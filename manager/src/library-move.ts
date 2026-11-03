@@ -86,9 +86,7 @@ export class LibraryMove {
     const mounts = filesystemMounts(await readFile('/run/frameleaf-host/mountinfo', 'utf8'));
     const location = (path: string) => LibraryMove.backing(path, mounts);
     const destination = location(root);
-    const autostart = process.env.MANAGER_UNRAID_AUTOSTART
-      ? await readFile(process.env.MANAGER_UNRAID_AUTOSTART, 'utf8')
-      : '';
+    const autostart = await this.fencing.readAutostart();
     const names = new Set(autostart.split('\n').map((line) => line.trim().split(/\s+/)[0]));
     const protectedPaths = [location(current.mounts[0].source), destination];
     for (const container of await this.docker.inventory()) {
@@ -157,7 +155,8 @@ export class LibraryMove {
       await this.execute('docker', ['rm', prior.Id]);
     }
     await mkdir(this.state(review.id), { recursive: true, mode: 0o700 });
-    let result: string;
+    let result: string | undefined;
+    let failure: unknown;
     try {
       result = await this.execute(
         'docker',
@@ -202,23 +201,49 @@ export class LibraryMove {
         ],
         { timeout: 86_400_000 },
       );
-    } finally {
-      const owned = JSON.parse(await this.execute('docker', ['inspect', name]))[0];
-      if (owned.Config?.Labels?.['app.frameleaf.move'] !== review.id || owned.Image !== controllers[0].Image)
-        throw new Refusal('media_copy_container_changed');
-      if (!owned.State.Running) await this.execute('docker', ['rm', owned.Id]);
+    } catch (error) {
+      failure = error;
     }
-    const values = JSON.parse(result);
-    if (
-      [
-        'unsupported_media_entry',
-        'media_source_changed',
-        'media_copy_mismatch',
-        'media_move_cancelled',
-        'media_copy_failed',
-      ].includes(values.error)
-    )
-      throw new Refusal(values.error);
+    // Cleanup never replaces the copy's own failure, whether the run failed or its receipt reports one.
+    let values: any;
+    if (result !== undefined) {
+      try {
+        values = JSON.parse(result);
+      } catch {
+        failure = new Refusal('invalid_media_copy_receipt');
+      }
+      if (
+        values &&
+        [
+          'unsupported_media_entry',
+          'media_source_changed',
+          'media_copy_mismatch',
+          'media_move_cancelled',
+          'media_copy_failed',
+        ].includes(values.error)
+      )
+        failure = new Refusal(values.error);
+    }
+    const failed = result === undefined || failure !== undefined;
+    let owned: any = null;
+    try {
+      owned = JSON.parse(await this.execute('docker', ['inspect', name]))[0];
+    } catch (error) {
+      // A run that never started leaves no container; after a run, inspection must succeed.
+      throw failed ? failure : error;
+    }
+    if (owned) {
+      if (owned.Config?.Labels?.['app.frameleaf.move'] !== review.id || owned.Image !== controllers[0].Image)
+        throw failed ? failure : new Refusal('media_copy_container_changed');
+      if (!owned.State.Running) {
+        try {
+          await this.execute('docker', ['rm', owned.Id]);
+        } catch (error) {
+          throw failed ? failure : error;
+        }
+      }
+    }
+    if (failed) throw failure;
     if (
       !Number.isSafeInteger(values.files) ||
       values.files < 0 ||

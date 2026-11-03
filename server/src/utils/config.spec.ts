@@ -281,6 +281,20 @@ describe('canonical system configuration storage', () => {
     expect(await getConfig(repos(), { withCache: true })).toEqual(defaults);
   });
 
+  it('reloads a cached read once another process saved the settings, with no ConfigUpdate here', async () => {
+    mocks.systemMetadata.getEffectiveConfigEpoch.mockImplementation(() =>
+      Promise.resolve(cloneDeep(metadata.get(SystemMetadataKey.EffectiveConfigEpoch)) as never),
+    );
+    expect((await getConfig(repos(), { withCache: true })).trash.days).toBe(defaults.trash.days);
+    // the CLI's save: the settings and their epoch change in that process; this one's cache is not cleared
+    await updateConfig(repos(), {
+      ...cloneDeep(defaults),
+      trash: { ...defaults.trash, days: defaults.trash.days + 3 },
+    });
+
+    expect((await getConfig(repos(), { withCache: true })).trash.days).toBe(defaults.trash.days + 3);
+  });
+
   it('fresh revision reads observe another writer while an ordinary cached read remains cached', async () => {
     const cached = await getConfig(repos(), { withCache: true });
     metadata.set(SystemMetadataKey.SystemConfig, { trash: { days: defaults.trash.days + 1 } });

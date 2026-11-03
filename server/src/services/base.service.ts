@@ -11,7 +11,9 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { UserAdmin } from 'src/database.js';
 import { AssetResponseDto, mapAsset } from 'src/dtos/asset-response.dto.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
-import { DatabaseLock, MlWorkload } from 'src/enum.js';
+import { DatabaseLock, JobName, LibraryScope, MlWorkload } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
+import { JobDependencyUnavailable } from 'src/queue/dependency.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
 import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
@@ -93,7 +95,10 @@ import { AccessRequest, checkAccess, requireAccess } from 'src/utils/access.js';
 import { ConfigHistoryKind, ConfigHistorySource, recordConfigHistory } from 'src/utils/config-history.js';
 import { getConfig, readConfig, updateConfig, withEffectiveConfigWrite } from 'src/utils/config.js';
 import { queueReleasedPersonThumbnails } from 'src/utils/cover-references.js';
+import { queueLockedSealFor } from 'src/utils/locked-seal-queue.js';
 import {
+  MlDestinationNotFoundError,
+  MlDestinationRefusedError,
   MlSelectionRequest,
   clipTextDestinationId,
   routedMlDestinationId,
@@ -101,6 +106,16 @@ import {
 } from 'src/utils/ml-destination.js';
 import { replaceLockedProfileImages } from 'src/utils/profile-image.js';
 import { resolvePublicUrl } from 'src/utils/public-url.js';
+import { isServerOwner, requireServerOwner } from 'src/utils/server-owner.js';
+
+/**
+ * FL-456: an admission that says this place cannot take the job now (refused, gone, or the Frameleaf
+ * Desktop helpers cannot take it yet), so the next place in the processing order may.
+ */
+const isPlaceUnavailable = (error: unknown) =>
+  error instanceof MlDestinationRefusedError ||
+  error instanceof MlDestinationNotFoundError ||
+  error instanceof JobDependencyUnavailable;
 
 export const BASE_SERVICE_DEPENDENCIES = [
   LoggingRepository,
@@ -420,6 +435,14 @@ export class BaseService {
     return readConfig(repos);
   }
 
+  /** One AssetsChanged for a bulk change; nothing when no item changed, as when it was sent per item. */
+  protected async emitAssetsChanged(assetIds: Iterable<string>) {
+    const unique = [...new Set(assetIds)];
+    if (unique.length > 0) {
+      await this.eventRepository.emit('AssetsChanged', { assetIds: unique });
+    }
+  }
+
   /**
    * FL-66: change the saved system configuration as one step. It holds the settings lock that
    * every administrator save holds, and starts from the configuration read straight from storage
@@ -475,24 +498,71 @@ export class BaseService {
    */
   protected async selectMlDestination(request: MlSelectionRequest) {
     const destinationId = await this.jobRepository.pinDestination(request.workload, request.destinationId);
+    return this.admitMlDestination({ ...request, destinationId });
+  }
+
+  private admitMlDestination(request: MlSelectionRequest) {
     return selectMlDestination(
       {
         mlDestinationRepository: this.mlDestinationRepository,
         machineLearningRepository: this.machineLearningRepository,
-        selectBackgroundPool: (selection) =>
-          this.machineLearningRepository.selectBackgroundPool(selection, request.jobId),
+        selectBackgroundPool: (selection, options) =>
+          this.machineLearningRepository.selectBackgroundPool(selection, request.jobId, options?.requireReady),
       },
-      { ...request, destinationId },
+      request,
     );
   }
 
   /**
-   * Admit a library workload against the destination the administrator routed it to. The
-   * route is explicit configuration; a workload without one is refused, not sent anywhere.
+   * Admit a library workload where its processing order sends it (FL-456): each place in the order is
+   * tried, live, until one admits the job. A job that already ran somewhere keeps that place. When no
+   * place can take it, the job waits on the first one (its refusal, and the wait it implies, are the first
+   * place's). Work never goes to a place outside the order; a workload whose order names nowhere is
+   * refused, not sent anywhere.
    */
   protected async selectRoutedMlDestination(request: Omit<MlSelectionRequest, 'destinationId'>) {
-    const destinationId = await routedMlDestinationId(this.mlDestinationRepository, request.workload);
-    return this.selectMlDestination({ ...request, destinationId });
+    const pinned = await this.jobRepository.pinnedDestination(request.workload);
+    if (pinned) {
+      return this.selectMlDestination({ ...request, destinationId: pinned });
+    }
+    const candidates = (await this.mlDestinationRepository.resolveRoute(request.workload)) ?? [];
+    const available = candidates.filter((candidate) => candidate.available);
+    if (available.length === 0) {
+      const destinationId =
+        candidates[0]?.destinationId ?? (await routedMlDestinationId(this.mlDestinationRepository, request.workload));
+      return this.selectMlDestination({ ...request, destinationId });
+    }
+
+    // A refusal notes the wait it implies on the running job; only the one the job ends on may stay.
+    const context = queueExecution.getStore();
+    const before = context?.dependencyReason;
+    let first: { error: unknown; reason: typeof before } | undefined;
+    for (const candidate of available) {
+      try {
+        const selection = await this.admitMlDestination({
+          ...request,
+          destinationId: candidate.destinationId,
+          desktopPool: candidate.desktopPool ? 'only' : 'skip',
+        });
+        if (context) {
+          context.dependencyReason = before;
+        }
+        await this.jobRepository.pinDestination(request.workload, selection.destinationId);
+        return selection;
+      } catch (error) {
+        if (!isPlaceUnavailable(error)) {
+          throw error;
+        }
+        first ??= { error, reason: context?.dependencyReason };
+        if (context) {
+          context.dependencyReason = before;
+        }
+      }
+    }
+    if (context) {
+      context.dependencyReason = first!.reason;
+    }
+    throw first!.error;
   }
 
   /**
@@ -512,8 +582,39 @@ export class BaseService {
   protected async afterAssetsLocked(assetIds: string[], sequenced = false): Promise<void> {
     await queueReleasedPersonThumbnails({ person: this.personRepository, job: this.jobRepository }, assetIds);
     await this.replaceLockedProfileImages();
+    // FL-721 (spec §7.2): an item that joined an encrypted set is sealed (public key only)
+    const sealed = (await this.assetRepository.getLockedEncryptionItems(assetIds)).filter(({ pending }) => !pending);
+    if (sealed.length > 0) {
+      await this.jobRepository.queueAll(sealed.map(({ id }) => ({ name: JobName.LockedSeal, data: { id } })));
+    }
     // FL-90: Studio previews of the newly Locked sources stop now rather than at their next read.
     if (!sequenced) await this.eventRepository.emit('AssetLocked', { assetIds });
+  }
+
+  /**
+   * FL-721 (spec §7.2): a job wrote new or derived files (thumbnails, encodes, edits, sidecars, develop
+   * or Studio results, restorations, moment frames) for `assetIds`; those in an encrypted set (the same
+   * test as `LockedFileRepository.encryptedSetOwner`: Locked, not pending, encryptable) are sealed
+   * again. A failure to queue never fails the job that wrote the files: the hourly sweep seals them.
+   */
+  protected async queueLockedSeal(assetIds: string[]): Promise<void> {
+    await queueLockedSealFor({ asset: this.assetRepository, job: this.jobRepository, logger: this.logger }, assetIds);
+  }
+
+  /**
+   * FL-721 (spec §7.3): once an unlock of `assetIds` committed. Items whose files are encrypted were
+   * only marked `pendingUnlockAt` (as were Studio results they kept locked); a sweep of each owner
+   * queues their unseals, which remove the locks once the files are plain.
+   */
+  protected async afterAssetsUnlocked(assetIds: string[]): Promise<void> {
+    const owners = new Set(
+      (await this.assetRepository.getLockedEncryptionItems(assetIds))
+        .filter(({ pending }) => pending)
+        .map(({ ownerId }) => ownerId),
+    );
+    for (const userId of owners) {
+      await this.jobRepository.queue({ name: JobName.LockedSweep, data: { userId } });
+    }
   }
 
   /**
@@ -530,7 +631,7 @@ export class BaseService {
     const assets = (await this.assetRepository.getByIdsWithAllRelationsButStacks(assetIds, ownerId)) ?? [];
     for (const asset of assets) {
       this.websocketRepository.clientSend(
-        'on_asset_update',
+        asset.libraryScope === LibraryScope.Design ? 'LibraryAssetUpdateV1' : 'on_asset_update',
         ownerId,
         // ponytail: no landmarks here, a Locked move never changes where an item was taken and the
         // viewer closes on it anyway; add `withLandmarks` if an unlock ever keeps the viewer open
@@ -545,7 +646,7 @@ export class BaseService {
    */
   protected async withLandmarks(data: AssetResponseDto): Promise<AssetResponseDto> {
     const { reverseGeocoding } = await this.getConfig({ withCache: true });
-    if (reverseGeocoding.enabled && typeof data.exifInfo?.latitude === 'number') {
+    if (reverseGeocoding.enabled && data.exifInfo) {
       const landmarks = await this.searchRepository.getAssetLandmarks(data.id);
       if (landmarks.length > 0) {
         const icons = this.mapRepository.getLandmarkIcons();
@@ -606,6 +707,16 @@ export class BaseService {
     return checkAccess(this.accessRepository, request);
   }
 
+  /** FL-416: whether the caller is the server owner, the first administrator (`utils/server-owner`). */
+  isServerOwner(auth: AuthDto): Promise<boolean> {
+    return isServerOwner(this.userRepository, auth);
+  }
+
+  /** FL-416: refuses (403) anyone but the server owner, the first administrator. */
+  requireServerOwner(auth: AuthDto): Promise<void> {
+    return requireServerOwner(this.userRepository, auth);
+  }
+
   async isSetupAvailable(): Promise<boolean> {
     const { setup } = this.configRepository.getEnv();
     return setup.allow && !(await this.userRepository.hasAdmin());
@@ -624,14 +735,25 @@ export class BaseService {
       throw new BadRequestException('Email is not available');
     }
 
-    if (!dto.isAdmin) {
+    const payload: Omit<Insertable<UserTable>, 'clusterGroupId'> = { ...dto };
+    if (payload.importClaimPending) {
+      Object.assign(payload, {
+        isAdmin: false,
+        password: null,
+        pinCode: null,
+        oauthId: null,
+        passwordLinkHash: null,
+        passwordLinkExpiresAt: null,
+        shouldChangePassword: false,
+      });
+    }
+    if (!payload.isAdmin) {
       const localAdmin = await this.userRepository.getAdmin();
       if (!localAdmin) {
-        throw new BadRequestException('The first registered account must the administrator.');
+        throw new BadRequestException('The first registered account must be the administrator.');
       }
     }
 
-    const payload: Omit<Insertable<UserTable>, 'clusterGroupId'> = { ...dto };
     if (payload.password) {
       payload.password = await this.cryptoRepository.hashBcrypt(payload.password, SALT_ROUNDS);
     }

@@ -48,7 +48,7 @@ export const load = (async ({ params, url, depends }) => {
   const [space, { members }, tree, { albums: linkedAlbums }, people, newSince, activity] = await Promise.all([
     getAlbumInfo({ id: params.spaceId }),
     getSharedSpaceMembers({ id: params.spaceId }),
-    getAlbumTree(),
+    getAlbumTree({}),
     getSharedSpaceAlbums({ id: params.spaceId }),
     getSharedSpacePeople({ id: params.spaceId }),
     getSharedSpaceNew({ id: params.spaceId }),

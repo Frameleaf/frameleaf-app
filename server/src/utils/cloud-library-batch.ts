@@ -8,6 +8,7 @@ import {
   CLOUD_LIBRARY_FAILURE_WARNINGS,
   type CloudClipResult,
   type CloudFaceResult,
+  type CloudJobRouting,
   decodeCloudEmbedding,
 } from 'src/utils/frameleaf-cloud.js';
 
@@ -117,6 +118,7 @@ export type CloudLibraryResult = {
     ceilingUsd: number;
     admittedAt: string;
     meteredSeconds: number | null;
+    routing?: CloudJobRouting;
     started: boolean;
     etag: string | null;
   } | null;
@@ -212,16 +214,15 @@ export const groupCloudLibraryBatches = (
   candidates: ReadonlyArray<{ assetId: string; ownerId: string }>,
   size = CLOUD_LIBRARY_BATCH_SIZE,
 ): Array<{ ownerId: string; assetIds: string[] }> => {
-  const perOwner = new Map<string, string[]>();
+  const perOwner = new Map<string, Set<string>>();
   for (const { assetId, ownerId } of candidates) {
-    const list = perOwner.get(ownerId) ?? [];
-    if (!list.includes(assetId)) {
-      list.push(assetId);
-    }
-    perOwner.set(ownerId, list);
+    const ids = perOwner.get(ownerId) ?? new Set<string>();
+    ids.add(assetId);
+    perOwner.set(ownerId, ids);
   }
   const batches: Array<{ ownerId: string; assetIds: string[] }> = [];
-  for (const [ownerId, assetIds] of perOwner) {
+  for (const [ownerId, ids] of perOwner) {
+    const assetIds = [...ids];
     for (let start = 0; start < assetIds.length; start += size) {
       batches.push({ ownerId, assetIds: assetIds.slice(start, start + size) });
     }

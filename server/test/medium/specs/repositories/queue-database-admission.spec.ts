@@ -37,7 +37,7 @@ describe('queue database admission', () => {
       if (text.startsWith('insert into job_attempt')) claimCommands.push('attempt');
       if (text.startsWith('update job_run_item i set state = j.state from job j')) claimCommands.push('state');
       if (text.startsWith('update job_run_item i set selection =')) claimCommands.push('redaction');
-      if (text.startsWith('update job_run_item shadow')) claimCommands.push('lineage');
+      if (text.includes('update job_run_item shadow')) claimCommands.push('lineage');
     });
     store = new SqlQueueStore(db);
   });

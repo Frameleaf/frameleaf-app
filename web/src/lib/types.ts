@@ -1,4 +1,4 @@
-import type { ImageEnrichmentFilter, QueueResponseDto } from '@frameleaf/sdk';
+import type { LibraryScope, ImageEnrichmentFilter, QueueResponseDto } from '@frameleaf/sdk';
 import type { ActionItem } from '@frameleaf/ui';
 import type { DateTime } from 'luxon';
 import type { SvelteSet } from 'svelte/reactivity';
@@ -24,6 +24,7 @@ export type UploadAsset = {
   assetId?: string;
   isTrashed?: boolean;
   albumId?: string;
+  libraryScope?: LibraryScope;
   /** Sent to the Locked folder; a retry must go there again. */
   isLockedAssets?: boolean;
   progress?: number;

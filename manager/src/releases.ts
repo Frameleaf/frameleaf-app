@@ -22,12 +22,16 @@ export function offered(body: string, seed: string, tag: string): boolean {
   const version = tag.replace(/^frameleaf-v/, '').replace(/-\d+$/, '');
   return percent <= 100 && parseInt(sha256(`${seed}:${version}`).slice(0, 8), 16) % 100 < percent;
 }
+/** Classify removed tags as ineligible so saved updates can recover through the withdrawn-release path. */
 async function github(path: string): Promise<any> {
   const response = await fetch(`${REPOSITORY}/${path}`, {
     headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Frameleaf-Manager' },
     signal: AbortSignal.timeout(30_000),
   });
-  if (!response.ok) throw new Refusal('release_service_unavailable', 503);
+  if (response.status === 404 && path.startsWith('releases/tags/'))
+    throw new Refusal('release_not_eligible', 409, 'This release is no longer available on GitHub (HTTP 404).');
+  if (!response.ok)
+    throw new Refusal('release_service_unavailable', 503, `GitHub returned HTTP ${response.status}.`);
   const text = await response.text();
   if (text.length > 4_000_000) throw new Refusal('invalid_release_response');
   return JSON.parse(text);
@@ -104,11 +108,10 @@ export class Releases {
         clearTimeout(timeout);
         reject(new Refusal('release_verification_failed'));
       });
-      worker.once('exit', (code) => {
-        if (code !== 0) {
-          clearTimeout(timeout);
-          reject(new Refusal('release_verification_failed'));
-        }
+      // Messages are delivered before 'exit'; an exit without one (even code 0) is a failed verification.
+      worker.once('exit', () => {
+        clearTimeout(timeout);
+        reject(new Refusal('release_verification_failed'));
       });
     });
   }

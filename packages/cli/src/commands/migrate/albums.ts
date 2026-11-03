@@ -1,4 +1,4 @@
-import type { UpdateAlbumDto } from '@frameleaf/sdk';
+import type { AlbumKind, UpdateAlbumDto } from '@frameleaf/sdk';
 import { chunk } from 'lodash-es';
 import type { ServerClient } from 'src/commands/migrate/client';
 import type { Controller } from 'src/commands/migrate/controller';
@@ -40,11 +40,18 @@ export async function migrateAlbums(
   };
   const ordered = albums.toSorted((a, b) => depthOf(a.aId) - depthOf(b.aId));
 
-  // Existing destination albums, so a crash between createAlbum and setAlbumBId can't
-  // produce a duplicate on resume. Keyed by name + parent, which is what identifies an
-  // album to a user.
-  const existingAlbums = await to.getAllAlbums();
-  const existing = new Map(existingAlbums.map((a) => [albumKey(a.parentId, a.albumName), a.id]));
+  // The destination user's own albums not yet claimed by this ledger, so a crash between
+  // createAlbum and setAlbumBId can't produce a duplicate on resume. Keyed by name + parent,
+  // which is what identifies an album to a user. Albums other users share are never
+  // candidates, and each one is claimed once, so same-named source albums stay apart.
+  const claimed = new Set(albums.map((a) => a.bId));
+  const existing = new Map<string, string[]>();
+  for (const a of await to.getAllAlbums()) {
+    if (!claimed.has(a.id)) {
+      const key = albumKey(a.parentId, a.albumName);
+      existing.set(key, [...(existing.get(key) ?? []), a.id]);
+    }
+  }
 
   // 1. Create albums (parents first) and copy order/sortOrder.
   for (const album of ordered) {
@@ -56,26 +63,36 @@ export async function migrateAlbums(
       return;
     }
     const parentBId = album.parentAId ? ledger.albumBId(album.parentAId) : undefined;
-    const key = albumKey(parentBId, album.name);
-    const createdAlbum = existing.has(key)
-      ? { id: existing.get(key)! }
-      : await to.createAlbum({
-          albumName: album.name,
-          description: album.description || undefined,
-          icon: album.icon ?? undefined,
-          parentId: parentBId,
-        });
-    existing.set(key, createdAlbum.id);
-    ledger.setAlbumBId(album.aId, createdAlbum.id);
-    const patch: UpdateAlbumDto = {};
-    if (album.order) {
-      patch.order = album.order as UpdateAlbumDto['order'];
+    if (album.parentAId && byId.has(album.parentAId) && !parentBId) {
+      // Its collection failed to be created; making this one top-level would lose the nesting.
+      controller.log(`album ${album.name}: skipped until its collection exists on destination`);
+      continue;
     }
-    if (album.sortOrder != undefined) {
-      patch.sortOrder = album.sortOrder;
-    }
-    if (Object.keys(patch).length > 0) {
-      await to.updateAlbum(createdAlbum.id, patch);
+    try {
+      const reuseId = existing.get(albumKey(parentBId, album.name))?.shift();
+      const createdAlbum = reuseId
+        ? { id: reuseId }
+        : await to.createAlbum({
+            albumName: album.name,
+            kind: album.kind as AlbumKind | undefined,
+            description: album.description || undefined,
+            icon: album.icon ?? undefined,
+            parentId: parentBId,
+          });
+      ledger.setAlbumBId(album.aId, createdAlbum.id);
+      const patch: UpdateAlbumDto = {};
+      if (album.order) {
+        patch.order = album.order as UpdateAlbumDto['order'];
+      }
+      if (album.sortOrder != undefined) {
+        patch.sortOrder = album.sortOrder;
+      }
+      if (Object.keys(patch).length > 0) {
+        await to.updateAlbum(createdAlbum.id, patch);
+      }
+    } catch (error) {
+      // Not recorded, so a later run retries it; the audit lists it as unresolved meanwhile.
+      controller.log(`album ${album.name}: failed — ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 

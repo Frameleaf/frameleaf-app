@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { FileDownloadResponse } from 'src/utils/file.js';
 import {
   StudioSourceResolutionDto,
   StudioSourceResolutionRequestDto,
@@ -166,56 +167,57 @@ export class StudioSourceResolutionService {
         live = await guard();
         if (!verified.valid || (verified.path && verified.path !== entry.path))
           throw new NotFoundException('Studio source unavailable');
-        if (entry.sourceAccess === 'owner' || entry.sourceAccess === 'shared') {
-          const original = await this.media.downloadOriginal(live, entry.id, { edited: false });
-          try {
+        let original: FileDownloadResponse | undefined;
+        try {
+          if (entry.sourceAccess === 'owner' || entry.sourceAccess === 'shared') {
+            original = await this.media.downloadOriginal(live, entry.id, { edited: false });
             await guard();
             if (original.path !== entry.path) throw new ConflictException('studio_source_superseded');
-          } finally {
-            await original.release?.();
           }
-        }
-        const observed = await this.storage.stat(entry.path);
-        await guard();
-        const boundIdentity = identity(observed);
-        if (identities.has(entry.key) && identities.get(entry.key) !== boundIdentity)
-          throw new ConflictException('studio_source_superseded');
-        identities.set(entry.key, boundIdentity);
-        if (cached.has(entry.key)) return cached.get(entry.key)!;
-        const file = await this.storage.openForRandomRead(entry.path);
-        try {
+          const observed = await this.storage.stat(entry.path);
           await guard();
-          const byteCount = file.size;
-          if (
-            !Number.isSafeInteger(byteCount) ||
-            byteCount <= 0 ||
-            byteCount > Math.min(maximum, MAX_DECODED, MAX_ALLOCATED - allocated)
-          )
-            throw new PayloadTooLargeException('studio_source_allocation_limit');
-          const bytes = own(await file.read(0, file.size));
-          await guard();
-          if (bytes.length !== file.size) throw new ConflictException('studio_source_superseded');
-          const expected = entry.checksum ?? '';
-          const hex = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(expected);
-          const checksum = Buffer.from(expected, hex ? 'hex' : 'base64');
+          const boundIdentity = identity(observed);
+          if (identities.has(entry.key) && identities.get(entry.key) !== boundIdentity)
+            throw new ConflictException('studio_source_superseded');
+          identities.set(entry.key, boundIdentity);
+          if (cached.has(entry.key)) return cached.get(entry.key)!;
+          const file = await this.storage.openForRandomRead(entry.path);
           try {
+            await guard();
+            const byteCount = file.size;
             if (
-              ![20, 32].includes(checksum.length) ||
-              (!hex && checksum.toString('base64') !== expected) ||
-              !createHash(checksum.length === 20 ? 'sha1' : 'sha256')
-                .update(bytes)
-                .digest()
-                .equals(checksum)
+              !Number.isSafeInteger(byteCount) ||
+              byteCount <= 0 ||
+              byteCount > Math.min(maximum, MAX_DECODED, MAX_ALLOCATED - allocated)
             )
-              throw new ConflictException('studio_source_superseded');
+              throw new PayloadTooLargeException('studio_source_allocation_limit');
+            const bytes = own(await file.read(0, file.size));
+            await guard();
+            if (bytes.length !== file.size) throw new ConflictException('studio_source_superseded');
+            const expected = entry.checksum ?? '';
+            const hex = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(expected);
+            const checksum = Buffer.from(expected, hex ? 'hex' : 'base64');
+            try {
+              if (
+                ![20, 32].includes(checksum.length) ||
+                (!hex && checksum.toString('base64') !== expected) ||
+                !createHash(checksum.length === 20 ? 'sha1' : 'sha256')
+                  .update(bytes)
+                  .digest()
+                  .equals(checksum)
+              )
+                throw new ConflictException('studio_source_superseded');
+            } finally {
+              checksum.fill(0);
+            }
+            cached.set(entry.key, bytes);
+            return bytes;
           } finally {
-            checksum.fill(0);
+            await file.close();
+            await guard();
           }
-          cached.set(entry.key, bytes);
-          return bytes;
         } finally {
-          await file.close();
-          await guard();
+          await original?.release?.();
         }
       };
       await guard();
@@ -279,20 +281,20 @@ export class StudioSourceResolutionService {
       );
       // Actual original admission is repeated at the final boundary, after materialization and encoding.
       for (const input of inputs) {
-        if (input.sourceAccess !== 'owner' && input.sourceAccess !== 'shared') continue;
-        const live = await guard();
-        const original = await this.media.downloadOriginal(live, input.id, { edited: false });
+        let original: FileDownloadResponse | undefined;
         try {
+          if (input.sourceAccess === 'owner' || input.sourceAccess === 'shared') {
+            const live = await guard();
+            original = await this.media.downloadOriginal(live, input.id, { edited: false });
+            await guard();
+            if (original.path !== input.path) throw new ConflictException('studio_source_superseded');
+          }
+          const current = await this.storage.stat(input.path!);
           await guard();
-          if (original.path !== input.path) throw new ConflictException('studio_source_superseded');
+          if (identity(current) !== identities.get(input.key)) throw new ConflictException('studio_source_superseded');
         } finally {
-          await original.release?.();
+          await original?.release?.();
         }
-      }
-      for (const input of inputs) {
-        const current = await this.storage.stat(input.path!);
-        await guard();
-        if (identity(current) !== identities.get(input.key)) throw new ConflictException('studio_source_superseded');
       }
       await guard();
       return StudioSourceResolutionSchema.parse({ ...result, manifestDigest });

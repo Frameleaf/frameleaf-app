@@ -15,6 +15,10 @@ Database backups do not contain your media. A filesystem copy taken while upload
 
 For cloud backups, also keep your backup key and recovery kit somewhere safe, apart from the server. Without them an encrypted cloud backup cannot be restored.
 
+Cloud Backup encrypts every file, the manifest that names your files, and the database dump on your server before upload, for Frameleaf-managed storage and your own bucket alike. Object names are keyed hashes, so they reveal neither file names nor content hashes. The storage provider can still see how many objects there are, their sizes and when they were written. To restore on a new server, the recovery file also needs the signed list of your backups. After backing up, use **Update recovery file** on the Cloud Backup page and choose your saved file: you get it back with your latest backups added (no keys come from the server). Your own bucket must have versioning turned on; add a lifecycle rule that removes noncurrent versions after a few days so pruned backups stop using space.
+
+If you store a recovery copy of the key with Frameleaf (escrow) and later rotate the backup key, the Cloud Backup page shows **Recovery copy is out of date**. Store it again with your passphrase so it can open the newest backups.
+
 ## Backup secrets and diagnostic logs
 
 Request diagnostics mask passphrases, recovery codes, keys, keyrings and wrapping secrets, including nested fields and separator/case variants. Cloud backup setup, bucket checks, key and escrow routes, Buddy recovery key routes, and credential replacement routes exclude their entire request body, including failed requests. Method, path, status, duration and client address remain available at debug level. Unexpected route errors record a fixed failure category rather than the request, error text or stack. **Download diagnostics** excludes credential values and recovery material from settings; it does not collect request logs or recovery kits.

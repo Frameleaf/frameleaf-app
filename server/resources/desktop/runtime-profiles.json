@@ -22,6 +22,26 @@
       "targets": [
         "macos-aarch64"
       ]
+    },
+    "cuda-ort": {
+      "python": "3.12.13",
+      "uv": "0.11.2",
+      "extra": "cuda",
+      "provider": "CUDAExecutionProvider",
+      "targets": [
+        "windows-x86_64",
+        "linux-x86_64"
+      ]
+    },
+    "openvino-ort": {
+      "python": "3.12.13",
+      "uv": "0.11.2",
+      "extra": "openvino",
+      "provider": "OpenVINOExecutionProvider",
+      "targets": [
+        "windows-x86_64",
+        "linux-x86_64"
+      ]
     }
   }
 }

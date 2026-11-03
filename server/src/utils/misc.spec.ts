@@ -4,6 +4,7 @@ import {
   getKeyByValue,
   getKeysDeep,
   globToPostgresRegex,
+  isRetryableStartupError,
   removeOpenApi30IncompatibleKeys,
   unsetDeep,
 } from 'src/utils/misc.js';
@@ -234,4 +235,23 @@ it('leaves closed arrays without positional tuple metadata intact', () => {
   const schema = { type: 'array', items: false };
   removeOpenApi30IncompatibleKeys(schema);
   expect(schema).toEqual({ type: 'array', items: false });
+});
+
+describe('isRetryableStartupError', () => {
+  const postgresError = (code: string) => Object.assign(new Error('canceling statement due to lock timeout'), { code });
+
+  it.each(['55P03', '40P01'])('retries PostgreSQL %s, directly or as the cause', (code) => {
+    expect(isRetryableStartupError(postgresError(code))).toBe(true);
+    expect(isRetryableStartupError(new Error('bootstrap failed', { cause: postgresError(code) }))).toBe(true);
+  });
+
+  it.each([
+    ['another SQLSTATE', postgresError('42P01')],
+    ['a plain error', new Error('Import must be activated before startup')],
+    ['a non-string code', { code: 55 }],
+    ['undefined', undefined],
+    ['null', null],
+  ])('does not retry %s', (_label, error) => {
+    expect(isRetryableStartupError(error)).toBe(false);
+  });
 });

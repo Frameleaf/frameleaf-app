@@ -73,8 +73,8 @@ SELECT "asset".*, "asset_exif"."description" FROM "asset_exif"
 ```
 
 ```sql title="Without metadata"
-SELECT "asset".* FROM "asset_exif"
-  LEFT JOIN "asset" ON "asset"."id" = "asset_exif"."assetId"
+SELECT "asset".* FROM "asset"
+  LEFT JOIN "asset_exif" ON "asset"."id" = "asset_exif"."assetId"
   WHERE "asset_exif"."assetId" IS NULL;
 ```
 
@@ -130,8 +130,17 @@ SELECT "user".* FROM "user" JOIN "asset" ON "user"."id" = "asset"."ownerId" WHER
 
 ## Persons
 
+Names are not unique, and other accounts can have a person with the same name. Find the exact person first, then delete it by its person group ID and owner:
+
+```sql title="Find the person to delete"
+SELECT "person"."personGroupId", "person"."ownerId", "user"."email", "person"."name" FROM "person"
+  JOIN "user" ON "user"."id" = "person"."ownerId"
+  WHERE "person"."name" = 'PersonNameHere';
+```
+
 ```sql title="Delete person and unset it for the faces it was associated with"
-DELETE FROM "person" WHERE "name" = 'PersonNameHere';
+DELETE FROM "person"
+  WHERE "personGroupId" = 'person-group-id-from-above' AND "ownerId" = 'owner-id-from-above';
 ```
 
 ## System

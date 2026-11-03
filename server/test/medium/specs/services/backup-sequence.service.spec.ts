@@ -1,5 +1,5 @@
 import { Kysely, sql } from 'kysely';
-import { DatabaseLock, JobStatus, SystemMetadataKey } from 'src/enum.js';
+import { DatabaseLock, JobName, JobStatus, SystemMetadataKey } from 'src/enum.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
@@ -40,9 +40,11 @@ describe('backup sequence worker serialization', () => {
           metadata,
           new DatabaseRepository(db, logger, {} as never),
           {} as never,
-          { queue: vi.fn() } as never,
+          {
+            queue: (item: { name: JobName }) => (item.name === JobName.DatabaseBackup ? local() : Promise.resolve()),
+            searchJobs: () => Promise.resolve([]),
+          } as never,
           {} as never,
-          { handleBackupDatabase: local } as never,
           { sequenceStatus: () => Promise.resolve({ on: false, busy: false }) } as never,
           {
             sequenceStatus: () => Promise.resolve({ on: true, busy: true }),

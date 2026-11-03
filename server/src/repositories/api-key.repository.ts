@@ -41,7 +41,8 @@ export class ApiKeyRepository {
             .selectFrom('user')
             .select(columns.authUser)
             .whereRef('user.id', '=', 'api_key.userId')
-            .where('user.deletedAt', 'is', null),
+            .where('user.deletedAt', 'is', null)
+            .where('user.importClaimPending', '=', false),
         ).as('user'),
       ])
       .where('api_key.key', '=', hashedToken)
@@ -66,5 +67,16 @@ export class ApiKeyRepository {
       .where('userId', '=', userId)
       .orderBy('createdAt', 'desc')
       .execute();
+  }
+
+  /** FL-655: the keys Save to Frameleaf received by signing in, and from which browser. */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async getSignedInClients(userId: string): Promise<Record<string, string>> {
+    const rows = await this.db
+      .selectFrom('browser_extension_access')
+      .select(['apiKeyId', 'client'])
+      .where('userId', '=', userId)
+      .execute();
+    return Object.fromEntries(rows.map((row) => [row.apiKeyId, row.client]));
   }
 }

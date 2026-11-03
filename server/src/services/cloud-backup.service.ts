@@ -29,6 +29,7 @@ import type {
   FrameleafCloudBackupRestore,
   FrameleafCloudBackupRun,
 } from 'src/types.js';
+import type { SystemNotificationTemplate } from 'src/utils/notification-locale.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
@@ -53,6 +54,8 @@ import {
   CloudBackupManifestItemsResponseDto,
   CloudBackupManifestsResponseDto,
   CloudBackupPruneDto,
+  CloudBackupRecoveryHistoryDto,
+  CloudBackupRecoveryHistoryRequestDto,
   CloudBackupRestoreDto,
   CloudBackupRunState,
   CloudBackupS3,
@@ -64,7 +67,6 @@ import {
 import { SystemConfig } from 'src/dtos/config.dto.js';
 import {
   AssetStatus,
-  ChecksumAlgorithm,
   DatabaseLock,
   FrameleafWorker,
   JobName,
@@ -86,6 +88,7 @@ import {
   CloudBackupAsset,
   CloudBackupEntry,
   CloudBackupIndexRepository,
+  CloudBackupIndexedObject,
   CloudBackupLibraryAsset,
 } from 'src/repositories/cloud-backup-index.repository.js';
 import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
@@ -96,6 +99,7 @@ import {
   CloudBackupFileChangedError,
   CloudBackupStoreError,
   CloudBackupStoreRepository,
+  bareEtag,
 } from 'src/repositories/cloud-backup-store.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CronRepository } from 'src/repositories/cron.repository.js';
@@ -109,6 +113,7 @@ import {
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { INSTANCE_KEY_FILE, InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
+import { LockedEncryptionRepository } from 'src/repositories/locked-encryption.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
   MediaOperation,
@@ -138,6 +143,7 @@ import {
   CloudBackupRestorer,
   IN_PLACE_SCOPES,
   RESTORE_REPLACED_FOLDER,
+  countEncryptedWithOlderKey,
   emptyRestoreResult,
   restorePlan,
 } from 'src/services/cloud-backup-restore.js';
@@ -149,7 +155,6 @@ import {
   clientBackupContext,
   clientBackupManifestKey,
   clientBackupObjectKey,
-  clientBackupWritesEnabled,
   parseClientBackupKeys,
 } from 'src/utils/cloud-backup-crypto.js';
 import { escrowPassphraseProblem, unwrapBucketKey, wrapBucketKey } from 'src/utils/cloud-backup-escrow.js';
@@ -159,13 +164,18 @@ import {
   assertOwnerRestorePath,
   captureOwnerRestoreFile,
 } from 'src/utils/cloud-backup-owner-path.js';
-import { checkOwnerRestoreItems, ownerRestoreHash } from 'src/utils/cloud-backup-owner-restore.js';
+import {
+  checkOwnerRestoreItems,
+  ownerRestoreHash,
+  readBackupAssetRecord as readRecord,
+} from 'src/utils/cloud-backup-owner-restore.js';
 import { ownerBackupHistoryPage, ownerThumbnail } from 'src/utils/cloud-backup-owner.js';
 import {
   type BackupRecoveryHistory,
   appendBackupSnapshot,
   backupRecoveryHistorySchema,
   backupRecoveryPackageSchema,
+  extendBackupHistory,
   mergeBackupHistory,
   readBackupHistory,
   selectBackupSnapshot,
@@ -187,7 +197,6 @@ import {
   CLOUD_BACKUP_KEY_FILE_FORMAT,
   CLOUD_BACKUP_MANIFEST_FORMAT,
   CLOUD_BACKUP_MANIFEST_PREFIX,
-  CLOUD_BACKUP_MANIFEST_VERSION,
   CLOUD_BACKUP_OBJECT_PREFIX,
   CLOUD_BACKUP_OWN_MEMORY_ACKNOWLEDGEMENT,
   CloudBackupAssetDetails,
@@ -196,6 +205,7 @@ import {
   CloudBackupManifestFile,
   CloudBackupRunResult,
   backupKeyFile,
+  backupRecordFor,
   bucketRef,
   compactIso,
   emptyRunResult,
@@ -203,13 +213,14 @@ import {
   keyFingerprint,
   manifestFileObjectKey,
   manifestKey,
-  objectKey,
   parseBackupKey,
   parseRunResult,
   recoveryCode,
+  restoredChecksum,
   runProgress,
   s3SettingsProblem,
   signingRegion,
+  withoutTrailingSlashes,
 } from 'src/utils/cloud-backup.js';
 import { compareCodeUnits } from 'src/utils/compare.js';
 import { recordConfigHistory } from 'src/utils/config-history.js';
@@ -246,6 +257,18 @@ import {
   pushJobData,
 } from 'src/utils/frameleaf-push.js';
 import {
+  LOCKED_KEY_BACKUP_ROLE,
+  lockedKeyBackupFiles,
+  lockedKeyFileKeyId,
+  lockedKeyFilePath,
+  lockedKeyGaps,
+  lockedKeyOwners,
+  matchLockedEncryptionRow,
+  pathsBeingReplaced,
+  readLockedKeyFile,
+  sealedFileOwnerKeyId,
+} from 'src/utils/locked-backup.js';
+import {
   ManagedBackupAuthorizationError,
   managedBackupReadSession,
   managedBackupSession,
@@ -255,6 +278,12 @@ import { OperationClaimLostError, settleOperationStop, withOperationExecution } 
 import { serverTimeZone } from 'src/utils/server-time-zone.js';
 
 const KIND = MediaOperationKind.CloudBackup;
+/** FL-406: the notice template of each failed maintenance task, by its English name. */
+const FAILED_TASK_TEMPLATE = {
+  'Cloud backup check': 'cloud-backup-check-failed',
+  'Cloud backup clean-up': 'cloud-backup-cleanup-failed',
+  'Restore from cloud backup': 'cloud-restore-failed',
+} as const;
 /** FL-164: a restore uses the bucket too, so it never runs beside a backup operation, nor they beside it. */
 const RESTORE_KIND = MediaOperationKind.CloudRestore;
 const BUCKET_KINDS = [KIND, RESTORE_KIND];
@@ -292,14 +321,13 @@ const LIBRARY_STATE_BATCH = 5000;
 
 /** FL-164: what `frameleaf-admin cloud-backup restore` restores from, and how much of it. */
 export type CloudBackupBareMetalRestore = {
-  s3: CloudBackupS3;
   /** The key file's content, the base64 key, or the recovery code. Never logged. */
   key: string;
   manifestKey?: string;
   scope: Extract<CloudBackupRestoreScope, 'files' | 'database' | 'library'>;
   restoreDatabase: boolean;
   offlineDirectory?: string;
-};
+} & ({ managed: true; s3?: never } | { managed?: false; s3: CloudBackupS3 });
 
 /** FL-164: what a `cloud_backup` operation does; a row from before FL-164 has no task and is a backup run. */
 type BackupTask = 'backup' | 'verify' | 'prune';
@@ -353,6 +381,8 @@ const runState = (status: MediaOperationStatus, pauseRequested: boolean): CloudB
   }
 };
 
+const UUID = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
+
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 const asIso = (value: Date | string | null | undefined): string | null =>
@@ -370,8 +400,9 @@ type FileToBackUp = {
 type HashedFile = FileToBackUp & { sha256: string; size: number; mtime: Date };
 
 /**
- * Cloud backup (FL-160, CLD-301): claim one bucket per server, keep its SSE-C key in one of three key
- * modes, and back up content-addressed runs as durable jobs.
+ * Cloud backup (FL-160, CLD-301): claim one bucket per server, keep its recovery key file in one of three key
+ * modes, and back up runs encrypted on this server (`frameleaf-client-backup` v1) as durable jobs. The bucket
+ * key only protects the claim marker and probes with SSE-C; every file, manifest and dump is client-encrypted.
  *
  * - **One bucket per server.** Setup claims an empty bucket by writing `frameleaf-backup.json` with this
  *   server's instance id; a bucket claimed by another server, claimed with another key, or holding
@@ -381,9 +412,9 @@ type HashedFile = FileToBackUp & { sha256: string; size: number; mtime: Date };
  *   with a copy in that file. `own-memory`: never saved; `POST admin/cloud/backup/key/unlock` loads it
  *   after each restart, handed to the other workers in memory, and runs wait until it is loaded. The
  *   key never goes into the configuration, a database dump, a log or a response.
- * - **Runs.** A run is a `media_operation` of kind `cloud_backup`: the database dump first (`db/`), then
- *   every original, sidecar and profile image by SHA-256 (`o/<sha256>`, uploaded once, never twice),
- *   then the manifest (`m/<ISO>.json.gz`). The cursor is written every 25 assets, a pause or cancel is
+ * - **Runs.** A run is a `media_operation` of kind `cloud_backup`: the database dump first (`db/v1/`), then
+ *   every original, sidecar and profile image under a keyed name (`o/v1/…`, uploaded once, never twice),
+ *   then the manifest (`m/v1/…json.gz`). The cursor is written every 25 assets, a pause or cancel is
  *   honoured there, and a claim after a restart finishes the same manifest. Nothing on this server is
  *   ever deleted or changed by a run except its own temporary database dump; Locked media is backed up
  *   like any other (backend work reaches it), and nothing a run reads is shown to anybody.
@@ -461,6 +492,7 @@ export class CloudBackupService {
     private jobRepository: JobRepository,
     private details: CloudBackupDetailsService,
     private selection: CloudBackupSelectionRepository,
+    private lockedEncryptionRepository: LockedEncryptionRepository,
   ) {
     this.logger.setContext(CloudBackupService.name);
     this.keyChannel = new CloudBackupKeyChannel(this.workerId, () =>
@@ -542,6 +574,9 @@ export class CloudBackupService {
         available: metadata?.keyMode === 'server' && link.linked,
         stored: !!metadata?.escrow,
         storedAt: metadata?.escrow?.storedAt ?? null,
+        outdated:
+          !!metadata?.escrow &&
+          (metadata.escrow.keyVersion ?? 1) < (this.clientKeys.get(metadata.keyFingerprint)?.current ?? 1),
       },
     };
   }
@@ -778,14 +813,16 @@ export class CloudBackupService {
     let recovery: Buffer | null = null;
     try {
       const fingerprint = keyFingerprint(key);
+      const identity = await loadInstanceIdentity(this.gatewayDeps());
+      // Every backup is encrypted on this server, so setup needs the recovery key file's client roots.
+      if (!this.readClientKeys(dto.key, key, identity.instanceId, false))
+        throw new BadRequestException('Use a complete backup recovery key file.');
       if (dto.target === 'managed') {
         // FL-228: the plan is active and the server has it; storage is being prepared (step 3 of 4)
         await this.announceActivation({ preparing: true });
       }
       const managed = dto.target === 'managed' ? await this.managedGrantForSetup() : null;
       const connection = managed ? managed.connection : await this.connectionFor(dto.s3!);
-      const identity = await loadInstanceIdentity(this.gatewayDeps());
-      this.readClientKeys(dto.key, key, identity.instanceId, false);
       recovery = dto.keyMode === 'own-memory' ? this.memoryRecovery(dto.key, key, identity.instanceId) : null;
 
       // Keep the stored key even on claim failure: the provider may commit before its response is lost.
@@ -1691,6 +1728,7 @@ export class CloudBackupService {
           level: NotificationLevel.Error,
           title: 'Cloud backup failed',
           description: `The last cloud backup stopped: ${message}`,
+          systemTemplate: { version: 1, key: 'cloud-backup-failed', args: { error: message } },
           dedupeKey: 'cloud-backup:failed',
           dedupeDays: 1,
           job: { id: operation.id, type: 'cloud-backup-run', actions: ['retry'] },
@@ -1728,6 +1766,7 @@ export class CloudBackupService {
       bucketKey,
       progress,
       uploadedNow: new Set(),
+      sealedOriginals: new Map(),
       clientKeys: opened.clientKeys,
       eligibleOwners: null,
       decided: false,
@@ -1745,13 +1784,13 @@ export class CloudBackupService {
       return;
     }
 
-    if (
-      (run.progress.result.manifestKey?.startsWith('m/v1/') ?? clientBackupWritesEnabled()) &&
-      run.metadata.target === 'managed' &&
-      !run.connection.clientFormatSupported
-    )
+    // Every write is encrypted on this server: never upload without the client roots or resume a non-v1 run.
+    if (!run.clientKeys) throw new Error('Load the complete backup recovery key file before starting a new backup.');
+    if (run.progress.result.manifestKey && !run.progress.result.manifestKey.startsWith('m/v1/'))
+      throw new Error('This unfinished backup is not encrypted on this server. Cancel it and start a new backup.');
+    if (run.metadata.target === 'managed' && !run.connection.clientFormatSupported)
       throw new Error(
-        'Client-encrypted managed writes require a qualified opaque-storage grant; use legacy writes until that contract is available.',
+        'Client-encrypted managed writes require a qualified opaque-storage grant. Update the server and retry.',
       );
     await this.openManifest(run);
     await this.recordRun(operation, progress.result, 'running');
@@ -1822,6 +1861,7 @@ export class CloudBackupService {
         level: NotificationLevel.Warning,
         title: 'Cloud backup is waiting for its key',
         description: 'This server does not keep the backup key. Load it in Settings › Frameleaf Cloud › Cloud backup.',
+        systemTemplate: { version: 1, key: 'cloud-backup-key-locked', args: {} },
         dedupeKey: 'cloud-backup:key-locked',
         dedupeDays: 1,
         job: { id: operation.id, type: 'cloud-backup-run', actions: ['pause', 'cancel'] },
@@ -1854,6 +1894,7 @@ export class CloudBackupService {
       connection = this.ownBucketConnection(metadata, settings);
     }
 
+    await this.removeEndedTransfers();
     const journal: BackupTransferJournal = {
       current: readBackupTransfer(operation.result),
       directory: join(identityDirectory(this.configRepository), 'cloud-backup-transfers', operation.id),
@@ -2263,9 +2304,7 @@ export class CloudBackupService {
     }
     const manifest = await this.index.createManifest({
       bucket: run.metadata.bucketRef,
-      key: clientBackupWritesEnabled()
-        ? clientBackupManifestKey(run.metadata.instanceId, this.clientWriteVersion(run), manifestKey(new Date()))
-        : manifestKey(new Date()),
+      key: clientBackupManifestKey(run.metadata.instanceId, this.clientWriteVersion(run), manifestKey(new Date())),
       operationId: run.id,
     });
     run.progress.result = { ...result, manifestId: manifest.id, manifestKey: manifest.key };
@@ -2279,39 +2318,23 @@ export class CloudBackupService {
     const folder = StorageCore.getBaseFolder(StorageFolder.Backups);
     let database = run.progress.result.database;
     const saved = run.connection.transfer?.current;
-    if (!database && saved?.kind === 'upload' && saved.key.startsWith(CLOUD_BACKUP_DB_PREFIX)) {
-      if (saved.key.startsWith('db/v1/')) throw new Error('The encrypted database upload has no pinned dump identity.');
-      if (
-        !saved.source ||
-        dirname(saved.source) !== folder ||
-        basename(saved.source) !== basename(saved.key) ||
-        !isCloudBackupDumpName(basename(saved.source)) ||
-        !saved.expectedSha256
-      )
-        throw new Error('The resumable database backup source is invalid.');
-      database = {
-        key: saved.key,
-        sha256: saved.expectedSha256,
-        size: (await this.storageRepository.stat(saved.source)).size,
-      };
-      run.progress.result = { ...run.progress.result, database };
-    }
+    if (!database && saved?.kind === 'upload' && saved.key.startsWith(CLOUD_BACKUP_DB_PREFIX))
+      throw new Error('The encrypted database upload has no pinned dump identity.');
     if (!database) {
+      await this.backUpLockedKeys(run);
       await this.removeLeftoverDumps();
       const path = await this.databaseBackup.createDatabaseBackup(CLOUD_BACKUP_DUMP_PREFIX, {
         signal: executionSignal(),
         progress: advanceExecutionProgress,
       });
       const sha256 = (await this.cryptoRepository.hashFile(path, 'sha256')).toString('hex');
-      const key = run.progress.result.manifestKey!.startsWith('m/v1/')
-        ? clientBackupObjectKey(
-            this.clientWriteRoot(run),
-            run.metadata.instanceId,
-            this.clientWriteVersion(run),
-            sha256,
-            basename(path),
-          )
-        : `${CLOUD_BACKUP_DB_PREFIX}${basename(path)}`;
+      const key = clientBackupObjectKey(
+        this.clientWriteRoot(run),
+        run.metadata.instanceId,
+        this.clientWriteVersion(run),
+        sha256,
+        basename(path),
+      );
       database = { key, sha256, size: (await this.storageRepository.stat(path)).size };
       run.progress.result = { ...run.progress.result, database };
     }
@@ -2336,6 +2359,62 @@ export class CloudBackupService {
       await this.storageRepository.unlink(path);
     }
     return proceed;
+  }
+
+  /**
+   * FL-721: every Locked key file as it is (wrapped; no secret opens anything without it), first, before the
+   * dump and any media: turning encryption off deletes the key file once its files are plain, so a copy
+   * taken later could miss the key this backup's ciphertext needs. Who had one is kept with the run.
+   */
+  private async backUpLockedKeys(run: Run) {
+    const keys = (await lockedKeyBackupFiles(StorageCore.getMediaLocation())).filter(({ userId }) =>
+      this.mayUpload(run, userId),
+    );
+    const before = run.progress.result.missing;
+    const recorded = await this.backUpFiles(
+      run,
+      keys.map(({ userId, path }) => ({
+        fileKey: `locked-key:${userId}`,
+        assetId: null,
+        ownerId: userId,
+        role: LOCKED_KEY_BACKUP_ROLE,
+        path,
+        recorded: null,
+      })),
+    );
+    // one removed since it was listed (encryption finished turning off) is not counted as missing media
+    const lockedKeyOwners = recorded.map(({ ownerId }) => ownerId).filter((ownerId): ownerId is string => !!ownerId);
+    const lockedKeyIds: string[] = [];
+    for (const { ownerId, path } of recorded) {
+      const id = ownerId ? await lockedKeyFileKeyId(path, ownerId) : null;
+      if (id) {
+        lockedKeyIds.push(id);
+      }
+    }
+    run.progress.result = { ...run.progress.result, missing: before, lockedKeyOwners, lockedKeyIds };
+  }
+
+  /**
+   * Partial downloads and transfer folders of operations that ended (cancelled, failed after their retries)
+   * are never resumed: the next bucket operation removes them, including a partial left in a library folder.
+   */
+  private async removeEndedTransfers() {
+    for (const { id, transfer } of await this.index.getEndedTransfers()) {
+      const partial = readBackupTransfer({ backupTransfer: transfer });
+      if (partial?.kind === 'download' && basename(partial.partial).startsWith('.frameleaf-part-')) {
+        await this.storageRepository.unlink(partial.partial).catch(() => {});
+      }
+      await this.index.clearEndedTransfer(id);
+    }
+    const root = join(identityDirectory(this.configRepository), 'cloud-backup-transfers');
+    const names = await this.storageRepository.readdir(root).catch((): string[] => []);
+    const ids = names.filter((name) => UUID.test(name));
+    const unfinished = await this.index.getUnfinishedOperationIds(ids);
+    for (const id of ids) {
+      if (!unfinished.has(id)) {
+        await this.storageRepository.unlinkDir(join(root, id), { recursive: true, force: true });
+      }
+    }
   }
 
   /**
@@ -2404,6 +2483,7 @@ export class CloudBackupService {
         const files = [
           ...Object.values(manifest.assets).flatMap((asset) => asset.files),
           ...Object.values(manifest.profiles),
+          ...Object.values(manifest.lockedKeys ?? {}),
         ];
         adopted.push({
           key,
@@ -2519,6 +2599,30 @@ export class CloudBackupService {
           recorded: null,
         })),
     );
+    // FL-721: encrypted files whose owner had no key file when the run started (encryption turned on, or
+    // off and on, during the run) would make a backup no secret can open. Never hidden: the run fails
+    // before its manifest, and the earlier backups, with their key files, stay as they are. The owner is
+    // the file's first recipient, so a partner copy needs the owner's key file, never the partner's.
+    // A key id that matches no live key file is an item restored under an older key (spec §9): reported,
+    // never a failure, since no backup could ever capture its key file.
+    const { keyless, older } = await lockedKeyGaps(
+      run.progress.result.sealedKeyIds,
+      new Set(run.progress.result.lockedKeyIds),
+      StorageCore.getMediaLocation(),
+    );
+    if (older.length > 0) {
+      this.logger.warn(
+        `Cloud backup run ${run.id}: encrypted Locked files under ${older.length} older key(s) that no key file opens; they are backed up as they are`,
+      );
+    }
+    if (keyless.length > 0) {
+      this.logger.warn(
+        `Cloud backup run ${run.id}: encrypted Locked files of ${keyless.length} person(s) had no key file when the run started`,
+      );
+      throw new Error(
+        `This backup found encrypted Locked files for ${keyless.length} person(s) whose key file was not there when it started. Their encryption changed during the backup; the next backup includes it.`,
+      );
+    }
     run.progress.result = { ...run.progress.result, phase: 'manifest' };
     return this.checkpoint(run);
   }
@@ -2529,55 +2633,75 @@ export class CloudBackupService {
    * gone is counted and left out; one that changes while it uploads is hashed again and uploaded once
    * more, then left for the next run.
    */
-  private async backUpFiles(run: Run, files: FileToBackUp[]) {
+  private async backUpFiles(run: Run, files: FileToBackUp[]): Promise<CloudBackupEntry[]> {
+    // FL-721 pre-flight: a file a seal, unseal or rewrap is replacing now (a `.fllk.tmp` sibling) is left
+    // for the next run. Only people with a Locked key file can have one.
+    const lockedOwners = await lockedKeyOwners(StorageCore.getMediaLocation());
+    const busy =
+      lockedOwners.size > 0
+        ? await pathsBeingReplaced(
+            files.filter(({ ownerId }) => ownerId && lockedOwners.has(ownerId)).map(({ path }) => path),
+          )
+        : new Set<string>();
+    if (busy.size > 0) {
+      this.logger.log(
+        `Cloud backup run ${run.id}: ${busy.size} Locked files are being encrypted now; the next run backs them up`,
+      );
+      run.progress.result = { ...run.progress.result, changed: run.progress.result.changed + busy.size };
+    }
     const hashed: HashedFile[] = [];
     for (const file of files) {
+      if (busy.has(file.path)) {
+        continue;
+      }
       const found = await this.hashed(run, file);
       if (found) {
         hashed.push(found);
       }
     }
 
-    const client = run.progress.result.manifestKey!.startsWith('m/v1/');
-    const existing = await this.index.getExisting(
-      run.metadata.bucketRef,
+    // A same-size HEAD cannot authenticate an opaque copy. This server's own upload receipt can: the object is
+    // still the one it wrote while a HEAD answers with the same ETag. Anything else is read and checked in full
+    // once, then gets a receipt (the full verify still reads it).
+    const existing = new Set<string>();
+    const receipts = await this.index.getRecorded(
+      this.clientReceipts(run),
       hashed.map(({ sha256 }) => sha256),
     );
-    if (client) {
-      // Presence in the legacy index or a same-size HEAD cannot authenticate an opaque copy.
-      existing.clear();
-      for (const file of hashed) {
-        if (existing.has(file.sha256) || run.uploadedNow.has(file.sha256)) continue;
-        try {
-          const stored = await this.store.hashObject(
-            run.connection,
-            clientBackupObjectKey(
-              this.clientWriteRoot(run),
-              run.metadata.instanceId,
-              this.clientWriteVersion(run),
-              file.sha256,
-            ),
-            run.bucketKey,
-          );
-          if (stored.size === file.size && stored.sha256 === file.sha256) existing.add(file.sha256);
-        } catch (error) {
-          if (!(error instanceof CloudBackupStoreError) || (error.status !== 404 && error.code !== 'ChecksumMismatch'))
-            throw error;
+    const fresh: CloudBackupIndexedObject[] = [];
+    for (const file of hashed) {
+      if (existing.has(file.sha256) || run.uploadedNow.has(file.sha256)) continue;
+      const key = clientBackupObjectKey(
+        this.clientWriteRoot(run),
+        run.metadata.instanceId,
+        this.clientWriteVersion(run),
+        file.sha256,
+      );
+      try {
+        const receipt = receipts.get(file.sha256);
+        const head =
+          receipt?.etag && receipt.size === file.size
+            ? await this.store.head(run.connection, key, run.bucketKey)
+            : null;
+        if (head && head.size === file.size && bareEtag(head.etag) === bareEtag(receipt!.etag)) {
+          existing.add(file.sha256);
+          continue;
         }
-      }
-    } else if (run.clientKeys) {
-      // Old client-format runs could populate the shared index without a legacy copy.
-      for (const file of hashed) {
-        if (!existing.has(file.sha256)) continue;
-        const stored = await this.store.head(run.connection, objectKey(file.sha256), run.bucketKey);
-        if (stored?.size !== file.size) existing.delete(file.sha256);
+        const stored = await this.store.hashObject(run.connection, key, run.bucketKey);
+        if (stored.size === file.size && stored.sha256 === file.sha256) {
+          existing.add(file.sha256);
+          const found = await this.store.head(run.connection, key, run.bucketKey);
+          if (found?.etag) fresh.push({ sha256: file.sha256, size: file.size, etag: found.etag });
+        }
+      } catch (error) {
+        if (!(error instanceof CloudBackupStoreError) || (error.status !== 404 && error.code !== 'ChecksumMismatch'))
+          throw error;
       }
     }
+    await this.index.record(this.clientReceipts(run), fresh);
     const recorded: CloudBackupEntry[] = [];
-    const skipped: string[] = [];
     for (const file of hashed) {
       if (existing.has(file.sha256) || run.uploadedNow.has(file.sha256)) {
-        skipped.push(file.sha256);
         run.progress.result = { ...run.progress.result, skipped: run.progress.result.skipped + 1 };
         recorded.push(this.entryOf(file));
         continue;
@@ -2589,8 +2713,8 @@ export class CloudBackupService {
       }
     }
 
-    if (!client) await this.index.touch(run.metadata.bucketRef, skipped);
     await this.index.upsertEntries(run.progress.result.manifestId!, recorded);
+    return recorded;
   }
 
   private async hashed(run: Run, file: FileToBackUp): Promise<HashedFile | null> {
@@ -2605,6 +2729,22 @@ export class CloudBackupService {
       return null;
     }
 
+    // FL-721: an encrypted Locked file is copied as it is. Its recorded checksum is the plaintext's, so a
+    // mismatch is not a change; its owner (the first recipient, whoever's asset row lists the path) must
+    // have a key file in this backup (see `backUpProfiles`). Checked before the verified fast path too.
+    // A file that is encrypted but whose header cannot be read counts as keyless (fail safe), never as plain.
+    const ownerKeyId = file.role === LOCKED_KEY_BACKUP_ROLE ? null : await sealedFileOwnerKeyId(file.path);
+    const sealed = ownerKeyId !== null;
+    if (file.role === 'original' && file.assetId) {
+      run.sealedOriginals.set(file.assetId, sealed);
+    }
+    if (ownerKeyId && !run.progress.result.sealedKeyIds.includes(ownerKeyId)) {
+      run.progress.result = {
+        ...run.progress.result,
+        sealedKeyIds: [...run.progress.result.sealedKeyIds, ownerKeyId],
+      };
+    }
+
     // The checksum on record stands for the file only while its size is the same and it has not been
     // written since the checksum was taken; anything else is hashed now.
     const { recorded } = file;
@@ -2617,7 +2757,7 @@ export class CloudBackupService {
     }
 
     const sha256 = (await this.cryptoRepository.hashFile(file.path, 'sha256')).toString('hex');
-    if (recorded && recorded.sha256 !== sha256) {
+    if (recorded && recorded.sha256 !== sha256 && !sealed) {
       run.progress.result = { ...run.progress.result, changed: run.progress.result.changed + 1 };
     }
     return { ...file, sha256, size: stats.size, mtime: stats.mtime };
@@ -2629,20 +2769,17 @@ export class CloudBackupService {
       try {
         const { etag, size } = await this.store.uploadFile(
           run.connection,
-          run.progress.result.manifestKey!.startsWith('m/v1/')
-            ? clientBackupObjectKey(
-                this.clientWriteRoot(run),
-                run.metadata.instanceId,
-                this.clientWriteVersion(run),
-                current.sha256,
-              )
-            : objectKey(current.sha256),
+          clientBackupObjectKey(
+            this.clientWriteRoot(run),
+            run.metadata.instanceId,
+            this.clientWriteVersion(run),
+            current.sha256,
+          ),
           current.path,
           run.bucketKey,
           current.sha256,
         );
-        if (!run.progress.result.manifestKey!.startsWith('m/v1/'))
-          await this.index.record(run.metadata.bucketRef, [{ sha256: current.sha256, size, etag }]);
+        await this.index.record(this.clientReceipts(run), [{ sha256: current.sha256, size, etag }]);
         run.uploadedNow.add(current.sha256);
         run.progress.result = {
           ...run.progress.result,
@@ -2664,6 +2801,14 @@ export class CloudBackupService {
     this.logger.warn(`Cloud backup run ${run.id}: a file kept changing while it uploaded; the next run backs it up`);
     run.progress.result = { ...run.progress.result, changed: run.progress.result.changed + 1 };
     return null;
+  }
+
+  /**
+   * Where this server keeps receipts of the client-format objects it uploaded, per key version (FL-525).
+   * Kept apart from the bucket's own index rows, so they never count as the bucket's objects.
+   */
+  private clientReceipts(run: Run) {
+    return `${run.metadata.bucketRef}#client-v${this.clientWriteVersion(run)}`;
   }
 
   private entryOf(file: HashedFile): CloudBackupEntry {
@@ -2707,7 +2852,7 @@ export class CloudBackupService {
         },
         { signal: executionSignal() },
       );
-      if (result.manifestKey!.startsWith('m/v1/')) await this.recordClientSnapshot(run, uploaded!);
+      await this.recordClientSnapshot(run, uploaded!);
       await this.index.finishManifest(manifestId, {
         status: 'complete',
         assetCount: counts.assets,
@@ -2715,8 +2860,7 @@ export class CloudBackupService {
         bytes: counts.bytes,
       });
     }
-    if (result.manifestKey!.startsWith('m/v1/'))
-      await this.store.finishClientUpload(run.connection, result.manifestKey!);
+    await this.store.finishClientUpload(run.connection, result.manifestKey!);
 
     run.progress.result = { ...run.progress.result, phase: 'done' };
     // Written whatever a pause or cancel asks: the backup is complete, and `finish` settles either.
@@ -2745,7 +2889,7 @@ export class CloudBackupService {
   ): AsyncGenerator<string> {
     const header = {
       format: CLOUD_BACKUP_MANIFEST_FORMAT,
-      version: run.progress.result.manifestKey!.startsWith('m/v1/') ? 3 : CLOUD_BACKUP_MANIFEST_VERSION,
+      version: 3,
       instanceId: run.metadata.instanceId,
       createdAt: asIso(run.operation.createdAt) ?? manifestTime(run.progress.result.manifestKey!)!.toISOString(),
       database: run.progress.result.database,
@@ -2753,6 +2897,7 @@ export class CloudBackupService {
     yield `${JSON.stringify(header).slice(0, -1)},"assets":{`;
 
     const profiles: string[] = [];
+    const lockedKeys: string[] = [];
     type ManifestAsset = { id: string; owner: string | null; files: CloudBackupManifestFile[] };
     // held in an object: the asset in hand changes inside the loop, which narrowing a local cannot follow
     const pending: { asset: ManifestAsset | null } = { asset: null };
@@ -2761,7 +2906,7 @@ export class CloudBackupService {
     const details = new Map<string, { record: CloudBackupAssetRecord; details: CloudBackupAssetDetails }>();
     const albumIds = new Set<string>();
     const people = new Map<string, { ownerId: string; personId: string }>();
-    const assetJson = (current: ManifestAsset) => {
+    const assetJson = async (current: ManifestAsset) => {
       const known = details.get(current.id);
       details.delete(current.id);
       if (known) {
@@ -2774,10 +2919,19 @@ export class CloudBackupService {
           }
         }
       }
+      // FL-738: the item's checksum is kept only for an original that was encrypted when this run hashed it
+      // (see `backupRecordFor`)
+      const original = known?.record.checksum ? current.files.find((file) => file.role === 'original') : undefined;
       const body = JSON.stringify({
         owner: current.owner,
         files: current.files,
-        ...(known && { ...known.record, details: known.details }),
+        ...(known && {
+          ...backupRecordFor(
+            known.record,
+            !!original && (run.sealedOriginals.get(current.id) ?? (await sealedFileOwnerKeyId(original.path)) !== null),
+          ),
+          details: known.details,
+        }),
       });
       const text = `${counts.assets > 0 ? ',' : ''}${JSON.stringify(current.id)}:${body}`;
       counts.assets += 1;
@@ -2801,27 +2955,27 @@ export class CloudBackupService {
           role: entry.role,
           path: entry.path,
           sha256: entry.sha256,
-          ...(run.progress.result.manifestKey!.startsWith('m/v1/') && {
-            objectKey: clientBackupObjectKey(
-              this.clientWriteRoot(run),
-              run.metadata.instanceId,
-              this.clientWriteVersion(run),
-              entry.sha256,
-            ),
-          }),
+          objectKey: clientBackupObjectKey(
+            this.clientWriteRoot(run),
+            run.metadata.instanceId,
+            this.clientWriteVersion(run),
+            entry.sha256,
+          ),
           size: entry.size,
           mtime: asIso(entry.mtime),
         };
         if (!entry.assetId) {
           if (entry.ownerId) {
-            profiles.push(`${JSON.stringify(entry.ownerId)}:${JSON.stringify(file)}`);
+            (entry.role === LOCKED_KEY_BACKUP_ROLE ? lockedKeys : profiles).push(
+              `${JSON.stringify(entry.ownerId)}:${JSON.stringify(file)}`,
+            );
           }
           continue;
         }
         let asset = pending.asset;
         if (asset?.id !== entry.assetId) {
           if (asset) {
-            yield assetJson(asset);
+            yield await assetJson(asset);
           }
           asset = { id: entry.assetId, owner: entry.ownerId, files: [] };
           pending.asset = asset;
@@ -2832,11 +2986,13 @@ export class CloudBackupService {
       after = page.at(-1)?.fileKey ?? after;
     }
     if (pending.asset) {
-      yield assetJson(pending.asset);
+      yield await assetJson(pending.asset);
     }
     const albums = await this.index.getAlbumRecords([...albumIds]);
     const persons = await this.index.getPersonRecords(people.values().toArray());
-    yield `},"profiles":{${profiles.join(',')}},"albums":${JSON.stringify(Object.fromEntries(albums))},"people":${JSON.stringify(Object.fromEntries(persons))}}`;
+    // FL-721: only when someone has a key file, so a manifest without one reads as it always did
+    const keys = lockedKeys.length > 0 ? `,"lockedKeys":{${lockedKeys.join(',')}}` : '';
+    yield `},"profiles":{${profiles.join(',')}}${keys},"albums":${JSON.stringify(Object.fromEntries(albums))},"people":${JSON.stringify(Object.fromEntries(persons))}}`;
   }
 
   private async finish(run: Run) {
@@ -3067,7 +3223,12 @@ export class CloudBackupService {
   }
 
   /** A verification, a clean-up or a restore failed: after its automatic retry, the administrators hear why. */
-  private async failTask(operation: MediaOperation, claimToken: string, error: unknown, what: string) {
+  private async failTask(
+    operation: MediaOperation,
+    claimToken: string,
+    error: unknown,
+    what: keyof typeof FAILED_TASK_TEMPLATE,
+  ) {
     if (await this.settleBackupStop(operation, claimToken, error)) return false;
     if (await this.waitForManagedRenewal(operation, claimToken, error)) return false;
     // a file system error names its path: shown to administrators, it names it below the media folder only
@@ -3090,6 +3251,7 @@ export class CloudBackupService {
         level: NotificationLevel.Error,
         title: `${what} failed`,
         description: message,
+        systemTemplate: { version: 1, key: FAILED_TASK_TEMPLATE[what], args: { error: message } },
         dedupeKey: `cloud-backup:${operation.kind === RESTORE_KIND ? 'restore' : taskOf(operation)}-failed`,
         dedupeDays: 1,
         // named so a device can open it; a verification, clean-up or restore is started again from settings
@@ -3186,6 +3348,11 @@ export class CloudBackupService {
             'The next backup uploads them again from this server;',
             `${result.degradedManifests} earlier backups are marked incomplete.`,
           ].join(' '),
+          systemTemplate: {
+            version: 1,
+            key: 'cloud-backup-check-problems',
+            args: { missing: result.missing, damaged: result.mismatched, incomplete: result.degradedManifests },
+          },
           dedupeKey: `cloud-backup:verify:${operation.id}`,
           dedupeDays: 7,
         });
@@ -3291,6 +3458,20 @@ export class CloudBackupService {
       const currentOriginals = new Map(
         [...library].filter(([, asset]) => !asset.isExternal).map(([id, asset]) => [id, asset.originalPath]),
       );
+      // a missing item goes back beside a path another item took since (a storage template reuses freed paths)
+      const missing = inPlace
+        ? (snapshot.assetIds ?? Object.keys(manifest.assets)).filter((id) => manifest.assets[id] && !library.has(id))
+        : [];
+      const taken = await this.index.getTakenPaths(
+        missing.flatMap((id) => manifest.assets[id].files.map((file) => file.path)),
+        missing,
+      );
+      const takenPaths = new Map(
+        missing.map((id) => [
+          id,
+          new Set(manifest.assets[id].files.map((file) => file.path).filter((path) => taken.has(path))),
+        ]),
+      );
       const mediaLocation = StorageCore.getMediaLocation();
       const plan = restorePlan({
         manifest,
@@ -3299,6 +3480,7 @@ export class CloudBackupService {
         operationId: operation.id,
         mediaLocation,
         currentOriginals,
+        takenPaths,
       });
       if (snapshot.owner) {
         plan.files = plan.files.filter((file) => file.role === 'original' || file.role === 'sidecar');
@@ -3333,7 +3515,19 @@ export class CloudBackupService {
           snapshot.owner
             ? this.restoreOwnerLibrary(operation, claimToken, manifest, snapshot, plan.files, current)
             : this.restoreLibrary(manifest, snapshot, plan.files, library, current),
+        // FL-721: a key file that became live has a row to match, and no stale key loaded anywhere
+        completedFile: (file, outcome) => this.onLockedKeyRestored(file, outcome, mediaLocation),
       });
+      if (done && inPlace) {
+        // FL-721: an encrypted item this server's key file for its owner does not open is said so, never left
+        // silent; saved with the last checkpoint, so the owner's Activity entry carries it too
+        done.encryptedWithOlderKey = await countEncryptedWithOlderKey(plan.files, mediaLocation);
+        if (done.encryptedWithOlderKey > 0) {
+          this.logger.warn(
+            `Cloud backup restore ${operation.id}: ${done.encryptedWithOlderKey} restored items are encrypted with an older key that this server's Locked key file does not open`,
+          );
+        }
+      }
       if (done) {
         result = done;
         stop = await this.checkpointTask(operation, claimToken, done, { ...restoreUnits(done), progress: 100 });
@@ -3475,6 +3669,36 @@ export class CloudBackupService {
     return state;
   }
 
+  /**
+   * FL-721: a backed-up key file that a restore made live (no live one was there). The person's
+   * `locked_encryption` row is made to agree with it, and any key loaded for them, with the grants that
+   * hang on it, is dropped everywhere (`LockedKeyChanged`), so nothing reads with a key that is not on
+   * disk any more. A key file kept in the replaced folder changes nothing live.
+   */
+  private async onLockedKeyRestored(
+    file: CloudBackupRestoreFile,
+    outcome: 'written' | 'skipped' | 'replaced',
+    mediaLocation: string,
+  ) {
+    if (file.role !== LOCKED_KEY_BACKUP_ROLE || !file.inPlace || outcome === 'skipped') {
+      return;
+    }
+    const userId = basename(file.target, '.json');
+    if (lockedKeyFilePath(mediaLocation, userId) !== file.target) {
+      return;
+    }
+    const restored = await readLockedKeyFile(file.target, userId);
+    if (restored) {
+      try {
+        await matchLockedEncryptionRow(this.lockedEncryptionRepository, restored, { create: true });
+      } catch (error) {
+        // an account that is gone has no row to match; its key file still serves the recovery CLI
+        this.logger.warn(`Could not match a restored Locked key file to its account: ${errorMessage(error)}`);
+      }
+    }
+    this.websocketRepository.serverSend('LockedKeyChanged', { userId });
+  }
+
   private async recordRestore(
     operation: MediaOperation,
     snapshot: CloudBackupRestoreSnapshot,
@@ -3499,6 +3723,8 @@ export class CloudBackupService {
         ...(result.databaseFile && { databaseFile: result.databaseFile }),
         ...(result.recreated > 0 && { recreated: result.recreated }),
         ...(result.detailsRestored > 0 && { detailsRestored: result.detailsRestored }),
+        ...(result.encryptedWithOlderKey > 0 && { encryptedWithOlderKey: result.encryptedWithOlderKey }),
+        ...(result.lockedKeysKept > 0 && { lockedKeysKept: result.lockedKeysKept }),
         ...(error && { error }),
       },
     }));
@@ -3564,7 +3790,11 @@ export class CloudBackupService {
     await this.ownerBackupAuth(auth.user.id, refresh);
     const metadata = await this.ownerBackupClaim();
     const candidates: Array<{ manifestKey: string; manifest: CloudBackupManifest }> = [];
+    // only the manifests that can hold one of the owner's trashed or deleted items are downloaded
+    // ponytail: an owner with such items in every manifest still downloads every kept one per request
+    const possible = await this.index.getOwnerBackupCandidates(metadata.bucketRef, auth.user.id);
     for (const row of await this.index.listKeptManifests(metadata.bucketRef)) {
+      if (!possible.has(row.key)) continue;
       const found = await this.ownerHistory(auth, { manifestKey: row.key, offset: 0, limit: 1 }, refresh);
       if (found.metadata.bucketRef !== metadata.bucketRef)
         throw new ConflictException('Cloud backup changed during the request');
@@ -3692,9 +3922,15 @@ export class CloudBackupService {
       return [{ assetId, asset, original, name }];
     });
     const library = await this.libraryState(candidates.map(({ assetId }) => assetId));
+    // an item gone from the library is Locked as the backup recorded it
+    const lockedIds = new Set(
+      candidates
+        .filter(({ assetId, asset }) => library.get(assetId)?.locked ?? asset.details?.visibility === 'locked')
+        .map(({ assetId }) => assetId),
+    );
     // a search by name never finds a Locked item, so its name cannot be guessed at
     const named = candidates.filter(
-      ({ assetId, name }) => !query || (!library.get(assetId)?.locked && name.toLowerCase().includes(query)),
+      ({ assetId, name }) => !query || (!lockedIds.has(assetId) && name.toLowerCase().includes(query)),
     );
     const stateOf = (assetId: string) => library.get(assetId)?.status ?? 'deleted';
     const byName = (a: { name: string }, b: { name: string }) =>
@@ -3706,8 +3942,8 @@ export class CloudBackupService {
       })
       .toSorted(
         (a, b) =>
-          Number(!!library.get(a.assetId)?.locked) - Number(!!library.get(b.assetId)?.locked) ||
-          (library.get(a.assetId)?.locked ? 0 : byName(a, b)) ||
+          Number(lockedIds.has(a.assetId)) - Number(lockedIds.has(b.assetId)) ||
+          (lockedIds.has(a.assetId) ? 0 : byName(a, b)) ||
           compareCodeUnits(a.assetId, b.assetId),
       );
     const page = matching.slice(0, limit);
@@ -3717,8 +3953,8 @@ export class CloudBackupService {
     const items: CloudBackupManifestItem[] = page.map(({ assetId, asset, original, name }) => ({
       assetId,
       // a Locked item is never named here, whoever looks; it can still be restored
-      name: library.get(assetId)?.locked ? '' : name,
-      locked: !!library.get(assetId)?.locked,
+      name: lockedIds.has(assetId) ? '' : name,
+      locked: lockedIds.has(assetId),
       ownerId: asset.owner,
       ownerName: asset.owner ? (owners.get(asset.owner) ?? null) : null,
       files: asset.files.length,
@@ -4001,8 +4237,7 @@ export class CloudBackupService {
                   id: assetId,
                   status: AssetStatus.Active,
                   deletedAt: null,
-                  checksum: Buffer.from(originalFile.sha256, 'hex'),
-                  checksumAlgorithm: ChecksumAlgorithm.sha256File,
+                  ...restoredChecksum(readRecord(asset), originalFile.sha256),
                 });
                 await assertOwnerRestoreFile(originalFile.target, evidence.identity);
                 return { recreated: 0, detailsRestored: changed ? 1 : 0 };
@@ -4203,6 +4438,7 @@ export class CloudBackupService {
     options: CloudBackupBareMetalRestore,
     report: (line: string) => void,
   ): Promise<CloudBackupRestoreResult & { manifestKey: string; databaseRestored: boolean }> {
+    if (options.managed) throw new Error('Managed mode only exports this server’s configured backup.');
     const key = parseBackupKey(options.key);
     const file = options.key.trimStart().startsWith('{')
       ? (JSON.parse(options.key) as {
@@ -4347,6 +4583,8 @@ export class CloudBackupService {
   /** Export one selected snapshot and its independent recovery authority, without modifying remote storage. */
   async exportFromBucket(options: CloudBackupBareMetalRestore, destination: string) {
     if (options.offlineDirectory) throw new Error('Export requires the source storage bucket');
+    if (options.managed && options.restoreDatabase)
+      throw new Error('Managed mode only exports this server’s configured backup.');
     const root = parseBackupKey(options.key);
     const original = JSON.parse(options.key) as {
       format: string;
@@ -4356,13 +4594,30 @@ export class CloudBackupService {
       recovery?: unknown;
     };
     const ring = parseClientBackupKeys(original.client, root, original.instanceId);
-    const connection = await this.connectionFor(options.s3);
+    let connection: CloudBackupConnection;
+    if (options.managed) {
+      const metadata = await this.requireClaim();
+      if (metadata.target !== 'managed') throw new Error('This server has no managed backup to export.');
+      if (
+        original.instanceId !== metadata.instanceId ||
+        original.bucket !== metadata.bucket ||
+        keyFingerprint(root) !== metadata.keyFingerprint
+      )
+        throw new Error('The recovery file does not match this server’s managed backup.');
+      connection = this.managedConnection(
+        await this.cloudBackup.rotate(await this.managedApi(), 'restore'),
+        metadata,
+        'restore',
+      );
+    } else {
+      connection = await this.connectionFor(options.s3);
+    }
     const marker = await this.store.readMarker(connection, root);
     if (marker.instanceId !== original.instanceId || original.bucket !== connection.bucket)
       throw new Error('Export key file does not match this vault');
     connection.vaultId = marker.instanceId;
     connection.recoveryKeys = ring?.keys;
-    const history = await this.recoveryHistory(connection, root, original.recovery);
+    const history = await this.recoveryHistory(connection, root, original.recovery, options.managed);
     let key = options.manifestKey;
     if (!key && history) key = selectBackupSnapshot(history).record.descriptor.manifest.objectKey;
     if (!key) throw new Error('Choose a legacy manifest explicitly, or supply the pinned client recovery history');
@@ -4380,6 +4635,7 @@ export class CloudBackupService {
     for (const file of [
       ...Object.values(manifest.assets).flatMap((asset) => asset.files),
       ...Object.values(manifest.profiles),
+      ...Object.values(manifest.lockedKeys ?? {}),
     ]) {
       const object = manifestFileObjectKey(file);
       const prior = expected.get(object);
@@ -4468,9 +4724,35 @@ export class CloudBackupService {
       throw new ConflictException(this.refusalOf(error).message);
     }
     await this.setEscrowConfig(true);
-    await this.updateMetadata((current) => ({ ...current, escrow: { storedAt: new Date().toISOString() } }));
+    await this.updateMetadata((current) => ({
+      ...current,
+      escrow: { storedAt: new Date().toISOString(), ...(ring && { keyVersion: ring.current }) },
+    }));
     this.logger.log(`Cloud backup key escrow stored with Frameleaf Cloud by ${auth.user.id}`);
     return this.getStatus();
+  }
+
+  /**
+   * The signed snapshot history behind every encrypted backup. Your own bucket has no other copy of it, so an
+   * encrypted restore after losing this server needs it in the recovery file; it holds no key material.
+   */
+  async getRecoveryHistory(dto: CloudBackupRecoveryHistoryRequestDto = {}): Promise<CloudBackupRecoveryHistoryDto> {
+    const metadata = await this.requireClaim();
+    try {
+      const saved = dto.recovery ? backupRecoveryHistorySchema.parse(JSON.parse(dto.recovery)) : undefined;
+      const history = mergeBackupHistory(
+        mergeBackupHistory(
+          await readBackupHistory(this.clientHistoryPath(metadata.bucketRef)),
+          this.importedHistory.get(metadata.keyFingerprint),
+        ),
+        saved,
+      );
+      if (history && history.anchor.vaultId !== metadata.instanceId)
+        throw new Error('Recovery history belongs to another vault');
+      return { history: history ? JSON.stringify(history) : null };
+    } catch (error) {
+      throw new BadRequestException(`This recovery file’s backup history can’t be used: ${errorMessage(error)}`);
+    }
   }
 
   /** Remove the key copy from Frameleaf Cloud. A copy that is already gone counts as removed. */
@@ -4560,6 +4842,8 @@ export class CloudBackupService {
     dedupeKey: string;
     dedupeDays?: number;
     type?: NotificationType;
+    /** FL-406: the notice in each recipient's language; title and description stay the English fallback. */
+    systemTemplate: SystemNotificationTemplate;
     /** The server job the notice is about, so devices can offer Retry or Pause for it. */
     job?: PushJobRef;
   }) {
@@ -4574,6 +4858,7 @@ export class CloudBackupService {
         admins: true,
         title: notice.title,
         body: notice.description,
+        systemTemplate: notice.systemTemplate,
         data: { reason: notice.dedupeKey, ...pushJobData(job) },
         dedupeKey: `cloud-backup-attention/${notice.dedupeKey}`,
       })
@@ -4684,7 +4969,30 @@ export class CloudBackupService {
     );
   }
 
-  private async recoveryHistory(connection: CloudBackupConnection, key: Buffer, imported: unknown) {
+  /**
+   * FL-697: a saved recovery file or escrow copy holds history only up to when it was saved. Managed
+   * storage also reads the signed records Frameleaf Cloud keeps, accepting only those that verify against
+   * the pinned keys and chain from the saved anchor. Unreachable or refused records keep the saved history.
+   */
+  private async withCloudHistory(history: BackupRecoveryHistory | null) {
+    if (!history) return history;
+    try {
+      const remote = await this.cloudBackup.listSnapshots(
+        await this.managedApi(),
+        history.anchor.vaultId,
+        history.anchor.sequence,
+      );
+      const extended = extendBackupHistory(history, remote);
+      if (extended.refused)
+        this.logger.warn('Frameleaf Cloud returned backup snapshot history that does not verify; it was not used.');
+      return extended.history;
+    } catch (error) {
+      this.logger.warn(`Could not read backup snapshot history from Frameleaf Cloud: ${errorMessage(error)}`);
+      return history;
+    }
+  }
+
+  private async recoveryHistory(connection: CloudBackupConnection, key: Buffer, imported: unknown, managed = false) {
     const physical = bucketRef(connection.endpoint, connection.bucket);
     let local = await readBackupHistory(this.clientHistoryPath(physical));
     const metadata = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
@@ -4699,7 +5007,8 @@ export class CloudBackupService {
         await readBackupHistory(this.clientHistoryPath(metadata.bucketRef)),
         local ?? undefined,
       );
-    const history = mergeBackupHistory(local, imported ? backupRecoveryHistorySchema.parse(imported) : undefined);
+    let history = mergeBackupHistory(local, imported ? backupRecoveryHistorySchema.parse(imported) : undefined);
+    if (managed) history = await this.withCloudHistory(history);
     if (history && connection.vaultId && history.anchor.vaultId !== connection.vaultId)
       throw new Error('Recovery history belongs to another vault');
     return history;
@@ -4711,7 +5020,8 @@ export class CloudBackupService {
     imported = this.importedHistory.get(metadata.keyFingerprint),
   ) {
     const local = await readBackupHistory(this.clientHistoryPath(metadata.bucketRef));
-    const history = mergeBackupHistory(local, imported);
+    let history = mergeBackupHistory(local, imported);
+    if (metadata.target === 'managed') history = await this.withCloudHistory(history);
     if (history) {
       if (history.anchor.instanceId !== metadata.instanceId || history.anchor.vaultId !== metadata.instanceId)
         throw new Error('Backup history belongs to another server');
@@ -4910,7 +5220,7 @@ export class CloudBackupService {
 
   /** The connection for your own bucket; an empty secret uses the stored one for the same bucket and key. */
   private async connectionFor(s3: CloudBackupS3): Promise<CloudBackupConnection> {
-    const endpoint = s3.endpoint.trim().replace(/\/+$/, '');
+    const endpoint = withoutTrailingSlashes(s3.endpoint.trim());
     const bucket = s3.bucket.trim();
     const accessKeyId = s3.accessKeyId.trim();
     let secretAccessKey = s3.secretAccessKey;
@@ -5021,6 +5331,8 @@ export class CloudBackupService {
       databaseFile: restore.databaseFile ?? null,
       recreated: restore.recreated ?? 0,
       detailsRestored: restore.detailsRestored ?? 0,
+      encryptedWithOlderKey: restore.encryptedWithOlderKey ?? 0,
+      lockedKeysKept: restore.lockedKeysKept ?? 0,
       error: restore.error ?? null,
     };
   }
@@ -5099,19 +5411,6 @@ const albumMembersOf = (manifest: CloudBackupManifest) => {
   return members;
 };
 
-/** An item's record as the manifest holds it (manifest v2), or null for a backup without one. */
-const readRecord = (asset: CloudBackupManifest['assets'][string]): CloudBackupAssetRecord | null =>
-  asset.type && asset.originalFileName && asset.fileCreatedAt && asset.fileModifiedAt && asset.localDateTime
-    ? {
-        type: asset.type,
-        originalFileName: asset.originalFileName,
-        fileCreatedAt: asset.fileCreatedAt,
-        fileModifiedAt: asset.fileModifiedAt,
-        localDateTime: asset.localDateTime,
-        duration: asset.duration ?? null,
-      }
-    : null;
-
 /**
  * FL-362: what a restore says about the items it brought back without an original, by reason and per
  * account (counts only). A deliberate exclusion is never an error.
@@ -5179,6 +5478,11 @@ type Run = {
   progress: { result: CloudBackupRunResult };
   /** Hashes this claim uploaded, so a second file with the same content in this run is never uploaded. */
   uploadedNow: Set<string>;
+  /**
+   * FL-738: whether each original this claim backed up was encrypted when it was hashed, by asset, so the
+   * manifest keeps an item's checksum for the bytes it holds. A claim resumed after hashing reads the file.
+   */
+  sealedOriginals: Map<string, boolean>;
   /** FL-362: the accounts whose originals and profile images this run uploads; null: every account. */
   eligibleOwners: Set<string> | null;
   /** FL-362: the run holds an inventory; its walk is the inventory's kept originals. */

@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Readable } from 'node:stream';
-import { ChecksumAlgorithm, IntegrityReport, SystemMetadataKey } from 'src/enum.js';
+import { ChecksumAlgorithm, IntegrityReport, JobStatus, SystemMetadataKey } from 'src/enum.js';
 import { IntegrityService } from 'src/services/integrity.service.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -33,30 +36,14 @@ describe(IntegrityService.name, () => {
       mocks.cron.update.mockReturnValue();
     });
 
-    it('stops the scheduled reference checks while the audit is off, keeping the checksum check', async () => {
-      await sut.onConfigInit({ newConfig: config(false) });
-
-      expect(mocks.cron.create).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'integrityUntrackedFiles', start: false }),
-      );
-      expect(mocks.cron.create).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'integrityMissingFiles', start: false }),
-      );
-      expect(mocks.cron.create).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'integrityChecksumFiles', start: true }),
-      );
-    });
-
-    it('runs each reference check on its own switch while the audit is on', async () => {
+    it('starts none of the checks on a timer of its own: the overnight schedule runs them (FL-363)', async () => {
       await sut.onConfigInit({ newConfig: config(true) });
       sut.onConfigUpdate({ newConfig: config(false) } as never);
 
-      expect(mocks.cron.create).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'integrityMissingFiles', start: true }),
-      );
-      expect(mocks.cron.update).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'integrityMissingFiles', start: false }),
-      );
+      for (const name of ['integrityUntrackedFiles', 'integrityMissingFiles', 'integrityChecksumFiles']) {
+        expect(mocks.cron.create).toHaveBeenCalledWith(expect.objectContaining({ name, start: false }));
+        expect(mocks.cron.update).toHaveBeenCalledWith(expect.objectContaining({ name, start: false }));
+      }
     });
   });
 
@@ -85,8 +72,8 @@ describe(IntegrityService.name, () => {
     };
 
     it('should backfill a sha1 for a verified sha256 asset', async () => {
-      // Clients pre-check duplicates with sha1; assets uploaded before that
-      // digest was recorded get one here, off the verification read.
+      // Upstream Immich clients pre-check duplicates with sha1; assets uploaded
+      // before that digest was recorded get one here, off the verification read.
       streamAsset(sha256, ChecksumAlgorithm.sha256File);
 
       await sut.handleChecksumFiles({});
@@ -114,6 +101,71 @@ describe(IntegrityService.name, () => {
         path: '/data/library/asset-1.jpg',
         source: 'integrity',
       });
+    });
+
+    it('moves a verified sha1 upload to its sha256 and keeps it verified under that checksum', async () => {
+      streamAsset(sha1, ChecksumAlgorithm.sha1File);
+      mocks.forkSchema.promoteToSha256.mockResolvedValue(true);
+
+      await expect(sut.handleChecksumFiles({})).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.forkSchema.promoteToSha256).toHaveBeenCalledWith({ assetId: 'asset-1', sha1, sha256 });
+      // the sha1 is recorded first, so upstream clients' sha1 pre-checks still translate once it moved
+      expect(mocks.forkSchema.recordAssetChecksums.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.forkSchema.promoteToSha256.mock.invocationCallOrder[0],
+      );
+      expect(mocks.integrityReport.recordVerification).toHaveBeenCalledTimes(2);
+      expect(mocks.integrityReport.recordVerification).toHaveBeenLastCalledWith({
+        assetId: 'asset-1',
+        originalPath: '/data/library/asset-1.jpg',
+        expectedChecksum: sha256,
+        checksumAlgorithm: ChecksumAlgorithm.sha256File,
+        actualSha256: sha256.toString('hex'),
+        result: 'passed',
+      });
+    });
+
+    it.each([ChecksumAlgorithm.sha256File, ChecksumAlgorithm.sha1Path])('leaves a %s asset', async (algorithm) => {
+      streamAsset(algorithm === ChecksumAlgorithm.sha256File ? sha256 : sha1, algorithm);
+
+      await expect(sut.handleChecksumFiles({})).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.forkSchema.promoteToSha256).not.toHaveBeenCalled();
+    });
+
+    it('does not move a sha1 asset whose file fails verification', async () => {
+      streamAsset(createHash('sha1').update('different').digest(), ChecksumAlgorithm.sha1File);
+
+      await sut.handleChecksumFiles({});
+
+      expect(mocks.forkSchema.recordAssetChecksums).not.toHaveBeenCalled();
+      expect(mocks.forkSchema.promoteToSha256).not.toHaveBeenCalled();
+      expect(mocks.integrityReport.create).toHaveBeenCalledWith(
+        expect.objectContaining({ type: IntegrityReport.ChecksumFail, assetId: 'asset-1' }),
+      );
+    });
+
+    it('keeps a sha1 asset when another upload of its owner holds that sha256, and still succeeds', async () => {
+      streamAsset(sha1, ChecksumAlgorithm.sha1File);
+      // what the repository answers on UQ_assets_owner_checksum: a real duplicate, left for duplicate review
+      mocks.forkSchema.promoteToSha256.mockResolvedValue(false);
+
+      await expect(sut.handleChecksumFiles({})).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.forkSchema.recordAssetChecksums).toHaveBeenCalledWith({
+        assetId: 'asset-1',
+        sha1,
+        sha256,
+        sizeInBytes: contents.length,
+        path: '/data/library/asset-1.jpg',
+        source: 'integrity',
+      });
+      expect(mocks.forkSchema.promoteToSha256).toHaveBeenCalledWith({ assetId: 'asset-1', sha1, sha256 });
+      expect(mocks.integrityReport.recordVerification).toHaveBeenCalledTimes(1);
+      expect(mocks.integrityReport.recordVerification).toHaveBeenCalledWith(
+        expect.objectContaining({ expectedChecksum: sha1, checksumAlgorithm: ChecksumAlgorithm.sha1File }),
+      );
+      expect(mocks.integrityReport.create).not.toHaveBeenCalled();
     });
 
     it('should not record digests when the file fails verification', async () => {
@@ -164,6 +216,48 @@ describe(IntegrityService.name, () => {
       await sut.handleChecksumFiles({});
       expect(mocks.forkSchema.recordAssetChecksums).not.toHaveBeenCalled();
       expect(mocks.integrityReport.create).not.toHaveBeenCalled();
+    });
+
+    it('does not move a sha1 asset whose check went stale', async () => {
+      streamAsset(sha1, ChecksumAlgorithm.sha1File);
+      mocks.integrityReport.recordVerification.mockResolvedValue(false);
+      await sut.handleChecksumFiles({});
+      expect(mocks.forkSchema.promoteToSha256).not.toHaveBeenCalled();
+    });
+
+    it('counts an encrypted Locked original as encrypted and never reads or reports it (FL-721)', async () => {
+      const directory = await mkdtemp(join(tmpdir(), 'integrity-locked-'));
+      const sealed = join(directory, 'sealed.jpg');
+      await writeFile(sealed, Buffer.concat([Buffer.from('FLLK'), Buffer.alloc(64, 1)]));
+      try {
+        streamAsset(sha256, ChecksumAlgorithm.sha256File);
+        mocks.integrityReport.streamAssetChecksums.mockReturnValue(
+          (function* () {
+            yield {
+              assetId: 'asset-1',
+              originalPath: sealed,
+              checksum: sha256,
+              checksumAlgorithm: ChecksumAlgorithm.sha256File,
+              createdAt: new Date(),
+              reportId: 'report-1',
+            };
+          })() as never,
+        );
+        mocks.systemMetadata.completeIntegrityRun.mockResolvedValue(true);
+        mocks.integrityReport.getIntegrityReportSummary.mockResolvedValue({} as never);
+
+        await sut.handleChecksumFiles({});
+
+        expect(mocks.storage.createPlainReadStream).not.toHaveBeenCalled();
+        expect(mocks.integrityReport.recordVerification).not.toHaveBeenCalled();
+        expect(mocks.integrityReport.create).not.toHaveBeenCalled();
+        expect(mocks.integrityReport.deleteById).not.toHaveBeenCalled();
+        expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.IntegrityCheckHistory, {
+          entries: [expect.objectContaining({ type: IntegrityReport.ChecksumFail, checked: 0, encrypted: 1 })],
+        });
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
     });
 
     it('propagates proof persistence failures without misreporting a file failure', async () => {
@@ -249,6 +343,94 @@ describe(IntegrityService.name, () => {
 
       expect(mocks.storage.unlink).not.toHaveBeenCalled();
       expect(mocks.integrityReport.deleteById).toHaveBeenCalledWith('report-id');
+    });
+  });
+
+  describe('encrypted Locked files (FL-721, spec §8.3)', () => {
+    let directory: string;
+    let sealed: string;
+
+    beforeEach(async () => {
+      directory = await mkdtemp(join(tmpdir(), 'integrity-locked-delete-'));
+      sealed = join(directory, 'sealed.jpg');
+      await writeFile(sealed, Buffer.concat([Buffer.from('FLLK'), Buffer.alloc(64, 1)]));
+    });
+
+    afterEach(async () => {
+      await rm(directory, { recursive: true, force: true });
+    });
+
+    it('Delete never trashes an item whose original is sealed, and drops the stale report', async () => {
+      mocks.integrityReport.getById.mockResolvedValue({ id: 'report-id', path: sealed, assetId: 'asset-id' } as never);
+      mocks.asset.getByIds.mockResolvedValue([{ id: 'asset-id', originalPath: sealed }] as never);
+
+      await sut.deleteIntegrityReport('user-id', 'report-id');
+
+      expect(mocks.asset.updateAll).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('AssetTrashAll', expect.anything());
+      expect(mocks.integrityReport.deleteById).toHaveBeenCalledWith('report-id');
+    });
+
+    it('Delete checks the original the item has now, not only the reported path', async () => {
+      mocks.integrityReport.getById.mockResolvedValue({
+        id: 'report-id',
+        path: '/data/library/moved-away.jpg',
+        assetId: 'asset-id',
+      } as never);
+      mocks.asset.getByIds.mockResolvedValue([{ id: 'asset-id', originalPath: sealed }] as never);
+
+      await sut.deleteIntegrityReport('user-id', 'report-id');
+
+      expect(mocks.asset.updateAll).not.toHaveBeenCalled();
+    });
+
+    it('Delete all trashes only the items whose originals are not sealed', async () => {
+      mocks.asset.getByIds.mockResolvedValue([
+        { id: 'sealed-asset', originalPath: sealed },
+        { id: 'plain-asset', originalPath: '/data/library/plain.jpg' },
+      ] as never);
+      mocks.integrityReport.getTrackedPaths.mockResolvedValue([]);
+
+      await sut.handleDeleteIntegrityReports({
+        reports: [
+          { id: 'sealed-report', assetId: 'sealed-asset', fileAssetId: null, path: sealed },
+          { id: 'plain-report', assetId: 'plain-asset', fileAssetId: null, path: '/data/library/plain.jpg' },
+          { id: 'orphan-report', assetId: null, fileAssetId: null, path: sealed },
+        ],
+      });
+
+      expect(mocks.asset.updateAll).toHaveBeenCalledExactlyOnceWith(['plain-asset'], expect.anything());
+      expect(mocks.event.emit).toHaveBeenCalledWith('AssetTrashAll', { assetIds: ['plain-asset'], userId: '' });
+      expect(mocks.integrityReport.deleteByIds).toHaveBeenCalledWith(['sealed-report']);
+      expect(mocks.integrityReport.deleteByIds).toHaveBeenCalledWith(['plain-report']);
+      // an untracked sealed file is never unlinked or moved
+      expect(mocks.physicalFile.deleteUnreferencedPath).not.toHaveBeenCalled();
+    });
+
+    it('Delete never removes an untracked sealed file', async () => {
+      mocks.integrityReport.getById.mockResolvedValue({ id: 'report-id', path: sealed } as never);
+      mocks.integrityReport.getTrackedPaths.mockResolvedValue([]);
+
+      await sut.deleteIntegrityReport('user-id', 'report-id');
+
+      expect(mocks.physicalFile.deleteUnreferencedPath).not.toHaveBeenCalled();
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+    });
+
+    it('the report refresh drops a checksum report on a sealed file without reading it', async () => {
+      await sut.handleChecksumRefresh({
+        items: [
+          {
+            reportId: 'report-1',
+            path: sealed,
+            checksum: Buffer.alloc(32).toString('hex'),
+            checksumAlgorithm: ChecksumAlgorithm.sha256File,
+          },
+        ],
+      });
+
+      expect(mocks.storage.createPlainReadStream).not.toHaveBeenCalled();
+      expect(mocks.integrityReport.deleteByIds).toHaveBeenCalledWith(['report-1']);
     });
   });
 
@@ -401,6 +583,41 @@ describe(IntegrityService.name, () => {
       );
     });
 
+    it('finishes a missing-file batch when one path cannot be read, and leaves that path unjudged', async () => {
+      mocks.storage.stat.mockImplementation((path) => {
+        if (path === '/denied') {
+          return Promise.reject(Object.assign(new Error('EACCES'), { code: 'EACCES' }));
+        }
+        if (path === '/under-a-file/a.jpg') {
+          return Promise.reject(Object.assign(new Error('ENOTDIR'), { code: 'ENOTDIR' }));
+        }
+        return Promise.resolve({} as never);
+      });
+      mocks.systemMetadata.updateIntegrityRun.mockResolvedValueOnce({
+        runId: 'run-3',
+        startedAt: '',
+        batches: 1,
+        done: 1,
+      });
+      await expect(
+        sut.handleMissingFiles({
+          runId: 'run-3',
+          items: [
+            { path: '/denied', reportId: 'stale', assetId: 'a', fileAssetId: null },
+            { path: '/under-a-file/a.jpg', reportId: null, assetId: 'b', fileAssetId: null },
+            { path: '/fine', reportId: 'fixed', assetId: 'c', fileAssetId: null },
+          ],
+        }),
+      ).resolves.toBe(JobStatus.Success);
+      expect(mocks.integrityReport.create).not.toHaveBeenCalled();
+      expect(mocks.integrityReport.deleteByIds).toHaveBeenCalledWith(['fixed']);
+      expect(mocks.systemMetadata.completeIntegrityRun).toHaveBeenCalledWith(
+        IntegrityReport.MissingFile,
+        'run-3',
+        expect.any(Date),
+      );
+    });
+
     it('completes an untracked-file run with no batches at once', async () => {
       mocks.crypto.randomUUID.mockReturnValue('run-2');
       mocks.integrityReport.streamIntegrityReportsWithAssetChecksum.mockReturnValue((async function* () {})() as never);
@@ -417,12 +634,7 @@ describe(IntegrityService.name, () => {
     });
 
     it('does not count a batch of a run that is no longer current, or one without a run', async () => {
-      mocks.integrityReport.getAssetPathsByPaths.mockResolvedValue([]);
-      mocks.integrityReport.getAssetFilePathsByPaths.mockResolvedValue([]);
-      mocks.integrityReport.getPersonThumbnailPathsByPaths.mockResolvedValue([]);
-      mocks.integrityReport.getVideoDuplicateFramePathsByPaths.mockResolvedValue([]);
-      mocks.integrityReport.getDevelopRevisionPathsByPaths.mockResolvedValue([]);
-      mocks.integrityReport.getRegisteredFilePathsByPaths.mockResolvedValue([]);
+      mocks.integrityReport.getTrackedPaths.mockResolvedValue([]);
       mocks.systemMetadata.updateIntegrityRun.mockResolvedValue(undefined);
 
       await sut.handleUntrackedFiles({ type: 'asset', paths: [], runId: 'stale' });
@@ -435,19 +647,59 @@ describe(IntegrityService.name, () => {
     it('never reports a registered stored file as untracked, even while no asset names it (FL-412)', async () => {
       const registered = '/data/upload/user/stored.jpg';
       const orphan = '/data/upload/user/orphan.jpg';
-      mocks.integrityReport.getAssetPathsByPaths.mockResolvedValue([]);
-      mocks.integrityReport.getAssetFilePathsByPaths.mockResolvedValue([]);
-      mocks.integrityReport.getPersonThumbnailPathsByPaths.mockResolvedValue([]);
-      mocks.integrityReport.getVideoDuplicateFramePathsByPaths.mockResolvedValue([]);
-      mocks.integrityReport.getDevelopRevisionPathsByPaths.mockResolvedValue([]);
-      mocks.integrityReport.getRegisteredFilePathsByPaths.mockResolvedValue([{ path: registered }]);
+      mocks.integrityReport.getTrackedPaths.mockResolvedValue([{ path: registered }]);
 
       await sut.handleUntrackedFiles({ type: 'asset', paths: [registered, orphan] });
 
-      expect(mocks.integrityReport.getRegisteredFilePathsByPaths).toHaveBeenCalledWith([registered, orphan]);
+      expect(mocks.integrityReport.getTrackedPaths).toHaveBeenCalledWith([registered, orphan]);
       expect(mocks.integrityReport.create).toHaveBeenCalledExactlyOnceWith([
         { type: IntegrityReport.UntrackedFile, path: orphan },
       ]);
+    });
+
+    it('keeps a checksum pass stopped by its limits as paused in Recent checks, not completed (FL-520)', async () => {
+      mocks.crypto.randomUUID.mockReturnValue('run-4');
+      mocks.integrityReport.getAssetCount.mockResolvedValue({ count: 10 } as never);
+      mocks.integrityReport.recordVerification.mockResolvedValue(true);
+      mocks.integrityReport.getIntegrityReportSummary.mockResolvedValue({
+        [IntegrityReport.ChecksumFail]: 0,
+        [IntegrityReport.MissingFile]: 0,
+        [IntegrityReport.UntrackedFile]: 0,
+      });
+      mocks.systemMetadata.get.mockImplementation(((key: SystemMetadataKey) =>
+        Promise.resolve(
+          key === SystemMetadataKey.SystemConfig
+            ? { integrityChecks: { checksumFiles: { percentageLimit: 0.1 } } }
+            : null,
+        )) as never);
+      mocks.systemMetadata.clearIntegrityRun.mockResolvedValue(true);
+      mocks.storage.createPlainReadStream.mockImplementation(() => Readable.from([Buffer.from('x')]) as never);
+      mocks.integrityReport.streamAssetChecksums.mockReturnValue(
+        (function* () {
+          for (let index = 0; index < 5; index++) {
+            yield {
+              assetId: `asset-${index}`,
+              originalPath: `/data/library/${index}.jpg`,
+              checksum: Buffer.alloc(20),
+              checksumAlgorithm: ChecksumAlgorithm.sha1File,
+              createdAt: new Date(2026, 0, index + 1),
+              reportId: null,
+            };
+          }
+        })() as never,
+      );
+
+      // A tenth of the library each night: the second file reaches the limit.
+      await sut.handleChecksumFiles();
+
+      expect(mocks.systemMetadata.updateIntegrityRun).toHaveBeenCalledWith(IntegrityReport.ChecksumFail, 'run-4', {
+        batches: 1,
+      });
+      expect(mocks.systemMetadata.completeIntegrityRun).not.toHaveBeenCalled();
+      expect(mocks.systemMetadata.clearIntegrityRun).toHaveBeenCalledWith(IntegrityReport.ChecksumFail, 'run-4');
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.IntegrityCheckHistory, {
+        entries: [expect.objectContaining({ type: IntegrityReport.ChecksumFail, outcome: 'paused', checked: 2 })],
+      });
     });
 
     it('records a checksum pass that covered every asset, and not one stopped by its limits', async () => {
@@ -463,6 +715,131 @@ describe(IntegrityService.name, () => {
         'run-3',
         expect.any(Date),
       );
+    });
+  });
+  describe('file checks overview, history and Stop (FL-520)', () => {
+    const summary = {
+      [IntegrityReport.ChecksumFail]: 1,
+      [IntegrityReport.MissingFile]: 4,
+      [IntegrityReport.UntrackedFile]: 0,
+    };
+
+    it('says one count per kind, the folders that cannot be reached, what runs now and the recent checks', async () => {
+      mocks.integrityReport.getFindingsOverview.mockResolvedValue({ missing: 4, damaged: 1, stray: 0, rawToMatch: 2 });
+      mocks.integrityReport.countMissingUnder.mockResolvedValue([4]);
+      mocks.library.getAll.mockResolvedValue([
+        { name: 'Taylor’s 2024 photos', importPaths: ['/mnt/photos/2024/'] },
+        { name: 'Shared', importPaths: ['/mnt/shared'] },
+      ] as never);
+      mocks.storage.stat.mockImplementation(((path: string) =>
+        path === '/mnt/photos/2024/'
+          ? Promise.reject(Object.assign(new Error('gone'), { code: 'ENOENT' }))
+          : Promise.resolve({})) as never);
+      const entry = {
+        type: IntegrityReport.MissingFile,
+        startedAt: '2026-10-22T03:00:00.000Z',
+        finishedAt: '2026-10-22T03:04:00.000Z',
+        outcome: 'completed' as const,
+        found: 4,
+        checked: null,
+      };
+      mocks.systemMetadata.get.mockImplementation(((key: SystemMetadataKey) => {
+        if (key === SystemMetadataKey.IntegrityCheckRuns) {
+          return Promise.resolve({
+            [IntegrityReport.ChecksumFail]: {
+              current: { runId: 'r', startedAt: '2026-10-22T03:05:00.000Z', batches: 100, done: 37 },
+            },
+          });
+        }
+        return Promise.resolve(key === SystemMetadataKey.IntegrityCheckHistory ? { entries: [entry] } : null);
+      }) as never);
+
+      await expect(sut.getIntegrityOverview()).resolves.toEqual({
+        missing: 4,
+        damaged: 1,
+        stray: 0,
+        rawToMatch: 2,
+        unreachable: [{ kind: 'library', name: 'Taylor’s 2024 photos', path: '/mnt/photos/2024', missing: 4 }],
+        running: [{ type: IntegrityReport.ChecksumFail, startedAt: '2026-10-22T03:05:00.000Z', done: 37, total: 100 }],
+        history: [entry],
+      });
+      expect(mocks.integrityReport.countMissingUnder).toHaveBeenCalledWith(['/mnt/photos/2024/']);
+      expect(mocks.integrityReport.getFindingsOverview).toHaveBeenCalledWith(expect.arrayContaining(['.dng', '.cr2']));
+    });
+
+    it('stops: waiting checks leave the queue, the running ones end as stopped, findings stay', async () => {
+      mocks.integrityReport.getFindingsOverview.mockResolvedValue({ missing: 4, damaged: 1, stray: 0, rawToMatch: 0 });
+      mocks.integrityReport.countMissingUnder.mockResolvedValue([]);
+      mocks.integrityReport.getIntegrityReportSummary.mockResolvedValue(summary);
+      mocks.library.getAll.mockResolvedValue([]);
+      mocks.storage.stat.mockResolvedValue({} as never);
+      mocks.systemMetadata.clearIntegrityRun.mockResolvedValue(true);
+      mocks.systemMetadata.get.mockImplementation(((key: SystemMetadataKey) =>
+        Promise.resolve(
+          key === SystemMetadataKey.IntegrityCheckRuns
+            ? { [IntegrityReport.MissingFile]: { current: { runId: 'm', startedAt: 'then', batches: 3, done: 1 } } }
+            : null,
+        )) as never);
+
+      await sut.stopIntegrityChecks();
+
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.IntegrityCheckStop, {
+        requestedAt: expect.any(String),
+      });
+      expect(mocks.job.empty).toHaveBeenCalledWith('integrityCheck');
+      expect(mocks.systemMetadata.clearIntegrityRun).toHaveBeenCalledExactlyOnceWith(IntegrityReport.MissingFile, 'm');
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.IntegrityCheckHistory, {
+        entries: [
+          expect.objectContaining({
+            type: IntegrityReport.MissingFile,
+            startedAt: 'then',
+            outcome: 'stopped',
+            found: 4,
+          }),
+        ],
+      });
+      expect(mocks.integrityReport.deleteByType).not.toHaveBeenCalled();
+    });
+
+    it('adds a completed check to Recent checks, newest first', async () => {
+      mocks.integrityReport.getIntegrityReportSummary.mockResolvedValue(summary);
+      mocks.storage.stat.mockResolvedValue({} as never);
+      const older = {
+        type: IntegrityReport.ChecksumFail,
+        startedAt: 'a',
+        finishedAt: 'b',
+        outcome: 'paused',
+        found: 1,
+        checked: 5,
+      };
+      mocks.systemMetadata.get.mockResolvedValue({ entries: [older] } as never);
+      mocks.systemMetadata.updateIntegrityRun.mockResolvedValue({
+        runId: 'm',
+        startedAt: 'start',
+        batches: 1,
+        done: 1,
+      });
+      mocks.systemMetadata.completeIntegrityRun.mockResolvedValue(true);
+
+      await sut.handleMissingFiles({ runId: 'm', items: [] });
+
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.IntegrityCheckHistory, {
+        entries: [
+          expect.objectContaining({
+            type: IntegrityReport.MissingFile,
+            startedAt: 'start',
+            outcome: 'completed',
+            found: 4,
+          }),
+          older,
+        ],
+      });
+    });
+
+    it('lists the photos behind missing findings for a restore, capped at the restore limit', async () => {
+      mocks.integrityReport.getFindingAssetIds.mockResolvedValue(['a']);
+      await expect(sut.getFindingAssetIds({ kind: 'missing' })).resolves.toEqual({ assetIds: ['a'] });
+      expect(mocks.integrityReport.getFindingAssetIds).toHaveBeenCalledWith('missing', 10_000);
     });
   });
 });

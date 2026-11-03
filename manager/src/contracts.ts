@@ -106,6 +106,7 @@ export type OperationKind =
   | 'start'
   | 'stop'
   | 'restart'
+  | 'reconfigure'
   | 'recover-source'
   | 'move-library';
 export type Operation = {

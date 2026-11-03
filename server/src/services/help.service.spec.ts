@@ -39,6 +39,7 @@ const container = (patch: Partial<HardwareCheck['ml']>): HardwareCheck['ml'] => 
   vendor: null,
   model: null,
   vramGb: null,
+  integrated: null,
   driver: null,
   backend: 'CPU',
   test: null,
@@ -164,6 +165,17 @@ describe(HelpService.name, () => {
 
     it('never fetches a page that is not a help article', async () => {
       await expect(sut.getArticle('admin/secret')).rejects.toBeInstanceOf(NotFoundException);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('never fetches an index entry whose id is not a guide path', async () => {
+      const id = '/evil.example/x';
+      metadata[SystemMetadataKey.HelpIndex] = {
+        index: { ...fresh, articles: [article(id)] },
+        etag: null,
+        fetchedAt: new Date().toISOString(),
+      };
+      await expect(sut.getArticle(id)).rejects.toBeInstanceOf(NotFoundException);
       expect(fetchSpy).not.toHaveBeenCalled();
     });
 

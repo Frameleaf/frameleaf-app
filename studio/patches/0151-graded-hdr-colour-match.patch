@@ -1,0 +1,867 @@
+Subject: Match colour through existing grades and in HDR, with before/after review
+
+Upstream Freecut source remains MIT licensed; this adaptation retains that license.
+The immutable vendor snapshot is unchanged.
+
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/colour-match-section.tsx b/src/features/editor/components/properties-sidebar/clip-panel/colour-match-section.tsx
+--- a/src/features/editor/components/properties-sidebar/clip-panel/colour-match-section.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/colour-match-section.tsx
+@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
+ import type { VideoItem } from '@/types/timeline'
+ import {
+   analyzeColourMatch,
++  applyColourMatch,
+   applyColourMatches,
+   readColourMatch,
+   setColourMatchStrength,
+@@ -19,6 +20,33 @@ import { PropertyRow, PropertySection } from '../components'
+ 
+ const signed = (value: number, digits: number) => `${value >= 0 ? '+' : ''}${value.toFixed(digits)}`
+ 
++type Rgb = readonly [number, number, number]
++
++/** Swatch colour for a working-space mean: SDR values are display values; HDR means are clamped for display. */
++function swatch([r, g, b]: Rgb, domain: string): string {
++  const encode = (v: number) => domain === 'srgb-display-bt709'
++    ? v
++    : v <= 0.0031308 ? 12.92 * v : 1.055 * Math.min(1, v) ** (1 / 2.4) - 0.055
++  const byte = (v: number) => Math.round(Math.min(1, Math.max(0, encode(v))) * 255)
++  return `rgb(${byte(r)}, ${byte(g)}, ${byte(b)})`
++}
++
++/** Before/after review: the mean colour of the reference, the target now, and the target with the match. */
++function MatchReview({ review, after }: { review: { domain: string; referenceMean: Rgb; targetMean: Rgb }; after: Rgb }) {
++  const { t } = useTranslation()
++  const values = (rgb: Rgb) => rgb.map((v) => v.toFixed(3)).join(' / ')
++  return (
++    <div className="mt-1 grid grid-cols-3 gap-1" role="group" aria-label={t('editor.colourMatch.review')}>
++      {([['reference', review.referenceMean], ['before', review.targetMean], ['after', after]] as const).map(([key, rgb]) => (
++        <div key={key} className="flex flex-col items-center gap-0.5" title={values(rgb)}>
++          <span className="h-5 w-full rounded border border-border" style={{ background: swatch(rgb, review.domain) }} />
++          <span className="text-[10px] text-muted-foreground">{t(`editor.colourMatch.${key}`)}</span>
++        </div>
++      ))}
++    </div>
++  )
++}
++
+ /**
+  * Match colour to a reference shot (FL-599). Proposals become an editable
+  * exposure + temperature/tint pair after the clip's grade, with a strength
+@@ -106,6 +134,16 @@ export function ColourMatchSection({ items }: { items: VideoItem[] }) {
+                 tint: signed(result.proposal.params.tint, 2),
+               })}
+             </p>
++            {result.review && (
++              <MatchReview
++                review={result.review}
++                after={applyColourMatch(result.review.targetMean, {
++                  exposure: result.proposal.params.exposure * (strength / 100),
++                  temperature: result.proposal.params.temperature * (strength / 100),
++                  tint: result.proposal.params.tint * (strength / 100),
++                }, result.review.domain)}
++              />
++            )}
+             {result.proposal.flags.map((flag) => (
+               <p key={flag} className="text-amber-500">{t(`editor.colourMatch.flag.${flag}`)}</p>
+             ))}
+diff --git a/src/features/editor/deps/timeline-store-contract.ts b/src/features/editor/deps/timeline-store-contract.ts
+--- a/src/features/editor/deps/timeline-store-contract.ts
++++ b/src/features/editor/deps/timeline-store-contract.ts
+@@ -49,6 +49,7 @@ export {
+   setColourMatchStrength,
+   type ColourMatchTargetResult,
+ } from '@/features/timeline/stores/actions/edit/colour-match-actions'
++export { applyColourMatch } from '@/features/timeline/utils/colour-match'
+ export {
+   addCompositionControl,
+   removeCompositionControl,
+diff --git a/src/features/export/utils/canvas-render-orchestrator.ts b/src/features/export/utils/canvas-render-orchestrator.ts
+--- a/src/features/export/utils/canvas-render-orchestrator.ts
++++ b/src/features/export/utils/canvas-render-orchestrator.ts
+@@ -33,6 +33,7 @@ import { createExportOutputTarget } from './export-output-target'
+ 
+ // Subsystems
+ import { createCompositionRenderer } from './client-render-engine'
++import { BT2020_TO_BT709, multiply, pqDecode, resolveColorManagement } from '@/shared/graphics/color/managed-color'
+ import { runPipelinedFrameLoop } from './pipelined-frame-loop'
+ 
+ function getLog() {
+@@ -996,6 +997,54 @@ export async function renderSingleFrame(options: SingleFrameOptions): Promise<Bl
+   }
+ }
+ 
++/**
++ * Render one frame and return it in the project's working colour space
++ * (FL-626): sRGB-encoded display values for SDR projects, linear BT.709 in
++ * reference-white units for HDR ones (decoded from the float route's PQ
++ * BT.2020 signal). Same renderer as export, at the composition's own size.
++ */
++export async function renderWorkingFrame(
++  composition: CompositionInputProps,
++  frame: number,
++): Promise<{ width: number; height: number; rgb: Float32Array; domain: 'srgb-display-bt709' | 'linear-display-bt709-v1' }> {
++  const width = composition.width || DEFAULT_PROJECT_WIDTH
++  const height = composition.height || DEFAULT_PROJECT_HEIGHT
++  const canvas = new OffscreenCanvas(width, height)
++  const context = canvas.getContext('2d')
++  if (!context) throw new Error('Failed to get 2d context')
++  const renderer = await createCompositionRenderer(composition, canvas, context)
++  try {
++    await renderer.preload()
++    const color = resolveColorManagement(composition.colorManagement)
++    const rgb = new Float32Array(width * height * 3)
++    if (color.workingRange === 'hdr') {
++      const signal = await renderer.renderFrameSignal(frame, 'pq')
++      for (let i = 0, o = 0; i < signal.rgba.length; i += 4, o += 3) {
++        const linear2020: [number, number, number] = [
++          pqDecode(signal.rgba[i]!) / color.referenceWhiteNits,
++          pqDecode(signal.rgba[i + 1]!) / color.referenceWhiteNits,
++          pqDecode(signal.rgba[i + 2]!) / color.referenceWhiteNits,
++        ]
++        const [r, g, b] = multiply(BT2020_TO_BT709, linear2020)
++        rgb[o] = r; rgb[o + 1] = g; rgb[o + 2] = b
++      }
++      return { width: signal.width, height: signal.height, rgb, domain: 'linear-display-bt709-v1' }
++    }
++    await renderer.renderFrame(frame)
++    const { data } = context.getImageData(0, 0, width, height)
++    for (let i = 0, o = 0; i < data.length; i += 4, o += 3) {
++      rgb[o] = data[i]! / 255; rgb[o + 1] = data[i + 1]! / 255; rgb[o + 2] = data[i + 2]! / 255
++    }
++    return { width, height, rgb, domain: 'srgb-display-bt709' }
++  } finally {
++    try {
++      renderer.dispose()
++    } catch (error) {
++      getLog().warn('Failed to dispose working-frame renderer', { error })
++    }
++  }
++}
++
+ // ---------------------------------------------------------------------------
+ // renderAudioOnly
+ // ---------------------------------------------------------------------------
+diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.test.ts b/src/features/timeline/stores/actions/edit/colour-match-actions.test.ts
+--- a/src/features/timeline/stores/actions/edit/colour-match-actions.test.ts
++++ b/src/features/timeline/stores/actions/edit/colour-match-actions.test.ts
+@@ -3,10 +3,12 @@
+ import { beforeEach, describe, expect, it } from 'vite-plus/test'
+ import type { ItemEffect } from '@/types/effects'
+ import type { TimelineTrack, VideoItem } from '@/types/timeline'
++import { useKeyframesStore } from '../../keyframes-store'
+ import { useItemsStore } from '../../items-store'
+ import { useTimelineCommandStore } from '../../timeline-command-store'
+ import { useTimelineSettingsStore } from '../../timeline-settings-store'
+ import { useProjectStore } from '@/features/timeline/deps/projects'
++import { useMediaLibraryStore } from '@/features/timeline/deps/media-library-store'
+ import {
+   analyzeColourMatch,
+   applyColourMatches,
+@@ -63,6 +65,13 @@ describe('colour match actions', () => {
+     })
+   })
+ 
++  it('reports nothing and adds no undo step for strength 0 on a clip without a match', () => {
++    const item = video({ effects: [blur] })
++    useItemsStore.getState().setItems([item, referenceClip()])
++    expect(applyColourMatches([{ result: result(item), strength: 0 }]).applied).toEqual([])
++    expect(useTimelineCommandStore.getState().canUndo).toBe(false)
++  })
++
+   it('changes strength and removes the match exactly at zero, each in one undo step', () => {
+     const item = video({ effects: [blur] })
+     useItemsStore.getState().setItems([item, referenceClip()])
+@@ -91,14 +100,48 @@ describe('colour match actions', () => {
+     expect(useTimelineCommandStore.getState().canUndo).toBe(false)
+   })
+ 
+-  it('refuses graded clips and a reference that is also a target before sampling', async () => {
+-    useItemsStore.getState().setItems([video({ id: 'ref' }), video({ effects: [grade] })])
+-    await expect(analyzeColourMatch('ref', ['v1'], 0)).resolves.toEqual({ ok: false, reason: 'graded', itemId: 'v1' })
+-    // A reference that already carries a colour match is refused too; a matched target is not graded.
+-    const matched: ItemEffect = { ...grade, id: 'colour-match:exposure' }
+-    useItemsStore.getState().setItems([video({ id: 'ref', effects: [matched] }), video()])
+-    await expect(analyzeColourMatch('ref', ['v1'], 0)).resolves.toEqual({ ok: false, reason: 'graded', itemId: 'ref' })
++  it('refuses before sampling: the reference as a target, reversed clips, non-video clips', async () => {
++    useItemsStore.getState().setItems([video({ id: 'ref' }), video({ isReversed: true }), video({ id: 'v2', type: 'audio' } as never)])
+     await expect(analyzeColourMatch('ref', ['ref'], 0)).resolves.toMatchObject({ ok: false, reason: 'same-clip' })
++    await expect(analyzeColourMatch('ref', ['v1'], 0)).resolves.toEqual({ ok: false, reason: 'reversed', itemId: 'v1' })
++    await expect(analyzeColourMatch('ref', ['v2'], 0)).resolves.toEqual({ ok: false, reason: 'unsupported-clip', itemId: 'v2' })
++  })
++
++  it('refuses graded analysis without WebGPU, which would skip the grade', async () => {
++    useItemsStore.getState().setItems([referenceClip({ effects: [grade] }), video()])
++    await expect(analyzeColourMatch('ref', ['v1'], 0)).resolves.toEqual({ ok: false, reason: 'graded-needs-gpu' })
++  })
++
++  it('matches graded clips after their grade', () => {
++    const target = video({ effects: [grade] })
++    useItemsStore.getState().setItems([target, referenceClip({ effects: [grade] })])
++    const bound: ColourMatchTargetResult = { ...result(target), binding: colourMatchBinding(target, 1, referenceClip({ effects: [grade] }), 0.5) }
++    expect(applyColourMatches([{ result: bound, strength: 1 }]).applied).toEqual(['v1'])
++    expect(effectTypes('v1')).toEqual(['gpu-exposure', 'gpu-exposure', 'gpu-temperature'])
++  })
++
++  it('puts a new match after a grade added since the last match', () => {
++    useItemsStore.getState().setItems([video(), referenceClip()])
++    applyColourMatches([{ result: result(video()), strength: 1 }])
++    const matched = useItemsStore.getState().itemById['v1'] as VideoItem
++    const graded = { ...matched, effects: [...(matched.effects ?? []), grade] } as VideoItem
++    useItemsStore.getState().setItems([graded, referenceClip()])
++    expect(applyColourMatches([{ result: result(graded), strength: 1 }]).applied).toEqual(['v1'])
++    const ids = (useItemsStore.getState().itemById['v1']!.effects ?? []).map((effect) => effect.id)
++    expect(ids[0]).toBe('grade')
++    expect(ids.slice(1).every((id) => id.startsWith('colour-match:'))).toBe(true)
++  })
++
++  it('treats an SDR result as stale once an HDR source is placed', () => {
++    useItemsStore.getState().setItems([video(), referenceClip()])
++    const sdr = result(video())
++    useMediaLibraryStore.setState({ mediaById: { hdr: { colorTransfer: 'pq' } } } as never)
++    useItemsStore.getState().setItems([video(), referenceClip(), video({ id: 'v9', mediaId: 'hdr', from: 900 })])
++    try {
++      expect(applyColourMatches([{ result: sdr, strength: 1 }]).stale).toEqual(['v1'])
++    } finally {
++      useMediaLibraryStore.setState({ mediaById: {} } as never)
++    }
+   })
+ 
+   it('treats a result as stale when the reference or either clip direction changes', () => {
+@@ -109,18 +152,24 @@ describe('colour match actions', () => {
+     expect(applyColourMatches([{ result: result(item), strength: 1 }]).stale).toEqual(['v1'])
+     useItemsStore.getState().setItems([item])
+     expect(applyColourMatches([{ result: result(item), strength: 1 }]).stale).toEqual(['v1'])
++    // An animated grade changes the sampled look.
++    useItemsStore.getState().setItems([item, referenceClip()])
++    const beforeKeyframes = result(item)
++    useKeyframesStore.getState().setKeyframes([{ itemId: 'v1', properties: [{ property: 'effect:grade:exposure', keyframes: [{ id: 'k', frame: 0, value: 0.3, easing: 'linear' }] }] }] as never)
++    expect(applyColourMatches([{ result: beforeKeyframes, strength: 1 }]).stale).toEqual(['v1'])
++    useKeyframesStore.getState().setKeyframes([])
+     // Moving the clip changes which source frame the analysed time sampled.
+     useItemsStore.getState().setItems([{ ...item, from: item.from + 10 } as VideoItem, referenceClip()])
+     expect(applyColourMatches([{ result: result(item), strength: 1 }]).stale).toEqual(['v1'])
+   })
+ 
+-  it('refuses every result when the project has become HDR since analysis', () => {
++  it('treats results as stale when the project colour management changes (e.g. becomes HDR)', () => {
+     const item = video()
+     useItemsStore.getState().setItems([item, referenceClip()])
++    const bound = result(item)
+     useProjectStore.setState({ currentProject: { metadata: { colorManagement: { workingRange: 'hdr' } } } } as never)
+     try {
+-      expect(applyColourMatches([{ result: result(item), strength: 1 }]).refused).toEqual([{ itemId: 'v1', reason: 'hdr' }])
+-      expect(useTimelineCommandStore.getState().canUndo).toBe(false)
++      expect(applyColourMatches([{ result: bound, strength: 1 }]).stale).toEqual(['v1'])
+     } finally {
+       useProjectStore.setState({ currentProject: null } as never)
+     }
+diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b/src/features/timeline/stores/actions/edit/colour-match-actions.ts
+--- a/src/features/timeline/stores/actions/edit/colour-match-actions.ts
++++ b/src/features/timeline/stores/actions/edit/colour-match-actions.ts
+@@ -1,13 +1,15 @@
+ import type { ItemEffect } from '@/types/effects'
+-import type { TimelineItem, VideoItem } from '@/types/timeline'
++import type { TimelineItem, TimelineTrack, VideoItem } from '@/types/timeline'
++import type { ItemKeyframes } from '@/types/keyframe'
+ import { useItemsStore } from '../../items-store'
+ import { useTimelineSettingsStore } from '../../timeline-settings-store'
++import { useKeyframesStore } from '../../keyframes-store'
+ import { execute } from '../shared'
+ import { hasLockedEditParticipants } from '../linked-edit'
+ import { useMediaLibraryStore } from '@/features/timeline/deps/media-library-store'
+-import { importMediaLibraryService } from '@/features/timeline/deps/media-library-service'
++import { convertTimelineToComposition, importCanvasRenderOrchestrator } from '@/features/timeline/deps/export-contract'
++import { resolveMediaUrls } from '@/features/timeline/deps/media-library-resolver'
+ import { useProjectStore } from '@/features/timeline/deps/projects'
+-import { getGpuEffect } from '@/infrastructure/gpu-effects/registry'
+ import { workingRangeOfSources } from '@/shared/graphics/color/managed-color'
+ import { timelineToSourceFrames } from '../../../utils/source-calculations'
+ import {
+@@ -15,7 +17,8 @@ import {
+   colourMatchEffects,
+   isColourMatchEffect,
+   proposeColourMatch,
+-  sampleStats,
++  sampleWorkingStats,
++  type WorkingDomain,
+   type ColourMatchParams,
+   type ColourMatchProposal,
+   type ColourMatchProvenance,
+@@ -26,8 +29,8 @@ export type ColourMatchRefusal =
+   | 'not-found'
+   | 'unsupported-clip'
+   | 'same-clip'
+-  | 'hdr'
+-  | 'graded'
++  | 'hdr-needs-gpu'
++  | 'graded-needs-gpu'
+   | 'reversed'
+   | 'locked'
+   | 'decode-failed'
+@@ -38,6 +41,8 @@ export interface ColourMatchTargetResult {
+   binding: string
+   provenance: ColourMatchProvenance
+   proposal: ColourMatchProposal
++  /** Measured means for before/after review, in the working space of `domain`. */
++  review?: { domain: WorkingDomain; referenceMean: [number, number, number]; targetMean: [number, number, number] }
+ }
+ 
+ export type ColourMatchAnalysis =
+@@ -47,11 +52,6 @@ export type ColourMatchAnalysis =
+ /** Analysis frames are downscaled to this width; means need no more. */
+ const SAMPLE_WIDTH = 160
+ 
+-function isGradingEffect(effect: ItemEffect): boolean {
+-  return effect.enabled && !isColourMatchEffect(effect)
+-    && getGpuEffect(effect.effect.gpuEffectType)?.category === 'color'
+-}
+-
+ function projectIsHdr(items: readonly TimelineItem[]): boolean {
+   const project = useProjectStore.getState().currentProject
+   if (project?.metadata.colorManagement?.workingRange === 'hdr') return true
+@@ -75,47 +75,71 @@ function sourceSecondsAt(item: VideoItem, frame: number, fps: number): number {
+  * (its match effects excluded), the reference's source, timing, direction and
+  * full grade, and the project's colour management.
+  */
++/** The effect keyframes the sampler renders with (a target's own match keyframes left out). */
++function effectKeyframes(itemId: string, keepMatch: boolean) {
++  return (useKeyframesStore.getState().keyframesByItemId[itemId]?.properties ?? [])
++    .filter((property) => property.property.startsWith('effect:') && (keepMatch || !property.property.includes('colour-match:')))
++}
++
+ export function colourMatchBinding(
+   item: TimelineItem,
+   seconds: number,
+   reference?: TimelineItem,
+   referenceSeconds?: number,
+-  // Analysis passes the rate it sampled at; apply checks against the current one.
++  // Analysis passes the rate it sampled at, and apply checks against the current one.
+   fps = useTimelineSettingsStore.getState().fps,
+ ): string {
+-  // Timing and cadence too: they choose which source frame a timeline time samples.
+-  const describe = (clip: TimelineItem, effects: readonly ItemEffect[]) => {
++  // Timing and cadence as well: they choose which source frame a timeline time samples.
++  const describe = (clip: TimelineItem, effects: readonly ItemEffect[], keepMatch: boolean) => {
+     const video = clip as VideoItem
+     return [clip.id, clip.mediaId, clip.from, clip.durationInFrames, video.sourceStart ?? 0, video.sourceEnd ?? null,
+-      video.sourceFps ?? fps, fps, video.speed ?? 1, video.isReversed === true, effects]
++      video.sourceFps ?? fps, fps, video.speed ?? 1, video.isReversed === true, effects, effectKeyframes(clip.id, keepMatch)]
+   }
+   return JSON.stringify([
+-    describe(item, (item.effects ?? []).filter((effect) => !isColourMatchEffect(effect))), seconds,
+-    reference ? [describe(reference, reference.effects ?? []), referenceSeconds] : null,
++    describe(item, (item.effects ?? []).filter((effect) => !isColourMatchEffect(effect)), false), seconds,
++    reference ? [describe(reference, reference.effects ?? [], true), referenceSeconds] : null,
+     useProjectStore.getState().currentProject?.metadata.colorManagement ?? null,
++    // The effective working range, since an HDR source added anywhere switches the renderer to HDR.
++    projectIsHdr(useItemsStore.getState().items),
+   ])
+ }
+ 
+-async function sampleFrame(item: VideoItem, seconds: number): Promise<ColourSampleStats> {
+-  const { mediaLibraryService } = await importMediaLibraryService()
+-  const blob = item.mediaId ? await mediaLibraryService.getMediaFile(item.mediaId) : null
+-  if (!blob) throw new Error('media unavailable')
+-  const { Input, BlobSource, CanvasSink, ALL_FORMATS } = await import('mediabunny')
+-  const input = new Input({ source: new BlobSource(blob as File), formats: ALL_FORMATS })
+-  try {
+-    const track = await input.getPrimaryVideoTrack()
+-    if (!track) throw new Error('no video track')
+-    const height = Math.max(1, Math.round((SAMPLE_WIDTH * track.displayHeight) / track.displayWidth))
+-    const sink = new CanvasSink(track, { width: SAMPLE_WIDTH, height, fit: 'fill' })
+-    const wrapped = await sink.getCanvas(seconds)
+-    if (!wrapped) throw new Error('no frame')
+-    const canvas = wrapped.canvas as OffscreenCanvas | HTMLCanvasElement
+-    const context = canvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null
+-    if (!context) throw new Error('no 2d context')
+-    return sampleStats(context.getImageData(0, 0, canvas.width, canvas.height).data)
+-  } finally {
+-    input.dispose()
+-  }
++/**
++ * The clip's frame as the project shows it, graded: the clip alone, fitted to
++ * a small canvas of its own aspect, through the export renderer, in the
++ * project's working colour space. The target's own match effects are left
++ * out; the reference keeps all of its effects (its look is the goal).
++ */
++async function sampleGradedFrame(item: VideoItem, frame: number, keepMatch: boolean, fps: number): Promise<{ stats: ColourSampleStats; domain: WorkingDomain }> {
++  const project = useProjectStore.getState().currentProject
++  const sourceWidth = item.sourceWidth ?? project?.metadata.width ?? 1920
++  const sourceHeight = item.sourceHeight ?? project?.metadata.height ?? 1080
++  const height = Math.max(2, Math.round((SAMPLE_WIDTH * sourceHeight) / sourceWidth))
++  const effectKeys = effectKeyframes(item.id, keepMatch)
++  const clip = {
++    ...item,
++    trackId: 'colour-match-sample',
++    transform: undefined,
++    effects: keepMatch ? item.effects : (item.effects ?? []).filter((effect) => !isColourMatchEffect(effect)),
++  } as VideoItem
++  const track = {
++    id: 'colour-match-sample', name: 'sample', kind: 'video', order: 0, height: 80, locked: false,
++    syncLock: false, visible: true, muted: true, solo: false, volume: 0, items: [],
++  } as TimelineTrack
++  const composition = convertTimelineToComposition(
++    [track], [clip], [], fps, SAMPLE_WIDTH, height, null, null,
++    effectKeys.length > 0 ? [{ itemId: item.id, properties: effectKeys }] as ItemKeyframes[] : [],
++    '#000000',
++  )
++  // The working range comes from all placed sources as well as the stored setting, as export derives it.
++  const hdr = projectIsHdr(useItemsStore.getState().items)
++  composition.colorManagement = hdr
++    ? { ...project?.metadata.colorManagement, workingRange: 'hdr' }
++    : project?.metadata.colorManagement
++  const resolved = { ...composition, tracks: await resolveMediaUrls(composition.tracks) }
++  const { renderWorkingFrame } = await importCanvasRenderOrchestrator()
++  const working = await renderWorkingFrame(resolved, frame)
++  return { stats: sampleWorkingStats(working.rgb, working.domain), domain: working.domain }
+ }
+ 
+ function refusalFor(items: readonly TimelineItem[], ids: readonly string[]): { reason: ColourMatchRefusal; itemId?: string } | null {
+@@ -124,13 +148,7 @@ function refusalFor(items: readonly TimelineItem[], ids: readonly string[]): { r
+     if (!item) return { reason: 'not-found', itemId: id }
+     if (item.type !== 'video') return { reason: 'unsupported-clip', itemId: id }
+     if (item.isReversed === true) return { reason: 'reversed', itemId: id }
+-    if ((item.effects ?? []).some(isGradingEffect)) return { reason: 'graded', itemId: id }
+-    // The reference is sampled ungraded, so a reference that is itself matched would not be what is seen.
+-    if (id === ids[0] && (item.effects ?? []).some((effect) => effect.enabled && isColourMatchEffect(effect))) {
+-      return { reason: 'graded', itemId: id }
+-    }
+   }
+-  if (projectIsHdr(items)) return { reason: 'hdr' }
+   return null
+ }
+ 
+@@ -157,35 +175,57 @@ export async function analyzeColourMatch(
+       : item.from + Math.floor(item.durationInFrames / 2)
+   const reference = items.find((item) => item.id === referenceId) as VideoItem
+   const referenceSeconds = sourceSecondsAt(reference, frameFor(reference), fps)
++  // Without WebGPU the renderer skips GPU effects and would sample the ungraded picture.
++  const noWebGpu = typeof navigator === 'undefined' || !('gpu' in navigator) || !navigator.gpu
++  const sampledEffects = [
++    ...(reference.effects ?? []),
++    ...targetIds.flatMap((id) => (items.find((item) => item.id === id)?.effects ?? []).filter((effect) => !isColourMatchEffect(effect))),
++  ]
++  if (noWebGpu && sampledEffects.some((effect) => effect.enabled && effect.effect.type === 'gpu-effect')) {
++    return { ok: false, reason: 'graded-needs-gpu' }
++  }
++  // Bound before sampling: an edit while frames render makes the result stale rather than
++  // describing a look that was not the one sampled.
++  const bindings = new Map(targetIds.map((id) => {
++    const target = items.find((item) => item.id === id) as VideoItem
++    return [id, colourMatchBinding(target, sourceSecondsAt(target, frameFor(target), fps), reference, referenceSeconds, fps)]
++  }))
+ 
+   try {
+-    const referenceStats = await sampleFrame(reference, referenceSeconds)
++    const reference_ = await sampleGradedFrame(reference, frameFor(reference), true, fps)
+     const targets: ColourMatchTargetResult[] = []
+     for (const id of targetIds) {
+       if (signal?.aborted) throw new DOMException('Colour match cancelled', 'AbortError')
+       const target = items.find((item) => item.id === id) as VideoItem
+-      const targetSeconds = sourceSecondsAt(target, frameFor(target), fps)
++      const targetFrame = frameFor(target)
++      const targetSeconds = sourceSecondsAt(target, targetFrame, fps)
++      const sampled = await sampleGradedFrame(target, targetFrame, false, fps)
+       targets.push({
+         itemId: id,
+         label: target.label,
+-        binding: colourMatchBinding(target, targetSeconds, reference, referenceSeconds, fps),
++        binding: bindings.get(id)!,
+         provenance: { referenceItemId: referenceId, referenceSeconds, targetSeconds },
+-        proposal: proposeColourMatch(referenceStats, await sampleFrame(target, targetSeconds)),
++        proposal: proposeColourMatch(reference_.stats, sampled.stats),
++        review: { domain: sampled.domain, referenceMean: reference_.stats.mean, targetMean: sampled.stats.mean },
+       })
+     }
+     if (signal?.aborted) throw new DOMException('Colour match cancelled', 'AbortError')
+     return { ok: true, targets }
+   } catch (error) {
+     if (error instanceof DOMException && error.name === 'AbortError') throw error
+-    return { ok: false, reason: 'decode-failed' }
++    // HDR frames come from the GPU float route; only a browser without WebGPU gets that reason.
++    return { ok: false, reason: projectIsHdr(items) && noWebGpu ? 'hdr-needs-gpu' : 'decode-failed' }
+   }
+ }
+ 
+-function withMatch(effects: readonly ItemEffect[], match: ItemEffect[]): ItemEffect[] {
++/**
++ * A new match was measured through every other effect, so it goes last (`atEnd`); a strength
++ * change keeps the match where it is.
++ */
++function withMatch(effects: readonly ItemEffect[], match: ItemEffect[], atEnd: boolean): ItemEffect[] {
+   const first = effects.findIndex(isColourMatchEffect)
+   const rest = effects.filter((effect) => !isColourMatchEffect(effect))
+-  // Replace in place so the match keeps its position after the grade; otherwise append.
+-  const at = first === -1 ? rest.length : effects.slice(0, first).filter((effect) => !isColourMatchEffect(effect)).length
++  const at = atEnd || first === -1 ? rest.length : effects.slice(0, first).filter((effect) => !isColourMatchEffect(effect)).length
+   return [...rest.slice(0, at), ...match, ...rest.slice(at)]
+ }
+ 
+@@ -219,11 +259,7 @@ export function applyColourMatches(approvals: readonly ColourMatchApproval[]): C
+   const outcome: ColourMatchApplyOutcome = { applied: [], stale: [], refused: [] }
+   const items = useItemsStore.getState().items
+   const updates: Array<{ itemId: string; effects: ItemEffect[] }> = []
+-  // The project may have become HDR since analysis; SDR proposals do not apply there.
+-  if (projectIsHdr(items)) {
+-    outcome.refused = approvals.map(({ result }) => ({ itemId: result.itemId, reason: 'hdr' as const }))
+-    return outcome
+-  }
++  // A change of colour management (e.g. the project becoming HDR) changes the binding, so such results are stale.
+   for (const { result, strength } of approvals) {
+     const item = items.find((candidate) => candidate.id === result.itemId)
+     const reference = items.find((candidate) => candidate.id === result.provenance.referenceItemId)
+@@ -242,10 +278,10 @@ export function applyColourMatches(approvals: readonly ColourMatchApproval[]): C
+       continue
+     }
+     const effects = item.effects ?? []
+-    updates.push({
+-      itemId: item.id,
+-      effects: withMatch(effects, colourMatchEffects(result.proposal.params, strength, result.provenance, matchIds(effects))),
+-    })
++    const next = withMatch(effects, colourMatchEffects(result.proposal.params, strength, result.provenance, matchIds(effects)), true)
++    // Strength 0 on a clip without a match changes nothing: no undo step, no "matched" report.
++    if (next.length === effects.length && next.every((effect, index) => effect === effects[index])) continue
++    updates.push({ itemId: item.id, effects: next })
+   }
+   if (updates.length > 0) {
+     execute('APPLY_COLOUR_MATCH', () => {
+@@ -287,9 +323,9 @@ export function setColourMatchStrength(itemId: string, strength: number): boolea
+   const item = useItemsStore.getState().itemById[itemId]
+   const current = item ? readColourMatch(item) : null
+   // HDR projects are not supported by this match, so its effects are not rewritten there.
+-  if (!item || !current || projectIsHdr(useItemsStore.getState().items) || hasLockedEditParticipants([item])) return false
++  if (!item || !current || hasLockedEditParticipants([item])) return false
+   const effects = item.effects ?? []
+-  const next = withMatch(effects, colourMatchEffects(current.params, strength, current.provenance, matchIds(effects)))
++  const next = withMatch(effects, colourMatchEffects(current.params, strength, current.provenance, matchIds(effects)), false)
+   execute('SET_COLOUR_MATCH_STRENGTH', () => {
+     useItemsStore.getState()._setItemEffects([{ itemId, effects: next }])
+     useTimelineSettingsStore.getState().markDirty()
+diff --git a/src/features/timeline/utils/colour-match.test.ts b/src/features/timeline/utils/colour-match.test.ts
+--- a/src/features/timeline/utils/colour-match.test.ts
++++ b/src/features/timeline/utils/colour-match.test.ts
+@@ -1,5 +1,6 @@
+ import { describe, expect, it } from 'vite-plus/test'
+ import {
++  sampleWorkingStats,
+   applyColourMatch,
+   colourMatchEffects,
+   proposeColourMatch,
+@@ -108,4 +109,27 @@ describe('colour match', () => {
+     const [half] = colourMatchEffects(params, 0.5, provenance, ids)
+     expect(half!.effect.params.exposure).toBe(0.25)
+   })
++
++  it('matches in the HDR working space (linear, values above reference white kept)', () => {
++    // Linear BT.709 chart reaching 2.5x reference white; offsets applied in linear working units.
++    const linear = CHART.map((patch) => patch.map((v) => 2.5 * v ** 2.2) as [number, number, number])
++    const toWorking = (patches: ReadonlyArray<readonly number[]>) => Float32Array.from(patches.flatMap((p) => [p[0]!, p[1]!, p[2]!]))
++    const offset = { exposure: -0.6, temperature: 0.2, tint: -0.1 }
++    const target = linear.map((patch) => applyColourMatch(patch, offset, 'linear-display-bt709-v1'))
++    const proposal = proposeColourMatch(
++      sampleWorkingStats(toWorking(linear), 'linear-display-bt709-v1'),
++      sampleWorkingStats(toWorking(target), 'linear-display-bt709-v1'),
++    )
++    expect(proposal.flags).toEqual([])
++    const matched = target.map((patch) => applyColourMatch(patch, proposal.params, 'linear-display-bt709-v1'))
++    const error = (a: ReadonlyArray<readonly number[]>) => a.reduce((sum, p, i) => sum + Math.hypot(p[0]! - linear[i]![0]!, p[1]! - linear[i]![1]!, p[2]! - linear[i]![2]!), 0)
++    expect(error(matched)).toBeLessThanOrEqual(error(target) * 0.5)
++    // Values above reference white are not clipped away in HDR.
++    expect(Math.max(...matched.flat())).toBeGreaterThan(1)
++  })
++
++  it('keeps saturated BT.2020 pixels with a negative BT.709 component in HDR', () => {
++    const stats = sampleWorkingStats(Float32Array.from([-0.05, 0.3, 0.6, 0.2, 0.2, 0.2]), 'linear-display-bt709-v1')
++    expect(stats.usableFraction).toBe(1)
++  })
+ })
+diff --git a/src/features/timeline/utils/colour-match.ts b/src/features/timeline/utils/colour-match.ts
+--- a/src/features/timeline/utils/colour-match.ts
++++ b/src/features/timeline/utils/colour-match.ts
+@@ -51,21 +51,33 @@ export interface ColourMatchProposal {
+   flags: ColourMatchFlag[]
+ }
+ 
+-/** Statistics of RGBA8 pixels (as from canvas getImageData) in the SDR working space. */
+-export function sampleStats(rgba: Uint8ClampedArray): ColourSampleStats {
++export type WorkingDomain = 'srgb-display-bt709' | 'linear-display-bt709-v1'
++
++/**
++ * Statistics of working-space RGB triplets. SDR values are sRGB-encoded 0..1;
++ * HDR values are linear BT.709 with 1.0 at reference white. Pixels at black
++ * or at the top of the range are clipped and ignored.
++ */
++export function sampleWorkingStats(rgb: Float32Array, domain: WorkingDomain): ColourSampleStats {
++  const low = domain === 'srgb-display-bt709' ? CLIP_MARGIN : 0.0005
++  const high = domain === 'srgb-display-bt709' ? 1 - CLIP_MARGIN : 40
+   let count = 0
+   let total = 0
+   let sumR = 0, sumG = 0, sumB = 0
+   const lumas: number[] = []
+-  for (let i = 0; i + 3 < rgba.length; i += 4) {
++  for (let i = 0; i + 2 < rgb.length; i += 3) {
+     total += 1
+-    const r = rgba[i]! / 255
+-    const g = rgba[i + 1]! / 255
+-    const b = rgba[i + 2]! / 255
+-    if (Math.min(r, g, b) < CLIP_MARGIN || Math.max(r, g, b) > 1 - CLIP_MARGIN) continue
++    const r = rgb[i]!
++    const g = rgb[i + 1]!
++    const b = rgb[i + 2]!
++    const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b
++    // In HDR, a saturated BT.2020 colour can have a negative BT.709 component and still be
++    // valid, so black is judged by luminance there; SDR keeps the per-channel clip test.
++    const aboveBlack = domain === 'srgb-display-bt709' ? Math.min(r, g, b) >= low : luma >= low
++    if (!(aboveBlack && Math.max(r, g, b) <= high)) continue
+     count += 1
+     sumR += r; sumG += g; sumB += b
+-    lumas.push(0.2126 * r + 0.7152 * g + 0.0722 * b)
++    lumas.push(luma)
+   }
+   const mean: [number, number, number] = count > 0 ? [sumR / count, sumG / count, sumB / count] : [0, 0, 0]
+   const lumaMean = lumas.reduce((a, v) => a + v, 0) / Math.max(1, lumas.length)
+@@ -73,6 +85,15 @@ export function sampleStats(rgba: Uint8ClampedArray): ColourSampleStats {
+   return { mean, usableFraction: total > 0 ? count / total : 0, lumaSpread }
+ }
+ 
++/** Statistics of RGBA8 pixels (as from canvas getImageData) in the SDR working space. */
++export function sampleStats(rgba: Uint8ClampedArray): ColourSampleStats {
++  const rgb = new Float32Array((rgba.length / 4) * 3)
++  for (let i = 0, o = 0; i + 3 < rgba.length; i += 4, o += 3) {
++    rgb[o] = rgba[i]! / 255; rgb[o + 1] = rgba[i + 1]! / 255; rgb[o + 2] = rgba[i + 2]! / 255
++  }
++  return sampleWorkingStats(rgb, 'srgb-display-bt709')
++}
++
+ export function proposeColourMatch(reference: ColourSampleStats, target: ColourSampleStats): ColourMatchProposal {
+   const flags: ColourMatchFlag[] = []
+   if (reference.usableFraction < MIN_USABLE_FRACTION || target.usableFraction < MIN_USABLE_FRACTION) flags.push('clipped')
+@@ -98,10 +119,17 @@ export function proposeColourMatch(reference: ColourSampleStats, target: ColourS
+   return { params, flags }
+ }
+ 
+-/** Evaluate the match on one working value, as the two effects do in SDR (for tests and previews). */
+-export function applyColourMatch([r, g, b]: readonly [number, number, number], params: ColourMatchParams): [number, number, number] {
++/**
++ * Evaluate the match on one working value as the two effects do: SDR clamps
++ * each stage to 0..1; HDR keeps signed linear values (for tests and review).
++ */
++export function applyColourMatch(
++  [r, g, b]: readonly [number, number, number],
++  params: ColourMatchParams,
++  domain: WorkingDomain = 'srgb-display-bt709',
++): [number, number, number] {
+   const gain = 2 ** params.exposure
+-  const clamp = (v: number) => Math.min(1, Math.max(0, v))
++  const clamp = domain === 'srgb-display-bt709' ? (v: number) => Math.min(1, Math.max(0, v)) : (v: number) => v
+   return [
+     clamp(clamp(r * gain) + params.temperature * 0.1 + params.tint * 0.05),
+     clamp(clamp(g * gain) - params.tint * 0.1),
+diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partials/de/editor.json
+--- a/src/i18n/locales/partials/de/editor.json
++++ b/src/i18n/locales/partials/de/editor.json
+@@ -976,12 +976,15 @@
+         "not-found": "Wähle Clips auf der Zeitleiste.",
+         "unsupported-clip": "Farbangleichung funktioniert mit Videoclips.",
+         "same-clip": "Wähle eine andere Referenz als die anzugleichenden Clips.",
+-        "hdr": "HDR-Projekte werden noch nicht unterstützt.",
+-        "graded": "Clips mit Farbkorrekturen werden noch nicht unterstützt; gleiche vor der Korrektur an.",
+         "reversed": "Rückwärtswiedergabe wird nicht unterstützt.",
+         "locked": "Der Clip liegt auf einer gesperrten Spur.",
+-        "decode-failed": "Aus den Clips konnte kein Bild gelesen werden."
+-      }
++        "decode-failed": "Aus den Clips konnte kein Bild gelesen werden.",
++        "graded-needs-gpu": "Das Abgleichen gegradeter Clips braucht WebGPU, um ihre Effekte zu rendern; dieser Browser kann das nicht.",
++        "hdr-needs-gpu": "HDR-Angleichung braucht WebGPU, um das bearbeitete HDR-Bild zu lesen; dieser Browser kann das nicht."
++      },
++      "review": "Vorher und nachher",
++      "before": "Vorher",
++      "after": "Nachher"
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partials/en/editor.json
+--- a/src/i18n/locales/partials/en/editor.json
++++ b/src/i18n/locales/partials/en/editor.json
+@@ -989,12 +989,15 @@
+         "not-found": "Choose clips on the timeline.",
+         "unsupported-clip": "Colour matching works on video clips.",
+         "same-clip": "Choose a reference other than the clips being matched.",
+-        "hdr": "HDR projects aren't supported yet.",
+-        "graded": "Clips with colour grades aren't supported yet; match before grading.",
+         "reversed": "Reverse playback isn't supported.",
+         "locked": "The clip is on a locked track.",
+-        "decode-failed": "Couldn't read a frame from the clips."
+-      }
++        "decode-failed": "Couldn't read a frame from the clips.",
++        "graded-needs-gpu": "Matching graded clips needs WebGPU to render their effects; this browser can't.",
++        "hdr-needs-gpu": "HDR matching needs WebGPU to read the graded HDR frame; this browser can't."
++      },
++      "review": "Before and after",
++      "before": "Before",
++      "after": "After"
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partials/es/editor.json
+--- a/src/i18n/locales/partials/es/editor.json
++++ b/src/i18n/locales/partials/es/editor.json
+@@ -976,12 +976,15 @@
+         "not-found": "Elige clips en la línea de tiempo.",
+         "unsupported-clip": "La igualación de color funciona con clips de vídeo.",
+         "same-clip": "Elige una referencia distinta de los clips que se igualan.",
+-        "hdr": "Los proyectos HDR aún no son compatibles.",
+-        "graded": "Los clips con corrección de color aún no son compatibles; iguala antes de corregir.",
+         "reversed": "La reproducción inversa no es compatible.",
+         "locked": "El clip está en una pista bloqueada.",
+-        "decode-failed": "No se pudo leer un fotograma de los clips."
+-      }
++        "decode-failed": "No se pudo leer un fotograma de los clips.",
++        "graded-needs-gpu": "Igualar clips con gradación necesita WebGPU para renderizar sus efectos; este navegador no puede.",
++        "hdr-needs-gpu": "Igualar en HDR necesita WebGPU para leer el fotograma HDR corregido; este navegador no puede."
++      },
++      "review": "Antes y después",
++      "before": "Antes",
++      "after": "Después"
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partials/fr/editor.json
+--- a/src/i18n/locales/partials/fr/editor.json
++++ b/src/i18n/locales/partials/fr/editor.json
+@@ -976,12 +976,15 @@
+         "not-found": "Choisissez des clips dans la timeline.",
+         "unsupported-clip": "L’harmonisation des couleurs fonctionne avec les clips vidéo.",
+         "same-clip": "Choisissez une référence différente des clips à harmoniser.",
+-        "hdr": "Les projets HDR ne sont pas encore pris en charge.",
+-        "graded": "Les clips étalonnés ne sont pas encore pris en charge ; harmonisez avant d’étalonner.",
+         "reversed": "La lecture inversée n’est pas prise en charge.",
+         "locked": "Le clip est sur une piste verrouillée.",
+-        "decode-failed": "Impossible de lire une image des clips."
+-      }
++        "decode-failed": "Impossible de lire une image des clips.",
++        "graded-needs-gpu": "L’appariement de clips étalonnés nécessite WebGPU pour rendre leurs effets ; ce navigateur ne le peut pas.",
++        "hdr-needs-gpu": "L’harmonisation HDR a besoin de WebGPU pour lire l’image HDR étalonnée ; ce navigateur ne le peut pas."
++      },
++      "review": "Avant et après",
++      "before": "Avant",
++      "after": "Après"
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partials/ja/editor.json
+--- a/src/i18n/locales/partials/ja/editor.json
++++ b/src/i18n/locales/partials/ja/editor.json
+@@ -976,12 +976,15 @@
+         "not-found": "タイムラインのクリップを選択してください。",
+         "unsupported-clip": "色合わせは動画クリップで使えます。",
+         "same-clip": "合わせるクリップとは別の参照を選んでください。",
+-        "hdr": "HDR プロジェクトはまだサポートしていません。",
+-        "graded": "カラーグレード済みのクリップはまだサポートしていません。グレーディングの前に合わせてください。",
+         "reversed": "逆再生はサポートしていません。",
+         "locked": "クリップがロックされたトラックにあります。",
+-        "decode-failed": "クリップからフレームを読み取れませんでした。"
+-      }
++        "decode-failed": "クリップからフレームを読み取れませんでした。",
++        "graded-needs-gpu": "グレーディング済みクリップのマッチにはエフェクトを描画する WebGPU が必要ですが、このブラウザーでは使えません。",
++        "hdr-needs-gpu": "HDR の色合わせには、グレーディング後の HDR フレームを読み取るために WebGPU が必要です。このブラウザーでは使えません。"
++      },
++      "review": "適用前と適用後",
++      "before": "適用前",
++      "after": "適用後"
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partials/ko/editor.json
+--- a/src/i18n/locales/partials/ko/editor.json
++++ b/src/i18n/locales/partials/ko/editor.json
+@@ -976,12 +976,15 @@
+         "not-found": "타임라인에서 클립을 선택하세요.",
+         "unsupported-clip": "색 맞추기는 비디오 클립에서 동작합니다.",
+         "same-clip": "맞출 클립과 다른 기준을 선택하세요.",
+-        "hdr": "HDR 프로젝트는 아직 지원하지 않습니다.",
+-        "graded": "색 보정이 적용된 클립은 아직 지원하지 않습니다. 보정 전에 맞추세요.",
+         "reversed": "역재생은 지원하지 않습니다.",
+         "locked": "클립이 잠긴 트랙에 있습니다.",
+-        "decode-failed": "클립에서 프레임을 읽을 수 없습니다."
+-      }
++        "decode-failed": "클립에서 프레임을 읽을 수 없습니다.",
++        "graded-needs-gpu": "그레이딩된 클립을 맞추려면 효과를 렌더링할 WebGPU가 필요하지만 이 브라우저는 지원하지 않습니다.",
++        "hdr-needs-gpu": "HDR 색 맞추기에는 보정된 HDR 프레임을 읽기 위해 WebGPU가 필요합니다. 이 브라우저에서는 사용할 수 없습니다."
++      },
++      "review": "적용 전과 후",
++      "before": "전",
++      "after": "후"
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/partials/pt-BR/editor.json
+--- a/src/i18n/locales/partials/pt-BR/editor.json
++++ b/src/i18n/locales/partials/pt-BR/editor.json
+@@ -976,12 +976,15 @@
+         "not-found": "Escolha clipes na linha do tempo.",
+         "unsupported-clip": "A igualação de cor funciona em clipes de vídeo.",
+         "same-clip": "Escolha uma referência diferente dos clipes a igualar.",
+-        "hdr": "Projetos HDR ainda não são compatíveis.",
+-        "graded": "Clipes com correção de cor ainda não são compatíveis; iguale antes de corrigir.",
+         "reversed": "Reprodução reversa não é compatível.",
+         "locked": "O clipe está em uma faixa bloqueada.",
+-        "decode-failed": "Não foi possível ler um quadro dos clipes."
+-      }
++        "decode-failed": "Não foi possível ler um quadro dos clipes.",
++        "graded-needs-gpu": "Igualar clipes com correção de cor precisa de WebGPU para renderizar os efeitos; este navegador não consegue.",
++        "hdr-needs-gpu": "Igualar em HDR precisa de WebGPU para ler o quadro HDR corrigido; este navegador não consegue."
++      },
++      "review": "Antes e depois",
++      "before": "Antes",
++      "after": "Depois"
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partials/tr/editor.json
+--- a/src/i18n/locales/partials/tr/editor.json
++++ b/src/i18n/locales/partials/tr/editor.json
+@@ -976,12 +976,15 @@
+         "not-found": "Zaman çizelgesinde klip seçin.",
+         "unsupported-clip": "Renk eşleştirme video kliplerinde çalışır.",
+         "same-clip": "Eşleştirilen kliplerden farklı bir referans seçin.",
+-        "hdr": "HDR projeler henüz desteklenmiyor.",
+-        "graded": "Renk düzenlemesi olan klipler henüz desteklenmiyor; düzenlemeden önce eşleştirin.",
+         "reversed": "Ters oynatma desteklenmiyor.",
+         "locked": "Klip kilitli bir izde.",
+-        "decode-failed": "Kliplerden kare okunamadı."
+-      }
++        "decode-failed": "Kliplerden kare okunamadı.",
++        "graded-needs-gpu": "Renk düzeltmeli klipleri eşleştirmek, efektlerini işlemek için WebGPU gerektirir; bu tarayıcı bunu yapamıyor.",
++        "hdr-needs-gpu": "HDR eşleştirme, düzenlenmiş HDR kareyi okumak için WebGPU gerektirir; bu tarayıcı yapamıyor."
++      },
++      "review": "Önce ve sonra",
++      "before": "Önce",
++      "after": "Sonra"
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/zh/editor.json b/src/i18n/locales/partials/zh/editor.json
+--- a/src/i18n/locales/partials/zh/editor.json
++++ b/src/i18n/locales/partials/zh/editor.json
+@@ -976,12 +976,15 @@
+         "not-found": "请在时间线上选择片段。",
+         "unsupported-clip": "颜色匹配适用于视频片段。",
+         "same-clip": "请选择与被匹配片段不同的参考。",
+-        "hdr": "暂不支持 HDR 项目。",
+-        "graded": "暂不支持已调色的片段；请在调色前匹配。",
+         "reversed": "不支持倒放。",
+         "locked": "片段位于锁定的轨道。",
+-        "decode-failed": "无法从片段读取画面。"
+-      }
++        "decode-failed": "无法从片段读取画面。",
++        "graded-needs-gpu": "匹配已调色的片段需要 WebGPU 渲染其效果；此浏览器不支持。",
++        "hdr-needs-gpu": "HDR 匹配需要 WebGPU 读取调色后的 HDR 画面；此浏览器无法做到。"
++      },
++      "review": "前后对比",
++      "before": "之前",
++      "after": "之后"
+     }
+   }
+ }

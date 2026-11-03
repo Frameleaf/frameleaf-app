@@ -60,7 +60,8 @@ it('loads the applied generated clip, binds its preview, saves/reopens through r
   setWorkspaceRoot(workspace.handle())
   vi.stubGlobal(
     'fetch',
-    vi.fn(async () => new Response(new Blob(['preview']), { status: 200 })),
+    // Node 22's Response cannot read jsdom's Blob (no stream()); send the same bytes directly.
+    vi.fn(async () => new Response(new TextEncoder().encode('preview'), { status: 200 })),
   )
   const seeder = createLibraryMediaSeeder({
     workspace,

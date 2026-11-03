@@ -1,4 +1,10 @@
-import { AlbumCollectionResponseDto, AlbumResponseDto, AlbumTreeResponseDto } from 'src/dtos/album.dto.js';
+import {
+  AlbumCollectionResponseDto,
+  AlbumHierarchyNode,
+  AlbumHierarchyResponseDto,
+  AlbumResponseDto,
+  AlbumTreeResponseDto,
+} from 'src/dtos/album.dto.js';
 import { AlbumKind } from 'src/enum.js';
 
 /**
@@ -111,7 +117,27 @@ export const albumOrderGroup = (
   items: DirectoryItem[],
   parentId: string | null,
   firstId: string,
+  hierarchy = false,
 ): string[] | undefined => {
+  if (hierarchy) {
+    const visible = new Map(items.map((item) => [item.id, item]));
+    if (parentId !== null && (!visible.has(parentId) || visible.get(parentId)!.kind === AlbumKind.Space)) {
+      return undefined;
+    }
+    const first = visible.get(firstId);
+    if (!first) return undefined;
+    return items
+      .filter((item) => {
+        const parent = item.parentId ? visible.get(item.parentId) : undefined;
+        const effectiveParent =
+          item.kind !== AlbumKind.Space && parent?.kind !== AlbumKind.Space && parent ? parent.id : null;
+        return (
+          effectiveParent === parentId &&
+          (parentId !== null || (item.kind === AlbumKind.Space) === (first.kind === AlbumKind.Space))
+        );
+      })
+      .map(({ id }) => id);
+  }
   if (parentId !== null) {
     if (items.every((item) => !(item.kind === AlbumKind.Collection && item.id === parentId))) {
       return undefined;
@@ -136,4 +162,46 @@ export const albumOrderGroup = (
         .map(({ id }) => id);
     }
   }
+};
+
+/** Build the recursive view without exposing absent parents or trusting legacy cycles. */
+export const buildAlbumHierarchy = (
+  albums: AlbumResponseDto[],
+  positions: Map<string, number> = new Map(),
+): AlbumHierarchyResponseDto => {
+  const nodes = new Map<string, AlbumHierarchyNode>(
+    albums.map((album) => [album.id, { album: { ...album }, children: [] }]),
+  );
+  for (const { album } of nodes.values()) {
+    const parent = album.parentId ? nodes.get(album.parentId) : undefined;
+    if (album.kind === AlbumKind.Space || !parent || parent.album.kind === AlbumKind.Space) album.parentId = null;
+  }
+  const checked = new Set<string>();
+  for (const id of nodes.keys()) {
+    const path = new Set<string>();
+    let current: string | null = id;
+    while (current !== null && !checked.has(current)) {
+      const node: AlbumHierarchyNode = nodes.get(current)!;
+      if (path.has(current)) {
+        node.album.parentId = null;
+        break;
+      }
+      path.add(current);
+      current = node.album.parentId;
+    }
+    for (const visited of path) checked.add(visited);
+  }
+  const roots: AlbumHierarchyNode[] = [];
+  const ordered = nodes
+    .values()
+    .toArray()
+    .sort(
+      (a, b) =>
+        (positions.get(a.album.id) ?? Number.MAX_SAFE_INTEGER) - (positions.get(b.album.id) ?? Number.MAX_SAFE_INTEGER),
+    );
+  for (const node of ordered) {
+    const parent = node.album.parentId ? nodes.get(node.album.parentId) : undefined;
+    (parent ? parent.children : roots).push(node);
+  }
+  return { roots };
 };

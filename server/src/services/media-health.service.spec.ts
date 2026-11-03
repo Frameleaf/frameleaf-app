@@ -605,6 +605,126 @@ describe(MediaHealthService.name, () => {
       expect(mocks.job.queue).not.toHaveBeenCalled();
     });
 
+    it('scans only the chosen photos this person may see (FL-737)', async () => {
+      vi.mocked(mediaHealthRepository.createRun)
+        .mockResolvedValueOnce({ id: 'missing-run' } as never)
+        .mockResolvedValueOnce({ id: 'corrupt-run' } as never);
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([{ id: 'asset-1' }] as never);
+
+      await sut.startMissingScan(authStub.user1, { assetIds: ['asset-1', 'asset-1', 'asset-other'] });
+
+      expect(mediaHealthRepository.getAssets).toHaveBeenCalledWith(
+        ['asset-1', 'asset-other'],
+        authStub.user1.user.id,
+        expect.anything(),
+      );
+      expect(mediaOperationRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          snapshot: {
+            mode: 'scan',
+            userId: authStub.user1.user.id,
+            missingRunId: 'missing-run',
+            corruptRunId: 'corrupt-run',
+            assetIds: ['asset-1'],
+          },
+        }),
+      );
+    });
+
+    it('refuses a scan of photos this person cannot see (FL-737)', async () => {
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([]);
+
+      await expect(sut.startCorruptScan(authStub.user1, { assetIds: ['asset-other'] })).rejects.toThrow(
+        'None of these photos can be scanned',
+      );
+      expect(mediaOperationRepository.create).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      { active: ['asset-1'], requested: ['asset-2'], label: 'other chosen photos' },
+      { active: ['asset-1'], requested: undefined, label: 'the whole library' },
+    ])('refuses a scan of $label while a scan of chosen photos runs (FL-737)', async ({ active, requested }) => {
+      vi.mocked(mediaOperationRepository.list).mockResolvedValue({
+        items: [
+          {
+            id: '0195e2a0-0000-7000-8000-0000000000d1',
+            snapshot: { mode: 'scan', userId: 'user-id', missingRunId: 'm', corruptRunId: 'c', assetIds: active },
+          },
+        ],
+        total: 1,
+      } as never);
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([{ id: 'asset-2' }] as never);
+
+      await expect(sut.startMissingScan(authStub.user1, requested && { assetIds: requested })).rejects.toThrow(
+        'A scan of other photos is running',
+      );
+      expect(mediaOperationRepository.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a scan of chosen photos while an incremental scan runs (FL-737)', async () => {
+      vi.mocked(mediaOperationRepository.list).mockResolvedValue({
+        items: [
+          {
+            id: '0195e2a0-0000-7000-8000-0000000000d1',
+            snapshot: {
+              mode: 'scan',
+              userId: 'user-id',
+              missingRunId: 'm',
+              corruptRunId: 'c',
+              changedSince: '2026-10-31T02:00:00.000Z',
+            },
+          },
+        ],
+        total: 1,
+      } as never);
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([{ id: 'asset-2' }] as never);
+
+      await expect(sut.startMissingScan(authStub.user1, { assetIds: ['asset-2'] })).rejects.toThrow(
+        'A scan of other photos is running',
+      );
+      expect(mediaOperationRepository.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a whole-library scan while an incremental scan runs (FL-737)', async () => {
+      vi.mocked(mediaOperationRepository.list).mockResolvedValue({
+        items: [
+          {
+            id: '0195e2a0-0000-7000-8000-0000000000d1',
+            snapshot: {
+              mode: 'scan',
+              userId: 'user-id',
+              missingRunId: 'm',
+              corruptRunId: 'c',
+              changedSince: '2026-10-31T02:00:00.000Z',
+            },
+          },
+        ],
+        total: 1,
+      } as never);
+
+      await expect(sut.startMissingScan(authStub.user1)).rejects.toThrow('A scan of other photos is running');
+      expect(mediaOperationRepository.create).not.toHaveBeenCalled();
+    });
+
+    it('answers a scan of chosen photos with the full scan already under way (FL-737)', async () => {
+      vi.mocked(mediaOperationRepository.list).mockResolvedValue({
+        items: [
+          {
+            id: '0195e2a0-0000-7000-8000-0000000000d1',
+            snapshot: { mode: 'scan', userId: 'user-id', missingRunId: 'm', corruptRunId: 'c' },
+          },
+        ],
+        total: 1,
+      } as never);
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([{ id: 'asset-2' }] as never);
+
+      await expect(sut.startCorruptScan(authStub.user1, { assetIds: ['asset-2'] })).resolves.toEqual({
+        runId: 'c',
+        operationId: '0195e2a0-0000-7000-8000-0000000000d1',
+      });
+      expect(mediaOperationRepository.create).not.toHaveBeenCalled();
+    });
+
     it('answers a second scan request with the scan already under way', async () => {
       vi.mocked(mediaOperationRepository.list).mockResolvedValue({
         items: [
@@ -1306,6 +1426,83 @@ describe(MediaHealthService.name, () => {
         sut.applyBulkEntry(worker(), MediaOperationBulkAction.TrashDamagedMedia, trashEntry),
       ).resolves.toMatchObject({ status: MediaOperationItemStatus.Skipped });
       expect(mediaHealthRepository.trashCorruptIfUnchanged).not.toHaveBeenCalled();
+    });
+
+    describe('encrypted Locked originals (FL-721, spec §8.3)', () => {
+      let directory: string;
+      let sealed: string;
+      const confirmed = { status: MediaHealthStatus.CorruptConfirmed, score: null, evidence: {}, resolution: {} };
+
+      beforeEach(async () => {
+        directory = await mkdtemp(join(tmpdir(), 'media-health-bulk-locked-'));
+        sealed = join(directory, 'sealed.jpg');
+        await writeFile(sealed, Buffer.concat([Buffer.from('FLLK'), Buffer.alloc(64, 1)]));
+      });
+
+      afterEach(async () => {
+        await rm(directory, { recursive: true, force: true });
+      });
+
+      it('the trash worker keeps an item whose original is sealed, however it was queued', async () => {
+        vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([
+          finding({ category: MediaHealthCategory.Corrupt, status: MediaHealthStatus.TrashQueued }),
+        ] as never);
+        vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([missingAsset({ originalPath: sealed })] as never);
+        vi.spyOn(sut as any, 'validateAssetIntegrity').mockResolvedValue(confirmed);
+
+        await expect(
+          sut.applyBulkEntry(worker(), MediaOperationBulkAction.TrashDamagedMedia, {
+            assetId: 'asset-1',
+            findingId: 'health-1',
+          }),
+        ).resolves.toMatchObject({
+          status: MediaOperationItemStatus.Skipped,
+          reasonKey: 'frameleaf_bulk_reason_media_health_not_damaged',
+        });
+        expect(mediaHealthRepository.trashCorruptIfUnchanged).not.toHaveBeenCalled();
+        expect(mocks.event.emit).not.toHaveBeenCalledWith('AssetTrashAll', expect.anything());
+        expect(mediaHealthRepository.upsertFinding).toHaveBeenCalledWith(
+          expect.objectContaining({ status: MediaHealthStatus.Resolved, evidence: { reason: 'locked_encrypted' } }),
+        );
+      });
+
+      it('never replaces a sealed original with a recovery copy', async () => {
+        vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([
+          finding({ category: MediaHealthCategory.Corrupt, status: MediaHealthStatus.CorruptConfirmed }),
+        ] as never);
+        vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([missingAsset({ originalPath: sealed })] as never);
+
+        await expect(
+          sut.applyBulkEntry(worker({ isAdmin: true }), MediaOperationBulkAction.RecoverDamagedMedia, entry),
+        ).resolves.toMatchObject({
+          status: MediaOperationItemStatus.Skipped,
+          reasonKey: 'frameleaf_bulk_reason_media_health_changed',
+        });
+        expect(mediaHealthRepository.getCandidatesByHealthIds).not.toHaveBeenCalled();
+        expect(mediaHealthRepository.relinkManagedAsset).not.toHaveBeenCalled();
+      });
+
+      it('never hashes or relinks a sealed candidate', async () => {
+        vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([finding()] as never);
+        vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([missingAsset()] as never);
+        vi.mocked(mediaHealthRepository.getCandidatesByHealthIds).mockResolvedValue([
+          {
+            id: 'candidate-1',
+            healthId: 'health-1',
+            candidatePath: sealed,
+            status: MediaHealthStatus.Found,
+            evidence: { rootId: MANAGED_ROOT_ID },
+          },
+        ] as never);
+        // a hash that would match, if anything read the ciphertext
+        vi.mocked(mocks.crypto.hashFileDigests).mockResolvedValue({ sha1, sha256, sizeInBytes: 10 });
+
+        await expect(
+          sut.applyBulkEntry(worker(), MediaOperationBulkAction.RelinkMissingMedia, entry),
+        ).resolves.toMatchObject({ status: MediaOperationItemStatus.Skipped });
+        expect(mocks.crypto.hashFileDigests).not.toHaveBeenCalled();
+        expect(mediaHealthRepository.relinkManagedAsset).not.toHaveBeenCalled();
+      });
     });
 
     describe('recovery from a verified copy (disposable filesystem fixtures)', () => {
@@ -2379,6 +2576,167 @@ describe(MediaHealthService.name, () => {
     });
   });
 
+  describe('encrypted Locked originals (FL-721, spec §8.3)', () => {
+    let directory: string;
+    let sealedPath: string;
+    const confirmed = {
+      status: MediaHealthStatus.CorruptConfirmed,
+      score: null,
+      evidence: { reason: 'expected_mismatch' },
+      resolution: {},
+    };
+    const sealedAsset = () => ({
+      id: 'asset-sealed',
+      ownerId: authStub.user1.user.id,
+      updateId: 'update-1',
+      originalPath: sealedPath,
+      originalFileName: 'sealed.jpg',
+      type: AssetType.Image,
+      checksum: Buffer.alloc(32, 3),
+      checksumAlgorithm: ChecksumAlgorithm.sha256File,
+    });
+
+    beforeEach(async () => {
+      directory = await mkdtemp(join(tmpdir(), 'media-health-locked-'));
+      sealedPath = join(directory, 'sealed.jpg');
+      // a sealed Locked file: its bytes start with the FLLK magic
+      await writeFile(sealedPath, Buffer.concat([Buffer.from('FLLK'), Buffer.alloc(64, 1)]));
+    });
+
+    afterEach(async () => {
+      await rm(directory, { recursive: true, force: true });
+    });
+
+    it('ScanCorrupt never reports an encrypted file', async () => {
+      vi.mocked(mediaHealthRepository.streamAssets).mockReturnValue(
+        (async function* () {
+          await Promise.resolve();
+          yield sealedAsset();
+        })() as never,
+      );
+      // whatever a decoder would say about the ciphertext, it is never a finding
+      vi.spyOn(sut as any, 'validateAssetIntegrity').mockResolvedValue(confirmed);
+      vi.spyOn(sut as any, 'validateReadableAssetIntegrity').mockResolvedValue(confirmed);
+
+      await expect(sut.handleCorruptScan({ runId: 'corrupt-run', userId: authStub.user1.user.id })).resolves.toBe(
+        JobStatus.Success,
+      );
+
+      expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
+      expect(mediaHealthRepository.markResolvedForAssets).not.toHaveBeenCalled();
+      // counted as "encrypted, not checked"
+      expect(mediaHealthRepository.finishRun).toHaveBeenCalledWith('corrupt-run', {
+        status: 'completed',
+        totalAssets: 1,
+        checkedAssets: 0,
+        foundAssets: 0,
+      });
+    });
+
+    it('the combined scan never reports an encrypted file as damaged', async () => {
+      vi.mocked(mediaHealthRepository.streamAssets).mockReturnValue(
+        (async function* () {
+          await Promise.resolve();
+          yield sealedAsset();
+        })() as never,
+      );
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(true);
+      vi.spyOn(sut as any, 'validateReadableAssetIntegrity').mockResolvedValue(confirmed);
+
+      await expect(sut.handleMissingScan({ missingRunId: 'missing-run', corruptRunId: 'corrupt-run' })).resolves.toBe(
+        JobStatus.Success,
+      );
+
+      expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
+      expect(mediaHealthRepository.finishRun).toHaveBeenCalledWith(
+        'corrupt-run',
+        expect.objectContaining({ totalAssets: 1, checkedAssets: 0, foundAssets: 0 }),
+      );
+    });
+
+    it('DeleteCorrupt refuses to delete a path that starts with FLLK, even if queued', async () => {
+      vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([
+        {
+          id: 'health-1',
+          assetId: 'asset-sealed',
+          category: MediaHealthCategory.Corrupt,
+          status: MediaHealthStatus.TrashQueued,
+          checkedAt: new Date(),
+          runId: 'corrupt-run',
+        },
+      ] as never);
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([sealedAsset()] as never);
+      vi.spyOn(sut as any, 'validateAssetIntegrity').mockResolvedValue(confirmed);
+
+      await expect(sut.handleDeleteCorrupt({ ids: ['health-1'], userId: authStub.user1.user.id })).resolves.toBe(
+        JobStatus.Success,
+      );
+
+      expect(mediaHealthRepository.trashCorruptIfUnchanged).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('AssetTrashAll', expect.anything());
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+      // the finding leaves the trash queue
+      expect(mediaHealthRepository.upsertFinding).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'health-1',
+          status: MediaHealthStatus.Resolved,
+          evidence: { reason: 'locked_encrypted' },
+          resolution: { trashSkipped: true },
+        }),
+      );
+    });
+
+    it('deleteCorrupt never queues an encrypted original for the trash', async () => {
+      vi.mocked(mocks.user.getForPinCode).mockResolvedValue({ password: '', pinCode: null });
+      vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([
+        {
+          id: 'health-1',
+          assetId: 'asset-sealed',
+          category: MediaHealthCategory.Corrupt,
+          status: MediaHealthStatus.CorruptConfirmed,
+          checkedAt: new Date(),
+        },
+      ] as never);
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([sealedAsset()] as never);
+      vi.spyOn(sut as any, 'validateAssetIntegrity').mockResolvedValue(confirmed);
+
+      await expect(
+        sut.deleteCorrupt(authStub.user1, { ids: ['health-1'], confirmText: CORRUPT_MEDIA_DELETE_CONFIRM_TEXT }),
+      ).rejects.toThrow('no longer failed');
+
+      expect(mediaHealthRepository.markStatus).not.toHaveBeenCalled();
+      expect(mediaOperationService.createBulk).not.toHaveBeenCalled();
+    });
+
+    it('never brings an untracked encrypted file back as a new photo', async () => {
+      vi.mocked(mediaHealthRepository.streamAssets).mockReturnValue(
+        // eslint-disable-next-line require-yield
+        (async function* () {
+          await Promise.resolve();
+        })() as never,
+      );
+      vi.mocked(mocks.user.get).mockResolvedValue({
+        id: 'user-1',
+        storageLabel: 'owner',
+        quotaSizeInBytes: null,
+        quotaUsageInBytes: 0,
+      } as never);
+      vi.mocked(mocks.storage.walk).mockReturnValue(
+        (async function* () {
+          await Promise.resolve();
+          yield [sealedPath];
+        })() as never,
+      );
+      vi.mocked(mediaHealthRepository.getTrackedPaths).mockResolvedValue(new Set());
+
+      await sut.handleMissingScan({ missingRunId: 'missing-run', corruptRunId: 'corrupt-run', userId: 'user-1' });
+
+      expect(mocks.crypto.hashFileDigests).not.toHaveBeenCalled();
+      expect(mocks.asset.create).not.toHaveBeenCalled();
+    });
+  });
+
   describe('handleDeleteCorrupt', () => {
     it('moves revalidated corrupt media to trash without queueing permanent file deletion', async () => {
       vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([
@@ -2558,7 +2916,7 @@ describe(MediaHealthService.name, () => {
       vi.mocked(mocks.systemMetadata.get).mockResolvedValue({ libraryCare } as never);
     };
 
-    it('schedules the health scan on the server that holds the lock, as the settings say', async () => {
+    it('keeps the health scan timer stopped on the server that holds the lock: the overnight schedule starts it (FL-363)', async () => {
       vi.mocked(mocks.database.tryLock).mockResolvedValue(true);
       vi.mocked(mocks.cron.create).mockReturnValue();
       vi.mocked(mocks.cron.update).mockReturnValue();
@@ -2575,7 +2933,7 @@ describe(MediaHealthService.name, () => {
       expect(mocks.cron.update).toHaveBeenCalledWith({
         name: 'libraryCareHealthScan',
         expression: '0 03 * * *',
-        start: true,
+        start: false,
       });
     });
 
@@ -2653,8 +3011,13 @@ describe(MediaHealthService.name, () => {
           scan('recent', '2026-09-24T02:00:00.000Z', '2026-09-23T02:00:00.000Z'),
           scan('recent', '2026-09-22T02:00:00.000Z'),
         ],
-        // Last full scan eight days ago: full, whatever the incremental ones since.
+        // Last full scan eight days ago: full, whatever the incremental ones since, and a scan of
+        // chosen photos (FL-737) is no full scan.
         stale: [
+          {
+            ...scan('stale', '2026-09-24T09:00:00.000Z'),
+            snapshot: { mode: 'scan', userId: 'stale', missingRunId: 'm', corruptRunId: 'c', assetIds: ['a'] },
+          },
           scan('stale', '2026-09-24T02:00:00.000Z', '2026-09-23T02:00:00.000Z'),
           scan('stale', '2026-09-17T02:00:00.000Z'),
         ],
@@ -2681,7 +3044,10 @@ describe(MediaHealthService.name, () => {
       vi.useRealTimers();
     });
 
-    it('keeps a scan an account already has instead of starting a second one', async () => {
+    it.each([
+      ['a full scan', {}],
+      ['an incremental scan', { changedSince: '2026-10-31T02:00:00.000Z' }],
+    ])('keeps %s an account already has instead of starting a second one', async (_, extra) => {
       care({ healthScan: true });
       vi.mocked(mocks.user.getList).mockResolvedValue([{ id: 'user-a' }] as never);
       vi.mocked(mediaOperationRepository.list).mockImplementation(
@@ -2692,7 +3058,7 @@ describe(MediaHealthService.name, () => {
                   items: [
                     {
                       id: 'op-open',
-                      snapshot: { mode: 'scan', userId: 'user-a', missingRunId: 'm', corruptRunId: 'c' },
+                      snapshot: { mode: 'scan', userId: 'user-a', missingRunId: 'm', corruptRunId: 'c', ...extra },
                     },
                   ],
                   total: 1,

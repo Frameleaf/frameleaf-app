@@ -1,12 +1,13 @@
 import { Mocked, vitest } from 'vitest';
 import type { RepositoryInterface } from 'src/types.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
+import { tryPromise } from 'src/utils/promise.js';
 
 export const newJobRepositoryMock = (): Mocked<RepositoryInterface<JobRepository>> => {
   return {
     setup: vitest.fn(),
     ensureProducerRun: vitest.fn().mockResolvedValue(undefined),
-    prepareCheckpoint: vitest.fn().mockImplementation((_key, prepare) => Promise.try(prepare)),
+    prepareCheckpoint: vitest.fn().mockImplementation((_key, prepare) => tryPromise(prepare)),
     settleTerminalLibrarySources: vi.fn().mockResolvedValue(0),
     prepareLibraryScanSource: vitest
       .fn()
@@ -18,6 +19,7 @@ export const newJobRepositoryMock = (): Mocked<RepositoryInterface<JobRepository
       .mockImplementation(async (_identity, _examined, work) => (await work(undefined as never)).value),
     guardAssetSource: vitest.fn().mockResolvedValue(undefined),
     pinDestination: vitest.fn().mockImplementation((_workload, destinationId) => Promise.resolve(destinationId)),
+    pinnedDestination: vitest.fn().mockResolvedValue(null),
     collectFollowups: vitest.fn().mockImplementation((action) => action()),
     createRun: vitest.fn().mockImplementation(async (_kind, _selection, enqueue) => {
       await enqueue();
@@ -26,6 +28,10 @@ export const newJobRepositoryMock = (): Mocked<RepositoryInterface<JobRepository
     listRunItems: vitest.fn().mockResolvedValue([]),
     listRuns: vitest.fn().mockResolvedValue([]),
     dispatchImportedWork: vitest.fn().mockResolvedValue('test-import-run'),
+    prepareImportedLibraryWork: vitest.fn().mockResolvedValue('test-import-run'),
+    dispatchImportedLibraryWork: vitest.fn().mockResolvedValue('test-import-run'),
+    validateImportedLibraryWork: vitest.fn().mockResolvedValue('test-import-run'),
+    isImportedMetadataJob: vitest.fn().mockResolvedValue(false),
     startWorkers: vitest.fn(),
     stopWorkers: vitest.fn().mockResolvedValue(undefined),
     watchWorkers: vitest.fn(),
@@ -40,10 +46,13 @@ export const newJobRepositoryMock = (): Mocked<RepositoryInterface<JobRepository
     queue: vitest.fn().mockImplementation(() => Promise.resolve()),
     queueSelection: vitest.fn().mockResolvedValue(undefined),
     queueAll: vitest.fn().mockImplementation(() => Promise.resolve()),
+    wakeLockedDeferrals: vitest.fn().mockResolvedValue(0),
     isActive: vitest.fn(),
     isPaused: vitest.fn(),
     getJobCounts: vitest.fn(),
     hasUnfinishedWork: vitest.fn().mockResolvedValue(false),
+    getPausedQueues: vitest.fn().mockResolvedValue(new Set()),
+    getQueuesWithUnfinishedWork: vitest.fn().mockResolvedValue(new Set()),
     observeQueueRun: vitest.fn().mockResolvedValue({
       active: 0,
       waiting: 0,
@@ -60,7 +69,10 @@ export const newJobRepositoryMock = (): Mocked<RepositoryInterface<JobRepository
     hasDedupJob: vitest.fn(),
     getRollingAvgMs: vitest.fn().mockReturnValue(null),
     clear: vitest.fn(),
+    cancelAssetJobs: vitest.fn(),
+    getStoppedClaims: vitest.fn().mockResolvedValue(new Set()),
     retryFailed: vitest.fn(),
+    retryImportedWork: vitest.fn(),
     waitForQueueCompletion: vitest.fn(),
     removeJob: vitest.fn(),
   };

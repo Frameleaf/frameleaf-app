@@ -25,6 +25,8 @@ const group = (id: string, members: string[]): ReviewGroup => ({
   hiddenMemberCount: 0,
   totalBytes: 0,
   qualities: [],
+  albums: [],
+  lookAlike: false,
 });
 
 const emptyHistory = (): DuplicateDecisionHistoryDto => ({ recent: [], active: [] });
@@ -177,6 +179,7 @@ describe('the duplicate review session', () => {
               operationId: 'job-1',
               createdAt: '2026-09-23T10:00:00.000Z',
               undoable: true,
+              automatic: false,
               groups: [
                 {
                   decisionId: 'decision-1',

@@ -1,9 +1,10 @@
 import { type Kysely, type Transaction, sql } from 'kysely';
 import { AsyncLocalStorage } from 'node:async_hooks';
+import type { DB as DatabaseSchema } from 'src/schema/index.js';
 import { AssetType } from 'src/enum.js';
 
 /** Only DB-only adoption callbacks enter this scope. No executor holds a transaction during I/O. */
-export const publicationTransaction = new AsyncLocalStorage<Transaction<any>>();
+export const publicationTransaction = new AsyncLocalStorage<Transaction<DatabaseSchema>>();
 
 /**
  * Participating repositories resolve their connection when building a query. A nested repository

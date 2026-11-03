@@ -1,3 +1,4 @@
+import { PROPERTY_DEPS_METADATA } from '@nestjs/common/constants.js';
 import { Insertable, Kysely } from 'kysely';
 import { DateTime } from 'luxon';
 import { createHash, randomBytes } from 'node:crypto';
@@ -51,6 +52,8 @@ import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { ItemShareRepository } from 'src/repositories/item-share.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
+import { LockedEncryptionRepository } from 'src/repositories/locked-encryption.repository.js';
+import { LockedKeyRepository } from 'src/repositories/locked-key.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MapRepository } from 'src/repositories/map.repository.js';
@@ -84,6 +87,7 @@ import { TrashRepository } from 'src/repositories/trash.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { VersionHistoryRepository } from 'src/repositories/version-history.repository.js';
 import { VideoMomentRepository } from 'src/repositories/video-moment.repository.js';
+import { ViewRepository } from 'src/repositories/view-repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -102,6 +106,7 @@ import { TagAssetTable } from 'src/schema/tables/tag-asset.table.js';
 import { TagTable } from 'src/schema/tables/tag.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { BASE_SERVICE_DEPENDENCIES, BaseService } from 'src/services/base.service.js';
+import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 import { MetadataService } from 'src/services/metadata.service.js';
 import { SyncService } from 'src/services/sync.service.js';
 import { ClassConstructor, ClassConstructorsToInstances, UploadFile } from 'src/types.js';
@@ -124,6 +129,7 @@ type BaseServiceDeps = typeof BASE_SERVICE_DEPENDENCIES;
 // Repositories that services inject directly (outside BaseService) but medium specs still exercise against a real database.
 type MediumRepositoryKey =
   | BaseServiceDeps[number]
+  | typeof LockedEncryptionRepository
   | typeof MediaOperationRepository
   | typeof StudioProjectRepository
   | typeof VideoMomentRepository;
@@ -150,7 +156,39 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
     this.sutDeps = this.makeDeps(options);
     this.sut = new Service(...this.sutDeps) as InstanceType<S>;
     this.database = options.database;
+    this.injectProperties(Service);
     this.setMockDefaults();
+  }
+
+  /**
+   * FL-721: services that take LockedEncryptionService by property injection get a real one, on the
+   * spec's own repositories where it chose them (real or mock), a real Locked encryption table, and
+   * mocks for the rest. The key files stay mocked: medium specs don't write under the upload location.
+   */
+  private injectProperties(Service: S) {
+    // eslint-disable-next-line unicorn/no-nonstandard-builtin-properties
+    const properties: { key: string; type: unknown }[] = Reflect.getMetadata(PROPERTY_DEPS_METADATA, Service) ?? [];
+    for (const { key, type } of properties) {
+      if (type === LockedEncryptionService) {
+        Object.assign(this.sut, { [key]: this.newLockedEncryptionService() });
+      }
+    }
+  }
+
+  private newLockedEncryptionService() {
+    const dep = <T extends BaseServiceDeps[number]>(key: T): InstanceType<T> =>
+      (this.sutDeps[BASE_SERVICE_DEPENDENCIES.indexOf(key)] ?? newMockRepository(key)) as InstanceType<T>;
+    return new LockedEncryptionService(
+      dep(LoggingRepository),
+      automock(LockedKeyRepository, { strict: false }),
+      this.get(LockedEncryptionRepository),
+      dep(UserRepository),
+      dep(SessionRepository),
+      dep(JobRepository),
+      dep(CryptoRepository),
+      dep(WebsocketRepository),
+      dep(DatabaseRepository),
+    );
   }
 
   /** The defaults the unit tests use too: library workloads go to a healthy local destination (FL-110). */
@@ -164,6 +202,8 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
         Promise.resolve({ workload, destinationId: mlDestinationStub.local.id, modelId: null, updatedAt: new Date() }),
       );
       mlDestination.getById.mockResolvedValue(mlDestinationStub.local);
+      // FL-456: no processing-order plan unless a test gives one, so admission falls back to `getRoute` above
+      mlDestination.resolveRoute.mockResolvedValue([]);
       // Synthetic healthy destinations have no restored authority; fence tests override this mock.
       mlDestination.assertRecoveryAuthority.mockResolvedValue();
       mlDestination.getRoutes.mockResolvedValue([]);
@@ -348,7 +388,7 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
   }
 
   async newJobStatus(dto: Partial<Insertable<AssetJobStatusTable>> & { assetId: string }) {
-    const jobStatus = mediumFactory.assetJobStatusInsert({ assetId: dto.assetId });
+    const jobStatus = mediumFactory.assetJobStatusInsert(dto);
     const result = await this.get(AssetRepository).upsertJobStatus(jobStatus);
     return { jobStatus, result };
   }
@@ -499,7 +539,7 @@ export class ExifTestContext extends MediumTestContext<typeof MetadataService> {
         SystemMetadataRepository,
         TagRepository,
       ],
-      mock: [ConfigRepository, EventRepository, LoggingRepository, MapRepository, StorageRepository],
+      mock: [ConfigRepository, EventRepository, JobRepository, LoggingRepository, MapRepository, StorageRepository],
     });
 
     this.getMock(ConfigRepository).getEnv.mockReturnValue(mockEnvData({}));
@@ -556,6 +596,7 @@ const newRealRepository = <T extends MediumRepositoryKey>(key: T, db: Kysely<DB>
     case ClusterGroupRepository:
     case DuplicateRepository:
     case IntegrityRepository:
+    case LockedEncryptionRepository:
     case MediaOperationRepository:
     case MemoryRepository:
     case DownloadRepository:
@@ -586,6 +627,7 @@ const newRealRepository = <T extends MediumRepositoryKey>(key: T, db: Kysely<DB>
     case UserRepository:
     case VersionHistoryRepository:
     case VideoMomentRepository:
+    case ViewRepository:
     case WorkflowRepository: {
       return new key(db) as InstanceType<T>;
     }
@@ -727,6 +769,8 @@ const newMockRepository = <T>(key: ClassConstructor<T>) => {
         ],
       });
       mock.collectFollowups.mockImplementation((action) => action());
+      mock.isImportedMetadataJob.mockResolvedValue(false);
+      mock.pinnedDestination.mockResolvedValue(null);
       return mock;
     }
 

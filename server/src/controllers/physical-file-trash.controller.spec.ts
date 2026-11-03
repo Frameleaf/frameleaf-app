@@ -59,6 +59,18 @@ describe(PhysicalFileTrashController.name, () => {
     expect(ctx.authenticate).toHaveBeenCalledWith(adminOnly);
   });
 
+  it('POST /admin/file-trash/empty empties Unused files and answers what came back (FL-416)', async () => {
+    service.empty.mockResolvedValue({ files: 277, bytes: 4_500_000_000, kept: 0 });
+
+    const { status, body } = await request(ctx.getHttpServer()).post('/admin/file-trash/empty');
+
+    expect(status).toBe(200);
+    expect(body).toEqual({ files: 277, bytes: 4_500_000_000, kept: 0 });
+    expect(service.empty).toHaveBeenCalledWith(auth);
+    expect(service.restore).not.toHaveBeenCalled();
+    expect(ctx.authenticate).toHaveBeenCalledWith(adminOnly);
+  });
+
   it('rejects an id that is not a UUID', async () => {
     const { status } = await request(ctx.getHttpServer()).delete('/admin/file-trash/not-a-uuid');
 

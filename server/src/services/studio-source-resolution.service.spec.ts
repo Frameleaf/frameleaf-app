@@ -344,4 +344,77 @@ describe('canonical Studio source resolution', () => {
     expect(f.media.downloadOriginal).toHaveBeenCalledTimes(2);
     zeroed(f.snapshots);
   });
+
+  it.each(['none', 'stat', 'open', 'read', 'close'])(
+    'holds each original lease through file access and final validation, including %s failure',
+    async (failure) => {
+      const f = setup({ dependency: true });
+      let active = 0;
+      let triggered = false;
+      const releases: ReturnType<typeof vi.fn>[] = [];
+      f.media.downloadOriginal.mockImplementation(() => {
+        active++;
+        const release = vi.fn(() => {
+          active--;
+        });
+        releases.push(release);
+        return Promise.resolve({ path: '/private/original', release });
+      });
+      const stat = f.storage.stat.getMockImplementation()!;
+      f.storage.stat.mockImplementation(async (path) => {
+        if (path === '/private/original') {
+          expect(active).toBe(1);
+          if (failure === 'stat') {
+            triggered = true;
+            throw new Error('fixture stat failed');
+          }
+        }
+        return stat(path);
+      });
+      const open = f.storage.openForRandomRead.getMockImplementation()!;
+      f.storage.openForRandomRead.mockImplementation(async (path) => {
+        if (path === '/private/original') {
+          expect(active).toBe(1);
+          if (failure === 'open') {
+            triggered = true;
+            throw new Error('fixture open failed');
+          }
+        }
+        const file = await open(path);
+        if (path === '/private/original') {
+          const read = file.read.getMockImplementation()!;
+          file.read.mockImplementation(async () => {
+            expect(active).toBe(1);
+            if (failure === 'read') {
+              triggered = true;
+              throw new Error('fixture read failed');
+            }
+            return read();
+          });
+          const close = file.close.getMockImplementation()!;
+          file.close.mockImplementation(async () => {
+            expect(active).toBe(1);
+            if (failure === 'close') {
+              triggered = true;
+              throw new Error('fixture close failed');
+            }
+            await close();
+          });
+        }
+        return file;
+      });
+      const result = f.sut.resolve(auth, projectId, f.request());
+      if (failure === 'none') {
+        await expect(result).resolves.toMatchObject({ projectId });
+        expect(releases).toHaveLength(2);
+      } else {
+        await expect(result).rejects.toThrow('studio_source_invalid');
+        expect(releases).toHaveLength(1);
+        expect(triggered).toBe(true);
+      }
+      expect(active).toBe(0);
+      for (const release of releases) expect(release).toHaveBeenCalledTimes(1);
+      zeroed(f.snapshots);
+    },
+  );
 });

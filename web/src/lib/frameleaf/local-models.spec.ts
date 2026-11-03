@@ -22,6 +22,7 @@ const check = (ml: { model: string | null; vramGb: number | null; backend: Hardw
       vendor: null,
       model: null,
       vramGb: null,
+      integrated: null,
       driver: null,
       backend: HardwareBackend.Cpu,
       test: null,
@@ -30,6 +31,7 @@ const check = (ml: { model: string | null; vramGb: number | null; backend: Hardw
     ml: {
       reachable: true,
       vendor: null,
+      integrated: null,
       driver: null,
       test: null,
       gpu: { present: null, visible: null, usable: null },

@@ -1,10 +1,17 @@
+import { generateKeyPair } from '@frameleaf/locked-crypto';
 import { EventEmitter } from 'node:events';
 import { ExitCode, FrameleafWorker } from 'src/enum.js';
+import { API_STARTUP_RETRY_EXIT_CODE } from 'src/utils/shutdown.js';
 
 const fixture = vi.hoisted(() => ({
   maintenance: false,
   starts: [] as string[],
-  workers: [] as (EventEmitter & { name: string; stopped: Promise<void> })[],
+  workers: [] as (EventEmitter & {
+    name: string;
+    stopped: Promise<void>;
+    terminate?: ReturnType<typeof vi.fn>;
+    ownedTerminate?: ReturnType<typeof vi.fn>;
+  })[],
   signals: new Map<string, () => void>(),
   nextStopped: undefined as Promise<void> | undefined,
   clients: [] as { destroy: ReturnType<typeof vi.fn> }[],
@@ -45,6 +52,7 @@ vi.mock('node:worker_threads', async () => {
       name: string;
       stopped = fixture.nextStopped ?? Promise.resolve();
       terminate = vi.fn().mockResolvedValue(0);
+      ownedTerminate = vi.fn().mockResolvedValue(0);
       postMessage = vi.fn();
       constructor(file: string) {
         super();
@@ -85,7 +93,7 @@ vi.mock('src/repositories/config.repository.js', () => ({
       return {
         workers: ['api', 'microservices', 'edge'],
         database: { config: {} },
-        shutdown: { deadlineMs: 9000 },
+        shutdown: { graceMs: 5000, workerDeadlineMs: 8000, deadlineMs: 9000 },
       };
     }
   },
@@ -107,7 +115,10 @@ vi.mock('src/queue/worker-stop-proof.js', () => ({
   },
 }));
 vi.mock('src/queue/supervisor.js', () => ({
-  superviseQueueWorker: (worker: { stopped: Promise<void> }) => ({ stopped: worker.stopped }),
+  superviseQueueWorker: (worker: { stopped: Promise<void>; ownedTerminate: () => Promise<number> }) => ({
+    stopped: worker.stopped,
+    terminate: worker.ownedTerminate,
+  }),
 }));
 
 const latest = (name: FrameleafWorker) => fixture.workers.findLast((worker) => worker.name === name)!;
@@ -412,6 +423,102 @@ describe('supervisor worker-local restart lifecycle', () => {
     expect(fixture.starts).toEqual(['api', 'microservices', 'edge', 'microservices']);
   });
 
+  it('backs off an executor that keeps failing at startup, and resets after a minute of running', async () => {
+    const restarts = () => fixture.starts.filter((name) => name === 'microservices').length;
+    latest(FrameleafWorker.Microservices).emit('exit', 1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(restarts()).toBe(2);
+    latest(FrameleafWorker.Microservices).emit('exit', 1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(restarts()).toBe(2);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(restarts()).toBe(3);
+    latest(FrameleafWorker.Microservices).emit('exit', 1);
+    await vi.advanceTimersByTimeAsync(3999);
+    expect(restarts()).toBe(3);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(restarts()).toBe(4);
+    await vi.advanceTimersByTimeAsync(61_000);
+    latest(FrameleafWorker.Microservices).emit('exit', 1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(restarts()).toBe(5);
+  });
+
+  // FL-646: an API start-up that lost a lock race to another worker comes back instead of stopping the server.
+  it('restarts an API worker whose start-up hit a transient lock conflict, backing off while it keeps failing', async () => {
+    latest(FrameleafWorker.Api).emit('exit', API_STARTUP_RETRY_EXIT_CODE);
+    expect(process.exit).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(fixture.starts).toEqual(['api', 'microservices', 'edge', 'api']);
+    latest(FrameleafWorker.Api).emit('exit', API_STARTUP_RETRY_EXIT_CODE);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(fixture.starts).toEqual(['api', 'microservices', 'edge', 'api']);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(fixture.starts).toEqual(['api', 'microservices', 'edge', 'api', 'api']);
+    expect(process.exit).not.toHaveBeenCalled();
+  });
+
+  it('still stops the server when the API worker fails for any other reason', async () => {
+    latest(FrameleafWorker.Api).emit('exit', 1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(process.exit).toHaveBeenCalledExactlyOnceWith(1);
+    expect(fixture.starts).toEqual(['api', 'microservices', 'edge']);
+  });
+
+  it('reserves child-reaping and proof time before the existing shutdown deadlines', async () => {
+    const persisted = Promise.withResolvers<void>();
+    fixture.nextStopped = persisted.promise;
+    const workers = new Workers();
+    await workers.bootstrap();
+    const microservices = latest(FrameleafWorker.Microservices);
+    workers.stop('SIGTERM');
+    await vi.advanceTimersByTimeAsync(6999);
+    expect(microservices.ownedTerminate).not.toHaveBeenCalled();
+    expect(process.exit).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(microservices.ownedTerminate).toHaveBeenCalledExactlyOnceWith(1000);
+    expect(process.exit).not.toHaveBeenCalled();
+    for (const name of [FrameleafWorker.Api, FrameleafWorker.Microservices, FrameleafWorker.Edge])
+      latest(name).emit('exit', 0);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(process.exit).not.toHaveBeenCalled();
+    persisted.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(process.exit).toHaveBeenCalledExactlyOnceWith(0);
+  });
+
+  it('cancels the reserved queue termination when the worker finishes its graceful stop', async () => {
+    const workers = new Workers();
+    await workers.bootstrap();
+    const microservices = latest(FrameleafWorker.Microservices);
+    workers.stop('SIGTERM');
+    for (const name of [FrameleafWorker.Api, FrameleafWorker.Microservices, FrameleafWorker.Edge])
+      latest(name).emit('exit', 0);
+    await vi.advanceTimersByTimeAsync(9000);
+    expect(microservices.ownedTerminate).not.toHaveBeenCalled();
+    expect(process.exit).toHaveBeenCalledExactlyOnceWith(0);
+  });
+
+  it('reports a native queue force before the deadline even if every worker then exits zero', async () => {
+    vi.stubEnv('FRAMELEAF_NATIVE_OWNER', '1');
+    const workers = new Workers();
+    await workers.bootstrap();
+    workers.stop('SIGTERM');
+    await vi.advanceTimersByTimeAsync(7000);
+    expect(latest(FrameleafWorker.Microservices).ownedTerminate).toHaveBeenCalledExactlyOnceWith(1000);
+    for (const name of [FrameleafWorker.Api, FrameleafWorker.Microservices, FrameleafWorker.Edge])
+      latest(name).emit('exit', 0);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(process.exit).toHaveBeenCalledExactlyOnceWith(1);
+  });
+
+  it('routes a poisoned microservices pool through its child-owning supervisor', () => {
+    const worker = latest(FrameleafWorker.Microservices);
+    worker.emit('message', { type: 'database-unusable' });
+    expect(worker.ownedTerminate).toHaveBeenCalledOnce();
+    expect(worker.terminate).not.toHaveBeenCalled();
+  });
+
   it('still restarts a poisoned API pool without restarting healthy workers', async () => {
     latest(FrameleafWorker.Api).emit('message', { type: 'database-unusable' });
     latest(FrameleafWorker.Api).emit('exit', 1);
@@ -427,6 +534,75 @@ describe('supervisor worker-local restart lifecycle', () => {
     expect(fixture.starts).toEqual(['api', 'microservices', 'edge']);
   });
 
+  describe('FL-721 Locked keys', () => {
+    const pair = generateKeyPair();
+    const load = {
+      type: 'locked-key',
+      action: 'load',
+      userId: 'owner',
+      publicKey: pair.publicKey.toString('base64'),
+      privateKey: pair.privateKey.toString('base64'),
+      expiresAt: null,
+      grants: [],
+    } as const;
+    const pin = { type: 'locked-key', action: 'pin', userId: 'owner' } as const;
+    type Thread = EventEmitter & { postMessage: ReturnType<typeof vi.fn> };
+    type Fork = EventEmitter & { send: ReturnType<typeof vi.fn> };
+    const posted = (worker: Thread) => worker.postMessage.mock.calls.map(([message]) => message);
+    const sent = (worker: Fork) => worker.send.mock.calls.map(([message]) => message);
+
+    it('relays keys from the API to the job worker only, never to the internet-facing edge worker', () => {
+      latest(FrameleafWorker.Api).emit('message', load);
+      latest(FrameleafWorker.Api).emit('message', pin);
+
+      expect(posted(latest(FrameleafWorker.Microservices) as unknown as Thread)).toEqual([load, pin]);
+      expect(sent(latest(FrameleafWorker.Edge) as unknown as Fork)).toEqual([]);
+      expect(sent(latest(FrameleafWorker.Api) as unknown as Fork)).toEqual([]);
+    });
+
+    it('never replays keys to the edge worker, even when it asks', () => {
+      latest(FrameleafWorker.Api).emit('message', load);
+      latest(FrameleafWorker.Edge).emit('message', { type: 'locked-key-ready' });
+
+      expect(sent(latest(FrameleafWorker.Edge) as unknown as Fork)).toEqual([]);
+    });
+
+    it('replays the loaded keys to a worker that restarts, once it listens', async () => {
+      latest(FrameleafWorker.Api).emit('message', load);
+      latest(FrameleafWorker.Api).emit('message', pin);
+      latest(FrameleafWorker.Microservices).emit('exit', 1);
+      await vi.advanceTimersByTimeAsync(1000);
+      const restarted = latest(FrameleafWorker.Microservices) as unknown as Thread;
+      expect(posted(restarted)).toEqual([]);
+
+      restarted.emit('message', { type: 'locked-key-ready' });
+
+      expect(posted(restarted)).toEqual([load, pin]);
+    });
+
+    it('does not relay locked-key messages that come from a job worker', () => {
+      latest(FrameleafWorker.Microservices).emit('message', load);
+      expect(posted(latest(FrameleafWorker.Microservices) as unknown as Thread)).toEqual([]);
+      expect(sent(latest(FrameleafWorker.Edge) as unknown as Fork)).toEqual([]);
+    });
+
+    it('empties the workers when the API process starts again', async () => {
+      latest(FrameleafWorker.Api).emit('message', load);
+      latest(FrameleafWorker.Api).emit('message', pin);
+      latest(FrameleafWorker.Api).emit('exit', API_STARTUP_RETRY_EXIT_CODE);
+      await vi.advanceTimersByTimeAsync(1000);
+
+      const drop = [
+        { type: 'locked-key', action: 'unpin', userId: 'owner' },
+        { type: 'locked-key', action: 'drop', userId: 'owner' },
+      ];
+      expect(posted(latest(FrameleafWorker.Microservices) as unknown as Thread)).toEqual([load, pin, ...drop]);
+      expect(sent(latest(FrameleafWorker.Edge) as unknown as Fork)).toEqual([]);
+      latest(FrameleafWorker.Microservices).emit('message', { type: 'locked-key-ready' });
+      expect(posted(latest(FrameleafWorker.Microservices) as unknown as Thread)).toHaveLength(4);
+    });
+  });
+
   it('does not admit a replacement while actual stop confirmation remains unresolved', async () => {
     // The stopped boundary represents real exit/native-child confirmation and first proof write.
     const proof = Promise.withResolvers<void>();
@@ -438,7 +614,8 @@ describe('supervisor worker-local restart lifecycle', () => {
     await vi.advanceTimersByTimeAsync(5000);
     expect(fixture.starts).toEqual(['api', 'microservices', 'edge', 'microservices']);
     proof.resolve();
-    await vi.advanceTimersByTimeAsync(1000);
+    // its second failure in a row waits 2 s
+    await vi.advanceTimersByTimeAsync(2000);
     expect(fixture.starts).toEqual(['api', 'microservices', 'edge', 'microservices', 'microservices']);
   });
 });

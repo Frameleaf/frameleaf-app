@@ -1,5 +1,8 @@
-ARG NODE_IMAGE=node:26.11.1-trixie-slim@sha256:193fe51b64e77981119c98c2002c9e32a70e2f006fb4d25068ce0558998917f0
+ARG NODE_IMAGE=node:22.23.4-trixie-slim@sha256:8eb619e402eaede1748a3c8173bffab391592812e85136452f781741c7242ddf
 FROM ${NODE_IMAGE}
+RUN apt-get update --error-on=any && apt-get install -y --no-install-recommends ca-certificates && \
+  test ! -e /etc/ssl/certs/emSign_ECC_Root_CA_-_G3.pem && test ! -e /etc/ssl/certs/Comodo_AAA_Services_root.pem && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /usr/src/app
 
 RUN npm install --global corepack@latest && corepack enable pnpm

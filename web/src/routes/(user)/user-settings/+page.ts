@@ -29,7 +29,8 @@ export const load = (async ({ url }) => {
     return { screen: 'settings' as const, system: null, meta };
   }
 
-  await systemConfigManager.init();
+  // One read of the settings and one of the defaults: the manager starts from the same answer.
   const [current, defaultConfig] = await Promise.all([getAdminConfigWithRevision(), getConfigDefaults()]);
+  systemConfigManager.seed(current.config, defaultConfig);
   return { screen: 'settings' as const, system: { current, defaultConfig }, meta };
 }) satisfies PageLoad;

@@ -248,11 +248,31 @@ describe('pet run reconciliation with canonical queue outcomes', () => {
     expect(await store.claim(queue, workerId)).toEqual([]);
   });
 
-  it('reflects an unconfirmed executor stop as failure without replaying its effects', async () => {
+  it('retries a repeatable run interrupted without a confirmed executor stop (FL-675)', async () => {
     const ownerId = await newOwner();
     const run = await start(ownerId);
     const [claim] = await store.claim(queue, workerId);
     await sql`update job set "leaseExpiresAt" = now() - interval '2 minutes' where id = ${claim.id}::uuid`.execute(db);
+    await store.recoverExpired();
+    const {
+      rows: [outcome],
+    } = await sql<{ state: string; attempt: number }>`select state, attempt from job
+      where id = ${claim.id}::uuid`.execute(db);
+    expect(outcome).toEqual({ state: 'pending', attempt: 1 });
+    expect(await pets.getRun(ownerId)).not.toMatchObject({ status: PetRecognitionRunStatus.Failed });
+    expect(await store.complete(claim, [])).toBe(false);
+    await sql`update job set "availableAt" = now() where id = ${claim.id}::uuid`.execute(db);
+    const [retry] = await store.claim(queue, workerId);
+    expect(retry).toMatchObject({ id: claim.id, attempt: 2 });
+    expect(await pets.getRun(ownerId)).toMatchObject({ id: run.id });
+  });
+
+  it('reflects an unconfirmed executor stop of work that is not safe to repeat as failure without replay', async () => {
+    const ownerId = await newOwner();
+    const run = await start(ownerId);
+    const [claim] = await store.claim(queue, workerId);
+    await sql`update job set "safeToRetry" = false, "leaseExpiresAt" = now() - interval '2 minutes'
+      where id = ${claim.id}::uuid`.execute(db);
     await store.recoverExpired();
     const {
       rows: [outcome],

@@ -288,6 +288,15 @@ describe('Buddy peer fetch authentication (FL-310, FC-100)', () => {
     expect(client.connection).toBeNull();
   });
 
+  it.each(['objects/../../../admin', '//evil.example/x', 'snapshots?x=1'])(
+    'sends nothing for a route that is not a vault path (%s)',
+    async (path) => {
+      const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Unexpected peer request'));
+      await expect(fixture.client.request('GET', path)).rejects.toBeInstanceOf(BuddyExecutionError);
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
+
   it('sends nothing when the grant has expired', async () => {
     const { client, grant } = fixture;
     vi.setSystemTime(grant.claims.exp * 1000);

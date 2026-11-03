@@ -152,7 +152,8 @@ export const metadataAgrees = (
   if (name.toLowerCase() !== item.originalFilename.normalize('NFC').toLowerCase()) {
     return false;
   }
-  if (Math.abs(Date.parse(item.creationDate) - date) > 1000) {
+  const created = Date.parse(item.creationDate);
+  if (!Number.isFinite(created) || Math.abs(created - date) > 1000) {
     return false;
   }
   const uti = fieldValue(masterFields, 'resOriginalFileType') ?? fieldValue(masterFields, 'itemType');

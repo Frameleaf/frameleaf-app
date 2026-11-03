@@ -14,12 +14,7 @@ it('references text primary keys for native index marker foreign keys', () => {
       }),
     ]),
   );
-  for (const name of [
-    'smart_search',
-    'smart_search_description',
-    'asset_video_duplicate_frame',
-    'video_moment_frame_embedding',
-  ]) {
+  for (const name of ['smart_search', 'smart_search_description', 'video_moment_frame_embedding']) {
     const table = schema.tables.find((table) => table.name === name)!;
     expect(table.constraints).toEqual(
       expect.arrayContaining([

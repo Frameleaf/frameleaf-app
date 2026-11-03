@@ -602,11 +602,12 @@ export const modelLadders: Readonly<Record<LadderWorkload, readonly ModelPositio
 
 /**
  * Smart search and faces (FL-455), light → heavy: the models this server can be set to (the choices
- * of Search & intelligence), then one blue stop for the model Frameleaf Cloud may run. The cloud runs
- * only the model this server uses, and only the release default today (SigLIP 384 for search,
- * buffalo_l for faces), so the blue stop repeats that model with `@cloud` and `cloudMatch`; it is left
- * off the slider while Frameleaf Cloud does not offer it (`ladderStates`). Speeds, memory and cloud
- * seconds are planning estimates; local positions have no cloud offer.
+ * of Search & intelligence), then one blue stop per model the release pins for Frameleaf Cloud
+ * (SigLIP 384 and ViT-B-32 for search, buffalo_l and antelopev2 for faces; the server's
+ * `resources/desktop` catalogue and pins). The cloud runs only the model this server uses, so a blue
+ * stop repeats its model with `@cloud` and `cloudMatch`, and the slider shows the one of the model it
+ * is set to while Frameleaf Cloud offers it (`ladderStates`). Speeds, memory and cloud seconds are
+ * planning estimates (the Cloud model ladder); local positions have no cloud offer.
  */
 export const matchedLadders: Readonly<Record<MatchedWorkload, readonly ModelPosition[]>> = Object.freeze({
   search: Object.freeze([
@@ -645,6 +646,18 @@ export const matchedLadders: Readonly<Record<MatchedWorkload, readonly ModelPosi
       vramGb: { fp16: 3 },
       speed: speeds('SOFFFFFS'),
       cloud: null,
+    }),
+    position('search', {
+      id: 'ViT-B-32__openai@cloud',
+      name: 'CLIP ViT-B-32',
+      short: 'ViT-B-32',
+      params: '151M',
+      sizeClass: 'tiny',
+      licence: 'MIT',
+      vramGb: {},
+      speed: speeds('NNNNNNNN'),
+      cloud: matchedCloud(0.008, 0.016),
+      cloudMatch: 'clip',
     }),
     position('search', {
       id: 'ViT-B-16-SigLIP-384__webli@cloud',
@@ -720,6 +733,18 @@ export const matchedLadders: Readonly<Record<MatchedWorkload, readonly ModelPosi
       cloud: matchedCloud(0.03, 0.06),
       cloudMatch: 'face',
     }),
+    position('faces', {
+      id: 'antelopev2@cloud',
+      name: 'antelopev2',
+      short: 'antelopev2',
+      params: null,
+      sizeClass: 'medium',
+      licence: 'commercial',
+      vramGb: {},
+      speed: speeds('NNNNNNNN'),
+      cloud: matchedCloud(0.04, 0.08),
+      cloudMatch: 'face',
+    }),
   ]),
 });
 
@@ -729,7 +754,8 @@ export const matchedLadders: Readonly<Record<MatchedWorkload, readonly ModelPosi
  * sliders are `matchedLadders`).
  */
 export const localOnlyModels = Object.freeze({
-  search: Object.freeze([{ id: 'clip-vit-b-32', name: 'CLIP ViT-B-32', licence: 'MIT' }]),
+  // The release default (`machineLearning.clip.modelName` in config.dto.ts), as the cloud stop above names it.
+  search: Object.freeze([{ id: 'siglip-vit-b-16-384', name: 'SigLIP ViT-B-16 384', licence: 'Apache-2.0' }]),
   faces: Object.freeze([{ id: 'insightface-buffalo_l', name: 'InsightFace buffalo_l', licence: 'commercial' }]),
   ocr: Object.freeze([{ id: 'pp-ocrv5-mobile', name: 'PP-OCRv5 mobile', licence: 'Apache-2.0' }]),
 });
@@ -768,6 +794,9 @@ export const isCloudOffered = (
 ): item is ModelPosition & { cloud: CloudOffer } =>
   !!item?.cloud && (!item.cloudMatch || cloudMatched.includes(item.cloudMatch));
 
+/** The local model a search or faces cloud stop repeats (`buffalo_l` for `buffalo_l@cloud`); any other id as is. */
+export const localTwinId = (id: string) => id.replace(/@cloud$/, '');
+
 /** Cloud positions of one workload, or of every routed ladder (search and faces only by name). */
 export const cloudPositions = (workload?: SliderWorkload, cloudMatched: CloudMatched = []) =>
   (workload ? ladderFor(workload) : Object.values(modelLadders).flat()).filter((item) =>
@@ -793,8 +822,18 @@ export const BANDS: Readonly<Record<Band, Readonly<{ id: Band; color: string; ic
     none: { id: 'none', color: 'none', icon: 'mdiCancel', labelKey: 'frameleaf_model_band_none' },
   });
 
-/** A GPU a container can use, as the hardware check reports it. */
-export type DetectedGpu = { name: string; vramGb: number; backend: string; profile: GpuProfileId | null };
+/**
+ * A GPU a container can use, as the hardware check reports it. An integrated GPU shares the
+ * computer's memory and reports none of its own (`vramGb` 0), so memory checks treat it like the
+ * processor while the work still runs on it.
+ */
+export type DetectedGpu = {
+  name: string;
+  vramGb: number;
+  backend: string;
+  profile: GpuProfileId | null;
+  integrated?: boolean;
+};
 
 /** Speed class of a model on a GPU; falls back to a memory check for profiles the research does not rate. */
 export const speedOn = (item: ModelPosition, gpu: DetectedGpu | null): SpeedClass => {
@@ -998,6 +1037,11 @@ export const positionState = (
     cpuProfile?: GpuProfileId;
     /** FL-455: what Frameleaf Cloud offers with this server's own models (search and faces). */
     cloudMatched?: CloudMatched;
+    /**
+     * FL-455: the model this server is set to for a search or faces slider; only that model's cloud
+     * stop is shown (`ladderStates`). Left out, every matched cloud stop is.
+     */
+    model?: string | null;
   } = {},
 ): PositionState => {
   const natural = bandFor(item, gpu, cpuProfile, cloudMatched);
@@ -1050,11 +1094,17 @@ export const CLOUD_DEFAULT_MODELS: Readonly<Partial<Record<SliderWorkload, strin
 
 /**
  * Every stop of a slider. A search or faces cloud stop is left out while Frameleaf Cloud does not offer
- * this server's model, rather than shown crossed out: nothing could make it available from here.
+ * this server's model, rather than shown crossed out: nothing could make it available from here. With
+ * `model`, only the cloud stop of that model is shown: the cloud runs exactly the server's model, so
+ * another pinned model's stop would promise a run that can never match.
  */
 export const ladderStates = (workload: SliderWorkload, options: Parameters<typeof positionState>[1] = {}) =>
   ladderFor(workload)
-    .filter((item) => !item.cloudMatch || isCloudOffered(item, options.cloudMatched))
+    .filter(
+      (item) =>
+        !item.cloudMatch ||
+        (isCloudOffered(item, options.cloudMatched) && (!options.model || localTwinId(item.id) === options.model)),
+    )
     .map((item) => positionState(item, options));
 
 /**

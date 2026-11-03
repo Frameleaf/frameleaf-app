@@ -133,7 +133,7 @@
       <span>{error || $t('frameleaf_setup_cloud_unreachable_body')}</span>
     </div>
     {#if onFallback}
-      <button type="button" class="button" onclick={onFallback}>{$t('frameleaf_setup_use_local')}</button>
+      <button type="button" class="button" onclick={onFallback}>{$t('frameleaf_setup_skip_for_now')}</button>
     {:else if mode === 'link'}
       <button type="button" class="auth-link" onclick={() => void cloudManager.refresh()}>
         {$t('frameleaf_personal_try_again')}

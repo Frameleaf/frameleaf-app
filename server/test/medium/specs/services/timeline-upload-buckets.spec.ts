@@ -83,7 +83,7 @@ describe('timeline buckets after upload and metadata extraction (FL-432)', () =>
         SystemMetadataRepository,
         TagRepository,
       ],
-      mock: [EventRepository, StorageRepository, LoggingRepository, MapRepository],
+      mock: [EventRepository, JobRepository, StorageRepository, LoggingRepository, MapRepository],
     });
     extraction.ctx.getMock(EventRepository).emit.mockResolvedValue();
     extraction.ctx.getMock(StorageRepository).stat.mockResolvedValue({

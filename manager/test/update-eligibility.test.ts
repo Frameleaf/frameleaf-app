@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { Operations } from '../src/operations.js';
+import { Releases } from '../src/releases.js';
 import { compareReleases } from '../src/release-order.js';
 import { Store } from '../src/store.js';
 import {
@@ -112,4 +113,180 @@ test('navigation highlights the section an installed server operation belongs to
   assert.equal(navSection('restore', false), 'welcome');
   assert.equal(navSection('progress', false, 'install'), 'welcome');
   assert.equal(navSection('phone', true), 'welcome');
+});
+
+// Issue 626: a failed update keeps the operation lock, so Resume must move off a withdrawn release.
+for (const prepared of [false, true])
+for (const missing of [false, true])
+test(`resuming an update whose release was ${missing ? 'removed' : 'withdrawn'} retries with the newest offered release (prepared=${prepared})`, async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-update-retarget-'));
+  const store = new Store(directory);
+  try {
+    const release = (tag: string) => ({
+      nas: {
+        tag,
+        platforms: ['linux/amd64'],
+        images: {
+          postgres: tag === 'frameleaf-v1.1.19' ? 'postgres:20' : 'postgres:19',
+        },
+      },
+    });
+    await mkdir(join(directory, 'stack'));
+    await writeFile(
+      join(directory, 'stack', 'compose.json'),
+      JSON.stringify({ services: { database: { image: 'postgres:19' } } }),
+    );
+    // 1.1.19 changes PostgreSQL, which needs a restore rather than an update.
+    const offered = new Set([
+      'frameleaf-v1.1.16',
+      'frameleaf-v1.1.18',
+      'frameleaf-v1.1.19',
+    ]);
+    const acquired: string[] = [];
+    t.mock.method(globalThis, 'fetch', async (url: string) => {
+      const tag = url.split('/').at(-1)!;
+      if (missing && !offered.has(tag)) return new Response('{}', { status: 404 });
+      return new Response(JSON.stringify({
+        draft: false, prerelease: false, body: offered.has(tag) ? '' : 'withdrawn: unsafe',
+      }));
+    });
+    const client = new Releases(directory, 'seed');
+    const releases = {
+      eligible: client.eligible.bind(client),
+      // Publication order, not version order: a 1.1.18 backport published after 1.1.19.
+      available: async () => [
+        { tag: 'frameleaf-v1.1.18' },
+        { tag: 'frameleaf-v1.1.19' },
+        { tag: 'frameleaf-v1.1.16' },
+      ],
+      acquire: async (tag: string) => (acquired.push(tag), release(tag)),
+    };
+    const operations = new Operations(
+      store,
+      {} as never,
+      releases as never,
+      {} as never,
+      [],
+      {} as never,
+    );
+    const retarget = (operation: unknown, review: unknown) =>
+      (operations as any).retargetWithdrawnUpdate(operation, review);
+    const { operation } = store.start('update', 'k', { reviewId: 'r' });
+    operation.completed = [
+      'download-images',
+      'stop-application',
+      'database-checkpoint',
+    ];
+    operation.step = 'apply-release';
+    if (prepared) {
+      store.set('installation', { release: 'frameleaf-v1.1.17' });
+      operation.receipts['release-start-state'] = 'prepared';
+    }
+    operation.receipts['database-checkpoint'] = 'snapshot';
+    store.save(operation);
+    const review = {
+      current: { release: 'frameleaf-v1.1.16' },
+      platform: 'linux/amd64',
+      release: release('frameleaf-v1.1.17'),
+    };
+
+    const retargeted = await retarget(operation, review);
+    assert.equal(retargeted.release.nas.tag, 'frameleaf-v1.1.18');
+    assert.equal(retargeted.current.release, 'frameleaf-v1.1.16');
+    assert.deepEqual(operation.completed, [
+      'stop-application',
+      'database-checkpoint',
+    ]);
+    assert.equal(operation.receipts['database-checkpoint'], 'snapshot');
+    assert.equal(
+      store.get<any>('update:r').release.nas.tag,
+      'frameleaf-v1.1.18',
+    );
+
+    // A release that is still offered is retried as it is.
+    assert.equal(await retarget(operation, retargeted), retargeted);
+    assert.deepEqual(acquired, ['frameleaf-v1.1.19', 'frameleaf-v1.1.18']);
+    offered.delete('frameleaf-v1.1.18');
+    await assert.rejects(
+      retarget(operation, retargeted),
+      /release_not_eligible/,
+    );
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true });
+  }
+});
+
+for (const state of ['complete', 'legacy', 'starting'])
+test(`an interrupted update keeps its selected release (state=${state})`, async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-update-applied-'));
+  const store = new Store(directory);
+  try {
+    let checks = 0;
+    const operations = new Operations(store, {} as never, {
+      eligible: async () => { checks++; throw new Error('release no longer available'); },
+    } as never, {} as never, [], {} as never);
+    const { operation } = store.start('update', 'applied', { reviewId: 'r' });
+    operation.state = 'interrupted';
+    operation.step = 'apply-release';
+    const completed = ['download-images', 'stop-application', 'database-checkpoint'];
+    if (state === 'complete') completed.push('apply-release');
+    else store.set('installation', { release: 'frameleaf-v1.1.17' });
+    if (state === 'starting') operation.receipts['release-start-state'] = 'starting';
+    operation.completed = [...completed];
+    store.save(operation);
+    const review = { release: { nas: { tag: 'frameleaf-v1.1.17' } } };
+    assert.equal(await (operations as any).retargetWithdrawnUpdate(operation, review), review);
+    assert.equal(checks, 0);
+    assert.deepEqual(operation.completed, completed);
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true });
+  }
+});
+
+for (const interrupt of ['selected', 'starting'])
+test(`update startup boundary is durable when interrupted at ${interrupt}`, async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-update-boundary-'));
+  const store = new Store(directory);
+  try {
+    const image = `fixture.invalid/server@sha256:${'a'.repeat(64)}`;
+    const current = { id: 'a'.repeat(12), project: 'frameleaf-test', release: 'frameleaf-v1.1.16',
+      ml: false, mounts: [], origin: 'new_library', port: 2283, databasePath: join(directory, 'db') };
+    const release = { directory, nas: { tag: 'frameleaf-v1.1.17',
+      images: { server: image, postgres: image, machineLearning: image } } };
+    await mkdir(join(directory, 'stack'));
+    await writeFile(join(directory, 'docker-compose.yml'), JSON.stringify({ services: {
+      database: {}, 'frameleaf-server': {}, 'frameleaf-machine-learning': {},
+    } }));
+    await writeFile(join(directory, 'stack', 'compose.json'), JSON.stringify({ services: { database: { image } } }));
+    store.set('installation', current);
+    store.set('database-password', 'fixture-only');
+    const { operation } = store.start('update', 'boundary', { reviewId: 'r' });
+    operation.completed = ['download-images', 'stop-application', 'database-checkpoint'];
+    store.save(operation);
+    const persistedState = () => store.history()[0].receipts['release-start-state'];
+    const originalSet = store.set.bind(store);
+    t.mock.method(store, 'set', (key: string, value: unknown) => {
+      originalSet(key, value);
+      if (key === 'installation') {
+        assert.equal(persistedState(), 'prepared');
+        if (interrupt === 'selected') throw new Error('interrupted-selected');
+      }
+    });
+    const operations = new Operations(store, {
+      compose: async () => {
+        assert.equal(persistedState(), 'starting');
+        throw new Error('interrupted-starting');
+      },
+    } as never, { eligible: async () => {} } as never, {} as never, [], { verify: async () => {} } as never);
+    (operations as any).fencing = { assertMedia: async () => {} };
+    await assert.rejects((operations as any).applyUpdate(operation, { current, release }),
+      new RegExp(`interrupted-${interrupt}`));
+    assert.equal(persistedState(), interrupt === 'selected' ? 'prepared' : 'starting');
+    assert.equal(store.get<any>('installation').release, release.nas.tag);
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true });
+  }
 });

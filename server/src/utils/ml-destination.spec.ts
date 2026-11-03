@@ -870,6 +870,7 @@ describe('selectMlDestination', () => {
     });
     expect(d.machineLearningRepository.probe).toHaveBeenCalledWith(expect.objectContaining(endpoint), {
       maxAgeMs: expect.any(Number),
+      includeHardware: false,
     });
     expect(d.mlDestinationRepository.recordProbe).not.toHaveBeenCalled();
 

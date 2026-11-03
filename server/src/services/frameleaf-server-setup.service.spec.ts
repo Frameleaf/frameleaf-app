@@ -55,7 +55,7 @@ describe(FrameleafServerSetupService.name, () => {
 
     await expect(sut.claimWithPassword(dto, phone)).resolves.toMatchObject({ email: 'me@example.test' });
     expect(mocks.user.create).toHaveBeenCalledWith(
-      expect.objectContaining({ isAdmin: true, email: 'me@example.test' }),
+      expect.objectContaining({ isAdmin: true, email: 'me@example.test', shouldChangePassword: false }),
     );
 
     // once an administrator exists, setup is over

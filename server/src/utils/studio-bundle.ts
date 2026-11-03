@@ -82,6 +82,8 @@ export const STUDIO_BUNDLE_MAX_DIRECTORY_BYTES = 8 * 1024 * 1024;
 export const STUDIO_BUNDLE_MAX_NAME_LENGTH = 512;
 /** Chunk size for streaming reads out of the archive. */
 export const STUDIO_BUNDLE_READ_CHUNK = 4 * 1024 * 1024;
+/** Compressed bytes fed to the inflater at a time when its output is copied out (`onData`). */
+const STUDIO_BUNDLE_INFLATE_SLICE = 16 * 1024;
 
 /** The two kinds the bundle runner claims, and nothing else. */
 export const STUDIO_BUNDLE_KINDS: readonly MediaOperationKind[] = [
@@ -1027,8 +1029,14 @@ export const digestZipEntry = async (
         inflate.destroy();
         refuse('bundle_corrupt', `${entry.name.slice(0, 80)} is truncated`);
       }
-      await write(chunk);
-      await drain();
+      // zlib inflates a whole written chunk before its callback, ignoring backpressure, so with
+      // onData the read is fed in small slices: deflate tops out near 1032:1, which bounds the
+      // output held in `pending` to about 16 MiB instead of everything one read inflates to.
+      const slice = options.onData ? STUDIO_BUNDLE_INFLATE_SLICE : chunk.length;
+      for (let offset = 0; offset < chunk.length && !state.failure; offset += slice) {
+        await write(chunk.subarray(offset, offset + slice));
+        await drain();
+      }
       if (!state.failure) {
         await options.onProgress?.(produced);
       }

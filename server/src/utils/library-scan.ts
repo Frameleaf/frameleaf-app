@@ -16,6 +16,8 @@ export type LibraryScanTrigger = 'manual' | 'automatic';
 export type LibraryScanSnapshot = {
   libraryId: string;
   trigger: LibraryScanTrigger;
+  /** FL-539: "Check every file again": every file is read again, not only the changed ones. */
+  everyFile?: boolean;
 };
 
 /**
@@ -65,6 +67,7 @@ export const parseLibraryScanSnapshot = (value: unknown): LibraryScanSnapshot =>
   return {
     libraryId: snapshot.libraryId,
     trigger: snapshot.trigger === 'automatic' ? 'automatic' : 'manual',
+    ...(snapshot.everyFile === true && { everyFile: true }),
   };
 };
 

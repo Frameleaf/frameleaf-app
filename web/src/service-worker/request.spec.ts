@@ -46,6 +46,18 @@ describe('service worker asset requests', () => {
     await expect(text(second)).resolves.toBe('image');
   });
 
+  it('releases the unread original body once every caller has its clone', async () => {
+    const first = handleFetch(url('release'));
+    const second = handleFetch(url('release'));
+    const cancel = vi.spyOn(ReadableStream.prototype, 'cancel');
+    resolvers[0](new Response('image'));
+    // the clones still read in full after the unread original is cancelled
+    await expect(text(first)).resolves.toBe('image');
+    await expect(text(second)).resolves.toBe('image');
+    expect(cancel).toHaveBeenCalledOnce();
+    cancel.mockRestore();
+  });
+
   it('goes back to the server once the earlier response has arrived', async () => {
     const first = handleFetch(url('b'));
     resolvers[0](new Response('allowed'));

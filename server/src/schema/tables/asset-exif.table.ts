@@ -12,7 +12,7 @@ import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import type { ImageEncodingInfo } from 'src/dtos/image-encoding.dto.js';
 import { LockableProperty } from 'src/database.js';
 import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
-import { asset_exif_landmark_match } from 'src/schema/functions.js';
+import { asset_exif_landmark_match, photo_location_invalidate } from 'src/schema/functions.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 
 @Table('asset_exif')
@@ -43,6 +43,7 @@ import { AssetTable } from 'src/schema/tables/asset.table.js';
   scope: 'row',
   function: asset_exif_landmark_match,
 })
+@AfterUpdateTrigger({ name: 'asset_exif_photo_location_invalidate', scope: 'row', function: photo_location_invalidate })
 export class AssetExifTable {
   @ForeignKeyColumn(() => AssetTable, { onDelete: 'CASCADE', primary: true })
   assetId!: string;
@@ -88,6 +89,9 @@ export class AssetExifTable {
 
   @Column({ type: 'double precision', nullable: true })
   longitude!: number | null;
+
+  @Column({ type: 'double precision', nullable: true })
+  gpsAccuracyM!: number | null;
 
   @Column({ type: 'character varying', nullable: true, index: true })
   city!: string | null;

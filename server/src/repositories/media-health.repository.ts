@@ -15,7 +15,7 @@ import {
   MediaHealthStatus,
   PhysicalFileType,
 } from 'src/enum.js';
-import { BUDDY_CAPTURE_LOCK, lockFilePath } from 'src/repositories/physical-file.repository.js';
+import { BUDDY_CAPTURE_LOCK, countPathReferences, lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
 import {
   AssetHealthCandidateTable,
@@ -24,6 +24,7 @@ import {
 } from 'src/schema/tables/asset-health.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { anyUuid, asUuid, lockedOwnerScope, withHiddenContentFilter } from 'src/utils/database.js';
+import { libraryPathOnRelink } from 'src/utils/library-path.js';
 import { isLocked } from 'src/utils/locked.js';
 /**
  * What an interactive read may show: the viewer's hidden-content settings, and their Locked media only
@@ -415,6 +416,19 @@ export class MediaHealthRepository {
       retainedPath: string;
     }>) {
       tracked.add(retainedPath);
+    }
+    // Frameleaf's own outputs (Studio exports, develop masters, backups, Unused files…) live in library
+    // storage too; restoring one would duplicate it. Same authoritative count the file trash uses.
+    // ponytail: a few queries per untracked file, fine while untracked files stay rare.
+    const untracked = paths.filter((candidate) => !tracked.has(candidate));
+    if (untracked.length > 0) {
+      await this.db.transaction().execute(async (trx) => {
+        for (const candidate of untracked) {
+          if ((await countPathReferences(trx, candidate)) > 0) {
+            tracked.add(candidate);
+          }
+        }
+      });
     }
     return tracked;
   }
@@ -815,8 +829,10 @@ export class MediaHealthRepository {
     limit: number;
     /** An incremental scan (FL-69): only assets changed since then. */
     changedSince?: Date;
+    /** FL-737: a scan of chosen photos, whoever owns them (the service checked they may be scanned). */
+    assetIds?: string[];
   }): Promise<MediaHealthAsset[]> {
-    return this.scanAssetQuery({ ownerId: options.ownerId })
+    return this.scanAssetQuery(options.assetIds ? { assetIds: options.assetIds } : { ownerId: options.ownerId })
       .$if(!!options.afterId, (qb) => qb.where('asset.id', '>', asUuid(options.afterId!)))
       .$if(!!options.changedSince, (qb) => qb.where('asset.updatedAt', '>', options.changedSince!))
       .orderBy('asset.id', 'asc')
@@ -1121,6 +1137,8 @@ export class MediaHealthRepository {
           .updateTable('asset')
           .set({
             originalPath: recoveredPath,
+            // FL-417: the recovered file is the photo's own
+            libraryPath: libraryPathOnRelink(recoveredPath, true),
             checksum: input.sha256,
             checksumAlgorithm: ChecksumAlgorithm.sha256File,
             fileModifiedAt: input.fileModifiedAt,

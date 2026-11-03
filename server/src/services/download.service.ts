@@ -15,8 +15,9 @@ import { BaseService } from 'src/services/base.service.js';
 import { AssetDetails, assetDetailsXmp } from 'src/utils/asset-details-xmp.js';
 import { DecimalSize } from 'src/utils/bytes.js';
 import { hasPublishedDevelopRendition } from 'src/utils/develop-envelope.js';
-import { nextArchiveName } from 'src/utils/file.js';
+import { lockedViewerOf, nextArchiveName } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions, getOthersRulesQueryOptions } from 'src/utils/hidden-content.js';
+import { lockedArchiveInput } from 'src/utils/locked-read.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { OriginalLocationPolicy, getOriginalLocationPolicies } from 'src/utils/partner-location.js';
 import { getPreferences } from 'src/utils/preferences.js';
@@ -109,10 +110,20 @@ export class DownloadService extends BaseService {
   }
 
   async downloadArchive(auth: AuthDto, request: DownloadArchiveDto): Promise<ReadStreamResponse> {
+    if (request.includeLibraryMetadata && (auth.sharedLink || auth.apiKey || auth.system)) {
+      throw new ForbiddenException('Private library export requires a signed-in account');
+    }
+    if (
+      (request.includeLibraryMetadata && request.edited) ||
+      (!request.includeLibraryMetadata && (request.includeSources || request.bookmarkIds?.length))
+    ) {
+      throw new BadRequestException('Portable library exports require a manifest and original files');
+    }
     await this.requireAccess({ auth, permission: Permission.AssetDownload, ids: request.assetIds });
 
     const dto = await this.withDownloadPreferences(auth, request);
-    const assets = await this.assetRepository.getForOriginals(dto.assetIds, dto.edited ?? false);
+    const assets =
+      dto.assetIds.length === 0 ? [] : await this.assetRepository.getForOriginals(dto.assetIds, dto.edited ?? false);
     // FL-54: the archive holds each file's bytes, embedded location included, so apply the same policy
     // as a single original download before anything is streamed
     const policyFor = getOriginalLocationPolicies({ auth, assets, purpose: 'download' });
@@ -121,6 +132,14 @@ export class DownloadService extends BaseService {
     }
 
     const assetMap = new Map(assets.map((asset) => [asset.id, asset]));
+    // shortcut: portable v1 cannot retain additional-original relationships; lift after versioned export/restore supports them.
+    if (
+      dto.includeLibraryMetadata &&
+      assets.length > 0 &&
+      (await this.downloadRepository.hasAdditionalOriginals(assetMap.keys().toArray()))
+    ) {
+      throw new BadRequestException('Portable library export cannot yet preserve photos with multiple originals');
+    }
     const disposition = dto.archiveName && `attachment; filename*=UTF-8''${encodeURIComponent(dto.archiveName)}.zip`;
 
     const sidecars = dto.includeSidecar ? await this.getSidecarPaths(assets.map(({ id }) => id)) : new Map();
@@ -131,35 +150,67 @@ export class DownloadService extends BaseService {
         )
       : new Map<string, AssetDetails>();
     const developed = dto.edited ? await this.getShownDevelopMasters(auth, assets) : new Map<string, string>();
-    const zip = this.storageRepository.createZipStream();
     const paths = new Map<string, number>();
-
-    for (const assetId of dto.assetIds) {
-      const found = assetMap.get(assetId);
-      if (!found) {
-        continue;
-      }
-
-      // As shown: the owner's current develop version takes the place of any other edited file.
-      const asset = { ...found, editedPath: developed.get(assetId) ?? found.editedPath };
-      const name = nextArchiveName(paths, archiveFileName(asset, dto));
-      zip.addFile(await this.resolveArchivePath(asset, dto), name);
-
-      // ACCOUNT-P5: "IMG_1.HEIC.xmp" beside "IMG_1.HEIC", so a RAW and a JPEG of one shot never share one
-      const sidecar = sidecars.get(assetId);
-      const generated = details.get(assetId);
-      if (sidecar) {
-        zip.addFile(sidecar, nextArchiveName(paths, `${name}.xmp`));
-      } else if (generated) {
-        // FL-423: a photo without a sidecar gets one made from what this person's asset response shows
-        const xmp = assetDetailsXmp(generated, { orientation: !usesEditedFile(asset, dto) });
-        zip.addFile(Buffer.from(xmp, 'utf8'), nextArchiveName(paths, `${name}.xmp`));
+    const manifestNames = new Map<string, string>();
+    if (dto.includeLibraryMetadata) {
+      nextArchiveName(paths, 'frameleaf-library.json');
+      for (const id of dto.assetIds) {
+        const asset = assetMap.get(id);
+        if (asset) manifestNames.set(id, nextArchiveName(paths, archiveFileName(asset, dto)));
       }
     }
+    const manifest = dto.includeLibraryMetadata
+      ? await this.downloadRepository.getLibraryManifest(
+          auth,
+          [...manifestNames].map(([id, file]) => ({ id, file })),
+          dto.bookmarkIds ?? [],
+          dto.includeSources ?? false,
+        )
+      : undefined;
+    const zip = this.storageRepository.createZipStream();
 
-    void zip.finalize();
+    try {
+      for (const assetId of dto.assetIds) {
+        const found = assetMap.get(assetId);
+        if (!found) {
+          continue;
+        }
 
-    return { stream: zip.stream, disposition };
+        // As shown: the owner's current develop version takes the place of any other edited file.
+        const asset = { ...found, editedPath: developed.get(assetId) ?? found.editedPath };
+        const name = manifestNames.get(assetId) ?? nextArchiveName(paths, archiveFileName(asset, dto));
+        // FL-721 (spec §8.1): an encrypted file goes in decrypted, as a stream for this viewer
+        zip.addFile(await lockedArchiveInput(await this.resolveArchivePath(asset, dto), lockedViewerOf(auth)), name);
+
+        // ACCOUNT-P5: "IMG_1.HEIC.xmp" beside "IMG_1.HEIC", so a RAW and a JPEG of one shot never share one
+        const sidecar = sidecars.get(assetId);
+        const generated = details.get(assetId);
+        if (sidecar) {
+          zip.addFile(await lockedArchiveInput(sidecar, lockedViewerOf(auth)), nextArchiveName(paths, `${name}.xmp`));
+        } else if (generated) {
+          // FL-423: a photo without a sidecar gets one made from what this person's asset response shows
+          const xmp = assetDetailsXmp(generated, { orientation: !usesEditedFile(asset, dto) });
+          zip.addFile(Buffer.from(xmp, 'utf8'), nextArchiveName(paths, `${name}.xmp`));
+        }
+      }
+
+      if (!dto.edited && assets.length > 0) {
+        for await (const original of this.downloadRepository.getAdditionalOriginals(assetMap.keys().toArray())) {
+          zip.addFile(
+            await lockedArchiveInput(await this.resolveArchivePath(original, dto), lockedViewerOf(auth)),
+            nextArchiveName(paths, original.originalFileName),
+          );
+        }
+      }
+
+      if (manifest) zip.addFile(Buffer.from(JSON.stringify(manifest), 'utf8'), 'frameleaf-library.json');
+      void zip.finalize();
+
+      return { stream: zip.stream, disposition };
+    } catch (error) {
+      zip.stream.destroy();
+      throw error;
+    }
   }
 
   /**

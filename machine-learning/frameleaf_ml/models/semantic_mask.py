@@ -22,6 +22,40 @@ MODEL_NAME = "frameleaf-florence2-sam2.1"
 MANIFEST = json.loads(Path(__file__).with_name("semantic-mask-models.json").read_text())
 
 
+def pinned_snapshot_paths(cache_dir: Path) -> list[Path]:
+    """The two manifest-verified local snapshots (Florence-2, SAM2.1), in manifest order. Never downloads.
+
+    `SemanticMaskModel._load` keeps the same steps inline: the boundary tests execute that method alone.
+    """
+    paths = []
+    for model in MANIFEST:
+        try:
+            path = Path(
+                snapshot_download(
+                    model["repository"],
+                    revision=model["revision"],
+                    cache_dir=cache_dir / "hub",
+                    local_files_only=True,
+                )
+            )
+            verify_snapshot(path, model["files"])
+        except (OSError, ValueError, LocalEntryNotFoundError) as error:
+            raise ModelUnavailableError(
+                "Pinned semantic model snapshots are absent or unverified; preload them locally"
+            ) from error
+        paths.append(path)
+    return paths
+
+
+def resolve_device(torch: Any, device_name: str) -> str:
+    """`auto` picks CUDA when Torch reports it; an explicit `cuda` without it is a visible error."""
+    if device_name == "auto":
+        device_name = "cuda" if torch.cuda.is_available() else "cpu"
+    if device_name == "cuda" and not torch.cuda.is_available():
+        raise ModelUnavailableError("CUDA was requested but is unavailable")
+    return device_name
+
+
 class SemanticMaskModel(InferenceModel):
     """Native, offline Florence-2 proposals refined by SAM2.1; no model Python/pickle is loaded."""
 

@@ -6,7 +6,7 @@ permissions:
   contents: read
 jobs:
   development:
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/main' }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
@@ -159,7 +159,7 @@ jobs:
           set -o pipefail
           pnpm --dir server exec node dist/bin/sync-sql.js 2>&1 | tee "$RUNNER_TEMP/frameleaf-development/reports/sql-queries.log"
       - name: Report server lint
-        timeout-minutes: 10
+        timeout-minutes: 20
         id: lint
         if: ${{ always() && steps.install.outcome == 'success' }}
         continue-on-error: true

@@ -96,8 +96,9 @@ services:
       FRAMELEAF_SUPPORT_URL: https://github.com/Frameleaf/frameleaf-app/issues
       FRAMELEAF_HELMET_FILE: "true"
     ports:
-      - 9230:9230
-      - 9231:9231
+      # Node inspector ports run code as the server: keep them on loopback.
+      - 127.0.0.1:9230:9230
+      - 127.0.0.1:9231:9231
       - 2283:2283
     depends_on:
       immich-init:

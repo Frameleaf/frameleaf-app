@@ -8,8 +8,12 @@
    * The counts are the work queues the Job manager shows (`getQueues`): what is queued or being read
    * for each feature, plus Library Care's count of photos whose details have not been read yet. A
    * paused queue is the one held-up state the app knows; "Finish now" resumes it the way the Job
-   * manager does, or queues the photo details still to read. How many photos each feature has
-   * finished, and how long the rest will take, wait for the server (follow-up of FL-366).
+   * manager does, or queues the photo details still to read.
+   *
+   * FL-521: Visual search, Faces, Text in photos, Descriptions and Locked detection say "N of M read"
+   * from the server (`getLibraryProgress`), with roughly how long the rest takes at the recent rate.
+   * When the work is sent to another computer that cannot take it now, the row and the answer say
+   * "Waiting for a computer" and name it (`getMlCapabilities`), with a way to Computers.
    *
    * The two switches are today's settings in the prototype's words: "Keep what I wrote myself"
    * (`libraryCare.manualMetadata`) and "Redo only what changed" (`libraryCare.incrementalEnrichment`).
@@ -27,17 +31,25 @@
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
   import { isFeatureOff, jobCounts, jobQueue } from '$lib/frameleaf/job-queues';
+  import { aboutTime, FEATURE_WORKLOAD, waitingFor } from '$lib/frameleaf/library-progress';
+  import { backupWhen } from '$lib/frameleaf/backup-overview';
+  import { locale } from '$lib/stores/preferences.store';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { handleResumeQueue } from '$lib/services/queue.service';
   import { handleError } from '$lib/utils/handle-error';
   import {
+    getLibraryProgress,
+    getMlCapabilities,
     getQueues,
     getSummary,
+    LibraryProgressFeature,
     QueueCommand,
     QueueName,
     runQueueCommandLegacy,
+    type LibraryProgressResponseDto,
+    type MlCapabilitiesResponseDto,
     type QueueResponseDto,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
@@ -47,6 +59,8 @@
     mdiCheckCircleOutline,
     mdiChevronRight,
     mdiCommentTextOutline,
+    mdiDesktopTowerMonitor,
+    mdiEyeOffOutline,
     mdiFaceRecognition,
     mdiImageMultipleOutline,
     mdiImageSearchOutline,
@@ -63,8 +77,15 @@
   };
   let { pollMs = 5000 }: Props = $props();
 
-  type FeatureId = 'search' | 'faces' | 'text' | 'captions' | 'details' | 'alike';
-  type Feature = { id: FeatureId; icon: string; queues: QueueName[]; href?: string };
+  type FeatureId = 'search' | 'faces' | 'text' | 'captions' | 'locked' | 'details' | 'alike';
+  type Feature = {
+    id: FeatureId;
+    icon: string;
+    queues: QueueName[];
+    href?: string;
+    /** FL-521: the server counts how far this feature has got. */
+    counted?: LibraryProgressFeature;
+  };
 
   /** In the prototype's order, with the photo details every other feature starts from. */
   const FEATURES: readonly Feature[] = [
@@ -73,24 +94,35 @@
       icon: mdiImageSearchOutline,
       queues: [QueueName.SmartSearch],
       href: commandCenterUrl('intelligence', 'smart-search'),
+      counted: LibraryProgressFeature.Search,
     },
     {
       id: 'faces',
       icon: mdiFaceRecognition,
       queues: [QueueName.FaceDetection, QueueName.FacialRecognition],
       href: commandCenterUrl('intelligence', 'faces'),
+      counted: LibraryProgressFeature.Faces,
     },
     {
       id: 'text',
       icon: mdiTextRecognition,
       queues: [QueueName.Ocr],
       href: commandCenterUrl('intelligence', 'documents'),
+      counted: LibraryProgressFeature.Text,
     },
     {
       id: 'captions',
       icon: mdiCommentTextOutline,
       queues: [QueueName.ImageDescription],
       href: commandCenterUrl('intelligence', 'descriptions'),
+      counted: LibraryProgressFeature.Captions,
+    },
+    {
+      id: 'locked',
+      icon: mdiEyeOffOutline,
+      queues: [QueueName.NsfwDetection],
+      href: commandCenterUrl('intelligence', 'sensitive-detection'),
+      counted: LibraryProgressFeature.Locked,
     },
     { id: 'details', icon: mdiCameraOutline, queues: [QueueName.MetadataExtraction] },
     {
@@ -125,14 +157,30 @@
   let detailsPending = $state(0);
   let loaded = $state(false);
   let said = $state('');
+  /** FL-521: N of M read with the recent rate, and whether the computer the work goes to can take it. */
+  let reading = $state<LibraryProgressResponseDto>();
+  let capabilities = $state<MlCapabilitiesResponseDto>();
   let finishing = $state(false);
 
+  /** An answer, or nothing when the server could not give one. */
+  const quietly = async <T,>(call: () => Promise<T>): Promise<T | undefined> => {
+    try {
+      return await call();
+    } catch {
+      return undefined;
+    }
+  };
+
   const load = async () => {
-    const [list, health] = await Promise.all([
+    const [list, health, progress, abilities] = await Promise.all([
       getQueues().catch(() => undefined),
       getSummary({ allAccounts: true }).catch(() => undefined),
+      quietly(getLibraryProgress),
+      quietly(getMlCapabilities),
     ]);
     queues = list;
+    reading = progress;
+    capabilities = abilities;
     detailsPending = health?.queues.enrichmentPending ?? 0;
     loaded = true;
   };
@@ -151,6 +199,12 @@
     failed: number;
     /** The photo details still to read, when nothing has queued them yet. */
     unqueued: boolean;
+    /** FL-521: how many are read of how many, and about how long the rest takes. */
+    done?: number;
+    total?: number;
+    secondsLeft?: number | null;
+    /** FL-521: the computer this work is sent to, when it cannot take it now. */
+    waiting?: { name: string; since: string | null; cloud: boolean };
   };
 
   const progressOf = (feature: Feature): Progress => {
@@ -173,13 +227,24 @@
     if (feature.id === 'details') {
       left = Math.max(left, detailsPending);
     }
+    const counted = feature.counted ? reading?.features.find((item) => item.feature === feature.counted) : undefined;
+    if (counted) {
+      // The server's count includes what nothing has queued yet.
+      left = Math.max(left, counted.total - counted.done);
+    }
+    const isOff = off && feature.id !== 'details';
     return {
-      off: off && feature.id !== 'details',
+      off: isOff,
       paused: found.filter((queue) => queue.isPaused).map((queue) => queue.name),
       left,
       active,
       failed,
       unqueued,
+      done: counted?.done,
+      total: counted?.total,
+      secondsLeft: counted?.secondsLeft,
+      waiting:
+        feature.counted && !isOff && left > 0 ? waitingFor(capabilities, FEATURE_WORKLOAD[feature.counted]) : undefined,
     };
   };
 
@@ -188,6 +253,10 @@
   const left = $derived(working.reduce((sum, row) => sum + row.left, 0));
   const paused = $derived(working.flatMap((row) => row.paused));
   const unqueued = $derived(working.some((row) => row.unqueued));
+  /** FL-521: the computers work is waiting for, each named once. */
+  const waitingOn = $derived([...new Set(working.flatMap((row) => (row.waiting ? [row.waiting.name] : [])))]);
+  /** The photos the waiting work still has to read (the largest of the waiting features). */
+  const waitingLeft = $derived(Math.max(0, ...working.filter((row) => row.waiting).map((row) => row.left)));
   const finishable = $derived(paused.length > 0 || unqueued);
 
   /** "Finish now": a held queue is resumed, as the Job manager does; photo details still to read are queued. */
@@ -212,7 +281,24 @@
     }
   };
 
+  const when = (value: string) => {
+    const said = backupWhen(new Date(value), { locale: $locale });
+    return $t(said.key, { values: said.values });
+  };
+  const about = (seconds: number) => {
+    const time = aboutTime(seconds);
+    return $t(time.key, { values: time.values });
+  };
+
   const hero = $derived.by(() => {
+    if (waitingOn.length > 0) {
+      return {
+        tone: 'warn' as const,
+        icon: mdiDesktopTowerMonitor,
+        title: $t('frameleaf_care_prog_hero_waiting', { values: { name: waitingOn.join(', ') } }),
+        body: $t('frameleaf_care_prog_hero_waiting_body', { values: { count: waitingLeft } }),
+      };
+    }
     if (paused.length > 0) {
       return {
         tone: 'warn' as const,
@@ -248,11 +334,29 @@
         note: $t('frameleaf_care_prog_left', { values: { count: row.left } }),
       };
     }
+    if (row.waiting) {
+      return {
+        tone: 'warn',
+        status: $t('frameleaf_care_prog_waiting_computer'),
+        note: row.waiting.since
+          ? $t('frameleaf_care_prog_waiting_since', {
+              values: { name: row.waiting.name, when: when(row.waiting.since) },
+            })
+          : $t('frameleaf_care_prog_waiting_named', { values: { name: row.waiting.name } }),
+      };
+    }
     if (row.left > 0) {
+      const read =
+        row.done !== undefined && row.total !== undefined && row.total > 0
+          ? $t('frameleaf_care_prog_read_of', { values: { done: row.done, total: row.total } })
+          : $t('frameleaf_care_prog_left', { values: { count: row.left } });
+      const pace = row.active > 0 ? $t('frameleaf_care_prog_reading_now') : $t('frameleaf_care_prog_waiting_turn');
       return {
         tone: 'off',
-        status: $t('frameleaf_care_prog_left', { values: { count: row.left } }),
-        note: row.active > 0 ? $t('frameleaf_care_prog_reading_now') : $t('frameleaf_care_prog_waiting_turn'),
+        status: read,
+        note: row.secondsLeft
+          ? $t('frameleaf_care_prog_time_left', { values: { time: about(row.secondsLeft) } })
+          : pace,
       };
     }
     if (row.failed > 0) {
@@ -261,6 +365,9 @@
         status: $t('frameleaf_care_prog_failed', { values: { count: row.failed } }),
         note: $t('frameleaf_care_prog_failed_note'),
       };
+    }
+    if (row.total !== undefined && row.total > 0) {
+      return { tone: 'good', status: $t('frameleaf_care_prog_all_read', { values: { count: row.total } }) };
     }
     return { tone: 'good', status: $t('frameleaf_care_prog_none') };
   };
@@ -279,6 +386,11 @@
     label={$t('frameleaf_care_prog_hero_label')}
   >
     {#snippet actions()}
+      {#if loaded && waitingOn.length > 0}
+        <Button variant="primary" onclick={() => goto(commandCenterUrl('processing', 'computers'))}>
+          {$t('frameleaf_care_prog_open_computers')}
+        </Button>
+      {/if}
       {#if loaded && finishable}
         <Button variant="primary" disabled={finishing || held} onclick={finishNow}>
           <Icon icon={mdiPlayOutline} size="1em" aria-hidden />

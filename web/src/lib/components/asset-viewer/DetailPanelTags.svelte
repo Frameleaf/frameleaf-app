@@ -233,7 +233,14 @@
     if (!ids.includes(asset.id) || isSaving) {
       return;
     }
-    await refresh();
+    const isCurrent = captureView();
+    try {
+      await refresh(isCurrent);
+    } catch (error) {
+      if (isCurrent()) {
+        handleError(error, $t('frameleaf_info_error_reload_failed'));
+      }
+    }
   };
 </script>
 

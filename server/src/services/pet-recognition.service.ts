@@ -10,6 +10,7 @@ import {
   MlAdmissionRefusal,
   MlDestinationKind,
   MlWorkload,
+  PetObservationState,
   PetRecognitionUnavailableReason,
   QueueName,
 } from 'src/enum.js';
@@ -343,10 +344,13 @@ export class PetRecognitionService {
         return 0;
       }
 
-      const answered = new Set(
-        (await this.petRepository.getDecisionsForAsset(asset.ownerId, asset.id)).map(({ petId }) => petId),
-      );
-      const matches = matchPets(embedding, reading, await this.getReferences(asset.ownerId, asset.id), answered);
+      const decisions = await this.petRepository.getDecisionsForAsset(asset.ownerId, asset.id);
+      const answered = new Set(decisions.map(({ petId }) => petId));
+      // A photo the owner already matched to a pet is settled: a new pet is never asked about it.
+      const settled = decisions.some(({ state }) => state === PetObservationState.Confirmed);
+      const matches = settled
+        ? []
+        : matchPets(embedding, reading, await this.getReferences(asset.ownerId, asset.id), answered);
       const width = asset.width ?? asset.exifImageWidth ?? 0;
       const height = asset.height ?? asset.exifImageHeight ?? 0;
       const [detection] = await this.petRepository.replaceDetections(asset.id, allIds, [

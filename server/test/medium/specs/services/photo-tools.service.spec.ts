@@ -58,7 +58,11 @@ const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest();
 
 const setup = () => {
   const { ctx } = newMediumService(BaseService, { database, real: [], mock: [LoggingRepository] });
-  const job = { queue: vi.fn().mockResolvedValue(undefined), queueAll: vi.fn().mockResolvedValue(undefined) };
+  const job = {
+    queue: vi.fn().mockResolvedValue(undefined),
+    queueAll: vi.fn().mockResolvedValue(undefined),
+    collectFollowups: vi.fn((action: () => Promise<void>) => action()),
+  };
   const develop = new AssetDevelopRepository(database);
   const photoTools = new PhotoToolsRepository(database);
   const sut = new AssetDevelopService(
@@ -76,6 +80,7 @@ const setup = () => {
     new SystemMetadataRepository(database),
     new MediaOperationRepository(database),
     {} as never,
+    { emit: vi.fn().mockResolvedValue(undefined) } as never,
   );
   const presets = new PhotoToolsService(logger(), photoTools);
   return { ctx, sut, presets, job, develop, integrity: new IntegrityRepository(database) };
@@ -301,6 +306,7 @@ describe('photo tools round trip (FL-64)', () => {
     expect(job.queue.mock.calls.map(([item]) => item.name)).toEqual([JobName.AssetDevelopRender]);
 
     await expect(sut.handleRender({ id: revision.id })).resolves.toBe(JobStatus.Success);
+    expect(job.collectFollowups).toHaveBeenCalledExactlyOnceWith(expect.any(Function));
     const stored = await develop.get(revision.id);
     expect(stored).toMatchObject({
       status: AssetDevelopRevisionStatus.Rendered,

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiExcludeEndpoint, ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
@@ -9,6 +9,7 @@ import {
   TagCreateDto,
   TagMergeDto,
   TagResponseDto,
+  TagSearchDto,
   TagStatisticsResponseDto,
   TagUpdateDto,
   TagUpsertDto,
@@ -43,6 +44,18 @@ export class TagController {
   })
   getAllTags(@Auth() auth: AuthDto): Promise<TagResponseDto[]> {
     return this.service.getAll(auth);
+  }
+
+  @Get('search')
+  @Authenticated({ permission: Permission.TagRead })
+  @Endpoint({
+    summary: 'Search tags',
+    description:
+      'Retrieve the tags whose value contains the text, ignoring case, at most `take` of them: a search-as-you-type picker, instead of the whole list.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  searchTags(@Auth() auth: AuthDto, @Query() dto: TagSearchDto): Promise<TagResponseDto[]> {
+    return this.service.getAll(auth, dto);
   }
 
   @Get('statistics')

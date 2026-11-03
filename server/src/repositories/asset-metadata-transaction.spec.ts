@@ -1,5 +1,6 @@
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { scriptedKysely } from 'test/scripted-kysely.js';
 
 describe('Metadata fill transaction', () => {
@@ -51,7 +52,7 @@ describe('Metadata fill transaction', () => {
     try {
       await expect(
         new AssetRepository(db).withMetadataUpdate('asset', () =>
-          Promise.try(() => {
+          tryPromise(() => {
             throw Object.assign(new Error('write failed'), { code });
           }),
         ),

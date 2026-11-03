@@ -102,6 +102,10 @@ test.describe('Album', () => {
     await expect(photoTile.getByRole('checkbox')).toBeChecked();
     await photoTile.getByRole('checkbox').click();
 
+    // Work (FL-1117): a click shows the item in the information panel; clicking it again opens it.
+    await videoTile.locator('button').first().click();
+    await expect(page.getByTestId('frameleaf-work-inspector')).toContainText('kayak-demo.mp4');
+    await expect(page.locator('#immich-asset-viewer')).toHaveCount(0);
     await videoTile.locator('button').first().click();
     await expect(page.locator('#immich-asset-viewer')).toHaveAttribute('data-asset-id', video.id);
     await page.goBack();
@@ -454,9 +458,21 @@ test.describe('Album', () => {
 
     // App.jsx onOpenMap: the album's Map action opens the Map screen with the album's scope.
     await page.goto(`/albums/${mapAlbum.id}`);
-    const mapButton = page.getByRole('button', { name: 'Map' });
-    await expect(mapButton).toBeEnabled();
-    await mapButton.click();
+    // FL-1118: Map folds into "…" when the album header is 1060px or narrower.
+    const moreActions = page.getByRole('button', { name: 'More actions', exact: true });
+    await expect(moreActions).toBeVisible();
+    const mapButton = page.getByRole('button', { name: 'Map', exact: true });
+    if ((await mapButton.count()) > 0) {
+      await expect(mapButton).toBeEnabled();
+      await mapButton.click();
+    } else {
+      await moreActions.click();
+      const mapItem = page
+        .getByRole('menu', { name: 'More actions' })
+        .getByRole('menuitem', { name: 'Map', exact: true });
+      await expect(mapItem).toBeEnabled();
+      await mapItem.click();
+    }
     await page.waitForURL(`/map?albumId=${mapAlbum.id}`);
 
     // MapView.jsx:579-582: a single item's marker is a button named "Open <file name>, <place>".
@@ -589,7 +605,7 @@ test.describe('Album', () => {
     const dialog = page.getByRole('dialog', { name: 'Move “Keyboard mover”' });
     await dialog.getByRole('radio', { name: /Keyboard target/ }).focus();
     await page.keyboard.press('Space');
-    await dialog.getByRole('button', { name: 'Move', exact: true }).focus();
+    await dialog.getByRole('button', { name: 'Move here', exact: true }).focus();
     await page.keyboard.press('Enter');
 
     await expect(page.getByText('Moved “Keyboard mover” into “Keyboard target”')).toBeVisible();
@@ -620,10 +636,10 @@ test.describe('Album', () => {
     await page.getByRole('menuitem', { name: 'Move to…' }).click();
     const dialog = page.getByRole('dialog', { name: 'Move “Stale mover”' });
     await dialog.getByRole('radio', { name: /Stale trips/ }).check();
-    await dialog.getByRole('button', { name: 'Move', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Move here', exact: true }).click();
 
     await expect(page.getByRole('status')).toContainText('Your albums changed since this page loaded');
-    const tree = await getAlbumTree({ headers: asBearerAuth(admin.accessToken) });
+    const tree = await getAlbumTree({}, { headers: asBearerAuth(admin.accessToken) });
     const node = tree.collections.find(({ collection }) => collection.id === family.id);
     expect(node?.albums.map(({ id }) => id)).toContain(album.id);
   });

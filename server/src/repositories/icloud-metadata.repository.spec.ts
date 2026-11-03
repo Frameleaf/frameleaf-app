@@ -3,6 +3,7 @@ import { AssetVisibility } from 'src/enum.js';
 import { AssetLocalEffectRepository } from 'src/repositories/asset-local-effect.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ICloudMetadataRepository } from 'src/repositories/icloud-metadata.repository.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { scriptedKysely } from 'test/scripted-kysely.js';
 
 describe('iCloud metadata lock effect transaction', () => {
@@ -35,13 +36,13 @@ describe('iCloud metadata lock effect transaction', () => {
     });
     vi.spyOn(AssetRepository.prototype, 'lock').mockResolvedValue(ids);
     vi.spyOn(AssetLocalEffectRepository, 'selectLockedAdmissions').mockImplementation((_tx, assetIds) =>
-      Promise.try(() => ({
+      tryPromise(() => ({
         assetIds,
         interactiveAdmissions: [],
       })),
     );
     const append = vi.spyOn(AssetLocalEffectRepository.prototype, 'append').mockImplementation((tx) =>
-      Promise.try(() => {
+      tryPromise(() => {
         expect(tx.isTransaction).toBe(true);
         expect(queries.some((query) => query.sql === 'commit')).toBe(false);
         return {} as never;

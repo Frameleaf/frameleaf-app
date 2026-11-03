@@ -86,6 +86,24 @@ describe('cloud backup restore (FL-164)', () => {
       ]);
     });
 
+    it('puts a missing asset back beside a path another asset holds now, never over it', () => {
+      const taken = new Map([['asset-1', new Set(['/data/library/owner-1/2026/IMG_1.jpg'])]]);
+      const { files } = restorePlan({
+        manifest,
+        scope: 'asset',
+        assetIds: ['asset-1'],
+        operationId: 'op-1',
+        mediaLocation: MEDIA,
+        currentOriginals: new Map(),
+        takenPaths: taken,
+      });
+
+      expect(files.map(({ target, inPlace }) => ({ target, inPlace }))).toEqual([
+        { target: '/data/library/owner-1/2026/IMG_1+asset-1.jpg', inPlace: true },
+        { target: '/data/library/owner-1/2026/IMG_1.jpg.xmp', inPlace: true },
+      ]);
+    });
+
     it('never writes outside the media folder: such a file goes to the restore folder instead', () => {
       const { files } = plan('library');
 

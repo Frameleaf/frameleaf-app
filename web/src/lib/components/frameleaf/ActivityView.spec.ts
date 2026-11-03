@@ -2,6 +2,7 @@ import {
   MediaOperationDestination,
   MediaOperationKind,
   MediaOperationStatus,
+  StudioRenderStage,
   QueueName,
   type MediaOperationDto,
   type QueueRunDto,
@@ -82,6 +83,40 @@ describe('Frameleaf Activity page', () => {
     return result;
   };
 
+  it('offers a GPU upgrade only when the Cloud job reports available capacity repricing', async () => {
+    const cloudJob = {
+      purpose: 'restoration',
+      stage: 'full',
+      activityStage: 'queued',
+      model: 'Restore',
+      modelSku: 'ms_54S55W7C',
+      plannedWorkers: 1,
+      workers: 0,
+      cloudStatus: 'queued',
+      progressUnit: null,
+      cost: {
+        estimatedP50Usd: 1,
+        estimatedP90Usd: 1.5,
+        holdUsd: 2,
+        soFarUsd: null,
+        settledUsd: null,
+        outcome: null,
+        note: null,
+      },
+      routing: {
+        quotedComputeSku: 'cs_KGECTVQ0',
+        approvedMaximumUsd: 2,
+        pricingRevision: 0,
+        queuedSince: '2026-09-26T03:59:00.000Z',
+        upgradeAvailable: true,
+        priceHistory: [],
+      },
+    };
+    await mount([operation({ kind: MediaOperationKind.CloudMlJob, cloudJob } as never)]);
+    expect(await screen.findByRole('button', { name: 'Upgrade GPU' })).toBeInTheDocument();
+    expect(screen.getByText('Authorized maximum')).toBeInTheDocument();
+  });
+
   it('names the destination on every job so cloud work is never implicit', async () => {
     await mount([operation()]);
 
@@ -99,6 +134,33 @@ describe('Frameleaf Activity page', () => {
     // The row reports stopping, not stopped: the worker has not acknowledged yet.
     await vi.waitFor(() => expect(screen.getByText('Stopping')).toBeInTheDocument());
   });
+
+  it.each([MediaOperationStatus.Queued, MediaOperationStatus.Preparing])(
+    'shows render time and a stuck warning only after a worker claims the export (%s)',
+    async (status) => {
+      await mount([
+        operation({
+          status,
+          startedAt: status === MediaOperationStatus.Queued ? null : '2026-09-22T09:50:00.000Z',
+          renderProgress: {
+            stage: StudioRenderStage.Preparing,
+            lastProgressAt: null,
+            framesPerSecond: null,
+            remainingRenderSeconds: null,
+          },
+        }),
+      ]);
+      if (status === MediaOperationStatus.Queued) {
+        // Waiting for its turn isn't work: no elapsed time and no stuck warning.
+        await vi.waitFor(() => expect(document.querySelector('.fla-status')).not.toBeNull());
+        expect(screen.queryByText(/Elapsed:/)).not.toBeInTheDocument();
+        expect(screen.queryByText(/No progress for/)).not.toBeInTheDocument();
+      } else {
+        await screen.findByText(/Elapsed:/);
+        expect(screen.getByText(/No progress for/)).toBeInTheDocument();
+      }
+    },
+  );
 
   it('offers retry only after a failure, and sends it to the server', async () => {
     sdkMock.retryMediaOperation.mockResolvedValue(
@@ -287,8 +349,8 @@ describe('Frameleaf Activity page', () => {
     expect(card?.getAttribute('aria-labelledby')).toBe(heading.id);
     const bar = screen.getByRole('progressbar', { name: /summer in the rockies/i });
     expect(bar.getAttribute('aria-valuenow')).toBe('42');
-    // Prototype `statusText`: the state, the percentage and about how long is left at the rate so far.
-    expect(card?.querySelector(':scope .fla-status')?.textContent?.trim()).toMatch(/^Rendering · 42% · about .+ left$/);
+    // A legacy Studio worker supplies counted percent, but no measured frame rate or render ETA.
+    expect(card?.querySelector(':scope .fla-status')?.textContent?.trim()).toBe('Rendering · 42%');
     expect(card?.querySelector(':scope .fla-chip .fla-dot')).not.toBeNull();
     // The prototype's summary names only what is not zero.
     expect(container.querySelector('.fla-summary')?.textContent).toBe('1 running');
@@ -379,6 +441,12 @@ describe('Frameleaf Activity page', () => {
       );
       expect(cards[1]).toHaveAccessibleName('Face detection: Paused · 52 waiting · This server. Open Background work.');
       expect(screen.getByText('2 background tasks busy')).toBeInTheDocument();
+      // UI review 2026-10-30 #18: one link to where background work is managed, no "read-only" hint.
+      expect(within(group).getByRole('link', { name: 'Manage background work' })).toHaveAttribute(
+        'href',
+        expect.stringContaining('area=processing'),
+      );
+      expect(screen.queryByText(/read-only/i)).not.toBeInTheDocument();
       expect(screen.queryByRole('heading', { name: 'Nothing in progress' })).not.toBeInTheDocument();
       expect(screen.queryByText(/stage|prerequisite/i)).not.toBeInTheDocument();
     } finally {

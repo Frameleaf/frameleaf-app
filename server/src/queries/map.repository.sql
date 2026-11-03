@@ -66,6 +66,7 @@ from
   and "asset_exif"."longitude" is not null
 where
   "asset"."deletedAt" is null
+  and "asset"."libraryScope" in ($1, $2)
   and (
     "asset"."visibility" = 'timeline'
     and not exists (
@@ -78,14 +79,14 @@ where
     )
   )
   and (
-    "ownerId" in ($1)
+    "ownerId" in ($3)
     or exists (
       select
       from
         "album_asset"
       where
         "asset"."id" = "album_asset"."assetId"
-        and "album_asset"."albumId" in ($2)
+        and "album_asset"."albumId" in ($4)
     )
   )
 order by

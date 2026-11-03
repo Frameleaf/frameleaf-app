@@ -95,7 +95,7 @@
     <svg
       class="qr-svg"
       role="img"
-      aria-label={`${label} for ${value}`}
+      aria-label={label}
       viewBox={`0 0 ${extent} ${extent}`}
       width={size}
       height={size}

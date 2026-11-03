@@ -14,6 +14,7 @@ import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
 import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { AssetUploadResourceRepository } from 'src/repositories/asset-upload-resource.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { CaptureRepository } from 'src/repositories/capture.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
@@ -143,6 +144,7 @@ describe('direct peer and actual native resource publication', () => {
       admission,
       new ICloudIdentityRepository(db),
       new PhotoSourceRepository(db),
+      new CaptureRepository(db),
     );
     const startDirect = () => {
       direct = new AssetUploadDirectService(native, authentication, admission);

@@ -5,6 +5,7 @@ import { mkdtemp, mkdir, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   AXES,
   loadConformance,
@@ -26,7 +27,7 @@ import {
 // tests don't depend on - or break when someone edits - the real reviewed entries.
 const rowCommands = (map) => map;
 
-const ROOT = new URL("..", import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const fixture = (id) => ({ id, actions: ["apply"] });
 const overlayRow = (id, axes = {}) => ({
   id,

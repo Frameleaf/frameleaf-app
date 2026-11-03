@@ -5,8 +5,10 @@ import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
 import { DownloadResponseDto } from 'src/dtos/download.dto.js';
 import { AssetVisibility, UserMetadataKey } from 'src/enum.js';
 import { DownloadService } from 'src/services/download.service.js';
+import { LockedKeyUnavailableError } from 'src/utils/locked-read.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
+import { lockedFixture } from 'test/fixtures/locked.stub.js';
 import { newDate, newUuid } from 'test/small.factory.js';
 import { ServiceMocks, makeStream, newTestService } from 'test/utils.js';
 
@@ -60,9 +62,95 @@ describe(DownloadService.name, () => {
     ({ sut, mocks } = newTestService(DownloadService));
     mocks.partner.getAll.mockResolvedValue([]);
     mocks.downloadRepository.getSidecars.mockResolvedValue([]);
+    mocks.downloadRepository.getAdditionalOriginals.mockReturnValue(makeStream([]));
   });
 
   describe('downloadArchive', () => {
+    it('refuses additional originals when a shared link hides embedded metadata', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForOriginals.mockResolvedValue([asset]);
+      const auth = {
+        ...authStub.adminSharedLink,
+        sharedLink: { ...authStub.adminSharedLink.sharedLink, showExif: false },
+      };
+      await expect(sut.downloadArchive(auth, { assetIds: [asset.id], includeSidecar: false })).rejects.toThrow(
+        'Downloads are turned off while metadata is hidden',
+      );
+      expect(mocks.downloadRepository.getAdditionalOriginals).not.toHaveBeenCalled();
+      expect(mocks.storage.createZipStream).not.toHaveBeenCalled();
+    });
+
+    it('refuses an encrypted additional original without a key before finalizing the archive', async () => {
+      const locked = await lockedFixture(authStub.admin.user.id);
+      try {
+        const path = await locked.seal('extra.nef', 'synthetic RAW');
+        const asset = AssetFactory.create();
+        const archive = { addFile: vitest.fn(), finalize: vitest.fn(), stream: new Readable() };
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.asset.getForOriginals.mockResolvedValue([asset]);
+        mocks.downloadRepository.getAdditionalOriginals.mockReturnValue(
+          makeStream([{ assetId: asset.id, originalPath: path, originalFileName: 'extra.nef' }]),
+        );
+        mocks.storage.realpath.mockImplementation((value) => Promise.resolve(value));
+        mocks.storage.createZipStream.mockReturnValue(archive);
+        await expect(
+          sut.downloadArchive(authStub.admin, { assetIds: [asset.id], includeSidecar: false }),
+        ).rejects.toThrow(LockedKeyUnavailableError);
+        expect(archive.finalize).not.toHaveBeenCalled();
+        expect(archive.stream.destroyed).toBe(true);
+      } finally {
+        await locked.cleanup();
+      }
+    });
+
+    it('a zip with an encrypted original contains the decrypted bytes (FL-721)', async () => {
+      const locked = await lockedFixture(authStub.admin.user.id);
+      try {
+        locked.loadKey();
+        const originalPath = await locked.seal('IMG_1.jpg', 'the plain photo', 'image/jpeg');
+        const archive = { addFile: vitest.fn(), finalize: vitest.fn(), stream: new Readable() };
+        const asset = AssetFactory.create({ originalFileName: 'IMG_1.jpg', originalPath });
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.asset.getForOriginals.mockResolvedValue([asset]);
+        mocks.storage.realpath.mockImplementation((path) => Promise.resolve(path));
+        mocks.storage.createZipStream.mockReturnValue(archive);
+
+        await sut.downloadArchive(authStub.admin, { assetIds: [asset.id] });
+
+        const [input, name] = archive.addFile.mock.calls[0];
+        expect(name).toBe('IMG_1.jpg');
+        expect(input).toBeInstanceOf(Readable);
+        const chunks: Buffer[] = [];
+        for await (const chunk of input as Readable) {
+          chunks.push(chunk);
+        }
+        expect(Buffer.concat(chunks).toString()).toBe('the plain photo');
+      } finally {
+        await locked.cleanup();
+      }
+    });
+
+    it('refuses a zip with an encrypted original when the key is not loaded (FL-721)', async () => {
+      const locked = await lockedFixture(authStub.admin.user.id);
+      try {
+        const originalPath = await locked.seal('IMG_1.jpg', 'the plain photo', 'image/jpeg');
+        const archive = { addFile: vitest.fn(), finalize: vitest.fn(), stream: new Readable() };
+        const asset = AssetFactory.create({ originalFileName: 'IMG_1.jpg', originalPath });
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.asset.getForOriginals.mockResolvedValue([asset]);
+        mocks.storage.realpath.mockImplementation((path) => Promise.resolve(path));
+        mocks.storage.createZipStream.mockReturnValue(archive);
+
+        await expect(sut.downloadArchive(authStub.admin, { assetIds: [asset.id] })).rejects.toThrow(
+          LockedKeyUnavailableError,
+        );
+        expect(archive.finalize).not.toHaveBeenCalled();
+      } finally {
+        await locked.cleanup();
+      }
+    });
+
     it.each([
       { names: ['constructor', 'constructor'], expected: ['constructor', 'constructor+1'] },
       { names: ['__proto__', '__proto__'], expected: ['__proto__', '__proto__+1'] },
@@ -763,4 +851,39 @@ describe(DownloadService.name, () => {
       });
     });
   });
+});
+
+it('reserves the portable manifest name and keeps original media names mapped to the ZIP', async () => {
+  const { sut, mocks } = newTestService(DownloadService);
+  const asset = AssetFactory.create({ ownerId: authStub.admin.user.id, originalFileName: 'frameleaf-library.json' });
+  const archive = { addFile: vitest.fn(), finalize: vitest.fn(), stream: new Readable() };
+  mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+  mocks.asset.getForOriginals.mockResolvedValue([asset]);
+  mocks.storage.createZipStream.mockReturnValue(archive);
+  mocks.storage.realpath.mockResolvedValue(asset.originalPath);
+  const manifest = { version: 1 as const, albums: [], tags: [], assets: [], bookmarks: [] };
+  mocks.downloadRepository.getLibraryManifest.mockResolvedValue(manifest);
+  mocks.downloadRepository.getAdditionalOriginals.mockReturnValue(makeStream([]));
+  await sut.downloadArchive(authStub.admin, {
+    assetIds: [asset.id],
+    includeLibraryMetadata: true,
+    includeSidecar: false,
+  });
+  expect(mocks.downloadRepository.getLibraryManifest).toHaveBeenCalledWith(
+    authStub.admin,
+    [{ id: asset.id, file: 'frameleaf-library+1.json' }],
+    [],
+    false,
+  );
+  expect(archive.addFile).toHaveBeenCalledWith(expect.anything(), 'frameleaf-library+1.json');
+  const metadata = archive.addFile.mock.calls.find(([, name]) => name === 'frameleaf-library.json');
+  expect(JSON.parse((metadata![0] as Buffer).toString())).toEqual(manifest);
+});
+it('refuses private metadata exports from shared links before reading or streaming files', async () => {
+  const { sut, mocks } = newTestService(DownloadService);
+  await expect(
+    sut.downloadArchive(authStub.adminSharedLink, { assetIds: [], includeLibraryMetadata: true }),
+  ).rejects.toThrow();
+  expect(mocks.asset.getForOriginals).not.toHaveBeenCalled();
+  expect(mocks.storage.createZipStream).not.toHaveBeenCalled();
 });

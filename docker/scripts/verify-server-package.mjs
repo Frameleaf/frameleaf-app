@@ -1,8 +1,13 @@
 import assert from "node:assert/strict";
 import { realpath, readFile, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+
+export function argon2NativePackage(platform, arch) {
+  const abi = platform === "linux" ? "-gnu" : platform === "win32" ? "-msvc" : "";
+  return `@node-rs/argon2-${platform}-${arch}${abi}`;
+}
 
 /** Inspect the real pnpm-deployed package without starting services or executing DDL. */
 export async function verifyServerPackage(
@@ -16,7 +21,7 @@ export async function verifyServerPackage(
     const target = await realpath(file);
     const local = relative(root, target);
     assert(
-      local !== ".." && !local.startsWith("../") && !isAbsolute(local),
+      local !== ".." && !local.startsWith(`..${sep}`) && !isAbsolute(local),
       `Production dependency escapes deployed package: ${file}`,
     );
     assert((await stat(target)).isFile(), `Missing production file: ${file}`);
@@ -48,6 +53,23 @@ export async function verifyServerPackage(
   await verifyStudioSubtitleRuntime(root, canonicalRuntime);
 
   const require = createRequire(resolve(root, "package.json"));
+  const argonEntry = await contained(require.resolve("@node-rs/argon2"));
+  const argonRequire = createRequire(argonEntry);
+  const nativeName = argon2NativePackage(process.platform, process.arch);
+  await contained(argonRequire.resolve(nativeName));
+  const { hashRaw } = require("@node-rs/argon2");
+  assert.equal(
+    (
+      await hashRaw("synthetic packaging check", {
+        memoryCost: 1024,
+        timeCost: 1,
+        parallelism: 1,
+        salt: Buffer.alloc(16, 1),
+      })
+    ).length,
+    32,
+    "Imported-password native runtime failed",
+  );
   const entry = await contained(require.resolve("@frameleaf/sql-tools"));
   const sqlRoot = dirname(dirname(entry));
   const manifest = JSON.parse(

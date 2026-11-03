@@ -43,4 +43,11 @@ export class AssetLockTable {
    */
   @Column({ type: 'boolean', default: false })
   inherited!: Generated<boolean>;
+
+  /**
+   * Locked encryption: set while the asset is leaving Locked but its files are still being unsealed.
+   * The asset stays locked until that finishes; null for every other lock.
+   */
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  pendingUnlockAt!: Timestamp | null;
 }

@@ -8,7 +8,8 @@ import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import { Store } from '../src/store.js';
 import { Fencing } from '../src/fencing.js';
-import { Docker, SERVER_ADMIN, type Container } from '../src/docker.js';
+import { HostAutostart } from '../src/unraid-autostart.js';
+import { Docker, command, SERVER_ADMIN, type Container } from '../src/docker.js';
 import { sourceFingerprint } from '../src/discovery.js';
 import { type Source, type Mount, type Installation } from '../src/contracts.js';
 import { copyVerified, fileHash } from '../src/files.js';
@@ -106,6 +107,110 @@ test('source fencing resumes after a crash between restart-policy changes withou
     await new Fencing(docker, store).verify(source);
     worker.Config.Env.push('IMMICH_MEDIA_LOCATION=/changed');
     await assert.rejects(new Fencing(docker, store).verify(source), /source_changed_review_again/);
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true });
+  }
+});
+for (const automatic of [false, true]) test(`verified import retires source services and recovery restores them (${automatic ? 'automatic Unraid access' : 'mounted file'})`, async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-retire-')),
+    store = new Store(directory);
+  const autostart = join(directory, 'unraid-autostart');
+  const app = container('a'),
+    database = container('b', true, 'always'),
+    redis = container('c', true, 'on-failure'),
+    otherRedis = container('d');
+  app.Name = '/immich_server';
+  database.Name = '/immich_postgres';
+  redis.Name = '/immich_redis';
+  redis.HostConfig.RestartPolicy.MaximumRetryCount = 3;
+  redis.NetworkSettings.Networks.private.Aliases = ['redis'];
+  // Another stack's Redis on a network the server is not attached to is never touched.
+  otherRedis.Name = '/other_redis';
+  otherRedis.NetworkSettings.Networks = { elsewhere: { IPAddress: '172.20.0.2', Aliases: ['redis'] } };
+  for (const c of [database, redis, otherRedis]) c.Mounts = [];
+  const controller = container('e');
+  controller.Image = `sha256:${'f'.repeat(64)}`;
+  controller.Config.Labels = { 'app.frameleaf.manager.role': 'controller' };
+  controller.Config.Env = [`MANAGER_DATA=${directory}`];
+  controller.Mounts = [];
+  const all = [app, database, redis, otherRedis, controller];
+  const source = {
+    id: app.Id,
+    app: app.Id,
+    workers: [app.Id],
+    mounts: media,
+    platform: 'unraid',
+    database: { container: database.Id },
+    fingerprint: sourceFingerprint(structuredClone([app, database])),
+    restart: { [app.Id]: structuredClone(app.HostConfig.RestartPolicy) },
+  } as Source;
+  const original = 'immich_redis\nimmich_postgres 10\nimmich_server\nfilebrowser\n';
+  await writeFile(autostart, original);
+  const docker = {
+    inventory: async () => structuredClone(all),
+    compatibility: async () => ({ dataRoot: '/docker' }),
+    restartPolicy: async (id: string, policy: string) => {
+      const [name, count] = policy.split(':');
+      all.find((c) => c.Id === id)!.HostConfig.RestartPolicy = { Name: name, MaximumRetryCount: Number(count ?? 0) };
+    },
+    stop: async (id: string) => {
+      all.find((c) => c.Id === id)!.State.Running = false;
+    },
+    start: async (id: string) => {
+      all.find((c) => c.Id === id)!.State.Running = true;
+    },
+  } as unknown as Docker;
+  let script = '';
+  const access = automatic ? new HostAutostart(docker, directory, async (_binary, args, options) => {
+    if (args[0] === 'create') {
+      script = args[args.indexOf('-e') + 1];
+      return 'f'.repeat(64);
+    }
+    return args[0] === 'start'
+      ? command('docker', ['-e', script, autostart], { ...options, executable: process.execPath }) : '';
+  }) : autostart;
+  const fencing = new Fencing(docker, store, access);
+  try {
+    await fencing.stop(source);
+    assert.equal(await readFile(autostart, 'utf8'), 'immich_redis\nimmich_postgres 10\nfilebrowser\n');
+    const retired = await fencing.retireSourceServices(source);
+    assert.deepEqual(
+      retired.map((s) => [s.role, s.name, s.autostart]),
+      [
+        ['redis', 'immich_redis', 'immich_redis'],
+        ['database', 'immich_postgres', 'immich_postgres 10'],
+      ],
+    );
+    for (const c of [database, redis]) {
+      assert.equal(c.State.Running, false, c.Name);
+      assert.equal(c.HostConfig.RestartPolicy.Name, 'no', c.Name);
+    }
+    assert.equal(otherRedis.State.Running, true);
+    assert.equal(await readFile(autostart, 'utf8'), 'filebrowser\n');
+    // A retry is idempotent, and the fenced source still verifies with its database's policy changed.
+    await fencing.retireSourceServices(source);
+    await fencing.verify(source);
+    // A database changed by anyone else is still refused.
+    database.HostConfig.RestartPolicy.Name = 'unless-stopped';
+    await assert.rejects(fencing.verify(source), /source_changed_review_again/);
+    database.HostConfig.RestartPolicy.Name = 'no';
+
+    if (automatic) {
+      // Crash during source-service retirement, before truncate; recovery repairs the durable write first.
+      const text = 'immich_redis\nimmich_postgres 10\nfilebrowser\n';
+      store.set('autostart-write', { text, modified: 'filebrowser\n' });
+      await writeFile(autostart, 'filebrowser\n' + text.slice('filebrowser\n'.length));
+    }
+    await fencing.recover(source, { mayHaveWrittenMedia: false } as Installation);
+    assert.deepEqual(database.HostConfig.RestartPolicy, { Name: 'always', MaximumRetryCount: 0 });
+    assert.deepEqual(redis.HostConfig.RestartPolicy, { Name: 'on-failure', MaximumRetryCount: 3 });
+    assert.equal(database.State.Running, true);
+    assert.equal(redis.State.Running, true);
+    // The application itself gets its restart policy back but stays stopped and out of autostart.
+    assert.equal(app.State.Running, false);
+    assert.equal(app.HostConfig.RestartPolicy.Name, 'unless-stopped');
+    assert.equal(await readFile(autostart, 'utf8'), 'immich_redis\nimmich_postgres 10\nfilebrowser\n');
   } finally {
     store.close();
     await rm(directory, { recursive: true });
@@ -410,6 +515,12 @@ test('import verification uses the fenced dump receipt instead of earlier discov
     compose: async () => {
       server.State.Running = true;
     },
+    restartPolicy: async (id: string, policy: string) => {
+      [app, sourceDb].find((c) => c.Id === id)!.HostConfig.RestartPolicy.Name = policy;
+    },
+    stop: async (id: string) => {
+      [app, sourceDb].find((c) => c.Id === id)!.State.Running = false;
+    },
   } as unknown as Docker;
   store.set('installation', installation);
   store.set(`review:review`, { source, backup: { verified: true }, input: {} });
@@ -423,6 +534,7 @@ test('import verification uses the fenced dump receipt instead of earlier discov
     'start-database',
     'capture-fenced-settings',
     'copy-current-database',
+    'check-media-writable',
     'configure-offline-import',
     'import-canonical-database',
     'import-settings',
@@ -442,6 +554,10 @@ test('import verification uses the fenced dump receipt instead of earlier discov
       await new Promise((resolve) => setTimeout(resolve, 5));
     assert.equal(store.history()[0].state, 'complete', store.history()[0].error ?? undefined);
     assert.deepEqual(store.history()[0].receipts['verify-import'], { countsMatch: true, activated: true });
+    // FL-476: after the verified import the source database is stopped with no restart policy.
+    assert.deepEqual(store.history()[0].receipts['retire-source-services'], [{ role: 'database', name: 'worker-b' }]);
+    assert.equal(sourceDb.State.Running, false);
+    assert.equal(sourceDb.HostConfig.RestartPolicy.Name, 'no');
   } finally {
     store.close();
     await rm(directory, { recursive: true });

@@ -5,6 +5,8 @@ import { CloudBackupStoreRepository } from 'src/repositories/cloud-backup-store.
 import { CloudBackupBucket, CloudBackupMaintenance } from 'src/services/cloud-backup-maintenance.js';
 import { clientBackupContext, clientBackupObjectKey, encryptClientBackup } from 'src/utils/cloud-backup-crypto.js';
 
+vi.mock('undici', () => ({ fetch: (...args: Parameters<typeof fetch>) => fetch(...args) }));
+
 const vault = 'f0000000-0000-4000-8000-000000000001';
 const root = Buffer.alloc(32, 1);
 const historical = Buffer.alloc(32, 2);

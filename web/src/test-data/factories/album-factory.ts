@@ -12,6 +12,7 @@ export const albumFactory = Sync.makeFactory<AlbumResponseDto>({
   id: Sync.each(() => faker.string.uuid()),
   parentId: null,
   icon: null,
+  color: null,
   sortOrder: null,
   kind: AlbumKind.Album,
   shared: false,

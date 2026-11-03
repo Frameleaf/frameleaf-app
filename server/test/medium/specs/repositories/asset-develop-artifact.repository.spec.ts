@@ -304,6 +304,7 @@ it('preserves shared Live Photo originals through Develop save, cancellation, se
     mocks.systemMetadata as never,
     mocks.mediaOperation as never,
     mocks.machineLearning as never,
+    mocks.event as never,
   );
   const { user } = await ctx.newUser();
   const { user: stranger } = await ctx.newUser();

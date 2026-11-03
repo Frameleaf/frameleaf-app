@@ -36,6 +36,8 @@ import {
   AssetVisibility,
   CalendarHeatmapType,
   ImageEnrichmentFilter,
+  LibraryScope,
+  LibraryViewScope,
   TimeBucketDateType,
 } from 'src/enum.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
@@ -87,6 +89,8 @@ import {
 } from 'src/utils/database.js';
 import { lockDerivedResults, releaseDerivedResults } from 'src/utils/derivative-locks.js';
 import { normalizeImportPath } from 'src/utils/library-paths.js';
+import { libraryScopePredicate } from 'src/utils/library-scope.js';
+import { encryptsFilesOf } from 'src/utils/locked-encryption-set.js';
 import { lockAssetRowsInOrder, onStacksJoined, otherStackMembers } from 'src/utils/locked-stacks.js';
 import {
   effectiveVisibility,
@@ -97,6 +101,7 @@ import {
   isTimelineVisible,
   lockReasonOf,
   lockedForReason,
+  visibilityIn,
   visibilityIs,
 } from 'src/utils/locked.js';
 import { getEditedMasterLineagePath } from 'src/utils/media-policy.js';
@@ -128,9 +133,9 @@ const studioHdrSourceFingerprint = sql<Buffer>`sha256(a.checksum || convert_to(e
 export type RemovedAsset = {
   originalPath: string;
   reservationTemporaryPath: string | null;
+  additionalOriginals: { path: string; originalFileName: string; checksum: Buffer; sizeInBytes: number }[];
   /** Its generated, edited and sidecar files. */
   files: AssetFile[];
-  videoDuplicateFramePaths: string[];
   /** Outputs of its restorations and develop revisions, whose rows go with it. */
   derivedPaths: string[];
   videoEditPaths?: string[];
@@ -222,6 +227,7 @@ export interface BoundingBox {
   north: number;
 }
 interface AssetStatsOptions extends HiddenContentQueryOptions {
+  libraryScope?: LibraryViewScope;
   isFavorite?: boolean;
   isTrashed?: boolean;
   visibility?: AssetVisibility;
@@ -239,6 +245,7 @@ interface LivePhotoSearchOptions {
   type: AssetType;
 }
 interface AssetBuilderOptions extends HiddenContentQueryOptions {
+  libraryScope?: LibraryViewScope;
   isFavorite?: boolean;
   isTrashed?: boolean;
   isDuplicate?: boolean;
@@ -320,9 +327,26 @@ export interface TimelineOrderedPage {
   skip: number;
   take: number;
 }
+export interface TimelineCalendarPage {
+  take: number;
+  after?: string;
+  before?: string;
+  membershipAlbumId?: string;
+}
+interface TimelineCalendarCursor {
+  day: string;
+  timestamp: string;
+  name: string;
+  id: string;
+}
 export interface TimeBucketItem {
   timeBucket: string;
   count: number;
+  page?: number;
+  after?: string | null;
+  firstAssetId?: string;
+  lastAssetId?: string;
+  days?: { day: number; count: number }[];
 }
 /** FL-33: how many places a curated timeline card names */
 export const TIMELINE_HIGHLIGHT_PLACES = 3;
@@ -570,6 +594,12 @@ export class AssetRepository {
                   timeZone: ref('timeZone'),
                   latitude: ref('latitude'),
                   longitude: ref('longitude'),
+                  gpsAccuracyM:
+                    lockedPropertiesBehavior === 'skip'
+                      ? sql<
+                          number | null
+                        >`CASE WHEN 'latitude' = ANY(asset_exif."lockedProperties") THEN asset_exif."gpsAccuracyM" ELSE excluded."gpsAccuracyM" END`
+                      : eb.ref('excluded.gpsAccuracyM'),
                   projectionType: ref('projectionType'),
                   city: ref('city'),
                   livePhotoCID: ref('livePhotoCID'),
@@ -597,6 +627,9 @@ export class AssetRepository {
                 },
                 exif,
               ),
+              ...(exif.gpsAccuracyM === undefined && (exif.latitude !== undefined || exif.longitude !== undefined)
+                ? { gpsAccuracyM: null }
+                : {}),
             };
           });
           return expectedUpdateId === undefined
@@ -641,6 +674,7 @@ export class AssetRepository {
       .updateTable('asset_exif')
       .set((eb) => ({
         ...options,
+        ...(options.latitude !== undefined || options.longitude !== undefined ? { gpsAccuracyM: null } : {}),
         // `unlock` releases locks the change makes stale (a typed place name at new coordinates)
         lockedProperties:
           unlock.length === 0
@@ -668,6 +702,7 @@ export class AssetRepository {
       .set((eb) => ({
         latitude: null,
         longitude: null,
+        gpsAccuracyM: null,
         city: null,
         state: null,
         country: null,
@@ -906,6 +941,7 @@ export class AssetRepository {
     return (
       this.db
         .selectFrom('asset')
+        .where(libraryScopePredicate(LibraryScope.Personal))
         .innerJoin('asset_job_status', 'asset.id', 'asset_job_status.assetId')
         .leftJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
         .select([
@@ -922,6 +958,8 @@ export class AssetRepository {
               .selectFrom('asset_landmark')
               .innerJoin('landmark', 'landmark.id', 'asset_landmark.landmarkId')
               .select(['landmark.id', 'landmark.name', 'landmark.kind', 'landmark.rank', 'landmark.radiusM'])
+              // Automatic visit titles require recorded locations, rather than a prediction about the scene.
+              .where('asset_landmark.inference', 'is', null)
               .whereRef('asset_landmark.assetId', '=', 'asset.id'),
           ).as('landmarks'),
         )
@@ -954,6 +992,7 @@ export class AssetRepository {
       .selectFrom('asset_landmark')
       .innerJoin('asset', 'asset.id', 'asset_landmark.assetId')
       .select('asset_landmark.landmarkId')
+      .where('asset_landmark.inference', 'is', null)
       .where('asset.ownerId', '=', ownerId)
       .where('asset.deletedAt', 'is', null)
       .where('asset.localDateTime', '>=', from)
@@ -976,6 +1015,7 @@ export class AssetRepository {
       .with('candidate', (qb) =>
         qb
           .selectFrom('asset')
+          .where(libraryScopePredicate(LibraryScope.Personal))
           .innerJoin('asset_job_status', 'asset.id', 'asset_job_status.assetId')
           .select([
             'asset.id as id',
@@ -1040,6 +1080,7 @@ export class AssetRepository {
             (qb) =>
               qb
                 .selectFrom('asset')
+                .where(libraryScopePredicate(LibraryScope.Personal))
                 .select(['asset.id', 'asset.localDateTime'])
                 .innerJoin('asset_job_status', 'asset.id', 'asset_job_status.assetId')
                 .where(sql`(asset."localDateTime" at time zone 'UTC')::date`, '=', sql`today.date`)
@@ -1116,6 +1157,31 @@ export class AssetRepository {
       .where('asset_lock.assetId', '=', anyUuid(ids))
       .execute();
     return new Set(rows.map(({ assetId }) => assetId));
+  }
+  /**
+   * FL-721: which of these assets are Locked items whose files their owner's Locked encryption covers
+   * (spec §6), and whether each is on its way out of Locked (`pendingUnlockAt`). What the lock and
+   * unlock follow-ups queue seal and unseal work for.
+   */
+  @GenerateSql({ params: [[DummyValue.UUID]] })
+  @ChunkedArray()
+  getLockedEncryptionItems(ids: string[]) {
+    if (ids.length === 0) {
+      return Promise.resolve([]);
+    }
+    return (
+      this.db
+        .selectFrom('asset')
+        .innerJoin('asset_lock', 'asset_lock.assetId', 'asset.id')
+        .innerJoin('locked_encryption', 'locked_encryption.userId', 'asset.ownerId')
+        .select(['asset.id', 'asset.ownerId'])
+        .select((eb) => eb('asset_lock.pendingUnlockAt', 'is not', null).$castTo<boolean>().as('pending'))
+        // FL-721 (spec §7.3): an Advanced owner's unlock needs their key loaded
+        .select('locked_encryption.mode')
+        .where('asset.id', '=', anyUuid(ids))
+        .where(encryptsFilesOf('asset'))
+        .execute()
+    );
   }
   /** Why each of these assets is locked; an asset that is not locked is absent (FL-34). */
   @ChunkedArray()
@@ -1213,6 +1279,13 @@ export class AssetRepository {
       set inherited = false, "lockedBy" = coalesce(${lockedBy}::uuid, "lockedBy")
       where "assetId" = any(${`{${targetIds}}`}::uuid[]) and inherited = true
     `.execute(tx);
+    // FL-721 (spec §7.3): an item on its way out of Locked (its files being decrypted) that is locked
+    // again stays Locked; it counts as newly locked, so its files are sealed again
+    const { rows: relocked } = await sql<{ assetId: string }>`
+      update asset_lock set "pendingUnlockAt" = null
+      where "assetId" = any(${`{${targetIds}}`}::uuid[]) and "pendingUnlockAt" is not null
+      returning "assetId"
+    `.execute(tx);
     const { rows } = await sql<{
       assetId: string;
     }>`
@@ -1222,7 +1295,7 @@ export class AssetRepository {
       on conflict ("assetId") do nothing
       returning "assetId"
     `.execute(tx);
-    const lockedIds = rows.map(({ assetId }) => assetId);
+    const lockedIds = [...rows.map(({ assetId }) => assetId), ...relocked.map(({ assetId }) => assetId)];
     if (lockedIds.length > 0) {
       // This update waits for any Studio export publication holding these rows, so the propagation
       // below sees every version it committed (FL-106).
@@ -1318,14 +1391,36 @@ export class AssetRepository {
     }
     // the group's rows before its lock records, in id order, like every lock writer (FL-34)
     await lockAssetRowsInOrder(tx, targetIds);
-    const unlocked = await tx
-      .deleteFrom('asset_lock')
+    // FL-721 (spec §7.3): decrypt first, then unlock. An item whose files its owner's Locked encryption
+    // covers is only marked; it stays hidden until the unseal job has made every file plain and removes
+    // the lock (`LockedFileRepository.finishPendingUnlock`). It is returned like any unlocked item: the
+    // owner's choice (their review, the partner copies following) is recorded now.
+    const pending = await tx
+      .updateTable('asset_lock')
+      .set((eb) => ({ pendingUnlockAt: eb.fn.coalesce('asset_lock.pendingUnlockAt', sql<Date>`now()`) }))
       .where('asset_lock.assetId', '=', anyUuid(targetIds))
+      .$if(!!reasons, (qb) => qb.where('asset_lock.reason', 'in', reasons!))
+      .where((eb) =>
+        eb.exists(
+          eb
+            .selectFrom('asset')
+            .select('asset.id')
+            .whereRef('asset.id', '=', 'asset_lock.assetId')
+            .where(encryptsFilesOf('asset')),
+        ),
+      )
+      .returning(['asset_lock.assetId', 'asset_lock.reason'])
+      .execute();
+    const marked = new Set(pending.map(({ assetId }) => assetId));
+    const removed = await tx
+      .deleteFrom('asset_lock')
+      .where('asset_lock.assetId', '=', anyUuid(targetIds.filter((id) => !marked.has(id))))
       .$if(!!reasons, (qb) => qb.where('asset_lock.reason', 'in', reasons!))
       .returning(['asset_lock.assetId', 'asset_lock.reason'])
       .execute();
-    if (unlocked.length > 0) {
-      const unlockedIds = unlocked.map(({ assetId }) => assetId);
+    const unlocked = [...removed, ...pending];
+    if (removed.length > 0) {
+      const unlockedIds = removed.map(({ assetId }) => assetId);
       await tx.updateTable('asset').set({ updatedAt: new Date() }).where('id', '=', anyUuid(unlockedIds)).execute();
       // FL-195 follow-up: Studio exports whose last locked source this was unlock with it, unless the
       // owner locked them directly. They are not part of what this unlock returns: the caller reviews
@@ -1528,6 +1623,15 @@ export class AssetRepository {
       .select(isLocked('asset').as('isLocked'))
       .where('asset.id', '=', asUuid(id))
       .$if(!!exifInfo, withExif)
+      .$if(!!exifInfo, (qb) =>
+        qb.select(
+          sql<import('src/utils/photo-locations.js').PhotoLocationInsight | null>`(
+        SELECT i.insight FROM asset_location_insight i
+        WHERE i."assetId" = asset.id AND NOT i.dismissed
+          AND i.latitude = asset_exif.latitude AND i.longitude = asset_exif.longitude
+      )`.as('locationInsight'),
+        ),
+      )
       .$if(!!faces, (qb) =>
         qb.select(faces?.person ? withFacesAndPeople({ viewingUserId: faces.viewingUserId! }) : withFaces).$narrowType<{
           faces: NotNull;
@@ -1635,7 +1739,7 @@ export class AssetRepository {
     }
     const updateAndSelect = (db: Kysely<DB>) =>
       db
-        .with('asset', (qb) => qb.updateTable('asset').set(asset).where('id', '=', asUuid(asset.id)).returningAll())
+        .with('asset', (qb) => qb.updateTable('asset').set(value).where('id', '=', asUuid(asset.id)).returningAll())
         .selectFrom('asset')
         .selectAll('asset')
         .$call(withExif)
@@ -1666,6 +1770,15 @@ export class AssetRepository {
         if (group.some((asset) => asset.ownerId !== motion.ownerId)) throw new BadRequestException('Asset not found');
       }
       const created = await assets.create({ ...asset, id });
+      // The paired video follows its stills' workspace, as setLibraryScope keeps it.
+      const stills = await assets.db
+        .selectFrom('asset')
+        .select('libraryScope')
+        .where('livePhotoVideoId', '=', motionId)
+        .execute();
+      const scopes = new Set(stills.map((row) => row.libraryScope));
+      const scope = scopes.size > 1 || scopes.has(LibraryScope.Both) ? LibraryScope.Both : created.libraryScope;
+      if (scope !== motion.libraryScope) await assets.update({ id: motionId, libraryScope: scope });
       const hiddenId = motion.visibility === AssetVisibility.Timeline ? motion.id : undefined;
       if (hiddenId) await assets.update({ id: hiddenId, visibility: AssetVisibility.Hidden });
       const lockedIds = lock ? await assets.lock([id], lock.reason, lock.lockedBy) : [];
@@ -1703,6 +1816,35 @@ export class AssetRepository {
       }
       throw error;
     }
+  }
+
+  async setLibraryScope(ids: string[], ownerId: string, libraryScope: LibraryScope): Promise<string[]> {
+    const requested = [...new Set(ids)];
+    if (requested.length === 0) return [];
+    const initial = await this.getByIds(requested);
+    const motions = initial.map(({ livePhotoVideoId }) => livePhotoVideoId).filter((id): id is string => !!id);
+    return this.withLivePhotoGroup([...requested, ...motions], async (assets) => {
+      const rows = await assets.getByIds(requested);
+      if (rows.length !== requested.length || rows.some((row) => row.ownerId !== ownerId))
+        throw new BadRequestException('Asset not found');
+      await assets.updateAll(requested, { libraryScope });
+      const motionIds = [
+        ...new Set(rows.map(({ livePhotoVideoId }) => livePhotoVideoId).filter((id): id is string => !!id)),
+      ];
+      for (const id of motionIds) {
+        const motion = await assets.getById(id);
+        if (!motion || motion.ownerId !== ownerId) throw new BadRequestException('Live Photo video not found');
+        const stills = await assets.db
+          .selectFrom('asset')
+          .select('libraryScope')
+          .where('livePhotoVideoId', '=', id)
+          .execute();
+        const scopes = new Set(stills.map((row) => row.libraryScope));
+        const scope = scopes.size > 1 || scopes.has(LibraryScope.Both) ? LibraryScope.Both : stills[0].libraryScope;
+        await assets.update({ id, libraryScope: scope });
+      }
+      return [...new Set([...requested, ...motionIds])];
+    });
   }
 
   async withLivePhotoUpdate<T>(
@@ -1867,7 +2009,7 @@ export class AssetRepository {
       originalPath: lockedAsset.originalPath,
       reservationTemporaryPath: lockedAsset.reservationTemporaryPath,
       files: lockedAsset.files,
-      videoDuplicateFramePaths: lockedAsset.videoDuplicateFramePaths,
+      additionalOriginals: lockedAsset.additionalOriginals,
       derivedPaths: [...new Set([...lockedAsset.restorationPaths, ...developPaths, ...studioHdrPaths])],
       ...(videoEditPaths.length > 0 && { videoEditPaths }),
       pendingMoves: lockedAsset.pendingMoves,
@@ -2017,12 +2159,17 @@ export class AssetRepository {
       .select(['id', 'type', 'path', 'isEdited'])
       .where('assetId', '=', asUuid(id))
       .execute();
-    // the asset's video duplicate frames
-    const frames = await sql<{
-      path: string;
-    }>`
-      SELECT path FROM public.asset_video_duplicate_frame WHERE "assetId" = ${id}::uuid
-    `.execute(tx);
+    const additionalOriginals = await tx
+      .selectFrom('asset_original')
+      .innerJoin('physical_file', 'physical_file.id', 'asset_original.physicalFileId')
+      .select([
+        'physical_file.path',
+        'physical_file.checksum',
+        'physical_file.sizeInBytes',
+        'asset_original.originalFileName',
+      ])
+      .where('asset_original.assetId', '=', asUuid(id))
+      .execute();
     // restorations are removed with the asset (ON DELETE CASCADE), so their outputs are read here
     const restorations = await tx
       .selectFrom('asset_restoration')
@@ -2049,7 +2196,7 @@ export class AssetRepository {
     return {
       ...row,
       files,
-      videoDuplicateFramePaths: frames.rows.map(({ path }) => path),
+      additionalOriginals,
       restorationPaths,
       derivedPaths: [...new Set([...restorationPaths, ...(developPaths ?? []), ...studioHdrPaths])],
       ...(videoEditPaths && videoEditPaths.length > 0 && { videoEditPaths }),
@@ -2115,14 +2262,23 @@ export class AssetRepository {
   }
   private async deleteDevelopRevisions(id: string, db: Kysely<DB>): Promise<string[]> {
     const { rows } = await sql<{
+      ownerId: string;
+      batchChargedBytes: number;
       masterPath: string | null;
       previewPath: string | null;
       hdrMasterPath: string | null;
       hdrPreviewPath: string | null;
     }>`
       DELETE FROM public.asset_develop_revision WHERE "assetId" = ${id}::uuid
-      RETURNING "masterPath", "previewPath", "hdrMasterPath", "hdrPreviewPath"
+      RETURNING "masterPath", "previewPath", "hdrMasterPath", "hdrPreviewPath","ownerId","batchChargedBytes"
     `.execute(db);
+    for (const row of rows)
+      if (Number(row.batchChargedBytes) > 0)
+        await db
+          .updateTable('user')
+          .set({ quotaUsageInBytes: sql`GREATEST("quotaUsageInBytes"-${row.batchChargedBytes},0)` })
+          .where('id', '=', row.ownerId)
+          .execute();
     return rows
       .flatMap((row) => [row.masterPath, row.previewPath, row.hdrMasterPath, row.hdrPreviewPath])
       .filter((path): path is string => !!path);
@@ -2179,7 +2335,7 @@ export class AssetRepository {
   getByChecksums(userId: string, checksums: Buffer[], options: AssetChecksumOptions = {}) {
     return this.db
       .selectFrom('asset')
-      .select(['id', 'checksum', 'deletedAt'])
+      .select(['id', 'checksum', 'deletedAt', 'status', 'originalPath', 'libraryId', 'isExternal'])
       .where('ownerId', '=', asUuid(userId))
       .where('checksum', 'in', checksums)
       .$call((qb) => withLockedOwnerScope(qb, options.lockedOwnerId))
@@ -2204,6 +2360,16 @@ export class AssetRepository {
       .executeTakeFirst();
     return asset?.id;
   }
+  /** FL-365: the uploaded originals a re-file into the folder layout checks (not in an added folder, not deleted). */
+  async countUploadedOriginals(): Promise<number> {
+    const row = await this.db
+      .selectFrom('asset')
+      .select((eb) => eb.fn.countAll<string>().as('count'))
+      .where('libraryId', 'is', null)
+      .where('deletedAt', 'is', null)
+      .executeTakeFirstOrThrow();
+    return Number(row.count);
+  }
   findLivePhotoMatch(options: LivePhotoSearchOptions) {
     const { ownerId, otherAssetId, livePhotoCID, type } = options;
     return this.db
@@ -2217,11 +2383,33 @@ export class AssetRepository {
       .limit(1)
       .executeTakeFirst();
   }
+  /**
+   * FL-541: how many of the owner's own photos and videos (timeline or archive, not in Trash) a draft
+   * of their Locked rules matches, as the Locked view matches them (`lockedRuleMatches`).
+   * ponytail: the owner's own media only; a "visible" scope also hides shared items, not counted here.
+   */
+  @GenerateSql({ params: [{ userId: DummyValue.UUID, tagIds: [], personIds: [DummyValue.UUID], petIds: [] }] })
+  async countLockedRuleMatches(
+    filter: Pick<HiddenContentFilter, 'userId' | 'tagIds' | 'personIds' | 'petIds'>,
+  ): Promise<{ photos: number; videos: number }> {
+    const rules: HiddenContentFilter = { ...filter, includeNsfw: false, scope: 'owned' };
+    const row = await this.db
+      .selectFrom('asset')
+      .select((eb) => eb.fn.countAll<string>().filterWhere('type', '=', AssetType.Image).as('photos'))
+      .select((eb) => eb.fn.countAll<string>().filterWhere('type', '=', AssetType.Video).as('videos'))
+      .where('ownerId', '=', asUuid(filter.userId))
+      .where('deletedAt', 'is', null)
+      .where(visibilityIn([AssetVisibility.Timeline, AssetVisibility.Archive]))
+      .where(hiddenContentAssetIdExists(sql.ref('asset.id'), rules))
+      .executeTakeFirstOrThrow();
+    return { photos: Number(row.photos), videos: Number(row.videos) };
+  }
   getStatistics(ownerId: string, options: AssetStatsOptions): Promise<AssetStats> {
     const { visibility, isFavorite, isTrashed } = options;
     return (
       this.db
         .selectFrom('asset')
+        .where(libraryScopePredicate(options.libraryScope ?? LibraryScope.Personal))
         .select((eb) => eb.fn.countAll<number>().filterWhere('type', '=', AssetType.Audio).as(AssetType.Audio))
         .select((eb) => eb.fn.countAll<number>().filterWhere('type', '=', AssetType.Image).as(AssetType.Image))
         .select((eb) => eb.fn.countAll<number>().filterWhere('type', '=', AssetType.Video).as(AssetType.Video))
@@ -2264,6 +2452,7 @@ export class AssetRepository {
     return (
       this.db
         .selectFrom('asset')
+        .where(libraryScopePredicate(LibraryScope.Personal))
         .select(date.as('date'))
         .select((eb) => eb.fn.countAll<number>().as('count'))
         .where('ownerId', '=', asUuid(ownerId))
@@ -2286,6 +2475,11 @@ export class AssetRepository {
     return (
       this.db
         .selectFrom('asset')
+        .$if(!!options.libraryScope || !!options.filter?.libraryScope || !options.albumId, (qb) =>
+          qb.where(
+            libraryScopePredicate(options.libraryScope ?? options.filter?.libraryScope ?? LibraryScope.Personal),
+          ),
+        )
         .select(timeBucketDate.as('timeBucket'))
         .$if(!!options.isTrashed, (qb) => qb.where('asset.status', '!=', AssetStatus.Deleted))
         .where('asset.deletedAt', options.isTrashed ? 'is not' : 'is', null)
@@ -2336,7 +2530,11 @@ export class AssetRepository {
         .$if(!!options.userIds, (qb) =>
           qb.where((eb) => {
             // TODO this should become a shared `hasAccess` style helper once implement sharing in more places
-            const isOwner = eb('asset.ownerId', '=', anyUuid(options.userIds!));
+            const isOwner = eb(
+              'asset.ownerId',
+              '=',
+              options.userIds!.length === 1 ? asUuid(options.userIds![0]) : anyUuid(options.userIds!),
+            );
             // the people's shared-album media widens the owner scope (`widensToSharedAlbums`)
             return auth && widensToSharedAlbums(options) ? eb.or([isOwner, inSharedAlbum(eb, auth.user.id)]) : isOwner;
           }),
@@ -2366,7 +2564,92 @@ export class AssetRepository {
       ],
     },
   )
-  async getTimeBuckets(options: TimeBucketOptions, auth?: AuthDto): Promise<TimeBucketItem[]> {
+  async getTimeBuckets(
+    options: TimeBucketOptions,
+    auth?: AuthDto,
+    pages?: { pageSize: number; locateAssetId?: string; sort?: TimelineOrderedSort },
+  ): Promise<TimeBucketItem[]> {
+    if (pages?.sort) {
+      if (!auth || !pages.locateAssetId) throw new Error('Sorted lookup requires an authenticated asset lookup');
+      const sortKeys = {
+        filename: sql`asset."originalFileName" collate "und-x-icu"`,
+        rating: sql`coalesce(asset_exif.rating, 0)`,
+        quality: sql`coalesce(best_photo_score.score, -1)`,
+      };
+      const selection = this.timelineAssets(options, auth, this.timelineBucketDate(options))
+        .$if(!options.bbox && !options.filter, (qb) => qb.innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId'))
+        .$if(pages.sort === 'quality', (qb) =>
+          qb.leftJoin('asset_best_photo_score as best_photo_score', (join) =>
+            join
+              .onRef('best_photo_score.assetId', '=', 'asset.id')
+              .on('best_photo_score.ownerId', '=', asUuid(auth.user.id)),
+          ),
+        )
+        .select([
+          'asset.id',
+          sql<number>`row_number() over (order by ${sortKeys[pages.sort]} ${sql.raw(pages.sort === 'filename' ? 'asc' : 'desc')}, asset."fileCreatedAt" desc, asset.id asc)`.as(
+            'position',
+          ),
+          sql<number>`count(*) over ()`.as('total'),
+        ]);
+      const { rows } = await sql<TimeBucketItem>`
+        with ranked as (${selection}), located as (
+          select *, ((position - 1) / ${pages.pageSize})::integer as page
+          from ranked where id = ${pages.locateAssetId}::uuid
+        )
+        select '1970-01-01' as "timeBucket", page,
+          least(${pages.pageSize}, total - page * ${pages.pageSize})::integer as count from located
+      `.execute(this.db);
+      return rows;
+    }
+    if (pages) {
+      const bucketDate = this.timelineBucketDate(options);
+      const added = options.dateType === TimeBucketDateType.Added || options.orderBy === AssetOrderBy.CreatedAt;
+      const day = added
+        ? sql`(asset."createdAt" AT TIME ZONE 'UTC')::date`
+        : sql`(asset."localDateTime" AT TIME ZONE 'UTC')::date`;
+      const timestamp = added ? sql`asset."createdAt"` : sql`asset."fileCreatedAt"`;
+      const direction = sql.raw(options.order === AssetOrder.Asc ? 'asc' : 'desc');
+      const window = sql`partition by ${bucketDate} order by ${day} ${direction}, ${timestamp} ${direction},
+        asset."originalFileName" ${direction}, asset.id ${direction}`;
+      const selection = this.timelineAssets(options, auth, bucketDate)
+        .where((eb) =>
+          eb.exists(
+            eb.selectFrom('asset_exif').select('asset_exif.assetId').whereRef('asset_exif.assetId', '=', 'asset.id'),
+          ),
+        )
+        .select([
+          'asset.id',
+          sql<number>`row_number() over (${window})`.as('position'),
+          sql<string | null>`lag(asset.id) over (${window})`.as('previousId'),
+          sql<number>`extract(day from ${day})::integer`.as('dayNumber'),
+          sql<number>`count(*) over (partition by ${bucketDate}, ${day})`.as('dayCount'),
+        ]);
+      // Rank narrow IDs once; each summary lets the client jump directly to a bounded page.
+      const { rows } = await sql<TimeBucketItem>`
+        with ranked as (${selection}),
+        numbered as (
+          select *, ((position - 1) / ${pages.pageSize})::integer as page from ranked
+        )
+        select ("timeBucket" at time zone 'UTC')::date::text as "timeBucket",
+          count(*)::integer as count, page,
+          (array_agg("previousId" order by position))[1] as after,
+          (array_agg(id order by position))[1] as "firstAssetId",
+          (array_agg(id order by position desc))[1] as "lastAssetId",
+          jsonb_agg(distinct jsonb_build_object('day', "dayNumber", 'count', "dayCount")) as days
+        from numbered
+        ${
+          pages.locateAssetId
+            ? sql`where ("timeBucket", page) = (
+          select "timeBucket", page from numbered where id = ${pages.locateAssetId}::uuid
+        )`
+            : sql``
+        }
+        group by "timeBucket", page
+        order by "timeBucket" ${direction}, page asc
+      `.execute(this.db);
+      return rows;
+    }
     return this.db
       .with('asset', () => this.timelineAssets(options, auth, this.timelineBucketDate(options)))
       .selectFrom('asset')
@@ -2431,7 +2714,7 @@ export class AssetRepository {
         left join asset_exif e on e."assetId" = a.id
         left join ${scoreTable} s on s."assetId" = a.id
       ),
-      places as (
+      places as materialized (
         select
           a."timeBucket",
           ${place} as place,
@@ -2476,8 +2759,47 @@ export class AssetRepository {
       ],
     },
   )
-  getTimeBucket(timeBucket: string, options: TimeBucketOptions, auth: AuthDto) {
-    return this.timelineAssetColumns(options, auth, { timeBucket });
+  getTimeBucket(timeBucket: string, options: TimeBucketOptions, auth: AuthDto, calendarPage?: TimelineCalendarPage) {
+    const anchorId = calendarPage?.after ?? calendarPage?.before;
+    if (!anchorId) {
+      return this.timelineAssetColumns(options, auth, { timeBucket, calendarPage });
+    }
+    // Resolve opaque IDs and read the page in one snapshot; no withheld EXIF enters a public cursor.
+    return this.db
+      .transaction()
+      .setIsolationLevel('repeatable read')
+      .execute(async (tx) => {
+        const repository = new AssetRepository(tx);
+        const added = options.dateType === TimeBucketDateType.Added || options.orderBy === AssetOrderBy.CreatedAt;
+        const day = added
+          ? sql`(asset."createdAt" AT TIME ZONE 'UTC')::date`
+          : sql`(asset."localDateTime" AT TIME ZONE 'UTC')::date`;
+        const timestamp = added ? sql`asset."createdAt"` : sql`asset."fileCreatedAt"`;
+        const bucketDate = this.timelineBucketDate(options);
+        const cursor = await repository
+          .timelineAssets(options, auth, bucketDate)
+          .where('asset.id', '=', asUuid(anchorId))
+          .where(bucketDate, '=', sql<Date>`${timeBucket.replace(/^[+-]/, '')}::timestamptz`)
+          .where((eb) =>
+            eb.exists(
+              eb.selectFrom('asset_exif').select('asset_exif.assetId').whereRef('asset_exif.assetId', '=', 'asset.id'),
+            ),
+          )
+          .select([
+            sql<string>`${day}::text`.as('day'),
+            sql<string>`${timestamp}::text`.as('timestamp'),
+            'asset.originalFileName as name',
+            'asset.id',
+          ])
+          .executeTakeFirst();
+        if (!cursor) {
+          throw new ConflictException('Calendar page changed; refresh the timeline');
+        }
+        return repository.timelineAssetColumns(options, auth, {
+          timeBucket,
+          calendarPage: { ...calendarPage!, cursor },
+        });
+      });
   }
   /**
    * FL-30 (S-15): one page of the timeline's assets in a flat order — by file name or by rating —
@@ -2498,14 +2820,16 @@ export class AssetRepository {
     target:
       | {
           timeBucket: string;
+          calendarPage?: TimelineCalendarPage & { cursor?: TimelineCalendarCursor };
           page?: undefined;
         }
       | {
           timeBucket?: undefined;
+          calendarPage?: undefined;
           page: TimelineOrderedPage;
         },
   ) {
-    const { timeBucket, page } = target;
+    const { timeBucket, page, calendarPage } = target;
     const sortKeys: Record<TimelineOrderedSort, RawBuilder<unknown>> = {
       filename: sql`asset."originalFileName" collate "und-x-icu"`,
       rating: sql`coalesce(asset_exif.rating, 0)`,
@@ -2516,6 +2840,7 @@ export class AssetRepository {
     const keyAscending = page?.sort === 'filename';
     const reverse = !!page?.reverse;
     const order = options.order ?? 'desc';
+    const calendarOrder = calendarPage?.before ? (order === 'asc' ? 'desc' : 'asc') : order;
     const withPlaces = !auth.sharedLink || auth.sharedLink.showExif;
     const useAddedDate = options.dateType === TimeBucketDateType.Added || options.orderBy === AssetOrderBy.CreatedAt;
     const timeBucketDate = useAddedDate
@@ -2541,6 +2866,11 @@ export class AssetRepository {
       .with('selection', (qb) =>
         qb
           .selectFrom('asset')
+          .$if(!!options.libraryScope || !!options.filter?.libraryScope || !options.albumId, (qb) =>
+            qb.where(
+              libraryScopePredicate(options.libraryScope ?? options.filter?.libraryScope ?? LibraryScope.Personal),
+            ),
+          )
           .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
           // LIB-P3: the viewer's own score only (one row per asset), so the order never ranks by another's
           .$if(page?.sort === 'quality', (qb) =>
@@ -2554,7 +2884,10 @@ export class AssetRepository {
             'asset.duration',
             'asset.id',
             effectiveVisibility('asset').as('visibility'),
-            sql`asset."isFavorite" and asset."ownerId" = ${auth.user.id}`.as('isFavorite'),
+            // the viewer's own mark; a shared link's visitor never sees its owner's favorites
+            (auth.sharedLink ? sql`false` : sql`asset."isFavorite" and asset."ownerId" = ${auth.user.id}`).as(
+              'isFavorite',
+            ),
             sql`asset.type = 'IMAGE'`.as('isImage'),
             sql`asset."deletedAt" is not null`.as('isTrashed'),
             // FL-33 (T-17): the tile's Offline badge (AssetTile.jsx `asset.isOffline`).
@@ -2579,6 +2912,13 @@ export class AssetRepository {
               )
               .as('ratio'),
           ])
+          .$if(!!calendarPage, (qb) =>
+            qb.select([
+              orderDate.as('calendarDay'),
+              orderTimestamp.as('calendarTimestamp'),
+              'asset.originalFileName as calendarName',
+            ]),
+          )
           .$if(!!page, (qb) =>
             qb.select([
               sortKey.as('sortKey'),
@@ -2593,6 +2933,19 @@ export class AssetRepository {
           .$if(withPlaces, (qb) => qb.select(['asset_exif.rating', 'asset.originalFileName']))
           // S-15: the list view's dimensions and size column; hidden with the rest of the metadata
           .$if(withPlaces, (qb) => qb.select(['asset.width', 'asset.height', 'asset_exif.fileSizeInByte']))
+          .$if(!!calendarPage?.membershipAlbumId, (qb) =>
+            qb.select((eb) =>
+              eb
+                .exists(
+                  eb
+                    .selectFrom('album_asset')
+                    .select('album_asset.assetId')
+                    .whereRef('album_asset.assetId', '=', 'asset.id')
+                    .where('album_asset.albumId', '=', asUuid(calendarPage!.membershipAlbumId!)),
+                )
+                .as('inAlbum'),
+            ),
+          )
           .$if(withPlaces, (qb) => qb.select(['asset_exif.city', 'asset_exif.country']))
           .$if(!!options.withCoordinates, (qb) => qb.select(['asset_exif.latitude', 'asset_exif.longitude']))
           .where('asset.deletedAt', options.isTrashed ? 'is not' : 'is', null)
@@ -2636,7 +2989,11 @@ export class AssetRepository {
           .$if(!!options.petId, (qb) => hasPets(qb, [options.petId!], auth.user.id))
           .$if(!!options.userIds, (qb) =>
             qb.where((eb) => {
-              const isOwner = eb('asset.ownerId', '=', anyUuid(options.userIds!));
+              const isOwner = eb(
+                'asset.ownerId',
+                '=',
+                options.userIds!.length === 1 ? asUuid(options.userIds![0]) : anyUuid(options.userIds!),
+              );
               // as getTimeBuckets: the people's shared-album media widens the owner scope, never a Locked request
               return widensToSharedAlbums(options) ? eb.or([isOwner, inSharedAlbum(eb, auth.user.id)]) : isOwner;
             }),
@@ -2679,8 +3036,18 @@ export class AssetRepository {
           .$if(!!options.tagId, (qb) => withTagId(qb, options.tagId!, options.withChildTags))
           .$if(!!options.bestPhotos, (qb) => qb.where((eb) => isBestPhotoOf(eb, options.bestPhotos!)))
           .$if(!page, (qb) =>
-            qb.orderBy(orderDate, order).orderBy(orderTimestamp, order).orderBy('asset.originalFileName', order),
+            qb
+              .orderBy(orderDate, calendarOrder)
+              .orderBy(orderTimestamp, calendarOrder)
+              .orderBy('asset.originalFileName', calendarOrder),
           )
+          .$if(!!calendarPage?.cursor, (qb) => {
+            const cursor = calendarPage!.cursor!;
+            const operator = calendarOrder === 'asc' ? sql`>` : sql`<`;
+            return qb.where(sql<boolean>`(${orderDate}, ${orderTimestamp}, asset."originalFileName", asset.id)
+              ${operator} (${cursor.day}::date, ${cursor.timestamp}::timestamptz, ${cursor.name}, ${cursor.id}::uuid)`);
+          })
+          .$if(!!calendarPage, (qb) => qb.orderBy('asset.id', calendarOrder).limit(calendarPage!.take))
           // Seek on the same tuple as ORDER BY. Preserve the database timestamp's microseconds
           // in the cursor rather than round-tripping the display date through JavaScript Date.
           .$if(!!page?.cursor, (qb) => {
@@ -2712,6 +3079,13 @@ export class AssetRepository {
         qb
           .selectFrom('selection')
           .selectAll()
+          .$if(!!calendarPage?.before, (qb) =>
+            qb
+              .orderBy('calendarDay', order)
+              .orderBy('calendarTimestamp', order)
+              .orderBy('calendarName', order)
+              .orderBy('id', order),
+          )
           // A backward seek selects in reverse, but every response has the canonical display order.
           .$if(reverse, (qb) =>
             qb
@@ -2745,6 +3119,15 @@ export class AssetRepository {
             eb.fn.coalesce(eb.fn('array_agg', ['status']), sql.lit('{}')).as('status'),
             eb.fn.coalesce(eb.fn('array_agg', ['thumbhash']), sql.lit('{}')).as('thumbhash'),
           ])
+          .$if(!!calendarPage, (qb) =>
+            qb.select([
+              sql<string | null>`(array_agg(id::text))[1]`.as('startCursor'),
+              sql<string | null>`(array_agg(id::text))[count(*)::int]`.as('endCursor'),
+            ]),
+          )
+          .$if(!!calendarPage?.membershipAlbumId, (qb) =>
+            qb.select((eb) => eb.fn.coalesce(eb.fn('array_agg', ['inAlbum']), sql.lit('{}')).as('inAlbum')),
+          )
           .$if(!!page, (qb) =>
             qb.select([
               sql<string | null>`(array_agg(cursor))[1]`.as('startCursor'),
@@ -2792,6 +3175,7 @@ export class AssetRepository {
       .where('asset_exif.city', 'is not', null)
       .where('ownerId', '=', asUuid(ownerId))
       .where(isTimelineVisible('asset', options.revealLockedOwnerId))
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .where('type', '=', AssetType.Image)
       .where('deletedAt', 'is', null)
       .$call((qb) => withHiddenContentFilter(qb, options))
@@ -2810,6 +3194,7 @@ export class AssetRepository {
       .select(['id as data', 'createdAt as value'])
       .where('ownerId', '=', asUuid(ownerId))
       .where(isTimelineVisible('asset', options.revealLockedOwnerId))
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .where('type', '=', AssetType.Image)
       .where('deletedAt', 'is', null)
       .$call((qb) => withHiddenContentFilter(qb, options))
@@ -2964,6 +3349,20 @@ export class AssetRepository {
       )
       .execute();
     return result.map((row) => row.path as string);
+  }
+  /**
+   * A scanned file's size, recorded with its new item as an upload's is, so the library's size counts it
+   * before its metadata is read. Metadata extraction writes the size again; an existing row is left alone.
+   */
+  async setExternalFileSizes(libraryId: string, files: { path: string; size: number }[]) {
+    if (files.length === 0) {
+      return;
+    }
+    await sql`insert into "asset_exif" ("assetId", "fileSizeInByte")
+      select "asset"."id", "file"."size"
+      from unnest(${files.map((file) => file.path)}::text[], ${files.map((file) => file.size)}::bigint[]) as "file"("path", "size")
+      join "asset" on "asset"."originalPath" = "file"."path" and "asset"."libraryId" = ${asUuid(libraryId)}
+      on conflict ("assetId") do nothing`.execute(this.db);
   }
   async getLibraryAssetCount(libraryId: string): Promise<number> {
     const { count } = await this.db
@@ -3260,7 +3659,7 @@ export class AssetRepository {
   async getForMetadataExtractionTags(id: string) {
     return this.db
       .selectFrom('asset_exif')
-      .select(['asset_exif.tags', 'asset_exif.updateId'])
+      .select(['asset_exif.tags', 'asset_exif.updateId', 'asset_exif.timeZone'])
       .where('asset_exif.assetId', '=', id)
       .executeTakeFirst();
   }
@@ -3289,6 +3688,51 @@ export class AssetRepository {
       )
       .where('asset.id', '=', id)
       .executeTakeFirstOrThrow();
+  }
+  /**
+   * Writes each asset's current tag values to its EXIF row and locks them, as `getForUpdateTags` and an
+   * `upsertExif` with `lockedPropertiesBehavior: 'append'` do for one asset, in one statement per chunk
+   * instead of two round trips per asset. An asset that no longer exists is skipped.
+   */
+  @Chunked()
+  async updateTagsForAssets(ids: string[]): Promise<void> {
+    if (ids.length === 0) {
+      return;
+    }
+    const locked: LockableProperty[] = ['tags'];
+    // Two tag edits on the same items at once: the second waits here, then reads the first one's
+    // committed tags, so neither writes a tag list that misses the other's change. Ordered by id, so
+    // overlapping edits never deadlock; NO KEY UPDATE leaves other tables' references to the items alone.
+    await sql`SELECT id FROM asset WHERE id = ANY(${ids}::uuid[]) ORDER BY id FOR NO KEY UPDATE`.execute(this.db);
+    await this.db
+      .insertInto('asset_exif')
+      .columns(['assetId', 'tags', 'lockedProperties'])
+      .expression((eb) =>
+        eb
+          .selectFrom('asset')
+          .select((eb) => [
+            'asset.id',
+            eb.fn
+              .coalesce(
+                eb
+                  .selectFrom('tag_asset')
+                  .innerJoin('tag', 'tag.id', 'tag_asset.tagId')
+                  .select((eb) => eb.fn.agg<string[]>('array_agg', ['tag.value']).as('tags'))
+                  .whereRef('tag_asset.assetId', '=', 'asset.id'),
+                sql<string[]>`'{}'::character varying[]`,
+              )
+              .as('tags'),
+            sql<LockableProperty[]>`${locked}::character varying[]`.as('lockedProperties'),
+          ])
+          .where('asset.id', '=', anyUuid(ids)),
+      )
+      .onConflict((oc) =>
+        oc.column('assetId').doUpdateSet((eb) => ({
+          tags: eb.ref('excluded.tags'),
+          lockedProperties: distinctLocked(eb, locked),
+        })),
+      )
+      .execute();
   }
   @GenerateSql({ params: [] })
   async getDescriptionStats(): Promise<DescriptionStats> {

@@ -24,6 +24,7 @@ import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
@@ -57,8 +58,16 @@ const setup = (db?: Kysely<DB>) => {
       AssetEditRepository,
       SystemMetadataRepository,
     ],
-    mock: [JobRepository, LoggingRepository, StorageRepository, MachineLearningRepository, MlDestinationRepository],
+    mock: [
+      EventRepository,
+      JobRepository,
+      LoggingRepository,
+      StorageRepository,
+      MachineLearningRepository,
+      MlDestinationRepository,
+    ],
   });
+  service.ctx.getMock(EventRepository).emit.mockResolvedValue();
   // FL-57: face changes queue the refresh of generated text that may name the wrong people
   service.ctx.getMock(JobRepository).queue.mockResolvedValue();
   useRealJobPublication(service.ctx.database, service.ctx.getMock(JobRepository), [service.sut]);
@@ -524,9 +533,105 @@ describe(PersonService.name, () => {
       },
     );
 
-    it.each([false, true])(
-      'repairs an imported ML face without face_search, preserving decisions (corrected=%s)',
-      async (corrected) => {
+    it.each([false, true])('retains manual-face overlaps (contested=%s)', async (contested) => {
+      const { sut, ctx } = setup();
+      ctx.getMock(JobRepository).queueAll.mockResolvedValue();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newExif({ assetId: asset.id, description: '' });
+      await ctx.newAssetFile({
+        assetId: asset.id,
+        type: AssetFileType.Preview,
+        isEdited: false,
+        path: 'overlapping-preview.jpg',
+      });
+      const boxes = [
+        {
+          imageWidth: 800,
+          imageHeight: 1000,
+          boundingBoxX1: 200,
+          boundingBoxY1: 200,
+          boundingBoxX2: 400,
+          boundingBoxY2: 400,
+        },
+        {
+          imageWidth: 200,
+          imageHeight: 250,
+          boundingBoxX1: contested ? 60 : 55,
+          boundingBoxY1: contested ? 60 : 55,
+          boundingBoxX2: contested ? 110 : 105,
+          boundingBoxY2: contested ? 110 : 105,
+        },
+      ];
+      const ids: string[] = [];
+      for (const box of boxes) {
+        const { person } = await ctx.newPerson({ ownerId: user.id });
+        const { assetFace } = await ctx.newAssetFace({
+          ...box,
+          assetId: asset.id,
+          personGroupId: person.personGroupId,
+          sourceType: SourceType.Manual,
+        });
+        ids.push(assetFace.id);
+      }
+      const readFaces = () =>
+        ctx.database.selectFrom('asset_face').selectAll().where('assetId', '=', asset.id).orderBy('id').execute();
+      const before = await readFaces();
+      const people = await ctx.database
+        .selectFrom('person')
+        .selectAll()
+        .where('ownerId', '=', user.id)
+        .orderBy('personGroupId')
+        .execute();
+      const embeddings = [0, 1].map((index) =>
+        JSON.stringify(Array.from({ length: 512 }, (_, column) => Number(column === index))),
+      );
+      ctx.getMock(MachineLearningRepository).detectFaces.mockResolvedValue({
+        imageWidth: 400,
+        imageHeight: 500,
+        faces: [
+          {
+            boundingBox: contested ? { x1: 105, y1: 105, x2: 205, y2: 205 } : { x1: 100, y1: 100, x2: 200, y2: 200 },
+            embedding: embeddings[0],
+            score: 1,
+          },
+          {
+            boundingBox: contested ? { x1: 90, y1: 90, x2: 190, y2: 190 } : { x1: 110, y1: 110, x2: 210, y2: 210 },
+            embedding: embeddings[1],
+            score: 1,
+          },
+        ],
+      });
+      await expect(sut.handleDetectFaces({ id: asset.id, preserveImportedFaces: true })).resolves.toBe(
+        JobStatus.Success,
+      );
+      expect(await readFaces()).toEqual(before);
+      expect(
+        await ctx.database
+          .selectFrom('person')
+          .selectAll()
+          .where('ownerId', '=', user.id)
+          .orderBy('personGroupId')
+          .execute(),
+      ).toEqual(people);
+      expect(
+        await ctx.database
+          .selectFrom('face_search')
+          .select(['faceId', 'embedding'])
+          .where('faceId', 'in', ids)
+          .orderBy('faceId')
+          .execute(),
+      ).toEqual(
+        ids
+          .map((faceId, index) => ({ faceId, embedding: embeddings[contested ? 1 - index : index] }))
+          .sort((a, b) => a.faceId.localeCompare(b.faceId)),
+      );
+      expect(ctx.getMock(JobRepository).queueAll).not.toHaveBeenCalled();
+    });
+
+    it.each([false, true].flatMap((corrected) => [0.5, 1, 2].map((scale) => ({ corrected, scale }))))(
+      'repairs an imported ML face without face_search, preserving decisions (corrected=$corrected, scale=$scale)',
+      async ({ corrected, scale }) => {
         const { sut, ctx } = setup();
         const { user } = await ctx.newUser();
         const { person } = await ctx.newPerson({ ownerId: user.id });
@@ -562,15 +667,15 @@ describe(PersonService.name, () => {
         expect(await readEmbedding()).toEqual([]);
         const embedding = newEmbedding();
         ctx.getMock(MachineLearningRepository).detectFaces.mockResolvedValue({
-          imageHeight: assetFace.imageHeight,
-          imageWidth: assetFace.imageWidth,
+          imageHeight: assetFace.imageHeight * scale,
+          imageWidth: assetFace.imageWidth * scale,
           faces: [
             {
               boundingBox: {
-                x1: assetFace.boundingBoxX1,
-                y1: assetFace.boundingBoxY1,
-                x2: assetFace.boundingBoxX2,
-                y2: assetFace.boundingBoxY2,
+                x1: assetFace.boundingBoxX1 * scale,
+                y1: assetFace.boundingBoxY1 * scale,
+                x2: assetFace.boundingBoxX2 * scale,
+                y2: assetFace.boundingBoxY2 * scale,
               },
               embedding,
               score: 1,

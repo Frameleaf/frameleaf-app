@@ -122,8 +122,10 @@ describe('Image previews (FL-366)', () => {
   });
 
   it('rebuilds every preview with the thumbnail job', async () => {
+    sdkMock.getQueue.mockResolvedValueOnce(queue(0)).mockResolvedValueOnce(queue(30));
     draft.store = newStore();
     render(ImageSettings);
+    expect(await screen.findByRole('heading', { name: 'Every photo has a preview' })).toBeInTheDocument();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Rebuild previews' }));
     expect(sdkMock.runQueueCommandLegacy).toHaveBeenCalledWith({
@@ -131,5 +133,52 @@ describe('Image previews (FL-366)', () => {
       queueCommandDto: { command: QueueCommand.Start, force: true },
     });
     expect(await screen.findByText(/Every preview is being made again/)).toBeInTheDocument();
+    // the queue is read again, so the running rebuild shows without a reload
+    expect(await screen.findByRole('heading', { name: 'Making previews' })).toBeInTheDocument();
+    expect(screen.getByText(/30 photos and videos are waiting/)).toBeInTheDocument();
+  });
+
+  it('says the space previews take, about what each choice would take, and saves a rebuild for tonight (FL-521)', async () => {
+    sdkMock.getMediaCopies.mockResolvedValue({
+      photos: 900,
+      withoutPreview: 0,
+      videos: 100,
+      withCopy: 10,
+      previewsBytes: 41_000_000_000,
+      playbackBytes: null,
+      measuredAt: '2026-10-22T03:00:00.000Z',
+      tonight: [],
+      videoMinutes: 0,
+      copyMinutes: 0,
+      videoCard: { failedAt: null, slowdown: null, lastTest: null },
+    });
+    sdkMock.redoLibraryWork.mockResolvedValue({ tonight: ['thumbnailGeneration' as never] });
+    const store = newStore();
+    const saveKeys = vi.spyOn(store, 'saveKeys').mockResolvedValue(true);
+    draft.store = store;
+    render(ImageSettings);
+
+    expect(await screen.findByText(/They take 41 GB for your 1,000 photos and videos/)).toBeInTheDocument();
+    expect(screen.getByText(/Previews would take about 41 GB for your library/)).toBeInTheDocument();
+
+    await fireEvent.click(quality().getByRole('button', { name: 'Sharpest' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Save and rebuild tonight' }));
+    expect(saveKeys).toHaveBeenCalledWith(['image']);
+    expect(sdkMock.redoLibraryWork).toHaveBeenCalledWith({
+      libraryRedoDto: { queue: 'thumbnailGeneration', when: 'tonight' },
+    });
+  });
+
+  it('stops a rebuild that is running (FL-521)', async () => {
+    sdkMock.getQueue.mockResolvedValue(queue(40));
+    sdkMock.emptyQueue.mockResolvedValue(undefined as never);
+    draft.store = newStore();
+    render(ImageSettings);
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Stop' }));
+    expect(sdkMock.emptyQueue).toHaveBeenCalledWith({
+      name: QueueName.ThumbnailGeneration,
+      queueDeleteDto: { failed: false },
+    });
   });
 });

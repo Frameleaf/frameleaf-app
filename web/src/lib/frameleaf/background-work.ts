@@ -7,7 +7,8 @@ import { JOB_QUEUES } from '$lib/frameleaf/job-queues';
  * activity-feed.mjs `summariseBackgroundQueues`).
  *
  * One card per kind of work the server is busy with: Thumbnails, Metadata, Face detection, Search
- * indexing… Each says only what a household needs: whether it is waiting, running or paused, how many
+ * indexing… Each says only what a household needs: whether it is waiting (for tonight, when quiet hours
+ * save it for the overnight window), running or paused, how many
  * items are waiting and running, and how far the running work has got. Stage totals, prerequisites,
  * destinations and run ids stay on the Background work settings page, which every card opens.
  *
@@ -27,6 +28,33 @@ export type BackgroundWorkCard = {
   running: number;
   /** 0–100 while running, when the server counts a total; otherwise null. */
   progress: number | null;
+  /**
+   * FL-711: quiet hours saved this work for the overnight window, and when it starts again by itself
+   * (null when the schedule never starts). Absent for work nothing is holding back for the night.
+   */
+  tonight?: { startsAt: string | null };
+};
+
+/** Starts before this hour of the morning after still belong to tonight. */
+const OVERNIGHT_CUTOFF_HOUR = 12;
+
+/**
+ * FL-711: how to say when quiet hours start saved work again, judged by the viewer's local calendar
+ * days (never a fixed 24 hours, which a daylight-saving day is not): `tonight` for a start later
+ * today or before noon tomorrow, `day` for a start further off, `unscheduled` when there is none.
+ */
+export const tonightStart = (startsAt: string | null, now: Date = new Date()): 'tonight' | 'day' | 'unscheduled' => {
+  const at = startsAt ? new Date(startsAt) : null;
+  if (!at || Number.isNaN(at.getTime())) {
+    return 'unscheduled';
+  }
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  const day = new Date(at.getFullYear(), at.getMonth(), at.getDate());
+  if (day.getTime() === today.getTime()) {
+    return 'tonight';
+  }
+  return day.getTime() === tomorrow.getTime() && at.getHours() < OVERNIGHT_CUTOFF_HOUR ? 'tonight' : 'day';
 };
 
 const percent = (done: number, total: number) =>
@@ -38,8 +66,10 @@ const fromQueue = (queue: DurableQueueRun): BackgroundWorkCard | null => {
   if (running + waiting <= 0) {
     return null;
   }
-  const paused = queue.isPaused || queue.state === 'paused';
-  const stage: BackgroundWorkStage = paused ? 'paused' : running > 0 ? 'running' : 'queued';
+  // Work quiet hours hold is waiting for tonight, not paused until someone starts it again (FL-711).
+  const tonight = queue.isPaused && queue.heldForNight;
+  const paused = !tonight && (queue.isPaused || queue.state === 'paused');
+  const stage: BackgroundWorkStage = paused ? 'paused' : running > 0 && !tonight ? 'running' : 'queued';
   const total = Math.max(queue.total, queue.processed + running + waiting);
   return {
     id: `queue:${queue.name}`,
@@ -48,6 +78,7 @@ const fromQueue = (queue: DurableQueueRun): BackgroundWorkCard | null => {
     waiting,
     running,
     progress: stage === 'running' && !queue.unavailable ? percent(Math.min(queue.processed, total), total) : null,
+    ...(tonight && { tonight: { startsAt: queue.resumesAt ?? null } }),
   };
 };
 

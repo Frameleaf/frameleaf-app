@@ -521,9 +521,10 @@
   .explore-library strong {
     font-weight: 560;
   }
+  /* FL-707 P5: explanatory text is at least 12px. */
   .explore-library small {
     color: var(--fl-muted);
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 400;
   }
   .el-people {
@@ -599,12 +600,33 @@
     background: linear-gradient(180deg, transparent 20%, rgb(0 0 0 / 72%));
     pointer-events: none;
   }
+  /* FL-707 item 16: a real scrim along the bottom and the left, so the white copy reads on any photo. */
+  .el-best > .el-cover-shade {
+    background:
+      linear-gradient(180deg, transparent 25%, rgb(0 0 0 / 45%) 60%, rgb(0 0 0 / 82%)),
+      linear-gradient(90deg, rgb(0 0 0 / 40%), transparent 65%);
+  }
   .el-best-copy {
     position: relative;
     display: flex;
     flex-direction: column;
     gap: 8px;
-    margin: 90px 24px 22px;
+    margin: 72px 24px 22px;
+    text-shadow: 0 1px 2px rgb(0 0 0 / 45%);
+  }
+  /*
+   * The "Best Photos" label stands clear of the title. It sits high on the card where the scrim is
+   * still light, so it carries its own dark backing: white on it stays at least 4.5:1 on a white photo.
+   */
+  .el-best-copy > .el-overline {
+    align-self: flex-start;
+    margin-bottom: 4px;
+    margin-inline-start: -8px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgb(0 0 0 / 60%);
+    font-weight: 600;
+    letter-spacing: 0.02em;
   }
   .el-best-copy > strong {
     max-width: 24ch;
@@ -874,7 +896,7 @@
     display: block;
     margin-top: var(--fl-space-2);
     overflow: hidden;
-    font-size: 11px;
+    font-size: 12px;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -1075,5 +1097,10 @@
     .el-more a {
       min-height: 40px;
     }
+  }
+  /* FL-707 P1: one top padding above every library-side page heading (28px, 16px on phones);
+     the page area already adds 8px. */
+  .explore-library {
+    padding-top: calc(var(--fl-page-top) - 8px);
   }
 </style>

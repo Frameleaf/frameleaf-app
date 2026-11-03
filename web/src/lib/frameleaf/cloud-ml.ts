@@ -310,16 +310,21 @@ export type LocalWorker = {
 };
 
 const detected = (
-  check: Pick<HardwareCheckResponseDto['ml'], 'model' | 'vramGb' | 'backend'> | null | undefined,
-): DetectedGpu | null =>
-  check && check.backend !== 'CPU' && check.model && (check.vramGb ?? 0) > 0
-    ? {
-        name: check.model,
-        vramGb: check.vramGb!,
-        backend: check.backend,
-        profile: gpuProfileFor(check.model, check.vramGb!),
-      }
+  check: Pick<HardwareCheckResponseDto['ml'], 'model' | 'vramGb' | 'backend' | 'integrated'> | null | undefined,
+): DetectedGpu | null => {
+  if (!check || check.backend === 'CPU' || !check.model) {
+    return null;
+  }
+  const vramGb = check.vramGb ?? 0;
+  if (vramGb > 0) {
+    return { name: check.model, vramGb, backend: check.backend, profile: gpuProfileFor(check.model, vramGb) };
+  }
+  // An integrated GPU (OpenVINO on an Intel iGPU) has no memory of its own to report; it is still the
+  // GPU the container uses, not the processor.
+  return check.integrated
+    ? { name: check.model, vramGb: 0, backend: check.backend, profile: null, integrated: true }
     : null;
+};
 
 /** The GPU each container can actually use, from the Hardware & GPU check (null = processor only). */
 export const workerFromHardware = (check: HardwareCheckResponseDto | null | undefined): LocalWorker => ({
@@ -370,17 +375,26 @@ export const localCapability = (id: WorkloadRowId, worker: LocalWorker | null): 
     return { ok: false, key: 'admin.frameleaf_routing_local_no_worker', values: {} };
   }
   const gpu = workerGpu(worker, id);
+  // An integrated GPU shares the computer's memory: what fits is decided as for the processor, and runs on it.
+  const integrated = !!gpu?.integrated;
   if ((LADDER_WORKLOADS as readonly string[]).includes(id)) {
     const ladder = ladderFor(id as LadderWorkload);
     const fits = ladder.filter((item) => ['gpu', 'cpu'].includes(bandFor(item, gpu, worker.cpuProfile)));
     if (fits.length > 0) {
       return {
         ok: true,
-        key: gpu ? 'admin.frameleaf_routing_local_up_to_gpu' : 'admin.frameleaf_routing_local_up_to_cpu',
+        key: integrated
+          ? 'admin.frameleaf_routing_local_up_to_integrated'
+          : gpu
+            ? 'admin.frameleaf_routing_local_up_to_gpu'
+            : 'admin.frameleaf_routing_local_up_to_cpu',
         values: { model: fits.at(-1)!.name, gpu: gpu?.name ?? '', memory: gpu?.vramGb ?? 0 },
       };
     }
     const needs = Math.min(...ladder.map((item) => minVramGb(item)).filter((value): value is number => value !== null));
+    if (gpu && integrated) {
+      return { ok: false, key: 'admin.frameleaf_routing_local_needs_gpu_integrated', values: { needs, gpu: gpu.name } };
+    }
     return gpu
       ? {
           ok: false,
@@ -388,6 +402,9 @@ export const localCapability = (id: WorkloadRowId, worker: LocalWorker | null): 
           values: { needs, gpu: gpu.name, memory: gpu.vramGb },
         }
       : { ok: false, key: 'admin.frameleaf_routing_local_needs_gpu_none', values: { needs } };
+  }
+  if (gpu && integrated) {
+    return { ok: true, key: 'admin.frameleaf_routing_local_integrated', values: { gpu: gpu.name } };
   }
   if (gpu && gpu.vramGb >= row.localGb) {
     return { ok: true, key: 'admin.frameleaf_routing_local_fits', values: { gpu: gpu.name, memory: gpu.vramGb } };

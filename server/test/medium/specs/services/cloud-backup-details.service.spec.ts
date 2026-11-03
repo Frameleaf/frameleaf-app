@@ -82,34 +82,38 @@ describe(CloudBackupDetailsService.name, () => {
     expect((await index.getAssetDetails([asset.id])).get(asset.id)!.details.isFavorite).toBe(false);
   });
 
-  it('owner mode refuses a current foreign album without leaking a membership on rollback', async () => {
+  it('owner mode puts an item back without its membership of someone else’s album (a shared album)', async () => {
     const { ctx, sut, index } = setup();
     const { user } = await ctx.newUser();
     const { user: foreign } = await ctx.newUser();
     const { asset } = await ctx.newAsset({ ownerId: user.id });
     const { album } = await ctx.newAlbum({ ownerId: foreign.id }, []);
     const current = (await index.getAssetDetails([asset.id])).get(asset.id)!;
-    await expect(
-      defaultDatabase.transaction().execute((db) =>
-        sut.putBack(
-          {
-            assetId: asset.id,
-            ownerId: user.id,
-            type: current.record.type,
-            current: current.details,
-            backup: {
-              ...current.details,
-              albums: [{ id: album.id, name: 'Foreign private album' }],
-              isFavorite: true,
-            },
-            mode: 'replace',
-            people: {},
+    await defaultDatabase.transaction().execute(async (db) => {
+      await sut.putBack(
+        {
+          assetId: asset.id,
+          ownerId: user.id,
+          type: current.record.type,
+          current: current.details,
+          backup: {
+            ...current.details,
+            albums: [{ id: album.id, name: 'Partner’s shared album' }],
+            isFavorite: true,
           },
+          mode: 'replace',
+          people: {},
+        },
+        { db, ownerId: user.id, jobs: [] },
+      );
+      await expect(
+        sut.restoreAlbum(
+          { albumId: album.id, album: undefined, memberIds: [asset.id] },
           { db, ownerId: user.id, jobs: [] },
         ),
-      ),
-    ).rejects.toThrow('Owner restore album unavailable');
-    expect((await index.getAssetDetails([asset.id])).get(asset.id)!.details).toEqual(current.details);
+      ).resolves.toBeNull();
+    });
+    expect((await index.getAssetDetails([asset.id])).get(asset.id)!.details.isFavorite).toBe(true);
     expect(
       await defaultDatabase.selectFrom('album_asset').select('assetId').where('albumId', '=', album.id).execute(),
     ).toEqual([]);

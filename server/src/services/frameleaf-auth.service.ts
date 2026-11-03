@@ -57,6 +57,7 @@ import {
   hasInstanceAccess,
   httpsOrigin,
 } from 'src/utils/frameleaf-sign-in.js';
+import { localNotificationText } from 'src/utils/preferences.js';
 import { publishedLocalOrigins } from 'src/utils/public-url.js';
 import { createSession } from 'src/utils/session.js';
 
@@ -65,6 +66,7 @@ export const HANDOFF_TTL_SECONDS = 60;
 
 const NOT_AVAILABLE_MESSAGE = 'Sign in with Frameleaf is not available on this server';
 const NOT_LINKED_MESSAGE = 'This server is not linked to Frameleaf Cloud';
+const IMPORT_CLAIM_PENDING_MESSAGE = 'This account must be claimed before signing in';
 const LINK_CONFIRM_TTL_SECONDS = 10 * 60;
 const LINK_CONFIRM_PURPOSE = 'frameleaf-link-confirm';
 
@@ -93,12 +95,13 @@ const DELETED_ACCOUNT_MESSAGE =
   'The account this Frameleaf account is linked to is being removed from this server. Ask an administrator to restore it.';
 
 /** Why a person Frameleaf vouched for cannot be signed in (the account rules of every Frameleaf sign-in). */
-type SignInRefusal = 'email' | 'removed' | 'conflict' | 'setup';
+type SignInRefusal = 'email' | 'removed' | 'conflict' | 'setup' | 'unclaimed';
 
 const SIGN_IN_REFUSAL_CODES: Record<SignInRefusal, FrameleafTokenExchangeErrorCode> = {
   email: FrameleafTokenExchangeErrorCode.EmailUnverified,
   removed: FrameleafTokenExchangeErrorCode.AccountRemoved,
   conflict: FrameleafTokenExchangeErrorCode.AccountConflict,
+  unclaimed: FrameleafTokenExchangeErrorCode.AccountConflict,
   // FL-292: only the owner may become a new server's first administrator
   setup: FrameleafTokenExchangeErrorCode.NoAccess,
 };
@@ -150,9 +153,12 @@ const ERROR_NAMES = {
 } as const;
 
 /** FL-230: a token exchange refusal, with the code the app explains it by. */
-const exchangeRefusal = (code: FrameleafTokenExchangeErrorCode) => {
-  const { status, message } = EXCHANGE_REFUSALS[code];
-  return new HttpException({ message, error: ERROR_NAMES[status], statusCode: status, code }, status);
+const exchangeRefusal = (code: FrameleafTokenExchangeErrorCode, message?: string) => {
+  const { status, message: defaultMessage } = EXCHANGE_REFUSALS[code];
+  return new HttpException(
+    { message: message ?? defaultMessage, error: ERROR_NAMES[status], statusCode: status, code },
+    status,
+  );
 };
 
 /**
@@ -332,7 +338,8 @@ export class FrameleafAuthService extends BaseService {
           claims as OAuthProfile,
           loginDetails,
           { sid: sid ?? undefined },
-          (refusal) => exchangeRefusal(SIGN_IN_REFUSAL_CODES[refusal]),
+          (refusal, message) =>
+            exchangeRefusal(SIGN_IN_REFUSAL_CODES[refusal], refusal === 'unclaimed' ? message : undefined),
           async () => {
             checkExpiry();
             // A back-channel logout records the revocation before it looks for tagged sessions, so a
@@ -392,6 +399,7 @@ export class FrameleafAuthService extends BaseService {
     const link = await this.frameleafAccountRepository.getLinkBySub(profile.sub);
     if (link) {
       user = await this.userRepository.get(link.userId, { withDeleted: false });
+      if (user?.importClaimPending) throw refuse('unclaimed', IMPORT_CLAIM_PENDING_MESSAGE);
       if (!user) {
         // the linked account is in the trash (scheduled for removal): never create a second one
         throw refuse('removed', DELETED_ACCOUNT_MESSAGE);
@@ -401,6 +409,7 @@ export class FrameleafAuthService extends BaseService {
       // an account here with the same verified email is linked to this Frameleaf account
       const existing = await this.userRepository.getByEmail(email);
       if (existing) {
+        if (existing.importClaimPending) throw refuse('unclaimed', IMPORT_CLAIM_PENDING_MESSAGE);
         const other = await this.frameleafAccountRepository.getLinkByUser(existing.id);
         if (other && other.sub !== profile.sub) {
           throw refuse('conflict', 'This account is already linked to another Frameleaf account');
@@ -424,14 +433,17 @@ export class FrameleafAuthService extends BaseService {
       // FL-235: a person invited to this server gets their own account, with the quota the
       // administrator chose for invited accounts (unlimited by default); the server's owner is never
       // capped: the owner is the link's account (its sub) when known, as GET /users/me reports it
-      const { frameleafCloud } = await this.getConfig({ withCache: false });
+      const { frameleafCloud, user: userConfig } = await this.getConfig({ withCache: false });
       const { link: cloudLink, linked } = await readCloudLink({
         configRepository: this.configRepository,
         systemMetadataRepository: this.systemMetadataRepository,
       });
       const ownerAccountId = linked ? cloudLink?.accountId : undefined;
       const isOwner = ownerAccountId ? profile.sub === ownerAccountId : access === 'owner';
-      const quota = isOwner ? null : (frameleafCloud.signIn?.invitedStorageQuota ?? null);
+      // FL-516: "Space for new people" decides; the older invited-account default applies while it is unset
+      const quota = isOwner
+        ? null
+        : (userConfig.newUserStorageQuota ?? frameleafCloud.signIn?.invitedStorageQuota ?? null);
       // The caller holds the setup claim lock before the Cloud authority lock, as setup does.
       user = await this.createUser({
         name: typeof profile.name === 'string' && profile.name.trim() ? profile.name.trim() : email,
@@ -911,12 +923,19 @@ export class FrameleafAuthService extends BaseService {
       if (admin.id === user.id) {
         continue;
       }
+      const name = user.name || user.email;
+      const { title, body } = await localNotificationText(
+        this.userRepository,
+        admin.id,
+        { version: 1, key: 'admin-granted', args: { name } },
+        { title: 'New administrator', body: `${name} became an administrator through Frameleaf Cloud` },
+      );
       const item = await this.notificationRepository.create({
         userId: admin.id,
         type: NotificationType.SystemMessage,
         level: NotificationLevel.Info,
-        title: 'New administrator',
-        description: `${user.name || user.email} became an administrator through Frameleaf Cloud`,
+        title,
+        description: body,
         data: JSON.stringify({ userId: user.id, source: 'frameleaf_role' }),
       });
       this.websocketRepository.clientSend('on_notification', admin.id, mapNotification(item));

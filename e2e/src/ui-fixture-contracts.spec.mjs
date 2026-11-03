@@ -52,7 +52,7 @@ it('serves a manifest and editor hello compatible with the current Studio host',
     'http://localhost/studio-engine/editor.html',
   );
   const postMessage = vi.fn();
-  runInNewContext(editor.body.match(/<script>([\s\S]*)<\/script>/)[1], {
+  runInNewContext(editor.body.match(/<script>([\s\S]*)<\/script\s*>/i)[1], {
     URLSearchParams,
     location: { search: '', origin: 'http://localhost' },
     window: {},

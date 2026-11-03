@@ -10,6 +10,7 @@ import { resolve } from 'node:path';
  */
 export const MEDIUM_SCALE_SUITES = Object.freeze({
   scale: [
+    'test/medium/specs/performance/large-library-plans.spec.ts',
     'test/medium/specs/repositories/sql-queue.spec.ts',
     'test/medium/specs/repositories/queue-selection-lineage.spec.ts',
     'test/medium/specs/repositories/queue-selection-recovery.spec.ts',

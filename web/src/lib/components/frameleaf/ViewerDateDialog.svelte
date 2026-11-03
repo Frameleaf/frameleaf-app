@@ -3,8 +3,9 @@
    * "Edit date and time" (audit V-23), ported from `DateTimeDialog` in
    * `design/frameleaf/template/src/MediaViewer.jsx:3397-3463` and `.mv-form` (media-viewer.css:1712-1752):
    * a date, a time, a time zone whose first choice keeps the current one, and a line saying what the
-   * capture time becomes. Saving writes `dateTimeOriginal` with the zone's offset through
-   * `updateAsset`, as the production date modal did; the zone list is the template's common zones
+   * capture time becomes. Saving writes `dateTimeOriginal` with the zone's offset and the zone by name
+   * through the bulk update (LIB-02: an offset alone kept the old zone, and a zone with the same offset
+   * saved nothing); the zone list is the template's common zones
    * followed by every other zone, so no zone the old dialog offered is lost.
    */
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
@@ -18,7 +19,7 @@
   } from '$lib/modals/timezone-utils';
   import { locale } from '$lib/stores/preferences.store';
   import { handleError } from '$lib/utils/handle-error';
-  import { updateAsset, type AssetResponseDto } from '@frameleaf/sdk';
+  import { updateAssets, type AssetResponseDto } from '@frameleaf/sdk';
   import { DateTime } from 'luxon';
   import { t } from 'svelte-i18n';
 
@@ -93,7 +94,14 @@
     }
     saving = true;
     try {
-      await updateAsset({ id: asset.id, updateAssetDto: { dateTimeOriginal: toIsoDate(takenAt, targetZone) } });
+      await updateAssets({
+        assetBulkUpdateDto: {
+          ids: [asset.id],
+          dateTimeOriginal: toIsoDate(takenAt, targetZone),
+          // keeping the zone keeps its name, even one the browser's list has no entry for
+          timeZone: zone || initialTimeZone || targetZone.value,
+        },
+      });
       saved = true;
       open = false;
     } catch (error) {

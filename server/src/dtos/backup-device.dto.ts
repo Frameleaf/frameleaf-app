@@ -54,7 +54,7 @@ export const ReconciliationStartSchema = z
       .array(BucketDigestSchema)
       .length(256)
       .describe(
-        'First byte buckets in index order. Digest SHA256 of sorted distinct raw32-byte hashes; empty digest SHA256(empty). Maximum2000 hashes per bucket; larger sets refused.',
+        'First byte buckets in index order. Digest SHA256 of sorted distinct raw 32-byte hashes; empty digest SHA256(empty). Maximum 2000 hashes per bucket; larger sets refused.',
       ),
   })
   .meta({ id: 'ReconciliationStartDto' });

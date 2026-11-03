@@ -1,0 +1,110 @@
+{
+  "epoch": 1,
+  "pins": [
+    {
+      "artifactBytes": {
+        ".gitattributes": 2291,
+        "README.md": 320,
+        "config.json": 196,
+        "models--frameleaf--ViT-B-32__openai/refs/main": 40,
+        "textual/merges.txt": 524619,
+        "textual/model.onnx": 254193396,
+        "textual/special_tokens_map.json": 588,
+        "textual/tokenizer.json": 3642073,
+        "textual/tokenizer_config.json": 736,
+        "textual/vocab.json": 862328,
+        "visual/model.onnx": 351613724,
+        "visual/preprocess_cfg.json": 197
+      },
+      "embeddingDimensions": 512,
+      "entries": {
+        "clip": {
+          "visual": {
+            "modelName": "ViT-B-32__openai"
+          }
+        }
+      },
+      "modelKey": "clip:c4410149fb53f66b0eb32c730448d479117f74227628fe1ca0b98737f21c74e7",
+      "modelName": "ViT-B-32__openai",
+      "modelSnapshotRevision": "a857c8de2c07bbcfa6646adfcf31b798845afa1e",
+      "models": [
+        {
+          "artifacts": {
+            ".gitattributes": "fe9518c29642e173be50548f62500d3f87ab4becc4d0de5e57c4e7fba5b3bf5e",
+            "README.md": "7f3eb44999af7cb7045911d2472f814aed3c03564956bf2191dcfe4ffd379e2e",
+            "config.json": "59a182a6dce0adeb303f3d72d73758d68ba29516d928dd92740465f498290409",
+            "models--frameleaf--ViT-B-32__openai/refs/main": "c9af303b6892ad38a0993ade1668ce0ef6be4a000c6b5564d3fb58098dda13c7",
+            "textual/merges.txt": "9fd691f7c8039210e0fced15865466c65820d09b63988b0174bfe25de299051a",
+            "textual/model.onnx": "b80cf0af751533a6712d92247f0ddc0c95208748bc59a1a27f33e67be6864e3b",
+            "textual/special_tokens_map.json": "2cdb3b8331a60c92fc1e55a13e9fd61fd2293c5a51275fdcccd62b780052530e",
+            "textual/tokenizer.json": "6d9109cc838977f3ca94a379eec36aecc7c807e1785cd729660ca2fc0171fb35",
+            "textual/tokenizer_config.json": "39bae5313c2da6467866dee758e754d69f0e302a875027b142531cb9c51c7c28",
+            "textual/vocab.json": "5047b556ce86ccaf6aa22b3ffccfc52d391ea4accdab9c2f2407da5b742d4363",
+            "visual/model.onnx": "33a3df41ceef21acdf371af00f6dd0456ec1f9eba24d03a7720f9c3734e40859",
+            "visual/preprocess_cfg.json": "c4fd008cd177c58a8fe107b099bac98913eaa6be6114dd59a4b45145c3c7673f"
+          },
+          "name": "ViT-B-32__openai",
+          "task": "clip",
+          "type": "visual"
+        }
+      ],
+      "preprocessingSha256": "8d9fc77dbb8d8c1ee262ed800a564b7cc82b0160e3c29166f724b84529ec353a",
+      "workload": "clip"
+    },
+    {
+      "artifactBytes": {
+        ".gitattributes": 2333,
+        "README.md": 583,
+        "detection/model.onnx": 16923827,
+        "models--frameleaf--antelopev2/refs/main": 40,
+        "recognition/model.onnx": 260665334
+      },
+      "embeddingDimensions": 512,
+      "entries": {
+        "facial-recognition": {
+          "detection": {
+            "modelName": "antelopev2",
+            "options": {
+              "minScore": 0.7
+            }
+          },
+          "recognition": {
+            "modelName": "antelopev2"
+          }
+        }
+      },
+      "modelKey": "face:c0d072bdd543c5576821a851143e1920fdc41a61c2ec5499aec3e2f53c5fb81a",
+      "modelName": "antelopev2",
+      "modelSnapshotRevision": "51ca7e153bccebdbae224779e23c9c243e2fec85",
+      "models": [
+        {
+          "artifacts": {
+            ".gitattributes": "75ba335cf8788deb51b215d50304007dd47980f80a42ea1652f269adc361144c",
+            "README.md": "a3b5ef75bdc49b9699e52d35af2ce078d227c80600f4e8e023375f525d287f91",
+            "detection/model.onnx": "5838f7fe053675b1c7a08b633df49e7af5495cee0493c7dcf6697200b85b5b91",
+            "models--frameleaf--antelopev2/refs/main": "d95906db621c3025f0e6352ca925f544f141432327da64965a6abb81199ac537",
+            "recognition/model.onnx": "4ab1d6435d639628a6f3e5008dd4f929edf4c4124b1a7169e1048f9fef534cdf"
+          },
+          "name": "antelopev2",
+          "task": "facial-recognition",
+          "type": "detection"
+        },
+        {
+          "artifacts": {
+            ".gitattributes": "75ba335cf8788deb51b215d50304007dd47980f80a42ea1652f269adc361144c",
+            "README.md": "a3b5ef75bdc49b9699e52d35af2ce078d227c80600f4e8e023375f525d287f91",
+            "detection/model.onnx": "5838f7fe053675b1c7a08b633df49e7af5495cee0493c7dcf6697200b85b5b91",
+            "models--frameleaf--antelopev2/refs/main": "d95906db621c3025f0e6352ca925f544f141432327da64965a6abb81199ac537",
+            "recognition/model.onnx": "4ab1d6435d639628a6f3e5008dd4f929edf4c4124b1a7169e1048f9fef534cdf"
+          },
+          "name": "antelopev2",
+          "task": "facial-recognition",
+          "type": "recognition"
+        }
+      ],
+      "preprocessingSha256": "8d9fc77dbb8d8c1ee262ed800a564b7cc82b0160e3c29166f724b84529ec353a",
+      "workload": "face"
+    }
+  ],
+  "schemaVersion": 1
+}

@@ -90,6 +90,7 @@ describe(DuplicateDecisionService.name, () => {
     repository = {
       getGroupMembers: vi.fn().mockResolvedValue(groupMembers(members)),
       getOwnerNames: vi.fn().mockResolvedValue([]),
+      getAlbumNames: vi.fn().mockResolvedValue([]),
       getAssetStates: vi.fn().mockResolvedValue([]),
       getKeeperStates: vi.fn().mockResolvedValue(new Map([[keeper, keeperState()]])),
       restoreKeeperMotion: vi.fn().mockResolvedValue(true),
@@ -108,6 +109,7 @@ describe(DuplicateDecisionService.name, () => {
       beginUndo: vi.fn().mockResolvedValue(true),
       markUndone: vi.fn().mockResolvedValue(undefined),
       listRecent: vi.fn().mockResolvedValue([]),
+      getAutomaticOperationIds: vi.fn().mockResolvedValue(new Set()),
       listActiveOperations: vi.fn().mockResolvedValue([]),
     };
     access = { asset: { checkOwnerAccess: vi.fn().mockResolvedValue(new Set()) } };
@@ -242,6 +244,38 @@ describe(DuplicateDecisionService.name, () => {
       expect(review.kind).toBe(DuplicateGroupKind.Burst);
       expect(review.suggestedKeepAssetIds).toEqual([]);
     });
+
+    it('reads retakes minutes apart as look-alikes and suggests no keeper (FL-558)', async () => {
+      const retakes = members.map((id, index) => asset(id, `2026-09-06T16:2${index}:12.000Z`));
+      duplicates.getDuplicates.mockResolvedValue([{ duplicateId, assets: retakes, suggestedKeepAssetIds: [keeper] }]);
+
+      const [review] = await sut.getReview(owner);
+
+      expect(review.kind).toBe(DuplicateGroupKind.Duplicates);
+      expect(review.lookAlike).toBe(true);
+      expect(review.suggestedKeepAssetIds).toEqual([]);
+    });
+
+    it('lists the viewer’s albums for each photo, in one read (FL-558)', async () => {
+      duplicates.getDuplicates.mockResolvedValue([
+        { duplicateId, assets: members.map((id) => asset(id)), suggestedKeepAssetIds: [keeper] },
+      ]);
+      repository.getAlbumNames.mockResolvedValue([
+        { assetId: keeper, albumName: 'Best of 2025' },
+        { assetId: keeper, albumName: 'Summer' },
+        { assetId: copy, albumName: 'Summer' },
+      ]);
+
+      const [review] = await sut.getReview(owner);
+
+      expect(repository.getAlbumNames).toHaveBeenCalledExactlyOnceWith(ownerId, members);
+      expect(review.albums).toEqual(
+        members.map((assetId) => ({
+          assetId,
+          names: assetId === keeper ? ['Best of 2025', 'Summer'] : assetId === copy ? ['Summer'] : [],
+        })),
+      );
+    });
   });
 
   describe('getHistory', () => {
@@ -258,6 +292,22 @@ describe(DuplicateDecisionService.name, () => {
       expect(history.recent.map(({ operationId: id }) => id)).toEqual([operationId, older]);
       expect(history.recent[0].undoable).toBe(false);
       expect(history.recent[1].undoable).toBe(true);
+    });
+
+    it('marks the jobs Frameleaf made itself, merging identical files (FL-416)', async () => {
+      const automaticJob = newUuidV7();
+      repository.listRecent.mockResolvedValue([
+        recorded({ appliedAt: new Date() }),
+        recorded({ operationId: automaticJob, duplicateId: newUuid(), appliedAt: new Date() }),
+      ]);
+      repository.getAutomaticOperationIds.mockResolvedValue(new Set([automaticJob]));
+
+      const history = await sut.getHistory(elevated);
+
+      const byJob = new Map(history.recent.map((batch) => [batch.operationId, batch]));
+      expect(byJob.get(automaticJob)?.automatic).toBe(true);
+      expect(byJob.get(operationId)?.automatic).toBe(false);
+      expect(repository.getAutomaticOperationIds).toHaveBeenCalledWith([operationId, automaticJob]);
     });
 
     it('offers undo again after an unfinished undo job, never for copies gone for good', async () => {

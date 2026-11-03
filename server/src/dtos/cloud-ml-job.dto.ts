@@ -8,7 +8,7 @@ import {
   CLOUD_ML_JOB_STAGES,
   SMOOTH_MOTION_FACTORS,
 } from 'src/utils/cloud-ml-job.js';
-import { MODEL_SKU_PATTERN } from 'src/utils/frameleaf-cloud.js';
+import { MODEL_SKU_PATTERN, jobRoutingSchema } from 'src/utils/frameleaf-cloud.js';
 
 /**
  * Frameleaf Cloud restoration and Smooth motion jobs for their owner (FL-162, `CLD-202`): estimate,
@@ -104,6 +104,10 @@ const CloudMlJobRefusalSchema = z
       .string()
       .describe('insufficient-credits, daily-cap or budget-exceeded; nothing is sent and the model is never changed'),
     message: z.string(),
+    topUpUrl: z
+      .string()
+      .nullable()
+      .describe('FL-544: where to add AI credit in the Frameleaf account, when the cloud named a page; null otherwise'),
   })
   .meta({ id: 'CloudMlJobRefusalDto' });
 
@@ -155,6 +159,7 @@ const CloudMlJobEstimateResponseSchema = z
     startFeeUsd: usd('One start fee, USD'),
     perSecondUsd: usd('The GPU rate per metered second, USD'),
     holdUsd: usd('What the AI Wallet holds while the job runs, USD; released when it settles'),
+    approvedMaximumUsd: usd('The maximum the owner authorizes for this job, USD').optional(),
     minimumUsd: usd('The least the job can cost once a worker starts (one start fee), USD'),
     plannedWorkers: z.int().describe('Serverless workers the job is planned on, at most 5; each adds a start fee'),
     coldStartSeconds: z.number().meta({ format: 'double' }).describe('Expected time to start a worker'),
@@ -223,6 +228,19 @@ export const CloudMlJobActivitySchema = z
     cloudStatus: z.string().nullable().describe('Frameleaf Cloud’s own state of the job, or null before it was sent'),
     progressUnit: z.string().nullable().describe('items, seconds or segments, when Frameleaf Cloud reports progress'),
     cost: CloudMlJobCostSchema,
+    routing: jobRoutingSchema
+      .extend({
+        approvedMaximumUsd: usd('The current total approved maximum, USD'),
+        priceHistory: z.array(
+          jobRoutingSchema.shape.priceHistory.element.extend({
+            perSecondUsd: usd('The approved GPU rate per metered second, USD'),
+            startFeeUsd: usd('The approved fee per new worker, USD'),
+            approvedMaximumUsd: usd('The total maximum approved with these prices, USD'),
+          }),
+        ),
+      })
+      .meta({ id: 'CloudMlJobRoutingDto' })
+      .optional(),
   })
   .meta({ id: 'CloudMlJobActivityDto' });
 
@@ -233,6 +251,34 @@ const CloudMlJobResponseSchema = z
     stage: CloudMlJobStageSchema,
   })
   .meta({ id: 'CloudMlJobResponseDto' });
+
+const CloudMlJobUpgradeEstimateSchema = z
+  .object({
+    estimateId: z.string(),
+    expiresAt: z.string().meta({ format: 'date-time' }),
+    computeSku: z.string(),
+    pricingRevision: z.int(),
+    incurredUsd: usd('Already incurred under previously approved prices, USD'),
+    remainingP50Usd: usd('Likely cost of the remaining work on the next GPU tier, USD'),
+    remainingP90Usd: usd('High estimate for the remaining work on the next GPU tier, USD'),
+    approvedMaximumUsd: usd('New total authorized maximum, including incurred charges, USD'),
+    perSecondUsd: usd('The next GPU tier rate per metered second, USD'),
+    startFeeUsd: usd('The start fee for each new worker, USD'),
+    plannedWorkers: z.int(),
+    permission: CloudMlJobPermissionSchema,
+    refusal: CloudMlJobRefusalSchema.nullable(),
+  })
+  .meta({ id: 'CloudMlJobUpgradeEstimateDto' });
+
+const CloudMlJobUpgradeSchema = z
+  .object({
+    estimateId: z.string().min(1).max(64),
+    acknowledgeMaximum: z.literal(true).describe('The owner explicitly approved the new total maximum'),
+  })
+  .meta({ id: 'CloudMlJobUpgradeDto' });
+
+export class CloudMlJobUpgradeEstimateDto extends createZodDto(CloudMlJobUpgradeEstimateSchema) {}
+export class CloudMlJobUpgradeDto extends createZodDto(CloudMlJobUpgradeSchema) {}
 
 export class CloudMlJobEstimateRequestDto extends createZodDto(CloudMlJobEstimateRequestSchema) {}
 export class CloudMlJobEstimateResponseDto extends createZodDto(CloudMlJobEstimateResponseSchema) {}

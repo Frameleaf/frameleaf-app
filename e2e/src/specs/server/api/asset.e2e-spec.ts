@@ -25,8 +25,8 @@ const locationAssetFilepath = `${testAssetDir}/metadata/gps-position/thompson-sp
 const ratingAssetFilepath = `${testAssetDir}/metadata/rating/mongolels.jpg`;
 
 // ARM runners hit queue backpressure on live photo upload — see commit 6bdce709c
-const IS_ARM = process.arch === 'arm64';
-const LIVE_PHOTO_TIMEOUT = IS_ARM ? 60_000 : 10_000;
+// upload, the live-photo link, every queue settling and the delete; the amd64 runner needs as long as arm under load
+const LIVE_PHOTO_TIMEOUT = 60_000;
 
 const readTags = async (bytes: Buffer, filename: string) => {
   const filepath = join(tempDir, filename);
@@ -47,7 +47,6 @@ describe('/asset', () => {
 
   let user1: LoginResponseDto;
   let user2: LoginResponseDto;
-  let timeBucketUser: LoginResponseDto;
   let quotaUser: LoginResponseDto;
   let statsUser: LoginResponseDto;
 
@@ -57,16 +56,18 @@ describe('/asset', () => {
   let ratingAsset: AssetMediaResponseDto;
 
   const setupTests = async () => {
+    if (websocket) {
+      utils.disconnectWebsocket(websocket);
+    }
     await utils.resetDatabase();
     admin = await utils.adminSetup({ onboarding: false });
 
-    [websocket, user1, user2, statsUser, quotaUser, timeBucketUser] = await Promise.all([
+    [websocket, user1, user2, statsUser, quotaUser] = await Promise.all([
       utils.connectWebsocket(admin.accessToken),
       utils.userSetup(admin.accessToken, createUserDto.create('1')),
       utils.userSetup(admin.accessToken, createUserDto.create('2')),
       utils.userSetup(admin.accessToken, createUserDto.create('stats')),
       utils.userSetup(admin.accessToken, createUserDto.userQuota),
-      utils.userSetup(admin.accessToken, createUserDto.create('time-bucket')),
     ]);
 
     await utils.createPartner(user1.accessToken, user2.userId);
@@ -105,13 +106,6 @@ describe('/asset', () => {
     ]);
 
     user2Assets = [await utils.createAsset(user2.accessToken)];
-
-    await Promise.all([
-      utils.createAsset(timeBucketUser.accessToken, { fileCreatedAt: new Date('1970-01-01').toISOString() }),
-      utils.createAsset(timeBucketUser.accessToken, { fileCreatedAt: new Date('1970-02-10').toISOString() }),
-      utils.createAsset(timeBucketUser.accessToken, { fileCreatedAt: new Date('1970-02-11').toISOString() }),
-      utils.createAsset(timeBucketUser.accessToken, { fileCreatedAt: new Date('1970-02-11').toISOString() }),
-    ]);
 
     for (const asset of [...user1Assets, ...user2Assets]) {
       expect(asset.status).toBe(AssetMediaStatus.Created);

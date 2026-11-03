@@ -1161,6 +1161,8 @@
   "folders_feature_description": "Utforsker mappe visning for bilder og videoer på fil systemet",
   "forgot_pin_code_question": "Glemt PIN-koden?",
   "forward": "Fremover",
+  "frameleaf_play_img_missing": "{count, plural, one {# bilde eller video har ingen forhåndsvisning ennå} other {# bilder og videoer har ingen forhåndsvisning ennå}}",
+  "frameleaf_tools": "Verktøy",
   "free_up_space": "Rydd opp lagringsplass",
   "free_up_space_description": "Flytt sikkerhetskopierte bilder og videoer til enhetens papirkurv for å frigjøre plass. Kopiene dine på serveren forblir trygge.",
   "free_up_space_settings_subtitle": "Frigjør lagringsplass på enheten",

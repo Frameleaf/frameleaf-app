@@ -1,10 +1,11 @@
+import { LOCKED_MAGIC } from '@frameleaf/locked-crypto';
 import { Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { open, readFile, readdir, realpath, rm } from 'node:fs/promises';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
-import type { FrameleafCloudBackup } from 'src/types.js';
+import type { FrameleafCloudBackup, IDeleteFilesJob } from 'src/types.js';
 import type { BuddyMetadata } from 'src/utils/buddy-backup-metadata.js';
 import type { BuddyStudioSnapshot } from 'src/utils/buddy-backup-studio.js';
 import { serverVersion } from 'src/constants.js';
@@ -24,6 +25,7 @@ import { BuddyBackupRepository, type BuddySettings } from 'src/repositories/budd
 import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
 import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { BUDDY_CAPTURE_LOCK, lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import {
@@ -31,7 +33,7 @@ import {
   type BuddyKeyring,
   buddyObjectId,
   decryptBuddyBlock,
-  encryptBuddyBlock,
+  sealBuddyBlock,
 } from 'src/utils/buddy-backup-crypto.js';
 import { type BuddyAssetFidelity, readBuddyAssetFidelity } from 'src/utils/buddy-backup-fidelity.js';
 import { type BuddySettingsSnapshot, readBuddySettingsSnapshot } from 'src/utils/buddy-backup-settings.js';
@@ -41,6 +43,7 @@ import {
   CLOUD_BACKUP_MANIFEST_FORMAT,
   type CloudBackupManifest,
   type CloudBackupManifestFile,
+  backupRecordFor,
   keyFingerprint,
   parseBackupKey,
 } from 'src/utils/cloud-backup.js';
@@ -48,8 +51,20 @@ import { getDiskUsage } from 'src/utils/disk-usage.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { withDatabaseCleanup } from 'src/utils/execution-database.js';
 import { advanceExecutionProgress, assertExecutionActive, executionSignal } from 'src/utils/execution-signal.js';
+import {
+  LOCKED_KEY_BACKUP_ROLE,
+  lockedFileOwnerKeyId,
+  lockedKeyBackupFiles,
+  lockedKeyFileKeyId,
+  lockedKeyGaps,
+  lockedKeyOwners,
+  pathsBeingReplaced,
+  unreadableLockedKeyId,
+} from 'src/utils/locked-backup.js';
 import { TERMINAL_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
 import { getEditedMasterLineagePath } from 'src/utils/media-policy.js';
+
+const LOCKED_MAGIC_BYTES = Buffer.from(LOCKED_MAGIC, 'ascii');
 
 export type BuddyContent = { blocks: string[]; keyVersion: number; bytes: number };
 export type BuddyManifest = {
@@ -92,15 +107,13 @@ export type BuddyCapture = {
   derivedInventoryVersion?: 1;
 };
 
+type PinnedOriginal = NonNullable<IDeleteFilesJob['original']>;
 type DerivedBackupPath = { path: string; role: string; assetId: string | null };
 
 /** Read from the same exported snapshot as the dump, never from directory names or temporary-file globs. */
 const derivedPaths = sql<DerivedBackupPath>`
   SELECT p."thumbnailPath" AS path, 'person-thumbnail'::text AS role, NULL::uuid AS "assetId"
   FROM public.person p WHERE p."thumbnailPath" <> ''
-  UNION ALL SELECT f.path, 'video-duplicate-frame'::text, f."assetId"
-  FROM public.asset_video_duplicate_frame f JOIN public.asset a ON a.id = f."assetId"
-  WHERE a.status IN (${AssetStatus.Active}, ${AssetStatus.Trashed})
   UNION ALL SELECT f.path, 'video-moment-frame'::text, f."assetId"
   FROM public.video_moment_frame f JOIN public.asset a ON a.id = f."assetId"
   WHERE a.status IN (${AssetStatus.Active}, ${AssetStatus.Trashed})`;
@@ -126,6 +139,8 @@ const dependencyPaths = sql<{ path: string }>`SELECT path FROM public.studio_pro
 
 @Injectable()
 export class BuddyBackupCaptureService {
+  private logger = LoggingRepository.create('BuddyBackupCaptureService');
+
   constructor(
     private repository: BuddyBackupRepository,
     private backups: DatabaseBackupService,
@@ -158,7 +173,7 @@ export class BuddyBackupCaptureService {
       } catch (readError) {
         if ((readError as NodeJS.ErrnoException).code !== 'ENOENT') throw readError;
         const nonce = randomBytes(12);
-        const sealed = encryptBuddyBlock(key, { vaultId: ring.vaultId, id, keyVersion: ring.current }, bytes, nonce);
+        const sealed = sealBuddyBlock(key, { vaultId: ring.vaultId, id, keyVersion: ring.current }, bytes, nonce);
         journal = {
           nonce: nonce.toString('base64url'),
           digest: BuddyVault.receipt(id, sealed).digest,
@@ -166,7 +181,7 @@ export class BuddyBackupCaptureService {
         };
         await writeBuddyFile(journalPath, JSON.stringify(journal), true);
       }
-      encrypted = encryptBuddyBlock(
+      encrypted = sealBuddyBlock(
         key,
         { vaultId: ring.vaultId, id, keyVersion: ring.current },
         bytes,
@@ -238,6 +253,7 @@ export class BuddyBackupCaptureService {
         database: null,
         assets: {},
         profiles: {},
+        lockedKeys: {},
         albums: {},
         people: {},
       },
@@ -254,6 +270,8 @@ export class BuddyBackupCaptureService {
       ),
     ];
 
+    /** FL-721: the captured paths that are encrypted Locked files (`FLLK`). */
+    const sealedPaths = new Set<string>();
     const captureFile = async (
       path: string,
       role: string,
@@ -274,7 +292,7 @@ export class BuddyBackupCaptureService {
         if (!before.isFile() || (!allowNew && Number(before.ctimeNs / 1_000_000n) > started))
           throw new Error('A required backup file changed after capture started');
         const hash = createHash('sha256');
-        const recorded =
+        let recorded =
           expected && expected.algorithm !== ChecksumAlgorithm.sha1Path ? createHash(expected.algorithm) : null;
         const blocks: string[] = [];
         let bytes = 0;
@@ -286,6 +304,12 @@ export class BuddyBackupCaptureService {
           advanceExecutionProgress(bytesRead);
           if (!bytesRead) break;
           const piece = buffer.subarray(0, bytesRead);
+          // FL-721: an encrypted Locked file is copied as it is. Its recorded checksum is the plaintext's,
+          // so it is never compared; the AEAD tags and the SHA-256 below vouch for the ciphertext.
+          if (bytes === 0 && piece.subarray(0, LOCKED_MAGIC_BYTES.length).equals(LOCKED_MAGIC_BYTES)) {
+            recorded = null;
+            sealedPaths.add(path);
+          }
           hash.update(piece);
           recorded?.update(piece);
           const receipt = await this.block(ring, piece, options.runId);
@@ -384,21 +408,64 @@ export class BuddyBackupCaptureService {
           UNION SELECT "profileImagePath" AS path FROM public.user WHERE "profileImagePath" <> '' AND "deletedAt" IS NULL`.execute(
               trx,
             );
+            // A library scan marks a vanished file offline and trashes it with its status unchanged.
+            // Like Cloud Backup, such an item is left out of the snapshot instead of failing it.
+            const offline = new Set(
+              (
+                await sql<{ path: string }>`SELECT "originalPath" AS path FROM public.asset
+          WHERE "isOffline" AND status IN (${AssetStatus.Active}, ${AssetStatus.Trashed})
+          UNION SELECT f.path FROM public.asset_file f JOIN public.asset a ON a.id=f."assetId"
+          WHERE a."isOffline" AND a.status IN (${AssetStatus.Active}, ${AssetStatus.Trashed})`.execute(trx)
+              ).rows.map((entry) => entry.path),
+            );
+            const present = (path: string) => !offline.has(path) || pinnedPaths.has(path);
             for (const path of new Set([
               ...[...required.rows, ...dependencies, ...derived].map((entry) => entry.path).filter(Boolean),
               ...configurationPaths,
             ])) {
               const canonical = await realpath(path).catch((error: NodeJS.ErrnoException) => {
+                if (error.code === 'ENOENT' && offline.has(path)) return null;
                 if (error.code === 'ENOENT' && derivedRoleByPath.has(path))
                   throw new Error(
                     `A selected Buddy derived file is missing (${derivedRoleByPath.get(path)}). Regenerate the cache or remove its stale reference before retrying the backup.`,
                   );
                 throw error;
               });
+              if (canonical === null) continue;
               if (inside(hostRoot, canonical) || inside(sourceRoot, canonical))
                 throw new Error('A backup contains a Buddy vault or server identity files');
               pinnedPaths.set(path, canonical);
             }
+            // A deletion this run holds back is replayed on release, after the asset row is gone. Record
+            // who held each pinned original first, so the replay can still put it in the file trash.
+            const originals = await trx
+              .selectFrom('asset')
+              .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+              .select([
+                'asset.id',
+                'asset.ownerId',
+                'asset.originalPath',
+                'asset.originalFileName',
+                'asset.checksum',
+                'asset_exif.fileSizeInByte',
+              ])
+              .where('asset.status', 'in', [AssetStatus.Active, AssetStatus.Trashed])
+              .execute();
+            await writeBuddyFile(
+              this.originalsPath(options.runId),
+              JSON.stringify(
+                originals
+                  .filter((row) => pinnedPaths.has(row.originalPath))
+                  .map((row): PinnedOriginal => ({
+                    path: row.originalPath,
+                    ownerId: row.ownerId,
+                    assetId: row.id,
+                    originalFileName: row.originalFileName,
+                    checksum: Buffer.from(row.checksum).toString('hex'),
+                    sizeInBytes: row.fileSizeInByte ?? 0,
+                  })),
+              ),
+            );
             const paths = [...new Set([...pinnedPaths.keys(), ...pinnedPaths.values()])];
             for (let offset = 0; offset < paths.length; offset += 1000)
               await sql`INSERT INTO public.buddy_backup_reference ("runId", path)
@@ -436,6 +503,22 @@ export class BuddyBackupCaptureService {
                 UserMetadataKey.Onboarding,
               ])
               .execute();
+            // FL-721: every Locked key file as it is (wrapped; no secret opens anything without it), first,
+            // before the dump and any media: turning encryption off deletes the key file once its files are
+            // plain, so a copy taken later could miss the key that this snapshot's ciphertext needs. A key
+            // file is replaced atomically, so it is read as it is now; one already removed is left out.
+            // The key ids (hex) of the captured key files: each encrypted file's owner key must be one of them.
+            const lockedKeyIds = new Set<string>();
+            for (const { userId, path } of await lockedKeyBackupFiles(StorageCore.getMediaLocation())) {
+              try {
+                manifest.library.lockedKeys![userId] = await captureFile(path, LOCKED_KEY_BACKUP_ROLE, undefined, true);
+              } catch (error) {
+                if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+                continue;
+              }
+              const id = await lockedKeyFileKeyId(path, userId);
+              if (id) lockedKeyIds.add(id);
+            }
             // pg_dump imports precisely this view. Internet transfer starts only after this transaction ends.
             const dump = await this.backups.createDatabaseBackup(`buddy-${options.runId}-`, {
               snapshot: rows[0].snapshot,
@@ -446,6 +529,12 @@ export class BuddyBackupCaptureService {
             try {
               let afterId: string | null = null;
               const albums = new Set<string>();
+              // FL-721 pre-flight: a file a seal, unseal or rewrap is replacing now is left for the next run
+              const lockedOwners = await lockedKeyOwners(StorageCore.getMediaLocation());
+              // FL-721: the owner key ids (first recipient, spec §5) of the captured encrypted files; each must be
+              // a key file in this snapshot. A partner copy points at its owner's file: the owner's key, not the
+              // partner's. A header that cannot be read stands for a key no snapshot has.
+              const sealedKeyIds = new Set<string>();
               const people = new Map<string, { ownerId: string; personId: string }>();
               while (true) {
                 const assets = await index.listAssets({
@@ -457,6 +546,18 @@ export class BuddyBackupCaptureService {
                 });
                 if (assets.length === 0) break;
                 const details = await index.getAssetDetails(assets.map((asset) => asset.id));
+                const busy =
+                  lockedOwners.size > 0
+                    ? await pathsBeingReplaced(
+                        assets
+                          .filter((asset) => lockedOwners.has(asset.ownerId))
+                          .flatMap((asset) => [
+                            asset.originalPath,
+                            ...asset.files.map((file) => file.path),
+                            ...(derivedByAsset.get(asset.id) ?? []).map((file) => file.path),
+                          ]),
+                      )
+                    : new Set<string>();
                 const originals = await trx
                   .selectFrom('asset')
                   .select(['id', 'checksum', 'checksumAlgorithm', 'livePhotoVideoId', 'libraryId', 'isExternal'])
@@ -470,15 +571,17 @@ export class BuddyBackupCaptureService {
                   const metadata = details.get(asset.id);
                   const original = originals.find((row) => row.id === asset.id);
                   if (!metadata || !original) throw new Error('Snapshot inventory is incomplete');
+                  if (!present(asset.originalPath) || busy.has(asset.originalPath)) continue;
                   const files = [
                     await captureFile(asset.originalPath, 'original', {
                       checksum: original.checksum,
                       algorithm: original.checksumAlgorithm,
                     }),
                   ];
-                  for (const file of asset.files) files.push(await captureFile(file.path, file.type));
+                  for (const file of asset.files)
+                    if (present(file.path) && !busy.has(file.path)) files.push(await captureFile(file.path, file.type));
                   for (const file of derivedByAsset.get(asset.id) ?? [])
-                    if (files.every((entry) => entry.path !== file.path))
+                    if (present(file.path) && !busy.has(file.path) && files.every((entry) => entry.path !== file.path))
                       files.push(await captureFile(file.path, file.role));
                   // Edited outputs and recorded version files are non-regenerable dependencies even with caches disabled.
                   const edited = await trx
@@ -488,8 +591,13 @@ export class BuddyBackupCaptureService {
                     .where('isEdited', '=', true)
                     .execute();
                   for (const file of edited)
-                    if (files.every((entry) => entry.path !== file.path))
+                    if (present(file.path) && !busy.has(file.path) && files.every((entry) => entry.path !== file.path))
                       files.push(await captureFile(file.path, file.type));
+                  for (const file of files)
+                    if (sealedPaths.has(file.path))
+                      sealedKeyIds.add(
+                        (await lockedFileOwnerKeyId(file.path).catch(() => null)) ?? unreadableLockedKeyId(file.path),
+                      );
                   manifest.assetLinks[asset.id] = {
                     livePhotoVideoId: original.livePhotoVideoId,
                     libraryId: original.libraryId,
@@ -505,7 +613,8 @@ export class BuddyBackupCaptureService {
                   manifest.library.assets[asset.id] = {
                     owner: asset.ownerId,
                     files,
-                    ...metadata.record,
+                    // FL-738: the item's checksum is kept only for an encrypted original
+                    ...backupRecordFor(metadata.record, sealedPaths.has(asset.originalPath)),
                     details: metadata.details,
                   };
                   manifest.assetFidelity![asset.id] = await fidelity.capture(
@@ -526,6 +635,24 @@ export class BuddyBackupCaptureService {
                 }
                 afterId = assets.at(-1)!.id;
               }
+              // A key file that appeared or went during the capture (encryption turned on or off) would leave
+              // ciphertext no key in this snapshot opens. Never hidden: the snapshot fails, and the previous
+              // snapshots, with their key files, stay as they are. The next run captures a consistent pair.
+              // A key id that matches no live key file is an item restored under an older key (spec §9):
+              // reported, never a failure, since no snapshot could ever capture its key file.
+              const { keyless, older } = await lockedKeyGaps(
+                sealedKeyIds,
+                lockedKeyIds,
+                StorageCore.getMediaLocation(),
+              );
+              if (older.length > 0)
+                this.logger.warn(
+                  `Buddy capture ${options.runId}: encrypted Locked files under ${older.length} older key(s) that no key file opens; they are captured as they are`,
+                );
+              if (keyless.length > 0)
+                throw new Error(
+                  `This backup found encrypted Locked files for ${keyless.length} person(s) whose key file was not there when it started. Their encryption changed during the backup; the next backup includes it.`,
+                );
               manifest.library.albums = Object.fromEntries(await index.getAlbumRecords([...albums]));
               manifest.library.people = Object.fromEntries(await index.getPersonRecords(people.values().toArray()));
               manifest.metadata = await new BuddyBackupMetadataRepository(trx).capture(people.values().toArray());
@@ -582,9 +709,14 @@ export class BuddyBackupCaptureService {
     return capture;
   }
 
+  private originalsPath(runId: string) {
+    return join(this.runDirectory(runId), 'originals.json');
+  }
+
   async release(runId: string) {
     const { rows } = await sql<{ path: string }>`SELECT path FROM public.buddy_backup_reference
       WHERE "runId" = ${runId}::uuid ORDER BY path`.execute(this.repository.db);
+    let originals: Map<string, PinnedOriginal> | undefined;
     for (const { path } of rows) {
       const deferred = await this.repository.db.transaction().execute(async (trx) => {
         await lockFilePath(trx, path);
@@ -595,7 +727,30 @@ export class BuddyBackupCaptureService {
       });
       // A released row is a durable outbox until the existing durable queue accepts the deletion.
       // Retrying after a crash can enqueue twice; FileDelete's reference check is idempotent.
-      if (deferred) await this.jobs.queue({ name: JobName.FileDelete, data: { files: [path] } });
+      if (deferred) {
+        originals ??= new Map(
+          (
+            JSON.parse(
+              await readFile(this.originalsPath(runId), 'utf8').catch((error: NodeJS.ErrnoException) => {
+                if (error.code !== 'ENOENT') throw error;
+                return '[]';
+              }),
+            ) as PinnedOriginal[]
+          ).map((entry) => [entry.path, entry]),
+        );
+        const original = originals.get(path);
+        const removed =
+          original &&
+          !(await this.repository.db
+            .selectFrom('asset')
+            .select('id')
+            .where('id', '=', original.assetId)
+            .executeTakeFirst());
+        await this.jobs.queue({
+          name: JobName.FileDelete,
+          data: removed ? { files: [path], removedAssetId: original.assetId, original } : { files: [path] },
+        });
+      }
       await sql`DELETE FROM public.buddy_backup_reference
         WHERE "runId" = ${runId}::uuid AND path = ${path} AND released`.execute(this.repository.db);
     }

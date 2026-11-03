@@ -206,7 +206,8 @@ export const duplicateDisposalReasons = (
   return [...reasons];
 };
 
-type ReviewAsset = Pick<AssetResponseDto, 'id' | 'type' | 'localDateTime' | 'originalFileName' | 'exifInfo'>;
+type ReviewAsset = Pick<AssetResponseDto, 'id' | 'type' | 'localDateTime' | 'originalFileName' | 'exifInfo'> &
+  Partial<Pick<AssetResponseDto, 'checksum'>>;
 
 const captureTime = (asset: ReviewAsset): number | null => {
   const value = asset.exifInfo?.dateTimeOriginal ?? asset.localDateTime;
@@ -214,28 +215,44 @@ const captureTime = (asset: ReviewAsset): number | null => {
   return Number.isFinite(time) ? time : null;
 };
 
+/** How a duplicate group reads in the review: copies of one photo, frames of a burst, or look-alikes. */
+export type DuplicateReviewKind = 'copies' | 'burst' | 'look-alike';
+
 /**
- * Copies of one photo, or frames of a burst.
+ * Copies of one photo, frames of a burst, or look-alikes (FL-558).
  *
- * A burst is photos (never videos) captured at distinct instants within `DUPLICATE_BURST_SECONDS` of
- * one another. Copies of one photo share their capture time — an export, a resized share, a RAW and
- * its JPEG — so any two members captured at the same instant make the group read as copies.
+ * Copies of one photo share their capture time — an export, a resized share, a RAW and its JPEG — so
+ * any two members captured at the same instant make the group read as copies. Photos (never videos)
+ * captured at distinct instants are a burst within `DUPLICATE_BURST_SECONDS` of one another, and
+ * look-alikes (retakes) when further apart. Only copies get a suggested keeper. Byte-identical files
+ * are always copies, whatever times their files carry.
  */
-export const classifyDuplicateGroup = (assets: readonly ReviewAsset[]): DuplicateGroupKind => {
+export const reviewKindOf = (assets: readonly ReviewAsset[]): DuplicateReviewKind => {
   if (assets.length < 2 || assets.some((asset) => asset.type !== AssetType.Image)) {
-    return DuplicateGroupKind.Duplicates;
+    return 'copies';
+  }
+  const checksum = assets[0].checksum;
+  if (checksum && assets.every((asset) => asset.checksum === checksum)) {
+    return 'copies';
   }
   const times = assets.map((asset) => captureTime(asset));
   if (times.includes(null)) {
-    return DuplicateGroupKind.Duplicates;
+    return 'copies';
   }
   const values = times as number[];
   if (new Set(values).size !== values.length) {
-    return DuplicateGroupKind.Duplicates;
+    return 'copies';
   }
   const span = Math.max(...values) - Math.min(...values);
-  return span <= DUPLICATE_BURST_SECONDS * 1000 ? DuplicateGroupKind.Burst : DuplicateGroupKind.Duplicates;
+  return span <= DUPLICATE_BURST_SECONDS * 1000 ? 'burst' : 'look-alike';
 };
+
+/**
+ * The API's `kind`. Look-alikes keep reading as `duplicates` there and are flagged by `lookAlike`, so a
+ * client that knows only the two kinds keeps working (FL-558).
+ */
+export const classifyDuplicateGroup = (assets: readonly ReviewAsset[]): DuplicateGroupKind =>
+  reviewKindOf(assets) === 'burst' ? DuplicateGroupKind.Burst : DuplicateGroupKind.Duplicates;
 
 const pixels = (asset: ReviewAsset) => (asset.exifInfo?.exifImageWidth ?? 0) * (asset.exifInfo?.exifImageHeight ?? 0);
 const bytes = (asset: ReviewAsset) => asset.exifInfo?.fileSizeInByte ?? 0;

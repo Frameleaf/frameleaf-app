@@ -68,6 +68,39 @@ def test_face_binding_uses_fresh_verified_models_without_mutating_batch_axes(mon
     assert all(call.kwargs == {"require_staged": False} for call in verify.call_args_list)
 
 
+def test_face_binding_reuses_verified_models_inside_private_runtime_cache(monkeypatch, pil_image, tmp_path):
+    from frameleaf_ml import face_producer_binding as module
+    from frameleaf_ml.schemas import ModelType
+    from frameleaf_ml.sessions import _private_cache
+
+    def models():
+        detector = Mock(model_type=ModelType.DETECTION)
+        recognizer = Mock(model_type=ModelType.RECOGNITION)
+        detector.predict.return_value = {}
+        recognizer.predict.return_value = []
+        for model in (detector, recognizer):
+            model.load.side_effect = lambda **_: roots.append(_private_cache.get())
+        return None, [detector, recognizer]
+
+    roots: list = []
+    first, second = models(), models()
+    verify = Mock(side_effect=[first, first, second, second])
+    monkeypatch.setattr(module, "verify_models", verify)
+    monkeypatch.setattr(module, "preprocessing_identity", lambda: "b" * 64)
+    monkeypatch.setattr(module.settings, "cache_folder", tmp_path)
+    image = BytesIO()
+    pil_image.save(image, format="PNG")
+    predictor = module.FaceBoundPredictor()
+    for _ in range(2):
+        predictor.predict(json.dumps(specification()), image.getvalue(), None)
+    assert verify.call_count == 4
+    assert all(model.load.call_count == 2 for model in first[1])
+    assert all(not model.load.called for model in second[1])
+    assert len(roots) == 4 and None not in roots and len(set(roots)) == 1
+    predictor.close()
+    assert not roots[0].exists()
+
+
 @pytest.mark.parametrize("change", ["key", "engine", "option", "workload", "empty-image", "preprocessing"])
 def test_face_binding_rejects_unapproved_requests_before_loading_models(change, monkeypatch, tmp_path):
     from frameleaf_ml import face_producer_binding as module

@@ -29,6 +29,34 @@ the exact samples used by the existing upload, playback and screenshot tests.
   {
     "file": "avatar-jamie.png",
     "sha256": "6d13775c248d429623b993d3c7125eed3b69058f7525e31be41b212073155937"
+  },
+  {
+    "file": "title-screen-a.mp4",
+    "sha256": "b4ce42f6afa806f059770a481d53d1f0adf8bbec613fd4c4d3393ec661c3487c"
+  },
+  {
+    "file": "title-screen-b.mp4",
+    "sha256": "1a4cd01e1c81ecfc353d4eecd53f1ff5b4c2b4947b0dce92bea3e25259def62d"
+  },
+  {
+    "file": "title-screen-a-trimmed.mp4",
+    "sha256": "1f0bb2b85531b868d20a0d038ccb44b2f23230fe15b4bd0afabc0e15f1001dc0"
   }
 ]
+```
+
+The `title-screen-*` clips (FL-651 video look-alikes) are synthetic ffmpeg test
+patterns: a 4 s SMPTE-bars title card, 16 s of different footage, the same card
+again; the trim is seconds 2-22 of the first, re-encoded.
+
+```sh
+ENC="-c:v libx264 -preset veryslow -crf 32 -pix_fmt yuv420p -an -movflags +faststart -map_metadata -1 -fflags +bitexact -flags:v +bitexact"
+gen() {
+  ffmpeg -y -f lavfi -i "smptebars=size=320x180:rate=24:duration=4" -f lavfi -i "$1" \
+    -f lavfi -i "smptebars=size=320x180:rate=24:duration=4" \
+    -filter_complex "[0:v][1:v][2:v]concat=n=3:v=1[v]" -map "[v]" $ENC "$2"
+}
+gen "testsrc2=size=320x180:rate=24:duration=16" title-screen-a.mp4
+gen "mandelbrot=size=320x180:rate=24,trim=duration=16" title-screen-b.mp4
+ffmpeg -y -ss 2 -i title-screen-a.mp4 -t 20 $ENC title-screen-a-trimmed.mp4
 ```

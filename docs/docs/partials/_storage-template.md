@@ -9,7 +9,7 @@ The admin user can set the template by using the template builder in **Settings 
 Date and time variables in storage templates are rendered in the server's local timezone.
 
 ```bash title="Default template"
-Year/Year-Month-Day/Filename.Extension
+{{y}}/{{y}}-{{MM}}-{{dd}}/{{filename}}
 ```
 
 If you want to change the storage template during the initial setup:

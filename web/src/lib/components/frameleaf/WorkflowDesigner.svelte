@@ -9,9 +9,13 @@
    * server refuses to enable or run what cannot run, and the draft stays open when a save fails.
    * History is the server's real run log: attempts, failures and manual retry.
    */
+  import WorkflowAutomation from './WorkflowAutomation.svelte';
+  import WorkflowBatches from './WorkflowBatches.svelte';
+  import { onMount } from 'svelte';
+  import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
-  import WorkflowParameter, { type ReferenceOption } from '$lib/components/frameleaf/WorkflowParameter.svelte';
+  import WorkflowParameter from '$lib/components/frameleaf/WorkflowParameter.svelte';
   import '$lib/frameleaf/workflow-designer.css';
   import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   import {
@@ -34,14 +38,20 @@
     type WorkflowDraftStep,
   } from '$lib/frameleaf/workflows';
   import { Route } from '$lib/route';
-  import { downloadJson } from '$lib/utils';
+  import { downloadJson, getAssetMediaUrl } from '$lib/utils';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import {
+    AssetMediaSize,
+    getWorkflowCapabilities,
+    previewWorkflow as previewWorkflowMatches,
+    type WorkflowCapabilitiesDto,
+    type WorkflowPreviewResponseDto,
     createWorkflow,
     deleteWorkflow,
     getWorkflowLogs,
     retryWorkflowRun,
     updateWorkflow,
+    WorkflowPreviewStepResult,
     WorkflowResult,
     WorkflowRunErrorCode,
     type PluginMethodResponseDto,
@@ -62,7 +72,6 @@
     methods,
     triggers,
     templates,
-    references = {},
     onSaved,
     onDeleted,
   }: {
@@ -73,7 +82,6 @@
     methods: PluginMethodResponseDto[];
     triggers: WorkflowTriggerResponseDto[];
     templates: PluginTemplateResponseDto[];
-    references?: Record<string, ReferenceOption[]>;
     onSaved: (workflow: WorkflowResponseDto) => void;
     onDeleted: (id: string) => void;
   } = $props();
@@ -91,6 +99,94 @@
   let raw = $state('');
   let parameterJson = $state<string | null>(null);
   let validation = $state<ReturnType<typeof previewWorkflow> | null>(null);
+  let capabilities = $state<WorkflowCapabilitiesDto | null>(null);
+  let matches = $state<WorkflowPreviewResponseDto | null>(null);
+  let previewing = $state(false);
+  let previewGeneration = 0;
+  onMount(() => {
+    let mounted = true;
+    void Promise.resolve(getWorkflowCapabilities())
+      .then((value) => {
+        if (mounted) {
+          capabilities = value ?? null;
+        }
+      })
+      .catch(() => {});
+    const unsubscribe = onLibraryAccessChange(() => {
+      matches = null;
+      previewGeneration++;
+    });
+    return () => {
+      mounted = false;
+      previewGeneration++;
+      unsubscribe();
+    };
+  });
+  const checkPreview = async () => {
+    validation = previewWorkflow(draft, methods, triggers);
+    matches = null;
+    if (!capabilities || validation.problems.length > 0) {
+      return;
+    }
+    const generation = ++previewGeneration;
+    previewing = true;
+    try {
+      const result = await previewWorkflowMatches({
+        workflowPreviewDto: { ...draftToCreateDto(draft), ...(workflow && { workflowId: workflow.id }) },
+      });
+      if (generation === previewGeneration) {
+        matches = result;
+      }
+    } catch (error_) {
+      if (generation === previewGeneration) {
+        error = getServerErrorMessage(error_) ?? $t('errors.something_went_wrong');
+      }
+    } finally {
+      if (generation === previewGeneration) {
+        previewing = false;
+      }
+    }
+  };
+  /**
+   * FL-729: a step the preview could not check may drop matches, or change an asset before a later filter
+   * reads it, so with such a step the count is only what the checked filters keep today, with no bound
+   * claimed. A partial count with every step checked is a lower bound.
+   */
+  const matchCountKey = ({ partial, steps }: WorkflowPreviewResponseDto): Translations => {
+    const unchecked = steps.some(({ result }) => result === WorkflowPreviewStepResult.Unchecked);
+    if (partial) {
+      return unchecked
+        ? 'frameleaf_workflows.match_count_partial_unchecked'
+        : 'frameleaf_workflows.match_count_partial';
+    }
+    return unchecked ? 'frameleaf_workflows.match_count_unchecked' : 'frameleaf_workflows.match_count';
+  };
+  /** FL-729: what the dry run did at a step; the server's result once it has checked the matches. */
+  const stepOutcome = (result: 'validated' | 'disabled', checked?: WorkflowPreviewResponseDto['steps'][number]) => {
+    if (result === 'disabled' || checked?.result === WorkflowPreviewStepResult.Disabled) {
+      return $t('frameleaf_workflows.preview_step_disabled');
+    }
+    switch (checked?.result) {
+      case WorkflowPreviewStepResult.Filtered: {
+        // a partial preview checked only the first matches, so a step's count is a lower bound
+        return $t(
+          matches?.partial
+            ? 'frameleaf_workflows.preview_step_filtered_partial'
+            : 'frameleaf_workflows.preview_step_filtered',
+          { values: { count: checked.remaining ?? 0 } },
+        );
+      }
+      case WorkflowPreviewStepResult.Skipped: {
+        return $t('frameleaf_workflows.preview_step_skipped');
+      }
+      case WorkflowPreviewStepResult.Unchecked: {
+        return $t('frameleaf_workflows.preview_step_unchecked');
+      }
+      default: {
+        return $t('frameleaf_workflows.preview_step_validated');
+      }
+    }
+  };
   let deleting = $state(false);
   let saving = $state(false);
 
@@ -119,6 +215,9 @@
     draft = next;
     error = '';
     validation = null;
+    matches = null;
+    previewing = false;
+    previewGeneration++;
   };
 
   const updateStep = (next: WorkflowDraftStep) =>
@@ -375,7 +474,18 @@
         </label>
         <label class="wd-field">
           {$t('frameleaf_workflows.trigger')}
-          <select value={draft.trigger} onchange={(event) => update({ ...draft, trigger: event.currentTarget.value })}>
+          <select
+            value={draft.trigger}
+            onchange={(event) => {
+              const trigger = event.currentTarget.value;
+              update({
+                ...draft,
+                trigger,
+                ...(['Schedule', 'AssetChanged'].includes(trigger) && { source: draft.source ?? { filter: {} } }),
+                ...(trigger === 'Schedule' && { schedule: draft.schedule ?? { cron: '0 9 * * *' } }),
+              });
+            }}
+          >
             {#if !knownTrigger}
               <option value={draft.trigger}>
                 {$t('frameleaf_workflows.trigger_unavailable', { values: { trigger: draft.trigger } })}
@@ -395,6 +505,14 @@
         </label>
       </div>
 
+      {#if capabilities}
+        <WorkflowAutomation
+          {draft}
+          timezone={capabilities.timezone}
+          nextRunAt={dirty ? null : workflow?.nextRunAt}
+          onChange={update}
+        />
+      {/if}
       <div class="wd-switches">
         <label>
           <input
@@ -522,7 +640,6 @@
                 value={selected.config ?? {}}
                 label={$t('frameleaf_workflows.parameters')}
                 storedSecrets={selected.storedSecrets}
-                {references}
                 onChange={(config) => updateStep({ ...selected, config: config as Record<string, unknown> })}
               />
               {#if selected.storedSecrets.length > 0}<small>{$t('frameleaf_workflows.credentials_note')}</small>{/if}
@@ -564,10 +681,39 @@
       <h3>{$t('frameleaf_workflows.validation_title')}</h3>
       <p>{$t('frameleaf_workflows.validation_help')}</p>
       <div>
-        <Button onclick={() => (validation = previewWorkflow(draft, methods, triggers))}>
+        <Button disabled={previewing} onclick={() => void checkPreview()}>
           {$t('frameleaf_workflows.validate')}
         </Button>
       </div>
+      {#if matches}
+        <div role="status">
+          <p>
+            {$t(matchCountKey(matches), { values: { count: matches.count } })}
+          </p>
+          {#each matches.issues as issue, index (index)}<p>{issue.message}</p>{/each}
+          {#if matches.exampleAssetIds.length > 0}
+            <ul class="wd-matches" aria-label={$t('frameleaf_workflows.matches_label')}>
+              {#each matches.exampleAssetIds as id, index (id)}<li>
+                  <a
+                    href={Route.viewAsset({ id })}
+                    aria-label={$t('frameleaf_workflows.open_match', {
+                      values: { index: index + 1, count: matches.count },
+                    })}
+                  >
+                    <img src={getAssetMediaUrl({ id, size: AssetMediaSize.Thumbnail })} alt="" loading="lazy" />
+                  </a>
+                </li>{/each}
+            </ul>
+            {#if matches.count > matches.exampleAssetIds.length}
+              <p>
+                {$t(matches.partial ? 'frameleaf_workflows.more_matches_partial' : 'frameleaf_workflows.more_matches', {
+                  values: { count: matches.count - matches.exampleAssetIds.length },
+                })}
+              </p>
+            {/if}
+          {/if}
+        </div>
+      {/if}
       {#if validation}
         <div role="status">
           {#if validation.problems.length > 0}
@@ -581,11 +727,7 @@
               {#each validation.steps as step (step.index)}
                 <li>
                   <strong>{step.title ?? step.method}</strong>
-                  <span>
-                    {step.result === 'disabled'
-                      ? $t('frameleaf_workflows.preview_step_disabled')
-                      : $t('frameleaf_workflows.preview_step_validated')}
-                  </span>
+                  <span>{stepOutcome(step.result, matches?.steps[step.index])}</span>
                 </li>
               {/each}
             </ol>
@@ -596,6 +738,7 @@
     {:else if tab === 'history'}
       <h3>{$t('frameleaf_workflows.history_title')}</h3>
       <p>{$t('frameleaf_workflows.history_help')}</p>
+      {#if capabilities && workflow}<WorkflowBatches {workflow} {dirty} />{/if}
       {#if notice}<p role="status">{notice}</p>{/if}
       {#if !workflow}
         <p>{$t('frameleaf_workflows.history_new')}</p>
@@ -632,7 +775,17 @@
                   </td>
                   <td>
                     {#if entry.triggerDataId}
-                      <a href={Route.viewAsset({ id: entry.triggerDataId })}>{$t('frameleaf_workflows.open_photo')}</a>
+                      <a
+                        class="wd-match"
+                        href={Route.viewAsset({ id: entry.triggerDataId })}
+                        aria-label={$t('frameleaf_workflows.open_photo')}
+                      >
+                        <img
+                          src={getAssetMediaUrl({ id: entry.triggerDataId, size: AssetMediaSize.Thumbnail })}
+                          alt=""
+                          loading="lazy"
+                        />
+                      </a>
                     {/if}
                     {#if entry.errorCode === WorkflowRunErrorCode.StepFailed && entry.triggerDataId && workflow.enabled}
                       <Button onclick={() => void retry(entry)}>{$t('frameleaf_workflows.retry')}</Button>

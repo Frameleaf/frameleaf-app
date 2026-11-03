@@ -26,7 +26,7 @@ Available single-asset repair actions are:
 - **Rewrite with AI**: rerun image descriptions and tags.
 - **Check again with AI**: rerun NSFW detection.
 - **Accept** the current NSFW classifier result.
-- **Mark safe** or **Mark sensitive** using a private review override.
+- **Lock** or **Unlock** using a private review override.
 - **Clear description**: clear the generated `AI description:` block without removing user-written description text.
 - **Clear tags**: clear generated tags from the asset without deleting the tag definitions.
 

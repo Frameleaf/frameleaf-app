@@ -10,9 +10,9 @@
   import type { OnAction, PreAction } from './action';
 
   /**
-   * The viewer's Mark Sensitive and Unmark Sensitive (FL-34; the prototype's `lock` and `unlock`).
-   * Marking is the lock: metadata that keeps the item's albums and organisation and hides it everywhere
-   * until the session is unlocked, where the Locked view lists it. Unmarking unlocks it and returns it
+   * The viewer's Lock and Unlock (FL-34; the prototype's `lock` and `unlock`).
+   * Locking is metadata that keeps the item's albums and organisation and hides it everywhere
+   * until the session is unlocked, where the Locked view lists it. Unlocking returns it
    * exactly where it was; the viewer only shows a locked item in an unlocked session, which the server
    * requires for it.
    */

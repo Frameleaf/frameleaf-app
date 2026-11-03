@@ -44,7 +44,11 @@
     compact = false,
   }: Props = $props();
 
-  const WIDTH = 640;
+  // Drawn at the box's real pixel size, so labels and dots are never stretched; 640 until measured.
+  let boxWidth = $state(0);
+  let boxHeight = $state(0);
+  const WIDTH = $derived(boxWidth || 640);
+  const drawHeight = $derived(boxHeight || height);
   const PAD = { top: 10, right: 10, bottom: 24, left: 56 };
   const LABEL_WIDTH = 170;
 
@@ -58,18 +62,21 @@
     ),
   );
   const observed = $derived(datasets.flatMap((dataset) => dataset.values).filter((value) => value !== null));
-  const maximum = $derived(Math.max(1, ...totals));
-  const minimum = $derived(kind === 'line' && observed.length > 0 ? Math.min(...observed) * 0.9 : 0);
-  const ticks = $derived(
-    Array.from(
-      { length: (compact ? 3 : 5) + 1 },
-      (_, index) => minimum + ((maximum - minimum) * index) / (compact ? 3 : 5),
-    ),
+  // Counts (items, attempts) get whole-number ticks, never 235.2 items; the axis ends on the last tick.
+  const whole = $derived(observed.every((value) => Number.isSafeInteger(value)));
+  const highest = $derived(Math.max(1, ...totals));
+  const lowest = $derived(kind === 'line' && observed.length > 0 ? Math.min(...observed) * 0.9 : 0);
+  const minimum = $derived(whole ? Math.floor(lowest) : lowest);
+  const tickCount = $derived(
+    whole ? Math.max(1, Math.min(compact ? 3 : 5, Math.ceil(highest - minimum))) : compact ? 3 : 5,
   );
+  const step = $derived(whole ? Math.ceil((highest - minimum) / tickCount) : (highest - minimum) / tickCount);
+  const maximum = $derived(minimum + step * tickCount);
+  const ticks = $derived(Array.from({ length: tickCount + 1 }, (_, index) => minimum + step * index));
 
   const plotLeft = $derived(horizontal ? LABEL_WIDTH : PAD.left);
   const plotWidth = $derived(WIDTH - plotLeft - PAD.right);
-  const plotHeight = $derived(height - PAD.top - PAD.bottom);
+  const plotHeight = $derived(drawHeight - PAD.top - PAD.bottom);
   const band = $derived((horizontal ? plotHeight : plotWidth) / Math.max(1, labels.length));
   const scale = (value: number) =>
     ((value - minimum) / Math.max(1e-9, maximum - minimum)) * (horizontal ? plotWidth : plotHeight);
@@ -100,108 +107,119 @@
 </script>
 
 <figure class="chart" style:height="{height}px">
-  <svg
-    viewBox="0 0 {WIDTH} {height}"
-    preserveAspectRatio="none"
-    role="img"
-    aria-label={$t('frameleaf_analytics_chart_label', { values: { title } })}
-  >
-    {#if horizontal}
-      {#each ticks as tick (tick)}
-        <line
-          class="grid"
-          x1={plotLeft + scale(tick)}
-          x2={plotLeft + scale(tick)}
-          y1={PAD.top}
-          y2={PAD.top + plotHeight}
-        />
-        <text class="tick" x={plotLeft + scale(tick)} y={height - 6} text-anchor="middle">{format(tick)}</text>
-      {/each}
-      {#each labels as label, index (index)}
-        <text class="tick category" x={plotLeft - 8} y={PAD.top + band * index + band / 2 + 3} text-anchor="end"
-          >{label}</text
-        >
-        {#each datasets as dataset, d (dataset.label)}
-          {@const value = dataset.values[index]}
-          {#if value !== null}
-            {@const before = stacked
-              ? datasets.slice(0, d).reduce((sum, item) => sum + (item.values[index] ?? 0), 0)
-              : 0}
-            {@const size = stacked ? band * 0.6 : (band * 0.6) / datasets.length}
-            <rect
-              data-tone={dataset.tone ?? 'primary'}
-              x={plotLeft + scale(before)}
-              y={PAD.top + band * index + band * 0.2 + (stacked ? 0 : size * d)}
-              width={Math.max(0, scale(before + value) - scale(before))}
-              height={size}
-              rx="2"
-            >
-              <title>{label} · {dataset.label}: {format(value)} {unit}</title>
-            </rect>
-          {/if}
+  <div class="plot" bind:clientWidth={boxWidth} bind:clientHeight={boxHeight}>
+    <svg
+      viewBox="0 0 {WIDTH} {drawHeight}"
+      width={WIDTH}
+      height={drawHeight}
+      role="img"
+      aria-label={$t('frameleaf_analytics_chart_label', { values: { title } })}
+    >
+      {#if horizontal}
+        {#each ticks as tick (tick)}
+          <line
+            class="grid"
+            x1={plotLeft + scale(tick)}
+            x2={plotLeft + scale(tick)}
+            y1={PAD.top}
+            y2={PAD.top + plotHeight}
+          />
+          <text class="tick" x={plotLeft + scale(tick)} y={drawHeight - 6} text-anchor="middle">{format(tick)}</text>
         {/each}
-      {/each}
-    {:else}
-      {#each ticks as tick (tick)}
-        <line class="grid" x1={plotLeft} x2={WIDTH - PAD.right} y1={y(tick)} y2={y(tick)} />
-        <text class="tick" x={plotLeft - 8} y={y(tick) + 3} text-anchor="end">{format(tick)}</text>
-      {/each}
-      {#each labels as label, index (index)}
-        {#if index % labelEvery === 0}
-          <text class="tick" x={plotLeft + band * index + band / 2} y={height - 6} text-anchor="middle">{label}</text>
-        {/if}
-      {/each}
-      {#if kind === 'line'}
-        {#each datasets as dataset (dataset.label)}
-          {#each segments(dataset.values) as run, r (r)}
-            {#if dataset.fill && run.length > 1}
-              <path
-                class="area"
-                d="M {run[0][0]} {PAD.top + plotHeight} {run.map(([px, py]) => `L ${px} ${py}`).join(' ')} L {run.at(
-                  -1,
-                )![0]} {PAD.top + plotHeight} Z"
-              />
-            {/if}
-            {#if run.length > 1}
-              <path
-                class="line"
-                data-tone={dataset.tone ?? 'primary'}
-                class:dashed={dataset.dashed}
-                d={run.map(([px, py], i) => `${i === 0 ? 'M' : 'L'} ${px} ${py}`).join(' ')}
-              />
-            {/if}
-            {#each run as [px, py] (px)}
-              <circle class="dot" data-tone={dataset.tone ?? 'primary'} cx={px} cy={py} r={run.length === 1 ? 3 : 1.5}>
-                <title>{labels[Math.round((px - plotLeft - band / 2) / band)]} · {dataset.label}</title>
-              </circle>
-            {/each}
-          {/each}
-        {/each}
-      {:else}
         {#each labels as label, index (index)}
+          <text class="tick category" x={plotLeft - 8} y={PAD.top + band * index + band / 2 + 3} text-anchor="end"
+            >{label}</text
+          >
           {#each datasets as dataset, d (dataset.label)}
             {@const value = dataset.values[index]}
             {#if value !== null}
               {@const before = stacked
                 ? datasets.slice(0, d).reduce((sum, item) => sum + (item.values[index] ?? 0), 0)
-                : minimum}
-              {@const size = stacked ? band * 0.7 : (band * 0.7) / datasets.length}
+                : 0}
+              {@const size = stacked ? band * 0.6 : (band * 0.6) / datasets.length}
               <rect
                 data-tone={dataset.tone ?? 'primary'}
-                x={plotLeft + band * index + band * 0.15 + (stacked ? 0 : size * d)}
-                y={y(before + value)}
-                width={size}
-                height={Math.max(0, y(before) - y(before + value))}
-                rx="1.5"
+                x={plotLeft + scale(before)}
+                y={PAD.top + band * index + band * 0.2 + (stacked ? 0 : size * d)}
+                width={Math.max(0, scale(before + value) - scale(before))}
+                height={size}
+                rx="2"
               >
                 <title>{label} · {dataset.label}: {format(value)} {unit}</title>
               </rect>
             {/if}
           {/each}
         {/each}
+      {:else}
+        {#each ticks as tick (tick)}
+          <line class="grid" x1={plotLeft} x2={WIDTH - PAD.right} y1={y(tick)} y2={y(tick)} />
+          <text class="tick" x={plotLeft - 8} y={y(tick) + 3} text-anchor="end">{format(tick)}</text>
+        {/each}
+        {#each labels as label, index (index)}
+          {#if index % labelEvery === 0}
+            <text class="tick" x={plotLeft + band * index + band / 2} y={drawHeight - 6} text-anchor="middle"
+              >{label}</text
+            >
+          {/if}
+        {/each}
+        {#if kind === 'line'}
+          {#each datasets as dataset (dataset.label)}
+            {#each segments(dataset.values) as run, r (r)}
+              {#if dataset.fill && run.length > 1}
+                <path
+                  class="area"
+                  d="M {run[0][0]} {PAD.top + plotHeight} {run.map(([px, py]) => `L ${px} ${py}`).join(' ')} L {run.at(
+                    -1,
+                  )![0]} {PAD.top + plotHeight} Z"
+                />
+              {/if}
+              {#if run.length > 1}
+                <path
+                  class="line"
+                  data-tone={dataset.tone ?? 'primary'}
+                  class:dashed={dataset.dashed}
+                  d={run.map(([px, py], i) => `${i === 0 ? 'M' : 'L'} ${px} ${py}`).join(' ')}
+                />
+              {/if}
+              {#each run as [px, py] (px)}
+                <circle
+                  class="dot"
+                  data-tone={dataset.tone ?? 'primary'}
+                  cx={px}
+                  cy={py}
+                  r={run.length === 1 ? 3 : 1.5}
+                >
+                  <title>{labels[Math.round((px - plotLeft - band / 2) / band)]} · {dataset.label}</title>
+                </circle>
+              {/each}
+            {/each}
+          {/each}
+        {:else}
+          {#each labels as label, index (index)}
+            {#each datasets as dataset, d (dataset.label)}
+              {@const value = dataset.values[index]}
+              {#if value !== null}
+                {@const before = stacked
+                  ? datasets.slice(0, d).reduce((sum, item) => sum + (item.values[index] ?? 0), 0)
+                  : minimum}
+                {@const size = stacked ? band * 0.7 : (band * 0.7) / datasets.length}
+                <rect
+                  data-tone={dataset.tone ?? 'primary'}
+                  x={plotLeft + band * index + band * 0.15 + (stacked ? 0 : size * d)}
+                  y={y(before + value)}
+                  width={size}
+                  height={Math.max(0, y(before) - y(before + value))}
+                  rx="1.5"
+                >
+                  <title>{label} · {dataset.label}: {format(value)} {unit}</title>
+                </rect>
+              {/if}
+            {/each}
+          {/each}
+        {/if}
       {/if}
-    {/if}
-  </svg>
+    </svg>
+  </div>
   {#if !compact && (datasets.length > 1 || hasGap)}
     <figcaption class="legend">
       {#each datasets as dataset (dataset.label)}
@@ -226,10 +244,14 @@
     min-width: 0;
     margin: 0;
   }
-  svg {
+  .plot {
+    position: relative;
     flex: 1;
-    width: 100%;
     min-height: 0;
+  }
+  svg {
+    position: absolute;
+    inset: 0;
     overflow: visible;
   }
   .grid {

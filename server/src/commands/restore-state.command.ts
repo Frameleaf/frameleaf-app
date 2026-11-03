@@ -1,4 +1,5 @@
 import { Command, CommandRunner } from 'nest-commander';
+import { hasManagerRestoreAuthority } from 'src/commands/validate-restore.command.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { DatabaseService } from 'src/services/database.service.js';
 
@@ -14,11 +15,7 @@ export class RestoreStateCommand extends CommandRunner {
 
   async run(): Promise<void> {
     try {
-      if (
-        process.env.FRAMELEAF_MANAGER_ORIGIN !== 'restored_library' ||
-        !/^[a-f0-9]{12}$/.test(process.env.FRAMELEAF_MANAGER_INSTALLATION ?? '') ||
-        !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(process.env.FRAMELEAF_MANAGER_RESTORE_OPERATION_ID ?? '')
-      ) {
+      if (!hasManagerRestoreAuthority()) {
         throw new Error('Manager offline restore authority required');
       }
       await this.database.initialize();

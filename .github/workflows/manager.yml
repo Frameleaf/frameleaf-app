@@ -32,7 +32,7 @@ on:
       tag:
         description: Manager component version matching manager/package.json
         type: string
-        default: manager-v0.2.8
+        default: manager-v1.2.3
 permissions:
   contents: read
 concurrency:
@@ -41,7 +41,7 @@ concurrency:
 jobs:
   manager:
     env:
-      FRAMELEAF_CI_NODE_IMAGE: mirror.gcr.io/library/node@sha256:193fe51b64e77981119c98c2002c9e32a70e2f006fb4d25068ce0558998917f0
+      FRAMELEAF_CI_NODE_IMAGE: mirror.gcr.io/library/node@sha256:8eb619e402eaede1748a3c8173bffab391592812e85136452f781741c7242ddf
       FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:4c618d9a30e0b88078b9371a0499d7055da9ab7f5afe386a460758eac9857f06
     name: Manager (${{ matrix.architecture }})
     if: github.repository == 'Frameleaf/frameleaf-app'
@@ -65,8 +65,8 @@ jobs:
           node-version-file: .nvmrc
       - name: Install independent Manager dependencies
         run: npm ci --prefix manager --ignore-scripts
-      - name: Install filesystem metadata tools for copy verification
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends acl attr
+      - name: Install filesystem metadata and native-helper test tools
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends acl attr gcc libc6-dev
       - name: Types and Svelte
         run: npm run check --prefix manager
       - name: Security, ownership, recovery and policy tests
@@ -114,6 +114,10 @@ jobs:
       - run: docker load --input "$RUNNER_TEMP/manager/runtime.tar"
       - name: HTTPS claim, session and restart integration
         run: node manager/test/container.mjs
+      - name: HTTP claim, session and restart integration
+        env:
+          MANAGER_TEST_HTTP: '1'
+        run: node manager/test/container.mjs
       - name: Build PostgreSQL from the owned pinned source
         run: docker build --build-arg POSTGRES_IMAGE="$FRAMELEAF_CI_POSTGRES_IMAGE" --build-arg TARGETARCH=${{ matrix.architecture }} --tag frameleaf-postgres:manager-test docker/postgres
       - name: Real disk PostgreSQL, encrypted Restic recovery and logical restore
@@ -124,6 +128,7 @@ jobs:
           name: manager-evidence-${{ matrix.architecture }}
           path: |
             manager-evidence.json
+            manager-evidence-http.json
             manager-postgres-evidence.json
           if-no-files-found: error
       - name: Bind both tested runtimes to their OCI bytes
@@ -169,7 +174,7 @@ jobs:
           node - <<'JS'
           const fs = require('node:fs');
           const assert = require('node:assert/strict');
-          for (const file of ['manager-evidence.json', 'manager-postgres-evidence.json']) {
+          for (const file of ['manager-evidence.json', 'manager-evidence-http.json', 'manager-postgres-evidence.json']) {
             const evidence = JSON.parse(fs.readFileSync(file, 'utf8'));
             assert.equal(evidence.commit, process.env.SOURCE_SHA);
             assert(Object.keys(evidence.checks).length > 0);
@@ -343,10 +348,10 @@ jobs:
           set -euo pipefail
           git fetch --no-tags origin "$GITHUB_REF"
           [[ "$(git rev-parse FETCH_HEAD)" == "$SOURCE_SHA" ]]
-          (cd "$RUNNER_TEMP" && sha256sum manager-manifest.json frameleaf-manager.xml frameleaf-manager.compose.yaml > SHA256SUMS)
+          (cd "$RUNNER_TEMP" && sha256sum manager-manifest.json frameleaf-manager.xml frameleaf-manager.compose.yaml frameleaf-manager.hexos.json > SHA256SUMS)
           printf 'Standalone Frameleaf Manager %s. Image: ghcr.io/frameleaf/frameleaf-manager@%s\nOnly Manager is published from source %s. NAS installers consume the authenticated manifest and immutable digest.\n' "$RELEASE_TAG" "$DIGEST" "$SOURCE_SHA" > "$RUNNER_TEMP/manager-notes.md"
           gh release create "$RELEASE_TAG" "$RUNNER_TEMP/manager-manifest.json" "$RUNNER_TEMP/SHA256SUMS" \
-            "$RUNNER_TEMP/frameleaf-manager.xml" "$RUNNER_TEMP/frameleaf-manager.compose.yaml" \
+            "$RUNNER_TEMP/frameleaf-manager.xml" "$RUNNER_TEMP/frameleaf-manager.compose.yaml" "$RUNNER_TEMP/frameleaf-manager.hexos.json" \
             --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --title "Frameleaf Manager $RELEASE_TAG" \
             --notes-file "$RUNNER_TEMP/manager-notes.md" --latest=false
           oras tag "ghcr.io/frameleaf/frameleaf-manager@$DIGEST" "$RELEASE_TAG" latest

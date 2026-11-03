@@ -1,0 +1,112 @@
+{
+  "version": 4,
+  "custom": true,
+  "metadata": {
+    "name": "Frameleaf",
+    "description": "Your photos. Your server. Everywhere.\n\nBring photos and videos together in a library with a timeline, albums, smart search, people, places, sharing and editing. Your server holds the originals; local use needs no Cloud account.\n\nThis package installs Frameleaf Manager. Manager guides storage setup, installs the application from a signed release, monitors services, handles updates and keeps encrypted database recovery points. HexOS creates dedicated folders in your selected storage locations. Open Manager after installation to create your local administrator and set up the photo library.\n\nManager needs Docker access to manage the application containers. Its backups cover the database and configuration, so keep a separate backup of original photos and videos. Product screenshots show demonstration data.\n\nInstallation: https://frameleaf.app/docs/nas/hexos/\nHelp center: https://frameleaf.app/help/\nCommunity: https://frameleaf.app/help/community/",
+    "icon": "https://raw.githubusercontent.com/Frameleaf/frameleaf-app/main/design/frameleaf/mark.png",
+    "version": "@MANAGER_VERSION@",
+    "categories": [
+      "media"
+    ],
+    "keywords": [
+      "photos",
+      "videos",
+      "photo library",
+      "self-hosted",
+      "gallery",
+      "albums",
+      "smart search",
+      "face recognition",
+      "backup",
+      "manager"
+    ],
+    "homepage": "https://frameleaf.app",
+    "sources": [
+      "https://github.com/Frameleaf/frameleaf-app",
+      "https://frameleaf.app/help/",
+      "https://frameleaf.app/docs/nas/hexos/",
+      "https://frameleaf.app/help/community/",
+      "https://www.youtube.com/@frameleafapp",
+      "https://www.reddit.com/r/Frameleaf/"
+    ],
+    "screenshots": [
+      "https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/manager-overview.jpg",
+      "https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/manager-storage.jpg",
+      "https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/manager-backups.jpg"
+    ]
+  },
+  "script": {
+    "version": "@MANAGER_VERSION@",
+    "changeLog": "Frameleaf Manager @MANAGER_VERSION@."
+  },
+  "requirements": {
+    "locations": ["ApplicationsPerformance", "ApplicationsCapacity", "Photos"],
+    "specifications": ["4CORE", "8GBRAM", "10GB"],
+    "permissions": ["READ_WRITE_LOCATIONS"],
+    "ports": [2282]
+  },
+  "ensure_directories_exists": [
+    { "path": "$LOCATION(ApplicationsPerformance)" },
+    { "path": "$LOCATION(ApplicationsCapacity)" },
+    { "path": "$LOCATION(Photos)", "network_share": true },
+    { "path": "$LOCATION(ApplicationsPerformance)/frameleaf/manager", "owner": { "user": "root" }, "snapshot": { "id": "manager" } },
+    { "path": "$LOCATION(ApplicationsPerformance)/frameleaf/databases", "owner": { "user": "root" }, "snapshot": { "id": "db" } },
+    { "path": "$LOCATION(Photos)/frameleaf", "owner": { "user": "root" } },
+    { "path": "$LOCATION(ApplicationsCapacity)/frameleaf/backups", "owner": { "user": "root" } }
+  ],
+  "app_values": {
+    "image": { "repository": "ghcr.io/frameleaf/frameleaf-manager", "tag": "latest", "pull_policy": "missing" },
+    "restart_policy": "unless-stopped",
+    "capabilities": { "add": ["CHOWN", "DAC_OVERRIDE", "FOWNER"] },
+    "labels": [{ "key": "app.frameleaf.manager.role", "value": "controller" }],
+    "host_network": false,
+    "ports": [
+      { "bind_mode": "published", "port_number": 2282, "container_port": 9443, "protocol": "tcp", "host_ips": [] }
+    ],
+    "portals": [
+      { "name": "Manager", "scheme": "https", "use_node_ip": true, "host": "", "port": 2282, "path": "/" }
+    ],
+    "envs": [
+      { "name": "MANAGER_BIND_ADDRESS", "value": "0.0.0.0" },
+      { "name": "MANAGER_DATA", "value": "$LOCATION(ApplicationsPerformance)/frameleaf/manager" },
+      { "name": "MANAGER_STORAGE_ROOTS", "value": "$LOCATION(Photos)/frameleaf" },
+      { "name": "MANAGER_DATABASE_ROOTS", "value": "$LOCATION(ApplicationsPerformance)/frameleaf/databases" },
+      { "name": "MANAGER_APPDATA_ROOT", "value": "$LOCATION(ApplicationsPerformance)/frameleaf/databases" },
+      { "name": "MANAGER_BACKUP_ROOT", "value": "$LOCATION(ApplicationsCapacity)/frameleaf/backups" }
+    ],
+    "storage": [
+      {
+        "type": "host_path",
+        "mount_path": "/var/run/docker.sock",
+        "host_path_config": { "path": "/var/run/docker.sock" }
+      },
+      {
+        "type": "host_path",
+        "mount_path": "/run/frameleaf-host/mountinfo",
+        "read_only": true,
+        "host_path_config": { "path": "/proc/1/mountinfo" }
+      },
+      {
+        "type": "host_path",
+        "mount_path": "$LOCATION(ApplicationsPerformance)/frameleaf/manager",
+        "host_path_config": { "path": "$LOCATION(ApplicationsPerformance)/frameleaf/manager" }
+      },
+      {
+        "type": "host_path",
+        "mount_path": "$LOCATION(Photos)/frameleaf",
+        "host_path_config": { "path": "$LOCATION(Photos)/frameleaf" }
+      },
+      {
+        "type": "host_path",
+        "mount_path": "$LOCATION(ApplicationsPerformance)/frameleaf/databases",
+        "host_path_config": { "path": "$LOCATION(ApplicationsPerformance)/frameleaf/databases" }
+      },
+      {
+        "type": "host_path",
+        "mount_path": "$LOCATION(ApplicationsCapacity)/frameleaf/backups",
+        "host_path_config": { "path": "$LOCATION(ApplicationsCapacity)/frameleaf/backups" }
+      }
+    ]
+  }
+}

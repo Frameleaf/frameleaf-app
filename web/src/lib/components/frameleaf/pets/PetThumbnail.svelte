@@ -1,7 +1,8 @@
 <script lang="ts">
   import ImageThumbnail from '$lib/components/assets/thumbnail/ImageThumbnail.svelte';
+  import { petThumbnailFocus } from '$lib/frameleaf/pets';
   import { getAssetMediaUrl } from '$lib/utils';
-  import { AssetMediaSize } from '@frameleaf/sdk';
+  import { AssetMediaSize, type PetSpecies } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import { mdiPawOutline } from '@mdi/js';
 
@@ -16,13 +17,15 @@
    * (apple-style.css:137-148; the people grid is the prototype pattern pets follow).
    *
    * `heroKey` marks it as one end of the card-to-page Hero (`data-fl-shared`); `heroPage` is the
-   * end on the page the card opens.
+   * end on the page the card opens. `species` sets where the square crops the photo
+   * (`petThumbnailFocus`).
    */
   let {
     assetId,
     cacheKey,
     size = 160,
     alt = '',
+    species,
     heroKey,
     heroPage = false,
   }: {
@@ -30,6 +33,7 @@
     cacheKey?: string | null;
     size?: number;
     alt?: string;
+    species?: PetSpecies | null;
     heroKey?: string;
     heroPage?: boolean;
   } = $props();
@@ -39,6 +43,7 @@
   class="pet-thumb fl-squircle"
   style:width="{size}px"
   style:height="{size}px"
+  style:--pet-focus={petThumbnailFocus(species)}
   data-fl-shared={heroKey}
   data-fl-shared-page={heroKey && heroPage ? '' : undefined}
 >
@@ -63,6 +68,9 @@
     flex-shrink: 0;
     overflow: hidden;
     background: var(--fl-raised);
+  }
+  .pet-thumb :global(img) {
+    object-position: var(--pet-focus);
   }
   .placeholder {
     display: inline-flex;

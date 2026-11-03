@@ -750,7 +750,9 @@
       return;
     }
     let cancelled = false;
-    const wait = Math.max(0, lastLoad + 5000 - Date.now());
+    // The count says there is work the list does not show yet (just after Resume): load it now (FL-588).
+    const behind = tabCount > 0 && untrack(() => jobs.length === 0);
+    const wait = behind ? 0 : Math.max(0, lastLoad + 5000 - Date.now());
     const timer = setTimeout(() => {
       lastLoad = Date.now();
       void Promise.all(

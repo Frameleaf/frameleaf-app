@@ -6,8 +6,9 @@ import {
   digest,
   frozenSource,
   newestContainedRelease,
+  withForkContent,
 } from 'src/immich-import/adapters.js';
-import { assertMediaPolicy, verifyMediaFile } from 'src/immich-import/media.js';
+import { assertMediaPolicy, lostOriginalReason, mapInOrder, verifyMediaFile } from 'src/immich-import/media.js';
 import { readSourceStructure, verifyReadableStructure, verifySourceStructure } from 'src/immich-import/schema.js';
 import {
   FrozenSource,
@@ -19,12 +20,14 @@ import {
 } from 'src/immich-import/types.js';
 
 export class ImmichSource {
+  private frozen: FrozenSource;
+  /** The frozen shape, plus pre-Frameleaf fork content once preflight has seen the source. */
   fixture: FrozenSource;
   constructor(
     readonly db: ImportDatabase,
     readonly config: ImportConfig,
   ) {
-    this.fixture = frozenSource(config.version);
+    this.frozen = this.fixture = frozenSource(config.version);
   }
 
   async preflight(): Promise<string> {
@@ -60,18 +63,20 @@ export class ImmichSource {
       // base comes from the upstream ledger, and its added tables and columns pass the readable-columns check.
       const base = newestContainedRelease(names);
       if (!base) throw new ImportRefused('UNKNOWN_SOURCE_MIGRATIONS');
-      this.fixture = { ...frozenSource(base), exact: false };
+      this.frozen = { ...frozenSource(base), exact: false };
     }
     const structure = await readSourceStructure(this.db);
-    if (this.fixture.exact && canonicalJson(names) === canonicalJson(this.fixture.migrations)) {
-      verifySourceStructure(structure, this.fixture.structure);
+    if (this.frozen.exact && canonicalJson(names) === canonicalJson(this.frozen.migrations)) {
+      verifySourceStructure(structure, this.frozen.structure);
     } else {
       // A replayed 2.x shape or a newer release: the selected frozen shape must be the newest one its ledger contains.
       const newest = newestContainedRelease(names);
-      if (!newest || frozenSource(newest).migrations !== this.fixture.migrations) {
+      if (!newest || frozenSource(newest).migrations !== this.frozen.migrations) {
         throw new ImportRefused('UNKNOWN_SOURCE_MIGRATIONS');
       }
-      verifyReadableStructure(structure, this.fixture);
+      verifyReadableStructure(structure, this.frozen);
+      // Fork sources carry extra migrations, so they always take this path.
+      this.fixture = withForkContent(this.frozen, structure);
     }
     const identity = await this.db.query(`SELECT current_database() AS database,
       (SELECT oid::text FROM pg_database WHERE datname=current_database()) AS database_oid,
@@ -85,41 +90,43 @@ export class ImmichSource {
       }
       hash.update(table);
       for await (const batch of this.batches(table)) {
-        for (const { row } of batch) {
-          hash.update(canonicalJson(row));
-          hash.update('\n');
-          if (this.config.media?.mode === 'manager-in-place') {
-            for (const column of PATH_COLUMNS[table] ?? []) {
-              const path = row[column];
-              if (typeof path !== 'string' || !path) continue;
-              hash.update(canonicalJson({ column, path }));
-              try {
-                await verifyMediaFile(
-                  path,
-                  this.config.mediaRoots,
-                  undefined,
-                  undefined,
-                  this.config.media,
-                  (sha256) => {
-                    hash.update(sha256);
-                  },
-                );
-              } catch (error) {
-                if (
-                  (error as NodeJS.ErrnoException).code !== 'ENOENT' ||
-                  (table !== 'asset_file' && table !== 'person')
-                ) {
-                  throw error;
-                }
-                hash.update('missing-regenerable-output');
-              }
-              hash.update('\n');
-            }
-          }
+        // Files are checked concurrently; their fingerprint parts are applied in row order.
+        for (const parts of await mapInOrder(batch, ({ row }) => this.rowFingerprint(table, row))) {
+          for (const part of parts) hash.update(part);
         }
       }
     }
     return hash.digest('hex');
+  }
+
+  private async rowFingerprint(table: string, row: ImportRow): Promise<string[]> {
+    const parts = [canonicalJson(row), '\n'];
+    if (this.config.media?.mode !== 'manager-in-place') return parts;
+    for (const column of PATH_COLUMNS[table] ?? []) {
+      const path = row[column];
+      if (typeof path !== 'string' || !path) continue;
+      parts.push(canonicalJson({ column, path }));
+      try {
+        await verifyMediaFile(path, this.config.mediaRoots, undefined, undefined, this.config.media, (identity) => {
+          parts.push(identity);
+        });
+      } catch (error) {
+        const lost =
+          table === 'asset' ? await lostOriginalReason(error, path, this.config.mediaRoots, this.config.media) : null;
+        if (lost) {
+          parts.push(`lost-original:${lost}`);
+        } else if (
+          (error as NodeJS.ErrnoException).code !== 'ENOENT' ||
+          (table !== 'asset_file' && table !== 'person')
+        ) {
+          throw error;
+        } else {
+          parts.push('missing-regenerable-output');
+        }
+      }
+      parts.push('\n');
+    }
+    return parts;
   }
 
   async *batches(table: string, after: string[] | null = null): AsyncGenerator<{ row: ImportRow; cursor: string[] }[]> {

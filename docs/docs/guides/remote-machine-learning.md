@@ -37,6 +37,14 @@ services:
       # The Studio render worker can only enrol on the server's host; see the note below.
       FRAMELEAF_STUDIO_WORKER: 'false'
     restart: always
+    # The worker has no authentication, and this publishes it on every interface of the host. Allow only
+    # the Frameleaf server to reach port 3003 (an allowlist firewall rule or ACL), or put both hosts on an
+    # isolated private network. Binding to a private address (for example 192.168.1.10:3003:3003) is
+    # extra defence in depth, not enough on its own: every device on that network could still reach it.
+    # Plain http:// is not encrypted, so image previews cross the network readable. Across an untrusted
+    # network, put the worker behind an HTTPS (TLS) reverse proxy that still lets only the Frameleaf
+    # server through (TLS encrypts, it does not restrict callers), or reach it only through a VPN, and
+    # use that address.
     ports:
       - 3003:3003
 
@@ -60,15 +68,15 @@ Version mismatches between both hosts may cause bugs and instability, so remembe
 
 ## Forcing remote processing
 
-Adding a new URL to the settings is recommended over replacing the existing URL (http://frameleaf-machine-learning:3003). This is because it will allow machine learning tasks to be processed successfully when the remote server is down by falling back to the local machine learning container. If you do not want machine learning tasks to be processed locally when the remote server is not available, you can instead replace the existing URL and only provide the remote container's URL. If doing this, you can remove the `frameleaf-machine-learning` section of the local `docker-compose.yml` file to save resources, as this service will never be used.
+Adding a new URL to the settings is recommended over replacing the existing URL (http://frameleaf-machine-learning:3003), so the local container stays available as a destination. Each kind of library work is tried first on the worker it is routed to under **Library analysis routes** (see [Workers and endpoints](/administration/workers-and-endpoints)). If that worker is unavailable, the work moves to the next available destination in the processing order that is turned on and allowed that work, so with the local URL kept, Smart Search and Face Detection continue locally while the remote worker is down. The work waits only when no destination in the order can take it; a job that starts while none is available is assigned to the first destination in the order and waits for that one, even if another comes back first. Once a destination is chosen, the request is sent only there; it is not retried against another URL. If you never want machine learning tasks processed locally, you can instead replace the existing URL and only provide the remote container's URL. If doing this, you can remove the `frameleaf-machine-learning` section of the local `docker-compose.yml` file to save resources, as this service will never be used.
 
 <ComposeBuilder query="machineLearning.external=true" />
 
-Do note that this will mean that Smart Search and Face Detection jobs will fail to be processed when the remote instance is not available. This in turn means that tasks dependent on these features—Duplicate Detection and Facial Recognition—will not run for affected assets. If this occurs, you must select **Catch up** for **Visual search** and **Face detection** under **Settings → Computers & background work → Background work** for the jobs to be retried.
+Do note that when the remote instance is the only destination that can take this work, Smart Search and Face Detection jobs cannot be processed while it is not available. Jobs that start while it is down wait for it and run when it comes back. Jobs that were already running on it when it went down are refused, so tasks dependent on these features—Duplicate Detection and Facial Recognition—will not run for those assets. To retry them, select **Catch up** for **Visual search** and **Face detection** under **Settings → Computers & background work → Background work**; it processes every photo still missing those results, which includes the refused ones, and does not redo finished photos. Waiting jobs do not need it.
 
 ## Load balancing
 
-While several URLs can be provided in the settings, they are tried sequentially; there is no attempt to distribute load across multiple containers. It is recommended to use a dedicated load balancer for such use-cases and specify it as the only URL. Among other things, it may enable the use of different APIs on the same server by running multiple containers with different configurations. For example, one might run an OpenVINO container in addition to a CUDA container, or run a standard release container to maximize both CPU and GPU utilization.
+While several URLs can be provided in the settings, each kind of work is routed to one of them; there is no attempt to distribute load across multiple containers. It is recommended to use a dedicated load balancer for such use-cases and specify it as the only URL. Among other things, it may enable the use of different APIs on the same server by running multiple containers with different configurations. For example, one might run an OpenVINO container in addition to a CUDA container, or run a standard release container to maximize both CPU and GPU utilization.
 
 :::tip
 The machine learning container can be shared among several Frameleaf instances regardless of the models a particular instance uses. However, using different models will lead to higher peak memory usage.

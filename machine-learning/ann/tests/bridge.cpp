@@ -14,8 +14,12 @@ int main(int argc, char** argv) {
         float input[] = {0.25F, -0.75F}, output[] = {0, 0};
         const void* inputs[] = {input};
         void* outputs[] = {output};
-        execute(handle, id, inputs, outputs);
+        assert(execute(handle, id, inputs, outputs) == 0);
         assert(output[0] == input[0] && output[1] == input[1]);
+        fixture::failExecuteStatus = true;
+        assert(execute(handle, id, inputs, outputs) != 0);
+        fixture::failExecute = true;
+        assert(execute(handle, id, inputs, outputs) != 0);
         unload(handle, id);
         destroy(handle);
         assert(fixture::runtimes == 0 && fixture::parsers == 0);
@@ -30,6 +34,13 @@ int main(int argc, char** argv) {
                 float input[] = {1, 2}, output[] = {0, 0};
                 const void* inputs[] = {input}; void* outputs[] = {output};
                 fixture::failExecute = true;
+                try { ann.execute(id, inputs, outputs); assert(false); } catch (const std::runtime_error&) {}
+                ann.execute(id, inputs, outputs);
+                assert(output[0] == 1 && output[1] == 2);
+            } else if (test == "execute-status") {
+                float input[] = {1, 2}, output[] = {0, 0};
+                const void* inputs[] = {input}; void* outputs[] = {output};
+                fixture::failExecuteStatus = true;
                 try { ann.execute(id, inputs, outputs); assert(false); } catch (const std::runtime_error&) {}
                 ann.execute(id, inputs, outputs);
                 assert(output[0] == 1 && output[1] == 2);

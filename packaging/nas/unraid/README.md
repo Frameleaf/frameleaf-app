@@ -1,30 +1,63 @@
 # Frameleaf for Unraid
 
-[Help center](https://frameleaf.app/help) · [Documentation](https://frameleaf.app/docs)
+[Help center](https://frameleaf.app/help) · [Documentation](https://frameleaf.app/docs) · [Unraid guide](https://frameleaf.app/docs/nas/unraid/)
 
-Install **Frameleaf Manager** for a self-hosted photo and video library. Manager
-installs or imports a library and manages the application, PostgreSQL and optional
-machine learning as sibling containers. Only Manager receives the Docker socket;
-that access lets it create and control containers on this host.
+**Your photos. Your server. Everywhere.** Frameleaf is a self-hosted photo and video
+library: bring a lifetime of photos home, find any moment, edit it, and enjoy it on
+your phone, in any browser and on the TV. Your originals stay as ordinary files on
+your own disks, faces and search are worked out on your own hardware, and there's no
+telemetry, subscription or cloud account required.
 
-This repository contains generated Docker templates. Packaging source and support
-live in [Frameleaf/frameleaf-app](https://github.com/Frameleaf/frameleaf-app).
-Templates reference `:latest` images and never pin a release. A published template is not proof
-of Community Apps acceptance or physical Unraid qualification.
+> Frameleaf is in beta. Keep independent backups of your photos and videos.
 
-The initial catalog contains Manager only. Manual Server/ML templates await a
-compatible signed application release with its `nas-manifest.json`. Manager's
-publication does not make an older application release compatible; installation
-and updates still require the application's release-verification gates.
+## What Frameleaf does
+
+- **Library** — a fast timeline for every photo and video, with albums, folders,
+  stacks, tags, RAW, Live and Motion Photos, and your best shots picked out.
+- **Search** — describe what you remember. People and pets, places and landmarks,
+  text in photos and words spoken in videos, all recognised on your server.
+- **Memories** — on this day, trips and years in review, played as shows with music.
+- **Create** — a photo editor with masks, looks and RAW development; **Studio**, a
+  real video editor that can make a movie from an album in one step; **Boards** for
+  references and design files; and **Clients** for photography studios.
+- **Share** — a library for each person, partner sharing, shared albums and spaces,
+  and links with passwords and expiry.
+- **Apps** — iPhone, iPad and Android with camera-roll backup, plus Apple TV and
+  Android TV.
+- **Keep it safe** — duplicate review, locked content, and database, Cloud and Buddy
+  backups. Optional [Frameleaf Cloud](https://frameleaf.app/docs/cloud/overview/) adds
+  remote access, off-site backup and cloud GPU processing.
+
+See [every feature](https://frameleaf.app/platform/) or [try the demo](https://frameleaf.app/demo/).
+
+## Switching to Frameleaf
+
+Bring your library across from Immich, PhotoPrism, LibrePhotos, Photoview, Piwigo,
+Lychee, PiGallery2, Ente Photos, Nextcloud Photos and Memories, or Synology Photos,
+and import a Google Photos Takeout or iCloud Photos. See
+[Switching to Frameleaf](https://frameleaf.app/docs/migrate/from-immich/).
 
 ## Screenshots
 
-Manager 0.1.2 interface with demo data. Counts, service states, paths and releases
-shown are examples, not evidence of a qualified Unraid installation.
+Screens use demonstration data.
 
-![Manager overview with demo data](https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/manager-overview.jpg)
-![Manager storage mappings with demo data](https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/manager-storage.jpg)
-![Manager database backups with demo data](https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/manager-backups.jpg)
+![Library timeline](https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/frameleaf-library.jpg)
+![Search in plain words](https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/frameleaf-search.jpg)
+![People and pets](https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/frameleaf-people.jpg)
+![Memories](https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/frameleaf-memories.jpg)
+![Photo editor with masks](https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/frameleaf-editor.jpg)
+![Studio video editor](https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/frameleaf-studio.jpg)
+![Boards filtered by colour](https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/frameleaf-boards.jpg)
+![Frameleaf on Apple TV](https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/frameleaf-apple-tv.jpg)
+![Frameleaf Manager on Unraid](https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/manager-overview.jpg)
+
+## Installing on Unraid
+
+Install **Frameleaf** from Community Apps. The template runs Frameleaf Manager, the
+official installer: it sets up Frameleaf, its PostgreSQL database and optional
+machine learning as sibling containers, then handles updates and encrypted database
+backups. Only Manager receives the Docker socket; that access lets it create and
+control containers on this host.
 
 Manager detects host GPUs through sysfs. It maps `/dev/dri` into the Frameleaf
 server for Intel/AMD video acceleration, or reserves an NVIDIA GPU with compute
@@ -46,15 +79,15 @@ For an existing installation, add the **DockerMan templates** mapping from the
 current Manager template and apply it in DockerMan. Start the
 library from Manager to generate the service templates.
 
-## Manager installation
+## Manager setup
 
 1. Create the state, media, database parent and backup folders on the intended
    storage **before** installing. Use Unraid's configured appdata share or your
    chosen pool; do not assume a pool named `cache`. Database storage must be on
    supported local disk storage outside Docker's data root and `docker.img`.
-2. Leave **Manager HTTPS origin** blank and open Manager from the WebUI link
+2. Leave **Manager origin** blank and open Manager from the WebUI link
    (`https://<NAS IP>:2282` or `https://tower.local:2282`). Only if you reach
-   Manager through a custom DNS name, set **Manager HTTPS origin** to that exact
+   Manager through a custom DNS name, set **Manager origin** to that exact
    address, for example `https://nas.example:2282`, and set **Advanced View →
    WebUI** to match; other hostnames are then refused with HTTP 403.
 3. Keep each storage mapping's **Host Path and Container Path identical**. When
@@ -87,13 +120,13 @@ Add each approved source media or database folder as an identical host/container
 mapping before import. Retain the original stopped source and its recovery point.
 Do not attach Frameleaf PostgreSQL to the source database's physical directory.
 
-For imports, use `docker info --format '{{.DockerRootDir}}'` to identify Docker's
-actual data root. Select its existing `unraid-autostart` file (usually
-`/var/lib/docker/unraid-autostart`) in **Unraid autostart file** and apply; Manager
-finds it automatically. Do not create a replacement or guess a pool path. Leave it
-blank for a fresh install. **Autostart controller path** stays blank.
-Manager needs this writable file to fence source autostart while preserving other
-entries. Follow the
+Manager configures Unraid autostart access automatically, using Docker's actual
+data root and the existing host list. Leave **Unraid autostart file** and
+**Autostart controller path** blank; existing manual mappings remain supported.
+An isolated helper uses the running Manager image and mounts that file,
+preserving other entries while preventing Immich from restarting at boot.
+If the host file is missing or inaccessible, Manager refuses the import. A fresh
+installation can proceed when Manager verifies that no list exists. Follow the
 [offline import guide](https://github.com/Frameleaf/frameleaf-app/blob/main/docs/docs/administration/import-immich.md).
 
 ## Updates and backups
@@ -133,9 +166,17 @@ media backups before upgrades. See the
 
 ## Support and listing status
 
-Report problems through [Frameleaf issues](https://github.com/Frameleaf/frameleaf-app/issues).
+Get help in the [Help center](https://frameleaf.app/help), or report problems through
+[Frameleaf issues](https://github.com/Frameleaf/frameleaf-app/issues).
 Include the Unraid version, template/release version and sanitized error details.
 Never include credentials, recovery keys or private media.
+
+This repository contains generated Docker templates, published automatically from
+signed Manager releases; packaging source lives in
+[Frameleaf/frameleaf-app](https://github.com/Frameleaf/frameleaf-app). Templates
+reference `:latest` images and never pin a release. The catalog contains the
+Frameleaf (Manager) template only; manual Server/ML templates await a compatible
+signed application release.
 
 Community Apps listing requires Validate, Scan and moderator acceptance at
 [the submission portal](https://ca.unraid.net/submit/new). Before declaring a
@@ -147,3 +188,7 @@ passing package tests do not replace those platform checks.
 ### Mobile discovery
 
 Manager installations of releases that include `frameleaf-lan-discovery` publish a Bonjour announcement from a separate host-network companion. The Frameleaf server and database stay on their private Docker bridge. The companion follows the published web port and the server's LAN discovery setting; no host Avahi files or manual announcements are needed. A loopback-only installation is not advertised. Older server releases without the companion keep their existing deployment layout.
+
+For HTTP management, set **Manager origin** to the exact `http://` address and
+change the Advanced View WebUI to that same address. HTTP sends management
+traffic without encryption; use a trusted home network. An unset origin keeps HTTPS.

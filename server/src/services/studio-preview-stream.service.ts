@@ -19,6 +19,7 @@ import { MediaOperationDestination, MediaOperationKind, MediaOperationStatus, St
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
+import { requireAdmissionSession } from 'src/repositories/studio-source-admission.js';
 import { StudioProjectService, StudioRevisionEvent } from 'src/services/studio-project.service.js';
 import { StudioResourceService } from 'src/services/studio-resource.service.js';
 import { RationalError, formatRational, rational } from 'src/utils/rational-time.js';
@@ -162,6 +163,7 @@ export class StudioPreviewStreamService {
         refusedCount: manifest.refusedCount,
       });
     }
+    requireAdmissionSession(manifest);
 
     if (!(await hasStudioPreviewWorker(this.renderWorkers, MediaOperationKind.StudioPreviewStream))) {
       throw new ConflictException({

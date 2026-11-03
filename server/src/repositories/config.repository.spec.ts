@@ -507,6 +507,11 @@ describe('getEnv', () => {
       });
     });
 
+    it('treats an empty link token as unset', () => {
+      process.env.FRAMELEAF_LINK_TOKEN = '';
+      expect(getEnv().frameleafCloud.linkToken).toBeNull();
+    });
+
     it('refuses a malformed link token, port or network', () => {
       process.env.FRAMELEAF_LINK_TOKEN = 'not-a-token';
       expect(() => getEnv()).toThrow('FRAMELEAF_LINK_TOKEN');

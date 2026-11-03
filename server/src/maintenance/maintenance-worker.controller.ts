@@ -25,7 +25,7 @@ import {
   SetMaintenanceModeDto,
 } from 'src/dtos/maintenance.dto.js';
 import { ServerConfigDto, ServerPingResponse, ServerVersionResponseDto } from 'src/dtos/server.dto.js';
-import { AuthCookie } from 'src/enum.js';
+import { AuthCookie, MaintenanceAction } from 'src/enum.js';
 import { MaintenanceRoute } from 'src/maintenance/maintenance-auth.guard.js';
 import { MaintenanceWorkerService } from 'src/maintenance/maintenance-worker.service.js';
 import { GetLoginDetails } from 'src/middleware/auth.guard.js';
@@ -132,9 +132,24 @@ export class MaintenanceWorkerController {
 
   @Post('admin/maintenance')
   @MaintenanceRoute()
-  setMaintenanceMode(@Body() dto: SetMaintenanceModeDto): void {
-    // FL-81: a conflicting action is refused with 409 before the action runs in the background
+  async setMaintenanceMode(@Body() dto: SetMaintenanceModeDto): Promise<void> {
+    // FL-81: a conflicting action is refused with 409 before the action runs in the background.
+    // claimAction stays synchronous so a restore or End reservation is taken before any await.
     this.service.claimAction(dto);
-    void this.service.setAction(dto);
+    const ending = dto.action === MaintenanceAction.End;
+    if (ending) {
+      try {
+        await this.service.assertCanEnd();
+      } catch (error) {
+        this.service.releaseEnd();
+        throw error;
+      }
+    }
+    void this.service.setAction(dto).catch((error: unknown) => {
+      if (ending) {
+        this.service.releaseEnd();
+      }
+      this.logger.error(`Maintenance action ${dto.action} failed: ${error}`);
+    });
   }
 }

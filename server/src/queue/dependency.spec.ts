@@ -1,7 +1,12 @@
 import type { QueueExecution } from 'src/queue/types.js';
 import { MlAdmissionRefusal } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
-import { JobDependencyUnavailable, deferJobUntilDependency, noteAdmissionDependency } from 'src/queue/dependency.js';
+import {
+  JobDependencyUnavailable,
+  deferJobOnTransientFailure,
+  deferJobUntilDependency,
+  noteAdmissionDependency,
+} from 'src/queue/dependency.js';
 
 const execution = (): QueueExecution => ({
   claim: {
@@ -28,6 +33,18 @@ const execution = (): QueueExecution => ({
 describe('queue dependency outcomes', () => {
   it('keeps non-queue callers unchanged', () => {
     expect(() => deferJobUntilDependency('workload-disabled')).not.toThrow();
+  });
+  it('keeps a reason already recorded when a transient failure defers (FL-676)', () => {
+    const context = { ...execution(), dependencyReason: 'destination-capacity' as const };
+    expect(() => queueExecution.run(context, () => deferJobOnTransientFailure('destination-unavailable', 4))).toThrow(
+      JobDependencyUnavailable,
+    );
+    expect(context.dependencyReason).toBe('destination-capacity');
+    const fresh = execution();
+    expect(() => queueExecution.run(fresh, () => deferJobOnTransientFailure('destination-unavailable', 4))).toThrow(
+      JobDependencyUnavailable,
+    );
+    expect(fresh.dependencyReason).toBe('destination-unavailable');
   });
   it('retains a disabled selected workload instead of skipping it', () => {
     const context = execution();

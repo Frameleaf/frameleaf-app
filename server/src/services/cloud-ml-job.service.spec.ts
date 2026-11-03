@@ -1,5 +1,8 @@
 import { BadRequestException, ConflictException, ForbiddenException, HttpException } from '@nestjs/common';
 import { DummyDriver, Kysely, PostgresDialect, Transaction } from 'kysely';
+import fs from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
@@ -41,6 +44,7 @@ import {
   jobViewSchema,
 } from 'src/utils/frameleaf-cloud.js';
 import { stripsVideoMetadata } from 'src/utils/media-privacy.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 import { ServiceMocks, getMocks } from 'test/utils.js';
@@ -526,6 +530,25 @@ describe(CloudMlJobService.name, () => {
       expect(metadata.has(SystemMetadataKey.FrameleafCloudMlJobEstimates)).toBe(true);
     });
 
+    it('refuses an encrypted Locked original before preparing anything: its prepared copy would be on disk (FL-721)', async () => {
+      const dir = await fs.mkdtemp(join(tmpdir(), 'cloud-ml-locked-'));
+      const sealedOriginal = join(dir, 'Holiday.mp4');
+      await fs.writeFile(sealedOriginal, Buffer.concat([Buffer.from('FLLK'), Buffer.alloc(64)]));
+      try {
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+          ...source,
+          originalPath: sealedOriginal,
+        } as never);
+
+        await expect(sut.estimate(owner, preview(), now)).rejects.toThrow(BadRequestException);
+        expect(mocks.storage.mkdirSync).not.toHaveBeenCalled();
+        expect(mocks.media.probe).not.toHaveBeenCalled();
+        expect(mocks.frameleafCloudMl.createEstimate).not.toHaveBeenCalled();
+      } finally {
+        await fs.rm(dir, { recursive: true, force: true });
+      }
+    });
+
     it('prepares and sends nothing when the consent is older than the version the cloud requires (FL-201)', async () => {
       const stale = { ...cloud, consentVersion: '2026-09-01.1' };
       mocks.mlDestination.getAll.mockResolvedValue([stale]);
@@ -584,6 +607,29 @@ describe(CloudMlJobService.name, () => {
       expect(mocks.frameleafCloudMl.createJob).not.toHaveBeenCalled();
     });
 
+    it('shows the routed retail rate consistently in the selected model and approval', async () => {
+      mocks.frameleafCloudMl.createEstimate.mockResolvedValue({
+        ...sealed,
+        routing: {
+          quotedComputeSku: sealed.computeSku,
+          perSecondUsd: 0.02,
+          startFeeUsd: 0.2,
+          plannedWorkers: 2,
+          approvedMaximumUsd: 2,
+        },
+      });
+      const quote = await sut.estimate(owner, preview(), now);
+      expect(quote).toMatchObject({
+        approvedMaximumUsd: 2,
+        perSecondUsd: 0.02,
+        startFeeUsd: 0.2,
+        plannedWorkers: 2,
+        model: { perSecondUsd: 0.02, startFeeUsd: 0.2 },
+        models: [{ perSecondUsd: 0.02, startFeeUsd: 0.2 }],
+      });
+      expect(estimates()[0].approved).toMatchObject({ approvedMaximumUsd: 2, perSecondUsd: 0.02 });
+    });
+
     it('never plans more than five workers, one start fee each', async () => {
       mocks.frameleafCloudMl.createEstimate.mockResolvedValue({ ...sealed, cost: { ...sealed.cost, startup: 0.8 } });
 
@@ -607,11 +653,39 @@ describe(CloudMlJobService.name, () => {
       expect(record.beforePath).toBe(first[1]);
     });
 
+    it('allows a fully promoted job with no wallet balance and approves only its net spending', async () => {
+      mocks.frameleafCloudMl.getWallet.mockResolvedValue(wallet(0));
+      mocks.frameleafCloudMl.createEstimate.mockResolvedValue({
+        ...sealed,
+        promotion: {
+          campaignId: '00000000-0000-4000-8000-000000000001',
+          discountP50: sealed.cost.p50,
+          discountP90: sealed.cost.p90,
+          netP50: 0,
+          netP90: 0,
+          netHold: 0,
+          finalAtAdmission: true,
+        },
+      });
+      const estimate = await sut.estimate(owner, preview(), now);
+      expect(estimate).toMatchObject({ p50Usd: 0, p90Usd: 0, holdUsd: 0, refusal: null });
+      expect(estimates()[0]!.approved).toMatchObject({ p50Usd: 0, p90Usd: 0, holdUsd: 0 });
+      expect(sealed.cost.hold).toBeGreaterThan(0);
+    });
+
     it('refuses to send a job the AI Wallet cannot hold, without offering a lighter model', async () => {
-      mocks.frameleafCloudMl.getWallet.mockResolvedValue(wallet(1));
+      mocks.frameleafCloudMl.getWallet.mockResolvedValue({
+        ...wallet(1),
+        topUpUrl: 'https://frameleaf.cloud/wallet/top-up',
+      });
 
       const estimate = await sut.estimate(owner, preview(), now);
-      expect(estimate.refusal).toMatchObject({ code: 'insufficient-credits' });
+      // FL-544: the refusal carries the one link that fixes it, so a gate can show one button
+      expect(estimate.refusal).toEqual({
+        code: 'insufficient-credits',
+        message: expect.stringContaining('Add AI credit first.'),
+        topUpUrl: 'https://frameleaf.cloud/wallet/top-up',
+      });
       expect(estimate.model.sku).toBe(FAITHFUL);
     });
 
@@ -778,6 +852,42 @@ describe(CloudMlJobService.name, () => {
       { status: MediaOperationStatus.Cancelled, remoteJobId: null, result: {}, holdUsd: 4, settledUsd: null },
     ];
 
+    it('reserves exactly an explicitly approved maximum without the legacy reseal allowance', async () => {
+      configure({ spenders: [{ userId: owner.user.id, monthlyCapUsd: 2 }] });
+      mocks.frameleafCloudMl.createEstimate.mockResolvedValue({
+        ...sealed,
+        routing: {
+          quotedComputeSku: sealed.computeSku,
+          perSecondUsd: 0.001301,
+          startFeeUsd: 0.1,
+          plannedWorkers: 5,
+          approvedMaximumUsd: 2,
+        },
+      });
+      const estimate = await sut.estimate(owner, preview(), now);
+      expect(estimate.permission.canConfirm).toBe(true);
+      await expect(confirm(owner, estimate.estimateId)).resolves.toMatchObject({ operationId: OPERATION_ID });
+    });
+
+    it('checks a routed maximum above its hold both in the quote and locked confirmation', async () => {
+      configure({ spenders: [{ userId: owner.user.id, monthlyCapUsd: 2.5 }] });
+      mocks.frameleafCloudMl.createEstimate.mockResolvedValue({
+        ...sealed,
+        routing: {
+          quotedComputeSku: sealed.computeSku,
+          perSecondUsd: 0.001301,
+          startFeeUsd: 0.1,
+          plannedWorkers: 5,
+          approvedMaximumUsd: 3,
+        },
+      });
+      const estimate = await sut.estimate(owner, preview(), now);
+      expect(estimate).toMatchObject({ holdUsd: 2, approvedMaximumUsd: 3 });
+      expect(estimate.permission).toMatchObject({ canConfirm: false, reason: 'monthly-cap' });
+      await expect(confirm(owner, estimate.estimateId)).rejects.toMatchObject({ status: 403 });
+      expect(mocks.mediaOperation.createWithin).not.toHaveBeenCalled();
+    });
+
     it('lets an administrator confirm without being on the list', async () => {
       configure({ spenders: [] });
 
@@ -837,6 +947,13 @@ describe(CloudMlJobService.name, () => {
 
     it('counts settled charges, the holds of unsettled jobs, and nothing for a job never sent', () => {
       expect(cloudMlJobSpentUsd(month)).toBe(4.8);
+      expect(cloudMlJobSpentUsd([{ ...month[2], approvedMaximumUsd: 3 }])).toBe(0);
+      expect(cloudMlJobSpentUsd([{ ...month[1], approvedMaximumUsd: 3.000049 }])).toBe(3.000049);
+      expect(
+        cloudMlJobSpentUsd([
+          { ...month[1], status: MediaOperationStatus.Queued, remoteJobId: null, holdUsd: 2, approvedMaximumUsd: 3 },
+        ]),
+      ).toBe(3);
       const settledLater = {
         status: MediaOperationStatus.Completed,
         remoteJobId: 'job-c',
@@ -857,6 +974,7 @@ describe(CloudMlJobService.name, () => {
       };
       // a finished job whose cost was read but whose accounting row is not settled yet counts that cost
       expect(cloudMlJobSpentUsd([settledLater])).toBe(0.25);
+      expect(cloudMlJobSpentUsd([{ ...settledLater, approvedMaximumUsd: 3 }])).toBe(0.25);
       // one not sent yet counts the most a reseal could hold
       expect(cloudMlJobSpentUsd([{ ...settledLater, status: MediaOperationStatus.Queued, result: {} }])).toBe(2.2);
       // one sent counts what the AI Wallet actually holds for it, a resealed hold included
@@ -1529,6 +1647,24 @@ describe(CloudMlJobService.name, () => {
       expect(key).toBe(`${OPERATION_ID}-2`);
     });
 
+    it('never reseals an explicitly approved maximum at a higher GPU rate or maximum', async () => {
+      const job = claimed();
+      job.snapshot = { ...job.snapshot, approved: { ...(job.snapshot as any).approved, approvedMaximumUsd: 2 } };
+      mocks.frameleafCloudMl.createEstimate.mockResolvedValue({
+        ...sealed,
+        expiresAt: '2026-09-26T04:35:00.000Z',
+        routing: {
+          quotedComputeSku: sealed.computeSku,
+          perSecondUsd: 0.02,
+          startFeeUsd: 0.1,
+          plannedWorkers: 5,
+          approvedMaximumUsd: 2,
+        },
+      });
+      await sut.step(job, 'claim', new Date('2026-09-26T04:20:00.000Z'));
+      expect(mocks.frameleafCloudMl.createJob).not.toHaveBeenCalled();
+    });
+
     it('sends nothing when a new estimate would hold more than the owner confirmed allows', async () => {
       mocks.frameleafCloudMl.createEstimate.mockResolvedValue({
         ...sealed,
@@ -1704,7 +1840,7 @@ describe(CloudMlJobService.name, () => {
         rendering();
         mocks.crypto.hashFileDigests.mockClear();
         mocks.crypto.hashFileDigests.mockImplementation((file) =>
-          Promise.try(() => {
+          tryPromise(() => {
             const path = file.toString();
             const cached = path.includes('/out-');
             const first = path.endsWith('out-v1-s0.mp4');
@@ -2779,6 +2915,333 @@ describe(CloudMlJobService.name, () => {
       expect(mocks.mlDestination.applySettlements).toHaveBeenCalledWith([
         { cloudJobId: JOB_ID, costUsd: 0.2026, credits: null },
       ]);
+    });
+  });
+
+  describe('GPU upgrades', () => {
+    const routing = {
+      quotedComputeSku: 'cs_KGECTVQ0',
+      approvedMaximumUsd: 2,
+      pricingRevision: 0,
+      queuedSince: '2026-09-26T03:59:00.000Z',
+      upgradeAvailable: true,
+      priceHistory: [
+        {
+          revision: 0,
+          computeSku: 'cs_KGECTVQ0',
+          perSecondUsd: 0.01,
+          startFeeUsd: 0.1,
+          approvedMaximumUsd: 2,
+          approvedAt: '2026-09-26T03:59:00.000Z',
+        },
+      ],
+    };
+    const upgrade = () => ({
+      ...sealed,
+      jobId: JOB_ID,
+      pricingRevision: 0,
+      computeSku: 'cs_FQ4BWNHK',
+      incurredUsd: 0.4,
+      perSecondUsd: 0.02,
+      startFeeUsd: 0.2,
+      plannedWorkers: 2,
+      routing: {
+        quotedComputeSku: 'cs_FQ4BWNHK',
+        perSecondUsd: 0.02,
+        startFeeUsd: 0.2,
+        plannedWorkers: 2,
+        approvedMaximumUsd: 2.9,
+      },
+      cost: { p50: 1, p90: 1.5, startup: 0.4, minimum: 0.2, hold: 2.5 },
+    });
+    beforeEach(async () => {
+      await estimateAndConfirm();
+      created = following();
+      created.result = { ...created.result, job: { ...runningRecord(), routing } };
+      mocks.frameleafCloudMl.getJobView.mockResolvedValue({
+        notModified: false,
+        data: view('job-running.json', { routing, charges: { meteredUsd: 0.4, holdUsd: 2, ceilingUsd: 2 } }),
+        etag: '"upgrade-0"',
+        retryAfterSeconds: 5,
+      });
+      mocks.frameleafCloudMl.createUpgradeEstimate = vi.fn().mockResolvedValue(upgrade());
+      mocks.frameleafCloudMl.upgradeJob = vi.fn().mockResolvedValue(
+        view('job-running.json', {
+          routing: { ...routing, approvedMaximumUsd: 2.9, pricingRevision: 1, upgradeAvailable: false },
+          charges: { meteredUsd: 0.4, holdUsd: 2.9, ceilingUsd: 2.9 },
+        }),
+      );
+    });
+
+    it('quotes remaining work and confirms the same job without replacing its checkpoints or consent', async () => {
+      const original = structuredClone(created);
+      const quote = await sut.estimateUpgrade(owner, OPERATION_ID, now);
+      expect(quote).toMatchObject({
+        incurredUsd: 0.4,
+        remainingP50Usd: 1,
+        remainingP90Usd: 1.5,
+        approvedMaximumUsd: 2.9,
+        perSecondUsd: 0.02,
+        startFeeUsd: 0.2,
+        plannedWorkers: 2,
+      });
+      expect(quote).not.toHaveProperty('estimate');
+      expect(mocks.frameleafCloudMl.cancelJob).not.toHaveBeenCalled();
+      await sut.upgrade(owner, OPERATION_ID, { estimateId: quote.estimateId, acknowledgeMaximum: true }, now);
+      await sut.upgrade(owner, OPERATION_ID, { estimateId: quote.estimateId, acknowledgeMaximum: true }, now);
+      expect(mocks.frameleafCloudMl.upgradeJob).toHaveBeenCalledTimes(2);
+      const calls = mocks.frameleafCloudMl.upgradeJob.mock.calls;
+      expect(calls[0].slice(1)).toEqual([JOB_ID, { estimate: upgrade().estimate }, expect.any(String)]);
+      expect(calls[1].slice(1)).toEqual(calls[0].slice(1));
+      expect(created).toEqual(original);
+      expect(mocks.mediaOperation.setBulkResult).not.toHaveBeenCalled();
+    });
+
+    it('persists the reservation but releases the shared estimates lock before the remote upgrade', async () => {
+      const quote = await sut.estimateUpgrade(owner, OPERATION_ID, now);
+      let depth = 0;
+      let duringRequest = -1;
+      const preflightDepths: number[] = [];
+      mocks.database.withLock.mockImplementation(async (_lock, callback) => {
+        depth++;
+        try {
+          return await callback();
+        } finally {
+          depth--;
+        }
+      });
+      const probe = mocks.machineLearning.probe.getMockImplementation()!;
+      mocks.machineLearning.probe.mockImplementation((...args) => {
+        preflightDepths.push(depth);
+        return probe(...args);
+      });
+      const token = mocks.frameleafCloud.accessToken.getMockImplementation()!;
+      mocks.frameleafCloud.accessToken.mockImplementation((...args) => {
+        preflightDepths.push(depth);
+        return token(...args);
+      });
+      const original = mocks.frameleafCloudMl.upgradeJob.getMockImplementation()!;
+      mocks.frameleafCloudMl.upgradeJob.mockImplementation((...args) => {
+        duringRequest = depth;
+        expect(metadata.get(SystemMetadataKey.FrameleafCloudMlJobEstimates)).toMatchObject({
+          upgrades: [expect.objectContaining({ attemptedAt: now.toISOString() })],
+        });
+        return original(...args);
+      });
+      await sut.upgrade(owner, OPERATION_ID, { estimateId: quote.estimateId, acknowledgeMaximum: true }, now);
+      expect(duringRequest).toBe(0);
+      expect(preflightDepths.length).toBeGreaterThan(0);
+      expect(preflightDepths.every((value) => value === 0)).toBe(true);
+    });
+
+    it('preserves concurrent estimates when a fresh remote upgrade is definitively refused', async () => {
+      const quote = await sut.estimateUpgrade(owner, OPERATION_ID, now);
+      const response = Promise.withResolvers<CloudJobView>();
+      mocks.frameleafCloudMl.upgradeJob.mockImplementationOnce(() => response.promise);
+      const request = sut.upgrade(owner, OPERATION_ID, { estimateId: quote.estimateId, acknowledgeMaximum: true }, now);
+      const rejected = expect(request).rejects.toThrow();
+      await vi.waitFor(() => expect(mocks.frameleafCloudMl.upgradeJob).toHaveBeenCalledTimes(1));
+      mocks.crypto.randomUUID.mockReturnValueOnce('concurrent-estimate');
+      const concurrent = await sut.estimate(owner, preview(), now);
+      response.reject(new FrameleafCloudError(MlAdmissionRefusal.RequestInvalid, 409, 'Stale revision'));
+      await rejected;
+      expect(estimates().some((entry) => entry.id === concurrent.estimateId)).toBe(true);
+      expect(metadata.get(SystemMetadataKey.FrameleafCloudMlJobEstimates)).toMatchObject({
+        upgrades: [expect.objectContaining({ attemptedAt: null, attemptRevision: 1 })],
+      });
+    });
+
+    it('does not let an older refusal clear a concurrent retry with an unknown outcome', async () => {
+      const quote = await sut.estimateUpgrade(owner, OPERATION_ID, now);
+      const first = Promise.withResolvers<CloudJobView>();
+      const second = Promise.withResolvers<CloudJobView>();
+      mocks.frameleafCloudMl.upgradeJob
+        .mockImplementationOnce(() => first.promise)
+        .mockImplementationOnce(() => second.promise);
+      const dto = { estimateId: quote.estimateId, acknowledgeMaximum: true } as const;
+      const rejectedFirst = expect(sut.upgrade(owner, OPERATION_ID, dto, now)).rejects.toThrow();
+      await vi.waitFor(() => expect(mocks.frameleafCloudMl.upgradeJob).toHaveBeenCalledTimes(1));
+      const rejectedSecond = expect(sut.upgrade(owner, OPERATION_ID, dto, now)).rejects.toThrow();
+      await vi.waitFor(() => expect(mocks.frameleafCloudMl.upgradeJob).toHaveBeenCalledTimes(2));
+      first.reject(new FrameleafCloudError(MlAdmissionRefusal.RequestInvalid, 409, 'Stale revision'));
+      await rejectedFirst;
+      second.reject(new Error('Lost response'));
+      await rejectedSecond;
+      expect(metadata.get(SystemMetadataKey.FrameleafCloudMlJobEstimates)).toMatchObject({
+        upgrades: [expect.objectContaining({ attemptedAt: now.toISOString(), attemptRevision: 2 })],
+      });
+      const calls = mocks.frameleafCloudMl.upgradeJob.mock.calls;
+      expect(calls[0].slice(1)).toEqual(calls[1].slice(1));
+      configure({ spenders: [{ userId: owner.user.id, monthlyCapUsd: 3 }] });
+      mocks.mediaOperation.listCloudMlJobSpend.mockResolvedValue([]);
+      expect(await sut.spendPermission(owner, 0.2, now, { exactHold: true })).toMatchObject({
+        canConfirm: false,
+        spentThisMonthUsd: 2.9,
+      });
+    });
+
+    it.each(['cancelled', 'access'] as const)(
+      'rechecks %s after slow destination preflight before reserving an upgrade',
+      async (change) => {
+        const quote = await sut.estimateUpgrade(owner, OPERATION_ID, now);
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        mocks.machineLearning.probe.mockImplementationOnce(async () => {
+          entered.resolve();
+          await release.promise;
+          return { ...mlProbeStub.frameleafCloud, workloads, cloud: facts };
+        });
+        const rejected = expect(
+          sut.upgrade(owner, OPERATION_ID, { estimateId: quote.estimateId, acknowledgeMaximum: true }, now),
+        ).rejects.toThrow();
+        await entered.promise;
+        if (change === 'cancelled') created!.cancelRequestedAt = now;
+        else mocks.access.asset.checkOwnerAccess.mockResolvedValueOnce(new Set());
+        release.resolve();
+        await rejected;
+        expect(mocks.frameleafCloudMl.upgradeJob).not.toHaveBeenCalled();
+        expect(metadata.get(SystemMetadataKey.FrameleafCloudMlJobEstimates)).toMatchObject({
+          upgrades: [expect.objectContaining({ attemptedAt: null })],
+        });
+      },
+    );
+
+    it('rejects upgrades for another owner, without asset access, and with no routing support', async () => {
+      mocks.mediaOperation.getForOwner.mockResolvedValueOnce(undefined);
+      await expect(sut.estimateUpgrade(owner, OPERATION_ID, now)).rejects.toMatchObject({ status: 404 });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValueOnce(new Set());
+      await expect(sut.estimateUpgrade(owner, OPERATION_ID, now)).rejects.toBeInstanceOf(BadRequestException);
+      mocks.frameleafCloudMl.getJobView.mockResolvedValueOnce({
+        notModified: false,
+        data: view('job-running.json'),
+        etag: null,
+        retryAfterSeconds: 5,
+      });
+      await expect(sut.estimateUpgrade(owner, OPERATION_ID, now)).rejects.toBeInstanceOf(ConflictException);
+      expect(mocks.frameleafCloudMl.createUpgradeEstimate).not.toHaveBeenCalled();
+    });
+
+    it('rechecks spending and the estimate expiry before approving a higher maximum', async () => {
+      const quote = await sut.estimateUpgrade(owner, OPERATION_ID, now);
+      configure({ spenders: [] });
+      await expect(
+        sut.upgrade(owner, OPERATION_ID, { estimateId: quote.estimateId, acknowledgeMaximum: true }, now),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      configure();
+      await expect(
+        sut.upgrade(
+          owner,
+          OPERATION_ID,
+          { estimateId: quote.estimateId, acknowledgeMaximum: true },
+          new Date('2026-09-26T04:16:00.000Z'),
+        ),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(mocks.frameleafCloudMl.upgradeJob).not.toHaveBeenCalled();
+    });
+
+    it('reserves an upgrade before a lost response and counts it until the worker reports settlement', async () => {
+      configure({ spenders: [{ userId: owner.user.id, monthlyCapUsd: 3 }] });
+      const quote = await sut.estimateUpgrade(owner, OPERATION_ID, now);
+      mocks.frameleafCloudMl.upgradeJob.mockRejectedValueOnce(new Error('lost response'));
+      await expect(
+        sut.upgrade(owner, OPERATION_ID, { estimateId: quote.estimateId, acknowledgeMaximum: true }, now),
+      ).rejects.toThrow();
+      mocks.mediaOperation.listCloudMlJobSpend.mockResolvedValue([
+        {
+          status: MediaOperationStatus.Rendering,
+          remoteJobId: JOB_ID,
+          result: created!.result,
+          holdUsd: 2,
+          settledUsd: null,
+        },
+      ]);
+      expect(await sut.spendPermission(owner, 0.2, now, { exactHold: true })).toMatchObject({
+        canConfirm: false,
+        spentThisMonthUsd: 2.9,
+      });
+      mocks.mediaOperation.listCloudMlJobSpend.mockResolvedValue([
+        {
+          status: MediaOperationStatus.Completed,
+          remoteJobId: JOB_ID,
+          result: created!.result,
+          holdUsd: 2,
+          settledUsd: 0.4,
+        },
+      ]);
+      expect(await sut.spendPermission(owner, 0.2, now, { exactHold: true })).toMatchObject({
+        canConfirm: true,
+        spentThisMonthUsd: 0.4,
+      });
+    });
+
+    it('counts an owner-approved upgrade even when another permitted person originally confirmed the job', async () => {
+      configure({ spenders: [{ userId: owner.user.id, monthlyCapUsd: 3 }] });
+      const quote = await sut.estimateUpgrade(owner, OPERATION_ID, now);
+      await sut.upgrade(owner, OPERATION_ID, { estimateId: quote.estimateId, acknowledgeMaximum: true }, now);
+      mocks.mediaOperation.listCloudMlJobSpend.mockResolvedValue([]);
+      expect(await sut.spendPermission(owner, 0.2, now, { exactHold: true })).toMatchObject({
+        canConfirm: false,
+        spentThisMonthUsd: 2.9,
+      });
+    });
+
+    it('counts the upgraded total once against the monthly limit, excluding the old hold', async () => {
+      configure({ spenders: [{ userId: owner.user.id, monthlyCapUsd: 3 }] });
+      mocks.mediaOperation.listCloudMlJobSpend.mockResolvedValue([]);
+      const quote = await sut.estimateUpgrade(owner, OPERATION_ID, now);
+      expect(quote.permission.canConfirm).toBe(true);
+      expect(mocks.mediaOperation.listCloudMlJobSpend).toHaveBeenLastCalledWith(
+        owner.user.id,
+        expect.any(Date),
+        OPERATION_ID,
+      );
+      configure({ spenders: [{ userId: owner.user.id, monthlyCapUsd: 2.8 }] });
+      await expect(
+        sut.upgrade(owner, OPERATION_ID, { estimateId: quote.estimateId, acknowledgeMaximum: true }, now),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it.each([MediaOperationStatus.Completed, MediaOperationStatus.Failed, MediaOperationStatus.Cancelled, null])(
+      'releases an old upgrade reservation after its operation is terminal or missing: %s',
+      async (status) => {
+        configure({ spenders: [{ userId: owner.user.id, monthlyCapUsd: 3 }] });
+        const quote = await sut.estimateUpgrade(owner, OPERATION_ID, now);
+        await sut.upgrade(owner, OPERATION_ID, { estimateId: quote.estimateId, acknowledgeMaximum: true }, now);
+        mocks.mediaOperation.listCloudMlJobSpend.mockResolvedValue([]);
+        mocks.mediaOperation.getForOwner.mockResolvedValue(status === null ? undefined : { ...created!, status });
+        const nextMonth = new Date('2026-10-01T00:00:00.000Z');
+        expect(await sut.spendPermission(owner, 0.2, nextMonth, { exactHold: true })).toMatchObject({
+          canConfirm: true,
+          spentThisMonthUsd: 0,
+        });
+        await sut.pruneEstimates(nextMonth);
+        expect(metadata.get(SystemMetadataKey.FrameleafCloudMlJobEstimates)).toMatchObject({ upgrades: [] });
+      },
+    );
+
+    it.each([
+      [MediaOperationStatus.Rendering, '2026-10-01T00:00:00.000Z'],
+      [MediaOperationStatus.Completed, now.toISOString()],
+    ])('retains unsettled open or current-month upgrade reservations: %s', async (status, at) => {
+      configure({ spenders: [{ userId: owner.user.id, monthlyCapUsd: 3 }] });
+      const quote = await sut.estimateUpgrade(owner, OPERATION_ID, now);
+      await sut.upgrade(owner, OPERATION_ID, { estimateId: quote.estimateId, acknowledgeMaximum: true }, now);
+      mocks.mediaOperation.listCloudMlJobSpend.mockResolvedValue([]);
+      mocks.mediaOperation.getForOwner.mockResolvedValue({ ...created!, status });
+      expect(await sut.spendPermission(owner, 0.2, new Date(at), { exactHold: true })).toMatchObject({
+        canConfirm: false,
+        spentThisMonthUsd: 2.9,
+      });
+      await sut.pruneEstimates(new Date(at));
+      expect(metadata.get(SystemMetadataKey.FrameleafCloudMlJobEstimates)).toMatchObject({
+        upgrades: [expect.objectContaining({ id: quote.estimateId })],
+      });
+    });
+
+    it('prunes an expired upgrade quote that was never submitted', async () => {
+      await sut.estimateUpgrade(owner, OPERATION_ID, now);
+      await sut.pruneEstimates(new Date('2026-10-01T00:00:00.000Z'));
+      expect(metadata.get(SystemMetadataKey.FrameleafCloudMlJobEstimates)).toMatchObject({ upgrades: [] });
     });
   });
 

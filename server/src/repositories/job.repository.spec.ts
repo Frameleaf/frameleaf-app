@@ -1,3 +1,4 @@
+import { generateKeyPair } from '@frameleaf/locked-crypto';
 import { ModuleRef } from '@nestjs/core';
 import { Kysely } from 'kysely';
 import { JobName, JobStatus, QueueName } from 'src/enum.js';
@@ -9,6 +10,10 @@ import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import * as attemptEvidence from 'src/utils/attempt-evidence.js';
+import { lockedKeys } from 'src/utils/locked-key-holder.js';
+import { LockedKeyUnavailableError, clearLockedDeferrals, deferForLockedKey } from 'src/utils/locked-read.js';
+import { queueLockedSealFor, queueLockedSealOf } from 'src/utils/locked-seal-queue.js';
+import { scriptedKysely } from 'test/scripted-kysely.js';
 
 /** Facade behavior; actual locking, retries, accounting and rollback are tested with PostgreSQL. */
 describe(JobRepository.name, () => {
@@ -52,6 +57,48 @@ describe(JobRepository.name, () => {
     expect(enqueue.mock.calls[1][0][0].options).toEqual({ jobId: 'album/user', delay: 3000 });
   });
 
+  it('deduplicates palette work per source revision and backfill cursor', async () => {
+    await sut.queue({ name: JobName.AssetPaletteExtract, data: { id: 'asset', sourceRevision: 'rev1' } });
+    await sut.queue({ name: JobName.AssetPaletteExtract, data: { id: 'asset', sourceRevision: 'rev2' } });
+    await sut.queue({ name: JobName.AssetPaletteQueueAll, data: { afterId: 'cursor' } });
+    expect(enqueue.mock.calls.map(([items]) => items[0].options)).toEqual([
+      { deduplication: { id: 'AssetPaletteExtract:asset:rev1' } },
+      { deduplication: { id: 'AssetPaletteExtract:asset:rev2' } },
+      { deduplication: { id: 'AssetPaletteQueueAll:cursor:false' } },
+    ]);
+  });
+
+  it('coalesces full landmark backfills while retaining independent per-asset work', async () => {
+    await sut.queue({ name: JobName.LandmarkInfer });
+    await sut.queue({ name: JobName.LandmarkInfer, data: {} });
+    await sut.queue({ name: JobName.LandmarkInfer, data: { id: 'asset-a' } });
+    await sut.queue({ name: JobName.LandmarkInfer, data: { id: 'asset-b' } });
+    expect(enqueue.mock.calls.map(([items]) => items[0].options)).toEqual([
+      { deduplication: { id: JobName.LandmarkInfer, keepLastIfActive: true } },
+      { deduplication: { id: JobName.LandmarkInfer, keepLastIfActive: true } },
+      undefined,
+      undefined,
+    ]);
+  });
+
+  it('keeps one waiting Locked encryption job per item and step, and one sweep per person (FL-721)', async () => {
+    await sut.queue({ name: JobName.LockedSeal, data: { id: 'asset' } });
+    await sut.queue({ name: JobName.LockedUnseal, data: { id: 'asset' } });
+    await sut.queue({ name: JobName.LockedRewrap, data: { id: 'asset' } });
+    await sut.queue({ name: JobName.LockedSweep, data: { userId: 'user' } });
+    await sut.queue({ name: JobName.LockedSweep, data: {} });
+    await sut.queue({ name: JobName.LockedSweep, data: { userId: 'user', delay: 120_000 } });
+    expect(enqueue.mock.calls.map(([items]) => items[0].options)).toEqual([
+      { deduplication: { id: 'LockedSeal:asset', keepLastIfActive: true } },
+      { deduplication: { id: 'LockedUnseal:asset', keepLastIfActive: true } },
+      { deduplication: { id: 'LockedRewrap:asset', keepLastIfActive: true } },
+      { deduplication: { id: 'LockedSweep:user', keepLastIfActive: true } },
+      { deduplication: { id: 'LockedSweep:all', keepLastIfActive: true } },
+      // the check after each seal or unseal: at most one waiting, apart from the immediate sweeps
+      { delay: 120_000, deduplication: { id: 'LockedSweep:user:later', keepLastIfActive: true } },
+    ]);
+  });
+
   it('buffers success follow-ups for the final outcome transaction with run and dependency lineage', async () => {
     const execution = context();
     await queueExecution.run(execution, () =>
@@ -60,6 +107,230 @@ describe(JobRepository.name, () => {
     expect(enqueue).not.toHaveBeenCalled();
     expect(execution.followups).toEqual([
       expect.objectContaining({ runId: 'run', itemKey: 'asset', parentId: 'parent' }),
+    ]);
+  });
+
+  it('retains a separate sealing obligation for each accepted publication while coalescing live work per asset', async () => {
+    const publication = async (id: string, token: string) => {
+      const execution = context();
+      execution.claim.id = id;
+      execution.claim.token = token;
+      execution.claim.rootItemKey = 'asset';
+      await queueExecution.run(execution, () =>
+        sut.collectFollowups(() => sut.queue({ name: JobName.LockedSeal, data: { id: 'asset' } })),
+      );
+      return execution.followups[0];
+    };
+    const first = await publication('thumbnail-parent', 'first-attempt');
+    const replay = await publication('thumbnail-parent', 'first-attempt');
+    const edited = await publication('edited-parent', 'edited-attempt');
+    const newer = await publication('thumbnail-parent', 'next-publication');
+    expect(first.itemKey).toBe(replay.itemKey);
+    expect(new Set([first.itemKey, edited.itemKey, newer.itemKey]).size).toBe(3);
+    for (const intent of [first, edited, newer]) {
+      expect(intent).toMatchObject({ runId: 'run', rootItemKey: 'asset', data: { id: 'asset' } });
+      expect(intent.options).toEqual({ deduplication: { id: 'LockedSeal:asset', keepLastIfActive: true } });
+      expect(intent.itemKey).not.toMatch(/first-attempt|edited-attempt|next-publication/);
+    }
+  });
+
+  it.each(['asset', 'lockedFile'] as const)('holds %s sealing until staged files publish', async (source) => {
+    const execution = context();
+    const adopt = vi.fn();
+    execution.adoptions.push(adopt);
+    const deps = {
+      asset: { getLockedEncryptionItems: vi.fn().mockResolvedValue([{ id: 'asset', pending: false }]) },
+      lockedFile: { encryptedSetOwner: vi.fn().mockResolvedValue('owner') },
+      job: sut,
+      logger: { warn: vi.fn() },
+    };
+    await queueExecution.run(execution, () =>
+      sut.collectFollowups(() =>
+        source === 'asset' ? queueLockedSealFor(deps, ['asset']) : queueLockedSealOf(deps, ['asset']),
+      ),
+    );
+    expect(deps.logger.warn).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(adopt).not.toHaveBeenCalled();
+    expect(execution.followups).toEqual([
+      expect.objectContaining({ name: JobName.LockedSeal, data: { id: 'asset' }, parentId: 'parent' }),
+    ]);
+  });
+
+  it.each(['asset', 'lockedFile'] as const)(
+    'retains committed %s sealing when the producer later fails',
+    async (source) => {
+      const { db, queries } = scriptedKysely(({ sql }) => ({
+        rows: sql.startsWith('select id from job where id =') ? [{ id: 'parent' }] : [],
+      }));
+      const handlers = sut['handlers'];
+      sut = new JobRepository(
+        {} as ModuleRef,
+        {} as ConfigRepository,
+        {} as EventRepository,
+        { setContext: vi.fn(), error: vi.fn(), warn: vi.fn() } as unknown as LoggingRepository,
+        db as Kysely<any>,
+      );
+      Object.assign(sut['handlers'], handlers);
+      const execution = context();
+      // A source guard or unrelated adoption does not make committed files staged.
+      execution.adoptions.push(vi.fn());
+      const deps = {
+        asset: { getLockedEncryptionItems: vi.fn().mockResolvedValue([{ id: 'asset', pending: false }]) },
+        lockedFile: { encryptedSetOwner: vi.fn().mockResolvedValue('owner') },
+        job: sut,
+        logger: { warn: vi.fn() },
+      };
+      await expect(
+        queueExecution.run(execution, async () => {
+          if (source === 'asset') await queueLockedSealFor(deps, ['asset']);
+          else await queueLockedSealOf(deps, ['asset']);
+          throw new Error('completion failed');
+        }),
+      ).rejects.toThrow('completion failed');
+      expect(deps.logger.warn).not.toHaveBeenCalled();
+      expect(execution.followups).toEqual([]);
+      const inserted = queries.findIndex(({ sql }) => sql.startsWith('insert into job('));
+      expect(inserted).toBeGreaterThanOrEqual(0);
+      expect(queries[inserted].parameters).toContain(JobName.LockedSeal);
+      expect(queries[inserted].parameters).toContain(JSON.stringify({ id: 'asset' }));
+      expect(queries[inserted].parameters.at(-1)).toBeNull();
+      expect(queries.findIndex(({ sql }) => sql === 'commit')).toBeGreaterThan(inserted);
+      await db.destroy();
+    },
+  );
+
+  it.each(['asset', 'lockedFile'] as const)(
+    'still admits %s sealing immediately outside a queued writer',
+    async (source) => {
+      const deps = {
+        asset: { getLockedEncryptionItems: vi.fn().mockResolvedValue([{ id: 'asset', pending: false }]) },
+        lockedFile: { encryptedSetOwner: vi.fn().mockResolvedValue('owner') },
+        job: sut,
+        logger: { warn: vi.fn() },
+      };
+      if (source === 'asset') await queueLockedSealFor(deps, ['asset', 'asset']);
+      else await queueLockedSealOf(deps, ['asset', 'asset']);
+      expect(deps.logger.warn).not.toHaveBeenCalled();
+      expect(enqueue).toHaveBeenCalledOnce();
+      expect(enqueue.mock.calls[0][0]).toEqual([
+        expect.objectContaining({ name: JobName.LockedSeal, data: { id: 'asset' } }),
+      ]);
+    },
+  );
+
+  it.each([false, true])('retains outer follow-up collection after a nested collector (throws=%s)', async (throws) => {
+    const execution = context();
+    await queueExecution.run(execution, () =>
+      sut.collectFollowups(async () => {
+        try {
+          await sut.collectFollowups(() => (throws ? Promise.reject(new Error('fixture')) : Promise.resolve()));
+        } catch {
+          // A handled inner failure must preserve the outer collection.
+        }
+        expect(execution.buffering).toBe(true);
+        await sut.queue({ name: JobName.LockedSeal, data: { id: 'asset' } });
+      }),
+    );
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(execution.followups).toHaveLength(1);
+    expect(execution.buffering).toBe(false);
+  });
+
+  it.each([
+    [false, false],
+    [false, true],
+    [true, false],
+    [true, true],
+  ])('keeps overlapping follow-up collection scoped (initial=%s, throws=%s)', async (initial, throws) => {
+    const execution = context();
+    execution.buffering = initial;
+    const { promise: firstGate, resolve: finishFirst } = Promise.withResolvers<void>();
+    const { promise: secondGate, resolve: finishSecond } = Promise.withResolvers<void>();
+    await queueExecution.run(execution, async () => {
+      const first = sut.collectFollowups(() => firstGate);
+      const second = sut.collectFollowups(async () => {
+        await secondGate;
+        if (throws) throw new Error('fixture');
+      });
+      const secondOutcome = second.catch((error: unknown) => error);
+      try {
+        finishFirst();
+        await first;
+        expect(execution.buffering).toBe(true);
+        await sut.queue({ name: JobName.LockedSeal, data: { id: 'asset' } });
+        expect(execution.followups).toHaveLength(1);
+      } finally {
+        finishSecond();
+        const outcome = await secondOutcome;
+        expect(outcome instanceof Error).toBe(throws);
+      }
+      expect(execution.buffering).toBe(initial);
+      expect(execution.followupCollection).toBeUndefined();
+    });
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it('keeps metadata and embedding inference distinct within one media run', async () => {
+    const execution = context();
+    execution.claim.rootItemKey = 'asset';
+    await queueExecution.run(execution, () =>
+      sut.collectFollowups(() =>
+        sut.queueAll([
+          { name: JobName.LandmarkInfer, data: { id: 'asset', trigger: 'metadata' } },
+          { name: JobName.LandmarkInfer, data: { id: 'asset', trigger: 'embedding' } },
+          { name: JobName.LandmarkInfer, data: { id: 'asset', trigger: 'metadata' } },
+          { name: JobName.LandmarkInfer, data: { id: 'asset' } },
+        ]),
+      ),
+    );
+    expect(execution.followups.map(({ itemKey }) => itemKey)).toEqual([
+      'asset/metadata',
+      'asset/embedding',
+      'asset/metadata',
+      'asset',
+    ]);
+    expect(execution.followups.every((item) => item.runId === 'run' && item.rootItemKey === 'asset')).toBe(true);
+    expect(execution.followups.every((item) => item.options === undefined)).toBe(true);
+  });
+
+  it('keys same-subject jobs with their own identity as separate run items', async () => {
+    const execution = context();
+    await queueExecution.run(execution, () =>
+      sut.collectFollowups(() =>
+        sut.queueAll([
+          { name: JobName.WorkflowAssetTrigger, data: { workflowId: 'w1', assetId: 'asset', executionId: 'e1' } },
+          { name: JobName.WorkflowAssetTrigger, data: { workflowId: 'w2', assetId: 'asset', executionId: 'e2' } },
+          { name: JobName.NotifyAlbumUpdate, data: { id: 'album', recipientId: 'u1' } },
+          { name: JobName.NotifyAlbumUpdate, data: { id: 'album', recipientId: 'u2' } },
+          { name: JobName.AssetGenerateThumbnails, data: { id: 'asset' } },
+        ] as never),
+      ),
+    );
+    expect(execution.followups.map(({ itemKey }) => itemKey)).toEqual([
+      'asset/workflow-e1',
+      'asset/workflow-e2',
+      'album/album/u1',
+      'album/album/u2',
+      'asset',
+    ]);
+  });
+
+  it('keys a duplicate recheck after each group mate fingerprint as its own run item (FL-651)', async () => {
+    const execution = context();
+    await queueExecution.run(execution, () =>
+      sut.collectFollowups(() =>
+        sut.queueAll([
+          { name: JobName.AssetDetectDuplicates, data: { id: 'video' } },
+          { name: JobName.AssetDetectDuplicates, data: { id: 'video', recheckAfter: 'mate-1' } },
+          { name: JobName.AssetDetectDuplicates, data: { id: 'video', recheckAfter: 'mate-2' } },
+        ]),
+      ),
+    );
+    expect(execution.followups.map(({ itemKey }) => itemKey)).toEqual([
+      'video',
+      'video/video/after/mate-1',
+      'video/video/after/mate-2',
     ]);
   });
 
@@ -111,6 +382,7 @@ describe(JobRepository.name, () => {
       { name: JobName.AssetExtractMetadata, data: { id: 'asset' } },
       { name: JobName.AssetDetectFaces, data: { id: 'asset' } },
       { name: JobName.SmartSearchQueueAll, data: { force: true } },
+      { name: JobName.PartnerBackfill, data: { sharedById: 'owner', sharedWithId: 'partner' } },
     ] as const) {
       await sut.queue(item);
       expect(enqueue.mock.lastCall?.[0][0].safeToRetry).toBe(true);
@@ -278,6 +550,207 @@ describe(JobRepository.name, () => {
       );
     });
 
+    describe('a job waiting for a Locked key whose key loads while it runs (FL-721)', () => {
+      const OWNER = '00000000-0000-4000-8000-0000000000f1';
+      const pair = generateKeyPair();
+      const loadKey = () => lockedKeys.load(OWNER, pair.publicKey, Buffer.from(pair.privateKey), null);
+      const order: string[] = [];
+
+      beforeEach(() => {
+        lockedKeys.clear();
+        clearLockedDeferrals();
+        order.length = 0;
+        sut['store'].defer = vi.fn().mockImplementation(() => {
+          order.push('defer');
+          return Promise.resolve(true);
+        });
+        sut['store'].wakeDeferred = vi.fn().mockImplementation((ids: string[]) => {
+          order.push(`wake ${ids.join(',')}`);
+          return Promise.resolve(ids.length);
+        });
+      });
+
+      afterEach(() => {
+        lockedKeys.clear();
+        clearLockedDeferrals();
+      });
+
+      const run = (steps: Array<'defer' | 'load'>) => {
+        sut['eventRepository'].emit = vi.fn().mockImplementation(() => {
+          for (const step of steps) {
+            if (step === 'load') {
+              loadKey();
+            } else {
+              deferForLockedKey(new LockedKeyUnavailableError([OWNER]));
+            }
+          }
+          return Promise.reject(new LockedKeyUnavailableError([OWNER]));
+        });
+      };
+
+      it('wakes it once its deferral is written when the key loaded before the wait was recorded', async () => {
+        run(['load', 'defer']);
+        await sut['execute'](claim(21), new AbortController());
+        expect(order).toEqual(['defer', 'wake 21']);
+      });
+
+      it('wakes it once its deferral is written when the key loaded after the wait was recorded', async () => {
+        run(['defer', 'load']);
+        await sut['execute'](claim(22), new AbortController());
+        expect(order).toEqual(['defer', 'wake 22']);
+      });
+
+      it('leaves it waiting while the key stays closed', async () => {
+        run(['defer']);
+        await sut['execute'](claim(23), new AbortController());
+        expect(order).toEqual(['defer']);
+        // and a later run of the same id is not woken by the stale record
+        loadKey();
+        lockedKeys.clear();
+        run(['defer']);
+        await sut['execute'](claim(23), new AbortController());
+        expect(order).toEqual(['defer', 'defer']);
+      });
+
+      it('forgets the wait of a job deferred for another reason first, so it never wakes a later run (M2)', async () => {
+        const OTHER = '00000000-0000-4000-8000-0000000000f2';
+        // another dependency was refused first: the queue writes that deferral, not the Locked one
+        sut['eventRepository'].emit = vi.fn().mockImplementation(() => {
+          queueExecution.getStore()!.dependencyReason = 'destination-unavailable';
+          deferForLockedKey(new LockedKeyUnavailableError([OWNER]));
+          return Promise.reject(new Error('Machine learning destination refused'));
+        });
+        await sut['execute'](claim(24), new AbortController());
+        // OWNER's key loads; the same job runs again and now waits only for OTHER's closed key
+        loadKey();
+        sut['eventRepository'].emit = vi.fn().mockImplementation(() => {
+          deferForLockedKey(new LockedKeyUnavailableError([OTHER]));
+          return Promise.reject(new LockedKeyUnavailableError([OTHER]));
+        });
+        await sut['execute'](claim(24), new AbortController());
+
+        expect(order).toEqual(['defer', 'defer']);
+      });
+    });
+
+    it('releases local admission and settles execution while committed observers are pending', async () => {
+      const observer = Promise.withResolvers<void>();
+      const held = await Promise.all(
+        Array.from({ length: QUEUE_EXECUTION_CAPACITY - 1 }, () =>
+          queueAdmission(sut['store'].db).execution.acquire(new AbortController().signal),
+        ),
+      );
+      sut['eventRepository'].emit = vi.fn().mockImplementation(() => {
+        if (queueExecution.getStore()!.claim.id === '1') {
+          queueExecution.getStore()!.afterCommit = [() => observer.promise];
+        }
+        return Promise.resolve();
+      });
+      const settled = vi.fn();
+      const first = sut['execute'](claim(1), new AbortController()).finally(settled);
+      const second = sut['execute'](claim(2), new AbortController());
+      try {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(settled).toHaveBeenCalledOnce();
+        expect(sut['eventRepository'].emit).toHaveBeenCalledTimes(2);
+        expect(sut['store'].complete).toHaveBeenCalledTimes(2);
+        expect(sut['store'].fail).not.toHaveBeenCalled();
+      } finally {
+        observer.resolve();
+        for (const release of held) release();
+        await Promise.all([first, second]);
+      }
+    });
+
+    it('reserves post-commit capacity before starting handlers and eventually delivers every callback', async () => {
+      const pending = Promise.withResolvers<void>();
+      const delivered: string[] = [];
+      sut['eventRepository'].emit = vi.fn().mockImplementation(() => {
+        const execution = queueExecution.getStore()!;
+        execution.afterCommit = [
+          () => pending.promise,
+          () => {
+            delivered.push(execution.claim.id);
+            return Promise.resolve();
+          },
+        ];
+        return Promise.resolve();
+      });
+      const executions = Array.from({ length: 24 }, (_, index) => sut['execute'](claim(index), new AbortController()));
+      try {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(sut['eventRepository'].emit).toHaveBeenCalledTimes(16);
+        expect(sut['store'].complete).toHaveBeenCalledTimes(16);
+        expect(delivered).toEqual([]);
+      } finally {
+        pending.resolve();
+        await Promise.all(executions);
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+      expect(new Set(delivered)).toEqual(new Set(Array.from({ length: 24 }, (_, index) => String(index))));
+      expect(sut['store'].fail).not.toHaveBeenCalled();
+    });
+
+    it('drains cleanup observers registered by active jobs during shutdown', async () => {
+      const handler = Promise.withResolvers<void>();
+      const cleanup = Promise.withResolvers<void>();
+      sut['eventRepository'].emit = vi.fn().mockImplementation(async () => {
+        await handler.promise;
+        queueExecution.getStore()!.afterCommit = [() => cleanup.promise];
+      });
+      const abort = new AbortController();
+      const execution = sut['execute'](claim(1), abort).finally(() => sut['active'].delete('1'));
+      sut['active'].set('1', { abort, finished: execution.then(() => {}) });
+      const finished = vi.fn();
+      try {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        const stopping = sut.stopWorkers(1000).then(finished);
+        handler.resolve();
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(finished).not.toHaveBeenCalled();
+        expect(sut['active'].size).toBe(0);
+        cleanup.resolve();
+        await stopping;
+        expect(finished).toHaveBeenCalledOnce();
+      } finally {
+        handler.resolve();
+        cleanup.resolve();
+        await execution;
+      }
+    });
+
+    it('bounds shutdown waiting for a pending committed observer by the grace period', async () => {
+      const observer = Promise.withResolvers<void>();
+      sut['eventRepository'].emit = vi.fn().mockImplementation(() => {
+        queueExecution.getStore()!.afterCommit = [() => observer.promise];
+        return Promise.resolve();
+      });
+      const execution = sut['execute'](claim(1), new AbortController());
+      try {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        await sut.stopWorkers(0);
+        expect(sut['store'].fail).not.toHaveBeenCalled();
+      } finally {
+        observer.resolve();
+        await execution;
+      }
+    });
+
+    it('contains rejected observers and failed warning logging after a durable completion', async () => {
+      sut['eventRepository'].emit = vi.fn().mockImplementation(() => {
+        queueExecution.getStore()!.afterCommit = [() => Promise.reject(new Error('offline'))];
+        return Promise.resolve();
+      });
+      vi.mocked(sut['logger'].warn).mockImplementation(() => {
+        throw new Error('logging unavailable');
+      });
+      await expect(sut['execute'](claim(1), new AbortController())).resolves.toBeUndefined();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(sut['store'].complete).toHaveBeenCalledOnce();
+      expect(sut['store'].fail).not.toHaveBeenCalled();
+      expect(sut['store'].defer).not.toHaveBeenCalled();
+    });
+
     it('backpressures 128 claimed handlers before they can exhaust the ten-session execution pool', async () => {
       const work = Promise.withResolvers<void>();
       let active = 0;
@@ -304,7 +777,7 @@ describe(JobRepository.name, () => {
         (index % 2 ? sut : other)['execute'](claim(index), new AbortController()),
       );
       try {
-        await Promise.resolve();
+        await new Promise<void>((resolve) => setImmediate(resolve));
         expect(peak).toBeGreaterThan(0);
         expect(peak).toBeLessThan(10);
       } finally {

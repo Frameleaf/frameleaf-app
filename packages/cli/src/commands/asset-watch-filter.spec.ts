@@ -17,8 +17,12 @@ it('admits the same filenames synchronously without changing watcher timing', as
   vi.mocked(watch).mockReturnValue(watcher as never);
   vi.mocked(getSupportedMediaTypes).mockResolvedValue({ image: ['.jpg', '.png'], video: ['.mp4'], sidecar: [] });
   const add = vi.spyOn(Batcher.prototype, 'add');
+  let stopWatch: Awaited<ReturnType<typeof startWatch>> | undefined;
   try {
-    await startWatch(['/synthetic'], { concurrency: 1, progress: true }, { debounceTimeMs: 0 });
+    const pending = startWatch(['/synthetic'], { concurrency: 1, progress: true }, { debounceTimeMs: 0 });
+    await vi.waitFor(() => expect(watch).toHaveBeenCalledOnce());
+    watcher.emit('ready');
+    stopWatch = await pending;
     const onFile = watcher.listeners('add')[0];
     expect(watcher.listeners('change')[0]).toBe(onFile);
     for (const [path, admitted] of [
@@ -48,11 +52,12 @@ it('admits the same filenames synchronously without changing watcher timing', as
         ignoreInitial: true,
         alwaysStat: true,
         awaitWriteFinish: true,
-        depth: 1,
+        depth: 0,
         persistent: true,
       }),
     );
   } finally {
+    await stopWatch?.();
     add.mockRestore();
     for (const listener of process.listeners('SIGINT')) {
       if (!before.includes(listener)) {

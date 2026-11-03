@@ -1,4 +1,11 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { isDeepStrictEqual } from 'node:util';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { SALT_ROUNDS } from 'src/constants.js';
@@ -19,9 +26,12 @@ import {
   mapUserAdmin,
 } from 'src/dtos/user.dto.js';
 import { AdminAuditAction, AssetVisibility, JobName, UserMetadataKey, UserStatus } from 'src/enum.js';
+import { EmailTemplate } from 'src/repositories/email.repository.js';
 import { UserFindOptions } from 'src/repositories/user.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 import { getCalendarHeatmap } from 'src/services/shared/user-methods.js';
+import { DecimalSize } from 'src/utils/bytes.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { getLockedOwnerId } from 'src/utils/locked-visibility.js';
 import { findOrFail } from 'src/utils/misc.js';
@@ -41,39 +51,135 @@ type Preferences = ReturnType<typeof getPreferences>;
 /** The default page size of an account's history (FL-76). */
 const HISTORY_PAGE_SIZE = 50;
 
+/** FL-538: how long an emailed "choose a password" link works. */
+const PASSWORD_LINK_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
+
 @Injectable()
 export class UserAdminService extends BaseService {
+  /** FL-721: an administrator can't clear or change the PIN of someone with Locked encryption on. */
+  @Inject(LockedEncryptionService)
+  private lockedEncryption!: LockedEncryptionService;
+
+  /** FL-721 (spec §10): the admin user response shows whether Locked encryption is on, nothing else. */
+  private async mapAdmin(user: UserAdmin): Promise<UserAdminResponseDto> {
+    return mapUserAdmin({ ...user, lockedEncryption: await this.lockedEncryption.isOn(user.id) });
+  }
+
   async search(auth: AuthDto, dto: UserAdminSearchDto): Promise<UserAdminResponseDto[]> {
     const users = await this.userRepository.getList({
       id: dto.id,
       withDeleted: dto.withDeleted,
     });
-    return users.map((user) => mapUserAdmin(user));
+    const encrypted = await this.lockedEncryption.usersWithEncryption(users.map(({ id }) => id));
+    return users.map((user) => mapUserAdmin({ ...user, lockedEncryption: encrypted.has(user.id) }));
   }
 
   async create(auth: AuthDto, dto: UserAdminCreateDto): Promise<UserAdminResponseDto> {
-    const { notify, ...userDto } = dto;
+    const { notify, passwordLink, ...userDto } = dto;
     const config = await this.getConfig({ withCache: false });
-    if (!config.oauth.enabled && !userDto.password) {
+    // FL-538: with a link they choose their own password, so none is set here (and none is emailed)
+    const linkBase = passwordLink ? await this.requirePasswordLinkBase() : undefined;
+    if (linkBase !== undefined) {
+      userDto.password = '';
+      userDto.shouldChangePassword = false;
+    } else if (!config.oauth.enabled && !userDto.password) {
       throw new BadRequestException('password is required');
     }
 
-    const user = await this.createUser(userDto);
-
-    await this.eventRepository.emit('UserSignup', {
-      notify: !!notify,
-      id: user.id,
-      password: userDto.password,
+    // FL-516: an account added without a space of its own starts with "Space for new people"
+    const newUserStorageQuota = config.user.newUserStorageQuota ?? null;
+    const user = await this.createUser({
+      ...userDto,
+      quotaSizeInBytes:
+        userDto.quotaSizeInBytes === undefined
+          ? newUserStorageQuota === null
+            ? null
+            : newUserStorageQuota * DecimalSize.GB
+          : userDto.quotaSizeInBytes,
     });
 
-    await this.recordAdminEvents([accountEvent(auth, user, AdminAuditAction.AccountCreated)]);
+    const events = [accountEvent(auth, user, AdminAuditAction.AccountCreated)];
+    if (linkBase === undefined) {
+      await this.eventRepository.emit('UserSignup', {
+        notify: !!notify,
+        id: user.id,
+        password: userDto.password,
+      });
+    } else {
+      await this.emailPasswordLink(auth, user, linkBase, true);
+      events.push(accountEvent(auth, user, AdminAuditAction.PasswordReset, 'link'));
+    }
 
-    return mapUserAdmin(user);
+    await this.recordAdminEvents(events);
+
+    return this.mapAdmin(user);
+  }
+
+  /**
+   * FL-538: email the person a single-use link to choose their own password. A new link replaces any
+   * earlier one. The administrator never sees the link or the password.
+   */
+  async sendPasswordLink(auth: AuthDto, id: string): Promise<void> {
+    const user = await this.findOrFail(id, {});
+    const base = await this.requirePasswordLinkBase();
+    await this.emailPasswordLink(auth, user, base, false);
+    await this.recordAdminEvents([accountEvent(auth, user, AdminAuditAction.PasswordReset, 'link')]);
+  }
+
+  /** The address a link points at; refused when email is off or the server has no public address. */
+  private async requirePasswordLinkBase(): Promise<string> {
+    const { notifications, server } = await this.getConfig({ withCache: false });
+    if (!notifications.smtp.enabled) {
+      throw new BadRequestException('Email is not set up on this server, so a link cannot be sent');
+    }
+    const base = await this.getPublicUrl(server);
+    if (!base) {
+      throw new BadRequestException('This server needs a public address before it can email a link');
+    }
+    return base;
+  }
+
+  private async emailPasswordLink(
+    auth: AuthDto,
+    user: { id: string; name: string; email: string },
+    baseUrl: string,
+    isNew: boolean,
+  ) {
+    const token = this.cryptoRepository.randomBytes(32).toString('base64url');
+    const issued = await this.userRepository.setPasswordLink(
+      user.id,
+      user.email,
+      this.cryptoRepository.hashSha256(token),
+      new Date(Date.now() + PASSWORD_LINK_LIFETIME_MS),
+    );
+    if (!issued) throw new ConflictException('This account changed; send a new password link');
+    const { templates } = await this.getConfig({ withCache: true });
+    const { html, text } = await this.emailRepository.renderEmail({
+      template: EmailTemplate.PASSWORD_LINK,
+      data: {
+        baseUrl,
+        displayName: user.name,
+        username: user.email,
+        link: `${baseUrl}/auth/choose-password#${token}`,
+        senderName: auth.user.name,
+        isNew,
+        showBranding: templates.email.showBranding,
+      },
+    });
+    await this.jobRepository.queue({
+      name: JobName.SendMail,
+      data: {
+        to: user.email,
+        subject: isNew ? 'Choose your Frameleaf password' : 'Choose a new Frameleaf password',
+        html,
+        text,
+      },
+    });
   }
 
   async get(auth: AuthDto, id: string): Promise<UserAdminResponseDto> {
     const user = await this.findOrFail(id, { withDeleted: true });
-    return mapUserAdmin(user);
+    return this.mapAdmin(user);
   }
 
   async update(auth: AuthDto, id: string, dto: UserAdminUpdateDto): Promise<UserAdminResponseDto> {
@@ -100,6 +206,14 @@ export class UserAdminService extends BaseService {
       if (duplicate && duplicate.id !== id) {
         throw new BadRequestException('Storage label already in use by another account');
       }
+    }
+
+    // FL-721 (spec §10, owner): their PIN wraps the key to their files, so neither clearing nor
+    // replacing it is left to an administrator; the person resets it with their recovery key
+    if (dto.pinCode !== undefined && (await this.lockedEncryption.isOn(id))) {
+      throw new ConflictException(
+        'This person has Locked encryption on, so their PIN can’t be cleared or changed. They can reset it with their recovery key.',
+      );
     }
 
     if (dto.password) {
@@ -129,11 +243,12 @@ export class UserAdminService extends BaseService {
     if (dto.password !== undefined || dto.pinCode !== undefined) {
       await this.sessionRepository.lockAll(id);
       this.websocketRepository.clientSend('on_session_lock', id);
+      await this.lockedEncryption.onSessionsLocked(id);
     }
 
     await this.recordAdminEvents(this.getUpdateEvents(auth, user, updatedUser, dto));
 
-    return mapUserAdmin(updatedUser);
+    return this.mapAdmin(updatedUser);
   }
 
   /**
@@ -164,6 +279,11 @@ export class UserAdminService extends BaseService {
 
     if (dto.quotaSizeInBytes !== undefined && after.quotaSizeInBytes !== before.quotaSizeInBytes) {
       add(AdminAuditAction.QuotaChanged, after.quotaSizeInBytes === null ? null : String(after.quotaSizeInBytes));
+    }
+
+    if (dto.uploadsPaused !== undefined && after.uploadsPaused !== before.uploadsPaused) {
+      // FL-538: recorded as an account change, so the API gains no new action values
+      add(AdminAuditAction.AccountUpdated, after.uploadsPaused ? 'uploads-paused' : 'uploads-resumed');
     }
 
     if (dto.storageLabel !== undefined && after.storageLabel !== before.storageLabel) {
@@ -217,7 +337,7 @@ export class UserAdminService extends BaseService {
       ]);
     }
 
-    return mapUserAdmin(user);
+    return this.mapAdmin(user);
   }
 
   async restore(auth: AuthDto, id: string): Promise<UserAdminResponseDto> {
@@ -226,7 +346,7 @@ export class UserAdminService extends BaseService {
     const user = await this.userRepository.restore(id);
     await this.eventRepository.emit('UserRestore', user);
     await this.recordAdminEvents([accountEvent(auth, user, AdminAuditAction.AccountRestored)]);
-    return mapUserAdmin(user);
+    return this.mapAdmin(user);
   }
 
   async getCalendarHeatmap(auth: AuthDto, id: string, dto: CalendarHeatmapDto): Promise<CalendarHeatmapResponseDto> {

@@ -85,24 +85,6 @@ export const setupMemoryMockApiRoutes = async (
       });
     }
 
-    const memoryMatch = pathname.match(/\/api\/memories\/([^/]+)$/);
-    if (memoryMatch && request.method() === 'GET') {
-      const memoryId = memoryMatch[1];
-      const memory = memories.find((m) => m.id === memoryId);
-
-      if (!memory || changes.memoryDeletions.includes(memoryId)) {
-        return route.fulfill({ status: 404 });
-      }
-
-      return route.fulfill({ status: 200, contentType: 'application/json', json: curate(memory, changes) });
-    }
-
-    if (/\/api\/memories\/([^/]+)$/.test(pathname) && request.method() === 'DELETE') {
-      const memoryId = pathname.split('/').pop()!;
-      changes.memoryDeletions.push(memoryId);
-      return route.fulfill({ status: 204 });
-    }
-
     await route.fallback();
   });
 
@@ -116,6 +98,17 @@ export const setupMemoryMockApiRoutes = async (
         : route.fulfill({ status: 204 });
     }
     const memory = memories.find((item) => item.id === id);
+    // `**/api/memories*` never matches a path with another segment, so single-memory reads and deletes live here.
+    if (memory && request.method() === 'GET') {
+      if (changes.memoryDeletions.includes(id)) {
+        return route.fulfill({ status: 404 });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', json: curate(memory, changes) });
+    }
+    if (memory && request.method() === 'DELETE') {
+      changes.memoryDeletions.push(id);
+      return route.fulfill({ status: 204 });
+    }
     if (memory && request.method() === 'PUT') {
       const body = request.postDataJSON() as {
         isHidden?: boolean;
@@ -169,6 +162,8 @@ export const setupMemoryMockApiRoutes = async (
                   maxBitDepth: 10,
                   hdr10: true,
                   dolbyVision: false,
+                  // FL-674: a GPU worker that writes Main10 for an SDR picture too.
+                  sdrTenBit: true,
                 },
               ],
             },

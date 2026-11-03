@@ -9,6 +9,7 @@ import { MediaOperation, MediaOperationRepository } from 'src/repositories/media
 import { ICloudScheduledStagingService } from 'src/services/icloud-scheduled-staging.service.js';
 import { MediaRecoveryService } from 'src/services/media-recovery.service.js';
 import { scheduledAuditClaimHolder } from 'src/utils/icloud-weekly.js';
+import { tryPromise } from 'src/utils/promise.js';
 
 /** Source seam only. Qualification and actual scheduler registration are separate deployment gates. */
 export const scheduledAuditExecutionEnabled = () => process.env.FRAMELEAF_ICLOUD_WEEKLY_AUDIT_EXECUTION === 'true';
@@ -207,7 +208,7 @@ export class ICloudScheduledWorkerService {
               throw new Error('scheduled_audit_unavailable');
             }
           } finally {
-            await Promise.allSettled(heldFiles.map((files) => Promise.try(() => files.release()))).then((releases) => {
+            await Promise.allSettled(heldFiles.map((files) => tryPromise(() => files.release()))).then((releases) => {
               const failures = releases
                 .filter((release) => release.status === 'rejected')
                 .map((release) => release.reason);

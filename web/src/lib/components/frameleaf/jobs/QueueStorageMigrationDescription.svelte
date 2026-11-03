@@ -5,10 +5,7 @@
   import { t } from 'svelte-i18n';
 </script>
 
-<FormatMessage
-  key="admin.storage_template_migration_description"
-  values={{ template: $t('admin.storage_template_settings') }}
->
+<FormatMessage key="frameleaf_jobs_queue_storage_template_hint" values={{ layout: $t('frameleaf_layout_label') }}>
   {#snippet children({ message })}
     <a href={Route.systemSettings({ isOpen: OpenQueryParam.STORAGE_TEMPLATE })} class="text-primary">
       {message}

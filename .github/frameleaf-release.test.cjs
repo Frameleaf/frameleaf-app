@@ -3,6 +3,7 @@ const test = require("node:test");
 const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
+const { createRequire } = require("node:module");
 const {
   VARIANTS,
   SOURCE,
@@ -17,6 +18,7 @@ const {
   requireTestQualification,
   chooseTag,
   previousReleaseTag,
+  releaseNotesBody,
   deployTestImages,
   verifyImage,
   createBundle,
@@ -319,18 +321,52 @@ const testJobNames = [
   "Test Web",
   "Test i18n",
   "End-to-End Lint",
+  "Medium Test Image",
+  "Medium Core Shard (1)",
+  "Medium Core Shard (2)",
+  "Medium Core Shard (3)",
+  "Medium Core Shard (4)",
+  "Medium Core Shard (5)",
+  "Medium Core Shard (6)",
+  "Medium Scale Shard (1)",
+  "Medium Scale Shard (2)",
+  "Medium Scale Shard (3)",
+  "Medium Scale Shard (4)",
+  "Medium Scale Shard (5)",
+  "Medium Scale Shard (6)",
   "Medium Tests (Server)",
   "Medium Scale Tests (Server)",
-  "End-to-End Tests (Server & CLI) (ubuntu-24.04)",
-  "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04, api-1)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04, api-2)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04, api-3)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04, api-4)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04, maintenance)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04, transport)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04, buddy)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04, cloud)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04, accounting)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm, api-1)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm, api-2)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm, api-3)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm, api-4)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm, maintenance)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm, transport)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm, cloud)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm, accounting)",
   "End-to-End Image (ubuntu-24.04)",
   "End-to-End Image (ubuntu-24.04-arm)",
   "End-to-End Tests (Web) (ubuntu-24.04, 1)",
   "End-to-End Tests (Web) (ubuntu-24.04, 2)",
   "End-to-End Tests (Web) (ubuntu-24.04, 3)",
+  "End-to-End Tests (Web) (ubuntu-24.04, ui)",
+  "End-to-End Tests (Web) (ubuntu-24.04, maintenance)",
+  "End-to-End Tests (Web) (ubuntu-24.04, icloud)",
   "End-to-End Tests (Web) (ubuntu-24.04-arm, 1)",
   "End-to-End Tests (Web) (ubuntu-24.04-arm, 2)",
   "End-to-End Tests (Web) (ubuntu-24.04-arm, 3)",
+  "End-to-End Tests (Web) (ubuntu-24.04-arm, ui)",
+  "End-to-End Tests (Web) (ubuntu-24.04-arm, maintenance)",
+  "End-to-End Tests (Web) (ubuntu-24.04-arm, icloud)",
   "End-to-End Tests Success",
   "Unit Test ML",
   ".github Files Formatting",
@@ -380,48 +416,60 @@ test("same-SHA Test qualification requires every real non-mobile job, including 
   const evidence = await requireTestQualification(sha, fixture.request);
   assert.equal(evidence.runId, 42);
   assert.equal(evidence.attempt, 2);
-  assert.equal(evidence.jobs.length, 26);
-  assert.deepEqual(
-    evidence.jobs
-      .filter((job) => job.name.startsWith("End-to-End Tests ("))
-      .map((job) => job.name),
-    [
-      "End-to-End Tests (Server & CLI) (ubuntu-24.04)",
-      "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm)",
-      "End-to-End Tests (Web) (ubuntu-24.04, 1)",
-      "End-to-End Tests (Web) (ubuntu-24.04, 2)",
-      "End-to-End Tests (Web) (ubuntu-24.04, 3)",
-      "End-to-End Tests (Web) (ubuntu-24.04-arm, 1)",
-      "End-to-End Tests (Web) (ubuntu-24.04-arm, 2)",
-      "End-to-End Tests (Web) (ubuntu-24.04-arm, 3)",
-    ],
+  assert.equal(evidence.jobs.length, 60);
+  assert.equal(
+    evidence.jobs.filter((job) =>
+      job.name.startsWith("End-to-End Tests (Server & CLI)"),
+    ).length,
+    17,
+  );
+  assert.equal(
+    evidence.jobs.filter((job) => job.name.startsWith("End-to-End Tests (Web)"))
+      .length,
+    12,
+  );
+  assert.equal(
+    evidence.jobs.some(
+      (job) =>
+        job.name ===
+        "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm, buddy)",
+    ),
+    false,
   );
 });
-test("the qualification job catalog covers the non-mobile Test workflow and both runner matrix members", async () => {
+test("the qualification job catalog covers every Test workflow axis, shard and exclusion", async () => {
   const source = await fs.readFile(
     path.join(__dirname, "workflows/test.yml"),
     "utf8",
   );
-  const jobs = source
-    .split(/^jobs:\s*$/m)[1]
-    .split(/(?=^  [a-z][a-z0-9-]*:\s*$)/m);
-  const resolved = jobs.flatMap((block) => {
-    const name = /^    name: (.+)$/m.exec(block)?.[1];
+  const { load } = createRequire(
+    path.join(__dirname, "../server/package.json"),
+  )("js-yaml");
+  const jobs = Object.values(load(source).jobs);
+  const resolved = jobs.flatMap(({ name, strategy }) => {
     if (!name) return [];
-    const matrix = /^        runner:\n((?:          - [^\n]+\n)+)/m.exec(
-      block,
-    )?.[1];
-    // FL-380: a second matrix axis (web shards) resolves as "name (runner, shard)".
-    const shards = /^        shard: \[([^\]]+)\]$/m
-      .exec(block)?.[1]
-      .split(", ");
-    return matrix
-      ? [...matrix.matchAll(/^          - (.+)$/gm)].flatMap(([, runner]) =>
-          shards
-            ? shards.map((shard) => `${name} (${runner}, ${shard})`)
-            : [`${name} (${runner})`],
-        )
-      : [name];
+    if (!strategy?.matrix) return [name];
+    const { exclude = [], ...axes } = strategy.matrix;
+    const combinations = Object.entries(axes).reduce(
+      (rows, [key, values]) =>
+        rows.flatMap((row) =>
+          values.map((value) => ({ ...row, [key]: value })),
+        ),
+      [{}],
+    );
+    return combinations
+      .filter(
+        (row) =>
+          !exclude.some((entry) =>
+            Object.entries(entry).every(([key, value]) => row[key] === value),
+          ),
+      )
+      .map(
+        (row) =>
+          `${name} (${Object.keys(axes)
+            .map((key) => row[key])
+            .join(", ")})`,
+      );
   });
   assert.deepEqual(resolved.sort(), [...testJobNames].sort());
 });
@@ -657,6 +705,28 @@ test("release notes compare from the previous app release, never a manager relea
   );
 });
 
+test("release notes lead with the user summary and the Jira issues, then build evidence", () => {
+  const body = releaseNotesBody({
+    summary: "\nDeleting a user now removes all of their files.\n",
+    messages: [
+      "FL-569 fix: purge every file a deleted user owned (#516)\n\nbody FL-1",
+      "FL-10, FC-2: share links (#515)",
+      "Merge branch 'main'",
+    ],
+    evidence: "Source: abc\n",
+  });
+  assert.equal(
+    body,
+    "## What's improved\n\nDeleting a user now removes all of their files.\n\n" +
+      "## Jira issues resolved\n\n- FL-569: fix: purge every file a deleted user owned (#516)\n- FL-10, FC-2: share links (#515)\n\n" +
+      "Source: abc",
+  );
+  assert.match(
+    releaseNotesBody({ summary: "x", messages: [], evidence: "e" }),
+    /resolved\n\nNone\n\ne$/,
+  );
+});
+
 test("independent versions are immutable and only the same source can resume", () => {
   assert.equal(chooseTag("1.0.0", [], [], sha), "frameleaf-v1.0.0");
   assert.equal(chooseTag("1.1.0-rc.1", [], [], sha), "frameleaf-v1.1.0-rc.1");
@@ -797,10 +867,16 @@ test("install bundle keeps :latest in Compose and env and preserves data configu
     assert.deepEqual(nas.platforms, ["linux/amd64", "linux/arm64"]);
     for (const [name, original] of originals) {
       const bundled = await fs.readFile(path.join(dir, name), "utf8");
-      // Never pinned to the release (owner 2026-10-18): bundles ship sources unchanged.
+      // Never pinned to the release (owner 2026-10-18): bundles ship sources unchanged, except a
+      // comment naming the exact tag above FRAMELEAF_VERSION=latest.
       assert.equal(
         bundled,
-        original,
+        name === "example.env"
+          ? original.replace(
+              /^FRAMELEAF_VERSION=latest$/m,
+              `# This release: FRAMELEAF_VERSION=${tag}\n$&`,
+            )
+          : original,
         `${name}: bundle must not pin the release`,
       );
       assert.equal(
@@ -1645,4 +1721,41 @@ test("a rollout without a percentage is refused instead of offering the release 
       /Rollout must be a whole percentage from 0 to 100/,
     );
   assert.deepEqual(writes, []);
+});
+
+test("a withdrawal without a restore tag or reason is refused before any release lookup", async (t) => {
+  const tag = "frameleaf-v3.2.0-2";
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (url) => {
+    calls.push(String(url));
+    return new Response(
+      JSON.stringify({ id: 2, draft: false, body: "Notes" }),
+      {
+        status: 200,
+      },
+    );
+  });
+  const base = {
+    GITHUB_REPOSITORY: "Frameleaf/frameleaf-app",
+    ACTION: "withdraw",
+    RELEASE_TAG: tag,
+    RESTORE_TAG: "frameleaf-v3.2.0-1",
+    REASON: "Broken upgrade",
+    DRY_RUN: "false",
+  };
+  for (const [change, message] of [
+    [{ RESTORE_TAG: undefined }, /Give the release tag to restore/],
+    [{ RESTORE_TAG: "latest" }, /Give the release tag to restore/],
+    [{ RESTORE_TAG: tag }, /Restore another release than the one withdrawn/],
+    [{ REASON: undefined }, /A withdrawal needs a reason/],
+    [{ REASON: " " }, /A withdrawal needs a reason/],
+    [{ REASON: "x".repeat(301) }, /at most 300 characters/],
+  ])
+    await assert.rejects(
+      releaseFlags({ ...base, ...change }, {}, () =>
+        assert.fail("must not run"),
+      ),
+      message,
+    );
+  assert.deepEqual(calls, []);
 });

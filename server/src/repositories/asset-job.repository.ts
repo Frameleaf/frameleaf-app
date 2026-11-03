@@ -4,7 +4,7 @@ import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AssetFileType, AssetMetadataKey, AssetStatus, AssetType, AssetVisibility } from 'src/enum.js';
+import { AssetFileType, AssetMetadataKey, AssetStatus, AssetType, AssetVisibility, LibraryScope } from 'src/enum.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
 import {
@@ -21,6 +21,7 @@ import {
   withVideoFormat,
   withVideoStream,
 } from 'src/utils/database.js';
+import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { effectiveVisibility, isLocked, isNotLocked } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
@@ -44,6 +45,7 @@ export class AssetJobRepository {
           'ownerId',
           'duplicateId',
           'stackId',
+          'deletedAt',
           effectiveVisibility('asset').as('visibility'),
           'smart_search.embedding',
         ])
@@ -276,22 +278,27 @@ export class AssetJobRepository {
       );
   }
 
-  @GenerateSql({ params: [{ force: false, frameCount: 4 }], stream: true })
-  streamForVideoDuplicateFrames(options: { force?: boolean; frameCount: number }) {
-    return this.selectionForVideoDuplicateFrames(options).stream();
-  }
-
-  selectionForVideoDuplicateFrames(options: { force?: boolean; frameCount: number }) {
+  /** FL-651: videos to fingerprint; all of them when forced, else those without a fingerprint. */
+  selectionForVideoFingerprint(force?: boolean) {
     return this.db
       .selectFrom('asset')
-      .leftJoin('asset_video_duplicate_frame as frame', 'frame.assetId', 'asset.id')
       .select(['asset.id'])
       .where('asset.type', '=', sql.lit(AssetType.Video))
       .where('asset.deletedAt', 'is', null)
       .where('asset.visibility', '!=', sql.lit(AssetVisibility.Hidden))
       .where(isNotLocked('asset'))
-      .groupBy('asset.id')
-      .$if(!options.force, (qb) => qb.having((eb) => eb.fn.count('frame.assetId'), '<', options.frameCount));
+      .$if(!force, (qb) =>
+        qb.where((eb) =>
+          eb.not(
+            eb.exists(
+              eb
+                .selectFrom('asset_video_fingerprint')
+                .select('asset_video_fingerprint.assetId')
+                .whereRef('asset_video_fingerprint.assetId', '=', 'asset.id'),
+            ),
+          ),
+        ),
+      );
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
@@ -336,6 +343,7 @@ export class AssetJobRepository {
     return (
       this.db
         .selectFrom('asset')
+        .where(libraryScopePredicate(LibraryScope.Personal))
         // FL-57: the checksum tells whether a face decision was made about this original
         .select(['asset.id', 'asset.visibility', 'asset.checksum'])
         .$call(withExifInner)
@@ -383,6 +391,7 @@ export class AssetJobRepository {
     return (
       this.db
         .selectFrom('asset')
+        .where(libraryScopePredicate(LibraryScope.Personal))
         .select(['asset.id'])
         .where('asset.type', 'in', [sql.lit(AssetType.Image), sql.lit(AssetType.Video)])
         .where('asset.status', '=', sql.lit(AssetStatus.Active))
@@ -421,6 +430,7 @@ export class AssetJobRepository {
   getForBestPhotoScoring(id: string) {
     return this.db
       .selectFrom('asset')
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .select((eb) => [
         'asset.id',
         'asset.ownerId',
@@ -466,6 +476,7 @@ export class AssetJobRepository {
       .selectFrom('asset')
       .select([
         'asset.id',
+        'asset.type',
         'asset.visibility',
         'asset.libraryId',
         'asset.ownerId',
@@ -606,6 +617,7 @@ export class AssetJobRepository {
         'asset.type',
         'asset.checksum',
         'asset.originalPath',
+        'asset.libraryPath',
         'asset.physicalOriginalFileId',
         'asset.isExternal',
         'asset.visibility',
@@ -676,6 +688,7 @@ export class AssetJobRepository {
 
   selectionForDetectFacesJob(force?: boolean) {
     return this.assetsWithPreviews()
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .$if(force === false, (qb) => qb.where('job_status.facesRecognizedAt', 'is', null))
       .select(['asset.id'])
       .orderBy('asset.fileCreatedAt', 'desc');
@@ -810,6 +823,97 @@ export class AssetJobRepository {
 
   selectionForNsfwDetectionJob(force?: boolean) {
     return this.selectionForImageEnrichmentTask(force, 'nsfwDetection');
+  }
+
+  /**
+   * FL-521: how far each reading feature has got, as "N of M read": the photos and videos it reads (with
+   * a preview, not deleted or hidden, Locked included as background work is) and how many of them it has
+   * finished. Text in photos and Locked detection read photos only.
+   */
+  async countFeatureProgress(): Promise<Record<'search' | 'faces' | 'text' | 'captions' | 'locked', [number, number]>> {
+    const enrichment = (task: string) => sql<boolean>`EXISTS (
+      SELECT 1 FROM public.asset_metadata m
+      WHERE m."assetId" = a.id AND m.key = ${AssetMetadataKey.MlEnrichment} AND m.value -> ${task} ->> 'status' = 'success'
+    )`;
+    const { rows } = await sql<Record<string, number>>`
+      SELECT
+        count(*)::int AS "all",
+        count(*) FILTER (WHERE a.type = ${AssetType.Image})::int AS "photos",
+        count(*) FILTER (WHERE EXISTS (SELECT 1 FROM public.smart_search s WHERE s."assetId" = a.id))::int AS "search",
+        count(*) FILTER (WHERE j."facesRecognizedAt" IS NOT NULL)::int AS "faces",
+        count(*) FILTER (WHERE a.type = ${AssetType.Image} AND j."ocrAt" IS NOT NULL)::int AS "text",
+        count(*) FILTER (WHERE ${enrichment('description')})::int AS "captions",
+        count(*) FILTER (WHERE a.type = ${AssetType.Image} AND ${enrichment('nsfwDetection')})::int AS "locked"
+      FROM public.asset a
+      JOIN public.asset_job_status j ON j."assetId" = a.id
+      WHERE a."deletedAt" IS NULL
+        AND a.visibility IN (${AssetVisibility.Archive}, ${AssetVisibility.Timeline})
+        AND a.type IN (${AssetType.Image}, ${AssetType.Video})
+        AND EXISTS (SELECT 1 FROM public.asset_file f WHERE f."assetId" = a.id AND f.type = ${AssetFileType.Preview})`.execute(
+      this.db,
+    );
+    const row = rows[0];
+    return {
+      search: [row.search, row.all],
+      faces: [row.faces, row.all],
+      text: [row.text, row.photos],
+      captions: [row.captions, row.all],
+      locked: [row.locked, row.photos],
+    };
+  }
+
+  /**
+   * FL-521: the photos and videos behind Editing & playback's status: photos, how many photos and
+   * videos have no preview yet (the thumbnail job makes both), videos and how many have a playback
+   * copy. FL-537: and how long those videos are, for "about N MB a minute". FL-630: and the space the copies take, from their recorded sizes (each
+   * shared file once); copies made before files were recorded are counted in `unsizedCopies`.
+   */
+  async countMediaCopies(): Promise<{
+    photos: number;
+    withoutPreview: number;
+    videos: number;
+    withCopy: number;
+    videoMs: number;
+    copyMs: number;
+    copyBytes: number;
+    unsizedCopies: number;
+  }> {
+    const { rows } = await sql<{
+      photos: number;
+      withoutPreview: number;
+      videos: number;
+      withCopy: number;
+      videoMs: number;
+      copyMs: number;
+      copyBytes: number;
+      unsizedCopies: number;
+    }>`
+      SELECT
+        count(*) FILTER (WHERE a.type = ${AssetType.Image})::int AS photos,
+        count(*) FILTER (WHERE NOT EXISTS (
+          SELECT 1 FROM public.asset_file f WHERE f."assetId" = a.id AND f.type = ${AssetFileType.Preview}
+        ))::int AS "withoutPreview",
+        count(*) FILTER (WHERE a.type = ${AssetType.Video})::int AS videos,
+        count(*) FILTER (WHERE a.type = ${AssetType.Video} AND EXISTS (
+          SELECT 1 FROM public.asset_file f WHERE f."assetId" = a.id AND f.type = ${AssetFileType.EncodedVideo}
+        ))::int AS "withCopy",
+        coalesce(sum(a.duration) FILTER (WHERE a.type = ${AssetType.Video}), 0)::float8 AS "videoMs",
+        coalesce(sum(a.duration) FILTER (WHERE a.type = ${AssetType.Video} AND EXISTS (
+          SELECT 1 FROM public.asset_file f WHERE f."assetId" = a.id AND f.type = ${AssetFileType.EncodedVideo}
+        )), 0)::float8 AS "copyMs",
+        (SELECT coalesce(sum(p."sizeInBytes"), 0)::float8 FROM public.physical_file p WHERE p.id IN (
+          SELECT f."physicalFileId" FROM public.asset_file f JOIN public.asset c ON c.id = f."assetId"
+          WHERE f.type = ${AssetFileType.EncodedVideo} AND c."deletedAt" IS NULL
+            AND c.visibility != ${AssetVisibility.Hidden}
+        )) AS "copyBytes",
+        (SELECT count(*) FROM public.asset_file f JOIN public.asset c ON c.id = f."assetId"
+          WHERE f.type = ${AssetFileType.EncodedVideo} AND c."deletedAt" IS NULL
+            AND c.visibility != ${AssetVisibility.Hidden} AND f."physicalFileId" IS NULL
+        )::int AS "unsizedCopies"
+      FROM public.asset a
+      WHERE a."deletedAt" IS NULL AND a.visibility != ${AssetVisibility.Hidden}
+        AND a.type IN (${AssetType.Image}, ${AssetType.Video})`.execute(this.db);
+    return rows[0];
   }
 
   @GenerateSql({ params: [DummyValue.DATE], stream: true })

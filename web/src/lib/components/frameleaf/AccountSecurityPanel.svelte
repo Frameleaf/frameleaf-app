@@ -24,11 +24,13 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import { canChangeSecrets } from '$lib/frameleaf/accounts';
   import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import { handleError } from '$lib/utils/handle-error';
   import {
     deleteUserSessionAdmin,
     getUserPinCodeStateAdmin,
+    sendUserPasswordLinkAdmin,
     type SessionResponseDto,
     type UserAdminResponseDto,
   } from '@frameleaf/sdk';
@@ -43,6 +45,28 @@
   // An administrator resets their own password in their account settings, not from here. The
   // server does not refuse it on this path, so this is a courtesy that matches the legacy action.
   const canResetPassword = $derived(live && authManager.user.id !== user.id);
+
+  // FL-538: a single-use link by email, so they choose their own password and you never see it
+  let sendingLink = $state(false);
+  const sendLink = async () => {
+    const confirmed = await confirmFrameleaf({
+      title: $t('frameleaf_users_password_link_title', { values: { name: user.name } }),
+      prompt: $t('frameleaf_users_password_link_confirm', { values: { name: user.name, email: user.email } }),
+      confirmText: $t('frameleaf_users_password_link_send'),
+    });
+    if (!confirmed) {
+      return;
+    }
+    sendingLink = true;
+    try {
+      await sendUserPasswordLinkAdmin({ id: user.id });
+      toastManager.primary($t('frameleaf_users_password_link_sent', { values: { email: user.email } }));
+    } catch (error) {
+      handleError(error, $t('frameleaf_users_password_link_failed'));
+    } finally {
+      sendingLink = false;
+    }
+  };
 
   /** Whether the account has a PIN; undefined until the server says (or when it could not). */
   let hasPin = $state<boolean | undefined>();
@@ -114,9 +138,16 @@
           : $t('frameleaf_users_password_no_change_required')}
       </small>
     </div>
-    <Button disabled={!canResetPassword} onclick={() => modalManager.show(AccountPasswordResetDialog, { user })}>
-      {$t('frameleaf_users_password_reset')}
-    </Button>
+    <span class="buttons">
+      {#if featureFlagsManager.value.email}
+        <Button disabled={!canResetPassword || sendingLink} onclick={sendLink}>
+          {$t('frameleaf_users_password_link')}
+        </Button>
+      {/if}
+      <Button disabled={!canResetPassword} onclick={() => modalManager.show(AccountPasswordResetDialog, { user })}>
+        {$t('frameleaf_users_password_reset')}
+      </Button>
+    </span>
   </div>
 
   <div class="row">
@@ -125,11 +156,15 @@
       <small aria-live="polite">
         {hasPin === undefined ? '' : hasPin ? $t('frameleaf_users_pin_is_set') : $t('frameleaf_users_pin_not_set')}
       </small>
+      {#if user.lockedEncryption}
+        <!-- FL-721: their Locked files are encrypted with the PIN, so the server refuses to clear or change it -->
+        <small>{$t('frameleaf_users_pin_locked_encryption', { values: { name: user.name } })}</small>
+      {/if}
     </div>
-    <Button disabled={!live} onclick={() => changePin('set')}>
+    <Button disabled={!live || user.lockedEncryption} onclick={() => changePin('set')}>
       {hasPin ? $t('frameleaf_users_pin_change') : $t('frameleaf_users_pin_set')}
     </Button>
-    <Button disabled={!live || hasPin === false} onclick={() => changePin('clear')}>
+    <Button disabled={!live || hasPin === false || user.lockedEncryption} onclick={() => changePin('clear')}>
       {$t('frameleaf_users_pin_reset')}
     </Button>
   </div>
@@ -189,6 +224,11 @@
   }
   .row strong {
     color: var(--fl-text);
+  }
+  .buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--fl-space-2);
   }
   .row small {
     font-size: var(--fl-font-small);

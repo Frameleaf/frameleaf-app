@@ -58,7 +58,7 @@ export const advanceJobProgress = (units: number) => {
   }
 };
 
-/** Observers run only after acceptance; reconnecting clients read durable state if delivery is lost. */
+/** Accepted callbacks run outside execution capacity, with separate bounded admission. */
 export const afterJobCommit = async (notify: () => Promise<void>) => {
   const context = queueExecution.getStore();
   if (context) {

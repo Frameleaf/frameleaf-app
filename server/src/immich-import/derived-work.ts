@@ -2,7 +2,7 @@ import { Kysely, sql } from 'kysely';
 import { v5 } from 'uuid';
 import { JobName } from 'src/enum.js';
 import { digest } from 'src/immich-import/adapters.js';
-import { assertMediaPolicy } from 'src/immich-import/media.js';
+import { assertMediaPolicy, managerImportAuthority } from 'src/immich-import/media.js';
 import { ImportConfig, ImportRefused } from 'src/immich-import/types.js';
 import { freezeSelection } from 'src/queue/manifest.js';
 import { QUEUE_BATCH, QueueIntent } from 'src/queue/types.js';
@@ -16,6 +16,16 @@ export const IMPORT_DERIVED_STAGES = [
   ['face-detection', JobName.AssetDetectFaces],
 ] as const;
 
+/** Every stage a derived run holds: the per-asset stages, people thumbnails and (FL-414) identical files. */
+export const IMPORT_DERIVED_RUN_STAGES = [
+  ...IMPORT_DERIVED_STAGES.map(([, stage]) => stage),
+  JobName.PersonGenerateThumbnail,
+  JobName.IdenticalFilesCheck,
+] as const;
+
+/** FL-414: the import's one identical-files item; the run itself covers the whole server. */
+export const IMPORT_IDENTICAL_FILES_ITEM = 'identical-files';
+
 /** The same verified journal must resolve the same run even after a lost commit acknowledgement. */
 export const importDerivedRunId = (sourceFingerprint: string, configFingerprint: string): string =>
   v5(JSON.stringify([IMPORT_DERIVED_RUN_KIND, sourceFingerprint, configFingerprint]), v5.URL);
@@ -27,21 +37,12 @@ export async function transferImportedWork(
   config?: ImportConfig,
 ): Promise<string> {
   const media = config?.media;
-  const managed = media?.mode === 'manager-in-place';
-  if (managed) {
-    if (!config) throw new ImportRefused('MANAGER_SETUP_CONFIG_REQUIRED');
-    assertMediaPolicy(config.mediaRoots, media);
-    if (
-      !/^[a-f0-9]{12}$/.test(media.deploymentId) ||
-      process.env.FRAMELEAF_MANAGER_ORIGIN !== 'new_import' ||
-      process.env.FRAMELEAF_MANAGER_INSTALLATION !== media.deploymentId ||
-      process.env.FRAMELEAF_IMPORT_MANAGER_OPERATION_ID !== media.operationId
-    ) {
-      throw new ImportRefused('MANAGER_SETUP_AUTHORITY_REQUIRED');
-    }
-  } else if (!config && process.env.FRAMELEAF_MANAGER_ORIGIN === 'new_import') {
+  if (!config && process.env.FRAMELEAF_MANAGER_ORIGIN === 'new_import')
     throw new ImportRefused('MANAGER_SETUP_CONFIG_REQUIRED');
-  }
+  const authority = managerImportAuthority(media);
+  const managed = !!authority;
+  if (config) assertMediaPolicy(config.mediaRoots, media);
+  if (media?.mode === 'manager-in-place' && !authority) throw new ImportRefused('MANAGER_SETUP_AUTHORITY_REQUIRED');
   const runId = await db.transaction().execute(async (tx) => {
     const {
       rows: [journal],
@@ -62,11 +63,13 @@ export async function transferImportedWork(
       selection: {
         source: string;
         config: string;
+        managerSetupRequired?: unknown;
         managerSetup?: {
           installation: string;
           operationId: string;
           preparedAt: string | null;
           startedAt: string | null;
+          paused?: boolean;
         };
       } | null;
     }>`select kind, selection from job_run where id = ${id}::uuid for update`.execute(tx);
@@ -80,11 +83,17 @@ export async function transferImportedWork(
     }
     const setup = existing?.selection?.managerSetup;
     if (
+      existing?.selection?.managerSetupRequired !== undefined &&
+      (existing.selection.managerSetupRequired !== true || !managed)
+    )
+      throw new ImportRefused('DERIVED_MANAGER_SETUP_IDENTITY_MISMATCH');
+    if (
       existing &&
       (managed
         ? !setup ||
-          setup.installation !== media.deploymentId ||
-          setup.operationId !== media.operationId ||
+          setup.installation !== authority.installation ||
+          setup.operationId !== authority.operationId ||
+          (setup.paused !== undefined && typeof setup.paused !== 'boolean') ||
           (setup.preparedAt !== null &&
             (typeof setup.preparedAt !== 'string' || !Number.isFinite(Date.parse(setup.preparedAt)))) ||
           (setup.startedAt !== null &&
@@ -103,9 +112,10 @@ export async function transferImportedWork(
         source: journal.source_fingerprint,
         config: journal.config_fingerprint,
         ...(managed && {
+          managerSetupRequired: true,
           managerSetup: {
-            installation: media.deploymentId,
-            operationId: media.operationId,
+            installation: authority.installation,
+            operationId: authority.operationId,
             preparedAt: null,
             startedAt: null,
           },
@@ -114,6 +124,10 @@ export async function transferImportedWork(
       await sql`insert into job_run(id, kind, selection) values (${id}::uuid, ${IMPORT_DERIVED_RUN_KIND},
         ${JSON.stringify(selection)}::text::jsonb)`.execute(tx);
     }
+    if (managed && existing && existing.selection?.managerSetupRequired === undefined)
+      await sql`update job_run set selection=selection || '{"managerSetupRequired":true}'::jsonb where id=${id}::uuid`.execute(
+        tx,
+      );
     return id;
   });
 
@@ -160,6 +174,24 @@ export async function transferImportedWork(
       and i.selection = ${JSON.stringify(personIntent.data)}::text::jsonb || p.data || jsonb_build_object('id', p.id)
   ) limit 1`.execute(db);
   if (missingPeople.length > 0) throw new ImportRefused('DERIVED_PERSON_WORK_MANIFEST_MISMATCH');
+
+  // FL-414: once the import is activated, the identical-files run (FL-413) reads every file again,
+  // stores identical files once, merges identical photos and recovers orphans into Recovered Media.
+  // One item for the whole server, frozen here like every stage, so the importer still changes no files.
+  const identicalIntent = intentFor(JobName.IdenticalFilesCheck);
+  identicalIntent.data = { ...identicalIntent.data, importRunId: runId };
+  await freezeSelection(
+    db,
+    identicalIntent,
+    db.selectNoFrom(sql<string>`${sql.lit(IMPORT_IDENTICAL_FILES_ITEM)}`.as('id')),
+    undefined,
+    runId,
+    readiness,
+  );
+  const { rows: identical } = await sql`select 1 from job_run_item i join job_selection s on s.id = i."selectionId"
+    where i."runId" = ${runId}::uuid and i.stage = ${identicalIntent.name} and s."capturedAt" is not null
+      and i."itemKey" = ${IMPORT_IDENTICAL_FILES_ITEM} limit 1`.execute(db);
+  if (identical.length === 0) throw new ImportRefused('DERIVED_IDENTICAL_FILES_MANIFEST_MISMATCH');
   await sql`analyze (skip_locked) job_run_item, job_selection, job_selection_run`.execute(db);
 
   const stageNames = sql.join(

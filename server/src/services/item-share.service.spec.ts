@@ -10,6 +10,7 @@ import {
   ItemShareService,
   SHARED_WITH_YOU_PATH,
 } from 'src/services/item-share.service.js';
+import { everyOwnersRules } from 'src/utils/hidden-content.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
@@ -149,6 +150,17 @@ describe(ItemShareService.name, () => {
       mocks.asset.getHiddenContentAssetIds.mockResolvedValue(new Set([a]));
       const suppressed = { ...auth, suppressedContent: { userId: owner.id } as never };
       await expect(sut.share(suppressed, { assetIds: [a, b], userIds: [jamie.id] })).rejects.toThrow(ITEM_SHARE_LOCKED);
+      expect(mocks.itemShare.add).not.toHaveBeenCalled();
+    });
+
+    it("refuses a Studio export of a source hidden by the owner's Locked rules (FL-447)", async () => {
+      const exported = newUuid();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([exported]));
+      mocks.asset.getLockedAssetIds.mockResolvedValue(new Set());
+      mocks.asset.getHiddenContentAssetIds.mockResolvedValue(new Set([exported]));
+
+      await expect(sut.share(auth, { assetIds: [exported], userIds: [jamie.id] })).rejects.toThrow(ITEM_SHARE_LOCKED);
+      expect(mocks.asset.getHiddenContentAssetIds).toHaveBeenCalledWith([exported], everyOwnersRules);
       expect(mocks.itemShare.add).not.toHaveBeenCalled();
     });
 

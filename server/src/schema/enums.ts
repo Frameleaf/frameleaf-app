@@ -1,5 +1,13 @@
 import { registerEnum } from '@frameleaf/sql-tools';
-import { AlbumUserRole, AssetStatus, AssetVisibility, ChecksumAlgorithm, SourceType, VideoCodec } from 'src/enum.js';
+import {
+  AlbumUserRole,
+  AssetStatus,
+  AssetVisibility,
+  ChecksumAlgorithm,
+  LibraryScope,
+  SourceType,
+  VideoCodec,
+} from 'src/enum.js';
 
 export const album_user_role_enum = registerEnum({
   name: 'album_user_role_enum',
@@ -30,3 +38,5 @@ export const video_stream_variant_codec_enum = registerEnum({
   name: 'video_stream_variant_codec_enum',
   values: [VideoCodec.Av1, VideoCodec.Hevc, VideoCodec.H264],
 });
+
+export const library_scope_enum = registerEnum({ name: 'library_scope_enum', values: Object.values(LibraryScope) });

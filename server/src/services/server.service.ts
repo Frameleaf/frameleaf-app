@@ -247,7 +247,7 @@ export class ServerService extends BaseService {
       notifications,
       ffmpeg,
       localFeatures,
-    } = await this.getConfig({ withCache: false });
+    } = await this.getConfig({ withCache: true });
     const { configFile } = this.configRepository.getEnv();
     const cloud = await this.frameleafCloudFlags();
 
@@ -344,10 +344,12 @@ export class ServerService extends BaseService {
   }
 
   async getSystemConfig(via: FrameleafVia | null = null): Promise<ServerConfigDto> {
-    const config = await this.getConfig({ withCache: false });
+    const config = await this.getConfig({ withCache: true });
     const isInitialized = !(await this.isSetupAvailable());
     // FL-176: the server counts as onboarded once Frameleaf first-run setup is complete.
     const setup = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafSetup);
+    // FL-402: the worker flags this while it re-imports the place data (MapRepository.init)
+    const geocoding = await this.systemMetadataRepository.get(SystemMetadataKey.ReverseGeocodingState);
     // FL-161: how this request arrived and what that asks of it, for the web app and the apps
     const deps = { configRepository: this.configRepository, systemMetadataRepository: this.systemMetadataRepository };
     const { link, linked } = await readCloudLink(deps);
@@ -364,11 +366,14 @@ export class ServerService extends BaseService {
       oauthAccountManagementUrl: config.oauth.accountManagementUrl,
       isInitialized,
       isOnboarded: setup?.completed === true,
+      // setup saves the new-server flow as soon as the administrator exists; an existing library has none yet
+      isNewServerSetup: setup?.completed !== true && setup?.flow === 'new',
       externalDomain: config.server.externalDomain,
       publicUsers: config.server.publicUsers,
       mapDarkStyleUrl: config.map.darkStyle,
       mapLightStyleUrl: config.map.lightStyle,
       maintenanceMode: false,
+      placesRestoring: geocoding?.restoring === true,
       defaultImageDescriptionRawPromptTemplate: DEFAULT_RAW_PROMPT_TEMPLATE,
       minFaces: config.machineLearning.facialRecognition.minFaces,
       frameleaf: {

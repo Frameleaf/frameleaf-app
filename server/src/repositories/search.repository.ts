@@ -24,7 +24,15 @@ import {
   SearchHistogramGranularity,
   SearchOrder,
 } from 'src/dtos/search.dto.js';
-import { AssetStatus, AssetType, AssetVisibility, ImageEnrichmentFilter, PetObservationState } from 'src/enum.js';
+import {
+  AssetStatus,
+  AssetType,
+  AssetVisibility,
+  ImageEnrichmentFilter,
+  LibraryScope,
+  LibraryViewScope,
+  PetObservationState,
+} from 'src/enum.js';
 import { deferJobAdoption } from 'src/queue/context.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
@@ -40,10 +48,12 @@ import {
   searchStatisticsV3Examples,
   tagIsSuppressed,
   tokenizeForSearch,
+  validLandmarkMatch,
   withExifInner,
   withHiddenContentFilter,
   withSearchOrder,
 } from 'src/utils/database.js';
+import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { isLocked, isTimelineVisible } from 'src/utils/locked.js';
 import { type PaginationOptions, paginationHelper } from 'src/utils/pagination.js';
 
@@ -191,12 +201,13 @@ export interface SearchLockedOwnerOptions {
 
 export type AssetSearchOptions = Omit<BaseAssetSearchOptions, 'visibility'> &
   SearchRelationOptions &
-  SearchLockedOwnerOptions & { visibility?: AssetVisibility | 'not-locked' };
+  SearchLockedOwnerOptions & { visibility?: AssetVisibility | 'not-locked'; libraryScope?: LibraryViewScope };
 
 export type AssetSearchBuilderOptions = Omit<AssetSearchOptions, 'orderDirection'>;
 
 export interface AssetSearchBuilderV3Options extends HiddenContentQueryOptions, SearchImageEnrichmentOptions {
   filter?: SearchFilter;
+  libraryScope?: LibraryViewScope;
   /** Server-derived ownership scope. Never client-controlled. */
   userIds?: string[];
   /** whose version of the people to select, required when selecting faces or people */
@@ -250,11 +261,16 @@ type SearchSuggestionPrivacyOptions = HiddenContentQueryOptions;
 // distance, without letting text-only matches dominate visual matches.
 const OCR_FUSION_WEIGHT = 0.15;
 const DESCRIPTION_FUSION_WEIGHT = 0.1;
-// Best-of-both retrieval: when an asset has a CLIP-text embedding of its
-// description, use the smaller of (visual cosine, description-text cosine).
-// This lets the VLM's understanding of an image surface matches the visual
-// encoder missed, without ever making the rank worse.
-const DESCRIPTION_EMBEDDING_WEIGHT = 0.5;
+// Description-embedding boost (FL-656). Query-to-description distances are
+// text-to-text CLIP distances, which sit on a much smaller scale than the
+// query-to-image distance (an unrelated description is ~0.58 away, a matching
+// photo ~0.85), so the two are never compared directly. Instead a description
+// closer than DESCRIPTION_MATCH_MAX_DISTANCE earns a bonus that grows linearly
+// to DESCRIPTION_MATCH_MAX_BONUS for an exact match. Unrelated descriptions
+// earn nothing, and a photo whose visual match is more than the cap better
+// always stays ahead of a described photo.
+export const DESCRIPTION_MATCH_MAX_DISTANCE = 0.45;
+export const DESCRIPTION_MATCH_MAX_BONUS = 0.1;
 
 export interface FaceEmbeddingSearch extends Omit<SearchEmbeddingOptions, 'userIds'> {
   clusterGroupId: string;
@@ -310,6 +326,8 @@ export interface SearchFacetOptions {
   /** a session that is not unlocked: these people and tags (with their descendants) are never named */
   suppressedPersonIds: string[];
   suppressedTagIds: string[];
+  /** FL-58: the pet twin of `suppressedPersonIds` */
+  suppressedPetIds: string[];
   /** also pick, per value, the newest matching asset by capture time (Explore's card covers) */
   covers?: boolean;
 }
@@ -338,6 +356,7 @@ const facetExample: SearchFacetOptions = {
   limit: 10,
   suppressedPersonIds: [DummyValue.UUID_1],
   suppressedTagIds: [DummyValue.UUID_1],
+  suppressedPetIds: [DummyValue.UUID_1],
   covers: true,
 };
 const legacySearchExample = { takenAfter: DummyValue.DATE, userIds: [DummyValue.UUID], lockedOwnerId: DummyValue.UUID };
@@ -506,11 +525,11 @@ export class SearchRepository {
   @GenerateSql({
     params: [
       {
-        userIds: [DummyValue.UUID],
+        clusterGroupId: DummyValue.UUID,
         embedding: DummyValue.VECTOR,
         numResults: 10,
         maxDistance: 0.6,
-      },
+      } satisfies FaceEmbeddingSearch,
     ],
   })
   searchFaces({ clusterGroupId, embedding, numResults, maxDistance, hasPerson, minBirthDate }: FaceEmbeddingSearch) {
@@ -535,6 +554,7 @@ export class SearchRepository {
               eb.selectFrom('user').select('user.id').where('user.clusterGroupId', '=', clusterGroupId),
             )
             .where('asset.deletedAt', 'is', null)
+            .where(libraryScopePredicate(LibraryScope.Personal))
             .$if(!!hasPerson, (qb) => qb.where('asset_face.personGroupId', 'is not', null))
             .$if(!!minBirthDate, (qb) =>
               qb.where((eb) =>
@@ -614,6 +634,7 @@ export class SearchRepository {
                 .on(isTimelineVisible('asset', options.revealLockedOwnerId))
                 .on('asset.deletedAt', 'is', null),
             )
+            .where(libraryScopePredicate(LibraryScope.Personal))
             .whereRef('pet_observation.petId', '=', 'pet.id')
             .where('pet_observation.state', '=', PetObservationState.Confirmed)
             .$call((qb) => withHiddenContentFilter(qb, options)),
@@ -634,6 +655,7 @@ export class SearchRepository {
           .innerJoin('asset', 'asset.id', 'asset_exif.assetId')
           .where('asset.ownerId', '=', anyUuid(userIds))
           .where(isTimelineVisible('asset', options.revealLockedOwnerId))
+          .where(libraryScopePredicate(LibraryScope.Personal))
           .where('asset.type', '=', AssetType.Image)
           .where('asset.deletedAt', 'is', null)
           .$call((qb) => withHiddenContentFilter(qb, options))
@@ -651,6 +673,7 @@ export class SearchRepository {
                 .innerJoin('asset', 'asset.id', 'asset_exif.assetId')
                 .where('asset.ownerId', '=', anyUuid(userIds))
                 .where(isTimelineVisible('asset', options.revealLockedOwnerId))
+                .where(libraryScopePredicate(LibraryScope.Personal))
                 .where('asset.type', '=', AssetType.Image)
                 .where('asset.deletedAt', 'is', null)
                 .$call((qb) => withHiddenContentFilter(qb, options))
@@ -691,6 +714,7 @@ export class SearchRepository {
       .select((eb) => ['asset_exif.city', eb.fn.countAll<number>().as('count')])
       .where('asset.ownerId', '=', anyUuid(userIds))
       .where(isTimelineVisible('asset', options.revealLockedOwnerId))
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .where('asset.deletedAt', 'is', null)
       .where('asset_exif.city', 'is not', null)
       .$call((qb) => withHiddenContentFilter(qb, options))
@@ -702,7 +726,8 @@ export class SearchRepository {
 
   /**
    * Landmarks the viewer has media at (FL-353), with the same owners and privacy rules as
-   * `getCityAssetCounts`. The place names are the most common among the items.
+   * `getCityAssetCounts`. Region names come only from recorded matches: a distant depiction must not
+   * move the landmark to the place the photo was taken.
    *
    * The cover is the best item taken there (FL-395), by the score the Best Photos list ranks by: scored
    * items first, a landscape one before a portrait one (it fronts a wide card), then the highest score, then
@@ -721,14 +746,16 @@ export class SearchRepository {
           .selectFrom('asset_landmark')
           .innerJoin('landmark', 'landmark.id', 'asset_landmark.landmarkId')
           .innerJoin('asset', 'asset.id', 'asset_landmark.assetId')
-          .select(['asset_landmark.assetId', 'asset_landmark.landmarkId'])
+          .where(validLandmarkMatch())
+          .select(['asset_landmark.assetId', 'asset_landmark.landmarkId', 'asset_landmark.inference'])
           .select(
-            sql<number>`row_number() over (partition by asset_landmark."assetId" order by ${mostSpecificLandmark})`.as(
+            sql<number>`row_number() over (partition by asset_landmark."assetId" order by asset_landmark.inference is not null, ${mostSpecificLandmark})`.as(
               'position',
             ),
           )
           .where('asset.ownerId', '=', anyUuid(userIds))
           .where(isTimelineVisible('asset', options.revealLockedOwnerId))
+          .where(libraryScopePredicate(LibraryScope.Personal))
           .where('asset.deletedAt', 'is', null)
           .$call((qb) => withHiddenContentFilter(qb, options)),
       )
@@ -750,9 +777,15 @@ export class SearchRepository {
         eb.fn.min('asset.localDateTime').as('firstTakenAt'),
         eb.fn.max('asset.localDateTime').as('lastTakenAt'),
         sql<string>`(array_agg(asset.id order by ${bestCover}))[1]`.as('coverAssetId'),
-        sql<string | null>`mode() within group (order by asset_exif.city)`.as('city'),
-        sql<string | null>`mode() within group (order by asset_exif.state)`.as('state'),
-        sql<string | null>`mode() within group (order by asset_exif.country)`.as('country'),
+        sql<string | null>`mode() within group (order by asset_exif.city) filter (where matched.inference is null)`.as(
+          'city',
+        ),
+        sql<string | null>`mode() within group (order by asset_exif.state) filter (where matched.inference is null)`.as(
+          'state',
+        ),
+        sql<
+          string | null
+        >`mode() within group (order by asset_exif.country) filter (where matched.inference is null)`.as('country'),
       ])
       .groupBy('landmark.id')
       .having(sql<boolean>`bool_or(matched.position = 1) or landmark."radiusM" > ${LANDMARK_WIDE_RADIUS_M}`)
@@ -761,16 +794,20 @@ export class SearchRepository {
       .execute();
   }
 
-  /** The landmarks one asset was taken at, the best label for it first. */
+  /** Recorded locations first, then labelled inferences about nearby photos or the scene. */
   @GenerateSql({ params: [DummyValue.UUID] })
-  getAssetLandmarks(assetId: string) {
-    return this.db
+  async getAssetLandmarks(assetId: string) {
+    const rows = await this.db
       .selectFrom('asset_landmark')
       .innerJoin('landmark', 'landmark.id', 'asset_landmark.landmarkId')
-      .select(['landmark.id', 'landmark.name', 'landmark.kind'])
+      .innerJoin('asset', 'asset.id', 'asset_landmark.assetId')
+      .select(['landmark.id', 'landmark.name', 'landmark.kind', 'asset_landmark.inference'])
       .where('asset_landmark.assetId', '=', assetId)
+      .where(validLandmarkMatch())
+      .orderBy(sql`asset_landmark.inference is not null`)
       .orderBy(mostSpecificLandmark)
       .execute();
+    return rows.map(({ inference, ...landmark }) => ({ ...landmark, ...(inference && { inference }) }));
   }
 
   async upsert(assetId: string, value: ClipEmbedding): Promise<void> {
@@ -1140,6 +1177,17 @@ export class SearchRepository {
           where ${options.suppressedTagIds.length > 0 ? sql`not ${tagIsSuppressed(sql.ref('t.id'), options.suppressedTagIds)}` : sql`true`}
           group by t.id`,
       ],
+      [
+        SearchFacetField.Pets,
+        // FL-58: the viewer's confirmed observations of their own pets, exactly as the petIds filter matches
+        sql`select ${SearchFacetField.Pets}::text as field, pet.id::text as value,
+            max(nullif(pet.name, '')) as label, count(distinct m.id) as count, ${cover} as cover
+          from matched m
+          inner join pet_observation po on po."assetId" = m.id and po.state = ${PetObservationState.Confirmed}
+          inner join pet on pet.id = po."petId" and pet."ownerId" = ${viewer} and not pet."isHidden"
+          where ${options.suppressedPetIds.length > 0 ? sql`not (pet.id = ${anyUuid(options.suppressedPetIds)})` : sql`true`}
+          group by pet.id`,
+      ],
     ];
 
     const selected = parts.filter(([field]) => wanted.has(field)).map(([, query]) => query);
@@ -1182,16 +1230,19 @@ export class SearchRepository {
     // <=> returns [0, 2]; (1 - <->>>) returns [0, 1] when the sidecar row
     // exists, NULL otherwise.
     const visualDistance = sql`(smart_search.embedding <=> ${options.embedding})`;
-    // Visual distance vs. (description-text embedding distance scaled toward
-    // visual). Take the smaller, so a strong description match can rescue
-    // a weak visual one, but never penalizes the rank. NULL distance (no
-    // description embedding yet) drops out of the LEAST.
-    const blendedClipDistance = sql`least(
-      ${visualDistance},
-      coalesce(
-        ${DESCRIPTION_EMBEDDING_WEIGHT} * (select embedding <=> ${options.embedding} from smart_search_description where "assetId" = asset.id),
-        ${visualDistance}
-      )
+    // Visual distance minus a capped bonus for a close description match (see
+    // DESCRIPTION_MATCH_MAX_DISTANCE). No description embedding yet means no
+    // bonus.
+    const blendedClipDistance = sql`(
+      ${visualDistance}
+      - ${DESCRIPTION_MATCH_MAX_BONUS / DESCRIPTION_MATCH_MAX_DISTANCE} * coalesce(
+          greatest(
+            0,
+            ${DESCRIPTION_MATCH_MAX_DISTANCE}
+              - (select embedding <=> ${options.embedding} from smart_search_description where "assetId" = asset.id)
+          ),
+          0
+        )
     )`;
     const orderExpr = fusionText
       ? sql`
@@ -1221,6 +1272,7 @@ export class SearchRepository {
       .innerJoin('asset', 'asset.id', 'asset_exif.assetId')
       .where('ownerId', '=', anyUuid(userIds))
       .where(isTimelineVisible('asset', options.revealLockedOwnerId))
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .where('deletedAt', 'is', null)
       .$call((qb) => withHiddenContentFilter(qb, options))
       .where(field, 'is not', null)

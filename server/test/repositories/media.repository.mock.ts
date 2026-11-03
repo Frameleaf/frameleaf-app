@@ -27,6 +27,7 @@ export const newMediaRepositoryMock = (): Mocked<RepositoryInterface<MediaReposi
     removeLocation: vitest.fn().mockResolvedValue(true),
     copyTagGroup: vitest.fn().mockImplementation(() => Promise.resolve()),
     generateThumbhash: vitest.fn().mockResolvedValue(Buffer.from('')),
+    extractAssetPalette: vitest.fn().mockResolvedValue({ swatches: [], hasTransparency: false }),
     decodeImage: vitest.fn().mockResolvedValue({ data: Buffer.from(''), info: {} }),
     extract: vitest.fn().mockResolvedValue(null),
     probe: vitest.fn(),
@@ -46,6 +47,7 @@ export const newMediaRepositoryMock = (): Mocked<RepositoryInterface<MediaReposi
     scoreThumbnailCandidate: vitest.fn().mockResolvedValue(0),
     composeImageGrid: vitest.fn().mockImplementation(() => Promise.resolve()),
     composeFilmstrip: vitest.fn().mockImplementation(() => Promise.resolve()),
+    filmstripFrameGrids: vitest.fn().mockResolvedValue([]),
     writeCloudUpload: vitest.fn().mockImplementation(() => Promise.resolve()),
     writeStrippedStill: vitest.fn().mockImplementation(() => Promise.resolve()),
     renderDevelopGeometry: vitest

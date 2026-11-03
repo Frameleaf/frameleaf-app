@@ -139,7 +139,7 @@
       {/if}
     {/if}
     <Row label={$t('frameleaf_intel_locked_what_hides')} help={$t('frameleaf_intel_locked_what_hides_help')}>
-      <Button onclick={() => goto(commandCenterUrl('security', 'suppressed-content'))}>
+      <Button onclick={() => goto(commandCenterUrl('privacy', 'suppressed-content'))}>
         {$t('frameleaf_intel_locked_open_locked')}
       </Button>
     </Row>

@@ -51,6 +51,18 @@ const undoDeleteAssets = async (onUndoDelete: OnUndoDelete, assets: TimelineAsse
 };
 
 /**
+ * Calendar pages and flat orders take their counts, page boundaries and a stack's hidden members from
+ * the server, so a stack change there reads the timeline again (once) instead of patching it.
+ */
+const refreshedForStackChange = (timelineManager: TimelineManager) => {
+  if (!timelineManager.calendarPaged && !timelineManager.ordered) {
+    return false;
+  }
+  void timelineManager.refresh();
+  return true;
+};
+
+/**
  * Update the asset stack state in the asset store based on the provided stack response.
  * This function updates the stack information so that the icon is shown for the primary asset
  * and removes any assets from the timeline that are marked for deletion.
@@ -59,7 +71,7 @@ const undoDeleteAssets = async (onUndoDelete: OnUndoDelete, assets: TimelineAsse
  * @param {StackResponse} stackResponse - The stack response containing the stack and assets to delete.
  */
 export function updateStackedAssetInTimeline(timelineManager: TimelineManager, { stack, toDeleteIds }: StackResponse) {
-  if (stack === undefined) {
+  if (stack === undefined || refreshedForStackChange(timelineManager)) {
     return;
   }
 
@@ -85,6 +97,9 @@ export function updateStackedAssetInTimeline(timelineManager: TimelineManager, {
  * @param assets - The array of asset response DTOs to update in the timeline manager.
  */
 export function updateUnstackedAssetInTimeline(timelineManager: TimelineManager, assets: TimelineAsset[]) {
+  if (refreshedForStackChange(timelineManager)) {
+    return;
+  }
   timelineManager.update(
     assets.map((asset) => asset.id),
     (asset) => {

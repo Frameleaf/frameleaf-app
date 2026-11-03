@@ -46,7 +46,7 @@ Frameleaf requires [**Docker**](https://docs.docker.com/get-started/get-docker/)
 - **Docker Engine**: This CLI variant is designed for Linux servers (or Windows via WSL2).
 - **Docker Desktop**: This GUI variant is **not recommended** for Linux, but is available for Windows or macOS.
 
-The Compose plugin will be installed by both Docker Engine and Desktop by following the linked installation guides; it can also be [separately installed](https://docs.docker.com/compose/install/).
+The Compose plugin will be installed by both Docker Engine and Desktop by following the linked installation guides; it can also be [separately installed](https://docs.docker.com/compose/install/). Use Docker Compose 2.24.4 or later: the Compose files load the optional `.env.ml` file, and the `docker-compose.ml-isolated.yml` overlay uses the `!override` tag, which older versions cannot read.
 
 :::note
 Frameleaf requires the command `docker compose`; the similarly named `docker-compose` is [deprecated](https://docs.docker.com/retired/#docker-compose-v1-replaced-by-compose-v2) and is no longer supported by Frameleaf.
@@ -74,7 +74,7 @@ Add the following line to the bottom of `docker-compose.yml`:
 ```diff
 volumes:
   model-cache:
-+ pgdata:
++  pgdata:
 ```
 
 </details>

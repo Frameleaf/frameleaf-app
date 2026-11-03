@@ -17,7 +17,7 @@ import {
 import { UserResponseDto, mapUser } from 'src/dtos/user.dto.js';
 import { AssetVisibility } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
-import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { everyOwnersRules, getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { resolveShareBaseUrl } from 'src/utils/public-url.js';
 
 /** Where a recipient opens what was shared with them: the Sharing page's "Shared with you" section. */
@@ -34,7 +34,7 @@ export const ITEM_SHARE_HIDDEN = 'Hidden items cannot be shared. Unhide them fir
  *
  * - Only the owner shares an item, and only with other people who have an account here. It is not
  *   partner sharing: nothing but the chosen items is reachable, and nothing leaves the server.
- * - Locked items are never shared (the prototype refuses "Unmark Sensitive before sharing this
+ * - Locked items are never shared (the prototype refuses "Unlock before sharing this
  *   item"): a share naming an item that is locked, or hidden by one of the owner's Locked rules, is
  *   refused as a whole. An item locked after it was shared disappears for the recipient, from their
  *   list and from every read, until it is unlocked (`ItemShareRepository`, `checkItemShareAccess`).
@@ -202,9 +202,11 @@ export class ItemShareService extends BaseService {
       throw new BadRequestException(ITEM_SHARE_HIDDEN);
     }
     const locked = await repository.getLockedAssetIds(assetIds);
-    const suppressed = auth.suppressedContent
-      ? await repository.getHiddenContentAssetIds(assetIds, { hiddenContent: auth.suppressedContent })
-      : new Set<string>();
+    // FL-447: `everyOwnersRules` also refuses a Studio export made from a source the rules hide
+    const suppressed = await repository.getHiddenContentAssetIds(assetIds, {
+      hiddenContent: auth.suppressedContent,
+      ...everyOwnersRules,
+    });
     if (locked.size > 0 || suppressed.size > 0) {
       throw new BadRequestException(ITEM_SHARE_LOCKED);
     }

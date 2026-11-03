@@ -352,10 +352,11 @@ describe(SearchService.name, () => {
 
     const repository = ctx.get(AssetRepository);
     const hydrate = repository.getByIdsWithAllRelationsButStacks.bind(repository);
-    let hydration = 0;
     let protectedId = '';
+    // the two sections hydrate side by side, in no fixed order: the city section's call carries its one
+    // cover, the recent section's all five
     const intercept = vi.spyOn(repository, 'getByIdsWithAllRelationsButStacks').mockImplementation(async (...args) => {
-      if (++hydration === (fieldName === 'exifInfo.city' ? 1 : 2)) {
+      if (!protectedId && args[0].length === (fieldName === 'exifInfo.city' ? 1 : 5)) {
         protectedId = args[0][0];
         expect(protectedId).toBeDefined();
         if (privacy === 'Locked') {

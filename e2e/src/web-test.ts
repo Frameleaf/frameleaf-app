@@ -57,11 +57,25 @@ export const withAssetReadySetup =
       testInfo.timeout > 0
         ? setTimeout(() => controller.abort(new Error('Asset setup exceeded its hook deadline')), testInfo.timeout)
         : undefined;
+    let failed = false;
+    let primary: unknown;
     try {
       await setup(controller.signal);
-    } finally {
-      clearTimeout(timer);
-      controller.abort();
+    } catch (error) {
+      failed = true;
+      primary = error;
+    }
+    clearTimeout(timer);
+    controller.abort();
+    try {
       await utils.settlePendingWaits(controller.signal);
+    } catch (error) {
+      if (failed) {
+        throw new AggregateError([primary, error], 'Asset setup and its cleanup failed', { cause: error });
+      }
+      throw error;
+    }
+    if (failed) {
+      throw primary;
     }
   };

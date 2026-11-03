@@ -130,3 +130,18 @@ it('retains curated labels and derives searchable words for other catalogue name
   expect(searchCatalogue(entries, 'ALBUM photo')).toEqual([entries[2]]);
   expect(searchCatalogue(entries, 'outline camera')).toEqual([]);
 });
+
+it('ranks whole words and prefixes before matches inside a word, and finds icons by keyword (LIB-04)', () => {
+  const entries = buildCatalogueEntries({
+    version: '7.4.47',
+    names: ['mdiSnowflake', 'mdiSnowflakeAlert', 'mdiWaves', 'mdiSailBoat', 'mdiWater', 'mdiWaterfall', 'mdiDrone'],
+    suggested: [],
+  });
+  const names = (query: string) => searchCatalogue(entries, query).map(({ name }) => name);
+
+  // "lake" is a keyword of the water icons; snowflakes only contain it inside a word, so they come last.
+  expect(names('lake').slice(0, 3)).toEqual(['mdiWaves', 'mdiSailBoat', 'mdiWater']);
+  expect(names('lake').slice(-2)).toEqual(['mdiSnowflake', 'mdiSnowflakeAlert']);
+  // Whole word, then prefix ("waterfall"), and nothing that does not match.
+  expect(names('water')).toEqual(['mdiWaves', 'mdiWater', 'mdiWaterfall']);
+});

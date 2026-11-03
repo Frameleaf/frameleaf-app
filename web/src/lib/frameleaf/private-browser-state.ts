@@ -19,6 +19,9 @@ export const DEVICE_PREFERENCE_KEYS: ReadonlySet<string> = new Set([
   'frameleaf-work-filenames',
   'frameleaf.rail.closedSections',
   'frameleaf.search.advanced',
+  // when a tab of this browser was last unlocked (session-privacy-guard): a time, naming no content,
+  // that must survive the clear a lock does so tabs loading during the lock still revalidate
+  'frameleaf:session:elevated-until',
 ]);
 
 const AUTH_PREFIX = 'frameleaf.auth.';

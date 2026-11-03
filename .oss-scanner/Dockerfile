@@ -4,9 +4,9 @@
 # this file, says how to exercise the result.
 # ponytail: the production native base (libvips/libheif/ffmpeg/darktable built from source in
 # server/Dockerfile) and the Studio engine are not rebuilt here; the unit suites mock them.
-FROM ghcr.io/astral-sh/uv:0.13.0@sha256:cdc6093146eb3ff6a40107b38f008b789e050e77ad87865e381d9917da55a168 AS uv
+FROM ghcr.io/astral-sh/uv:0.13.4@sha256:9f130421e930bfbdc563c00740466603f8723158e90297d07957c2294640262b AS uv
 
-FROM node:26.11.1-trixie
+FROM node:22.23.4-trixie
 ENV DEBIAN_FRONTEND=noninteractive \
     CI=1 \
     COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
@@ -14,6 +14,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     UV_PYTHON_INSTALL_DIR=/opt/uv-python
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates git build-essential python3 ffmpeg exiftool \
+    && test ! -e /etc/ssl/certs/emSign_ECC_Root_CA_-_G3.pem \
+    && test ! -e /etc/ssl/certs/Comodo_AAA_Services_root.pem \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=uv /uv /uvx /usr/local/bin/
 

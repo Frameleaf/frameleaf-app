@@ -6,6 +6,7 @@ import {
   AssetVisibility,
   SyncEntityType,
   SyncRequestType,
+  UserMetadataKey,
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
@@ -434,3 +435,30 @@ it.each(['locked', 'outside', 'sensitive'] as const)(
     expect(JSON.stringify(prepared.data)).not.toContain(asset.id);
   },
 );
+
+it("leaves items matching their owner's Locked rules out of linked counts and covers (FL-446)", async () => {
+  const { ctx, owner, member, target, asset } = await setup();
+  const { tag } = await ctx.newTag({ userId: owner.user.id, value: 'Private' });
+  await ctx.newTagAsset({ tagIds: [tag.id], assetIds: [asset.id] });
+  await db
+    .insertInto('user_metadata')
+    .values({
+      userId: owner.user.id,
+      key: UserMetadataKey.Preferences,
+      value: { privacy: { suppression: { tagIds: [tag.id] } } },
+    } as never)
+    .execute();
+
+  const rows = events(await ctx.syncStream(member.auth, types));
+
+  expect(rows).toEqual([
+    expect.objectContaining({
+      type: SyncEntityType.SharedSpaceAlbumV1,
+      data: expect.objectContaining({ albumId: target.id, assetCount: 0, thumbnailAssetId: null }),
+    }),
+    expect.objectContaining({
+      type: SyncEntityType.SharedSpacePersonV1,
+      data: expect.objectContaining({ assetCount: 0 }),
+    }),
+  ]);
+});

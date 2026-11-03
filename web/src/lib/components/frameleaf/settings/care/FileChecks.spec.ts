@@ -1,6 +1,14 @@
-import { IntegrityReport, type AdminConfigDto } from '@frameleaf/sdk';
+import {
+  IntegrityCheckOutcome,
+  IntegrityFindingKind,
+  IntegrityReport,
+  IntegrityUnreachableFolderKind,
+  type AdminConfigDto,
+  type IntegrityOverviewResponseDto,
+} from '@frameleaf/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
+import { goto } from '$app/navigation';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { SystemConfigDraftStore } from '$lib/frameleaf/system-config-draft.svelte';
 import en from '../../../../../../../i18n/en.json';
@@ -51,10 +59,8 @@ const newStore = () => {
 };
 
 const idle = {
-  integrityCheck: {
-    jobCounts: { active: 0, waiting: 0, delayed: 0, paused: 0, completed: 0, failed: 0 },
-    queueStatus: { isActive: false, isPaused: false },
-  },
+  hasUnfinishedWork: false,
+  statistics: { active: 0, waiting: 0, delayed: 0, paused: 0, completed: 0, failed: 0 },
 } as never;
 
 const counts = (missing = 0, damaged = 0, stray = 0) => ({
@@ -65,8 +71,21 @@ const counts = (missing = 0, damaged = 0, stray = 0) => ({
 const ran = '2026-10-14T09:40:00.000Z';
 const paths = (type: IntegrityReport, list: string[]) =>
   sdkMock.getIntegrityReport.mockImplementation(({ $type }) =>
-    Promise.resolve({ items: $type === type ? list.map((path, index) => ({ id: `f${index}`, path, type })) : [] }),
+    Promise.resolve({
+      items: $type === type ? list.map((path, index) => ({ id: `f${index}`, path, type, originalFileName: null })) : [],
+    }),
   );
+
+const overview = (value: Partial<IntegrityOverviewResponseDto> = {}): IntegrityOverviewResponseDto => ({
+  missing: 0,
+  damaged: 0,
+  stray: 0,
+  rawToMatch: 0,
+  unreachable: [],
+  running: [],
+  history: [],
+  ...value,
+});
 
 const hero = () => within(screen.getByRole('region', { name: 'File check status' }));
 
@@ -81,7 +100,8 @@ describe('File checks (FL-366)', () => {
     sdkMock.getIntegrityCheckRuns.mockResolvedValue({ missing_file: ran, checksum_mismatch: ran, untracked_file: ran });
     sdkMock.getIntegrityReport.mockResolvedValue({ items: [] });
     sdkMock.getSummary.mockResolvedValue({ recoveryAvailable: false } as never);
-    sdkMock.getQueuesLegacy.mockResolvedValue(idle);
+    sdkMock.getQueue.mockResolvedValue(idle);
+    sdkMock.getIntegrityOverview.mockResolvedValue(overview());
     confirmFrameleaf.mockResolvedValue(false);
   });
 
@@ -143,12 +163,20 @@ describe('File checks (FL-366)', () => {
     expect(screen.getByRole('button', { name: 'Delete these 2 files from the drive…' })).toBeInTheDocument();
   });
 
-  it('reads many missing files in one folder as a drive that is unplugged', async () => {
-    const folder = '/photos/library/taylor/2024/';
+  it('says a drive is unplugged when the server cannot reach the folder the missing files are in (FL-520)', async () => {
     sdkMock.getIntegrityReportSummary.mockResolvedValue(counts(12));
-    paths(
-      IntegrityReport.MissingFile,
-      Array.from({ length: 12 }, (_, index) => `${folder}IMG_${index}.JPG`),
+    sdkMock.getIntegrityOverview.mockResolvedValue(
+      overview({
+        missing: 12,
+        unreachable: [
+          {
+            kind: IntegrityUnreachableFolderKind.Library,
+            name: 'Taylor’s 2024 photos',
+            path: '/mnt/2024',
+            missing: 12,
+          },
+        ],
+      }),
     );
     newStore();
     render(FileChecks, { pollMs: 60_000 });
@@ -157,6 +185,159 @@ describe('File checks (FL-366)', () => {
     expect(hero().getByText(/Nothing has been removed from your library/)).toBeInTheDocument();
     expect(screen.getByText('Check the drive before anything else')).toBeInTheDocument();
     expect(screen.getByText('Folder can’t be reached')).toBeInTheDocument();
+    expect(screen.getAllByText(/Taylor’s 2024 photos/).length).toBeGreaterThan(0);
+  });
+
+  it('no longer guesses an unplugged drive from many missing files in one folder (FL-520)', async () => {
+    const folder = '/photos/library/taylor/2024/';
+    sdkMock.getIntegrityReportSummary.mockResolvedValue(counts(12));
+    paths(
+      IntegrityReport.MissingFile,
+      Array.from({ length: 3 }, (_, index) => `${folder}IMG_${index}.JPG`),
+    );
+    newStore();
+    render(FileChecks, { pollMs: 60_000 });
+
+    expect(await hero().findByRole('heading', { name: '12 files need attention' })).toBeInTheDocument();
+    expect(screen.queryByText('Check the drive before anything else')).not.toBeInTheDocument();
+  });
+
+  it('offers a restore from a backup for missing files, and says how many are RAW files to match (FL-520)', async () => {
+    sdkMock.getIntegrityReportSummary.mockResolvedValue(counts(2));
+    sdkMock.getIntegrityOverview.mockResolvedValue(overview({ missing: 2, rawToMatch: 1 }));
+    paths(IntegrityReport.MissingFile, ['/a/IMG_1.CR2', '/a/IMG_2.JPG']);
+    newStore();
+    render(FileChecks, { pollMs: 60_000 });
+
+    expect(await screen.findByText(/1 of them is a RAW file/)).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Restore from a backup' }));
+    expect(goto).toHaveBeenCalledWith(expect.stringContaining('area=backups&section=restore&files=missing'));
+  });
+
+  it('names a photo by the file name it came with, and a stray file by its path (FL-737)', async () => {
+    sdkMock.getIntegrityReportSummary.mockResolvedValue(counts(1, 0, 1));
+    sdkMock.getIntegrityReport.mockImplementation(({ $type }) =>
+      Promise.resolve({
+        items:
+          $type === IntegrityReport.MissingFile
+            ? [{ id: 'm', type: $type, path: '/data/upload/u/0b/fb/0bfb7144.jpg', originalFileName: 'beach-1.jpg' }]
+            : $type === IntegrityReport.UntrackedFile
+              ? [{ id: 's', type: $type, path: '/data/upload/u/ab/cd/extra.jpg', originalFileName: null }]
+              : [],
+      }),
+    );
+    newStore();
+    render(FileChecks, { pollMs: 60_000 });
+
+    expect(await screen.findByText('beach-1.jpg')).toBeInTheDocument();
+    expect(screen.queryByText('0bfb7144.jpg')).not.toBeInTheDocument();
+    expect(screen.queryByText('/data/upload/u/0b/fb/')).not.toBeInTheDocument();
+    expect(screen.getByText('extra.jpg')).toBeInTheDocument();
+    expect(screen.getByText('/data/upload/u/ab/cd/')).toBeInTheDocument();
+  });
+
+  it('opens Missing files and Damaged files scanning just the photos these checks found (FL-737)', async () => {
+    sdkMock.getIntegrityReportSummary.mockResolvedValue(counts(1, 1));
+    sdkMock.getSummary.mockResolvedValue({ recoveryAvailable: true } as never);
+    sdkMock.getIntegrityFindingAssets.mockImplementation(({ kind }) =>
+      Promise.resolve({ assetIds: [kind === IntegrityFindingKind.Missing ? 'a-missing' : 'a-damaged'] }),
+    );
+    sdkMock.startMissingAssetScan.mockResolvedValue({ runId: 'r', operationId: 'o' });
+    sdkMock.startCorruptAssetScan.mockResolvedValue({ runId: 'r', operationId: 'o' });
+    newStore();
+    render(FileChecks, { pollMs: 60_000 });
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Find it again' }));
+    await vi.waitFor(() => expect(goto).toHaveBeenCalledWith(expect.stringContaining('section=missing-media')));
+    expect(sdkMock.startMissingAssetScan).toHaveBeenCalledWith({ mediaHealthScanDto: { assetIds: ['a-missing'] } });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Look for a good copy' }));
+    await vi.waitFor(() => expect(goto).toHaveBeenCalledWith(expect.stringContaining('section=corrupt-media')));
+    expect(sdkMock.startCorruptAssetScan).toHaveBeenCalledWith({ mediaHealthScanDto: { assetIds: ['a-damaged'] } });
+  });
+
+  it('still opens the tool when its scan cannot start (FL-737)', async () => {
+    sdkMock.getIntegrityReportSummary.mockResolvedValue(counts(1));
+    sdkMock.getIntegrityFindingAssets.mockResolvedValue({ assetIds: ['a'] });
+    sdkMock.startMissingAssetScan.mockRejectedValue(new Error('409'));
+    newStore();
+    render(FileChecks, { pollMs: 60_000 });
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Find it again' }));
+    await vi.waitFor(() => expect(goto).toHaveBeenCalledWith(expect.stringContaining('section=missing-media')));
+  });
+
+  it('shows a running check’s progress and stops it, keeping what was found (FL-520)', async () => {
+    sdkMock.getQueue.mockResolvedValue({
+      hasUnfinishedWork: true,
+      statistics: { active: 1, waiting: 0, delayed: 0, paused: 0, completed: 0, failed: 0 },
+    } as never);
+    const running = overview({
+      running: [{ type: IntegrityReport.ChecksumMismatch, startedAt: ran, done: 37, total: 100 }],
+      history: [
+        {
+          type: IntegrityReport.MissingFile,
+          startedAt: ran,
+          finishedAt: '2026-10-14T09:44:00.000Z',
+          outcome: IntegrityCheckOutcome.Completed,
+          found: 0,
+          checked: null,
+        },
+      ],
+    });
+    sdkMock.getIntegrityOverview.mockResolvedValue(running);
+    sdkMock.stopIntegrityChecks.mockResolvedValue(overview());
+    newStore();
+    render(FileChecks, { pollMs: 10 });
+
+    expect(await hero().findByRole('heading', { name: 'Checking your files now' })).toBeInTheDocument();
+    expect(await hero().findByText('Reading files now · 37%')).toBeInTheDocument();
+    expect(hero().getByText('Finished')).toBeInTheDocument();
+
+    await fireEvent.click(hero().getByRole('button', { name: 'Stop' }));
+    expect(sdkMock.stopIntegrityChecks).toHaveBeenCalled();
+    expect(sdkMock.clearIntegrityReports).not.toHaveBeenCalled();
+  });
+
+  it('lists recent checks with what each found (FL-520)', async () => {
+    sdkMock.getIntegrityOverview.mockResolvedValue(
+      overview({
+        history: [
+          {
+            type: IntegrityReport.ChecksumMismatch,
+            startedAt: '2026-10-14T09:00:00.000Z',
+            finishedAt: '2026-10-14T09:18:00.000Z',
+            outcome: IntegrityCheckOutcome.Paused,
+            found: 1,
+            checked: 4210,
+          },
+          {
+            type: IntegrityReport.MissingFile,
+            startedAt: '2026-10-14T08:50:00.000Z',
+            finishedAt: '2026-10-14T08:54:00.000Z',
+            outcome: IntegrityCheckOutcome.Stopped,
+            found: 0,
+            checked: null,
+          },
+          {
+            type: IntegrityReport.MissingFile,
+            startedAt: '2026-10-14T08:40:00.000Z',
+            finishedAt: '2026-10-14T08:40:02.000Z',
+            outcome: IntegrityCheckOutcome.Completed,
+            found: 0,
+            checked: 1200,
+          },
+        ],
+      }),
+    );
+    newStore();
+    render(FileChecks, { pollMs: 60_000 });
+
+    expect(await screen.findByText(/4,210 files read · took 18 minutes · carries on next night/)).toBeInTheDocument();
+    expect(screen.getByText('1 found')).toBeInTheDocument();
+    expect(screen.getByText('Stopped before it finished')).toBeInTheDocument();
+    // a two-second check reads in seconds, not "took 1 minute"
+    expect(screen.getByText('1,200 files read · took 2 seconds')).toBeInTheDocument();
   });
 
   it('one switch per check writes every setting that check is made of', async () => {
@@ -191,15 +372,8 @@ describe('File checks (FL-366)', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Half' }));
     expect(store.draft.integrityChecks.checksumFiles.percentageLimit).toBe(0.5);
 
-    const start = screen.getByRole('combobox', { name: 'Damaged files check starts at' });
-    expect(start).toHaveValue('03:00');
-    await fireEvent.change(start, { target: { value: '04:00' } });
-    expect(store.draft.integrityChecks.checksumFiles.cronExpression).toBe('0 4 * * *');
-
-    await fireEvent.change(screen.getByRole('combobox', { name: 'File health scan starts at' }), {
-      target: { value: '01:00' },
-    });
-    expect(store.draft.libraryCare?.healthScanCronExpression).toBe('0 1 * * *');
+    // FL-363: the overnight schedule decides when the checks run, so no start time is offered here
+    expect(screen.queryByRole('combobox', { name: 'Damaged files check starts at' })).not.toBeInTheDocument();
     // no expression is ever shown
     expect(screen.queryByText(/\* \* \*/)).not.toBeInTheDocument();
   });

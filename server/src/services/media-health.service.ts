@@ -33,6 +33,7 @@ import {
   MediaHealthRootResponse,
   MediaHealthRootsResponseDto,
   MediaHealthRunResponseDto,
+  MediaHealthScanDto,
   MediaHealthScanResponseDto,
   MediaHealthSummaryQueryDto,
   MediaHealthSummaryResponseDto,
@@ -86,6 +87,7 @@ import { getConfig } from 'src/utils/config.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { isLockedPath } from 'src/utils/locked-read.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import {
   MediaHealthOperationSnapshot,
@@ -289,7 +291,8 @@ export class MediaHealthService {
       name: LIBRARY_CARE_HEALTH_SCAN_CRON,
       expression: libraryCare.healthScanCronExpression,
       onTick: () => handlePromiseError(this.startScheduledScans(), this.logger),
-      start: libraryCare.healthScan,
+      // FL-363: the overnight schedule's "Check files" step starts the health scans
+      start: false,
     });
   }
 
@@ -301,7 +304,8 @@ export class MediaHealthService {
     this.cronRepository.update({
       name: LIBRARY_CARE_HEALTH_SCAN_CRON,
       expression: libraryCare.healthScanCronExpression,
-      start: libraryCare.healthScan,
+      // FL-363: the overnight schedule's "Check files" step starts the health scans
+      start: false,
     });
   }
 
@@ -361,7 +365,8 @@ export class MediaHealthService {
     for (const operation of items) {
       try {
         const snapshot = parseMediaHealthSnapshot(operation.snapshot);
-        if (snapshot.mode !== 'scan') {
+        // a scan of chosen photos (FL-737) says nothing about the rest of the library
+        if (snapshot.mode !== 'scan' || snapshot.assetIds) {
           continue;
         }
         const startedAt = asDateTimeString(operation.createdAt as unknown as Date);
@@ -778,13 +783,13 @@ export class MediaHealthService {
     };
   }
 
-  async startMissingScan(auth: AuthDto): Promise<MediaHealthScanResponseDto> {
-    const { missingRunId, operationId } = await this.startDurableScan(auth);
+  async startMissingScan(auth: AuthDto, dto?: MediaHealthScanDto): Promise<MediaHealthScanResponseDto> {
+    const { missingRunId, operationId } = await this.startDurableScan(auth, dto);
     return { runId: missingRunId, operationId };
   }
 
-  async startCorruptScan(auth: AuthDto): Promise<MediaHealthScanResponseDto> {
-    const { corruptRunId, operationId } = await this.startDurableScan(auth);
+  async startCorruptScan(auth: AuthDto, dto?: MediaHealthScanDto): Promise<MediaHealthScanResponseDto> {
+    const { corruptRunId, operationId } = await this.startDurableScan(auth, dto);
     return { runId: corruptRunId, operationId };
   }
 
@@ -1082,6 +1087,10 @@ export class MediaHealthService {
       if (!asset) {
         continue;
       }
+      if (await this.isEncryptedOriginal(asset)) {
+        resultStatusById.set(finding.id, await this.releaseEncrypted(finding, asset));
+        continue;
+      }
       const result = await this.validateAssetIntegrity(asset);
 
       if (result?.status === MediaHealthStatus.CorruptConfirmed) {
@@ -1272,6 +1281,10 @@ export class MediaHealthService {
       // Unsupported RAW and suspected damage are never replaced.
       return changed(id, 'Only confirmed damage can be replaced');
     }
+    if (await this.isEncryptedOriginal(asset)) {
+      // FL-721 (spec §8.3): an encrypted Locked original is never repaired from a plain copy
+      return changed(id, 'The original is encrypted in Locked');
+    }
     if (asset.isExternal) {
       return unverified(id, 'External originals are relinked within their own library');
     }
@@ -1302,6 +1315,15 @@ export class MediaHealthService {
     if (finding.status !== MediaHealthStatus.TrashQueued) {
       // Only a finding that passed the typed confirmation and revalidation at submit is ever moved.
       return changed(id, 'The finding was not confirmed for the trash');
+    }
+    if (await this.isEncryptedOriginal(asset)) {
+      await this.releaseEncrypted(finding, asset);
+      return outcome(
+        id,
+        MediaOperationItemStatus.Skipped,
+        'frameleaf_bulk_reason_media_health_not_damaged',
+        'The original is encrypted in Locked, so it was kept',
+      );
     }
 
     const result = await this.validateAssetIntegrity(asset);
@@ -1587,19 +1609,47 @@ export class MediaHealthService {
   /* ------------------------------------------------------------------ */
 
   /** A scan already under way answers with itself; a search under way has to finish first. */
-  private startDurableScan(auth: AuthDto): Promise<DurableScan> {
-    return this.mediaHealthRepository.withLibraryCareLock(auth.user.id, () => this.admitDurableScan(auth.user.id));
+  private async startDurableScan(auth: AuthDto, { assetIds }: Partial<MediaHealthScanDto> = {}): Promise<DurableScan> {
+    // FL-737: chosen photos are scanned only where this person may see them, as their findings are listed.
+    const scoped = assetIds
+      ? (
+          await this.mediaHealthRepository.getAssets(
+            [...new Set(assetIds)],
+            auth.user.isAdmin ? undefined : auth.user.id,
+            this.privacyFor(auth),
+          )
+        ).map(({ id }) => id)
+      : undefined;
+    if (scoped?.length === 0) {
+      throw new BadRequestException('None of these photos can be scanned');
+    }
+    return this.mediaHealthRepository.withLibraryCareLock(auth.user.id, () =>
+      this.admitDurableScan(auth.user.id, { assetIds: scoped }),
+    );
   }
 
   private async admitDurableScan(
     ownerId: string,
-    options: { changedSince?: string; scheduled?: boolean } = {},
+    options: { changedSince?: string; scheduled?: boolean; assetIds?: string[] } = {},
   ): Promise<DurableScan> {
     const active = await this.activeJob(ownerId);
     if (active) {
       const snapshot = parseMediaHealthSnapshot(active.snapshot);
-      if (snapshot.mode === 'scan') {
+      // FL-737: the scan under way answers only for photos it covers: a full scan covers any, a scan of
+      // chosen photos only those, and an incremental one only changed photos, so none chosen here and
+      // not a whole-library scan someone asked for (a scheduled one may share it: the next night catches up).
+      const covered =
+        snapshot.mode === 'scan' &&
+        (options.assetIds
+          ? snapshot.assetIds
+            ? options.assetIds.every((id) => snapshot.assetIds!.includes(id))
+            : !snapshot.changedSince
+          : !snapshot.assetIds && (!snapshot.changedSince || !!options.scheduled));
+      if (snapshot.mode === 'scan' && covered) {
         return { missingRunId: snapshot.missingRunId, corruptRunId: snapshot.corruptRunId, operationId: active.id };
+      }
+      if (snapshot.mode === 'scan') {
+        throw new ConflictException('A scan of other photos is running. Wait for it or cancel it first.');
       }
       throw new ConflictException('A search for originals is running. Wait for it or cancel it first.');
     }
@@ -1615,6 +1665,7 @@ export class MediaHealthService {
       corruptRunId: corruptRun.id,
       ...(options.changedSince && { changedSince: options.changedSince }),
       ...(options.scheduled && { scheduled: true }),
+      ...(options.assetIds && { assetIds: options.assetIds }),
     };
     try {
       const operation = await this.createHealthOperation(ownerId, snapshot, null);
@@ -1692,6 +1743,7 @@ export class MediaHealthService {
       afterId,
       limit,
       ...(snapshot.changedSince && { changedSince: new Date(snapshot.changedSince) }),
+      ...(snapshot.assetIds && { assetIds: snapshot.assetIds }),
     });
     const { checksumScan } = await this.careSettings();
     const page: MediaHealthScanPage = { checked: 0, missing: 0, corrupt: 0, lastId: afterId };
@@ -2001,8 +2053,10 @@ export class MediaHealthService {
       const created = await this.mediaHealthRepository.createRun(MediaHealthCategory.Corrupt, job.userId);
       run = created.id;
     }
+    let totalAssets = 0;
     let checkedAssets = 0;
     let foundAssets = 0;
+    let encryptedAssets = 0;
     // Buffer healthy-asset resolutions and flush in batches. On large rescans
     // (millions of assets, mostly healthy) doing one UPDATE per asset inside
     // the streaming loop dominates the DB cost; batching collapses that.
@@ -2021,6 +2075,12 @@ export class MediaHealthService {
         assetIds: job.assetIds,
         ownerId: job.userId,
       })) {
+        totalAssets++;
+        if (await this.isEncryptedOriginal(asset)) {
+          // FL-721 (spec §8.3): encrypted, not checked; never a finding and never resolved by this run
+          encryptedAssets++;
+          continue;
+        }
         checkedAssets++;
         const result = await this.validateAssetIntegrity(asset);
         if (!result) {
@@ -2056,10 +2116,11 @@ export class MediaHealthService {
       }
 
       await flushResolved();
+      this.logEncrypted(encryptedAssets);
 
       await this.mediaHealthRepository.finishRun(run, {
         status: 'completed',
-        totalAssets: checkedAssets,
+        totalAssets,
         checkedAssets,
         foundAssets,
       });
@@ -2084,6 +2145,11 @@ export class MediaHealthService {
     for (const finding of findings) {
       const asset = assetsById.get(finding.assetId);
       if (!asset || finding.status !== MediaHealthStatus.TrashQueued) {
+        continue;
+      }
+      if (await this.isEncryptedOriginal(asset)) {
+        // FL-721 (spec §8.3): never trashed, however it was queued
+        await this.releaseEncrypted(finding, asset);
         continue;
       }
 
@@ -2150,6 +2216,7 @@ export class MediaHealthService {
     let checkedAssets = 0;
     let missingFoundAssets = 0;
     let corruptFoundAssets = 0;
+    let encryptedAssets = 0;
 
     try {
       const { checksumScan } = await this.careSettings();
@@ -2159,12 +2226,25 @@ export class MediaHealthService {
       })) {
         checkedAssets++;
         const found = await this.scanAsset(asset, missingRunId, corruptRunId, { checksumScan });
-        if (found === 'missing') {
-          missingFoundAssets++;
-        } else if (found === 'corrupt') {
-          corruptFoundAssets++;
+        switch (found) {
+          case 'missing': {
+            missingFoundAssets++;
+            break;
+          }
+          case 'corrupt': {
+            corruptFoundAssets++;
+            break;
+          }
+          case 'encrypted': {
+            encryptedAssets++;
+            break;
+          }
+          case 'healthy': {
+            break;
+          }
         }
       }
+      this.logEncrypted(encryptedAssets);
 
       if (job.userId) {
         await this.restoreUntrackedFiles(job.userId);
@@ -2183,7 +2263,8 @@ export class MediaHealthService {
           this.mediaHealthRepository.finishRun(corruptRunId, {
             status: 'completed',
             totalAssets: checkedAssets,
-            checkedAssets,
+            // FL-721: an encrypted Locked original is "encrypted, not checked" for damage
+            checkedAssets: checkedAssets - encryptedAssets,
             foundAssets: corruptFoundAssets,
           }),
         );
@@ -2217,7 +2298,7 @@ export class MediaHealthService {
     missingRunId: string,
     corruptRunId: string | null,
     { checksumScan = true }: { checksumScan?: boolean } = {},
-  ): Promise<'missing' | 'corrupt' | 'healthy'> {
+  ): Promise<'missing' | 'corrupt' | 'healthy' | 'encrypted'> {
     const sourceExists = await this.storageRepository.checkFileExists(asset.originalPath, constants.R_OK);
     if (!sourceExists) {
       await this.mediaHealthRepository.upsertFinding({
@@ -2239,6 +2320,11 @@ export class MediaHealthService {
     if (!corruptRunId) {
       await this.mediaHealthRepository.markResolvedForAssets([MediaHealthCategory.Missing], [asset]);
       return 'healthy';
+    }
+    if (await this.isEncryptedOriginal(asset)) {
+      // FL-721 (spec §8.3): it is there, so not missing; encrypted, so not checked for damage
+      await this.mediaHealthRepository.markResolvedForAssets([MediaHealthCategory.Missing], [asset]);
+      return 'encrypted';
     }
     // "Verify original checksums" off: the scan still reads and decodes every original, but no longer
     // proves it is the recorded file. Repairs and the trash always verify, whatever this says.
@@ -2293,6 +2379,37 @@ export class MediaHealthService {
     return this.validateReadableAssetIntegrity(asset);
   }
 
+  /**
+   * FL-721 (spec §8.3): the original is a sealed Locked file (it starts with `FLLK`). Its bytes are
+   * ciphertext, so no decode or checksum here can speak for it: it is never marked damaged, moved to
+   * the trash or repaired. Its GCM tags prove it intact when it is opened.
+   */
+  private isEncryptedOriginal(asset: Pick<MediaHealthAsset, 'originalPath'>): Promise<boolean> {
+    return isLockedPath(asset.originalPath);
+  }
+
+  /** A damage finding on an encrypted original leaves the trash queue: kept, and why. */
+  private async releaseEncrypted(finding: MediaHealthFinding, asset: MediaHealthAsset): Promise<MediaHealthStatus> {
+    await this.mediaHealthRepository.upsertFinding({
+      ...finding,
+      expectedUpdateId: asset.updateId,
+      runId: finding.runId,
+      status: MediaHealthStatus.Resolved,
+      severity: MediaHealthSeverity.Info,
+      evidence: { reason: 'locked_encrypted' },
+      resolution: { trashSkipped: true },
+      checkedAt: new Date(),
+      resolvedAt: new Date(),
+    });
+    return MediaHealthStatus.Resolved;
+  }
+
+  private logEncrypted(count: number) {
+    if (count > 0) {
+      this.logger.log(`${count} encrypted Locked original(s) were not checked for damage`);
+    }
+  }
+
   private async restoreUntrackedFiles(userId: string): Promise<void> {
     const user = await this.userRepository.get(userId, {});
     if (!user) {
@@ -2316,6 +2433,10 @@ export class MediaHealthService {
         if (tracked.has(candidatePath)) {
           continue;
         }
+        if (await isLockedPath(candidatePath)) {
+          // FL-721: a sealed Locked file is never brought back as a new photo of its ciphertext
+          continue;
+        }
 
         let digests: Awaited<ReturnType<CryptoRepository['hashFileDigests']>>;
         try {
@@ -2325,6 +2446,11 @@ export class MediaHealthService {
           continue;
         }
         const checksumAssets = await this.assetRepository.getByChecksums(userId, [digests.sha1, digests.sha256]);
+        // The owner's own photo whose original went missing (an interrupted storage move, typically):
+        // this file is that original, so it goes back under the photo instead of being skipped.
+        if (await this.restoreLostOriginalFrom(candidatePath, checksumAssets, digests)) {
+          continue;
+        }
         const duplicate =
           checksumAssets.length > 0 ||
           (await this.forkSchemaRepository.hasAssetChecksum(userId, digests.sha1, digests.sha256));
@@ -2403,6 +2529,36 @@ export class MediaHealthService {
     }
   }
 
+  private async restoreLostOriginalFrom(
+    candidatePath: string,
+    matches: Awaited<ReturnType<AssetRepository['getByChecksums']>>,
+    digests: Awaited<ReturnType<CryptoRepository['hashFileDigests']>>,
+  ): Promise<boolean> {
+    const present = await Promise.all(
+      matches.map(({ originalPath }) => this.storageRepository.checkFileExists(originalPath)),
+    );
+    if (matches.length === 0 || present.some(Boolean)) {
+      return false;
+    }
+    for (const asset of matches) {
+      if (asset.deletedAt || asset.libraryId || asset.isExternal) {
+        continue;
+      }
+      const restored = await this.physicalFileRepository.restoreLostOriginal({
+        assetId: asset.id,
+        expectedOriginalPath: asset.originalPath,
+        originalPath: candidatePath,
+        ...digests,
+        reason: 'restored_from_untracked_file',
+      });
+      if (restored) {
+        await this.queueRelinkJobs(asset.id);
+        return true;
+      }
+    }
+    return false;
+  }
+
   private async validateReadableAssetIntegrity(
     asset: MediaHealthAsset,
     { verifyChecksum = true }: { verifyChecksum?: boolean } = {},
@@ -2416,6 +2572,10 @@ export class MediaHealthService {
     });
     if (result.status === 'healthy') {
       await this.recordContentDigests(asset, result);
+      return null;
+    }
+    if (result.status === 'encrypted') {
+      // FL-721: sealed since the caller looked; never damage (the callers skip it before this)
       return null;
     }
     return {
@@ -2811,6 +2971,10 @@ export class MediaHealthService {
   }
 
   private async validateManagedCandidate(asset: MediaHealthAsset, candidatePath: string) {
+    if (await isLockedPath(candidatePath)) {
+      // FL-721: a sealed file holds ciphertext; it is never proven against a plaintext checksum
+      return;
+    }
     let digests: Awaited<ReturnType<CryptoRepository['hashFileDigests']>>;
     try {
       digests = await this.cryptoRepository.hashFileDigests(candidatePath);

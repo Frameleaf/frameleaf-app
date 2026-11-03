@@ -101,6 +101,23 @@ describe(HelpPalette.name, () => {
     expect(screen.getByText(/RTX 3060/)).toBeInTheDocument();
   });
 
+  // FL-529: an answer that repeats a source or a question still renders.
+  it('shows an answer that repeats a citation or a question', async () => {
+    await open(index());
+    sdkMock.askHelp.mockResolvedValue({
+      kind: HelpAnswerKind.Answer,
+      blocks: [{ text: 'Open the album and choose Share.', sourceIds: ['s1', 's1'] }],
+      sources: [
+        { id: 's1', title: 'Sharing — Shared albums', url: '/docs/using/sharing/#shared-albums' },
+        { id: 's1', title: 'Sharing — Shared albums', url: '/docs/using/sharing/#shared-albums' },
+      ],
+      questions: ['Which album?', 'Which album?'],
+    });
+    await fireEvent.click(screen.getByRole('option', { name: 'frameleaf_help_panel_starter_share' }));
+    expect(await screen.findByText('Open the album and choose Share.')).toBeInTheDocument();
+    expect(screen.getAllByText('Which album?')).toHaveLength(2);
+  });
+
   it('says help is offline and keeps Ask out of reach', async () => {
     await open(index({ offline: true }));
     expect(screen.getByRole('status')).toHaveTextContent('frameleaf_help_panel_offline');

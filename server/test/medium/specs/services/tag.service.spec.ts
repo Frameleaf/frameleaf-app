@@ -1174,6 +1174,50 @@ describe(TagService.name, () => {
       await expect(ctx.get(TagRepository).getAssetIds(tag.id, [asset.id])).resolves.toContain(asset.id);
     });
 
+    it('writes every item its own tag list in one go, keeping the locks it had', async () => {
+      const { sut, ctx } = setup();
+      ctx.getMock(EventRepository).emit.mockResolvedValue();
+      const { user } = await ctx.newUser();
+      const { asset: plain } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: located } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newExif({ assetId: located.id, city: 'Paris', lockedProperties: ['city'] });
+      const [first, second] = await upsertTags(ctx.get(TagRepository), {
+        userId: user.id,
+        tags: ['tag-1', 'tag-2'],
+      });
+      const auth = factory.auth({ user });
+      const exifOf = (assetId: string) =>
+        ctx.database
+          .selectFrom('asset_exif')
+          .select(['lockedProperties', 'tags', 'city'])
+          .where('assetId', '=', assetId)
+          .executeTakeFirstOrThrow();
+
+      await sut.addAssets(auth, first.id, { ids: [plain.id] });
+      await expect(sut.bulkTagAssets(auth, { tagIds: [second.id], assetIds: [plain.id, located.id] })).resolves.toEqual(
+        { count: 2 },
+      );
+      await expect(exifOf(plain.id)).resolves.toEqual({
+        lockedProperties: ['tags'],
+        tags: expect.arrayContaining(['tag-1', 'tag-2']),
+        city: null,
+      });
+      await expect(exifOf(located.id)).resolves.toEqual({
+        lockedProperties: expect.arrayContaining(['city', 'tags']),
+        tags: ['tag-2'],
+        city: 'Paris',
+      });
+
+      // the last tag gone leaves an empty, still locked, list
+      await sut.remove(auth, second.id);
+      await expect(exifOf(located.id)).resolves.toEqual({
+        lockedProperties: expect.arrayContaining(['city', 'tags']),
+        tags: [],
+        city: 'Paris',
+      });
+      await expect(exifOf(plain.id)).resolves.toEqual(expect.objectContaining({ tags: ['tag-1'] }));
+    });
+
     it('should not tag a partner asset', async () => {
       const { sut, ctx } = setup();
       ctx.getMock(EventRepository).emit.mockResolvedValue();

@@ -1,0 +1,40 @@
+{
+  "action": {
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png"
+    },
+    "default_popup": "popup.html",
+    "default_title": "Save to Frameleaf"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_security_policy": {
+    "extension_pages": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; connect-src https: http: blob: data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+  },
+  "description": "Collect images and inspiration in your own Frameleaf library.",
+  "icons": {
+    "128": "icons/icon128.png",
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png"
+  },
+  "manifest_version": 3,
+  "minimum_chrome_version": "116",
+  "name": "Save to Frameleaf",
+  "host_permissions": ["https://*/*", "http://*/*"],
+  "options_ui": {
+    "open_in_tab": true,
+    "page": "options.html"
+  },
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "alarms",
+    "contextMenus",
+    "identity"
+  ],
+  "version": "1.0.0"
+}

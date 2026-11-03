@@ -624,7 +624,8 @@ class MemoryManager {
   }
 
   private async load(generation: number) {
-    do {
+    // Every page is already here when the server has no more: asking again would only read past the end.
+    while (this.#hasNextPage) {
       this.#queued = false;
       const items = await searchMemories({ ...this.#filters, page: this.#page });
       if (generation !== this.#generation) {
@@ -649,7 +650,10 @@ class MemoryManager {
       }
 
       this.#hasNextPage = this.#received < total;
-    } while (this.#queued && this.#hasNextPage);
+      if (!this.#queued) {
+        break;
+      }
+    }
   }
 
   private scheduleHourlyRefresh() {

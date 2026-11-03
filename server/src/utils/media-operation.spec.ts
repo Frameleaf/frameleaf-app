@@ -114,7 +114,8 @@ describe('pause and resume (FL-104)', () => {
     expect(isPausableMediaOperationKind(MediaOperationKind.EnrichmentPlan)).toBe(true);
     expect(isPausableMediaOperationKind(MediaOperationKind.MediaHealth)).toBe(true);
     expect(isPausableMediaOperationKind(MediaOperationKind.ICloudSync)).toBe(true);
-    expect(isPausableMediaOperationKind(MediaOperationKind.PhysicalDeduplication)).toBe(true);
+    // FL-413: retired; no worker carries a plan on any more
+    expect(isPausableMediaOperationKind(MediaOperationKind.PhysicalDeduplication)).toBe(false);
     expect(isPausableMediaOperationKind(MediaOperationKind.PreservationExport)).toBe(true);
     expect(isPausableMediaOperationKind(MediaOperationKind.PreservationVerify)).toBe(true);
     expect(isPausableMediaOperationKind(MediaOperationKind.PreservationReview)).toBe(true);

@@ -45,6 +45,7 @@ describe(PersonService.name, () => {
     ({ sut, mocks } = newTestService(PersonService));
     // FL-57 defaults: no recorded decisions, and recognition's assignment lands
     mocks.person.getReferenceFaces.mockResolvedValue([]);
+    mocks.person.getAssetIdsForPeople.mockResolvedValue([]);
     mocks.person.getOrphanedFaceCorrections.mockResolvedValue([]);
     mocks.person.getFaceDecisionChecksums.mockResolvedValue(new Map());
     mocks.person.recordFaceCorrections.mockResolvedValue([]);
@@ -593,6 +594,14 @@ describe(PersonService.name, () => {
   });
 
   describe('getThumbnail', () => {
+    it('withholds a stale thumbnail whose featured face is outside personal media', async () => {
+      const person = PersonFactory.create({ faceAssetId: newUuid() });
+      const auth = AuthFactory.create();
+      mocks.person.getByGroupId.mockResolvedValue(person);
+      mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([person.personGroupId]));
+      mocks.person.getFeaturedAsset.mockResolvedValue(undefined);
+      await expect(sut.getThumbnail(auth, person.personGroupId)).rejects.toBeInstanceOf(NotFoundException);
+    });
     it('should require person.read permission', async () => {
       const auth = AuthFactory.create();
       const person = PersonFactory.create();
@@ -641,6 +650,31 @@ describe(PersonService.name, () => {
   });
 
   describe('update', () => {
+    it('does not notify workflows when the same birthday is read as separate date objects', async () => {
+      const auth = AuthFactory.create();
+      const person = PersonFactory.create({ birthDate: new Date('2000-01-15') });
+      mocks.person.getByGroupId.mockResolvedValue(person);
+      mocks.person.update.mockResolvedValue({ ...person, birthDate: new Date('2000-01-15') });
+      mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([person.personGroupId]));
+      await sut.update(auth, person.personGroupId, { birthDate: '2000-01-15' });
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('PersonChanged', expect.anything());
+    });
+    it('notifies matching workflows after an identity change without depending on enrichment', async () => {
+      const auth = AuthFactory.create();
+      const person = PersonFactory.create({ name: 'Before' });
+      mocks.person.getByGroupId.mockResolvedValue(person);
+      mocks.person.update.mockResolvedValue({ ...person, name: 'After' });
+      mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([person.personGroupId]));
+      await sut.update(auth, person.personGroupId, { name: 'After' });
+      expect(mocks.event.emit).toHaveBeenCalledWith('PersonChanged', {
+        ownerId: person.ownerId,
+        personGroupId: person.personGroupId,
+      });
+      mocks.event.emit.mockClear();
+      mocks.person.update.mockResolvedValue(person);
+      await sut.update(auth, person.personGroupId, { name: person.name });
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('PersonChanged', expect.anything());
+    });
     it('commits the person value and override before identity jobs', async () => {
       const auth = AuthFactory.create();
       const person = PersonFactory.create({ name: 'Before' });
@@ -1354,6 +1388,14 @@ describe(PersonService.name, () => {
       return { auth, survivor, removed };
     };
 
+    it('reevaluates all photos affected by a merge even without identity captions', async () => {
+      const { auth, survivor, removed } = setupMerge();
+      const assetId = AssetFactory.create().id;
+      mocks.person.getAssetIdsForPeople.mockResolvedValue([assetId]);
+      await sut.mergePeople(auth, { ids: [survivor.personGroupId, removed.personGroupId] });
+      expect(mocks.event.emit).toHaveBeenCalledWith('AssetsChanged', { assetIds: [assetId] });
+    });
+
     it('preserves the mapping when identity-refresh admission fails', async () => {
       const { auth, survivor, removed } = setupMerge();
       mocks.job.queue.mockRejectedValueOnce(new Error('queue failed'));
@@ -1708,6 +1750,120 @@ describe(PersonService.name, () => {
   });
 
   describe('handleDetectFaces', () => {
+    it.each([false, true])(
+      'preserves both competing identities before overlap preference (imported=%s)',
+      async (preserveImportedFaces) => {
+        const asset = AssetFactory.from()
+          .file({ type: AssetFileType.Preview })
+          .exif()
+          .face({
+            imageWidth: 400,
+            imageHeight: 500,
+            boundingBoxX1: 100,
+            boundingBoxY1: 100,
+            boundingBoxX2: 200,
+            boundingBoxY2: 200,
+            personGroupId: newUuid(),
+          })
+          .face({
+            imageWidth: 400,
+            imageHeight: 500,
+            boundingBoxX1: 120,
+            boundingBoxY1: 120,
+            boundingBoxX2: 220,
+            boundingBoxY2: 220,
+            personGroupId: newUuid(),
+          })
+          .build();
+        mocks.assetJob.getForDetectFacesJob.mockResolvedValue(getForDetectedFaces(asset));
+        await sut.publishDetectedFaces(
+          asset.id,
+          {
+            previewPath: asset.files[0].path,
+            checksum: asset.checksum.toString('hex'),
+            imageWidth: 400,
+            imageHeight: 500,
+            faces: [
+              { boundingBox: { x1: 105, y1: 105, x2: 205, y2: 205 }, embedding: '[1,2,3]' },
+              { boundingBox: { x1: 90, y1: 90, x2: 190, y2: 190 }, embedding: '[4,5,6]' },
+            ],
+          },
+          preserveImportedFaces,
+        );
+        expect(mocks.person.refreshFaces).toHaveBeenCalledWith(
+          [],
+          [],
+          [
+            { faceId: asset.faces[1].id, embedding: '[1,2,3]' },
+            { faceId: asset.faces[0].id, embedding: '[4,5,6]' },
+          ],
+        );
+        expect(mocks.job.queueAll).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(
+      [false, true].flatMap((preserveImportedFaces) =>
+        [false, true].flatMap((overlap) =>
+          [false, true].map((reverse) => ({ preserveImportedFaces, overlap, reverse })),
+        ),
+      ),
+    )(
+      'matches each retained face once in its own frame (imported=$preserveImportedFaces, overlap=$overlap, reverse=$reverse)',
+      async ({ preserveImportedFaces, overlap, reverse }) => {
+        const asset = AssetFactory.from()
+          .file({ type: AssetFileType.Preview })
+          .exif()
+          .face({
+            imageWidth: 800,
+            imageHeight: 1000,
+            boundingBoxX1: 200,
+            boundingBoxY1: 200,
+            boundingBoxX2: 400,
+            boundingBoxY2: 400,
+            personGroupId: newUuid(),
+          })
+          .face({
+            imageWidth: 200,
+            imageHeight: 250,
+            boundingBoxX1: overlap ? 55 : 125,
+            boundingBoxY1: overlap ? 55 : 125,
+            boundingBoxX2: overlap ? 105 : 175,
+            boundingBoxY2: overlap ? 105 : 175,
+            personGroupId: newUuid(),
+          })
+          .build();
+        const retained = [...asset.faces];
+        if (reverse) asset.faces.reverse();
+        mocks.assetJob.getForDetectFacesJob.mockResolvedValue(getForDetectedFaces(asset));
+        const embeddings = ['[1,2,3]', '[4,5,6]'];
+        const boxes = [
+          { x1: 100, y1: 100, x2: 200, y2: 200 },
+          overlap ? { x1: 110, y1: 110, x2: 210, y2: 210 } : { x1: 250, y1: 250, x2: 350, y2: 350 },
+        ];
+        await sut.publishDetectedFaces(
+          asset.id,
+          {
+            previewPath: asset.files[0].path,
+            checksum: asset.checksum.toString('hex'),
+            imageWidth: 400,
+            imageHeight: 500,
+            faces: boxes.map((boundingBox, index) => ({ boundingBox, embedding: embeddings[index] })),
+          },
+          preserveImportedFaces,
+        );
+        expect(mocks.person.refreshFaces).toHaveBeenCalledWith(
+          [],
+          [],
+          retained.map((face, index) => ({
+            faceId: face.id,
+            embedding: embeddings[index],
+          })),
+        );
+        expect(mocks.job.queueAll).not.toHaveBeenCalled();
+      },
+    );
+
     it('keeps face rows and recognition intents unpublished until acceptance, refusing changed previews', async () => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Preview }).exif().build();
       const face = AssetFaceFactory.create({ assetId: asset.id });

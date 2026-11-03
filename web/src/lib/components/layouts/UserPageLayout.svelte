@@ -13,9 +13,11 @@
   import { Button, ContextMenuButton, HStack, isMenuItemType, type MenuItemType } from '@frameleaf/ui';
   import { onDestroy, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
+  import { MediaQuery } from 'svelte/reactivity';
 
   interface Props {
     hideNavbar?: boolean;
+    onUploadClick?: () => void;
     title?: string | undefined;
     description?: string | undefined;
     scrollbar?: boolean;
@@ -39,6 +41,7 @@
 
   let {
     hideNavbar = false,
+    onUploadClick = () => void openFileUploadDialog(),
     title = undefined,
     description = undefined,
     scrollbar = true,
@@ -50,6 +53,13 @@
     buttons,
     children,
   }: Props = $props();
+
+  /**
+   * UI review 2026-10-30 #8: phones have no top tabs, so the ☰ menu opens the rail on every page,
+   * Studio's included; below the sidebar breakpoint the rail is an overlay and takes no width.
+   */
+  const phone = new MediaQuery('max-width: 700px');
+  const showRail = $derived(rail || phone.current);
 
   const enabledActions = $derived(
     actions
@@ -117,7 +127,7 @@
 
 <header>
   {#if !hideNavbar}
-    <NavigationBar onUploadClick={() => openFileUploadDialog()} hasRail={rail} />
+    <NavigationBar {onUploadClick} hasRail={showRail} />
   {/if}
 </header>
 <div
@@ -125,7 +135,7 @@
   tabindex="-1"
   style="--sidebar-width: {railWidth}"
   class="relative z-0 grid overflow-hidden
-    {rail ? 'grid-cols-[--spacing(0)_auto] sidebar:grid-cols-[var(--sidebar-width)_auto]' : 'grid-cols-1'}
+    {showRail ? 'grid-cols-[--spacing(0)_auto] sidebar:grid-cols-[var(--sidebar-width)_auto]' : 'grid-cols-1'}
     {sidebarStore.isResizing
     ? ''
     : 'transition-[grid-template-columns] duration-(--fl-duration) ease-(--fl-snappy) motion-reduce:transition-none'}
@@ -134,7 +144,7 @@
     {hideNavbar ? 'max-md:pt-(--navbar-height-md)' : ''}"
 >
   <!-- Without the rail the grid has one column and the content takes the whole width. -->
-  {#if rail}
+  {#if showRail}
     {#if sidebar}
       {@render sidebar()}
     {:else}

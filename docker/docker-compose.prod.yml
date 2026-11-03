@@ -34,6 +34,9 @@ services:
     depends_on:
       - database
     restart: always
+    # FL-721: encrypted Locked files are decrypted into /dev/shm (RAM) for thumbnails, video and ML; Docker's
+    # default 64 MB is too small for videos and RAW files. Lower it on a NAS with little memory.
+    shm_size: 2gb
     # must exceed FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS (9 s by default): running jobs finish or go back to waiting first
     stop_grace_period: 10s
     healthcheck:

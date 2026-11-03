@@ -11,6 +11,7 @@ import {
   editOperationJobItem,
   editOperationOutcome,
 } from 'src/utils/edit-operation.js';
+import { LOCKED_DEFERRAL_DELAY_MS, isLockedKeyUnavailable, lockedOperationMayWait } from 'src/utils/locked-read.js';
 
 type Operations = Pick<
   MediaOperationRepository,
@@ -383,6 +384,16 @@ export class EditOperationTracker {
       await run.finish(status);
       return status;
     } catch (error) {
+      // FL-721 (spec §8): waiting for the owner's Locked key is not a failure. The row goes back to
+      // the queue for an hour without using an attempt, for at most 72 hours.
+      if (
+        isLockedKeyUnavailable(error) &&
+        lockedOperationMayWait(run.operation.createdAt) &&
+        (await run.release(LOCKED_DEFERRAL_DELAY_MS))
+      ) {
+        this.logger.log(`Edit operation ${operationId} waits for its owner's Locked key`);
+        return JobStatus.Skipped;
+      }
       await run.fail(error, EDIT_RENDER_FAILED.errorCode);
       throw error;
     } finally {

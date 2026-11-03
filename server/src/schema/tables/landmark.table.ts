@@ -1,4 +1,12 @@
-import { Column, ForeignKeyColumn, Index, PrimaryColumn, PrimaryGeneratedColumn, Table } from '@frameleaf/sql-tools';
+import {
+  Check,
+  Column,
+  ForeignKeyColumn,
+  Index,
+  PrimaryColumn,
+  PrimaryGeneratedColumn,
+  Table,
+} from '@frameleaf/sql-tools';
 import type { Generated } from '@frameleaf/sql-tools';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 
@@ -53,15 +61,29 @@ export class LandmarkAreaTable {
 }
 
 /**
- * Every place an asset was taken at. `landmarkId` deliberately has no foreign key: re-importing the
+ * Recorded locations and inferred landmarks. `landmarkId` deliberately has no foreign key: re-importing the
  * place pack replaces the `landmark` rows and must not wipe the matches.
  */
 @Table({ name: 'asset_landmark', primaryConstraintName: 'asset_landmark_pkey' })
 @Index({ name: 'asset_landmark_landmarkId_idx', columns: ['landmarkId'] })
+@Check({
+  name: 'asset_landmark_inference_check',
+  expression: `(("inference" IS NULL AND "sourceAssetIds" IS NULL) OR
+    ("inference" = 'temporal' AND cardinality("sourceAssetIds") = 1) OR
+    ("inference" = 'visual' AND cardinality("sourceAssetIds") BETWEEN 2 AND 3)) IS TRUE`,
+})
 export class AssetLandmarkTable {
   @ForeignKeyColumn(() => AssetTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE', primary: true })
   assetId!: string;
 
   @PrimaryColumn({ type: 'character varying', length: 20 })
   landmarkId!: string;
+
+  /** Null is a recorded GPS match; predictions never replace the asset's coordinates. */
+  @Column({ type: 'character varying', nullable: true })
+  inference!: 'temporal' | 'visual' | null;
+
+  /** Private evidence, rechecked on reads so deleting or hiding a donor takes effect immediately. */
+  @Column({ type: 'uuid', array: true, nullable: true })
+  sourceAssetIds!: string[] | null;
 }

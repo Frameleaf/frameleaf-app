@@ -188,13 +188,65 @@ export const libraryFrozenPending = (runId: RawBuilder<string>) => sql<boolean>`
             on selected."selectionId" = original_source.id and selected."runId" = original_source."runId"
             where original_source.id = original.id and selected."rootItemKey" = child."rootItemKey" and selected.state != 'cancelled'))))`;
 
+/** Current setup authority gates every Manager import admission, including already waiting jobs. */
+export const managerImportHeld = (runId: RawBuilder<string>) => {
+  const current = process.env.FRAMELEAF_MANAGER_INSTALLATION ?? '';
+  const origin = process.env.FRAMELEAF_MANAGER_ORIGIN ?? '';
+  const expected = origin === 'restored_library' ? (process.env.FRAMELEAF_MANAGER_IMPORT_INSTALLATION ?? '') : current;
+  const profile = origin === 'new_import' || (origin === 'restored_library' && !!expected);
+  const validProfile = profile && /^[a-f0-9]{12}$/.test(current) && /^[a-f0-9]{12}$/.test(expected);
+  return sql<boolean>`exists (
+    select 1 from job_run manager_run cross join lateral (select (
+      (manager_run.kind='immich-import-derived' and exists (
+        select 1 from frameleaf_immich_import journal where journal.status='activated'
+          and journal.source_fingerprint=manager_run.selection->>'source'
+          and journal.config_fingerprint=manager_run.selection->>'config'
+          and not exists(select 1 from frameleaf_library_import)))
+      or (manager_run.kind='library-import-derived' and exists (
+        select 1 from frameleaf_library_import journal where journal.status='activated'
+          and journal.binding->>'operationId'=manager_run.selection->>'operationId'
+          and journal.binding->>'manifestSha256'=manager_run.selection->>'manifestSha256'
+          and journal.binding->>'planSha256'=manager_run.selection->>'planSha256'
+          and lower(journal.reviewed_plan->>'destinationId')=manager_run.selection->>'destinationId'
+          and not exists(select 1 from frameleaf_immich_import)))
+    ) as matches) journal_authority
+    where manager_run.id=${runId} and manager_run.kind in ('immich-import-derived','library-import-derived')
+      and (manager_run.selection ? 'managerSetupRequired' or manager_run.selection ? 'managerSetup'
+        or ${profile})
+      and (${validProfile} and journal_authority.matches and manager_run."enumerationDone"
+        and manager_run."finishedAt" is null
+        and (not manager_run.selection ? 'managerSetupRequired' or manager_run.selection->'managerSetupRequired'='true'::jsonb)
+        and jsonb_typeof(manager_run.selection->'managerSetup')='object'
+        and manager_run.selection #>> '{managerSetup,installation}'=${expected}
+        and nullif(manager_run.selection #>> '{managerSetup,operationId}','') is not null
+        and jsonb_typeof(manager_run.selection #> '{managerSetup,startedAt}')='string'
+        and pg_input_is_valid(manager_run.selection #>> '{managerSetup,startedAt}','timestamp with time zone')
+        and jsonb_typeof(manager_run.selection #> '{managerSetup,preparedAt}')='string'
+        and pg_input_is_valid(manager_run.selection #>> '{managerSetup,preparedAt}','timestamp with time zone')
+        and coalesce(manager_run.selection #> '{managerSetup,paused}','false'::jsonb)='false'::jsonb
+        and exists (select 1 from system_metadata setup where setup.key=${'frameleaf-manager-library-setup:' + current}
+          and setup.value->>'installation'=${current} and setup.value->>'origin'=${origin}
+          and setup.value->>'importRunId'=manager_run.id::text
+          and setup.value->>'importOperationId'=manager_run.selection #>> '{managerSetup,operationId}'
+          and setup.value->>'phase' in ('rescanning','verifying','complete')
+          and coalesce(setup.value->'paused','false'::jsonb)='false'::jsonb
+          and (${origin !== 'new_import'} or setup.value->'processingChoiceApplied'='true'::jsonb))) is not true
+  )`;
+};
+
+const requiredStages = (stage: string, ignored: readonly string[]) =>
+  ignored.length > 0 ? sql`AND ${sql.ref(stage)}<>ALL(${[...ignored]}::text[])` : sql``;
+
 /** A sufficient unfinished proof shared by the cheap publication preflight and full settlement.
  * A retained pending alias whose detailed job is already terminal is not live execution.
  * Keep both existence checks correlated: flattening them can scan all retained terminal jobs
  * for every publication instead of stopping at one live item and its indexed job identity.
  */
-export const unfinishedAdmittedRunItems = (runId: RawBuilder<string>) => sql<boolean>`
-  exists (select 1 from job_run_item i where i."runId" = ${runId} and i.state in ('pending','waiting','active')
+export const unfinishedAdmittedRunItems = (
+  runId: RawBuilder<string>,
+  ignoredStages: readonly string[] = [],
+) => sql<boolean>`
+  exists (select 1 from job_run_item i where i."runId" = ${runId} ${requiredStages('i.stage', ignoredStages)} and i.state in ('pending','waiting','active')
     and (i."selectionId" is null or i."jobId" is not null)
     and not exists (select 1 from job j where j.id = i."jobId" and j.state not in ('pending','waiting','active')
       limit 1 offset 0) limit 1 offset 0)`;
@@ -202,21 +254,21 @@ export const unfinishedAdmittedRunItems = (runId: RawBuilder<string>) => sql<boo
 /** Probe per-run headers first. Separate frozen admission from derived library ownership so
  * PostgreSQL can use the sparse pending-manifest index without filtering retained terminal rows.
  */
-export const unfinishedRunItems = (runId: RawBuilder<string>) => sql<boolean>`
+export const unfinishedRunItems = (runId: RawBuilder<string>, ignoredStages: readonly string[] = []) => sql<boolean>`
   ${libraryRunPending(runId)}
-  or (${unfinishedAdmittedRunItems(runId)})
+  or (${unfinishedAdmittedRunItems(runId, ignoredStages)})
   or exists (select 1 from job_selection_run m join job_selection s on s.id = m."selectionId"
-    where m."runId" = ${runId} and not m."copyComplete"
+    where m."runId" = ${runId} ${requiredStages('s.stage', ignoredStages)} and not m."copyComplete"
       and (s."sourceKind" = 'frozen' or (${libraryMembershipEntitled(sql<string>`m."runId"`, sql<string>`s."libraryOperationId"`)})))
   or exists (select 1 from job_selection_run membership join job_selection snapshot on snapshot.id = membership."selectionId"
-    where membership."runId" = ${runId} and snapshot."sourceKind" = 'frozen' and snapshot.state in ('enumerating','ready')
+    where membership."runId" = ${runId} ${requiredStages('snapshot.stage', ignoredStages)} and snapshot."sourceKind" = 'frozen' and snapshot.state in ('enumerating','ready')
       and (snapshot.state = 'enumerating' or exists (select 1 from (
         select i."itemKey" from job_run_item i
         where i."selectionId" = snapshot.id and i."runId" = membership."runId"
           and i."jobId" is null and i.state = 'pending'
         order by i."itemKey" limit 1 offset 0) pending_manifest)))
   or exists (select 1 from job_selection_run membership join job_selection snapshot on snapshot.id = membership."selectionId"
-    where membership."runId" = ${runId} and snapshot."sourceKind" != 'frozen'
+    where membership."runId" = ${runId} ${requiredStages('snapshot.stage', ignoredStages)} and snapshot."sourceKind" != 'frozen'
       and (${libraryMembershipEntitled(sql<string>`membership."runId"`, sql<string>`snapshot."libraryOperationId"`)}) and snapshot.state in ('enumerating','ready')
       and (snapshot.state = 'enumerating' or exists (select 1 from job_run_item i
         where i."selectionId" = snapshot.id and i."runId" = snapshot."runId"

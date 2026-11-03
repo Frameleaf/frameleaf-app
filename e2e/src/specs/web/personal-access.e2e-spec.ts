@@ -23,10 +23,10 @@ import request from 'supertest';
  * ApiKeysSection.svelte / ApiKeyDialog.svelte and CredentialRow.svelte (i18n/en.json).
  */
 
-const lockedRulesUrl = '/user-settings?area=security&section=suppressed-content';
+const lockedRulesUrl = '/user-settings?area=privacy&section=suppressed-content';
 const profileUrl = '/user-settings?area=preferences&section=account';
-const apiKeysUrl = '/user-settings?area=security&section=api-keys';
-const devicesUrl = '/user-settings?area=security&section=authorized-devices';
+const apiKeysUrl = '/user-settings?area=privacy&section=api-keys';
+const devicesUrl = '/user-settings?area=privacy&section=authorized-devices';
 const emailSettingsUrl = '/user-settings?area=notifications&section=notifications&isOpen=email';
 
 const pinCode = '135790';
@@ -223,11 +223,11 @@ test.describe('Personal access (FL-67)', () => {
     await page.goto(apiKeysUrl);
 
     const row = page.getByRole('listitem').filter({ hasText: 'e2e' });
-    await row.getByRole('button', { name: 'Rotate' }).click();
+    await row.getByRole('button', { name: 'Replace key…' }).click();
 
-    const confirm = page.getByRole('dialog', { name: 'Rotate e2e' });
+    const confirm = page.getByRole('dialog', { name: 'Replace the key e2e' });
     await expect(confirm).toContainText('The old key stops working at once');
-    await confirm.getByRole('button', { name: 'Rotate' }).click();
+    await confirm.getByRole('button', { name: 'Replace key' }).click();
 
     const reveal = page.getByRole('dialog', { name: 'Your new API key' });
     await expect(reveal).toContainText('This key is shown once. Copy it now; it cannot be shown again.');

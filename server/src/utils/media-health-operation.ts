@@ -30,6 +30,11 @@ export type MediaHealthScanSnapshot = {
   changedSince?: string;
   /** Started by the Library care schedule rather than by a person. */
   scheduled?: boolean;
+  /**
+   * FL-737: only these photos (File checks' findings, already checked as the person's to scan). Such a
+   * scan brings back no untracked media and is not a full scan the schedule counts from.
+   */
+  assetIds?: string[];
 };
 
 /** Search chosen locations for exact copies of the originals behind a fixed set of findings. */
@@ -92,6 +97,7 @@ export const parseMediaHealthSnapshot = (value: unknown): MediaHealthOperationSn
       ...(typeof value.changedSince === 'string' &&
         !Number.isNaN(Date.parse(value.changedSince)) && { changedSince: value.changedSince }),
       ...(value.scheduled === true && { scheduled: true }),
+      ...(Array.isArray(value.assetIds) && { assetIds: [...new Set(asStrings(value.assetIds))] }),
     };
   }
 

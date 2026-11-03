@@ -2,7 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Selectable, Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { AssetRestorationStatus } from 'src/dtos/asset-restoration.dto.js';
-import { MediaOperationStatus } from 'src/enum.js';
+import { MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { AssetRestorationTable } from 'src/schema/tables/asset-restoration.table.js';
 import { EXPIRING_RESULT_STATUSES, canDiscardRestoration } from 'src/utils/restoration.js';
@@ -49,14 +49,21 @@ export class AssetRestorationRepository {
    * transaction to write in, when the row must land together with the job that renders it (FL-162).
    */
   async create(input: AssetRestorationCreate, executor: Kysely<DB> = this.db): Promise<AssetRestoration> {
-    const row = await executor
-      .insertInto('asset_restoration')
-      .values({
-        ...input,
-        revision: sql<number>`(SELECT coalesce(max("revision"), 0) + 1 FROM "asset_restoration" WHERE "assetId" = ${input.assetId})`,
-      })
-      .returningAll()
-      .executeTakeFirstOrThrow();
+    // Concurrent requests for one asset take turns, so two never read the same max(revision).
+    const insert = async (tx: Kysely<DB>) => {
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`asset_restoration_revision:${input.assetId}`}, 0))`.execute(
+        tx,
+      );
+      return tx
+        .insertInto('asset_restoration')
+        .values({
+          ...input,
+          revision: sql<number>`(SELECT coalesce(max("revision"), 0) + 1 FROM "asset_restoration" WHERE "assetId" = ${input.assetId})`,
+        })
+        .returningAll()
+        .executeTakeFirstOrThrow();
+    };
+    const row = executor.isTransaction ? await insert(executor) : await executor.transaction().execute(insert);
     return row as unknown as AssetRestoration;
   }
 
@@ -356,7 +363,17 @@ export class AssetRestorationRepository {
             .selectFrom('media_operation')
             .select('media_operation.id')
             .whereRef('media_operation.id', '=', 'asset_restoration.fullOperationId')
-            .where('media_operation.status', 'in', [MediaOperationStatus.Cancelled, MediaOperationStatus.Failed]),
+            .where((op) =>
+              op.or([
+                op('media_operation.status', '=', MediaOperationStatus.Failed),
+                // A cancelled Frameleaf Cloud full render is reconciled by CloudMlJobService, which puts the
+                // paid, reviewed preview back up for review instead of cancelling it.
+                op.and([
+                  op('media_operation.status', '=', MediaOperationStatus.Cancelled),
+                  op('media_operation.kind', '!=', MediaOperationKind.CloudMlJob),
+                ]),
+              ]),
+            ),
         ),
       )
       .executeTakeFirst();

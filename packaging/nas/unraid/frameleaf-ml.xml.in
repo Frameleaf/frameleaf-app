@@ -1,16 +1,35 @@
 <Container version="2">
   <Name>frameleaf-ml</Name>
   <Repository>ghcr.io/frameleaf/frameleaf-machine-learning:latest</Repository>
-  <Registry>https://ghcr.io</Registry>
+  <Registry>https://github.com/orgs/Frameleaf/packages/container/package/frameleaf-machine-learning</Registry>
+  <Shell>sh</Shell>
+  <DefaultTagDescription>Latest published Frameleaf Machine Learning</DefaultTagDescription>
   <Network>frameleaf</Network>
   <Privileged>false</Privileged>
-  <Project>https://github.com/Frameleaf/frameleaf-app</Project>
-  <Support>https://github.com/Frameleaf/frameleaf-app/issues</Support>
-  <Overview>Optional local search and recognition worker for Frameleaf Server.</Overview>
+  <Project>https://frameleaf.app</Project>
+  <Support>https://frameleaf.app/help/</Support>
+  <Overview>Find a photo by describing what you remember, and bring familiar faces together. This optional companion provides local machine learning for Frameleaf Server, including smart search and face recognition. The bundled Studio worker can also serve supported editing jobs when it shares its enrolment folder with the server.
+
+Install alongside a running Frameleaf Server on the same frameleaf Docker network. It is a background worker with no separate web interface; browse your library and manage processing from Frameleaf. Keep the model cache persistent so models do not have to download again after every restart.
+
+Model downloads need internet access and processing needs available CPU and memory. GPU use depends on a compatible image, drivers and device configuration; it is not enabled by this basic template. Mount the same Studio enrolment folder as the server, read-only here. Use Manager if you prefer guided installation and updates.</Overview>
   <Category>MediaApp:Photos</Category>
+  <ExtraSearchTerms>photos videos smart-search semantic-search face-recognition local-ai machine-learning models studio worker</ExtraSearchTerms>
+  <Requires>A compatible Frameleaf Server on the frameleaf Docker network; persistent model-cache storage; internet access for initial model downloads; sufficient CPU and memory for selected models. Studio worker enrolment requires the server shared folder mounted read-only. This template has no separate WebUI.</Requires>
   <Icon>https://raw.githubusercontent.com/Frameleaf/frameleaf-app/main/design/frameleaf/mark.png</Icon>
+  <Discord>https://discord.gg/cN3U3mv4</Discord>
+  <Reddit>https://www.reddit.com/r/Frameleaf/</Reddit>
+  <Twitter>https://x.com/frameleafapp</Twitter>
+  <DonateLink>https://frameleaf.app/pricing/#supporter</DonateLink>
+  <DonateText>Support Frameleaf with a supporter licence</DonateText>
+  <Photo>https://frameleaf.app/web/search-palette.webp?v=2026-10-30</Photo>
+  <Screenshot>https://frameleaf.app/web/search-palette.webp?v=2026-10-30</Screenshot>
+  <Screenshot>https://frameleaf.app/web/people.webp?v=2026-10-30</Screenshot>
+  <Video>https://www.youtube.com/watch?v=A-QotzqIXlA</Video>
+  <Video>https://www.youtube.com/watch?v=pezgEUVyppY</Video>
   <TemplateURL>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/templates/frameleaf-ml.xml</TemplateURL>
-  <ReadMe>https://github.com/Frameleaf/unraid-apps#manual-server-and-ml-installation</ReadMe>
+  <License>https://github.com/Frameleaf/frameleaf-app/blob/main/LICENSE</License>
+  <ReadMe>https://frameleaf.app/docs/nas/unraid/</ReadMe>
   <Config Name="Model cache" Target="/cache" Default="/mnt/user/appdata/frameleaf/model-cache" Mode="rw" Description="Persistent downloaded models" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/frameleaf/model-cache</Config>
   <Config Name="Studio worker enrolment" Target="/run/frameleaf/studio-worker" Default="/mnt/user/appdata/frameleaf/studio-worker" Mode="ro" Description="The same folder as frameleaf-server's Studio worker enrolment, read-only; the bundled Studio render worker enrols from it. Set FRAMELEAF_STUDIO_WORKER=false to turn the worker off" Type="Path" Display="advanced" Required="true" Mask="false">/mnt/user/appdata/frameleaf/studio-worker</Config>
   <Config Name="Studio worker" Target="FRAMELEAF_STUDIO_WORKER" Default="true" Description="Run the bundled Studio render worker so web Studio opens and exports; false turns it off" Type="Variable" Display="advanced" Required="false" Mask="false">true</Config>

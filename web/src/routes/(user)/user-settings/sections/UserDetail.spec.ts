@@ -14,7 +14,7 @@ vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { user: { id:
 vi.mock('$lib/managers/server-config-manager.svelte', () => ({
   serverConfigManager: { value: { userDeleteDelay: 7 } },
 }));
-vi.mock('$lib/components/frameleaf/AccountDetailTabs.svelte', async () => ({
+vi.mock('$lib/components/frameleaf/settings/people/PersonPage.svelte', async () => ({
   default: (await import('../../../../test-data/components/MockText.svelte')).default,
 }));
 
@@ -33,28 +33,27 @@ describe('account detail header (FL-71, AccountsLibraries.jsx)', () => {
     mocks.goto.mockReset().mockResolvedValue(undefined);
   });
 
-  it("carries the template's profile, View analytics, Edit account and Close details", async () => {
+  it("carries the template's profile, View analytics and Close details (FL-516)", async () => {
     mocks.loadUserDetail.mockResolvedValue(detail());
     render(UserDetail, { id });
 
     expect(await screen.findByRole('heading', { level: 2, name: 'Jamie' })).toBeInTheDocument();
     expect(screen.getByText('jamie@example.test')).toBeInTheDocument();
-    // The account's password, PIN, deletion and restore live in its tabs, not in a second action row.
+    // The account's password, PIN, removal and restore live on its page (PersonPage), not in a second action row.
     expect(screen.queryByRole('button', { name: /Reset password|Delete|Restore/ })).toBeNull();
 
     await userEvent.click(screen.getByRole('button', { name: 'View analytics' }));
     expect(mocks.goto).toHaveBeenLastCalledWith(`/user-settings?area=analytics&scope=account%3A${id}`);
-    await userEvent.click(screen.getByRole('button', { name: 'Edit account' }));
-    expect(mocks.goto).toHaveBeenLastCalledWith(`/user-settings?area=users&section=accounts&user=${id}&edit=1`);
+    // FL-516: About is edited in place, so there is no Edit account button.
+    expect(screen.queryByRole('button', { name: 'Edit account' })).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Close details' }));
     expect(mocks.goto).toHaveBeenLastCalledWith('/user-settings?area=users&section=accounts');
   });
 
-  it('offers no Edit account for a deleted account', async () => {
+  it('still shows a deleted account', async () => {
     mocks.loadUserDetail.mockResolvedValue(detail('2026-09-20T00:00:00.000Z'));
     render(UserDetail, { id });
 
     expect(await screen.findByRole('heading', { level: 2, name: 'Jamie' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Edit account' })).toBeNull();
   });
 });

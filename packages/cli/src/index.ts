@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { upload } from 'src/commands/asset.js';
 import { login, logout } from 'src/commands/auth.js';
+import { buildLockedDecryptCommand } from 'src/commands/locked.js';
 import { migrate } from 'src/commands/migrate/index.js';
 import { serverInfo } from 'src/commands/server-info.js';
 import { applyCliEnvAliases, preferExisting } from 'src/env-aliases.js';
@@ -143,6 +144,12 @@ program
   )
   .addOption(new Option('--include-trashed', 'Also migrate trashed assets').default(false))
   .addOption(new Option('--retry-failed', 'Requeue assets that errored on a previous run').default(false))
+  .addOption(
+    new Option(
+      '--rescan',
+      'Scan the source again on a reused ledger to copy photos added since the last run (no duplicates)',
+    ).default(false),
+  )
   .addOption(new Option('--no-faces', "Skip person/face migration (faces are best-effort and depend on B's ML)"))
   .addOption(new Option('--serve', 'Serve a local browser dashboard to monitor/control the run').default(false))
   .addOption(
@@ -151,5 +158,8 @@ program
       .default(2285),
   )
   .action((options) => migrate(options));
+
+const locked = program.command('locked').description('Work with encrypted Locked files');
+locked.addCommand(buildLockedDecryptCommand());
 
 program.parse(process.argv);

@@ -80,12 +80,17 @@ type EventMap = {
   // asset events
   AssetLocalEffects: [AssetLocalEffectBundle];
   AssetCreate: [{ asset: Pick<Asset, 'id' | 'ownerId'>; file?: UploadFile }];
+  AssetChanged: [{ assetId: string; causation?: string[] }];
+  /** Many assets changed at once (a bulk edit or an album add); each owner's workflows are read once. */
+  AssetsChanged: [{ assetIds: string[] }];
+  PersonChanged: [{ ownerId: string; personGroupId: string }];
   AssetTag: [{ assetId: string; userId: string }];
   AssetUntag: [{ assetId: string }];
   AssetHide: [{ assetId: string; userId: string }];
   AssetShow: [{ assetId: string; userId: string }];
   AssetTrash: [{ assetId: string; userId: string }];
   AssetDelete: [{ assetId: string; userId: string }];
+  AssetDevelopCurrentChanged: [{ assetId: string }];
   AssetMetadataExtracted: [{ assetId: string; userId: string; source?: JobSource }];
 
   // asset bulk events
@@ -164,6 +169,11 @@ type EventMap = {
 
   /** FL-228: something happened that registered devices may be told about by push. */
   PushNotify: [PushNotice];
+
+  /** FL-721: a person's Locked encryption finished turning off; the API process releases their pinned key. */
+  LockedEncryptionOff: [{ userId: string }];
+  /** FL-721: a restore changed a person's key file; every process drops the key it holds for them. */
+  LockedKeyChanged: [{ userId: string }];
 };
 
 export type AdminNotice = {
@@ -221,11 +231,11 @@ export type EventItem<T extends EmitEvent> = {
 
 /**
  * FL-169: events announced after something irreversible, whose handlers each do their own part of
- * the follow-up (revoking Studio access, clearing move history, telling clients). Every handler runs
+ * the follow-up (revoking Studio access, clearing move history, telling clients, refreshing palettes). Every handler runs
  * even when an earlier one throws; a failure is logged and never reaches the emitter, which could not
  * repeat the change anyway. Other events keep stopping at, and rethrowing, the first failure.
  */
-const ISOLATED_EVENTS: ReadonlySet<EmitEvent> = new Set<EmitEvent>(['AssetDelete']);
+const ISOLATED_EVENTS: ReadonlySet<EmitEvent> = new Set<EmitEvent>(['AssetDelete', 'AssetDevelopCurrentChanged']);
 
 export type AuthFn = (client: Socket) => Promise<AuthDto>;
 

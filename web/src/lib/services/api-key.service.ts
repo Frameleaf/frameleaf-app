@@ -77,7 +77,7 @@ export const handleRotateApiKey = async (apiKey: ApiKeyResponseDto) => {
   const confirmed = await confirmFrameleaf({
     title: $t('frameleaf_access_key_rotate_title', { values: { name: apiKey.name } }),
     prompt: $t('frameleaf_access_key_rotate_prompt', { values: { name: apiKey.name } }),
-    confirmText: $t('frameleaf_access_key_rotate'),
+    confirmText: $t('frameleaf_access_key_replace'),
   });
   if (!confirmed) {
     return;
@@ -111,5 +111,37 @@ export const handleDeleteApiKey = async (apiKey: ApiKeyResponseDto) => {
     toastManager.primary($t('removed_api_key', { values: { name: apiKey.name } }));
   } catch (error) {
     handleError(error, $t('errors.unable_to_remove_api_key'));
+  }
+};
+
+/** FL-655: how a browser is named, from an access Save to Frameleaf added by signing in. */
+export const extensionBrowser = (apiKey: Pick<ApiKeyResponseDto, 'signedInFrom'>) =>
+  apiKey.signedInFrom === 'edge' ? 'Edge' : 'Chrome';
+
+/**
+ * FL-655: remove an access Save to Frameleaf added by signing in, after a confirmation. That browser
+ * is signed out at once and keeps its waiting items until it signs in again.
+ */
+export const handleRemoveExtensionAccess = async (apiKey: ApiKeyResponseDto) => {
+  const $t = await getFormatter();
+
+  const confirmed = await confirmFrameleaf({
+    title: $t('frameleaf_access_key_extension_remove_title', { values: { name: apiKey.name } }),
+    prompt: $t('frameleaf_access_key_extension_remove_help', { values: { browser: extensionBrowser(apiKey) } }),
+    confirmText: $t('frameleaf_access_key_extension_remove'),
+    danger: true,
+  });
+  if (!confirmed) {
+    return false;
+  }
+
+  try {
+    await deleteApiKey({ id: apiKey.id });
+    eventManager.emit('ApiKeyDelete', apiKey);
+    toastManager.primary($t('frameleaf_access_key_extension_removed', { values: { name: apiKey.name } }));
+    return true;
+  } catch (error) {
+    handleError(error, $t('errors.unable_to_remove_api_key'));
+    return false;
   }
 };

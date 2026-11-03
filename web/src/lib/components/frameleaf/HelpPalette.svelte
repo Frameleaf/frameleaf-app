@@ -505,7 +505,7 @@
               <!-- offline: the opening of each section, from the saved index -->
               <div class="hp-markdown" bind:this={readerBody}>
                 <p>{reading.article.intro}</p>
-                {#each reading.article.headings as heading (heading.title)}
+                {#each reading.article.headings as heading, row (row)}
                   <h3 id={headingAnchor(heading.title)}>{heading.title}</h3>
                   <p>{heading.text}</p>
                 {/each}
@@ -539,7 +539,7 @@
                     {#each turn.result.blocks as block, position (position)}
                       <p>
                         {block.text}
-                        {#each block.sourceIds as id (id)}
+                        {#each new Set(block.sourceIds) as id (id)}
                           {@const source = turn.result.sources.find((item) => item.id === id)}
                           {@const target = source && sourceTarget(source.url)}
                           <sup>
@@ -557,14 +557,14 @@
                     {#if turn.result.questions.length > 0}
                       <p class="hp-small">{$t('frameleaf_help_panel_more_detail')}</p>
                       <ul class="hp-questions">
-                        {#each turn.result.questions as question (question)}
+                        {#each turn.result.questions as question, row (row)}
                           <li>{question}</li>
                         {/each}
                       </ul>
                     {/if}
                     {#if turn.result.sources.length > 0}
                       <ol class="hp-sources" aria-label={$t('frameleaf_help_panel_sources')}>
-                        {#each turn.result.sources as source (source.id)}
+                        {#each turn.result.sources as source, row (row)}
                           {@const target = sourceTarget(source.url)}
                           <li>
                             {#if target}
@@ -660,7 +660,7 @@
           <section class="hp-preview">
             <h3>{$t('frameleaf_help_panel_on_this_page')}</h3>
             <ul class="hp-toc">
-              {#each reading.article.headings as heading (heading.title)}
+              {#each reading.article.headings as heading, row (row)}
                 {@const anchor = headingAnchor(heading.title)}
                 <li>
                   <button
@@ -728,7 +728,7 @@
             {#if preview.headings.length > 0}
               <h3>{$t('frameleaf_help_panel_on_this_page')}</h3>
               <ul class="hp-toc">
-                {#each preview.headings.slice(0, 6) as heading (heading.title)}
+                {#each preview.headings.slice(0, 6) as heading, row (row)}
                   <li>
                     <button
                       type="button"

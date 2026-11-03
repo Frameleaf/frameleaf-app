@@ -1,6 +1,6 @@
 {
   "name": "frameleaf-e2e",
-  "version": "1.1.7",
+  "version": "1.2.2",
   "description": "",
   "main": "index.js",
   "type": "module",
@@ -57,7 +57,7 @@
     "sharp": "^0.35.5",
     "socket.io-client": "^4.8.4",
     "supertest": "^7.3.1",
-    "@typescript/native": "npm:typescript@^7.0.2",
+    "@typescript/native": "npm:typescript@7.1.0-beta",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "typescript-eslint": "^8.71.2",
     "utimes": "^5.2.1",

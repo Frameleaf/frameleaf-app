@@ -199,6 +199,18 @@ describe('immutable MP4 text-track semantics', () => {
     (graph.timeline.items[1] as any)[field] = {};
     expect(() => sealStudioEmbeddedSubtitles(graph, binding)).toThrow(/styling/);
   });
+  it('FL-640: carries whole lines when captions have word times and a word-by-word look', () => {
+    const plain = sealStudioEmbeddedSubtitles(captionGraph(), binding);
+    const graph = captionGraph();
+    const caption = graph.timeline.items[1] as any;
+    caption.wordLook = { style: 'big', highlightColor: '#f2cc60', size: 'large', position: 'middle' };
+    caption.cues[1].words = [
+      { text: 'Tail', startSeconds: caption.cues[1].startSeconds, endSeconds: caption.cues[1].endSeconds },
+    ];
+    const seal = sealStudioEmbeddedSubtitles(graph, binding);
+    expect(seal.decodedCueDigest).toBe(plain.decodedCueDigest);
+    expect(seal.source.cueCount).toBe(2);
+  });
   it('refuses future per-cue styling and preserves noncontributing styles plus ordinary titles', () => {
     const graph = captionGraph();
     (graph.timeline.items[1] as any).cues[0].style = { color: '#ff00ff' };

@@ -50,8 +50,6 @@ export const BuddyStatusSchema = z.object({
   instanceId: z.string(),
   settings: BuddySettingsSchema.nullable(),
   pairing: BuddyPairing.nullable(),
-  /** The pairing waits for this server's confirmation: it sent the invitation (only the inviter confirms). */
-  canConfirm: z.boolean().optional(),
   recoveryVerified: z.boolean(),
   keyFingerprint: z.string().nullable(),
   lastCompleteAt: z.string().nullable(),
@@ -133,6 +131,13 @@ export const BuddyRestoreStatusSchema = z.object({
   progress: z.number().meta({ format: 'double' }).nullable(),
   phase: z.string(),
   recoveryId: z.string().nullable(),
+  encryptedWithOlderKey: z
+    .number()
+    .int()
+    .nonnegative()
+    .describe(
+      "FL-721: restored Locked items encrypted with an older key, which this server's key file for their owner does not open",
+    ),
   error: z.string().nullable(),
 });
 export class BuddySettingsDto extends createZodDto(BuddySettingsSchema) {}

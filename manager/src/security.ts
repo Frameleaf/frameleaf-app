@@ -27,19 +27,21 @@ export const homeAddress = (address: string | undefined) => {
 
 export class Security {
   private readonly frameAncestors: string;
+  private readonly secure: boolean;
   constructor(
     private store: Store,
     readonly origin: string | undefined,
     frameOrigin?: string,
   ) {
     this.frameAncestors = "'none'";
+    this.secure = !origin || new URL(origin).protocol !== 'http:';
     if (!origin) {
       if (frameOrigin) throw new Error('A frame origin requires MANAGER_ORIGIN');
       return;
     }
     const url = new URL(origin);
-    if (url.protocol !== 'https:' || url.pathname !== '/' || url.search || url.hash || url.username || url.password)
-      throw new Error('Invalid Manager HTTPS origin');
+    if (!['http:', 'https:'].includes(url.protocol) || url.pathname !== '/' || url.search || url.hash || url.username || url.password)
+      throw new Error('Invalid Manager HTTP or HTTPS origin');
     this.origin = url.origin;
     if (frameOrigin) {
       const frame = new URL(frameOrigin);
@@ -132,16 +134,25 @@ export class Security {
       throw error;
     }
   }
-  cookie(res: Response, session: string): void {
-    res.cookie(COOKIE, session, { secure: true, httpOnly: true, sameSite: 'strict', path: '/', maxAge: LIFETIME });
+  issueSession(res: Response, session: string): void {
+    // Cookies cross ports; HTTP credentials must be sent explicitly only to Manager's origin.
+    if (!this.secure) res.set('X-Frameleaf-Manager-Session', session);
+    else res.cookie(COOKIE, session, { secure: true, httpOnly: true, sameSite: 'strict', path: '/', maxAge: LIFETIME });
+  }
+  private signedIn(req: Request): boolean {
+    try {
+      return !!this.session(req);
+    } catch {
+      return false;
+    }
   }
   session(req: Request): { hash: string; csrf: string } {
-    const value = (req.headers.cookie ?? '')
+    const value = !this.secure ? req.headers['x-frameleaf-manager-session'] : (req.headers.cookie ?? '')
       .split(';')
       .map((c) => c.trim())
       .find((c) => c.startsWith(`${COOKIE}=`))
       ?.slice(COOKIE.length + 1);
-    if (!value || !/^[a-f0-9]{64}$/.test(value)) throw new Refusal('sign_in_required', 401);
+    if (typeof value !== 'string' || !/^[a-f0-9]{64}$/.test(value)) throw new Refusal('sign_in_required', 401);
     const hash = sha256(value);
     const found = this.store.db
       .prepare('SELECT csrf FROM sessions WHERE hash=? AND expires>?')
@@ -151,7 +162,7 @@ export class Security {
   }
   logout(req: Request, res: Response): void {
     this.store.db.prepare('DELETE FROM sessions WHERE hash=?').run(this.session(req).hash);
-    res.clearCookie(COOKIE, { secure: true, httpOnly: true, sameSite: 'strict', path: '/' });
+    if (this.secure) res.clearCookie(COOKIE, { secure: true, httpOnly: true, sameSite: 'strict', path: '/' });
   }
   guard = (req: Request, res: Response, next: NextFunction): void => {
     try {
@@ -172,7 +183,9 @@ export class Security {
       const write = !['GET', 'HEAD'].includes(req.method);
       const publicRoute = ['/manager-api/status', '/manager-api/claim', '/manager-api/login'].includes(req.path);
       const credential = ['administrator', 'backup-key', 'export'].some((path) => req.path === `/manager-api/${path}`);
-      this.limit(req.socket.remoteAddress ?? 'unknown', write && (publicRoute || credential) ? 'login' : 'api');
+      const scope = write && (publicRoute || credential) ? 'login' : 'api';
+      // A signed-in session's own calls (the UI polls dashboard every 10 s) never spend the anonymous budget.
+      if (scope === 'login' || !this.signedIn(req)) this.limit(req.socket.remoteAddress ?? 'unknown', scope);
       if (write && (req.headers.origin !== origin || !req.is('application/json')))
         throw new Refusal('invalid_origin', 403);
       if (!publicRoute) {

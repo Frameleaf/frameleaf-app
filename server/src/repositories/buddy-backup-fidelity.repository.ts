@@ -330,6 +330,11 @@ export class BuddyBackupFidelityRepository {
           row.status === 'rendered' &&
           (row.sourceChecksum === null || row.sourceChecksum === state.source.sha256),
       );
+      if ((previousDevelop.find((row) => row.isCurrent)?.id ?? null) !== (current?.id ?? null)) {
+        await sql`UPDATE public.develop_batch_return returned SET "activationInvalidated"=true FROM public.develop_batch_item item WHERE item.id=returned."itemId" AND item."assetId"=${asset.id}::uuid AND returned.status IN ('confirmed','imported','failed')`.execute(
+          trx,
+        );
+      }
       await sql`UPDATE public.asset_develop_revision SET "isCurrent"=false WHERE "assetId"=${asset.id}::uuid`.execute(
         trx,
       );

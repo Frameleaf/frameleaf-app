@@ -3,12 +3,35 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runInNewContext } from "node:vm";
 import test from "node:test";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const { load } = createRequire(join(root, "server/package.json"))("js-yaml");
 const workflow = (file) =>
   load(readFileSync(join(root, ".github/workflows", file), "utf8"));
+
+test("explicit development diagnostics can capture a feature candidate without admitting pull requests or forks", () => {
+  const condition = workflow(
+    "development-validation.yml",
+  ).jobs.development.if.replace(/^\$\{\{\s*|\s*\}\}$/g, "");
+  for (const [repository, ref, event_name, expected] of [
+    [
+      "Frameleaf/frameleaf-app",
+      "refs/heads/aj/power-workflows",
+      "workflow_dispatch",
+      true,
+    ],
+    ["Frameleaf/frameleaf-app", "refs/pull/539/merge", "pull_request", false],
+    ["someone/frameleaf-app", "refs/heads/main", "workflow_dispatch", false],
+    ["Frameleaf/frameleaf-app", "refs/heads/main", "push", true],
+  ]) {
+    assert.equal(
+      runInNewContext(condition, { github: { repository, ref, event_name } }),
+      expected,
+    );
+  }
+});
 
 test("development diagnostics are read-only and dispatchable through existing Test definition", () => {
   const entry = workflow("test.yml");
@@ -34,7 +57,10 @@ test("development diagnostics are read-only and dispatchable through existing Te
   const job = definition.jobs.development;
   assert.match(job.if, /Frameleaf\/frameleaf-app/);
   assert.match(job.if, /refs\/heads\/main/);
-  assert.doesNotMatch(job.if, /master\/frameleaf-implementation|aj\/FL-333-pg19/);
+  assert.doesNotMatch(
+    job.if,
+    /master\/frameleaf-implementation|aj\/FL-333-pg19/,
+  );
   assert.deepEqual(job.permissions, { contents: "read" });
   const checkout = job.steps.find(({ uses }) =>
     uses?.startsWith("actions/checkout@"),
@@ -83,7 +109,10 @@ test("failed checks preserve diagnostics but cannot produce a successful develop
     "queries",
   ]) {
     assert.match(steps.find((step) => step.id === id).if, /always\(\)/);
-    assert.match(steps.find((step) => step.id === id).run, /set -(?:euo|o) pipefail/);
+    assert.match(
+      steps.find((step) => step.id === id).run,
+      /set -(?:euo|o) pipefail/,
+    );
   }
   const upload = steps.find(({ uses }) =>
     uses?.startsWith("actions/upload-artifact@"),

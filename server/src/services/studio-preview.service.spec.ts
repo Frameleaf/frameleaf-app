@@ -632,6 +632,22 @@ describe(StudioPreviewService.name, () => {
       expect(previews.upsert).not.toHaveBeenCalled();
     });
 
+    it('refuses an API key with a clear answer, since a preview is admitted per signed-in session', async () => {
+      projects.authorizeRevision.mockResolvedValue(
+        authorization({
+          manifest: manifest({
+            interactiveAdmissionView: { actorId: authStub.user1.user.id, sessionId: null, owners: [] },
+          } as never),
+        }),
+      );
+
+      await expect(sut.request(authStub.user1, request())).rejects.toMatchObject({
+        status: 403,
+        response: { code: 'studio_preview_session_required' },
+      });
+      expect(previews.upsert).not.toHaveBeenCalled();
+    });
+
     it('answers "not found" when the account may not read the project', async () => {
       projects.authorizeRevision.mockRejectedValue(new NotFoundException('Studio project not found'));
 

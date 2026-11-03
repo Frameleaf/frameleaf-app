@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { it } from 'vitest';
+import { tryPromise } from 'src/utils/promise.js';
 
 // Exercise the installed SDK's command construction without a router or discovery traffic.
 const { InternetGatewayService4 } = await import(
@@ -16,7 +17,7 @@ for (const protocol of ['tcp', 'udp']) {
         location: new URL('http://127.0.0.1:49152'),
       },
       run: (_service: string, action: string, args: Array<[string, string | number]>) =>
-        Promise.try(() => {
+        tryPromise(() => {
           requests.push({ action, args });
           return { AddAnyPortMappingResponse: { NewReservedPort: 4443 } };
         }),

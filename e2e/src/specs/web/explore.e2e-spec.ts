@@ -21,12 +21,23 @@ const scrollOffset = (inside: Locator) =>
   });
 
 test.describe('Explore', () => {
+  const uploadQueues = [
+    'sidecar',
+    'metadataExtraction',
+    'storageTemplateMigration',
+    'thumbnailGeneration',
+    'faceDetection',
+    'backgroundTask',
+  ] as const;
   let admin: LoginResponseDto;
   let first: AssetMediaResponseDto;
   let second: AssetMediaResponseDto;
   let archived: AssetMediaResponseDto;
 
   test.beforeAll(async () => {
+    // Three uploads and six ordered queue waits (each bounded at 60 s in CI) plus reset outgrow the 30 s hook default.
+    const uploads = 3;
+    test.setTimeout((uploads + uploadQueues.length) * 60_000 + 60_000);
     utils.initSdk();
     await utils.resetDatabase();
     admin = await utils.adminSetup();
@@ -44,7 +55,10 @@ test.describe('Explore', () => {
       assetData: { filename: 'archived.png' },
       fileCreatedAt: '2026-08-03T09:00:00.000Z',
     });
-    await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction');
+    // Archiving changes the publication source; let upload-derived work finish first.
+    for (const queue of uploadQueues) {
+      await utils.waitForQueueFinish(admin.accessToken, queue);
+    }
     await utils.archiveAssets(admin.accessToken, [archived.id]);
 
     const [beach] = await utils.upsertTags(admin.accessToken, ['beach']);
@@ -97,10 +111,13 @@ test.describe('Explore', () => {
     await page.goto('/explore');
 
     const things = page.getByRole('region', { name: 'Things in your photos' });
-    await things.scrollIntoViewIfNeeded();
+    const beach = things.getByRole('link', { name: /beach/ });
+    // Clicking waits for the entrance animation and can scroll the link; sample the actual departure position.
+    await beach.click({ trial: true });
     const scrolled = await scrollOffset(things);
+    expect(scrolled).toBeGreaterThan(0);
 
-    await things.getByRole('link', { name: /beach/ }).click();
+    await beach.click();
     await page.waitForURL(/\/search\?query=.*tagIds/);
     await page.locator('[data-asset-id]').first().click();
     await expect(page.locator('#immich-asset-viewer')).toBeVisible();
@@ -112,8 +129,8 @@ test.describe('Explore', () => {
     await page.goBack();
     await page.waitForURL(/\/explore/);
     await expect(things).toBeVisible();
-    const restored = await scrollOffset(things);
-    expect(Math.abs(restored - scrolled)).toBeLessThan(80);
+    // The route restores its snapshot in the next animation frame after it becomes visible.
+    await expect.poll(() => scrollOffset(things)).toBe(scrolled);
   });
 
   test('counts Favorites as the Favorites page shows them: archived included, a stack once (FL-50)', async ({
@@ -146,13 +163,7 @@ test.describe('Explore', () => {
     // face detection), so this library already has scores. Give one item five stars, let every job
     // that could score it finish, then clear the scores: a rated library with nothing scored.
     await updateAsset({ id: first.id, updateAssetDto: { rating: 5 } }, { headers: asBearerAuth(admin.accessToken) });
-    for (const queue of [
-      'sidecar',
-      'metadataExtraction',
-      'thumbnailGeneration',
-      'faceDetection',
-      'backgroundTask',
-    ] as const) {
+    for (const queue of uploadQueues) {
       await utils.waitForQueueFinish(admin.accessToken, queue);
     }
     const client = await utils.connectDatabase();

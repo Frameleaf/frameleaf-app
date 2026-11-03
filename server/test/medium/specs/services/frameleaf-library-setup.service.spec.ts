@@ -4,7 +4,12 @@ import { Writable } from 'node:stream';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { FrameleafLibrarySetupController } from 'src/controllers/frameleaf-library-setup.controller.js';
 import { JobName, QueueName, SyncEntityType } from 'src/enum.js';
-import { IMPORT_DERIVED_RUN_KIND, IMPORT_DERIVED_STAGES, importDerivedRunId } from 'src/immich-import/derived-work.js';
+import {
+  IMPORT_DERIVED_RUN_KIND,
+  IMPORT_DERIVED_RUN_STAGES,
+  importDerivedRunId,
+} from 'src/immich-import/derived-work.js';
+import { SqlQueueStore } from 'src/queue/store.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
 import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repository.js';
@@ -26,15 +31,18 @@ it('starts the retained import regeneration during first setup once ready, resum
   const source = 'verified-source',
     configFingerprint = 'verified-config';
   const id = importDerivedRunId(source, configFingerprint);
-  const stages = [...IMPORT_DERIVED_STAGES.map(([, name]) => name), JobName.PersonGenerateThumbnail];
+  const stages = [...IMPORT_DERIVED_RUN_STAGES];
   const users = {
     hasAdmin: vi.fn().mockResolvedValue(false),
     getAdmin: vi.fn().mockResolvedValue({ id: randomUUID() }),
   };
   const config = {
-    getAdminConfigWithRevision: vi
-      .fn()
-      .mockResolvedValue({ config: { machineLearning: { enabled: true, urls: [] } }, revision: 'first' }),
+    getAdminConfigWithRevision: vi.fn().mockResolvedValue({
+      config: {
+        machineLearning: { enabled: true, urls: [], clip: { enabled: true }, facialRecognition: { enabled: true } },
+      },
+      revision: 'first',
+    }),
     updateAdminConfigWithRevision: vi.fn().mockResolvedValue({}),
   };
   const make = () =>
@@ -42,11 +50,15 @@ it('starts the retained import regeneration during first setup once ready, resum
       db,
       { getAll: vi.fn().mockResolvedValue([]) } as never,
       {} as never,
-      { getJobCounts: vi.fn().mockResolvedValue({ active: 0, waiting: 0, delayed: 0, paused: 0, failed: 0 }) } as never,
+      {
+        getJobCounts: vi.fn().mockResolvedValue({ active: 0, waiting: 0, delayed: 0, paused: 0, failed: 0 }),
+        retryImportedWork: (runId: string, tx: typeof db) => new SqlQueueStore(db).retryImportedWork(runId, tx),
+      } as never,
       users as never,
       {} as never,
       {} as never,
       config as never,
+      {} as never,
     );
   const run = async () =>
     (
@@ -122,8 +134,32 @@ it('starts the retained import regeneration during first setup once ready, resum
     expect(await selections()).toEqual(
       stages
         .toSorted()
-        .map((stage) => ({ stage, state: stage === JobName.AssetGenerateThumbnails ? 'cancelled' : 'ready' })),
+        // FL-1146: metadata (and thumbnails) start at once; the rest wait for the original-file check.
+        .map((stage) => ({
+          stage,
+          state:
+            stage === JobName.AssetGenerateThumbnails
+              ? 'cancelled'
+              : stage === JobName.AssetExtractMetadata
+                ? 'ready'
+                : 'enumerating',
+        })),
     );
+    // FL-1146 setup bar: smart search and faces wait for the original-file check; pause holds every stage.
+    const progress = await make().progress();
+    expect(progress).toMatchObject({ active: true, paused: false, completedAt: null, people: 0, albums: 0 });
+    expect(progress.stages.map(({ id, status }) => ({ id, status }))).toEqual([
+      { id: 'check', status: 'running' },
+      { id: 'thumbnails', status: 'running' },
+      { id: 'search', status: 'waiting' },
+    ]);
+    const held = await make().setPaused(true);
+    expect(held.paused).toBe(true);
+    expect((await selections()).filter((row) => row.state === 'ready')).toEqual([]);
+    await make().setPaused(false);
+    expect((await selections()).filter((row) => row.state === 'ready')).toEqual([
+      { stage: JobName.AssetExtractMetadata, state: 'ready' },
+    ]);
     await make().begin(true); // Restart/retry must not mint a run or revive cancellation.
     expect((await run()).selection.managerSetup.startedAt).toBe(startedAt);
     expect((await sql<{ count: number }>`SELECT count(*)::int AS count FROM job_run`.execute(db)).rows[0].count).toBe(
@@ -208,6 +244,7 @@ it('applies the initial machine learning choice once through normal settings and
     {} as never,
     {} as never,
     config as never,
+    {} as never,
   );
   try {
     process.env.FRAMELEAF_MANAGER_INSTALLATION = 'aaaaaaaabbbb';
@@ -254,6 +291,8 @@ it('waits for a fresh full integrity scan when the existing operation is increme
   try {
     const { user } = await ctx.newUser();
     await ctx.newAsset({ ownerId: user.id });
+    // Photos that survive only as untracked files in the upload folder still need the scan.
+    const { user: filesOnly } = await ctx.newUser();
     process.env.FRAMELEAF_MANAGER_INSTALLATION = 'eeeeeeeeffff';
     process.env.FRAMELEAF_MANAGER_ORIGIN = 'new_library';
     delete process.env.FRAMELEAF_MANAGER_ML_ENABLED;
@@ -270,6 +309,7 @@ it('waits for a fresh full integrity scan when the existing operation is increme
       { hasAdmin: vi.fn().mockResolvedValue(true), getAdmin: vi.fn().mockResolvedValue(user) } as never,
       {} as never,
       mediaHealth as never,
+      {} as never,
       {} as never,
     );
     await service.status(); // Persist the full-scan admission boundary after discovery.
@@ -302,7 +342,11 @@ it('waits for a fresh full integrity scan when the existing operation is increme
       value: { health: Record<string, string> };
     }>`SELECT value FROM system_metadata WHERE key=${key}`.execute(db);
     expect(state.rows[0].value.health).toEqual({ [user.id]: freshFull });
-    expect(mediaHealth.startMissingScan).toHaveBeenCalledTimes(2);
+    expect(mediaHealth.startMissingScan).toHaveBeenCalledWith({ user: { id: filesOnly.id } });
+    const owners = await sql<{
+      value: { owners: string[] };
+    }>`SELECT value FROM system_metadata WHERE key=${key}`.execute(db);
+    expect(owners.rows[0].value.owners.sort()).toEqual([user.id, filesOnly.id].sort());
   } finally {
     for (const [key, value] of [
       ['FRAMELEAF_MANAGER_INSTALLATION', previous.installation],
@@ -356,6 +400,7 @@ it('serializes setup, resumes from persisted intent and keeps device completion 
               : [],
           ),
       } as never,
+      {} as never,
       {} as never,
       {} as never,
     );

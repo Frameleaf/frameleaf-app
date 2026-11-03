@@ -22,6 +22,11 @@ const tools = vi.hoisted(() => ({
 vi.mock('$app/navigation', () => ({ invalidateAll: vi.fn(), beforeNavigate: vi.fn(), goto: vi.fn() }));
 vi.mock('$lib/frameleaf/own-preferences-draft', () => ({ createOwnPreferencesDraft: () => tools }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { preferences: {}, user: {} } }));
+// FL-522: "Your smart albums" reads the person's albums; none here.
+vi.mock('@frameleaf/sdk', async (original) => ({
+  ...(await original<object>()),
+  getMySmartAlbums: vi.fn().mockResolvedValue({ enabled: false, albums: [] }),
+}));
 
 const values = (overrides: Record<string, unknown> = {}) => ({
   'folders.enabled': true,

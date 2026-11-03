@@ -30,4 +30,19 @@ describe('AlbumTile', () => {
     render(AlbumTile, { album, currentUserId: 'me' });
     expect(screen.queryByTestId('album-origin-mark')).toBeNull();
   });
+
+  it('marks the Recovered Media album and says so under its name (FL-416)', () => {
+    const album = albumFactory.build({ albumName: 'Recovered Media', albumThumbnailAssetId: null, recovered: true });
+    render(AlbumTile, { album, currentUserId: 'me' });
+
+    const mark = screen.getByTestId('album-recovered-mark');
+    expect(mark.getAttribute('aria-label')).toBe('Recovered from your imported library’s folders');
+    expect(screen.getByText(/· Recovered$/)).toBeInTheDocument();
+  });
+
+  it('shows no recovered mark on other albums', () => {
+    const album = albumFactory.build({ albumThumbnailAssetId: null });
+    render(AlbumTile, { album, currentUserId: 'me' });
+    expect(screen.queryByTestId('album-recovered-mark')).toBeNull();
+  });
 });

@@ -183,7 +183,7 @@ describe(StudioReverseConformCommandService.name, () => {
 
   it('routes enqueue/apply through owner, live resource and original-revision guards', async () => {
     const { sut, studio, resources, operation } = setup();
-    const controller = new StudioProjectController(studio as never, {} as never, sut, {} as never);
+    const controller = new StudioProjectController(studio as never, {} as never, sut, {} as never, {} as never);
     await expect(
       controller.enqueueStudioReverseConform(
         owner,

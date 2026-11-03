@@ -13,32 +13,33 @@ test.describe('Registration', () => {
   });
 
   test('admin registration', async ({ page }) => {
-    // welcome
+    // FL-708: a server nobody has set up opens setup's one welcome straight away
     await page.goto('/');
-    await page.getByRole('link', { name: 'Getting Started' }).click();
 
     // FL-176: a new server's first-run setup on the always-dark stage
     await expect(page).toHaveURL('/auth/register');
     await expect(page).toHaveTitle(/Set up Frameleaf/);
     await expect(page.locator('section.frs-root')).toHaveAttribute('data-theme', 'dark');
+    await expect(page.getByRole('button', { name: 'Restore from a backup' })).toBeVisible();
     await page.getByRole('button', { name: 'Continue setup' }).click();
 
-    await expect(page.getByRole('heading', { name: "How you'll sign in" })).toBeVisible();
-    await page.getByText('Local account only').click();
-    await page.getByRole('button', { name: /^(Continue|Use recommended)$/ }).click();
-
-    await expect(page.getByRole('heading', { name: 'Create the admin account' })).toBeVisible();
+    // FL-708: the administrator is always a local account, created first
+    await expect(page.getByRole('heading', { name: 'Create your admin account' })).toBeVisible();
     await page.getByLabel('Name', { exact: true }).fill('Frameleaf Admin');
     await page.getByLabel('Email', { exact: true }).fill('admin@immich.app');
     await page.getByLabel('Password', { exact: true }).fill('Frameleaf-Admin-2026');
     await page.getByLabel('Confirm password', { exact: true }).fill('Frameleaf-Admin-2026');
-    await page.getByRole('button', { name: /^(Continue|Use recommended)$/ }).click();
+    await page.getByRole('button', { name: 'Continue' }).click();
+
+    // then an optional Frameleaf account, which can be skipped
+    await expect(page.getByRole('heading', { name: 'Add a Frameleaf account' })).toBeVisible();
+    await page.getByRole('button', { name: 'Skip for now' }).click();
 
     // The admin now exists and is signed in; every later step has a recommended choice.
     await expect(page.getByRole('heading', { name: 'Where your library lives' })).toBeVisible();
     await expect(page.getByText(/^Writable, .* free$/)).toBeVisible();
     for (const title of ['Processing', 'Protection', 'Privacy', 'Bring everything together', "You're ready"]) {
-      await page.getByRole('button', { name: /^(Continue|Use recommended)$/ }).click();
+      await page.getByRole('button', { name: 'Continue' }).click();
       await expect(page.getByRole('heading', { name: title, level: 1 })).toBeVisible();
     }
     await page.getByRole('button', { name: 'Open Frameleaf' }).click();
@@ -56,14 +57,15 @@ test.describe('Registration', () => {
     await page.goto('/admin/user-management');
     await page.waitForURL('**/user-settings?area=users&section=accounts');
     await expect(page.getByRole('heading', { name: 'Users', level: 1 })).toBeVisible();
-    await page.getByRole('button', { name: 'Create account', exact: true }).click();
-    const dialog = page.getByRole('dialog', { name: 'Create account' });
-    await dialog.getByLabel('Email').fill('user@example.com');
-    await dialog.getByLabel('Initial password').fill('password');
-    await dialog.getByLabel('Confirm password').fill('password');
-    await dialog.getByLabel('Name').fill('Immich User');
-    await dialog.getByRole('button', { name: 'Create account' }).click();
-    await expect(dialog).toHaveCount(0);
+    // FL-516: Add a person is a page; Frameleaf makes up a temporary password and shows it once.
+    await page.getByRole('button', { name: 'Add a person', exact: true }).click();
+    await page.getByLabel('Name', { exact: true }).fill('Immich User');
+    await page.getByLabel('Email', { exact: true }).fill('user@example.com');
+    await page.getByRole('button', { name: 'Add person', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Immich User is added' })).toBeVisible();
+    const shown = await page.locator('p.password code').innerText();
+    const password = shown.trim();
+    expect(password.length).toBeGreaterThan(7);
 
     // logout
     await context.clearCookies();
@@ -71,7 +73,7 @@ test.describe('Registration', () => {
     // login
     await page.goto('/auth/login?autoLaunch=0');
     await page.getByLabel('Email', { exact: true }).fill('user@example.com');
-    await page.getByLabel('Password', { exact: true }).fill('password');
+    await page.getByLabel('Password', { exact: true }).fill(password);
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();
 
     // change password (FL-80 prototype screen)
@@ -251,7 +253,7 @@ test.describe('Sign-in lifecycle', () => {
 
     const heading = (name: string) => page.getByRole('heading', { name, level: 1 });
     await expect(heading('Your account')).toBeFocused();
-    await page.getByRole('button', { name: /^(Continue|Use recommended)$/ }).click();
+    await page.getByRole('button', { name: 'Continue' }).click();
     await expect(heading('Library check')).toBeFocused();
     await page.keyboard.press('Alt+ArrowLeft');
     await expect(heading('Your account')).toBeFocused();

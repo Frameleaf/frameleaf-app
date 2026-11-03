@@ -79,8 +79,8 @@ test.describe('Timeline', () => {
 
   test.beforeEach(async ({ context }) => {
     await setupBaseMockApiRoutes(context, adminUserId);
-    await setupTimelineMockApiRoutes(context, timelineRestData, changes, testContext);
-    await setupTrashMockApiRoutes(context, timelineRestData, changes);
+    const { purge } = await setupTimelineMockApiRoutes(context, timelineRestData, changes, testContext);
+    await setupTrashMockApiRoutes(context, timelineRestData, changes, purge);
   });
 
   test.afterEach(() => {
@@ -245,19 +245,6 @@ test.describe('Timeline', () => {
     });
     await selectionBarUtils.action(page, 'Delete').click();
     await expect(deleteRequest).resolves.toEqual({ force: false, ids: [assetId] });
-  };
-
-  const restoreFromTrash = async (page: Page, assetId: string) => {
-    const row = page.locator('article', { has: page.locator(`img[src*="${assetId}"]`) });
-    await expect(row).toBeVisible();
-    const restoreRequest = pageRoutePromise(page, '**/api/trash/apply', async (route, request) => {
-      const requestJson = request.postDataJSON();
-      changes.assetDeletions = changes.assetDeletions.filter((id) => !requestJson.ids.includes(id));
-      await route.fulfill({ json: { count: requestJson.ids.length } });
-    });
-    await row.getByRole('button', { name: 'Restore', exact: true }).click();
-    await expect(restoreRequest).resolves.toEqual({ action: 'restore', ids: [assetId], token: 'review' });
-    await expect(row).toHaveCount(0);
   };
 
   const archiveRequest = (page: Page, visibility: 'archive' | 'timeline') =>
@@ -482,10 +469,13 @@ test.describe('Timeline', () => {
       await thumbnailUtils.ensureSelected(page, assets[2].id);
       await expect(selectionBarUtils.locator(page)).toContainText('3 selected');
 
+      // Notifications follow committed server changes, which refreshed pages must also see.
+      changes.assetDeletions.push(assets[1].id);
       socket.emit('on_asset_trash', [assets[1].id]);
       await expect(thumbnailUtils.withAssetId(page, assets[1].id)).toHaveCount(0);
       await expect(selectionBarUtils.locator(page)).toContainText('2 selected');
 
+      changes.assetDeletions.push(assets[2].id);
       socket.emit('on_asset_delete', assets[2].id);
       await expect(thumbnailUtils.withAssetId(page, assets[2].id)).toHaveCount(0);
       await expect(selectionBarUtils.locator(page)).toContainText('1 selected');
@@ -577,7 +567,7 @@ test.describe('Timeline', () => {
       await expect(page.getByTestId('library-status-bar')).toHaveCount(0);
     });
 
-    test('on a phone the layouts sit beside the title and the toolbar has two rows (LIB-P5)', async ({ page }) => {
+    test('on a phone the layouts sit beside the title and the toolbar is one line (UI review #7)', async ({ page }) => {
       await page.setViewportSize({ width: 390, height: 844 });
       await pageUtils.openPhotosPage(page);
       const toolbar = page.getByTestId('frameleaf-results-toolbar');
@@ -586,18 +576,25 @@ test.describe('Timeline', () => {
       // Timeline, Browse and Work beside the title, as the template does; no separate view menu.
       await expect(page.getByRole('group', { name: 'Layout' })).toBeVisible();
       await expect(page.getByRole('button', { name: 'View options' })).toHaveCount(0);
-      // Row one: the count, Filter, Slideshow and more. Row two: Sort across, then Grid and List.
+      // One line: the count, Filter, Sort as its icon and "…". Slideshow and Grid / List move to "…".
       const sort = toolbar.getByRole('combobox', { name: 'Sort by' });
+      const more = toolbar.getByRole('button', { name: 'More library actions' });
       await expect(sort).toBeVisible();
-      const [countBox, moreBox, sortBox, listBox] = await Promise.all([
+      await expect(more).toBeVisible();
+      await expect(toolbar.getByRole('button', { name: 'List view' })).toBeHidden();
+      const [countBox, moreBox, sortBox] = await Promise.all([
         count.boundingBox(),
-        toolbar.getByRole('button', { name: 'More library actions' }).boundingBox(),
+        more.boundingBox(),
         sort.boundingBox(),
-        toolbar.getByRole('button', { name: 'List view' }).boundingBox(),
       ]);
       expect(Math.abs(middle(countBox) - middle(moreBox))).toBeLessThanOrEqual(12);
-      expect(sortBox!.y).toBeGreaterThanOrEqual(countBox!.y + countBox!.height);
-      expect(Math.abs(middle(sortBox) - middle(listBox))).toBeLessThanOrEqual(12);
+      expect(Math.abs(middle(countBox) - middle(sortBox))).toBeLessThanOrEqual(12);
+
+      await more.click();
+      const sheet = page.getByRole('dialog');
+      await expect(sheet.getByRole('button', { name: 'Slideshow' })).toBeVisible();
+      await sheet.getByRole('button', { name: 'List view' }).click();
+      await expect(page).toHaveURL(/%22view%22%3A%22list%22/);
 
       await timelineUtils.setLayout(page, 'Timeline');
       await expect(page.getByTestId('frameleaf-library')).toHaveAttribute('data-layout', 'timeline');
@@ -653,7 +650,9 @@ test.describe('Timeline', () => {
       await expect(toolbar.getByRole('button', { name: 'Slideshow' })).toBeEnabled();
       await expect(toolbar.getByRole('combobox', { name: 'Sort by' })).toHaveValue('captured-desc');
 
-      await toolbar.getByRole('button', { name: 'Show information panel' }).click();
+      // FL-707 item 10: the Information panel switch is in the labelled View menu.
+      await toolbar.getByRole('button', { name: 'View', exact: true }).click();
+      await toolbar.getByRole('switch', { name: 'Show information panel' }).click();
       await expect(page.getByTestId('frameleaf-work-inspector')).toBeVisible();
 
       await toolbar.getByRole('button', { name: 'More library actions' }).click();
@@ -1546,4 +1545,19 @@ const captured = (assets: TimelineAssetConfig[], assetId: string) => {
 const getYearMonth = (assets: TimelineAssetConfig[], assetId: string) => {
   const dateTime = captured(assets, assetId);
   return dateTime.year + '-' + dateTime.month;
+};
+
+const restoreFromTrash = async (page: Page, assetId: string) => {
+  const row = page.locator('article', { has: page.locator(`img[src*="${assetId}"]`) });
+  await expect(row).toBeVisible();
+  const restoreRequest = pageRoutePromise(page, '**/api/trash/apply', async (route) => {
+    await route.fallback();
+  });
+  await row.getByRole('button', { name: 'Restore', exact: true }).click();
+  await expect(restoreRequest).resolves.toEqual({
+    action: 'restore',
+    ids: [assetId],
+    token: expect.stringMatching(/^timeline-review-\d+$/),
+  });
+  await expect(row).toHaveCount(0);
 };

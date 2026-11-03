@@ -27,6 +27,7 @@ import {
   AssetUploadResourceRepository,
 } from 'src/repositories/asset-upload-resource.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { CaptureRepository } from 'src/repositories/capture.repository.js';
 import { ICloudIdentityRepository } from 'src/repositories/icloud-identity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PhotoSourceRepository } from 'src/repositories/photo-source.repository.js';
@@ -43,6 +44,7 @@ import {
   parseAssetUploadHeaders,
   writeAssetUploadPart,
 } from 'src/utils/asset-upload-resource.js';
+import { captureActor } from 'src/utils/capture.js';
 import { getFilenameExtension } from 'src/utils/file.js';
 import { parseCloudIdentifier } from 'src/utils/icloud-identity.js';
 
@@ -66,6 +68,7 @@ export class AssetUploadResourceService {
     private rateLimits: RateLimitRepository,
     private identities: ICloudIdentityRepository,
     private sources: PhotoSourceRepository,
+    private captures: CaptureRepository,
   ) {}
 
   async limits() {
@@ -99,6 +102,11 @@ export class AssetUploadResourceService {
     resource: Pick<AssetUploadResource, 'metadata' | 'expectedChecksum' | 'expectedSize'>,
     tx?: Transaction<DB>,
   ) {
+    if (resource.metadata.publication === 'capture') {
+      if (resource.metadata.captureActor !== captureActor(auth)) throw new NotFoundException('Capture unavailable');
+      await this.captures.assertActor(auth, tx, Permission.CaptureCreate, true);
+      return;
+    }
     const binding = resource.metadata.sourceIdentity;
     if (binding?.kind !== 'folder') return;
     if (!auth.session || auth.apiKey || auth.sharedLink || auth.system)
@@ -139,14 +147,19 @@ export class AssetUploadResourceService {
     headers: IncomingHttpHeaders,
     input: Readable,
     resume: (resource: AssetUploadResource) => void,
+    mode: 'asset' | 'capture' = 'asset',
   ) {
     const ownerId = await this.owner(auth);
     const parsed = parseAssetUploadHeaders(headers);
+    if ((mode === 'capture') !== (parsed.metadata.publication === 'capture')) {
+      throw new BadRequestException('Upload publication mode does not match');
+    }
+    if (mode === 'capture') parsed.metadata.captureActor = captureActor(auth);
     const limits = await this.limits();
     if (limits.maxSize === 0 || (parsed.size !== undefined && parsed.size > limits.maxSize)) {
       throw new HttpException('Insufficient upload storage', 507);
     }
-    const id = randomUUID();
+    const id = mode === 'capture' ? parsed.metadata.captureId! : randomUUID();
     this.media.canUploadFile({
       auth,
       fieldName: UploadFieldName.ASSET_DATA,
@@ -166,6 +179,7 @@ export class AssetUploadResourceService {
     });
     await this.refuseClaimedItem(ownerId, parsed.metadata.sourceIdentity);
     // The committed resource exists before its URI is sent, including on an interrupted POST.
+    if (mode === 'capture') await this.captures.assertNotCancelled(auth, id);
     const resource = await this.uploads.create(id, ownerId, { ...parsed, maxSize: limits.maxSize });
     resume(resource);
     return this.receive(auth, resource.id, input, 0, parsed.complete, parsed.size);
@@ -177,6 +191,56 @@ export class AssetUploadResourceService {
     return row.metadata.publication === 'live-photo'
       ? { ...row, ingested: await this.uploads.livePhotoPairIngested(row) }
       : row;
+  }
+
+  async captureResource(auth: AuthDto, id: string) {
+    const row = await this.uploads.get(id, await this.owner(auth));
+    if (row.metadata.publication !== 'capture' || row.metadata.captureId !== id)
+      throw new NotFoundException('Capture unavailable');
+    await this.sourceAdmission(auth, row);
+    return row;
+  }
+
+  async commitCapture<T>(
+    auth: AuthDto,
+    id: string,
+    sha256: string,
+    commit: (
+      tx: Transaction<DB>,
+      publish: () => Promise<{ id: string; status: 'created' | 'duplicate' }>,
+    ) => Promise<T>,
+  ): Promise<T> {
+    const resource = await this.captureResource(auth, id);
+    if (resource.expectedChecksum.toString('hex') !== sha256) throw new ConflictException('Capture file changed');
+    return this.withStreamAdmission(auth, id, async (check) => {
+      const verified = await this.finalize(auth, id, check);
+      if (!['verified', 'published'].includes(verified.state))
+        throw new ConflictException('Capture upload is not ready');
+      const prepared =
+        verified.state === 'verified'
+          ? await this.media.prepareUploadAsset(auth, this.metadata(verified), this.file(verified))
+          : undefined;
+      const result = await this.uploads.locked(id, auth.user.id, async (tx, current) => {
+        await check(tx);
+        await this.sourceAdmission(auth, current, tx);
+        let published = current;
+        return commit(tx, async () => {
+          if (published.state !== 'published') {
+            if (published.state !== 'verified' || !prepared) throw new ConflictException('Capture upload is not ready');
+            published = await this.uploads.publish(tx, published, prepared);
+          }
+          if (!published.resultAssetId || !published.resultStatus)
+            throw new ConflictException('Capture upload was not published');
+          return {
+            id: published.resultAssetId,
+            status: current.state === 'published' ? 'duplicate' : published.resultStatus,
+          };
+        });
+      });
+      // Existing ingestion/expiry recovery owns jobs and byte cleanup after the complete receipt transaction commits.
+      await this.finalize(auth, id, check);
+      return result;
+    });
   }
 
   async append(auth: AuthDto, id: string, headers: IncomingHttpHeaders, input: Readable) {
@@ -227,6 +291,8 @@ export class AssetUploadResourceService {
     await this.owner(auth);
     const resource = await this.uploads.get(id, auth.user.id);
     await this.sourceAdmission(auth, resource);
+    if (resource.metadata.publication === 'capture')
+      await this.captures.assertNotCancelled(auth, resource.metadata.captureId!);
     const token = randomUUID();
     let acquired: boolean;
     try {
@@ -239,6 +305,8 @@ export class AssetUploadResourceService {
     }
     const check: UploadAdmissionCheck = async (tx) => {
       await this.sourceAdmission(auth, resource, tx);
+      if (resource.metadata.publication === 'capture')
+        await this.captures.assertNotCancelled(auth, resource.metadata.captureId!, tx);
       let current: boolean;
       try {
         current = await this.rateLimits.isUploadStreamCurrent(id, token);
@@ -470,12 +538,25 @@ export class AssetUploadResourceService {
     if (row.state === 'rejected') {
       throw new BadRequestException('Upload representation was rejected');
     }
+    if (row.state === 'verified' && row.metadata.publication === 'capture') return row;
     if (row.state === 'verified' && row.metadata.publication !== 'live-photo') {
       await check();
       const prepared = await this.media.prepareUploadAsset(auth, this.metadata(row), this.file(row));
+      // Media health: the bytes of a photo whose original is gone go back under that photo (an
+      // iCloud edit render is bound to its own asset and is never a repair).
+      const source = row.metadata.sourceIdentity;
+      const restored =
+        source?.kind === 'icloud' && source.role === 'edit-render'
+          ? undefined
+          : await this.media.restoreLostOriginal(auth, this.metadata(row), this.file(row));
       row = await this.uploads.locked(id, auth.user.id, async (tx, current) => {
         await check(tx);
-        return current.state === 'published' ? current : this.uploads.publish(tx, current, prepared);
+        if (current.state === 'published') {
+          return current;
+        }
+        return restored
+          ? this.uploads.publishRestored(tx, current, restored.id, restored.visible)
+          : this.uploads.publish(tx, current, prepared);
       });
     }
     if (
@@ -730,7 +811,7 @@ export class AssetUploadResourceService {
           if (row.metadata.sourceIdentity?.kind === 'icloud' && row.metadata.sourceIdentity.role === 'edit-render')
             await this.uploads.enqueueLocalEffects();
           await this.ingest({ user }, row);
-        } else if (row.metadata.sourceIdentity?.kind !== 'folder') {
+        } else if (row.metadata.sourceIdentity?.kind !== 'folder' && row.metadata.publication !== 'capture') {
           // Folder publication resumes through the desktop's live photo session, never a background actor.
           await this.withStreamAdmission({ user }, row.id, (check) => this.finalize({ user }, row.id, check));
         }

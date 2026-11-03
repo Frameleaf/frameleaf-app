@@ -10,6 +10,7 @@
   import { savedSearchesStore } from '$lib/stores/saved-searches.svelte';
   import { handleError } from '$lib/utils/handle-error';
   import {
+    getWorkflowCapabilities,
     addAssetsToAlbum,
     BulkIdErrorReason,
     createAlbum,
@@ -22,6 +23,7 @@
   import { Icon } from '@frameleaf/ui';
   import { mdiFilterOutline, mdiFolderOutline, mdiFolderSearchOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
+  import { onMount } from 'svelte';
 
   /**
    * "Save search" from the search palette (FL-49). Ported from the prototype's save flow
@@ -70,6 +72,14 @@
     | { kind: 'stalled'; albumId: string; remaining: string[][]; tally: Tally; of: number }
     | { kind: 'done'; albumId: string; tally: Tally };
 
+  let automationAvailable = $state(false);
+  onMount(() => {
+    void Promise.resolve(getWorkflowCapabilities())
+      .then((value) => {
+        automationAvailable = value?.sourceFilters ?? false;
+      })
+      .catch(() => {});
+  });
   let name = $state('');
   let busy = $state(false);
   let error = $state('');
@@ -93,6 +103,10 @@
   const nothingMatches = $derived(count === 0);
 
   const guard = async (work: () => Promise<void>) => {
+    if (query.mode === 'speech') {
+      error = $t('frameleaf_speech_integrations');
+      return;
+    }
     if (!name.trim() || busy) {
       return;
     }
@@ -209,6 +223,13 @@
     await goto(Route.viewAlbum({ id: albumId }));
   };
 
+  const automate = async () => {
+    const params = new URLSearchParams({ workflowQuery: JSON.stringify(query), workflowName: name.trim() });
+    open = false;
+    onSaved?.('search', true);
+    await goto(`${Route.workflows()}&${params}`);
+  };
+
   const saveSearch = async () => {
     if (await savedSearchesStore.save(name.trim(), query)) {
       open = false;
@@ -237,6 +258,19 @@
         : $t('frameleaf_search_save_snapshot_exact', { values: { count: snapshot.ids.length } });
 
   const choices = $derived([
+    {
+      id: 'workflow',
+      icon: mdiFilterOutline,
+      title: $t('frameleaf_workflows.create_from_search'),
+      description: $t(
+        automationAvailable
+          ? 'frameleaf_workflows.create_from_search_help'
+          : 'frameleaf_workflows.automation_unavailable',
+      ),
+      note: '',
+      disabled: !automationAvailable,
+      action: automate,
+    },
     {
       id: 'smart',
       icon: mdiFolderSearchOutline,
@@ -280,7 +314,9 @@
       <input data-initial-focus maxlength="100" bind:value={name} disabled={busy || step.kind !== 'choose'} />
     </label>
 
-    {#if step.kind === 'choose'}
+    {#if query.mode === 'speech'}
+      <p role="status">{$t('frameleaf_speech_integrations')}</p>
+    {:else if step.kind === 'choose'}
       <div class="choices">
         {#each choices as choice (choice.id)}
           <button

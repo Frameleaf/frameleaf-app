@@ -17,16 +17,36 @@ export const shortcutLabel = (shortcut) => {
     label += shortcut.key.toUpperCase();
     return label;
 };
-/** Determines whether an event should be ignored. The event will be ignored if:
- *  - The element dispatching the event is not the same as the element which the event listener is attached to
- *  - The element dispatching the event is an input field
+/** Inputs that take no typing, so their keys can still be shortcuts. */
+const NON_TYPING_INPUT_TYPES = ['button', 'checkbox', 'color', 'file', 'image', 'radio', 'range', 'reset', 'submit'];
+const OPEN_DIALOG = 'dialog[open], [role="dialog"][aria-modal="true"], [role="alertdialog"]';
+/** Determines whether an event should be ignored. The event will be ignored if, when the element dispatching
+ *  the event is not the one the listener is attached to:
+ *  - it takes typing (a text-like input of any type, such as time or number, a select, a text area or editable
+ *    content), or
+ *  - a dialog is open and the listener is not inside it: the dialog owns every key until it closes (LIB-02, a
+ *    digit typed in Edit date and time set the star rating behind it)
  */
 export const shouldIgnoreEvent = (event) => {
     if (event.target === event.currentTarget) {
         return false;
     }
-    const type = event.target.type;
-    return ['textarea', 'text', 'date', 'datetime-local', 'email', 'password'].includes(type);
+    const target = event.target;
+    if (typeof Element === 'undefined' || !(target instanceof Element)) {
+        return false;
+    }
+    const dialogs = [...target.ownerDocument.querySelectorAll(OPEN_DIALOG)];
+    const listener = event.currentTarget;
+    if (dialogs.length > 0 && !dialogs.some((dialog) => listener instanceof Node && dialog.contains(listener))) {
+        return true;
+    }
+    if (target.closest('[contenteditable]:not([contenteditable="false"])')) {
+        return true;
+    }
+    if (target.tagName === 'INPUT') {
+        return !NON_TYPING_INPUT_TYPES.includes(target.type);
+    }
+    return target.tagName === 'TEXTAREA' || target.tagName === 'SELECT';
 };
 export const matchesShortcut = (event, shortcut) => {
     return (shortcut.key.toLowerCase() === event.key.toLowerCase() &&

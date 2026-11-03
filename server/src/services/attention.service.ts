@@ -3,7 +3,12 @@ import { DateTime } from 'luxon';
 import type { SystemConfig } from 'src/config.js';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { ATTENTION_KINDS, type AttentionKind, type AttentionResponseDto } from 'src/dtos/attention.dto.js';
+import {
+  ATTENTION_KINDS,
+  type AttentionDismissDto,
+  type AttentionKind,
+  type AttentionResponseDto,
+} from 'src/dtos/attention.dto.js';
 import { QueueName, StorageFolder, SystemMetadataKey } from 'src/enum.js';
 import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
@@ -25,6 +30,8 @@ import {
 import { effectiveBackupSchedule } from 'src/utils/backup-sequence.js';
 import { getConfig } from 'src/utils/config.js';
 import { isValidDatabaseRoutineBackupName } from 'src/utils/database-backups.js';
+import { quietHoursHolds } from 'src/utils/overnight.js';
+import { serverTimeZone } from 'src/utils/server-time-zone.js';
 
 /** Queues are read a few at a time, as the queue list does, so a read never fills the database pool. */
 const QUEUE_BATCH = 4;
@@ -61,8 +68,8 @@ export class AttentionService {
     const config = await this.readConfig();
     const [backup, storage, work, version] = await Promise.all([
       this.check('backup', () => this.backup(config, now)),
-      this.check('storage', () => this.storage()),
-      this.check('work', () => this.work()),
+      this.check('storage', () => this.storage(config)),
+      this.check('work', () => this.work(config)),
       this.check('version', () => this.version(config)),
     ]);
     const results: Record<AttentionKind, SignalResult> = { backup, storage, work, version };
@@ -70,7 +77,25 @@ export class AttentionService {
       checkedAt: now.toISOString(),
       items: sortAttention(ATTENTION_KINDS.flatMap((kind) => results[kind].items)),
       checks: ATTENTION_KINDS.map((kind) => ({ kind, state: results[kind].state })),
+      dismissed: await this.dismissed(),
     };
+  }
+
+  private async dismissed(): Promise<string[]> {
+    const stored = await this.systemMetadataRepository.get(SystemMetadataKey.OverviewDismissed).catch(() => null);
+    return stored?.ids ?? [];
+  }
+
+  /** FL-363: dismiss an Overview item so it stops counting, or bring it back. Kept for every administrator. */
+  async setDismissed({ id, dismissed }: AttentionDismissDto): Promise<AttentionResponseDto> {
+    const ids = new Set(await this.dismissed());
+    if (dismissed) {
+      ids.add(id);
+    } else {
+      ids.delete(id);
+    }
+    await this.systemMetadataRepository.set(SystemMetadataKey.OverviewDismissed, { ids: [...ids].slice(-32) });
+    return this.getAttention();
   }
 
   private async check(kind: AttentionKind, read: () => Promise<SignalResult>): Promise<SignalResult> {
@@ -82,8 +107,11 @@ export class AttentionService {
     }
   }
 
-  private async storage(): Promise<SignalResult> {
-    return storageSignal(await this.storageRepository.checkDiskUsage(StorageCore.getBaseFolder(StorageFolder.Library)));
+  private async storage(config: SystemConfig): Promise<SignalResult> {
+    return storageSignal(
+      await this.storageRepository.checkDiskUsage(StorageCore.getBaseFolder(StorageFolder.Library)),
+      config.storageWarning.percent,
+    );
   }
 
   /**
@@ -171,9 +199,11 @@ export class AttentionService {
     return times.length > 0 ? new Date(Math.max(...times)).toISOString() : null;
   }
 
-  private async work(): Promise<SignalResult> {
+  private async work(config: SystemConfig): Promise<SignalResult> {
     const pause = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafLibraryMovePause);
     const held = new Set(pause?.queues);
+    const overnight = await this.systemMetadataRepository.get(SystemMetadataKey.OvernightSequence);
+    const quiet = quietHoursHolds(overnight, config.nightlyTasks, serverTimeZone(config.server));
     const names = Object.values(QueueName);
     const queues: QueueFacts[] = [];
     for (let offset = 0; offset < names.length; offset += QUEUE_BATCH) {
@@ -183,7 +213,7 @@ export class AttentionService {
             this.jobRepository.getJobCounts(name),
             this.jobRepository.isPaused(name),
           ]);
-          return { name, counts, paused, heldByMove: held.has(name) };
+          return { name, counts, paused, heldByMove: held.has(name), heldByQuietHours: quiet.has(name) };
         }),
       );
       queues.push(...batch);

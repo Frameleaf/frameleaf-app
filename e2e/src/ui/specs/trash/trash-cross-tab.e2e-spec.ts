@@ -78,6 +78,14 @@ test.describe('Trash across tabs', () => {
     const trashTab = await context.newPage();
 
     await trashTab.goto(trashSection);
+    // Synthetic media is served through the app's worker; the second tab needs it to be controlling first.
+    await trashTab.evaluate(async () => {
+      await navigator.serviceWorker.ready;
+    });
+    await trashTab.waitForFunction(() => !!navigator.serviceWorker.controller);
+    expect(await trashTab.evaluate(() => navigator.serviceWorker.controller?.scriptURL)).toContain(
+      '/service-worker.js',
+    );
     await viewerTab.goto(`/photos/${asset.id}`);
     await assetViewerUtils.waitForViewerLoad(viewerTab, asset);
     await expect.poll(() => socket.connected()).toBe(2);

@@ -37,7 +37,7 @@ test('NAS Manager packages authenticate the component, both architectures and ex
     const output = path.join(directory, 'valid');
     await buildManager(file, output, { run, request });
     manifest.installers = { schemaVersion: 1, sourceCommit, tag: manifest.tag, image: manifest.image,
-      files: ['frameleaf-manager.xml', 'frameleaf-manager.compose.yaml'].map(name => ({ name, sha256: '0'.repeat(64) })) };
+      files: ['frameleaf-manager.xml', 'frameleaf-manager.compose.yaml', 'frameleaf-manager.hexos.json'].map(name => ({ name, sha256: '0'.repeat(64) })) };
     await fs.writeFile(file, JSON.stringify(manifest));
     const staleOutput = path.join(directory, 'stale-authenticated-templates');
     await assert.rejects(buildManager(file, staleOutput, { run, request }), /installer/i);
@@ -55,6 +55,8 @@ test('NAS Manager packages authenticate the component, both architectures and ex
     assert(xml.includes('--cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER</ExtraParams>'));
     assert(xml.includes('Target="/run/frameleaf-host/unraid-autostart" Default="" Mode="rw"'));
     assert(xml.includes('Target="MANAGER_UNRAID_AUTOSTART" Default=""'));
+    assert(xml.includes('Leave blank: Manager automatically discovers'));
+    assert(!xml.includes('Required for imports: select'));
     assert.equal(await fs.readFile(path.join(output, 'unraid/LICENSE'), 'utf8'),
       await fs.readFile(path.join(__dirname, '../../LICENSE'), 'utf8'));
     assert((await fs.readFile(path.join(output, 'unraid/README.md'), 'utf8')).includes('No claim key is needed'));
@@ -65,15 +67,16 @@ root = pathlib.Path(sys.argv[1])
 profile = ET.parse(root / 'ca_profile.xml').getroot()
 assert profile.tag == 'CommunityApplications'
 assert 'Manager' in profile.findtext('Profile', '')
-assert profile.findtext('Forum') == 'https://frameleaf.app/help'
-assert profile.findtext('WebPage') == 'https://frameleaf.app/docs'
-assert profile.findtext('Discord') == 'https://discord.gg/bMP5vjyC'
+assert profile.findtext('Forum') == 'https://frameleaf.app/help/community/'
+assert profile.findtext('WebPage') == 'https://frameleaf.app'
+assert profile.findtext('Discord') == 'https://discord.gg/cN3U3mv4'
 assert profile.findtext('Twitter') == 'https://x.com/frameleafapp'
 assert profile.findtext('Video') == 'https://www.youtube.com/watch?v=rNgyZZoZoEg'
-assert profile.findtext('Photo') == 'https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/manager-overview.jpg'
-for field in ['Reddit', 'Facebook', 'DonateLink', 'DonateText']:
-    assert profile.find(field) is not None
-    assert not profile.findtext(field)
+assert profile.findtext('Photo') == 'https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/frameleaf-library.jpg'
+assert profile.findtext('Reddit') == 'https://www.reddit.com/r/Frameleaf/'
+assert profile.findtext('DonateLink') == 'https://frameleaf.app/pricing/#supporter'
+assert profile.findtext('DonateText') == 'Support Frameleaf with a supporter licence'
+assert profile.find('Facebook') is None
 readme = (root / 'README.md').read_text()
 assert '[Help center](https://frameleaf.app/help)' in readme
 assert '[Documentation](https://frameleaf.app/docs)' in readme
@@ -89,6 +92,10 @@ for template in templates:
     assert app.findtext('TemplateURL') == 'https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/templates/' + template.name
     assert app.findtext('Repository') == 'ghcr.io/frameleaf/frameleaf-manager:latest'
     assert app.findtext('Privileged') == 'false'
+    # Community Apps lists Frameleaf by this name and leads with the product tour.
+    assert app.findtext('Name') == 'Frameleaf'
+    assert [v.text for v in app.findall('Video')] == ['https://www.youtube.com/watch?v=' + v for v in ['rNgyZZoZoEg', 'INeVz9NFzOM', 'bTfFBDHc6OE']]
+    assert len(app.findall('Screenshot')) == 9
     for config in app.findall('Config'):
         assert config.get('Description', '').strip(), config.get('Name')
 `, path.join(output, 'unraid')]);
@@ -101,7 +108,39 @@ for template in templates:
     for (const bind of compose.services.manager.volumes.filter(bind => bind.source.startsWith('/mnt/')))
       assert.equal(bind.source, bind.target);
     assert(!compose.services.manager.volumes.some(bind => bind.target.startsWith('/var/lib/postgresql')));
-    assert.deepEqual(await fs.readdir(output), ['manager-manifest.json', 'truenas', 'unraid']);
+    const hexos = JSON.parse(await fs.readFile(path.join(output, 'hexos/frameleaf-manager.hexos.json'), 'utf8'));
+    assert.equal(hexos.custom, true);
+    assert.deepEqual(hexos.app_values.image, { repository: IMAGE, tag: 'latest', pull_policy: 'missing' });
+    assert.equal(hexos.metadata.version, '0.1.0');
+    assert.equal(hexos.script.version, '0.1.0');
+    assert.equal(hexos.app_values.privileged, undefined);
+    assert.deepEqual(hexos.app_values.capabilities.add, ['CHOWN', 'DAC_OVERRIDE', 'FOWNER']);
+    assert.deepEqual(hexos.app_values.labels, [{ key: 'app.frameleaf.manager.role', value: 'controller' }]);
+    assert.deepEqual(hexos.app_values.ports.map(port => [port.port_number, port.container_port]), [[2282, 9443]]);
+    assert.equal(hexos.requirements.ports[0], 2282);
+    const env = Object.fromEntries(hexos.app_values.envs.map(({ name, value }) => [name, value]));
+    assert.equal(env.MANAGER_BIND_ADDRESS, '0.0.0.0');
+    assert.equal(env.MANAGER_ORIGIN, undefined);
+    const mounts = Object.fromEntries(hexos.app_values.storage.map(entry => [entry.mount_path, entry]));
+    assert.equal(mounts['/var/run/docker.sock'].host_path_config.path, '/var/run/docker.sock');
+    assert.equal(mounts['/run/frameleaf-host/mountinfo'].read_only, true);
+    assert.equal(mounts['/run/frameleaf-host/mountinfo'].host_path_config.path, '/proc/1/mountinfo');
+    // Manager compares host paths with its own view, so every library folder mounts at its host path.
+    const folders = hexos.app_values.storage.filter(entry => entry.mount_path.startsWith('$LOCATION('));
+    for (const entry of folders) assert.equal(entry.host_path_config.path, entry.mount_path);
+    const roots = [env.MANAGER_DATA, env.MANAGER_BACKUP_ROOT, env.MANAGER_APPDATA_ROOT,
+      ...env.MANAGER_STORAGE_ROOTS.split(':'), ...env.MANAGER_DATABASE_ROOTS.split(':')];
+    for (const root of roots) assert(folders.some(entry => entry.mount_path === root), root);
+    const created = hexos.ensure_directories_exists.map(entry => entry.path);
+    for (const entry of folders) assert(created.includes(entry.mount_path), entry.mount_path);
+    const text = JSON.stringify(hexos);
+    for (const [, location] of text.matchAll(/\$LOCATION\((\w+)\)/g)) assert(hexos.requirements.locations.includes(location), location);
+    // The catalog copy is the signed script with only the image tag pinned to this release.
+    const custom = await fs.readFile(path.join(output, 'hexos/frameleaf-manager.hexos.json'), 'utf8');
+    const catalog = await fs.readFile(path.join(output, 'hexos/frameleaf.json'), 'utf8');
+    assert.equal(catalog, custom.replace('"tag": "latest"', '"tag": "manager-v0.1.0"'));
+    assert.equal(JSON.parse(catalog).app_values.image.tag, 'manager-v0.1.0');
+    assert.deepEqual(await fs.readdir(output), ['hexos', 'manager-manifest.json', 'truenas', 'unraid']);
     for (const head_branch of ['main']) {
       const admitted = path.join(directory, head_branch.replaceAll('/', '-'));
       await buildManager(file, admitted, { run, request: async () => ({ ...build, head_branch }) });

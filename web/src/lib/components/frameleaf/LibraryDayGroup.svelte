@@ -22,6 +22,8 @@
   type Props = {
     timelineDay: TimelineDay;
     selection: string[];
+    groupCount?: number;
+    groupState?: ReturnType<typeof groupSelectionState>;
     selecting: boolean;
     /** Browse hides the day header; Timeline and Work keep it sticky above the rows. */
     showHeader?: boolean;
@@ -48,13 +50,15 @@
     captionBelow?: boolean;
     /** Work: show file names in the captions. */
     showFileNames?: boolean;
+    /** Work with the panel beside the grid: the item the panel describes gets a neutral ring. */
+    inPanelId?: string | null;
     /** Rating override for an asset; by default each tile shows the asset's own rating. */
     ratingFor?: (asset: TimelineAsset) => number | null;
     /** FL-34: tiles that carry the Sensitive badge without a lock (the Locked view's rule matches). */
     sensitiveFor?: (asset: TimelineAsset) => boolean;
     onOpen?: (asset: TimelineAsset, event: MouseEvent | KeyboardEvent) => void;
     onToggleSelect?: (asset: TimelineAsset, event: MouseEvent | KeyboardEvent) => void;
-    onSelectGroup?: (ids: string[], checked: boolean) => void;
+    onSelectGroup?: (ids: string[], checked: boolean) => void | Promise<boolean>;
     onFocusAsset?: (asset: TimelineAsset) => void;
     /** Extra chrome drawn over every tile by the page that mounts the timeline. */
     tileOverlay?: Snippet<[TimelineAsset]>;
@@ -77,6 +81,8 @@
   let {
     timelineDay,
     selection,
+    groupCount,
+    groupState,
     selecting,
     showHeader = true,
     headerHeight = 48,
@@ -86,6 +92,7 @@
     captionHeight = 0,
     captionBelow = false,
     showFileNames = false,
+    inPanelId = null,
     ratingFor,
     sensitiveFor,
     onOpen,
@@ -104,11 +111,9 @@
   const tiles = $derived(hosted ?? timelineDay.activeViewerAssets.filter((viewerAsset) => !viewerAsset.flowHost));
 
   const dayIds = $derived(timelineDay.viewerAssets.map((viewerAsset) => viewerAsset.id));
-  const state = $derived(groupSelectionState(dayIds, selection));
+  const state = $derived(groupState ?? groupSelectionState(dayIds, selection));
   const selected = $derived(new Set(selection));
-  const headingId = $derived(
-    `fl-day-${timelineDay.timelineMonth.yearMonth.year}-${timelineDay.timelineMonth.yearMonth.month}-${timelineDay.day}`,
-  );
+  const headingId = $derived(`fl-day-${timelineDay.timelineMonth.viewId}-${timelineDay.day}`);
   /**
    * The day's title as the prototype writes it (`explore-timeline.mjs` `timelineGroups`): the full
    * date, e.g. "Wednesday, December 11, 2024". Only this header uses it; the manager's shorter
@@ -142,7 +147,7 @@
     <LibraryGroupHeader
       id={headingId}
       title={dayTitle}
-      count={dayIds.length}
+      count={groupCount ?? dayIds.length}
       {state}
       {selecting}
       width={Math.max(timelineDay.width, headerWidth ?? 0)}
@@ -172,6 +177,7 @@
         >
           <AssetTile
             {asset}
+            dateType={timelineDay.dateType}
             width={position.width}
             height={tileHeight}
             selected={selected.has(asset.id)}
@@ -187,6 +193,7 @@
             overlay={tileOverlay}
             quickActions={quickActions?.(asset)}
             deferImage={deferImages}
+            inPanel={inPanelId === asset.id}
           />
         </div>
       {/if}

@@ -139,9 +139,9 @@ export class LibraryScanService {
   /* ------------------------------------------------------------------ */
 
   /** An administrator's scan. Asking again while one is waiting or running answers with that one. */
-  async queueManual(auth: AuthDto, libraryId: string): Promise<void> {
+  async queueManual(auth: AuthDto, libraryId: string, everyFile = false): Promise<void> {
     const library = await this.findOrFail(libraryId);
-    const { created } = await this.queue(library, { ownerId: auth.user.id, trigger: 'manual' });
+    const { created } = await this.queue(library, { ownerId: auth.user.id, trigger: 'manual', everyFile });
     if (created) {
       await this.audit(auth, library, AdminAuditAction.LibraryScanQueued);
     }
@@ -185,7 +185,7 @@ export class LibraryScanService {
    */
   async queue(
     library: LibraryRow,
-    options: { ownerId: string; trigger: LibraryScanTrigger },
+    options: { ownerId: string; trigger: LibraryScanTrigger; everyFile?: boolean },
   ): Promise<{ operation: MediaOperation; created: boolean }> {
     await this.requireActiveOwner(library);
     if (library.importPaths.length === 0) {
@@ -200,7 +200,11 @@ export class LibraryScanService {
           destination: MediaOperationDestination.Local,
           destinationDetail: null,
           label: library.name,
-          snapshot: { libraryId: library.id, trigger: options.trigger } satisfies LibraryScanSnapshot,
+          snapshot: {
+            libraryId: library.id,
+            trigger: options.trigger,
+            ...(options.everyFile && { everyFile: true }),
+          } satisfies LibraryScanSnapshot,
           settings: {},
           estimate: null,
           result: emptyLibraryScanResult() as unknown as Record<string, unknown>,
@@ -542,6 +546,13 @@ export class LibraryScanService {
       expected: await this.assetRepository.getLibraryAssetCount(library.id),
     };
     const found = new Map(roots.map((root) => [root, 0]));
+    // FL-538: while an administrator has paused the owner's uploads, the folders are still checked
+    // (files that went missing are noticed) but nothing new is added; the next scan after resuming does.
+    const owner = await this.userRepository.get(library.ownerId, {});
+    const paused = owner?.uploadsPaused === true;
+    if (paused) {
+      this.logger.log(`Scan ${operation.id} of library ${library.id}: new uploads are paused, nothing is added`);
+    }
 
     const batches = this.storageRepository.walkLibrary({
       pathsToCrawl: roots,
@@ -567,7 +578,7 @@ export class LibraryScanService {
 
       for (let offset = 0; offset < batch.length; offset += QUEUE_BATCH) {
         const slice = batch.slice(offset, offset + QUEUE_BATCH);
-        const added = await this.importFiles(operation, claimToken, library, slice, result, signal);
+        const added = paused ? 0 : await this.importFiles(operation, claimToken, library, slice, result, signal);
         if (added === undefined) return;
         result = { ...result, crawled: result.crawled + slice.length, added: result.added + added };
       }
@@ -659,9 +670,12 @@ export class LibraryScanService {
     const toOnline: string[] = [];
     const trashedToOnline: string[] = [];
     const toUpdate: string[] = [];
+    // FL-539: "Check every file again" reads every file again, not only the ones that changed
+    const everyFile = parseLibraryScanSnapshot(operation.snapshot).everyFile;
 
     for (const [index, asset] of assets.entries()) {
-      switch (checkExistingAsset(asset, stats[index])) {
+      const outcome = checkExistingAsset(asset, stats[index]);
+      switch (everyFile && outcome === AssetSyncResult.DO_NOTHING ? AssetSyncResult.UPDATE : outcome) {
         case AssetSyncResult.OFFLINE: {
           (asset.status === AssetStatus.Trashed ? trashedToOffline : toOffline).push(asset.id);
           break;
@@ -747,6 +761,7 @@ export class LibraryScanService {
     }
 
     const rows: ReturnType<typeof libraryAssetFromFile>[] = [];
+    const sizes = new Map<string, number>();
     for (const filePath of paths) {
       signal.throwIfAborted();
       const assetPath = path.normalize(filePath);
@@ -758,6 +773,7 @@ export class LibraryScanService {
         signal.throwIfAborted();
         const stat = await this.storageRepository.stat(assetPath);
         signal.throwIfAborted();
+        sizes.set(assetPath, stat.size);
         rows.push(
           libraryAssetFromFile(
             { path: assetPath, mtime: stat.mtime },
@@ -786,7 +802,13 @@ export class LibraryScanService {
             rows.map((row) => row.originalPath),
           ),
         );
-        return assets.createAll(rows.filter((row) => fresh.has(row.originalPath)));
+        const created = rows.filter((row) => fresh.has(row.originalPath));
+        const ids = await assets.createAll(created);
+        await assets.setExternalFileSizes(
+          library.id,
+          created.map((row) => ({ path: row.originalPath, size: sizes.get(row.originalPath) ?? 0 })),
+        );
+        return ids;
       },
       {
         examined: paths.length,

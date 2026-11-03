@@ -20,6 +20,9 @@ import {
   buildExplorePeople,
   buildExplorePlaces,
   buildExploreThings,
+  exploreThingsFacetsBody,
+  exploreThingsNeedMoreTags,
+  peopleNameSet,
   EXPLORE_RECENT_LIMIT,
   exploreFacetsBody,
   facetCounts,
@@ -89,7 +92,7 @@ export const load = (async ({ url }) => {
     // Every section loads on its own: a request that fails leaves `null`, the page still opens, and
     // only that section says it could not load (`failed` below) instead of the whole page erroring.
     getAllPeople({ withHidden: false }).catch(() => null),
-    getAlbumTree().catch(() => null),
+    getAlbumTree({}).catch(() => null),
     loadMemories().catch(() => null),
     // Card counts share the same scope/archive/privacy rules as the destinations they link to.
     // Favorites: the Favorites timeline's own query (its `options`), summed over its buckets, so the
@@ -133,6 +136,20 @@ export const load = (async ({ url }) => {
     withoutPeople: withoutPeopleStatistics ? withoutPeopleStatistics.total : null,
   };
 
+  // FL-707 item 15: things only, so no person's name, catalogue folder, camera keyword or code. The
+  // non-things are left out of the busiest tags, so a library of mostly catalogue keywords asks once
+  // more for a fuller tag list rather than show a short (or empty) row.
+  const peopleNames = peopleNameSet(people?.people ?? []);
+  let tagCounts = facetCounts(facets?.facets, SearchFacetField.Tags);
+  let things = buildExploreThings(tagCounts, undefined, peopleNames);
+  if (exploreThingsNeedMoreTags(tagCounts, things)) {
+    const fuller = await searchFacets({ searchFacetsDto: exploreThingsFacetsBody }).catch(() => null);
+    if (fuller) {
+      tagCounts = facetCounts(fuller.facets, SearchFacetField.Tags);
+      things = buildExploreThings(tagCounts, undefined, peopleNames);
+    }
+  }
+
   const bestPhotosPreview: ExploreBestPhotosPreview = bestPhotos ?? { total: null, cover: null };
 
   return {
@@ -147,7 +164,7 @@ export const load = (async ({ url }) => {
     },
     peopleCards: buildExplorePeople(facetCounts(facets?.facets, SearchFacetField.People), people?.people ?? []),
     places: buildExplorePlaces(facetCounts(facets?.facets, SearchFacetField.City)),
-    things: buildExploreThings(facetCounts(facets?.facets, SearchFacetField.Tags)),
+    things,
     landmarks: landmarkCards,
     // FL-357: one visit worth an album, when there is one. The section is no worse off without it.
     landmarkAlbumSuggestion: await suggestLandmarkAlbum(landmarkCards).catch(() => null),

@@ -44,14 +44,24 @@ administrator's own account.
 Sign in as the person on each server, open **Settings → Access & security → API keys**, and
 create a key with these permissions (or `all`):
 
-| Server      | Required                                                                                       | Optional                                                        |
-| ----------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| Source      | `asset.read`, `asset.download`, `album.read`, `tag.read`                                       | `stack.read`, `person.read`                                     |
-| Destination | `asset.upload`, `asset.update`, `album.create`, `albumAsset.create`, `tag.create`, `tag.asset` | `stack.create`, `person.create`, `person.reassign`, `face.read` |
+| Server      | Required                                                                                       | Optional                                                                        |
+| ----------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Source      | `asset.read`, `asset.download`, `album.read`, `tag.read`                                       | `stack.read`, `person.read`                                                     |
+| Destination | `asset.upload`, `asset.update`, `album.create`, `albumAsset.create`, `tag.create`, `tag.asset` | `stack.create`, `person.create`, `person.reassign`, `face.read`, `asset.delete` |
 
 Without the optional permissions, stacks and people are skipped and everything
-else still moves. If the account does not exist on the destination yet, create
-it first and sign in as that person to create the key.
+else still moves. `asset.delete` lets the run restore an original the
+destination already holds only in its trash; without it, that original is
+reported as failed. If the account does not exist on the destination yet,
+create it first and sign in as that person to create the key.
+
+:::warning Locked items are not copied
+An API key cannot open Locked, so the migration never reads, copies or counts
+Locked items. Before you start, move everything out of Locked on the source
+(you can lock it again on the destination afterwards). A **Pass** covers only
+what was copied, and the command reminds you of this at preflight and in its
+summary.
+:::
 
 ## 1. Build the command-line tool
 
@@ -124,6 +134,18 @@ Albums, tags and stacks are only marked complete once every one of their photos
 is on the destination. If an original failed, its albums stay pending and the
 report lists them until the original arrives.
 
+A rerun does not scan the source again once its scan has finished, so it stays
+fast. Photos added to the source after that scan are not picked up. To copy
+them, add `--rescan`:
+
+```bash
+node packages/cli/dist/index.js migrate --ledger ./library-move.sqlite --rescan
+```
+
+It scans the source library again and copies only what the ledger has not seen.
+Photos already copied are not uploaded again, and no album or person is created
+twice. New photos join their existing albums, tags and stacks on the destination.
+
 ## 6. Retry failed items
 
 ```bash
@@ -183,13 +205,16 @@ credentials or paths into details; run the verify command again for a clean file
 Retire the source only when all of these hold:
 
 - the latest verify report shows **Pass**;
+- Locked on the source is empty (Locked items are never copied);
 - every unresolved item is resolved, or you have accepted it (for example a
   person whose name could not be attached because a photo has several faces);
 - you have a backup of the destination; and
 - you have kept the ledger file and the final report as your record.
 
-Album sharing, activity, comments and anything owned by another account are not
-migrated. Thumbnails, faces, smart search and places are rebuilt by the
+Album sharing, activity, comments and anything owned by another account
+(including albums other people share with you) are not migrated. Favorites and
+archive are added to originals the destination already held; the destination's
+own favorites and archive are kept. Thumbnails, faces, smart search and places are rebuilt by the
 destination's own jobs.
 
 :::caution Recovery evidence

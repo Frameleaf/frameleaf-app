@@ -10,10 +10,12 @@
    *
    * Together they retire the legacy shared gallery grid and the legacy asset select bar.
    */
+  import type { LibraryItemDto, BookmarkResponseDto } from '@frameleaf/sdk';
+  import type { LibraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
   import AssetGrid from '$lib/components/frameleaf/AssetGrid.svelte';
   import SelectionBar from '$lib/components/frameleaf/SelectionBar.svelte';
   import type { BulkActionContext, BulkActionId, BulkAsset } from '$lib/frameleaf/bulk-actions';
-  import type { BulkPayload } from '$lib/frameleaf/bulk-operations';
+  import { bulkStateById, type BulkPayload } from '$lib/frameleaf/bulk-operations';
   import { BulkController } from '$lib/frameleaf/bulk-controller.svelte';
   import { durableBulkTracker } from '$lib/frameleaf/durable-bulk-tracker.svelte';
   import { librarySession, type LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
@@ -28,6 +30,9 @@
   type Props = {
     /** The results, in the order the page loaded them. */
     assets: TimelineAsset[];
+    items?: LibraryItemDto[];
+    preferences?: LibraryGridPreferences;
+    onOpenBookmark?: (bookmark: BookmarkResponseDto) => void;
     session?: LibrarySessionStore;
     /** Ask for the next page. */
     onEndReached?: () => void;
@@ -73,6 +78,9 @@
 
   let {
     assets,
+    items,
+    preferences,
+    onOpenBookmark,
     session = librarySession,
     onEndReached,
     onOpen,
@@ -123,6 +131,7 @@
       ownerById: Object.fromEntries(
         session.selection.map((id) => [id, byId.get(id)?.ownerId]).filter(([, owner]) => !!owner) as [string, string][],
       ),
+      stateById: bulkStateById(session.selection, (id) => byId.get(id)),
     }),
   });
 
@@ -202,6 +211,9 @@
 
 <div class="frameleaf fl-results" data-testid="frameleaf-results">
   <AssetGrid
+    {items}
+    {preferences}
+    {onOpenBookmark}
     {assets}
     {session}
     {onEndReached}

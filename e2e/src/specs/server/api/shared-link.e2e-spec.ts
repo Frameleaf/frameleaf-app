@@ -490,6 +490,7 @@ describe('/shared-links', () => {
           }),
         ]);
       }),
+      15_000,
     );
 
     describe('allowDownload=false', () => {

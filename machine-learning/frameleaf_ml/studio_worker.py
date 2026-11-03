@@ -6,10 +6,13 @@ server through the private trust volume and renders Studio exports. It is on by 
 in either leaves the other running, and the worker is restarted with a growing back-off.
 """
 
+import errno
 import os
+import signal
 import subprocess
 import threading
 from collections.abc import Callable, Mapping
+from contextlib import suppress
 from pathlib import Path
 
 from .config import log
@@ -65,6 +68,7 @@ class StudioWorkerSupervisor:
         self.clock = clock or time.monotonic
         self.stopping = threading.Event()
         self.process: subprocess.Popen[bytes] | None = None
+        self._process_lock = threading.Lock()
         self.thread = threading.Thread(target=self.run, name="studio-worker", daemon=True)
 
     def start(self) -> None:
@@ -75,14 +79,23 @@ class StudioWorkerSupervisor:
         while not self.stopping.is_set():
             started = self.clock()
             try:
-                self.process = self.popen(self.command, env=worker_env(os.environ))
+                process = self.popen(self.command, env=worker_env(os.environ), start_new_session=True)
+                with self._process_lock:
+                    self.process = process
             except OSError as error:
                 log.warning(f"Studio worker could not start: {error}")
-                return
+                if error.errno not in {errno.EAGAIN, errno.ENOMEM, errno.EINTR, errno.EMFILE, errno.ENFILE}:
+                    return
+                backoff = next_backoff(backoff, 0)
+                log.warning(f"Retrying Studio worker startup in {backoff:.0f} s")
+                self.stopping.wait(backoff)
+                continue
             # stop() may have run before this process was recorded, when it had nothing to terminate.
-            if self.stopping.is_set():
-                self.process.terminate()
-            code = self.process.wait()
+            if self.stopping.is_set() and not self._cleanup(process):
+                return
+            code = process.wait()
+            if not self._cleanup(process):
+                return
             if self.stopping.is_set():
                 return
             if code == 0:
@@ -95,12 +108,32 @@ class StudioWorkerSupervisor:
     def stop(self, timeout: float = 10.0) -> None:
         self.stopping.set()
         process = self.process
-        if process is not None and process.poll() is None:
-            process.terminate()
+        if process is not None:
+            self._cleanup(process, timeout)
+
+    def _cleanup(self, process: subprocess.Popen[bytes], timeout: float = 10.0) -> bool:
+        with self._process_lock:
+            if self.process is not process:
+                return True
+            # The session belongs to this worker, including children left behind after its leader exits.
+            for sig in (signal.SIGTERM, signal.SIGKILL):
+                try:
+                    os.killpg(process.pid, sig)
+                except ProcessLookupError:
+                    pass
+                except OSError as error:
+                    log.warning(f"Studio worker group cleanup failed; restart held: {error}")
+                    return False
+                if sig == signal.SIGTERM:
+                    with suppress(subprocess.TimeoutExpired):
+                        process.wait(timeout=timeout)
             try:
                 process.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
-                process.kill()
+                log.warning("Studio worker did not exit after SIGKILL; restart held")
+                return False
+            self.process = None
+            return True
 
 
 def start_studio_worker(env: Mapping[str, str] | None = None) -> StudioWorkerSupervisor | None:

@@ -1,0 +1,2203 @@
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/subtitle-section.tsx b/src/features/editor/components/properties-sidebar/clip-panel/subtitle-section.tsx
+--- a/src/features/editor/components/properties-sidebar/clip-panel/subtitle-section.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/subtitle-section.tsx
+@@ -26,6 +26,7 @@
+ } from '@/types/timeline'
+ 
+ import { CaptionStyleControls } from './caption-style-controls'
++import { ClipWordCaptionStyleCard, SegmentWordCaptionStyleCard } from './word-caption-style-card'
+ import { PropertySection } from '../components'
+ 
+ interface SubtitleSectionProps {
+@@ -101,6 +102,11 @@
+         defaultOpen={true}
+       >
+         <div className="space-y-3 px-1">
++          <SegmentWordCaptionStyleCard
++            segments={segments}
++            canvasWidth={canvasWidth}
++            canvasHeight={canvasHeight}
++          />
+           <CaptionStyleControls
+             items={segments}
+             canvasWidth={canvasWidth}
+@@ -253,6 +259,11 @@
+             />
+           </div>
+ 
++          <ClipWordCaptionStyleCard
++            clips={clips}
++            canvasWidth={canvasWidth}
++            canvasHeight={canvasHeight}
++          />
+           <CaptionStyleControls
+             items={styleItems}
+             canvasWidth={canvasWidth}
+@@ -298,6 +309,11 @@
+           />
+         </div>
+ 
++        <ClipWordCaptionStyleCard
++          clips={clips}
++          canvasWidth={canvasWidth}
++          canvasHeight={canvasHeight}
++        />
+         <CaptionStyleControls
+           items={styleItems}
+           canvasWidth={canvasWidth}
+@@ -381,6 +397,11 @@
+           {sourceLabel}
+         </p>
+ 
++        <SegmentWordCaptionStyleCard
++          segments={styleItems}
++          canvasWidth={canvasWidth}
++          canvasHeight={canvasHeight}
++        />
+         <CaptionStyleControls
+           items={styleItems}
+           canvasWidth={canvasWidth}
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/word-caption-style-card.tsx b/src/features/editor/components/properties-sidebar/clip-panel/word-caption-style-card.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/features/editor/components/properties-sidebar/clip-panel/word-caption-style-card.tsx
+@@ -0,0 +1,361 @@
++/**
++ * Caption style card (Frameleaf FL-640): how captions look in the picture.
++ *
++ * A live preview in Vertical 9:16 or Original, the four styles (Lines, Highlight, Word by word,
++ * One big word), a highlight colour, a size and a position. The preview follows the playhead while
++ * it is inside a caption, and otherwise loops the first caption. Choosing anything stores the look
++ * on the captions (`wordLook`) and writes the size and position as the captions' own font size and
++ * height, so the other caption controls and every renderer keep agreeing.
++ *
++ * Word styles need word times; they come from the transcript. Fonts are the captions' own (the
++ * title fonts); nothing here adds fonts or emphasis.
++ */
++
++import { memo, useCallback, useEffect, useMemo, useState } from 'react'
++import { useTranslation } from 'react-i18next'
++import { Captions } from 'lucide-react'
++
++import { cn } from '@/shared/ui/cn'
++import { useTimelineStore } from '@/features/editor/deps/timeline-store'
++import { usePlaybackStore } from '@/shared/state/playback'
++import {
++  DEFAULT_WORD_CAPTION_LOOK,
++  WORD_CAPTION_HIGHLIGHTS,
++  WORD_CAPTION_POSITIONS,
++  WORD_CAPTION_SIZES,
++  WORD_CAPTION_STYLES,
++  isWordCaptionLook,
++  resolveWordCaption,
++  wordLookStylePatch,
++} from '@/shared/typography/word-captions'
++import type {
++  AudioItem,
++  SubtitleSegmentItem,
++  TimelineItem,
++  TimelineTranscriptCaptions,
++  VideoItem,
++} from '@/types/timeline'
++import type { CaptionWord, WordCaptionLook } from '@/types/word-captions'
++
++type PreviewCue = { startSeconds: number; endSeconds: number; text: string; words?: CaptionWord[] }
++
++const SWATCH_NAMES = ['yellow', 'white', 'green', 'blue', 'coral'] as const
++const STYLE_KEYS = { lines: 'lines', highlight: 'highlight', word: 'word', big: 'big' } as const
++/** Preview font size as a fraction of the preview frame's short side, per size. */
++const PREVIEW_FONT = { small: 0.075, medium: 0.095, large: 0.13 } as const
++const PREVIEW_TOP = { bottom: '78%', middle: '50%', top: '22%' } as const
++const LOOP_TAIL_SECONDS = 0.6
++
++interface WordCaptionStyleCardProps {
++  look: WordCaptionLook | undefined
++  cues: readonly PreviewCue[]
++  /** The cue clock at a timeline frame (source seconds for clip captions). */
++  cueSecondsAt: (frame: number) => number
++  fontFamily?: string
++  textColor?: string
++  onChange: (look: WordCaptionLook) => void
++}
++
++/** The card itself; the two wrappers below connect it to clip captions or a caption segment. */
++export const WordCaptionStyleCard = memo(function WordCaptionStyleCard({
++  look: chosen,
++  cues,
++  cueSecondsAt,
++  fontFamily,
++  textColor = '#ffffff',
++  onChange,
++}: WordCaptionStyleCardProps) {
++  const { t } = useTranslation()
++  const look = isWordCaptionLook(chosen) ? chosen : DEFAULT_WORD_CAPTION_LOOK
++  const [vertical, setVertical] = useState(true)
++  const frame = usePlaybackStore((s) => s.currentFrame)
++  const playing = usePlaybackStore((s) => s.isPlaying)
++  const playheadSeconds = cueSecondsAt(frame)
++  const atPlayhead = cues.find(
++    (cue) => cue.startSeconds <= playheadSeconds && playheadSeconds < cue.endSeconds,
++  )
++  const cue = atPlayhead ?? cues[0]
++  const [loop, setLoop] = useState(0)
++  useEffect(() => {
++    if (playing || atPlayhead || !cue) return undefined
++    const length = cue.endSeconds - cue.startSeconds + LOOP_TAIL_SECONDS
++    const timer = setInterval(() => setLoop((value) => (value + 0.1) % length), 100)
++    return () => clearInterval(timer)
++  }, [playing, atPlayhead, cue])
++  const seconds = atPlayhead ? playheadSeconds : cue ? cue.startSeconds + loop : 0
++
++  const set = useCallback(
++    (patch: Partial<WordCaptionLook>) => onChange({ ...look, ...patch }),
++    [look, onChange],
++  )
++
++  if (!cue) return null
++  const hasWordTimes = cues.some((item) => (item.words?.length ?? 0) > 0)
++  const resolved = look.style === 'lines' ? null : resolveWordCaption(cue, seconds, look)
++  const showLine = look.style === 'lines' && seconds < cue.endSeconds
++
++  return (
++    <section
++      aria-label={t('wordCaptions.title')}
++      data-testid="word-caption-style-card"
++      className="space-y-2 rounded border border-border bg-muted/20 p-2"
++    >
++      <h4 className="flex items-center gap-1.5 text-xs font-semibold">
++        <Captions className="h-3.5 w-3.5" aria-hidden="true" />
++        {t('wordCaptions.title')}
++      </h4>
++
++      <div
++        data-testid="word-caption-preview"
++        data-style={look.style}
++        className={cn(
++          'relative mx-auto overflow-hidden rounded bg-black',
++          vertical ? 'aspect-[9/16] w-full max-w-[160px]' : 'aspect-video w-full',
++        )}
++        style={{ containerType: 'inline-size' }}
++      >
++        {(resolved || showLine) && (
++          <p
++            className="absolute inset-x-[8%] m-0 flex -translate-y-1/2 flex-wrap justify-center gap-x-[0.25em] text-center font-extrabold leading-tight"
++            style={{
++              top: PREVIEW_TOP[look.position],
++              fontFamily,
++              color: textColor,
++              fontSize: `${PREVIEW_FONT[look.size] * (resolved?.fontScale ?? 1) * 100}cqi`,
++              textShadow: '0 2px 6px rgb(0 0 0 / 70%)',
++              ...(showLine
++                ? { background: 'rgb(0 0 0 / 55%)', borderRadius: 4, padding: '2px 6px' }
++                : {}),
++            }}
++          >
++            {resolved
++              ? resolved.spans.map((span, index) => (
++                  <span
++                    key={`${index}-${span.text}`}
++                    data-said={span.color ? 'true' : undefined}
++                    style={span.color ? { color: span.color } : undefined}
++                  >
++                    {span.text.trim()}
++                  </span>
++                ))
++              : cue.text}
++          </p>
++        )}
++      </div>
++
++      <div
++        role="radiogroup"
++        aria-label={t('wordCaptions.previewShape')}
++        className="grid grid-cols-2 gap-1"
++      >
++        {(['vertical', 'original'] as const).map((shape) => (
++          <button
++            key={shape}
++            type="button"
++            role="radio"
++            aria-checked={vertical === (shape === 'vertical')}
++            onClick={() => setVertical(shape === 'vertical')}
++            className={cn(
++              'h-7 rounded border text-[11px] transition-colors',
++              vertical === (shape === 'vertical')
++                ? 'border-primary bg-secondary/60 text-foreground'
++                : 'border-border text-muted-foreground hover:bg-secondary/40',
++            )}
++          >
++            {t(`wordCaptions.${shape}`)}
++          </button>
++        ))}
++      </div>
++
++      <div
++        role="radiogroup"
++        aria-label={t('wordCaptions.style')}
++        className="grid grid-cols-2 gap-1.5"
++      >
++        {WORD_CAPTION_STYLES.map((style) => (
++          <button
++            key={style}
++            type="button"
++            role="radio"
++            aria-checked={look.style === style}
++            data-style={style}
++            onClick={() => set({ style })}
++            className={cn(
++              'flex flex-col gap-0.5 rounded border p-2 text-start transition-colors',
++              look.style === style
++                ? 'border-primary bg-secondary/60 text-foreground'
++                : 'border-border text-muted-foreground hover:bg-secondary/40',
++            )}
++          >
++            <b className="text-[11px]">{t(`wordCaptions.${STYLE_KEYS[style]}`)}</b>
++            <span className="text-[10px] leading-snug">
++              {t(`wordCaptions.${STYLE_KEYS[style]}Note`)}
++            </span>
++          </button>
++        ))}
++      </div>
++
++      {look.style !== 'lines' && (
++        <div
++          role="radiogroup"
++          aria-label={t('wordCaptions.highlightColour')}
++          className="flex flex-wrap gap-2"
++        >
++          {WORD_CAPTION_HIGHLIGHTS.map((colour, index) => (
++            <button
++              key={colour}
++              type="button"
++              role="radio"
++              aria-checked={look.highlightColor === colour}
++              aria-label={t(`wordCaptions.colour.${SWATCH_NAMES[index]}`)}
++              onClick={() => set({ highlightColor: colour })}
++              className={cn(
++                'h-7 w-7 rounded-full border border-border',
++                look.highlightColor === colour &&
++                  'outline outline-2 outline-offset-2 outline-primary',
++              )}
++              style={{ background: colour }}
++            />
++          ))}
++        </div>
++      )}
++
++      <div className="grid grid-cols-2 gap-2">
++        <label className="flex flex-col gap-1 text-[11px]">
++          <span className="text-muted-foreground">{t('wordCaptions.size')}</span>
++          <select
++            value={look.size}
++            onChange={(event) =>
++              set({ size: event.currentTarget.value as WordCaptionLook['size'] })
++            }
++            className="h-7 rounded border border-border bg-background px-1 text-xs"
++          >
++            {WORD_CAPTION_SIZES.map((size) => (
++              <option key={size} value={size}>
++                {t(`wordCaptions.${size}`)}
++              </option>
++            ))}
++          </select>
++        </label>
++        <label className="flex flex-col gap-1 text-[11px]">
++          <span className="text-muted-foreground">{t('wordCaptions.position')}</span>
++          <select
++            value={look.position}
++            onChange={(event) =>
++              set({ position: event.currentTarget.value as WordCaptionLook['position'] })
++            }
++            className="h-7 rounded border border-border bg-background px-1 text-xs"
++          >
++            {WORD_CAPTION_POSITIONS.map((position) => (
++              <option key={position} value={position}>
++                {t(`wordCaptions.${position}`)}
++              </option>
++            ))}
++          </select>
++        </label>
++      </div>
++
++      <p className="text-[10px] leading-snug text-muted-foreground">
++        {t(hasWordTimes ? 'wordCaptions.note' : 'wordCaptions.noWordTimes')}
++      </p>
++    </section>
++  )
++})
++
++type CaptionedClip = (AudioItem | VideoItem) & { transcriptCaptions: TimelineTranscriptCaptions }
++
++/** The card for captions a clip shows from its transcript. */
++export const ClipWordCaptionStyleCard = memo(function ClipWordCaptionStyleCard({
++  clips,
++  canvasWidth,
++  canvasHeight,
++}: {
++  clips: readonly CaptionedClip[]
++  canvasWidth: number
++  canvasHeight: number
++}) {
++  const updateItem = useTimelineStore((s) => s.updateItem)
++  const fps = useTimelineStore((s) => s.fps)
++  const first = clips[0]
++  const cueSecondsAt = useCallback(
++    (frame: number) => {
++      if (!first) return 0
++      const sourceFps = first.sourceFps ?? fps
++      return (
++        ((frame - first.from) / fps) * (first.speed ?? 1) + (first.sourceStart ?? 0) / sourceFps
++      )
++    },
++    [first, fps],
++  )
++  const onChange = useCallback(
++    (look: WordCaptionLook) => {
++      for (const clip of clips) {
++        const style = clip.transcriptCaptions.style ?? {}
++        updateItem(clip.id, {
++          transcriptCaptions: {
++            ...clip.transcriptCaptions,
++            wordLook: look,
++            style: {
++              ...style,
++              ...wordLookStylePatch(look, style.transform, canvasWidth, canvasHeight),
++            },
++            updatedAt: Date.now(),
++          },
++        } as Partial<TimelineItem>)
++      }
++    },
++    [canvasHeight, canvasWidth, clips, updateItem],
++  )
++  if (!first) return null
++  return (
++    <WordCaptionStyleCard
++      look={first.transcriptCaptions.wordLook}
++      cues={first.transcriptCaptions.cues}
++      cueSecondsAt={cueSecondsAt}
++      fontFamily={first.transcriptCaptions.style?.fontFamily}
++      onChange={onChange}
++    />
++  )
++})
++
++/** The card for caption segments on a caption track. */
++export const SegmentWordCaptionStyleCard = memo(function SegmentWordCaptionStyleCard({
++  segments,
++  canvasWidth,
++  canvasHeight,
++}: {
++  segments: readonly SubtitleSegmentItem[]
++  canvasWidth: number
++  canvasHeight: number
++}) {
++  const updateItem = useTimelineStore((s) => s.updateItem)
++  const fps = useTimelineStore((s) => s.fps)
++  const first = segments[0]
++  const cueSecondsAt = useCallback(
++    (frame: number) => (first ? (frame - first.from) / fps : 0),
++    [first, fps],
++  )
++  const onChange = useCallback(
++    (look: WordCaptionLook) => {
++      for (const segment of segments) {
++        updateItem(segment.id, {
++          wordLook: look,
++          ...wordLookStylePatch(look, segment.transform, canvasWidth, canvasHeight),
++        } as Partial<TimelineItem>)
++      }
++    },
++    [canvasHeight, canvasWidth, segments, updateItem],
++  )
++  const cues = useMemo(() => first?.cues ?? [], [first])
++  if (!first) return null
++  return (
++    <WordCaptionStyleCard
++      look={first.wordLook}
++      cues={cues}
++      cueSecondsAt={cueSecondsAt}
++      fontFamily={first.fontFamily}
++      textColor={first.color}
++      onChange={onChange}
++    />
++  )
++})
+diff --git a/src/features/export/utils/canvas-item-renderer/text.ts b/src/features/export/utils/canvas-item-renderer/text.ts
+--- a/src/features/export/utils/canvas-item-renderer/text.ts
++++ b/src/features/export/utils/canvas-item-renderer/text.ts
+@@ -10,6 +10,7 @@
+ 
+ import type { SubtitleSegmentItem, TextItem } from '@/types/timeline'
+ import { parseSubtitleCueText } from '@/shared/utils/subtitle-cue-format'
++import { isWordStyle, resolveWordCaption } from '@/shared/typography/word-captions'
+ import {
+   layoutTextBlock,
+   lineInkWidth,
+@@ -495,6 +496,11 @@
+   if (!activeCue) return
+   const parsed = parseSubtitleCueText(activeCue.text)
+   if (parsed.isEmpty) return
++  // A word style (Frameleaf FL-640) burns in the words said so far, lighting the one being said.
++  const words = isWordStyle(item.wordLook)
++    ? resolveWordCaption(activeCue, secondsIntoSegment, item.wordLook, parsed.plainText)
++    : null
++  if (isWordStyle(item.wordLook) && !words) return
+ 
+   const ephemeralText: TextItem = {
+     id: item.id,
+@@ -504,9 +510,11 @@
+     durationInFrames: item.durationInFrames,
+     label: item.label,
+     mediaId: item.mediaId,
+-    text: parsed.plainText,
+-    textSpans: parsed.spans,
+-    fontSize: item.fontSize,
++    text: words?.text ?? parsed.plainText,
++    textSpans: words?.spans ?? parsed.spans,
++    ...(words ? { spanLayout: 'inline' as const } : {}),
++    fontSize:
++      words && item.fontSize !== undefined ? item.fontSize * words.fontScale : item.fontSize,
+     fontFamily: item.fontFamily,
+     fontWeight: item.fontWeight,
+     fontStyle: item.fontStyle,
+diff --git a/src/features/export/utils/timeline-to-composition.ts b/src/features/export/utils/timeline-to-composition.ts
+--- a/src/features/export/utils/timeline-to-composition.ts
++++ b/src/features/export/utils/timeline-to-composition.ts
+@@ -19,6 +19,7 @@
+   timelineToSourceFrames,
+ } from '@/features/export/deps/timeline-frame'
+ import { appendVirtualTranscriptCaptionTrack } from '@/features/export/deps/caption-items'
++import { shiftCueWords } from '@/shared/typography/word-captions'
+ import { createLogger } from '@/shared/logging/logger'
+ import { resolveReverseConformedVideoItem } from '@/shared/utils/reverse-conform-item'
+ 
+@@ -184,7 +185,7 @@
+             item.cues,
+             additionalTrimStart / fps,
+             newDuration / fps,
+-          )
++          ).map((cue) => shiftCueWords(cue, additionalTrimStart / fps))
+         }
+ 
+         return adjustedItem
+diff --git a/src/features/media-library/services/media-transcription-service.test.ts b/src/features/media-library/services/media-transcription-service.test.ts
+--- a/src/features/media-library/services/media-transcription-service.test.ts
++++ b/src/features/media-library/services/media-transcription-service.test.ts
+@@ -833,13 +833,19 @@
+           id: 'nested-clip',
+           transcriptCaptions: expect.objectContaining({
+             sourceTranscriptUpdatedAt: transcript.updatedAt,
+-            timingVersion: 4,
++            timingVersion: 5,
+             cues: [
+               {
+                 id: 'transcript-media-1-0',
+                 startSeconds: 0.2,
+                 endSeconds: 1.4,
+                 text: 'Fresh nested phrase',
++                // FL-640: the transcript's word times, linked to the stored words.
++                words: [
++                  { text: 'Fresh', startSeconds: 0.2, endSeconds: 0.5, ref: '0:0' },
++                  { text: 'nested', startSeconds: 0.53, endSeconds: 0.9, ref: '0:1' },
++                  { text: 'phrase', startSeconds: 0.93, endSeconds: 1.4, ref: '0:2' },
++                ],
+               },
+             ],
+           }),
+@@ -852,7 +858,7 @@
+           items: [
+             expect.objectContaining({
+               id: 'stashed-clip',
+-              transcriptCaptions: expect.objectContaining({ timingVersion: 4 }),
++              transcriptCaptions: expect.objectContaining({ timingVersion: 5 }),
+             }),
+           ],
+         }),
+diff --git a/src/features/media-library/services/media-transcription-service.ts b/src/features/media-library/services/media-transcription-service.ts
+--- a/src/features/media-library/services/media-transcription-service.ts
++++ b/src/features/media-library/services/media-transcription-service.ts
+@@ -64,7 +64,8 @@
+ const MIN_TRANSCRIPT_CAPTION_WORDS = 2
+ // A short but audible pause is a better phrase boundary than a blanket timing offset.
+ const TRANSCRIPT_CAPTION_BREAK_GAP_SECONDS = 0.18
+-const TRANSCRIPT_CAPTION_TIMING_VERSION = 4
++// 5: cues carry the transcript's word times (Frameleaf FL-640).
++const TRANSCRIPT_CAPTION_TIMING_VERSION = 5
+ const SENTENCE_END_PATTERN = /[.!?。！？]$/
+ const DEFAULT_QUANTIZATION = DEFAULT_WHISPER_QUANTIZATION
+ 
+@@ -130,12 +131,16 @@
+   cancelMessage: string
+ }
+ 
+-function sanitizeTranscriptWord(word: NonNullable<TranscriptSegment['words']>[number]) {
++function sanitizeTranscriptWord(
++  word: NonNullable<TranscriptSegment['words']>[number] & { ref?: string },
++) {
+   return {
+     text: word.text.trim(),
+     start: word.start,
+     end: word.end,
+     ...(typeof word.confidence === 'number' ? { confidence: word.confidence } : {}),
++    // Only caption cues set this: the stored transcript word a caption word came from (FL-640).
++    ...(typeof word.ref === 'string' ? { ref: word.ref } : {}),
+   }
+ }
+ 
+@@ -276,16 +281,61 @@
+   return captionSegments.toSorted((left, right) => left.start - right.start)
+ }
+ 
+-function buildTimelineTranscriptCaptionCues(
++/**
++ * Caption cues of a transcript. Each cue keeps the transcript's word times and, for every word, a
++ * link to the stored word it came from, so word styles follow the real speech and a word fixed in
++ * the transcript is fixed in the captions (Frameleaf FL-640).
++ */
++export function buildTimelineTranscriptCaptionCues(
+   mediaId: string,
+   segments: readonly MediaTranscriptSegment[],
+ ): TimelineTranscriptCaptionCue[] {
+-  return segmentTranscriptForCaptions([...segments]).map((segment, index) => ({
+-    id: `transcript-${mediaId}-${index}`,
+-    startSeconds: segment.start,
+-    endSeconds: segment.end,
+-    text: segment.text,
++  const linked = segments.map((segment, segmentIndex) => ({
++    ...segment,
++    words: segment.words?.map((word, wordIndex) => ({
++      ...word,
++      ref: `${segmentIndex}:${wordIndex}`,
++    })),
+   }))
++  return segmentTranscriptForCaptions(linked).map((segment, index) => {
++    const words = (segment.words as Array<MediaTranscriptWordWithRef> | undefined)?.map((word) => ({
++      text: word.text,
++      startSeconds: word.start,
++      endSeconds: word.end,
++      ...(word.ref ? { ref: word.ref } : {}),
++    }))
++    return {
++      id: `transcript-${mediaId}-${index}`,
++      startSeconds: segment.start,
++      endSeconds: segment.end,
++      text: segment.text,
++      ...(words?.length ? { words } : {}),
++    }
++  })
++}
++
++type MediaTranscriptWordWithRef = NonNullable<MediaTranscriptSegment['words']>[number] & {
++  ref?: string
++}
++
++/**
++ * Words whose text changed between two versions of a transcript, by `segmentIndex:wordIndex`
++ * (Frameleaf FL-640). Correcting a word keeps the transcript's shape, so indexes line up.
++ */
++export function transcriptWordTextChanges(
++  previous: readonly MediaTranscriptSegment[],
++  next: readonly MediaTranscriptSegment[],
++): Map<string, string> {
++  const changes = new Map<string, string>()
++  previous.forEach((segment, segmentIndex) => {
++    segment.words?.forEach((word, wordIndex) => {
++      const after = next[segmentIndex]?.words?.[wordIndex]
++      if (after && after.text.trim() !== word.text.trim()) {
++        changes.set(`${segmentIndex}:${wordIndex}`, after.text.trim())
++      }
++    })
++  })
++  return changes
+ }
+ 
+ function buildSyncedTranscriptCaptionItem(
+@@ -364,17 +414,31 @@
+   items: readonly TimelineItem[],
+   mediaId: string,
+   changes: ReadonlyMap<string, string>,
++  wordChanges: ReadonlyMap<string, string> = new Map(),
+ ): Array<{ id: string; cues: SubtitleSegmentItem['cues'] }> {
+-  if (changes.size === 0) return []
++  if (changes.size === 0 && wordChanges.size === 0) return []
+   return items.flatMap((item) => {
+     if (item.type !== 'subtitle') return []
+     if (item.source.type !== 'transcript' || item.source.mediaId !== mediaId) return []
+     let changed = false
+     const cues = item.cues.map((cue) => {
+-      const text = changes.get(cue.text)
+-      if (text === undefined) return cue
++      // A caption word linked to a corrected transcript word takes the new text (FL-640).
++      let words = cue.words
++      if (
++        words &&
++        wordChanges.size > 0 &&
++        words.some((word) => word.ref && wordChanges.has(word.ref))
++      ) {
++        words = words.map((word) =>
++          word.ref && wordChanges.has(word.ref)
++            ? { ...word, text: wordChanges.get(word.ref)! }
++            : word,
++        )
++      }
++      const text = changes.get(cue.text)
++      if (text === undefined && words === cue.words) return cue
+       changed = true
+-      return { ...cue, text }
++      return { ...cue, ...(text === undefined ? {} : { text }), ...(words ? { words } : {}) }
+     })
+     return changed ? [{ id: item.id, cues }] : []
+   })
+@@ -665,6 +729,7 @@
+         timeline.items ?? [],
+         saved.mediaId,
+         changes,
++        transcriptWordTextChanges(previous.segments, saved.segments),
+       )) {
+         timeline.updateItem?.(update.id, { cues: update.cues } as Partial<TimelineItem>)
+       }
+@@ -696,12 +761,7 @@
+     // an older transcript snapshot.
+     const compositionsState = useCompositionsStore.getState()
+     for (const composition of compositionsState.compositions) {
+-      const synced = syncTranscriptCaptionItems(
+-        composition.items,
+-        mediaId,
+-        transcript,
+-        sourceCues,
+-      )
++      const synced = syncTranscriptCaptionItems(composition.items, mediaId, transcript, sourceCues)
+       if (synced.updatedClipCount === 0) continue
+       compositionsState.updateComposition(composition.id, { items: synced.items })
+       updatedClipCount += synced.updatedClipCount
+@@ -718,9 +778,7 @@
+       return synced.updatedClipCount > 0 ? { ...stash, items: synced.items } : stash
+     }
+     const nextStashStack = navigationState.stashStack.map(syncStash)
+-    const nextMainHolder = navigationState.mainHolder
+-      ? syncStash(navigationState.mainHolder)
+-      : null
++    const nextMainHolder = navigationState.mainHolder ? syncStash(navigationState.mainHolder) : null
+     if (updatedStashedClipCount > 0) {
+       useCompositionNavigationStore.setState({
+         stashStack: nextStashStack,
+@@ -946,6 +1004,10 @@
+           timingVersion: TRANSCRIPT_CAPTION_TIMING_VERSION,
+           cues: sourceCues,
+           ...(styleTemplate ? { style: styleTemplate } : {}),
++          // A caption look chosen before keeps applying (FL-640).
++          ...(clip.transcriptCaptions?.wordLook
++            ? { wordLook: clip.transcriptCaptions.wordLook }
++            : {}),
+         },
+       } as Partial<TimelineItem>)
+       updatedClipCount += 1
+diff --git a/src/features/media-library/utils/caption-items.ts b/src/features/media-library/utils/caption-items.ts
+--- a/src/features/media-library/utils/caption-items.ts
++++ b/src/features/media-library/utils/caption-items.ts
+@@ -8,6 +8,7 @@
+ import type { MediaTranscriptSegment } from '@/types/storage'
+ import type { MediaCaption } from '@/infrastructure/analysis/media-tagger'
+ import type { SubtitleCue, SubtitleFormat } from '@/shared/utils/subtitles'
++import type { CaptionWord, WordCaptionLook } from '@/types/word-captions'
+ import type {
+   AudioItem,
+   GeneratedCaptionSource,
+@@ -827,17 +828,55 @@
+ 
+ interface BuildSubtitleSegmentForClipOptions {
+   trackId: string
+-  cues: readonly SubtitleCue[]
++  /** Source-time cues; transcript cues carry their words (Frameleaf FL-640). */
++  cues: readonly (SubtitleCue & { words?: readonly CaptionWord[] })[]
+   clip: AudioItem | VideoItem
+   timelineFps: number
+   canvasWidth: number
+   canvasHeight: number
+   source: import('@/types/timeline').SubtitleSegmentSource
+   styleTemplate?: CaptionTextItemTemplate
++  /** The chosen word-by-word look, carried onto the segment (Frameleaf FL-640). */
++  wordLook?: WordCaptionLook
+   /** Label shown in the timeline-item UI; defaults to the source-track label. */
+   label?: string
++}
++
++/**
++ * A cue's words moved onto the clip's timeline clock (Frameleaf FL-640): clipped to the part of
++ * the cue the clip shows, divided by the clip's speed, measured from `originSeconds`.
++ */
++function wordsOnTimeline(
++  words: readonly CaptionWord[] | undefined,
++  overlapStartSec: number,
++  overlapEndSec: number,
++  sourceStartSeconds: number,
++  speed: number,
++): CaptionWord[] | undefined {
++  if (!words?.length) return undefined
++  const placed = words.flatMap((word) => {
++    const start = Math.max(word.startSeconds, overlapStartSec)
++    const end = Math.min(word.endSeconds, overlapEndSec)
++    if (end <= start) return []
++    return [
++      {
++        ...word,
++        startSeconds: (start - sourceStartSeconds) / speed,
++        endSeconds: (end - sourceStartSeconds) / speed,
++      },
++    ]
++  })
++  return placed.length > 0 ? placed : undefined
+ }
+ 
++function shiftWords(words: CaptionWord[] | undefined, by: number): CaptionWord[] | undefined {
++  return words?.map((word) => ({
++    ...word,
++    startSeconds: word.startSeconds - by,
++    endSeconds: word.endSeconds - by,
++  }))
++}
++
+ /**
+  * Build ONE {@link SubtitleSegmentItem} that owns all cues overlapping
+  * `clip`'s source window. Replaces the per-cue {@link buildSubtitleTextItemsForClip}
+@@ -859,6 +898,7 @@
+     trackId,
+     source,
+     styleTemplate,
++    wordLook,
+     label,
+   } = options
+   const { sourceStart, sourceEnd, sourceFps, speed } = getClipSourceBounds(clip, timelineFps)
+@@ -882,11 +922,19 @@
+     const cueEndFrames = Math.ceil(cueEndTimeline * timelineFps)
+     if (cueEndFrames <= cueStartFrames) continue
+ 
++    const words = wordsOnTimeline(
++      cue.words,
++      overlapStartSec,
++      overlapEndSec,
++      sourceStartSeconds,
++      speed,
++    )
+     overlappingCues.push({
+       id: cue.id,
+       startSeconds: cueStartTimeline,
+       endSeconds: cueEndTimeline,
+       text: cue.text,
++      ...(words ? { words } : {}),
+     })
+     if (cueStartFrames < firstFromOffset) firstFromOffset = cueStartFrames
+     if (cueEndFrames > lastEndOffset) lastEndOffset = cueEndFrames
+@@ -908,6 +956,7 @@
+     startSeconds: cue.startSeconds - segmentFromOffset / timelineFps,
+     endSeconds: cue.endSeconds - segmentFromOffset / timelineFps,
+     text: cue.text,
++    ...(cue.words ? { words: shiftWords(cue.words, segmentFromOffset / timelineFps) } : {}),
+   }))
+ 
+   const defaultStyle = {
+@@ -960,6 +1009,7 @@
+     cues: segmentRelativeCues,
+     ...defaultStyle,
+     ...styleTemplate,
++    ...(wordLook ? { wordLook } : {}),
+   }
+ }
+ 
+@@ -976,8 +1026,7 @@
+     unfilteredBaseTracks.flatMap((track) =>
+       (track.items ?? [])
+         .filter(
+-          (item) =>
+-            (item.type === 'video' || item.type === 'audio') && item.isReversed === true,
++          (item) => (item.type === 'video' || item.type === 'audio') && item.isReversed === true,
+         )
+         .map((item) => item.id),
+     ),
+@@ -1030,6 +1079,7 @@
+           clipId: item.id,
+         },
+         styleTemplate: transcriptCaptions.style as CaptionTextItemTemplate | undefined,
++        wordLook: transcriptCaptions.wordLook,
+       })
+ 
+       if (!segment) continue
+diff --git a/src/features/timeline/stores/items-store-normalize.ts b/src/features/timeline/stores/items-store-normalize.ts
+--- a/src/features/timeline/stores/items-store-normalize.ts
++++ b/src/features/timeline/stores/items-store-normalize.ts
+@@ -1,4 +1,5 @@
+ import type { SubtitleSegmentItem, TimelineItem, TimelineTrack } from '@/types/timeline'
++import { shiftCueWords } from '@/shared/typography/word-captions'
+ import { normalizeAudioEqSettings } from '@/shared/utils/audio-eq'
+ import { resolveCornerPinTargetRect } from '@/features/timeline/deps/composition-runtime'
+ import {
+@@ -150,7 +151,7 @@
+     const startSeconds = Math.max(0, cue.startSeconds - offsetSeconds)
+     const endSeconds = cue.endSeconds - offsetSeconds
+     if (endSeconds <= startSeconds) continue
+-    nextCues.push({ ...cue, startSeconds, endSeconds })
++    nextCues.push(shiftCueWords({ ...cue, startSeconds, endSeconds }, offsetSeconds))
+   }
+   return { cues: nextCues }
+ }
+@@ -170,7 +171,7 @@
+     if (cue.startSeconds >= newEndSeconds) continue
+     const endSeconds = Math.min(cue.endSeconds, newEndSeconds)
+     if (endSeconds <= cue.startSeconds) continue
+-    nextCues.push({ ...cue, endSeconds })
++    nextCues.push(shiftCueWords({ ...cue, endSeconds }, 0))
+   }
+   return { cues: nextCues }
+ }
+diff --git a/src/features/timeline/stores/items-store.ts b/src/features/timeline/stores/items-store.ts
+--- a/src/features/timeline/stores/items-store.ts
++++ b/src/features/timeline/stores/items-store.ts
+@@ -1,6 +1,7 @@
+ import { create } from 'zustand'
+ import { createLogger } from '@/shared/logging/logger'
+ import type { TimelineItem, TimelineTrack } from '@/types/timeline'
++import { shiftCueWords } from '@/shared/typography/word-captions'
+ import type { TransformProperties } from '@/types/transform'
+ import type { VisualEffect, ItemEffect } from '@/types/effects'
+ import {
+@@ -537,20 +538,30 @@
+           leftCues.push(cue)
+         } else if (!startsBeforeSplit) {
+           // Wholly in the right half — rebase to the new segment's `from`.
+-          rightCues.push({
+-            ...cue,
+-            startSeconds: cue.startSeconds - splitSeconds,
+-            endSeconds: cue.endSeconds - splitSeconds,
+-          })
++          rightCues.push(
++            shiftCueWords(
++              {
++                ...cue,
++                startSeconds: cue.startSeconds - splitSeconds,
++                endSeconds: cue.endSeconds - splitSeconds,
++              },
++              splitSeconds,
++            ),
++          )
+         } else {
+           // Straddles the cut. Truncate left to splitSeconds, rebase right.
+-          leftCues.push({ ...cue, endSeconds: splitSeconds })
+-          rightCues.push({
+-            ...cue,
+-            id: `${cue.id}-r`,
+-            startSeconds: 0,
+-            endSeconds: cue.endSeconds - splitSeconds,
+-          })
++          leftCues.push(shiftCueWords({ ...cue, endSeconds: splitSeconds }, 0))
++          rightCues.push(
++            shiftCueWords(
++              {
++                ...cue,
++                id: `${cue.id}-r`,
++                startSeconds: 0,
++                endSeconds: cue.endSeconds - splitSeconds,
++              },
++              splitSeconds,
++            ),
++          )
+         }
+       }
+       ;(leftItem as typeof item).cues = leftCues
+diff --git a/src/i18n/locales/partials/de/word-captions.json b/src/i18n/locales/partials/de/word-captions.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/de/word-captions.json
+@@ -0,0 +1,35 @@
++{
++  "wordCaptions": {
++    "big": "One big word",
++    "bigNote": "One large word at a time, for short vertical videos.",
++    "bottom": "Bottom",
++    "colour": {
++      "blue": "Blue",
++      "coral": "Coral",
++      "green": "Green",
++      "white": "White",
++      "yellow": "Yellow"
++    },
++    "highlight": "Highlight",
++    "highlightColour": "Highlight colour",
++    "highlightNote": "The line shows, and each word lights up as it's said.",
++    "large": "Large",
++    "lines": "Lines",
++    "linesNote": "Today's captions: a line at a time.",
++    "medium": "Medium",
++    "middle": "Middle",
++    "noWordTimes": "These captions have no word times, so words are spaced by their length. Captions made from a transcript follow the speech.",
++    "note": "Word timing comes from the transcript. Word styles are burned into the picture; a subtitle file always has whole lines.",
++    "original": "Original",
++    "position": "Position",
++    "previewShape": "Preview shape",
++    "size": "Size",
++    "small": "Small",
++    "style": "Style",
++    "title": "Caption style",
++    "top": "Top",
++    "vertical": "Vertical 9:16",
++    "word": "Word by word",
++    "wordNote": "Words appear one at a time as they're said."
++  }
++}
+diff --git a/src/i18n/locales/partials/en/word-captions.json b/src/i18n/locales/partials/en/word-captions.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/en/word-captions.json
+@@ -0,0 +1,35 @@
++{
++  "wordCaptions": {
++    "big": "One big word",
++    "bigNote": "One large word at a time, for short vertical videos.",
++    "bottom": "Bottom",
++    "colour": {
++      "blue": "Blue",
++      "coral": "Coral",
++      "green": "Green",
++      "white": "White",
++      "yellow": "Yellow"
++    },
++    "highlight": "Highlight",
++    "highlightColour": "Highlight colour",
++    "highlightNote": "The line shows, and each word lights up as it's said.",
++    "large": "Large",
++    "lines": "Lines",
++    "linesNote": "Today's captions: a line at a time.",
++    "medium": "Medium",
++    "middle": "Middle",
++    "noWordTimes": "These captions have no word times, so words are spaced by their length. Captions made from a transcript follow the speech.",
++    "note": "Word timing comes from the transcript. Word styles are burned into the picture; a subtitle file always has whole lines.",
++    "original": "Original",
++    "position": "Position",
++    "previewShape": "Preview shape",
++    "size": "Size",
++    "small": "Small",
++    "style": "Style",
++    "title": "Caption style",
++    "top": "Top",
++    "vertical": "Vertical 9:16",
++    "word": "Word by word",
++    "wordNote": "Words appear one at a time as they're said."
++  }
++}
+diff --git a/src/i18n/locales/partials/es/word-captions.json b/src/i18n/locales/partials/es/word-captions.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/es/word-captions.json
+@@ -0,0 +1,35 @@
++{
++  "wordCaptions": {
++    "big": "One big word",
++    "bigNote": "One large word at a time, for short vertical videos.",
++    "bottom": "Bottom",
++    "colour": {
++      "blue": "Blue",
++      "coral": "Coral",
++      "green": "Green",
++      "white": "White",
++      "yellow": "Yellow"
++    },
++    "highlight": "Highlight",
++    "highlightColour": "Highlight colour",
++    "highlightNote": "The line shows, and each word lights up as it's said.",
++    "large": "Large",
++    "lines": "Lines",
++    "linesNote": "Today's captions: a line at a time.",
++    "medium": "Medium",
++    "middle": "Middle",
++    "noWordTimes": "These captions have no word times, so words are spaced by their length. Captions made from a transcript follow the speech.",
++    "note": "Word timing comes from the transcript. Word styles are burned into the picture; a subtitle file always has whole lines.",
++    "original": "Original",
++    "position": "Position",
++    "previewShape": "Preview shape",
++    "size": "Size",
++    "small": "Small",
++    "style": "Style",
++    "title": "Caption style",
++    "top": "Top",
++    "vertical": "Vertical 9:16",
++    "word": "Word by word",
++    "wordNote": "Words appear one at a time as they're said."
++  }
++}
+diff --git a/src/i18n/locales/partials/fr/word-captions.json b/src/i18n/locales/partials/fr/word-captions.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/fr/word-captions.json
+@@ -0,0 +1,35 @@
++{
++  "wordCaptions": {
++    "big": "One big word",
++    "bigNote": "One large word at a time, for short vertical videos.",
++    "bottom": "Bottom",
++    "colour": {
++      "blue": "Blue",
++      "coral": "Coral",
++      "green": "Green",
++      "white": "White",
++      "yellow": "Yellow"
++    },
++    "highlight": "Highlight",
++    "highlightColour": "Highlight colour",
++    "highlightNote": "The line shows, and each word lights up as it's said.",
++    "large": "Large",
++    "lines": "Lines",
++    "linesNote": "Today's captions: a line at a time.",
++    "medium": "Medium",
++    "middle": "Middle",
++    "noWordTimes": "These captions have no word times, so words are spaced by their length. Captions made from a transcript follow the speech.",
++    "note": "Word timing comes from the transcript. Word styles are burned into the picture; a subtitle file always has whole lines.",
++    "original": "Original",
++    "position": "Position",
++    "previewShape": "Preview shape",
++    "size": "Size",
++    "small": "Small",
++    "style": "Style",
++    "title": "Caption style",
++    "top": "Top",
++    "vertical": "Vertical 9:16",
++    "word": "Word by word",
++    "wordNote": "Words appear one at a time as they're said."
++  }
++}
+diff --git a/src/i18n/locales/partials/ja/word-captions.json b/src/i18n/locales/partials/ja/word-captions.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/ja/word-captions.json
+@@ -0,0 +1,35 @@
++{
++  "wordCaptions": {
++    "big": "One big word",
++    "bigNote": "One large word at a time, for short vertical videos.",
++    "bottom": "Bottom",
++    "colour": {
++      "blue": "Blue",
++      "coral": "Coral",
++      "green": "Green",
++      "white": "White",
++      "yellow": "Yellow"
++    },
++    "highlight": "Highlight",
++    "highlightColour": "Highlight colour",
++    "highlightNote": "The line shows, and each word lights up as it's said.",
++    "large": "Large",
++    "lines": "Lines",
++    "linesNote": "Today's captions: a line at a time.",
++    "medium": "Medium",
++    "middle": "Middle",
++    "noWordTimes": "These captions have no word times, so words are spaced by their length. Captions made from a transcript follow the speech.",
++    "note": "Word timing comes from the transcript. Word styles are burned into the picture; a subtitle file always has whole lines.",
++    "original": "Original",
++    "position": "Position",
++    "previewShape": "Preview shape",
++    "size": "Size",
++    "small": "Small",
++    "style": "Style",
++    "title": "Caption style",
++    "top": "Top",
++    "vertical": "Vertical 9:16",
++    "word": "Word by word",
++    "wordNote": "Words appear one at a time as they're said."
++  }
++}
+diff --git a/src/i18n/locales/partials/ko/word-captions.json b/src/i18n/locales/partials/ko/word-captions.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/ko/word-captions.json
+@@ -0,0 +1,35 @@
++{
++  "wordCaptions": {
++    "big": "One big word",
++    "bigNote": "One large word at a time, for short vertical videos.",
++    "bottom": "Bottom",
++    "colour": {
++      "blue": "Blue",
++      "coral": "Coral",
++      "green": "Green",
++      "white": "White",
++      "yellow": "Yellow"
++    },
++    "highlight": "Highlight",
++    "highlightColour": "Highlight colour",
++    "highlightNote": "The line shows, and each word lights up as it's said.",
++    "large": "Large",
++    "lines": "Lines",
++    "linesNote": "Today's captions: a line at a time.",
++    "medium": "Medium",
++    "middle": "Middle",
++    "noWordTimes": "These captions have no word times, so words are spaced by their length. Captions made from a transcript follow the speech.",
++    "note": "Word timing comes from the transcript. Word styles are burned into the picture; a subtitle file always has whole lines.",
++    "original": "Original",
++    "position": "Position",
++    "previewShape": "Preview shape",
++    "size": "Size",
++    "small": "Small",
++    "style": "Style",
++    "title": "Caption style",
++    "top": "Top",
++    "vertical": "Vertical 9:16",
++    "word": "Word by word",
++    "wordNote": "Words appear one at a time as they're said."
++  }
++}
+diff --git a/src/i18n/locales/partials/pt-BR/word-captions.json b/src/i18n/locales/partials/pt-BR/word-captions.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/pt-BR/word-captions.json
+@@ -0,0 +1,35 @@
++{
++  "wordCaptions": {
++    "big": "One big word",
++    "bigNote": "One large word at a time, for short vertical videos.",
++    "bottom": "Bottom",
++    "colour": {
++      "blue": "Blue",
++      "coral": "Coral",
++      "green": "Green",
++      "white": "White",
++      "yellow": "Yellow"
++    },
++    "highlight": "Highlight",
++    "highlightColour": "Highlight colour",
++    "highlightNote": "The line shows, and each word lights up as it's said.",
++    "large": "Large",
++    "lines": "Lines",
++    "linesNote": "Today's captions: a line at a time.",
++    "medium": "Medium",
++    "middle": "Middle",
++    "noWordTimes": "These captions have no word times, so words are spaced by their length. Captions made from a transcript follow the speech.",
++    "note": "Word timing comes from the transcript. Word styles are burned into the picture; a subtitle file always has whole lines.",
++    "original": "Original",
++    "position": "Position",
++    "previewShape": "Preview shape",
++    "size": "Size",
++    "small": "Small",
++    "style": "Style",
++    "title": "Caption style",
++    "top": "Top",
++    "vertical": "Vertical 9:16",
++    "word": "Word by word",
++    "wordNote": "Words appear one at a time as they're said."
++  }
++}
+diff --git a/src/i18n/locales/partials/tr/word-captions.json b/src/i18n/locales/partials/tr/word-captions.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/tr/word-captions.json
+@@ -0,0 +1,35 @@
++{
++  "wordCaptions": {
++    "big": "One big word",
++    "bigNote": "One large word at a time, for short vertical videos.",
++    "bottom": "Bottom",
++    "colour": {
++      "blue": "Blue",
++      "coral": "Coral",
++      "green": "Green",
++      "white": "White",
++      "yellow": "Yellow"
++    },
++    "highlight": "Highlight",
++    "highlightColour": "Highlight colour",
++    "highlightNote": "The line shows, and each word lights up as it's said.",
++    "large": "Large",
++    "lines": "Lines",
++    "linesNote": "Today's captions: a line at a time.",
++    "medium": "Medium",
++    "middle": "Middle",
++    "noWordTimes": "These captions have no word times, so words are spaced by their length. Captions made from a transcript follow the speech.",
++    "note": "Word timing comes from the transcript. Word styles are burned into the picture; a subtitle file always has whole lines.",
++    "original": "Original",
++    "position": "Position",
++    "previewShape": "Preview shape",
++    "size": "Size",
++    "small": "Small",
++    "style": "Style",
++    "title": "Caption style",
++    "top": "Top",
++    "vertical": "Vertical 9:16",
++    "word": "Word by word",
++    "wordNote": "Words appear one at a time as they're said."
++  }
++}
+diff --git a/src/i18n/locales/partials/zh/word-captions.json b/src/i18n/locales/partials/zh/word-captions.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/zh/word-captions.json
+@@ -0,0 +1,35 @@
++{
++  "wordCaptions": {
++    "big": "One big word",
++    "bigNote": "One large word at a time, for short vertical videos.",
++    "bottom": "Bottom",
++    "colour": {
++      "blue": "Blue",
++      "coral": "Coral",
++      "green": "Green",
++      "white": "White",
++      "yellow": "Yellow"
++    },
++    "highlight": "Highlight",
++    "highlightColour": "Highlight colour",
++    "highlightNote": "The line shows, and each word lights up as it's said.",
++    "large": "Large",
++    "lines": "Lines",
++    "linesNote": "Today's captions: a line at a time.",
++    "medium": "Medium",
++    "middle": "Middle",
++    "noWordTimes": "These captions have no word times, so words are spaced by their length. Captions made from a transcript follow the speech.",
++    "note": "Word timing comes from the transcript. Word styles are burned into the picture; a subtitle file always has whole lines.",
++    "original": "Original",
++    "position": "Position",
++    "previewShape": "Preview shape",
++    "size": "Size",
++    "small": "Small",
++    "style": "Style",
++    "title": "Caption style",
++    "top": "Top",
++    "vertical": "Vertical 9:16",
++    "word": "Word by word",
++    "wordNote": "Words appear one at a time as they're said."
++  }
++}
+diff --git a/src/runtime/composition-runtime/components/subtitle-segment-content.tsx b/src/runtime/composition-runtime/components/subtitle-segment-content.tsx
+--- a/src/runtime/composition-runtime/components/subtitle-segment-content.tsx
++++ b/src/runtime/composition-runtime/components/subtitle-segment-content.tsx
+@@ -2,6 +2,7 @@
+ 
+ import { useSequenceContext } from '@/runtime/composition-runtime/deps/player'
+ import { parseSubtitleCueText } from '@/shared/utils/subtitle-cue-format'
++import { isWordStyle, resolveWordCaption } from '@/shared/typography/word-captions'
+ import type { SubtitleSegmentItem, TextItem } from '@/types/timeline'
+ 
+ import { useVideoConfig } from '../hooks/use-player-compat'
+@@ -36,6 +37,16 @@
+     [activeCue],
+   )
+ 
++  // A word style (Frameleaf FL-640) draws the words said so far, lighting the one being said.
++  const wordLook = isWordStyle(item.wordLook) ? item.wordLook : undefined
++  const words = useMemo(
++    () =>
++      activeCue && parsed && wordLook
++        ? resolveWordCaption(activeCue, secondsIntoSegment, wordLook, parsed.plainText)
++        : null,
++    [activeCue, parsed, wordLook, secondsIntoSegment],
++  )
++
+   // Synthesize an ephemeral TextItem that carries the active cue's text and
+   // the segment's typography. Keyframe/gizmo lookups by id will miss (the
+   // segment isn't a TextItem) — that's fine for now; segment-level keyframes
+@@ -50,12 +61,14 @@
+       label: item.label,
+       mediaId: item.mediaId,
+       transform: item.transform,
+-      text: parsed?.plainText ?? '',
++      text: words?.text ?? parsed?.plainText ?? '',
+       // textSpans drives styled per-run rendering — italic / bold / colored
+       // fragments inside one cue. TextContent prefers spans over `text`
+       // when both are present.
+-      textSpans: parsed?.spans,
+-      fontSize: item.fontSize,
++      textSpans: words?.spans ?? parsed?.spans,
++      ...(words ? { spanLayout: 'inline' as const } : {}),
++      fontSize:
++        words && item.fontSize !== undefined ? item.fontSize * words.fontScale : item.fontSize,
+       fontFamily: item.fontFamily,
+       fontWeight: item.fontWeight,
+       fontStyle: item.fontStyle,
+@@ -72,10 +85,11 @@
+       stroke: item.stroke,
+       _sequenceFrameOffset: item._sequenceFrameOffset,
+     }),
+-    [parsed, item],
++    [parsed, item, words],
+   )
+ 
+   if (!activeCue || !parsed || parsed.isEmpty) return null
++  if (wordLook && !words) return null
+   return <TextContent item={syntheticTextItem} />
+ }
+ 
+diff --git a/src/shared/typography/word-captions.test.ts b/src/shared/typography/word-captions.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/shared/typography/word-captions.test.ts
+@@ -0,0 +1,167 @@
++import { describe, expect, it } from 'vite-plus/test'
++
++import {
++  VERTICAL_WORD_CAPTION_LOOK,
++  activeWordIndex,
++  captionCueWords,
++  estimateCaptionWords,
++  isWordStyle,
++  resolveWordCaption,
++  shiftCueWords,
++  wordCaptionPlacement,
++  wordLookStylePatch,
++} from './word-captions'
++import type { CaptionWord, WordCaptionLook } from '@/types/word-captions'
++
++const words: CaptionWord[] = [
++  { text: 'We', startSeconds: 1, endSeconds: 1.2, ref: '0:0' },
++  { text: 'made', startSeconds: 1.25, endSeconds: 1.6, ref: '0:1' },
++  { text: 'it!', startSeconds: 1.9, endSeconds: 2.3, ref: '0:2' },
++]
++const cue = { startSeconds: 1, endSeconds: 2.5, text: 'We made it!', words }
++const look = (style: WordCaptionLook['style']): WordCaptionLook => ({
++  style,
++  highlightColor: '#f2cc60',
++  size: 'large',
++  position: 'middle',
++})
++
++describe('FL-640 word timing', () => {
++  it('uses the transcript word times when the cue has them', () => {
++    expect(captionCueWords(cue)).toEqual(words)
++  })
++
++  it('spreads a line without word times over its time by word length', () => {
++    const estimated = estimateCaptionWords('Hi wonderful world', 0, 3)
++    expect(estimated.map((word) => word.text)).toEqual(['Hi', 'wonderful', 'world'])
++    expect(estimated[0]!.startSeconds).toBe(0)
++    expect(estimated.at(-1)!.endSeconds).toBeCloseTo(3)
++    // Longer words take longer.
++    const length = (word: CaptionWord) => word.endSeconds - word.startSeconds
++    expect(length(estimated[1]!)).toBeGreaterThan(length(estimated[0]!))
++    expect(captionCueWords({ startSeconds: 0, endSeconds: 3, text: 'Hi wonderful world' })).toEqual(
++      estimated,
++    )
++  })
++
++  it('ignores empty or zero-length words', () => {
++    const odd = { ...cue, words: [...words, { text: ' ', startSeconds: 2, endSeconds: 2.1 }] }
++    expect(captionCueWords(odd)).toHaveLength(3)
++  })
++
++  it('moves words with a trim or split and drops the ones left outside the cue', () => {
++    const trimmed = shiftCueWords({ ...cue, startSeconds: 0, endSeconds: 1.2 }, 1.1)
++    expect(trimmed.words).toEqual(
++      [
++        { text: 'We', startSeconds: 0, endSeconds: 0.1, ref: '0:0' },
++        { text: 'made', startSeconds: 0.15, endSeconds: 0.5, ref: '0:1' },
++        { text: 'it!', startSeconds: 0.8, endSeconds: 1.2, ref: '0:2' },
++      ].map((word) => ({
++        ...word,
++        startSeconds: expect.closeTo(word.startSeconds),
++        endSeconds: expect.closeTo(word.endSeconds),
++      })),
++    )
++    expect(shiftCueWords({ ...cue, startSeconds: 0, endSeconds: 0.05 }, 5).words).toBeUndefined()
++    const plain = { startSeconds: 0, endSeconds: 1, text: 'x' }
++    expect(shiftCueWords(plain, 1)).toBe(plain)
++  })
++})
++
++describe('FL-640 the active word', () => {
++  it('is -1 before the first word, then the last word that has started', () => {
++    expect(activeWordIndex(words, 0.9)).toBe(-1)
++    expect(activeWordIndex(words, 1)).toBe(0)
++    expect(activeWordIndex(words, 1.3)).toBe(1)
++    // A pause between words keeps the last word lit.
++    expect(activeWordIndex(words, 1.75)).toBe(1)
++    expect(activeWordIndex(words, 1.9)).toBe(2)
++    expect(activeWordIndex(words, 2.45)).toBe(2)
++    expect(activeWordIndex([], 1)).toBe(-1)
++  })
++})
++
++describe('FL-640 what each style draws', () => {
++  it('Highlight shows the line and lights the word being said', () => {
++    const drawn = resolveWordCaption(cue, 1.3, look('highlight'))!
++    expect(drawn.text).toBe('We made it!')
++    expect(drawn.spans).toEqual([
++      { text: 'We ' },
++      { text: 'made ', color: '#f2cc60' },
++      { text: 'it!' },
++    ])
++    expect(drawn.fontScale).toBe(1)
++    // Before the first word the line shows with nothing lit.
++    expect(resolveWordCaption(cue, 0.5, look('highlight'))!.spans.some((span) => span.color)).toBe(
++      false,
++    )
++  })
++
++  it('Word by word shows the words said so far', () => {
++    expect(resolveWordCaption(cue, 0.5, look('word'))).toBeNull()
++    expect(resolveWordCaption(cue, 1.3, look('word'))!.text).toBe('We made')
++    expect(resolveWordCaption(cue, 2, look('word'))!.text).toBe('We made it!')
++  })
++
++  it('One big word shows the word being said, larger and in capitals', () => {
++    expect(resolveWordCaption(cue, 0.5, look('big'))).toBeNull()
++    const drawn = resolveWordCaption(cue, 1.95, look('big'))!
++    expect(drawn.spans).toEqual([{ text: 'IT!', color: '#f2cc60' }])
++    expect(drawn.fontScale).toBeGreaterThan(1)
++  })
++
++  it('treats Lines and unknown looks as whole lines', () => {
++    expect(isWordStyle(look('lines'))).toBe(false)
++    expect(isWordStyle(undefined)).toBe(false)
++    expect(isWordStyle({ ...look('highlight'), size: 'huge' } as unknown as WordCaptionLook)).toBe(
++      false,
++    )
++    expect(isWordStyle(look('highlight'))).toBe(true)
++  })
++})
++
++describe('FL-640 size and position', () => {
++  it('sizes from the short side, so a look reads the same in 16:9 and 9:16', () => {
++    expect(wordCaptionPlacement(look('highlight'), 1920, 1080).fontSize).toBe(
++      wordCaptionPlacement(look('highlight'), 1080, 1920).fontSize,
++    )
++    const small = wordCaptionPlacement({ size: 'small', position: 'bottom' }, 1920, 1080)
++    const large = wordCaptionPlacement({ size: 'large', position: 'top' }, 1920, 1080)
++    expect(large.fontSize).toBeGreaterThan(small.fontSize)
++    expect(small.y).toBeGreaterThan(0)
++    expect(large.y).toBeLessThan(0)
++    expect(wordCaptionPlacement({ size: 'medium', position: 'middle' }, 1920, 1080).y).toBe(0)
++  })
++
++  it('gives captions without a box the default caption box, never a zero one', () => {
++    for (const transform of [
++      undefined,
++      { x: 5, y: 9, width: 0, height: 0, rotation: 0, opacity: 1 },
++    ]) {
++      const patch = wordLookStylePatch(look('highlight'), transform, 1920, 1080)
++      expect(patch.transform).toMatchObject({ width: 1574, height: 173, y: 0 })
++    }
++    const kept = wordLookStylePatch(
++      { size: 'small', position: 'top', style: 'word', highlightColor: '#fff' },
++      { x: 12, y: 300, width: 900, height: 120, rotation: 0, opacity: 1 },
++      1920,
++      1080,
++    )
++    expect(kept.transform).toEqual({
++      x: 12,
++      y: -324,
++      width: 900,
++      height: 120,
++      rotation: 0,
++      opacity: 1,
++    })
++  })
++
++  it('defaults a Vertical 9:16 export to Highlight, Large, Middle', () => {
++    expect(VERTICAL_WORD_CAPTION_LOOK).toMatchObject({
++      style: 'highlight',
++      size: 'large',
++      position: 'middle',
++    })
++  })
++})
+diff --git a/src/shared/typography/word-captions.ts b/src/shared/typography/word-captions.ts
+new file mode 100644
+--- /dev/null
++++ b/src/shared/typography/word-captions.ts
+@@ -0,0 +1,238 @@
++/**
++ * Word-by-word captions (Frameleaf FL-640): the pure model shared by the preview, the export
++ * renderer and the Caption style card.
++ *
++ * Word times come from the transcript (FL-562): cues made from a transcript carry its words, and a
++ * word corrected there is corrected in the cue too. A cue without word times (an imported subtitle
++ * file, or captions typed by hand) spreads its line over its time by word length, as the mock does,
++ * so every style still reads; that is an estimate, never stored.
++ *
++ * Nothing here reads a store, so it is unit-tested directly.
++ */
++
++import type { TextSpan } from '@/types/text'
++import type { TransformProperties } from '@/types/transform'
++import type {
++  CaptionWord,
++  WordCaptionLook,
++  WordCaptionPosition,
++  WordCaptionSize,
++  WordCaptionStyle,
++} from '@/types/word-captions'
++
++export const WORD_CAPTION_STYLES: readonly WordCaptionStyle[] = [
++  'lines',
++  'highlight',
++  'word',
++  'big',
++]
++export const WORD_CAPTION_SIZES: readonly WordCaptionSize[] = ['small', 'medium', 'large']
++export const WORD_CAPTION_POSITIONS: readonly WordCaptionPosition[] = ['bottom', 'middle', 'top']
++/** The mock's swatches: warm yellow, white, green, blue, coral. */
++export const WORD_CAPTION_HIGHLIGHTS: readonly string[] = [
++  '#f2cc60',
++  '#ffffff',
++  '#3fb950',
++  '#58a6ff',
++  '#ff7b72',
++]
++
++/** What the card shows before anyone chooses: today's captions. */
++export const DEFAULT_WORD_CAPTION_LOOK: WordCaptionLook = {
++  style: 'lines',
++  highlightColor: WORD_CAPTION_HIGHLIGHTS[0]!,
++  size: 'medium',
++  position: 'bottom',
++}
++
++/**
++ * The look of a Vertical 9:16 export when the person has not chosen one (owner decision
++ * 2026-10-29). The render worker applies the same look (`studio/tools/bundled-worker-word-captions.mjs`).
++ */
++export const VERTICAL_WORD_CAPTION_LOOK: WordCaptionLook = {
++  style: 'highlight',
++  highlightColor: WORD_CAPTION_HIGHLIGHTS[0]!,
++  size: 'large',
++  position: 'middle',
++}
++
++/** Font size as a fraction of the frame's short side, so a look reads the same in 16:9 and 9:16. */
++export const WORD_CAPTION_SIZE_RATIO: Readonly<Record<WordCaptionSize, number>> = {
++  small: 0.04,
++  medium: 0.05,
++  large: 0.07,
++}
++/** Box centre offset from the frame centre, as a fraction of the frame height. */
++export const WORD_CAPTION_POSITION_RATIO: Readonly<Record<WordCaptionPosition, number>> = {
++  bottom: 0.3,
++  middle: 0,
++  top: -0.3,
++}
++/** One big word is drawn this much larger than the chosen size. */
++export const BIG_WORD_SCALE = 1.8
++
++export function isWordCaptionLook(value: unknown): value is WordCaptionLook {
++  if (!value || typeof value !== 'object') return false
++  const look = value as Partial<WordCaptionLook>
++  return (
++    WORD_CAPTION_STYLES.includes(look.style as WordCaptionStyle) &&
++    typeof look.highlightColor === 'string' &&
++    WORD_CAPTION_SIZES.includes(look.size as WordCaptionSize) &&
++    WORD_CAPTION_POSITIONS.includes(look.position as WordCaptionPosition)
++  )
++}
++
++/** True when the look draws words one at a time, rather than whole lines. */
++export function isWordStyle(look: WordCaptionLook | undefined): look is WordCaptionLook {
++  return !!look && look.style !== 'lines' && isWordCaptionLook(look)
++}
++
++/** Font size and vertical offset of a look on a frame of this size. */
++export function wordCaptionPlacement(
++  look: Pick<WordCaptionLook, 'size' | 'position'>,
++  width: number,
++  height: number,
++): { fontSize: number; y: number } {
++  const short = Math.max(1, Math.min(width, height))
++  return {
++    fontSize: Math.max(8, Math.round(short * WORD_CAPTION_SIZE_RATIO[look.size])),
++    y: Math.round(height * WORD_CAPTION_POSITION_RATIO[look.position]),
++  }
++}
++
++/** Words of a line spread over its time by length (no transcript times). */
++export function estimateCaptionWords(
++  text: string,
++  startSeconds: number,
++  endSeconds: number,
++): CaptionWord[] {
++  const words = text.split(/\s+/).filter(Boolean)
++  const weights = words.map((word) => 1 + word.replace(/[^\p{L}\p{N}]/gu, '').length / 6)
++  const total = weights.reduce((sum, value) => sum + value, 0) || 1
++  const span = Math.max(0, endSeconds - startSeconds)
++  let cursor = startSeconds
++  return words.map((word, index) => {
++    const duration = (span * weights[index]!) / total
++    const item = { text: word, startSeconds: cursor, endSeconds: cursor + duration }
++    cursor += duration
++    return item
++  })
++}
++
++/** The transcript's words when the cue has them, else an estimate from its text. */
++export function captionCueWords(
++  cue: { startSeconds: number; endSeconds: number; text: string; words?: readonly CaptionWord[] },
++  plainText: string = cue.text,
++): CaptionWord[] {
++  const words = (cue.words ?? []).filter(
++    (word) => word.text.trim().length > 0 && word.endSeconds > word.startSeconds,
++  )
++  if (words.length > 0) return words.toSorted((a, b) => a.startSeconds - b.startSeconds)
++  return estimateCaptionWords(plainText, cue.startSeconds, cue.endSeconds)
++}
++
++/**
++ * Index of the word being said at `seconds`: the last word that has started, so a short pause
++ * between words keeps the last one lit instead of flickering. -1 before the first word.
++ */
++export function activeWordIndex(words: readonly CaptionWord[], seconds: number): number {
++  let active = -1
++  for (let index = 0; index < words.length; index++) {
++    if (words[index]!.startSeconds <= seconds + 1e-9) active = index
++    else break
++  }
++  return active
++}
++
++export interface ResolvedWordCaption {
++  /** Plain text drawn this frame. */
++  text: string
++  /** One span per word, flowed inline; the word being said carries the highlight colour. */
++  spans: TextSpan[]
++  /** Multiplies the item's font size (One big word). */
++  fontScale: number
++}
++
++/**
++ * What a word style draws for a cue at `seconds` (the cue's own clock), or null when nothing shows
++ * yet (Word by word and One big word before the first word is said).
++ */
++export function resolveWordCaption(
++  cue: { startSeconds: number; endSeconds: number; text: string; words?: readonly CaptionWord[] },
++  seconds: number,
++  look: WordCaptionLook,
++  plainText: string = cue.text,
++): ResolvedWordCaption | null {
++  const words = captionCueWords(cue, plainText)
++  if (words.length === 0) return null
++  const active = activeWordIndex(words, seconds)
++  const span = (word: CaptionWord, index: number, last: number): TextSpan => ({
++    text: index < last ? `${word.text.trim()} ` : word.text.trim(),
++    ...(index === active ? { color: look.highlightColor } : {}),
++  })
++
++  if (look.style === 'big') {
++    const word = active >= 0 ? words[active]! : null
++    if (!word) return null
++    const text = word.text.trim().toLocaleUpperCase()
++    return {
++      text,
++      spans: [{ text, color: look.highlightColor }],
++      fontScale: BIG_WORD_SCALE,
++    }
++  }
++
++  const shown = look.style === 'word' ? words.slice(0, active + 1) : words
++  if (shown.length === 0) return null
++  const spans = shown.map((word, index) => span(word, index, shown.length - 1))
++  return { text: spans.map((item) => item.text).join(''), spans, fontScale: 1 }
++}
++
++/**
++ * A cue whose clock moved `deltaSeconds` earlier (a trim or split re-anchored it), with its words
++ * moved the same way. Words that no longer fall inside the cue are dropped.
++ */
++export function shiftCueWords<
++  T extends { startSeconds: number; endSeconds: number; words?: CaptionWord[] },
++>(cue: T, deltaSeconds: number): T {
++  if (!cue.words?.length) return cue
++  const words = cue.words.flatMap((word) => {
++    const startSeconds = Math.max(cue.startSeconds, word.startSeconds - deltaSeconds)
++    const endSeconds = Math.min(cue.endSeconds, word.endSeconds - deltaSeconds)
++    return endSeconds > startSeconds ? [{ ...word, startSeconds, endSeconds }] : []
++  })
++  const next = { ...cue }
++  if (words.length > 0) next.words = words
++  else delete next.words
++  return next
++}
++
++const BLANK_TRANSFORM: TransformProperties = {
++  x: 0,
++  y: 0,
++  width: 0,
++  height: 0,
++  rotation: 0,
++  opacity: 1,
++}
++
++/** The caption style fields a look sets on a canvas of this size. */
++export function wordLookStylePatch(
++  look: WordCaptionLook,
++  transform: TransformProperties | undefined,
++  canvasWidth: number,
++  canvasHeight: number,
++): { fontSize: number; transform: TransformProperties } {
++  const placement = wordCaptionPlacement(look, canvasWidth, canvasHeight)
++  const base = { ...BLANK_TRANSFORM, ...transform }
++  // An absent or zero box is not an automatic size: use the default caption box (82% × 16%).
++  return {
++    fontSize: placement.fontSize,
++    transform: {
++      ...base,
++      width: (base.width ?? 0) > 0 ? base.width! : Math.round(canvasWidth * 0.82),
++      height: (base.height ?? 0) > 0 ? base.height! : Math.round(canvasHeight * 0.16),
++      y: placement.y,
++    },
++  }
++}
+diff --git a/src/test/word-captions-render.test.tsx b/src/test/word-captions-render.test.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/test/word-captions-render.test.tsx
+@@ -0,0 +1,370 @@
++/**
++ * Word-by-word captions (Frameleaf FL-640) through the real stores, composition, export paint,
++ * preview and the Caption style card.
++ */
++import { cleanup, fireEvent, render } from '@testing-library/react'
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++import { SubtitleSection } from '@/features/editor/components/properties-sidebar/clip-panel/subtitle-section'
++import { useItemsStore } from '@/features/editor/deps/timeline-store'
++import {
++  resetTimelineCompositionTestState,
++  makeTimelineTrack,
++  makeTimelineVideoItem,
++} from '@/features/timeline/test-helpers'
++import { convertTimelineToComposition } from '@/features/export/utils/timeline-to-composition'
++import { renderSubtitleSegmentItem } from '@/features/export/utils/canvas-item-renderer/text'
++import type { ItemRenderContext } from '@/features/export/utils/canvas-item-renderer/types'
++import { TextMeasurementCache } from '@/features/export/utils/canvas-pool'
++import { buildTranscriptSubtitleWebVtt } from '@/features/export/utils/embedded-subtitle-export'
++import {
++  buildTimelineTranscriptCaptionCues,
++  correctPlacedTranscriptCaptions,
++  transcriptWordTextChanges,
++} from '@/features/media-library/services/media-transcription-service'
++import { correctTranscriptWord } from '@/features/timeline/utils/transcript-document'
++import { trimSubtitleCuesAtStart } from '@/features/timeline/stores/items-store-normalize'
++import { SubtitleSegmentContent } from '@/runtime/composition-runtime/components/subtitle-segment-content'
++import { SequenceContext } from '@/runtime/player/composition/sequence-context'
++import { VideoConfigProvider } from '@/runtime/player/VideoConfigProvider'
++import type { MediaTranscript } from '@/types/storage'
++import type { SubtitleSegmentItem, TimelineItem, VideoItem } from '@/types/timeline'
++import type { WordCaptionLook } from '@/types/word-captions'
++
++vi.mock('@tanstack/react-virtual', () => ({
++  useVirtualizer: ({ count }: { count: number }) => ({
++    getVirtualItems: () =>
++      Array.from({ length: count }, (_, index) => ({ index, key: index, start: index * 116 })),
++    getTotalSize: () => count * 116,
++    measureElement: () => {},
++  }),
++}))
++vi.mock('@/runtime/composition-runtime/utils/fonts', () => ({
++  loadFont: (family: string) => family,
++}))
++
++const HIGHLIGHT = '#f2cc60'
++const look = (style: WordCaptionLook['style']): WordCaptionLook => ({
++  style,
++  highlightColor: HIGHLIGHT,
++  size: 'large',
++  position: 'middle',
++})
++
++/** One cue, "We made it", words at 0-0.4, 0.5-0.9, 1.2-1.8 s on the segment clock. */
++function segment(wordLook?: WordCaptionLook): SubtitleSegmentItem {
++  return {
++    id: 'captions',
++    type: 'subtitle',
++    trackId: 'caption-track',
++    from: 0,
++    durationInFrames: 90,
++    label: 'Transcript',
++    mediaId: 'media-1',
++    source: { type: 'transcript', mediaId: 'media-1', clipId: 'video-1' },
++    cues: [
++      {
++        id: 'c0',
++        startSeconds: 0,
++        endSeconds: 2,
++        text: 'We made it',
++        words: [
++          { text: 'We', startSeconds: 0, endSeconds: 0.4, ref: '0:0' },
++          { text: 'made', startSeconds: 0.5, endSeconds: 0.9, ref: '0:1' },
++          { text: 'it', startSeconds: 1.2, endSeconds: 1.8, ref: '0:2' },
++        ],
++      },
++    ],
++    fontFamily: 'Arial',
++    fontSize: 40,
++    fontWeight: 'bold',
++    color: '#ffffff',
++    textAlign: 'center',
++    verticalAlign: 'middle',
++    ...(wordLook ? { wordLook } : {}),
++  }
++}
++
++function paint(item: SubtitleSegmentItem, frame: number) {
++  const painted: { text: string; color: string; font: string }[] = []
++  const ctx = {
++    font: '',
++    fillStyle: '',
++    strokeStyle: '',
++    lineWidth: 0,
++    letterSpacing: '0px',
++    save() {},
++    restore() {},
++    beginPath() {},
++    rect() {},
++    clip() {},
++    fill() {},
++    fillRect() {},
++    roundRect() {},
++    moveTo() {},
++    lineTo() {},
++    arcTo() {},
++    closePath() {},
++    measureText(text: string) {
++      return { width: text.length * 20, actualBoundingBoxAscent: 30, actualBoundingBoxDescent: 8 }
++    },
++    fillText(text: string) {
++      painted.push({ text, color: this.fillStyle, font: this.font })
++    },
++    strokeText() {},
++  }
++  renderSubtitleSegmentItem(
++    ctx as unknown as OffscreenCanvasRenderingContext2D,
++    item,
++    { x: 0, y: 0, width: 1000, height: 300 },
++    frame,
++    {
++      canvasSettings: { width: 1280, height: 720, fps: 30 },
++      renderMode: 'export',
++      textMeasureCache: new TextMeasurementCache(),
++    } as ItemRenderContext,
++  )
++  return painted
++}
++
++const words = (painted: ReturnType<typeof paint>) =>
++  painted
++    .map((entry) => entry.text)
++    .join('')
++    .split(/\s+/)
++    .filter(Boolean)
++const litWords = (painted: ReturnType<typeof paint>) =>
++  painted
++    .filter((entry) => entry.color.toLowerCase() === HIGHLIGHT)
++    .map((entry) => entry.text.trim())
++    .filter(Boolean)
++
++function preview(item: SubtitleSegmentItem, frame: number) {
++  return render(
++    <VideoConfigProvider fps={30} width={1280} height={720} durationInFrames={90}>
++      <SequenceContext.Provider
++        value={{ from: 0, durationInFrames: 90, localFrame: frame, parentFrom: 0 }}
++      >
++        <SubtitleSegmentContent item={item} />
++      </SequenceContext.Provider>
++    </VideoConfigProvider>,
++  )
++}
++
++beforeEach(resetTimelineCompositionTestState)
++afterEach(cleanup)
++
++describe('FL-640 burned-in word styles: export paint and preview', () => {
++  it('Lines paints the whole line in the caption colour (today)', () => {
++    const painted = paint(segment(), 16)
++    expect(words(painted)).toEqual(['We', 'made', 'it'])
++    expect(litWords(painted)).toEqual([])
++    expect(paint(segment(look('lines')), 16)).toEqual(painted)
++  })
++
++  it('Highlight paints the whole line and lights the word being said', () => {
++    const item = segment(look('highlight'))
++    // 0.53 s: "made" is being said.
++    const painted = paint(item, 16)
++    expect(words(painted)).toEqual(['We', 'made', 'it'])
++    expect(litWords(painted)).toEqual(['made'])
++    // 1.0 s: a pause, "made" stays lit; 1.3 s: "it".
++    expect(litWords(paint(item, 30))).toEqual(['made'])
++    expect(litWords(paint(item, 39))).toEqual(['it'])
++    const ui = preview(item, 16)
++    expect(ui.container.textContent?.replace(/\s+/g, ' ').trim()).toBe('We made it')
++    const lit = [...ui.container.querySelectorAll<HTMLElement>('span')].filter(
++      (span) => span.style.color && span.style.color !== 'rgb(255, 255, 255)',
++    )
++    expect(lit.map((span) => span.textContent?.trim())).toEqual(['made'])
++  })
++
++  it('Word by word paints only the words said so far', () => {
++    const item = segment(look('word'))
++    expect(words(paint(item, 3))).toEqual(['We'])
++    expect(words(paint(item, 16))).toEqual(['We', 'made'])
++    expect(words(paint(item, 39))).toEqual(['We', 'made', 'it'])
++    expect(preview(item, 16).container.textContent?.replace(/\s+/g, ' ').trim()).toBe('We made')
++  })
++
++  it('One big word paints the word being said, larger and in capitals', () => {
++    const item = segment(look('big'))
++    const painted = paint(item, 16)
++    expect(words(painted)).toEqual(['MADE'])
++    expect(litWords(painted)).toEqual(['MADE'])
++    expect(painted[0]!.font).toContain('72px')
++    expect(preview(item, 39).container.textContent?.trim()).toBe('IT')
++  })
++
++  it('keeps whole lines in the subtitle file whatever the picture style', () => {
++    const video = makeTimelineVideoItem({ id: 'video-1', durationInFrames: 90, mediaId: 'media-1' })
++    useItemsStore
++      .getState()
++      .setTracks([
++        makeTimelineTrack({ id: 'track-v1', name: 'V1', order: 1, kind: 'video' }),
++        makeTimelineTrack({ id: 'caption-track', name: 'Captions', order: 0, kind: 'video' }),
++      ])
++    useItemsStore.getState().setItems([video, segment(look('big'))])
++    const { tracks, items } = useItemsStore.getState()
++    const vtt = buildTranscriptSubtitleWebVtt(
++      convertTimelineToComposition(tracks, items, [], 30, 1280, 720),
++    )
++    expect(vtt).toContain('We made it')
++  })
++})
++
++describe('FL-640 clip captions made from the transcript', () => {
++  const transcript: MediaTranscript = {
++    id: 'media-1',
++    mediaId: 'media-1',
++    model: 'whisper-small',
++    quantization: 'q8',
++    text: 'We made it',
++    segments: [
++      {
++        text: 'We made it',
++        start: 3,
++        end: 4.8,
++        words: [
++          { text: 'We', start: 3, end: 3.4 },
++          { text: 'made', start: 3.5, end: 3.9 },
++          { text: 'it', start: 3.95, end: 4.8 },
++        ],
++      },
++    ],
++    createdAt: 1,
++    updatedAt: 1,
++  }
++
++  it('keep the transcript word times and a link to each transcript word', () => {
++    const [cue] = buildTimelineTranscriptCaptionCues('media-1', transcript.segments)
++    expect(cue!.words).toEqual([
++      { text: 'We', startSeconds: 3, endSeconds: 3.4, ref: '0:0' },
++      { text: 'made', startSeconds: 3.5, endSeconds: 3.9, ref: '0:1' },
++      { text: 'it', startSeconds: 3.95, endSeconds: 4.8, ref: '0:2' },
++    ])
++  })
++
++  it('render on the clip with its look, trimmed and moved to the timeline', () => {
++    const clip: VideoItem = {
++      ...makeTimelineVideoItem({
++        id: 'video-1',
++        mediaId: 'media-1',
++        from: 30,
++        durationInFrames: 120,
++        sourceStart: 60,
++        sourceEnd: 180,
++        sourceDuration: 300,
++      }),
++      transcriptCaptions: {
++        type: 'transcript',
++        mediaId: 'media-1',
++        enabled: true,
++        updatedAt: 1,
++        cues: buildTimelineTranscriptCaptionCues('media-1', transcript.segments),
++        wordLook: look('highlight'),
++      },
++    }
++    const composition = convertTimelineToComposition(
++      [makeTimelineTrack({ id: clip.trackId, name: 'V1', order: 0, kind: 'video' })],
++      [clip as TimelineItem],
++      [],
++      30,
++      1280,
++      720,
++    )
++    const virtual = composition.tracks
++      .flatMap((track) => track.items ?? [])
++      .find((item) => item.type === 'subtitle') as SubtitleSegmentItem
++    expect(virtual.wordLook).toEqual(look('highlight'))
++    // The clip shows source 2 s onward from timeline frame 30, so "made" (source 3.5 s) is at
++    // timeline 1.5 s past the clip start; the segment starts with the first word (1.0 s).
++    const made = virtual.cues[0]!.words!.find((word) => word.text === 'made')!
++    expect(virtual.from + Math.round((made.startSeconds + 0.01) * 30)).toBe(30 + 45)
++    expect(litWords(paint(virtual, 76))).toEqual(['made'])
++  })
++
++  it('follow a word corrected in the transcript, on placed captions too', () => {
++    const corrected = correctTranscriptWord(transcript, 0, 1, 'did')!
++    const changes = transcriptWordTextChanges(transcript.segments, corrected.segments)
++    expect([...changes]).toEqual([['0:1', 'did']])
++    const placed = segment(look('highlight'))
++    const updates = correctPlacedTranscriptCaptions(
++      [placed],
++      'media-1',
++      new Map([['We made it', 'We did it']]),
++      changes,
++    )
++    expect(updates).toHaveLength(1)
++    expect(updates[0]!.cues[0]!.text).toBe('We did it')
++    expect(updates[0]!.cues[0]!.words!.map((word) => word.text)).toEqual(['We', 'did', 'it'])
++    expect(updates[0]!.cues[0]!.words![1]!.startSeconds).toBe(0.5)
++  })
++
++  it('move their words when a caption segment is trimmed', () => {
++    const trimmed = trimSubtitleCuesAtStart(segment(), 15, 30)!
++    expect(trimmed.cues[0]!.words!.map((word) => [word.text, word.startSeconds])).toEqual([
++      ['made', 0],
++      ['it', expect.closeTo(0.7)],
++    ])
++  })
++})
++
++describe('FL-640 Caption style card', () => {
++  it('stores the chosen look and writes its size and position as the caption style', () => {
++    const video = makeTimelineVideoItem({ id: 'video-1', durationInFrames: 90, mediaId: 'media-1' })
++    useItemsStore
++      .getState()
++      .setTracks([
++        makeTimelineTrack({ id: 'track-v1', name: 'V1', order: 1, kind: 'video' }),
++        makeTimelineTrack({ id: 'caption-track', name: 'Captions', order: 0, kind: 'video' }),
++      ])
++    useItemsStore.getState().setItems([video, segment()])
++    function Editor() {
++      const items = useItemsStore((state) => state.items)
++      return (
++        <SubtitleSection
++          items={items.filter((item) => item.id === 'captions')}
++          canvas={{ width: 1920, height: 1080 }}
++        />
++      )
++    }
++    const ui = render(<Editor />)
++    const card = ui.getByTestId('word-caption-style-card')
++    expect(card.getAttribute('aria-label')).toBe('Caption style')
++    const radios = [...card.querySelectorAll<HTMLButtonElement>('[role="radio"][data-style]')]
++    expect(radios.map((radio) => radio.dataset.style)).toEqual([
++      'lines',
++      'highlight',
++      'word',
++      'big',
++    ])
++    expect(radios[0]!.getAttribute('aria-checked')).toBe('true')
++
++    fireEvent.click(radios[1]!)
++    const current = () =>
++      useItemsStore.getState().items.find((item) => item.id === 'captions') as SubtitleSegmentItem
++    expect(current().wordLook).toEqual({
++      style: 'highlight',
++      highlightColor: HIGHLIGHT,
++      size: 'medium',
++      position: 'bottom',
++    })
++    expect(current().fontSize).toBe(54)
++    expect(current().transform?.y).toBe(324)
++
++    const [size, position] = [...card.querySelectorAll<HTMLSelectElement>('select')]
++    fireEvent.change(size!, { target: { value: 'large' } })
++    fireEvent.change(position!, { target: { value: 'middle' } })
++    expect(current().wordLook).toMatchObject({ size: 'large', position: 'middle' })
++    expect(current().fontSize).toBe(76)
++    expect(current().transform?.y).toBe(0)
++
++    const swatches = card.querySelectorAll<HTMLButtonElement>(
++      '[role="radiogroup"][aria-label="Highlight colour"] [role="radio"]',
++    )
++    expect(swatches).toHaveLength(5)
++    fireEvent.click(swatches[2]!)
++    expect(current().wordLook?.highlightColor).toBe('#3fb950')
++    expect(ui.getByTestId('word-caption-preview').dataset.style).toBe('highlight')
++  })
++})
+diff --git a/src/types/timeline.ts b/src/types/timeline.ts
+--- a/src/types/timeline.ts
++++ b/src/types/timeline.ts
+@@ -7,6 +7,7 @@
+ import type { TextMotionSpec } from './text-motion'
+ import type { TextLayoutDrafts, TextSpan, TextStyleFields } from './text'
+ import type { CompositionControlOverrides } from './composition-controls'
++import type { CaptionWord, WordCaptionLook } from './word-captions'
+ 
+ export interface TimelineItemCornerPin {
+   topLeft: [number, number]
+@@ -22,6 +23,8 @@
+   startSeconds: number
+   endSeconds: number
+   text: string
++  /** The transcript's words, in source seconds (Frameleaf FL-640). */
++  words?: CaptionWord[]
+ }
+ 
+ export type TimelineTranscriptCaptionStyle = TextStyleFields & {
+@@ -40,6 +43,8 @@
+   /** Source-relative transcript cues. Render/export trims them to the clip. */
+   cues: TimelineTranscriptCaptionCue[]
+   style?: TimelineTranscriptCaptionStyle
++  /** The chosen word-by-word look (Frameleaf FL-640); absent means Lines. */
++  wordLook?: WordCaptionLook
+ }
+ 
+ /** Sidechain ducking settings carried by a duck-source item. */
+@@ -412,6 +417,8 @@
+   startSeconds: number
+   endSeconds: number
+   text: string
++  /** Word times on the cue's clock, from the transcript (Frameleaf FL-640). */
++  words?: CaptionWord[]
+ }
+ 
+ /**
+@@ -435,6 +442,8 @@
+     source: SubtitleSegmentSource
+     /** Cue list, sorted by `startSeconds`. Times are segment-relative. */
+     cues: SubtitleSegmentCue[]
++    /** The chosen word-by-word look (Frameleaf FL-640); absent means Lines. */
++    wordLook?: WordCaptionLook
+     color: string
+   }
+ 
+diff --git a/src/types/word-captions.ts b/src/types/word-captions.ts
+new file mode 100644
+--- /dev/null
++++ b/src/types/word-captions.ts
+@@ -0,0 +1,36 @@
++/**
++ * Word-by-word captions (Frameleaf FL-640): the stored shapes.
++ *
++ * A caption cue made from a transcript carries the transcript's own word times, so the picture can
++ * light up, reveal or show one word at a time as it is said. A subtitle file or embedded subtitle
++ * track always carries whole lines; only the picture uses the words.
++ */
++
++/** One word of a caption cue. Times use the same clock as the cue that holds it. */
++export interface CaptionWord {
++  text: string
++  startSeconds: number
++  endSeconds: number
++  /**
++   * The transcript word this came from, `segmentIndex:wordIndex` in the media's transcript, so a
++   * word corrected in the transcript is corrected here too.
++   */
++  ref?: string
++}
++
++/** `lines` is today's captions; the others need word times and are burned into the picture. */
++export type WordCaptionStyle = 'lines' | 'highlight' | 'word' | 'big'
++export type WordCaptionSize = 'small' | 'medium' | 'large'
++export type WordCaptionPosition = 'bottom' | 'middle' | 'top'
++
++/**
++ * How captions look in the picture. Present only once the person has chosen a look in the Caption
++ * style card; a Vertical 9:16 export without one uses Highlight, Large, Middle.
++ */
++export interface WordCaptionLook {
++  style: WordCaptionStyle
++  /** Colour of the word being said (Highlight), or of every shown word (Word by word, One big word). */
++  highlightColor: string
++  size: WordCaptionSize
++  position: WordCaptionPosition
++}

@@ -1,0 +1,1358 @@
+{
+  "source": {
+    "repository": "https://github.com/photoprism/photoprism",
+    "commit": "963b58c5034a45010b3944841f2bcc2e289abadd",
+    "version": "261029-963b58c50",
+    "executableVersion": "261029-963b58c50-Linux-ARM64-Plus",
+    "archiveSha256": "2871451788e6960c6a27d69ba07d295400511b44294ced038ee243ae81c75396",
+    "runtimeImage": "photoprism/photoprism@sha256:9409cf8e5a6ebcbe3170d14537556cbc20997aaa307096d6eeedbfc5eeef6719",
+    "engine": "sqlite",
+    "writerVersionNumber": 3053004,
+    "license": "AGPL-3.0",
+    "licenseUrl": "https://github.com/photoprism/photoprism/blob/963b58c5034a45010b3944841f2bcc2e289abadd/LICENSE"
+  },
+  "schemaSha256": "507395a491d2db109d8f661764cf8f6ecd2e6222bd5e7f633cbeafc96817ca34",
+  "objects": [
+    {
+      "type": "index",
+      "name": "idx_albums_album_category",
+      "tbl_name": "albums",
+      "sql": "CREATE INDEX `idx_albums_album_category` ON `albums`(`album_category`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_albums_album_filter",
+      "tbl_name": "albums",
+      "sql": "CREATE INDEX idx_albums_album_filter ON albums (album_filter)"
+    },
+    {
+      "type": "index",
+      "name": "idx_albums_album_path",
+      "tbl_name": "albums",
+      "sql": "CREATE INDEX `idx_albums_album_path` ON `albums`(`album_path`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_albums_album_slug",
+      "tbl_name": "albums",
+      "sql": "CREATE INDEX `idx_albums_album_slug` ON `albums`(`album_slug`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_albums_album_state",
+      "tbl_name": "albums",
+      "sql": "CREATE INDEX `idx_albums_album_state` ON `albums`(`album_state`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_albums_album_title",
+      "tbl_name": "albums",
+      "sql": "CREATE INDEX `idx_albums_album_title` ON `albums`(`album_title`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_albums_country_year_month",
+      "tbl_name": "albums",
+      "sql": "CREATE INDEX `idx_albums_country_year_month` ON `albums`(`album_country`,`album_year`,`album_month`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_albums_created_by",
+      "tbl_name": "albums",
+      "sql": "CREATE INDEX `idx_albums_created_by` ON `albums`(`created_by`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_albums_deleted_at",
+      "tbl_name": "albums",
+      "sql": "CREATE INDEX `idx_albums_deleted_at` ON `albums`(`deleted_at`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_albums_published_at",
+      "tbl_name": "albums",
+      "sql": "CREATE INDEX `idx_albums_published_at` ON `albums`(`published_at`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_albums_thumb",
+      "tbl_name": "albums",
+      "sql": "CREATE INDEX `idx_albums_thumb` ON `albums`(`thumb`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_albums_users_team_uid",
+      "tbl_name": "albums_users",
+      "sql": "CREATE INDEX `idx_albums_users_team_uid` ON `albums_users`(`team_uid`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_albums_users_user_uid",
+      "tbl_name": "albums_users",
+      "sql": "CREATE INDEX `idx_albums_users_user_uid` ON `albums_users`(`user_uid`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_albums_ymd",
+      "tbl_name": "albums",
+      "sql": "CREATE INDEX `idx_albums_ymd` ON `albums`(`album_day`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_audit_logins_banned_at",
+      "tbl_name": "audit_logins",
+      "sql": "CREATE INDEX `idx_audit_logins_banned_at` ON `audit_logins`(`banned_at`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_audit_logins_failed_at",
+      "tbl_name": "audit_logins",
+      "sql": "CREATE INDEX `idx_audit_logins_failed_at` ON `audit_logins`(`failed_at`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_audit_logins_login_name",
+      "tbl_name": "audit_logins",
+      "sql": "CREATE INDEX `idx_audit_logins_login_name` ON `audit_logins`(`login_name`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_audit_logins_updated_at",
+      "tbl_name": "audit_logins",
+      "sql": "CREATE INDEX `idx_audit_logins_updated_at` ON `audit_logins`(`updated_at`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_auth_clients_deleted_at",
+      "tbl_name": "auth_clients",
+      "sql": "CREATE INDEX `idx_auth_clients_deleted_at` ON `auth_clients`(`deleted_at`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_auth_clients_node_uuid",
+      "tbl_name": "auth_clients",
+      "sql": "CREATE INDEX `idx_auth_clients_node_uuid` ON `auth_clients`(`node_uuid`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_auth_clients_user_name",
+      "tbl_name": "auth_clients",
+      "sql": "CREATE INDEX `idx_auth_clients_user_name` ON `auth_clients`(`user_name`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_auth_clients_user_uid",
+      "tbl_name": "auth_clients",
+      "sql": "CREATE INDEX `idx_auth_clients_user_uid` ON `auth_clients`(`user_uid`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_auth_codes_expires_at",
+      "tbl_name": "auth_codes",
+      "sql": "CREATE INDEX `idx_auth_codes_expires_at` ON `auth_codes`(`expires_at`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_auth_codes_user_uid",
+      "tbl_name": "auth_codes",
+      "sql": "CREATE INDEX `idx_auth_codes_user_uid` ON `auth_codes`(`user_uid`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_auth_grants_client_id",
+      "tbl_name": "auth_grants",
+      "sql": "CREATE INDEX `idx_auth_grants_client_id` ON `auth_grants`(`client_id`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_auth_grants_used_at",
+      "tbl_name": "auth_grants",
+      "sql": "CREATE INDEX `idx_auth_grants_used_at` ON `auth_grants`(`used_at`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_auth_sessions_auth_id",
+      "tbl_name": "auth_sessions",
+      "sql": "CREATE INDEX `idx_auth_sessions_auth_id` ON `auth_sessions`(`auth_id`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_auth_sessions_client_ip",
+      "tbl_name": "auth_sessions",
+      "sql": "CREATE INDEX `idx_auth_sessions_client_ip` ON `auth_sessions`(`client_ip`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_auth_sessions_client_uid",
+      "tbl_name": "auth_sessions",
+      "sql": "CREATE INDEX `idx_auth_sessions_client_uid` ON `auth_sessions`(`client_uid`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_auth_sessions_sess_expires",
+      "tbl_name": "auth_sessions",
+      "sql": "CREATE INDEX `idx_auth_sessions_sess_expires` ON `auth_sessions`(`sess_expires`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_auth_sessions_user_name",
+      "tbl_name": "auth_sessions",
+      "sql": "CREATE INDEX `idx_auth_sessions_user_name` ON `auth_sessions`(`user_name`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_auth_sessions_user_uid",
+      "tbl_name": "auth_sessions",
+      "sql": "CREATE INDEX `idx_auth_sessions_user_uid` ON `auth_sessions`(`user_uid`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_auth_users_auth_id",
+      "tbl_name": "auth_users",
+      "sql": "CREATE INDEX `idx_auth_users_auth_id` ON `auth_users`(`auth_id`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_auth_users_born_at",
+      "tbl_name": "auth_users",
+      "sql": "CREATE INDEX `idx_auth_users_born_at` ON `auth_users`(`born_at`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_auth_users_deleted_at",
+      "tbl_name": "auth_users",
+      "sql": "CREATE INDEX `idx_auth_users_deleted_at` ON `auth_users`(`deleted_at`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_auth_users_details_cell_id",
+      "tbl_name": "auth_users_details",
+      "sql": "CREATE INDEX `idx_auth_users_details_cell_id` ON `auth_users_details`(`cell_id`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_auth_users_details_org_email",
+      "tbl_name": "auth_users_details",
+      "sql": "CREATE INDEX `idx_auth_users_details_org_email` ON `auth_users_details`(`org_email`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_auth_users_details_place_id",
+      "tbl_name": "auth_users_details",
+      "sql": "CREATE INDEX `idx_auth_users_details_place_id` ON `auth_users_details`(`place_id`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_auth_users_details_subj_uid",
+      "tbl_name": "auth_users_details",
+      "sql": "CREATE INDEX `idx_auth_users_details_subj_uid` ON `auth_users_details`(`subj_uid`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_auth_users_expires_at",
+      "tbl_name": "auth_users",
+      "sql": "CREATE INDEX `idx_auth_users_expires_at` ON `auth_users`(`expires_at`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_auth_users_invite_token",
+      "tbl_name": "auth_users",
+      "sql": "CREATE INDEX `idx_auth_users_invite_token` ON `auth_users`(`invite_token`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_auth_users_shares_expires_at",
+      "tbl_name": "auth_users_shares",
+      "sql": "CREATE INDEX `idx_auth_users_shares_expires_at` ON `auth_users_shares`(`expires_at`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_auth_users_shares_share_uid",
+      "tbl_name": "auth_users_shares",
+      "sql": "CREATE INDEX `idx_auth_users_shares_share_uid` ON `auth_users_shares`(`share_uid`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_auth_users_thumb",
+      "tbl_name": "auth_users",
+      "sql": "CREATE INDEX `idx_auth_users_thumb` ON `auth_users`(`thumb`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_auth_users_user_email",
+      "tbl_name": "auth_users",
+      "sql": "CREATE INDEX `idx_auth_users_user_email` ON `auth_users`(`user_email`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_auth_users_user_name",
+      "tbl_name": "auth_users",
+      "sql": "CREATE INDEX `idx_auth_users_user_name` ON `auth_users`(`user_name`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_auth_users_user_uuid",
+      "tbl_name": "auth_users",
+      "sql": "CREATE INDEX `idx_auth_users_user_uuid` ON `auth_users`(`user_uuid`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_cameras_deleted_at",
+      "tbl_name": "cameras",
+      "sql": "CREATE INDEX `idx_cameras_deleted_at` ON `cameras`(`deleted_at`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_duplicates_file_hash",
+      "tbl_name": "duplicates",
+      "sql": "CREATE INDEX `idx_duplicates_file_hash` ON `duplicates`(`file_hash`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_errors_error_time",
+      "tbl_name": "errors",
+      "sql": "CREATE INDEX `idx_errors_error_time` ON `errors`(`error_time`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_faces_embed_model",
+      "tbl_name": "faces",
+      "sql": "CREATE INDEX `idx_faces_embed_model` ON `faces`(`embed_model`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_faces_subj_uid",
+      "tbl_name": "faces",
+      "sql": "CREATE INDEX `idx_faces_subj_uid` ON `faces`(`subj_uid`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_files_deleted_at",
+      "tbl_name": "files",
+      "sql": "CREATE INDEX `idx_files_deleted_at` ON `files`(`deleted_at`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_files_file_error",
+      "tbl_name": "files",
+      "sql": "CREATE INDEX `idx_files_file_error` ON `files`(`file_error`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_files_file_hash",
+      "tbl_name": "files",
+      "sql": "CREATE INDEX `idx_files_file_hash` ON `files`(`file_hash`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_files_instance_id",
+      "tbl_name": "files",
+      "sql": "CREATE INDEX `idx_files_instance_id` ON `files`(`instance_id`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_files_media_utc",
+      "tbl_name": "files",
+      "sql": "CREATE INDEX `idx_files_media_utc` ON `files`(`media_utc`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_files_missing_root",
+      "tbl_name": "files",
+      "sql": "CREATE INDEX idx_files_missing_root ON files (file_missing, file_root)"
+    },
+    {
+      "type": "index",
+      "name": "idx_files_name_root",
+      "tbl_name": "files",
+      "sql": "CREATE UNIQUE INDEX `idx_files_name_root` ON `files`(`file_name`,`file_root`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_files_photo_id",
+      "tbl_name": "files",
+      "sql": "CREATE INDEX `idx_files_photo_id` ON `files`(`photo_id`,`file_primary`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_files_photo_taken_at",
+      "tbl_name": "files",
+      "sql": "CREATE INDEX `idx_files_photo_taken_at` ON `files`(`photo_taken_at`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_files_photo_uid",
+      "tbl_name": "files",
+      "sql": "CREATE INDEX `idx_files_photo_uid` ON `files`(`photo_uid`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_files_published_at",
+      "tbl_name": "files",
+      "sql": "CREATE INDEX `idx_files_published_at` ON `files`(`published_at`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_files_search_media",
+      "tbl_name": "files",
+      "sql": "CREATE UNIQUE INDEX `idx_files_search_media` ON `files`(`media_id`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_files_search_timeline",
+      "tbl_name": "files",
+      "sql": "CREATE UNIQUE INDEX `idx_files_search_timeline` ON `files`(`time_index`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_files_share_service_status",
+      "tbl_name": "files_share",
+      "sql": "CREATE INDEX `idx_files_share_service_status` ON `files_share`(`service_id`,`status`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_files_sync_file_id",
+      "tbl_name": "files_sync",
+      "sql": "CREATE INDEX `idx_files_sync_file_id` ON `files_sync`(`file_id`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_files_sync_service_status",
+      "tbl_name": "files_sync",
+      "sql": "CREATE INDEX `idx_files_sync_service_status` ON `files_sync`(`service_id`,`status`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_folders_country_year_month",
+      "tbl_name": "folders",
+      "sql": "CREATE INDEX `idx_folders_country_year_month` ON `folders`(`folder_country`,`folder_year`,`folder_month`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_folders_deleted_at",
+      "tbl_name": "folders",
+      "sql": "CREATE INDEX `idx_folders_deleted_at` ON `folders`(`deleted_at`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_folders_folder_category",
+      "tbl_name": "folders",
+      "sql": "CREATE INDEX `idx_folders_folder_category` ON `folders`(`folder_category`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_folders_path_root",
+      "tbl_name": "folders",
+      "sql": "CREATE UNIQUE INDEX `idx_folders_path_root` ON `folders`(`path`,`root`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_folders_published_at",
+      "tbl_name": "folders",
+      "sql": "CREATE INDEX `idx_folders_published_at` ON `folders`(`published_at`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_keywords_keyword",
+      "tbl_name": "keywords",
+      "sql": "CREATE INDEX `idx_keywords_keyword` ON `keywords`(`keyword`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_labels_custom_slug",
+      "tbl_name": "labels",
+      "sql": "CREATE INDEX `idx_labels_custom_slug` ON `labels`(`custom_slug`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_labels_deleted_at",
+      "tbl_name": "labels",
+      "sql": "CREATE INDEX `idx_labels_deleted_at` ON `labels`(`deleted_at`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_labels_published_at",
+      "tbl_name": "labels",
+      "sql": "CREATE INDEX `idx_labels_published_at` ON `labels`(`published_at`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_labels_thumb",
+      "tbl_name": "labels",
+      "sql": "CREATE INDEX `idx_labels_thumb` ON `labels`(`thumb`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_lenses_deleted_at",
+      "tbl_name": "lenses",
+      "sql": "CREATE INDEX `idx_lenses_deleted_at` ON `lenses`(`deleted_at`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_links_created_by",
+      "tbl_name": "links",
+      "sql": "CREATE INDEX `idx_links_created_by` ON `links`(`created_by`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_links_share_slug",
+      "tbl_name": "links",
+      "sql": "CREATE INDEX `idx_links_share_slug` ON `links`(`share_slug`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_links_uid_token",
+      "tbl_name": "links",
+      "sql": "CREATE UNIQUE INDEX `idx_links_uid_token` ON `links`(`share_uid`,`link_token`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_markers_detect_model",
+      "tbl_name": "markers",
+      "sql": "CREATE INDEX `idx_markers_detect_model` ON `markers`(`detect_model`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_markers_embed_model",
+      "tbl_name": "markers",
+      "sql": "CREATE INDEX `idx_markers_embed_model` ON `markers`(`embed_model`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_markers_face_id",
+      "tbl_name": "markers",
+      "sql": "CREATE INDEX `idx_markers_face_id` ON `markers`(`face_id`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_markers_file_uid",
+      "tbl_name": "markers",
+      "sql": "CREATE INDEX `idx_markers_file_uid` ON `markers`(`file_uid`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_markers_matched_at",
+      "tbl_name": "markers",
+      "sql": "CREATE INDEX `idx_markers_matched_at` ON `markers`(`matched_at`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_markers_subj_uid_src",
+      "tbl_name": "markers",
+      "sql": "CREATE INDEX `idx_markers_subj_uid_src` ON `markers`(`subj_uid`,`subj_src`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_markers_thumb",
+      "tbl_name": "markers",
+      "sql": "CREATE INDEX `idx_markers_thumb` ON `markers`(`thumb`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_photos_albums_album_uid",
+      "tbl_name": "photos_albums",
+      "sql": "CREATE INDEX `idx_photos_albums_album_uid` ON `photos_albums`(`album_uid`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_photos_camera_lens",
+      "tbl_name": "photos",
+      "sql": "CREATE INDEX `idx_photos_camera_lens` ON `photos`(`camera_id`,`lens_id`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_photos_cell_id",
+      "tbl_name": "photos",
+      "sql": "CREATE INDEX `idx_photos_cell_id` ON `photos`(`cell_id`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_photos_checked_at",
+      "tbl_name": "photos",
+      "sql": "CREATE INDEX `idx_photos_checked_at` ON `photos`(`checked_at`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_photos_country_year_month",
+      "tbl_name": "photos",
+      "sql": "CREATE INDEX `idx_photos_country_year_month` ON `photos`(`photo_country`,`photo_year`,`photo_month`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_photos_created_by",
+      "tbl_name": "photos",
+      "sql": "CREATE INDEX `idx_photos_created_by` ON `photos`(`created_by`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_photos_deleted_at",
+      "tbl_name": "photos",
+      "sql": "CREATE INDEX `idx_photos_deleted_at` ON `photos`(`deleted_at`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_photos_keywords_keyword_id",
+      "tbl_name": "photos_keywords",
+      "sql": "CREATE INDEX `idx_photos_keywords_keyword_id` ON `photos_keywords`(`keyword_id`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_photos_labels_label_id",
+      "tbl_name": "photos_labels",
+      "sql": "CREATE INDEX `idx_photos_labels_label_id` ON `photos_labels`(`label_id`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_photos_path_name",
+      "tbl_name": "photos",
+      "sql": "CREATE INDEX `idx_photos_path_name` ON `photos`(`photo_path`,`photo_name`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_photos_photo_lat",
+      "tbl_name": "photos",
+      "sql": "CREATE INDEX `idx_photos_photo_lat` ON `photos`(`photo_lat`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_photos_photo_lng",
+      "tbl_name": "photos",
+      "sql": "CREATE INDEX `idx_photos_photo_lng` ON `photos`(`photo_lng`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_photos_place_id",
+      "tbl_name": "photos",
+      "sql": "CREATE INDEX `idx_photos_place_id` ON `photos`(`place_id`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_photos_published_at",
+      "tbl_name": "photos",
+      "sql": "CREATE INDEX `idx_photos_published_at` ON `photos`(`published_at`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_photos_taken_uid",
+      "tbl_name": "photos",
+      "sql": "CREATE INDEX `idx_photos_taken_uid` ON `photos`(`taken_at`,`photo_uid`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_photos_users_team_uid",
+      "tbl_name": "photos_users",
+      "sql": "CREATE INDEX `idx_photos_users_team_uid` ON `photos_users`(`team_uid`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_photos_users_user_uid",
+      "tbl_name": "photos_users",
+      "sql": "CREATE INDEX `idx_photos_users_user_uid` ON `photos_users`(`user_uid`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_photos_uuid",
+      "tbl_name": "photos",
+      "sql": "CREATE INDEX `idx_photos_uuid` ON `photos`(`uuid`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_photos_ymd",
+      "tbl_name": "photos",
+      "sql": "CREATE INDEX `idx_photos_ymd` ON `photos`(`photo_day`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_places_place_city",
+      "tbl_name": "places",
+      "sql": "CREATE INDEX `idx_places_place_city` ON `places`(`place_city`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_places_place_district",
+      "tbl_name": "places",
+      "sql": "CREATE INDEX `idx_places_place_district` ON `places`(`place_district`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_places_place_state",
+      "tbl_name": "places",
+      "sql": "CREATE INDEX `idx_places_place_state` ON `places`(`place_state`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_reactions_reacted_at",
+      "tbl_name": "reactions",
+      "sql": "CREATE INDEX `idx_reactions_reacted_at` ON `reactions`(`reacted_at`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_services_deleted_at",
+      "tbl_name": "services",
+      "sql": "CREATE INDEX `idx_services_deleted_at` ON `services`(`deleted_at`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_subjects_deleted_at",
+      "tbl_name": "subjects",
+      "sql": "CREATE INDEX `idx_subjects_deleted_at` ON `subjects`(`deleted_at`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_subjects_subj_slug",
+      "tbl_name": "subjects",
+      "sql": "CREATE INDEX `idx_subjects_subj_slug` ON `subjects`(`subj_slug`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_subjects_thumb",
+      "tbl_name": "subjects",
+      "sql": "CREATE INDEX `idx_subjects_thumb` ON `subjects`(`thumb`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_version_edition",
+      "tbl_name": "versions",
+      "sql": "CREATE UNIQUE INDEX `idx_version_edition` ON `versions`(`version`,`edition`)"
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_albums_users_1",
+      "tbl_name": "albums_users",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_audit_logins_1",
+      "tbl_name": "audit_logins",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_auth_clients_1",
+      "tbl_name": "auth_clients",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_auth_grants_1",
+      "tbl_name": "auth_grants",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_auth_sessions_1",
+      "tbl_name": "auth_sessions",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_auth_users_details_1",
+      "tbl_name": "auth_users_details",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_auth_users_settings_1",
+      "tbl_name": "auth_users_settings",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_auth_users_shares_1",
+      "tbl_name": "auth_users_shares",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_categories_1",
+      "tbl_name": "categories",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_cells_1",
+      "tbl_name": "cells",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_countries_1",
+      "tbl_name": "countries",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_duplicates_1",
+      "tbl_name": "duplicates",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_faces_1",
+      "tbl_name": "faces",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_files_share_1",
+      "tbl_name": "files_share",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_files_sync_1",
+      "tbl_name": "files_sync",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_folders_1",
+      "tbl_name": "folders",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_links_1",
+      "tbl_name": "links",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_markers_1",
+      "tbl_name": "markers",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_migrations_1",
+      "tbl_name": "migrations",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_passcodes_1",
+      "tbl_name": "passcodes",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_passwords_1",
+      "tbl_name": "passwords",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_photos_albums_1",
+      "tbl_name": "photos_albums",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_photos_keywords_1",
+      "tbl_name": "photos_keywords",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_photos_labels_1",
+      "tbl_name": "photos_labels",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_photos_users_1",
+      "tbl_name": "photos_users",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_places_1",
+      "tbl_name": "places",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_reactions_1",
+      "tbl_name": "reactions",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_subjects_1",
+      "tbl_name": "subjects",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "uix_albums_album_uid",
+      "tbl_name": "albums",
+      "sql": "CREATE UNIQUE INDEX `uix_albums_album_uid` ON `albums`(`album_uid`)"
+    },
+    {
+      "type": "index",
+      "name": "uix_auth_codes_code_hash",
+      "tbl_name": "auth_codes",
+      "sql": "CREATE UNIQUE INDEX `uix_auth_codes_code_hash` ON `auth_codes`(`code_hash`)"
+    },
+    {
+      "type": "index",
+      "name": "uix_auth_grants_user_client",
+      "tbl_name": "auth_grants",
+      "sql": "CREATE UNIQUE INDEX `uix_auth_grants_user_client` ON `auth_grants`(`user_uid`,`client_id`)"
+    },
+    {
+      "type": "index",
+      "name": "uix_auth_users_user_uid",
+      "tbl_name": "auth_users",
+      "sql": "CREATE UNIQUE INDEX `uix_auth_users_user_uid` ON `auth_users`(`user_uid`)"
+    },
+    {
+      "type": "index",
+      "name": "uix_cameras_camera_slug",
+      "tbl_name": "cameras",
+      "sql": "CREATE UNIQUE INDEX `uix_cameras_camera_slug` ON `cameras`(`camera_slug`)"
+    },
+    {
+      "type": "index",
+      "name": "uix_countries_country_slug",
+      "tbl_name": "countries",
+      "sql": "CREATE UNIQUE INDEX `uix_countries_country_slug` ON `countries`(`country_slug`)"
+    },
+    {
+      "type": "index",
+      "name": "uix_files_file_uid",
+      "tbl_name": "files",
+      "sql": "CREATE UNIQUE INDEX `uix_files_file_uid` ON `files`(`file_uid`)"
+    },
+    {
+      "type": "index",
+      "name": "uix_labels_label_slug",
+      "tbl_name": "labels",
+      "sql": "CREATE UNIQUE INDEX `uix_labels_label_slug` ON `labels`(`label_slug`)"
+    },
+    {
+      "type": "index",
+      "name": "uix_labels_label_uid",
+      "tbl_name": "labels",
+      "sql": "CREATE UNIQUE INDEX `uix_labels_label_uid` ON `labels`(`label_uid`)"
+    },
+    {
+      "type": "index",
+      "name": "uix_lenses_lens_slug",
+      "tbl_name": "lenses",
+      "sql": "CREATE UNIQUE INDEX `uix_lenses_lens_slug` ON `lenses`(`lens_slug`)"
+    },
+    {
+      "type": "index",
+      "name": "uix_photos_photo_uid",
+      "tbl_name": "photos",
+      "sql": "CREATE UNIQUE INDEX `uix_photos_photo_uid` ON `photos`(`photo_uid`)"
+    },
+    {
+      "type": "index",
+      "name": "uix_subjects_subj_name",
+      "tbl_name": "subjects",
+      "sql": "CREATE UNIQUE INDEX `uix_subjects_subj_name` ON `subjects`(`subj_name`)"
+    },
+    {
+      "type": "table",
+      "name": "albums",
+      "tbl_name": "albums",
+      "sql": "CREATE TABLE `albums` (`id` integer PRIMARY KEY AUTOINCREMENT,`album_uid` blob(0),`parent_uid` blob(0) DEFAULT \"\",`album_slug` blob(0),`album_path` blob(0),`album_type` blob(0) DEFAULT \"album\",`album_title` varchar(160),`album_location` varchar(160),`album_category` varchar(100),`album_caption` varchar(1024),`album_description` varchar(2048),`album_notes` varchar(1024),`album_filter` blob(0) DEFAULT \"\",`album_order` blob(0),`album_template` blob(0),`album_state` varchar(100),`album_country` blob(0) DEFAULT \"zz\",`album_year` integer,`album_month` integer,`album_day` integer,`album_favorite` numeric,`album_private` numeric,`thumb` blob(0) DEFAULT \"\",`thumb_src` blob(0) DEFAULT \"\",`created_by` blob(0),`created_at` datetime,`updated_at` datetime,`published_at` datetime,`deleted_at` datetime)"
+    },
+    {
+      "type": "table",
+      "name": "albums_users",
+      "tbl_name": "albums_users",
+      "sql": "CREATE TABLE `albums_users` (`uid` blob(0),`user_uid` blob(0),`team_uid` blob(0),`perm` integer,PRIMARY KEY (`uid`,`user_uid`))"
+    },
+    {
+      "type": "table",
+      "name": "audit_logins",
+      "tbl_name": "audit_logins",
+      "sql": "CREATE TABLE `audit_logins` (`client_ip` varchar(64),`login_name` varchar(64),`login_realm` varchar(64),`login_status` varchar(32),`error_message` varchar(512),`error_repeated` integer,`client_browser` varchar(512),`login_at` datetime,`failed_at` datetime,`banned_at` datetime,`created_at` datetime,`updated_at` datetime,PRIMARY KEY (`client_ip`,`login_name`,`login_realm`))"
+    },
+    {
+      "type": "table",
+      "name": "auth_clients",
+      "tbl_name": "auth_clients",
+      "sql": "CREATE TABLE `auth_clients` (`client_uid` blob(0),`node_uuid` blob(0) DEFAULT \"\",`user_uid` blob(0) DEFAULT \"\",`user_name` varchar(200),`app_name` varchar(64),`app_version` varchar(64),`client_name` varchar(200),`display_name` varchar(200),`name_src` blob(0) DEFAULT \"\",`client_role` varchar(64) DEFAULT \"\",`client_type` blob(0),`client_url` blob(0) DEFAULT \"\",`auth_provider` blob(0) DEFAULT \"\",`auth_method` blob(0) DEFAULT \"\",`auth_scope` varchar(1024) DEFAULT \"\",`auth_expires` integer,`auth_tokens` integer,`auth_enabled` numeric,`refresh_token` blob(0) DEFAULT \"\",`id_token` blob(0) DEFAULT \"\",`data_json` blob(0),`last_active` integer,`created_at` datetime,`updated_at` datetime,`deleted_at` datetime,PRIMARY KEY (`client_uid`))"
+    },
+    {
+      "type": "table",
+      "name": "auth_codes",
+      "tbl_name": "auth_codes",
+      "sql": "CREATE TABLE `auth_codes` (`id` integer PRIMARY KEY AUTOINCREMENT,`code_hash` blob(0) DEFAULT \"\",`code_type` blob(0) DEFAULT \"\",`client_id` blob(0) DEFAULT \"\",`client_name` varchar(200) DEFAULT \"\",`user_uid` blob(0) DEFAULT \"\",`redirect_uri` blob(0) DEFAULT \"\",`scope` varchar(1024) DEFAULT \"\",`resource` blob(0) DEFAULT \"\",`state` varchar(1024) DEFAULT \"\",`code_challenge` blob(0) DEFAULT \"\",`code_challenge_method` blob(0) DEFAULT \"\",`expires_at` datetime,`created_at` datetime)"
+    },
+    {
+      "type": "table",
+      "name": "auth_grants",
+      "tbl_name": "auth_grants",
+      "sql": "CREATE TABLE `auth_grants` (`grant_uid` blob(0),`user_uid` blob(0) DEFAULT \"\",`user_name` varchar(200) DEFAULT \"\",`client_id` blob(0) DEFAULT \"\",`client_name` varchar(200) DEFAULT \"\",`redirect_uri` blob(0) DEFAULT \"\",`scope` varchar(1024) DEFAULT \"\",`resource` blob(0) DEFAULT \"\",`refresh_hash` blob(0) DEFAULT \"\",`refresh_gen` integer DEFAULT 0,`used_at` datetime,`created_at` datetime,`updated_at` datetime,PRIMARY KEY (`grant_uid`))"
+    },
+    {
+      "type": "table",
+      "name": "auth_sessions",
+      "tbl_name": "auth_sessions",
+      "sql": "CREATE TABLE `auth_sessions` (`id` blob(0),`user_uid` blob(0) DEFAULT \"\",`user_name` varchar(200),`client_uid` blob(0) DEFAULT \"\",`client_name` varchar(200) DEFAULT \"\",`client_ip` varchar(64),`auth_provider` blob(0) DEFAULT \"\",`auth_method` blob(0) DEFAULT \"\",`auth_issuer` blob(0) DEFAULT \"\",`auth_id` blob(0) DEFAULT \"\",`auth_scope` varchar(1024) DEFAULT \"\",`auth_audience` blob(0) DEFAULT \"\",`grant_type` blob(0) DEFAULT \"\",`last_active` integer,`sess_expires` integer,`sess_timeout` integer,`preview_token` blob(0) DEFAULT \"\",`access_token` blob(0) DEFAULT \"\",`refresh_token` blob(0) DEFAULT \"\",`id_token` blob(0) DEFAULT \"\",`user_agent` varchar(512),`data_json` blob(0),`ref_id` blob(0) DEFAULT \"\",`login_ip` varchar(64),`login_at` datetime,`created_at` datetime,`updated_at` datetime,PRIMARY KEY (`id`))"
+    },
+    {
+      "type": "table",
+      "name": "auth_users",
+      "tbl_name": "auth_users",
+      "sql": "CREATE TABLE `auth_users` (`id` integer PRIMARY KEY AUTOINCREMENT,`user_uuid` blob(0),`user_uid` blob(0),`auth_provider` blob(0) DEFAULT \"\",`auth_method` blob(0) DEFAULT \"\",`auth_issuer` blob(0) DEFAULT \"\",`auth_id` blob(0) DEFAULT \"\",`user_name` varchar(200),`display_name` varchar(200),`user_email` varchar(255),`backup_email` varchar(255),`user_role` varchar(64) DEFAULT \"\",`user_scope` varchar(1024) DEFAULT \"*\",`user_attr` varchar(1024) DEFAULT \"\",`super_admin` numeric,`can_login` numeric,`login_at` datetime,`expires_at` datetime,`webdav` numeric,`mcp` integer DEFAULT 0,`base_path` blob(0),`upload_path` blob(0),`can_invite` numeric,`invite_token` blob(0),`invited_by` varchar(64),`verify_token` blob(0),`verified_at` datetime,`consent_at` datetime,`born_at` datetime,`reset_token` blob(0),`preview_token` blob(0),`thumb` blob(0) DEFAULT \"\",`thumb_src` blob(0) DEFAULT \"\",`ref_id` blob(0),`created_at` datetime,`updated_at` datetime,`deleted_at` datetime)"
+    },
+    {
+      "type": "table",
+      "name": "auth_users_details",
+      "tbl_name": "auth_users_details",
+      "sql": "CREATE TABLE `auth_users_details` (`user_uid` blob(0),`subj_uid` blob(0),`subj_src` blob(0) DEFAULT \"\",`place_id` blob(0) DEFAULT \"zz\",`place_src` blob(0),`cell_id` blob(0) DEFAULT \"zz\",`birth_year` integer DEFAULT -1,`birth_month` integer DEFAULT -1,`birth_day` integer DEFAULT -1,`name_title` varchar(32),`given_name` varchar(64),`middle_name` varchar(64),`family_name` varchar(64),`name_suffix` varchar(32),`nick_name` varchar(64),`name_src` blob(0),`user_gender` varchar(16),`user_about` varchar(512),`user_bio` varchar(2048),`user_location` varchar(512),`user_country` blob(0) DEFAULT \"zz\",`user_phone` varchar(32),`site_url` blob(0),`profile_url` blob(0),`feed_url` blob(0),`avatar_url` blob(0),`org_title` varchar(64),`org_name` varchar(128),`org_email` varchar(255),`org_phone` varchar(32),`org_url` blob(0),`id_url` blob(0),`created_at` datetime,`updated_at` datetime,PRIMARY KEY (`user_uid`))"
+    },
+    {
+      "type": "table",
+      "name": "auth_users_settings",
+      "tbl_name": "auth_users_settings",
+      "sql": "CREATE TABLE `auth_users_settings` (`user_uid` blob(0),`ui_theme` blob(0),`ui_start_page` varchar(64) DEFAULT \"default\",`ui_language` blob(0),`ui_time_zone` blob(0),`maps_style` blob(0),`maps_animate` integer DEFAULT 0,`index_path` blob(0),`index_rescan` integer DEFAULT 0,`import_path` blob(0),`import_move` integer DEFAULT 0,`download_originals` integer DEFAULT 0,`download_media_raw` integer DEFAULT 0,`download_media_sidecar` integer DEFAULT 0,`search_list_view` integer DEFAULT 0,`search_show_titles` integer DEFAULT 0,`search_show_captions` integer DEFAULT 0,`upload_path` blob(0),`created_at` datetime,`updated_at` datetime,PRIMARY KEY (`user_uid`))"
+    },
+    {
+      "type": "table",
+      "name": "auth_users_shares",
+      "tbl_name": "auth_users_shares",
+      "sql": "CREATE TABLE `auth_users_shares` (`user_uid` blob(0),`share_uid` blob(0),`link_uid` blob(0),`expires_at` datetime,`comment` varchar(512),`perm` integer,`ref_id` blob(0),`created_at` datetime,`updated_at` datetime,PRIMARY KEY (`user_uid`,`share_uid`))"
+    },
+    {
+      "type": "table",
+      "name": "cameras",
+      "tbl_name": "cameras",
+      "sql": "CREATE TABLE `cameras` (`id` integer PRIMARY KEY AUTOINCREMENT,`camera_slug` blob(0),`camera_name` varchar(160),`camera_make` varchar(160),`camera_model` varchar(160),`camera_type` varchar(100),`camera_description` varchar(2048),`camera_notes` varchar(1024),`camera_src` blob(0) DEFAULT \"\",`created_at` datetime,`updated_at` datetime,`deleted_at` datetime)"
+    },
+    {
+      "type": "table",
+      "name": "categories",
+      "tbl_name": "categories",
+      "sql": "CREATE TABLE `categories` (`label_id` integer,`category_id` integer,PRIMARY KEY (`label_id`,`category_id`))"
+    },
+    {
+      "type": "table",
+      "name": "cells",
+      "tbl_name": "cells",
+      "sql": "CREATE TABLE `cells` (`id` blob(0),`cell_name` varchar(200),`cell_street` varchar(100),`cell_postcode` varchar(50),`cell_category` varchar(50),`place_id` blob(0) DEFAULT \"zz\",`created_at` datetime,`updated_at` datetime,PRIMARY KEY (`id`))"
+    },
+    {
+      "type": "table",
+      "name": "countries",
+      "tbl_name": "countries",
+      "sql": "CREATE TABLE `countries` (`id` blob(0),`country_slug` blob(0),`country_name` varchar(160),`country_description` varchar(2048),`country_notes` varchar(1024),`country_photo_id` integer,PRIMARY KEY (`id`))"
+    },
+    {
+      "type": "table",
+      "name": "details",
+      "tbl_name": "details",
+      "sql": "CREATE TABLE `details` (`photo_id` integer,`keywords` varchar(2048),`keywords_src` blob(0),`notes` varchar(2048),`notes_src` blob(0),`subject` varchar(1024),`subject_src` blob(0),`artist` varchar(1024),`artist_src` blob(0),`copyright` varchar(1024),`copyright_src` blob(0),`license` varchar(1024),`license_src` blob(0),`software` varchar(1024),`software_src` blob(0),`created_at` datetime,`updated_at` datetime,PRIMARY KEY (`photo_id`))"
+    },
+    {
+      "type": "table",
+      "name": "duplicates",
+      "tbl_name": "duplicates",
+      "sql": "CREATE TABLE `duplicates` (`file_name` blob(0),`file_root` blob(0) DEFAULT \"/\",`file_hash` blob(0) DEFAULT \"\",`file_size` integer,`mod_time` integer,PRIMARY KEY (`file_name`,`file_root`))"
+    },
+    {
+      "type": "table",
+      "name": "errors",
+      "tbl_name": "errors",
+      "sql": "CREATE TABLE `errors` (`id` integer PRIMARY KEY AUTOINCREMENT,`error_time` datetime,`error_level` blob(0),`error_message` blob(0))"
+    },
+    {
+      "type": "table",
+      "name": "faces",
+      "tbl_name": "faces",
+      "sql": "CREATE TABLE `faces` (`id` blob(0),`face_src` blob(0),`face_kind` integer,`face_hidden` numeric,`subj_uid` blob(0) DEFAULT \"\",`samples` integer,`sample_radius` real,`collisions` integer,`collision_radius` real,`merge_retry` TINYINT(3) DEFAULT 0,`merge_notes` varchar(255) DEFAULT \"\",`embed_model` blob(0) DEFAULT \"\",`embedding_json` blob,`matched_at` datetime,`created_at` datetime,`updated_at` datetime,PRIMARY KEY (`id`))"
+    },
+    {
+      "type": "table",
+      "name": "files",
+      "tbl_name": "files",
+      "sql": "CREATE TABLE `files` (`id` integer PRIMARY KEY AUTOINCREMENT,`photo_id` integer,`photo_uid` blob(0),`photo_taken_at` datetime,`time_index` blob(0),`media_id` blob(0),`media_utc` integer,`instance_id` blob(0),`file_uid` blob(0),`file_name` blob(0),`file_root` blob(0) DEFAULT \"/\",`original_name` blob(0),`file_hash` blob(0),`file_size` integer,`file_codec` blob(0),`file_type` blob(0),`media_type` blob(0),`file_mime` blob(0),`file_primary` numeric,`file_sidecar` numeric,`file_missing` numeric,`file_portrait` numeric,`file_video` numeric,`file_duration` integer,`file_fps` real,`file_frames` integer,`file_pages` integer DEFAULT 0,`file_width` integer,`file_height` integer,`file_orientation` integer,`file_orientation_src` blob(0) DEFAULT \"\",`file_projection` blob(0),`file_aspect_ratio` real,`file_hdr` numeric,`file_watermark` numeric,`file_color_profile` blob(0),`file_main_color` blob(0),`file_colors` blob(0),`file_luminance` blob(0),`file_diff` integer DEFAULT -1,`file_chroma` integer DEFAULT -1,`file_software` varchar(64),`file_error` blob(0),`mod_time` integer,`created_at` datetime,`created_in` integer,`updated_at` datetime,`updated_in` integer,`published_at` datetime,`deleted_at` datetime)"
+    },
+    {
+      "type": "table",
+      "name": "files_share",
+      "tbl_name": "files_share",
+      "sql": "CREATE TABLE `files_share` (`file_id` integer,`service_id` integer,`remote_name` blob(0),`status` blob(0),`error` blob(0),`errors` integer,`created_at` datetime,`updated_at` datetime,PRIMARY KEY (`file_id`,`service_id`,`remote_name`))"
+    },
+    {
+      "type": "table",
+      "name": "files_sync",
+      "tbl_name": "files_sync",
+      "sql": "CREATE TABLE `files_sync` (`remote_name` blob(0),`service_id` integer,`file_id` integer,`remote_date` datetime,`remote_size` integer,`status` blob(0),`error` blob(0),`errors` integer,`created_at` datetime,`updated_at` datetime,PRIMARY KEY (`remote_name`,`service_id`))"
+    },
+    {
+      "type": "table",
+      "name": "folders",
+      "tbl_name": "folders",
+      "sql": "CREATE TABLE `folders` (`path` blob(0),`root` blob(0) DEFAULT \"\",`folder_uid` blob(0),`folder_type` blob(0),`folder_title` varchar(200),`folder_category` varchar(100),`folder_description` varchar(2048),`folder_order` blob(0),`folder_country` blob(0) DEFAULT \"zz\",`folder_year` integer,`folder_month` integer,`folder_day` integer,`folder_favorite` numeric,`folder_private` numeric,`folder_ignore` numeric,`folder_watch` numeric,`created_at` datetime,`updated_at` datetime,`modified_at` datetime,`published_at` datetime,`deleted_at` datetime,PRIMARY KEY (`folder_uid`))"
+    },
+    {
+      "type": "table",
+      "name": "keywords",
+      "tbl_name": "keywords",
+      "sql": "CREATE TABLE `keywords` (`id` integer PRIMARY KEY AUTOINCREMENT,`keyword` varchar(64),`skip` numeric)"
+    },
+    {
+      "type": "table",
+      "name": "labels",
+      "tbl_name": "labels",
+      "sql": "CREATE TABLE `labels` (`id` integer PRIMARY KEY AUTOINCREMENT,`label_uid` blob(0),`label_slug` blob(0),`custom_slug` blob(0),`label_name` varchar(160),`label_favorite` numeric DEFAULT false,`label_priority` integer DEFAULT 0,`label_nsfw` numeric DEFAULT false,`label_description` varchar(2048),`label_notes` varchar(1024),`photo_count` integer DEFAULT 1,`thumb` blob(0) DEFAULT \"\",`thumb_src` blob(0) DEFAULT \"\",`created_at` datetime,`updated_at` datetime,`published_at` datetime,`deleted_at` datetime)"
+    },
+    {
+      "type": "table",
+      "name": "lenses",
+      "tbl_name": "lenses",
+      "sql": "CREATE TABLE `lenses` (`id` integer PRIMARY KEY AUTOINCREMENT,`lens_slug` blob(0),`lens_name` varchar(160),`lens_make` varchar(160),`lens_model` varchar(160),`lens_type` varchar(100),`lens_description` varchar(2048),`lens_notes` varchar(1024),`lens_src` blob(0) DEFAULT \"\",`created_at` datetime,`updated_at` datetime,`deleted_at` datetime)"
+    },
+    {
+      "type": "table",
+      "name": "links",
+      "tbl_name": "links",
+      "sql": "CREATE TABLE `links` (`link_uid` blob(0),`share_uid` blob(0),`share_slug` blob(0),`link_token` blob(0),`link_expires` integer,`link_views` integer,`max_views` integer,`comment` varchar(512),`perm` integer,`ref_id` blob(0),`created_by` blob(0),`created_at` datetime,`modified_at` datetime,PRIMARY KEY (`link_uid`))"
+    },
+    {
+      "type": "table",
+      "name": "markers",
+      "tbl_name": "markers",
+      "sql": "CREATE TABLE `markers` (`marker_uid` blob(0),`file_uid` blob(0) DEFAULT \"\",`marker_type` blob(0) DEFAULT \"\",`marker_src` blob(0) DEFAULT \"\",`marker_name` varchar(160),`marker_review` numeric,`marker_invalid` numeric,`subj_uid` blob(0),`subj_src` blob(0) DEFAULT \"\",`face_id` blob(0),`face_dist` real DEFAULT -1,`embed_model` blob(0) DEFAULT \"\",`detect_model` blob(0) DEFAULT \"\",`embeddings_json` blob,`landmarks_json` blob,`x` real,`y` real,`w` real,`h` real,`size` integer DEFAULT -1,`thumb_size` integer DEFAULT -1,`embed_detail` integer DEFAULT -1,`score` integer,`thumb` blob(0) DEFAULT \"\",`matched_at` datetime,`created_at` datetime,`updated_at` datetime,PRIMARY KEY (`marker_uid`))"
+    },
+    {
+      "type": "table",
+      "name": "migrations",
+      "tbl_name": "migrations",
+      "sql": "CREATE TABLE `migrations` (`id` varchar(16),`dialect` varchar(16),`stage` varchar(16),`error` varchar(255),`source` varchar(16),`started_at` datetime,`finished_at` datetime,PRIMARY KEY (`id`))"
+    },
+    {
+      "type": "table",
+      "name": "passcodes",
+      "tbl_name": "passcodes",
+      "sql": "CREATE TABLE `passcodes` (`uid` blob(0),`key_type` varchar(64) DEFAULT \"\",`key_url` varchar(2048) DEFAULT \"\",`recovery_code` varchar(255) DEFAULT \"\",`verified_at` datetime,`activated_at` datetime,`created_at` datetime,`updated_at` datetime,PRIMARY KEY (`uid`,`key_type`))"
+    },
+    {
+      "type": "table",
+      "name": "passwords",
+      "tbl_name": "passwords",
+      "sql": "CREATE TABLE `passwords` (`uid` blob(0),`hash` blob(0),`created_at` datetime,`updated_at` datetime,PRIMARY KEY (`uid`))"
+    },
+    {
+      "type": "table",
+      "name": "photos",
+      "tbl_name": "photos",
+      "sql": "CREATE TABLE `photos` (`id` integer PRIMARY KEY AUTOINCREMENT,`uuid` blob(0),`taken_at` datetime,`taken_at_local` datetime,`taken_src` blob(0),`photo_uid` blob(0),`photo_type` blob(0) DEFAULT \"image\",`type_src` blob(0),`photo_title` varchar(200),`title_src` blob(0),`photo_caption` varchar(4096),`caption_src` blob(0),`photo_path` blob(0),`photo_name` blob(0),`original_name` blob(0),`photo_stack` integer,`photo_favorite` numeric,`photo_private` numeric,`photo_scan` numeric,`photo_panorama` numeric,`time_zone` blob(0) DEFAULT \"Local\",`place_id` blob(0) DEFAULT \"zz\",`place_src` blob(0),`cell_id` blob(0) DEFAULT \"zz\",`cell_accuracy` integer,`photo_altitude` integer,`photo_lat` real,`photo_lng` real,`photo_country` blob(0) DEFAULT \"zz\",`photo_year` integer,`photo_month` integer,`photo_day` integer,`photo_iso` integer,`photo_exposure` blob(0),`photo_f_number` real,`photo_focal_length` integer,`photo_quality` integer,`photo_faces` integer,`photo_resolution` integer,`photo_duration` integer,`photo_color` integer DEFAULT -1,`camera_id` integer DEFAULT 1,`camera_serial` blob(0),`camera_src` blob(0),`lens_id` integer DEFAULT 1,`created_by` blob(0),`created_at` datetime,`updated_at` datetime,`edited_at` datetime,`published_at` datetime,`indexed_at` datetime,`checked_at` datetime,`estimated_at` datetime,`deleted_at` datetime)"
+    },
+    {
+      "type": "table",
+      "name": "photos_albums",
+      "tbl_name": "photos_albums",
+      "sql": "CREATE TABLE `photos_albums` (`photo_uid` blob(0),`album_uid` blob(0),`order` integer,`hidden` numeric,`missing` numeric,`created_at` datetime,`updated_at` datetime,PRIMARY KEY (`photo_uid`,`album_uid`))"
+    },
+    {
+      "type": "table",
+      "name": "photos_keywords",
+      "tbl_name": "photos_keywords",
+      "sql": "CREATE TABLE `photos_keywords` (`photo_id` integer,`keyword_id` integer,PRIMARY KEY (`photo_id`,`keyword_id`))"
+    },
+    {
+      "type": "table",
+      "name": "photos_labels",
+      "tbl_name": "photos_labels",
+      "sql": "CREATE TABLE `photos_labels` (`photo_id` integer,`label_id` integer,`label_src` blob(0),`uncertainty` integer,`topicality` integer DEFAULT 0,`nsfw` integer DEFAULT 0,PRIMARY KEY (`photo_id`,`label_id`))"
+    },
+    {
+      "type": "table",
+      "name": "photos_users",
+      "tbl_name": "photos_users",
+      "sql": "CREATE TABLE `photos_users` (`uid` blob(0),`user_uid` blob(0),`team_uid` blob(0),`perm` integer,PRIMARY KEY (`uid`,`user_uid`))"
+    },
+    {
+      "type": "table",
+      "name": "places",
+      "tbl_name": "places",
+      "sql": "CREATE TABLE `places` (`id` blob(0),`place_label` varchar(400),`place_district` varchar(100),`place_city` varchar(100),`place_state` varchar(100),`place_country` blob(0),`place_keywords` varchar(300),`place_favorite` numeric,`photo_count` integer DEFAULT 1,`created_at` datetime,`updated_at` datetime,PRIMARY KEY (`id`))"
+    },
+    {
+      "type": "table",
+      "name": "reactions",
+      "tbl_name": "reactions",
+      "sql": "CREATE TABLE `reactions` (`uid` blob(0),`user_uid` blob(0),`reaction` blob(0),`reacted` integer,`reacted_at` datetime,PRIMARY KEY (`uid`,`user_uid`,`reaction`))"
+    },
+    {
+      "type": "table",
+      "name": "services",
+      "tbl_name": "services",
+      "sql": "CREATE TABLE `services` (`id` integer PRIMARY KEY AUTOINCREMENT,`acc_name` varchar(160),`acc_owner` varchar(160),`acc_url` varchar(255),`acc_type` blob(0),`acc_key` blob(0),`acc_user` blob(0),`acc_pass` blob(0),`acc_timeout` blob(0),`acc_error` blob(0),`acc_errors` integer,`acc_share` numeric,`acc_sync` numeric,`retry_limit` integer,`share_path` blob(0),`share_size` blob(0),`share_expires` integer,`sync_path` blob(0),`sync_status` blob(0),`sync_interval` integer,`sync_date` datetime,`sync_upload` numeric,`sync_download` numeric,`sync_filenames` numeric,`sync_raw` numeric,`sync_yaml` integer DEFAULT 0,`created_at` datetime,`updated_at` datetime,`deleted_at` datetime)"
+    },
+    {
+      "type": "table",
+      "name": "sqlite_sequence",
+      "tbl_name": "sqlite_sequence",
+      "sql": "CREATE TABLE sqlite_sequence(name,seq)"
+    },
+    {
+      "type": "table",
+      "name": "subjects",
+      "tbl_name": "subjects",
+      "sql": "CREATE TABLE `subjects` (`subj_uid` blob(0),`subj_type` blob(0) DEFAULT \"\",`subj_src` blob(0) DEFAULT \"\",`subj_slug` blob(0) DEFAULT \"\",`subj_name` varchar(160) DEFAULT \"\",`subj_alias` varchar(160) DEFAULT \"\",`subj_birthday` datetime,`subj_about` varchar(512),`subj_bio` varchar(2048),`subj_notes` varchar(1024),`subj_favorite` numeric DEFAULT false,`subj_hidden` numeric DEFAULT false,`subj_private` numeric DEFAULT false,`subj_excluded` numeric DEFAULT false,`file_count` integer DEFAULT 0,`photo_count` integer DEFAULT 0,`verified` numeric DEFAULT false,`thumb` blob(0) DEFAULT \"\",`thumb_src` blob(0) DEFAULT \"\",`created_at` datetime,`updated_at` datetime,`deleted_at` datetime,PRIMARY KEY (`subj_uid`))"
+    },
+    {
+      "type": "table",
+      "name": "versions",
+      "tbl_name": "versions",
+      "sql": "CREATE TABLE `versions` (`id` integer PRIMARY KEY AUTOINCREMENT,`version` varchar(255),`edition` varchar(255),`error` varchar(255),`created_at` datetime,`updated_at` datetime,`migrated_at` datetime)"
+    }
+  ],
+  "migrations": [
+    {
+      "id": "20211121-094727",
+      "dialect": "sqlite3",
+      "stage": "main"
+    },
+    {
+      "id": "20211124-120008",
+      "dialect": "sqlite3",
+      "stage": "main"
+    },
+    {
+      "id": "20220329-040000",
+      "dialect": "sqlite3",
+      "stage": "main"
+    },
+    {
+      "id": "20220329-050000",
+      "dialect": "sqlite3",
+      "stage": "main"
+    },
+    {
+      "id": "20220329-061000",
+      "dialect": "sqlite3",
+      "stage": "main"
+    },
+    {
+      "id": "20220329-071000",
+      "dialect": "sqlite3",
+      "stage": "main"
+    },
+    {
+      "id": "20220329-081000",
+      "dialect": "sqlite3",
+      "stage": "main"
+    },
+    {
+      "id": "20220329-083000",
+      "dialect": "sqlite3",
+      "stage": "main"
+    },
+    {
+      "id": "20220329-091000",
+      "dialect": "sqlite3",
+      "stage": "main"
+    },
+    {
+      "id": "20220329-093000",
+      "dialect": "sqlite3",
+      "stage": "main"
+    },
+    {
+      "id": "20220421-200000",
+      "dialect": "sqlite3",
+      "stage": "main"
+    },
+    {
+      "id": "20221015-100000",
+      "dialect": "sqlite3",
+      "stage": "pre"
+    },
+    {
+      "id": "20221015-100100",
+      "dialect": "sqlite3",
+      "stage": "pre"
+    },
+    {
+      "id": "20230309-000001",
+      "dialect": "sqlite3",
+      "stage": "main"
+    },
+    {
+      "id": "20230313-000001",
+      "dialect": "sqlite3",
+      "stage": "main"
+    },
+    {
+      "id": "20240112-000001",
+      "dialect": "sqlite3",
+      "stage": "main"
+    },
+    {
+      "id": "20240709-000001",
+      "dialect": "sqlite3",
+      "stage": "pre"
+    },
+    {
+      "id": "20241010-000001",
+      "dialect": "sqlite3",
+      "stage": "main"
+    },
+    {
+      "id": "20241202-000001",
+      "dialect": "sqlite3",
+      "stage": "main"
+    },
+    {
+      "id": "20250117-000001",
+      "dialect": "sqlite3",
+      "stage": "pre"
+    },
+    {
+      "id": "20250315-000001",
+      "dialect": "sqlite3",
+      "stage": "pre"
+    },
+    {
+      "id": "20250416-000001",
+      "dialect": "sqlite3",
+      "stage": "main"
+    },
+    {
+      "id": "20251005-000001",
+      "dialect": "sqlite3",
+      "stage": "main"
+    },
+    {
+      "id": "20251007-000001",
+      "dialect": "sqlite3",
+      "stage": "main"
+    },
+    {
+      "id": "20260828-000001",
+      "dialect": "sqlite3",
+      "stage": "main"
+    },
+    {
+      "id": "20261010-000002",
+      "dialect": "sqlite3",
+      "stage": "main"
+    },
+    {
+      "id": "20261010-000003",
+      "dialect": "sqlite3",
+      "stage": "main"
+    },
+    {
+      "id": "20261011-000001",
+      "dialect": "sqlite3",
+      "stage": "main"
+    },
+    {
+      "id": "20261012-000001",
+      "dialect": "sqlite3",
+      "stage": "main"
+    }
+  ]
+}

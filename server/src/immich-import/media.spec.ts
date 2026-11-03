@@ -1,8 +1,17 @@
 import { createHash } from 'node:crypto';
-import { link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { link, mkdir, mkdtemp, open, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { assertMediaPolicy, mapMediaPath, verifyMediaFile, verifyMediaRoots } from 'src/immich-import/media.js';
+import {
+  MEDIA_CONCURRENCY,
+  assertMediaPolicy,
+  lostOriginalPath,
+  lostOriginalReason,
+  mapInOrder,
+  mapMediaPath,
+  verifyMediaFile,
+  verifyMediaRoots,
+} from 'src/immich-import/media.js';
 
 describe('offline media verification', () => {
   let directory: string;
@@ -19,6 +28,40 @@ describe('offline media verification', () => {
     operationId: 'operation-1',
     deploymentId: 'deployment-1',
   };
+
+  it('keeps originals that are lost, changed or unmapped, but never an unmounted root or an uncopied file', async () => {
+    const source = join(directory, 'source');
+    const target = join(directory, 'target');
+    const roots = [{ source, target }];
+    const lost = join(source, 'upload', 'user', 'lost.jpg');
+    const failure = (path: string, checksum?: string, algorithm?: string) =>
+      verifyMediaFile(path, roots, checksum, algorithm).catch((error: unknown) => error);
+
+    // Empty roots look like a mount that never came up.
+    await expect(lostOriginalReason(await failure(lost), lost, roots)).resolves.toBeNull();
+
+    await writeFile(join(source, '.immich'), '');
+    await writeFile(join(target, '.immich'), '');
+    await expect(lostOriginalReason(await failure(lost), lost, roots)).resolves.toBe('missing');
+    expect(lostOriginalPath(lost, 'missing', roots)).toBe(join(target, 'upload', 'user', 'lost.jpg'));
+
+    // Present in Immich but not copied to the destination: the import must still stop.
+    const uncopied = join(source, 'kept.jpg');
+    await writeFile(uncopied, 'bytes');
+    await expect(lostOriginalReason(await failure(uncopied), uncopied, roots)).resolves.toBeNull();
+
+    // Bytes no longer match what Immich recorded.
+    await writeFile(join(target, 'kept.jpg'), 'bytes');
+    const changed = await failure(uncopied, 'ff'.repeat(20), 'sha1');
+    await expect(lostOriginalReason(changed, uncopied, roots)).resolves.toBe('changed');
+
+    const outside = join(directory, 'elsewhere', 'photo.jpg');
+    await expect(lostOriginalReason(await failure(outside), outside, roots)).resolves.toBe('unmapped');
+    expect(lostOriginalPath(outside, 'unmapped', roots)).toBe(outside);
+
+    const inPlace = [{ source, target: source }];
+    await expect(lostOriginalReason(await failure(lost), lost, inPlace, manager)).resolves.toBe('missing');
+  });
 
   it('validates empty independent roots and preserves same-path nested Manager mounts', async () => {
     const source = join(directory, 'source');
@@ -64,18 +107,25 @@ describe('offline media verification', () => {
     await expect(verifyMediaRoots([{ source, target: join(directory, 'file') }])).rejects.toThrow('DIRECTORY');
   });
 
-  it('retains Manager media at exactly the same path while checking original bytes', async () => {
+  it('retains Manager media at exactly the same path, identified by its file identity, without reading it', async () => {
     const root = join(directory, 'source');
     const path = join(root, 'photo.jpg');
     await writeFile(path, 'original');
     const roots = [{ source: root, target: root }];
-    const checksum = createHash('sha1').update('original').digest('hex');
     const receipt = vi.fn();
-    await expect(verifyMediaFile(path, roots, checksum, 'sha1', manager, receipt)).resolves.toBe(path);
-    expect(receipt).toHaveBeenCalledWith(createHash('sha256').update('original').digest('hex'));
-    await writeFile(path, 'modified');
-    await expect(verifyMediaFile(path, roots, checksum, 'sha1', manager)).rejects.toThrow('ORIGINAL_CHECKSUM_MISMATCH');
-    expect(await readFile(path, 'utf8')).toBe('modified');
+    const handle = await open(path);
+    const reads = vi.spyOn(Object.getPrototypeOf(handle), 'createReadStream');
+    await handle.close();
+    try {
+      // A changed original is the background check's to report (Library care), not a reason to stop the import.
+      await expect(verifyMediaFile(path, roots, '0'.repeat(40), 'sha1', manager, receipt)).resolves.toBe(path);
+      expect(reads).not.toHaveBeenCalled();
+    } finally {
+      reads.mockRestore();
+    }
+    const { size, mtimeNs } = await stat(path, { bigint: true });
+    expect(receipt).toHaveBeenCalledWith(`stat:${size}:${mtimeNs}`);
+    expect(await readFile(path, 'utf8')).toBe('original');
   });
 
   it('uses the most specific Manager mount and rejects duplicate destinations', () => {
@@ -206,5 +256,40 @@ describe('offline media verification', () => {
     await expect(verifyMediaFile(join(directory, 'source', 'photo.jpg'), roots)).rejects.toThrow(
       'MEDIA_SYMLINK_ESCAPE',
     );
+  });
+});
+
+describe('mapInOrder', () => {
+  it('checks files concurrently up to the limit and keeps results in input order', async () => {
+    let active = 0;
+    let peak = 0;
+    const items = Array.from({ length: 250 }, (_, index) => index);
+    const results = await mapInOrder(items, async (item) => {
+      peak = Math.max(peak, ++active);
+      await new Promise((resolve) => setTimeout(resolve, (item * 7) % 5));
+      active--;
+      return item * 2;
+    });
+    expect(results).toEqual(items.map((item) => item * 2));
+    expect(peak).toBe(MEDIA_CONCURRENCY);
+  });
+});
+
+describe('mapInOrder failures', () => {
+  it('starts no new item after a failure and rejects only once in-flight items finish', async () => {
+    let active = 0;
+    const started: number[] = [];
+    const items = Array.from({ length: 100 }, (_, index) => index);
+    const result = mapInOrder(items, async (item) => {
+      started.push(item);
+      active++;
+      await new Promise((resolve) => setTimeout(resolve, item === 0 ? 1 : 10));
+      active--;
+      if (item === 0) throw new Error('boom');
+      return item;
+    });
+    await expect(result).rejects.toThrow('boom');
+    expect(active).toBe(0);
+    expect(started).toHaveLength(MEDIA_CONCURRENCY);
   });
 });

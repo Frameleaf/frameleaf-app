@@ -11,7 +11,14 @@ vi.mock('@frameleaf/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   getAllAlbums: vi.fn(),
 }));
-vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { user: { id: 'me' } } }));
+vi.mock('$lib/frameleaf/icon-catalogue', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/frameleaf/icon-catalogue')>()),
+  // The album marks in Add to album would fetch the icon geometry from Vite, which is not running.
+  loadIconPaths: async () => ({}),
+}));
+vi.mock('$lib/managers/auth-manager.svelte', () => ({
+  authManager: { user: { id: 'me' }, authenticated: true, captureSession: () => () => true },
+}));
 
 /**
  * The bar's contract with the library view: it never runs an action itself, it hands an action and a
@@ -125,25 +132,25 @@ describe('Frameleaf selection bar', () => {
   it('groups the rest of the bulk set in the More menu, including both sensitive actions', async () => {
     const { unmount } = mount();
     await fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
-    for (const name of ['Stack', 'Tag', 'Change date', 'Archive', 'Mark Sensitive', 'Refresh metadata']) {
+    for (const name of ['Stack', 'Tag', 'Change date', 'Archive', 'Lock', 'Refresh metadata']) {
       expect(screen.getByRole('menuitem', { name })).toBeInTheDocument();
     }
     unmount();
 
-    // As in the prototype's selection.mjs, Unmark Sensitive is offered only when a selected item is
+    // As in the prototype's selection.mjs, Unlock is offered only when a selected item is
     // marked, so a selection mixing a marked and an unmarked item offers both.
     mount({ assets: [photo('a'), photo('b', { isLocked: true })] });
     await fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
-    for (const name of ['Mark Sensitive', 'Unmark Sensitive']) {
+    for (const name of ['Lock', 'Unlock']) {
       expect(screen.getByRole('menuitem', { name })).toBeInTheDocument();
     }
   });
 
-  it('offers no Unmark Sensitive when nothing selected is marked', async () => {
+  it('offers no Unlock when nothing selected is marked', async () => {
     mount();
     await fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
-    expect(screen.getByRole('menuitem', { name: 'Mark Sensitive' })).toBeInTheDocument();
-    expect(screen.queryByRole('menuitem', { name: 'Unmark Sensitive' })).not.toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Lock' })).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'Unlock' })).not.toBeInTheDocument();
   });
 
   it('carries the stack ids Unstack needs, which only the bar knows', async () => {
@@ -178,7 +185,7 @@ describe('Frameleaf selection bar', () => {
     mount();
     await fireEvent.click(screen.getByRole('button', { name: 'Add to album' }));
 
-    const dialog = screen.getByRole('dialog');
+    const dialog = await screen.findByRole('dialog');
     await waitFor(() => expect(within(dialog).getByRole('radio', { name: /Iceland/ })).toBeInTheDocument());
     expect(getAllAlbums).toHaveBeenCalledOnce();
     expect(within(dialog).getByText('Trips')).toBeInTheDocument();

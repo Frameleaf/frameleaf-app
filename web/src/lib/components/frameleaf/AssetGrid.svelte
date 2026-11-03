@@ -16,6 +16,9 @@
    * page when the end comes into view; it owns no viewer, no keyboard map and no actions — the page
    * mounts the viewer and the session carries the selection.
    */
+  import BookmarkCard from '$lib/components/frameleaf/BookmarkCard.svelte';
+  import { libraryGridEntries, type LibraryGridEntry } from '$lib/frameleaf/library-grid-items';
+  import type { BookmarkResponseDto, LibraryItemDto } from '@frameleaf/sdk';
   import AssetTile from '$lib/components/frameleaf/AssetTile.svelte';
   import { bindGridZoom } from '$lib/frameleaf/grid-zoom';
   import {
@@ -25,19 +28,22 @@
     type CellGridOptions,
     type TileLayout,
   } from '$lib/frameleaf/library-grid';
-  import { libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
+  import { libraryGridPreferences, type LibraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
   import { animateFlip } from '$lib/frameleaf/motion';
   import type { LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
-  import { getJustifiedLayoutFromAssets } from '$lib/utils/layout-utils';
+  import { filledJustifiedLayout } from '$lib/frameleaf/justified-rows';
   import type { Snippet } from 'svelte';
 
   type Props = {
     /** The results, in the order the page loaded them. */
-    assets: TimelineAsset[];
+    assets?: TimelineAsset[];
+    items?: LibraryItemDto[];
+    preferences?: LibraryGridPreferences;
+    onOpenBookmark?: (bookmark: BookmarkResponseDto) => void;
     session: LibrarySessionStore;
     /** Ask for the next page. Fired once per end-of-list intersection. */
     onEndReached?: () => void;
@@ -75,7 +81,10 @@
   };
 
   let {
-    assets,
+    assets = [],
+    items,
+    preferences = libraryGridPreferences,
+    onOpenBookmark,
     session,
     onEndReached,
     onOpen,
@@ -101,6 +110,9 @@
   let rowsElement = $state<HTMLElement>();
   let root = $state<HTMLElement>();
 
+  const entries = $derived<LibraryGridEntry[]>(
+    items ? libraryGridEntries(items) : assets.map((asset) => ({ kind: 'asset', key: asset.id, asset })),
+  );
   const maxMd = $derived(mediaQueryManager.maxMd);
   const selection = $derived(session.selection);
   const selected = $derived(new Set(selection));
@@ -109,11 +121,9 @@
   const tileLayout = $derived<TileLayout>(publicView || cellOptions ? 'browse' : (layout ?? session.layout));
   const cells = $derived(
     cellOptions ??
-      (tileLayout === 'timeline'
-        ? null
-        : cellGridOptions(tileLayout, libraryGridPreferences.thumbnailSize, libraryGridPreferences.phone)),
+      (tileLayout === 'timeline' ? null : cellGridOptions(tileLayout, preferences.thumbnailSize, preferences.phone)),
   );
-  const grid = $derived(cells ? cellGrid(assets.length, width, cells) : null);
+  const grid = $derived(cells ? cellGrid(entries.length, width, cells) : null);
 
   /**
    * Where the rows sit in their scroller and how tall its frame is, measured when either resizes;
@@ -178,9 +188,9 @@
     }
     return bindGridZoom(element, {
       onZoom: (direction) => {
-        const next = libraryGridPreferences.nextSize(direction);
+        const next = preferences.nextSize(direction);
         if (next !== null) {
-          animateFlip(element, () => (libraryGridPreferences.thumbnailSize = next));
+          animateFlip(element, () => (preferences.thumbnailSize = next));
         }
       },
       // No zoom under any open viewer: a video viewer leaves + and − unclaimed.
@@ -191,18 +201,18 @@
   /** The cells to mount: the rows in or near the viewport, never the whole result list. */
   const mounted = $derived.by(() => {
     if (!grid) {
-      return assets.map((asset, index) => ({ asset, index }));
+      return entries.map((entry, index) => ({ entry, index }));
     }
     const { start, end } = grid.range(viewTop, viewBottom, OVERSCAN_ROWS);
-    return assets.slice(start, end).map((asset, offset) => ({ asset, index: start + offset }));
+    return entries.slice(start, end).map((entry, offset) => ({ entry, index: start + offset }));
   });
 
   const geometry = $derived(
-    getJustifiedLayoutFromAssets(grid ? [] : assets, {
+    filledJustifiedLayout(grid ? [] : entries.map((entry) => (entry.kind === 'asset' ? entry.asset.ratio : 1)), {
       spacing: maxMd ? 8 : 12,
       heightTolerance: 0.5,
       // Thumbnail size scales the Timeline rows too, as in the library.
-      rowHeight: timelineRowHeight(maxMd ? 100 : 235, libraryGridPreferences.thumbnailSize),
+      rowHeight: timelineRowHeight(maxMd ? 100 : 235, preferences.thumbnailSize),
       rowWidth: Math.floor(width),
       fillRowWidth: true,
     }),
@@ -230,7 +240,7 @@
   });
 
   /** Every id in visible order: what a shift-click range is taken against. */
-  const orderedIds = $derived(assets.map((asset) => asset.id));
+  const orderedIds = $derived(entries.map((entry) => entry.key));
 
   const pick = (asset: TimelineAsset) => {
     if (singleSelect) {
@@ -263,6 +273,24 @@
     session.setScrollAnchor(asset.id);
     onOpen(asset);
   };
+  const toggleBookmark = (bookmark: BookmarkResponseDto, event: MouseEvent | KeyboardEvent) => {
+    const key = `bookmark:${bookmark.id}`;
+    session.select(key, { range: event.shiftKey, orderedIds });
+    session.setScrollAnchor(key);
+  };
+  const openBookmark = (bookmark: BookmarkResponseDto) => {
+    if (selectionMode || !onOpenBookmark) {
+      const key = `bookmark:${bookmark.id}`;
+      if (singleSelect) {
+        session.dispatch({ type: 'selection', ids: [key] });
+      } else {
+        session.select(key);
+      }
+    } else {
+      session.setScrollAnchor(`bookmark:${bookmark.id}`);
+      onOpenBookmark(bookmark);
+    }
+  };
 </script>
 
 <div
@@ -275,12 +303,12 @@
 >
   {@render header?.()}
 
-  {#if assets.length === 0}
+  {#if entries.length === 0}
     {@render empty?.()}
   {:else if width > 0}
     <!-- The justified layout needs a measured container; the first frame only measures. -->
     <div class="fl-grid-rows" bind:this={rowsElement} style:height="{grid ? grid.height : geometry.containerHeight}px">
-      {#each mounted as { asset, index } (asset.id)}
+      {#each mounted as { entry, index } (entry.key)}
         {@const position = grid ? grid.position(index) : geometry.getPosition(index)}
         <div
           class="fl-grid-cell"
@@ -289,24 +317,38 @@
           style:width="{position.width}px"
           style:height="{position.height}px"
         >
-          <AssetTile
-            {asset}
-            width={position.width}
-            height={caption && cellOptions ? Math.max(1, position.height - cellOptions.captionHeight) : position.height}
-            selected={selected.has(asset.id)}
-            {selecting}
-            layout={tileLayout}
-            rating={ratingFor?.(asset)}
-            captionHeight={cellOptions ? 0 : (cells?.captionHeight ?? 0)}
-            offline={offlineFor?.(asset) ?? false}
-            showFileName={libraryGridPreferences.showFileNames}
-            onOpen={handleOpen}
-            onToggleSelect={toggleSelect}
-            onFocus={(focused) => session.setScrollAnchor(focused.id)}
-            overlay={tileOverlay}
-          />
-          {#if caption && cellOptions}
-            <div class="fl-grid-caption" style:height="{cellOptions.captionHeight}px">{@render caption(asset)}</div>
+          {#if entry.kind === 'bookmark'}
+            <BookmarkCard
+              bookmark={entry.bookmark}
+              selected={selected.has(entry.key)}
+              {selecting}
+              onOpen={openBookmark}
+              onToggleSelect={toggleBookmark}
+              onFocus={() => session.setScrollAnchor(entry.key)}
+            />
+          {:else}
+            {@const asset = entry.asset}
+            <AssetTile
+              {asset}
+              width={position.width}
+              height={caption && cellOptions
+                ? Math.max(1, position.height - cellOptions.captionHeight)
+                : position.height}
+              selected={selected.has(asset.id)}
+              {selecting}
+              layout={tileLayout}
+              rating={ratingFor?.(asset)}
+              captionHeight={cellOptions ? 0 : (cells?.captionHeight ?? 0)}
+              offline={offlineFor?.(asset) ?? false}
+              showFileName={preferences.showFileNames}
+              onOpen={handleOpen}
+              onToggleSelect={toggleSelect}
+              onFocus={(focused) => session.setScrollAnchor(focused.id)}
+              overlay={tileOverlay}
+            />
+            {#if caption && cellOptions}
+              <div class="fl-grid-caption" style:height="{cellOptions.captionHeight}px">{@render caption(asset)}</div>
+            {/if}
           {/if}
         </div>
       {/each}

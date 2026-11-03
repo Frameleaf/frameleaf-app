@@ -17,7 +17,7 @@
    *
    * The legacy timeline and its select bar are gone. The Frameleaf selection bar carries the whole
    * bulk set, so the actions this page used to list one by one — unfavorite, share link, select
-   * all, add to album, download, change date, description and location, archive, mark sensitive,
+   * all, add to album, download, change date, description and location, archive, lock,
    * tag, move to the Locked folder and delete — are the same actions the bar offers everywhere.
    *
    * An empty Favorites says how items get here, so "nothing yet" is not mistaken for "nothing

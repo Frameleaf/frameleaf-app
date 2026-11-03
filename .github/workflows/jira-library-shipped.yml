@@ -1,0 +1,57 @@
+name: Jira Library shipped version
+
+on:
+  # Trusted main code only; reads publication evidence, never executes candidate code.
+  workflow_run: # zizmor: ignore[dangerous-triggers]
+    workflows: [Deploy production]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy-run-id:
+        description: Successful production deployment run to reconcile
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: jira-version-sync
+  queue: max
+
+jobs:
+  shipped:
+    if: >-
+      github.repository == 'Frameleaf/frameleaf-app' &&
+      ((github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+      - name: Verify the published Library release and source range
+        id: receipt
+        env:
+          DEPLOY_RUN_ID: ${{ github.event.workflow_run.id || inputs.deploy-run-id }}
+          GITHUB_TOKEN: ${{ github.token }}
+          JIRA_RELEASE_BASE_SHA: ${{ vars.JIRA_RELEASE_BASE_SHA }}
+          JIRA_ALLOWED_PROJECTS: FL
+        run: node .github/jira-library-release.mjs "$DEPLOY_RUN_ID" "$RUNNER_TEMP/library-release-receipt.json"
+      - name: Record the shipped Library version in Jira
+        if: steps.receipt.outputs.shipped == 'true'
+        env:
+          JIRA_BASE_URL: ${{ vars.JIRA_BASE_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PRODUCT: Library
+          JIRA_ALLOWED_PROJECTS: FL
+        run: node .github/jira-release.mjs "$RUNNER_TEMP/library-release-receipt.json"

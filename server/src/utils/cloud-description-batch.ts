@@ -4,7 +4,12 @@ import type { DatabaseRepository } from 'src/repositories/database.repository.js
 import type { MlDestinationRepository, MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
 import type { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import type { CloudJobUploadState } from 'src/utils/frameleaf-cloud-job-client.js';
-import type { CloudCatalogEntry, CloudConsentFeatures, CloudEstimate } from 'src/utils/frameleaf-cloud.js';
+import type {
+  CloudCatalogEntry,
+  CloudConsentFeatures,
+  CloudEstimate,
+  CloudJobRouting,
+} from 'src/utils/frameleaf-cloud.js';
 import { DatabaseLock, MlAdmissionRefusal, MlDestinationKind, MlWorkload, SystemMetadataKey } from 'src/enum.js';
 import { cloudRouteAllows } from 'src/utils/ml-destination.js';
 
@@ -106,6 +111,8 @@ export type CloudDescriptionItem = {
   sha256?: string;
   bytes?: number;
   contentType?: string;
+  /** The original's checksum (hex) when the photo was sent: a result for another original is not written. */
+  checksum?: string;
   /** Why the photo was not sent after all: `locked`, `not-found`, `no-preview`, `not-an-image`, `prepare-failed`. */
   refused?: string;
   /** Its share of the settled charge, once settled (USD). */
@@ -158,6 +165,7 @@ export type CloudDescriptionResult = {
     ceilingUsd: number;
     admittedAt: string;
     meteredSeconds: number | null;
+    routing?: CloudJobRouting;
     /** Every photo is uploaded and the job was started (`POST /v2/jobs/{id}/start`). */
     started?: boolean;
     /** The last ETag of `GET /v2/jobs/{id}`, sent back with `If-None-Match`. */
@@ -191,6 +199,7 @@ export type CloudDescriptionEstimateRecord = {
   createdBy: string | null;
   /** The photos the estimate covers, per owner. Emptied once the backfill started. */
   owners: Record<string, string[]>;
+  promotionalFirstBatch?: { ownerId: string; assetIds: string[]; p90Usd: number; holdUsd: number };
   started: { at: string; batches: number; photos: number; operationIds: string[] } | null;
 };
 

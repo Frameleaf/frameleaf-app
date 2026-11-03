@@ -5,7 +5,7 @@ export const JsonSchemaTypeSchema = z
   .enum(['string', 'number', 'integer', 'boolean', 'object'])
   .meta({ id: 'JsonSchemaType' });
 
-const JsonSchemaPropertySchema = z
+export const JsonSchemaPropertySchema = z
   .object({
     type: JsonSchemaTypeSchema.optional().default('object').describe('Type'),
     title: z.string().describe('Title'),
@@ -23,7 +23,7 @@ const JsonSchemaPropertySchema = z
         order: z.int().optional(),
       })
       .optional(),
-    get properties() {
+    get properties(): z.ZodOptional<z.ZodRecord<z.ZodString, typeof JsonSchemaPropertySchema>> {
       return z.record(z.string(), JsonSchemaPropertySchema).optional();
     },
   })

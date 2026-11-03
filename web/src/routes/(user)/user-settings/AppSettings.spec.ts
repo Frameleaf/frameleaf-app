@@ -18,8 +18,11 @@ import en from '../../../../../i18n/en.json';
 import AppSettings from './AppSettings.svelte';
 
 const albums = vi.hoisted(() => ({
-  draft: { 'albums.defaultAssetOrder': 'desc', 'search.includeArchived': false },
-  baseline: { 'albums.defaultAssetOrder': 'desc', 'search.includeArchived': false },
+  draft: { 'albums.defaultAssetOrder': 'desc', 'search.includeArchived': false, 'trash.reuploadUntil': '' } as Record<
+    string,
+    unknown
+  >,
+  baseline: { 'albums.defaultAssetOrder': 'desc', 'search.includeArchived': false, 'trash.reuploadUntil': '' },
   dirty: false,
   stale: false,
   loading: false,
@@ -122,5 +125,34 @@ describe('AppSettings: Look & playback (FL-368)', () => {
     // an account preference: it waits for the Save bar
     await fireEvent.click(screen.getByRole('switch', { name: 'Show archived photos in search' }));
     expect(albums.set).toHaveBeenCalledWith('search.includeArchived', true);
+  });
+
+  it('FL-556: lets uploads bring back deleted photos for 24 hours, as an account preference', async () => {
+    const before = Date.now();
+    const { unmount } = render(AppSettings);
+    const toggle = screen.getByRole('switch', { name: 'Let uploads bring back deleted photos' });
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getByText(/For 24 hours, uploading a photo that is in your Trash/)).toBeInTheDocument();
+
+    await fireEvent.click(toggle);
+    const [key, until] = albums.set.mock.calls.at(-1)!;
+    expect(key).toBe('trash.reuploadUntil');
+    expect(Date.parse(until as string) - before).toBeGreaterThanOrEqual(24 * 60 * 60 * 1000);
+    expect(Date.parse(until as string) - Date.now()).toBeLessThanOrEqual(24 * 60 * 60 * 1000);
+    unmount();
+
+    // On: the switch shows it and when it ends; turning it off clears it.
+    albums.draft['trash.reuploadUntil'] = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    render(AppSettings);
+    const on = screen.getByRole('switch', { name: 'Let uploads bring back deleted photos' });
+    expect(on).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByText(/^On until .+ Turns itself off after that\.$/)).toBeInTheDocument();
+    await fireEvent.click(on);
+    expect(albums.set).toHaveBeenLastCalledWith('trash.reuploadUntil', '');
+
+    // A window that has passed reads as off.
+    albums.draft['trash.reuploadUntil'] = new Date(Date.now() - 1).toISOString();
+    expect(screen.getByRole('switch', { name: 'Let uploads bring back deleted photos' })).toBeInTheDocument();
+    albums.draft['trash.reuploadUntil'] = '';
   });
 });

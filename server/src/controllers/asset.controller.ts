@@ -10,6 +10,8 @@ import {
   AssetCopyDto,
   AssetImageEnrichmentActionRequestDto,
   AssetImageEnrichmentResponseDto,
+  AssetInfoBatchDto,
+  AssetInfoBatchResponseDto,
   AssetJobsDto,
   AssetMetadataBulkDeleteDto,
   AssetMetadataBulkResponseDto,
@@ -127,6 +129,19 @@ export class AssetController {
   })
   unlockAssets(@Auth() auth: AuthDto, @Body() dto: BulkIdsDto): Promise<void> {
     return this.imageEnrichmentService.unlockAssets(auth, dto);
+  }
+
+  @Post('info')
+  @Authenticated({ permission: Permission.AssetRead })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Retrieve several assets',
+    description:
+      'Retrieve detailed information about up to 200 assets in one request, each exactly as the single-asset read returns it and with the same access check. Assets the caller may not read, or that do not exist, are left out instead of failing the request.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  getAssetsInfo(@Auth() auth: AuthDto, @Body() dto: AssetInfoBatchDto): Promise<AssetInfoBatchResponseDto> {
+    return this.service.getMany(auth, dto);
   }
 
   @Get(':id')

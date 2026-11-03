@@ -1,6 +1,8 @@
 import { Command, CommandRunner, Option, SubCommand } from 'nest-commander';
 import { readFile } from 'node:fs/promises';
 import { CloudBackupBareMetalRestore, CloudBackupService } from 'src/services/cloud-backup.service.js';
+import { DatabaseService } from 'src/services/database.service.js';
+import { StorageService } from 'src/services/storage.service.js';
 import { writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
 import { addClientBackupKeys, parseClientBackupKeys, rotateClientBackupKeys } from 'src/utils/cloud-backup-crypto.js';
 import { unwrapBucketKey } from 'src/utils/cloud-backup-escrow.js';
@@ -29,6 +31,7 @@ type RestoreOptions = {
   offlineDirectory?: string;
   exportDirectory?: string;
   historyFile?: string;
+  managed?: boolean;
 };
 
 const SCOPES = new Set<CloudBackupBareMetalRestore['scope']>(['library', 'files', 'database']);
@@ -43,7 +46,11 @@ const SCOPES = new Set<CloudBackupBareMetalRestore['scope']>(['library', 'files'
   description: 'Restore this server’s files and database from its cloud backup bucket, without the web app',
 })
 export class CloudBackupRestoreCommand extends CommandRunner {
-  constructor(private readonly service: CloudBackupService) {
+  constructor(
+    private readonly service: CloudBackupService,
+    private readonly databaseService: DatabaseService,
+    private readonly storageService: StorageService,
+  ) {
     super();
   }
 
@@ -128,6 +135,11 @@ export class CloudBackupRestoreCommand extends CommandRunner {
     return value;
   }
 
+  @Option({ flags: '--managed', description: 'Export this linked server’s managed backup using renewable read access' })
+  parseManaged() {
+    return true;
+  }
+
   @Option({
     flags: '--history-file <path>',
     description: 'Locally trusted signed snapshot history to include in the recovery kit',
@@ -148,6 +160,9 @@ export class CloudBackupRestoreCommand extends CommandRunner {
       );
       return;
     }
+    parseBackupKey(restore.key);
+    await this.databaseService.initialize();
+    if (restore.restoreDatabase) await this.storageService.onBootstrap();
     const result = await this.service.restoreFromBucket(restore, (line) => process.stdout.write(`${line}\n`));
     const dump = result.databaseFile
       ? `The database dump is ${result.databaseFile} in the backups folder: restore it from the maintenance restore, or run this again with --restore-database.`
@@ -166,13 +181,27 @@ export const restoreRequest = async (
   options: RestoreOptions,
   env: Record<string, string | undefined>,
 ): Promise<CloudBackupBareMetalRestore> => {
-  if (!options.offlineDirectory && (!options.bucket || !options.endpoint || !options.accessKeyId)) {
+  if (
+    options.managed &&
+    (!options.exportDirectory ||
+      options.restoreDatabase ||
+      options.offlineDirectory ||
+      options.bucket ||
+      options.endpoint ||
+      options.accessKeyId ||
+      options.region)
+  ) {
+    throw new Error(
+      'Managed mode only exports this server’s configured backup; do not combine it with storage or restore options.',
+    );
+  }
+  if (!options.managed && !options.offlineDirectory && (!options.bucket || !options.endpoint || !options.accessKeyId)) {
     throw new Error(
       'Give the bucket, its storage address and its access key ID (--bucket, --endpoint, --access-key-id).',
     );
   }
   const secretAccessKey = env[CLOUD_BACKUP_SECRET_ENV];
-  if (!options.offlineDirectory && !secretAccessKey) {
+  if (!options.managed && !options.offlineDirectory && !secretAccessKey) {
     throw new Error(`Set ${CLOUD_BACKUP_SECRET_ENV} to the bucket’s secret access key.`);
   }
   if (!!options.keyFile === !!options.escrowFile) {
@@ -215,6 +244,9 @@ export const restoreRequest = async (
   }
   if (options.offlineDirectory && !options.bucket && !file.bucket)
     throw new Error('The offline key file must name its bucket, or give --bucket');
+  if (options.managed) {
+    return { managed: true, key, manifestKey: options.manifest, scope, restoreDatabase: false };
+  }
   return {
     s3: {
       endpoint: options.endpoint ?? 'https://offline.invalid',

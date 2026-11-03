@@ -243,7 +243,6 @@
       return;
     }
     void getTakeoutImport({ id })
-      .catch(() => undefined)
       .then((current) => {
         if (requested === key) {
           loaded = { key: requested, current };

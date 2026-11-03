@@ -45,6 +45,7 @@
   import { Route } from '$lib/route';
   import { getPeopleThumbnailUrl } from '$lib/utils';
   import {
+    countLockedRules,
     getAllPeople,
     getAllPets,
     getAllTags,
@@ -468,6 +469,27 @@
     disposed = true;
     drop();
   });
+
+  // FL-541: what the draft would keep Locked, counted on the server as the rules are edited (only
+  // the owner's own photos and videos; the rules need an unlocked session, so does the count).
+  let lockedCount = $state<{ photos: number; videos: number } | null>(null);
+  const draftKey = $derived(JSON.stringify([draft.personIds, draft.tagIds, draft.petIds]));
+  $effect(() => {
+    if (phase !== 'ready') {
+      return;
+    }
+    const [personIds, tagIds, petIds] = JSON.parse(draftKey) as [string[], string[], string[]];
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          lockedCount = (await countLockedRules({ lockedRulesDraftDto: { personIds, tagIds, petIds } })) ?? null;
+        } catch {
+          lockedCount = null;
+        }
+      })();
+    }, 400);
+    return () => clearTimeout(timer);
+  });
 </script>
 
 <OnEvents
@@ -624,6 +646,13 @@
       </section>
     </div>
 
+    {#if lockedCount}
+      <p class="count" role="status">
+        {lockedCount.photos + lockedCount.videos === 0
+          ? $t('frameleaf_locked_rules_count_none')
+          : $t('frameleaf_locked_rules_count', { values: lockedCount })}
+      </p>
+    {/if}
     <div class="section-action end">
       <Button disabled={saving} onclick={() => void load()}>{$t('frameleaf_locked_rules_discard')}</Button>
       <Button variant="primary" disabled={conflict || saving} onclick={save}>
@@ -653,6 +682,9 @@
   p {
     margin: 0;
     color: var(--fl-text);
+  }
+  .count {
+    font-weight: 600;
   }
   .rules {
     display: grid;

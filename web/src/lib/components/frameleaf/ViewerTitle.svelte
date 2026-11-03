@@ -47,7 +47,7 @@
     {#if position || kind}
       <small class="fl-title-meta shrink-0 text-xs text-white/70">
         {#if position}
-          <span class="fl-title-position" data-testid="viewer-title-position">
+          <span class="fl-title-position" aria-live="polite" data-testid="viewer-title-position">
             {$t('frameleaf_viewer_position', { values: { index: position.index + 1, total: position.total } })}
           </span>
         {/if}
@@ -65,21 +65,12 @@
 </div>
 
 <style>
+  /* FL-707 item 14: the one "N of M" counter, beside the file name on every screen size. */
   .fl-title-meta {
     font-variant-numeric: tabular-nums;
   }
 
   .fl-title-position + .fl-title-kind::before {
     content: '· ';
-  }
-
-  @media (max-width: 700px) {
-    .fl-title-position {
-      display: none;
-    }
-
-    .fl-title-position + .fl-title-kind::before {
-      content: none;
-    }
   }
 </style>

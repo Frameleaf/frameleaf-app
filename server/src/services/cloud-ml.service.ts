@@ -4,6 +4,7 @@ import type { CloudMlGateway } from 'src/repositories/frameleaf-cloud-ml.reposit
 import type { MachineLearningHardwareResponse, MlEndpointProbe } from 'src/repositories/machine-learning.repository.js';
 import type { MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
 import type { FrameleafMlWallet } from 'src/types.js';
+import type { SystemNotificationTemplate } from 'src/utils/notification-locale.js';
 import { OnEvent } from 'src/decorators.js';
 import {
   CloudMlCatalogResponseDto,
@@ -64,6 +65,7 @@ import {
 } from 'src/utils/frameleaf-cloud.js';
 import { mapMlDestination } from 'src/utils/ml-destination-dto.js';
 import { ML_BUDGET_WINDOW_DAYS, cloudRouteAllows, workloadPolicyProblem } from 'src/utils/ml-destination.js';
+import { localNotificationText } from 'src/utils/preferences.js';
 
 /** How many settled charges the processing section lists. */
 const CLOUD_ML_SETTLEMENT_LIMIT = 50;
@@ -722,32 +724,62 @@ export class CloudMlService extends BaseService {
     if (!notice) {
       return;
     }
-    const names = notice.removedDestinations.map((destination) => destination.name);
-    const parts = [
-      names.length > 0
-        ? `The cloud processing destination${names.length === 1 ? '' : 's'} ${names.join(', ')} ${names.length === 1 ? 'was' : 'were'} removed: Frameleaf Cloud replaces the previous cloud processing service.`
-        : 'Frameleaf Cloud replaces the previous cloud processing service.',
-      'The work that used it is not sent anywhere else. Choose where it runs under Processing destinations, or add Frameleaf Cloud.',
+    const title = 'Cloud processing moved to Frameleaf Cloud';
+    const names = notice.removedDestinations.map((destination) => destination.name).join(', ');
+    const removed = notice.removedDestinations.length;
+    const jobs = notice.cancelledOperations;
+    const workers = notice.revokedRenderWorkers ?? 0;
+    // FL-406: each sentence is its own template, so every combination is rendered in the recipient's language
+    const parts: Array<{ template: SystemNotificationTemplate; body: string }> = [
+      {
+        template:
+          removed === 0
+            ? { version: 1, key: 'cloud-ml-migration', args: {} }
+            : {
+                version: 1,
+                key: removed === 1 ? 'cloud-ml-migration-removed-one' : 'cloud-ml-migration-removed-many',
+                args: { names },
+              },
+        body: [
+          removed > 0
+            ? `The cloud processing destination${removed === 1 ? '' : 's'} ${names} ${removed === 1 ? 'was' : 'were'} removed: Frameleaf Cloud replaces the previous cloud processing service.`
+            : 'Frameleaf Cloud replaces the previous cloud processing service.',
+          'The work that used it is not sent anywhere else. Choose where it runs under Processing destinations, or add Frameleaf Cloud.',
+        ].join(' '),
+      },
     ];
-    if (notice.cancelledOperations > 0) {
-      parts.push(
-        `${notice.cancelledOperations} unfinished job${notice.cancelledOperations === 1 ? '' : 's'} stopped and can be started again.`,
-      );
+    if (jobs > 0) {
+      parts.push({
+        template:
+          jobs === 1
+            ? { version: 1, key: 'cloud-ml-migration-jobs-one', args: {} }
+            : { version: 1, key: 'cloud-ml-migration-jobs-many', args: { count: jobs } },
+        body: `${jobs} unfinished job${jobs === 1 ? '' : 's'} stopped and can be started again.`,
+      });
     }
-    if ((notice.revokedRenderWorkers ?? 0) > 0) {
-      parts.push(
-        `${notice.revokedRenderWorkers} render worker${notice.revokedRenderWorkers === 1 ? ' was' : 's were'} signed out.`,
-      );
+    if (workers > 0) {
+      parts.push({
+        template:
+          workers === 1
+            ? { version: 1, key: 'cloud-ml-migration-workers-one', args: {} }
+            : { version: 1, key: 'cloud-ml-migration-workers-many', args: { count: workers } },
+        body: `${workers} render worker${workers === 1 ? ' was' : 's were'} signed out.`,
+      });
     }
     try {
       const admins = (await this.userRepository.getList()).filter((user) => user.isAdmin && !user.deletedAt);
       for (const admin of admins) {
+        const texts = await Promise.all(
+          parts.map(({ template, body }) =>
+            localNotificationText(this.userRepository, admin.id, template, { title, body }),
+          ),
+        );
         await this.notificationRepository.create({
           userId: admin.id,
           type: NotificationType.SystemMessage,
           level: NotificationLevel.Warning,
-          title: 'Cloud processing moved to Frameleaf Cloud',
-          description: parts.join(' '),
+          title: texts[0].title,
+          description: texts.map(({ body }) => body).join(' '),
         });
       }
       await this.systemMetadataRepository.delete(SystemMetadataKey.FrameleafCloudMigrationNotice);

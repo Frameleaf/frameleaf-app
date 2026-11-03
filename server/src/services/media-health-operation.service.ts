@@ -168,9 +168,11 @@ export class MediaHealthOperationService {
     if (result.total === null) {
       result = {
         ...result,
-        total: snapshot.changedSince
-          ? await this.mediaHealth.countScanAssets(snapshot.userId, snapshot.changedSince)
-          : await this.mediaHealth.countScanAssets(snapshot.userId),
+        total: snapshot.assetIds
+          ? snapshot.assetIds.length
+          : snapshot.changedSince
+            ? await this.mediaHealth.countScanAssets(snapshot.userId, snapshot.changedSince)
+            : await this.mediaHealth.countScanAssets(snapshot.userId),
       };
     }
 
@@ -186,8 +188,9 @@ export class MediaHealthOperationService {
 
       const page = await this.mediaHealth.scanPage(snapshot, result.cursor, MEDIA_HEALTH_SCAN_BATCH);
       const done = page.checked < MEDIA_HEALTH_SCAN_BATCH;
-      if (done) {
-        // The last step: supported media in library storage that no asset tracks comes back.
+      // The last step: supported media in library storage that no asset tracks comes back. Not for a
+      // scan of chosen photos (FL-737): it would turn the stray files File checks lists into photos.
+      if (done && !snapshot.assetIds) {
         await this.mediaHealth.restoreUntracked(snapshot.userId);
       }
 

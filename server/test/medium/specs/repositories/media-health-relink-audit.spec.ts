@@ -21,7 +21,7 @@ describe('Media health transactional relink audit', () => {
       'CREATE SCHEMA public',
       'CREATE TABLE public.user (id uuid PRIMARY KEY)',
       `CREATE TABLE public.asset (id uuid PRIMARY KEY, "ownerId" uuid REFERENCES public.user, "updateId" uuid DEFAULT gen_random_uuid(),
-        "originalPath" text, "originalFileName" text, checksum bytea, "checksumAlgorithm" text, "isExternal" boolean,
+        "originalPath" text, "libraryPath" text, "originalFileName" text, checksum bytea, "checksumAlgorithm" text, "isExternal" boolean,
         "libraryId" uuid, "deletedAt" timestamptz, status text DEFAULT 'active', "isOffline" boolean DEFAULT true,
         "physicalOriginalFileId" uuid, "fileModifiedAt" timestamptz)`,
       'CREATE TABLE public.physical_file (id uuid PRIMARY KEY, "canonicalAssetId" uuid, checksum bytea, path text UNIQUE, "sizeInBytes" bigint, type text)',
@@ -218,7 +218,7 @@ describe('Media health transactional relink audit', () => {
     const { expectedLibraryId: _, ...input } = await arrange(false);
     const shared = randomUUID();
     const physical = randomUUID();
-    await sql`INSERT INTO public.asset SELECT ${shared}::uuid,"ownerId",gen_random_uuid(),"originalPath","originalFileName",checksum,"checksumAlgorithm","isExternal","libraryId","deletedAt",status,"isOffline",${physical}::uuid,"fileModifiedAt" FROM public.asset WHERE id=${input.assetId}::uuid`.execute(
+    await sql`INSERT INTO public.asset SELECT ${shared}::uuid,"ownerId",gen_random_uuid(),"originalPath","libraryPath","originalFileName",checksum,"checksumAlgorithm","isExternal","libraryId","deletedAt",status,"isOffline",${physical}::uuid,"fileModifiedAt" FROM public.asset WHERE id=${input.assetId}::uuid`.execute(
       db,
     );
     await sql`UPDATE public.asset SET "physicalOriginalFileId"=${physical}::uuid WHERE id=${input.assetId}::uuid`.execute(

@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { decodeProtectedHeader, importJWK, jwtVerify } from 'jose';
+import { createHash } from 'node:crypto';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -32,6 +33,8 @@ import { ServiceMocks, newTestService } from 'test/utils.js';
 
 const SERVER_KEY = 'FL-S8NL-49G8-J583';
 const PERSONAL_KEY = 'FL-IC8Q-BT2Q-8EL6';
+
+const sha256Hex = (value: string) => createHash('sha256').update(value).digest('hex');
 
 describe(FrameleafLicenseService.name, () => {
   let sut: FrameleafLicenseService;
@@ -841,6 +844,66 @@ describe(FrameleafLicenseService.name, () => {
     });
   });
 
+  describe('startCheckout (FL-544: the combined licence-and-plan purchase)', () => {
+    const CHECKOUT = { checkoutId: 'chk_1', expiresAt: '2026-10-24T16:00:00.000Z' };
+
+    it('refuses before the server is linked', async () => {
+      await expect(
+        sut.startCheckout(authStub.admin, { licence: 'supporter-server', plan: 'cloud-annual' }),
+      ).rejects.toThrow('Link this server to a Frameleaf account first.');
+      expect(cloud.requests.some(({ path }) => path.includes('licensed-checkout'))).toBe(false);
+    });
+
+    it('asks Frameleaf Cloud with the instance token and returns the store page to open', async () => {
+      link();
+      serveToken();
+      cloud.on('POST /api/v1/billing/licensed-checkout', () => ({
+        status: 200,
+        body: { ...CHECKOUT, url: `${cloud.url}/store?checkout=chk_1` },
+      }));
+      await expect(
+        sut.startCheckout(authStub.admin, { licence: 'supporter-server', plan: 'cloud-annual' }),
+      ).resolves.toEqual({ ...CHECKOUT, url: `${cloud.url}/store?checkout=chk_1` });
+      const request = cloud.requests.find(({ path }) => path === '/api/v1/billing/licensed-checkout')!;
+      expect(tokenNameOf(request)).toBe('api-token');
+      expect(request.json()).toEqual({ licence: 'supporter-server', plan: 'cloud-annual' });
+    });
+
+    it('sends the holder fingerprint for an Individual licence only', async () => {
+      link();
+      serveToken();
+      cloud.on('POST /api/v1/billing/licensed-checkout', () => ({
+        status: 200,
+        body: { ...CHECKOUT, url: `${cloud.url}/store?checkout=chk_1` },
+      }));
+      await sut.startCheckout(authStub.admin, { licence: 'supporter-individual', plan: 'cloud-monthly' });
+      const request = cloud.requests.find(({ path }) => path === '/api/v1/billing/licensed-checkout')!;
+      const body = request.json() as { userFingerprint: string };
+      expect(body.userFingerprint).toMatch(/^[a-f0-9]{64}$/);
+      expect(body.userFingerprint).toBe(sha256Hex(`${instanceId()}${authStub.admin.user.id}`));
+    });
+
+    it('passes a cloud refusal on as a bad request and never opens a page off the cloud', async () => {
+      link();
+      serveToken();
+      cloud.on('POST /api/v1/billing/licensed-checkout', () => ({
+        status: 402,
+        body: { code: 'instance-limit', message: 'This account already has three servers.' },
+      }));
+      await expect(
+        sut.startCheckout(authStub.admin, { licence: 'supporter-server', plan: 'cloud-annual' }),
+      ).rejects.toThrow('This account already has three servers.');
+
+      cloud.on('POST /api/v1/billing/licensed-checkout', () => ({
+        status: 200,
+        body: { ...CHECKOUT, url: 'https://evil.example/store' },
+      }));
+      await expect(
+        sut.startCheckout(authStub.admin, { licence: 'supporter-server', plan: 'cloud-annual' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
   describe('link codes (CLD-004, golden fixtures of frameleaf-cloud PR #82)', () => {
     const golden = {
       request: cloudContractFixture('licence/redeem-link-code-request.json'),
@@ -1144,6 +1207,39 @@ describe(FrameleafLicenseService.name, () => {
       mocks.frameleafUserLicense.getByKeyHash.mockResolvedValue({ userId: 'someone-else' } as never);
       await expect(sut.activateUserSupporter(authStub.user1, { key: PERSONAL_KEY })).rejects.toThrow(
         'already active for another account',
+      );
+    });
+
+    it('keys a pasted personal licence by its licence id, as a link-code redemption does', async () => {
+      const licenceHash = createHash('sha256').update('lic:lic-77').digest('hex');
+      cloud.on('POST /api/v1/licenses/activate', () => ({
+        status: 200,
+        body: {
+          certificate: certificate({
+            ent: ['SUPPORTER_INDIVIDUAL'],
+            lic_exp: null,
+            lic: { id: 'lic-77', kind: 'individual', last4: '8EL6' },
+          }),
+          activationId: 'act-9',
+        },
+      }));
+      // the same licence was redeemed by link code for another account, keyed by its licence id
+      mocks.frameleafUserLicense.getByKeyHash.mockImplementation((hash) =>
+        Promise.resolve(hash === licenceHash ? ({ userId: 'someone-else' } as never) : undefined),
+      );
+
+      await expect(sut.activateUserSupporter(authStub.user1, { key: PERSONAL_KEY })).rejects.toThrow(
+        'already active for another account',
+      );
+      expect(mocks.frameleafUserLicense.upsert).not.toHaveBeenCalled();
+
+      mocks.frameleafUserLicense.getByKeyHash.mockResolvedValue(undefined);
+      mocks.frameleafUserLicense.upsert.mockImplementation((row) =>
+        Promise.resolve({ ...row, kind: 'individual', activatedAt: new Date('2026-09-25T12:00:00.000Z') }),
+      );
+      await sut.activateUserSupporter(authStub.user1, { key: PERSONAL_KEY });
+      expect(mocks.frameleafUserLicense.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ keySha256: licenceHash }),
       );
     });
 

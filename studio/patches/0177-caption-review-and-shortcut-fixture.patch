@@ -1,0 +1,100 @@
+--- a/src/features/editor/components/properties-sidebar/caption-quality-panel.tsx
++++ b/src/features/editor/components/properties-sidebar/caption-quality-panel.tsx
+@@ -42,8 +42,17 @@
+   }, [locale])
+   const time = (seconds: number) => {
+     if (!Number.isFinite(seconds)) return t('captionQuality.unknownTime')
+-    const absolute = Math.abs(seconds)
+-    return `${seconds < 0 ? '−' : ''}${Math.floor(absolute / 60)}:${(absolute % 60).toFixed(2).padStart(5, '0')}`
++    const centiseconds = Math.round(Math.abs(seconds) * 100)
++    const minutes = Math.floor(centiseconds / 6000)
++    const rest = ((centiseconds % 6000) / 100).toFixed(2).padStart(5, '0')
++    return `${seconds < 0 && centiseconds > 0 ? '−' : ''}${minutes}:${rest}`
++  }
++  const languageName = (code: string) => {
++    try {
++      return names?.of(code) ?? code
++    } catch {
++      return code
++    }
+   }
+   return (
+     <PropertySection
+@@ -63,7 +72,7 @@
+             const track =
+               tracks.find((candidate) => candidate.id === warning.trackId)?.name ?? warning.trackId
+             const language = warning.language
+-              ? (names?.of(warning.language) ?? warning.language)
++              ? languageName(warning.language)
+               : t('captionQuality.original')
+             const reason = warning.reasons.map((key) => t(`captionQuality.${key}`)).join(' · ')
+             const label = `${track} · ${language} · ${time(warning.startSeconds)} · ${reason}`
+--- a/src/features/editor/utils/caption-quality.ts
++++ b/src/features/editor/utils/caption-quality.ts
+@@ -71,7 +71,7 @@
+       push(item, item.id, start, end, item.text)
+     } else if (
+       (item.type === 'video' || item.type === 'audio') &&
+-      item.transcriptCaptions &&
++      item.transcriptCaptions?.enabled &&
+       !item.isReversed
+     ) {
+       const speed = item.speed ?? 1
+--- a/src/test/caption-quality.test.tsx
++++ b/src/test/caption-quality.test.tsx
+@@ -143,6 +143,9 @@
+     expect(review([{ ...item, speed: 0 }])[0]?.reasons).toContain('timing')
+     expect(review([{ ...item, sourceEnd: 72 }])).toHaveLength(1)
+     expect(review([{ ...item, isReversed: true }])).toEqual([])
++    expect(
++      review([{ ...item, transcriptCaptions: { ...item.transcriptCaptions!, enabled: false } }]),
++    ).toEqual([])
+     const invalid = {
+       ...item,
+       transcriptCaptions: {
+@@ -257,3 +260,29 @@
+   expect(useSelectionStore.getState().selectedItemIds).toEqual(['nested-caption'])
+   expect(usePlaybackStore.getState().currentFrame).toBe(180)
+ })
++
++it.each([
++  [59.996, '1:00.00'],
++  [-0.0001, '0:00.00'],
++])('formats warning time %s as %s and tolerates malformed languages', (start, label) => {
++  const item = segment({
++    from: 0,
++    durationInFrames: 6000,
++    source: {
++      type: 'subtitle-import',
++      translation: { language: 'bad_code!', from: 'en', subtitle: true, translatedAt: 1 },
++    } as unknown as SubtitleSegmentItem['source'],
++    cues: [cue('warning', start, start + 1, 'a\nb\nc')],
++  })
++  useItemsStore.getState().setItems([item])
++  useItemsStore
++    .getState()
++    .setTracks([makeTimelineTrack({ id: 'original', name: 'Original', order: 0 })])
++  const ui = render(<CaptionQualityPanel />)
++  fireEvent.click(ui.getByRole('button', { name: 'Caption quality (1)' }))
++  const warning = ui.getByRole('button', {
++    name: new RegExp('Original · ' + label.replace('.', '\\.')),
++  })
++  expect(warning.textContent).toContain(label)
++  expect(warning.textContent).not.toContain('−0:00.00')
++})
+--- a/src/features/settings/components/hotkey-editor-search.test.ts
++++ b/src/features/settings/components/hotkey-editor-search.test.ts
+@@ -11,11 +11,11 @@
+ describe('getHotkeyEditorSearchResults', () => {
+   it('filters commands by localized label', () => {
+     const results = getHotkeyEditorSearchResults({
+-      query: 'ripple',
++      query: 'supprimer',
+       sections: HOTKEY_EDITOR_SECTIONS,
+       hotkeys: HOTKEYS,
+       translate: (key) =>
+-        key.endsWith('rippleDeleteSelectedItems') ? 'Ripple delete selected items' : key,
++        key.endsWith('rippleDeleteSelectedItems') ? 'Supprimer les éléments sélectionnés' : key,
+     })
+ 
+     expect(results.map((result) => result.item.labelKey)).toEqual([

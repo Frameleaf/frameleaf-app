@@ -9,6 +9,12 @@
     browse: 'frameleaf_library_layout_browse',
     work: 'frameleaf_library_layout_work',
   };
+  /** FL-707 item 12 (App.jsx `LAYOUT_HINTS`): what each layout is for, as a tooltip and beside the tabs. */
+  export const LAYOUT_HINTS: Record<LibraryLayout, Translations> = {
+    timeline: 'frameleaf_library_layout_timeline_hint',
+    browse: 'frameleaf_library_layout_browse_hint',
+    work: 'frameleaf_library_layout_work_hint',
+  };
   /** LIB-01: ⇧T, ⇧B and ⇧W (library-shortcuts.ts) switch from anywhere, the header scrolled away or not. */
   export const LAYOUT_KEYS: Record<LibraryLayout, string> = { timeline: 'T', browse: 'B', work: 'W' };
 
@@ -34,8 +40,9 @@
    * text tabs; the current one reads in the text colour over a 2px underline. The Locked collection
    * offers the Timeline only (`App.jsx` `collection === "Locked" ? ["timeline"]`).
    *
-   * The underline slides from the old tab to the new one (sliding-plate.ts). Phones show it beside
-   * the title too, with tighter tabs, as the template does (LIB-P5).
+   * The underline slides from the old tab to the new one (sliding-plate.ts). FL-707 P2/12: the tabs
+   * have their own row under the page header and any notice, directly above the toolbar, and each
+   * tab's tooltip says what the layout is for.
    */
   import { slidingPlate } from '$lib/components/timeline/sliding-plate';
   import { t } from 'svelte-i18n';
@@ -62,7 +69,7 @@
       class:fl-current={current === layout}
       aria-pressed={current === layout}
       aria-keyshortcuts={shown.length > 1 ? `Shift+${LAYOUT_KEYS[layout]}` : undefined}
-      title={shown.length > 1 ? `${$t(LAYOUT_LABELS[layout])} (⇧${LAYOUT_KEYS[layout]})` : undefined}
+      title={shown.length > 1 ? `${$t(LAYOUT_HINTS[layout])} (⇧${LAYOUT_KEYS[layout]})` : $t(LAYOUT_HINTS[layout])}
       onclick={() => {
         if (shown.length === 1) {
           return;

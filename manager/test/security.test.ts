@@ -191,3 +191,82 @@ test('without MANAGER_ORIGIN, Manager accepts local addresses only and still che
     assert.throws(() => new Security(store, undefined, 'https://tower:5001'));
   } finally { store.close(); await rm(directory, { recursive: true, force: true }); }
 });
+
+test('a signed-in session polling the dashboard never runs out of the per-address budget', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-rate-'));
+  const store = new Store(directory);
+  try {
+    const security = new Security(store, 'https://manager.test:9443');
+    await security.claim('Owner', 'a private test password', '::ffff:192.168.1.5');
+    const session = await security.login('a private test password');
+    const statuses: number[] = [];
+    const response = {
+      set: () => {},
+      status: (value: number) => {
+        statuses.push(value);
+        return response;
+      },
+      json: () => {},
+    } as unknown as Response;
+    const get = (cookie: string) =>
+      security.guard(
+        {
+          headers: { host: 'manager.test:9443', cookie },
+          method: 'GET',
+          path: '/manager-api/dashboard',
+          socket: { remoteAddress: '192.168.1.5' },
+        } as unknown as Request,
+        response,
+        () => {},
+      );
+    // Two visible tabs polling every 10 s for 10 minutes.
+    for (let i = 0; i < 130; i++) get(`__Host-frameleaf-manager=${session.session}`);
+    assert.deepEqual(statuses, []);
+    // Requests without a session still share the address's budget.
+    for (let i = 0; i < 121; i++) get('');
+    assert.equal(statuses.at(-1), 429);
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('HTTP sessions require an explicit header and never issue a cross-port cookie', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-http-'));
+  const store = new Store(directory);
+  try {
+    const security = new Security(store, 'http://tower.local:2282');
+    await security.claim('Owner', 'synthetic HTTP test password', '127.0.0.1');
+    const session = await security.login('synthetic HTTP test password');
+    let cookie: any[] = [], token: unknown;
+    const response = { set: (name: string, value: string) => { assert.equal(name, 'X-Frameleaf-Manager-Session'); token = value; },
+      cookie: (...args: any[]) => { cookie = args; } } as unknown as Response;
+    security.issueSession(response, session.session);
+    assert.equal(token, session.session);
+    assert.deepEqual(cookie, []);
+    const req = { headers: { host: 'tower.local:2282', origin: security.origin,
+      'x-frameleaf-manager-session': session.session, 'x-csrf-token': session.csrf },
+      method: 'POST', path: '/manager-api/control', socket: { remoteAddress: '127.0.0.1' }, is: () => true } as unknown as Request;
+    assert.equal(security.session(req).csrf, session.csrf);
+    const invoke = (patch: Record<string, string>) => {
+      let next = false;
+      const res = { set() {}, status() { return this; }, json() {} } as unknown as Response;
+      security.guard({ ...req, headers: { ...req.headers, ...patch } } as Request, res, () => { next = true; });
+      return next;
+    };
+    assert.equal(invoke({}), true);
+    for (const patch of [{ host: 'evil.test' }, { origin: 'https://tower.local:2282' }, { 'x-csrf-token': 'bad' },
+      { 'x-frameleaf-manager-session': '', cookie: `frameleaf-manager=${session.session}` },
+      { 'x-frameleaf-manager-session': '', cookie: `__Host-frameleaf-manager=${session.session}` }])
+      assert.equal(invoke(patch), false);
+    const https = new Security(store, 'https://tower.local:2282');
+    assert.throws(() => https.session(req), /sign_in_required/);
+    https.issueSession(response, session.session);
+    assert.equal(cookie[0], '__Host-frameleaf-manager');
+    assert.equal(cookie[2].secure, true);
+    security.logout(req, { clearCookie: () => { throw Error('HTTP must not issue cookies'); } } as unknown as Response);
+    assert.throws(() => security.session(req), /sign_in_required/);
+    for (const origin of ['ftp://tower.local', 'http://u:p@tower.local', 'http://tower.local/path', 'http://tower.local?x=1', 'http://tower.local#x'])
+      assert.throws(() => new Security(store, origin));
+  } finally { store.close(); await rm(directory, { recursive: true, force: true }); }
+});

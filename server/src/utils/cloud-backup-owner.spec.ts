@@ -60,6 +60,14 @@ describe('owner backup history projection', () => {
       ).total,
     ).toBe(0);
   });
+  it('lists a deleted encrypted original by the plaintext checksum its backup recorded (FL-738)', () => {
+    const plain = 'b'.repeat(64);
+    const data = manifest({ a: asset(own, { checksum: plain, checksumAlgorithm: 'sha256' }) });
+    const evidence = (checksum: string) =>
+      new Map([['a', { deletion: deletion({ checksum: Buffer.from(checksum, 'hex') }) }]]);
+    expect(ownerBackupHistoryPage(authStub.user1, data, evidence(plain), page).total).toBe(1);
+    expect(ownerBackupHistoryPage(authStub.user1, data, evidence(sha), page).total).toBe(0);
+  });
   it('refuses absent capture, checksum/algorithm/owner mismatches and post-backup locks', () => {
     const data = manifest({ a: asset() });
     expect(ownerBackupHistoryPage(authStub.user1, data, new Map(), page).total).toBe(0);

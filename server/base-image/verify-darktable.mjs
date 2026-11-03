@@ -139,7 +139,16 @@ export function verifyNativeRuntime(prefix, recordPath, packageListPath) {
     const savedPath = '/build/darktable-runtime.json';
     if (existsSync(savedPath)) {
       const saved = JSON.parse(readFileSync(savedPath, 'utf8'));
-      assert.deepEqual(dependencies, saved.dependencies, 'Native dependency artifact changed');
+      // The production stage installs system packages at the recorded versions or newer (security
+      // updates), so only the /usr/local libraries copied from the build stage must hash the same.
+      const pinned = (record) =>
+        Object.fromEntries(Object.entries(record).filter(([name]) => name.startsWith('/usr/local/')));
+      assert.deepEqual(pinned(dependencies), pinned(saved.dependencies), 'Pinned native dependency changed');
+      assert.deepEqual(
+        Object.keys(dependencies).sort(),
+        Object.keys(saved.dependencies).sort(),
+        'Native dependency linkage changed',
+      );
     }
   }
   console.log('Native darktable package gate passed: source, both patches, files, resources, version and linkage');

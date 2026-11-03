@@ -169,7 +169,7 @@
     "machine_learning_facial_recognition_model": "Model für die Gesichtserkennung",
     "machine_learning_facial_recognition_model_description": "Modell sind noch abstigender Grössi ufglitet. Grösseri Modell sind langsamer und bruched meh Arbeitsspeicher, aber produziered besseri Resultat. Gsichterkennig muss für alli Fotis neu usgfüehrt wärde, nochdem s Modell gwächslet worde esch.",
     "machine_learning_facial_recognition_setting": "Gsichtserkennig ischalte",
-    "machine_learning_facial_recognition_setting_description": "Wenn usgschalte wärded Fotis ned für Gsichtserkennig enkodiert und wärded ned ide Personesektion uf de",
+    "machine_learning_facial_recognition_setting_description": "Wenn usgschalte wärded Fotis ned für Gsichtserkennig enkodiert und wärded ned ide Personesektion uf de Entdecke-Siite aazeigt.",
     "machine_learning_max_detection_distance": "Maximali Erkennigsdistanz",
     "machine_learning_max_detection_distance_description": "Maximali Distanz zwüsche zwei Bilder, um si als Duplikat z erkenne, zwische 0.001 - 0.1. Höcheri Wärt erkenned meh Duplikat, aber chönd Falschpositivi erzüge."
   },

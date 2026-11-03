@@ -32,59 +32,23 @@ group by
 
 -- IntegrityRepository.getIntegrityReport
 select
-  "id",
-  "type",
-  "path",
-  "assetId",
-  "fileAssetId",
-  "createdAt"
+  "integrity_report"."id",
+  "integrity_report"."type",
+  "integrity_report"."path",
+  "integrity_report"."assetId",
+  "integrity_report"."fileAssetId",
+  "integrity_report"."createdAt",
+  "asset"."originalFileName"
 from
   "integrity_report"
+  left join "asset" on "asset"."id" = "integrity_report"."assetId"
 where
-  "type" = $1
-  and "id" <= $2
+  "integrity_report"."type" = $1
+  and "integrity_report"."id" <= $2
 order by
-  "id" desc
+  "integrity_report"."id" desc
 limit
   $3
-
--- IntegrityRepository.getAssetPathsByPaths
-select
-  "asset"."originalPath",
-  "asset_file"."path" as "encodedVideoPath"
-from
-  "asset"
-  left join "asset_file" on "asset"."id" = "asset_file"."assetId"
-  and "asset_file"."type" = $1
-where
-  (
-    "originalPath" in $2
-    or "asset_file"."path" in $3
-  )
-
--- IntegrityRepository.getAssetFilePathsByPaths
-select
-  "path"
-from
-  "asset_file"
-where
-  "path" in $1
-
--- IntegrityRepository.getVideoDuplicateFramePathsByPaths
-select
-  "path"
-from
-  "public"."asset_video_duplicate_frame"
-where
-  "path" in $1
-
--- IntegrityRepository.getPersonThumbnailPathsByPaths
-select
-  "person"."thumbnailPath"
-from
-  "person"
-where
-  "person"."thumbnailPath" in $1
 
 -- IntegrityRepository.getTrackedPaths
 select
@@ -107,6 +71,13 @@ from
   "person"
 where
   "person"."thumbnailPath" in $3
+union
+select
+  "video_moment_frame"."path" as "path"
+from
+  "video_moment_frame"
+where
+  "video_moment_frame"."path" in $4
 
 -- IntegrityRepository.getAssetCount
 select

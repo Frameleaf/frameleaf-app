@@ -562,6 +562,10 @@
     ]
       .filter(Boolean)
       .join(' · ');
+  /** The welcome empty state (no projects yet), which carries its own "New project". */
+  const showsWelcome = $derived(!failed && !loading && items.length === 0 && !query.trim() && shelf === 'active');
+  /** Waiting for the first page: neither place shows "New project" yet, so it never jumps. */
+  const showHeaderNew = $derived(!showsWelcome && (!loading || items.length > 0 || failed));
 </script>
 
 <main class="frameleaf fl-studio-library" aria-labelledby="fl-studio-library-title">
@@ -569,8 +573,8 @@
 
   <header class="head">
     <div>
-      <p class="fl-type-overline kicker">{$t('frameleaf_studio_title')}</p>
-      <h1 id="fl-studio-library-title">{$t('frameleaf_studio_library_title')}</h1>
+      <!-- UI review 2026-10-30 #18: the page is "Studio", with no eyebrow repeating it. -->
+      <h1 id="fl-studio-library-title">{$t('frameleaf_studio_title')}</h1>
       {#if !failed && !(loading && items.length === 0)}
         <p class="summary">{$t('frameleaf_studio_library_summary', { values: { count: total } })}</p>
       {/if}
@@ -580,10 +584,13 @@
         <Icon icon={mdiImport} size={ICON_SIZE.md} />
         {uploading ? $t('frameleaf_studio_bundle_uploading') : $t('frameleaf_studio_bundle_import')}
       </Button>
-      <Button variant="primary" onclick={() => void goto(Route.studio())}>
-        <Icon icon={mdiPlus} size={ICON_SIZE.md} />
-        {$t('frameleaf_studio_library_new')}
-      </Button>
+      <!-- #18: "New project" once, here while there are projects and in the empty state when there are none. -->
+      {#if showHeaderNew}
+        <Button variant="primary" onclick={() => void goto(Route.studio())}>
+          <Icon icon={mdiPlus} size={ICON_SIZE.md} />
+          {$t('frameleaf_studio_library_new')}
+        </Button>
+      {/if}
       <input
         bind:this={fileInput}
         class="sr-only"
@@ -936,12 +943,8 @@
   .toolbar {
     align-items: center;
   }
-  /* Not `overline`: that is a Tailwind utility, and draws a line over the text. */
-  .kicker {
-    margin: 0;
-  }
   h1 {
-    margin: var(--fl-space-1) 0 0;
+    margin: 0;
     font: var(--fl-type-title);
     letter-spacing: var(--fl-tracking-title);
   }
@@ -1003,11 +1006,35 @@
     justify-content: flex-end;
     row-gap: var(--fl-space-3);
   }
-  @media (max-width: 640px) {
+  /*
+   * P4 (review-1030-shell.css `.sp-toolbar`): the search and the segmented controls in a row share
+   * one height, the 34px control, or the 44px touch size on a touch screen.
+   */
+  .toolbar :global(.segments) {
+    box-sizing: border-box;
+    height: var(--fl-control-height-compact);
+    padding: 2px;
+  }
+  .toolbar :global(.segments button) {
+    min-height: 0;
+    padding-block: 0;
+  }
+  .toolbar .search {
+    box-sizing: border-box;
+    height: var(--fl-control-height-compact);
+  }
+  @media (pointer: coarse) {
+    .toolbar :global(.segments),
+    .toolbar .search {
+      height: var(--fl-control-height-touch);
+    }
+  }
+  @media (max-width: 700px) {
     /* With the page's own 8px, the 16px phone gutter. */
     .fl-studio-library {
       padding-inline: var(--fl-space-2);
     }
+    /* #18: the search spans the row; stacked control rows sit 12px apart (the toolbar's gap). */
     .filters {
       justify-content: flex-start;
       width: 100%;

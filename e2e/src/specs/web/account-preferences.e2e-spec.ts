@@ -46,10 +46,9 @@ test.describe('Account preferences (FL-144)', () => {
       await utils.setAuthCookies(adminContext, admin.accessToken);
       const adminPage = await adminContext.newPage();
       await adminPage.goto(`/user-settings?area=users&section=accounts&user=${alice.userId}`);
-      await adminPage
-        .getByRole('navigation', { name: 'Detail sections' })
-        .getByRole('button', { name: 'Features' })
-        .click();
+      // FL-516: "What they've turned on" asks first, then opens the same editor.
+      await adminPage.getByRole('button', { name: 'Change for them…' }).click();
+      await adminPage.getByRole('button', { name: 'Continue', exact: true }).click();
       const adminForm = adminPage.locator('form.account-preferences');
       await expect(adminForm).toBeVisible();
       await adminForm.getByLabel('Minimum faces').fill(String(minimumFaces));

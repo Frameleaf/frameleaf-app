@@ -52,6 +52,9 @@ const RAW_FETCH = {
   'repositories/machine-learning.repository.ts': 'ML workers',
   // FL-355: fixed public icon pack, anonymous whole-pack download with a pinned checksum; no instance token.
   'repositories/map.repository.ts': 'public landmark icon pack',
+  // FL-632: Save a link reads a typed page's title and picture through the guarded public-only fetch
+  // (no private addresses, checked at connect and on each redirect); anonymous, no instance token.
+  'utils/public-fetch.ts': 'link preview of a public page',
   // generic OIDC profile pictures
   'repositories/oauth.repository.ts': 'OIDC profile picture',
   // the public release feed: anonymous on purpose, no instance identity is ever sent (FL-80, FL-192)
@@ -70,6 +73,12 @@ const RAW_FETCH = {
 
 /** Every file that opens a socket itself. */
 const RAW_SOCKETS = {
+  // Operator-configured isolated PhotoPrism restore; source database credentials only, never Cloud identity.
+  'library-import/photoprism-mariadb-source.ts': 'isolated PhotoPrism database restore',
+  // Operator-configured restored PiGallery2 database; source DB credentials only, never Cloud identity.
+  'library-import/pigallery2-mysql-source.ts': 'isolated PiGallery2 database restore',
+  // Operator-configured restored Piwigo database; source DB credentials only, never a Cloud token or instance identity.
+  'library-import/piwigo-source.ts': 'isolated Piwigo database restore',
   // the relay tunnel: its token comes from a DPoP call and the tunnel's PROOF is signed by the instance key
   'edge/edge-relay.service.ts': 'relay tunnel',
   // the edge worker's own upstream (this server) on the local host
@@ -84,6 +93,8 @@ const PUBLIC_CALLS: Array<[string, FrameleafCloudPublicCall]> = [
   ['repositories/frameleaf-cloud.repository.ts', FrameleafCloudPublicCall.Discovery],
   ['services/frameleaf-cloud.service.ts', FrameleafCloudPublicCall.DeviceAuthorization],
   ['services/frameleaf-cloud.service.ts', FrameleafCloudPublicCall.DeviceToken],
+  // FL-708 (FC-222): the public consent statements; the password link itself carries a proof
+  ['services/frameleaf-cloud.service.ts', FrameleafCloudPublicCall.SignUpConsents],
   ['services/frameleaf-license.service.ts', FrameleafCloudPublicCall.UnlinkedLicense],
   ['services/frameleaf-license.service.ts', FrameleafCloudPublicCall.UnlinkedLicense],
 ];

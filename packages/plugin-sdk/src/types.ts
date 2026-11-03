@@ -22,6 +22,8 @@ export type WorkflowEventData<T extends WorkflowType> = WorkflowEventMap[T];
 
 export enum WorkflowTrigger {
   AssetCreate = 'AssetCreate',
+  AssetChanged = 'AssetChanged',
+  Schedule = 'Schedule',
   AssetMetadataExtraction = 'AssetMetadataExtraction',
   AssetTagged = 'AssetTagged',
   // PersonRecognized = 'PersonRecognized',

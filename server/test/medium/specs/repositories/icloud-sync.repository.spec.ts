@@ -136,7 +136,7 @@ describe(ICloudSyncRepository.name, () => {
   });
   it.each(
     ['FRAMELEAF_ICLOUD_MAX_CONCURRENCY', 'FRAMELEAF_ICLOUD_MAX_STAGING_BYTES'].flatMap((name) =>
-      ['garbage', 'NaN', 'Infinity', '-1', '0', '1.5', '9007199254740992', ''].map((value) => ({ name, value })),
+      ['garbage', 'NaN', 'Infinity', '-1', '0', '1.5', '9007199254740992'].map((value) => ({ name, value })),
     ),
   )('refuses new admission with invalid $name=$value', async ({ name, value }) => {
     await repository.savePage(connection.id, 'assets:library', 'library', [asset, master], null, true);
@@ -150,6 +150,16 @@ describe(ICloudSyncRepository.name, () => {
     }>`SELECT status,"reservedBytes"::float8 AS "reservedBytes","leaseToken" FROM public.icloud_resource`.execute(db);
     expect(rows.rows[0]).toMatchObject({ status: 'pending', reservedBytes: 0, leaseToken: null });
   });
+  it.each(['FRAMELEAF_ICLOUD_MAX_CONCURRENCY', 'FRAMELEAF_ICLOUD_MAX_STAGING_BYTES'])(
+    'treats an empty %s as unset and admits with the default',
+    async (name) => {
+      await repository.savePage(connection.id, 'assets:library', 'library', [asset, master], null, true);
+      await repository.materialize(connection, 'library', library);
+      // Compose turns an unset ${VAR} into an empty string
+      vi.stubEnv(name, '');
+      expect(await repository.claim(connection.id, 1000)).toBeDefined();
+    },
+  );
   it('allows committed cleanup even when administrator limit settings are malformed', async () => {
     await repository.savePage(connection.id, 'assets:library', 'library', [asset, master], null, true);
     await repository.materialize(connection, 'library', library);

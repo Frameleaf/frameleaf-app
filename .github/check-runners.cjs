@@ -137,17 +137,14 @@ assert.match(
   /chromium\.launch\(\{ timeout: 15000 \}\)/,
 );
 const docker = workflows["docker.yml"];
-assert.deepEqual(docker.on.push.branches, ["main"]);
-assert(
-  !docker.on.pull_request && !docker.on.release,
-  "Candidate publishing must not run on PR/release events",
-);
+// Candidates are built on demand before a release, not after every merge.
+assert.deepEqual(Object.keys(docker.on), ["workflow_dispatch"]);
 // FL-142: the built images are archived (not pushed), deployment-tested, and only then pushed.
 for (const name of ["server", "machine-learning"]) {
   assert.deepEqual(
     docker.jobs[name].needs,
-    ["changes", "integration"],
-    "Both quality gates must precede building",
+    ["changes"],
+    "Builds run alongside integration; deploy-test and every push wait for it",
   );
   assert.equal(
     docker.jobs[name].with.mode,

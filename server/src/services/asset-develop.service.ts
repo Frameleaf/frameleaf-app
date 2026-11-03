@@ -7,15 +7,14 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { setInterval } from 'node:timers/promises';
 import sharp from 'sharp';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { SystemConfig } from 'src/dtos/config.dto.js';
 import type { HdrHistogram } from 'src/queue/image-hdr-histogram.js';
-import type { ArgOf } from 'src/repositories/event.repository.js';
+import type { BatchReturnAdmission } from 'src/repositories/develop-batch.repository.js';
 import type { JobOf, RawImageInfo } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
@@ -60,11 +59,13 @@ import {
   AssetDevelopRepository,
   type AssetDevelopRevision,
   type AssetDevelopRevisionUpdate,
+  BatchDevelopCancelled,
 } from 'src/repositories/asset-develop.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
+import { type ArgOf, EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { InpaintUnavailableError, MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
@@ -112,7 +113,16 @@ import {
 } from 'src/utils/develop-recipe.js';
 import { EditOperationRun, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { EditOperationEdit } from 'src/utils/edit-operation.js';
-import { FileDownloadResponse } from 'src/utils/file.js';
+import { FileDownloadResponse, lockedViewerOf } from 'src/utils/file.js';
+import {
+  assertPlainCopyPossible,
+  hashPlainFile,
+  isLockedKeyUnavailable,
+  isLockedPath,
+  makeWorkDir,
+  withPlainCopy,
+} from 'src/utils/locked-read.js';
+import { queueLockedSealFor } from 'src/utils/locked-seal-queue.js';
 import { MEDIA_OPERATION_AUTO_RETRIES, MEDIA_OPERATION_AUTO_RETRY_DELAY_MS } from 'src/utils/media-operation.js';
 import { getKeyframeCommand } from 'src/utils/media.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
@@ -206,6 +216,7 @@ export class AssetDevelopService {
     private systemMetadataRepository: SystemMetadataRepository,
     private mediaOperationRepository: MediaOperationRepository,
     private machineLearningRepository: MachineLearningRepository,
+    private eventRepository: EventRepository,
   ) {
     this.logger.setContext(AssetDevelopService.name);
     this.editOperations = new EditOperationTracker(mediaOperationRepository, jobRepository, logger);
@@ -305,6 +316,7 @@ export class AssetDevelopService {
       }
     }
     await this.assetDevelopRepository.setCurrent(assetId, dto.revisionId ?? null);
+    await this.eventRepository.emit('AssetDevelopCurrentChanged', { assetId });
     return this.toResponse(assetId);
   }
 
@@ -319,30 +331,49 @@ export class AssetDevelopService {
     signal?: AbortSignal,
   ): Promise<{ buffer: Buffer; contentType: string; histogram?: HdrHistogram }> {
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditGet, ids: [assetId] });
-    const source = await this.assetJobRepository.getForGenerateThumbnailJob(assetId);
-    if (!source || source.type !== AssetType.Image) {
+    const found = await this.assetJobRepository.getForGenerateThumbnailJob(assetId);
+    if (!found || found.type !== AssetType.Image) {
       throw new BadRequestException('Only images have develop previews');
     }
+    // FL-721 (spec §8.2): a sealed original is previewed from a plain copy, for a viewer allowed its key
+    return withPlainCopy(
+      found.originalPath,
+      (originalPath) =>
+        this.previewFrom(auth, originalPath === found.originalPath ? found : { ...found, originalPath }, dto, signal),
+      { viewerId: lockedViewerOf(auth) },
+    );
+  }
+
+  private async previewFrom(
+    auth: AuthDto,
+    source: DevelopSource,
+    dto: AssetDevelopPreviewDto,
+    signal?: AbortSignal,
+  ): Promise<{ buffer: Buffer; contentType: string; histogram?: HdrHistogram }> {
     const { image } = await this.getConfig();
     const recipe = assertRenderableDevelopRecipe(dto.recipe);
     // Preserve discriminated-union narrowing for the HDR renderer.
     // eslint-disable-next-line unicorn/prefer-includes-over-repeated-comparisons
     if (recipe.version === 3 || recipe.version === 4 || recipe.version === 5 || recipe.version === 6)
-      return this.renderHdrPreview(source, recipe, dto, signal);
+      return this.renderHdrPreview(source, recipe, dto, lockedViewerOf(auth), signal);
     if (dto.dynamicRange === 'hdr') throw new BadRequestException('HDR previews require recipe version 3, 4, 5 or 6');
     const motion =
       recipe.version === 1 && recipe.keyFrame
         ? await this.requireMotionClip(source, recipe.keyFrame.timeMs, auth, Permission.AssetEditGet)
         : undefined;
-    const native = recipe.version === 2 ? await this.renderNativeRecipe(source, recipe, undefined, signal) : undefined;
+    // FL-721 M7: every read for this request uses the keys this viewer may use
+    const viewerId = lockedViewerOf(auth);
+    const native =
+      recipe.version === 2 ? await this.renderNativeRecipe(source, recipe, viewerId, undefined, signal) : undefined;
     // Legacy recipes decode at preview scale; native previews share the full-resolution final pipeline.
     const keyframe = recipe.version === 1 ? recipe.keyFrame : undefined;
     const decoded =
       native ??
       (keyframe
-        ? await this.decodeKeyframe(source, keyframe.timeMs, dto.size * 2, motion)
-        : await this.decodeSource(source, image, dto.size * 2));
-    const rendered = native ?? (await this.renderRecipe(decoded, renderDevelopProjection(dto.recipe), 0, source));
+        ? await this.decodeKeyframe(source, keyframe.timeMs, viewerId, dto.size * 2, motion)
+        : await this.decodeSource(source, image, viewerId, dto.size * 2));
+    const rendered =
+      native ?? (await this.renderRecipe(decoded, renderDevelopProjection(dto.recipe), 0, source, viewerId));
     const format = image.preview.format;
     const buffer = native
       ? await encodeNativeDevelopOutput(native.nativeBuffer, { format, quality: image.preview.quality, size: dto.size })
@@ -404,29 +435,39 @@ export class AssetDevelopService {
     ) {
       const heic = format === 'hdr-heic';
       if (!heic && revision.kind === AssetDevelopRevisionKind.External) {
-        const encoding = await this.mediaRepository.inspectImageEncoding(filePath);
+        const encoding = await withPlainCopy(filePath, (path) => this.mediaRepository.inspectImageEncoding(path), {
+          viewerId: lockedViewerOf(auth),
+        });
         if (encoding.dynamicRange !== 'sdr') throw new BadRequestException('This version has no verified SDR master');
       }
       // Export copies retain the saved rendition and renderer identity. Historical SDR converts
       // to sRGB JPEG; HDR HEIC reconstructs the published gain-map master in the same worker.
-      const folder = await mkdtemp(path.join(tmpdir(), 'frameleaf-photo-export-'));
+      // FL-721 (spec §8): a sealed source's full-size export is written inside the locked tmpfs folder
+      const folder = await makeWorkDir('photo-export', await isLockedPath(filePath));
       const output = path.join(folder, heic ? 'still_hdr.heic' : 'still_sdr.jpg');
       const release = () =>
         void rm(folder, { recursive: true, force: true }).catch(() => {
           this.logger.warn('Unable to remove a temporary still export');
         });
       try {
-        if (heic) {
-          await this.mediaRepository.generateHdrRenditions(
-            filePath,
-            [{ path: output, format: 'heic' }],
-            undefined,
-            signal,
-            revision.hdrRenditionChecksum ?? (await this.cryptoRepository.hashFile(filePath, 'sha256')),
-          );
-        } else {
-          await this.mediaRepository.writeStrippedStill(filePath, output, 'jpeg', 'srgb', signal);
-        }
+        // FL-721 (spec §8.2): a sealed master is exported from a plain copy, for a viewer allowed its key
+        await withPlainCopy(
+          filePath,
+          async (input) => {
+            if (heic) {
+              await this.mediaRepository.generateHdrRenditions(
+                input,
+                [{ path: output, format: 'heic' }],
+                undefined,
+                signal,
+                revision.hdrRenditionChecksum ?? (await this.cryptoRepository.hashFile(input, 'sha256')),
+              );
+            } else {
+              await this.mediaRepository.writeStrippedStill(input, output, 'jpeg', 'srgb', signal);
+            }
+          },
+          { viewerId: lockedViewerOf(auth) },
+        );
         signal?.throwIfAborted();
         await requireAccess(this.accessRepository, { auth, permission: Permission.AssetDownload, ids: [assetId] });
         const current = await this.requireRevision(assetId, revisionId);
@@ -529,6 +570,8 @@ export class AssetDevelopService {
       return JobStatus.Failed;
     }
 
+    // FL-721: wait for the Locked key before the attempt starts (a deferral, never a failed version)
+    await assertPlainCopyPossible(source.originalPath);
     const revision = await this.assetDevelopRepository.beginAttempt(
       id,
       existing.kind === AssetDevelopRevisionKind.Recipe && existing.recipe.version === 2
@@ -566,11 +609,22 @@ export class AssetDevelopService {
           ? await this.requireMotionClip(source, parsed.keyFrame.timeMs)
           : undefined;
       const sourceChecksum = motion
-        ? await this.cryptoRepository.hashFile(motion.originalPath, 'sha256')
-        : await this.currentSourceChecksum(revision.assetId);
+        ? await this.hashPlain(motion.originalPath, null)
+        : await this.currentSourceChecksum(revision.assetId, null);
       const publication: AssetDevelopRevisionUpdate = external
         ? await this.renderExternal(revision, sourceChecksum, outputs.preview, tmp.preview, image)
-        : await this.renderRecipeRevision(revision, source, sourceChecksum, outputs, tmp, image, motion);
+        : // FL-721 (spec §8.2): a sealed original is rendered from a plain copy
+          await withPlainCopy(source.originalPath, (originalPath) =>
+            this.renderRecipeRevision(
+              revision,
+              originalPath === source.originalPath ? source : { ...source, originalPath },
+              sourceChecksum,
+              outputs,
+              tmp,
+              image,
+              motion,
+            ),
+          );
       publication.sourceAssetId = motion?.id ?? source.id;
       // FL-43: the version becomes the working one only under its job's claim. A run that lost its
       // claim, or was cancelled at the last moment, leaves the previous working version current.
@@ -578,6 +632,13 @@ export class AssetDevelopService {
         if (!external) await this.discard([...Object.values(tmp), ...Object.values(outputs)]);
         return JobStatus.Skipped;
       }
+      if (
+        external &&
+        Number(revision.batchChargedBytes) > 0 &&
+        revision.sourceChecksum &&
+        !(await this.currentSourceChecksum(revision.assetId, null)).equals(revision.sourceChecksum)
+      )
+        throw new DevelopSourceChanged('The original changed while the returned preview rendered');
       // Rendering a version makes it the working version; Revert walks back through history.
       await publishJobResult(async () => {
         if (motion) {
@@ -590,8 +651,10 @@ export class AssetDevelopService {
           await assertPublicationSource(source.id, source.checksum);
         }
         if (await this.assetDevelopRepository.isCancelRequested(id)) throw new DevelopRenderCancelled();
-        await this.assetDevelopRepository.update(revision.id, publication);
-        await this.assetDevelopRepository.setCurrent(revision.assetId, id);
+        if (!(external && (await this.assetDevelopRepository.publishBatchRendered(revision, publication)))) {
+          await this.assetDevelopRepository.update(revision.id, publication);
+          await this.assetDevelopRepository.setCurrent(revision.assetId, id);
+        }
         if (!external) {
           const accepted = new Set([
             publication.masterPath,
@@ -605,8 +668,21 @@ export class AssetDevelopService {
           if (replaced.length > 0) await this.queueFileDelete(replaced);
         }
       });
+      // FL-721 (spec §7.2): a Locked item's new develop files are sealed
+      await this.jobRepository.collectFollowups(() =>
+        queueLockedSealFor({ asset: this.assetRepository, job: this.jobRepository, logger: this.logger }, [
+          source.id,
+          ...(motion ? [motion.id] : []),
+        ]),
+      );
       return JobStatus.Success;
     } catch (error) {
+      if (isLockedKeyUnavailable(error)) {
+        // the key went away mid-render: the version waits, queued, for the deferred job
+        await this.discard([...Object.values(tmp), ...Object.values(outputs)]);
+        await this.assetDevelopRepository.update(id, { status: AssetDevelopRevisionStatus.Queued, progress: 0 });
+        throw error;
+      }
       await this.discard(
         external
           ? [tmp.preview]
@@ -614,9 +690,10 @@ export class AssetDevelopService {
             ? [...Object.values(tmp), ...Object.values(outputs)]
             : [tmp.master, tmp.preview, outputs.master, outputs.preview],
       );
+      if (external && Number(revision.batchChargedBytes) > 0) await this.queueFileDelete([outputs.preview]);
       jobSignal()?.throwIfAborted();
       if (run?.done) return JobStatus.Skipped;
-      if (error instanceof DevelopRenderCancelled) {
+      if (error instanceof DevelopRenderCancelled || error instanceof BatchDevelopCancelled) {
         await this.assetDevelopRepository.update(id, { status: AssetDevelopRevisionStatus.Cancelled, progress: 0 });
         await run?.cancelled();
         return JobStatus.Skipped;
@@ -641,9 +718,15 @@ export class AssetDevelopService {
       }
       this.logger.error(`Develop render failed for revision ${id}: ${message}`);
       await this.assetDevelopRepository.update(id, { status: AssetDevelopRevisionStatus.Failed, error: message });
+      if (Number(revision.batchChargedBytes) > 0)
+        await this.assetDevelopRepository.failBatchRender(
+          id,
+          error instanceof DevelopSourceChanged ? 'source_changed' : 'render_failed',
+        );
       if (external && permanent && revision.masterPath) {
         // A file that no longer answers the original (or is gone) can never become a version.
-        await this.assetDevelopRepository.update(id, { masterPath: null });
+        if (Number(revision.batchChargedBytes) > 0) await this.assetDevelopRepository.releaseBatchMaster(id);
+        else await this.assetDevelopRepository.update(id, { masterPath: null });
         await this.discard([revision.masterPath]);
       }
       return JobStatus.Failed;
@@ -680,8 +763,11 @@ export class AssetDevelopService {
     }
     this.logger.error(`Develop render failed for revision ${id}: ${message}`);
     await this.assetDevelopRepository.update(id, { status: AssetDevelopRevisionStatus.Failed, error: message });
+    if (Number(revision.batchChargedBytes) > 0)
+      await this.assetDevelopRepository.failBatchRender(id, sourceChanged ? 'source_changed' : 'render_failed');
     if (revision.kind === AssetDevelopRevisionKind.External && permanent && revision.masterPath) {
-      await this.assetDevelopRepository.update(id, { masterPath: null });
+      if (Number(revision.batchChargedBytes) > 0) await this.assetDevelopRepository.releaseBatchMaster(id);
+      else await this.assetDevelopRepository.update(id, { masterPath: null });
       await this.discard([revision.masterPath]);
     }
     return JobStatus.Failed;
@@ -748,7 +834,7 @@ export class AssetDevelopService {
     if (exports.length === 0) {
       return [];
     }
-    const current = await this.currentSourceChecksum(assetId);
+    const current = await this.currentSourceChecksum(assetId, lockedViewerOf(auth));
     return exports.map((item) => this.toExportDto(item, current));
   }
 
@@ -756,16 +842,22 @@ export class AssetDevelopService {
    * Records that the original is going out for development elsewhere, with the SHA-256 of its
    * bytes now. The client then downloads the original through the ordinary download route.
    */
-  async createExport(auth: AuthDto, assetId: string): Promise<DevelopExportResponseDto> {
+  async createExport(auth: AuthDto, assetId: string, reservedId?: string): Promise<DevelopExportResponseDto> {
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids: [assetId] });
     const asset = await this.requireEditableStill(assetId);
-    const checksum = await this.currentSourceChecksum(assetId);
-    const created = await this.photoToolsRepository.createExport({
+    const checksum = await this.currentSourceChecksum(assetId, lockedViewerOf(auth));
+    const create = reservedId
+      ? this.photoToolsRepository.createReservedExport.bind(this.photoToolsRepository)
+      : this.photoToolsRepository.createExport.bind(this.photoToolsRepository);
+    const created = await create({
+      ...(reservedId && { id: reservedId }),
       assetId,
       ownerId: asset.ownerId,
       sourceChecksum: checksum,
       fileName: asset.originalFileName,
     });
+    if (reservedId && !created.sourceChecksum.equals(checksum))
+      throw new ConflictException('The original changed after this export was prepared');
     return this.toExportDto(created, checksum);
   }
 
@@ -781,11 +873,13 @@ export class AssetDevelopService {
     assetId: string,
     dto: AssetDevelopImportDto,
     file: ImportedFile | undefined,
+    batchReturn?: BatchReturnAdmission,
   ): Promise<AssetDevelopRevisionResponseDto> {
     if (!file?.path) {
       throw new BadRequestException('Choose the developed file to bring back');
     }
     let kept: string | undefined;
+    let reservationToken: string | null = null;
     try {
       await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids: [assetId] });
       const asset = await this.requireEditableStill(assetId);
@@ -818,7 +912,7 @@ export class AssetDevelopService {
       if (!expected) {
         throw new BadRequestException('Say which export or original checksum the file was developed from');
       }
-      const current = await this.currentSourceChecksum(assetId);
+      const current = await this.currentSourceChecksum(assetId, lockedViewerOf(auth));
       if (!current.equals(expected)) {
         throw new ConflictException(
           'This file was developed from a different original than the photo has now; nothing was changed',
@@ -836,15 +930,17 @@ export class AssetDevelopService {
         throw new BadRequestException('The file did not arrive intact; nothing was changed, try again');
       }
 
-      const master = path.join(
+      const candidate = path.join(
         StorageCore.getNestedFolder(StorageFolder.Thumbnails, asset.ownerId, asset.id),
         `${asset.id}_develop_import_${randomUUID()}${extension}`,
       );
+      const reservation = batchReturn
+        ? await this.assetDevelopRepository.reserveBatchMaster(asset.ownerId, batchReturn, candidate)
+        : { target: candidate, token: null };
+      const master = reservation.target;
+      reservationToken = reservation.token;
       this.storageRepository.mkdirSync(path.dirname(master));
-      await this.storageRepository.rename(file.path, master);
-      kept = master;
-
-      const revision = await this.assetDevelopRepository.create({
+      const input = {
         assetId,
         ownerId: asset.ownerId,
         recipe: defaultDevelopRecipe(),
@@ -858,13 +954,46 @@ export class AssetDevelopService {
         fileName,
         software: dto.software ?? null,
         masterPath: master,
-      });
+        batchReturn: batchReturn ? { ...batchReturn, sourceIdentity: asset.checksum } : undefined,
+      };
+      let revision: AssetDevelopRevision;
+      if (batchReturn) {
+        kept = master;
+        const result = await this.assetDevelopRepository.moveBatchMaster(
+          asset.ownerId,
+          batchReturn,
+          master,
+          reservationToken,
+          () => this.storageRepository.rename(file.path, master),
+          () => this.assetDevelopRepository.create(input),
+        );
+        if ('quotaExceeded' in result)
+          throw new BadRequestException({ message: 'Your storage is full', code: 'develop_batch_quota' });
+        revision = result.value;
+      } else {
+        await this.storageRepository.rename(file.path, master);
+        kept = master;
+        revision = await this.assetDevelopRepository.create(input);
+      }
+      if (batchReturn && revision.masterPath !== master) await this.queueFileDelete([master]);
       kept = undefined;
       this.logger.log(`Developed file ${fileName} brought back as version ${revision.revision} of asset ${assetId}`);
+      if (batchReturn && !(await this.assetDevelopRepository.queueBatchRevision(revision.id)))
+        return this.toRevisionDto(revision);
       return await this.queueRender(revision, asset.originalFileName);
     } finally {
-      // Whatever was not recorded is removed: the staged upload, or a kept copy with no row.
-      await this.discard([file.path, ...(kept ? [kept] : [])]);
+      try {
+        if (batchReturn && kept)
+          await this.assetDevelopRepository.cleanupFailedBatchMaster(
+            auth.user.id,
+            batchReturn,
+            kept,
+            reservationToken,
+            () => rm(kept!, { force: true }),
+          );
+      } finally {
+        await this.discard([file.path, ...(!batchReturn && kept ? [kept] : [])]);
+      }
     }
   }
 
@@ -922,6 +1051,7 @@ export class AssetDevelopService {
         // the same bitmap again: record it again, which restarts its grace period, and make sure its
         // file is still there (a release may have taken both since it was found)
         await this.recordArtifact(asset, id, dto.kind, target, normalized);
+        await this.queueArtifactSeal(asset.id);
         return { id, kind: existing.kind as AssetDevelopArtifactKind, width: existing.width, height: existing.height };
       }
       this.storageRepository.mkdirSync(path.dirname(target));
@@ -936,6 +1066,7 @@ export class AssetDevelopService {
         await this.queueFileDelete([target]);
         throw error;
       }
+      await this.queueArtifactSeal(asset.id);
       return { id, kind: dto.kind, width: normalized.width, height: normalized.height };
     } finally {
       await this.discard([file.path]);
@@ -960,10 +1091,16 @@ export class AssetDevelopService {
     const source = await this.assetJobRepository.getForGenerateThumbnailJob(assetId);
     if (!source || !mimeTypes.isRaw(source.originalFileName))
       throw new BadRequestException('Native semantic masks require a RAW original');
-    const developed = await renderDarktable(
+    // FL-721 (spec §8.2): a sealed original is developed from a plain copy, for a viewer allowed its key
+    const developed = await withPlainCopy(
       source.originalPath,
-      { version: 2, renderer: 'darktable/5.6.1', exposureEV: 0, sensorCanvas: true },
-      signal,
+      (originalPath) =>
+        renderDarktable(
+          originalPath,
+          { version: 2, renderer: 'darktable/5.6.1', exposureEV: 0, sensorCanvas: true },
+          signal,
+        ),
+      { viewerId: lockedViewerOf(auth) },
     );
     const canvas = await sharp(developed)
       .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
@@ -976,7 +1113,8 @@ export class AssetDevelopService {
     if (metadata.format !== 'png' || metadata.width !== reference.width || metadata.height !== reference.height)
       throw new BadRequestException('Local worker returned an invalid sensor mask');
     await sharp(png).stats();
-    const directory = await mkdtemp(path.join(tmpdir(), 'frameleaf-semantic-mask-'));
+    // FL-721 M6: a mask of an encrypted original stays in the RAM-backed Locked folder
+    const directory = await makeWorkDir('semantic-mask', await isLockedPath(source.originalPath));
     const file = path.join(directory, 'mask.png');
     try {
       await writeFile(file, png, { flag: 'wx' });
@@ -1006,22 +1144,35 @@ export class AssetDevelopService {
     await this.requireEditableStill(assetId);
     const source = await this.assetJobRepository.getForGenerateThumbnailJob(assetId);
     if (!source || source.type !== AssetType.Image) throw new BadRequestException('Only stills have develop masks');
-    const canvas = await sharp(await this.orientedOriginal(source, signal), {
-      failOn: 'error',
-      limitInputPixels: 200_000_000,
-    })
-      .rotate()
-      .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
-      .toColourspace('srgb')
-      .jpeg({ quality: 92 })
-      .toBuffer();
+    // FL-721 (spec §8.2): a sealed original is read from a plain copy, for a viewer allowed its key
+    const canvas = await withPlainCopy(
+      source.originalPath,
+      async (originalPath) =>
+        sharp(await this.orientedOriginal({ ...source, originalPath }, signal), {
+          failOn: 'error',
+          limitInputPixels: 200_000_000,
+        })
+          .rotate()
+          .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
+          .toColourspace('srgb')
+          .jpeg({ quality: 92 })
+          .toBuffer(),
+      { viewerId: lockedViewerOf(auth) },
+    );
     signal?.throwIfAborted();
     const png = await this.machineLearningRepository.semanticMaskLocal(canvas, target, signal);
     const metadata = await sharp(png, { failOn: 'warning', limitInputPixels: 2048 * 2048 }).metadata();
     const reference = await sharp(canvas).metadata();
     if (metadata.format !== 'png' || metadata.width !== reference.width || metadata.height !== reference.height)
       throw new BadRequestException('Local worker returned an invalid mask');
-    return this.admitGeneratedArtifact(auth, assetId, AssetDevelopArtifactKind.Mask, png, signal);
+    return this.admitGeneratedArtifact(
+      auth,
+      assetId,
+      AssetDevelopArtifactKind.Mask,
+      png,
+      await isLockedPath(source.originalPath),
+      signal,
+    );
   }
 
   /**
@@ -1041,6 +1192,41 @@ export class AssetDevelopService {
     await this.requireEditableStill(assetId);
     const source = await this.assetJobRepository.getForGenerateThumbnailJob(assetId);
     if (!source || source.type !== AssetType.Image) throw new BadRequestException('Only stills have Clean Up');
+    // FL-721 (spec §8.2): a sealed original is read from a plain copy, for a viewer allowed its key
+    const { image, mask, fill } = await withPlainCopy(
+      source.originalPath,
+      (originalPath) => this.fillInputs({ ...source, originalPath }, dto, signal),
+      { viewerId: lockedViewerOf(auth) },
+    );
+    signal?.throwIfAborted();
+    let filled: Buffer;
+    try {
+      filled = await this.machineLearningRepository.inpaintLocal(image, mask, signal);
+    } catch (error) {
+      if (error instanceof InpaintUnavailableError) {
+        throw new ServiceUnavailableException({
+          message: 'No inpainting model is available on this server; Remove needs a fill made on the device',
+          code: 'develop_inpaint_unavailable',
+        });
+      }
+      throw error;
+    }
+    const result = await sharp(filled, { failOn: 'warning', limitInputPixels: 4096 * 4096 }).metadata();
+    if (result.format !== 'png' || result.width !== fill.width || result.height !== fill.height)
+      throw new BadRequestException('Local worker returned an invalid fill');
+    const png = await sharp(filled).extract(fill.area).removeAlpha().ensureAlpha(1).png().toBuffer();
+    return this.admitGeneratedArtifact(
+      auth,
+      assetId,
+      AssetDevelopArtifactKind.Fill,
+      png,
+      await isLockedPath(source.originalPath),
+      signal,
+    );
+  }
+
+  /** Clean Up Remove's inputs: the area's window of the oriented original, and its mask. */
+  private async fillInputs(source: DevelopSource, dto: AssetDevelopFillGenerateDto, signal?: AbortSignal) {
     const input = await this.orientedOriginal(source, signal);
     const metadata = await sharp(input, { failOn: 'error', limitInputPixels: 200_000_000 }).metadata();
     const swapped = (metadata.orientation ?? 1) >= 5 && !Buffer.isBuffer(input);
@@ -1084,24 +1270,7 @@ export class AssetDevelopService {
       .toColourspace('b-w')
       .png()
       .toBuffer();
-    signal?.throwIfAborted();
-    let filled: Buffer;
-    try {
-      filled = await this.machineLearningRepository.inpaintLocal(image, mask, signal);
-    } catch (error) {
-      if (error instanceof InpaintUnavailableError) {
-        throw new ServiceUnavailableException({
-          message: 'No inpainting model is available on this server; Remove needs a fill made on the device',
-          code: 'develop_inpaint_unavailable',
-        });
-      }
-      throw error;
-    }
-    const result = await sharp(filled, { failOn: 'warning', limitInputPixels: 4096 * 4096 }).metadata();
-    if (result.format !== 'png' || result.width !== fill.width || result.height !== fill.height)
-      throw new BadRequestException('Local worker returned an invalid fill');
-    const png = await sharp(filled).extract(fill.area).removeAlpha().ensureAlpha(1).png().toBuffer();
-    return this.admitGeneratedArtifact(auth, assetId, AssetDevelopArtifactKind.Fill, png, signal);
+    return { image, mask, fill };
   }
 
   /** The original to compute on: the file itself, or a RAW developed by LibRaw (orientation applied). */
@@ -1110,15 +1279,22 @@ export class AssetDevelopService {
     return isRaw ? renderRawWithLibRaw(source.originalPath, signal) : source.originalPath;
   }
 
+  /** FL-721 (spec §7.2): a Locked item's new develop artifact (a mask or a fill) is sealed after it is written. */
+  private queueArtifactSeal(assetId: string) {
+    return queueLockedSealFor({ asset: this.assetRepository, job: this.jobRepository, logger: this.logger }, [assetId]);
+  }
+
   /** A bitmap the server generated goes through the same admission as an uploaded one. */
   private async admitGeneratedArtifact(
     auth: AuthDto,
     assetId: string,
     kind: AssetDevelopArtifactKind,
     png: Buffer,
+    sealed: boolean,
     signal?: AbortSignal,
   ) {
-    const directory = await mkdtemp(path.join(tmpdir(), 'frameleaf-develop-artifact-'));
+    // FL-721 M6: a mask or Clean Up fill of an encrypted original stays in the RAM-backed Locked folder
+    const directory = await makeWorkDir('develop-artifact', sealed);
     const file = path.join(directory, 'artifact.png');
     try {
       await writeFile(file, png, { flag: 'wx' });
@@ -1223,6 +1399,7 @@ export class AssetDevelopService {
     asset: { id: string; ownerId: string },
     ids: string[],
     kind: AssetDevelopArtifactKind,
+    viewerId: string | null | undefined,
     verify = false,
   ): Promise<Map<string, DevelopBitmap>> {
     const bitmaps = new Map<string, DevelopBitmap>();
@@ -1235,14 +1412,20 @@ export class AssetDevelopService {
       if (
         verify &&
         (artifact.ownerId !== asset.ownerId ||
-          (await this.cryptoRepository.hashFile(artifact.path, 'sha256')).toString('hex') !== artifact.id)
+          (await this.hashPlain(artifact.path, viewerId)).toString('hex') !== artifact.id)
       ) {
         throw new BadRequestException({
           message: 'The develop artifact changed or is not owned by this photo',
           code: 'develop_artifact_changed',
         });
       }
-      bitmaps.set(artifact.id, await this.mediaRepository.decodeDevelopArtifact(artifact.path, kind));
+      bitmaps.set(
+        artifact.id,
+        // FL-721: a sealed artifact is decoded from a plain copy
+        await withPlainCopy(artifact.path, (path) => this.mediaRepository.decodeDevelopArtifact(path, kind), {
+          viewerId,
+        }),
+      );
     }
     return bitmaps;
   }
@@ -1358,11 +1541,12 @@ export class AssetDevelopService {
   private async decodeSource(
     source: DevelopSource,
     image: SystemConfig['image'],
+    viewerId: string | null | undefined,
     size?: number,
     keyframe?: { timeMs: number },
   ) {
     if (keyframe) {
-      return this.decodeKeyframe(source, keyframe.timeMs, size);
+      return this.decodeKeyframe(source, keyframe.timeMs, viewerId, size);
     }
     const isRaw = mimeTypes.isRaw(source.originalFileName) && !source.originalFileName.toLowerCase().endsWith('.psd');
     if (!isRaw) {
@@ -1419,8 +1603,9 @@ export class AssetDevelopService {
         code: 'develop_key_frame_unavailable',
       });
     }
+    // the stored format carries asset.duration, which is in milliseconds
     const duration = motion.format.duration;
-    if (Number.isFinite(duration) && duration > 0 && timeMs >= duration * 1000) {
+    if (Number.isFinite(duration) && duration > 0 && timeMs >= duration) {
       throw new BadRequestException({
         message: 'The key frame is past the end of the motion clip',
         code: 'develop_key_frame_out_of_range',
@@ -1433,18 +1618,22 @@ export class AssetDevelopService {
   private async decodeKeyframe(
     source: DevelopSource,
     timeMs: number,
+    viewerId: string | null | undefined,
     size?: number,
     clip?: NonNullable<Awaited<ReturnType<AssetJobRepository['getForVideoConversion']>>>,
   ) {
     const motion = clip ?? (await this.requireMotionClip(source, timeMs));
     const { ffmpeg } = await this.getConfig();
-    const folder = await mkdtemp(path.join(tmpdir(), 'frameleaf-key-frame-'));
+    // FL-721 M6: a frame of an encrypted motion part stays in the RAM-backed Locked folder
+    const folder = await makeWorkDir('key-frame', await isLockedPath(motion.originalPath));
     try {
       const output = path.join(folder, 'frame.png');
-      await this.mediaRepository.transcode(
+      // FL-721 (spec §8.2): a sealed motion part is read from a plain copy
+      await withPlainCopy(
         motion.originalPath,
-        output,
-        getKeyframeCommand(ffmpeg, motion.videoStream, timeMs),
+        (input) =>
+          this.mediaRepository.transcode(input, output, getKeyframeCommand(ffmpeg, motion.videoStream, timeMs)),
+        { viewerId },
       );
       const { data, info } = await this.mediaRepository.decodeImage(output, {
         colorspace: Colorspace.Srgb,
@@ -1462,18 +1651,29 @@ export class AssetDevelopService {
     recipe: ReturnType<typeof renderDevelopProjection>,
     seed: number,
     asset: { id: string; ownerId: string },
+    viewerId: string | null | undefined,
   ) {
     // FL-233: Clean Up works on the original, before every other step
     const cleanup = (recipe.cleanup ?? []).filter((op) => op.enabled);
     if (cleanup.length > 0) {
-      const fills = await this.loadArtifacts(asset, developCleanupArtifacts(cleanup), AssetDevelopArtifactKind.Fill);
+      const fills = await this.loadArtifacts(
+        asset,
+        developCleanupArtifacts(cleanup),
+        AssetDevelopArtifactKind.Fill,
+        viewerId,
+      );
       applyDevelopCleanup(decoded.data, decoded.info as never, cleanup, fills);
     }
     const geometry = planDevelopGeometry(recipe, decoded.info.width, decoded.info.height);
     const shaped = await this.mediaRepository.renderDevelopGeometry(decoded.data, decoded.info, geometry);
     const { params, look } = effectiveDevelop(recipe);
     applyDevelopTone(shaped.data, shaped.info, params, look, seed + 1);
-    const bitmaps = await this.loadArtifacts(asset, developMaskArtifacts(recipe.masks), AssetDevelopArtifactKind.Mask);
+    const bitmaps = await this.loadArtifacts(
+      asset,
+      developMaskArtifacts(recipe.masks),
+      AssetDevelopArtifactKind.Mask,
+      viewerId,
+    );
     applyDevelopMasks(shaped.data, shaped.info, recipe.masks, maskMappingFor(geometry), bitmaps);
     const detail = planDevelopDetail(params, { width: shaped.info.width, height: shaped.info.height });
     return { data: shaped.data, info: shaped.info, detail };
@@ -1482,6 +1682,7 @@ export class AssetDevelopService {
   private async renderNativeRecipe(
     source: DevelopSource,
     recipe: DarktableDevelopRecipe,
+    viewerId: string | null | undefined,
     revisionId?: string,
     signal?: AbortSignal,
   ) {
@@ -1495,7 +1696,7 @@ export class AssetDevelopService {
       const artifacts = (recipe.masks ?? [])
         .filter((mask) => mask.enabled && mask.artifact)
         .map((mask) => mask.artifact!);
-      const bitmaps = await this.loadArtifacts(source, artifacts, AssetDevelopArtifactKind.Mask);
+      const bitmaps = await this.loadArtifacts(source, artifacts, AssetDevelopArtifactKind.Mask, viewerId);
       const buffer = await renderDarktable(source.originalPath, recipe, abort, bitmaps);
       const { width, height } = await this.mediaRepository.getImageMetadata(buffer);
       abort.throwIfAborted();
@@ -1559,6 +1760,7 @@ export class AssetDevelopService {
     source: DevelopSource,
     recipe: HdrAssetDevelopRecipe,
     outputs: Parameters<MediaRepository['generateHdrRenditions']>[1],
+    viewerId: string | null | undefined,
     revisionId?: string,
     seed = 1,
     signal?: AbortSignal,
@@ -1568,9 +1770,9 @@ export class AssetDevelopService {
     if (mimeTypes.isRaw(source.originalFileName))
       throw new BadRequestException('HDR quick edits require a reconstructed still; RAW uses native development');
     const needed = developRenderArtifacts(recipe);
-    const masks = await this.loadArtifacts(source, needed.mask, AssetDevelopArtifactKind.Mask, true);
-    const fills = await this.loadArtifacts(source, needed.fill, AssetDevelopArtifactKind.Fill, true);
-    const contentChecksum = checksum ?? (await this.currentSourceChecksum(source.id));
+    const masks = await this.loadArtifacts(source, needed.mask, AssetDevelopArtifactKind.Mask, viewerId, true);
+    const fills = await this.loadArtifacts(source, needed.fill, AssetDevelopArtifactKind.Fill, viewerId, true);
+    const contentChecksum = checksum ?? (await this.currentSourceChecksum(source.id, viewerId));
     const { version: _version, renderer: _renderer, hdr: _hdr, ...fields } = recipe;
     return this.withRenderCancellation(revisionId, signal, (abort) =>
       this.mediaRepository.generateHdrRenditions(
@@ -1587,10 +1789,12 @@ export class AssetDevelopService {
     source: DevelopSource,
     recipe: HdrAssetDevelopRecipe,
     dto: AssetDevelopPreviewDto,
+    viewerId: string | null | undefined,
     signal?: AbortSignal,
   ) {
     await this.requireHdrRenderer(recipe);
-    const folder = await mkdtemp(path.join(tmpdir(), 'frameleaf-hdr-preview-'));
+    // FL-721 M6: a preview of an encrypted original stays in the RAM-backed Locked folder
+    const folder = await makeWorkDir('hdr-preview', await isLockedPath(source.originalPath));
     const output = path.join(folder, 'preview.jpg');
     try {
       const result = await this.hdrRender(
@@ -1604,6 +1808,7 @@ export class AssetDevelopService {
             dynamicRange: dto.dynamicRange === 'sdr' || !dto.dynamicRange ? 'sdr' : 'hdr',
           },
         ],
+        viewerId,
         undefined,
         1,
         signal,
@@ -1640,6 +1845,7 @@ export class AssetDevelopService {
         { path: tmp.master, dynamicRange: 'sdr' },
         { path: tmp.preview, size: image.preview.size, dynamicRange: 'sdr' },
       ],
+      null,
       revision.id,
       revision.revision + 1,
       undefined,
@@ -1678,11 +1884,18 @@ export class AssetDevelopService {
     );
   }
 
+  /** FL-721: SHA-256 of a file's plaintext, also when it is sealed (a sealed file's own bytes change with every seal). */
+  private async hashPlain(path: string, viewerId: string | null | undefined): Promise<Buffer> {
+    return (await isLockedPath(path))
+      ? hashPlainFile(path, 'sha256', viewerId)
+      : this.cryptoRepository.hashFile(path, 'sha256');
+  }
+
   /**
    * SHA-256 of the asset's original bytes now. New uploads already store it; older rows (SHA-1,
    * or the path-based checksum of external libraries) are hashed from the file.
    */
-  private async currentSourceChecksum(assetId: string): Promise<Buffer> {
+  private async currentSourceChecksum(assetId: string, viewerId: string | null | undefined): Promise<Buffer> {
     const asset = await this.assetRepository.getById(assetId);
     if (!asset) {
       throw new NotFoundException('Asset not found');
@@ -1690,7 +1903,8 @@ export class AssetDevelopService {
     if (asset.checksumAlgorithm === ChecksumAlgorithm.sha256File) {
       return asset.checksum;
     }
-    return this.cryptoRepository.hashFile(asset.originalPath, 'sha256');
+    // FL-721: the hash of the plaintext, also when the original is sealed
+    return this.hashPlain(asset.originalPath, viewerId);
   }
 
   private async renderRecipeRevision(
@@ -1707,17 +1921,18 @@ export class AssetDevelopService {
     // eslint-disable-next-line unicorn/prefer-includes-over-repeated-comparisons
     if (recipe.version === 3 || recipe.version === 4 || recipe.version === 5 || recipe.version === 6)
       return this.renderHdrRecipeRevision(revision, source, sourceChecksum, outputs, tmp, image);
-    const native = recipe.version === 2 ? await this.renderNativeRecipe(source, recipe, revision.id) : undefined;
+    const native = recipe.version === 2 ? await this.renderNativeRecipe(source, recipe, null, revision.id) : undefined;
     const keyframe = recipe.version === 1 ? recipe.keyFrame : undefined;
     const decoded =
       native ??
       (keyframe
-        ? await this.decodeKeyframe(source, keyframe.timeMs, undefined, motion)
-        : await this.decodeSource(source, image));
+        ? await this.decodeKeyframe(source, keyframe.timeMs, null, undefined, motion)
+        : await this.decodeSource(source, image, null));
     await this.progress(revision.id, 25);
 
     const rendered =
-      native ?? (await this.renderRecipe(decoded, renderDevelopProjection(revision.recipe), revision.revision, source));
+      native ??
+      (await this.renderRecipe(decoded, renderDevelopProjection(revision.recipe), revision.revision, source, null));
     await this.progress(revision.id, 60);
 
     this.storageRepository.mkdirSync(path.dirname(outputs.master));

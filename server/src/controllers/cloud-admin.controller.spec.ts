@@ -47,11 +47,46 @@ describe(CloudAdminController.name, () => {
       ['delete', '/admin/cloud/remote/hostname'],
       ['get', '/admin/cloud/tour'],
       ['put', '/admin/cloud/tour'],
+      ['get', '/admin/cloud/link/account/consents'],
+      ['post', '/admin/cloud/link/account'],
+      ['post', '/admin/cloud/link/account/verify'],
     ] as const) {
       await request(ctx.getHttpServer())[method](path);
       expect(ctx.authenticate).toHaveBeenCalled();
       ctx.authenticate.mockClear();
     }
+  });
+
+  describe('POST /admin/cloud/link/account (FL-708)', () => {
+    const create = {
+      mode: 'create',
+      email: 'ada@example.test',
+      password: 'a-password',
+      name: 'Ada',
+      consent: { tos: '2026-10-01.1', privacy: '2026-10-01.1' },
+    };
+
+    it('needs a name and the statements shown to create an account', async () => {
+      for (const body of [
+        { ...create, name: undefined },
+        { ...create, consent: undefined },
+        { ...create, mode: 'other' },
+      ]) {
+        const { status } = await request(ctx.getHttpServer()).post('/admin/cloud/link/account').send(body);
+        expect(status).toBe(400);
+      }
+      expect(service.linkWithAccount).not.toHaveBeenCalled();
+    });
+
+    it('takes a create or a sign-in', async () => {
+      service.linkWithAccount.mockResolvedValue({ outcome: 'code-needed' } as never);
+      const created = await request(ctx.getHttpServer()).post('/admin/cloud/link/account').send(create);
+      expect(created.status).toBe(200);
+      const signIn = { mode: 'sign-in', email: 'ada@example.test', password: 'x', dataRegion: 'eu' };
+      const signedIn = await request(ctx.getHttpServer()).post('/admin/cloud/link/account').send(signIn);
+      expect(signedIn.status).toBe(200);
+      expect(service.linkWithAccount).toHaveBeenLastCalledWith(undefined, signIn);
+    });
   });
 
   it('reads the status', async () => {

@@ -2,6 +2,8 @@ import { Dirent } from 'node:fs';
 import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative } from 'node:path';
+import { Readable } from 'node:stream';
+import { buffer } from 'node:stream/consumers';
 import { CrawlOptionsDto } from 'src/dtos/library.dto.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
@@ -206,6 +208,144 @@ describe(StorageRepository.name, () => {
   });
 
   describe('createZipStream', () => {
+    it.each(['active', 'queued'] as const)(
+      'forwards a failed %s input and closes every owned reader',
+      async (failed) => {
+        const zip = sut.createZipStream();
+        const started = vi.fn();
+        const active = new Readable({
+          read() {
+            started();
+          },
+        });
+        const pending = new Readable({ read() {} });
+        const errors = vi.fn();
+        const failure = new Error('synthetic original read failure');
+        const broken = failed === 'active' ? active : pending;
+        // Observe the low-level failure so the regression can assert archive propagation without an unhandled event.
+        broken.on('error', () => {});
+        zip.stream.on('error', errors);
+        try {
+          zip.addFile(active, 'active.raw');
+          zip.addFile(pending, 'pending.raw');
+          await vi.waitFor(() => expect(started).toHaveBeenCalled());
+          broken.destroy(failure);
+          await vi.waitFor(() => {
+            expect(errors).toHaveBeenCalledWith(failure);
+            expect(active.closed).toBe(true);
+            expect(pending.closed).toBe(true);
+          });
+        } finally {
+          zip.stream.destroy();
+          active.destroy();
+          pending.destroy();
+        }
+      },
+    );
+
+    it('forwards an owned plain-file read failure after successful stat', async () => {
+      const path = fixturePath('/zip/not-a-file');
+      await fs.mkdir(path, { recursive: true });
+      const original = sut.createPlainReadStream.bind(sut);
+      const open = vi.spyOn(sut, 'createPlainReadStream').mockImplementation((...args) => {
+        const source = original(...args);
+        source.on('error', () => {});
+        return source;
+      });
+      const zip = sut.createZipStream();
+      const pending = new Readable({ read() {} });
+      const errors = vi.fn();
+      zip.stream.on('error', errors);
+      zip.stream.resume();
+      try {
+        zip.addFile(path, 'original.raw');
+        zip.addFile(pending, 'pending.raw');
+        await vi.waitFor(() => {
+          expect(errors).toHaveBeenCalledWith(expect.objectContaining({ code: 'EISDIR' }));
+          expect(pending.closed).toBe(true);
+        });
+      } finally {
+        zip.stream.destroy();
+        pending.destroy();
+        for (const result of open.mock.results) if (result.type === 'return') result.value.destroy();
+        open.mockRestore();
+      }
+    });
+
+    it('fails a missing file through the archive and closes inputs that have not started', async () => {
+      const zip = sut.createZipStream();
+      const started = vi.fn();
+      const pending = Readable.from(
+        (function* () {
+          started();
+          yield Buffer.from('pending');
+        })(),
+      );
+      const bytes = buffer(zip.stream);
+      try {
+        zip.addFile(fixturePath('/missing.raw'), 'missing.raw');
+        zip.addFile(pending, 'pending.raw');
+        const finalized = zip.finalize();
+        await expect(bytes).rejects.toMatchObject({ code: 'ENOENT' });
+        await finalized;
+        await vi.waitFor(() => expect(pending.closed).toBe(true));
+        expect(started).not.toHaveBeenCalled();
+      } finally {
+        zip.stream.destroy();
+        pending.destroy();
+      }
+    });
+
+    it('closes its owned file reader when a plain-file archive is cancelled', async () => {
+      await writeFiles({ '/zip/large.raw': 'x'.repeat(8 * 1024 * 1024) });
+      const open = vi.spyOn(sut, 'createPlainReadStream');
+      const zip = sut.createZipStream();
+      try {
+        zip.addFile(fixturePath('/zip/large.raw'), 'large.raw');
+        await vi.waitFor(() => expect(open.mock.results[0]?.value.readableDidRead).toBe(true));
+        zip.stream.destroy();
+        await vi.waitFor(() => expect(open.mock.results[0]?.value.closed).toBe(true));
+      } finally {
+        zip.stream.destroy();
+        for (const result of open.mock.results) if (result.type === 'return') result.value.destroy();
+        open.mockRestore();
+      }
+    });
+
+    it('closes active and queued inputs on cancellation and never starts later inputs', async () => {
+      const zip = sut.createZipStream();
+      const started: string[] = [];
+      const lazy = (name: string) =>
+        Readable.from(
+          (function* () {
+            started.push(name);
+            for (let index = 0; index < 64; index++) yield Buffer.alloc(65_536, name);
+          })(),
+        );
+      const active = lazy('active');
+      const pending = lazy('pending');
+      const late = lazy('late');
+      try {
+        zip.addFile(active, 'active.raw');
+        zip.addFile(pending, 'pending.raw');
+        await vi.waitFor(() => expect(started).toEqual(['active']));
+        zip.stream.destroy();
+        await vi.waitFor(() => {
+          expect(active.closed).toBe(true);
+          expect(pending.closed).toBe(true);
+        });
+        zip.addFile(late, 'late.raw');
+        await vi.waitFor(() => expect(late.closed).toBe(true));
+        await expect(zip.finalize()).resolves.toBeUndefined();
+        expect(started).toEqual(['active']);
+      } finally {
+        zip.stream.destroy();
+        active.destroy();
+        pending.destroy();
+        late.destroy();
+      }
+    });
+
     it('stores a file from disk and bytes made for the archive, such as a details file (FL-423)', async () => {
       await writeFiles({ '/zip/IMG_1.JPG': 'original pixels' });
       const zip = sut.createZipStream();
@@ -225,6 +365,64 @@ describe(StorageRepository.name, () => {
       expect(archive).toContain('IMG_1.JPG.xmp');
       expect(archive).toContain('original pixels');
       expect(archive).toContain('<x:xmpmeta>details</x:xmpmeta>');
+    });
+
+    it('starts a streamed entry only once the streamed entry before it is done (FL-721)', async () => {
+      const zip = sut.createZipStream();
+      const started: string[] = [];
+      let firstStarted!: () => void;
+      const first = new Promise<void>((resolve) => (firstStarted = resolve));
+      const lazy = (name: string) =>
+        Readable.from(
+          (function* () {
+            started.push(name);
+            firstStarted();
+            // more than the stream buffers hold, like a real file, so it stays open until read
+            for (let index = 0; index < 64; index++) {
+              yield Buffer.alloc(65_536, name);
+            }
+            yield Buffer.from(`${name} bytes`);
+          })(),
+        );
+      const chunks: Buffer[] = [];
+      zip.stream.pause();
+      const ended = new Promise((resolve, reject) => zip.stream.on('end', resolve).on('error', reject));
+
+      zip.addFile(lazy('a'), 'a.jpg');
+      zip.addFile(lazy('b'), 'b.jpg');
+      const finalized = zip.finalize();
+      await first;
+      // give a wrongly started second stream time to show up
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      // nothing reads the archive yet, so the second stream must not have been opened
+      expect(started).toEqual(['a']);
+
+      zip.stream
+        .on('data', (chunk: Buffer) => {
+          chunks.push(chunk);
+        })
+        .resume();
+      await finalized;
+      await ended;
+      expect(started).toEqual(['a', 'b']);
+      expect(Buffer.concat(chunks).toString('latin1')).toContain('b bytes');
+    });
+  });
+
+  describe('removeDirIfEmpty', () => {
+    it('removes only an empty folder, never one with files, a link or a missing path (OPS-08)', async () => {
+      await writeFiles({ '/upload/ab/full/keep.jpg': 'original', '/outside/keep.jpg': 'outside' });
+      await fs.mkdir(fixturePath('/upload/ab/empty'), { recursive: true });
+      await fs.symlink(fixturePath('/outside'), fixturePath('/upload/ab/link'), 'dir');
+
+      await expect(sut.removeDirIfEmpty(fixturePath('/upload/ab/empty'))).resolves.toBe(true);
+      await expect(sut.removeDirIfEmpty(fixturePath('/upload/ab/full'))).resolves.toBe(false);
+      await expect(sut.removeDirIfEmpty(fixturePath('/upload/ab/link'))).resolves.toBe(false);
+      await expect(sut.removeDirIfEmpty(fixturePath('/upload/ab/gone'))).resolves.toBe(false);
+
+      await expect(fs.stat(fixturePath('/upload/ab/empty'))).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(fs.readFile(fixturePath('/upload/ab/full/keep.jpg'), 'utf8')).resolves.toBe('original');
+      expect((await fs.lstat(fixturePath('/upload/ab/link'))).isSymbolicLink()).toBe(true);
     });
   });
 

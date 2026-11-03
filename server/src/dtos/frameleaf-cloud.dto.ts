@@ -1,6 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
-import { HEARTBEAT_FIELDS } from 'src/utils/frameleaf-cloud-link.js';
+import { DATA_REGIONS, HEARTBEAT_FIELDS, PASSWORD_LINK_REFUSALS } from 'src/utils/frameleaf-cloud-link.js';
 
 /**
  * Linking this server to a Frameleaf account (FL-154 status, FL-155 link lifecycle). Customer copy
@@ -135,6 +135,25 @@ const CloudSignInUpdateSchema = z
 
 export class CloudSignInUpdateDto extends createZodDto(CloudSignInUpdateSchema) {}
 
+const CloudSignInPersonSchema = z
+  .object({
+    id: z.uuidv4().describe('Account ID'),
+    name: z.string().describe('Account name'),
+    email: z.string().describe('Sign-in email here'),
+    linked: z.boolean().describe('Linked to a Frameleaf account, so they can sign in away from home'),
+    frameleafEmail: z.string().nullable().describe('The Frameleaf account email it is linked with'),
+  })
+  .meta({ id: 'CloudSignInPersonDto' });
+
+const CloudSignInPeopleResponseSchema = z
+  .object({
+    people: z.array(CloudSignInPersonSchema).describe('Every account here, those not linked first'),
+    canRemind: z.boolean().describe('Email is set up and the server has a public address, so reminders can be sent'),
+  })
+  .meta({ id: 'CloudSignInPeopleResponseDto' });
+
+export class CloudSignInPeopleResponseDto extends createZodDto(CloudSignInPeopleResponseSchema) {}
+
 const CloudRemoteAccessUpdateSchema = z
   .object({
     allowOriginalsOverRelay: z
@@ -190,3 +209,119 @@ const CloudTourResponseSchema = z
   .meta({ id: 'CloudTourResponseDto' });
 
 export class CloudTourResponseDto extends createZodDto(CloudTourResponseSchema) {}
+
+// ------------------------------------------------------------------ FL-708: link with an account during setup
+
+const accountLinkCommon = {
+  email: z.email().max(320).describe('The Frameleaf account’s email'),
+  password: z
+    .string()
+    .min(1)
+    .max(1024)
+    .describe('The Frameleaf account’s password; sent to Frameleaf Cloud, never kept'),
+  dataRegion: z
+    .enum(DATA_REGIONS)
+    .optional()
+    .describe(
+      'Where this server’s cloud data lives; sent only when the administrator chose the account’s region after region-mismatch',
+    ),
+};
+
+/** create needs the person's name and the statement versions shown; sign-in needs neither (FC-222). */
+export const CloudAccountLinkSchema = z
+  .discriminatedUnion('mode', [
+    z
+      .object({
+        mode: z.literal('create').describe('A new Frameleaf account').meta({ id: 'CloudAccountLinkCreateMode' }),
+        ...accountLinkCommon,
+        name: z.string().trim().min(1).max(200).describe('The person’s name'),
+        consent: z
+          .object({
+            tos: z.string().min(1).max(64).describe('The Terms of Use version shown'),
+            privacy: z.string().min(1).max(64).describe('The privacy statement version shown'),
+          })
+          .describe('The statement versions shown (from the consents endpoint)'),
+      })
+      .meta({ id: 'CloudAccountLinkCreateDto' }),
+    z
+      .object({
+        mode: z
+          .literal('sign-in')
+          .describe('An account the administrator already has')
+          .meta({ id: 'CloudAccountLinkSignInMode' }),
+        ...accountLinkCommon,
+      })
+      .meta({ id: 'CloudAccountLinkSignInDto' }),
+  ])
+  .meta({ id: 'CloudAccountLinkDto' });
+
+export type CloudAccountLinkRequest = z.infer<typeof CloudAccountLinkSchema>;
+/**
+ * A class for Nest's body metadata (validation and OpenAPI read its static `schema`, a `oneOf` by
+ * `mode`). A class cannot extend a union type, so the instance type is `CloudAccountLinkRequest`.
+ */
+export class CloudAccountLinkDto extends (createZodDto(CloudAccountLinkSchema) as unknown as new () => object) {}
+
+const CloudAccountLinkVerifySchema = z
+  .object({
+    challengeId: z.string().min(1).max(200).describe('The challenge the link answered with'),
+    code: z
+      .string()
+      .trim()
+      .min(1)
+      .max(64)
+      .describe('The emailed code, the authenticator app’s code or a recovery code'),
+  })
+  .meta({ id: 'CloudAccountLinkVerifyDto' });
+
+export class CloudAccountLinkVerifyDto extends createZodDto(CloudAccountLinkVerifySchema) {}
+
+export const CloudAccountLinkRefusalSchema = z
+  .enum(PASSWORD_LINK_REFUSALS)
+  .describe('Why Frameleaf Cloud did not link with the account')
+  .meta({ id: 'CloudAccountLinkRefusal' });
+
+const CloudAccountConsentSchema = z
+  .object({
+    version: z.string(),
+    text: z.string().describe('The statement to show; Frameleaf Cloud records that it was shown'),
+  })
+  .meta({ id: 'CloudAccountConsentDto' });
+
+const CloudAccountConsentsResponseSchema = z
+  .object({ tos: CloudAccountConsentSchema, privacy: CloudAccountConsentSchema })
+  .meta({ id: 'CloudAccountConsentsResponseDto' });
+
+export class CloudAccountConsentsResponseDto extends createZodDto(CloudAccountConsentsResponseSchema) {}
+
+const CloudAccountLinkResponseSchema = z
+  .object({
+    outcome: z
+      .enum(['linked', 'code-needed', 'refused'])
+      .describe('linked: this server is linked; code-needed: enter the code in `challenge`; refused: see `refusal`')
+      .meta({ id: 'CloudAccountLinkOutcome' }),
+    challenge: z
+      .object({
+        challengeId: z.string(),
+        kind: z
+          .enum(['email-code', 'second-factor'])
+          .describe(
+            'email-code: the code emailed to the address; second-factor: the authenticator app or a recovery code',
+          )
+          .meta({ id: 'CloudAccountLinkChallengeKind' }),
+        expiresAt: z.string(),
+      })
+      .nullable(),
+    refusal: CloudAccountLinkRefusalSchema.nullable(),
+    message: z.string().nullable().describe('Frameleaf Cloud’s own words for a refusal, when it sent any'),
+    attemptsLeft: z.int().nullable().describe('Codes left to try after a wrong one'),
+    retryAfterSeconds: z.int().nullable().describe('When to try again after too many attempts'),
+    accountRegion: z
+      .string()
+      .nullable()
+      .describe('For region-mismatch: the region the account keeps its data in, to offer linking there'),
+    status: CloudStatusResponseSchema,
+  })
+  .meta({ id: 'CloudAccountLinkResponseDto' });
+
+export class CloudAccountLinkResponseDto extends createZodDto(CloudAccountLinkResponseSchema) {}

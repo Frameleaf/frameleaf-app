@@ -55,7 +55,8 @@ test('model download transport refuses uploads before forwarding and preserves b
   let bodyReads = 0;
   const changingInit = {
     get method() { methodReads++; return bodyReads === 0 ? 'GET' : 'POST'; },
-    get body() { return ++bodyReads === 1 ? null : 'synthetic audio'; },
+    // Each accessor turns unsafe once the other was read, so either WebIDL read order (Node 22 vs 26) refuses.
+    get body() { bodyReads++; return methodReads === 0 ? null : 'synthetic audio'; },
   };
   const shadowed = new Request(pinned, { method: 'POST', body: 'synthetic audio' });
   Object.defineProperties(shadowed, { method: { value: 'GET' }, body: { value: null } });

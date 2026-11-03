@@ -10,16 +10,23 @@ import type {
   AssetWaveformResponseDto,
 } from 'src/dtos/studio-media.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
+import type { JobOf, VideoStreamInfo } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { OnEvent } from 'src/decorators.js';
-import { CacheControl, Permission, StorageFolder } from 'src/enum.js';
+import { OnEvent, OnJob } from 'src/decorators.js';
+import { AssetVisibility, CacheControl, JobName, JobStatus, Permission, QueueName, StorageFolder } from 'src/enum.js';
+import { publishJobResult } from 'src/queue/context.js';
+import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { BaseService } from 'src/services/base.service.js';
-import { FileDownloadResponse } from 'src/utils/file.js';
+import { FileDownloadResponse, lockedViewerOf } from 'src/utils/file.js';
+import { isLockedPath, readPlainFile, withPlainCopy } from 'src/utils/locked-read.js';
+import { isDuplicateDetectionEnabled } from 'src/utils/misc.js';
 import {
   FILMSTRIP_COUNT,
   FILMSTRIP_HEIGHT,
   FILMSTRIP_QUALITY,
+  FILMSTRIP_SINGLE_PASS_MAX_MS,
   FilmstripFormat,
+  PLAYER_FILMSTRIP,
   PeakAccumulator,
   WAVEFORM_BUCKETS,
   WaveformChannelMode,
@@ -27,12 +34,14 @@ import {
   decodeWaveformPeaks,
   encodeWaveformPeaks,
   getFilmstripFrameCommand,
+  getFilmstripPassCommand,
   getWaveformCommand,
   planFilmstrip,
   resampleWaveformPeaks,
   studioMediaFingerprint,
   waveformChannelCount,
 } from 'src/utils/studio-media.js';
+import { frameHash } from 'src/utils/video-fingerprint.js';
 
 /** Filmstrip variants (count x height x format) kept per video; older ones are removed. */
 const MAX_FILMSTRIP_VARIANTS = 8;
@@ -46,6 +55,8 @@ type StudioMediaSource = {
   path: string;
   version: string;
   folder: string;
+  /** FL-721: who the cache is made for (null: a job). A sealed video is read for them only. */
+  viewerId: string | null | undefined;
 };
 
 /**
@@ -96,8 +107,7 @@ export class StudioMediaService extends BaseService {
     const source = await this.resolveSource(auth, id);
     const mode: WaveformChannelMode = dto.channels ?? 'mono';
     const cachePath = join(source.folder, `waveform-${source.version}-${mode}.bin`);
-    const cached = await this.storageRepository
-      .readFile(cachePath)
+    const cached = await this.readCache(cachePath, source.viewerId)
       .then((buffer) => decodeWaveformPeaks(buffer))
       .catch(() => null);
     const peaks = cached ?? (await this.once(cachePath, () => this.generateWaveform(source, mode, cachePath)));
@@ -116,6 +126,104 @@ export class StudioMediaService extends BaseService {
     return { assetId: id, version: source.version, hasAudio: true, ...resampled };
   }
 
+  /** FL-650: the player's seek-bar previews, made after upload or encoding so the first hover is instant. */
+  @OnJob({ name: JobName.AssetWarmFilmstrip, queue: QueueName.VideoConversion })
+  async handleWarmFilmstrip({ id }: JobOf<JobName.AssetWarmFilmstrip>): Promise<JobStatus> {
+    try {
+      await this.ensureFilmstrip(await this.getSource(id), PLAYER_FILMSTRIP);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        return JobStatus.Skipped; // not a video, file missing or nothing decodable
+      }
+      throw error;
+    }
+    return JobStatus.Success;
+  }
+
+  /**
+   * FL-651: the timeline hashes video look-alikes are confirmed with, one per frame of the seek-bar
+   * filmstrip (made here if the warm-up has not run yet). Duplicate detection runs again after it.
+   */
+  @OnJob({ name: JobName.AssetVideoFingerprint, queue: QueueName.VideoDuplicateDetection })
+  async handleVideoFingerprint({ id }: JobOf<JobName.AssetVideoFingerprint>): Promise<JobStatus> {
+    const { machineLearning } = await this.getConfig({ withCache: true });
+    if (!isDuplicateDetectionEnabled(machineLearning)) {
+      deferJobUntilDependency('workload-disabled');
+      return JobStatus.Skipped;
+    }
+    const video = await this.assetJobRepository.getForVideoDuplicateFrameJob(id);
+    if (!video || video.visibility === AssetVisibility.Hidden || video.visibility === AssetVisibility.Locked) {
+      return JobStatus.Skipped;
+    }
+
+    let filmstrip: Awaited<ReturnType<StudioMediaService['ensureFilmstrip']>>;
+    try {
+      const source = await this.getSource(id);
+      if (await isLockedPath(source.path)) {
+        // FL-721 (spec §8.3): duplicate fingerprinting never decodes a sealed Locked video
+        return JobStatus.Skipped;
+      }
+      filmstrip = await this.ensureFilmstrip(source, PLAYER_FILMSTRIP);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        return JobStatus.Skipped; // file missing or nothing decodable
+      }
+      throw error;
+    }
+    const { index, spritePath } = filmstrip;
+    // FL-721: a sealed sprite is read from a plain copy
+    const grids = await withPlainCopy(spritePath, (path) =>
+      this.mediaRepository.filmstripFrameGrids(
+        path,
+        index.frames.map(({ x, y }) => ({ left: x, top: y, width: index.frameWidth, height: index.frameHeight })),
+      ),
+    );
+    await publishJobResult(() =>
+      this.duplicateRepository.upsertVideoFingerprint({
+        assetId: id,
+        durationMs: index.durationMs,
+        hashes: grids.map((grid) => frameHash(grid)),
+      }),
+    );
+
+    // the CLIP frames the retired video duplicate check kept
+    const legacy = StorageCore.getLegacyVideoDuplicateFramePaths(video.ownerId, id);
+    const exists = await Promise.all(legacy.map((path) => this.storageRepository.checkFileExists(path)));
+    const files = legacy.filter((_, index) => exists[index]);
+    if (files.length > 0) {
+      await this.jobRepository.queue({ name: JobName.FileDelete, data: { files } });
+    }
+    return JobStatus.Success;
+  }
+
+  /** FL-650: every frame of a short video's filmstrip from one ffmpeg run; empty if it could not run. */
+  private async cutFilmstripInOnePass(
+    source: StudioMediaSource,
+    video: VideoStreamInfo,
+    durationMs: number,
+    count: number,
+    height: number,
+    work: string,
+  ): Promise<Array<string | null>> {
+    const { ffmpeg } = await this.getConfig({ withCache: true });
+    try {
+      await this.mediaRepository.transcode(
+        source.path,
+        join(work, 'pass-%d.jpg'),
+        getFilmstripPassCommand(ffmpeg, video, durationMs, count, height),
+      );
+    } catch (error) {
+      this.logger.warn(`Could not cut the filmstrip of ${source.assetId} in one pass, seeking per frame: ${error}`);
+      return [];
+    }
+    const cut: Array<string | null> = [];
+    for (let frame = 1; frame <= count; frame++) {
+      const output = join(work, `pass-${frame}.jpg`);
+      cut.push((await this.storageRepository.checkFileExists(output)) ? output : null);
+    }
+    return cut.some(Boolean) ? cut : [];
+  }
+
   /** The cache goes with the asset; nothing else refers to it. */
   @OnEvent({ name: 'AssetDelete' })
   async onAssetDelete({ assetId, userId }: ArgOf<'AssetDelete'>) {
@@ -126,6 +234,10 @@ export class StudioMediaService extends BaseService {
 
   private async resolveSource(auth: AuthDto, id: string): Promise<StudioMediaSource> {
     await this.requireAccess({ auth, permission: Permission.AssetView, ids: [id] });
+    return { ...(await this.getSource(id)), viewerId: lockedViewerOf(auth) };
+  }
+
+  private async getSource(id: string): Promise<StudioMediaSource> {
     const asset = await this.assetRepository.getForVideo(id);
     if (!asset) {
       throw new NotFoundException('Asset not found or asset is not a video');
@@ -142,6 +254,7 @@ export class StudioMediaService extends BaseService {
       path,
       version: studioMediaFingerprint({ path, size: stats.size, mtimeMs: stats.mtimeMs }),
       folder: getStudioMediaFolder(asset.ownerId, id),
+      viewerId: null,
     };
   }
 
@@ -158,7 +271,7 @@ export class StudioMediaService extends BaseService {
     const spritePath = `${base}.${format === 'webp' ? 'webp' : 'jpg'}`;
     const indexPath = `${base}.${format}.json`;
 
-    const cached = await this.readFilmstripIndex(indexPath, spritePath);
+    const cached = await this.readFilmstripIndex(indexPath, spritePath, source.viewerId);
     if (cached) {
       return { index: cached, spritePath };
     }
@@ -168,10 +281,16 @@ export class StudioMediaService extends BaseService {
     return { index, spritePath };
   }
 
-  private async readFilmstripIndex(indexPath: string, spritePath: string) {
+  /** FL-721: a cache file, decrypted for the viewer it is made for once the item's files are sealed. */
+  private async readCache(path: string, viewerId: string | null | undefined): Promise<Buffer> {
+    return (await isLockedPath(path)) ? readPlainFile(path, { viewerId }) : this.storageRepository.readFile(path);
+  }
+
+  private async readFilmstripIndex(indexPath: string, spritePath: string, viewerId: string | null | undefined) {
     try {
       const [buffer, hasSprite] = await Promise.all([
-        this.storageRepository.readFile(indexPath),
+        // FL-721: a sealed cache file is read for the viewer it is made for
+        this.readCache(indexPath, viewerId),
         this.storageRepository.checkFileExists(spritePath),
       ]);
       return hasSprite ? (JSON.parse(buffer.toString('utf8')) as AssetFilmstripResponseDto) : null;
@@ -180,7 +299,21 @@ export class StudioMediaService extends BaseService {
     }
   }
 
-  private generateFilmstrip(
+  private async generateFilmstrip(
+    sealedSource: StudioMediaSource,
+    options: { count: number; height: number; format: FilmstripFormat; spritePath: string; indexPath: string },
+  ): Promise<AssetFilmstripResponseDto> {
+    // FL-721 (spec §8.2): a sealed video is cut from a plain copy; the new files are sealed after
+    const index = await withPlainCopy(
+      sealedSource.path,
+      (path) => this.generateFilmstripFrom({ ...sealedSource, path }, options),
+      { viewerId: sealedSource.viewerId },
+    );
+    await this.queueLockedSeal([sealedSource.assetId]);
+    return index;
+  }
+
+  private generateFilmstripFrom(
     source: StudioMediaSource,
     options: { count: number; height: number; format: FilmstripFormat; spritePath: string; indexPath: string },
   ): Promise<AssetFilmstripResponseDto> {
@@ -206,19 +339,25 @@ export class StudioMediaService extends BaseService {
       const work = join(source.folder, `.work-${randomUUID()}`);
       this.storageRepository.mkdirSync(work);
       try {
-        const cut: Array<string | null> = [];
-        for (const [frameIndex, timeMs] of plan.timesMs.entries()) {
-          const output = join(work, `${frameIndex}.jpg`);
-          try {
-            await this.mediaRepository.transcode(
-              source.path,
-              output,
-              getFilmstripFrameCommand(ffmpeg, video, timeMs, height),
-            );
-            cut.push((await this.storageRepository.checkFileExists(output)) ? output : null);
-          } catch (error) {
-            this.logger.warn(`Could not cut filmstrip frame of ${source.assetId} at ${timeMs} ms: ${error}`);
-            cut.push(null);
+        const cut: Array<string | null> =
+          durationMs <= FILMSTRIP_SINGLE_PASS_MAX_MS
+            ? await this.cutFilmstripInOnePass(source, video, durationMs, count, height, work)
+            : [];
+        // long videos, or a short one the single pass could not decode: one seek per frame
+        if (cut.length === 0) {
+          for (const [frameIndex, timeMs] of plan.timesMs.entries()) {
+            const output = join(work, `${frameIndex}.jpg`);
+            try {
+              await this.mediaRepository.transcode(
+                source.path,
+                output,
+                getFilmstripFrameCommand(ffmpeg, video, timeMs, height),
+              );
+              cut.push((await this.storageRepository.checkFileExists(output)) ? output : null);
+            } catch (error) {
+              this.logger.warn(`Could not cut filmstrip frame of ${source.assetId} at ${timeMs} ms: ${error}`);
+              cut.push(null);
+            }
           }
         }
         const frames = fillMissingFrames(cut);
@@ -266,7 +405,22 @@ export class StudioMediaService extends BaseService {
     });
   }
 
-  private generateWaveform(
+  private async generateWaveform(
+    sealedSource: StudioMediaSource,
+    mode: WaveformChannelMode,
+    cachePath: string,
+  ): Promise<WaveformPeaks> {
+    // FL-721 (spec §8.2): a sealed video is read from a plain copy; the new file is sealed after
+    const peaks = await withPlainCopy(
+      sealedSource.path,
+      (path) => this.generateWaveformFrom({ ...sealedSource, path }, mode, cachePath),
+      { viewerId: sealedSource.viewerId },
+    );
+    await this.queueLockedSeal([sealedSource.assetId]);
+    return peaks;
+  }
+
+  private generateWaveformFrom(
     source: StudioMediaSource,
     mode: WaveformChannelMode,
     cachePath: string,

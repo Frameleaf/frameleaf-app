@@ -4,6 +4,7 @@ import { PostgresJSDialect } from 'kysely-postgres-js';
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { setTimeout as sleep } from 'node:timers/promises';
+import type { DB } from 'src/schema/index.js';
 import { freezeSelection, shareSelectionPage } from 'src/queue/manifest.js';
 import { pruneQueueHistory } from 'src/queue/retention.js';
 import { selectionLineageSource } from 'src/queue/selection-lineage.js';
@@ -77,7 +78,7 @@ it('retains downstream stages published before a late shared membership is copie
 });
 
 describe('durable selected-job descendant lineage', () => {
-  let db: Kysely<any>;
+  let db: Kysely<DB>;
   beforeEach(async () => {
     db = await getKyselyDB();
   });
@@ -162,7 +163,7 @@ describe('durable selected-job descendant lineage', () => {
     const {
       rows: [database],
     } = await sql<{ name: string }>`select current_database() name`.execute(db);
-    return new Kysely<any>({
+    return new Kysely<DB>({
       dialect: new PostgresJSDialect({
         postgres: createPostgres({
           connection: {
@@ -911,6 +912,8 @@ describe('durable selected-job descendant lineage', () => {
       (${'frameleaf-attempt-evidence:' + randomUUID()}, ${JSON.stringify({ jobId: f.prior.id, stoppedAt: Date.now() })}::text::jsonb)`.execute(
       db,
     );
+    // FL-675: repeatable work retries after an unconfirmed stop; this covers work that is not safe to repeat.
+    await sql`update job set "safeToRetry" = false where id = ${f.prior.id}::uuid`.execute(db);
     await sql`update job set "leaseExpiresAt" = clock_timestamp() - interval '1 second' where id = ${f.prior.id}::uuid`.execute(
       db,
     );
@@ -1204,7 +1207,7 @@ describe('durable selected-job descendant lineage', () => {
         ),
       ).toBe(500_002);
       const { rows: plans } = await sql<{ 'QUERY PLAN': [{ Plan: Plan }] }>`explain (analyze, buffers, format json)
-        ${selectionLineageSource(selection.id, '499750')}`.execute(controlDb);
+        ${selectionLineageSource(selection.id, String(SCALE_ITEMS - 250))}`.execute(controlDb);
       const { descendantRows: tailRows, selectionRows: tailSelectionRows } = assertBoundedPlan(
         plans[0]['QUERY PLAN'][0].Plan,
       );

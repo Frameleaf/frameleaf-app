@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import z from 'zod';
 import type { CloudBackupKeyMode } from 'src/types.js';
+import { ChecksumAlgorithm } from 'src/enum.js';
 
 /**
  * Cloud backup (FL-160): the bucket layout, the bucket key's formats and the checks every part of the
@@ -52,8 +53,17 @@ export const compactIso = (date: Date) =>
 
 export const manifestKey = (date: Date) => `${CLOUD_BACKUP_MANIFEST_PREFIX}${compactIso(date)}.json.gz`;
 
+/** The value without trailing slashes; a loop, since `/\/+$/` backtracks on long runs of slashes. */
+export const withoutTrailingSlashes = (value: string) => {
+  let end = value.length;
+  while (end > 0 && value[end - 1] === '/') {
+    end--;
+  }
+  return value.slice(0, end);
+};
+
 /** The claimed bucket's address, the index key in `cloud_backup_object`. */
-export const bucketRef = (endpoint: string, bucket: string) => `${endpoint.replace(/\/+$/, '')}/${bucket}`;
+export const bucketRef = (endpoint: string, bucket: string) => `${withoutTrailingSlashes(endpoint)}/${bucket}`;
 
 /**
  * Short display fingerprint of a key (FNV-1a over its bytes, `ABCD-1234`), the same function the
@@ -332,8 +342,51 @@ const cloudBackupAssetRecordSchema = z.object({
   fileModifiedAt: isoText,
   localDateTime: isoText,
   duration: z.number().int().min(0).nullable(),
+  // FL-738: the item's own checksum. An encrypted Locked original is backed up as ciphertext, so the
+  // file's SHA-256 is not the item's; a restore uses this one. Absent in older backups, ignored when malformed.
+  checksum: z
+    .string()
+    .regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/)
+    .optional()
+    .catch(undefined),
+  checksumAlgorithm: z.enum(['sha1', 'sha256']).optional().catch(undefined),
 });
 export type CloudBackupAssetRecord = z.infer<typeof cloudBackupAssetRecordSchema>;
+
+const RECORDED_CHECKSUM = new Map<unknown, RegExp>([
+  ['sha1', /^[0-9a-f]{40}$/],
+  ['sha256', /^[0-9a-f]{64}$/],
+]);
+
+/** FL-738: an item's recorded checksum as a raw manifest holds it: hex of its algorithm's length, else none. */
+export const recordedChecksum = (asset: { checksum?: unknown; checksumAlgorithm?: unknown }) =>
+  typeof asset.checksum === 'string' && RECORDED_CHECKSUM.get(asset.checksumAlgorithm)?.test(asset.checksum)
+    ? { checksum: asset.checksum, checksumAlgorithm: asset.checksumAlgorithm as 'sha1' | 'sha256' }
+    : {};
+
+/**
+ * FL-738: a record keeps the item's checksum only for an encrypted Locked original, whose file hash is the
+ * ciphertext's. A plain original restores with its own SHA-256, so a stale checksum never comes back.
+ */
+export const backupRecordFor = (record: CloudBackupAssetRecord, sealed: boolean): CloudBackupAssetRecord => {
+  if (sealed) {
+    return record;
+  }
+  const { checksum: _checksum, checksumAlgorithm: _algorithm, ...plain } = record;
+  return plain;
+};
+
+/**
+ * FL-738: the checksum a restored original gives its item: the one the backup recorded for it (an
+ * encrypted original), else the file's SHA-256.
+ */
+export const restoredChecksum = (record: { checksum?: string; checksumAlgorithm?: string } | null, sha256: string) =>
+  record?.checksum && record.checksumAlgorithm
+    ? {
+        checksum: Buffer.from(record.checksum, 'hex'),
+        checksumAlgorithm: record.checksumAlgorithm as ChecksumAlgorithm,
+      }
+    : { checksum: Buffer.from(sha256, 'hex'), checksumAlgorithm: ChecksumAlgorithm.sha256File };
 
 /** An album as the manifest lists it (v2), so a deleted album can be made again. */
 export const cloudBackupAlbumSchema = z.object({
@@ -403,6 +456,11 @@ export type CloudBackupManifest = {
   database: { key: string; sha256: string; size: number } | null;
   assets: Record<string, CloudBackupManifestAsset>;
   profiles: Record<string, CloudBackupManifestFile>;
+  /**
+   * FL-721: each person's Locked key file (`<media>/locked-keys/<userId>.json`) by user id, copied as it
+   * is (it is wrapped). Absent when nobody has one, and on manifests from before it.
+   */
+  lockedKeys?: Record<string, CloudBackupManifestFile>;
   /** v2: every album an item in the manifest belongs to; empty for v1. */
   albums: Record<string, CloudBackupAlbum>;
   /** v2: every person a face in the manifest names; empty for v1. */
@@ -423,6 +481,15 @@ export type CloudBackupRunResult = {
   bytesUploaded: number;
   assets: number;
   total: number | null;
+  /**
+   * FL-721: the people whose Locked key file the run backed up when it started (before the dump and any
+   * media), and those key files' key ids (hex). `sealedKeyIds` are the owner key ids (each encrypted file's
+   * first recipient, spec §5) of the backed-up encrypted files: each must be in `lockedKeyIds`. A partner
+   * copy points at its owner's file, so it needs the owner's key file, never the partner's.
+   */
+  lockedKeyOwners: string[];
+  lockedKeyIds: string[];
+  sealedKeyIds: string[];
 };
 
 export const emptyRunResult = (): CloudBackupRunResult => ({
@@ -438,6 +505,9 @@ export const emptyRunResult = (): CloudBackupRunResult => ({
   bytesUploaded: 0,
   assets: 0,
   total: null,
+  lockedKeyOwners: [],
+  lockedKeyIds: [],
+  sealedKeyIds: [],
 });
 
 const PHASES: ReadonlySet<CloudBackupRunResult['phase']> = new Set([
@@ -453,6 +523,9 @@ const count = (value: unknown) => {
   const number = Number(value ?? 0);
   return Number.isFinite(number) && number > 0 ? Math.floor(number) : 0;
 };
+
+const ids = (value: unknown) =>
+  Array.isArray(value) ? [...new Set(value.filter((id): id is string => typeof id === 'string' && id.length > 0))] : [];
 
 const text = (value: unknown) => (typeof value === 'string' && value.length > 0 ? value : null);
 
@@ -484,6 +557,9 @@ export const parseRunResult = (value: unknown): CloudBackupRunResult => {
     bytesUploaded: count(result.bytesUploaded),
     assets: count(result.assets),
     total: result.total === null || result.total === undefined ? null : count(result.total),
+    lockedKeyOwners: ids(result.lockedKeyOwners),
+    lockedKeyIds: ids(result.lockedKeyIds),
+    sealedKeyIds: ids(result.sealedKeyIds),
   };
 };
 

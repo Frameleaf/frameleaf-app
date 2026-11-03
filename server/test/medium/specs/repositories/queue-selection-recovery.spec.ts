@@ -110,7 +110,7 @@ describe('late shared selection recovery budget', () => {
         expect(maxPageMs, 'one coordinator copy page remains responsive').toBeLessThan(1000);
         if (!copied) break;
         pages++;
-        if (pages === 1999) {
+        if (pages === SCALE_ITEMS / 250 - 1) {
           const {
             rows: [cursor],
           } = await sql<{ copyAfter: string; selectionId: string; sourceRunId: string }>`
@@ -146,6 +146,7 @@ describe('late shared selection recovery budget', () => {
         expect(pages).toBeLessThanOrEqual(SCALE_ITEMS / 250 + 1);
       }
       expect(pages).toBe(SCALE_ITEMS / 250 + 1); // Final empty page acknowledges an exact multiple of250.
+      expect(tailRows, 'near-tail source check ran').toBeGreaterThan(0);
       expect(await recovery.hasUnfinishedWork(queue)).toBe(false);
       const {
         rows: [counts],

@@ -1,0 +1,450 @@
+{
+  "rows": {
+    "users": [
+      {
+        "id": 1,
+        "username": "fixture_admin",
+        "admin": 1,
+        "created_at": "2026-11-01 21:15:42.204441209+00:00",
+        "updated_at": "2026-11-01 21:15:42.204441209+00:00"
+      },
+      {
+        "id": 2,
+        "username": "fixture_alice",
+        "admin": 0,
+        "created_at": "2026-11-01 21:16:24.733182423+00:00",
+        "updated_at": "2026-11-01 21:16:24.733182423+00:00"
+      },
+      {
+        "id": 3,
+        "username": "fixture_bob",
+        "admin": 0,
+        "created_at": "2026-11-01 21:16:25.15187359+00:00",
+        "updated_at": "2026-11-01 21:16:25.69599409+00:00"
+      },
+      {
+        "id": 4,
+        "username": "fixture_mallory",
+        "admin": 0,
+        "created_at": "2026-11-01 21:16:25.562863632+00:00",
+        "updated_at": "2026-11-01 21:16:25.562863632+00:00"
+      }
+    ],
+    "albums": [
+      {
+        "id": 1,
+        "created_at": "2026-11-01 21:15:42.2077785+00:00",
+        "updated_at": "2026-11-01 21:15:42.2077785+00:00",
+        "title": "admin",
+        "parent_album_id": null,
+        "path": "/photos/admin",
+        "path_hash": "3ce885123d092d5958dc949c0849a0a4",
+        "cover_id": null
+      },
+      {
+        "id": 2,
+        "created_at": "2026-11-01 21:16:24.826916298+00:00",
+        "updated_at": "2026-11-01 21:16:24.826916298+00:00",
+        "title": "alice",
+        "parent_album_id": null,
+        "path": "/photos/alice",
+        "path_hash": "7d9aa62860a7fbe5c799c741d4920756",
+        "cover_id": null
+      },
+      {
+        "id": 3,
+        "created_at": "2026-11-01 21:16:25.216233215+00:00",
+        "updated_at": "2026-11-01 21:16:25.216233215+00:00",
+        "title": "bob",
+        "parent_album_id": null,
+        "path": "/photos/bob",
+        "path_hash": "89b0ce8b09ca7c92d7099b6912968cbf",
+        "cover_id": null
+      },
+      {
+        "id": 4,
+        "created_at": "2026-11-01 21:16:25.625525965+00:00",
+        "updated_at": "2026-11-01 21:16:25.625525965+00:00",
+        "title": "shared",
+        "parent_album_id": null,
+        "path": "/photos/shared",
+        "path_hash": "e80be854099c982f1037bbffb9dde37c",
+        "cover_id": null
+      },
+      {
+        "id": 5,
+        "created_at": "2026-11-01 21:16:25.75390184+00:00",
+        "updated_at": "2026-11-01 21:16:25.754045674+00:00",
+        "title": "private",
+        "parent_album_id": 1,
+        "path": "/photos/admin/private",
+        "path_hash": "2c075f28079e7654ae3cb1cd555dcebf",
+        "cover_id": null
+      },
+      {
+        "id": 6,
+        "created_at": "2026-11-01 21:16:25.758362382+00:00",
+        "updated_at": "2026-11-01 21:16:25.758457215+00:00",
+        "title": "private",
+        "parent_album_id": 2,
+        "path": "/photos/alice/private",
+        "path_hash": "be2bbcf41c7a2aae53ffaa3a67eaa46c",
+        "cover_id": null
+      },
+      {
+        "id": 7,
+        "created_at": "2026-11-01 21:16:25.759742882+00:00",
+        "updated_at": "2026-11-01 21:16:25.760702132+00:00",
+        "title": "private",
+        "parent_album_id": 4,
+        "path": "/photos/shared/private",
+        "path_hash": "26c55a994adcf699cce7c040de331101",
+        "cover_id": null
+      },
+      {
+        "id": 8,
+        "created_at": "2026-11-01 21:16:40.334759389+00:00",
+        "updated_at": "2026-11-01 21:16:40.335667806+00:00",
+        "title": "private",
+        "parent_album_id": 3,
+        "path": "/photos/bob/private",
+        "path_hash": "9119bfb423d5c0688bc77a193634efb7",
+        "cover_id": null
+      }
+    ],
+    "media": [
+      {
+        "id": 1,
+        "created_at": "2026-11-01 21:16:25.762514882+00:00",
+        "updated_at": "2026-11-01 21:16:26.230916924+00:00",
+        "title": "photo.png",
+        "path": "/photos/admin/private/photo.png",
+        "path_hash": "5fb402d6bffbe7320efbb72ef85e56d2",
+        "album_id": 5,
+        "exif_id": 1,
+        "date_shot": "2026-11-01 21:07:49+00:00",
+        "type": "photo",
+        "video_metadata_id": null,
+        "side_car_path": null,
+        "side_car_hash": null,
+        "blurhash": "L0Ph_M-lfQ-l-lfQfQfQfQfQfQfQ"
+      },
+      {
+        "id": 2,
+        "created_at": "2026-11-01 21:16:25.939997257+00:00",
+        "updated_at": "2026-11-01 21:16:26.230916924+00:00",
+        "title": "photo.png",
+        "path": "/photos/alice/private/photo.png",
+        "path_hash": "c2f9717dd4969b46c3f92d10f1582401",
+        "album_id": 6,
+        "exif_id": 2,
+        "date_shot": "2026-11-01 21:07:49+00:00",
+        "type": "photo",
+        "video_metadata_id": null,
+        "side_car_path": null,
+        "side_car_hash": null,
+        "blurhash": "L02HVtkFfQkFkGfQfQfQfQfQfQfQ"
+      },
+      {
+        "id": 3,
+        "created_at": "2026-11-01 21:16:26.063419965+00:00",
+        "updated_at": "2026-11-01 21:16:26.230916924+00:00",
+        "title": "photo.png",
+        "path": "/photos/shared/private/photo.png",
+        "path_hash": "43b2edfc950b6b411fa12beca82cab10",
+        "album_id": 7,
+        "exif_id": 3,
+        "date_shot": "2026-11-01 21:07:49+00:00",
+        "type": "photo",
+        "video_metadata_id": null,
+        "side_car_path": null,
+        "side_car_hash": null,
+        "blurhash": "L02HVtkFfQkFkGfQfQfQfQfQfQfQ"
+      },
+      {
+        "id": 4,
+        "created_at": "2026-11-01 21:16:40.484340208+00:00",
+        "updated_at": "2026-11-01 21:16:40.748157916+00:00",
+        "title": "photo.png",
+        "path": "/photos/bob/private/photo.png",
+        "path_hash": "760231e01ff01c11d52fce18a41090ee",
+        "album_id": 8,
+        "exif_id": 4,
+        "date_shot": "2026-11-01 21:07:49+00:00",
+        "type": "photo",
+        "video_metadata_id": null,
+        "side_car_path": null,
+        "side_car_hash": null,
+        "blurhash": "L02egrkofQkok.fQfQfQfQfQfQfQ"
+      }
+    ],
+    "media_exif": [
+      {
+        "id": 1,
+        "created_at": "2026-11-01 21:16:25.919124965+00:00",
+        "updated_at": "2026-11-01 21:16:25.919124965+00:00",
+        "description": null,
+        "camera": null,
+        "maker": null,
+        "lens": null,
+        "date_shot": "2026-11-01 21:07:49+00:00",
+        "exposure": null,
+        "aperture": null,
+        "iso": null,
+        "focal_length": null,
+        "flash": null,
+        "orientation": null,
+        "exposure_program": null,
+        "gps_latitude": null,
+        "gps_longitude": null
+      },
+      {
+        "id": 2,
+        "created_at": "2026-11-01 21:16:26.045168049+00:00",
+        "updated_at": "2026-11-01 21:16:26.045168049+00:00",
+        "description": null,
+        "camera": null,
+        "maker": null,
+        "lens": null,
+        "date_shot": "2026-11-01 21:07:49+00:00",
+        "exposure": null,
+        "aperture": null,
+        "iso": null,
+        "focal_length": null,
+        "flash": null,
+        "orientation": null,
+        "exposure_program": null,
+        "gps_latitude": null,
+        "gps_longitude": null
+      },
+      {
+        "id": 3,
+        "created_at": "2026-11-01 21:16:26.167090632+00:00",
+        "updated_at": "2026-11-01 21:16:26.167090632+00:00",
+        "description": null,
+        "camera": null,
+        "maker": null,
+        "lens": null,
+        "date_shot": "2026-11-01 21:07:49+00:00",
+        "exposure": null,
+        "aperture": null,
+        "iso": null,
+        "focal_length": null,
+        "flash": null,
+        "orientation": null,
+        "exposure_program": null,
+        "gps_latitude": null,
+        "gps_longitude": null
+      },
+      {
+        "id": 4,
+        "created_at": "2026-11-01 21:16:40.602194166+00:00",
+        "updated_at": "2026-11-01 21:16:40.602194166+00:00",
+        "description": null,
+        "camera": null,
+        "maker": null,
+        "lens": null,
+        "date_shot": "2026-11-01 21:07:49+00:00",
+        "exposure": null,
+        "aperture": null,
+        "iso": null,
+        "focal_length": null,
+        "flash": null,
+        "orientation": null,
+        "exposure_program": null,
+        "gps_latitude": null,
+        "gps_longitude": null
+      }
+    ],
+    "video_metadata": [],
+    "user_albums": [
+      {
+        "album_id": 1,
+        "user_id": 1
+      },
+      {
+        "album_id": 2,
+        "user_id": 2
+      },
+      {
+        "album_id": 3,
+        "user_id": 3
+      },
+      {
+        "album_id": 4,
+        "user_id": 2
+      },
+      {
+        "album_id": 4,
+        "user_id": 3
+      },
+      {
+        "album_id": 5,
+        "user_id": 1
+      },
+      {
+        "album_id": 6,
+        "user_id": 2
+      },
+      {
+        "album_id": 7,
+        "user_id": 2
+      },
+      {
+        "album_id": 7,
+        "user_id": 3
+      },
+      {
+        "album_id": 8,
+        "user_id": 3
+      }
+    ],
+    "user_media_data": [
+      {
+        "created_at": "2026-11-01 21:17:13.259363084+00:00",
+        "updated_at": "2026-11-01 21:17:20.574817171+00:00",
+        "user_id": 2,
+        "media_id": 3,
+        "favorite": 1
+      }
+    ],
+    "face_groups": [],
+    "image_faces": [],
+    "media_urls": [
+      {
+        "id": 1,
+        "created_at": "2026-11-01 21:16:25.922092007+00:00",
+        "updated_at": "2026-11-01 21:16:25.922092007+00:00",
+        "media_id": 1,
+        "width": 640,
+        "height": 480,
+        "purpose": "original",
+        "content_type": "image/png",
+        "file_size": 1588
+      },
+      {
+        "id": 2,
+        "created_at": "2026-11-01 21:16:25.935445174+00:00",
+        "updated_at": "2026-11-01 21:16:25.935445174+00:00",
+        "media_id": 1,
+        "width": 640,
+        "height": 480,
+        "purpose": "thumbnail",
+        "content_type": "image/jpeg",
+        "file_size": 5395
+      },
+      {
+        "id": 3,
+        "created_at": "2026-11-01 21:16:26.047178299+00:00",
+        "updated_at": "2026-11-01 21:16:26.047178299+00:00",
+        "media_id": 2,
+        "width": 640,
+        "height": 480,
+        "purpose": "original",
+        "content_type": "image/png",
+        "file_size": 1587
+      },
+      {
+        "id": 4,
+        "created_at": "2026-11-01 21:16:26.059223757+00:00",
+        "updated_at": "2026-11-01 21:16:26.059223757+00:00",
+        "media_id": 2,
+        "width": 640,
+        "height": 480,
+        "purpose": "thumbnail",
+        "content_type": "image/jpeg",
+        "file_size": 5395
+      },
+      {
+        "id": 5,
+        "created_at": "2026-11-01 21:16:26.168690715+00:00",
+        "updated_at": "2026-11-01 21:16:26.168690715+00:00",
+        "media_id": 3,
+        "width": 640,
+        "height": 480,
+        "purpose": "original",
+        "content_type": "image/png",
+        "file_size": 1587
+      },
+      {
+        "id": 6,
+        "created_at": "2026-11-01 21:16:26.180291757+00:00",
+        "updated_at": "2026-11-01 21:16:26.180291757+00:00",
+        "media_id": 3,
+        "width": 640,
+        "height": 480,
+        "purpose": "thumbnail",
+        "content_type": "image/jpeg",
+        "file_size": 5395
+      },
+      {
+        "id": 7,
+        "created_at": "2026-11-01 21:16:40.6083215+00:00",
+        "updated_at": "2026-11-01 21:16:40.6083215+00:00",
+        "media_id": 4,
+        "width": 640,
+        "height": 480,
+        "purpose": "original",
+        "content_type": "image/png",
+        "file_size": 1587
+      },
+      {
+        "id": 8,
+        "created_at": "2026-11-01 21:16:40.649746333+00:00",
+        "updated_at": "2026-11-01 21:16:40.649746333+00:00",
+        "media_id": 4,
+        "width": 640,
+        "height": 480,
+        "purpose": "thumbnail",
+        "content_type": "image/jpeg",
+        "file_size": 5394
+      }
+    ],
+    "user_preferences": [],
+    "share_tokens": [
+      {
+        "id": 1,
+        "created_at": "2026-11-01 21:19:50.375337629+00:00",
+        "updated_at": "2026-11-01 21:19:50.375337629+00:00",
+        "owner_id": 1,
+        "album_id": null,
+        "media_id": 1,
+        "expire": null,
+        "has_password": 0
+      },
+      {
+        "id": 2,
+        "created_at": "2026-11-01 21:19:50.723928546+00:00",
+        "updated_at": "2026-11-01 21:19:50.723928546+00:00",
+        "owner_id": 1,
+        "album_id": null,
+        "media_id": 1,
+        "expire": null,
+        "has_password": 1
+      }
+    ]
+  },
+  "expected": {
+    "sourceCommit": "f79d379e38241c687c55e9f899e30661fd9f115a",
+    "counts": {
+      "alice": 2,
+      "bob": 2,
+      "mallory": 0
+    },
+    "sharedMediaId": "3",
+    "alicePrivateMediaId": "2",
+    "aliceSharedFavorite": true,
+    "bobSharedFavorite": false,
+    "unrelatedPrivateMediaDenied": true,
+    "shareProtection": [
+      {
+        "id": "1",
+        "hasPassword": false
+      },
+      {
+        "id": "2",
+        "hasPassword": true
+      }
+    ]
+  }
+}

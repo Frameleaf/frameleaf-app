@@ -4,6 +4,8 @@ import { PluginMethodSearchResponse } from 'src/repositories/plugin.repository.j
 
 export const triggerMap: Record<WorkflowTrigger, WorkflowType[]> = {
   [WorkflowTrigger.AssetCreate]: [WorkflowType.AssetV1],
+  [WorkflowTrigger.AssetChanged]: [WorkflowType.AssetV1],
+  [WorkflowTrigger.Schedule]: [WorkflowType.AssetV1],
   // [WorkflowTrigger.PersonRecognized]: [WorkflowType.AssetPersonV1],
   [WorkflowTrigger.AssetMetadataExtraction]: [WorkflowType.AssetV1],
   [WorkflowTrigger.AssetTagged]: [WorkflowType.AssetV1],

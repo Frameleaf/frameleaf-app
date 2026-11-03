@@ -25,9 +25,14 @@
   type Props = {
     asset: AssetResponseDto;
     onAction: OnAction;
+    /**
+     * FL-707 item 14: only the 0-5 keys, no star in the top bar (it read as a second favourite).
+     * The rating is set in the information panel.
+     */
+    keysOnly?: boolean;
   };
 
-  let { asset, onAction }: Props = $props();
+  let { asset, onAction, keysOnly = false }: Props = $props();
 
   let destroyed = false;
   onDestroy(() => (destroyed = true));
@@ -168,7 +173,7 @@
     : []}
 />
 
-{#if enabled}
+{#if enabled && !keysOnly}
   <div class="fl-rating-wrap" bind:this={wrapper}>
     <IconButton
       color="secondary"

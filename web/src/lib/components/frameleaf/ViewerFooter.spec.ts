@@ -13,6 +13,9 @@ import { sharedLinkFactory } from '@test-data/factories/shared-link-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import ViewerFooter from './ViewerFooter.svelte';
 
+const flags = vi.hoisted(() => ({ realtimeTranscoding: false }));
+vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({ featureFlagsManager: { value: flags } }));
+
 const base = {
   canNavigateCollection: true,
   canShowFilmstrip: true,
@@ -47,6 +50,42 @@ describe('ViewerFooter (V-13, MediaViewer.jsx:1693-1797)', () => {
     );
   });
 
+  it('selects the original when the video has no playback copy (FL-630)', () => {
+    const none = render(ViewerFooter, {
+      asset: { ...assetFactory.build({ type: AssetTypeEnum.Video }), playbackCopy: false },
+      ...base,
+    });
+    expect(screen.getByRole('button', { name: 'frameleaf_viewer_source_original' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    const optimized = screen.getByRole('button', { name: 'frameleaf_viewer_source_optimized' });
+    expect(optimized).toHaveAttribute('aria-pressed', 'false');
+    expect(optimized).toBeDisabled();
+    none.unmount();
+
+    render(ViewerFooter, {
+      asset: { ...assetFactory.build({ type: AssetTypeEnum.Video }), playbackCopy: true },
+      ...base,
+    });
+    expect(screen.getByRole('button', { name: 'frameleaf_viewer_source_optimized' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
+  it('keeps Play optimized without a stored copy when real-time playback makes one (FL-630)', () => {
+    flags.realtimeTranscoding = true;
+    render(ViewerFooter, {
+      asset: { ...assetFactory.build({ type: AssetTypeEnum.Video }), playbackCopy: false },
+      ...base,
+    });
+    const optimized = screen.getByRole('button', { name: 'frameleaf_viewer_source_optimized' });
+    expect(optimized).toBeEnabled();
+    expect(optimized).toHaveAttribute('aria-pressed', 'true');
+    flags.realtimeTranscoding = false;
+  });
+
   it('cannot play a slideshow with nothing to move to', () => {
     render(ViewerFooter, { asset: assetFactory.build(), ...base, canNavigateCollection: false });
     expect(screen.getByRole('button', { name: 'frameleaf_viewer_play_slideshow' })).toBeDisabled();
@@ -74,9 +113,10 @@ describe('ViewerFooter (V-13, MediaViewer.jsx:1693-1797)', () => {
     setSharedLink(undefined);
   });
 
-  it('announces the position and toggles the settings flag and the filmstrip', async () => {
-    render(ViewerFooter, { asset: assetFactory.build(), ...base, position: { index: 4, total: 9 } });
-    expect(screen.getByTestId('viewer-position')).toHaveAttribute('aria-live', 'polite');
+  it('leaves the position to the title and toggles the settings flag and the filmstrip', async () => {
+    render(ViewerFooter, { asset: assetFactory.build(), ...base });
+    // FL-707 item 14: one counter, beside the file name at the top.
+    expect(screen.queryByTestId('viewer-position')).not.toBeInTheDocument();
 
     await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_viewer_slideshow_settings' }));
     expect(get(slideshowStore.settingsOpen)).toBe(true);

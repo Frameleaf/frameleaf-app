@@ -37,6 +37,10 @@ const ContainerCheckSchema = z
     vendor: z.string().nullable(),
     model: z.string().nullable(),
     vramGb: z.number().meta({ format: 'double' }).nullable(),
+    integrated: z
+      .boolean()
+      .nullable()
+      .describe("The GPU is an integrated one sharing the computer's memory; null when not known"),
     driver: z.string().nullable().describe('Driver and runtime, or what the driver reported instead'),
     backend: HardwareBackendSchema,
     test: ContainerTestSchema.nullable(),

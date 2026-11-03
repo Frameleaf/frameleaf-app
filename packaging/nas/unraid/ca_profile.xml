@@ -1,14 +1,15 @@
 <CommunityApplications>
-  <Profile>Official Frameleaf Manager for installing and managing a self-hosted photo and video library on Unraid. Manager coordinates sibling services through the Docker socket. Its encrypted recovery checkpoints cover the database and configuration, not photo or video originals. Manual Server and optional Machine Learning templates are published only after a compatible signed application release is available. Read the setup guide before installing.</Profile>
+  <Profile>Frameleaf is a self-hosted photo and video library. Bring a lifetime of photos home, find any moment by describing it, edit photos and videos, and enjoy them on your phone, in any browser and on the TV. Faces, search and AI run on your own hardware, originals stay as ordinary files, and there's no subscription. Switch from Immich, PhotoPrism, Synology Photos and seven other photo servers, or import Google Photos and iCloud. Frameleaf Manager, the official installer, gives a guided setup with updates and database backups. Keep your own backup of original photos and videos.</Profile>
   <Icon>https://raw.githubusercontent.com/Frameleaf/frameleaf-app/main/design/frameleaf/mark.png</Icon>
-  <WebPage>https://frameleaf.app/docs</WebPage>
-  <Forum>https://frameleaf.app/help</Forum>
-  <Discord>https://discord.gg/bMP5vjyC</Discord>
-  <Reddit></Reddit>
+  <WebPage>https://frameleaf.app</WebPage>
+  <Forum>https://frameleaf.app/help/community/</Forum>
+  <Discord>https://discord.gg/cN3U3mv4</Discord>
+  <Reddit>https://www.reddit.com/r/Frameleaf/</Reddit>
   <Twitter>https://x.com/frameleafapp</Twitter>
-  <Facebook></Facebook>
-  <DonateLink></DonateLink>
-  <DonateText></DonateText>
-  <Photo>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/manager-overview.jpg</Photo>
+  <DonateLink>https://frameleaf.app/pricing/#supporter</DonateLink>
+  <DonateText>Support Frameleaf with a supporter licence</DonateText>
+  <Photo>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/frameleaf-library.jpg</Photo>
   <Video>https://www.youtube.com/watch?v=rNgyZZoZoEg</Video>
+  <Video>https://www.youtube.com/watch?v=INeVz9NFzOM</Video>
+  <Video>https://www.youtube.com/watch?v=bTfFBDHc6OE</Video>
 </CommunityApplications>

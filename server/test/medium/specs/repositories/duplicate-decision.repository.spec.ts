@@ -60,6 +60,25 @@ describe(DuplicateDecisionRepository.name, () => {
       settings: {},
     });
 
+  describe('getAlbumNames', () => {
+    it('names only albums the viewer belongs to, for each photo (FL-558)', async () => {
+      const { ctx, sut } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const { asset: photo } = await ctx.newAsset({ ownerId: owner.id });
+      const { asset: plain } = await ctx.newAsset({ ownerId: owner.id });
+      await ctx.newAlbum({ ownerId: owner.id, albumName: 'Summer' }, [photo.id]);
+      await ctx.newAlbum({ ownerId: other.id, albumName: 'Not mine' }, [photo.id]);
+      const { album: removed } = await ctx.newAlbum({ ownerId: owner.id, albumName: 'Deleted' }, [photo.id]);
+      await defaultDatabase.updateTable('album').set({ deletedAt: new Date() }).where('id', '=', removed.id).execute();
+
+      await expect(sut.getAlbumNames(owner.id, [photo.id, plain.id])).resolves.toEqual([
+        { assetId: photo.id, albumName: 'Summer' },
+      ]);
+      await expect(sut.getAlbumNames(owner.id, [])).resolves.toEqual([]);
+    });
+  });
+
   describe('getGroupMembers', () => {
     it('reads the complete group, whoever owns each photo, so a mixed group is never decided in part', async () => {
       const { ctx, sut } = setup();

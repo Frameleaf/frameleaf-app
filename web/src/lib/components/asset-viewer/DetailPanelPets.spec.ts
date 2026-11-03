@@ -11,6 +11,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { authManager } from '$lib/managers/auth-manager.svelte';
+import { deferredPromise } from '@test-data/deferred';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
@@ -128,6 +129,76 @@ describe('DetailPanelPets', () => {
         id: 'pet-biscuit',
         petObservationCreateDto: { assetId: 'asset-1', expectedChecksum: 'c3VtCg==' },
       }),
+    );
+  });
+
+  it('puts a removed pet back on the photo it came from after the viewer moves on', async () => {
+    sdkMock.getAssetPetObservations.mockResolvedValue([observation()]);
+    const toast = vi.spyOn(toastManager, 'primary');
+    const asset = assetFactory.build({ id: 'asset-1', ownerId: owner.id, checksum: 'c3VtCg==' });
+    const view = render(DetailPanelPets, { asset, isOwner: true });
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Remove Biscuit from this photo' }));
+    await waitFor(() => expect(sdkMock.deletePetObservation).toHaveBeenCalled());
+    sdkMock.getAssetPetObservations.mockResolvedValue([]);
+    await view.rerender({
+      asset: assetFactory.build({ id: 'asset-2', ownerId: owner.id, checksum: 'b3RoZXIK' }),
+      isOwner: true,
+    });
+    const [[item]] = toast.mock.calls as unknown as [[{ button: { onclick: () => void } }]];
+    item.button.onclick();
+
+    await waitFor(() =>
+      expect(sdkMock.createPetObservation).toHaveBeenCalledWith({
+        id: 'pet-biscuit',
+        petObservationCreateDto: { assetId: 'asset-1', expectedChecksum: 'c3VtCg==' },
+      }),
+    );
+    await waitFor(() => expect(toast).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText('Biscuit')).not.toBeInTheDocument();
+  });
+
+  it('reloads the list instead of applying an add that finishes after the original was replaced', async () => {
+    const toast = vi.spyOn(toastManager, 'primary');
+    const pending = deferredPromise<PetObservationResponseDto>();
+    sdkMock.createPetObservation.mockReturnValue(pending.promise as ReturnType<typeof sdkMock.createPetObservation>);
+    const asset = assetFactory.build({ id: 'asset-1', ownerId: owner.id, checksum: 'c3VtCg==' });
+    const view = render(DetailPanelPets, { asset, isOwner: true });
+
+    await fireEvent.click(await screen.findByRole('button', { name: en.frameleaf_viewer_pets_add_label }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Rex' }));
+    await view.rerender({ asset: { ...asset, checksum: 'bmV3Cg==' }, isOwner: true });
+    await waitFor(() => expect(sdkMock.getAssetPetObservations).toHaveBeenCalledTimes(2));
+    // Hold the reload the late add triggers, so only a local update could show Rex.
+    const reload = deferredPromise<PetObservationResponseDto[]>();
+    sdkMock.getAssetPetObservations.mockReturnValue(
+      reload.promise as ReturnType<typeof sdkMock.getAssetPetObservations>,
+    );
+    pending.resolve(observation({ petId: 'pet-rex' }));
+
+    await waitFor(() => expect(sdkMock.getAssetPetObservations).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(toast).toHaveBeenCalled());
+    expect(screen.queryByRole('button', { name: 'Remove Rex from this photo' })).not.toBeInTheDocument();
+    reload.resolve([]);
+    await waitFor(() => expect(screen.getByText(en.frameleaf_viewer_pets_none)).toBeInTheDocument());
+  });
+
+  it('reloads the list when a removal finishes after the original was replaced', async () => {
+    sdkMock.getAssetPetObservations.mockResolvedValue([observation()]);
+    const pending = deferredPromise<void>();
+    sdkMock.deletePetObservation.mockReturnValue(pending.promise as ReturnType<typeof sdkMock.deletePetObservation>);
+    const asset = assetFactory.build({ id: 'asset-1', ownerId: owner.id, checksum: 'c3VtCg==' });
+    const view = render(DetailPanelPets, { asset, isOwner: true });
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Remove Biscuit from this photo' }));
+    await view.rerender({ asset: { ...asset, checksum: 'bmV3Cg==' }, isOwner: true });
+    await waitFor(() => expect(sdkMock.getAssetPetObservations).toHaveBeenCalledTimes(2));
+    sdkMock.getAssetPetObservations.mockResolvedValue([]);
+    pending.resolve();
+
+    await waitFor(() => expect(sdkMock.getAssetPetObservations).toHaveBeenCalledTimes(3));
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Remove Biscuit from this photo' })).not.toBeInTheDocument(),
     );
   });
 

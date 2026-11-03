@@ -1,3 +1,4 @@
+import math
 from functools import cached_property
 from typing import Any
 
@@ -41,7 +42,7 @@ class TextDetector(InferenceModel):
         if width < 32 or height < 32:
             return self._empty
 
-        image, content = self._transform(inputs, maxResolution)
+        image, content = self._transform(inputs, self._canvas_size(maxResolution))
         input_name = self.session.get_inputs()[0].name
         probs = self.session.run(None, {input_name: image})[0][0]
         if probs.ndim == 3:
@@ -77,6 +78,11 @@ class TextDetector(InferenceModel):
             np.multiply(array[:, :, channel], self.scale, out=plane)
             plane -= 1.0
         return out, (resize_h, resize_w)
+
+    @staticmethod
+    def _canvas_size(max_resolution: int) -> int:
+        # the graph only takes sides divisible by 32; up, so the short side _transform rounds to always fits
+        return math.ceil(max_resolution / 32) * 32
 
     @staticmethod
     def _round32(value: float) -> int:

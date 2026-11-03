@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { onTestFailed } from 'vitest';
+import { defaults, mapAdminConfig } from 'src/dtos/config.dto.js';
 import { JobName, QueueName } from 'src/enum.js';
 import { digest } from 'src/immich-import/adapters.js';
 import { IMPORT_DERIVED_STAGES, importDerivedRunId } from 'src/immich-import/derived-work.js';
@@ -13,6 +14,7 @@ import { freezeSelection } from 'src/queue/manifest.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { QUEUE_BATCH, QUEUE_HIGH_WATER, QUEUE_LOW_WATER, QueueClaim } from 'src/queue/types.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
+import { FrameleafLibrarySetupService } from 'src/services/frameleaf-library-setup.service.js';
 import { getKyselyConfig } from 'src/utils/database.js';
 import { createImportScaleDiagnostics } from 'test/medium/import-scale-diagnostics.js';
 import { SCALE_ITEMS, scaleIt } from 'test/medium/scale.js';
@@ -39,6 +41,12 @@ const repositoryFor = (db: Kysely<any>) => {
     queueName: QueueName.ThumbnailGeneration,
     jobName: JobName.PersonGenerateThumbnail,
     label: 'import person fixture',
+    handler: vi.fn(),
+  };
+  repository['handlers'][JobName.IdenticalFilesCheck] = {
+    queueName: QueueName.StorageTemplateMigration,
+    jobName: JobName.IdenticalFilesCheck,
+    label: 'import identical files fixture',
     handler: vi.fn(),
   };
   return repository;
@@ -75,6 +83,9 @@ const observe = (
 
 afterEach(() => vi.unstubAllEnvs());
 
+/** FL-414: the import's one identical-files item; the per-asset counts below leave it out. */
+const IDENTICAL = JobName.IdenticalFilesCheck;
+
 describe('offline import derived-work durable ownership', () => {
   let db: Kysely<any>;
   let store: SqlQueueStore;
@@ -109,9 +120,9 @@ describe('offline import derived-work durable ownership', () => {
         pending: number;
         jobs: number;
       }>`select (select count(*)::int from job_run) runs,
-    (select count(*)::int from job_selection) stages,
-    (select count(distinct "rootItemKey")::int from job_run_item) roots,
-    (select count(*)::int from job_run_item) memberships,
+    (select count(*)::int from job_selection where stage <> ${IDENTICAL}) stages,
+    (select count(distinct "rootItemKey")::int from job_run_item where stage <> ${IDENTICAL}) roots,
+    (select count(*)::int from job_run_item where stage <> ${IDENTICAL}) memberships,
     (select count(*)::int from frameleaf_immich_import_work where dispatched_at is not null) acknowledged,
     (select count(*)::int from frameleaf_immich_import_work where dispatched_at is null) pending,
     (select count(*)::int from job) jobs`.execute(db)
@@ -132,10 +143,11 @@ describe('offline import derived-work durable ownership', () => {
     expect(await new SqlQueueStore(db).listRuns(10, 0)).toEqual([
       expect.objectContaining({
         id: runId,
-        total: 2,
+        // two assets with four stages each, and the identical-files item (FL-414)
+        total: 3,
         enumerationDone: true,
         state: 'unavailable',
-        stageTotals: expect.objectContaining({ total: 8, waiting: 8 }),
+        stageTotals: expect.objectContaining({ total: 9, waiting: 9 }),
       }),
     ]);
     expect(await repositoryFor(db).dispatchImportedWork()).toBe(runId);
@@ -146,6 +158,20 @@ describe('offline import derived-work durable ownership', () => {
       where stage = ${JobName.PersonGenerateThumbnail}`.execute(db)
       ).rows,
     ).toEqual([{ state: 'ready', captured: true }]);
+    // FL-414: the identical-files stage is frozen with the import run and admitted with it
+    expect(
+      (
+        await sql`select s.state, s.queue, i."itemKey", i.selection from job_selection s
+      join job_run_item i on i."selectionId" = s.id where s.stage = ${IDENTICAL}`.execute(db)
+      ).rows,
+    ).toEqual([
+      {
+        state: 'ready',
+        queue: QueueName.StorageTemplateMigration,
+        itemKey: 'identical-files',
+        selection: { id: 'identical-files', importRunId: runId },
+      },
+    ]);
   });
 
   const managerConfig = (): ImportConfig => {
@@ -225,7 +251,7 @@ describe('offline import derived-work durable ownership', () => {
     for (const queue of queues) expect(await store.feedManifest(queue)).toBe(0);
     expect(await repositoryFor(db).dispatchImportedWork(config)).toBe(id);
     expect((await sql`select state, "capturedAt" is not null as captured from job_selection`.execute(db)).rows).toEqual(
-      Array.from({ length: 5 }, () => ({ state: 'enumerating', captured: true })),
+      Array.from({ length: 6 }, () => ({ state: 'enumerating', captured: true })),
     );
     const prepared = (await sql`select selection, "enumerationDone" from job_run`.execute(db)).rows;
     expect(prepared).toEqual([
@@ -234,6 +260,7 @@ describe('offline import derived-work durable ownership', () => {
         selection: {
           source: 'source-fixture',
           config: digest(config),
+          managerSetupRequired: true,
           managerSetup: {
             installation: 'abcdef123456',
             operationId: 'fixture-operation',
@@ -334,6 +361,29 @@ describe('offline import derived-work durable ownership', () => {
     }
   });
 
+  it.each([undefined, { mode: 'independent-copy' as const }])(
+    'rejects unmanaged preparation after a copied Manager run loses its marker: %s',
+    async (media) => {
+      const config = managerConfig();
+      config.media = media;
+      config.mediaRoots = [{ source: '/source', target: '/copy' }];
+      await sql`update frameleaf_immich_import set config_fingerprint=${digest(config)}`.execute(db);
+      await seed(1);
+      await repository.dispatchImportedWork(config);
+      await sql`update job_run set selection=selection-'managerSetup'`.execute(db);
+      vi.stubEnv('FRAMELEAF_MANAGER_ORIGIN', '');
+      vi.stubEnv('FRAMELEAF_MANAGER_INSTALLATION', '');
+      vi.stubEnv('FRAMELEAF_IMPORT_MANAGER_OPERATION_ID', '');
+      await expect(repositoryFor(db).dispatchImportedWork(config)).rejects.toThrow(
+        'DERIVED_MANAGER_SETUP_IDENTITY_MISMATCH',
+      );
+      expect((await sql`select distinct state from job_selection`.execute(db)).rows).toEqual([
+        { state: 'enumerating' },
+      ]);
+      expect(await counts()).toMatchObject({ runs: 1, stages: 5, jobs: 0 });
+    },
+  );
+
   it.each(['changed operation', 'missing marker'])(
     'rejects %s instead of retrofitting or releasing a Manager run',
     async (corruption) => {
@@ -358,19 +408,62 @@ describe('offline import derived-work durable ownership', () => {
     },
   );
 
-  it('keeps explicit independent-copy admission ready even in a Manager environment', async () => {
-    const config = managerConfig();
-    config.media = { mode: 'independent-copy' };
-    config.mediaRoots = [{ source: '/source', target: '/copy' }];
-    await sql`update frameleaf_immich_import set config_fingerprint = ${digest(config)}`.execute(db);
-    await seed(1);
-    await repository.dispatchImportedWork(config);
-    expect((await sql`select distinct state from job_selection`.execute(db)).rows).toEqual([{ state: 'ready' }]);
-    expect((await sql`select selection ? 'managerSetup' as managed from job_run`.execute(db)).rows).toEqual([
-      { managed: false },
-    ]);
-    expect(await store.feedManifest(QueueName.MetadataExtraction)).toBe(1);
-  });
+  it.each([undefined, { mode: 'independent-copy' as const }])(
+    'retains Manager authority and holds copied imports: %s',
+    async (media) => {
+      const config = managerConfig();
+      config.media = media;
+      config.mediaRoots = [{ source: '/source', target: '/copy' }];
+      await sql`update frameleaf_immich_import set config_fingerprint = ${digest(config)}`.execute(db);
+      await seed(1);
+      await repository.dispatchImportedWork(config);
+      expect((await sql`select distinct state from job_selection`.execute(db)).rows).toEqual([
+        { state: 'enumerating' },
+      ]);
+      expect(
+        (await sql<{ marker: unknown }>`select selection->'managerSetup' as marker from job_run`.execute(db)).rows[0]
+          .marker,
+      ).toMatchObject({
+        installation: 'abcdef123456',
+        operationId: 'fixture-operation',
+        preparedAt: expect.any(String),
+        startedAt: null,
+      });
+      expect(await store.feedManifest(QueueName.MetadataExtraction)).toBe(0);
+      vi.stubEnv('FRAMELEAF_MANAGER_INSTALLATION', 'abcdef654321');
+      await expect(repository.dispatchImportedWork(config)).rejects.toThrow('DERIVED_MANAGER_SETUP_IDENTITY_MISMATCH');
+      expect((await sql`select distinct state from job_selection`.execute(db)).rows).toEqual([
+        { state: 'enumerating' },
+      ]);
+      vi.stubEnv('FRAMELEAF_MANAGER_INSTALLATION', 'abcdef123456');
+      vi.stubEnv('FRAMELEAF_MANAGER_ML_ENABLED', 'true');
+      await sql`delete from system_metadata where key='frameleaf-manager-library-setup:abcdef123456'`.execute(db);
+      await sql`update frameleaf_immich_import set status='activated'`.execute(db);
+      const setup = new FrameleafLibrarySetupService(
+        db,
+        { getAll: vi.fn().mockResolvedValue([]) } as never,
+        {} as never,
+        {
+          getJobCounts: vi.fn().mockResolvedValue({ active: 0, waiting: 0, delayed: 0, paused: 0, failed: 0 }),
+        } as never,
+        { hasAdmin: vi.fn().mockResolvedValue(true) } as never,
+        {} as never,
+        {} as never,
+        {
+          getAdminConfigWithRevision: vi.fn().mockResolvedValue({ config: mapAdminConfig(defaults), revision: 'test' }),
+          updateAdminConfigWithRevision: vi.fn(),
+        } as never,
+        {} as never,
+      );
+      await setup.begin();
+      expect(
+        (
+          await sql<{ stage: string }>`select stage from job_selection where state='ready' order by stage`.execute(db)
+        ).rows.map(({ stage }) => stage),
+      ).toEqual([JobName.AssetExtractMetadata, JobName.AssetGenerateThumbnails].sort());
+      expect(await store.feedManifest(QueueName.MetadataExtraction)).toBe(1);
+    },
+  );
 
   it('reuses frozen memberships after a crash before the first journal acknowledgement', async () => {
     await seed(3);
@@ -637,15 +730,16 @@ it.each(['independent-copy', 'manager-in-place'] as const)(
         { importPaths: [fixture.config.mediaRoots[0].target] },
       ]);
       expect(await new SqlQueueStore(db).listRuns(10, 0)).toEqual([
-        expect.objectContaining({
-          enumerationDone: true,
-          total: 0,
-          ...(mode === 'independent-copy' && { state: 'completed' }),
-        }),
+        // FL-414: only the identical-files item, which still recovers orphans in an empty library
+        expect.objectContaining({ enumerationDone: true, total: 1 }),
       ]);
       expect(
+        (await sql`select stage, "itemKey", selection->>'importRunId' as "importRunId" from job_run_item`.execute(db))
+          .rows,
+      ).toEqual([{ stage: IDENTICAL, itemKey: 'identical-files', importRunId: expect.any(String) }]);
+      expect(
         (await sql`select state, count(*)::int as count from job_selection group by state`.execute(db)).rows,
-      ).toEqual([{ state: mode === 'manager-in-place' ? 'enumerating' : 'ready', count: 5 }]);
+      ).toEqual([{ state: mode === 'manager-in-place' ? 'enumerating' : 'ready', count: 6 }]);
       expect((await sql`select id from job`.execute(db)).rows).toEqual([]);
     } finally {
       await db?.destroy();
@@ -786,15 +880,14 @@ it.each(['independent-copy', 'manager-in-place'] as const)(
       if (mode === 'manager-in-place') {
         expect(
           (await sql`select state, count(*)::int as count from job_selection group by state`.execute(db)).rows,
-        ).toEqual([{ state: 'enumerating', count: 5 }]);
+        ).toEqual([{ state: 'enumerating', count: 6 }]);
         expect(await new SqlQueueStore(db).feedManifest(QueueName.ThumbnailGeneration)).toBe(0);
       }
       expect((await sql`select id from job`.execute(db)).rows).toEqual([]);
       expect(
         (
-          await sql`select count(*)::int as count from job_run_item where stage != ${JobName.PersonGenerateThumbnail}`.execute(
-            db,
-          )
+          await sql`select count(*)::int as count from job_run_item
+            where stage != ${JobName.PersonGenerateThumbnail} and stage != ${IDENTICAL}`.execute(db)
         ).rows,
       ).toEqual([{ count: 4 }]);
     } finally {
@@ -824,8 +917,9 @@ it('verifies and activates a real offline source after durable transfer while al
     expect(await new SqlQueueStore(db).listRuns(10, 0)).toEqual([
       expect.objectContaining({
         id: state.derivedRunId,
-        total: 1,
-        stageTotals: expect.objectContaining({ total: 4 }),
+        // one asset with its four stages, and the identical-files item (FL-414)
+        total: 2,
+        stageTotals: expect.objectContaining({ total: 5 }),
         enumerationDone: true,
       }),
     ]);

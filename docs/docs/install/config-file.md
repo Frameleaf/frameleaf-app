@@ -183,10 +183,20 @@ Part of the default configuration looks like this (the file can hold any setting
   "nightlyTasks": {
     "clusterNewFaces": true,
     "databaseCleanup": true,
+    "days": [0, 1, 2, 3, 4, 5, 6],
+    "emptyTrash": true,
     "generateMemories": true,
     "missingThumbnails": true,
     "startTime": "00:00",
-    "syncQuotaUsage": true
+    "steps": {
+      "cleanup": "nightly",
+      "fileChecks": "nightly",
+      "folders": "nightly",
+      "icloud": "nightly"
+    },
+    "stopTime": "06:00",
+    "syncQuotaUsage": true,
+    "weeklyDay": 0
   },
   "notifications": {
     "smtp": {
@@ -206,7 +216,7 @@ Part of the default configuration looks like this (the file can hold any setting
   "oauth": {
     "autoLaunch": false,
     "autoRegister": true,
-    "buttonText": "Login with OAuth",
+    "buttonText": "Sign in with your provider",
     "clientId": "",
     "clientSecret": "",
     "defaultStorageQuota": null,
@@ -239,6 +249,9 @@ Part of the default configuration looks like this (the file can hold any setting
     "enabled": false,
     "hashVerificationEnabled": true,
     "template": "{{y}}/{{y}}-{{MM}}-{{dd}}/{{filename}}"
+  },
+  "storageWarning": {
+    "percent": 90
   },
   "templates": {
     "email": {

@@ -1,0 +1,193 @@
+<script lang="ts">
+  import { longPress } from '$lib/actions/long-press';
+  import { DRAG_SELECT_EVENT } from '$lib/components/timeline/drag-select';
+  import { libraryReferenceUrl } from '$lib/frameleaf/library-reference';
+  import { getAssetMediaUrl } from '$lib/utils';
+  import { AssetMediaSize, type BookmarkResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
+  import { mdiCheck, mdiLinkVariant } from '@mdi/js';
+  import { t } from 'svelte-i18n';
+
+  let {
+    bookmark,
+    selected = false,
+    selecting = false,
+    onOpen,
+    onToggleSelect,
+    onFocus,
+  }: {
+    bookmark: BookmarkResponseDto;
+    selected?: boolean;
+    selecting?: boolean;
+    onOpen?: (bookmark: BookmarkResponseDto) => void;
+    onToggleSelect?: (bookmark: BookmarkResponseDto, event: MouseEvent | KeyboardEvent) => void;
+    onFocus?: () => void;
+  } = $props();
+  const url = $derived(libraryReferenceUrl(bookmark.url));
+  const host = $derived(url ? new URL(url).hostname : '');
+  const name = $derived(bookmark.title || host || bookmark.url);
+  const dragSelect = (node: HTMLElement) => {
+    const listener = () => {
+      if (!selected) {
+        onToggleSelect?.(bookmark, new MouseEvent('click'));
+      }
+    };
+    node.addEventListener(DRAG_SELECT_EVENT, listener);
+    return { destroy: () => node.removeEventListener(DRAG_SELECT_EVENT, listener) };
+  };
+  const toggle = (event: MouseEvent | KeyboardEvent) => onToggleSelect?.(bookmark, event);
+</script>
+
+<div
+  class="fl-bookmark"
+  class:is-selected={selected}
+  class:is-selecting={selecting}
+  data-testid="frameleaf-bookmark-card"
+  data-asset-id="bookmark:{bookmark.id}"
+  use:dragSelect
+>
+  <button
+    type="button"
+    class="fl-bookmark-open"
+    aria-label={$t(selecting ? 'frameleaf_boards_select_link' : 'frameleaf_boards_open_link', {
+      values: { title: name },
+    })}
+    aria-pressed={selecting ? selected : undefined}
+    onfocus={onFocus}
+    use:longPress={{ onLongPress: () => onToggleSelect?.(bookmark, new MouseEvent('click')) }}
+    onclick={(event) => (selecting ? toggle(event) : onOpen?.(bookmark))}
+    onkeydown={(event) => {
+      if (event.key === ' ' && event.shiftKey) {
+        event.preventDefault();
+        toggle(event);
+      }
+    }}
+  >
+    <div class="fl-bookmark-preview">
+      {#if bookmark.previewAssetId}
+        <img
+          src={getAssetMediaUrl({ id: bookmark.previewAssetId, size: AssetMediaSize.Thumbnail })}
+          alt=""
+          loading="lazy"
+        />
+      {:else}<Icon icon={mdiLinkVariant} size="32" />{/if}
+    </div>
+    <span class="fl-bookmark-title">{name}</span>
+    <span class="fl-bookmark-host">{host}</span>
+  </button>
+  <label class="fl-bookmark-select"
+    ><input
+      type="checkbox"
+      checked={selected}
+      aria-label={$t('frameleaf_bookmark_select', { values: { title: name } })}
+      onclick={toggle}
+    /><span aria-hidden="true"
+      >{#if selected}<Icon icon={mdiCheck} size="15" />{/if}</span
+    ></label
+  >
+</div>
+
+<style>
+  .fl-bookmark {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    border-radius: var(--fl-radius-control);
+    background: var(--fl-panel);
+    overflow: hidden;
+  }
+  .fl-bookmark.is-selected {
+    outline: 2px solid var(--fl-accent);
+    outline-offset: -2px;
+  }
+  .fl-bookmark-open {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    text-align: start;
+    padding: var(--fl-space-2);
+    gap: var(--fl-space-1);
+    color: var(--fl-text);
+  }
+  .fl-bookmark-open:focus-visible {
+    outline: 2px solid var(--fl-accent);
+    outline-offset: -3px;
+  }
+  .fl-bookmark-preview {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    place-items: center;
+    color: var(--fl-muted);
+  }
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    min-height: 0;
+  }
+  .fl-bookmark-title,
+  .fl-bookmark-host {
+    display: block;
+    width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .fl-bookmark-title {
+    font-size: var(--fl-font-size);
+  }
+  .fl-bookmark-host {
+    font-size: var(--fl-font-small);
+    color: var(--fl-muted);
+  }
+  .fl-bookmark-select {
+    position: absolute;
+    top: 0;
+    inset-inline-start: 0;
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    /* Like an image tile's ring (AssetTile): shown on hover, focus, or once a selection is under way. */
+    opacity: 0;
+    transition: opacity var(--fl-motion-fast) var(--fl-ease);
+  }
+  .fl-bookmark:hover .fl-bookmark-select,
+  .fl-bookmark:focus-within .fl-bookmark-select,
+  .fl-bookmark.is-selecting .fl-bookmark-select,
+  .fl-bookmark.is-selected .fl-bookmark-select {
+    opacity: 1;
+  }
+  /* The image tile's round ring and tick (AssetTile `.fl-tile-select`), over the same hidden checkbox. */
+  .fl-bookmark-select input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+  .fl-bookmark-select > span {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border: 2px solid rgb(255 255 255 / 92%);
+    border-radius: 50%;
+    background: rgb(0 0 0 / 28%);
+    box-shadow: 0 1px 3px rgb(0 0 0 / 45%);
+    color: var(--fl-accent-text);
+    pointer-events: none;
+  }
+  .fl-bookmark.is-selected .fl-bookmark-select > span {
+    border-color: var(--fl-accent);
+    background: var(--fl-accent);
+  }
+  .fl-bookmark-select:has(input:focus-visible) > span {
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
+  }
+</style>

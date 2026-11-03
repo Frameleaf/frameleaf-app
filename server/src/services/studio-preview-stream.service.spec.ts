@@ -254,6 +254,24 @@ describe(StudioPreviewStreamService.name, () => {
       );
     });
 
+    it('refuses an API key with a clear answer, since a stream is admitted per signed-in session', async () => {
+      projects.authorizeRevision.mockResolvedValueOnce({
+        revision: { revision: head },
+        manifest: {
+          complete: true,
+          revision: head,
+          digest: `digest-${head}`,
+          refusedCount: 0,
+          interactiveAdmissionView: { actorId: OWNER, sessionId: null, owners: [] },
+        },
+      });
+      await expect(sut.open(auth(), openDto())).rejects.toMatchObject({
+        status: 403,
+        response: { code: 'studio_preview_session_required' },
+      });
+      expect(operations.create).not.toHaveBeenCalled();
+    });
+
     it('refuses a superseded revision with the current one', async () => {
       await expect(sut.open(auth(), openDto({ revision: 2 }))).rejects.toMatchObject({
         response: { code: 'studio_preview_stale_revision', currentRevision: 3 },

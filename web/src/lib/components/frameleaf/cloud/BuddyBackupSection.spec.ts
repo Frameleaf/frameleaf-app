@@ -146,23 +146,20 @@ it.each([
     await fireEvent.click(setup);
     expect(await screen.findByRole('dialog', { name: 'Set up Buddy Backup' })).toBeVisible();
   }
-  if (!gate.linked) {
-    expect(outgoing.getByText(en.frameleaf_buddy_link_required)).toBeVisible();
-    expect(outgoing.getByRole('link', { name: en.frameleaf_cloud_backup_gate_link })).toBeVisible();
-  } else if (gate.licence !== 'server') {
-    expect(outgoing.getByText(en.frameleaf_buddy_server_licence_required)).toBeVisible();
-    expect(outgoing.getByRole('link', { name: en.frameleaf_buddy_server_licence_action })).toBeVisible();
+  // FL-544: unlinked or without a Server licence, the same gate and the same one button
+  if (!gate.linked || gate.licence !== 'server') {
+    expect(outgoing.getByText(/Buddy Backup needs a Server licence on both servers/)).toBeVisible();
+    expect(outgoing.getByRole('button', { name: en.frameleaf_get_cloud })).toBeVisible();
   } else {
     expect(outgoing.getByText(en.frameleaf_buddy_direct_or_relay)).toBeVisible();
   }
 });
 
-it('lets only the inviter confirm: the server that accepted the invitation never calls confirm (FL-434)', async () => {
+it('treats the pairing as active after accept and never calls confirm (FL-513)', async () => {
   Object.assign(status, { pairing: null });
   sdkMock.acceptBackupBuddy.mockResolvedValue({
     ...status,
-    pairing: { version: 1, pairId: 'pair', state: State.Pending, readUntil: null, vaults: [] },
-    canConfirm: false,
+    pairing: { version: 1, pairId: 'pair', state: State.Active, readUntil: null, vaults: [] },
   });
   render(BuddyBackupSection, { view: 'status' });
   await fireEvent.click(await screen.findByRole('button', { name: en.frameleaf_buddy_set_up_buddy_backup }));
@@ -171,8 +168,25 @@ it('lets only the inviter confirm: the server that accepted the invitation never
     target: { value: 'a'.repeat(43) },
   });
   await fireEvent.click(dialog.getByRole('button', { name: en.frameleaf_buddy_accept_invitation }));
-  expect(await dialog.findByText(en.frameleaf_buddy_waiting_for_inviter_confirmation)).toBeVisible();
-  await fireEvent.click(dialog.getByRole('button', { name: en.frameleaf_buddy_confirm_agreement }));
+  await fireEvent.click(await dialog.findByRole('button', { name: en.frameleaf_buddy_confirm_agreement }));
   expect(await dialog.findByRole('button', { name: en.frameleaf_buddy_generate_recovery_kit })).toBeVisible();
   expect(sdkMock.changeBuddyRelationship).not.toHaveBeenCalled();
+});
+
+it('shows the Server licence prompt when Cloud refuses an invitation with 402 (FL-506)', async () => {
+  Object.assign(status, { pairing: null });
+  sdkMock.isHttpError.mockImplementation((error) => (error as { status?: number })?.status === 402);
+  sdkMock.inviteBackupBuddy.mockRejectedValue(
+    Object.assign(new Error('This server needs an active Server licence'), { status: 402 }),
+  );
+  render(BuddyBackupSection, { view: 'status' });
+  await fireEvent.click(await screen.findByRole('button', { name: en.frameleaf_buddy_set_up_buddy_backup }));
+  const dialog = within(await screen.findByRole('dialog', { name: en.frameleaf_buddy_set_up_buddy_backup }));
+  await fireEvent.input(dialog.getByLabelText(en.frameleaf_buddy_your_buddy_s_cloud_account_id), {
+    target: { value: '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e99' },
+  });
+  await fireEvent.click(dialog.getByRole('button', { name: en.frameleaf_buddy_create_invitation }));
+  expect(await dialog.findByText(/Buddy Backup needs a Server licence on both servers/)).toBeVisible();
+  expect(dialog.getByRole('button', { name: en.frameleaf_get_cloud })).toBeVisible();
+  expect(dialog.getByText('This server needs an active Server licence')).toBeVisible();
 });

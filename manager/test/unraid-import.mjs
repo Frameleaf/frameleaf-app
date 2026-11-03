@@ -282,7 +282,7 @@ EOF
     nas(`docker run -d --name filebrowser --restart unless-stopped -u 0:0 -l net.unraid.docker.managed=dockerman \
       -v /mnt/user:/srv -v ${APPDATA}/filebrowser:/database filebrowser/filebrowser:latest >/dev/null`);
     // Unraid writes one container name per line (optional delay) in the order the Docker page shows.
-    nas(`printf '%s\\n' immich_redis 'immich_postgres 10' immich_server filebrowser frameleaf-manager > ${autostart}`);
+    nas(`printf '%s\\n' immich_redis 'immich_postgres 10' immich_server filebrowser Frameleaf > ${autostart}`);
   });
 
   // ---------- 4. Manager, exactly as the Unraid template renders ----------
@@ -291,10 +291,11 @@ EOF
     nas(`docker tag ${sh(MANAGER_IMAGE)} ghcr.io/frameleaf/frameleaf-manager:latest`);
   });
   const xml = readFileSync(join(ROOT, 'packaging/nas/unraid/frameleaf-manager.xml.in'), 'utf8');
-  // The README: select the existing unraid-autostart under DockerRootDir, then set the controller path.
-  const values = { 'Unraid autostart file': autostart, 'Autostart controller path': '/run/frameleaf-host/unraid-autostart' };
+  // Default template, with no manual autostart path or mount.
+  const values = {};
   await step('Manager: stopped older copy + template-rendered container', async () => {
     const run = renderTemplate(xml, values);
+    assert.ok(!run.some((arg) => arg.includes('/run/frameleaf-host/unraid-autostart')));
     report.managerRun = run;
     const create = [...run];
     create[0] = 'create';
@@ -387,13 +388,18 @@ EOF
       nas(`docker exec $(docker ps -qf label=com.docker.compose.service=database -f name=frameleaf-) sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At -c "SELECT value FROM system_metadata WHERE key='"'"'system-config'"'"'"'`),
     );
     assert.equal(stored.forkExperiments, undefined);
-    // Manager fences Immich's application containers; its database and Redis are left as they were.
+    // Manager fences Immich's application containers, and after the verified import (FL-476) also stops its
+    // database and Redis with no restart policy and takes them out of autostart.
     const state = (name) => nas(`docker inspect -f '{{.State.Running}} {{.HostConfig.RestartPolicy.Name}}' ${name}`).trim();
     report.immichAfter = Object.fromEntries(['immich_server', 'immich_postgres', 'immich_redis'].map((n) => [n, state(n)]));
-    assert.equal(report.immichAfter.immich_server, 'false no');
+    assert.deepEqual(report.immichAfter, {
+      immich_server: 'false no',
+      immich_postgres: 'false no',
+      immich_redis: 'false no',
+    });
     const lines = nas(`cat ${autostart}`).split('\n').map((l) => l.split(/\s+/)[0]).filter(Boolean);
     report.autostartAfter = lines;
-    assert.deepEqual(lines, ['immich_redis', 'immich_postgres', 'filebrowser', 'frameleaf-manager']);
+    assert.deepEqual(lines, ['filebrowser', 'Frameleaf']);
     assert.equal(nas(`docker inspect -f '{{.State.Running}}' filebrowser`).trim(), 'true');
   });
 }

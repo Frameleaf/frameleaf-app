@@ -12,6 +12,7 @@ import {
   MediaHealthLocateDto,
   MediaHealthRecoverDto,
   MediaHealthRootsResponseDto,
+  MediaHealthScanDto,
   MediaHealthScanResponseDto,
   MediaHealthSummaryQueryDto,
   MediaHealthSummaryResponseDto,
@@ -84,6 +85,17 @@ export class MediaHealthController {
     return this.service.startMissingScan(auth);
   }
 
+  @Post('missing/scan/assets')
+  @Authenticated()
+  @Endpoint({
+    summary: 'Scan chosen photos for missing media',
+    description: 'Queue a scan of chosen photos only, which brings back no untracked media.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  startMissingAssetScan(@Auth() auth: AuthDto, @Body() dto: MediaHealthScanDto): Promise<MediaHealthScanResponseDto> {
+    return this.service.startMissingScan(auth, dto);
+  }
+
   @Post('missing/locate')
   @Authenticated()
   @Endpoint({
@@ -116,6 +128,17 @@ export class MediaHealthController {
   })
   startCorruptScan(@Auth() auth: AuthDto): Promise<MediaHealthScanResponseDto> {
     return this.service.startCorruptScan(auth);
+  }
+
+  @Post('corrupt/scan/assets')
+  @Authenticated()
+  @Endpoint({
+    summary: 'Scan chosen photos for damaged media',
+    description: 'Queue a scan validating the source media of chosen photos only.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  startCorruptAssetScan(@Auth() auth: AuthDto, @Body() dto: MediaHealthScanDto): Promise<MediaHealthScanResponseDto> {
+    return this.service.startCorruptScan(auth, dto);
   }
 
   @Post('corrupt/recover')

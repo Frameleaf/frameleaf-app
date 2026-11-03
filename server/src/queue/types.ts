@@ -40,11 +40,17 @@ export type QueueIntent = {
 export type JobDependencyReason =
   | 'workload-disabled'
   | 'destination-unavailable'
+  | 'destination-capacity'
   | 'destination-configuration'
   | 'destination-consent'
   | 'destination-budget'
   | 'source-unavailable'
-  | 'local-capacity';
+  | 'local-capacity'
+  /**
+   * FL-721: the job reads an encrypted Locked file and no key that opens it is loaded (or the RAM-backed
+   * temporary folder is unusable). Internal only: run reasons show it as `dependency_unavailable`.
+   */
+  | 'locked-key-unavailable';
 export type QueueClaim = {
   id: string;
   queue: string;
@@ -76,6 +82,7 @@ export type QueueExecution = {
   failureSettlements?: Array<(tx: Transaction<any>, reason: string, cancelled: boolean) => Promise<void>>;
   afterCommit?: Array<() => Promise<void>>;
   buffering: boolean;
+  followupCollection?: { active: number; buffering: boolean };
   progressUnits: number;
   outcome?: 'completed' | 'failed';
   dependencyReason?: JobDependencyReason;

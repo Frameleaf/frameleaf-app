@@ -1,21 +1,55 @@
 <Container version="2">
-  <Name>frameleaf-manager</Name>
+  <Name>Frameleaf</Name>
   <Repository>ghcr.io/frameleaf/frameleaf-manager:latest</Repository>
-  <Registry>https://ghcr.io</Registry>
+  <Registry>https://github.com/orgs/Frameleaf/packages/container/package/frameleaf-manager</Registry>
+  <Shell>sh</Shell>
+  <DefaultTagDescription>Latest published Frameleaf Manager</DefaultTagDescription>
   <Network>bridge</Network>
   <Privileged>false</Privileged>
-  <Project>https://github.com/Frameleaf/frameleaf-app</Project>
-  <Support>https://github.com/Frameleaf/frameleaf-app/issues</Support>
-  <Overview>Install and manage a self-hosted Frameleaf photo and video library. Manager coordinates sibling services through the Docker socket. Encrypted recovery covers the database and configuration, not media originals. Before applying, create the storage folders and follow the linked setup guide for the storage mappings. Create the administrator from your home network on first open.</Overview>
-  <Category>MediaApp:Photos</Category>
+  <Project>https://frameleaf.app</Project>
+  <Support>https://frameleaf.app/help/</Support>
+  <Overview>Frameleaf is your own photo and video library, running on your Unraid server. Bring a lifetime of photos home, find any moment by describing it, edit it, and enjoy it on your phone, in any browser and on the TV. Your originals stay as ordinary files on your disks, faces and search run on your own hardware, and there's no subscription or telemetry.
+
+• Library — a fast timeline for every photo and video, with albums, folders, RAW, Live Photos and your best shots picked out.
+• Search — describe what you remember: people and pets, places and landmarks, text in photos, even words spoken in videos.
+• Memories — on this day, trips and years in review, played as shows on Apple TV and Android TV.
+• Create — a photo editor; Studio, a real video editor that can make a movie from an album in one step; Boards for references and design files; and Clients for photography studios.
+• Share — a library for each person, partner sharing, shared albums and protected links.
+• Apps — iPhone, iPad and Android with camera-roll backup, plus Apple TV and Android TV.
+• Keep it safe — duplicate review, locked content and backups. Optional Frameleaf Cloud adds remote access and off-site backup.
+
+Switching? Bring your library across from Immich, PhotoPrism, LibrePhotos, Photoview, Piwigo, Lychee, PiGallery2, Ente Photos, Nextcloud Photos and Memories, or Synology Photos, and import Google Photos Takeout or iCloud Photos.
+
+This is the official way to install Frameleaf on Unraid. Frameleaf Manager sets up Frameleaf, its database and optional machine learning, then handles updates and database backups from one dashboard. Before applying, create folders for your photos, database and backups, then open Manager and create your administrator from your home network. Frameleaf is in beta: keep your own backup of original photos and videos.</Overview>
+  <Category>MediaApp:Photos MediaApp:Video</Category>
+  <ExtraSearchTerms>photos videos photo-library photo-backup google-photos icloud gallery albums family faces people search memories video-editor ai self-hosted immich photoprism librephotos photoview piwigo lychee pigallery2 ente nextcloud-photos synology-photos</ExtraSearchTerms>
+  <Requires>Docker enabled, and folders for your photos, the database and backups created before you apply. Keep each folder's host and container paths identical. Frameleaf Manager uses the Docker socket to install and update Frameleaf. See the setup guide for hardware requirements.</Requires>
   <Icon>https://raw.githubusercontent.com/Frameleaf/frameleaf-app/main/design/frameleaf/mark.png</Icon>
+  <Discord>https://discord.gg/cN3U3mv4</Discord>
+  <Reddit>https://www.reddit.com/r/Frameleaf/</Reddit>
+  <Twitter>https://x.com/frameleafapp</Twitter>
+  <DonateLink>https://frameleaf.app/pricing/#supporter</DonateLink>
+  <DonateText>Support Frameleaf with a supporter licence</DonateText>
+  <Photo>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/frameleaf-library.jpg</Photo>
+  <Screenshot>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/frameleaf-library.jpg</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/frameleaf-search.jpg</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/frameleaf-people.jpg</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/frameleaf-memories.jpg</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/frameleaf-editor.jpg</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/frameleaf-studio.jpg</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/frameleaf-boards.jpg</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/frameleaf-apple-tv.jpg</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/manager-overview.jpg</Screenshot>
+  <Video>https://www.youtube.com/watch?v=rNgyZZoZoEg</Video>
+  <Video>https://www.youtube.com/watch?v=INeVz9NFzOM</Video>
+  <Video>https://www.youtube.com/watch?v=bTfFBDHc6OE</Video>
   <TemplateURL>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/templates/frameleaf-manager.xml</TemplateURL>
-  <ReadMe>https://github.com/Frameleaf/unraid-apps#readme</ReadMe>
+  <ReadMe>https://frameleaf.app/docs/nas/unraid/</ReadMe>
   <License>https://github.com/Frameleaf/unraid-apps/blob/main/LICENSE</License>
   <WebUI>https://[IP]:[PORT:9443]</WebUI>
   <ExtraParams>--label app.frameleaf.manager.role=controller --security-opt no-new-privileges --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER</ExtraParams>
-  <Config Name="Manager HTTPS port" Target="9443" Default="2282" Mode="tcp" Description="Port you open Manager on. 2282 sits next to Frameleaf (2283) and avoids 9443, which Portainer and other apps often use" Type="Port" Display="always" Required="true" Mask="false">2282</Config>
-  <Config Name="Manager HTTPS origin" Target="MANAGER_ORIGIN" Default="" Description="Optional. Leave blank to open Manager by IP address or tower.local. Only for a custom DNS name, enter that exact HTTPS address with port (for example https://nas.example.com:2282) and set Advanced View WebUI to match." Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="Manager port" Target="9443" Default="2282" Mode="tcp" Description="Port you open Manager on. 2282 sits next to Frameleaf (2283) and avoids 9443, which Portainer and other apps often use" Type="Port" Display="always" Required="true" Mask="false">2282</Config>
+  <Config Name="Manager origin" Target="MANAGER_ORIGIN" Default="" Description="Optional. Leave blank to open Manager by IP address or tower.local. For a custom name or HTTP access, enter the exact HTTP or HTTPS address with port (for example http://tower.local:2282) and set Advanced View WebUI to match. HTTP is unencrypted; use a trusted network." Type="Variable" Display="always" Required="false" Mask="false"></Config>
   <Config Name="Manager state" Target="/mnt/user/appdata/frameleaf-manager" Default="/mnt/user/appdata/frameleaf-manager" Mode="rw" Description="Persistent sessions and recovery configuration. When changing the host path, change the container path and MANAGER_DATA too." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/frameleaf-manager</Config>
   <Config Name="Media" Target="/mnt/user/appdata/frameleaf-media" Default="/mnt/user/appdata/frameleaf-media" Mode="rw" Description="Original media. Keep host and container paths identical and update MANAGER_STORAGE_ROOTS." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/frameleaf-media</Config>
   <Config Name="Database parent" Target="/mnt/user/appdata/frameleaf-databases" Default="/mnt/user/appdata/frameleaf-databases" Mode="rw" Description="Physical host storage outside Docker data/docker.img. Keep host and container paths identical and update database root variables." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/frameleaf-databases</Config>
@@ -31,6 +65,6 @@
   <Config Name="DockerMan templates" Target="/run/frameleaf-host/templates-user" Default="/boot/config/plugins/dockerMan/templates-user" Mode="rw" Description="Saves per-container templates so Frameleaf services can also be edited and recreated by Unraid DockerMan." Type="Path" Display="advanced" Required="true" Mask="false">/boot/config/plugins/dockerMan/templates-user</Config>
   <Config Name="Host mount information" Target="/run/frameleaf-host/mountinfo" Default="/proc/1/mountinfo" Mode="ro" Description="Read-only host filesystem evidence for database storage checks." Type="Path" Display="advanced" Required="true" Mask="false">/proc/1/mountinfo</Config>
   <Config Name="Unraid Docker configuration" Target="/run/frameleaf-host/docker.cfg" Default="/boot/config/docker.cfg" Mode="ro" Description="Read-only Unraid appdata and Docker storage configuration." Type="Path" Display="advanced" Required="true" Mask="false">/boot/config/docker.cfg</Config>
-  <Config Name="Unraid autostart file" Target="/run/frameleaf-host/unraid-autostart" Default="" Mode="rw" Description="Required for imports: select the existing unraid-autostart file in Docker's data folder, usually /var/lib/docker/unraid-autostart (check with docker info --format {{.DockerRootDir}}). Manager uses it so Immich cannot start again at boot. Do not point it at a file that does not exist; leave blank for a fresh install." Type="Path" Display="always" Required="false" Mask="false"></Config>
-  <Config Name="Autostart controller path" Target="MANAGER_UNRAID_AUTOSTART" Default="" Description="Leave blank. Manager finds the autostart file mounted above; set this only to override its in-container path." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="Unraid autostart file" Target="/run/frameleaf-host/unraid-autostart" Default="" Mode="rw" Description="Optional override. Leave blank: Manager automatically discovers and accesses Docker's existing Unraid autostart list for imports and recovery." Type="Path" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="Autostart controller path" Target="MANAGER_UNRAID_AUTOSTART" Default="" Description="Optional override for an existing manual autostart mapping. Leave blank for automatic configuration." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
 </Container>

@@ -7,6 +7,7 @@ import { crc32, deflateRawSync } from 'node:zlib';
 import type { TakeoutSource } from 'src/repositories/takeout.repository.js';
 import type { TakeoutZipEntry } from 'src/utils/takeout-zip.js';
 import { TakeoutStagingRepository } from 'src/repositories/takeout-staging.repository.js';
+import { tryPromise } from 'src/utils/promise.js';
 
 vi.mock('node:fs', async (importOriginal) => {
   const original = await importOriginal<typeof import('node:fs')>();
@@ -89,7 +90,7 @@ describe(TakeoutStagingRepository.name, () => {
     await writeFile(staged, 'data');
     await expect(
       sut.copyToLibrary(staged, 4, destination, signal(), () =>
-        Promise.try(() => {
+        tryPromise(() => {
           throw new Error('recording ownership failed');
         }),
       ),
@@ -139,6 +140,19 @@ describe(TakeoutStagingRepository.name, () => {
     }
   });
 
+  it('refuses a range read larger than any archive read needs, before allocating it', async () => {
+    const path = join(directory, 'archive');
+    await writeFile(path, Buffer.from('01234567'));
+    const allocate = vi.spyOn(Buffer, 'alloc');
+    const archive = await sut.openArchive(path);
+    try {
+      await expect(archive.source.read(0, 2 ** 40)).rejects.toThrow('larger than an import needs');
+      expect(allocate).not.toHaveBeenCalledWith(2 ** 40);
+    } finally {
+      await archive.close();
+    }
+  });
+
   it('refuses a descendant directory swapped for a link before descending into it', async () => {
     const selected = join(directory, 'selected'),
       outside = join(directory, 'outside');
@@ -166,7 +180,7 @@ describe(TakeoutStagingRepository.name, () => {
       path,
       {
         size: bytes.length,
-        read: (position, length) => Promise.try(() => bytes.subarray(position, position + length)),
+        read: (position, length) => tryPromise(() => bytes.subarray(position, position + length)),
       },
       {
         name: 'photo.jpg',
@@ -223,7 +237,7 @@ describe(TakeoutStagingRepository.name, () => {
         path,
         {
           size: bytes.length,
-          read: (position, length) => Promise.try(() => bytes.subarray(position, position + length)),
+          read: (position, length) => tryPromise(() => bytes.subarray(position, position + length)),
         },
         entry,
         destination,

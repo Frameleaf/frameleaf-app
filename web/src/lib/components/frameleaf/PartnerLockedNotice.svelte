@@ -73,4 +73,20 @@
   .pl-notice p span {
     color: var(--fl-muted);
   }
+  /* UI review 2026-10-30 #7: on phones the text keeps the full width and the buttons sit on a line
+     below it, at its end. The notice itself is in the page's 16px gutter. */
+  @media (max-width: 700px) {
+    .pl-notice {
+      flex-wrap: wrap;
+      align-items: flex-start;
+      row-gap: 12px;
+      padding: 12px 16px;
+    }
+    .pl-notice p {
+      flex: 1 1 calc(100% - 30px);
+    }
+    .pl-notice > :global(button:first-of-type) {
+      margin-inline-start: auto;
+    }
+  }
 </style>

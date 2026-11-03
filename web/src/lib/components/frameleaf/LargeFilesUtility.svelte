@@ -7,11 +7,13 @@
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { handlePromiseError } from '$lib/utils';
   import { getNextAsset, getPreviousAsset, navigateToAsset } from '$lib/utils/asset-utils';
+  import { handleError } from '$lib/utils/handle-error';
   import { navigate } from '$lib/utils/navigation';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import { getAssetInfo, type AssetResponseDto } from '@frameleaf/sdk';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { onDestroy } from 'svelte';
+  import { t } from 'svelte-i18n';
   import { SvelteSet } from 'svelte/reactivity';
   import type { UtilityData } from '$lib/frameleaf/utilities-load';
   type PageData = Extract<UtilityData, { tool: 'large-files' }>;
@@ -34,10 +36,31 @@
   /** What the viewer steps through: largest first, without what went to the trash or was deleted. */
   const inLibrary = $derived(assets.filter((asset) => !trashed.has(asset.id) && !removed.has(asset.id)));
 
+  /** Bumped by every open and close, so a slower earlier open cannot show its asset afterwards. */
+  let openRequest = 0;
+
   const onOpen = async (asset: AssetResponseDto) => {
-    const info = await getAssetInfo({ ...authManager.params, id: asset.id });
-    assetViewerManager.setAsset(info);
-    await navigate({ targetRoute: 'current', assetId: asset.id });
+    const request = ++openRequest;
+    const isCurrentSession = authManager.captureSession();
+    const isCurrent = () => request === openRequest && isCurrentSession();
+    try {
+      const info = await getAssetInfo({ ...authManager.params, id: asset.id });
+      if (!isCurrent()) {
+        return false;
+      }
+      // Show the asset only once the URL points at it, so a failed navigation leaves nothing open.
+      await navigate({ targetRoute: 'current', assetId: asset.id });
+      if (!isCurrent() || page.url.searchParams.get('assetId') !== asset.id) {
+        return false;
+      }
+      assetViewerManager.setAsset(info);
+      return true;
+    } catch (error) {
+      if (isCurrent()) {
+        handleError(error, $t('errors.failed_to_load_asset'));
+      }
+      return false;
+    }
   };
 
   const onRandom = async () => {
@@ -45,8 +68,7 @@
       return undefined;
     }
     const asset = inLibrary[Math.floor(Math.random() * inLibrary.length)];
-    await onOpen(asset);
-    return asset;
+    return (await onOpen(asset)) ? asset : undefined;
   };
 
   const assetCursor = $derived({
@@ -64,7 +86,10 @@
         assetViewerManager.showAssetViewer(false);
     }
   };
-  onDestroy(() => assetViewerManager.showAssetViewer(false));
+  onDestroy(() => {
+    openRequest++;
+    assetViewerManager.showAssetViewer(false);
+  });
   $effect(() => {
     const id = page.url.searchParams.get('assetId');
     if (!id) {
@@ -101,6 +126,7 @@
         {onRandom}
         {preAction}
         onClose={() => {
+          openRequest++;
           assetViewerManager.showAssetViewer(false);
           handlePromiseError(navigate({ targetRoute: 'current', assetId: null }));
         }}

@@ -18,15 +18,8 @@ import { useSwagger } from 'src/utils/misc.js';
 export async function configureExpress(
   app: NestExpressApplication,
   {
-    permitSwaggerWrite = true,
     ssr,
   }: {
-    /**
-     * Whether to allow swagger module to write to the specs.json
-     * This is not desirable when the API is not available
-     * @default true
-     */
-    permitSwaggerWrite?: boolean;
     /**
      * Service to use for server-side rendering
      */
@@ -76,7 +69,9 @@ export async function configureExpress(
   }
   app.useWebSocketAdapter(new WebSocketAdapter(app));
 
-  useSwagger(app, { write: configRepository.isDev() && permitSwaggerWrite });
+  // Serve the live specification only. The tracked open-api/immich-openapi-specs.json is regenerated
+  // explicitly with `node ./dist/bin/sync-open-api.js` (mise //server:sync-open-api), never at start-up.
+  useSwagger(app, { write: false });
 
   if (existsSync(resourcePaths.web.root)) {
     // copied from https://github.com/sveltejs/kit/blob/679b5989fe62e3964b9a73b712d7b41831aa1f07/packages/adapter-node/src/handler.js#L46

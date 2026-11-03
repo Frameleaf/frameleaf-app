@@ -2,7 +2,7 @@ import { WorkflowTrigger } from '@frameleaf/plugin-sdk';
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { JsonSchemaDto } from 'src/dtos/json-schema.dto.js';
-import { WorkflowTriggerSchema, WorkflowType, WorkflowTypeSchema } from 'src/enum.js';
+import { LegacyWorkflowTriggerSchema, WorkflowTriggerSchema, WorkflowType, WorkflowTypeSchema } from 'src/enum.js';
 import { asPluginKey } from 'src/utils/workflow.js';
 
 const PluginSearchSchema = z
@@ -55,7 +55,7 @@ const PluginTemplateStepResponseSchema = z
   })
   .meta({ id: 'PluginTemplateStepResponseDto' });
 
-const PluginTemplateResponseSchema = z
+export const PluginTemplateResponseSchema = z
   .object({
     key: z.string().describe('Template key (unique across all templates)'),
     title: z.string().describe('Template title'),
@@ -85,6 +85,11 @@ export class PluginResponseDto extends createZodDto(PluginResponseSchema) {}
 export class PluginMethodSearchDto extends createZodDto(PluginMethodSearchSchema) {}
 export class PluginMethodResponseDto extends createZodDto(PluginMethodResponseSchema) {}
 export class PluginTemplateResponseDto extends createZodDto(PluginTemplateResponseSchema) {}
+export class LegacyPluginTemplateResponseDto extends createZodDto(
+  PluginTemplateResponseSchema.extend({ trigger: LegacyWorkflowTriggerSchema }).meta({
+    id: 'LegacyPluginTemplateResponseDto',
+  }),
+) {}
 
 export type PluginTemplate = {
   name: string;

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { DatabaseLock, JobName, JobStatus, SystemMetadataKey } from 'src/enum.js';
+import { DatabaseLock, JobName, JobStatus, QueueJobStatus, SystemMetadataKey } from 'src/enum.js';
 import { BACKUP_SEQUENCE_CRON, BackupSequenceService } from 'src/services/backup-sequence.service.js';
 import { type BackupSequenceState, deriveBackupSchedule, effectiveBackupSchedule } from 'src/utils/backup-sequence.js';
 
@@ -11,6 +11,8 @@ const setup = (options: { chosen?: string; databaseEnabled?: boolean; databaseCr
   const stored: { state?: BackupSequenceState } = {};
   let lockTail = Promise.resolve();
   const buddy: Place = { on: true, busy: false };
+  // The snapshot job the run queues: it finishes at once unless a test gives it another state.
+  const local: { status: QueueJobStatus } = { status: QueueJobStatus.Complete };
   const cloud: Place = { on: true, busy: false };
   const config = {
     backup: {
@@ -46,14 +48,21 @@ const setup = (options: { chosen?: string; databaseEnabled?: boolean; databaseCr
       }),
     },
     cron: { create: vi.fn(), update: vi.fn() },
-    job: { queue: vi.fn().mockResolvedValue(undefined) },
-    buddyRepository: { state: vi.fn().mockResolvedValue({ settings: { schedule: '0 4 * * *' } }) },
-    databaseBackup: {
-      handleBackupDatabase: vi.fn(() => {
-        order.push('local');
-        return Promise.resolve(JobStatus.Success);
+    /** Queuing the snapshot job ("local"). */
+    snapshot: vi.fn((): Promise<unknown> => {
+      order.push('local');
+      return Promise.resolve();
+    }),
+    job: {
+      queue: vi.fn((item: { name: JobName }) =>
+        item.name === JobName.DatabaseBackup ? mocks.snapshot() : Promise.resolve(),
+      ),
+      searchJobs: vi.fn((_queue: string, dto: { status?: QueueJobStatus[] }) => {
+        const job = { id: 'snapshot-job', name: JobName.DatabaseBackup, status: local.status };
+        return Promise.resolve(!dto.status || dto.status.includes(local.status) ? [job] : []);
       }),
     },
+    buddyRepository: { state: vi.fn().mockResolvedValue({ settings: { schedule: '0 4 * * *' } }) },
     buddyBackup: {
       sequenceStatus: vi.fn(() => Promise.resolve({ ...buddy })),
       startScheduled: vi.fn(() => {
@@ -80,14 +89,13 @@ const setup = (options: { chosen?: string; databaseEnabled?: boolean; databaseCr
       mocks.cron as never,
       mocks.job as never,
       mocks.buddyRepository as never,
-      mocks.databaseBackup as never,
       mocks.buddyBackup as never,
       mocks.cloudBackup as never,
     );
     (sut as unknown as { readConfig: () => Promise<unknown> }).readConfig = () => Promise.resolve(config);
     return sut;
   };
-  return { sut: createService(), createService, mocks, order, stored, buddy, cloud, config };
+  return { sut: createService(), createService, mocks, order, stored, local, buddy, cloud, config };
 };
 
 describe('the one backup schedule (FL-362)', () => {
@@ -143,7 +151,7 @@ describe('the one backup schedule (FL-362)', () => {
       cloud.on = false;
       const entered = Promise.withResolvers<void>();
       const release = Promise.withResolvers<void>();
-      mocks.databaseBackup.handleBackupDatabase.mockImplementationOnce(async () => {
+      mocks.snapshot.mockImplementationOnce(async () => {
         entered.resolve();
         await release.promise;
         return JobStatus.Success;
@@ -153,7 +161,7 @@ describe('the one backup schedule (FL-362)', () => {
       const advancing = createService().move();
       release.resolve();
       await Promise.all([starting, advancing]);
-      expect(mocks.databaseBackup.handleBackupDatabase).toHaveBeenCalledOnce();
+      expect(mocks.snapshot).toHaveBeenCalledOnce();
       expect(mocks.database.withLock).toHaveBeenCalledTimes(2);
       for (const [lock] of mocks.database.withLock.mock.calls) expect(lock).toBe(DatabaseLock.BackupSequenceRun);
     });
@@ -163,7 +171,7 @@ describe('the one backup schedule (FL-362)', () => {
       buddy.on = false;
       const entered = Promise.withResolvers<void>();
       const release = Promise.withResolvers<void>();
-      mocks.databaseBackup.handleBackupDatabase.mockImplementationOnce(async () => {
+      mocks.snapshot.mockImplementationOnce(async () => {
         entered.resolve();
         await release.promise;
         return JobStatus.Success;
@@ -175,7 +183,7 @@ describe('the one backup schedule (FL-362)', () => {
       expect(await Promise.all([starting, ticking])).toEqual([JobStatus.Success, JobStatus.Skipped]);
       expect(stored.state?.dueAt).toEqual(expect.any(String));
       expect(stored.state?.run).toMatchObject({ place: 'cloud', begun: true });
-      expect(mocks.databaseBackup.handleBackupDatabase).toHaveBeenCalledOnce();
+      expect(mocks.snapshot).toHaveBeenCalledOnce();
     });
 
     it('backs up this server, then the buddy, then the cloud, each when the one before has finished', async () => {
@@ -238,12 +246,62 @@ describe('the one backup schedule (FL-362)', () => {
       },
     );
 
-    it('still backs up the others when the library data copy fails', async () => {
+    it('still backs up the others when the snapshot job cannot be queued', async () => {
       const { sut, mocks, order, stored } = setup();
-      mocks.databaseBackup.handleBackupDatabase.mockRejectedValue(new Error('disk full'));
+      mocks.snapshot.mockRejectedValue(new Error('queue unavailable'));
 
       await sut.handleStart();
       expect(order).toEqual(['buddy']);
+      expect(stored.state?.run?.results).toEqual({ local: 'failed' });
+    });
+
+    it('makes the library data copy as the queued snapshot job and waits for it (FL-657)', async () => {
+      const { sut, mocks, order, stored, local } = setup();
+      local.status = QueueJobStatus.Active;
+
+      await sut.handleStart();
+      // The same job "Take a snapshot now" queues, so its outcome is reported the same way.
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.DatabaseBackup, data: {} });
+      expect(order).toEqual(['local']);
+      expect(stored.state?.run).toMatchObject({ place: 'local', begun: true, jobId: 'snapshot-job' });
+
+      await sut.move();
+      expect(order).toEqual(['local']);
+
+      // Waiting for its retry still holds the run.
+      local.status = QueueJobStatus.Delayed;
+      await sut.move();
+      expect(order).toEqual(['local']);
+
+      local.status = QueueJobStatus.Complete;
+      await sut.move();
+      expect(order).toEqual(['local', 'buddy']);
+      expect(stored.state?.run).toMatchObject({ place: 'buddy', results: { local: 'done' } });
+    });
+
+    it('records the snapshot job failing for good as a failed library data copy (FL-657)', async () => {
+      const { sut, order, stored, local } = setup();
+      local.status = QueueJobStatus.Active;
+      await sut.handleStart();
+
+      local.status = QueueJobStatus.Failed;
+      await sut.move();
+      expect(order).toEqual(['local', 'buddy']);
+      expect(stored.state?.run?.results).toEqual({ local: 'failed' });
+    });
+
+    it('waits for a snapshot being made in a paused queue, but not for one still waiting there', async () => {
+      const { sut, order, stored, local } = setup();
+      // Pausing a queue does not stop a snapshot already being made: the run waits for it.
+      local.status = QueueJobStatus.Active;
+      await sut.handleStart();
+      await sut.move();
+      expect(order).toEqual(['local']);
+
+      // One that has not started stays until the queue is resumed: the run moves on without it.
+      local.status = QueueJobStatus.Paused;
+      await sut.move();
+      expect(order).toEqual(['local', 'buddy']);
       expect(stored.state?.run?.results).toEqual({ local: 'failed' });
     });
 
@@ -263,7 +321,7 @@ describe('the one backup schedule (FL-362)', () => {
 
       await sut.handleStart();
       expect(order).toEqual(['cloud']);
-      expect(mocks.databaseBackup.handleBackupDatabase).not.toHaveBeenCalled();
+      expect(mocks.snapshot).not.toHaveBeenCalled();
       expect(mocks.buddyBackup.startScheduled).not.toHaveBeenCalled();
       expect(stored.state?.run?.results).toEqual({ local: 'off', buddy: 'off' });
 

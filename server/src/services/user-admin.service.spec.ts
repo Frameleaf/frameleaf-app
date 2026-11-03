@@ -32,6 +32,23 @@ describe(UserAdminService.name, () => {
     mocks.session.delete.mockResolvedValue();
   });
 
+  it('admin user response includes lockedEncryption', async () => {
+    mocks.lockedEncryption.get.mockResolvedValueOnce({ userId: userStub.user1.id, mode: 'pin', status: 'on' } as never);
+    await expect(sut.get(authStub.admin, userStub.user1.id)).resolves.toMatchObject({ lockedEncryption: true });
+    await expect(sut.get(authStub.admin, userStub.user1.id)).resolves.toMatchObject({ lockedEncryption: false });
+  });
+
+  it('admin user list says who has Locked encryption on, in one query', async () => {
+    mocks.user.getList.mockResolvedValue([userStub.admin, userStub.user1]);
+    mocks.lockedEncryption.getUserIds.mockResolvedValue(new Set([userStub.user1.id]));
+    const users = await sut.search(authStub.admin, {});
+    expect(users.map(({ id, lockedEncryption }) => ({ id, lockedEncryption }))).toEqual([
+      { id: userStub.admin.id, lockedEncryption: false },
+      { id: userStub.user1.id, lockedEncryption: true },
+    ]);
+    expect(mocks.lockedEncryption.getUserIds).toHaveBeenCalledTimes(1);
+  });
+
   describe('create', () => {
     it('should not create a user if there is no local admin account', async () => {
       mocks.user.getAdmin.mockResolvedValueOnce(void 0);
@@ -65,6 +82,118 @@ describe(UserAdminService.name, () => {
         storageLabel: 'label',
         password: expect.anything(),
         clusterGroupId: expect.any(String),
+        quotaSizeInBytes: null,
+      });
+    });
+
+    it('starts an account added without a space of its own with "Space for new people" (FL-516)', async () => {
+      mocks.user.getAdmin.mockResolvedValue(userStub.admin);
+      mocks.user.create.mockResolvedValue(userStub.user1);
+      mocks.systemMetadata.get.mockResolvedValue({ user: { newUserStorageQuota: 200 } });
+
+      await sut.create(authStub.admin, { email: 'a@example.test', name: 'A', password: 'password' });
+      expect(mocks.user.create).toHaveBeenLastCalledWith(expect.objectContaining({ quotaSizeInBytes: 200e9 }));
+
+      // A space chosen for this person wins, "no limit" included.
+      await sut.create(authStub.admin, {
+        email: 'b@example.test',
+        name: 'B',
+        password: 'password',
+        quotaSizeInBytes: null,
+      });
+      expect(mocks.user.create).toHaveBeenLastCalledWith(expect.objectContaining({ quotaSizeInBytes: null }));
+    });
+
+    describe('with a link to choose a password (FL-538)', () => {
+      const mailReady = {
+        notifications: { smtp: { enabled: true } },
+        server: { externalDomain: 'https://photos.example.test' },
+      };
+
+      it('sets no password, emails a single-use link and sends no welcome email', async () => {
+        mocks.user.getAdmin.mockResolvedValue(userStub.admin);
+        mocks.user.create.mockResolvedValue(userStub.user1);
+        mocks.systemMetadata.get.mockResolvedValue(mailReady);
+        mocks.user.setPasswordLink.mockResolvedValue({ id: userStub.user1.id });
+        mocks.crypto.randomBytes.mockReturnValue(Buffer.from('a'.repeat(32)));
+        mocks.crypto.hashSha256.mockReturnValue(Buffer.from('digest'));
+        mocks.email.renderEmail.mockResolvedValue({ html: '<p>link</p>', text: 'link' });
+
+        await sut.create(authStub.admin, {
+          email: userStub.user1.email,
+          name: userStub.user1.name,
+          password: 'ignored',
+          notify: true,
+          passwordLink: true,
+        });
+
+        expect(mocks.user.create).toHaveBeenCalledWith(
+          expect.objectContaining({ password: '', shouldChangePassword: false }),
+        );
+        expect(mocks.crypto.hashBcrypt).not.toHaveBeenCalled();
+        expect(mocks.user.setPasswordLink).toHaveBeenCalledWith(
+          userStub.user1.id,
+          userStub.user1.email,
+          Buffer.from('digest'),
+          expect.any(Date),
+        );
+        const token = Buffer.from('a'.repeat(32)).toString('base64url');
+        expect(mocks.email.renderEmail).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              link: `https://photos.example.test/auth/choose-password#${token}`,
+              isNew: true,
+            }),
+          }),
+        );
+        expect(mocks.job.queue).toHaveBeenCalledWith({
+          name: JobName.SendMail,
+          data: expect.objectContaining({ to: userStub.user1.email, subject: 'Choose your Frameleaf password' }),
+        });
+        expect(mocks.event.emit).not.toHaveBeenCalledWith('UserSignup', expect.anything());
+        expect(mocks.adminAudit.create).toHaveBeenCalledWith([
+          expect.objectContaining({ action: AdminAuditAction.AccountCreated }),
+          expect.objectContaining({ action: AdminAuditAction.PasswordReset, detail: 'link' }),
+        ]);
+      });
+
+      it('refuses before adding anyone while email is off or the server has no address', async () => {
+        mocks.user.getAdmin.mockResolvedValue(userStub.admin);
+        const dto = { email: 'a@example.test', name: 'A', password: '', passwordLink: true };
+
+        await expect(sut.create(authStub.admin, dto)).rejects.toThrow('Email is not set up');
+
+        mocks.systemMetadata.get.mockResolvedValue({ notifications: { smtp: { enabled: true } } });
+        await expect(sut.create(authStub.admin, dto)).rejects.toThrow('needs a public address');
+        expect(mocks.user.create).not.toHaveBeenCalled();
+      });
+
+      it('refuses to send a link after the destination email changes', async () => {
+        mocks.systemMetadata.get.mockResolvedValue(mailReady);
+        mocks.crypto.randomBytes.mockReturnValue(Buffer.alloc(32));
+        mocks.user.setPasswordLink.mockResolvedValue(undefined);
+        await expect(sut.sendPasswordLink(authStub.admin, userStub.user1.id)).rejects.toBeInstanceOf(ConflictException);
+        expect(mocks.email.renderEmail).not.toHaveBeenCalled();
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+        expect(mocks.adminAudit.create).not.toHaveBeenCalled();
+      });
+
+      it('emails an existing person a new link from their page', async () => {
+        mocks.user.get.mockResolvedValue(userStub.user1);
+        mocks.systemMetadata.get.mockResolvedValue(mailReady);
+        mocks.user.setPasswordLink.mockResolvedValue({ id: userStub.user1.id });
+        mocks.crypto.randomBytes.mockReturnValue(Buffer.from('b'.repeat(32)));
+        mocks.email.renderEmail.mockResolvedValue({ html: '', text: '' });
+
+        await sut.sendPasswordLink(authStub.admin, userStub.user1.id);
+
+        expect(mocks.email.renderEmail).toHaveBeenCalledWith(
+          expect.objectContaining({ data: expect.objectContaining({ isNew: false }) }),
+        );
+        expect(mocks.job.queue).toHaveBeenCalledWith({
+          name: JobName.SendMail,
+          data: expect.objectContaining({ subject: 'Choose a new Frameleaf password' }),
+        });
       });
     });
 
@@ -195,6 +324,24 @@ describe(UserAdminService.name, () => {
   });
 
   describe('update', () => {
+    // FL-721 (spec §10, owner): clearing or changing the PIN would leave the files unopenable
+    it.each([{ pinCode: null }, { pinCode: '654321' }])(
+      'admin update with %j returns 409 while encryption is on',
+      async (dto) => {
+        mocks.lockedEncryption.get.mockResolvedValue({ userId: userStub.user1.id, mode: 'pin', status: 'on' } as never);
+
+        await expect(sut.update(authStub.admin, userStub.user1.id, dto)).rejects.toBeInstanceOf(ConflictException);
+        expect(mocks.user.update).not.toHaveBeenCalled();
+        expect(mocks.session.lockAll).not.toHaveBeenCalled();
+      },
+    );
+
+    it('admin update leaves other fields editable while encryption is on', async () => {
+      mocks.lockedEncryption.get.mockResolvedValue({ userId: userStub.user1.id, mode: 'pin', status: 'on' } as never);
+      mocks.user.update.mockResolvedValue(userStub.user1);
+      await expect(sut.update(authStub.admin, userStub.user1.id, { name: 'New name' })).resolves.toBeDefined();
+    });
+
     // FL-34 (ported from PR131 bb70ad841f): a credential reset revokes the target's elevation everywhere
     it.each([{ pinCode: null }, { pinCode: '654321' }, { password: 'new-password' }])(
       'revokes only the target user elevation after a credential update: %j',
@@ -711,6 +858,26 @@ describe(UserAdminService.name, () => {
         entry(AdminAuditAction.AdminGranted),
         entry(AdminAuditAction.QuotaChanged, '1024'),
         entry(AdminAuditAction.StorageLabelChanged, 'label'),
+      ]);
+    });
+
+    it('records pausing and resuming new uploads (FL-538)', async () => {
+      mocks.user.get.mockResolvedValue({ ...userStub.user1, uploadsPaused: false });
+      mocks.user.update.mockResolvedValue({ ...userStub.user1, uploadsPaused: true });
+      await sut.update(authStub.admin, userStub.user1.id, { uploadsPaused: true });
+      expect(mocks.user.update).toHaveBeenCalledWith(
+        userStub.user1.id,
+        expect.objectContaining({ uploadsPaused: true }),
+      );
+      expect(mocks.adminAudit.create).toHaveBeenLastCalledWith([
+        entry(AdminAuditAction.AccountUpdated, 'uploads-paused'),
+      ]);
+
+      mocks.user.get.mockResolvedValue({ ...userStub.user1, uploadsPaused: true });
+      mocks.user.update.mockResolvedValue({ ...userStub.user1, uploadsPaused: false });
+      await sut.update(authStub.admin, userStub.user1.id, { uploadsPaused: false });
+      expect(mocks.adminAudit.create).toHaveBeenLastCalledWith([
+        entry(AdminAuditAction.AccountUpdated, 'uploads-resumed'),
       ]);
     });
 

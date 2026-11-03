@@ -1,4 +1,4 @@
-import { AssetResponseDto, AssetVisibility } from '@frameleaf/sdk';
+import { AssetResponseDto, AssetVisibility, TimeBucketsResponseDto } from '@frameleaf/sdk';
 import { BrowserContext, Page, Request, Route } from '@playwright/test';
 import { basename, dirname } from 'node:path';
 import {
@@ -24,25 +24,138 @@ export class TimelineTestContext {
 
 export const setupTimelineMockApiRoutes = async (
   context: BrowserContext,
-  timelineRestData: TimelineData,
+  sourceData: TimelineData,
   changes: Changes,
   testContext: TimelineTestContext,
 ) => {
+  const timelineRestData = {
+    ...sourceData,
+    buckets: new Map(sourceData.buckets),
+    album: { ...sourceData.album, assetIds: [...sourceData.album.assetIds] },
+  };
+  const purged = new Set<string>();
+  const purge = (ids: string[]) => {
+    const removed = new Set(ids);
+    for (const id of ids) {
+      purged.add(id);
+    }
+    changes.assetDeletions = changes.assetDeletions.filter((id) => !removed.has(id));
+    changes.albumAdditions = changes.albumAdditions.filter((id) => !removed.has(id));
+    timelineRestData.album.assetIds = timelineRestData.album.assetIds.filter((id) => !removed.has(id));
+    for (const [timeBucket, assets] of timelineRestData.buckets) {
+      const remaining = assets.filter((asset) => !removed.has(asset.id));
+      if (remaining.length > 0) {
+        timelineRestData.buckets.set(timeBucket, remaining);
+      } else {
+        timelineRestData.buckets.delete(timeBucket);
+      }
+    }
+  };
+  const readAlbum = (id: string | undefined) => {
+    const album = getAlbum(timelineRestData, testContext.adminId, id, changes);
+    if (album?.albumThumbnailAssetId && purged.has(album.albumThumbnailAssetId)) {
+      album.albumThumbnailAssetId = null;
+    }
+    return album;
+  };
+  const orderedAssets = (params: URLSearchParams) =>
+    timelineRestData.buckets
+      .entries()
+      .flatMap(([timeBucket, assets]) => {
+        const filtered = getTimeBucket(
+          timelineRestData,
+          timeBucket,
+          params.get('isTrashed') === 'true',
+          params.get('visibility') === 'archive',
+          params.has('isFavorite') ? params.get('isFavorite') === 'true' : undefined,
+          params.get('albumId') || undefined,
+          changes,
+        );
+        const byId = new Map(assets.map((asset) => [asset.id, asset]));
+        return filtered.id.map((id, index) => ({
+          ...byId.get(id)!,
+          isFavorite: filtered.isFavorite[index],
+          isTrashed: filtered.isTrashed[index],
+          visibility: filtered.visibility[index],
+        }));
+      })
+      .filter((asset) => asset.visibility === (params.get('visibility') ?? AssetVisibility.Timeline))
+      .toArray()
+      .toSorted((a, b) => (params.get('sort') === 'filename' ? a.id.localeCompare(b.id) : 0));
+
   await context.route('**/api/timeline**', async (route, request) => {
     const url = new URL(request.url());
     const pathname = url.pathname;
     if (pathname === '/api/timeline/buckets') {
       const albumId = url.searchParams.get('albumId') || undefined;
-      const isTrashed = url.searchParams.get('isTrashed') ? url.searchParams.get('isTrashed') === 'true' : undefined;
+      const isTrashed = url.searchParams.get('isTrashed') === 'true';
       const isFavorite = url.searchParams.get('isFavorite') ? url.searchParams.get('isFavorite') === 'true' : undefined;
       const isArchived = url.searchParams.get('visibility')
         ? url.searchParams.get('visibility') === 'archive'
         : undefined;
-      return route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        json: getTimeBuckets(timelineRestData, isTrashed, isArchived, isFavorite, albumId, changes),
-      });
+      let summaries = getTimeBuckets(timelineRestData, isTrashed, isArchived, isFavorite, albumId, changes);
+      const pageSize = Number(url.searchParams.get('pageSize'));
+      const sort = url.searchParams.get('sort');
+      const locateAssetId = url.searchParams.get('locateAssetId');
+      if (sort && locateAssetId && pageSize) {
+        const assets = orderedAssets(url.searchParams);
+        const index = assets.findIndex(({ id }) => id === locateAssetId);
+        const page = Math.floor(index / pageSize);
+        return route.fulfill({
+          json:
+            index === -1
+              ? []
+              : [
+                  {
+                    timeBucket: '1970-01-01',
+                    page,
+                    count: Math.min(pageSize, assets.length - page * pageSize),
+                  },
+                ],
+        });
+      }
+      if (pageSize) {
+        summaries = summaries.flatMap(({ timeBucket }) => {
+          const bucket = getTimeBucket(
+            timelineRestData,
+            timeBucket,
+            isTrashed,
+            isArchived,
+            isFavorite,
+            albumId,
+            changes,
+          );
+          const { id } = bucket;
+          const dayNumbers = bucket.fileCreatedAt.map((date, index) =>
+            new Date(Date.parse(date) + bucket.localOffsetHours[index] * 3_600_000).getUTCDate(),
+          );
+          const dayCounts = new Map<number, number>();
+          for (const day of dayNumbers) {
+            dayCounts.set(day, (dayCounts.get(day) ?? 0) + 1);
+          }
+          const locator = url.searchParams.get('locateAssetId');
+          const pages: TimeBucketsResponseDto[] = [];
+          for (let start = 0; start < id.length; start += pageSize) {
+            const ids = id.slice(start, start + pageSize);
+            if (!locator || ids.includes(locator)) {
+              pages.push({
+                timeBucket,
+                count: ids.length,
+                page: start / pageSize,
+                after: start ? id[start - 1] : null,
+                firstAssetId: ids[0],
+                lastAssetId: ids.at(-1),
+                days: [...new Set(dayNumbers.slice(start, start + pageSize))].map((day) => ({
+                  day,
+                  count: dayCounts.get(day)!,
+                })),
+              });
+            }
+          }
+          return pages;
+        });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', json: summaries });
     }
     if (pathname === '/api/timeline/highlights') {
       const param = (name: string) => url.searchParams.get(name);
@@ -53,7 +166,7 @@ export const setupTimelineMockApiRoutes = async (
           timelineRestData,
           param('grouping') === 'month' ? 'month' : 'year',
           Number(param('highlightCount') ?? 0),
-          param('isTrashed') ? param('isTrashed') === 'true' : undefined,
+          param('isTrashed') === 'true',
           param('visibility') ? param('visibility') === 'archive' : undefined,
           param('isFavorite') ? param('isFavorite') === 'true' : undefined,
           param('albumId') || undefined,
@@ -65,20 +178,7 @@ export const setupTimelineMockApiRoutes = async (
       // FL-30 (S-15): the library's own assets in a flat order; the mock names each file by its id.
       const skip = Number(url.searchParams.get('skip') ?? 0);
       const take = Number(url.searchParams.get('take') ?? 500);
-      const sort = url.searchParams.get('sort');
-      const assets = timelineRestData.buckets
-        .values()
-        .toArray()
-        .flat()
-        .filter(
-          (asset) =>
-            !asset.isTrashed &&
-            asset.visibility === AssetVisibility.Timeline &&
-            !changes.assetDeletions.includes(asset.id) &&
-            !changes.assetArchivals.includes(asset.id),
-        )
-        .toSorted((a, b) => (sort === 'filename' ? a.id.localeCompare(b.id) : 0))
-        .slice(skip, skip + take);
+      const assets = orderedAssets(url.searchParams).slice(skip, skip + take);
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -90,7 +190,7 @@ export const setupTimelineMockApiRoutes = async (
       if (!timeBucket) {
         return route.continue();
       }
-      const isTrashed = url.searchParams.get('isTrashed') ? url.searchParams.get('isTrashed') === 'true' : undefined;
+      const isTrashed = url.searchParams.get('isTrashed') === 'true';
       const isArchived = url.searchParams.get('visibility')
         ? url.searchParams.get('visibility') === 'archive'
         : undefined;
@@ -100,11 +200,45 @@ export const setupTimelineMockApiRoutes = async (
       if (testContext.slowBucket) {
         await sleep(5000);
       }
-      return route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        json: assets,
-      });
+      const take = Number(url.searchParams.get('take'));
+      if (take) {
+        const after = url.searchParams.get('after');
+        const start = after ? assets.id.indexOf(after) + 1 : 0;
+        if (after && start === 0) {
+          return route.fulfill({ status: 409 });
+        }
+        const page = Object.fromEntries(
+          Object.entries(assets).map(([key, value]) => [
+            key,
+            Array.isArray(value) ? value.slice(start, start + take) : value,
+          ]),
+        );
+        const ids = assets.id.slice(start, start + take);
+        const firstAssetId = url.searchParams.get('firstAssetId');
+        const lastAssetId = url.searchParams.get('lastAssetId');
+        if (
+          (firstAssetId || lastAssetId) &&
+          ((firstAssetId && ids[0] !== firstAssetId) ||
+            (lastAssetId && ids.at(-1) !== lastAssetId) ||
+            ids.length !== take)
+        ) {
+          return route.fulfill({ status: 409 });
+        }
+        const membershipAlbumId = url.searchParams.get('membershipAlbumId');
+        const albumIds = new Set([
+          ...(timelineRestData.album?.id === membershipAlbumId ? timelineRestData.album.assetIds : []),
+          ...changes.albumAdditions,
+        ]);
+        return route.fulfill({
+          json: {
+            ...page,
+            startCursor: ids[0] ?? null,
+            endCursor: ids.at(-1) ?? null,
+            ...(membershipAlbumId && { inAlbum: ids.map((id) => albumIds.has(id)) }),
+          },
+        });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', json: assets });
     }
     return route.continue();
   });
@@ -114,18 +248,24 @@ export const setupTimelineMockApiRoutes = async (
       const url = new URL(request.url());
       const pathname = url.pathname;
       const assetId = basename(pathname);
+      if (purged.has(assetId)) {
+        return route.fulfill({ status: 404 });
+      }
       let asset = getAsset(timelineRestData, assetId);
-      if (changes.assetDeletions.includes(asset!.id)) {
+      if (!asset) {
+        return route.fallback();
+      }
+      if (changes.assetDeletions.includes(asset.id)) {
         asset = {
           ...asset,
           isTrashed: true,
         } as AssetResponseDto;
       }
       // The asset endpoint reports the same changes the buckets do.
-      if (changes.assetFavorites.includes(asset!.id)) {
+      if (changes.assetFavorites.includes(asset.id)) {
         asset = { ...asset, isFavorite: true } as AssetResponseDto;
       }
-      if (changes.assetArchivals.includes(asset!.id)) {
+      if (changes.assetArchivals.includes(asset.id)) {
         asset = { ...asset, visibility: AssetVisibility.Archive } as AssetResponseDto;
       }
       return route.fulfill({
@@ -139,6 +279,16 @@ export const setupTimelineMockApiRoutes = async (
 
   await context.route('**/api/assets', async (route, request) => {
     if (request.method() === 'DELETE') {
+      const { ids, force } = request.postDataJSON();
+      if (force) {
+        purge(ids);
+      } else {
+        for (const id of ids) {
+          if (!purged.has(id) && !changes.assetDeletions.includes(id)) {
+            changes.assetDeletions.push(id);
+          }
+        }
+      }
       return route.fulfill({
         status: 204,
       });
@@ -238,13 +388,18 @@ export const setupTimelineMockApiRoutes = async (
     const pathname = new URL(request.url()).pathname;
     if (pathname === '/api/albums/tree') {
       // The library rail reads the album tree; the mock album stands on its own.
-      const album = getAlbum(timelineRestData, testContext.adminId, timelineRestData.album.id, changes);
+      const album = readAlbum(timelineRestData.album.id);
       return route.fulfill({ json: { albums: [album], collections: [], spaces: [] } });
+    }
+    if (pathname === '/api/albums/hierarchy') {
+      // The same rail data in the nested shape the rail now reads.
+      const album = readAlbum(timelineRestData.album.id);
+      return route.fulfill({ json: { roots: [{ album, children: [] }] } });
     }
     // Only the album itself: sub-resources (descendant counts, members, ...) are not mocked.
     const albumsMatch = pathname.match(/^\/api\/albums\/(?<albumId>[0-9a-f-]{36})$/);
     if (albumsMatch && request.method() === 'GET') {
-      const album = getAlbum(timelineRestData, testContext.adminId, albumsMatch.groups?.albumId, changes);
+      const album = readAlbum(albumsMatch.groups?.albumId);
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -265,6 +420,7 @@ export const setupTimelineMockApiRoutes = async (
     }
     return route.fallback();
   });
+  return { purge };
 };
 
 /**
@@ -275,6 +431,7 @@ export const setupTrashMockApiRoutes = async (
   context: BrowserContext,
   timelineRestData: TimelineData,
   changes: Changes,
+  purge: (ids: string[]) => void,
 ) => {
   const trashItems = () =>
     changes.assetDeletions
@@ -290,6 +447,16 @@ export const setupTrashMockApiRoutes = async (
         type: asset.type,
       }));
 
+  const affectedIds = (action: string, ids: string[]) => {
+    const selected = new Set(ids);
+    return trashItems()
+      .map(({ id }) => id)
+      .filter((id) => action === 'empty' || action === 'restore-all' || selected.has(id));
+  };
+
+  const reviews = new Map<string, { action: string; ids: string[] }>();
+  let reviewSequence = 0;
+
   await context.route('**/api/trash/**', async (route, request) => {
     const pathname = new URL(request.url()).pathname;
     if (pathname === '/api/trash/summary') {
@@ -301,24 +468,56 @@ export const setupTrashMockApiRoutes = async (
     }
     if (pathname === '/api/trash/review') {
       const { action, ids = [] } = request.postDataJSON();
+      const affected = affectedIds(action, ids);
+      const whole = action === 'empty' || action === 'restore-all';
+      if (affected.length === 0 || (!whole && new Set(ids).size !== affected.length)) {
+        return route.fulfill({
+          status: 400,
+          json: { message: 'A chosen item changed or is no longer available. Refresh and review again.' },
+        });
+      }
+      const token = `timeline-review-${++reviewSequence}`;
+      reviews.set(token, { action, ids: affected.toSorted((a, b) => a.localeCompare(b)) });
       return route.fulfill({
         json: {
           action,
           bytes: 0,
-          count: ids.length,
+          count: affected.length,
           names: [],
           retainedBytes: 0,
           retainedOriginals: 0,
-          token: 'review',
+          token,
         },
       });
     }
     if (pathname === '/api/trash/apply') {
-      const { action, ids = [] } = request.postDataJSON();
-      if (action === 'restore') {
-        changes.assetDeletions = changes.assetDeletions.filter((id) => !ids.includes(id));
+      const { action, ids = [], token } = request.postDataJSON();
+      const affected = affectedIds(action, ids);
+      const review = reviews.get(token);
+      const whole = action === 'empty' || action === 'restore-all';
+      if (
+        (!whole && new Set(ids).size !== affected.length) ||
+        !review ||
+        review.action !== action ||
+        JSON.stringify(review.ids) !== JSON.stringify(affected.toSorted((a, b) => a.localeCompare(b)))
+      ) {
+        return route.fulfill({
+          status: 409,
+          json: { message: 'Trash changed since this review. Review the current items before continuing.' },
+        });
       }
-      return route.fulfill({ json: { count: ids.length } });
+      const changedIds = new Set(affected);
+      for (const [reviewToken, previous] of reviews) {
+        if (previous.ids.some((id) => changedIds.has(id))) {
+          reviews.delete(reviewToken);
+        }
+      }
+      if (action === 'restore' || action === 'restore-all') {
+        changes.assetDeletions = changes.assetDeletions.filter((id) => !affected.includes(id));
+      } else if (action === 'delete' || action === 'empty') {
+        purge(affected);
+      }
+      return route.fulfill({ json: { count: affected.length } });
     }
     return route.fallback();
   });

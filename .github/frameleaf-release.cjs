@@ -330,18 +330,52 @@ const REQUIRED_TEST_JOBS = Object.freeze([
   "Test Web",
   "Test i18n",
   "End-to-End Lint",
+  "Medium Test Image",
+  "Medium Core Shard (1)",
+  "Medium Core Shard (2)",
+  "Medium Core Shard (3)",
+  "Medium Core Shard (4)",
+  "Medium Core Shard (5)",
+  "Medium Core Shard (6)",
+  "Medium Scale Shard (1)",
+  "Medium Scale Shard (2)",
+  "Medium Scale Shard (3)",
+  "Medium Scale Shard (4)",
+  "Medium Scale Shard (5)",
+  "Medium Scale Shard (6)",
   "Medium Tests (Server)",
   "Medium Scale Tests (Server)",
-  "End-to-End Tests (Server & CLI) (ubuntu-24.04)",
-  "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04, api-1)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04, api-2)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04, api-3)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04, api-4)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04, maintenance)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04, transport)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04, buddy)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04, cloud)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04, accounting)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm, api-1)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm, api-2)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm, api-3)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm, api-4)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm, maintenance)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm, transport)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm, cloud)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm, accounting)",
   "End-to-End Image (ubuntu-24.04)",
   "End-to-End Image (ubuntu-24.04-arm)",
   "End-to-End Tests (Web) (ubuntu-24.04, 1)",
   "End-to-End Tests (Web) (ubuntu-24.04, 2)",
   "End-to-End Tests (Web) (ubuntu-24.04, 3)",
+  "End-to-End Tests (Web) (ubuntu-24.04, ui)",
+  "End-to-End Tests (Web) (ubuntu-24.04, maintenance)",
+  "End-to-End Tests (Web) (ubuntu-24.04, icloud)",
   "End-to-End Tests (Web) (ubuntu-24.04-arm, 1)",
   "End-to-End Tests (Web) (ubuntu-24.04-arm, 2)",
   "End-to-End Tests (Web) (ubuntu-24.04-arm, 3)",
+  "End-to-End Tests (Web) (ubuntu-24.04-arm, ui)",
+  "End-to-End Tests (Web) (ubuntu-24.04-arm, maintenance)",
+  "End-to-End Tests (Web) (ubuntu-24.04-arm, icloud)",
   "End-to-End Tests Success",
   "Unit Test ML",
   ".github Files Formatting",
@@ -392,7 +426,7 @@ async function requireTestQualification(sha, request = github, expected) {
   const result = await request(
     `actions/runs/${run.id}/attempts/${run.run_attempt}/jobs?per_page=100`,
   );
-  // There are 20 required lanes. Fail closed if a response is incomplete instead of certifying a partial page.
+  // Fail closed if a response is incomplete instead of certifying a partial page.
   assert(
     Array.isArray(result.jobs) &&
       result.total_count === result.jobs.length &&
@@ -472,6 +506,33 @@ function previousReleaseTag(tag, releases) {
       .filter(([, version]) => version && compare(version, current) < 0)
       .sort(([, a], [, b]) => compare(b, a))[0]?.[0] ?? null
   );
+}
+// What users read first (Manager's update screen shows this body): the summary written for the
+// version in .github/release-notes/<version>.md, then every Jira key in the squash subjects since
+// the previous release. Build evidence and GitHub's generated notes follow.
+function releaseNotesBody({ summary, messages, evidence }) {
+  const key = /\b[A-Z][A-Z0-9]+-\d+\b/g;
+  const issues = messages.flatMap((message) => {
+    const subject = message.split("\n")[0];
+    const keys = subject.match(key);
+    if (!keys) return [];
+    const title = subject.replace(/^(?:[A-Z][A-Z0-9]+-\d+[\s,:]*)+/, "");
+    return [`- ${keys.join(", ")}: ${title.trim()}`];
+  });
+  return [
+    `## What's improved\n\n${summary.trim()}`,
+    `## Jira issues resolved\n\n${issues.length ? issues.join("\n") : "None"}`,
+    evidence.trim(),
+  ].join("\n\n");
+}
+async function releaseSummary(version) {
+  const file = `.github/release-notes/${version}.md`;
+  const summary = await fs.readFile(file, "utf8").catch(() => "");
+  assert(
+    summary.trim(),
+    `Missing ${file}: write a short user-facing summary of what improved in the version bump PR`,
+  );
+  return summary;
 }
 function chooseTag(version, releases, refs, sha) {
   assert(SHA.test(sha), "Invalid source SHA");
@@ -830,12 +891,10 @@ async function planReuse(env = process.env, registry = new Registry(env)) {
     }
   }
   let manifest;
-  if (env.GITHUB_EVENT_NAME === "push") {
-    try {
-      manifest = await releaseEvidence();
-    } catch (error) {
-      console.log(`Build required: ${error.message}`);
-    }
+  try {
+    manifest = await releaseEvidence();
+  } catch (error) {
+    console.log(`Build required: ${error.message}`);
   }
   for (const image of Object.keys(BUILD_INPUTS)) {
     let reuse = false;
@@ -877,7 +936,7 @@ function reuseAnnotations(spec, image, env) {
 async function reuseCandidate(env = process.env) {
   assert.equal(env.GITHUB_REPOSITORY, REPOSITORY);
   assert.equal(env.GITHUB_REF, `refs/heads/${MAIN}`);
-  assert.equal(env.GITHUB_EVENT_NAME, "push");
+  assert(["push", "workflow_dispatch"].includes(env.GITHUB_EVENT_NAME));
   const spec = variant(env.IMAGE, env.SUFFIX);
   assert(/^frameleaf-v/.test(env.REUSE_RELEASE || ""), "Missing reuse release");
   const registry = new Registry(env);
@@ -1136,7 +1195,10 @@ async function resolveCandidate(
     `actions/workflows/docker.yml/runs?head_sha=${sha}&status=success&per_page=100`,
   );
   const run = (Array.isArray(runs) ? runs : []).find((r) => trustedRun(r, sha));
-  assert(run, "No successful same-SHA build run exists for this commit");
+  assert(
+    run,
+    "No successful same-SHA build run exists for this commit; run the Deploy workflow on main first",
+  );
   const testQualification = await requireTestQualification(sha);
   const images = [];
   for (const spec of VARIANTS)
@@ -1281,6 +1343,27 @@ async function releaseFlags(
     /^frameleaf-v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(tag || ""),
     "Invalid release tag",
   );
+  const restoreTag = env.RESTORE_TAG;
+  if (env.ACTION === "withdraw") {
+    // Check the inputs before any lookup: a missing restore tag would otherwise fall back to `latest`.
+    assert(
+      /^frameleaf-v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(restoreTag || ""),
+      "Give the release tag to restore",
+    );
+    assert(
+      typeof env.REASON === "string" && env.REASON.trim(),
+      "A withdrawal needs a reason",
+    );
+    assert(
+      env.REASON.replace(/\s+/g, " ").trim().length <= 300,
+      "A withdrawal needs a reason of at most 300 characters",
+    );
+    assert.notEqual(
+      restoreTag,
+      tag,
+      "Restore another release than the one withdrawn",
+    );
+  }
   const record = await github(`releases/tags/${encodeURIComponent(tag)}`);
   assert(!record.draft, "The release is still a draft");
   const dryRun = env.DRY_RUN === "true";
@@ -1304,13 +1387,12 @@ async function releaseFlags(
     return;
   }
   assert.equal(env.ACTION, "withdraw", "Expected rollout or withdraw");
-  const restoreTag = env.RESTORE_TAG;
+  const evidence = await releaseEvidence(restoreTag);
   assert.notEqual(
-    restoreTag,
+    evidence.tag,
     tag,
     "Restore another release than the one withdrawn",
   );
-  const evidence = await releaseEvidence(restoreTag);
   const restore = [];
   for (const spec of VARIANTS) {
     const records = evidence.images.filter(
@@ -1392,6 +1474,11 @@ async function createBundle(
       assert(
         /^FRAMELEAF_VERSION=latest$/m.test(body),
         "Version setting must be latest",
+      );
+      // Name this bundle's exact tag for anyone who pins it.
+      body = body.replace(
+        /^FRAMELEAF_VERSION=latest$/m,
+        `# This release: FRAMELEAF_VERSION=${tag}\n$&`,
       );
     } else if (name.startsWith("docker-compose")) {
       assert(
@@ -1590,6 +1677,7 @@ async function release(env = process.env) {
   // never reserved, tagged or promoted.
   const dependencies = await verifyDependencyImages(registry, process.cwd());
   const version = JSON.parse(await fs.readFile("server/package.json")).version;
+  const summary = await releaseSummary(version);
   const releases = await listAll("releases");
   const refs = await github("git/matching-refs/tags/frameleaf-v");
   assert(Array.isArray(refs), "Invalid tag reference response");
@@ -1645,13 +1733,25 @@ async function release(env = process.env) {
           ...(previous ? { previous_tag_name: previous } : {}),
         }),
       });
+      // ponytail: one compare page (250 commits); paginate if a release ever ships more.
+      const range = previous
+        ? await github(`compare/${previous}...${env.SOURCE_SHA}?per_page=250`)
+        : { commits: [], total_commits: 0 };
+      assert(
+        range.commits.length === range.total_commits,
+        "Too many commits since the previous release to list its Jira issues",
+      );
       const body = {
         tag_name: tag,
         target_commitish: env.SOURCE_SHA,
         name: tag,
         draft: true,
         body: releaseFlagsBody(
-          `Source: ${env.SOURCE_SHA}\n\nBuild evidence: ${manifest.buildRun}\n\nUse the attached version-matched installation files and release-manifest.json. Verify an image with: cosign verify --key ${COSIGN_PUBLIC_KEY} <image>@<digest>\n\n${notes.body ?? ""}`,
+          releaseNotesBody({
+            summary,
+            messages: range.commits.map((c) => c.commit.message),
+            evidence: `Source: ${env.SOURCE_SHA}\n\nBuild evidence: ${manifest.buildRun}\n\nUse the attached version-matched installation files and release-manifest.json. Verify an image with: cosign verify --key ${COSIGN_PUBLIC_KEY} <image>@<digest>\n\n${notes.body ?? ""}`,
+          }),
           { rolloutPercent },
         ),
       };
@@ -1742,6 +1842,7 @@ module.exports = {
   requireTestQualification,
   chooseTag,
   previousReleaseTag,
+  releaseNotesBody,
   verifyImage,
   createBundle,
   DEPENDENCY_IMAGES,

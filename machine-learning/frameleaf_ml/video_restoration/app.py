@@ -18,6 +18,7 @@ Bearer authentication uses the same ``FRAMELEAF_ML_AUTH_TOKEN`` variable (or its
 
 import asyncio
 import base64
+import ipaddress
 import logging
 import os
 import secrets
@@ -309,8 +310,24 @@ def create_app(
     return app
 
 
+def _is_loopback(host: str) -> bool:
+    if host.strip().lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host.strip().strip("[]")).is_loopback
+    except ValueError:
+        return False
+
+
 def create_app_from_env() -> tuple[FastAPI, WorkerSettings]:
     settings = WorkerSettings.from_env()
+    if settings.auth_token is None and not _is_loopback(settings.host):
+        log.warning(
+            "FRAMELEAF_ML_AUTH_TOKEN is not set and the restoration worker listens on %s; "
+            "anything able to reach port %d can submit restoration requests.",
+            settings.host,
+            settings.port,
+        )
     registry = RestorationRegistry(
         settings.manifest,
         settings.qualification,

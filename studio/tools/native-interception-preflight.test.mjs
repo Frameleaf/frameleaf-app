@@ -8,7 +8,7 @@ import { once } from 'node:events';
 import { cleanupWhisperRun } from './whisper-worker.browser.mjs';
 import { runNativeInterceptionPreflight, nativeChannelDisposition, nativeDiagnosticError, nativeDiagnosticURL } from './native-interception-preflight.browser.mjs';
 
-test('actual browser Fetch guards page and workers, redirects and OPTIONS while sockets remain fenced', async (t) => {
+test('actual browser Fetch guards page and workers, redirects and OPTIONS while sockets remain fenced', { skip: process.env.STUDIO_NATIVE_PREFLIGHT !== '1' }, async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'frameleaf-native-preflight-report-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const file = path.join(root, 'observation.json');

@@ -36,7 +36,7 @@
     markerRowLine,
     markerTypeCounts,
   } from '$lib/frameleaf/map-markers';
-  import { mapDateWindow, MAP_DATE_PRESETS, type MapArea } from '$lib/frameleaf/map-settings';
+  import { isInMapArea, mapDateWindow, MAP_DATE_PRESETS, toMapArea, type MapArea } from '$lib/frameleaf/map-settings';
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
   import { mapSettings, type MapSettings, locale } from '$lib/stores/preferences.store';
   import { getAssetMediaUrl } from '$lib/utils';
@@ -390,9 +390,8 @@
     if (!map) {
       return;
     }
-    const bounds = map.getBounds();
-    const all = bounds.getEast() - bounds.getWest() >= 360;
-    inView = all ? markers : markers.filter(({ lon, lat }) => bounds.contains([lon, lat]));
+    const area = toMapArea(map.getBounds());
+    inView = markers.filter(({ lon, lat }) => isInMapArea(area, lon, lat));
     listShown = LIST_PAGE;
     zoom = map.getZoom();
     layoutPins();
@@ -489,15 +488,9 @@
     if (!map) {
       return;
     }
-    const bounds = map.getBounds();
     changed = false;
     status = $t('frameleaf_map_status_searching', { values: { count: inView.length } });
-    onSearchArea?.({
-      west: Math.max(-180, bounds.getWest()),
-      south: Math.max(-90, bounds.getSouth()),
-      east: Math.min(180, bounds.getEast()),
-      north: Math.min(90, bounds.getNorth()),
-    });
+    onSearchArea?.(toMapArea(map.getBounds()));
   };
 
   const onKeydown = (event: KeyboardEvent) => {

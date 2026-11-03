@@ -104,6 +104,19 @@ export class PhotoToolsRepository {
     return this.db.insertInto('develop_export').values(item).returningAll().executeTakeFirstOrThrow();
   }
 
+  async createReservedExport(item: Insertable<DevelopExportTable>): Promise<DevelopExport> {
+    const created = await this.db
+      .insertInto('develop_export')
+      .values(item)
+      .onConflict((oc) => oc.column('id').doNothing())
+      .returningAll()
+      .executeTakeFirst();
+    if (created) return created;
+    const existing = await this.getExport(item.id!);
+    if (!existing || existing.ownerId !== item.ownerId || existing.assetId !== item.assetId)
+      throw new BadRequestException('That export is unavailable');
+    return existing;
+  }
   listExports(assetId: string): Promise<DevelopExport[]> {
     return this.db
       .selectFrom('develop_export')

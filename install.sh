@@ -28,11 +28,36 @@ download_dot_env_file() {
 
 generate_random_password() {
   echo "Generate random password for .env file..."
-  rand_pass=$(echo "$RANDOM$(date)$RANDOM" | sha256sum | base64 | head -c10)
-  if [ -z "$rand_pass" ]; then
-    sed -i -e "s/DB_PASSWORD=postgres/DB_PASSWORD=postgres${RANDOM}${RANDOM}/" ./.env
-  else
-    sed -i -e "s/DB_PASSWORD=postgres/DB_PASSWORD=${rand_pass}/" ./.env
+  local rand_pass
+  rand_pass=$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom 2>/dev/null | head -c 24)
+  if [[ ${#rand_pass} -ne 24 ]]; then
+    echo 'could not read secure random bytes from /dev/urandom' >&2
+    return 1
+  fi
+  # Shell builtins only: the password never appears in another process's arguments.
+  local line found=0
+  {
+    while IFS= read -r line || [[ -n $line ]]; do
+      if [[ $line == 'DB_PASSWORD=postgres' ]]; then
+        line="DB_PASSWORD=${rand_pass}"
+        found=$((found + 1))
+      fi
+      printf '%s\n' "$line"
+    done <./.env
+  } >./.env.new || return 1
+  if [[ $found -ne 1 ]]; then
+    rm -f ./.env.new
+    echo '.env has no single DB_PASSWORD=postgres placeholder to replace' >&2
+    return 1
+  fi
+  mv ./.env.new ./.env || return 1
+  found=0
+  while IFS= read -r line || [[ -n $line ]]; do
+    [[ $line == "DB_PASSWORD=${rand_pass}" ]] && found=1
+  done <./.env
+  if [[ $found -ne 1 ]]; then
+    echo '.env does not contain the generated database password' >&2
+    return 1
   fi
 }
 
@@ -84,6 +109,8 @@ main() {
     return 14
   fi
 
+  # Keep the install directory and .env (database password) private to this user.
+  umask 077
   create_frameleaf_directory || {
     echo 'error creating Frameleaf directory'
     return 10
@@ -96,7 +123,10 @@ main() {
     echo 'error downloading .env'
     return 12
   }
-  generate_random_password
+  generate_random_password || {
+    echo 'error generating database password'
+    return 15
+  }
   start_docker_compose || {
     echo 'error starting Docker'
     return 13

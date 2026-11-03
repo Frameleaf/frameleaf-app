@@ -257,7 +257,7 @@ const required = {
   "Medium Tests (Server)": [
     "test.yml",
     "server-medium-tests",
-    /docker run --rm/,
+    /test "\$RESULT" = success/,
   ],
   "Unit Test CLI": ["test.yml", "cli-unit-tests", /ci-unit/],
   "SQL Schema Checks": ["test.yml", "sql-schema-up-to-date", /migrations:run/],
@@ -343,8 +343,8 @@ test("all nine protected checks execute on Frameleaf main PRs", () => {
     );
     assert.equal(
       j.needs,
-      undefined,
-      `${name} must not depend on an upstream pre-job`,
+      id === "server-medium-tests" ? "server-medium-core-tests" : undefined,
+      `${name} must execute directly or aggregate every isolated shard`,
     );
     assert.equal(admission(j.if, "Frameleaf/frameleaf-app"), true);
     assert.equal(admission(j.if, "immich-app/immich"), false);
@@ -364,13 +364,7 @@ test("all nine protected checks execute on Frameleaf main PRs", () => {
         );
       }
     }
-    // FL-380: the medium runner build reads (never writes) the registry build cache.
-    assert.deepEqual(
-      j.permissions,
-      id === "server-medium-tests"
-        ? { contents: "read", packages: "read" }
-        : { contents: "read" },
-    );
+    assert.deepEqual(j.permissions, { contents: "read" });
     assert.match(j.steps.map((s) => s.run ?? s.uses ?? "").join("\n"), command);
     assert.equal(
       j.steps.some((s) => s["continue-on-error"]),
@@ -609,7 +603,10 @@ test("server E2E diagnostics preserve the failure state before maintenance", () 
     /strace|core_pattern|trace_pipe|\/proc\/.*environ|pid,args|trace_options/u,
   );
   assert.equal(capture.name, "Capture server diagnostics after API tests");
-  assert.equal(capture.if, "always()");
+  assert.equal(
+    capture.if,
+    "${{ always() && startsWith(matrix.suite, 'api-') }}",
+  );
   assert.equal(capture["working-directory"], "./e2e");
   assert.equal(steps[api + 2].name, "Run e2e tests (maintenance)");
   assert.match(capture.run, /docker compose ps --all --quiet/u);
@@ -668,11 +665,11 @@ test("hosted NAS fixtures require the pinned TrueNAS library and hashed renderer
   assert.match(prepare.run, /https:\/\/github\.com\/truenas\/apps\.git/);
   assert.match(
     prepare.run,
-    /fetch --depth=1 origin db019217d73fc8c4e1d1b9c3e89be5dcc705c95a/,
+    /fetch --depth=1 origin 99df68c9497e3966d33ee4e0990df7009e3f49a9/,
   );
   assert.match(
     prepare.run,
-    /test "\$\(git -C "\$catalog" rev-parse HEAD\)" = db019217d73fc8c4e1d1b9c3e89be5dcc705c95a/,
+    /test "\$\(git -C "\$catalog" rev-parse HEAD\)" = 99df68c9497e3966d33ee4e0990df7009e3f49a9/,
   );
   assert.match(prepare.run, /python3 -m venv "\$RUNNER_TEMP\/nas-render-venv"/);
   assert.match(
@@ -683,10 +680,7 @@ test("hosted NAS fixtures require the pinned TrueNAS library and hashed renderer
   assert.doesNotMatch(prepare.run, /\|\| true|--no-deps|--trusted-host/);
   assert.equal(fixtures.env.FRAMELEAF_REQUIRE_TRUENAS_RENDER, "true");
   assert.equal(fixtures.env.PYTHONDONTWRITEBYTECODE, "1");
-  assert.equal(
-    fixtures.env.TRUENAS_LIBRARY,
-    "${{ runner.temp }}/truenas-catalog/ix-dev/community/actual-budget/templates/library/base_v2_3_4",
-  );
+  assert.equal(fixtures.env.TRUENAS_LIBRARY, "${{ runner.temp }}/base_v2_3_18");
   assert.equal(
     fixtures.run,
     "node --test --test-concurrency=1 packaging/nas/build.test.cjs",
@@ -719,7 +713,7 @@ test("Buddy acceptance runs only on x64 and refuses unsuccessful fixture prerequ
       for (const cancelled of [false, true]) {
         const admitted = runInNewContext(
           step.if.replace(/^\$\{\{\s*|\s*\}\}$/g, ""),
-          { matrix: { runner }, cancelled: () => cancelled },
+          { matrix: { runner, suite: "buddy" }, cancelled: () => cancelled },
         );
         assert.equal(admitted, runner === "ubuntu-24.04" && !cancelled);
       }
@@ -778,7 +772,7 @@ test("Buddy cleanup is always admitted on x64 and refuses an unowned directory",
     for (const runner of ["ubuntu-24.04", "ubuntu-24.04-arm"]) {
       assert.equal(
         runInNewContext(step.if.replace(/^\$\{\{\s*|\s*\}\}$/g, ""), {
-          matrix: { runner },
+          matrix: { runner, suite: "buddy" },
           always: () => true,
         }),
         runner === "ubuntu-24.04",
@@ -1459,6 +1453,13 @@ const assertIntegrationMlArchives = (w) => {
   );
 };
 
+test("a superseded Test run skips the E2E gate instead of failing it", () => {
+  const w = workflow("test.yml");
+  // A newer commit cancels the running one; that run must not leave a red check behind.
+  assert.equal(w.concurrency["cancel-in-progress"], true);
+  assert.match(w.jobs["success-check-e2e"].if, /&& !cancelled\(\) }}$/);
+});
+
 test("integration image is a guarded manual pre-release that never writes release-pipeline tags", () => {
   const w = workflow("integration-image.yml");
   // Pushes to main build it; a manual dispatch on main rebuilds the current head.
@@ -1863,7 +1864,7 @@ test("media fixture source is immutable and the owned archive cannot publish", (
     /sha256sum/,
   );
   for (const [file, id] of [
-    ["test.yml", "server-medium-tests"],
+    ["test.yml", "server-medium-core-tests"],
     ["test.yml", "server-medium-scale-tests"],
     ["test.yml", "e2e-tests-server-cli"],
     ["test.yml", "e2e-tests-web"],
@@ -1928,14 +1929,18 @@ test("canonical TypeScript SDK generation has no workflow or mise raw bypass", (
   assert.doesNotMatch(mise, /oazapfts\s+--/u);
 });
 
-test("action upgrades preserve later mise authentication and the existing uv cache policy", () => {
+test("action upgrades preserve scoped mise authentication and the existing uv cache policy", () => {
   for (const file of readdirSync(path.join(root, ".github/workflows")).filter(
     (file) => /\.ya?ml$/.test(file),
   )) {
     for (const job of Object.values(workflow(file).jobs)) {
       for (const step of job.steps ?? []) {
         if (step.uses?.startsWith("jdx/mise-action@")) {
-          assert.equal(step.with.persist_github_token, true, file);
+          assert.equal(
+            step.with.persist_github_token,
+            file !== "library-import-qualification.yml",
+            file,
+          );
         }
       }
     }
@@ -1962,9 +1967,242 @@ test("image publish and re-tag jobs survive the other image's skipped build", ()
     "retag-machine-learning",
   ]) {
     const condition = String(jobs[name].if);
-    assert.match(condition, /!cancelled\(\)/, `${name} needs a status function`);
-    assert.match(condition, /needs\['deploy-test'\]\.result == 'success'/, `${name} still requires the deployment test`);
+    assert.match(
+      condition,
+      /!cancelled\(\)/,
+      `${name} needs a status function`,
+    );
+    assert.match(
+      condition,
+      /needs\['deploy-test'\]\.result == 'success'/,
+      `${name} still requires the deployment test`,
+    );
   }
-  assert.match(String(jobs["server-publish"].if), /needs\.server\.result == 'success'/);
-  assert.match(String(jobs["machine-learning-publish"].if), /needs\['machine-learning'\]\.result == 'success'/);
+  assert.match(
+    String(jobs["server-publish"].if),
+    /needs\.server\.result == 'success'/,
+  );
+  assert.match(
+    String(jobs["machine-learning-publish"].if),
+    /needs\['machine-learning'\]\.result == 'success'/,
+  );
+});
+
+test("isolated test lanes cover every shard and keep required gates fail-closed", () => {
+  const jobs = workflow("test.yml").jobs;
+  for (const [id, total] of [
+    ["server-medium-core-tests", 6],
+    ["server-medium-scale-tests", 6],
+  ]) {
+    const job = jobs[id];
+    assert.ok(job, id);
+    assert.deepEqual(
+      job.strategy.matrix.shard,
+      Array.from({ length: total }, (_, i) => i + 1),
+    );
+    assert.equal(job.strategy["fail-fast"], false);
+    assert.equal(job.needs, "server-medium-image");
+    const run = job.steps.find((s) => s.env?.FRAMELEAF_MEDIUM_SUITE);
+    assert.equal(
+      run.env.FRAMELEAF_MEDIUM_SHARD,
+      "${{ matrix.shard }}/" + total,
+    );
+    assert.match(run.run, /--env FRAMELEAF_MEDIUM_SHARD/);
+    assert.ok(job.steps.some((s) => s.run?.includes("docker load")));
+    assert.equal(
+      job.steps.some((s) => s.with?.target === "medium-test"),
+      false,
+    );
+  }
+  for (const [id, dependency, name] of [
+    [
+      "server-medium-tests",
+      "server-medium-core-tests",
+      "Medium Tests (Server)",
+    ],
+    [
+      "server-medium-scale-success",
+      "server-medium-scale-tests",
+      "Medium Scale Tests (Server)",
+    ],
+  ]) {
+    const gate = jobs[id];
+    assert.equal(gate.name, name);
+    assert.equal(gate.needs, dependency);
+    assert.match(gate.if, /always\(\)/);
+    const run = gate.steps[0];
+    for (const result of ["success", "failure", "cancelled", "skipped"]) {
+      const checked = spawnSync("bash", ["-e", "-c", run.run], {
+        env: { ...process.env, RESULT: result },
+      });
+      assert.equal(
+        checked.status === 0,
+        result === "success",
+        id + ":" + result,
+      );
+    }
+  }
+  const api = jobs["e2e-tests-server-cli"];
+  const install = api.steps.find(
+    (step) => step.name === "Install dependencies",
+  ).run;
+  assert.match(install, /--filter 'frameleaf-e2e\.\.\.'/);
+  assert.match(install, /--filter 'frameleaf\.\.\.'/);
+  assert.deepEqual(api.strategy.matrix.suite, [
+    "api-1",
+    "api-2",
+    "api-3",
+    "api-4",
+    "maintenance",
+    "transport",
+    "buddy",
+    "cloud",
+    "accounting",
+  ]);
+  assert.deepEqual(api.strategy.matrix.exclude, [
+    { runner: "ubuntu-24.04-arm", suite: "buddy" },
+  ]);
+  assert.ok(
+    api.steps
+      .find((s) => s.name === "Archive Docker logs")
+      .with.name.includes("matrix.suite"),
+  );
+  const web = jobs["e2e-tests-web"];
+  assert.deepEqual(web.strategy.matrix.shard, [
+    1,
+    2,
+    3,
+    "ui",
+    "maintenance",
+    "icloud",
+  ]);
+  for (const job of [api, web]) assert.equal(job.strategy["fail-fast"], false);
+  const image = jobs["e2e-image"].steps;
+  const builds = image
+    .find((s) => s.name === "Build the server image")
+    .run.trim()
+    .split("\n")
+    .map((command) => command.replace(/^docker compose build /, "").split(" "));
+  assert.deepEqual(
+    builds[0],
+    ["frameleaf-server"],
+    "keep the server cache graph isolated",
+  );
+  const compose = load(
+    readFileSync(path.join(root, "e2e/docker-compose.yml"), "utf8"),
+  );
+  const builtServices = builds.flat();
+  const saved = image.find((s) => s.name === "Save the server image").run;
+  for (const [name, service] of Object.entries(compose.services).filter(
+    ([, service]) => service.build,
+  )) {
+    assert.equal(
+      builtServices.filter((candidate) => candidate === name).length,
+      1,
+      `build ${name} explicitly exactly once`,
+    );
+    assert.ok(saved.includes(service.image), `export the built ${name} image`);
+  }
+  assert.match(
+    image.find((s) => s.name === "Save the server image").run,
+    /frameleaf-postgres:e2e frameleaf-e2e-auth:latest/,
+  );
+});
+
+test("E2E matrix lanes execute each intended suite once per architecture", () => {
+  const jobs = workflow("test.yml").jobs;
+  const selected = (job, matrix) => {
+    const steps = {};
+    const names = [];
+    for (const step of job.steps) {
+      const expression = step.if
+        ?.replace(/^\$\{\{\s*|\s*\}\}$/g, "")
+        .replace(/steps\.([\w-]+)\.outcome/g, 'steps["$1"].outcome');
+      const run =
+        !expression ||
+        runInNewContext(expression, {
+          matrix,
+          steps,
+          cancelled: () => false,
+          always: () => true,
+          success: () => true,
+          failure: () => false,
+          startsWith: (value, prefix) => value.startsWith(prefix),
+          github: {
+            event_name: "pull_request",
+            event: {
+              pull_request: {
+                head: { repo: { full_name: "Frameleaf/frameleaf-app" } },
+              },
+            },
+            repository: "Frameleaf/frameleaf-app",
+          },
+        });
+      if (step.id) steps[step.id] = { outcome: run ? "success" : "skipped" };
+      if (run) names.push(step.name);
+    }
+    return names;
+  };
+  const server = jobs["e2e-tests-server-cli"];
+  const serverRuns = [
+    "Run e2e tests (api & cli)",
+    "Run e2e tests (maintenance)",
+    "Run upload relay and proxy transport tests",
+    "Run two-server direct Buddy acceptance",
+    "Run e2e tests (Frameleaf Cloud consent)",
+    "Run e2e tests (Frameleaf Cloud description accounting)",
+  ];
+  for (const runner of server.strategy.matrix.runner) {
+    for (const suite of server.strategy.matrix.suite) {
+      if (runner === "ubuntu-24.04-arm" && suite === "buddy") continue;
+      const names = selected(server, { runner, suite });
+      const expected = suite.startsWith("api-")
+        ? 0
+        : ["maintenance", "transport", "buddy", "cloud", "accounting"].indexOf(
+            suite,
+          ) + 1;
+      assert.deepEqual(
+        names.filter((name) => serverRuns.includes(name)),
+        [serverRuns[expected]],
+        `${runner}:${suite}`,
+      );
+      assert.equal(
+        names.includes("Start Docker Compose"),
+        suite.startsWith("api-") || suite === "maintenance",
+      );
+      assert.equal(names.includes("Run setup web"), false);
+    }
+  }
+  const browser = jobs["e2e-tests-web"];
+  const browserRuns = [
+    "Run e2e tests (web)",
+    "Run ui tests (web)",
+    "Run maintenance tests",
+    "Run e2e tests (iCloud sync)",
+  ];
+  const reports = [
+    "Archive e2e test (web) results",
+    "Archive ui test (web) results",
+    "Archive maintenance tests (web) results",
+    "Archive e2e test (iCloud sync) results",
+  ];
+  for (const runner of browser.strategy.matrix.runner) {
+    for (const shard of browser.strategy.matrix.shard) {
+      const names = selected(browser, { runner, shard });
+      const expected = Number.isInteger(shard)
+        ? 0
+        : ["ui", "maintenance", "icloud"].indexOf(shard) + 1;
+      assert.deepEqual(
+        names.filter((name) => browserRuns.includes(name)),
+        [browserRuns[expected]],
+        `${runner}:${shard}`,
+      );
+      assert.deepEqual(
+        names.filter((name) => reports.includes(name)),
+        [reports[expected]],
+        `${runner}:${shard}`,
+      );
+      assert.equal(names.includes("Docker build"), shard !== "icloud");
+    }
+  }
 });

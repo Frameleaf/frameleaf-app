@@ -31,10 +31,12 @@ import {
   MEDIA_OPERATION_AUTO_RETRIES,
   MEDIA_OPERATION_AUTO_RETRY_DELAY_MS,
   PAUSABLE_MEDIA_OPERATION_STATUSES,
+  PUBLIC_MEDIA_OPERATION_KINDS,
   SAFE_MEDIA_OPERATION_REPLAY_KINDS,
   TERMINAL_MEDIA_OPERATION_STATUSES,
 } from 'src/utils/media-operation.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
+import { type StudioRenderReport, advanceStudioRenderProgress } from 'src/utils/studio-render-progress.js';
 import { sidecarSealOf } from 'src/utils/studio-subtitle-sidecar.js';
 
 export type MediaOperation = Selectable<MediaOperationTable>;
@@ -116,6 +118,8 @@ export type MediaOperationChange = {
 };
 export type MediaOperationListOptions = {
   ownerId: string;
+  /** Exclude internal-only jobs before selecting a page or counting public Activity results. */
+  publicOnly?: boolean;
   kind?: MediaOperationKind;
   statuses?: readonly MediaOperationStatus[];
   /** Finished jobs the owner cleared from Activity are hidden unless explicitly asked for. */
@@ -198,6 +202,7 @@ export type CloudMlJobSpendRow = {
   remoteJobId: string | null;
   result: unknown;
   holdUsd: number | null;
+  approvedMaximumUsd?: number | null;
   settledUsd: number | null;
 };
 /**
@@ -414,7 +419,10 @@ export class MediaOperationRepository {
     items: MediaOperation[];
     total: number;
   }> {
-    let query = this.db.selectFrom('media_operation').where('ownerId', '=', options.ownerId);
+    let query = this.db
+      .selectFrom('media_operation')
+      .where('ownerId', '=', options.ownerId)
+      .$if(!!options.publicOnly, (qb) => qb.where('kind', 'in', PUBLIC_MEDIA_OPERATION_KINDS));
     if (options.kind) {
       query = query.where('kind', '=', options.kind);
     }
@@ -424,6 +432,18 @@ export class MediaOperationRepository {
     if (!options.includeDismissed) {
       query = query.where('dismissedAt', 'is', null);
     }
+    // A removed library's scans have nothing left to act on (FL-588).
+    query = query.where((eb) =>
+      eb.or([
+        eb('kind', '!=', MediaOperationKind.LibraryScan),
+        eb.exists(
+          eb
+            .selectFrom('library')
+            .where(sql<boolean>`library.id::text = media_operation.snapshot->>'libraryId'`)
+            .where('library.deletedAt', 'is', null),
+        ),
+      ]),
+    );
     const [items, total] = await Promise.all([
       query
         .select(LIST_COLUMNS)
@@ -932,6 +952,12 @@ export class MediaOperationRepository {
       kinds: readonly MediaOperationKind[];
       destinationIds: readonly string[];
     };
+    /**
+     * Only jobs whose `snapshot.kind` is one of these. Several Studio jobs on one clip share the
+     * `studio_transcription` kind (a new kind would change a response enum the native apps decode),
+     * so each worker names its own snapshot kind and never takes another's job.
+     */
+    snapshotKinds?: readonly string[];
   }): Promise<
     | {
         operation: MediaOperation;
@@ -974,6 +1000,9 @@ export class MediaOperationRepository {
               qb.where(
                 sql<boolean>`not ("kind" = any(${[...holdBack!.kinds]}::text[]) and coalesce("snapshot"->>'destinationId', '') = any(${[...holdBack!.destinationIds]}::text[]))`,
               ),
+            )
+            .$if(!!options.snapshotKinds?.length, (qb) =>
+              qb.where(sql<boolean>`"snapshot"->>'kind' = any(${[...options.snapshotKinds!]}::text[])`),
             )
             .orderBy('createdAt', 'asc')
             .limit(1)
@@ -1045,30 +1074,67 @@ export class MediaOperationRepository {
       processedUnits: number;
       totalUnits: number | null;
       progress: number;
+      studioRender?: StudioRenderReport;
     },
   ): Promise<boolean> {
     const from = PROGRESS_FROM[patch.status];
     if (!from) {
       return false;
     }
-    const row = await this.write((db) =>
-      db
-        .updateTable('media_operation')
-        .set({
-          status: patch.status,
-          processedUnits: String(patch.processedUnits),
-          totalUnits: patch.totalUnits === null ? null : String(patch.totalUnits),
-          progress: patch.progress,
-          heartbeatAt: sql<Date>`now()`,
-        })
-        .where('id', '=', id)
-        .where('claimToken', '=', claimToken)
-        // Stages only move forward (FL-43): a job checking its output is never reported as rendering
-        // again, and nothing reaches validating except through the stages before it.
-        .where('status', 'in', [...from])
-        .returning(['id', 'ownerId'])
-        .executeTakeFirst(),
-    );
+    const row = await this.write(async (db) => {
+      let renderResult: Record<string, unknown> | undefined;
+      if (patch.studioRender) {
+        const current = await db
+          .selectFrom('media_operation')
+          .select(['kind', 'attempt', 'result'])
+          .where('id', '=', id)
+          .where('claimToken', '=', claimToken)
+          .where('status', 'in', [...from])
+          .forUpdate()
+          .executeTakeFirst();
+        if (
+          !current ||
+          current.kind !== MediaOperationKind.StudioExport ||
+          (patch.status === MediaOperationStatus.Preparing) !== (patch.studioRender.stage === 'preparing')
+        )
+          return;
+        const measurement = advanceStudioRenderProgress(
+          current.result?.studioRenderProgress,
+          current.attempt,
+          patch.studioRender,
+          patch.processedUnits,
+          patch.totalUnits,
+          Date.now(),
+        );
+        if (!measurement) return;
+        renderResult = { ...current.result, studioRenderProgress: measurement };
+      }
+      return (
+        db
+          .updateTable('media_operation')
+          .set({
+            ...(renderResult && { result: renderResult }),
+            status: patch.status,
+            processedUnits: String(patch.processedUnits),
+            totalUnits: patch.totalUnits === null ? null : String(patch.totalUnits),
+            progress: patch.progress,
+            heartbeatAt: sql<Date>`now()`,
+          })
+          .where('id', '=', id)
+          .where('claimToken', '=', claimToken)
+          // Stages only move forward (FL-43): a job checking its output is never reported as rendering
+          // again, and nothing reaches validating except through the stages before it.
+          .where('status', 'in', [...from])
+          .$if(!!patch.studioRender, (qb) =>
+            qb
+              .where('claimExpiresAt', '>', sql<Date>`clock_timestamp()`)
+              .where('cancelRequestedAt', 'is', null)
+              .where('pauseRequestedAt', 'is', null),
+          )
+          .returning(['id', 'ownerId'])
+          .executeTakeFirst()
+      );
+    });
     this.changed(row);
     return !!row;
   }
@@ -1327,6 +1393,11 @@ export class MediaOperationRepository {
     },
     options: {
       retry?: boolean;
+      /**
+       * The runner resumes from its recorded result and repeats no external side effect (a Frameleaf Cloud
+       * batch resumes by its job and idempotency key), so the retry is allowed although it is remote work.
+       */
+      resumable?: boolean;
       /** Opt-in final-write lease fence for workers whose stop state can expire while awaiting a row lock. */
       requireActiveClaim?: boolean;
       executor?: Kysely<DB>;
@@ -1364,7 +1435,7 @@ export class MediaOperationRepository {
               )
               .where('status', 'in', WORKING_STATUSES)
               .where('cancelRequestedAt', 'is', null)
-              .where(safeAutomaticReplay())
+              .$if(options.resumable !== true, (qb) => qb.where(safeAutomaticReplay()))
               .where('autoRetries', '<', MEDIA_OPERATION_AUTO_RETRIES)
               .returning(['id', 'ownerId'])
               .executeTakeFirst(),
@@ -1467,6 +1538,7 @@ export class MediaOperationRepository {
       ownerId: string;
       kind: string;
       projectId: string | null;
+      assetId: string | null;
     }>
   > {
     if (projectIds.length === 0 || kinds.length === 0) {
@@ -1474,7 +1546,7 @@ export class MediaOperationRepository {
     }
     return this.db
       .selectFrom('media_operation')
-      .select(['id', 'ownerId', 'kind', 'projectId'])
+      .select(['id', 'ownerId', 'kind', 'projectId', 'assetId'])
       .where('projectId', 'in', [...projectIds])
       .where('kind', 'in', [...kinds])
       .$if(ownerId !== undefined, (qb) => qb.where('ownerId', '=', ownerId!))
@@ -1919,7 +1991,11 @@ export class MediaOperationRepository {
    * FL-162: the Frameleaf Cloud jobs one person confirmed since `since`, with what each was settled at
    * (its accounting row), its hold, and enough of its state to count a job still running.
    */
-  async listCloudMlJobSpend(userId: string, since: Date): Promise<CloudMlJobSpendRow[]> {
+  async listCloudMlJobSpend(
+    userId: string,
+    since: Date,
+    excludeLocationScanId?: string,
+  ): Promise<Array<CloudMlJobSpendRow | { reservedUsd: number; settledUsd: number | null }>> {
     const rows = await this.db
       .selectFrom('media_operation')
       .leftJoin('ml_workload_accounting', (join) =>
@@ -1932,9 +2008,13 @@ export class MediaOperationRepository {
         'media_operation.remoteJobId',
         'media_operation.result',
         sql<number | null>`("media_operation"."snapshot" -> 'approved' ->> 'holdUsd')::double precision`.as('holdUsd'),
+        sql<number | null>`("media_operation"."snapshot" -> 'approved' ->> 'approvedMaximumUsd')::double precision`.as(
+          'approvedMaximumUsd',
+        ),
         'ml_workload_accounting.costUsd as settledUsd',
       ])
       .where('media_operation.kind', '=', MediaOperationKind.CloudMlJob)
+      .$if(!!excludeLocationScanId, (qb) => qb.where('media_operation.id', '!=', excludeLocationScanId!))
       .where(sql<boolean>`"media_operation"."snapshot" -> 'consent' ->> 'acceptedBy' = ${userId}`)
       // this month's jobs, and any earlier one still holding the AI Wallet
       .where((eb) =>
@@ -1944,7 +2024,26 @@ export class MediaOperationRepository {
         ]),
       )
       .execute();
-    return rows as unknown as CloudMlJobSpendRow[];
+    const locations = await this.db
+      .selectFrom('photo_location_scan')
+      .select(['estimatedMicros', 'billing'])
+      .where('ownerId', '=', userId)
+      .where('estimateId', 'is not', null)
+      .$if(!!excludeLocationScanId, (qb) => qb.where('id', '!=', excludeLocationScanId!))
+      .where((eb) =>
+        eb.or([
+          eb('createdAt', '>=', since),
+          sql<boolean>`coalesce(billing->>'state', 'pending_hold') NOT IN ('settled', 'released', 'no_charge')`,
+        ]),
+      )
+      .execute();
+    return [
+      ...(rows as unknown as CloudMlJobSpendRow[]),
+      ...locations.map(({ estimatedMicros, billing }) => ({
+        reservedUsd: (billing?.heldMicros ?? estimatedMicros) / 1_000_000,
+        settledUsd: typeof billing?.chargedMicros === 'number' ? billing.chargedMicros / 1_000_000 : null,
+      })),
+    ];
   }
   /** FL-162: the snapshots of unfinished cloud ML jobs, for the prepared inputs they still need. */
   async listUnfinishedCloudMlJobSnapshots(): Promise<unknown[]> {
@@ -2027,8 +2126,9 @@ export class MediaOperationRepository {
     id: string,
     ownerId: string,
     kinds: readonly MediaOperationKind[],
+    executor?: Kysely<DB>,
   ): Promise<MediaOperation | undefined> {
-    const row = (await this.write((db) =>
+    const write = (db: Kysely<DB>) =>
       db
         .updateTable('media_operation')
         .set((eb) => ({
@@ -2046,9 +2146,9 @@ export class MediaOperationRepository {
         .where('status', 'in', [...PAUSABLE_MEDIA_OPERATION_STATUSES])
         .where('cancelRequestedAt', 'is', null)
         .returningAll()
-        .executeTakeFirst(),
-    )) as unknown as MediaOperation | undefined;
-    this.changed(row);
+        .executeTakeFirst();
+    const row = (await (executor ? write(executor) : this.write(write))) as unknown as MediaOperation | undefined;
+    this.changed(row, executor);
     return row;
   }
   /**
@@ -2059,8 +2159,8 @@ export class MediaOperationRepository {
    * kept, so resuming never skips the wait before an automatic retry. A running job whose pause is
    * still pending simply keeps running.
    */
-  async resume(id: string, ownerId: string): Promise<MediaOperation | undefined> {
-    const row = (await this.write((db) =>
+  async resume(id: string, ownerId: string, executor?: Kysely<DB>): Promise<MediaOperation | undefined> {
+    const write = (db: Kysely<DB>) =>
       db
         .updateTable('media_operation')
         .set((eb) => ({
@@ -2082,9 +2182,9 @@ export class MediaOperationRepository {
           ]),
         )
         .returningAll()
-        .executeTakeFirst(),
-    )) as unknown as MediaOperation | undefined;
-    this.changed(row);
+        .executeTakeFirst();
+    const row = (await (executor ? write(executor) : this.write(write))) as unknown as MediaOperation | undefined;
+    this.changed(row, executor);
     return row;
   }
   /**
@@ -2680,9 +2780,10 @@ export class MediaOperationRepository {
    * path: an administrator can see that eleven renders are queued on Frameleaf Cloud without learning
    * whose media they are.
    */
-  async getAggregates(): Promise<MediaOperationAggregateRow[]> {
+  async getAggregates(options: { publicOnly?: boolean } = {}): Promise<MediaOperationAggregateRow[]> {
     const rows = await this.db
       .selectFrom('media_operation')
+      .$if(!!options.publicOnly, (qb) => qb.where('kind', 'in', PUBLIC_MEDIA_OPERATION_KINDS))
       .select((eb) => [
         'kind',
         'status',

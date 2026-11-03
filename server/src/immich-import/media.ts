@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { BigIntStats, constants } from 'node:fs';
-import { FileHandle, open, realpath, stat } from 'node:fs/promises';
+import { FileHandle, lstat, open, readdir, realpath, stat } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { ImportMediaPolicy, ImportRefused, MediaRootMap } from 'src/immich-import/types.js';
 
@@ -35,8 +35,25 @@ export const mapMediaPath = (
   return { source: path, target, root };
 };
 
+/** Copy and in-place imports share the private Manager provisioning identity. */
+export const managerImportAuthority = (policy?: ImportMediaPolicy) => {
+  if (process.env.FRAMELEAF_MANAGER_ORIGIN !== 'new_import') return;
+  const installation = process.env.FRAMELEAF_MANAGER_INSTALLATION;
+  const operationId = process.env.FRAMELEAF_IMPORT_MANAGER_OPERATION_ID;
+  if (
+    !installation ||
+    !/^[a-f0-9]{12}$/.test(installation) ||
+    !operationId?.trim() ||
+    (policy?.mode === 'manager-in-place' &&
+      (policy.deploymentId !== installation || policy.operationId !== operationId))
+  )
+    throw new ImportRefused('MANAGER_SETUP_AUTHORITY_REQUIRED');
+  return { installation, operationId };
+};
+
 /** Manager identity is an orchestration contract, not a substitute for fencing or filesystem checks. */
 export const assertMediaPolicy = (roots: MediaRootMap[], policy?: ImportMediaPolicy): void => {
+  managerImportAuthority(policy);
   if (!policy || policy.mode === 'independent-copy') return;
   if (
     policy.mode !== 'manager-in-place' ||
@@ -96,6 +113,74 @@ export const verifyMediaRoots = async (roots: MediaRootMap[], policy?: ImportMed
   }
 };
 
+export type LostOriginalReason = 'missing' | 'changed' | 'unmapped';
+const UNMAPPED = new Set(['AMBIGUOUS_OR_UNMAPPED_MEDIA_ROOT', 'UNSAFE_MEDIA_PATH', 'MEDIA_ROOT_ESCAPE']);
+export const isUnmappedPath = (error: unknown): boolean => error instanceof ImportRefused && UNMAPPED.has(error.code);
+
+/**
+ * Why an asset original can be imported without a verified file, or null when the import must stop.
+ * The item is always kept: Library Care's post-import scan reports it, and a re-upload restores it.
+ * - missing: Immich itself had already lost the file (shown there as unavailable);
+ * - changed: the file no longer matches the checksum Immich recorded;
+ * - unmapped: the path is outside every configured media folder.
+ * Copy-safety refusals (symlink escapes, shared inodes, an uncopied file) still stop the import.
+ * ponytail: an empty or absent root reads as unmounted, never as "every original lost".
+ */
+export const lostOriginalReason = async (
+  error: unknown,
+  path: string,
+  roots: MediaRootMap[],
+  policy?: ImportMediaPolicy,
+): Promise<LostOriginalReason | null> => {
+  const code = error instanceof ImportRefused ? error.code : (error as NodeJS.ErrnoException).code;
+  if (code === 'ORIGINAL_CHECKSUM_MISMATCH') return 'changed';
+  if (isUnmappedPath(error)) return 'unmapped';
+  if (code !== 'ENOENT') return null;
+  const { root } = mapMediaPath(path, roots, policy);
+  const mounted = (dir: string) =>
+    readdir(dir)
+      .then((entries) => entries.length > 0)
+      .catch(() => false);
+  const [source, target, present] = await Promise.all([
+    mounted(root.source),
+    mounted(root.target),
+    lstat(path)
+      .then(() => true)
+      .catch((error: NodeJS.ErrnoException) => error.code !== 'ENOENT'),
+  ]);
+  return source && target && !present ? 'missing' : null;
+};
+
+/** Where a kept original points after import: its mapped destination, or its Immich path when unmapped. */
+export const lostOriginalPath = (
+  path: string,
+  reason: LostOriginalReason,
+  roots: MediaRootMap[],
+  policy?: ImportMediaPolicy,
+): string => (reason === 'unmapped' ? path : mapMediaPath(path, roots, policy).target);
+
+/** Media checks wait on the share, not the CPU: a NAS answers many opens at once. Results keep input order. */
+export const MEDIA_CONCURRENCY = 16;
+export const mapInOrder = async <T, R>(items: T[], body: (item: T) => Promise<R>): Promise<R[]> => {
+  const results: R[] = [];
+  let next = 0;
+  // After a failure no new item starts, and the error waits for in-flight checks so none outlives the caller's lock.
+  let failure: { error: unknown } | undefined;
+  const worker = async () => {
+    while (!failure && next < items.length) {
+      const index = next++;
+      try {
+        results[index] = await body(items[index]);
+      } catch (error) {
+        failure ??= { error };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(MEDIA_CONCURRENCY, items.length) }, worker));
+  if (failure) throw failure.error;
+  return results;
+};
+
 export const pathChecksum = (path: string): string => createHash('sha1').update(`path:${path}`).digest('hex');
 const sameFile = (left: BigIntStats, right: BigIntStats): boolean => left.dev === right.dev && left.ino === right.ino;
 const unchanged = (before: BigIntStats, after: BigIntStats): boolean =>
@@ -121,7 +206,7 @@ export const verifyMediaFile = async (
   checksum?: string,
   algorithm?: string,
   policy?: ImportMediaPolicy,
-  onVerified?: (sha256: string) => void,
+  onVerified?: (identity: string) => void,
 ): Promise<string> => {
   await verifyMediaRoots(roots, policy);
   const inPlace = policy?.mode === 'manager-in-place';
@@ -156,7 +241,11 @@ export const verifyMediaFile = async (
       if (!before.isFile() || !targetBefore.isFile() || before.size !== targetBefore.size) {
         throw new ImportRefused('MEDIA_FILE_MISMATCH');
       }
-      const [sourceDigest, targetDigest] = await Promise.all([fileDigests(sourceFile), fileDigests(targetFile)]);
+      // In place, source and target were just proven to be one file and Manager mounts it read-only, so the
+      // import reads no content: the background original-file check compares it with Immich's checksum later.
+      const [sourceDigest, targetDigest] = inPlace
+        ? [null, null]
+        : await Promise.all([fileDigests(sourceFile), fileDigests(targetFile)]);
       const [after, targetAfter, sourcePathAfter, targetPathAfter, sourceResolvedAfter, targetResolvedAfter] =
         await Promise.all([
           sourceFile.stat({ bigint: true }),
@@ -167,7 +256,7 @@ export const verifyMediaFile = async (
           realpath(mapping.target),
         ]);
       if (
-        sourceDigest.sha256 !== targetDigest.sha256 ||
+        sourceDigest?.sha256 !== targetDigest?.sha256 ||
         !unchanged(before, after) ||
         !unchanged(targetBefore, targetAfter) ||
         !unchanged(before, sourcePathAfter) ||
@@ -177,20 +266,23 @@ export const verifyMediaFile = async (
       ) {
         throw new ImportRefused('MEDIA_CHANGED_OR_MISMATCHED');
       }
-      if (checksum) {
+      if (checksum && (sourceDigest || algorithm === 'sha1-path')) {
         const actual =
           algorithm === 'sha1-path'
             ? pathChecksum(path)
             : algorithm === 'sha1'
-              ? sourceDigest.sha1
+              ? sourceDigest?.sha1
               : algorithm === 'sha256'
-                ? sourceDigest.sha256
+                ? sourceDigest?.sha256
                 : null;
         if (actual !== checksum.replace(/^\\x/u, '')) {
           throw new ImportRefused('ORIGINAL_CHECKSUM_MISMATCH');
         }
       }
-      onVerified?.(sourceDigest.sha256);
+      // A copy is identified by its content; an in-place file by its size and nanosecond modification time. Device
+      // and inode numbers stay out: a remount after a host restart can renumber them (FUSE shares such as Unraid's
+      // /mnt/user, NFS), which would wrongly refuse a resume. Same-file identity is still checked on every read above.
+      onVerified?.(sourceDigest?.sha256 ?? `stat:${before.size}:${before.mtimeNs}`);
       return mapping.target;
     } finally {
       await targetFile.close();

@@ -15,18 +15,20 @@ select
           "user"."email",
           "user"."isAdmin",
           "user"."quotaUsageInBytes",
-          "user"."quotaSizeInBytes"
+          "user"."quotaSizeInBytes",
+          "user"."uploadsPaused"
         from
           "user"
         where
           "user"."id" = "api_key"."userId"
           and "user"."deletedAt" is null
+          and "user"."importClaimPending" = $1
       ) as obj
   ) as "user"
 from
   "api_key"
 where
-  "api_key"."key" = $1
+  "api_key"."key" = $2
 
 -- ApiKeyRepository.getById
 select
@@ -56,3 +58,12 @@ where
   "userId" = $1
 order by
   "createdAt" desc
+
+-- ApiKeyRepository.getSignedInClients
+select
+  "apiKeyId",
+  "client"
+from
+  "browser_extension_access"
+where
+  "userId" = $1

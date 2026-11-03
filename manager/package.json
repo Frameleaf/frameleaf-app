@@ -1,10 +1,10 @@
 {
   "name": "@frameleaf/manager",
-  "version": "0.2.8",
+  "version": "1.2.3",
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=24.0.0"
+    "node": ">=22.23.4"
   },
   "scripts": {
     "build": "node node_modules/@typescript/native/bin/tsc -p tsconfig.json && vite build",
@@ -27,12 +27,16 @@
     "@types/express": "5.0.6",
     "@types/js-yaml": "4.0.9",
     "@types/node": "26.6.5",
-    "@typescript/native": "npm:typescript@7.0.2",
+    "@typescript/native": "npm:typescript@7.1.0-beta",
     "playwright": "1.64.0",
     "svelte": "5.57.2",
     "svelte-check": "4.7.6",
     "tsx": "4.23.15",
     "typescript": "6.0.3",
     "vite": "8.3.4"
+  },
+  "overrides": {
+    "multer": "2.5.0",
+    "body-parser": "2.4.0"
   }
 }

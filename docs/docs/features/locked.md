@@ -13,7 +13,7 @@ Locked content hides again when you leave the browser tab, after one hour, or wh
 Every locked item has exactly one lock, and the lock records why it was locked:
 
 - **Moved from old Locked folder**: it was in the Locked folder of a library you brought into Frameleaf with the [offline importer](../administration/import-immich.md). It stays hidden until you unlock, and it is listed in Locked.
-- **Marked**: you locked it with **Mark Sensitive** in the selection bar or the viewer, a sensitive review in the information panel, or an upload into Locked.
+- **Marked**: you locked it with **Lock** in the selection bar or the viewer, a sensitive review in the information panel, or an upload into Locked.
 - **Detected**: sensitive-content detection flagged it while **Hide flagged photos until unlocked** is on.
 
 A lock is metadata. Locking never changes an item's albums, stack, favorites, tags, faces or its place in the timeline or archive, and unlocking returns it exactly where it was.
@@ -82,7 +82,7 @@ A locked photo is never an album, collection or space cover, a person's or pet's
 
 Open **Locked** after unlocking. It lists every locked item, newest first, together with the items your Locked rules hide (the people, pets and tags you chose in the Locked rules of your security settings), with a filter: **All** (the default), **Moved from old Locked folder**, **Marked** and **Detected**. The three reasons narrow the view to locks, so rule matches are listed under **All** only. Each tile is badged **Locked** (moved from the old folder) or **Sensitive** (marked, detected or matched by a rule).
 
-Select items and choose **Unmark Sensitive** to unlock them. A rule match has no lock to remove: it leaves Locked when you change your Locked rules. Unlocking also records your review as safe, so running detection again never locks the item again. You can still add locked items to albums, download them, change their date or location, or delete them permanently from Locked.
+Select items and choose **Unlock** to unlock them. A rule match has no lock to remove: it leaves Locked when you change your Locked rules. Unlocking also records your review as safe, so running detection again never locks the item again. You can still add locked items to albums, download them, change their date or location, or delete them permanently from Locked.
 
 ## For API clients
 

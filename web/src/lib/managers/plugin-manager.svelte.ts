@@ -1,5 +1,7 @@
 import {
+  getWorkflowDiscovery,
   getWorkflowTriggers,
+  isHttpError,
   searchPluginMethods,
   searchPluginTemplates,
   WorkflowTrigger,
@@ -94,10 +96,18 @@ class PluginManager {
 
   private async load() {
     const generation = this.#generation;
-    const [methods, triggers, templates] = await Promise.all([
+    const [methods, discovery] = await Promise.all([
       searchPluginMethods({}),
-      getWorkflowTriggers(),
-      searchPluginTemplates(),
+      getWorkflowDiscovery().catch(async (error: unknown) => {
+        if (!isHttpError(error) || ![404, 405].includes(error.status)) {
+          throw error;
+        }
+        const [triggers, templates] = await Promise.all([getWorkflowTriggers(), searchPluginTemplates()]);
+        return {
+          triggers: triggers.map((entry) => ({ ...entry, trigger: WorkflowTrigger[entry.trigger] })),
+          templates: templates.map((entry) => ({ ...entry, trigger: WorkflowTrigger[entry.trigger] })),
+        };
+      }),
     ]);
     if (generation !== this.#generation) {
       return;
@@ -108,8 +118,8 @@ class PluginManager {
       this.#methodMap.set(method.key, method);
     }
 
-    this.#triggers = triggers;
-    this.#templates = templates;
+    this.#triggers = discovery.triggers;
+    this.#templates = discovery.templates;
   }
 }
 

@@ -324,7 +324,7 @@ export declare enum ActionType {
     SET_DEFAULT = "SET DEFAULT"
 }
 export type ColumnStorage = 'default' | 'external' | 'extended' | 'main';
-export type ColumnType = 'bigint' | 'boolean' | 'bytea' | 'character' | 'character varying' | 'date' | 'double precision' | '"char"' | 'smallint' | 'integer' | 'jsonb' | 'polygon' | 'text' | 'time' | 'time with time zone' | 'time without time zone' | 'timestamp' | 'timestamp with time zone' | 'timestamp without time zone' | 'uuid' | 'vector' | 'enum' | 'serial' | 'real';
+export type ColumnType = 'bigint' | 'boolean' | 'bytea' | 'character' | 'character varying' | 'date' | 'double precision' | '"char"' | 'smallint' | 'integer' | 'jsonb' | 'polygon' | 'text' | 'time' | 'time with time zone' | 'time without time zone' | 'timestamp' | 'timestamp with time zone' | 'timestamp without time zone' | 'uuid' | 'vector' | 'tsvector' | 'enum' | 'serial' | 'real';
 export type DatabaseSequence = {
     name: string;
     dataType: 'smallint' | 'integer' | 'bigint';

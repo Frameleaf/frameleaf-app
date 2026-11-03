@@ -13,6 +13,7 @@ describe(ApiKeyService.name, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(ApiKeyService));
+    mocks.apiKey.getSignedInClients.mockResolvedValue({});
   });
 
   describe('create', () => {
@@ -294,6 +295,22 @@ describe(ApiKeyService.name, () => {
     });
   });
 
+  describe('design permissions', () => {
+    it('reports newer permissions apart from the strictly decoded permissions list', async () => {
+      const auth = AuthFactory.create();
+      const apiKey = ApiKeyFactory.create({
+        userId: auth.user.id,
+        permissions: [Permission.CaptureCreate, Permission.AssetRead, Permission.CaptureCatalogRead],
+      });
+      mocks.apiKey.getById.mockResolvedValue(apiKey);
+
+      await expect(sut.getById(auth, apiKey.id)).resolves.toMatchObject({
+        permissions: [Permission.AssetRead],
+        designPermissions: [Permission.CaptureCreate, Permission.CaptureCatalogRead],
+      });
+    });
+  });
+
   describe('getById', () => {
     it('should throw an error if the key is not found', async () => {
       const auth = AuthFactory.create();
@@ -328,6 +345,67 @@ describe(ApiKeyService.name, () => {
       await expect(sut.getAll(auth)).resolves.toHaveLength(1);
 
       expect(mocks.apiKey.getByUserId).toHaveBeenCalledWith(auth.user.id);
+    });
+
+    it('says when each key was last used (FL-367)', async () => {
+      const auth = AuthFactory.create();
+      const used = ApiKeyFactory.create({ userId: auth.user.id });
+      const never = ApiKeyFactory.create({ userId: auth.user.id });
+      mocks.apiKey.getByUserId.mockResolvedValue([used, never]);
+      mocks.systemMetadata.get.mockResolvedValue({ [used.id]: '2026-10-20T10:00:00.000Z' });
+
+      const keys = await sut.getAll(auth);
+
+      expect(keys.map((key) => key.lastUsedAt)).toEqual(['2026-10-20T10:00:00.000Z', null]);
+    });
+
+    it('marks the access Save to Frameleaf added by signing in (FL-655)', async () => {
+      const auth = AuthFactory.create();
+      const extension = ApiKeyFactory.create({ userId: auth.user.id, name: 'Save to Frameleaf · Chrome' });
+      const byHand = ApiKeyFactory.create({ userId: auth.user.id });
+      mocks.apiKey.getByUserId.mockResolvedValue([extension, byHand]);
+      mocks.apiKey.getSignedInClients.mockResolvedValue({ [extension.id]: 'chrome' });
+
+      const keys = await sut.getAll(auth);
+
+      expect(keys.map((key) => key.signedInFrom)).toEqual(['chrome', null]);
+      expect(mocks.apiKey.getSignedInClients).toHaveBeenCalledWith(auth.user.id);
+    });
+  });
+
+  describe('an access added by signing in (FL-655)', () => {
+    it('has no value to replace', async () => {
+      const auth = AuthFactory.create();
+      const apiKey = ApiKeyFactory.create({ userId: auth.user.id });
+      mocks.apiKey.getById.mockResolvedValue(apiKey);
+      mocks.apiKey.getSignedInClients.mockResolvedValue({ [apiKey.id]: 'edge' });
+
+      await expect(sut.rotate(auth, apiKey.id)).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.apiKey.update).not.toHaveBeenCalled();
+    });
+
+    it('has no permissions to change', async () => {
+      const auth = AuthFactory.create();
+      const apiKey = ApiKeyFactory.create({ userId: auth.user.id });
+      mocks.apiKey.getById.mockResolvedValue(apiKey);
+      mocks.apiKey.getSignedInClients.mockResolvedValue({ [apiKey.id]: 'chrome' });
+
+      await expect(sut.update(auth, apiKey.id, { permissions: [Permission.All] })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mocks.apiKey.update).not.toHaveBeenCalled();
+    });
+
+    it('can still be removed', async () => {
+      const auth = AuthFactory.create();
+      const apiKey = ApiKeyFactory.create({ userId: auth.user.id });
+      mocks.apiKey.getById.mockResolvedValue(apiKey);
+      mocks.apiKey.getSignedInClients.mockResolvedValue({ [apiKey.id]: 'chrome' });
+      mocks.apiKey.delete.mockResolvedValue();
+
+      await sut.delete(auth, apiKey.id);
+
+      expect(mocks.apiKey.delete).toHaveBeenCalledWith(auth.user.id, apiKey.id);
     });
   });
 });

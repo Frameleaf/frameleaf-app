@@ -150,3 +150,58 @@ test('shared-link hook joins asset readiness and aborts and settles its owned si
   assert.equal(ready, true);
   assert.equal(settled, true);
 });
+
+test('random-search setup waits for its six assets and settles its bounded owner', async () => {
+  const text = source('./specs/server/api/search.e2e-spec.ts');
+  const start = text.indexOf("  describe('POST /search/random'");
+  const end = text.indexOf('    it.each(TEN_TIMES)', start);
+  assert.ok(start >= 0 && end > start);
+  const setup = text.slice(text.indexOf('    beforeAll', start), end);
+  let hook;
+  let ownerSignal;
+  let settled = false;
+  const created = [];
+  const ready = [];
+  const utils = {
+    createAsset: async (_token, _dto, { signal } = {}) => {
+      assert.ok(signal instanceof AbortSignal);
+      ownerSignal ??= signal;
+      assert.equal(signal, ownerSignal);
+      signal.throwIfAborted();
+      const asset = { id: `asset-${created.length + 1}` };
+      created.push(asset);
+      return asset;
+    },
+    waitForAssetReady: async (_token, id, { signal }) => {
+      assert.equal(signal, ownerSignal);
+      signal.throwIfAborted();
+      ready.push(id);
+    },
+    settlePendingWaits: async (signal) => {
+      assert.equal(signal, ownerSignal);
+      assert.equal(signal.aborted, true);
+      settled = true;
+    },
+  };
+  const withApiAssetReadiness = new Function(
+    'utils',
+    bare(source('./api-asset-readiness.ts')) + '\nreturn withApiAssetReadiness;',
+  )(utils);
+  new Function('beforeAll', 'withApiAssetReadiness', 'utils', 'admin', 'SEARCH_SETUP_TIMEOUT', bare(setup))(
+    (callback, timeout) => {
+      assert.equal(timeout, 6000);
+      hook = callback;
+    },
+    withApiAssetReadiness,
+    utils,
+    { accessToken: 'admin' },
+    1000,
+  );
+  await hook();
+  assert.equal(created.length, 6);
+  assert.deepEqual(
+    ready,
+    created.map(({ id }) => id),
+  );
+  assert.equal(settled, true);
+});

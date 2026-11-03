@@ -85,6 +85,9 @@ export const setupBaseMockApiRoutes = async (context: BrowserContext, adminUserI
           showSupportBadge: true,
           hideBuyButtonUntil: '2100-02-12T00:00:00.000Z',
         },
+        trash: {
+          reuploadUntil: '',
+        },
         cast: {
           gCastEnabled: false,
         },
@@ -163,14 +166,16 @@ export const setupBaseMockApiRoutes = async (context: BrowserContext, adminUserI
         serverName: '',
         trashDays: 30,
         userDeleteDelay: 7,
-        oauthButtonText: 'Login with OAuth',
+        oauthButtonText: 'Sign in with your provider',
         isInitialized: true,
         isOnboarded: true,
+        isNewServerSetup: false,
         externalDomain: '',
         publicUsers: true,
         mapDarkStyleUrl: 'https://tiles.frameleaf.cloud/v1/style/dark.json',
         mapLightStyleUrl: 'https://tiles.frameleaf.cloud/v1/style/light.json',
         maintenanceMode: false,
+        placesRestoring: false,
         frameleaf: {
           via: null,
           cloudConfigured: false,

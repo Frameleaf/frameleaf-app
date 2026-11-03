@@ -9,7 +9,7 @@ export const load = (async ({ url, depends }) => {
   // Invitations are not memberships, so they are not in the tree: a shared
   // space the recipient has not accepted is reachable only as a preview.
   const [tree, partners, invitations] = await Promise.all([
-    getAlbumTree(),
+    getAlbumTree({}),
     getPartners({ direction: PartnerDirection.SharedWith }),
     getSharedSpaceInvitations(),
   ]);

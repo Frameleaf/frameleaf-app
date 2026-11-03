@@ -14,7 +14,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { DB } from 'src/schema/index.js';
 import type { ImportDeclaration, PreparedImport, PublicationKey } from 'src/utils/studio-import-publication.js';
@@ -1723,6 +1723,8 @@ describe('Studio import publication — participating callers and precise keyset
   });
   it('A4-07 duplication waits on its existing source project before owner quota and FK admission', async () => {
     const f = await setup();
+    // The duplicate links the published import into its own folder under this media root.
+    StorageCore.setMediaLocation(root);
     await prepare(f);
     const entered = defer(),
       finish = defer();
@@ -1806,5 +1808,13 @@ describe('Studio import publication — participating callers and precise keyset
     expect(created?.duplicatedFromId).toBe(f.project.id);
     expect((await f.projects.getRevision(created!.id, 1))?.digest).toBe('duplicate-lock-order');
     expect((await f.projects.getById(f.project.id))?.currentRevision).toBe(0);
+    // The copy keeps its own link to the import published before it (FL-531).
+    const copied = await f.projects.listImports(created!.id);
+    expect(copied).toEqual([expect.objectContaining({ id: f.key.importId })]);
+    const owner = join(root, 'exports', f.user.id);
+    for (const directory of [join(root, 'exports'), owner, join(owner, 'studio-imports'), dirname(copied[0].path)]) {
+      ownedDirectories.add(directory);
+    }
+    ownedFiles.add(copied[0].path);
   });
 });

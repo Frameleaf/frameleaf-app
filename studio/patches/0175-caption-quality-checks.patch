@@ -1,0 +1,723 @@
+diff --git a/src/features/editor/components/properties-sidebar/index.tsx b/src/features/editor/components/properties-sidebar/index.tsx
+--- a/src/features/editor/components/properties-sidebar/index.tsx
++++ b/src/features/editor/components/properties-sidebar/index.tsx
+@@ -23,6 +23,7 @@
+ import { useSelectionStore } from '@/shared/state/selection'
+ import type { TimelineItem } from '@/types/timeline'
+ import { CanvasPanel } from './canvas-panel'
++import { CaptionQualityPanel } from './caption-quality-panel'
+ import { useSettingsStore } from '@/features/editor/deps/settings'
+ import {
+   EDITOR_LAYOUT_CSS_VALUES,
+@@ -341,6 +342,7 @@
+                   : 'flex-1 overflow-y-auto overflow-x-hidden p-3 [scrollbar-gutter:stable]'
+               }
+             >
++              <CaptionQualityPanel />
+               {selectedTransitionId ? (
+                 <Suspense fallback={null}>
+                   <LazyTransitionPanel />
+diff --git a/src/features/editor/components/properties-sidebar/caption-quality-panel.tsx b/src/features/editor/components/properties-sidebar/caption-quality-panel.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/features/editor/components/properties-sidebar/caption-quality-panel.tsx
+@@ -0,0 +1,103 @@
++import { useMemo } from 'react'
++import { useTranslation } from 'react-i18next'
++import { ListChecks } from 'lucide-react'
++import {
++  useItemsStore,
++  useTimelineStore,
++  useCompositionNavigationStore,
++  useCompositionsStore,
++} from '@/features/editor/deps/timeline-store'
++import { useSelectionStore } from '@/shared/state/selection'
++import { usePlaybackStore } from '@/shared/state/playback'
++import { PropertySection } from './components'
++import { reviewCaptionQuality } from '../../utils/caption-quality'
++
++export function CaptionQualityPanel() {
++  const { t, i18n } = useTranslation()
++  const items = useItemsStore((state) => state.items)
++  const tracks = useItemsStore((state) => state.tracks)
++  const timelineFps = useTimelineStore((state) => state.fps)
++  const activeId = useCompositionNavigationStore((state) => state.activeCompositionId)
++  const composition = useCompositionsStore((state) =>
++    activeId ? state.compositionById[activeId] : undefined,
++  )
++  const fps = composition?.fps ?? timelineFps
++  const duration =
++    composition?.durationInFrames ??
++    items.reduce(
++      (last, item) =>
++        Number.isFinite(item.from + item.durationInFrames)
++          ? Math.max(last, item.from + item.durationInFrames)
++          : last,
++      0,
++    )
++  const warnings = useMemo(() => reviewCaptionQuality(items, fps, duration), [items, fps, duration])
++  const locale = i18n.resolvedLanguage ?? i18n.language ?? 'en'
++  const names = useMemo(() => {
++    try {
++      return new Intl.DisplayNames([locale], { type: 'language' })
++    } catch {
++      return null
++    }
++  }, [locale])
++  const time = (seconds: number) => {
++    if (!Number.isFinite(seconds)) return t('captionQuality.unknownTime')
++    const absolute = Math.abs(seconds)
++    return `${seconds < 0 ? '−' : ''}${Math.floor(absolute / 60)}:${(absolute % 60).toFixed(2).padStart(5, '0')}`
++  }
++  return (
++    <PropertySection
++      title={t('captionQuality.title', { count: warnings.length })}
++      icon={ListChecks}
++      defaultOpen={false}
++    >
++      <section
++        aria-label={t('captionQuality.label')}
++        className="space-y-2 text-xs"
++        data-testid="caption-quality-panel"
++      >
++        <p className="text-muted-foreground">{t('captionQuality.note')}</p>
++        {warnings.length === 0 && <p role="status">{t('captionQuality.clear')}</p>}
++        <ul className="space-y-2">
++          {warnings.map((warning) => {
++            const track =
++              tracks.find((candidate) => candidate.id === warning.trackId)?.name ?? warning.trackId
++            const language = warning.language
++              ? (names?.of(warning.language) ?? warning.language)
++              : t('captionQuality.original')
++            const reason = warning.reasons.map((key) => t(`captionQuality.${key}`)).join(' · ')
++            const label = `${track} · ${language} · ${time(warning.startSeconds)} · ${reason}`
++            return (
++              <li key={warning.id}>
++                <button
++                  type="button"
++                  className="w-full rounded border border-border p-2 text-left hover:bg-secondary/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
++                  aria-label={label}
++                  onClick={() => {
++                    useSelectionStore.getState().selectItems([warning.itemId])
++                    const item = useItemsStore.getState().itemById[warning.itemId]
++                    const seconds = Number.isFinite(warning.startSeconds)
++                      ? warning.startSeconds
++                      : (item?.from ?? 0) / fps
++                    const frame = Number.isFinite(seconds * fps) ? Math.round(seconds * fps) : 0
++                    usePlaybackStore
++                      .getState()
++                      .setCurrentFrame(Math.max(0, Math.min(Math.max(0, duration - 1), frame)))
++                  }}
++                >
++                  <span className="block font-medium">
++                    {track} · {language} · {time(warning.startSeconds)}
++                  </span>
++                  <span className="block">{reason}</span>
++                  <span className="block whitespace-pre-wrap text-muted-foreground">
++                    {warning.text}
++                  </span>
++                </button>
++              </li>
++            )
++          })}
++        </ul>
++      </section>
++    </PropertySection>
++  )
++}
+diff --git a/src/features/editor/utils/caption-quality.ts b/src/features/editor/utils/caption-quality.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/editor/utils/caption-quality.ts
+@@ -0,0 +1,147 @@
++import type { TimelineItem } from '@/types/timeline'
++import { translationOf } from './caption-languages'
++
++export type CaptionQualityReason = 'speed' | 'lines' | 'overlap' | 'bounds' | 'timing'
++export interface CaptionQualityWarning {
++  id: string
++  itemId: string
++  trackId: string
++  language?: string
++  startSeconds: number
++  text: string
++  reasons: CaptionQualityReason[]
++}
++
++/** Review authored cues without changing text, style, word timing or the graph. */
++export function reviewCaptionQuality(
++  items: readonly TimelineItem[],
++  fps: number,
++  durationInFrames: number,
++): CaptionQualityWarning[] {
++  const cues: (CaptionQualityWarning & { endSeconds: number })[] = []
++  const validRate = Number.isFinite(fps) && fps > 0
++  const duration = durationInFrames / fps
++  const push = (item: TimelineItem, id: string, start: number, end: number, text: string) => {
++    const reasons: CaptionQualityReason[] = []
++    const valid =
++      validRate &&
++      Number.isFinite(duration) &&
++      duration >= 0 &&
++      Number.isFinite(item.from) &&
++      Number.isFinite(item.durationInFrames) &&
++      item.durationInFrames > 0 &&
++      Number.isFinite(start) &&
++      Number.isFinite(end) &&
++      end > start
++    if (!valid) reasons.push('timing')
++    else if ([...text.replace(/\s/gu, '')].length > 20 * (end - start) + 1e-9) reasons.push('speed')
++    if (text.split(/\r\n|\r|\n/).length > 2) reasons.push('lines')
++    if (
++      Number.isFinite(start) &&
++      Number.isFinite(end) &&
++      Number.isFinite(duration) &&
++      (start < 0 || end > duration)
++    )
++      reasons.push('bounds')
++    cues.push({
++      id,
++      itemId: item.id,
++      trackId: item.trackId,
++      language: translationOf(item)?.language,
++      startSeconds: start,
++      endSeconds: end,
++      text,
++      reasons,
++    })
++  }
++  for (const item of items) {
++    const start = item.from / fps
++    const end = (item.from + item.durationInFrames) / fps
++    if (item.type === 'subtitle') {
++      item.cues.forEach((cue, index) =>
++        push(
++          item,
++          `${item.id}:${index}`,
++          start + cue.startSeconds,
++          start + cue.endSeconds,
++          cue.text,
++        ),
++      )
++    } else if (item.type === 'text' && item.textRole === 'caption') {
++      push(item, item.id, start, end, item.text)
++    } else if (
++      (item.type === 'video' || item.type === 'audio') &&
++      item.transcriptCaptions &&
++      !item.isReversed
++    ) {
++      const speed = item.speed ?? 1
++      const sourceFps = item.sourceFps ?? fps
++      const sourceStart = (item.sourceStart ?? 0) / sourceFps
++      const sourceEnd = item.sourceEnd == null ? Infinity : item.sourceEnd / sourceFps
++      item.transcriptCaptions.cues.forEach((cue, index) => {
++        const cueStart = start + (cue.startSeconds - sourceStart) / speed
++        const cueEnd = start + (Math.min(cue.endSeconds, sourceEnd) - sourceStart) / speed
++        const validMapping =
++          validRate &&
++          Number.isFinite(sourceFps) &&
++          sourceFps > 0 &&
++          Number.isFinite(speed) &&
++          speed > 0 &&
++          Number.isFinite(sourceStart) &&
++          (item.sourceEnd == null || (Number.isFinite(sourceEnd) && sourceEnd > sourceStart))
++        const validCue =
++          Number.isFinite(cue.startSeconds) &&
++          Number.isFinite(cue.endSeconds) &&
++          cue.endSeconds > cue.startSeconds
++        // Trimmed-away transcript cues are not on the sequence; partial cues use their visible time.
++        if (
++          validMapping &&
++          validCue &&
++          (cue.endSeconds <= sourceStart ||
++            cue.startSeconds >= sourceEnd ||
++            cueEnd <= start ||
++            cueStart >= end)
++        )
++          return
++        const validTiming =
++          validMapping &&
++          validCue &&
++          Number.isFinite(cueStart) &&
++          Number.isFinite(cueEnd) &&
++          cueEnd > cueStart
++        push(
++          item,
++          `${item.id}:${index}`,
++          validTiming ? Math.max(start, cueStart) : NaN,
++          validTiming ? Math.min(end, cueEnd) : NaN,
++          cue.text,
++        )
++      })
++    }
++  }
++  const tracks = new Map<string, typeof cues>()
++  for (const cue of cues) {
++    if (cue.reasons.includes('timing')) continue
++    const track = tracks.get(cue.trackId) ?? []
++    track.push(cue)
++    tracks.set(cue.trackId, track)
++  }
++  for (const track of tracks.values()) {
++    track.sort((a, b) => a.startSeconds - b.startSeconds)
++    let longest: (typeof cues)[number] | undefined
++    for (const cue of track) {
++      if (longest && cue.startSeconds < longest.endSeconds) {
++        if (!longest.reasons.includes('overlap')) longest.reasons.push('overlap')
++        cue.reasons.push('overlap')
++      }
++      if (!longest || cue.endSeconds > longest.endSeconds) longest = cue
++    }
++  }
++  return cues
++    .filter((cue) => cue.reasons.length > 0)
++    .sort(
++      (a, b) =>
++        (Number.isFinite(a.startSeconds) ? a.startSeconds : Infinity) -
++        (Number.isFinite(b.startSeconds) ? b.startSeconds : Infinity),
++    )
++}
+diff --git a/src/test/caption-quality.test.tsx b/src/test/caption-quality.test.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/test/caption-quality.test.tsx
+@@ -0,0 +1,259 @@
++import { act, cleanup, fireEvent, render } from '@testing-library/react'
++import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test'
++import { reviewCaptionQuality } from '@/features/editor/utils/caption-quality'
++import { CaptionQualityPanel } from '@/features/editor/components/properties-sidebar/caption-quality-panel'
++import {
++  useItemsStore,
++  useTimelineSettingsStore,
++  useCompositionsStore,
++  useCompositionNavigationStore,
++  useTimelineCommandStore,
++} from '@/features/editor/deps/timeline-store'
++import { useSelectionStore } from '@/shared/state/selection'
++import { usePlaybackStore } from '@/shared/state/playback'
++import {
++  makeTimelineTrack,
++  makeTimelineVideoItem,
++  resetTimelineCompositionTestState,
++} from '@/features/timeline/test-helpers'
++import type { SubtitleSegmentItem, TimelineItem } from '@/types/timeline'
++
++function segment(overrides: Partial<SubtitleSegmentItem> = {}): SubtitleSegmentItem {
++  return {
++    id: 'captions',
++    type: 'subtitle',
++    trackId: 'original',
++    label: 'Captions',
++    from: 30,
++    durationInFrames: 300,
++    source: { type: 'subtitle-import' },
++    cues: [{ id: 'cue', startSeconds: 1, endSeconds: 2, text: 'Hello' }],
++    color: '#ffffff',
++    fontFamily: 'Arial',
++    fontSize: 40,
++    ...overrides,
++  } as SubtitleSegmentItem
++}
++const cue = (id: string, startSeconds: number, endSeconds: number, text = 'Hello') => ({
++  id,
++  startSeconds,
++  endSeconds,
++  text,
++})
++const review = (items: TimelineItem[], duration = 600, fps = 30) =>
++  reviewCaptionQuality(items, fps, duration)
++
++beforeEach(resetTimelineCompositionTestState)
++afterEach(cleanup)
++
++describe('caption quality advisory', () => {
++  it('counts Unicode code points without whitespace at the exact 20 cps boundary', () => {
++    expect(review([segment({ cues: [cue('a', 0, 1, '😀 '.repeat(20))] })])).toEqual([])
++    expect(review([segment({ cues: [cue('a', 0, 1, '😀\t'.repeat(21))] })])[0]?.reasons).toEqual([
++      'speed',
++    ])
++    expect(review([segment({ cues: [cue('a', 0, 2, '字'.repeat(40))] })])).toEqual([])
++    expect(review([segment({ cues: [cue('a', 0.1, 0.2, '字字')] })])).toEqual([])
++    expect(review([segment({ cues: [cue('a', 0, 1, 'a\nb')] })])).toEqual([])
++    expect(review([segment({ cues: [cue('a', 0, 1, 'a\r\nb\rc')] })])[0]?.reasons).toEqual([
++      'lines',
++    ])
++  })
++
++  it('finds both ends of nested overlaps, but allows adjacent cues and separate tracks/languages', () => {
++    const cues = [
++      cue('outer', 0, 10),
++      cue('inner', 1, 2),
++      cue('later', 3, 4),
++      cue('adjacent', 10, 11),
++    ]
++    const original = segment({ cues })
++    const translated = segment({
++      id: 'fr',
++      trackId: 'French',
++      cues: [cue('fr', 1, 2)],
++      source: {
++        type: 'subtitle-import',
++        translation: { language: 'fr', from: 'en', subtitle: true, translatedAt: 1 },
++      } as SubtitleSegmentItem['source'],
++    })
++    expect(review([original, translated]).map((warning) => [warning.id, warning.reasons])).toEqual([
++      ['captions:0', ['overlap']],
++      ['captions:1', ['overlap']],
++      ['captions:2', ['overlap']],
++    ])
++    const crossItem = segment({ id: 'another', from: 60, cues: [cue('cross', 0, 1)] })
++    expect(
++      review([original, crossItem]).find((warning) => warning.itemId === 'another')?.reasons,
++    ).toContain('overlap')
++  })
++
++  it('reports invalid durations and sequence bounds safely, with real owner IDs and segment offsets', () => {
++    const item = segment({
++      from: 60,
++      cues: [
++        cue('first', -3, -2),
++        cue('last', 18, 19),
++        cue('zero', 4, 4),
++        cue('backwards', 5, 4),
++        cue('invalid', NaN, Infinity),
++      ],
++    })
++    const warnings = review([item])
++    expect(warnings.map((warning) => warning.itemId)).toEqual(Array(5).fill('captions'))
++    expect(warnings.filter((warning) => warning.reasons.includes('bounds'))).toHaveLength(2)
++    expect(warnings.filter((warning) => warning.reasons.includes('timing'))).toHaveLength(3)
++    expect(warnings.find((warning) => warning.id === 'captions:1')?.startSeconds).toBe(20)
++    expect(review([segment({ durationInFrames: 0 })])[0]?.reasons).toContain('timing')
++    expect(review([segment()], 600, 0)[0]?.reasons).toContain('timing')
++    expect(review([segment()], NaN)[0]?.reasons).toContain('timing')
++  })
++
++  it('maps transcript source rate, trim and speed to the visible cue and preserves authored words/styles', () => {
++    const item = makeTimelineVideoItem({
++      from: 90,
++      durationInFrames: 90,
++      sourceStart: 48,
++      sourceEnd: 192,
++      sourceFps: 24,
++      speed: 2,
++      transcriptCaptions: {
++        type: 'transcript',
++        mediaId: 'media-1',
++        enabled: true,
++        updatedAt: 1,
++        cues: [
++          cue('trimmed', 0, 1),
++          {
++            ...cue('partial', 1, 4, '字'.repeat(21)),
++            words: [{ text: '字', startSeconds: 2, endSeconds: 3 }],
++          },
++          cue('offset', 4, 5, '字'.repeat(21)),
++        ],
++        style: { fontSize: 60 },
++      },
++    })
++    const before = structuredClone(item)
++    const warnings = review([item])
++    expect(warnings.map((warning) => [warning.itemId, warning.startSeconds])).toEqual([
++      ['video-1', 3],
++      ['video-1', 4],
++    ])
++    expect(item).toEqual(before)
++    expect(review([{ ...item, speed: 0 }])[0]?.reasons).toContain('timing')
++    expect(review([{ ...item, sourceEnd: 72 }])).toHaveLength(1)
++    expect(review([{ ...item, isReversed: true }])).toEqual([])
++    const invalid = {
++      ...item,
++      transcriptCaptions: {
++        ...item.transcriptCaptions!,
++        cues: [cue('invalid', Infinity, Infinity)],
++      },
++    }
++    expect(review([invalid])[0]?.reasons).toContain('timing')
++  })
++
++  it('checks translated cues even on hidden tracks and caption text without mutating graph state', () => {
++    const translated = segment({
++      source: {
++        type: 'subtitle-import',
++        translation: { language: 'fr', from: 'en', subtitle: true, translatedAt: 1 },
++      } as SubtitleSegmentItem['source'],
++      cues: [cue('fr', 0, 1, 'a\nb\nc')],
++    })
++    const text = {
++      ...makeTimelineVideoItem(),
++      id: 'text',
++      type: 'text',
++      textRole: 'caption',
++      text: '字'.repeat(41),
++      durationInFrames: 60,
++    } as unknown as TimelineItem
++    expect(
++      review([translated, text])
++        .map((warning) => warning.itemId)
++        .sort(),
++    ).toEqual(['captions', 'text'])
++    expect(review([translated])[0]?.language).toBe('fr')
++  })
++})
++
++it('opens review, selects the actual translated item, seeks through cue offsets, recomputes and leaves graph/history untouched', () => {
++  const item = segment({
++    id: 'translated:item:with:colons',
++    trackId: 'fr',
++    from: 90,
++    source: {
++      type: 'subtitle-import',
++      translation: { language: 'fr', from: 'en', subtitle: true, translatedAt: 1 },
++    } as SubtitleSegmentItem['source'],
++    cues: [cue('cue:with:colons', 2, 3, 'un\ndeux\ntrois')],
++  })
++  useItemsStore.getState().setItems([item])
++  useItemsStore
++    .getState()
++    .setTracks([makeTimelineTrack({ id: 'fr', name: 'French captions', order: 0, visible: false })])
++  useTimelineSettingsStore.getState().setFps(30)
++  const before = useItemsStore.getState()
++  const history = useTimelineCommandStore.getState()
++  const ui = render(<CaptionQualityPanel />)
++  fireEvent.click(ui.getByRole('button', { name: 'Caption quality (1)' }))
++  fireEvent.click(ui.getByRole('button', { name: /French captions · French · 0:05.00/ }))
++  expect(useSelectionStore.getState().selectedItemIds).toEqual([item.id])
++  expect(usePlaybackStore.getState().currentFrame).toBe(150)
++  expect(useItemsStore.getState()).toBe(before)
++  expect(useTimelineCommandStore.getState()).toBe(history)
++  act(() => useItemsStore.getState().setItems([{ ...item, cues: [cue('fixed', 2, 3, 'Fixed')] }]))
++  expect(ui.getByRole('status').textContent).toBe('No caption quality warnings.')
++})
++
++it('uses the active nested sequence bounds and handles invalid cue seek safely', () => {
++  useTimelineSettingsStore.getState().setFps(30)
++  useCompositionsStore.setState({
++    compositionById: { sequence: { id: 'sequence', durationInFrames: 120 } } as never,
++  })
++  useCompositionNavigationStore.setState({ activeCompositionId: 'sequence' })
++  useItemsStore
++    .getState()
++    .setItems([segment({ cues: [cue('beyond', 4, 5), cue('invalid', NaN, NaN)] })])
++  const ui = render(<CaptionQualityPanel />)
++  fireEvent.click(ui.getByRole('button', { name: 'Caption quality (2)' }))
++  const buttons = ui.getAllByRole('button', { name: /Original/ })
++  fireEvent.click(buttons[0]!)
++  expect(usePlaybackStore.getState().currentFrame).toBe(119)
++  fireEvent.click(buttons[1]!)
++  expect(usePlaybackStore.getState().currentFrame).toBe(30)
++})
++
++it('uses the active sequence rate for reading speed, cue offsets and seeking independently of root FPS', () => {
++  useTimelineSettingsStore.getState().setFps(30)
++  useCompositionsStore.setState({
++    compositionById: { sequence: { id: 'sequence', fps: 60, durationInFrames: 600 } } as never,
++  })
++  useCompositionNavigationStore.setState({ activeCompositionId: 'sequence' })
++  const text = {
++    ...segment(),
++    id: 'fast-text',
++    type: 'text',
++    textRole: 'caption',
++    from: 60,
++    durationInFrames: 30,
++    text: '字'.repeat(15),
++  } as unknown as TimelineItem
++  useItemsStore.getState().setItems([
++    text,
++    segment({
++      id: 'nested-caption',
++      from: 120,
++      cues: [cue('nested', 1, 2, 'one\ntwo\nthree')],
++    }),
++  ])
++  const ui = render(<CaptionQualityPanel />)
++  fireEvent.click(ui.getByRole('button', { name: 'Caption quality (2)' }))
++  expect(
++    ui.getByRole('button', { name: /Original · 0:01.00 · Over 20 characters per second/ }),
++  ).toBeInTheDocument()
++  fireEvent.click(ui.getByRole('button', { name: /Original · 0:03.00 · More than two lines/ }))
++  expect(useSelectionStore.getState().selectedItemIds).toEqual(['nested-caption'])
++  expect(usePlaybackStore.getState().currentFrame).toBe(180)
++})
+diff --git a/src/i18n/locales/partials/de/caption-quality.json b/src/i18n/locales/partials/de/caption-quality.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/de/caption-quality.json
+@@ -0,0 +1,15 @@
++{
++  "captionQuality": {
++    "title": "Untertitelqualität ({{count}})",
++    "label": "Hinweise zur Untertitelqualität",
++    "note": "Nur Hinweise. Prüfe die Untertitel der aktiven Sequenz; Export und Untertitel bleiben unverändert.",
++    "clear": "Keine Qualitätshinweise.",
++    "original": "Original",
++    "unknownTime": "Unbekannte Zeit",
++    "speed": "Über 20 Zeichen pro Sekunde",
++    "lines": "Mehr als zwei Zeilen",
++    "overlap": "Überlappende Untertitel auf dieser Spur",
++    "bounds": "Außerhalb der Sequenzgrenzen",
++    "timing": "Ungültige Dauer oder Dauer null"
++  }
++}
+diff --git a/src/i18n/locales/partials/en/caption-quality.json b/src/i18n/locales/partials/en/caption-quality.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/en/caption-quality.json
+@@ -0,0 +1,15 @@
++{
++  "captionQuality": {
++    "title": "Caption quality ({{count}})",
++    "label": "Caption quality warnings",
++    "note": "Advisory only. Review cues in the active sequence; export and captions remain unchanged.",
++    "clear": "No caption quality warnings.",
++    "original": "Original",
++    "unknownTime": "Unknown time",
++    "speed": "Over 20 characters per second",
++    "lines": "More than two lines",
++    "overlap": "Overlapping cues on this track",
++    "bounds": "Outside sequence bounds",
++    "timing": "Invalid or zero duration"
++  }
++}
+diff --git a/src/i18n/locales/partials/es/caption-quality.json b/src/i18n/locales/partials/es/caption-quality.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/es/caption-quality.json
+@@ -0,0 +1,15 @@
++{
++  "captionQuality": {
++    "title": "Calidad de subtítulos ({{count}})",
++    "label": "Avisos de calidad de subtítulos",
++    "note": "Solo orientativo. Revisa los subtítulos de la secuencia activa; la exportación y los subtítulos no cambian.",
++    "clear": "Sin avisos de calidad.",
++    "original": "Original",
++    "unknownTime": "Tiempo desconocido",
++    "speed": "Más de 20 caracteres por segundo",
++    "lines": "Más de dos líneas",
++    "overlap": "Subtítulos superpuestos en esta pista",
++    "bounds": "Fuera de los límites de la secuencia",
++    "timing": "Duración nula o no válida"
++  }
++}
+diff --git a/src/i18n/locales/partials/fr/caption-quality.json b/src/i18n/locales/partials/fr/caption-quality.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/fr/caption-quality.json
+@@ -0,0 +1,15 @@
++{
++  "captionQuality": {
++    "title": "Qualité des sous-titres ({{count}})",
++    "label": "Avertissements des sous-titres",
++    "note": "À titre indicatif. Vérifiez les répliques de la séquence active ; les sous-titres et l’export restent inchangés.",
++    "clear": "Aucun avertissement.",
++    "original": "Original",
++    "unknownTime": "Heure inconnue",
++    "speed": "Plus de 20 caractères par seconde",
++    "lines": "Plus de deux lignes",
++    "overlap": "Répliques superposées sur cette piste",
++    "bounds": "Hors des limites de la séquence",
++    "timing": "Durée nulle ou non valide"
++  }
++}
+diff --git a/src/i18n/locales/partials/ja/caption-quality.json b/src/i18n/locales/partials/ja/caption-quality.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/ja/caption-quality.json
+@@ -0,0 +1,15 @@
++{
++  "captionQuality": {
++    "title": "字幕の品質（{{count}}）",
++    "label": "字幕の品質に関する警告",
++    "note": "参考情報です。現在のシーケンスの字幕を確認します。書き出しや字幕は変更されません。",
++    "clear": "字幕の品質に関する警告はありません。",
++    "original": "原文",
++    "unknownTime": "時刻不明",
++    "speed": "1秒あたり20文字を超えています",
++    "lines": "3行以上あります",
++    "overlap": "同じトラックで字幕が重複しています",
++    "bounds": "シーケンスの範囲外です",
++    "timing": "長さが無効またはゼロです"
++  }
++}
+diff --git a/src/i18n/locales/partials/ko/caption-quality.json b/src/i18n/locales/partials/ko/caption-quality.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/ko/caption-quality.json
+@@ -0,0 +1,15 @@
++{
++  "captionQuality": {
++    "title": "자막 품질 ({{count}})",
++    "label": "자막 품질 경고",
++    "note": "참고용입니다. 현재 시퀀스의 자막을 검토하세요. 내보내기와 자막은 변경되지 않습니다.",
++    "clear": "자막 품질 경고가 없습니다.",
++    "original": "원문",
++    "unknownTime": "알 수 없는 시간",
++    "speed": "초당 20자 초과",
++    "lines": "두 줄 초과",
++    "overlap": "이 트랙에서 자막이 겹칩니다",
++    "bounds": "시퀀스 범위를 벗어납니다",
++    "timing": "길이가 잘못되었거나 0입니다"
++  }
++}
+diff --git a/src/i18n/locales/partials/pt-BR/caption-quality.json b/src/i18n/locales/partials/pt-BR/caption-quality.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/pt-BR/caption-quality.json
+@@ -0,0 +1,15 @@
++{
++  "captionQuality": {
++    "title": "Qualidade das legendas ({{count}})",
++    "label": "Avisos de qualidade das legendas",
++    "note": "Apenas orientativo. Revise as legendas da sequência ativa; a exportação e as legendas permanecem inalteradas.",
++    "clear": "Nenhum aviso de qualidade.",
++    "original": "Original",
++    "unknownTime": "Tempo desconhecido",
++    "speed": "Mais de 20 caracteres por segundo",
++    "lines": "Mais de duas linhas",
++    "overlap": "Legendas sobrepostas nesta faixa",
++    "bounds": "Fora dos limites da sequência",
++    "timing": "Duração inválida ou zero"
++  }
++}
+diff --git a/src/i18n/locales/partials/tr/caption-quality.json b/src/i18n/locales/partials/tr/caption-quality.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/tr/caption-quality.json
+@@ -0,0 +1,15 @@
++{
++  "captionQuality": {
++    "title": "Altyazı kalitesi ({{count}})",
++    "label": "Altyazı kalitesi uyarıları",
++    "note": "Yalnızca öneri niteliğindedir. Etkin dizinin altyazılarını inceleyin; dışa aktarma ve altyazılar değişmez.",
++    "clear": "Altyazı kalitesi uyarısı yok.",
++    "original": "Özgün",
++    "unknownTime": "Bilinmeyen zaman",
++    "speed": "Saniyede 20 karakterden fazla",
++    "lines": "İkiden fazla satır",
++    "overlap": "Bu kanalda çakışan altyazılar",
++    "bounds": "Dizi sınırları dışında",
++    "timing": "Geçersiz veya sıfır süre"
++  }
++}
+diff --git a/src/i18n/locales/partials/zh/caption-quality.json b/src/i18n/locales/partials/zh/caption-quality.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/zh/caption-quality.json
+@@ -0,0 +1,15 @@
++{
++  "captionQuality": {
++    "title": "字幕质量（{{count}}）",
++    "label": "字幕质量警告",
++    "note": "仅供参考。检查当前序列的字幕，不会更改导出或字幕。",
++    "clear": "没有字幕质量警告。",
++    "original": "原文",
++    "unknownTime": "时间未知",
++    "speed": "每秒超过20个字符",
++    "lines": "超过两行",
++    "overlap": "此轨道上的字幕重叠",
++    "bounds": "超出序列范围",
++    "timing": "时长无效或为零"
++  }
++}

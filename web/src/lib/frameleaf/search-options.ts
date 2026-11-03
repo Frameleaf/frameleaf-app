@@ -16,11 +16,15 @@ import {
   searchSmartStatistics,
   SearchSuggestionType,
   type AssetResponseDto,
+  LibraryViewScope,
+  LibraryItemSearchMode,
+  searchLibraryItems,
   type PersonResponseDto,
   type PetResponseDto,
   type SearchHistogramBucketDto,
 } from '@frameleaf/sdk';
 import type { DiscoverySearchDto } from '$lib/components/discovery/query';
+import { albumSelectionOptions } from '$lib/frameleaf/album-tree';
 import { sortPets } from '$lib/frameleaf/pets';
 import {
   bucketsByYear,
@@ -30,6 +34,7 @@ import {
   type HistogramUnit,
   type PaletteFacets,
 } from '$lib/frameleaf/search-palette';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 
 export type FilterPanelOptions = {
   people: PersonResponseDto[];
@@ -96,6 +101,89 @@ const loadAllPeople = async (signal?: AbortSignal): Promise<PersonResponseDto[]>
   }
 };
 
+type SharedSuggestions = { request: Promise<string[]>; controller: AbortController; callers: number };
+const inFlightSuggestions = new Map<SearchSuggestionType, SharedSuggestions>();
+
+let clearsOnLogout = false;
+
+/**
+ * One request per suggestion list while it is in flight: opening the palette loads the filter panel's
+ * places and the command palette's places at the same moment. Not cached once settled. A caller whose
+ * signal aborts stops waiting at once, and the request is aborted when its last caller has left.
+ */
+export const sharedSearchSuggestions = (type: SearchSuggestionType, signal?: AbortSignal): Promise<string[]> => {
+  if (signal?.aborted) {
+    return Promise.reject(signal.reason);
+  }
+  if (!clearsOnLogout) {
+    clearsOnLogout = true;
+    // a request started for one account must never answer the next one
+    eventManager.on({
+      AuthLogout: () => {
+        for (const { controller } of inFlightSuggestions.values()) {
+          controller.abort();
+        }
+        inFlightSuggestions.clear();
+      },
+    });
+  }
+  let shared = inFlightSuggestions.get(type);
+  if (!shared) {
+    const controller = new AbortController();
+    const entry: SharedSuggestions = {
+      controller,
+      callers: 0,
+      // never throws synchronously: a caller's Promise.all must receive every request it started
+      request: (async () =>
+        (await getSearchSuggestions({ $type: type }, { signal: controller.signal })) ?? [])().finally(() => {
+        if (inFlightSuggestions.get(type) === entry) {
+          inFlightSuggestions.delete(type);
+        }
+      }),
+    };
+    inFlightSuggestions.set(type, entry);
+    shared = entry;
+  }
+  const entry = shared;
+  entry.callers++;
+  return new Promise<string[]>((resolve, reject) => {
+    let left = false;
+    const leave = () => {
+      if (left) {
+        return false;
+      }
+      left = true;
+      entry.callers--;
+      signal?.removeEventListener('abort', onAbort);
+      return true;
+    };
+    const onAbort = () => {
+      if (!leave()) {
+        return;
+      }
+      if (entry.callers === 0) {
+        if (inFlightSuggestions.get(type) === entry) {
+          inFlightSuggestions.delete(type);
+        }
+        entry.controller.abort(signal?.reason);
+      }
+      reject(signal?.reason);
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+    entry.request
+      .then((value) => {
+        if (leave()) {
+          resolve(value);
+        }
+      })
+      .catch((error: unknown) => {
+        if (leave()) {
+          reject(error);
+        }
+      });
+  });
+};
+
 const settle = async <T>(work: Promise<T>, fallback: T, signal?: AbortSignal): Promise<T> => {
   try {
     return await work;
@@ -108,16 +196,19 @@ const settle = async <T>(work: Promise<T>, fallback: T, signal?: AbortSignal): P
   }
 };
 
-export const loadFilterPanelOptions = async (signal?: AbortSignal): Promise<FilterPanelOptions> => {
+export const loadFilterPanelOptions = async (
+  signal?: AbortSignal,
+  libraryScope?: LibraryViewScope,
+): Promise<FilterPanelOptions> => {
   const [people, pets, tags, albums, cities, states, countries, makes, models, lenses, landmarks] = await Promise.all([
     settle<PersonResponseDto[]>(loadAllPeople(signal), [], signal),
     // Hidden pets are left out for the same reason hidden people are: hiding is a display choice
     settle<PetResponseDto[]>(getAllPets({ withHidden: false }, { signal }), [], signal),
     settle(getAllTags({ signal }), [], signal),
-    settle(getAllAlbums({}, { signal }), [], signal),
-    settle(getSearchSuggestions({ $type: SearchSuggestionType.City }, { signal }), [], signal),
-    settle(getSearchSuggestions({ $type: SearchSuggestionType.State }, { signal }), [], signal),
-    settle(getSearchSuggestions({ $type: SearchSuggestionType.Country }, { signal }), [], signal),
+    settle(getAllAlbums(libraryScope ? { libraryScope } : {}, { signal }), [], signal),
+    settle(sharedSearchSuggestions(SearchSuggestionType.City, signal), [], signal),
+    settle(sharedSearchSuggestions(SearchSuggestionType.State, signal), [], signal),
+    settle(sharedSearchSuggestions(SearchSuggestionType.Country, signal), [], signal),
     settle(getSearchSuggestions({ $type: SearchSuggestionType.CameraMake }, { signal }), [], signal),
     settle(getSearchSuggestions({ $type: SearchSuggestionType.CameraModel }, { signal }), [], signal),
     settle(getSearchSuggestions({ $type: SearchSuggestionType.CameraLensModel }, { signal }), [], signal),
@@ -129,7 +220,7 @@ export const loadFilterPanelOptions = async (signal?: AbortSignal): Promise<Filt
     // Favorites first, then by name, as the Pets page lists them
     pets: sortPets(pets),
     tags: tags.map((tag) => ({ value: tag.id, label: tag.value })),
-    albums: albums.map((album) => ({ value: album.id, label: album.albumName })),
+    albums: albumSelectionOptions(albums),
     cities: cities.filter(Boolean),
     landmarks: landmarks.map(({ id, name, assetCount }) => ({ id, name, count: assetCount })),
     states: states.filter(Boolean),
@@ -197,6 +288,10 @@ export const loadPaletteYears = async (body: DiscoverySearchDto, signal?: AbortS
 
 export type PaletteCount = { total: number; capped: boolean };
 
+/** Mixed palettes count both real kinds; media-only refinements do not pretend to include links. */
+export const isMixedPaletteSearch = (body: DiscoverySearchDto) =>
+  body.filter?.libraryScope === LibraryViewScope.Design || !!body.filter?.text;
+
 /**
  * How many items a body matches. Smart search ranks every eligible item, so its count comes from the
  * smart statistics endpoint and stops at the cap (`capped`), shown as "1,000+".
@@ -206,6 +301,21 @@ export const loadPaletteCount = async (
   smart: boolean,
   signal?: AbortSignal,
 ): Promise<PaletteCount> => {
+  if (isMixedPaletteSearch(body)) {
+    const response = await searchLibraryItems(
+      {
+        libraryItemSearchDto: {
+          filter: body.filter,
+          mode: smart ? LibraryItemSearchMode.Smart : LibraryItemSearchMode.Text,
+          ...(body.query && { query: body.query }),
+          ...(body.queryAssetId && { queryAssetId: body.queryAssetId }),
+          limit: 1,
+        },
+      },
+      { signal },
+    );
+    return { total: response.count, capped: response.countCapped };
+  }
   if (smart) {
     const { total, capped } = await searchSmartStatistics(
       {

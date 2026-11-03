@@ -1,3 +1,4 @@
+import { LibraryScope } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -7,7 +8,12 @@ import { eventManager } from '$lib/managers/event-manager.svelte';
 import SearchEntry from './SearchEntry.svelte';
 
 const app = vi.hoisted(() => ({
-  page: { url: new URL('http://localhost/photos'), route: { id: '/(user)/photos' }, params: {} },
+  page: {
+    url: new URL('http://localhost/photos'),
+    route: { id: '/(user)/photos' },
+    params: {},
+    data: {} as { album?: { id: string; libraryScope: LibraryScope } },
+  },
 }));
 vi.mock('$app/state', () => ({ page: app.page }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
@@ -19,7 +25,32 @@ vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({
 describe('SearchEntry', () => {
   beforeEach(() => {
     app.page.url = new URL('http://localhost/photos');
+    app.page.data = {};
     document.body.replaceChildren();
+  });
+
+  it('opens an album deep link in its actual Design workspace', async () => {
+    app.page.url = new URL('http://localhost/albums/11111111-1111-4111-8111-111111111111');
+    app.page.data = { album: { id: '11111111-1111-4111-8111-111111111111', libraryScope: LibraryScope.Design } };
+    sdkMock.searchLibraryItems.mockResolvedValue({ count: 0, countCapped: false, items: [], nextCursor: null });
+    HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
+      this.open = true;
+    };
+    render(SearchEntry);
+    await fireEvent.click(screen.getByTestId('search-entry'));
+    await waitFor(() =>
+      expect(sdkMock.searchLibraryItems).toHaveBeenCalledWith(
+        expect.objectContaining({
+          libraryItemSearchDto: expect.objectContaining({
+            filter: expect.objectContaining({
+              libraryScope: 'design',
+              albumIds: { any: ['11111111-1111-4111-8111-111111111111'] },
+            }),
+          }),
+        }),
+        expect.anything(),
+      ),
+    );
   });
 
   it('is the top bar search on library pages', () => {

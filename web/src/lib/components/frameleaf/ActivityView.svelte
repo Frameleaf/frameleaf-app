@@ -1,6 +1,9 @@
 <script lang="ts">
   import type { Translations } from 'svelte-i18n';
   import { goto } from '$app/navigation';
+  import CloudGpuUpgrade from '$lib/components/frameleaf/cloud/CloudGpuUpgrade.svelte';
+  import StudioRenderProgress from '$lib/components/frameleaf/StudioRenderProgress.svelte';
+  import SpokenWordsActivity from '$lib/components/frameleaf/SpokenWordsActivity.svelte';
   import BackgroundWorkRows from '$lib/components/frameleaf/BackgroundWorkRows.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
@@ -52,6 +55,7 @@
     mdiDownloadOutline,
     mdiExportVariant,
     mdiImageMultipleOutline,
+    mdiLockAlertOutline,
     mdiMovieEditOutline,
     mdiOpenInApp,
     mdiPause,
@@ -390,6 +394,8 @@
     </div>
   </header>
 
+  <SpokenWordsActivity />
+
   {#if activitySession.unreachable}
     <div class="fla-offline" role="status">
       <Icon icon={mdiWifiOff} size="1.125rem" aria-hidden={true} />
@@ -500,6 +506,14 @@
             · <span class="fla-error">{item.error}</span>
           {/if}
         </p>
+        <!-- Only while it works: a queued, done or failed export shows its outcome in the status line (FL-1120). -->
+        {#if item.renderProgress && item.running && (item.stage === 'starting' || item.stage === 'running')}
+          <StudioRenderProgress
+            progress={item.renderProgress}
+            startedAt={item.renderStartedAt}
+            online={!activitySession.unreachable}
+          />
+        {/if}
         {#if item.cloud && item.stage === 'starting'}
           <p class="fla-status">
             {$t('frameleaf_activity_cloud_start_note', { values: { workers: item.cloud.plannedWorkers } })}
@@ -508,9 +522,19 @@
         {#if item.bulk && item.bulk.retried > 0}
           <p class="fla-status">{$t('frameleaf_activity_bulk_retried', { values: { count: item.bulk.retried } })}</p>
         {/if}
+        {#if item.encryptedWithOlderKey}
+          <!-- some restored items can't be opened here: a warning, not a status -->
+          <p class="fla-warn" role="note">
+            <Icon icon={mdiLockAlertOutline} size="16" aria-hidden={true} />
+            <span>{$t('frameleaf_le_activity_older_key', { values: { count: item.encryptedWithOlderKey } })}</span>
+          </p>
+        {/if}
       </div>
 
       <div class="fla-actions">
+        {#if item.cloud?.routing?.upgradeAvailable && !item.finished && item.operationId}
+          <CloudGpuUpgrade operationId={item.operationId} />
+        {/if}
         {#if item.canPause && item.source === 'job'}
           <Button
             disabled={busyId === item.id}
@@ -644,12 +668,12 @@
     padding: 32px 36px 48px;
     color: var(--fl-text);
   }
+  /* P4 (review-1030-shell.css): the filters sit on their own row, in line with the content. */
   .fla-head {
     display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
+    flex-direction: column;
+    align-items: stretch;
     gap: 16px;
-    flex-wrap: wrap;
     margin-bottom: 20px;
     max-width: 900px;
   }
@@ -670,7 +694,6 @@
   }
   .fla-head-text {
     min-width: 0;
-    flex: 1 1 320px;
   }
   /* activity.css `.fla-intro`: what the page is for, above the counts. */
   .fla-intro {
@@ -690,7 +713,6 @@
     align-items: center;
     gap: 10px;
     flex-wrap: wrap;
-    padding-top: 6px;
   }
   .fla-filters {
     display: inline-flex;
@@ -926,6 +948,22 @@
   }
   .fla-error {
     color: var(--fl-danger);
+  }
+  .fla-warn {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--fl-space-2);
+    margin: var(--fl-space-2) 0 0;
+    padding: var(--fl-space-2) var(--fl-space-3);
+    color: var(--fl-text);
+    font-size: var(--fl-font-small);
+    background: color-mix(in srgb, var(--fl-warning), transparent 88%);
+    border-radius: var(--fl-radius-control);
+  }
+  .fla-warn :global(svg) {
+    flex-shrink: 0;
+    margin-top: 1px;
+    color: var(--fl-warning);
   }
   /* Frameleaf Cloud cost facts on a job (activity.css) */
   .fla-cost {

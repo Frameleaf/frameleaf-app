@@ -32,6 +32,7 @@ async function fixture(
   run: (f: any) => Promise<void>,
   native = false,
   nativeBackups = false,
+  origin = 'https://manager.test:9443',
 ) {
   const root = await mkdtemp(join(tmpdir(), 'manager-desktop-api-')),
     store = new Store(root),
@@ -192,7 +193,7 @@ async function fixture(
     });
   const browser = {
     origin,
-    cookie: `__Host-frameleaf-manager=${session.session}`,
+    ...(origin.startsWith('http://') ? { 'x-frameleaf-manager-session': session.session } : { cookie: `__Host-frameleaf-manager=${session.session}` }),
     'x-csrf-token': session.csrf,
   };
   const pair = async (
@@ -258,8 +259,8 @@ async function fixture(
     await rm(root, { recursive: true, force: true });
   }
 }
-test('browser-approved pairing and native redemption preserve browser Host/Origin/CSRF checks', async () => {
-  await fixture(async ({ call, browser, signed }) => {
+for (const protocol of ['https', 'http']) test(`${protocol} browser pairing and redemption preserve Host/Origin/CSRF checks`, async () => {
+  await fixture(async ({ call, browser, signed, effects }) => {
     const input = JSON.stringify({
       password,
       deviceId,
@@ -312,10 +313,14 @@ test('browser-approved pairing and native redemption preserve browser Host/Origi
     assert.equal(status.status, 200);
     assert.equal(status.body.installation.id, installationId);
     assert.equal(status.headers['cache-control'], 'no-store');
+    const control = '/manager-api/desktop/control';
+    const body = JSON.stringify({ action: 'stop', key: randomUUID() });
+    assert.equal((await call(control, body, signed(grant, control, body, 'stop'))).status, 200);
+    assert.deepEqual(effects, ['stop:owned']);
     const list = await call('/manager-api/desktop-grants', '', browser, 'GET');
     assert.equal(list.status, 200);
     assert.ok(!JSON.stringify(list.body).includes(grant.token));
-  });
+  }, false, false, `${protocol}://manager.test:9443`);
 });
 test('native transport refuses browser context, wrong host, noncanonical paths and oversized/malformed JSON', async () => {
   await fixture(async ({ call, pair, signed, browser }) => {

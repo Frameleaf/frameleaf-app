@@ -1,0 +1,255 @@
+{
+  "source": {
+    "kind": "photoview",
+    "version": "v2.4.0",
+    "commit": "f79d379e38241c687c55e9f899e30661fd9f115a",
+    "image": "viktorstrate/photoview@sha256:a2216ed2ba7423121f5eee8b36e4fd016975e62821245c8d384ed11c988fa1b4",
+    "database": {
+      "engine": "sqlite",
+      "version": "3.40.1"
+    }
+  },
+  "schemaSha256": "d6dd07880bb4ee9eee48052a42ed394dd3e33dab75f2f0476c21d9f556871952",
+  "applicationId": {
+    "application_id": 0
+  },
+  "userVersion": {
+    "user_version": 0
+  },
+  "objects": [
+    {
+      "type": "index",
+      "name": "idx_access_tokens_expire",
+      "tbl_name": "access_tokens",
+      "sql": "CREATE INDEX `idx_access_tokens_expire` ON `access_tokens`(`expire`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_access_tokens_user_id",
+      "tbl_name": "access_tokens",
+      "sql": "CREATE INDEX `idx_access_tokens_user_id` ON `access_tokens`(`user_id`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_access_tokens_value",
+      "tbl_name": "access_tokens",
+      "sql": "CREATE INDEX `idx_access_tokens_value` ON `access_tokens`(`value`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_albums_parent_album_id",
+      "tbl_name": "albums",
+      "sql": "CREATE INDEX `idx_albums_parent_album_id` ON `albums`(`parent_album_id`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_image_faces_face_group_id",
+      "tbl_name": "image_faces",
+      "sql": "CREATE INDEX `idx_image_faces_face_group_id` ON `image_faces`(`face_group_id`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_image_faces_media_id",
+      "tbl_name": "image_faces",
+      "sql": "CREATE INDEX `idx_image_faces_media_id` ON `image_faces`(`media_id`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_media_album_id",
+      "tbl_name": "media",
+      "sql": "CREATE INDEX `idx_media_album_id` ON `media`(`album_id`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_media_exif_id",
+      "tbl_name": "media",
+      "sql": "CREATE INDEX `idx_media_exif_id` ON `media`(`exif_id`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_media_type",
+      "tbl_name": "media",
+      "sql": "CREATE INDEX `idx_media_type` ON `media`(`type`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_media_urls_media_id",
+      "tbl_name": "media_urls",
+      "sql": "CREATE INDEX `idx_media_urls_media_id` ON `media_urls`(`media_id`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_media_urls_media_name",
+      "tbl_name": "media_urls",
+      "sql": "CREATE INDEX `idx_media_urls_media_name` ON `media_urls`(`media_name`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_media_urls_purpose",
+      "tbl_name": "media_urls",
+      "sql": "CREATE INDEX `idx_media_urls_purpose` ON `media_urls`(`purpose`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_media_video_metadata_id",
+      "tbl_name": "media",
+      "sql": "CREATE INDEX `idx_media_video_metadata_id` ON `media`(`video_metadata_id`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_share_tokens_album_id",
+      "tbl_name": "share_tokens",
+      "sql": "CREATE INDEX `idx_share_tokens_album_id` ON `share_tokens`(`album_id`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_share_tokens_expire",
+      "tbl_name": "share_tokens",
+      "sql": "CREATE INDEX `idx_share_tokens_expire` ON `share_tokens`(`expire`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_share_tokens_media_id",
+      "tbl_name": "share_tokens",
+      "sql": "CREATE INDEX `idx_share_tokens_media_id` ON `share_tokens`(`media_id`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_share_tokens_owner_id",
+      "tbl_name": "share_tokens",
+      "sql": "CREATE INDEX `idx_share_tokens_owner_id` ON `share_tokens`(`owner_id`)"
+    },
+    {
+      "type": "index",
+      "name": "idx_user_preferences_user_id",
+      "tbl_name": "user_preferences",
+      "sql": "CREATE INDEX `idx_user_preferences_user_id` ON `user_preferences`(`user_id`)"
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_albums_1",
+      "tbl_name": "albums",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_media_1",
+      "tbl_name": "media",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_media_2",
+      "tbl_name": "media",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_user_albums_1",
+      "tbl_name": "user_albums",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_user_media_data_1",
+      "tbl_name": "user_media_data",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_users_1",
+      "tbl_name": "users",
+      "sql": null
+    },
+    {
+      "type": "table",
+      "name": "access_tokens",
+      "tbl_name": "access_tokens",
+      "sql": "CREATE TABLE `access_tokens` (`id` integer PRIMARY KEY AUTOINCREMENT,`created_at` datetime,`updated_at` datetime,`user_id` integer NOT NULL,`value` text NOT NULL,`expire` datetime NOT NULL,CONSTRAINT `fk_access_tokens_user` FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE)"
+    },
+    {
+      "type": "table",
+      "name": "albums",
+      "tbl_name": "albums",
+      "sql": "CREATE TABLE `albums` (`id` integer PRIMARY KEY AUTOINCREMENT,`created_at` datetime,`updated_at` datetime,`title` text NOT NULL,`parent_album_id` integer,`path` text NOT NULL,`path_hash` text,`cover_id` integer,CONSTRAINT `fk_albums_parent_album` FOREIGN KEY (`parent_album_id`) REFERENCES `albums`(`id`) ON DELETE SET NULL,CONSTRAINT `uni_albums_path_hash` UNIQUE (`path_hash`))"
+    },
+    {
+      "type": "table",
+      "name": "face_groups",
+      "tbl_name": "face_groups",
+      "sql": "CREATE TABLE `face_groups` (`id` integer PRIMARY KEY AUTOINCREMENT,`created_at` datetime,`updated_at` datetime,`label` text)"
+    },
+    {
+      "type": "table",
+      "name": "image_faces",
+      "tbl_name": "image_faces",
+      "sql": "CREATE TABLE `image_faces` (`id` integer PRIMARY KEY AUTOINCREMENT,`created_at` datetime,`updated_at` datetime,`face_group_id` integer NOT NULL,`media_id` integer NOT NULL,`descriptor` BLOB NOT NULL,`rectangle` VARCHAR(64) NOT NULL,CONSTRAINT `fk_media_faces` FOREIGN KEY (`media_id`) REFERENCES `media`(`id`) ON DELETE CASCADE,CONSTRAINT `fk_face_groups_image_faces` FOREIGN KEY (`face_group_id`) REFERENCES `face_groups`(`id`) ON DELETE CASCADE)"
+    },
+    {
+      "type": "table",
+      "name": "media",
+      "tbl_name": "media",
+      "sql": "CREATE TABLE `media` (`id` integer PRIMARY KEY AUTOINCREMENT,`created_at` datetime,`updated_at` datetime,`title` text NOT NULL,`path` text NOT NULL,`path_hash` text NOT NULL,`album_id` integer NOT NULL,`exif_id` integer,`date_shot` datetime NOT NULL,`type` text NOT NULL,`video_metadata_id` integer,`side_car_path` text,`side_car_hash` text,`blurhash` text,CONSTRAINT `fk_media_exif` FOREIGN KEY (`exif_id`) REFERENCES `media_exif`(`id`) ON DELETE CASCADE,CONSTRAINT `fk_media_video_metadata` FOREIGN KEY (`video_metadata_id`) REFERENCES `video_metadata`(`id`) ON DELETE CASCADE,CONSTRAINT `fk_media_album` FOREIGN KEY (`album_id`) REFERENCES `albums`(`id`) ON DELETE CASCADE,CONSTRAINT `uni_media_path_hash` UNIQUE (`path_hash`),CONSTRAINT `uni_media_side_car_hash` UNIQUE (`side_car_hash`))"
+    },
+    {
+      "type": "table",
+      "name": "media_exif",
+      "tbl_name": "media_exif",
+      "sql": "CREATE TABLE `media_exif` (`id` integer PRIMARY KEY AUTOINCREMENT,`created_at` datetime,`updated_at` datetime,`description` text,`camera` text,`maker` text,`lens` text,`date_shot` datetime,`exposure` real,`aperture` real,`iso` integer,`focal_length` real,`flash` integer,`orientation` integer,`exposure_program` integer,`gps_latitude` real,`gps_longitude` real)"
+    },
+    {
+      "type": "table",
+      "name": "media_urls",
+      "tbl_name": "media_urls",
+      "sql": "CREATE TABLE `media_urls` (`id` integer PRIMARY KEY AUTOINCREMENT,`created_at` datetime,`updated_at` datetime,`media_id` integer NOT NULL,`media_name` text NOT NULL,`width` integer NOT NULL,`height` integer NOT NULL,`purpose` text NOT NULL,`content_type` text NOT NULL,`file_size` integer NOT NULL,CONSTRAINT `fk_media_media_url` FOREIGN KEY (`media_id`) REFERENCES `media`(`id`) ON DELETE CASCADE)"
+    },
+    {
+      "type": "table",
+      "name": "share_tokens",
+      "tbl_name": "share_tokens",
+      "sql": "CREATE TABLE `share_tokens` (`id` integer PRIMARY KEY AUTOINCREMENT,`created_at` datetime,`updated_at` datetime,`value` text NOT NULL,`owner_id` integer NOT NULL,`expire` datetime,`password` text,`album_id` integer,`media_id` integer,CONSTRAINT `fk_share_tokens_media` FOREIGN KEY (`media_id`) REFERENCES `media`(`id`) ON DELETE CASCADE,CONSTRAINT `fk_share_tokens_owner` FOREIGN KEY (`owner_id`) REFERENCES `users`(`id`) ON DELETE CASCADE,CONSTRAINT `fk_share_tokens_album` FOREIGN KEY (`album_id`) REFERENCES `albums`(`id`) ON DELETE CASCADE)"
+    },
+    {
+      "type": "table",
+      "name": "site_info",
+      "tbl_name": "site_info",
+      "sql": "CREATE TABLE `site_info` (`initial_setup` numeric NOT NULL,`periodic_scan_interval` integer NOT NULL,`concurrent_workers` integer NOT NULL,`thumbnail_method` text NOT NULL)"
+    },
+    {
+      "type": "table",
+      "name": "sqlite_sequence",
+      "tbl_name": "sqlite_sequence",
+      "sql": "CREATE TABLE sqlite_sequence(name,seq)"
+    },
+    {
+      "type": "table",
+      "name": "user_albums",
+      "tbl_name": "user_albums",
+      "sql": "CREATE TABLE `user_albums` (`album_id` integer,`user_id` integer,PRIMARY KEY (`album_id`,`user_id`),CONSTRAINT `fk_user_albums_user` FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE,CONSTRAINT `fk_user_albums_album` FOREIGN KEY (`album_id`) REFERENCES `albums`(`id`) ON DELETE CASCADE)"
+    },
+    {
+      "type": "table",
+      "name": "user_media_data",
+      "tbl_name": "user_media_data",
+      "sql": "CREATE TABLE `user_media_data` (`created_at` datetime,`updated_at` datetime,`user_id` integer,`media_id` integer,`favorite` numeric NOT NULL DEFAULT false,PRIMARY KEY (`user_id`,`media_id`))"
+    },
+    {
+      "type": "table",
+      "name": "user_preferences",
+      "tbl_name": "user_preferences",
+      "sql": "CREATE TABLE `user_preferences` (`id` integer PRIMARY KEY AUTOINCREMENT,`created_at` datetime,`updated_at` datetime,`user_id` integer NOT NULL,`language` text,CONSTRAINT `fk_user_preferences_user` FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE)"
+    },
+    {
+      "type": "table",
+      "name": "users",
+      "tbl_name": "users",
+      "sql": "CREATE TABLE `users` (`id` integer PRIMARY KEY AUTOINCREMENT,`created_at` datetime,`updated_at` datetime,`username` text,`password` text,`admin` numeric DEFAULT false,CONSTRAINT `uni_users_username` UNIQUE (`username`))"
+    },
+    {
+      "type": "table",
+      "name": "video_metadata",
+      "tbl_name": "video_metadata",
+      "sql": "CREATE TABLE `video_metadata` (`id` integer PRIMARY KEY AUTOINCREMENT,`created_at` datetime,`updated_at` datetime,`width` integer NOT NULL,`height` integer NOT NULL,`duration` real NOT NULL,`codec` text,`framerate` real,`bitrate` text,`color_profile` text,`audio` text)"
+    }
+  ]
+}

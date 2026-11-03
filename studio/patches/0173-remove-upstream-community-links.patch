@@ -1,0 +1,53 @@
+diff --git a/src/features/editor/components/toolbar.tsx b/src/features/editor/components/toolbar.tsx
+index b80b048..71c9309 100644
+--- a/src/features/editor/components/toolbar.tsx
++++ b/src/features/editor/components/toolbar.tsx
+@@ -1,4 +1,3 @@
+-import { Github } from '@/components/brand/github-icon'
+ import { memo, useEffect, useMemo, useRef, useState } from 'react'
+ import { useNavigate } from '@tanstack/react-router'
+ import { useTranslation } from 'react-i18next'
+@@ -17,8 +16,6 @@ import {
+   Video,
+ } from 'lucide-react'
+ import { Button } from '@/components/ui/button'
+-import { DiscordIcon } from '@/components/brand/discord-icon'
+-import { DISCORD_INVITE_URL } from '@/config/community'
+ import {
+   DropdownMenu,
+   DropdownMenuContent,
+@@ -226,34 +223,6 @@ export const Toolbar = memo(function Toolbar({
+           <DebugPopover projectId={projectId} />
+         )}
+ 
+-        {/* Socials */}
+-        <Button variant="outline" size="icon" className="h-7 w-7" asChild>
+-          <a
+-            href="https://github.com/walterlow/freecut"
+-            target="_blank"
+-            rel="noopener noreferrer"
+-            data-tooltip={t('toolbar.viewOnGitHub')}
+-            data-tooltip-side="bottom"
+-            aria-label={t('toolbar.viewOnGitHub')}
+-          >
+-            <Github className="h-4 w-4" />
+-          </a>
+-        </Button>
+-        <Button variant="outline" size="icon" className="h-7 w-7" asChild>
+-          <a
+-            href={DISCORD_INVITE_URL}
+-            target="_blank"
+-            rel="noopener noreferrer"
+-            data-tooltip={t('toolbar.joinDiscord')}
+-            data-tooltip-side="bottom"
+-            aria-label={t('toolbar.joinDiscord')}
+-          >
+-            <DiscordIcon className="h-4 w-4" />
+-          </a>
+-        </Button>
+-
+-        <Separator orientation="vertical" className="h-5" />
+-
+         {/* Utility */}
+         <Button variant="outline" size="icon" className="h-7 w-7" asChild>
+           <a

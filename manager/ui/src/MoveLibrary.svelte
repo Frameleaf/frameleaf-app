@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { requestKey } from './request-key';
   import { formatBytes, readable } from './presentation';
   let {
     roots,
@@ -34,7 +35,7 @@
     busy = true;
     error = '';
     try {
-      started((await api('move-library', { id: review.id, key: crypto.randomUUID() })).id);
+      started((await api('move-library', { id: review.id, key: requestKey() })).id);
     } catch (e) {
       error = readable(e instanceof Error ? e.message : 'media_move_failed');
     } finally {

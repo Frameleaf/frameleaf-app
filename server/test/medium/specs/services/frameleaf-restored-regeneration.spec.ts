@@ -3,7 +3,11 @@ import { randomUUID } from 'node:crypto';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { defaults, mapAdminConfig } from 'src/dtos/config.dto.js';
 import { JobName, SystemMetadataKey } from 'src/enum.js';
-import { IMPORT_DERIVED_RUN_KIND, IMPORT_DERIVED_STAGES, importDerivedRunId } from 'src/immich-import/derived-work.js';
+import {
+  IMPORT_DERIVED_RUN_KIND,
+  IMPORT_DERIVED_RUN_STAGES,
+  importDerivedRunId,
+} from 'src/immich-import/derived-work.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -26,7 +30,7 @@ it('releases a restored prepared import once with a real admin and effective set
   const source = 'restored-verified-source',
     fingerprint = 'restored-verified-config';
   const id = importDerivedRunId(source, fingerprint);
-  const stages = [...IMPORT_DERIVED_STAGES.map(([, name]) => name), JobName.PersonGenerateThumbnail];
+  const stages = [...IMPORT_DERIVED_RUN_STAGES];
   const setup = newMediumService(SystemConfigService, {
     database: db,
     real: [SystemMetadataRepository],
@@ -43,8 +47,10 @@ it('releases a restored prepared import once with a real admin and effective set
       { getJobCounts: vi.fn().mockResolvedValue({ active: 0, waiting: 0, delayed: 0, paused: 0, failed: 0 }) } as never,
       users,
       {} as never,
-      {} as never,
+      // Setup scans every account, including the asset-less admin made below.
+      { startMissingScan: vi.fn().mockResolvedValue({ operationId: randomUUID() }) } as never,
       setup.sut,
+      {} as never,
     );
   const run = async () =>
     (
@@ -184,8 +190,10 @@ it('releases a restored prepared import once with a real admin and effective set
     await Promise.all([make().begin(), make().begin()]);
     const marker = (await run()).selection.managerSetup;
     expect(marker).toMatchObject({ installation: original, operationId, startedAt: expect.any(String) });
+    // FL-1146: metadata and thumbnails start at once; the rest wait for the original-file check.
+    const early = new Set<string>([JobName.AssetExtractMetadata, JobName.AssetGenerateThumbnails]);
     expect((await selections()).map((row) => row.state)).toEqual(
-      captured.map((row) => (row.state === 'enumerating' ? 'ready' : row.state)),
+      captured.map((row) => (row.state === 'enumerating' && early.has(row.stage) ? 'ready' : row.state)),
     );
     expect((await selections()).map((row) => row.capturedAt)).toEqual(captured.map((row) => row.capturedAt));
     expect(await setup.sut.getAdminConfigWithRevision()).toEqual(settings);
@@ -244,6 +252,7 @@ it.each(['bound-missing-run', 'bound-missing-marker', 'unbound-markerless'] as c
       {} as never,
       {} as never,
       { getAdminConfigWithRevision: vi.fn().mockResolvedValue({ config: mapAdminConfig(defaults) }) } as never,
+      {} as never,
     );
     try {
       process.env.FRAMELEAF_MANAGER_INSTALLATION = 'aaaabbbbcccc';

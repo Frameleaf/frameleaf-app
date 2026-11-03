@@ -106,6 +106,29 @@ for (const key of [
   "callbacks",
 ])
   openApi(document.components?.[key], `/components/${key}`);
+// Preserve the original response enum identity while allowing its members in wider requests.
+const requestShape = document.components?.schemas?.StudioExportRequestShape;
+if (requestShape) {
+  if (
+    JSON.stringify(document.components.schemas.StudioExportShape?.enum) !==
+      JSON.stringify(["original", "vertical", "square"]) ||
+    requestShape.nullable ||
+    requestShape.type !== "string" ||
+    JSON.stringify(requestShape.enum) !==
+      JSON.stringify(["original", "landscape", "vertical", "square"]) ||
+    requestShape.anyOf ||
+    requestShape.oneOf ||
+    requestShape.allOf ||
+    requestShape.$ref
+  )
+    throw new Error("Studio export request shape requires generator review");
+  delete requestShape.type;
+  delete requestShape.enum;
+  requestShape.anyOf = [
+    { $ref: "#/components/schemas/StudioExportShape" },
+    { type: "string", enum: ["landscape"] },
+  ];
+}
 const directory = await mkdtemp(join(tmpdir(), "frameleaf-sdk-input-"));
 try {
   const input = join(directory, "openapi.json");

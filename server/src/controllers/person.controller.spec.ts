@@ -271,6 +271,6 @@ describe(PersonController.name, () => {
       .post(`/people/${ids[0]}/merge`)
       .send({ ids: [ids[1]] });
     expect(legacy.status).toBe(200);
-    expect(service.mergePeople).toHaveBeenLastCalledWith(undefined, { ids });
+    expect(service.mergePerson).toHaveBeenCalledWith(undefined, ids[0], { ids: [ids[1]] });
   });
 });

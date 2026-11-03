@@ -137,6 +137,32 @@ describe('page and partial saves (FL-66)', () => {
     expect(reset.ffmpeg.crf).toBe(40);
   });
 
+  // FL-529: Cloud processing resets its own part of frameleafCloud, never Cloud Backup or sign-in.
+  it('"Reset this page" can name one part of a group', () => {
+    const cloud = (cloudMl: object, cloudBackup: object) => ({
+      cloudMl,
+      cloudBackup,
+      signIn: { invitedStorageQuota: 5 },
+    });
+    const defaults = withChange((config) => {
+      (config as Record<string, unknown>).frameleafCloud = cloud({ enabled: false, spenders: [] }, { target: 'off' });
+    });
+    const draft = withChange((config) => {
+      (config as Record<string, unknown>).frameleafCloud = {
+        ...cloud({ enabled: true, spenders: ['a'] }, { target: 'byo-s3', bucket: 'photos' }),
+        signIn: { invitedStorageQuota: 10 },
+      };
+    });
+
+    const reset = resetConfigKeys(draft, defaults, ['frameleafCloud.cloudMl']) as unknown as {
+      frameleafCloud: ReturnType<typeof cloud>;
+    };
+
+    expect(reset.frameleafCloud.cloudMl).toEqual({ enabled: false, spenders: [] });
+    expect(reset.frameleafCloud.cloudBackup).toEqual({ target: 'byo-s3', bucket: 'photos' });
+    expect(reset.frameleafCloud.signIn).toEqual({ invitedStorageQuota: 10 });
+  });
+
   it('a partial save takes only the named groups from the draft', () => {
     const draft = withChange((config) => {
       config.trash.days = 5;

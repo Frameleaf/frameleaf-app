@@ -11,8 +11,9 @@ vi.mock('$lib/managers/auth-manager.svelte', () => ({
   authManager: { user: { id: 'me', isAdmin: false, name: 'Me', email: 'me@example.com' }, params: {} },
 }));
 
-const me = userAdminFactory.build({ id: 'me', name: 'Me' });
-const jamie = userAdminFactory.build({ id: 'jamie', name: 'Jamie' });
+// Fixed emails: a generated one can contain another member's name and match the wrong row.
+const me = userAdminFactory.build({ id: 'me', name: 'Me', email: 'me@example.com' });
+const jamie = userAdminFactory.build({ id: 'jamie', name: 'Jamie', email: 'jamie@example.com' });
 
 describe('AlbumShareDialog', () => {
   beforeAll(async () => {
@@ -72,7 +73,7 @@ describe('AlbumShareDialog', () => {
   });
 
   it('invites several people at once with one role', async () => {
-    const sam = userAdminFactory.build({ id: 'sam', name: 'Sam' });
+    const sam = userAdminFactory.build({ id: 'sam', name: 'Sam', email: 'sam@example.com' });
     sdkMock.searchUsers.mockResolvedValue([jamie, sam]);
     sdkMock.addUsersToAlbum.mockResolvedValue(undefined as never);
     const album = albumFactory.build({ id: 'album-1', albumUsers: [{ user: me, role: AlbumUserRole.Owner }] });

@@ -49,7 +49,7 @@ const UNKNOWN_MEDIA_COLOR: StudioMediaColor = {
  * The media record's `colorTransfer` (graph protocol 3.5) of a picture stream. Any Dolby Vision
  * profile is `hdr` whatever transfer its base layer states, as the web host marks it; otherwise
  * H.273 transfer 16 is `pq` and 18 is `hlg`; everything else, unspecified included, is `sdr`. Every
- * stream `StudioResourceService.hdrLibraryAssets` counts as HDR is one of the first three.
+ * stream `StudioResourceService.hdrLibrarySources` counts as HDR is one of the first three.
  */
 export const studioMediaColorOf = (
   stream:

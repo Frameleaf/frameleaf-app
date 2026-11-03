@@ -4,6 +4,7 @@
 select
   "workflow_definition"."definition",
   "workflow"."id",
+  "workflow"."ownerId",
   "workflow"."name",
   "workflow"."description",
   "workflow"."trigger",
@@ -42,6 +43,7 @@ order by
 select
   "workflow_definition"."definition",
   "workflow"."id",
+  "workflow"."ownerId",
   "workflow"."name",
   "workflow"."description",
   "workflow"."trigger",
@@ -79,6 +81,7 @@ where
 -- WorkflowRepository.getForWorkflowRun
 select
   "workflow"."id",
+  "workflow"."ownerId",
   "workflow"."name",
   "workflow"."trigger",
   "workflow"."logging",

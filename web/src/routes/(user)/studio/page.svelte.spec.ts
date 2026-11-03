@@ -1,19 +1,46 @@
-import { createStudioExport, getMediaOperation } from '@frameleaf/sdk';
+import {
+  createStudioExport,
+  createStudioExportBatch,
+  getMediaOperation,
+  MediaOperationDestination,
+  StudioExportSubtitleMode,
+} from '@frameleaf/sdk';
+import { toastManager } from '@frameleaf/ui';
 import { render } from '@testing-library/svelte';
 import { tick } from 'svelte';
+import { studioCaptionExportSidecars } from '$lib/frameleaf/studio/caption-languages';
 import { authManager } from '$lib/managers/auth-manager.svelte';
+import { downloadBlob } from '$lib/utils';
 import { deferredPromise } from '@test-data/deferred';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import type { PageData } from './$types';
 import StudioPage from './+page.svelte';
 
 const harness = vi.hoisted(() => ({
-  exportDialog: undefined as { onExport: (choice: object) => void } | undefined,
+  exportDialog: undefined as
+    | {
+        onExport: (choice: object) => Promise<void>;
+        open?: boolean;
+        retryPending?: boolean;
+        deliveryResults?: { queued: boolean }[];
+      }
+    | undefined,
+  host: undefined as
+    { services: { requestExport: () => void; setDirty: (dirty: boolean) => void }; onExport?: () => void } | undefined,
+  hasDraft: false,
+  /** Runs inside the session's flush; may change the session state it is given. */
+  flush: undefined as undefined | ((state: Record<string, unknown>) => Promise<void>),
+  /** The live session: its state and the page's change callback. */
+  session: undefined as undefined | { state: Record<string, unknown>; onChange: (state: object) => void },
 }));
 
 vi.mock('$app/navigation', () => ({ beforeNavigate: vi.fn(), goto: vi.fn(), replaceState: vi.fn() }));
 vi.mock('$lib/components/shared-components/navigation-bar/NavigationBar.svelte', () => ({ default: () => {} }));
-vi.mock('$lib/components/frameleaf/StudioHost.svelte', () => ({ default: () => {} }));
+vi.mock('$lib/components/frameleaf/StudioHost.svelte', () => ({
+  default: (_anchor: unknown, props: NonNullable<typeof harness.host>) => {
+    harness.host = props;
+  },
+}));
 vi.mock('$lib/components/frameleaf/StudioBundleExportDialog.svelte', () => ({ default: () => {} }));
 vi.mock('$lib/components/frameleaf/Dialog.svelte', () => ({ default: () => {} }));
 vi.mock('$lib/components/frameleaf/StudioExportDialog.svelte', () => ({
@@ -43,10 +70,12 @@ vi.mock('$lib/frameleaf/studio/project-imports', () => ({
 vi.mock('$lib/frameleaf/studio/import-retention', () => ({
   onStudioImportSessionRetired: () => () => {},
   reconcileRetainedImports: vi.fn().mockResolvedValue({ items: [] }),
+  retireStudioImportSessions: vi.fn(),
   submitRetainedImport: vi.fn(),
 }));
 vi.mock('$lib/frameleaf/studio/project-session', () => ({
   STUDIO_DRAFT_PROJECT_ID: 'draft',
+  isEmptyStudioExport: () => false,
   createStudioProjectSession: (options: { onChange: (state: object) => void }) => {
     const state = {
       project: {
@@ -61,13 +90,18 @@ vi.mock('$lib/frameleaf/studio/project-session', () => ({
       },
       status: 'saved',
       access: 'owner',
-      hasDraft: false,
+      hasDraft: harness.hasDraft,
     };
+    harness.session = { state, onChange: options.onChange };
     return {
       state,
       open: vi.fn(async () => options.onChange(state)),
       dispose: vi.fn(async () => {}),
-      flush: vi.fn(async () => {}),
+      flush: vi.fn(async () => {
+        state.hasDraft = false;
+        await harness.flush?.(state);
+        options.onChange({ ...state });
+      }),
       comments: vi.fn().mockResolvedValue({ items: [] }),
       setOnline: vi.fn(),
     };
@@ -76,7 +110,17 @@ vi.mock('$lib/frameleaf/studio/project-session', () => ({
 vi.mock('@frameleaf/sdk', async (original) => ({
   ...(await original<object>()),
   createStudioExport: vi.fn(),
+  createStudioExportBatch: vi.fn(),
   getMediaOperation: vi.fn(),
+}));
+
+vi.mock('$lib/utils', async (original) => ({
+  ...(await original<object>()),
+  downloadBlob: vi.fn(),
+}));
+vi.mock('$lib/frameleaf/studio/caption-languages', async (original) => ({
+  ...(await original<object>()),
+  studioCaptionExportSidecars: vi.fn().mockReturnValue([{ language: 'fr', srt: 'French captions' }]),
 }));
 
 const data = {
@@ -107,7 +151,7 @@ it('stops following an export once the page is gone, even with a status read in 
   const view = render(StudioPage, { data });
   await vi.advanceTimersByTimeAsync(0);
   await tick();
-  harness.exportDialog!.onExport({});
+  await harness.exportDialog!.onExport({});
   await vi.advanceTimersByTimeAsync(1000);
   expect(getMediaOperation).toHaveBeenCalledTimes(1);
 
@@ -115,4 +159,229 @@ it('stops following an export once the page is gone, even with a status read in 
   inFlight.resolve(running);
   await vi.advanceTimersByTimeAsync(60_000);
   expect(getMediaOperation).toHaveBeenCalledTimes(1);
+});
+
+describe('opening the export dialog (FL-674)', () => {
+  const opened = async () => {
+    authManager.setUser(userAdminFactory.build());
+    render(StudioPage, { data });
+    await vi.waitFor(() => expect(harness.host).toBeDefined());
+    await tick();
+  };
+  const settle = async () => {
+    for (let index = 0; index < 5; index++) {
+      await tick();
+    }
+  };
+
+  afterEach(() => {
+    harness.hasDraft = false;
+    harness.flush = undefined;
+    harness.exportDialog = undefined;
+    harness.host = undefined;
+  });
+
+  it('saves a pending edit first, and keeps the dialog closed when the save fails', async () => {
+    harness.hasDraft = true;
+    harness.flush = () => Promise.reject(new Error('offline'));
+    await opened();
+
+    harness.host!.services.requestExport();
+    await settle();
+    expect(harness.exportDialog?.open).toBeFalsy();
+
+    harness.flush = async () => {};
+    harness.host!.services.requestExport();
+    await vi.waitFor(() => expect(harness.exportDialog?.open).toBe(true));
+  });
+
+  it('waits for an edit the editor has marked but not staged yet, then saves it', async () => {
+    await opened();
+    harness.host!.services.setDirty(true);
+    await settle();
+
+    harness.host!.services.requestExport();
+    await settle();
+    // The editor stages after its pause: nothing is opened on the stale timeline meanwhile.
+    expect(harness.exportDialog?.open).toBeFalsy();
+
+    const { state, onChange } = harness.session!;
+    state.hasDraft = true;
+    onChange({ ...state });
+    await vi.waitFor(() => expect(harness.exportDialog?.open).toBe(true));
+  });
+
+  it('keeps the dialog closed when the edit is never staged', async () => {
+    vi.useFakeTimers();
+    await opened();
+    harness.host!.services.setDirty(true);
+    await settle();
+    harness.host!.services.requestExport();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(harness.exportDialog?.open).toBeFalsy();
+  });
+
+  it('keeps the dialog closed when the save leaves the session unable to write (a 404)', async () => {
+    harness.hasDraft = true;
+    harness.flush = async (state) => {
+      // A missing project clears the draft and leaves the session forbidden, without throwing.
+      state.status = 'forbidden';
+      state.project = { ...(state.project as object), hasLease: false };
+    };
+    await opened();
+    harness.host!.services.requestExport();
+    await settle();
+    expect(harness.exportDialog?.open).toBeFalsy();
+  });
+});
+
+describe('delivery batch recovery', () => {
+  const choice = {
+    destination: MediaOperationDestination.Local,
+    subtitleMode: StudioExportSubtitleMode.Burn,
+    reviewedRevision: 3,
+    deliveries: [{ shape: 'landscape', format: 'mp4-h264', color: 'preserve', resolution: '1080p' }],
+  };
+  const refused = { shape: 'square', result: null, error: 'Unsupported' };
+  const admitted = {
+    shape: 'landscape',
+    result: { operation: { id: 'batch-op', status: 'rendering' } },
+    error: null,
+  };
+  const open = async () => {
+    harness.host!.services.requestExport();
+    await vi.waitFor(() => expect(harness.exportDialog?.open).toBe(true));
+  };
+  beforeEach(async () => {
+    harness.hasDraft = false;
+    harness.flush = undefined;
+    harness.host = undefined;
+    harness.exportDialog = undefined;
+    authManager.setUser(userAdminFactory.build());
+    vi.mocked(getMediaOperation).mockResolvedValue({ id: 'batch-op', status: 'completed' } as never);
+    render(StudioPage, { data });
+    await vi.waitFor(() => expect(harness.host).toBeDefined());
+    await open();
+  });
+
+  it('keeps the request key and outcomes when a lost or partial response is retried after reopening', async () => {
+    vi.mocked(createStudioExportBatch)
+      .mockRejectedValueOnce(new Error('Response lost'))
+      .mockResolvedValue({ items: [admitted, refused] } as never);
+    await harness.exportDialog!.onExport(choice);
+    const first = vi.mocked(createStudioExportBatch).mock.calls[0]![0];
+    await tick();
+    expect(harness.exportDialog!.retryPending).toBe(true);
+    harness.exportDialog!.open = false;
+    await open();
+    await harness.exportDialog!.onExport(choice);
+    expect(vi.mocked(createStudioExportBatch).mock.calls[1]![0]).toEqual(first);
+    await tick();
+    expect(harness.exportDialog!.deliveryResults).toHaveLength(2);
+    harness.exportDialog!.open = false;
+    await open();
+    expect(harness.exportDialog!.deliveryResults).toHaveLength(2);
+    await harness.exportDialog!.onExport(choice);
+    expect(vi.mocked(createStudioExportBatch).mock.calls[2]![0]).toEqual(first);
+  });
+
+  it('rejects a changed retry once, then allows a deliberate new batch with a new key', async () => {
+    vi.mocked(createStudioExportBatch).mockResolvedValue({ items: [refused] } as never);
+    await harness.exportDialog!.onExport(choice);
+    const first = vi.mocked(createStudioExportBatch).mock.calls[0]![0];
+    const changed = { ...choice, deliveries: [{ ...choice.deliveries[0], resolution: '720p' }] };
+    await harness.exportDialog!.onExport(changed);
+    expect(createStudioExportBatch).toHaveBeenCalledTimes(1);
+    await harness.exportDialog!.onExport(changed);
+    expect(createStudioExportBatch).toHaveBeenCalledTimes(2);
+    const next = vi.mocked(createStudioExportBatch).mock.calls[1]![0];
+    expect(next.studioExportBatchCreateDto.requestKey).not.toBe(first.studioExportBatchCreateDto.requestKey);
+    expect(next.studioExportBatchCreateDto.variants[0]!.resolution).toBe('720p');
+  });
+
+  it('requires a deliberate second submission when switching an unresolved batch to a single export', async () => {
+    vi.mocked(createStudioExportBatch).mockResolvedValue({ items: [refused] } as never);
+    vi.mocked(createStudioExport).mockResolvedValue({ operation: { id: 'single-op', status: 'rendering' } } as never);
+    await harness.exportDialog!.onExport(choice);
+    const single = {
+      destination: choice.destination,
+      subtitleMode: choice.subtitleMode,
+      format: 'mp4-h264',
+      color: 'preserve',
+      resolution: '1080p',
+    };
+    await harness.exportDialog!.onExport(single);
+    expect(createStudioExport).not.toHaveBeenCalled();
+    await tick();
+    expect(harness.exportDialog!.retryPending).toBe(false);
+    await harness.exportDialog!.onExport(single);
+    expect(createStudioExport).toHaveBeenCalledTimes(1);
+  });
+
+  it('queues Original as an ordinary export beside the reframed shapes and names refused shapes in words', async () => {
+    vi.mocked(createStudioExportBatch).mockResolvedValue({ items: [refused] } as never);
+    vi.mocked(createStudioExport).mockResolvedValue({ operation: { id: 'original-op', status: 'rendering' } } as never);
+    const danger = vi.spyOn(toastManager, 'danger');
+    const both = {
+      ...choice,
+      deliveries: [
+        { shape: 'original', format: 'mp4-h264', color: 'preserve', resolution: '1080p' },
+        { shape: 'square', format: 'mp4-h264', color: 'preserve', resolution: '1080p', framing: [] },
+      ],
+    };
+    await harness.exportDialog!.onExport(both);
+    const single = vi.mocked(createStudioExport).mock.calls[0]![0].studioExportCreateDto;
+    expect(single).not.toHaveProperty('shape');
+    expect(single).not.toHaveProperty('framing');
+    expect(single).toMatchObject({ expectedRevision: 3, format: 'mp4-h264', destination: 'local' });
+    expect(vi.mocked(createStudioExportBatch).mock.calls[0]![0].studioExportBatchCreateDto.variants).toEqual([
+      expect.objectContaining({ shape: 'square' }),
+    ]);
+    await tick();
+    expect(harness.exportDialog!.deliveryResults).toEqual([
+      { shape: 'original', queued: true, error: null },
+      { shape: 'square', queued: false, error: 'Unsupported' },
+    ]);
+    expect(danger).toHaveBeenCalledTimes(1);
+    // Trying again reuses Original's key, so the server answers with the same export.
+    await harness.exportDialog!.onExport(both);
+    expect(vi.mocked(createStudioExport).mock.calls[1]![0].studioExportCreateDto.requestKey).toBe(single.requestKey);
+  });
+
+  it('saves caption files once per submission, not again on each retry', async () => {
+    vi.mocked(createStudioExportBatch).mockResolvedValue({ items: [admitted, refused] } as never);
+    await harness.exportDialog!.onExport(choice);
+    await harness.exportDialog!.onExport(choice);
+    expect(studioCaptionExportSidecars).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows and follows the admitted batch before reporting a lost Original response', async () => {
+    vi.mocked(createStudioExportBatch).mockResolvedValue({ items: [admitted] } as never);
+    vi.mocked(createStudioExport).mockRejectedValueOnce(new Error('Response lost'));
+    const both = {
+      ...choice,
+      deliveries: [
+        { shape: 'original', format: 'mp4-h264', color: 'preserve', resolution: '1080p' },
+        ...choice.deliveries,
+      ],
+    };
+    await harness.exportDialog!.onExport(both);
+    await tick();
+    expect(harness.exportDialog!.deliveryResults).toEqual([{ shape: 'landscape', queued: true, error: null }]);
+    expect(studioCaptionExportSidecars).toHaveBeenCalledTimes(1);
+    expect(harness.exportDialog!.retryPending).toBe(true);
+  });
+
+  it.each([false, true])(
+    'downloads caption sidecars only when a delivery is admitted (admitted=%s)',
+    async (accepted) => {
+      vi.mocked(createStudioExportBatch).mockResolvedValue({
+        items: accepted ? [admitted, refused] : [refused],
+      } as never);
+      await harness.exportDialog!.onExport(choice);
+      expect(studioCaptionExportSidecars).toHaveBeenCalledTimes(accepted ? 1 : 0);
+      expect(downloadBlob).toHaveBeenCalledTimes(accepted ? 1 : 0);
+      expect(harness.exportDialog!.open).toBe(true);
+    },
+  );
 });

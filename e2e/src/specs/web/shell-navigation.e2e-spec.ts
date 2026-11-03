@@ -85,7 +85,7 @@ test.describe('Frameleaf shell navigation (FL-30)', () => {
       'Documents',
       'All albums',
       'Shared links',
-      'Photography',
+      'Clients',
       // FL-420: LibraryRail.jsx lists RAW support right under Photography.
       'RAW support',
       'Workflows',
@@ -98,8 +98,11 @@ test.describe('Frameleaf shell navigation (FL-30)', () => {
     for (const { name, href } of destinations) {
       await test.step(name, async () => {
         const previous = page.url();
+        // FL-544: Support Frameleaf folded into Your Frameleaf Cloud; /buy redeems a link code, then goes
+        // on to Settings → Frameleaf Cloud in its place in the history.
+        const landing = name === 'Support Frameleaf' ? '/user-settings?area=cloud&section=cloud-plan' : href;
         await railLink(page, name).click();
-        await page.waitForURL(at(href));
+        await page.waitForURL(at(landing));
         await expect(errorTitle(page), `${name} (${href}) opens a page`).toHaveCount(0);
         if (name === 'Locked') {
           // LIB-P2: without an unlocked session Locked opens in the app, the rail in place, and its
@@ -115,17 +118,8 @@ test.describe('Frameleaf shell navigation (FL-30)', () => {
           await expect(rail(page)).toBeVisible();
           return;
         }
-        if (name === 'Photography') {
-          // Like Studio, the photography workspace is a full-page tool without the library rail (App.jsx).
-          await expect(rail(page)).toHaveCount(0);
-          await page.goBack();
-          await page.waitForURL(at(previous));
-          await expect(rail(page)).toBeVisible();
-          return;
-        }
-        if (name === 'Support Frameleaf') {
-          // The prototype's Buy screen is one of its full-page auth screens (App.jsx AUTH_SCREENS).
-          await expect(page.getByRole('heading', { level: 1, name: 'Support Frameleaf' })).toBeVisible();
+        if (name === 'Clients') {
+          // Like Studio, Clients (and its introduction until it is started) is a full page without the library rail.
           await expect(rail(page)).toHaveCount(0);
           await page.goBack();
           await page.waitForURL(at(previous));

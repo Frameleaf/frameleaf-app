@@ -88,7 +88,7 @@ The check names the set-up problems it finds, each with the fix and, where docke
   - Where and how you can get this file depends on device and vendor, but typically, the device vendor also supplies these
   - The `hwaccel.ml.yml` file assumes the path to it is `/usr/lib/libmali.so`, so update accordingly if it is elsewhere
   - The `hwaccel.ml.yml` file assumes an additional file `/lib/firmware/mali_csffw.bin`, so update accordingly if your device's driver does not require this file
-- Optional: Configure your `.env` file, see [environment variables](/install/environment-variables) for ARM NN specific settings
+- Optional: Configure your `.env.ml` file (the machine learning container does not read `.env`; move any existing ML-only settings from `.env` to `.env.ml`), see [environment variables](/install/environment-variables) for ARM NN specific settings
   - In particular, the `MACHINE_LEARNING_ANN_FP16_TURBO` can significantly improve performance at the cost of very slightly lower accuracy
 
 #### CUDA
@@ -135,7 +135,7 @@ The check names the set-up problems it finds, each with the fix and, where docke
   - This is usually pre-installed on the device vendor's Linux images
 - RKNPU driver V0.9.8 or later must be available in the host server
   - You may confirm this by running `cat /sys/kernel/debug/rknpu/version` to check the version
-- Optional: Configure your `.env` file, see [environment variables](/install/environment-variables) for RKNN specific settings
+- Optional: Configure your `.env.ml` file (the machine learning container does not read `.env`; move any existing ML-only settings from `.env` to `.env.ml`), see [environment variables](/install/environment-variables) for RKNN-specific settings
   - In particular, setting `MACHINE_LEARNING_RKNN_THREADS` to 2 or 3 can _dramatically_ improve performance for RK3576 and RK3588 compared to the default of 1, at the expense of multiplying the amount of RAM each model uses by that amount.
 
 ## Setup
@@ -188,8 +188,10 @@ frameleaf-machine-learning:
               - gpu
   volumes:
     - model-cache:/cache
+  # Keep server credentials out of the inference worker.
   env_file:
-    - .env
+    - path: .env.ml
+      required: false
   restart: always
 ```
 

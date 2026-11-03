@@ -33,7 +33,8 @@ import { Refusal, publicSource, redact, secretEnvironmentValues } from './contra
 import { appdataDefaults } from './appdata.js';
 import { nativeListener } from './runtime/native-listener.js';
 import { PostgresStorage } from './postgres-storage.js';
-import { detectAcceleration } from './compose.js';
+import { HostAutostart } from './unraid-autostart.js';
+import { ServiceOverrides, detectAcceleration, hostInstallations, suggestedPort } from './compose.js';
 import { sharePortWithRedirect } from './http-redirect.js';
 
 const directory = process.env.MANAGER_DATA;
@@ -55,7 +56,7 @@ const backupRoot = process.env.MANAGER_BACKUP_ROOT ?? (runtime === 'native' ? jo
 if (!backupRoot || backupRoot !== resolve(backupRoot))
   throw new Error('MANAGER_BACKUP_ROOT must be an absolute mounted directory');
 const native = runtime === 'native'
-  ? await createNativeService(store, createReadStream('', { fd: 0, autoClose: true }), origin!, join(backupRoot, 'frameleaf-database'))
+  ? await createNativeService(store, process.stdin, origin!, join(backupRoot, 'frameleaf-database'))
   : null;
 const docker = new Docker();
 const security = new Security(store, origin, process.env.MANAGER_FRAME_ORIGIN);
@@ -72,7 +73,7 @@ async function databaseDefaults() {
   return appdataDefaults(process.env, config);
 }
 const defaults = native ? { roots: [], platform: 'native' as const } : await databaseDefaults();
-// The Unraid template mounts the host's unraid-autostart file here; MANAGER_UNRAID_AUTOSTART only overrides the path.
+// Preserve existing explicit mounts; Unraid otherwise discovers the file through the host engine.
 const mountedAutostart = '/run/frameleaf-host/unraid-autostart';
 const autostart = process.env.MANAGER_UNRAID_AUTOSTART || mountedAutostart;
 const autostartStat = native ? null : await stat(autostart).catch(() => null);
@@ -88,7 +89,7 @@ const operations = new Operations(
   backups,
   (process.env.MANAGER_STORAGE_ROOTS ?? '').split(':').filter(Boolean),
   databaseStorage,
-  process.env.MANAGER_UNRAID_AUTOSTART,
+  process.env.MANAGER_UNRAID_AUTOSTART ?? (defaults.platform === 'unraid' ? new HostAutostart(docker, directory) : undefined),
 );
 const lifecycle = native ?? operations;
 const RequestKey = z.string().uuid();
@@ -128,7 +129,7 @@ class Api {
       .parse(input);
     await security.claim(value.name, value.password, request.socket.remoteAddress);
     const session = await security.login(value.password);
-    security.cookie(response, session.session);
+    security.issueSession(response, session.session);
     return { csrf: session.csrf };
   }
   @Post('login') async login(@Body() input: unknown, @Res({ passthrough: true }) response: Response) {
@@ -137,7 +138,7 @@ class Api {
       .strict()
       .parse(input);
     const session = await security.login(password);
-    security.cookie(response, session.session);
+    security.issueSession(response, session.session);
     return { csrf: session.csrf };
   }
   @Post('logout') logout(@Req() request: Request, @Res({ passthrough: true }) response: Response) {
@@ -154,13 +155,18 @@ class Api {
       .strict()
       .parse(input);
     const session = await security.updateAdministrator(value.name, value.password, value.newPassword);
-    security.cookie(response, session.session);
+    security.issueSession(response, session.session);
     return { csrf: session.csrf };
   }
   @Get('dashboard') async dashboard(@Req() request: Request) {
     const installation = operations.installation();
+    // Without an installation the switcher is optional; with one, an unreachable Docker still fails as before.
+    const inventory = await docker.inventory().catch((error) => {
+      if (installation) throw error;
+      return [];
+    });
     const containers = installation
-      ? (await docker.inventory()).filter((c) => c.Config.Labels?.['app.frameleaf.manager'] === installation.id)
+      ? inventory.filter((c) => c.Config.Labels?.['app.frameleaf.manager'] === installation.id)
       : [];
     const host = await docker.compatibility().catch(() => null);
     return {
@@ -196,6 +202,8 @@ class Api {
         .filter(Boolean),
       databaseStorage: await databaseDefaults(),
       onboardingFinished: !!store.get('onboarding-finished'),
+      installations: hostInstallations(inventory, installation?.id, security.requestOrigin(request)),
+      suggestedPort: suggestedPort(inventory, [Number(new URL(security.requestOrigin(request)).port || 443)]),
       appUrl: installation ? new URL(`http://${new URL(security.requestOrigin(request)).hostname}:${installation.port}`).origin : null,
       librarySetup: installation
         ? await operations.libraryStatus().catch(() => ({ phase: 'unavailable', canFinish: false }))
@@ -264,6 +272,13 @@ class Api {
       .strict()
       .parse(input);
     return { id: operations.control(value.action, value.key).id };
+  }
+  @Get('container-settings') containerSettings() {
+    return operations.containerSettings();
+  }
+  @Post('container-settings') saveContainerSettings(@Body() input: unknown) {
+    const { services, key } = z.object({ services: ServiceOverrides, key: RequestKey }).strict().parse(input);
+    return { id: operations.reconfigure(services, key).id };
   }
   @Post('recover') async recover(@Body() input: unknown) {
     const value = z.object({ id: z.string().uuid() }).strict().parse(input);
@@ -409,7 +424,8 @@ async function main() {
   await mkdir(directory!, { recursive: true, mode: 0o700 });
   const cert = join(directory!, 'tls.crt'),
     key = join(directory!, 'tls.key');
-  if (!native) {
+  const http = !native && security.origin?.startsWith('http://');
+  if (!native && !http) {
     try {
       await stat(cert);
       await stat(key);
@@ -438,7 +454,7 @@ async function main() {
   }
   const httpsOptions = native
     ? native.httpsOptions()
-    : { cert: await readFile(cert), key: await readFile(key) };
+    : http ? undefined : { cert: await readFile(cert), key: await readFile(key) };
   store.interrupt();
   const app = await NestFactory.create(ManagerModule, {
     logger: false,
@@ -479,6 +495,7 @@ async function main() {
   app.use(express.static(ui, { index: 'index.html', dotfiles: 'deny' }));
   app.enableShutdownHooks();
   if (native) await app.listen(nativeAddress!.port, nativeAddress!.host);
+  else if (http) await app.listen(9443, '0.0.0.0');
   else {
     // Docker: browsers send a typed "IP:port" as http://, so redirect it instead of an empty reply.
     await app.init();

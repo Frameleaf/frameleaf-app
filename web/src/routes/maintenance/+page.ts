@@ -1,6 +1,6 @@
 import { getServerVersion } from '@frameleaf/sdk';
 import { loadMaintenanceAuth, loadMaintenanceStatus } from '$lib/utils/maintenance';
-import type { PageLoad } from '../admin/$types';
+import type { PageLoad } from './$types';
 
 export const load = (async () => {
   const [auth] = await Promise.allSettled([loadMaintenanceAuth(), loadMaintenanceStatus()]);

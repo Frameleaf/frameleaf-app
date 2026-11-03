@@ -31,7 +31,7 @@ const capture = job.steps.find(
   (step) => step.name === "Capture medium scale diagnostics",
 );
 const upload = job.steps.find(
-  (step) => step.with?.name === "medium-scale-diagnostics",
+  (step) => step.with?.name === "medium-scale-diagnostics-${{ matrix.shard }}",
 );
 const cleanup = job.steps.find(
   (step) => step.name === "Remove medium runner after failure or cancellation",
@@ -59,7 +59,7 @@ test("scale diagnostics retain the runner and always capture/upload before force
   assert.equal(upload.with["retention-days"], 3);
   assert.doesNotMatch(run.run, /src=.*frameleaf-medium-scale-artifacts/);
   assert.equal(
-    jobs["server-medium-tests"].steps.some(
+    jobs["server-medium-core-tests"].steps.some(
       (step) => step.env?.FRAMELEAF_MEDIUM_DIAGNOSTICS,
     ),
     false,

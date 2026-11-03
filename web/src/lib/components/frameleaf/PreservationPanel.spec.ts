@@ -54,6 +54,20 @@ describe('PreservationPanel (FL-74)', () => {
 
   afterEach(() => vi.useRealTimers());
 
+  it('shows saved links separately when a package has no originals', async () => {
+    sdkMock.getPreservationPackages.mockResolvedValue([
+      {
+        ...exporting,
+        counts: { ...exporting.counts, copied: 0, total: 0 },
+        operation: null,
+        bookmarks: { selected: 3, written: 2, skipped: 1 },
+      },
+    ]);
+    const { unmount } = render(PreservationPanel);
+    expect(await screen.findByText('2 of 3 saved links written · 1 skipped')).toBeInTheDocument();
+    unmount();
+  });
+
   it('stops reading the packages once the panel is gone, even with a read on its way', async () => {
     vi.useFakeTimers();
     let answer: (value: PreservationPackageDto[]) => void = () => {};

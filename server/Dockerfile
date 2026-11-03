@@ -1,6 +1,6 @@
-ARG STUDIO_NODE_IMAGE=node:26.11.1-bookworm@sha256:f1233c415b41ffcf237c717b3dea92e9d4ea006e0e4c71edcb790605d74f5404
+ARG STUDIO_NODE_IMAGE=node:22.23.4-bookworm@sha256:2bd396628eceb5c999a6e43731fab69d5fb98b94ba9d9d90b5f64575c5178765
 # BEGIN frameleaf-server-base
-ARG NODE_IMAGE=node:26.11.1-trixie-slim@sha256:193fe51b64e77981119c98c2002c9e32a70e2f006fb4d25068ce0558998917f0
+ARG NODE_IMAGE=node:22.23.4-trixie-slim@sha256:8eb619e402eaede1748a3c8173bffab391592812e85136452f781741c7242ddf
 # Frameleaf builds its own server base instead of pulling a prebuilt one. The stages between these
 # markers reproduce the base-server-dev image from immich-app/base-images tag 202609151314 (commit
 # 0f4c144d44c0556f8a7fc9143f82a176986369fc, AGPL-3.0). The scripts, version pins and patches it runs
@@ -22,6 +22,7 @@ COPY --chmod=755 server/base-image/apt-update-strict.sh /usr/local/sbin/apt-upda
 RUN ./configure-apt.sh && \
   apt-update-strict && \
   apt-get install --no-install-recommends -yqq ca-certificates && \
+  test ! -e /etc/ssl/certs/emSign_ECC_Root_CA_-_G3.pem && test ! -e /etc/ssl/certs/Comodo_AAA_Services_root.pem && \
   mkdir -p /usr/share/postgresql-common/pgdg
 
 # PGDG signing key (fingerprint B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8), pinned by checksum.
@@ -235,6 +236,7 @@ COPY --chmod=755 server/base-image/apt-update-strict.sh /usr/local/sbin/apt-upda
 RUN ./configure-apt.sh && \
   apt-update-strict && \
   apt-get install curl ca-certificates --no-install-recommends -yqq && \
+  test ! -e /etc/ssl/certs/emSign_ECC_Root_CA_-_G3.pem && test ! -e /etc/ssl/certs/Comodo_AAA_Services_root.pem && \
   mkdir -p /usr/share/postgresql-common/pgdg
 
 # PGDG signing key (fingerprint B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8), pinned by checksum.
@@ -374,14 +376,19 @@ RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter @fram
 
 FROM plugin-sdk AS server
 
+COPY ./packages/locked-crypto ./packages/locked-crypto/
 COPY ./packages/sql-tools ./packages/sql-tools/
 COPY ./server/package.json ./server/package.json
 RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter 'frameleaf...' install --frozen-lockfile
 
 COPY ./server ./server/
+COPY ./manager/package.json ./manager/package.json
+COPY ./manager/src/contracts.ts ./manager/src/import-plan.ts ./manager/src/import-transfer-journal.ts ./manager/src/import-copy.ts ./manager/src/import-file-review.ts ./manager/src/import-adoption.ts ./manager/src/import-relocation.ts ./manager/src/
+COPY ./manager/import-rename.c ./manager/import-rename.c
 COPY ./studio/runtime/subtitle-sidecar.mjs ./studio/runtime/subtitle-sidecar.d.mts ./studio/runtime/
 COPY ./studio/tools/owned-subtitle-runtime.mjs ./studio/tools/prepare-server-subtitle-runtime.mjs ./studio/tools/
 COPY ./docker/scripts/verify-server-package.mjs /build/verify-server-package.mjs
+COPY ./docker/scripts/preserve-import-crypto-runtime.mjs /build/preserve-import-crypto-runtime.mjs
 # The build channel is compiled into the server (server/src/utils/frameleaf-build-channel.ts). Only
 # .github/workflows/integration-image.yml passes FRAMELEAF_BUILD_CHANNEL=integration; every release
 # build leaves it at release, and the source line is then checked unchanged. An integration build may
@@ -400,7 +407,10 @@ RUN set -eu; \
   esac
 RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store \
   pnpm --filter frameleaf build && \
+  install -m 755 server/resources/library-import/frameleaf-import-rename /usr/local/bin/frameleaf-import-rename && \
   pnpm --filter frameleaf --prod --no-optional deploy /output/server-pruned
+RUN node /build/preserve-import-crypto-runtime.mjs /usr/src/app/server /output/server-pruned
+RUN node ./server/scripts/prepare-import-transfer-runtime.mjs --package /output/server-pruned
 RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store \
   SHARP_FORCE_GLOBAL_LIBVIPS=true pnpm --config.verify-deps-before-run=false --dir /output/server-pruned/node_modules/sharp exec npm run build
 RUN node /build/verify-server-package.mjs /output/server-pruned /usr/src/app/studio/runtime
@@ -421,7 +431,7 @@ ENTRYPOINT ["node", "/build/verify-darktable-develop.mjs"]
 # together with every licence notice it needs (attribution/, notices/).
 FROM ${STUDIO_NODE_IMAGE} AS studio-engine
 
-RUN npm install --global npm@11.8.0 --ignore-scripts --no-audit --no-fund
+RUN npm install --global npm@12.2.0 --ignore-scripts --no-audit --no-fund
 
 WORKDIR /usr/src/app
 COPY ./scripts/frameleaf-studio-contracts.mjs ./scripts/frameleaf-studio-contracts.mjs
@@ -454,6 +464,7 @@ RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter frame
 
 FROM sdk AS cli
 
+COPY ./packages/locked-crypto ./packages/locked-crypto/
 COPY ./packages/cli/package.json ./packages/cli/package.json
 RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter @frameleaf/cli install --frozen-lockfile
 
@@ -507,7 +518,7 @@ FROM server AS medium-test
 COPY --from=plugins /usr/src/app/packages/plugin-core/dist ./packages/plugin-core/dist
 COPY --from=plugins /usr/src/app/packages/plugin-core/manifest.json ./packages/plugin-core/manifest.json
 WORKDIR /usr/src/app/server
-CMD ["bash", "-ec", "docker version --format '{{.Client.Version}} {{.Server.Version}}'; node -e 'console.log(require(\"/usr/local/lib/frameleaf/image-hdr.node\").capabilities())'; pnpm run test:medium --run"]
+CMD ["bash", "-ec", "docker version --format '{{.Client.Version}} {{.Server.Version}}'; node -e 'console.log(require(\"/usr/local/lib/frameleaf/image-hdr.node\").capabilities())'; pnpm run test:medium --run --shard=${FRAMELEAF_MEDIUM_SHARD:-1/1}"]
 
 FROM base-server-prod AS prod
 
@@ -518,6 +529,7 @@ ENV NODE_ENV=production \
   NVIDIA_VISIBLE_DEVICES=all
 
 COPY --from=server /output/server-pruned ./server
+COPY --from=server /output/server-pruned/resources/library-import/frameleaf-import-rename /usr/local/bin/frameleaf-import-rename
 COPY --from=web /usr/src/app/web/build /build/www
 COPY --from=cli /output/cli-pruned ./cli
 COPY --from=plugins /usr/src/app/packages/plugin-core/dist /build/plugins/immich-plugin-core/dist

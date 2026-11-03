@@ -1,5 +1,6 @@
-import { Kysely, Transaction, sql } from 'kysely';
+import { Kysely, type QueryExecutorProvider, Transaction, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
+import type { DB } from 'src/schema/index.js';
 import { JobName, QueueName } from 'src/enum.js';
 import {
   publishLibraryFollowups,
@@ -25,6 +26,7 @@ import {
 } from 'src/queue/selection-lineage.js';
 import {
   libraryRunPending,
+  managerImportHeld,
   unfinishedAdmittedRunItems,
   unfinishedQueueItems,
   unfinishedRunItems,
@@ -41,7 +43,7 @@ import {
   QueueState,
 } from 'src/queue/types.js';
 
-type Executor = Kysely<any> | Transaction<any>;
+type Executor = Kysely<DB>;
 
 // An unclaimed row no longer carries its token. Retained attempts, not its state, prove it stopped.
 const stoppedJobAttempts = sql`((j.attempt = 0 or exists (
@@ -54,14 +56,17 @@ const stoppedJobAttempts = sql`((j.attempt = 0 or exists (
       and m.value->>'workerId' = a."workerId"::text and m.value ? 'stoppedAt')))`;
 
 /**
- * Local capacity frees up within seconds. Any other dependency (machine learning off or unreachable,
+ * Local or destination capacity frees up within seconds. Any other dependency (machine learning off or unreachable,
  * consent, budget, a missing preview) can stay down for hours, so its jobs wait longer on each claim
  * (30s, 1m, 2m, 4m, 8m, then every 10m) instead of re-running every 30 seconds forever.
  */
 const deferralDelay = (reason: JobDependencyReason) =>
-  reason === 'local-capacity'
+  reason === 'local-capacity' || reason === 'destination-capacity'
     ? sql`interval '30 seconds'`
-    : sql`least(interval '30 seconds' * power(2, least(attempt - 1, 5)), interval '10 minutes')`;
+    : reason === 'locked-key-unavailable'
+      ? // FL-721: an hour per wait (LOCKED_DEFERRAL_DELAY_MS); a key load wakes it sooner (`wakeDeferred`)
+        sql`interval '1 hour'`
+      : sql`least(interval '30 seconds' * power(2, least(attempt - 1, 5)), interval '10 minutes')`;
 
 /** Shared with the plan gate so the complete entitlement predicate remains measured even when
  * an admitted-live preflight can avoid executing it during ordinary publication.
@@ -75,9 +80,13 @@ export const settleRunQuery = (runIds: string[]) => sql`update job_run r set "fi
  * Bind serialized JSON as text before casting: postgres.js otherwise JSON-encodes it a second time.
  */
 export class SqlQueueStore {
-  constructor(readonly db: Kysely<any>) {}
+  constructor(readonly db: Kysely<DB>) {}
 
   async initialize(queues: string[], workerId?: string) {
+    // Preserve the Manager discriminator before recovery can lose the detailed marker.
+    await sql`update job_run set selection=selection || '{"managerSetupRequired":true}'::jsonb
+      where kind in ('immich-import-derived','library-import-derived')
+        and selection ? 'managerSetup' and not selection ? 'managerSetupRequired'`.execute(this.db);
     for (const name of queues) {
       await sql`insert into job_queue(name) values (${name}) on conflict do nothing`.execute(this.db);
     }
@@ -110,11 +119,13 @@ export class SqlQueueStore {
           rows: [existing],
         } = await sql<{
           id: string;
+          name: string;
+          data: Record<string, unknown>;
           state: QueueState;
           latestPending: QueueIntent | null;
           ownsProducerState: boolean;
         }>`
-          select j.id, j.state, j."latestPending",
+          select j.id, j.name, j.data, j.state, j."latestPending",
             (j.data ? '_producerCheckpoints' or exists (
               select 1 from job_selection s where s."producerId" = j.id) or exists (
               select 1 from job_library_source_producer link where link."producerId" = j.id)) as "ownsProducerState"
@@ -122,24 +133,51 @@ export class SqlQueueStore {
           and j.state in ('pending','waiting','active') for update of j
         `.execute(db);
         if (existing) {
-          if (intent.options?.deduplication?.keepLastIfActive) {
+          const previous = existing.latestPending;
+          const sharedSealing =
+            intent.name === JobName.LockedSeal &&
+            existing.name === intent.name &&
+            typeof intent.data.id === 'string' &&
+            existing.data.id === intent.data.id &&
+            !existing.ownsProducerState &&
+            (!previous || (previous.name === intent.name && previous.data.id === intent.data.id));
+          // A pending seal covers every accepted publication for this asset. Keep its original
+          // execution owner and attach accounting aliases; these are obligations, not replacements.
+          if (intent.options?.deduplication?.keepLastIfActive && (!sharedSealing || existing.state === 'active')) {
             const deferred = existing.state === 'active' || existing.ownsProducerState;
-            const previous = existing.latestPending;
-            const superseded = await supersedeSelectionLineage(
-              db,
-              deferred
-                ? {
-                    items:
-                      previous?.runId && previous.itemKey
-                        ? [
-                            { runId: previous.runId, itemKey: previous.itemKey, stage: previous.name },
-                            ...(previous.memberships ?? []).map((member) => ({ ...member, stage: previous.name })),
-                          ]
-                        : [],
-                  }
-                : { jobIds: [existing.id] },
-              intent,
-            );
+            if (sharedSealing && previous) {
+              const memberships = [...(intent.memberships ?? []), ...(previous.memberships ?? [])];
+              if (previous.runId && previous.itemKey)
+                memberships.push({
+                  runId: previous.runId,
+                  itemKey: previous.itemKey,
+                  rootItemKey: previous.rootItemKey ?? null,
+                });
+              intent.memberships = new Map(
+                memberships.map((member) => [JSON.stringify([member.runId, member.itemKey]), member]),
+              )
+                .values()
+                .toArray();
+            }
+            // The active seal may already have enumerated the old files. Retain one future pass
+            // and all earlier future-pass aliases until that pass reports its fenced outcome.
+            const superseded = sharedSealing
+              ? []
+              : await supersedeSelectionLineage(
+                  db,
+                  deferred
+                    ? {
+                        items:
+                          previous?.runId && previous.itemKey
+                            ? [
+                                { runId: previous.runId, itemKey: previous.itemKey, stage: previous.name },
+                                ...(previous.memberships ?? []).map((member) => ({ ...member, stage: previous.name })),
+                              ]
+                            : [],
+                      }
+                    : { jobIds: [existing.id] },
+                  intent,
+                );
             // A stopped producer may still own a durable snapshot/checkpoint. Rewriting it would
             // orphan its original run and retry state; let it settle before scheduling the latest.
             if (deferred) {
@@ -291,7 +329,7 @@ export class SqlQueueStore {
     kind: string,
     selection: Record<string, unknown>,
     intents: QueueIntent[],
-    tx: Transaction<any>,
+    tx: Transaction<DB>,
   ) {
     // Lock every prepared destination before insertBatch can take any job/item locks.
     for (const queue of [...new Set(intents.map((intent) => intent.queue))].sort()) {
@@ -345,8 +383,8 @@ export class SqlQueueStore {
         rows: [counts],
       } = await sql<{ active: number; ready: number }>`
         select count(*) filter (where state = 'active')::int active,
-          count(*) filter (where state in ('waiting','active'))::int ready
-        from job where queue = ${queue} and state in ('waiting','active')
+          count(*) filter (where state='active' or (state='waiting' and not (${managerImportHeld(sql<string>`j."runId"`)})))::int ready
+        from job j where queue = ${queue} and state in ('waiting','active')
       `.execute(tx);
       if (counts.ready <= QUEUE_LOW_WATER) {
         // Keep the ready + active set bounded even for a 15,000-item selection.
@@ -354,6 +392,7 @@ export class SqlQueueStore {
           const { numAffectedRows } = await sql`update job set state = 'waiting' where id in (
           select id from job j where queue = ${queue} and state = 'pending' and "availableAt" <= now()
             and ("cancelRequestedAt" is null or "cancelReason" = 'deadline')
+            and not (${managerImportHeld(sql<string>`j."runId"`)})
             and ("parentId" is null or exists (select 1 from job p where p.id = j."parentId" and p.state = 'completed'))
           order by "createdAt", id limit ${Math.min(QUEUE_BATCH, slots)}
           for update skip locked
@@ -370,8 +409,9 @@ export class SqlQueueStore {
           attempt = attempt + 1, "startedAt" = now(), "progressAt" = now(), "progressUnits" = 0,
           "leaseExpiresAt" = now() + interval '60 seconds', "cancelRequestedAt" = null, "cancelReason" = null, "dependencyReason" = null
         where id in (
-          select id from job where queue = ${queue} and state = 'waiting' and "availableAt" <= now()
+          select id from job j where queue = ${queue} and state = 'waiting' and "availableAt" <= now()
             and ("cancelRequestedAt" is null or "cancelReason" = 'deadline')
+            and not (${managerImportHeld(sql<string>`j."runId"`)})
           order by "createdAt", id limit ${capacity} for update skip locked
         ) returning id, queue, name, data, token, "workerId", attempt, "runId", "itemKey", "rootItemKey", "deadlineMs", "startedAt", "safeToRetry"
       `.execute(tx);
@@ -390,11 +430,16 @@ export class SqlQueueStore {
   async heartbeat(workerId: string, claims: Array<{ id: string; token: string }>) {
     await this.db.transaction().execute(async (tx) => {
       await sql`update job_worker set "heartbeatAt" = now() where id = ${workerId}::uuid`.execute(tx);
-      // One bounded statement irrespective of active media concurrency.
-      await sql`update job j set "leaseExpiresAt" = now() + interval '60 seconds'
-        from jsonb_to_recordset(${JSON.stringify(claims)}::text::jsonb) as owned(id uuid, token uuid)
-        where j.id = owned.id and j.token = owned.token and j.state = 'active'
-        and j."workerId" = ${workerId}::uuid and j."leaseExpiresAt" > clock_timestamp()`.execute(tx);
+      // A publication fence must not delay other leases; retry its locked claim on the next heartbeat.
+      await sql`with renewable as materialized (
+        select j.id from job j
+        join jsonb_to_recordset(${JSON.stringify(claims)}::text::jsonb) as owned(id uuid, token uuid)
+          on j.id = owned.id and j.token = owned.token
+        where j.state = 'active' and j."workerId" = ${workerId}::uuid
+          and j."leaseExpiresAt" > clock_timestamp()
+        for no key update of j skip locked
+      ) update job j set "leaseExpiresAt" = now() + interval '60 seconds'
+        from renewable where j.id = renewable.id and j."leaseExpiresAt" > clock_timestamp()`.execute(tx);
     });
   }
 
@@ -411,7 +456,7 @@ export class SqlQueueStore {
   async complete(
     claim: QueueClaim,
     followups: QueueIntent[],
-    adopt?: (tx: Transaction<any>) => Promise<void>,
+    adopt?: (tx: Transaction<DB>) => Promise<void>,
     publication?: QueuePublication,
   ) {
     return withSelectionSharing(
@@ -507,6 +552,18 @@ export class SqlQueueStore {
     );
   }
 
+  /**
+   * FL-721: runs these deferred jobs now instead of at the end of their wait, when they still wait for
+   * the reason they were deferred for (a key that has just been loaded). Returns how many it woke.
+   */
+  async wakeDeferred(ids: string[], reason: JobDependencyReason) {
+    if (ids.length === 0) return 0;
+    const { rows } = await sql`update job set "availableAt" = now()
+      where id = any(${ids}::uuid[]) and state = 'pending' and "dependencyReason" = ${reason}
+        and "availableAt" > now() returning id`.execute(this.db);
+    return rows.length;
+  }
+
   /** A dependency refusal is not an execution failure. Keep the item and audit, refund its retry credit. */
   async defer(claim: QueueClaim, reason: JobDependencyReason) {
     return this.db.transaction().execute(async (tx) => {
@@ -528,7 +585,7 @@ export class SqlQueueStore {
   async fail(
     claim: Pick<QueueClaim, 'id' | 'queue'> & { token: string | null },
     reason: string,
-    diagnostic?: (tx: Transaction<any>) => Promise<void>,
+    diagnostic?: (tx: Transaction<DB>) => Promise<void>,
     options: {
       expiredRecovery?: boolean;
       stopRequestedOnly?: boolean;
@@ -554,8 +611,10 @@ export class SqlQueueStore {
           graceElapsed: boolean;
           stopRequested: boolean;
           cancelled: boolean;
+          safeToRetry: boolean;
+          retryAvailable: boolean;
           operationId: string | null;
-        }>`select data->>'operationId' "operationId",
+        }>`select data->>'operationId' "operationId", "safeToRetry", attempt < "retryBaseAttempt" + 2 "retryAvailable",
           "leaseExpiresAt" <= clock_timestamp() - interval '30 seconds' "graceElapsed",
           "cancelRequestedAt" is not null "stopRequested",
           ("cancelRequestedAt" is not null and "cancelReason" is distinct from 'deadline') cancelled,
@@ -586,7 +645,19 @@ export class SqlQueueStore {
             return false;
           }
           unconfirmedStop = !job.stopped;
-          if (unconfirmedStop) reason = 'Executor stop could not be confirmed; review the worker before retrying';
+        }
+        // Audited repeatable work (thumbnails, ML, metadata) publishes only under its claim token, which this
+        // update revokes, so a second run is safe even if the old executor never confirmed its stop (e.g. the
+        // container was replaced mid-job). It keeps its normal retry budget. Cancelled, operation-owned and
+        // unclassified work still waits for a person: its effects may not be repeatable.
+        const unconfirmedAttention = unconfirmedStop && (job.cancelled || !job.safeToRetry || !!job.operationId);
+        if (unconfirmedAttention) {
+          reason = 'Executor stop could not be confirmed; review the worker before retrying';
+        } else if (unconfirmedStop) {
+          // Same budget as the state chosen below: another attempt is scheduled, or the job fails and waits for retry.
+          reason = job.retryAvailable
+            ? 'Interrupted before it finished (for example by a restart); it is retried automatically'
+            : 'Interrupted before it finished (for example by a restart) and out of automatic retries; retry failed jobs to run it again';
         }
         const operationId =
           options.expiredRecovery || (options.queuedCancellation && unconfirmedStop) ? job.operationId : null;
@@ -604,10 +675,10 @@ export class SqlQueueStore {
           if (valid.length === 0) throw new Error('Diagnostic publication lost its claim');
         }
         const { rows } = await sql<{ id: string; state: QueueState; latestPending: QueueIntent | null }>`update job set
-        state = case when ${unconfirmedStop} then 'needs_attention' when ${job.cancelled} then 'cancelled'
+        state = case when ${unconfirmedAttention} then 'needs_attention' when ${job.cancelled} then 'cancelled'
           when not "safeToRetry" then 'needs_attention' when attempt < "retryBaseAttempt" + 2 then 'pending' else 'failed' end,
         "availableAt" = now() + interval '30 seconds', "dependencyReason" = null, token = null, "leaseExpiresAt" = null,
-        "finishedAt" = case when ${unconfirmedStop} or ${job.cancelled} or not "safeToRetry" or attempt >= "retryBaseAttempt" + 2 then now() else null end,
+        "finishedAt" = case when ${unconfirmedAttention} or ${job.cancelled} or not "safeToRetry" or attempt >= "retryBaseAttempt" + 2 then now() else null end,
         error = case when sensitive then 'Job failed; sensitive details omitted' else ${reason.slice(0, 500)} end,
         data = case when sensitive then '{}'::jsonb else data end
         where id = ${claim.id}::uuid and ${owned}
@@ -641,7 +712,12 @@ export class SqlQueueStore {
           await finishSelections(tx, claim.id, false);
           await sql`update job set "latestPending" = null where id = ${claim.id}::uuid`.execute(tx);
           const latest = rows[0].latestPending;
-          if (unconfirmedStop && latest) {
+          // Work held for attention never replays its deferred request. Repeatable work that ran out of retries
+          // on an unconfirmed stop schedules it like any other failure: a second executor of repeatable work is
+          // already accepted above (publication is fenced by the revoked claim token), the request keeps its
+          // place in the deduplication sequence and its run stays open, and scheduleLatest still holds an
+          // unsafe request for attention.
+          if (unconfirmedAttention && latest) {
             // Discard the one deferred intent only after every positively identified obligation
             // is terminal. A later history copy may not appear in its original membership list.
             const identities = [{ runId: latest.runId, itemKey: latest.itemKey }, ...(latest.memberships ?? [])];
@@ -816,6 +892,12 @@ export class SqlQueueStore {
     return rows[0]?.paused ?? false;
   }
 
+  /** The names of every paused queue, in one round trip. */
+  async pausedQueues() {
+    const { rows } = await sql<{ name: string }>`select name from job_queue where paused`.execute(this.db);
+    return new Set(rows.map(({ name }) => name));
+  }
+
   async counts(name: string) {
     const {
       rows: [row],
@@ -874,21 +956,25 @@ export class SqlQueueStore {
     return observeQueueRun(this.db, name);
   }
 
-  async clear(queue: string, states: QueueState[]) {
+  /** `entityIds` narrows the clear to the jobs about those items (their `data.id`), e.g. removed assets. */
+  async clear(queue: string, states: QueueState[], entityIds?: string[]) {
+    if (entityIds?.length === 0) return;
+    const about = entityIds ? sql`and j.data ->> 'id' = any(${entityIds}::text[])` : sql``;
     // Keep run accounting and dependency history. Clearing hides payloads and cancels pending work.
     await withSelectionSharing(this.db, async (tx) => {
       await sql`select name from job_queue where name = ${queue} for no key update`.execute(tx);
       const { rows: cancelledLatest } = await sql<LineageItemIdentity & { rootItemKey: string | null }>`
         update job_run_item i set state = 'cancelled' where i."jobId" is null and exists (
         select 1 from job j where j.queue = ${queue} and j.state = any(${states}::text[]) and j.state != 'active'
-        and j."latestPending" ->> 'name' = i.stage and (
+        ${about} and j."latestPending" ->> 'name' = i.stage and (
           (j."latestPending" ->> 'runId' = i."runId"::text and j."latestPending" ->> 'itemKey' = i."itemKey")
           or exists (select 1 from jsonb_to_recordset(coalesce(j."latestPending" -> 'memberships', '[]'::jsonb))
             as member("runId" uuid, "itemKey" text) where member."runId" = i."runId" and member."itemKey" = i."itemKey")))
           returning i."runId", i."rootItemKey", i."itemKey", i.stage`.execute(tx);
       cancelledLatest.push(...(await mirrorSelectionLineage(tx, { items: cancelledLatest })));
       const affectedRuns = cancelledLatest.map((item) => item.runId);
-      if (states.includes('pending') || states.includes('waiting')) {
+      // a selection still being enumerated is the whole queue's, never one item's
+      if (!entityIds && (states.includes('pending') || states.includes('waiting'))) {
         const { rows: cancelled } = await sql<{
           runId: string;
         }>`with cancelled as (
@@ -897,9 +983,9 @@ export class SqlQueueStore {
         ) select distinct m."runId" from cancelled c join job_selection_run m on m."selectionId" = c.id`.execute(tx);
         affectedRuns.push(...cancelled.map((item) => item.runId));
       }
-      const { rows } = await sql<{ id: string }>`update job set state = 'cancelled', data = '{}'::jsonb,
-        "latestPending" = null, "finishedAt" = now() where queue = ${queue} and state = any(${states}::text[])
-        and state != 'active' returning id`.execute(tx);
+      const { rows } = await sql<{ id: string }>`update job j set state = 'cancelled', data = '{}'::jsonb,
+        "latestPending" = null, "finishedAt" = now() where j.queue = ${queue} and j.state = any(${states}::text[])
+        and j.state != 'active' ${about} returning id`.execute(tx);
       for (const { id } of rows) {
         affectedRuns.push(...(await this.syncItem(id, tx)));
         await finishSelections(tx, id, false);
@@ -911,9 +997,50 @@ export class SqlQueueStore {
         )),
       );
       await this.finishSupersededProducers(cancelledLatest, tx);
-      await redactLibrarySourcePage(tx, queue);
+      if (!entityIds) await redactLibrarySourcePage(tx, queue);
       await this.settleRuns(tx, affectedRuns);
     });
+  }
+
+  /** Caller holds setup authority and catalogue/run locks; never replay cancelled or unaudited work. */
+  async retryImportedWork(runId: string, db: Executor) {
+    // Producer retries would reopen the import's frozen inventory.
+    for (;;) {
+      const { rows } = await sql<{ id: string }>`WITH RECURSIVE eligible AS (
+        SELECT j.id,j."parentId",j.state FROM job j
+        WHERE j."runId"=${runId}::uuid AND j."safeToRetry" AND j.data->>'operationId' IS NULL
+          AND NOT EXISTS (SELECT 1 FROM job_selection s WHERE s."producerId"=j.id)
+          AND j.state IN ('failed','blocked')
+          AND (j."dedupKey" IS NULL OR NOT EXISTS (
+            SELECT 1 FROM job d WHERE d.queue=j.queue AND d."dedupKey"=j."dedupKey" AND d.id<>j.id
+              AND (d.state IN ('pending','waiting','active') OR (d.state IN ('failed','blocked')
+                AND (d."createdAt",d.id)<(j."createdAt",j.id)))))
+      ), recoverable AS (
+        SELECT e.id FROM eligible e WHERE (e.state='failed' AND e."parentId" IS NULL) OR EXISTS (
+          SELECT 1 FROM job p WHERE p.id=e."parentId" AND p.state IN ('pending','waiting','active','completed'))
+        UNION SELECT e.id FROM eligible e JOIN recoverable p ON p.id=e."parentId"
+      ) UPDATE job SET state='pending',"availableAt"=now(),"finishedAt"=NULL,error=NULL,
+        "retryBaseAttempt"=attempt,"cancelRequestedAt"=NULL,"cancelReason"=NULL
+        WHERE id IN (SELECT id FROM recoverable LIMIT 1000) RETURNING id`.execute(db);
+      if (rows.length > 0)
+        await this.syncItem(
+          rows.map(({ id }) => id),
+          db,
+        );
+      if (rows.length < 1000) break;
+    }
+    // Replay only intact frozen payloads; history pruning may have erased required preservation flags.
+    await sql`UPDATE job_run_item i SET state='pending' FROM job_selection s
+      WHERE i."runId"=${runId}::uuid AND i.state='failed' AND i."jobId" IS NULL
+        AND s.id=i."selectionId" AND s."runId"=i."runId" AND s."sourceKind"='frozen'
+        AND s."producerId" IS NULL AND s."capturedAt" IS NOT NULL AND s.state IN ('ready','enumerating') AND s."safeToRetry"
+        AND NOT s.sensitive AND jsonb_typeof(i.selection->'id')='string' AND i.selection->>'id'=i."itemKey"
+        AND i.selection->>'operationId' IS NULL
+        AND (i.stage<>${JobName.AssetDetectFaces} OR i.selection->'preserveImportedFaces'='true'::jsonb)`.execute(db);
+    await sql`UPDATE job_run SET "finishedAt"=NULL WHERE id=${runId}::uuid
+      AND EXISTS (SELECT 1 FROM job_run_item WHERE "runId"=${runId}::uuid AND state IN ('pending','waiting','active'))`.execute(
+      db,
+    );
   }
 
   async retryFailed(queue: string) {
@@ -950,7 +1077,7 @@ export class SqlQueueStore {
 /** Restore runs with all workers stopped. Only audited repeatable work retains its existing retry budget.
  * Operation-owned jobs are never resumed here; the media-operation dispatcher owns their retry.
  */
-export async function resetQueueAfterRestore(db: Executor) {
+export async function resetQueueAfterRestore(db: QueryExecutorProvider) {
   // Older dumps serialized this audited local job as unsafe. Its current handler publishes a
   // unique verified dump per attempt; retain the same one-retry budget and operation exclusions.
   const backup = sql`(name = ${JobName.DatabaseBackup} and queue = ${QueueName.BackupDatabase})`;

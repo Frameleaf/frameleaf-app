@@ -15,6 +15,9 @@ import { BULK_MAX_ITEMS } from 'src/utils/bulk-operation.js';
 import { DUPLICATE_DECISION_MAX_GROUPS } from 'src/utils/duplicate-review.js';
 
 const JsonObjectSchema = z.record(z.string(), z.unknown());
+export const StudioRenderStageSchema = z
+  .enum(['preparing', 'rendering', 'finalising'])
+  .meta({ id: 'StudioRenderStage' });
 
 /** One still + motion video pair to relink (FL-70). */
 const MediaOperationLivePhotoPairSchema = z
@@ -198,6 +201,37 @@ export const MediaOperationSchema = z
     bulk: MediaOperationBulkSummarySchema.nullable(),
     /** FL-162: present only on `cloud_ml_job` jobs: the stage, the model and the cost. Null elsewhere. */
     cloudJob: CloudMlJobActivitySchema.nullable().optional(),
+    /**
+     * FL-637/FL-638: which Studio clip job a `studio_transcription` job is when it is not captions
+     * (`stabilise`, `voice-cleanup`). A plain string, never an enum, so clients built before a new value
+     * keep decoding; null for captions and every other kind.
+     */
+    studioWork: z
+      .string()
+      .nullable()
+      .optional()
+      .describe(
+        'Which Studio clip job this is when it shares the `studio_transcription` kind with captions, such as `stabilise` or `voice-cleanup`; null otherwise',
+      ),
+    renderProgress: z
+      .object({
+        stage: StudioRenderStageSchema,
+        lastProgressAt: z.iso.datetime().nullable(),
+        framesPerSecond: z.number().nonnegative().meta({ format: 'double' }).nullable(),
+        remainingRenderSeconds: z.number().nonnegative().meta({ format: 'double' }).nullable(),
+      })
+      .nullable()
+      .optional()
+      .describe('Studio export measurements from the current worker attempt; ETA covers rendering only'),
+    /** FL-721: optional like `cloudJob`, so clients built before it keep decoding. */
+    encryptedWithOlderKey: z
+      .int()
+      .nonnegative()
+      .nullable()
+      .optional()
+      .describe(
+        "A Cloud or Buddy restore: restored Locked items encrypted with an older key, which this server's key file for their owner does not open; null for every other kind",
+      ),
     progress: z.number().meta({ format: 'double' }).describe('Percent complete, from counted work'),
     processedUnits: z.string(),
     totalUnits: z.string().nullable(),

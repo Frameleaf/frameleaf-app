@@ -146,7 +146,11 @@ export class PreservationService {
   async preview(auth: AuthDto, dto: PreservationPreviewDto): Promise<PreservationPreviewResponseDto> {
     this.requireAccount(auth);
     const unlocked = this.isUnlocked(auth);
-    const counts = await this.repository.previewSelection(auth.user.id, this.selectionOf(dto.scope));
+    const counts = await this.repository.previewSelection(
+      auth.user.id,
+      this.selectionOf(dto.scope),
+      dto.includeMetadata ?? true,
+    );
     const includeLocked = dto.includeLocked === true && unlocked;
     const includedItems = counts.items + (includeLocked ? counts.lockedItems : 0);
     const includedBytes = counts.bytes + (includeLocked ? counts.lockedBytes : 0);
@@ -170,7 +174,7 @@ export class PreservationService {
       withinLimit: includedItems <= PRESERVATION_MAX_ITEMS,
       lockedAllowed: unlocked,
       freeBytes,
-      support: preservationSupportFor(true),
+      support: preservationSupportFor(dto.includeMetadata ?? true),
     };
   }
 
@@ -217,7 +221,7 @@ export class PreservationService {
         includeMetadata,
         scope: {
           description: describePreservationScope(selection),
-          itemCount: selection.assetIds?.length ?? null,
+          itemCount: selection.assetIds ? selection.assetIds.length + (selection.bookmarkIds?.length ?? 0) : null,
           filter: selection.filter ?? null,
         },
       },
@@ -231,7 +235,8 @@ export class PreservationService {
         `One package holds up to ${PRESERVATION_MAX_ITEMS} items; narrow the selection, for example by year or album`,
       );
     }
-    if (created.items === 0) {
+    const itemCount = created.items + (created.bookmarkItems ?? 0);
+    if (itemCount === 0) {
       await this.repository.updatePackage(created.package.id, { status: 'removed', removedAt: new Date() });
       throw new BadRequestException('Nothing of yours matches this selection');
     }
@@ -255,10 +260,10 @@ export class PreservationService {
       },
       settings: { includeMetadata, includeLocked },
       estimate: null,
-      totalUnits: String(created.items),
+      totalUnits: String(itemCount),
     });
 
-    this.logger.log(`Preservation package ${created.package.id} queued with ${created.items} items`);
+    this.logger.log(`Preservation package ${created.package.id} queued with ${itemCount} items`);
     return this.mapPackage(auth, created.package);
   }
 
@@ -432,13 +437,18 @@ export class PreservationService {
     this.requireAccount(auth);
     const packages = await this.repository.listPackages(auth.user.id);
     const ids = packages.map((item) => item.id);
-    const [counts, operations] = await Promise.all([
+    const [counts, operations, restrictedBookmarks] = await Promise.all([
       this.repository.countItems(ids, { excludeLocked: !this.isUnlocked(auth) }),
       this.repository.latestOperations(auth.user.id, 'packageId', ids),
+      this.isUnlocked(auth) ? Promise.resolve(new Set<string>()) : this.repository.lockedBookmarkPackageIds(ids),
     ]);
     return Promise.all(
       packages.map((item) =>
-        this.mapPackage(auth, item, { counts: counts.get(item.id), operation: operations.get(item.id) }),
+        this.mapPackage(auth, item, {
+          counts: counts.get(item.id),
+          operation: operations.get(item.id),
+          bookmarksRestricted: restrictedBookmarks.has(item.id),
+        }),
       ),
     );
   }
@@ -799,8 +809,11 @@ export class PreservationService {
   }
 
   private selectionOf(scope: PreservationExportCreateDto['scope']): PreservationSelection {
-    if (scope?.assetIds) {
-      return { assetIds: [...new Set(scope.assetIds)] };
+    if (scope?.assetIds || scope?.bookmarkIds) {
+      return {
+        assetIds: scope.assetIds ? [...new Set(scope.assetIds)] : [],
+        ...(scope.bookmarkIds ? { bookmarkIds: [...new Set(scope.bookmarkIds)] } : {}),
+      };
     }
     return { filter: scope?.filter ?? {} };
   }
@@ -878,6 +891,7 @@ export class PreservationService {
     preloaded?: {
       counts?: { states: Record<string, number>; locked: number; bytes: number };
       operation?: MediaOperation;
+      bookmarksRestricted: boolean;
     },
   ): Promise<PreservationPackageDto> {
     const unlocked = this.isUnlocked(auth);
@@ -902,6 +916,15 @@ export class PreservationService {
     // The owner chose to include Locked items; beyond that choice an ordinary session learns nothing.
     const lockedContent = item.includeLocked || (unlocked && (counts?.locked ?? 0) > 0);
 
+    const bookmarksRestricted =
+      !unlocked &&
+      (item.includeLocked ||
+        (preloaded
+          ? preloaded.bookmarksRestricted
+          : (await this.repository.lockedBookmarkPackageIds([item.id])).has(item.id)));
+    const selectedBookmarks = asRecord(item.scope).bookmarkIds;
+    const writtenBookmarks = asInt(manifestCounts.bookmarks);
+    const skippedBookmarks = asInt(manifestCounts.bookmarkSkipped);
     return {
       id: item.id,
       name: item.name,
@@ -915,6 +938,13 @@ export class PreservationService {
       createdAt: asIso(item.createdAt)!,
       updatedAt: asIso(item.updatedAt)!,
       expiresAt: asIso(item.expiresAt),
+      bookmarks: bookmarksRestricted
+        ? null
+        : {
+            selected: Array.isArray(selectedBookmarks) ? selectedBookmarks.length : writtenBookmarks + skippedBookmarks,
+            written: writtenBookmarks,
+            skipped: skippedBookmarks,
+          },
       counts: {
         total: Object.values(states).reduce((sum, value) => sum + value, 0),
         pending: states.pending ?? 0,

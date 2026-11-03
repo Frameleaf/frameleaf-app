@@ -66,7 +66,9 @@ export function sealStudioSidecar(
     sizeInBytes: String(plan.byteLength),
     cueDigest: plan.cueDigest,
     graphDigest: createHash('sha256').update(canonicalJson(graph)).digest('hex'),
-    ...binding,
+    revisionDigest: binding.revisionDigest,
+    manifestDigest: binding.manifestDigest,
+    engineDigest: binding.engineDigest,
   });
 }
 

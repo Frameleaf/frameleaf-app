@@ -2,7 +2,6 @@ import { SingleBar } from 'cli-progress';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { setTimeout as sleep } from 'node:timers/promises';
 import { describe, expect, it, MockedFunction, vi } from 'vitest';
 
 import {
@@ -317,11 +316,20 @@ describe('checkForDuplicates', () => {
 
   it('returns results when check duplicates retry is failed', async () => {
     vi.mocked(checkBulkUpload).mockRejectedValue(new Error('Network error'));
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    await expect(checkForDuplicates([testFilePath], { concurrency: 1 })).resolves.toEqual({
-      duplicates: [],
-      newFiles: [],
-    });
+    try {
+      await expect(checkForDuplicates([testFilePath], { concurrency: 1 })).resolves.toEqual({
+        duplicates: [],
+        newFiles: [],
+      });
+      expect(log).toHaveBeenCalledWith('Failed to check 1 file for duplicates:');
+      expect(log).toHaveBeenCalledWith(`- ${testFilePath} - Error: Network error`);
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = undefined;
+      log.mockRestore();
+    }
   });
 });
 
@@ -329,9 +337,11 @@ describe('checkForDuplicates', () => {
 describe('startWatch', { timeout: 15_000 }, () => {
   let testFolder: string;
   let checkBulkUploadMocked: MockedFunction<typeof checkBulkUpload>;
+  let stopWatch: Awaited<ReturnType<typeof startWatch>> | undefined;
 
   beforeEach(async () => {
     vi.restoreAllMocks();
+    stopWatch = undefined;
 
     vi.mocked(getSupportedMediaTypes).mockResolvedValue({
       image: ['.jpg'],
@@ -349,8 +359,7 @@ describe('startWatch', { timeout: 15_000 }, () => {
   it('should start watching a directory and upload new files', async () => {
     const testFilePath = path.join(testFolder, 'test.jpg');
 
-    await startWatch([testFolder], { concurrency: 1 }, { batchSize: 1, debounceTimeMs: 10 });
-    await sleep(100); // to debounce the watcher from considering the test file as a existing file
+    stopWatch = await startWatch([testFolder], { concurrency: 1 }, { batchSize: 1, debounceTimeMs: 10 });
     await fs.promises.writeFile(testFilePath, 'testjpg');
 
     await vi.waitFor(
@@ -378,8 +387,7 @@ describe('startWatch', { timeout: 15_000 }, () => {
     const testFilePath = path.join(testFolder, 'test.jpg');
     const unsupportedFilePath = path.join(testFolder, 'test.txt');
 
-    await startWatch([testFolder], { concurrency: 1 }, { batchSize: 1, debounceTimeMs: 10 });
-    await sleep(100); // to debounce the watcher from considering the test file as a existing file
+    stopWatch = await startWatch([testFolder], { concurrency: 1 }, { batchSize: 1, debounceTimeMs: 10 });
     await fs.promises.writeFile(testFilePath, 'testjpg');
     await fs.promises.writeFile(unsupportedFilePath, 'testtxt');
 
@@ -415,8 +423,11 @@ describe('startWatch', { timeout: 15_000 }, () => {
     await fs.promises.mkdir(ignoredFolder, { recursive: true });
     const ignoredFilePath = path.join(ignoredFolder, 'ignored.jpg');
 
-    await startWatch([testFolder], { concurrency: 1, ignore: ignoredPattern }, { batchSize: 1, debounceTimeMs: 10 });
-    await sleep(100); // to debounce the watcher from considering the test file as a existing file
+    stopWatch = await startWatch(
+      [testFolder],
+      { concurrency: 1, ignore: ignoredPattern },
+      { batchSize: 1, debounceTimeMs: 10 },
+    );
     await fs.promises.writeFile(testFilePath, 'testjpg');
     await fs.promises.writeFile(ignoredFilePath, 'ignoredjpg');
 
@@ -446,6 +457,7 @@ describe('startWatch', { timeout: 15_000 }, () => {
   });
 
   afterEach(async () => {
+    await stopWatch?.();
     await fs.promises.rm(testFolder, { recursive: true, force: true });
   });
 });
@@ -554,6 +566,40 @@ describe('deleteFiles', () => {
     );
     expect([testFilePath, raw, sidecar].map((file) => fs.existsSync(file))).toEqual([false, false, false]);
   });
+
+  it('keeps a shared sidecar while another original with the same stem stays on disk', async () => {
+    const raw = path.join(testDir, 'test.nef');
+    const sidecar = path.join(testDir, 'test.xmp');
+    fs.writeFileSync(raw, 'raw');
+    fs.writeFileSync(sidecar, 'metadata');
+    await deleteFiles([{ id: 'jpeg', filepath: testFilePath }], [], { delete: true, concurrency: 1 });
+    expect([testFilePath, raw, sidecar].map((file) => fs.existsSync(file))).toEqual([false, true, true]);
+  });
+
+  it('keeps a shared sidecar when the remaining original differs only by case', async () => {
+    const raw = path.join(testDir, 'TEST.nef');
+    const sidecar = path.join(testDir, 'test.xmp');
+    fs.writeFileSync(raw, 'raw');
+    fs.writeFileSync(sidecar, 'metadata');
+    await deleteFiles([{ id: 'jpeg', filepath: testFilePath }], [], { delete: true, concurrency: 1 });
+    expect([testFilePath, raw, sidecar].map((file) => fs.existsSync(file))).toEqual([false, true, true]);
+  });
+
+  it.skipIf(os.platform() === 'win32' || process.getuid?.() === 0)(
+    'keeps the sidecar but deletes the original when the directory cannot be listed',
+    async () => {
+      const sidecar = path.join(testDir, 'test.xmp');
+      fs.writeFileSync(sidecar, 'metadata');
+      fs.chmodSync(testDir, 0o300); // write + search, no read: unlink works, readdir fails with EACCES
+      try {
+        await deleteFiles([{ id: 'jpeg', filepath: testFilePath }], [], { delete: true, concurrency: 1 });
+      } finally {
+        fs.chmodSync(testDir, 0o700);
+      }
+      expect(fs.existsSync(testFilePath)).toBe(false);
+      expect(fs.existsSync(sidecar)).toBe(true);
+    },
+  );
 
   it('keeps originals and shared sidecars during dry runs', async () => {
     const sidecar = path.join(testDir, 'test.xmp');

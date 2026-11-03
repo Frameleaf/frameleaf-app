@@ -273,6 +273,17 @@ const noStoreProducts = {
 
 export const setupCloudMockApiRoutes = async (context: BrowserContext, mock: CloudMockState) => {
   await context.route('**/api/admin/license', (route) => route.fulfill({ status: 200, json: unlicensed }));
+  // FL-544: the combined licence+plan checkout the Get Frameleaf Cloud sheet starts
+  await context.route('**/api/admin/license/checkout', (route) =>
+    route.fulfill({
+      status: 200,
+      json: {
+        checkoutId: 'chk_1',
+        url: 'https://frameleaf.cloud.test/store?checkout=chk_1',
+        expiresAt: '2099-01-01T00:00:00.000Z',
+      },
+    }),
+  );
   await context.route('**/api/license/products', (route) => route.fulfill({ status: 200, json: noStoreProducts }));
   await context.route('**/api/admin/cloud/**', async (route, request) => {
     const path = new URL(request.url()).pathname.replace('/api/', '');

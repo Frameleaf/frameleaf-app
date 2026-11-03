@@ -17,6 +17,7 @@ import {
   CloudConnectionState,
   CloudMlGatewayDeps,
   ML_CLONE_SUSPENDED_DETAIL,
+  loadInstanceIdentity,
   resolveCloudGateway,
 } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
@@ -29,6 +30,7 @@ import {
   ed25519Thumbprint,
 } from 'src/utils/frameleaf-cloud.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
+import { expectLocalisedSystemNotices } from 'test/utils.js';
 
 /**
  * A fake Frameleaf Cloud (FL-159): discovery, the token endpoint (which verifies the EdDSA client
@@ -44,6 +46,8 @@ type FakeCloud = {
     auth: string | null;
     dpop: string | null;
     idempotencyKey: string | null;
+    promotionPricing: string | null;
+    routingProtocol: string | null;
     body: string;
   }>;
   publicJwk?: FrameleafInstanceIdentity['publicJwk'];
@@ -99,6 +103,8 @@ const startFakeCloud = async (): Promise<FakeCloud> => {
       auth: request.headers.authorization ?? null,
       dpop: (request.headers.dpop as string | undefined) ?? null,
       idempotencyKey: (request.headers['idempotency-key'] as string | undefined) ?? null,
+      promotionPricing: (request.headers['x-frameleaf-promotion-pricing'] as string | undefined) ?? null,
+      routingProtocol: (request.headers['x-frameleaf-ml-routing'] as string | undefined) ?? null,
       body,
     });
     const send = (status: number, payload: unknown) => {
@@ -393,6 +399,42 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
     expect(cloud.requests.filter((request) => request.path === '/.well-known/frameleaf-services')).toHaveLength(1);
   });
 
+  it('shares one discovery read and one token request between callers that miss the cache together', async () => {
+    metadata.set(SystemMetadataKey.FrameleafCloudLink, link());
+    await loadInstanceIdentity(deps);
+    const signer = identity.currentSigner();
+    const documents = await Promise.all([1, 2, 3].map(() => cloudRepository.discovery(cloud.url)));
+    expect(new Set(documents).size).toBe(1);
+    const resource = `${cloud.url}/ml-eu`;
+    const tokens = await Promise.all(
+      [1, 2, 3, 4].map(() => cloudRepository.accessToken(documents[0], 'instance-1', resource, signer)),
+    );
+    expect(new Set(tokens.map(({ accessToken }) => accessToken)).size).toBe(1);
+    expect(cloud.requests.filter(({ path }) => path === '/.well-known/frameleaf-services')).toHaveLength(1);
+    expect(cloud.requests.filter(({ path }) => path === '/id/token')).toHaveLength(1);
+    // a failed request is not remembered: the next caller asks again
+    cloud.respond = ({ path }) => (path === '/id/token' ? { status: 503, body: {} } : undefined);
+    cloudRepository.forget();
+    await expect(cloudRepository.accessToken(documents[0], 'instance-1', resource, signer)).rejects.toThrow();
+    cloud.respond = () => {};
+    await expect(cloudRepository.accessToken(documents[0], 'instance-1', resource, signer)).resolves.toMatchObject({
+      accessToken: cloud.token,
+    });
+  });
+
+  it('never caches a token whose request was sent before forget', async () => {
+    metadata.set(SystemMetadataKey.FrameleafCloudLink, link());
+    await loadInstanceIdentity(deps);
+    const signer = identity.currentSigner();
+    const document = await cloudRepository.discovery(cloud.url);
+    const resource = `${cloud.url}/ml-eu`;
+    const before = cloudRepository.accessToken(document, 'instance-1', resource, signer);
+    cloudRepository.forget();
+    await before;
+    await cloudRepository.accessToken(document, 'instance-1', resource, signer);
+    expect(cloud.requests.filter(({ path }) => path === '/id/token')).toHaveLength(2);
+  });
+
   it('refuses a discovery document whose token issuer is on another host, and asks it for nothing (FL-159)', async () => {
     cloud.respond = ({ path }) =>
       path === '/.well-known/frameleaf-services'
@@ -598,6 +640,8 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
       const estimate = await ml.createEstimate(gateway, estimateRequest());
       expect(estimate).toMatchObject({ modelSku: 'ms_K6WT70CS', modelRev: 'mr_B2H147RBJBQ0', basis: 'measured' });
       expect(JSON.parse(gatewayRequests('POST', '/v2/estimates')[0].body)).toEqual(estimateRequest());
+      expect(gatewayRequests('POST', '/v2/estimates')[0].promotionPricing).toBe('1');
+      expect(gatewayRequests('POST', '/v2/estimates')[0].routingProtocol).toBe('1');
 
       const admitted = await ml.createJob(gateway, jobRequest(), 'batch-0192f1b0-1');
       expect(admitted).toMatchObject({ jobId, status: 'admitted', hold: { amountUsd: 0.203251 } });
@@ -613,6 +657,46 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
       expect(gatewayRequests('DELETE', `/v2/jobs/${jobId}`)).toHaveLength(1);
       const calls = cloud.requests.filter((request) => request.path.startsWith('/ml-eu/v2/'));
       expect(calls.every((request) => request.auth === `DPoP ${cloud.token}` && !!request.dpop)).toBe(true);
+    });
+
+    it('quotes and upgrades the same job with routing negotiation, DPoP and a stable idempotency key', async () => {
+      const { gateway, ml } = await ready();
+      const base = cloudContractFixture('ml/estimate-response.json');
+      const quote = {
+        ...base,
+        jobId,
+        pricingRevision: 0,
+        incurredUsd: 0.1,
+        perSecondUsd: 0.01,
+        startFeeUsd: 0.02,
+        plannedWorkers: 1,
+        routing: {
+          quotedComputeSku: base.computeSku,
+          perSecondUsd: 0.01,
+          startFeeUsd: 0.02,
+          plannedWorkers: 1,
+          approvedMaximumUsd: 0.15,
+        },
+      };
+      const job = cloudContractFixture('ml/job-running.json');
+      cloud.respond = ({ path }) =>
+        path.endsWith('/upgrade-estimate')
+          ? { status: 200, body: quote }
+          : path.endsWith('/upgrade')
+            ? { status: 200, body: job }
+            : undefined;
+      expect(await ml.createUpgradeEstimate(gateway, jobId)).toEqual(quote);
+      expect(await ml.upgradeJob(gateway, jobId, { estimate: base.estimate }, 'gpu-upgrade-1')).toEqual(job);
+      const calls = cloud.requests.filter((request) => request.path.includes('/upgrade'));
+      expect(calls.map((call) => JSON.parse(call.body))).toEqual([{}, { estimate: base.estimate }]);
+      expect(
+        calls.every((call) => call.routingProtocol === '1' && !!call.dpop && call.auth === `DPoP ${cloud.token}`),
+      ).toBe(true);
+      expect(calls[1].idempotencyKey).toBe('gpu-upgrade-1');
+      await expect(ml.upgradeJob(gateway, jobId, { estimate: base.estimate }, 'bad')).rejects.toMatchObject({
+        refusal: MlAdmissionRefusal.RequestInvalid,
+      });
+      expect(cloud.requests.filter((request) => request.path.includes('/upgrade'))).toHaveLength(2);
     });
 
     it.each([
@@ -806,6 +890,7 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
         instanceId: 'instance-1',
       });
       expect(emit).toHaveBeenCalledWith('AdminNotify', expect.objectContaining({ ...CLONE_SUSPECTED_NOTICE }));
+      expectLocalisedSystemNotices(emit);
       await expect(ml.getWallet(gateway)).rejects.toMatchObject({ message: ML_CLONE_SUSPENDED_DETAIL });
       // one dedupe key: a repeat is the same notice, which the notification path keeps from repeating
       expect(emit.mock.calls.every(([, notice]) => notice.dedupeKey === CLONE_SUSPECTED_NOTICE.dedupeKey)).toBe(true);

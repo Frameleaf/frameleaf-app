@@ -428,6 +428,7 @@ export function getAlbum(
     isActivityEnabled: true,
     assetCount: albumAssets.length,
     parentId: null,
+    color: null,
     icon: null,
     sortOrder: null,
     startDate: albumAssets.length > 0 ? albumAssets.at(-1)?.fileCreatedAt : undefined,

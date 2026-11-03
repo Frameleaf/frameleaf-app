@@ -5,6 +5,7 @@
   import FilterPanel from '$lib/components/frameleaf/FilterPanel.svelte';
   import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
   import SearchChip from '$lib/components/frameleaf/SearchChip.svelte';
+  import { getSpeechCapabilities } from '@frameleaf/sdk';
   import SearchSaveDialog from '$lib/components/frameleaf/SearchSaveDialog.svelte';
   import SearchPaletteSide from '$lib/components/frameleaf/SearchPaletteSide.svelte';
   import {
@@ -15,6 +16,7 @@
     withDiscoveryEnrichment,
     withDiscoveryFacet,
     withoutDiscoveryFilter,
+    withoutDiscoveryFilters,
     type DiscoveryFilterSection,
     type DiscoveryQuery,
   } from '$lib/components/discovery/query';
@@ -29,6 +31,7 @@
     loadEnrichmentCounts,
     loadFilterPanelOptions,
     loadPaletteCount,
+    isMixedPaletteSearch,
     loadPaletteFacets,
     loadPaletteHistogram,
     loadPaletteResults,
@@ -77,6 +80,7 @@
   import { getAssetMediaUrl, handlePromiseError } from '$lib/utils';
   import {
     AssetMediaSize,
+    LibraryViewScope,
     AssetTypeEnum,
     ImageEnrichmentFilter,
     type AssetResponseDto,
@@ -108,7 +112,7 @@
     mdiTextRecognition,
     mdiTuneVariant,
   } from '@mdi/js';
-  import { onDestroy, tick, untrack } from 'svelte';
+  import { onDestroy, onMount, tick, untrack } from 'svelte';
   import type { Attachment } from 'svelte/attachments';
   import { t } from 'svelte-i18n';
 
@@ -208,7 +212,19 @@
    * it can find something: smart search needs its model, and the text in photos is only read while
    * text recognition is on.
    */
+  let speechAvailable = $state(false);
+  onMount(() => {
+    const valid = authManager.captureSession();
+    void Promise.resolve(getSpeechCapabilities())
+      .then((value) => {
+        if (valid()) {
+          speechAvailable = value?.version === 1;
+        }
+      })
+      .catch(() => {});
+  });
   const capabilities = $derived<PaletteCapabilities>({
+    speech: speechAvailable,
     smartSearch: smartEnabled,
     ocr: featureFlagsManager.value.ocr,
   });
@@ -237,7 +253,13 @@
   // A fresh search starts in smart search, as the prototype's `searchBy` defaults to "semantic". A page
   // search the palette cannot fully carry (FL-48) keeps its own mode, so reopening it changes nothing.
   let mode = $state<PaletteMode>(
-    untrack(() => !opened.input && unsupported.length === 0 && featureFlagsManager.value.smartSearch)
+    untrack(
+      () =>
+        !opened.input &&
+        unsupported.length === 0 &&
+        opened.base.filter.libraryScope !== LibraryViewScope.Design &&
+        featureFlagsManager.value.smartSearch,
+    )
       ? 'smart'
       : opened.mode,
   );
@@ -323,7 +345,14 @@
     return () => clearTimeout(timer);
   });
 
-  const parsed = $derived(parseSearchInput(deferredInput, catalog));
+  const parsed = $derived.by(() => {
+    if (mode !== 'speech') {
+      return parseSearchInput(deferredInput, catalog);
+    }
+    // Keep the chips' tokens so their filters aren't shown again as a separate, unlinked Filters chip.
+    const fromChips = parseSearchInput(tokens.join(' '), catalog);
+    return { text: text.slice(0, MAX_PALETTE_TEXT), filter: fromChips.filter, tokens: fromChips.tokens };
+  });
 
   const compileFor = (target: DiscoveryQuery) =>
     compilePaletteQuery(target, parsed, mode) ??
@@ -339,14 +368,17 @@
   const includeArchived = $derived(authManager.authenticated && !!authManager.preferences.search?.includeArchived);
   const body = $derived(paletteSearchBody(next, includeArchived));
   const smart = $derived(smartEnabled && isSmartBody(body));
+  const mixedSearch = $derived(isMixedPaletteSearch(body));
   const typing = $derived(text.trim().length > 0 || tokens.length > 0);
-  const pending = $derived(deferredInput !== liveInput || loading);
+  const pending = $derived(mode !== 'speech' && (deferredInput !== liveInput || loading));
 
-  const selectedCount = $derived(scopeChoice === 'library' ? counts.library : counts.current);
-  const otherCount = $derived(scopeChoice === 'library' ? counts.current : counts.library);
+  const selectedCount = $derived(
+    mode === 'speech' ? null : scopeChoice === 'library' ? counts.library : counts.current,
+  );
+  const otherCount = $derived(mode === 'speech' ? null : scopeChoice === 'library' ? counts.current : counts.library);
 
   const suggestions = $derived<PaletteSuggestion[]>(
-    text.trim() ? suggestSearchTokens(text, catalog, 6, operators) : [],
+    mode !== 'speech' && text.trim() ? suggestSearchTokens(text, catalog, 6, operators) : [],
   );
   // "Go to" reuses the shared command index; a filter being typed ("person:…") is not a destination
   const destinations = $derived(
@@ -360,7 +392,10 @@
       ...emptyDiscoveryQuery(),
       text,
       mode: textMode === 'smart' ? 'smart' : 'text',
-      ...(textMode !== 'smart' && textMode !== 'all' && textMode !== 'originalFileName' && { textField: textMode }),
+      ...(textMode !== 'speech' &&
+        textMode !== 'smart' &&
+        textMode !== 'all' &&
+        textMode !== 'originalFileName' && { textField: textMode }),
     },
   });
   const EXAMPLES = $derived(
@@ -405,7 +440,7 @@
     ...(typing ? [] : saved.map((item) => ({ kind: 'saved' as const, item }))),
   ]);
   // The Advanced view hides the results, so arrows and Enter never move through them
-  const navItems = $derived(advanced ? [] : items);
+  const navItems = $derived(advanced || mode === 'speech' ? [] : items);
   const indexOf = (entry: Entry) => items.indexOf(entry);
   const activeEntry = $derived(active >= 0 ? navItems[active] : undefined);
   const previewAsset = $derived(
@@ -475,6 +510,7 @@
   const isAbort = (error: unknown, signal: AbortSignal) =>
     signal.aborted || (error instanceof DOMException && error.name === 'AbortError');
 
+  const libraryScope = $derived(base.filter.libraryScope);
   let optionsController: AbortController | undefined;
   let catalogController: AbortController | undefined;
   let remoteController: AbortController | undefined;
@@ -482,11 +518,14 @@
 
   $effect(() => {
     void generation;
+    const scope = libraryScope;
     untrack(() => {
+      options = emptyFilterPanelOptions();
+      optionsLoaded = false;
       optionsController?.abort();
       const controller = new AbortController();
       optionsController = controller;
-      void loadFilterPanelOptions(controller.signal)
+      void loadFilterPanelOptions(controller.signal, scope)
         .then((result) => {
           if (controller.signal.aborted) {
             return;
@@ -512,7 +551,9 @@
   // Typeahead counts: the collection (or library) as a whole, not narrowed by what is typed
   const catalogBody = $derived(
     paletteSearchBody(
-      scopeChoice === 'library' ? emptyDiscoveryQuery() : withPaletteScope(emptyDiscoveryQuery(), scope),
+      scopeChoice === 'library'
+        ? { ...emptyDiscoveryQuery(), filter: { libraryScope: base.filter.libraryScope } }
+        : withPaletteScope({ ...emptyDiscoveryQuery(), filter: { libraryScope: base.filter.libraryScope } }, scope),
       includeArchived,
     ),
   );
@@ -524,6 +565,11 @@
       const controller = new AbortController();
       catalogController = controller;
       const { signal } = controller;
+      if (isMixedPaletteSearch(catalogBody)) {
+        catalogFacets = {};
+        catalogYears = [];
+        return;
+      }
       void loadPaletteFacets(catalogBody, signal, 100)
         .then((result) => !signal.aborted && (catalogFacets = result))
         .catch(() => !signal.aborted && (catalogFacets = {}));
@@ -538,6 +584,7 @@
       paletteSearchBody(currentQuery, includeArchived),
       paletteSearchBody(libraryQuery, includeArchived),
       scopeChoice,
+      mode,
       smartEnabled,
       typing,
       advanced,
@@ -553,12 +600,27 @@
       clearTimeout(remoteTimer);
       const controller = new AbortController();
       remoteController = controller;
+      if (mode === 'speech') {
+        runRemote(controller.signal);
+        return;
+      }
       loading = true;
       remoteTimer = setTimeout(() => runRemote(controller.signal), REMOTE_DEBOUNCE_MS);
     });
   });
 
   const runRemote = (signal: AbortSignal) => {
+    if (mode === 'speech') {
+      loading = false;
+      counts = { current: null, library: null };
+      results = [];
+      failed = false;
+      facets = {};
+      histogram = { unit: 'month', buckets: [] };
+      enrichmentCounts = {};
+      settledLabel = $t('frameleaf_speech_palette_hint');
+      return;
+    }
     const currentBody = paletteSearchBody(currentQuery, includeArchived);
     const libraryBody = paletteSearchBody(libraryQuery, includeArchived);
     const searchBody = scopeChoice === 'library' ? libraryBody : currentBody;
@@ -595,16 +657,23 @@
             scopeChoice === 'library',
           )
         : Promise.resolve(),
-      settle(loadPaletteFacets(searchBody, signal), (value) => (facets = value ?? {})),
       settle(
-        loadPaletteHistogram(searchBody, signal),
+        isMixedPaletteSearch(searchBody) ? Promise.resolve({}) : loadPaletteFacets(searchBody, signal),
+        (value) => (facets = value ?? {}),
+      ),
+      settle(
+        isMixedPaletteSearch(searchBody)
+          ? Promise.resolve({ unit: 'month' as const, buckets: [] })
+          : loadPaletteHistogram(searchBody, signal),
         (value) => (histogram = value ?? { unit: 'month', buckets: [] }),
       ),
       settle(
-        loadEnrichmentCounts(searchBody, advanced ? ALL_ENRICHMENT : QUICK_ENRICHMENT, signal),
+        isMixedPaletteSearch(searchBody)
+          ? Promise.resolve({})
+          : loadEnrichmentCounts(searchBody, advanced ? ALL_ENRICHMENT : QUICK_ENRICHMENT, signal),
         (value) => (enrichmentCounts = value ?? {}),
       ),
-      typing
+      typing && !isMixedPaletteSearch(searchBody)
         ? settle(
             loadPaletteResults(searchBody, smartFor(searchBody), TOP_HITS, signal),
             // A failed search keeps the last good hits on screen (dimmed) rather than emptying the list
@@ -679,6 +748,10 @@
 
   /** Completed operators become chips as they are typed; ">" hands off to the command palette. */
   const onInput = (value: string, field?: HTMLInputElement) => {
+    if (mode === 'speech') {
+      text = value;
+      return;
+    }
     if (isCommandQuery(value) && onOpenPalette) {
       onOpenPalette(value);
       return;
@@ -712,7 +785,7 @@
    * reopened from the URL, from Back, from a recent or a saved search comes back as typed chips).
    */
   const readBackChips = () => {
-    if (decompiled || !optionsLoaded) {
+    if (mode === 'speech' || decompiled || !optionsLoaded) {
       return;
     }
     const scoped = scope ? withoutPaletteScope(base, scope) : base;
@@ -725,6 +798,7 @@
     base = scope ? withPaletteScope(rest, scope) : rest;
   };
 
+  // Speech mode parses the same chips (`tokens.join(' ')`), so repeated person/tag/date tokens combine.
   const addToken = (raw: string) => {
     if (!tokens.includes(raw)) {
       tokens = [...tokens, raw];
@@ -747,7 +821,7 @@
     text = '';
     tokens = [];
     droppedChips = 0;
-    base = withPaletteScope({ ...emptyDiscoveryQuery(), mode: base.mode }, scope);
+    base = withPaletteScope(withoutDiscoveryFilters(base), scope);
     input?.focus();
   };
 
@@ -812,12 +886,18 @@
 
   /** Recent searches keep the compiled query (ids, not names); their rows are labelled from it. */
   const remember = () => {
+    if (mode === 'speech') {
+      return;
+    }
     searchStore.recentSearches = rememberRecentSearch(searchStore.recentSearches, { query: submitted() });
   };
 
   /** The query submitted now, compiled from the live input rather than the deferred one. */
   const submitted = () => {
-    const live = parseSearchInput(liveInput, catalog);
+    const live =
+      mode === 'speech'
+        ? { text: text.slice(0, MAX_PALETTE_TEXT), filter: parseSearchInput(tokens.join(' '), catalog).filter }
+        : parseSearchInput(liveInput, catalog);
     const target = scopeChoice === 'library' ? withoutPaletteScope(base, scope) : base;
     return compilePaletteQuery(target, live, mode) ?? compilePaletteQuery(target, live, 'originalFileName')!;
   };
@@ -835,18 +915,28 @@
       return;
     }
     remember();
-    if (section && applyFilterQuery(query)) {
+    if (query.mode !== 'speech' && section && applyFilterQuery(query)) {
       onClose();
       return;
     }
-    handlePromiseError(goto(isEmptyDiscoverySearch(query) ? '/search' : discoveryUrl(query)));
+    handlePromiseError(
+      goto(
+        isEmptyDiscoverySearch(query) && query.filter.libraryScope !== LibraryViewScope.Design
+          ? '/search'
+          : discoveryUrl(query),
+      ),
+    );
     onClose();
   };
 
   const openAsset = (asset: AssetResponseDto) => {
     remember();
     const parameters = new URLSearchParams({ [DISCOVERY_QUERY_PARAMETER]: JSON.stringify(submitted()) });
-    handlePromiseError(goto(`/search/photos/${asset.id}?${parameters}`));
+    handlePromiseError(
+      goto(
+        `${submitted().filter.libraryScope === LibraryViewScope.Design ? '/pro' : '/search'}/photos/${asset.id}?${parameters}`,
+      ),
+    );
     onClose();
   };
 
@@ -1014,11 +1104,14 @@
   };
 
   /** Save search needs something to save: text, a chip or a filter. */
-  const canSave = $derived(typing || baseChips.length > 0 || !!base.imageEnrichment);
+  const canSave = $derived(mode !== 'speech' && (typing || baseChips.length > 0 || !!base.imageEnrichment));
 
   /** The compiled search the save dialog keeps, frozen when it opens. */
   let saveQuery = $state.raw<DiscoveryQuery>(emptyDiscoveryQuery());
   const openSave = () => {
+    if (mode === 'speech') {
+      return;
+    }
     saveQuery = submitted();
     saving = true;
   };
@@ -1042,16 +1135,22 @@
   const countLabel = (count: PaletteCount) =>
     $t('frameleaf_search_palette_matches', { values: { count: count.total, capped: count.capped ? 'yes' : 'no' } });
   const matchesLabel = $derived(
-    pending
-      ? $t('frameleaf_search_searching')
-      : failed
-        ? $t('frameleaf_search_failed')
-        : selectedCount
-          ? countLabel(selectedCount)
-          : $t('frameleaf_search_searching'),
+    mode === 'speech'
+      ? $t('frameleaf_speech_palette_hint')
+      : pending
+        ? $t('frameleaf_search_searching')
+        : failed
+          ? $t('frameleaf_search_failed')
+          : selectedCount
+            ? countLabel(selectedCount)
+            : $t('frameleaf_search_searching'),
   );
   // The live region speaks only settled answers, never "Searching…" on every keystroke
   $effect(() => {
+    if (mode === 'speech') {
+      settledLabel = $t('frameleaf_speech_palette_hint');
+      return;
+    }
     if (pending) {
       return;
     }
@@ -1114,7 +1213,7 @@
           aria-label={$t('frameleaf_search_query')}
           role="combobox"
           aria-expanded={navItems.length > 0}
-          aria-controls="{listId}-results"
+          aria-controls={mode === 'speech' ? undefined : `${listId}-results`}
           aria-autocomplete="list"
           aria-activedescendant={!advanced && active >= 0 && activeEntry ? `${listId}-item-${active}` : undefined}
           autocomplete="off"
@@ -1200,7 +1299,7 @@
             onclick={() => (scopeChoice = option.value)}
           >
             {option.label}
-            <small>{formatScopeCount(option.count)}</small>
+            {#if mode !== 'speech'}<small>{formatScopeCount(option.count)}</small>{/if}
           </button>
         {/each}
       </div>
@@ -1264,6 +1363,7 @@
     {#if advanced}
       <div class="sp-advanced">
         <FilterPanel
+          showEnrichment={!mixedSearch}
           embedded
           query={next}
           {options}
@@ -1275,7 +1375,7 @@
       </div>
     {/if}
 
-    <div class="sp-body" hidden={advanced}>
+    <div class="sp-body" hidden={advanced || mode === 'speech'}>
       <div
         class="sp-results"
         id="{listId}-results"
@@ -1333,7 +1433,7 @@
           </section>
         {/if}
 
-        {#if typing}
+        {#if typing && mode !== 'speech' && !mixedSearch}
           <section>
             <h3>
               {$t('frameleaf_search_photos_and_videos')}
@@ -1563,7 +1663,7 @@
     <footer class="sp-footer">
       <span class="sp-keys" aria-hidden="true">
         <!-- The Advanced view has no list to move through, so only the keys that still act are named. -->
-        {#if !advanced}
+        {#if !advanced && mode !== 'speech'}
           <kbd>↑</kbd><kbd>↓</kbd>
           {$t('frameleaf_search_key_move')}
           <kbd>⏎</kbd>

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { AlbumResponseDto } from 'src/dtos/album.dto.js';
 import { AlbumKind } from 'src/enum.js';
-import { albumOrderGroup, buildAlbumTree, orderAlbumTree } from 'src/utils/album-tree.js';
+import { albumOrderGroup, buildAlbumHierarchy, buildAlbumTree, orderAlbumTree } from 'src/utils/album-tree.js';
 
 const album = (overrides: Partial<AlbumResponseDto> & { id: string }): AlbumResponseDto => ({
   albumName: overrides.id,
@@ -16,6 +16,7 @@ const album = (overrides: Partial<AlbumResponseDto> & { id: string }): AlbumResp
   isActivityEnabled: true,
   parentId: null,
   icon: null,
+  color: null,
   sortOrder: null,
   kind: AlbumKind.Album,
   ...overrides,
@@ -212,5 +213,76 @@ describe(albumOrderGroup.name, () => {
     }));
     expect(albumOrderGroup(counted, parentId, firstId)).toEqual(expected);
     expect(reads).toBe(items.length + 1);
+  });
+});
+
+describe('recursive album hierarchy', () => {
+  it('keeps albums and nested collections in one ordered tree', () => {
+    const root = album({ id: 'root' });
+    const group = album({ id: 'group', kind: AlbumKind.Collection, parentId: 'root' });
+    const leaf = album({ id: 'leaf', parentId: 'group' });
+    const sibling = album({ id: 'sibling', parentId: 'root' });
+    const result = buildAlbumHierarchy(
+      [leaf, sibling, root, group],
+      new Map([
+        ['group', 0],
+        ['sibling', 1],
+      ]),
+    );
+    expect(result.roots).toEqual([
+      {
+        album: root,
+        children: [
+          { album: group, children: [{ album: leaf, children: [] }] },
+          { album: sibling, children: [] },
+        ],
+      },
+    ]);
+  });
+
+  it('promotes accessible children without disclosing an inaccessible parent', () => {
+    const item = album({ id: 'child', parentId: 'private' });
+    const result = buildAlbumHierarchy([item]);
+    expect(result.roots).toEqual([{ album: { ...item, parentId: null }, children: [] }]);
+    expect(item.parentId).toBe('private');
+  });
+
+  it('keeps spaces at the root and does not attach children to them', () => {
+    const space = album({ id: 'space', kind: AlbumKind.Space, parentId: 'child' });
+    const child = album({ id: 'child', parentId: 'space' });
+    expect(
+      buildAlbumHierarchy([space, child]).roots.map(({ album: value, children }) => [
+        value.id,
+        value.parentId,
+        children,
+      ]),
+    ).toEqual([
+      ['space', null, []],
+      ['child', null, []],
+    ]);
+  });
+
+  it('breaks corrupt cycles without hiding any accessible item', () => {
+    const first = album({ id: 'first', parentId: 'second' });
+    const second = album({ id: 'second', parentId: 'first' });
+    const result = buildAlbumHierarchy([first, second]);
+    expect(result.roots).toEqual([
+      { album: { ...first, parentId: null }, children: [{ album: second, children: [] }] },
+    ]);
+    expect(JSON.stringify(result)).toContain('second');
+  });
+});
+
+describe('hierarchy order groups', () => {
+  const items = [
+    { id: 'root', kind: AlbumKind.Album, parentId: null },
+    { id: 'group', kind: AlbumKind.Collection, parentId: 'root' },
+    { id: 'leaf', kind: AlbumKind.Album, parentId: 'root' },
+    { id: 'hidden-parent-child', kind: AlbumKind.Album, parentId: 'private' },
+  ];
+  it('orders mixed siblings and promotes inaccessible parents', () => {
+    expect(albumOrderGroup(items, 'root', 'group', true)).toEqual(['group', 'leaf']);
+    expect(albumOrderGroup(items, null, 'root', true)).toEqual(['root', 'hidden-parent-child']);
+    expect(albumOrderGroup(items, 'private', 'hidden-parent-child', true)).toBeUndefined();
   });
 });

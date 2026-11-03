@@ -103,7 +103,11 @@
 
   {#if run}
     <div class="run" data-testid="pet-recognition-run" data-status={run.status}>
-      {#if active}
+      {#if active && run.assetCount === 0}
+        <!-- queued: the run has not counted its photos yet, so "0 of 0" would say nothing -->
+        <progress aria-label={$t('frameleaf_pets_recognition_progress_label')}></progress>
+        <p class="note">{$t('frameleaf_pets_recognition_starting')}</p>
+      {:else if active}
         <progress max="100" value={percent} aria-label={$t('frameleaf_pets_recognition_progress_label')}></progress>
         <p class="note">
           {$t('frameleaf_pets_recognition_progress', {

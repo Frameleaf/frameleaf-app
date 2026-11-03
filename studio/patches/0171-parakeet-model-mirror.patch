@@ -1,0 +1,66 @@
+diff --git a/src/features/media-library/transcription/workers/parakeet.worker.ts b/src/features/media-library/transcription/workers/parakeet.worker.ts
+--- a/src/features/media-library/transcription/workers/parakeet.worker.ts
++++ b/src/features/media-library/transcription/workers/parakeet.worker.ts
+@@ -24,9 +24,10 @@
+ 
+ const logger = createLogger('ParakeetWorker')
+ 
+-const HF_REPO = 'Olicorne/parakeet-tdt-0.6b-v3-smoothquant-onnx'
+-// Frameleaf: fetched only from the revision the owner approved, never a moving branch.
+-const hfBase = () => `https://huggingface.co/${HF_REPO}/resolve/${approvedRevision('model:' + HF_REPO)}`
++const MODEL_ID = 'model:Olicorne/parakeet-tdt-0.6b-v3-smoothquant-onnx'
++// Frameleaf: fetched only from the Frameleaf model mirror (the row's locator), at the revision
++// the owner approved, never a moving branch.
++const modelBase = () => `${requireResource(MODEL_ID).locator}/resolve/${approvedRevision(MODEL_ID)}`
+ 
+ const ENCODER_FP16 = 'encoder-model.fp16.onnx'
+ const ENCODER_INT8 = 'encoder-model.int8.onnx'
+@@ -145,7 +146,7 @@
+ }
+ 
+ async function loadVocab(): Promise<NonNullable<typeof vocab>> {
+-  const text = await fetchOnnxModelText(`${hfBase()}/${VOCAB_FILE}`)
++  const text = await fetchOnnxModelText(`${modelBase()}/${VOCAB_FILE}`)
+   const idToToken = new Map<number, string>()
+   let blankIdx = -1
+   for (const rawLine of text.split('\n')) {
+@@ -250,15 +251,15 @@
+     // monotonic merge would then drop every `downloading` event that followed.
+     const download = new DownloadProgress([PREPROCESSOR, encoderFile, DECODER_INT8])
+     const preprocBytes = await fetchOnnxModelBytes(
+-      `${hfBase()}/${PREPROCESSOR}`,
++      `${modelBase()}/${PREPROCESSOR}`,
+       download.track(PREPROCESSOR),
+     )
+     const encoderBytes = await fetchOnnxModelBytes(
+-      `${hfBase()}/${encoderFile}`,
++      `${modelBase()}/${encoderFile}`,
+       download.track(encoderFile),
+     )
+     const decoderBytes = await fetchOnnxModelBytes(
+-      `${hfBase()}/${DECODER_INT8}`,
++      `${modelBase()}/${DECODER_INT8}`,
+       download.track(DECODER_INT8),
+     )
+ 
+@@ -288,7 +289,7 @@
+       // counter — parking on the indeterminate `preparing` would hide a multi-minute download.
+       const fallbackDownload = new DownloadProgress([ENCODER_INT8], true)
+       fallbackBytes = await fetchOnnxModelBytes(
+-        `${hfBase()}/${ENCODER_INT8}`,
++        `${modelBase()}/${ENCODER_INT8}`,
+         fallbackDownload.track(ENCODER_INT8),
+       )
+       postMain({ type: 'progress', event: { stage: 'preparing', progress: 0 } })
+diff --git a/src/shared/utils/local-model-cache.ts b/src/shared/utils/local-model-cache.ts
+--- a/src/shared/utils/local-model-cache.ts
++++ b/src/shared/utils/local-model-cache.ts
+@@ -88,7 +88,7 @@
+     label: 'Parakeet',
+     description: 'Parakeet TDT ASR encoder, decoder/joint, preprocessor, and vocab files.',
+     cacheName: ONNX_MODEL_CACHE_NAME,
+-    matchPathFragments: ['/parakeet-tdt-0.6b-v3-smoothquant-onnx/'],
++    matchPathFragments: ['/frameleaf/parakeet-tdt-0.6b-v3/'],
+   },
+   {
+     id: 'supertonic-tts',

@@ -8,6 +8,7 @@ import type { UserMetadata, UserMetadataItem } from 'src/types.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetFileType, AssetStatus, AssetType, AssetVisibility, UserMetadataKey, UserStatus } from 'src/enum.js';
+import { canRedeemImportedAccountClaim } from 'src/library-import/account-claim-policy.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { UTILITY_ACTIVITY_RETENTION_DAYS } from 'src/repositories/trash.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -62,6 +63,12 @@ const withMetadata = (eb: ExpressionBuilder<DB, 'user'>) => {
       .whereRef('user.id', '=', 'user_metadata.userId'),
   ).as('metadata');
 };
+// Aggregate attachments per asset so file variants never multiply logical photo counts.
+const originalBytes = sql<number>`COALESCE(asset_exif."fileSizeInByte", 0) + COALESCE((
+  SELECT sum(file."sizeInBytes") FROM public.asset_original original
+  JOIN public.physical_file file ON file.id = original."physicalFileId"
+  WHERE original."assetId" = asset.id
+), 0)`;
 @Injectable()
 export class UserRepository {
   constructor(
@@ -365,6 +372,101 @@ export class UserRepository {
       .where('user.deletedAt', 'is', null)
       .executeTakeFirstOrThrow();
   }
+
+  /** FL-538: who a still-usable "choose a password" link belongs to, by the link's SHA-256. */
+  @GenerateSql({ params: [DummyValue.BUFFER] })
+  async getByPasswordLink(hash: Buffer) {
+    const user = await this.db
+      .selectFrom('user')
+      .select(['id', 'name', 'email', 'importClaimPending'])
+      .where('passwordLinkHash', '=', hash)
+      .where('passwordLinkExpiresAt', '>', sql<Date>`now()`)
+      .where('deletedAt', 'is', null)
+      .where('status', '=', UserStatus.Active)
+      .executeTakeFirst();
+    if (user?.importClaimPending && !(await canRedeemImportedAccountClaim(this.db, user.id))) return;
+    return user;
+  }
+
+  /**
+   * FL-538: use a "choose a password" link once. The link is cleared in the same statement that sets
+   * the password, so a second use (or a race) finds nothing.
+   */
+  @GenerateSql({ params: [DummyValue.BUFFER, DummyValue.STRING] })
+  redeemPasswordLink(hash: Buffer, hashedPassword: string) {
+    return this.db
+      .updateTable('user')
+      .set({
+        password: hashedPassword,
+        shouldChangePassword: false,
+        passwordLinkHash: null,
+        passwordLinkExpiresAt: null,
+        updatedAt: new Date(),
+      })
+      .where('importClaimPending', '=', false)
+      .where('passwordLinkHash', '=', hash)
+      .where('passwordLinkExpiresAt', '>', sql<Date>`now()`)
+      .where('deletedAt', 'is', null)
+      .where('status', '=', UserStatus.Active)
+      .returning(['id', 'email'])
+      .executeTakeFirst();
+  }
+
+  /** The account lock binds the claim, activation and removal of any stale authentication material. */
+  redeemImportedAccountClaim(hash: Buffer, hashedPassword: string) {
+    return this.db.transaction().execute(async (tx) => {
+      const candidate = await tx
+        .selectFrom('user')
+        .select('id')
+        .where('passwordLinkHash', '=', hash)
+        .where('importClaimPending', '=', true)
+        .where('deletedAt', 'is', null)
+        .where('status', '=', UserStatus.Active)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!candidate || !(await canRedeemImportedAccountClaim(tx, candidate.id))) return;
+      const user = await tx
+        .updateTable('user')
+        .set({
+          password: hashedPassword,
+          shouldChangePassword: false,
+          importClaimPending: false,
+          passwordLinkHash: null,
+          passwordLinkExpiresAt: null,
+          oauthId: null,
+          pinCode: null,
+          updatedAt: new Date(),
+        })
+        .where('id', '=', candidate.id)
+        .where('passwordLinkHash', '=', hash)
+        .where('passwordLinkExpiresAt', '>', sql<Date>`clock_timestamp()`)
+        .where('importClaimPending', '=', true)
+        .where('deletedAt', 'is', null)
+        .where('status', '=', UserStatus.Active)
+        .returning(['id', 'email'])
+        .executeTakeFirst();
+      if (!user) return;
+      await tx.deleteFrom('session').where('userId', '=', user.id).execute();
+      await tx.deleteFrom('api_key').where('userId', '=', user.id).execute();
+      await tx.deleteFrom('shared_link').where('userId', '=', user.id).execute();
+      await sql`DELETE FROM public.frameleaf_account_link WHERE "userId"=${user.id}`.execute(tx);
+      return user;
+    });
+  }
+
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.EMAIL, DummyValue.BUFFER, new Date('2027-01-01')] })
+  setPasswordLink(id: string, email: string, hash: Buffer, expiresAt: Date) {
+    return this.db
+      .updateTable('user')
+      .set({ passwordLinkHash: hash, passwordLinkExpiresAt: expiresAt })
+      .where('id', '=', asUuid(id))
+      .where('email', '=', email)
+      .where('deletedAt', 'is', null)
+      .where('status', '=', UserStatus.Active)
+      .returning('id')
+      .executeTakeFirst();
+  }
+
   /**
    * `withDeleted` (FL-76): the email is unique across soft-deleted accounts too, so a duplicate check
    * before an insert or update must see them. Sign-in never passes it.
@@ -468,7 +570,15 @@ export class UserRepository {
     const write = (db: Kysely<DB>) =>
       db
         .updateTable('user')
-        .set(dto)
+        .set({
+          ...dto,
+          ...(dto.email !== undefined && dto.passwordLinkHash === undefined
+            ? {
+                passwordLinkHash: sql<Buffer | null>`CASE WHEN email IS DISTINCT FROM ${dto.email} THEN NULL ELSE "passwordLinkHash" END`,
+                passwordLinkExpiresAt: sql<Date | null>`CASE WHEN email IS DISTINCT FROM ${dto.email} THEN NULL ELSE "passwordLinkExpiresAt" END`,
+              }
+            : {}),
+        })
         .where('user.id', '=', asUuid(id))
         .where('user.deletedAt', 'is', null)
         .returning(columns.userAdmin)
@@ -726,15 +836,12 @@ export class UserRepository {
           )
           .as('videos'),
         eb.fn
-          .coalesce(
-            eb.fn.sum<number>('asset_exif.fileSizeInByte').filterWhere('asset.libraryId', 'is', null),
-            eb.lit(0),
-          )
+          .coalesce(eb.fn.sum<number>(originalBytes).filterWhere('asset.libraryId', 'is', null), eb.lit(0))
           .as('usage'),
         eb.fn
           .coalesce(
             eb.fn
-              .sum<number>('asset_exif.fileSizeInByte')
+              .sum<number>(originalBytes)
               .filterWhere((eb) =>
                 eb.and([eb('asset.libraryId', 'is', null), eb('asset.type', '=', sql.lit(AssetType.Image))]),
               ),
@@ -744,7 +851,7 @@ export class UserRepository {
         eb.fn
           .coalesce(
             eb.fn
-              .sum<number>('asset_exif.fileSizeInByte')
+              .sum<number>(originalBytes)
               .filterWhere((eb) =>
                 eb.and([eb('asset.libraryId', 'is', null), eb('asset.type', '=', sql.lit(AssetType.Video))]),
               ),
@@ -783,7 +890,7 @@ export class UserRepository {
           eb
             .selectFrom('asset')
             .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
-            .select((eb) => eb.fn.coalesce(eb.fn.sum<number>('asset_exif.fileSizeInByte'), eb.lit(0)).as('usage'))
+            .select((eb) => eb.fn.coalesce(eb.fn.sum<number>(originalBytes), eb.lit(0)).as('usage'))
             .where('asset.libraryId', 'is', null)
             .where('asset.ownerId', '=', eb.ref('user.id')),
         updatedAt: new Date(),

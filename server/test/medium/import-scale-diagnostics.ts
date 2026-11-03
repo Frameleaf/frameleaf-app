@@ -1,5 +1,6 @@
 import { performance } from 'node:perf_hooks';
 import type { KyselyPlugin, QueryId, RawNode } from 'kysely';
+import { tryPromise } from 'src/utils/promise.js';
 
 type Phase = 'seed' | 'dispatch' | 'counts' | 'share-feed' | 'low-water-update';
 type QueryPhase =
@@ -79,7 +80,7 @@ export const createImportScaleDiagnostics = (
       return node;
     },
     transformResult: (args) =>
-      Promise.try(() => {
+      tryPromise(() => {
         const { queryId, result } = args;
         const query = unmatchedTransforms.get(queryId);
         if (query) {

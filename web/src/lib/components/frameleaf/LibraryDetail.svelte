@@ -28,12 +28,25 @@
     onEdit: () => void;
     onRemove: () => void;
     onScan: () => void;
+    /** FL-539: "Check every file again": reads every file, not only the new and changed ones. */
+    onScanEveryFile?: () => void;
     onCancelScan: () => void;
     onAnalytics: () => void;
     onClose: () => void;
   };
 
-  let { row, snapshotAt, busy = false, onEdit, onRemove, onScan, onCancelScan, onAnalytics, onClose }: Props = $props();
+  let {
+    row,
+    snapshotAt,
+    busy = false,
+    onEdit,
+    onRemove,
+    onScan,
+    onScanEveryFile,
+    onCancelScan,
+    onAnalytics,
+    onClose,
+  }: Props = $props();
 
   let tab = $state<Tab>('overview');
   let history = $state<UserAdminHistoryEventResponseDto[]>([]);
@@ -146,7 +159,11 @@
       <div class="resource-scan">
         <div>
           <h3>{$t('frameleaf_libraries_scan_title')}</h3>
-          <p role="status" data-testid="library-scan-message">{$t(message.key, { values: message.values })}</p>
+          <p role="status" data-testid="library-scan-message">
+            {message.parts
+              ? message.parts.map((part) => $t(part.key, { values: part.values })).join(' · ')
+              : $t(message.key, { values: message.values })}
+          </p>
         </div>
         {#if scanning && row.scan}
           <progress max={100} value={row.scan.progress} aria-label={$t('frameleaf_libraries_scan_progress')}></progress>
@@ -157,6 +174,16 @@
           <button type="button" class="resource-button" disabled={busy || !canScanLibrary(row)} onclick={onScan}>
             {$t('frameleaf_libraries_scan_start')}
           </button>
+          {#if onScanEveryFile}
+            <button
+              type="button"
+              class="resource-button"
+              disabled={busy || !canScanLibrary(row)}
+              onclick={onScanEveryFile}
+            >
+              {$t('frameleaf_libraries_scan_every_file')}
+            </button>
+          {/if}
         {/if}
       </div>
     {/if}
@@ -165,7 +192,9 @@
       {#if external && active}
         <p>{$t('frameleaf_libraries_danger_external')}</p>
         <button type="button" class="resource-button danger" onclick={onRemove}>
-          {$t('frameleaf_libraries_remove')}
+          {(row.stats?.items ?? 0) > 0
+            ? $t('frameleaf_libraries_remove_count', { values: { count: row.stats?.items ?? 0 } })
+            : $t('frameleaf_libraries_remove')}
         </button>
       {:else if external}
         <p>{$t('frameleaf_libraries_danger_removing')}</p>

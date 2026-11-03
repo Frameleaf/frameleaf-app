@@ -86,6 +86,26 @@ export class HardwareProbeRepository {
     return { encoder: 'libx264', gpu: false, speed: fallback.speed, error: attempt.error };
   }
 
+  /**
+   * FL-537: "Test it" on Video playback copies: the same short test encode on the graphics card, and
+   * on the processor for comparison. No card found answers with no encoder.
+   */
+  async testVideoCard(): Promise<{
+    encoder: string | null;
+    speed: number | null;
+    softwareSpeed: number | null;
+    error: string | null;
+  }> {
+    const [nvidia, renderNodes, encoders] = await Promise.all([this.nvidiaSmi(), this.renderNodes(), this.encoders()]);
+    const choice = testEncoderFor({ nvidia: nvidia.gpu, renderNodes, encoders });
+    if (choice.encoder === 'libx264') {
+      return { encoder: null, speed: null, softwareSpeed: null, error: nvidia.error };
+    }
+    const card = await this.encode(choice.encoder, choice.node);
+    const processor = await this.encode('libx264', null);
+    return { encoder: choice.encoder, speed: card.speed, softwareSpeed: processor.speed, error: card.error };
+  }
+
   private async encode(encoder: string, node: string | null): Promise<{ speed: number | null; error: string | null }> {
     const hardware =
       encoder === 'h264_vaapi' && node

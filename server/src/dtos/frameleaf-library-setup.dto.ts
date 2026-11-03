@@ -41,3 +41,28 @@ export class FinishLibrarySetupDto extends createZodDto(
 ) {}
 
 export class WarmLibrarySetupDto extends createZodDto(z.object({ reset: z.boolean().optional() }).strict()) {}
+
+const SetupStageSchema = z.object({
+  id: z.enum(['check', 'thumbnails', 'search']).meta({ id: 'LibrarySetupStageId' }),
+  status: z.enum(['done', 'running', 'paused', 'waiting']).meta({ id: 'LibrarySetupStageStatus' }),
+  disabled: z.boolean().optional().describe('Optional processing is turned off; retained work can resume when enabled'),
+  done: z.number().int().nonnegative(),
+  total: z.number().int().nonnegative(),
+});
+
+/** FL-1146 setup bar: what an imported library still has to do after it opens. */
+export class LibrarySetupProgressDto extends createZodDto(
+  z.object({
+    active: z.boolean().describe('False when this server was not set up from an import, or before its first setup'),
+    phase: z.enum(['awaiting-account', 'rescanning', 'verifying', 'needs-attention', 'complete']).nullable(),
+    paused: z.boolean(),
+    completedAt: z.string().nullable().describe('When everything finished; null while setup runs'),
+    items: z.number().int().nonnegative(),
+    people: z.number().int().nonnegative().describe('Named people, for the completion window'),
+    albums: z.number().int().nonnegative(),
+    flagged: z.number().int().nonnegative().describe('Originals listed in Library Care as missing or changed'),
+    stages: z.array(SetupStageSchema),
+  }),
+) {}
+
+export class LibrarySetupPauseDto extends createZodDto(z.object({ paused: z.boolean() }).strict()) {}

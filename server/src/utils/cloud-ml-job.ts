@@ -3,9 +3,12 @@ import { MediaOperationKind, MediaOperationStatus, MlWorkload } from 'src/enum.j
 import {
   CLOUD_JOB_STATUSES,
   CloudEstimate,
+  CloudJobRouting,
   CloudJobView,
   CloudOutputDownload,
+  CloudUpgradeEstimate,
   isFinalCloudJobStatus,
+  jobRoutingSchema,
 } from 'src/utils/frameleaf-cloud.js';
 
 /**
@@ -136,6 +139,7 @@ export const CloudMlJobApprovalSchema = z.object({
   coldStartSeconds: z.number().min(0),
   runSeconds: z.number().min(0),
   basis: z.enum(['measured', 'modelled']),
+  approvedMaximumUsd: usd.optional(),
 });
 export type CloudMlJobApproval = z.infer<typeof CloudMlJobApprovalSchema>;
 
@@ -225,6 +229,7 @@ const CloudMlJobRecordSchema = z.object({
   etag: z.string().nullable(),
   admittedAt: z.string(),
   startedAt: z.string().nullable(),
+  routing: jobRoutingSchema.optional(),
   error: z.object({ code: z.string(), message: z.string(), retryable: z.boolean() }).nullable(),
 });
 export type CloudMlJobRecord = z.infer<typeof CloudMlJobRecordSchema>;
@@ -283,6 +288,17 @@ export type CloudMlJobEstimateRecord = {
   operationId: string | null;
   /** FC-46: a photo upscale's quoted factor; absent on video work. */
   upscale?: CloudMlJobUpscale;
+};
+
+/** A kept, job-bound upgrade quote; attempted prices reserve spending until the job reports them. */
+export type CloudMlJobUpgradeRecord = {
+  id: string;
+  operationId: string;
+  createdBy: string;
+  quote: CloudUpgradeEstimate;
+  attemptedAt: string | null;
+  /** Monotonic submission fence; a stale refusal cannot release a newer retry's reservation. */
+  attemptRevision?: number;
 };
 
 /** What happened so far; the one mutable part of the job. */
@@ -459,17 +475,22 @@ export const cloudMlJobMonthStart = (now: Date): Date => new Date(Date.UTC(now.g
 /**
  * What one person's confirmed jobs count against their monthly limit (FL-162 owner decision): a
  * settled job its settled charge; a job still running (or ended but not settled) the amount the AI
- * Wallet holds for it, or, before it was sent, the most a reseal could hold (its confirmed hold plus
- * `CLOUD_ML_JOB_PRICE_TOLERANCE`); and a job that ended before anything was sent nothing.
+ * Wallet holds for it, or its explicitly approved routed maximum. Before a legacy job was sent,
+ * reserve the most a reseal could hold (`CLOUD_ML_JOB_PRICE_TOLERANCE`); a job that ended before
+ * anything was sent counts nothing.
  */
 export const cloudMlJobSpentUsd = (
-  rows: ReadonlyArray<{
-    status: string;
-    remoteJobId: string | null;
-    result: unknown;
-    holdUsd: number | null;
-    settledUsd: number | null;
-  }>,
+  rows: ReadonlyArray<
+    | {
+        status: string;
+        remoteJobId: string | null;
+        result: unknown;
+        holdUsd: number | null;
+        approvedMaximumUsd?: number | null;
+        settledUsd: number | null;
+      }
+    | { reservedUsd: number; settledUsd: number | null }
+  >,
 ): number => {
   const ended = new Set<string>([
     MediaOperationStatus.Completed,
@@ -482,6 +503,10 @@ export const cloudMlJobSpentUsd = (
       total += row.settledUsd;
       continue;
     }
+    if ('reservedUsd' in row) {
+      total += row.reservedUsd;
+      continue;
+    }
     if (ended.has(row.status) && !row.remoteJobId) {
       continue;
     }
@@ -492,9 +517,13 @@ export const cloudMlJobSpentUsd = (
     }
     const submitted = result.submission?.attemptedAt ? result.submission.holdUsd : null;
     const held = result.job ? Math.max(result.job.holdUsd, submitted ?? 0) : submitted;
-    total += held ?? (row.holdUsd ?? 0) * CLOUD_ML_JOB_PRICE_TOLERANCE;
+    const maximum = row.approvedMaximumUsd ?? result.job?.routing?.approvedMaximumUsd;
+    total +=
+      maximum === undefined || maximum === null
+        ? (held ?? (row.holdUsd ?? 0) * CLOUD_ML_JOB_PRICE_TOLERANCE)
+        : Math.max(maximum, result.job?.routing?.approvedMaximumUsd ?? 0, held ?? 0);
   }
-  return Math.round(total * 10_000) / 10_000;
+  return Math.round(total * 1_000_000) / 1_000_000;
 };
 
 /**
@@ -520,6 +549,7 @@ export type CloudMlJobActivity = {
   workers: number;
   cloudStatus: string | null;
   progressUnit: string | null;
+  routing?: CloudJobRouting;
   cost: {
     estimatedP50Usd: number;
     estimatedP90Usd: number;
@@ -560,6 +590,7 @@ export const cloudMlJobActivity = (operation: {
     workers: result.job?.workers ?? 0,
     cloudStatus: result.job?.status ?? null,
     progressUnit: result.job?.progress?.unit ?? null,
+    ...(result.job?.routing && { routing: result.job.routing }),
     cost: {
       estimatedP50Usd: approved.p50Usd,
       estimatedP90Usd: approved.p90Usd,
@@ -611,6 +642,11 @@ export const cloudMlJobRecordOf = (
   etag,
   admittedAt: previous?.admittedAt ?? view.createdAt,
   startedAt: view.run.startedAt,
+  ...(view.routing
+    ? { routing: view.routing }
+    : previous?.routing
+      ? { routing: { ...previous.routing, upgradeAvailable: false } }
+      : {}),
   error: view.error ? { code: view.error.code, message: view.error.message, retryable: view.error.retryable } : null,
 });
 

@@ -28,6 +28,9 @@ services:
       POSTGRES_USER: ${DB_USERNAME-postgres}
       POSTGRES_DB: ${DB_DATABASE_NAME-frameleaf}
       POSTGRES_INITDB_ARGS: "--data-checksums"
+    # The devcontainer's default credentials are public: keep PostgreSQL on loopback.
+    ports: !override
+      - 127.0.0.1:5432:5432
     volumes:
       - ${UPLOAD_LOCATION:-postgres19-devcontainer-volume}${UPLOAD_LOCATION:+/postgres19}:/var/lib/postgresql
 volumes:

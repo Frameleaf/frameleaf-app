@@ -227,7 +227,7 @@ export class AssetMediaController {
       // viewThumbnailRes is a AssetMediaRedirectResponse
       // which redirects to the original asset or a specific size to make better use of caching
       const { targetSize } = viewThumbnailRes;
-      const [reqPath, reqSearch] = req.url.split('?', 2);
+      const reqSearch = req.url.split('?', 2)[1];
       let redirPath: string;
       const redirSearchParams = new URLSearchParams(reqSearch);
       if (targetSize === 'original') {
@@ -235,7 +235,8 @@ export class AssetMediaController {
         redirPath = 'original';
         redirSearchParams.delete('size');
       } else if (Object.values(AssetMediaSize).includes(targetSize)) {
-        redirPath = reqPath;
+        // relative path back to this endpoint: the request's own path never becomes the redirect target
+        redirPath = 'thumbnail';
         redirSearchParams.set('size', targetSize);
       } else {
         throw new Error('Invalid targetSize: ' + targetSize);

@@ -1,6 +1,7 @@
 import { faker } from '@faker-js/faker';
 import { AssetTypeEnum, AssetVisibility, type AssetResponseDto, type TimeBucketAssetResponseDto } from '@frameleaf/sdk';
 import { Sync } from 'factory.ts';
+import { DateTime } from 'luxon';
 import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
 import { fromISODateTimeUTCToObject, fromTimelinePlainDateTime } from '$lib/utils/timeline-util';
 
@@ -86,6 +87,12 @@ export const toResponseDto = (...timelineAsset: TimelineAsset[]) => {
     bucketAssets.isTrashed.push(asset.isTrashed);
     bucketAssets.livePhotoVideoId.push(asset.livePhotoVideoId!);
     bucketAssets.fileCreatedAt.push(fileCreatedAt);
+    bucketAssets.localOffsetHours.push(
+      // both as UTC components, so host time zone and DST don't change the offset
+      (DateTime.fromObject(asset.localDateTime, { zone: 'UTC' }).toMillis() -
+        DateTime.fromObject(asset.fileCreatedAt, { zone: 'UTC' }).toMillis()) /
+        3_600_000,
+    );
     bucketAssets.createdAt.push(fromTimelinePlainDateTime(asset.createdAt).toISO());
     bucketAssets.ownerId.push(asset.ownerId);
     bucketAssets.projectionType.push(asset.projectionType!);

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import ctypes
+import platform
+import sys
 from collections.abc import Sequence
 from contextlib import nullcontext
 from pathlib import Path
@@ -11,6 +14,7 @@ from uuid import uuid4
 import numpy as np
 import onnxruntime as ort
 from numpy.typing import NDArray
+from onnxruntime.capi.onnxruntime_pybind11_state import Fail
 
 from frameleaf_ml.models.constants import SUPPORTED_PROVIDERS
 from frameleaf_ml.native_ort import current_policy
@@ -18,6 +22,23 @@ from frameleaf_ml.schemas import ModelPrecision, SessionNode
 from frameleaf_ml.sessions import runtime_cache_dir
 
 from ..config import log, settings
+
+# TensorRT-RTX comes as a plugin provider (onnxruntime-ep-nv-tensorrt-rtx-cu12, the cuda extra): registered here,
+# it is listed and taken by the name it gives itself rather than by an ...ExecutionProvider name
+TRT_RTX = "nv_tensorrt_rtx"
+try:
+    import onnxruntime_ep_nv_tensorrt_rtx as nv_tensorrt_rtx
+except ImportError:
+    pass
+else:
+    try:
+        ort.register_execution_provider_library(nv_tensorrt_rtx.get_ep_name(), nv_tensorrt_rtx.get_library_path())
+    except Fail as e:
+        log.info(f"TensorRT-RTX is unavailable: {e}")
+
+# TensorRT-RTX records CUDA graphs in global capture mode, which fails any other thread's synchronizing call, and as its
+# context memory can move between runs, any run may record: so its sessions open and run one at a time
+_trt_rtx_lock = Lock()
 
 MigraphxInputSignature = tuple[tuple[str, str, tuple[int, ...]], ...]
 
@@ -97,9 +118,11 @@ class OrtSession:
         provider_options: list[dict[str, Any]] | None = None,
         sess_options: ort.SessionOptions | None = None,
         device_id: str | None = None,
+        threads: int = 2,
     ):
         self.model_path = Path(model_path)
         self.source_model_path = self.model_path
+        self.threads = threads
         native = current_policy()
         self._coreml_lock = (
             Lock()
@@ -121,17 +144,22 @@ class OrtSession:
             providers = requested
         self.device_id = device_id
         self.providers = providers if providers is not None else self._providers_default
+        self._run_lock = _trt_rtx_lock if TRT_RTX in self.providers else nullcontext()
+        self.disabled_optimizers = _disabled_optimizers_default(self.providers)
+        log.debug(f"Setting disabled_optimizers to {self.disabled_optimizers}")
         self.provider_options = provider_options if provider_options is not None else self._provider_options_default
         self.sess_options = sess_options if sess_options is not None else self._sess_options_default
         if native is not None and native.profile_dir is not None:
             self.sess_options.enable_profiling = True
             self.sess_options.profile_file_prefix = str(native.profile_dir / f"native-{uuid4().hex}")
-        self.session = ort.InferenceSession(
-            self.model_path.as_posix(),
-            providers=self.providers,
-            provider_options=self.provider_options,
-            sess_options=self.sess_options,
-        )
+        with self._run_lock:
+            self.session = ort.InferenceSession(
+                self.model_path.as_posix(),
+                providers=self.providers,
+                provider_options=self.provider_options,
+                sess_options=self.sess_options,
+                disabled_optimizers=self.disabled_optimizers,
+            )
         if native is not None:
             self.session.disable_fallback()
             if native.provider not in self.session.get_providers():
@@ -182,7 +210,8 @@ class OrtSession:
                 outputs = self.session.run(output_names, input_feed, run_options)
                 return outputs
 
-            outputs = self.session.run(output_names, input_feed, run_options)
+            with self._run_lock:
+                outputs = self.session.run(output_names, input_feed, run_options)
             return outputs
 
     def _specialize_coreml(self, input_feed: dict[str, NDArray[Any]]) -> None:
@@ -229,6 +258,7 @@ class OrtSession:
                 providers=self.providers,
                 provider_options=providers,
                 sess_options=options,
+                disabled_optimizers=self.disabled_optimizers,
             )
             session.disable_fallback()
             if "CoreMLExecutionProvider" not in session.get_providers():
@@ -257,7 +287,12 @@ class OrtSession:
     def _providers_default(self) -> list[str]:
         available_providers = set(ort.get_available_providers())
         log.debug(f"Available ORT providers: {available_providers}")
-        return [provider for provider in SUPPORTED_PROVIDERS if provider in available_providers]
+        providers = [provider for provider in SUPPORTED_PROVIDERS if provider in available_providers]
+        if TRT_RTX in providers:
+            providers.remove(
+                "CUDAExecutionProvider"
+            )  # CUDA EP syncs the legacy stream each run, which a recording fails
+        return providers
 
     @property
     def provider_options(self) -> list[dict[str, Any]]:
@@ -278,6 +313,10 @@ class OrtSession:
                     options = {"arena_extend_strategy": "kSameAsRequested"}
                 case "CUDAExecutionProvider":
                     options = {"arena_extend_strategy": "kSameAsRequested", "device_id": settings.device_id}
+                case "nv_tensorrt_rtx":
+                    trt_rtx_dir = runtime_cache_dir(self.model_path) / "trt-rtx"
+                    trt_rtx_dir.mkdir(parents=True, exist_ok=True)
+                    options = {"device_id": settings.device_id, "nv_runtime_cache_path": trt_rtx_dir.as_posix()}
                 case "MIGraphXExecutionProvider":
                     migraphx_dir = runtime_cache_dir(self.model_path) / "migraphx"
                     # MIGraphX does not create the underlying folder and will crash if it does not exist
@@ -323,6 +362,8 @@ class OrtSession:
     @property
     def _sess_options_default(self) -> ort.SessionOptions:
         sess_options = ort.SessionOptions()
+        # some CPUs slow down many times over on subnormal operands, and ORT clears the flush in its threads otherwise
+        sess_options.add_session_config_entry("session.set_denormal_as_zero", "1")
         sess_options.enable_cpu_mem_arena = settings.model_arena
 
         # avoid thread contention between models
@@ -337,9 +378,32 @@ class OrtSession:
         if settings.model_intra_op_threads > 0:
             sess_options.intra_op_num_threads = settings.model_intra_op_threads
         elif settings.model_intra_op_threads == 0 and self.providers == ["CPUExecutionProvider"]:
-            sess_options.intra_op_num_threads = 2
+            sess_options.intra_op_num_threads = self.threads
 
         if sess_options.inter_op_num_threads > 1:
             sess_options.execution_mode = ort.ExecutionMode.ORT_PARALLEL
 
         return sess_options
+
+
+def _disabled_optimizers_default(providers: list[str]) -> list[str]:
+    disabled_optimizers: list[str] = []
+    if platform.machine() in ("arm64", "aarch64"):  # as macOS and Linux name the same architecture
+        disabled_optimizers.append("ConvAddActivationFusion")
+
+    # the Gemm it makes runs slower than the pair it replaces there, and on CUDA it also keeps BiasGelu from fusing
+    if "CoreMLExecutionProvider" in providers or "CUDAExecutionProvider" in providers:
+        disabled_optimizers.append("MatMulAddFusion")
+
+    return disabled_optimizers
+
+
+def flush_denormals() -> None:
+    """Reads subnormal floats as zero on the calling thread, which ORT does only on its own threads."""
+    if sys.platform != "linux" or platform.machine() != "x86_64":
+        return
+    libm = ctypes.CDLL("libm.so.6")
+    env = (ctypes.c_uint32 * 8)()  # glibc's fenv_t here: the x87 environment, then MXCSR
+    libm.fegetenv(env)
+    env[7] |= 0x8040  # denormals are zero, flush to zero
+    libm.fesetenv(env)

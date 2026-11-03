@@ -2,10 +2,32 @@ import { ConflictException, ForbiddenException, Injectable, NotFoundException } 
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
-import type { PhotographySite, PhotographyStudioPreset } from 'src/dtos/photography-workflow.dto.js';
+import type {
+  PhotographyInquiry,
+  PhotographySite,
+  PhotographyStudioPreset,
+} from 'src/dtos/photography-workflow.dto.js';
+
+/** One site-owned copy of a portfolio photograph at each width (FL-702). */
+export type StudioSiteMedia = {
+  revisionId: string | null;
+  assetId?: string;
+  version: string;
+  width: number;
+  height: number;
+  files: { width: number; path: string }[];
+};
+/** `photography_studio_site.value`: the website, watermark presets, the site's photo copies and inquiries. */
+export type StudioRecord = {
+  site: PhotographySite | null;
+  presets: PhotographyStudioPreset[];
+  media?: Record<string, StudioSiteMedia>;
+  inquiries?: PhotographyInquiry[];
+};
 import type { PhotographyWorkflow } from 'src/services/photography-workflow.service.js';
 import { AlbumUserRole, AssetFileType, AssetStatus, AssetType, UserStatus } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
+import { hiddenByOwnerRules } from 'src/utils/database.js';
 import { isNotLocked, lockedAssetIdExists } from 'src/utils/locked.js';
 
 export type WorkflowRow = {
@@ -206,6 +228,8 @@ export class PhotographyWorkflowRepository {
       .where('album_asset.albumId', '=', albumId)
       .where('asset.type', '=', AssetType.Image)
       .where(isNotLocked())
+      // FL-446: what the owner's Locked rules hide reaches partners only, never a gallery or portfolio
+      .where(sql<boolean>`not ${hiddenByOwnerRules()}`)
       .where('asset.status', '=', AssetStatus.Active)
       .where('asset.deletedAt', 'is', null)
       .orderBy('asset.fileCreatedAt')
@@ -230,6 +254,7 @@ export class PhotographyWorkflowRepository {
       .where('asset.type', '=', AssetType.Image)
       .where('asset.isOffline', '=', false)
       .where(isNotLocked())
+      .where(sql<boolean>`not ${hiddenByOwnerRules()}`)
       .where('asset.status', '=', AssetStatus.Active)
       .where('asset.deletedAt', 'is', null)
       .where('asset_exif.fileSizeInByte', '<=', 512_000)
@@ -244,7 +269,7 @@ export class PhotographyWorkflowRepository {
       JOIN public.album_asset membership ON membership."assetId"=asset.id
       WHERE revision.id=ANY(${ids}::uuid[]) AND revision."ownerId"=${row.ownerId}::uuid
       AND asset."ownerId"=${row.ownerId}::uuid AND membership."albumId"=${row.albumId}::uuid
-      AND ${isNotLocked()} AND asset.status='active' AND asset."deletedAt" IS NULL AND NOT asset."isOffline"
+      AND ${isNotLocked()} AND NOT ${hiddenByOwnerRules()} AND asset.status='active' AND asset."deletedAt" IS NULL AND NOT asset."isOffline"
       AND revision.status='rendered' AND revision."masterPath" IS NOT NULL
       AND (revision."sourceChecksum" IS NULL OR revision."sourceChecksum"=asset.checksum)`.execute(this.db);
     return new Set(rows.map((r) => r.id));
@@ -320,10 +345,14 @@ export class PhotographyWorkflowRepository {
     if (!preset) throw new NotFoundException('Studio preset unavailable');
     return preset;
   }
+  /**
+   * `expected` undefined (FL-702): a write that is not the owner's edit, such as a website inquiry or the
+   * site's own photo copies, keeps the revision so it never makes the owner's open editor reload.
+   */
   async mutateStudio<T>(
     ownerId: string,
-    expected: string | null,
-    change: (record: { site: PhotographySite | null; presets: PhotographyStudioPreset[] }) => Promise<T> | T,
+    expected: string | null | undefined,
+    change: (record: StudioRecord) => Promise<T> | T,
   ) {
     return this.db.transaction().execute(async (tx) => {
       await sql`SELECT pg_advisory_xact_lock(hashtextextended(${ownerId},0))`.execute(tx);
@@ -338,33 +367,60 @@ export class PhotographyWorkflowRepository {
       if (!owner) throw new ForbiddenException('Studio unavailable');
       const { rows } = await sql<{
         revision: string;
-        value:
-          | PhotographySite
-          | {
-              site: PhotographySite | null;
-              presets: PhotographyStudioPreset[];
-            };
+        value: PhotographySite | StudioRecord;
       }>`SELECT revision,value FROM public.photography_studio_site WHERE "ownerId"=${ownerId}::uuid FOR UPDATE`.execute(
         tx,
       );
-      if ((rows[0]?.revision ?? null) !== expected) throw new ConflictException('Studio settings changed; reload');
+      if (expected !== undefined && (rows[0]?.revision ?? null) !== expected)
+        throw new ConflictException('Studio settings changed; reload');
       const stored = rows[0]?.value;
-      const record = stored && 'site' in stored ? stored : { site: stored ?? null, presets: [] };
+      const record: StudioRecord = stored && 'site' in stored ? stored : { site: stored ?? null, presets: [] };
       const result = await change(record);
       const encoded = JSON.stringify(record);
       if (Buffer.byteLength(encoded) > 20_000_000) throw new ConflictException('Studio settings storage limit reached');
-      const revision = randomUUID();
+      const revision = expected === undefined && rows[0] ? rows[0].revision : randomUUID();
       await sql`INSERT INTO public.photography_studio_site ("ownerId",revision,value) VALUES (${ownerId}::uuid,${revision}::uuid,${encoded}::text::jsonb) ON CONFLICT ("ownerId") DO UPDATE SET revision=EXCLUDED.revision,value=EXCLUDED.value`.execute(
         tx,
       );
       return { revision, record, result };
     });
   }
-  async saveSite(ownerId: string, expected: string | null, value: PhotographySite) {
-    const result = await this.mutateStudio(ownerId, expected, (record) => {
-      record.site = value;
-    });
-    return { revision: result.revision, site: value };
+  /** FL-702: the whole studio record, for the site's photo copies and inquiries. */
+  async studioRecord(ownerId: string) {
+    const { rows } = await sql<{
+      revision: string;
+      value: PhotographySite | StudioRecord;
+    }>`SELECT revision,value FROM public.photography_studio_site WHERE "ownerId"=${ownerId}::uuid`.execute(this.db);
+    const stored = rows[0]?.value;
+    const record: StudioRecord = stored && 'site' in stored ? stored : { site: stored ?? null, presets: [] };
+    return { revision: rows[0]?.revision ?? null, record };
+  }
+  /** FL-702: the studio whose website answers at /studio/<slug>. */
+  async siteOwnerBySlug(slug: string) {
+    const { rows } = await sql<{ ownerId: string }>`SELECT "ownerId" FROM public.photography_studio_site
+      WHERE value->'site'->>'slug' = ${slug} LIMIT 1`.execute(this.db);
+    return rows[0]?.ownerId;
+  }
+  /** FL-702: the description a photographer gave each photograph, used as the website's alt text. */
+  async assetDescriptions(ownerId: string, ids: string[]) {
+    if (ids.length === 0) return new Map<string, string>();
+    const rows = await this.db
+      .selectFrom('asset_exif')
+      .innerJoin('asset', 'asset.id', 'asset_exif.assetId')
+      .select(['asset.id', 'asset_exif.description'])
+      .where('asset.ownerId', '=', ownerId)
+      .where('asset.id', 'in', ids)
+      .execute();
+    return new Map(rows.filter((row) => row.description?.trim()).map((row) => [row.id, row.description!.trim()]));
+  }
+  async studioOwner(ownerId: string) {
+    return this.db
+      .selectFrom('user')
+      .select(['email', 'name'])
+      .where('id', '=', ownerId)
+      .where('status', '=', UserStatus.Active)
+      .where('deletedAt', 'is', null)
+      .executeTakeFirst();
   }
   async unfinished(cursor: string | null = null) {
     const { rows } = await sql<WorkflowRow>`SELECT * FROM ${TABLE}

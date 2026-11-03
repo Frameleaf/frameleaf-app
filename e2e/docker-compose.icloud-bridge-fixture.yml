@@ -13,7 +13,7 @@
 #     up -d --no-build --force-recreate --renew-anon-volumes --remove-orphans --wait
 services:
   icloud-bridge-fixture:
-    image: ${FRAMELEAF_CI_NODE_IMAGE:-node:26.11.1-trixie-slim@sha256:193fe51b64e77981119c98c2002c9e32a70e2f006fb4d25068ce0558998917f0}
+    image: ${FRAMELEAF_CI_NODE_IMAGE:-node:22.23.4-trixie-slim@sha256:8eb619e402eaede1748a3c8173bffab391592812e85136452f781741c7242ddf}
     command: node /fixture/icloud-bridge-fixture.mjs
     environment:
       ICLOUD_BRIDGE_FIXTURE_PORT: '9443'
