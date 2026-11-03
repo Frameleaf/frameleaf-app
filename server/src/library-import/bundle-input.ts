@@ -10,7 +10,7 @@ import {
 } from 'src/library-import/command-input.js';
 import { bindDestinationImportPlan } from 'src/library-import/destination-plan.js';
 import { type SourceKind, manifestFingerprint, parseImportManifest } from 'src/library-import/manifest.js';
-import { loadPrivateOwnerInputs, restorePrivateOwnerInputs } from 'src/library-import/private-owners.js';
+import { loadPrivateOwnerInputs, parsePrivateOwnerInputs } from 'src/library-import/private-owners.js';
 import { loadReviewedImportInputs } from 'src/library-import/reviewed-inputs.js';
 import {
   EMPTY_SOURCE_ARCHIVE_HASH,
@@ -69,10 +69,10 @@ export async function loadLibraryImportBundle(config: LibraryImportCommandConfig
   });
   const plan = bindDestinationImportPlan(parsedPlan, binding, manifest, config.destinationId);
   const context = { binding, destinationId: config.destinationId, manifest, plan };
-  const owners = restorePrivateOwnerInputs(
-    { private_owners: ownersInput.value, private_owners_sha256: fingerprintHash(ownersInput.value) },
-    context,
-  ).owners.map(({ intent, credential }) => ({ intent, credential }));
+  const owners = parsePrivateOwnerInputs(ownersInput.value, context).owners.map(({ intent, credential }) => ({
+    intent,
+    credential,
+  }));
   const descriptor = parseSourceArchiveDescriptor(archiveInput.value);
 
   const records = async function* () {

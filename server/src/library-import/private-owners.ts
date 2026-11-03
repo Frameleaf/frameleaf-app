@@ -41,15 +41,10 @@ const readPrivateRow = async (tx: ImportDatabase): Promise<PrivateRow> => {
   if (!row) return refuse('IMPORT_JOURNAL_MISSING');
   return row as PrivateRow;
 };
-export const restorePrivateOwnerInputs = (row: PrivateRow, context: PrivateContext) => {
-  if (row.private_owners === null && row.private_owners_sha256 === null) return refuse('IMPORT_PRIVATE_OWNERS_MISSING');
-  const parsed = archiveSchema.safeParse(row.private_owners);
-  if (
-    !parsed.success ||
-    typeof row.private_owners_sha256 !== 'string' ||
-    !/^[a-f0-9]{64}$/.test(row.private_owners_sha256)
-  )
-    return refuse('IMPORT_PRIVATE_OWNERS_INVALID');
+/** Validates and canonicalizes private file content; retained records separately require their stored checksum. */
+export const parsePrivateOwnerInputs = (input: unknown, context: PrivateContext) => {
+  const parsed = archiveSchema.safeParse(input);
+  if (!parsed.success) return refuse('IMPORT_PRIVATE_OWNERS_INVALID');
   const owners = new Map(context.plan.owners.map((owner) => [owner.sourceId, owner.destinationId]));
   const inventory = parsed.data.owners.map((entry) => {
     const intent = parseImportedOwnerIntent(entry.intent);
@@ -73,9 +68,17 @@ export const restorePrivateOwnerInputs = (row: PrivateRow, context: PrivateConte
     return { intent, credential };
   });
   const prepared = prepare(context, inventory);
+  return { owners: prepared.owners, sha256: prepared.sha256 };
+};
+
+export const restorePrivateOwnerInputs = (row: PrivateRow, context: PrivateContext) => {
+  if (row.private_owners === null && row.private_owners_sha256 === null) return refuse('IMPORT_PRIVATE_OWNERS_MISSING');
+  if (typeof row.private_owners_sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(row.private_owners_sha256))
+    return refuse('IMPORT_PRIVATE_OWNERS_INVALID');
+  const prepared = parsePrivateOwnerInputs(row.private_owners, context);
   if (!timingSafeEqual(Buffer.from(prepared.sha256, 'hex'), Buffer.from(row.private_owners_sha256, 'hex')))
     return refuse('IMPORT_PRIVATE_OWNERS_CHANGED');
-  return { owners: prepared.owners, sha256: prepared.sha256 };
+  return prepared;
 };
 
 /** Retains protected destination-policy verifiers, never raw source verifiers, sessions or API keys. */

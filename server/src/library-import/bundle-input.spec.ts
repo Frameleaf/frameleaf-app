@@ -5,6 +5,7 @@ import { basename, join } from 'node:path';
 import { loadLibraryImportBundle } from 'src/library-import/bundle-input.js';
 import { openPrivateImportFile, readPrivateImportJSON } from 'src/library-import/command-input.js';
 import fixture from 'src/library-import/fixtures/manager-plan-v2.json' with { type: 'json' };
+import { restorePrivateOwnerInputs } from 'src/library-import/private-owners.js';
 import {
   EMPTY_SOURCE_ARCHIVE_HASH,
   advanceSourceArchiveHash,
@@ -122,4 +123,57 @@ it('stops oversized archive lines before parsing an unbounded record', async () 
   const bundle = await loadLibraryImportBundle(config, 'photoprism');
   await writeFile(join(directory, 'archive.jsonl'), 'x'.repeat(8 * 1024 * 1024 + 1));
   await expect(bundle.assertUnchanged()).rejects.toThrow('SOURCE_ARCHIVE_RECORD_INVALID');
+});
+
+it.each(['object keys', 'owner order', 'both'])('accepts equivalent owner JSON with different %s', async (order) => {
+  Object.assign(values.get('plan.json') as object, { owners: fixture.plan.owners });
+  Object.assign(values.get('manifest.json') as object, {
+    users: fixture.plan.owners.map((owner) => ({ id: owner.sourceId, name: owner.sourceId })),
+  });
+  const input = {
+    format: 'frameleaf-private-owner-inputs',
+    version: 1,
+    owners: fixture.plan.owners.map((owner) => ({
+      intent: {
+        sourceUserId: owner.sourceId,
+        email: owner.sourceId + '@example.invalid',
+        login: {
+          revision: fixture.plan.source.revision,
+          snapshotSha256: 'a'.repeat(64),
+          accountEnabled: true,
+          passwordLoginEnabled: true,
+          secondFactorRequired: false,
+          externalIdentityRequired: false,
+          ownedLibraryAccess: 'full',
+          otherRestrictions: 'none',
+        },
+        disposition: { kind: 'claim', reason: 'no-local-verifier', claimPermitted: true },
+      },
+    })),
+  };
+  if (order !== 'object keys') input.owners.reverse();
+  const reverseKeys = (value: unknown): unknown =>
+    Array.isArray(value)
+      ? value.map((item) => reverseKeys(item))
+      : value !== null && typeof value === 'object'
+        ? Object.fromEntries(
+            Object.entries(value)
+              .toReversed()
+              .map(([key, item]) => [key, reverseKeys(item)]),
+          )
+        : value;
+  values.set('owners.json', order === 'owner order' ? input : reverseKeys(input));
+  const bundle = await loadLibraryImportBundle(config, 'photoprism');
+  expect(bundle.owners.map((owner) => owner.intent.sourceUserId)).toEqual(['owner-1', 'owner-2']);
+  await expect(bundle.assertUnchanged()).resolves.toBeUndefined();
+});
+
+it('still rejects an incorrect stored hash when restoring retained owner records', async () => {
+  const bundle = await loadLibraryImportBundle(config, 'photoprism');
+  expect(() =>
+    restorePrivateOwnerInputs(
+      { private_owners: values.get('owners.json'), private_owners_sha256: '0'.repeat(64) },
+      bundle.context,
+    ),
+  ).toThrow('IMPORT_PRIVATE_OWNERS_CHANGED');
 });
