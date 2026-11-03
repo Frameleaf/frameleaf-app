@@ -148,6 +148,10 @@ describe('Lychee common manifest mapping', () => {
     expect(manifest.losses.some((l) => l.code === 'LYCHEE_SHARING_RESTRICTED')).toBe(true);
     expect(manifest).toMatchObject({ stacks: [], livePhotos: [] });
   });
+  it('preserves a cleared nullable caption as an empty locked description', () => {
+    database.prepare('UPDATE photos SET description=NULL WHERE id=?').run(photo.id);
+    expect(read().manifest.assets.find((p) => p.id === photo.id)?.metadata.description).toBe('');
+  });
   it('uses current manual UTC dates and their named source zone ahead of initial values', () => {
     database
       .prepare(
@@ -403,22 +407,37 @@ describe('Lychee common manifest mapping', () => {
       expect(() => read(value)).toThrow(/LYCHEE_/);
     },
   );
-  it.each(['schema', 'revision', 'writers', 'owner', 'timezone', 'date', 'gps'])(
-    'refuses unqualified %s state before destination effects',
-    (kind) => {
-      const value = input();
-      if (kind === 'schema') value.source.schemaSha256 = '0'.repeat(64);
-      if (kind === 'revision') value.inventory.revisionAfter = 'changed';
-      if (kind === 'writers') value.inventory.writersStopped = false;
-      if (kind === 'owner') database.prepare('UPDATE photos SET owner_id=999 WHERE id=?').run(photo.id);
-      if (kind === 'timezone')
-        database
-          .prepare('UPDATE photos SET taken_at=?,taken_at_orig_tz=NULL WHERE id=?')
-          .run('2020-06-10 18:30:00.000000', photo.id);
-      if (kind === 'date')
-        database.prepare('UPDATE photos SET taken_at=?,taken_at_orig_tz=? WHERE id=?').run('invalid', 'UTC', photo.id);
-      if (kind === 'gps') database.prepare('UPDATE photos SET latitude=45,longitude=NULL WHERE id=?').run(photo.id);
-      expect(() => read(value)).toThrow(/LYCHEE_/);
-    },
-  );
+  it.each([
+    'schema',
+    'revision',
+    'writers',
+    'owner',
+    'timezone',
+    'timezone-invalid',
+    'date',
+    'gps',
+    'album-cycle',
+    'stale-snapshot',
+  ])('refuses unqualified %s state before destination effects', (kind) => {
+    const value = input();
+    if (kind === 'schema') value.source.schemaSha256 = '0'.repeat(64);
+    if (kind === 'revision') value.inventory.revisionAfter = 'changed';
+    if (kind === 'writers') value.inventory.writersStopped = false;
+    if (kind === 'owner') database.prepare('UPDATE photos SET owner_id=999 WHERE id=?').run(photo.id);
+    if (kind === 'album-cycle')
+      database.prepare('UPDATE albums SET parent_id=id WHERE id=?').run(content.rows.albums[0].id);
+    if (kind === 'stale-snapshot') value.materializedAlbums.unknown = [photo.id];
+    if (kind === 'timezone-invalid')
+      database
+        .prepare('UPDATE photos SET taken_at=?,taken_at_orig_tz=? WHERE id=?')
+        .run('2020-06-10 18:30:00.000000', 'Mars/Olympus', photo.id);
+    if (kind === 'timezone')
+      database
+        .prepare('UPDATE photos SET taken_at=?,taken_at_orig_tz=NULL WHERE id=?')
+        .run('2020-06-10 18:30:00.000000', photo.id);
+    if (kind === 'date')
+      database.prepare('UPDATE photos SET taken_at=?,taken_at_orig_tz=? WHERE id=?').run('invalid', 'UTC', photo.id);
+    if (kind === 'gps') database.prepare('UPDATE photos SET latitude=45,longitude=NULL WHERE id=?').run(photo.id);
+    expect(() => read(value)).toThrow(/LYCHEE_/);
+  });
 });
