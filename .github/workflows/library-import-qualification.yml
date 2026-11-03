@@ -105,7 +105,7 @@ jobs:
         run: |
           node ../studio/tools/prepare-server-subtitle-runtime.mjs
           node scripts/prepare-import-transfer-runtime.mjs
-          pnpm exec vitest run --config test/vitest.config.mjs src/library-import/*manifest.spec.ts --maxWorkers=1
+          pnpm exec vitest run --config test/vitest.config.mjs src/library-import/*manifest.spec.ts src/library-import/piwigo-source.spec.ts --maxWorkers=1
   photoprism-mariadb:
     name: PhotoPrism MariaDB native reader
     if: github.repository == 'Frameleaf/frameleaf-app'

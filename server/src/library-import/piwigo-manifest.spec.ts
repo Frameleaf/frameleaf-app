@@ -42,7 +42,7 @@ const input = () => ({
 });
 const rows = () =>
   Object.fromEntries(
-    Object.entries(content.rows).map(([table, records]) => [
+    Object.entries({ ...content.rows, rate: [] }).map(([table, records]) => [
       table,
       records.map((record) =>
         Object.fromEntries(
@@ -69,6 +69,54 @@ const read = async (value = input(), records = rows()): Promise<Result> => {
   return adapter!(source(), value);
 };
 describe('Piwigo common manifest mapping', () => {
+  it('maps the chosen owner rating independently of the public aggregate and other voters', async () => {
+    const records = rows();
+    records.rate = [
+      { element_id: 4n, user_id: 3n, anonymous_id: '192.0.2', rate: 4n, date: '2020-01-01' },
+      { element_id: 4n, user_id: 4n, anonymous_id: '198.51.100', rate: 1n, date: '2020-01-02' },
+    ];
+    const { manifest, archive } = await read(input(), records);
+    expect(manifest.assets.find((asset) => asset.id === '4')!.metadata.rating).toBe(4);
+    expect(manifest.assets.find((asset) => asset.id === '5')!.metadata.rating).toBe(0);
+    expect(archive.filter((record) => record.table === 'rate')).toHaveLength(2);
+    expect(JSON.stringify(manifest)).not.toContain('192.0.2');
+  });
+
+  it('requires review rather than picking one conflicting owner vote', async () => {
+    const records = rows();
+    records.rate = [
+      { element_id: 4n, user_id: 3n, anonymous_id: '192.0.2', rate: 4n, date: '2020-01-01' },
+      { element_id: 4n, user_id: 3n, anonymous_id: '198.51.100', rate: 1n, date: '2020-01-02' },
+    ];
+    await expect(read(input(), records)).rejects.toThrow('PIWIGO_RATING_REVIEW_REQUIRED');
+  });
+
+  it('archives an unrepresentable owner score without rescaling it silently', async () => {
+    const records = rows();
+    records.rate = [{ element_id: 4n, user_id: 3n, anonymous_id: '192.0.2', rate: 8n, date: '2020-01-01' }];
+    const { manifest, archive } = await read(input(), records);
+    expect(manifest.losses).toContainEqual({
+      code: 'PIWIGO_OWNER_RATING_ARCHIVED',
+      entityId: '4',
+      acknowledged: false,
+    });
+    expect(manifest.assets.find((asset) => asset.id === '4')!.metadata.rating).toBe(0);
+    expect(archive.find((record) => record.table === 'rate')!.value.rate).toBe(8n);
+  });
+
+  it('does not use guest or generic account ratings as a personal owner preference', async () => {
+    const records = rows();
+    records.user_infos.find((row) => row.user_id === 3n)!.status = 'generic';
+    records.rate = [{ element_id: 4n, user_id: 3n, anonymous_id: '192.0.2', rate: 4n, date: '2020-01-01' }];
+    const { manifest } = await read(input(), records);
+    expect(manifest.assets.find((asset) => asset.id === '4')!.metadata.rating).toBe(0);
+    expect(manifest.losses).toContainEqual({
+      code: 'PIWIGO_OWNER_RATING_ARCHIVED',
+      entityId: '4',
+      acknowledged: false,
+    });
+  });
+
   it('preserves native originals, manual metadata, album membership and owner favourites', async () => {
     const { manifest, archive } = await read();
     expect(manifest.assets).toHaveLength(4);

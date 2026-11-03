@@ -143,6 +143,7 @@ export async function readPiwigoManifest(
   const missing = new Set<string>();
   for (const table of ['image_category', 'favorites', 'image_tag', 'image_format'] as const)
     for (const row of rows(table)) if (!images.has(key(row.image_id))) missing.add(key(row.image_id));
+  for (const row of rows('rate')) if (!images.has(key(row.element_id))) missing.add(key(row.element_id));
   for (const category of categories.values())
     if (category.representative_picture_id !== null && !images.has(key(category.representative_picture_id)))
       missing.add(key(category.representative_picture_id));
@@ -224,6 +225,27 @@ export async function readPiwigoManifest(
     losses.push({ code, ...(entityId === undefined ? {} : { entityId }), acknowledged: false });
   };
   if (missing.size > 0) loss('PIWIGO_MISSING_IMAGE_RELATIONSHIPS_ARCHIVED');
+  const ownerRatings = new Map<string, bigint>();
+  for (const vote of rows('rate')) {
+    const imageId = key(vote.element_id);
+    if (
+      typeof vote.user_id !== 'bigint' ||
+      vote.user_id < 0n ||
+      typeof vote.anonymous_id !== 'string' ||
+      typeof vote.rate !== 'bigint' ||
+      vote.rate < 0n ||
+      vote.rate > 255n
+    )
+      return refuse('PIWIGO_METADATA_INVALID');
+    if (!images.has(imageId) || String(vote.user_id) !== input.photoOwners[imageId]) continue;
+    if (!['normal', 'admin', 'webmaster'].includes(String(infos.get(String(vote.user_id))?.status))) {
+      loss('PIWIGO_OWNER_RATING_ARCHIVED', imageId);
+      continue;
+    }
+    const previous = ownerRatings.get(imageId);
+    if (previous !== undefined && previous !== vote.rate) return refuse('PIWIGO_RATING_REVIEW_REQUIRED');
+    ownerRatings.set(imageId, vote.rate);
+  }
   const proofs = new Map(input.files.map((file) => [file.id, file]));
   if (proofs.size !== input.files.length) return refuse('PIWIGO_FILE_EVIDENCE_MISMATCH');
   const files: ImportManifest['files'] = [],
@@ -305,6 +327,8 @@ export async function readPiwigoManifest(
     if (image.name) loss('PIWIGO_TITLE_ARCHIVED', id);
     if (row.rotation !== null && row.rotation !== 0n) loss('PIWIGO_ROTATION_ARCHIVED', id);
     if (row.rating_score !== null) loss('PIWIGO_AGGREGATE_RATING_ARCHIVED', id);
+    const ownerRating = ownerRatings.get(id);
+    if (ownerRating !== undefined && ownerRating > 5n) loss('PIWIGO_OWNER_RATING_ARCHIVED', id);
     assets.push({
       id,
       ownerId,
@@ -322,6 +346,7 @@ export async function readPiwigoManifest(
         longitude: coordinates[1],
         tags: photoTags as string[],
         favorite: favourites.has(JSON.stringify([id, ownerId])),
+        rating: ownerRating !== undefined && ownerRating <= 5n ? Number(ownerRating) : 0,
       },
     });
   }

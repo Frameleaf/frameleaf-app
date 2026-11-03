@@ -77,6 +77,10 @@ export const piwigoProjections = {
     columns: ['user_id', 'image_id'],
     keys: ['user_id', 'image_id'],
   },
+  rate: {
+    columns: ['element_id', 'user_id', 'anonymous_id', 'rate', 'date'],
+    keys: ['element_id', 'user_id', 'anonymous_id'],
+  },
   tags: {
     columns: ['id', 'name', 'url_name'],
     keys: ['id'],
