@@ -19,7 +19,7 @@ import {
 } from 'src/immich-import/types.js';
 
 export class ImmichSource {
-  readonly fixture: FrozenSource;
+  fixture: FrozenSource;
   constructor(
     readonly db: ImportDatabase,
     readonly config: ImportConfig,
@@ -50,10 +50,18 @@ export class ImmichSource {
     if (elevated.length > 0 || writable.length > 0 || others.length > 0) {
       throw new ImportRefused('SOURCE_WRITERS_OR_WRITE_AUTHORITY_PRESENT');
     }
-    const [frameleaf] = await this.db.query("SELECT to_regclass('public.frameleaf_migrations') IS NOT NULL AS present");
-    if (frameleaf?.present) throw new ImportRefused('SOURCE_IS_FRAMELEAF');
+    const [ledgers] = await this.db.query(`SELECT to_regclass('public.frameleaf_migrations') IS NOT NULL AS present,
+      to_regclass('public.gallery_migrations') IS NOT NULL AS noodle`);
+    if (ledgers?.present) throw new ImportRefused('SOURCE_IS_FRAMELEAF');
     const migrations = await this.db.query('SELECT name FROM public.kysely_migrations ORDER BY name');
     const names = migrations.map((row) => String(row.name));
+    if (ledgers?.noodle) {
+      // Noodle Gallery reports its own release (5.x) and keeps its migrations in gallery_migrations: the Immich
+      // base comes from the upstream ledger, and its added tables and columns pass the readable-columns check.
+      const base = newestContainedRelease(names);
+      if (!base) throw new ImportRefused('UNKNOWN_SOURCE_MIGRATIONS');
+      this.fixture = { ...frozenSource(base), exact: false };
+    }
     const structure = await readSourceStructure(this.db);
     if (this.fixture.exact && canonicalJson(names) === canonicalJson(this.fixture.migrations)) {
       verifySourceStructure(structure, this.fixture.structure);

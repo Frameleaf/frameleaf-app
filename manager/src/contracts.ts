@@ -43,6 +43,7 @@ export type Database = {
 export type Source = {
   id: string;
   project: string | null;
+  product: 'Immich' | 'Noodle Gallery';
   version: string;
   image: string;
   app: string;

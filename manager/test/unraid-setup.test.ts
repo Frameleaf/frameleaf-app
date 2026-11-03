@@ -16,6 +16,8 @@ test('Immich servers are recognised by repository name, whatever the registry or
     `docker.io/altran1502/${SERVER}:release`,
     `registry.local:5000/photos/${SERVER}:latest`,
     'ghcr.io/upstream-owner/immich-microservices:v1.105.0',
+    'ghcr.io/open-noodle/gallery-server:release',
+    'ghcr.io/open-noodle/gallery-server:v5.9.0',
   ])
     assert.ok(isSourceServer(image), image);
   for (const image of [
@@ -23,6 +25,8 @@ test('Immich servers are recognised by repository name, whatever the registry or
     'ghcr.io/frameleaf/frameleaf-server:latest',
     `ghcr.io/someone/not-${SERVER}:latest`,
     `${SERVER}-proxy:latest`,
+    'ghcr.io/open-noodle/gallery-ml:release',
+    'ghcr.io/someone/gallery-server:latest',
   ])
     assert.ok(!isSourceServer(image), image);
 });

@@ -22,6 +22,7 @@ const makeSource = (
     extraColumn?: boolean;
     missingColumn?: boolean;
     retypedColumn?: boolean;
+    noodle?: boolean;
   } = {},
 ) => {
   const columns = Object.entries(fixture.structure.tables)
@@ -55,6 +56,9 @@ const makeSource = (
       }
       if (statement.includes('has_table_privilege')) {
         return overrides.writable ? [{ present: 1 }] : [];
+      }
+      if (statement.includes('gallery_migrations')) {
+        return [{ present: false, noodle: !!overrides.noodle }];
       }
       if (statement.includes('pg_stat_activity')) {
         return overrides.writers ? [{ present: 1 }] : [];
@@ -145,6 +149,17 @@ describe('source preflight', () => {
     const { source } = makeSource({ extraMigration: true });
     await expect(new ImmichSource(source.db, { ...config, version: '3.0.0' }).preflight()).rejects.toThrow(
       'UNKNOWN_SOURCE_MIGRATIONS',
+    );
+  });
+
+  it('reads Noodle Gallery through the Immich base in its ledger, not its own release number', async () => {
+    // An exact Immich ledger plus Noodle's own tables and columns: the exact catalog check would refuse it.
+    const { source } = makeSource({ noodle: true, extraColumn: true });
+    const noodle = new ImmichSource(source.db, { ...config, version: '5.9.0' });
+    await expect(noodle.preflight()).resolves.toMatch(/^[a-f\d]{64}$/u);
+    expect(noodle.fixture).toMatchObject({ commit: fixture.commit, exact: false });
+    await expect(makeSource({ noodle: true, missingColumn: true }).source.preflight()).rejects.toThrow(
+      'UNKNOWN_SOURCE_SCHEMA',
     );
   });
 
