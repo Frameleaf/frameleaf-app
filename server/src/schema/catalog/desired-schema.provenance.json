@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "8df891743c3b11cb3c98a198ad674c0e947fe044",
+  "sourceCommit": "18b8ccba19deec85c5f8422755c54911ed7c6516",
   "sourceHashes": {
     "src/enum.ts": "12a951e417c04357b3b9bd14dce9d8b97a52f02b3417487cb2b16dbfbcafe9d3",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
@@ -72,11 +72,11 @@
     "src/schema/tables/face-search.table.ts": "dcf3d20474ef65a7fc155081d9b04a5151be688268cfd113df1cf2e040f0bde9",
     "src/schema/tables/geodata-places.table.ts": "2c0be153c56497bfa21053ce9834ae8a6e4c6ae3c7677643302f44ce5d0c333e",
     "src/schema/tables/icloud-edit-authority.table.ts": "ba14f25a37c620555ca64a52d2568b08cd23353d8c88ff8c033b028749b312e5",
-    "src/schema/tables/identical-file-change.table.ts": "64566fb0024838fda28c4554cbc64f3b826872c1203e830f931a4b19a03ce739",
+    "src/schema/tables/identical-file-change.table.ts": "0ba6b84c17693bc7dfcb737cd5ab079f3a752826b47825bcc965fae020ea312c",
     "src/schema/tables/integrity-report.table.ts": "8dbdb2fb24d919983fade4571fe85e6d20d632e315f0a769cc13f32c46bf56a5",
     "src/schema/tables/landmark.table.ts": "6af5cfdc87cb98808070399734733648f5d7c01ddc5b3f56a5978b7caca1046a",
     "src/schema/tables/library.table.ts": "dbc20caa6eaddef3bbf1a1c5e598fc914886ccae40d7026e5d84df7a3a2304c6",
-    "src/schema/tables/locked-encryption.table.ts": "c0d2309a95b9bd53f0705fda537e3daddb0e62d4e7a58ae8d05c4f56bbbf1587",
+    "src/schema/tables/locked-encryption.table.ts": "584743cf4a255f61502d0ffb133c3d876b38d717b9d681cd397a0626b1f41591",
     "src/schema/tables/media-operation.table.ts": "9934aeb4c2ab6c303c88bf66ea465d56c49efb9b00c17635a2ad9de0aef7e66c",
     "src/schema/tables/memory-asset-audit.table.ts": "5f4914dd96def13ddaaf55a3dd89ace3354e7381482f1ee8e1244a86b403e9ec",
     "src/schema/tables/memory-asset.table.ts": "d290cffde479e426de022f987418fa9b9b209739a7b4ac419c65e7046e9be4b7",
@@ -84,7 +84,7 @@
     "src/schema/tables/memory-export.table.ts": "cecab6b74e04f7da31b59644663ae13b89b391f5afca571f46bb9e92da37ec13",
     "src/schema/tables/memory.table.ts": "6c563388fd136727eec376f3df23e487f1eb6c543444affa68e90e5ed3b7711a",
     "src/schema/tables/ml-destination.table.ts": "36c14a543a97321261843201448ec030aeb5d8672c21128f150ccc98f4af6bd9",
-    "src/schema/tables/ml-processing-order.table.ts": "f6338c02fe7c998933822548b2173b48c3edb02ad7e518d94031e2530b80155e",
+    "src/schema/tables/ml-processing-order.table.ts": "ab6aecef4d67f383f6764269ffca3fe4f61b87b648cb07882b973a4101ead9ba",
     "src/schema/tables/ml-workload-route-origin.table.ts": "f5f4b57506681ed8a8d150dfd9ca6df2a6261f83cd11a44645674c679973530f",
     "src/schema/tables/move.table.ts": "85b22f54d11e38e513e1ef55f179497a3130de07be3dd844bbd7b13274c26360",
     "src/schema/tables/natural-earth-countries.table.ts": "acc461f0604797521c9e84a6c39ec3b469a47e91a0e6b1a155610c531264046b",
@@ -158,7 +158,7 @@
     "src/schema/tables/workflow.table.ts": "5fa01bdb8bbded01acabcba85c0fe1cca0a2fb56eeb7f5ac751c44279cc5ce7a"
   },
   "serverVersion": 190000,
-  "baselineSha256": "f73cd17872961af64842fe2f300a3ede5bd6742e8ada8b555dac3c3b0c48685f",
-  "dumpSha256": "3759e21ca75537b4c9fd4b1035b7496d86f24b3f8afb425c9a95cf62b2973220",
-  "rawMetadataSha256": "2a77a33844b114c097fca9b7e872046e48db7f852f5606344f3eb058e4baf74f"
+  "baselineSha256": "b57bd944096b45f516bb29a336033410d24b145e89b708575786aa09e1a6bfbf",
+  "dumpSha256": "42679b28468f125dcf4f27be8194cf3055159879aa19ef69a5faa25dbc9d4eaa",
+  "rawMetadataSha256": "5aca47ce58c619b5fcc7fab05f22e09e257357bd8944aaa2932a7b7b7fc25fed"
 }
