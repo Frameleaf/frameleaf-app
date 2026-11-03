@@ -1920,10 +1920,10 @@ describe(MetadataService.name, () => {
           .exif({ dateTimeOriginal: instant, timeZone })
           .build();
         const locks = new Set<LockableProperty>(['dateTimeOriginal', 'timeZone']);
-        mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockImplementation(async () => [...locks]);
-        mocks.asset.unlockProperties.mockImplementation(async (_id, properties) => {
+        mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockImplementation(() => Promise.resolve([...locks]));
+        mocks.asset.unlockProperties.mockImplementation((_id, properties) => {
           for (const property of properties) locks.delete(property);
-          return [];
+          return Promise.resolve([]);
         });
         const sidecarSource = getForSidecarWrite(asset);
         if (timeZone) sidecarSource.exifInfo.dateTimeOriginal = '2020-06-10T18:30:00.123456+00:00';
