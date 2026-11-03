@@ -22,6 +22,11 @@ export const withDateTimeOffset = (value?: string) => {
   if (!parsed.isValid) return value;
   const time = value.split(/t/iu, 2)[1];
   if (!time) return parsed.toISO() ?? value;
+  if (time.includes('[')) {
+    const normalized = parsed.toISO()!;
+    const fraction = /[.,](\d+)/u.exec(time)?.[1];
+    return fraction ? normalized.replace(/\.\d+(?=[Z+-])/u, () => '.' + fraction) : normalized;
+  }
   return /(?:Z|[+-]\d{2}(?::?\d{2})?)$/iu.test(time) ? value : value + 'Z';
 };
 
