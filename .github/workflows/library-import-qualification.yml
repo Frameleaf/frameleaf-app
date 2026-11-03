@@ -96,7 +96,7 @@ jobs:
         run: |
           node ../studio/tools/prepare-server-subtitle-runtime.mjs
           node scripts/prepare-import-transfer-runtime.mjs
-          pnpm exec vitest run --config test/vitest.config.mjs src/services/metadata.service.spec.ts src/services/asset.service.spec.ts --maxWorkers=1
+          pnpm exec vitest run --config test/vitest.config.mjs src/services/metadata.service.spec.ts src/services/asset.service.spec.ts src/utils/date.spec.ts --maxWorkers=1
       - name: Verify scoped cancellation cleanup
         run: node --test server/test/photoprism-qualification-cleanup.test.mjs
       - name: Qualify native restored database extraction

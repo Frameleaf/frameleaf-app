@@ -869,6 +869,46 @@ describe(AssetService.name, () => {
       },
     );
 
+    it.each([false, true])(
+      'uses UTC consistently for an offsetless absolute edit (live photo: %s)',
+      async (livePhoto) => {
+        const asset = AssetFactory.from({
+          ownerId: authStub.admin.user.id,
+          fileCreatedAt: new Date('2020-06-10T18:30:00Z'),
+          localDateTime: new Date('2020-06-10T12:30:00Z'),
+        })
+          .exif({ dateTimeOriginal: new Date('2020-06-10T18:30:00Z'), timeZone: 'America/Edmonton' })
+          .build();
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+        mocks.asset.getByIds.mockResolvedValue([asset] as never);
+        mocks.asset.update.mockResolvedValue(getForAsset(asset));
+        mocks.asset.withLivePhotoUpdate.mockImplementation(async (_id, _motionId, write) =>
+          write(mocks.asset, mocks.access),
+        );
+        await sut.update(authStub.admin, asset.id, {
+          dateTimeOriginal: '2020-06-10T12:30:00',
+          ...(livePhoto ? { livePhotoVideoId: null } : {}),
+        });
+        expect(mocks.asset.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            id: asset.id,
+            fileCreatedAt: new Date('2020-06-10T12:30:00Z'),
+            localDateTime: new Date('2020-06-10T12:30:00Z'),
+          }),
+        );
+        expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+          expect.objectContaining({
+            exif: expect.objectContaining({
+              assetId: asset.id,
+              dateTimeOriginal: '2020-06-10T12:30:00',
+              timeZone: 'UTC',
+            }),
+          }),
+        );
+      },
+    );
+
     it('should update the asset', async () => {
       const asset = AssetFactory.create();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
@@ -1867,6 +1907,25 @@ describe(AssetService.name, () => {
         id: asset.id,
         fileCreatedAt: new Date('2020-06-10T19:30:00Z'),
         localDateTime: new Date('2020-06-10T19:30:00Z'),
+      });
+    });
+
+    it('uses UTC consistently for an offsetless absolute bulk edit', async () => {
+      const asset = AssetFactory.create({
+        id: 'asset-1',
+        fileCreatedAt: new Date('2020-06-10T18:30:00Z'),
+        localDateTime: new Date('2020-06-10T12:30:00Z'),
+      });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.updateDateTimeOriginal.mockResolvedValue([
+        { assetId: asset.id, dateTimeOriginal: new Date('2020-06-10T12:30:00Z'), timeZone: 'UTC' },
+      ]);
+      await sut.updateAll(authStub.admin, { ids: [asset.id], dateTimeOriginal: '2020-06-10T12:30:00' });
+      expect(mocks.asset.updateDateTimeOriginal).toHaveBeenCalledWith([asset.id], undefined, 'UTC');
+      expect(mocks.asset.update).toHaveBeenCalledWith({
+        id: asset.id,
+        fileCreatedAt: new Date('2020-06-10T12:30:00Z'),
+        localDateTime: new Date('2020-06-10T12:30:00Z'),
       });
     });
 
