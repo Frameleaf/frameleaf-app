@@ -19,7 +19,6 @@
    * and smart search and faces wait for the check. When everything has finished, the completion window opens once.
    */
   import { clickOutside } from '$lib/actions/click-outside';
-  import SetupComplete from '$lib/components/frameleaf/SetupComplete.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
   import { locale } from '$lib/stores/preferences.store';
@@ -331,7 +330,10 @@
 {/if}
 
 {#if celebrating && progress}
-  <SetupComplete {progress} onClose={closeCelebration} />
+  <!-- Loaded only when it opens: it shows once per library. -->
+  {#await import('$lib/components/frameleaf/SetupComplete.svelte') then { default: SetupComplete }}
+    <SetupComplete {progress} onClose={closeCelebration} />
+  {/await}
 {/if}
 
 <style>

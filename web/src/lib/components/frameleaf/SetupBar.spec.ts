@@ -31,7 +31,8 @@ beforeAll(() => {
   HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
     this.open = true;
   };
-  vi.stubGlobal('matchMedia', () => ({ matches: true }));
+  // Reduced motion, so the completion window draws no confetti.
+  vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
 });
 beforeEach(() => {
   vi.clearAllMocks();
