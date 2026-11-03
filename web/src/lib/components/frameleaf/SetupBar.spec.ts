@@ -4,10 +4,12 @@ import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import SetupBar from '$lib/components/frameleaf/SetupBar.svelte';
 import { locale } from '$lib/stores/preferences.store';
+import { handleError } from '$lib/utils/handle-error';
 import en from '../../../../../i18n/en.json';
 
 const auth = vi.hoisted(() => ({ authenticated: true, user: { isAdmin: true } }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: auth }));
+vi.mock('$lib/utils/handle-error', () => ({ handleError: vi.fn() }));
 
 const progress = (overrides: Partial<LibrarySetupProgressDto> = {}): LibrarySetupProgressDto => ({
   active: true,
@@ -108,6 +110,35 @@ describe('SetupBar', () => {
     expect(screen.queryByRole('button', { name: 'Pause' })).not.toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(sdkMock.beginLibrarySetup).toHaveBeenCalled();
+  });
+
+  it('shows an identity warning without offering stage actions or progress', async () => {
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(progress({ phase: Phase.NeedsAttention, stages: [] }));
+    render(SetupBar);
+    expect(await screen.findByText('Setup needs attention')).toBeInTheDocument();
+    expect(screen.getByText('Setup could not be verified. See Library care before continuing.')).toBeInTheDocument();
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Pause' })).not.toBeInTheDocument();
+    expect(screen.queryByText('0%')).not.toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: /Details/ }));
+    expect(screen.getByRole('link', { name: 'Library care' })).toBeInTheDocument();
+  });
+
+  it.each([false, true])('reports rejected setup actions and clears busy, retry=%s', async (retry) => {
+    const failure = new Error('synthetic action refusal');
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(
+      progress({ phase: retry ? Phase.NeedsAttention : Phase.Rescanning }),
+    );
+    const action = retry ? sdkMock.beginLibrarySetup : sdkMock.pauseLibrarySetup;
+    action.mockRejectedValueOnce(failure);
+    render(SetupBar);
+    const button = await screen.findByRole('button', { name: retry ? 'Retry' : 'Pause' });
+    await fireEvent.click(button);
+    await vi.waitFor(() =>
+      expect(handleError).toHaveBeenCalledWith(failure, 'Unable to update library setup. Try again.'),
+    );
+    expect(button).not.toBeDisabled();
   });
 
   it('keeps asking after a failed request', async () => {

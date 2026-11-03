@@ -22,6 +22,7 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
   import { locale } from '$lib/stores/preferences.store';
+  import { handleError } from '$lib/utils/handle-error';
   import {
     beginLibrarySetup,
     getLibrarySetupProgress,
@@ -153,6 +154,8 @@
     busy = true;
     try {
       await work();
+    } catch (error) {
+      handleError(error, $t('setup_bar_action_error'));
     } finally {
       busy = false;
     }
@@ -191,7 +194,7 @@
   onDestroy(() => document.documentElement.style.removeProperty('--fl-setup-bar-height'));
 </script>
 
-{#if visible && progress && current}
+{#if visible && progress && (current || attention)}
   <div
     class="fl-setup-bar"
     class:is-paused={progress.paused}
@@ -215,8 +218,8 @@
       </strong>
       <span class="fl-setup-bar-detail">
         {#if attention}
-          {$t('setup_bar_attention_detail')}
-        {:else if current.total > 0}
+          {$t(current ? 'setup_bar_attention_detail' : 'setup_bar_identity_attention_detail')}
+        {:else if current && current.total > 0}
           {$t('setup_bar_progress', {
             values: {
               stage: stageTitle(current.id),
@@ -224,14 +227,16 @@
               total: current.total.toLocaleString($locale),
             },
           })}
-        {:else}
+        {:else if current}
           {stageTitle(current.id)}
         {/if}
         {#if secondsLeft !== null && !attention}
           · {timeLeft(secondsLeft)}
         {/if}
       </span>
-      <span class="fl-setup-bar-percent">{percent}%</span>
+      {#if current}
+        <span class="fl-setup-bar-percent">{percent}%</span>
+      {/if}
     </p>
     {#if progress.flagged > 0}
       <a class="fl-setup-bar-flag" href={Route.libraryCare()}>
@@ -239,22 +244,24 @@
         {$t('setup_bar_flagged', { values: { count: progress.flagged } })}
       </a>
     {/if}
-    <div
-      class="fl-setup-bar-progress"
-      role="progressbar"
-      aria-label={stageTitle(current.id)}
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-valuenow={percent}
-    >
-      <span style:width="{part * 100}%"></span>
-    </div>
+    {#if current}
+      <div
+        class="fl-setup-bar-progress"
+        role="progressbar"
+        aria-label={stageTitle(current.id)}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percent}
+      >
+        <span style:width="{part * 100}%"></span>
+      </div>
+    {/if}
     <div class="fl-setup-bar-actions">
-      {#if attention}
+      {#if attention && current}
         <button type="button" class="button primary" disabled={busy} onclick={retry}>
           {$t('retry')}
         </button>
-      {:else}
+      {:else if !attention}
         <button type="button" class="button fl-setup-bar-pause" disabled={busy} onclick={togglePause}>
           <Icon icon={progress.paused ? mdiPlay : mdiPause} size="18" aria-hidden={true} />
           {progress.paused ? $t('resume') : $t('pause')}
