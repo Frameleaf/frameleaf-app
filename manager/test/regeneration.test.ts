@@ -28,3 +28,15 @@ test('regeneration does not show zero counts before the run is counted', () => {
   assert.doesNotMatch(display.detail, /\b0\b/);
   assert.match(display.detail, /in place/);
 });
+
+test('a finished run with nothing to do keeps its counts', () => {
+  const display = regenerationPresentation({
+    state: 'completed',
+    completed: 0,
+    total: 0,
+    failed: 0,
+    blocked: 0,
+    needsAttention: 0,
+  });
+  assert.match(display.detail, /0 of 0 items complete/);
+});

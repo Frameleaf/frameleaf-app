@@ -373,7 +373,12 @@ describe('fork sensitive detections', () => {
     await (importer as unknown as { convertLocks(): Promise<void> }).convertLocks();
     return statements.filter(({ sql }) => sql.includes('is_nsfw'));
   };
-  const rebuild = expect.objectContaining({ sql: expect.stringContaining('SET is_nsfw=true') });
+  // The owner's review wins over the detection result (2100000000010), so a "safe" review stays unlocked.
+  const rebuild = expect.objectContaining({
+    sql: expect.stringMatching(
+      /SET is_nsfw=true[\s\S]*coalesce\(m\.value #>> '\{nsfwDetection,review,isNsfw\}', m\.value #>> '\{nsfwDetection,result,isNsfw\}'\)='true'/,
+    ),
+  });
 
   it('locks detections when the source hid them from the library', async () => {
     expect(await convert('true')).toEqual([rebuild, expect.objectContaining({ parameters: ['detected'] })]);
