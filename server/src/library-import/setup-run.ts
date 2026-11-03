@@ -13,7 +13,13 @@ import { LibraryImportRefused, parseLibraryImportBinding } from 'src/library-imp
 import { type DB } from 'src/schema/index.js';
 
 type SetupSelection = Record<string, unknown> & {
-  managerSetup?: { installation: string; operationId: string; preparedAt: string | null; startedAt: string | null };
+  managerSetup?: {
+    installation: string;
+    operationId: string;
+    preparedAt: string | null;
+    startedAt: string | null;
+    paused?: boolean;
+  };
 };
 type SetupRun = { id: string; kind: string; selection: SetupSelection; enumerationDone: boolean };
 
@@ -49,6 +55,7 @@ export async function readImportedSetupRun(db: Kysely<DB>, lock = false) {
       !!run &&
       object &&
       run.kind === kind &&
+      (selection.managerSetup?.paused === undefined || typeof selection.managerSetup.paused === 'boolean') &&
       (binding
         ? selection.version === 1 &&
           selection.prepared === true &&

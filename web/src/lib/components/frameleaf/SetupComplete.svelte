@@ -6,7 +6,7 @@
   import { confetti } from '$lib/frameleaf/confetti';
   import { Route } from '$lib/route';
   import { locale } from '$lib/stores/preferences.store';
-  import type { LibrarySetupProgressDto } from '@frameleaf/sdk';
+  import { LibrarySetupStageId, type LibrarySetupProgressDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import {
     mdiAccountGroupOutline,
@@ -34,6 +34,9 @@
     return confetti({ parent: dialog });
   });
 
+  const searchOff = $derived(
+    progress.stages.some((stage) => stage.id === LibrarySetupStageId.Search && stage.disabled),
+  );
   const facts = $derived([
     [mdiImageMultipleOutline, progress.items, $t('setup_complete_items', { values: { count: progress.items } })],
     [mdiAccountGroupOutline, progress.people, $t('setup_complete_people')],
@@ -54,7 +57,7 @@
     <Icon icon={mdiCheckBold} size="40" />
   </div>
   <h2 id="fl-setup-complete-title">{$t('setup_complete_title')}</h2>
-  <p>{$t('setup_complete_body')}</p>
+  <p>{$t(searchOff ? 'setup_complete_body_search_off' : 'setup_complete_body')}</p>
   <ul class="fl-setup-complete-facts">
     {#each facts as [icon, value, label] (label)}
       <li>

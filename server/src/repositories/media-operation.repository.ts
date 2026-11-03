@@ -2126,8 +2126,9 @@ export class MediaOperationRepository {
     id: string,
     ownerId: string,
     kinds: readonly MediaOperationKind[],
+    executor?: Kysely<DB>,
   ): Promise<MediaOperation | undefined> {
-    const row = (await this.write((db) =>
+    const write = (db: Kysely<DB>) =>
       db
         .updateTable('media_operation')
         .set((eb) => ({
@@ -2145,9 +2146,9 @@ export class MediaOperationRepository {
         .where('status', 'in', [...PAUSABLE_MEDIA_OPERATION_STATUSES])
         .where('cancelRequestedAt', 'is', null)
         .returningAll()
-        .executeTakeFirst(),
-    )) as unknown as MediaOperation | undefined;
-    this.changed(row);
+        .executeTakeFirst();
+    const row = (await (executor ? write(executor) : this.write(write))) as unknown as MediaOperation | undefined;
+    this.changed(row, executor);
     return row;
   }
   /**
@@ -2158,8 +2159,8 @@ export class MediaOperationRepository {
    * kept, so resuming never skips the wait before an automatic retry. A running job whose pause is
    * still pending simply keeps running.
    */
-  async resume(id: string, ownerId: string): Promise<MediaOperation | undefined> {
-    const row = (await this.write((db) =>
+  async resume(id: string, ownerId: string, executor?: Kysely<DB>): Promise<MediaOperation | undefined> {
+    const write = (db: Kysely<DB>) =>
       db
         .updateTable('media_operation')
         .set((eb) => ({
@@ -2181,9 +2182,9 @@ export class MediaOperationRepository {
           ]),
         )
         .returningAll()
-        .executeTakeFirst(),
-    )) as unknown as MediaOperation | undefined;
-    this.changed(row);
+        .executeTakeFirst();
+    const row = (await (executor ? write(executor) : this.write(write))) as unknown as MediaOperation | undefined;
+    this.changed(row, executor);
     return row;
   }
   /**

@@ -2,13 +2,14 @@ import { sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { v5 } from 'uuid';
 import { defaults, mapAdminConfig } from 'src/dtos/config.dto.js';
-import { JobName, QueueName } from 'src/enum.js';
+import { JobName, MediaOperationDestination, MediaOperationKind, MediaOperationStatus, QueueName } from 'src/enum.js';
 import { destinationPlanFingerprint, parseDestinationImportPlan } from 'src/library-import/destination-plan.js';
 import fixture from 'src/library-import/fixtures/manager-plan-v1.json' with { type: 'json' };
 import { type SourceKind, manifestFingerprint, parseImportManifest, sourceKinds } from 'src/library-import/manifest.js';
 import { queueExecution } from 'src/queue/context.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
+import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { FrameleafLibrarySetupService } from 'src/services/frameleaf-library-setup.service.js';
 import { PersonService } from 'src/services/person.service.js';
 import { SmartInfoService } from 'src/services/smart-info.service.js';
@@ -21,7 +22,19 @@ const cases = [
     mismatch,
     outcome: '',
   })),
-  ...['disabled', 'failed', 'needs_attention', 'cancelled', 'blocked', 'terminal-alias'].map((outcome) => ({
+  ...[
+    'disabled',
+    'disabled-people',
+    'failed',
+    'needs_attention',
+    'cancelled',
+    'blocked',
+    'terminal-alias',
+    'empty',
+    'queued-pause',
+    'scans-pause',
+    'pause-rollback',
+  ].map((outcome) => ({
     kind: 'photoprism' as SourceKind,
     mismatch: '',
     outcome,
@@ -52,6 +65,7 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
   plan.owners = [{ sourceId: 'owner', destinationId: ownerId }];
   plan.files = [plan.files[0]];
   const file = plan.files[0];
+  if (outcome === 'empty') plan.files = [];
   const manifest = parseImportManifest({
     format: 'frameleaf-library-import',
     version: 3,
@@ -65,20 +79,29 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
       revisionAfter: source.revision,
     },
     users: [{ id: 'owner', name: 'Synthetic imported owner' }],
-    files: [{ id: file.id, path: file.sourcePath, bytes: file.bytes, sha256: file.sha256, role: 'original' }],
-    assets: [
-      {
-        id: 'photo',
-        ownerId: 'owner',
-        fileIds: [file.id],
-        primaryFileId: file.id,
-        originalFileNames: { [file.id]: 'synthetic.jpg' },
-        type: 'IMAGE',
-        fileModifiedAt: '2020-01-02T03:04:05Z',
-        visibility: 'timeline',
-        metadata: {},
-      },
-    ],
+    files: plan.files.map((file) => ({
+      id: file.id,
+      path: file.sourcePath,
+      bytes: file.bytes,
+      sha256: file.sha256,
+      role: 'original',
+    })),
+    assets:
+      outcome === 'empty'
+        ? []
+        : [
+            {
+              id: 'photo',
+              ownerId: 'owner',
+              fileIds: [file.id],
+              primaryFileId: file.id,
+              originalFileNames: { [file.id]: 'synthetic.jpg' },
+              type: 'IMAGE',
+              fileModifiedAt: '2020-01-02T03:04:05Z',
+              visibility: 'timeline',
+              metadata: {},
+            },
+          ],
     albums: [],
     losses: [],
   });
@@ -112,6 +135,7 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
     config.getAdminConfigWithRevision.mockResolvedValue({ config: saved, revision: 'updated' });
     return Promise.resolve({});
   });
+  const operations = new MediaOperationRepository(db);
   const make = () =>
     new FrameleafLibrarySetupService(
       db,
@@ -124,7 +148,7 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
       { getNow: vi.fn().mockResolvedValue({ nowId: randomUUID() }) } as never,
       {} as never,
       config as never,
-      {} as never,
+      operations,
     );
   const marker = async () =>
     (
@@ -141,20 +165,21 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
   try {
     process.env.FRAMELEAF_MANAGER_INSTALLATION = installation;
     process.env.FRAMELEAF_MANAGER_ORIGIN = 'new_import';
-    process.env.FRAMELEAF_MANAGER_ML_ENABLED = outcome === 'disabled' ? 'false' : 'true';
+    process.env.FRAMELEAF_MANAGER_ML_ENABLED = outcome.startsWith('disabled') ? 'false' : 'true';
     await sql`INSERT INTO frameleaf_library_import(operation_id,binding,status,reviewed_manifest,reviewed_plan)
       VALUES(${binding.operationId}::uuid,${JSON.stringify(binding)}::text::jsonb,'verifying',
         ${JSON.stringify(manifest)}::text::jsonb,${JSON.stringify(plan)}::text::jsonb)`.execute(db);
     await sql`WITH g AS (INSERT INTO cluster_group DEFAULT VALUES RETURNING id)
       INSERT INTO "user"(id,email,"clusterGroupId") SELECT ${ownerId}::uuid,'owner@example.test',id FROM g`.execute(db);
-    await sql`INSERT INTO asset(id,"ownerId",type,"originalPath","fileCreatedAt","fileModifiedAt",checksum,
+    if (manifest.assets.length > 0)
+      await sql`INSERT INTO asset(id,"ownerId",type,"originalPath","fileCreatedAt","fileModifiedAt",checksum,
       "checksumAlgorithm","originalFileName","localDateTime") VALUES(${assetId}::uuid,${ownerId}::uuid,
       'IMAGE','/fixture/synthetic.jpg',now(),now(),decode(${file.sha256},'hex'),'sha256','synthetic.jpg',now())`.execute(
-      db,
-    );
+        db,
+      );
     for (const [kind, sourceId, destinationId] of [
       ['owner', 'owner', ownerId],
-      ['asset', 'photo', assetId],
+      ...(manifest.assets.length > 0 ? [['asset', 'photo', assetId]] : []),
     ])
       await sql`INSERT INTO frameleaf_library_import_mapping(operation_id,entity_kind,source_id,destination_id,record_sha256)
         VALUES(${binding.operationId}::uuid,${kind},${sourceId},${destinationId}::uuid,${'e'.repeat(64)})`.execute(db);
@@ -226,7 +251,7 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
     await make().begin();
     expect((await make().status()).regeneration).toMatchObject({
       runId: id,
-      state: 'pending_first_setup',
+      state: outcome === 'empty' ? 'completed' : 'pending_first_setup',
       startedAt: null,
     });
     expect(await ready()).toEqual([]);
@@ -259,75 +284,217 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
       quietSince: Date.now() - 11_000,
     })}::text::jsonb WHERE key=${`frameleaf-manager-library-setup:${installation}`}`.execute(db);
     if (outcome) {
-      if (outcome === 'terminal-alias') {
-        const store = new SqlQueueStore(db);
-        const worker = randomUUID();
-        await store.initialize([QueueName.SmartSearch], worker);
-        await sql`UPDATE job_run_item SET state='pending' WHERE "runId"=${id}::uuid AND stage=${JobName.SmartSearch}`.execute(
-          db,
-        );
-        await store.feedManifest(QueueName.SmartSearch);
-        const [claim] = await store.claim(QueueName.SmartSearch, worker, 1);
-        expect(await store.complete(claim, [])).toBe(true);
-        await sql`UPDATE job_run_item SET state='active' WHERE "runId"=${id}::uuid AND stage=${JobName.SmartSearch}`.execute(
-          db,
-        );
-        expect((await make().status()).phase).toBe('complete');
-        expect(await make().progress()).toMatchObject({ completedAt: expect.any(String) });
-      } else if (outcome === 'disabled') {
-        const store = new SqlQueueStore(db);
-        const worker = randomUUID();
-        const smart = newTestService(SmartInfoService).sut;
-        const faces = newTestService(PersonService).sut;
-        const disabled = structuredClone(defaults);
-        disabled.machineLearning.enabled = false;
-        vi.spyOn(smart, 'getConfig').mockResolvedValue(disabled);
-        vi.spyOn(faces, 'getConfig').mockResolvedValue(disabled);
-        await store.initialize([QueueName.SmartSearch, QueueName.FaceDetection], worker);
-        for (const [stage, queue] of [
-          [JobName.SmartSearch, QueueName.SmartSearch],
-          [JobName.AssetDetectFaces, QueueName.FaceDetection],
-        ] as const) {
-          await sql`UPDATE job_run_item SET state='pending' WHERE "runId"=${id}::uuid AND stage=${stage}`.execute(db);
-          await store.feedManifest(queue);
-          const [claim] = await store.claim(queue, worker, 1);
-          expect(claim).toBeDefined();
-          const invoke = () =>
-            stage === JobName.SmartSearch
-              ? smart.handleEncodeClip({ id: assetId })
-              : faces.handleDetectFaces({ id: assetId });
-          await expect(
-            queueExecution.run(
-              {
-                claim,
-                signal: new AbortController().signal,
-                progress: () => {},
-                followups: [],
-                adoptions: [],
-                buffering: false,
-                progressUnits: 0,
-              },
-              invoke,
-            ),
-          ).rejects.toMatchObject({ reason: 'workload-disabled' });
-          expect(await store.defer(claim, 'workload-disabled')).toBe(true);
+      switch (outcome) {
+        case 'queued-pause': {
+          const store = new SqlQueueStore(db);
+          const worker = randomUUID();
+          await store.initialize([QueueName.MetadataExtraction, QueueName.ThumbnailGeneration], worker);
+          await sql`UPDATE job_run_item SET state='pending' WHERE "runId"=${id}::uuid AND stage IN (${JobName.AssetExtractMetadata},${JobName.AssetGenerateThumbnails})`.execute(
+            db,
+          );
+          await store.feedManifest(QueueName.MetadataExtraction);
+          const [active] = await store.claim(QueueName.MetadataExtraction, worker, 1);
+          expect(active.runId).toBe(id);
+          await sql`UPDATE job_queue SET concurrency=1 WHERE name=${QueueName.ThumbnailGeneration}`.execute(db);
+          await store.enqueue([
+            {
+              queue: QueueName.ThumbnailGeneration,
+              name: JobName.AssetGenerateThumbnails,
+              data: { id: randomUUID() },
+              safeToRetry: true,
+              sensitive: false,
+              deadlineMs: 60_000,
+            },
+          ]);
+          const [occupying] = await store.claim(QueueName.ThumbnailGeneration, worker, 1);
+          await store.feedManifest(QueueName.ThumbnailGeneration);
+          expect(await store.claim(QueueName.ThumbnailGeneration, worker)).toEqual([]);
+          await make().setPaused(true);
+          await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup}',(selection->'managerSetup')-'paused') WHERE id=${id}::uuid`.execute(
+            db,
+          );
+          await make().begin(); // A restarted Manager repairs the durable hold before accepting more work.
+          expect(await store.complete(occupying, [])).toBe(true);
+          expect(await store.claim(QueueName.ThumbnailGeneration, worker)).toEqual([]);
+          expect(await store.complete(active, [])).toBe(true);
+          await store.enqueue([
+            {
+              queue: QueueName.ThumbnailGeneration,
+              name: JobName.AssetGenerateThumbnails,
+              data: { id: randomUUID() },
+              safeToRetry: true,
+              sensitive: false,
+              deadlineMs: 60_000,
+            },
+          ]);
+          const [other] = await store.claim(QueueName.ThumbnailGeneration, worker, 1);
+          expect(other.runId).toBeNull();
+          expect(await store.complete(other, [])).toBe(true);
+          await make().setPaused(false);
+          const [resumed] = await store.claim(QueueName.ThumbnailGeneration, worker, 1);
+          expect(resumed.runId).toBe(id);
+
+          break;
         }
-        expect((await make().status()).phase).toBe('complete');
-        expect(await make().progress()).toMatchObject({
-          completedAt: expect.any(String),
-          stages: expect.arrayContaining([{ id: 'search', status: 'waiting', disabled: true, done: 0, total: 0 }]),
-        });
-        expect((await sql`SELECT "dependencyReason" FROM job WHERE "runId"=${id}::uuid`.execute(db)).rows).toEqual([
-          { dependencyReason: 'workload-disabled' },
-          { dependencyReason: 'workload-disabled' },
-        ]);
-      } else {
-        await sql`UPDATE job_run_item SET state=${outcome} WHERE "runId"=${id}::uuid AND stage=${JobName.SmartSearch}`.execute(
-          db,
-        );
-        expect((await make().status()).phase).toBe('needs-attention');
-        expect(await make().progress()).toMatchObject({ phase: 'needs-attention', completedAt: null });
-        expect((await make().progress()).stages.find(({ id }) => id === 'search')?.status).not.toBe('done');
+        case 'scans-pause':
+        case 'pause-rollback': {
+          const createScan = (status: MediaOperationStatus) =>
+            operations.create({
+              ownerId,
+              kind: MediaOperationKind.LibraryScan,
+              status,
+              destination: MediaOperationDestination.Local,
+              label: 'Synthetic library scan',
+              snapshot: {},
+              settings: {},
+              ...(status === MediaOperationStatus.Rendering && {
+                claimToken: randomUUID(),
+                claimedBy: 'synthetic-worker',
+                claimExpiresAt: new Date(Date.now() + 60_000),
+              }),
+            });
+          const queued = (await createScan(MediaOperationStatus.Queued)).id;
+          const running = (await createScan(MediaOperationStatus.Rendering)).id;
+          await sql`UPDATE system_metadata SET value=jsonb_set(value,'{scans}',${JSON.stringify({ first: queued, second: running })}::text::jsonb)
+          WHERE key=${`frameleaf-manager-library-setup:${installation}`}`.execute(db);
+          if (outcome === 'pause-rollback') {
+            const pause = operations.requestPause.bind(operations);
+            vi.spyOn(operations, 'requestPause').mockImplementationOnce(async (...args) => {
+              await pause(...args);
+              throw new Error('synthetic pause failure');
+            });
+            await expect(make().setPaused(true)).rejects.toThrow('synthetic pause failure');
+            expect((await make().progress()).paused).toBe(false);
+            expect(
+              (
+                await sql`SELECT selection #> '{managerSetup,paused}' AS paused FROM job_run WHERE id=${id}::uuid`.execute(
+                  db,
+                )
+              ).rows[0].paused,
+            ).toBe(false);
+          } else {
+            await make().setPaused(true);
+            expect(
+              (await sql`SELECT status FROM media_operation WHERE id=${queued}::uuid`.execute(db)).rows[0].status,
+            ).toBe(MediaOperationStatus.Paused);
+            expect(
+              (
+                await sql`SELECT "pauseRequestedAt" IS NOT NULL AS paused FROM media_operation WHERE id=${running}::uuid`.execute(
+                  db,
+                )
+              ).rows[0].paused,
+            ).toBe(true);
+            await make().setPaused(false);
+            expect(
+              (await sql`SELECT status FROM media_operation WHERE id=${queued}::uuid`.execute(db)).rows[0].status,
+            ).toBe(MediaOperationStatus.Queued);
+          }
+          expect(
+            (await sql`SELECT 1 FROM media_operation WHERE "pauseRequestedAt" IS NOT NULL`.execute(db)).rows,
+          ).toEqual([]);
+          break;
+        }
+        case 'empty': {
+          await sql`UPDATE job_run SET "enumerationDone"=false WHERE id=${id}::uuid`.execute(db);
+          expect((await make().progress()).stages.find(({ id }) => id === 'thumbnails')?.status).toBe('running');
+          await sql`UPDATE job_run SET "enumerationDone"=true WHERE id=${id}::uuid`.execute(db);
+          expect((await make().status()).phase).toBe('complete');
+          expect((await make().progress()).stages.find(({ id }) => id === 'thumbnails')?.status).toBe('done');
+
+          break;
+        }
+        case 'terminal-alias': {
+          const store = new SqlQueueStore(db);
+          const worker = randomUUID();
+          await store.initialize([QueueName.SmartSearch], worker);
+          await sql`UPDATE job_run_item SET state='pending' WHERE "runId"=${id}::uuid AND stage=${JobName.SmartSearch}`.execute(
+            db,
+          );
+          await store.feedManifest(QueueName.SmartSearch);
+          const [claim] = await store.claim(QueueName.SmartSearch, worker, 1);
+          expect(await store.complete(claim, [])).toBe(true);
+          await sql`UPDATE job_run_item SET state='active' WHERE "runId"=${id}::uuid AND stage=${JobName.SmartSearch}`.execute(
+            db,
+          );
+          expect((await make().status()).phase).toBe('complete');
+          expect(await make().progress()).toMatchObject({ completedAt: expect.any(String) });
+
+          break;
+        }
+        default: {
+          if (outcome.startsWith('disabled')) {
+            const store = new SqlQueueStore(db);
+            const worker = randomUUID();
+            const smart = newTestService(SmartInfoService).sut;
+            const faces = newTestService(PersonService).sut;
+            const disabled = structuredClone(defaults);
+            disabled.machineLearning.enabled = false;
+            vi.spyOn(smart, 'getConfig').mockResolvedValue(disabled);
+            vi.spyOn(faces, 'getConfig').mockResolvedValue(disabled);
+            await store.initialize([QueueName.SmartSearch, QueueName.FaceDetection], worker);
+            for (const [stage, queue] of [
+              [JobName.SmartSearch, QueueName.SmartSearch],
+              [JobName.AssetDetectFaces, QueueName.FaceDetection],
+            ] as const) {
+              await sql`UPDATE job_run_item SET state='pending' WHERE "runId"=${id}::uuid AND stage=${stage}`.execute(
+                db,
+              );
+              await store.feedManifest(queue);
+              const [claim] = await store.claim(queue, worker, 1);
+              expect(claim).toBeDefined();
+              const invoke = () =>
+                stage === JobName.SmartSearch
+                  ? smart.handleEncodeClip({ id: assetId })
+                  : faces.handleDetectFaces({ id: assetId });
+              await expect(
+                queueExecution.run(
+                  {
+                    claim,
+                    signal: new AbortController().signal,
+                    progress: () => {},
+                    followups: [],
+                    adoptions: [],
+                    buffering: false,
+                    progressUnits: 0,
+                  },
+                  invoke,
+                ),
+              ).rejects.toMatchObject({ reason: 'workload-disabled' });
+              expect(await store.defer(claim, 'workload-disabled')).toBe(true);
+            }
+            if (outcome === 'disabled-people') {
+              // A retained people-preview child remains required while the AI stages wait for enablement.
+              await sql`INSERT INTO job_run_item("runId","itemKey",stage,queue,state,selection)
+            VALUES(${id}::uuid,${randomUUID()},${JobName.PersonGenerateThumbnail},${QueueName.ThumbnailGeneration},'pending','{}'::jsonb)`.execute(
+                db,
+              );
+              expect((await make().status()).phase).toBe('verifying');
+              const previews = (await make().progress()).stages.find(({ id }) => id === 'thumbnails');
+              expect(previews).toMatchObject({ total: 2, done: 1, status: 'running' });
+              await sql`UPDATE job_run_item SET state='completed' WHERE "runId"=${id}::uuid AND stage=${JobName.PersonGenerateThumbnail}`.execute(
+                db,
+              );
+              await sql`UPDATE system_metadata SET value=jsonb_set(value,'{quietSince}',${JSON.stringify(Date.now() - 11_000)}::text::jsonb)
+            WHERE key=${`frameleaf-manager-library-setup:${installation}`}`.execute(db);
+            }
+            expect((await make().status()).phase).toBe('complete');
+            expect(await make().progress()).toMatchObject({
+              completedAt: expect.any(String),
+              stages: expect.arrayContaining([{ id: 'search', status: 'waiting', disabled: true, done: 0, total: 0 }]),
+            });
+            expect((await sql`SELECT "dependencyReason" FROM job WHERE "runId"=${id}::uuid`.execute(db)).rows).toEqual([
+              { dependencyReason: 'workload-disabled' },
+              { dependencyReason: 'workload-disabled' },
+            ]);
+          } else {
+            await sql`UPDATE job_run_item SET state=${outcome} WHERE "runId"=${id}::uuid AND stage=${JobName.SmartSearch}`.execute(
+              db,
+            );
+            expect((await make().status()).phase).toBe('needs-attention');
+            expect(await make().progress()).toMatchObject({ phase: 'needs-attention', completedAt: null });
+            expect((await make().progress()).stages.find(({ id }) => id === 'search')?.status).not.toBe('done');
+          }
+        }
       }
       return;
     }

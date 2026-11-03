@@ -31,6 +31,7 @@ const managerSchema = z.strictObject({
 });
 export type ManagerLibrarySetup = z.infer<typeof managerSchema>;
 const setupMarkerSchema = managerSchema.extend({
+  paused: z.boolean().optional(),
   preparedAt: z
     .string()
     .refine((value) => Number.isFinite(Date.parse(value)))

@@ -198,7 +198,7 @@
   onDestroy(() => document.documentElement.style.removeProperty('--fl-setup-bar-height'));
 </script>
 
-{#if visible && progress && (current || attention)}
+{#if visible && progress}
   <div
     class="fl-setup-bar"
     class:is-paused={progress.paused}
