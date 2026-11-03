@@ -54,7 +54,7 @@ const PATH_SECRET_ROUTES = [
 const redactPathSecrets = (url: string) => {
   for (const route of PATH_SECRET_ROUTES) {
     if (route.test(url)) {
-      return url.replace(route, `$1${REDACTED}`);
+      return url.replace(route, (_match, prefix: string) => `${prefix}${REDACTED}`);
     }
   }
   return url;
