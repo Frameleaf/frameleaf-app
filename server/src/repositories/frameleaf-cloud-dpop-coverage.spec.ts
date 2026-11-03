@@ -73,6 +73,8 @@ const RAW_FETCH = {
 
 /** Every file that opens a socket itself. */
 const RAW_SOCKETS = {
+  // Operator-configured isolated PhotoPrism restore; source database credentials only, never Cloud identity.
+  'library-import/photoprism-mariadb-source.ts': 'isolated PhotoPrism database restore',
   // Operator-configured restored PiGallery2 database; source DB credentials only, never Cloud identity.
   'library-import/pigallery2-mysql-source.ts': 'isolated PiGallery2 database restore',
   // Operator-configured restored Piwigo database; source DB credentials only, never a Cloud token or instance identity.

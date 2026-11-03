@@ -26,7 +26,7 @@ const contentTables = [
   'folders',
   'duplicates',
 ] as const;
-const projections = {
+export const photoprismProjections = {
   ...Object.fromEntries(contentTables.map((name) => [name, { name, columns: '*' }])),
   users: {
     name: 'auth_users',
@@ -50,9 +50,9 @@ const projections = {
 } as Record<PhotoprismTable, { name: string; columns: string }>;
 export type PhotoprismTable = (typeof contentTables)[number] | 'users' | 'markers' | 'links' | 'shares';
 export type PhotoprismRow = Record<string, SQLOutputValue>;
-export const photoprismTables = Object.keys(projections) as PhotoprismTable[];
+export const photoprismTables = Object.keys(photoprismProjections) as PhotoprismTable[];
 
-const relationshipChecks = [
+export const photoprismRelationshipChecks = [
   [
     'PHOTOPRISM_FILE_PHOTO_MISMATCH',
     'SELECT 1 FROM files f LEFT JOIN photos p ON p.photo_uid=f.photo_uid WHERE p.id IS NULL OR f.photo_id IS NULL OR f.photo_id<>p.id LIMIT 1',
@@ -138,7 +138,7 @@ export const openPhotoprismSnapshot = (path: string, version: string) => {
       ),
     validateRelationships: () => {
       try {
-        for (const [code, sql] of relationshipChecks) {
+        for (const [code, sql] of photoprismRelationshipChecks) {
           if (database.prepare(sql).get()) throw new PhotoprismReadError(code);
         }
       } catch (error) {
@@ -154,8 +154,8 @@ export const openPhotoprismSnapshot = (path: string, version: string) => {
       }
     },
     *rows(table: PhotoprismTable): Generator<PhotoprismRow[]> {
-      if (!Object.hasOwn(projections, table)) throw new PhotoprismReadError('PHOTOPRISM_TABLE_NOT_ALLOWED');
-      const { name, columns } = projections[table];
+      if (!Object.hasOwn(photoprismProjections, table)) throw new PhotoprismReadError('PHOTOPRISM_TABLE_NOT_ALLOWED');
+      const { name, columns } = photoprismProjections[table];
       try {
         const select = `SELECT rowid AS __frameleaf_cursor,${columns} FROM "${name}"`;
         const first = database.prepare(`${select} ORDER BY rowid LIMIT 1000`);
