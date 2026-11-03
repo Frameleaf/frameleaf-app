@@ -270,6 +270,12 @@ describe('PiGallery2 common manifest mapping', () => {
     'refuses unrepresentable keyword tags before producing a manifest (%s)',
     (keywords) => {
       database.prepare('UPDATE media_entity SET metadataKeywords=? WHERE id=6').run(keywords);
+      expect(database.prepare('SELECT hex(metadataKeywords) AS bytes FROM media_entity WHERE id=6').get()?.bytes).toBe(
+        Buffer.from(keywords).toString('hex').toUpperCase(),
+      );
+      const probe = pigallery2.openPigallery2Snapshot(path, '3.5.2');
+      opened.push(probe);
+      expect([...probe.rows('media_entity')].flat().find((row) => row.id === 6n)?.metadataKeywords).toBe(keywords);
       expect(() => read()).toThrow('PIGALLERY2_METADATA_INVALID');
     },
   );
