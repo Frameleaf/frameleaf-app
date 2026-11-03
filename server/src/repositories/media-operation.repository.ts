@@ -202,6 +202,7 @@ export type CloudMlJobSpendRow = {
   remoteJobId: string | null;
   result: unknown;
   holdUsd: number | null;
+  approvedMaximumUsd?: number | null;
   settledUsd: number | null;
 };
 /**
@@ -2007,6 +2008,9 @@ export class MediaOperationRepository {
         'media_operation.remoteJobId',
         'media_operation.result',
         sql<number | null>`("media_operation"."snapshot" -> 'approved' ->> 'holdUsd')::double precision`.as('holdUsd'),
+        sql<number | null>`("media_operation"."snapshot" -> 'approved' ->> 'approvedMaximumUsd')::double precision`.as(
+          'approvedMaximumUsd',
+        ),
         'ml_workload_accounting.costUsd as settledUsd',
       ])
       .where('media_operation.kind', '=', MediaOperationKind.CloudMlJob)

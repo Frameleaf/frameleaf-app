@@ -869,6 +869,25 @@ describe(CloudMlJobService.name, () => {
       await expect(confirm(owner, estimate.estimateId)).resolves.toMatchObject({ operationId: OPERATION_ID });
     });
 
+    it('checks a routed maximum above its hold both in the quote and locked confirmation', async () => {
+      configure({ spenders: [{ userId: owner.user.id, monthlyCapUsd: 2.5 }] });
+      mocks.frameleafCloudMl.createEstimate.mockResolvedValue({
+        ...sealed,
+        routing: {
+          quotedComputeSku: sealed.computeSku,
+          perSecondUsd: 0.001301,
+          startFeeUsd: 0.1,
+          plannedWorkers: 5,
+          approvedMaximumUsd: 3,
+        },
+      });
+      const estimate = await sut.estimate(owner, preview(), now);
+      expect(estimate).toMatchObject({ holdUsd: 2, approvedMaximumUsd: 3 });
+      expect(estimate.permission).toMatchObject({ canConfirm: false, reason: 'monthly-cap' });
+      await expect(confirm(owner, estimate.estimateId)).rejects.toMatchObject({ status: 403 });
+      expect(mocks.mediaOperation.createWithin).not.toHaveBeenCalled();
+    });
+
     it('lets an administrator confirm without being on the list', async () => {
       configure({ spenders: [] });
 
@@ -928,6 +947,13 @@ describe(CloudMlJobService.name, () => {
 
     it('counts settled charges, the holds of unsettled jobs, and nothing for a job never sent', () => {
       expect(cloudMlJobSpentUsd(month)).toBe(4.8);
+      expect(cloudMlJobSpentUsd([{ ...month[2], approvedMaximumUsd: 3 }])).toBe(0);
+      expect(cloudMlJobSpentUsd([{ ...month[1], approvedMaximumUsd: 3.000049 }])).toBe(3.000049);
+      expect(
+        cloudMlJobSpentUsd([
+          { ...month[1], status: MediaOperationStatus.Queued, remoteJobId: null, holdUsd: 2, approvedMaximumUsd: 3 },
+        ]),
+      ).toBe(3);
       const settledLater = {
         status: MediaOperationStatus.Completed,
         remoteJobId: 'job-c',
@@ -948,6 +974,7 @@ describe(CloudMlJobService.name, () => {
       };
       // a finished job whose cost was read but whose accounting row is not settled yet counts that cost
       expect(cloudMlJobSpentUsd([settledLater])).toBe(0.25);
+      expect(cloudMlJobSpentUsd([{ ...settledLater, approvedMaximumUsd: 3 }])).toBe(0.25);
       // one not sent yet counts the most a reseal could hold
       expect(cloudMlJobSpentUsd([{ ...settledLater, status: MediaOperationStatus.Queued, result: {} }])).toBe(2.2);
       // one sent counts what the AI Wallet actually holds for it, a resealed hold included
@@ -3063,6 +3090,49 @@ describe(CloudMlJobService.name, () => {
       await expect(
         sut.upgrade(owner, OPERATION_ID, { estimateId: quote.estimateId, acknowledgeMaximum: true }, now),
       ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it.each([MediaOperationStatus.Completed, MediaOperationStatus.Failed, MediaOperationStatus.Cancelled, null])(
+      'releases an old upgrade reservation after its operation is terminal or missing: %s',
+      async (status) => {
+        configure({ spenders: [{ userId: owner.user.id, monthlyCapUsd: 3 }] });
+        const quote = await sut.estimateUpgrade(owner, OPERATION_ID, now);
+        await sut.upgrade(owner, OPERATION_ID, { estimateId: quote.estimateId, acknowledgeMaximum: true }, now);
+        mocks.mediaOperation.listCloudMlJobSpend.mockResolvedValue([]);
+        mocks.mediaOperation.getForOwner.mockResolvedValue(status === null ? undefined : { ...created!, status });
+        const nextMonth = new Date('2026-10-01T00:00:00.000Z');
+        expect(await sut.spendPermission(owner, 0.2, nextMonth, { exactHold: true })).toMatchObject({
+          canConfirm: true,
+          spentThisMonthUsd: 0,
+        });
+        await sut.pruneEstimates(nextMonth);
+        expect(metadata.get(SystemMetadataKey.FrameleafCloudMlJobEstimates)).toMatchObject({ upgrades: [] });
+      },
+    );
+
+    it.each([
+      [MediaOperationStatus.Rendering, '2026-10-01T00:00:00.000Z'],
+      [MediaOperationStatus.Completed, now.toISOString()],
+    ])('retains unsettled open or current-month upgrade reservations: %s', async (status, at) => {
+      configure({ spenders: [{ userId: owner.user.id, monthlyCapUsd: 3 }] });
+      const quote = await sut.estimateUpgrade(owner, OPERATION_ID, now);
+      await sut.upgrade(owner, OPERATION_ID, { estimateId: quote.estimateId, acknowledgeMaximum: true }, now);
+      mocks.mediaOperation.listCloudMlJobSpend.mockResolvedValue([]);
+      mocks.mediaOperation.getForOwner.mockResolvedValue({ ...created!, status });
+      expect(await sut.spendPermission(owner, 0.2, new Date(at), { exactHold: true })).toMatchObject({
+        canConfirm: false,
+        spentThisMonthUsd: 2.9,
+      });
+      await sut.pruneEstimates(new Date(at));
+      expect(metadata.get(SystemMetadataKey.FrameleafCloudMlJobEstimates)).toMatchObject({
+        upgrades: [expect.objectContaining({ id: quote.estimateId })],
+      });
+    });
+
+    it('prunes an expired upgrade quote that was never submitted', async () => {
+      await sut.estimateUpgrade(owner, OPERATION_ID, now);
+      await sut.pruneEstimates(new Date('2026-10-01T00:00:00.000Z'));
+      expect(metadata.get(SystemMetadataKey.FrameleafCloudMlJobEstimates)).toMatchObject({ upgrades: [] });
     });
   });
 

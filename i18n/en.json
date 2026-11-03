@@ -5365,6 +5365,7 @@
   "frameleaf_cloud_job_fact_per_unit": "Per {unit, select, photo {photo} other {minute}}",
   "frameleaf_cloud_job_fact_upscale": "Upscale",
   "frameleaf_cloud_job_keeps_going": "You can close this; the job keeps going in Activity.",
+  "frameleaf_cloud_job_legacy_price_tolerance": "Your model stays the same. If a queued estimate expires, its estimated total may rise by up to 10% within the existing allowance; a larger increase needs your approval.",
   "frameleaf_cloud_job_model_label": "Model · lighter to heavier",
   "frameleaf_cloud_job_model_mismatch": "That model is no longer offered for this work. Choose a model again.",
   "frameleaf_cloud_job_model_rate": "{gpu} · {rate} per minute of GPU time + {fee} start fee",

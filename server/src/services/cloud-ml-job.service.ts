@@ -639,9 +639,14 @@ export class CloudMlJobService {
       consent: { version: consent.requiredVersion, summary: consent.summary, documentUrl: consent.documentUrl },
       refusal: this.walletRefusal(wallet, availableUsd, cloudCustomerCost(sealed).hold),
       // everyone may see what a job would cost; only those allowed may confirm it
-      permission: await this.spendPermission(auth, cloudCustomerCost(sealed).hold, now, {
-        exactHold: !!sealed.routing,
-      }),
+      permission: await this.spendPermission(
+        auth,
+        sealed.routing?.approvedMaximumUsd ?? cloudCustomerCost(sealed).hold,
+        now,
+        {
+          exactHold: !!sealed.routing,
+        },
+      ),
       upscale: upscale
         ? {
             requestedScale: upscale.requestedScale,
@@ -753,8 +758,8 @@ export class CloudMlJobService {
     // An owner can approve an upgrade to a job originally confirmed by another permitted person.
     for (const reservation of reservations.values()) {
       const operation = await this.mediaOperationRepository.getForOwner(reservation.operationId, auth.user.id);
-      const result = parseCloudMlJobResult(operation?.result);
-      if (!result.cost || Date.parse(reservation.attemptedAt) >= cloudMlJobMonthStart(now).getTime()) {
+      if (this.keepUpgradeReservation(operation, reservation.attemptedAt, now)) {
+        const result = parseCloudMlJobResult(operation!.result);
         reserved.push({ reservedUsd: reservation.maximum, settledUsd: result.cost?.totalUsd ?? null });
       }
     }
@@ -768,6 +773,17 @@ export class CloudMlJobService {
       monthlyCapUsd: spender.monthlyCapUsd,
       spentThisMonthUsd: spent,
     };
+  }
+
+  private keepUpgradeReservation(operation: MediaOperation | undefined, attemptedAt: string, now: Date): boolean {
+    if (!operation) return false;
+    const result = parseCloudMlJobResult(operation.result);
+    const open =
+      !result.cost &&
+      ![MediaOperationStatus.Completed, MediaOperationStatus.Failed, MediaOperationStatus.Cancelled].includes(
+        operation.status as MediaOperationStatus,
+      );
+    return open || Date.parse(attemptedAt) >= cloudMlJobMonthStart(now).getTime();
   }
 
   /** Refuse a confirmation this person may not make, in plain words; never left to the web app. */
@@ -850,7 +866,7 @@ export class CloudMlJobService {
       // checked under the estimates lock, so two confirmations at once cannot both fit one monthly limit
       await this.requireSpendPermission(
         auth,
-        record.approved.holdUsd,
+        record.approved.approvedMaximumUsd ?? record.approved.holdUsd,
         now,
         record.approved.approvedMaximumUsd !== undefined,
       );
@@ -1278,11 +1294,26 @@ export class CloudMlJobService {
         }
         return keep;
       });
-      if (records.length !== store.records.length || prepared.length !== (store.prepared ?? []).length || add) {
+      const upgrades: CloudMlJobUpgradeRecord[] = [];
+      for (const entry of store.upgrades ?? []) {
+        if (!entry.attemptedAt) {
+          if (Date.parse(entry.quote.expiresAt) > now.getTime()) upgrades.push(entry);
+          continue;
+        }
+        const operation = await this.mediaOperationRepository.getForOwner(entry.operationId, entry.createdBy);
+        if (this.keepUpgradeReservation(operation, entry.attemptedAt, now)) upgrades.push(entry);
+      }
+      if (
+        records.length !== store.records.length ||
+        prepared.length !== (store.prepared ?? []).length ||
+        upgrades.length !== (store.upgrades ?? []).length ||
+        add
+      ) {
         await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudMlJobEstimates, {
           ...store,
           records,
           prepared,
+          ...(store.upgrades && { upgrades }),
         });
       }
     });

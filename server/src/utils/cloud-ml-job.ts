@@ -473,8 +473,9 @@ export const cloudMlJobMonthStart = (now: Date): Date => new Date(Date.UTC(now.g
 /**
  * What one person's confirmed jobs count against their monthly limit (FL-162 owner decision): a
  * settled job its settled charge; a job still running (or ended but not settled) the amount the AI
- * Wallet holds for it, or, before it was sent, the most a reseal could hold (its confirmed hold plus
- * `CLOUD_ML_JOB_PRICE_TOLERANCE`); and a job that ended before anything was sent nothing.
+ * Wallet holds for it, or its explicitly approved routed maximum. Before a legacy job was sent,
+ * reserve the most a reseal could hold (`CLOUD_ML_JOB_PRICE_TOLERANCE`); a job that ended before
+ * anything was sent counts nothing.
  */
 export const cloudMlJobSpentUsd = (
   rows: ReadonlyArray<
@@ -483,6 +484,7 @@ export const cloudMlJobSpentUsd = (
         remoteJobId: string | null;
         result: unknown;
         holdUsd: number | null;
+        approvedMaximumUsd?: number | null;
         settledUsd: number | null;
       }
     | { reservedUsd: number; settledUsd: number | null }
@@ -513,9 +515,13 @@ export const cloudMlJobSpentUsd = (
     }
     const submitted = result.submission?.attemptedAt ? result.submission.holdUsd : null;
     const held = result.job ? Math.max(result.job.holdUsd, submitted ?? 0) : submitted;
-    total += held ?? (row.holdUsd ?? 0) * CLOUD_ML_JOB_PRICE_TOLERANCE;
+    const maximum = row.approvedMaximumUsd ?? result.job?.routing?.approvedMaximumUsd;
+    total +=
+      maximum === undefined || maximum === null
+        ? (held ?? (row.holdUsd ?? 0) * CLOUD_ML_JOB_PRICE_TOLERANCE)
+        : Math.max(maximum, result.job?.routing?.approvedMaximumUsd ?? 0, held ?? 0);
   }
-  return Math.round(total * 10_000) / 10_000;
+  return Math.round(total * 1_000_000) / 1_000_000;
 };
 
 /**

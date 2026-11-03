@@ -56,6 +56,15 @@ describe('CloudJobDialog: photo upscale under the 64 MP output cap (FC-46)', () 
     open();
     expect(await screen.findByText('frameleaf_cloud_job_authorized_maximum')).toBeInTheDocument();
     expect(messages.frameleaf_cloud_job_authorized_maximum_help).toMatch(/maximum.*approve.*higher/i);
+    expect(screen.getByText('frameleaf_cloud_job_never_fallback')).toBeInTheDocument();
+    expect(screen.queryByText('frameleaf_cloud_job_legacy_price_tolerance')).not.toBeInTheDocument();
+  });
+
+  it('describes the legacy reseal tolerance without promising approval for every price change', async () => {
+    sdkMock.estimateCloudMlJob.mockResolvedValue(estimate(null));
+    open();
+    expect(await screen.findByText('frameleaf_cloud_job_legacy_price_tolerance')).toBeInTheDocument();
+    expect(screen.queryByText('frameleaf_cloud_job_never_fallback')).not.toBeInTheDocument();
   });
 
   it('shows the lowered factor and what it changes before the owner confirms', async () => {

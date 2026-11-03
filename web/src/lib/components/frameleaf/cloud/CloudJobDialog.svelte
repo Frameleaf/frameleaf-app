@@ -4,7 +4,7 @@
    * CloudJobDialog.jsx and cloud-job.css): the model on its slider, the server's estimate as a p50–p90
    * range with how it is billed (metered GPU time × rate + a start fee per worker, never a fixed
    * price), the amount the AI Wallet holds, and a per-job consent naming the terms version. A refusal
-   * replaces the submit button. GPU pricing changes require a separate approval. Once confirmed, the dialog
+   * replaces the submit button. Routed GPU pricing changes require a separate approval. Once confirmed, the dialog
    * follows the same durable job Activity shows, so the two always agree; closing it leaves the job
    * running.
    *
@@ -376,7 +376,13 @@
           </label>
         {/if}
       {/if}
-      <p class="fcj-note">{$t('frameleaf_cloud_job_never_fallback')}</p>
+      <p class="fcj-note">
+        {$t(
+          estimate?.approvedMaximumUsd !== undefined
+            ? 'frameleaf_cloud_job_never_fallback'
+            : 'frameleaf_cloud_job_legacy_price_tolerance',
+        )}
+      </p>
     {:else}
       <div class="fcj-run" aria-live="polite">
         <div class="fcj-run-head">

@@ -114,11 +114,13 @@ export class SqlQueueStore {
           rows: [existing],
         } = await sql<{
           id: string;
+          name: string;
+          data: Record<string, unknown>;
           state: QueueState;
           latestPending: QueueIntent | null;
           ownsProducerState: boolean;
         }>`
-          select j.id, j.state, j."latestPending",
+          select j.id, j.name, j.data, j.state, j."latestPending",
             (j.data ? '_producerCheckpoints' or exists (
               select 1 from job_selection s where s."producerId" = j.id) or exists (
               select 1 from job_library_source_producer link where link."producerId" = j.id)) as "ownsProducerState"
@@ -126,24 +128,51 @@ export class SqlQueueStore {
           and j.state in ('pending','waiting','active') for update of j
         `.execute(db);
         if (existing) {
-          if (intent.options?.deduplication?.keepLastIfActive) {
+          const previous = existing.latestPending;
+          const sharedSealing =
+            intent.name === JobName.LockedSeal &&
+            existing.name === intent.name &&
+            typeof intent.data.id === 'string' &&
+            existing.data.id === intent.data.id &&
+            !existing.ownsProducerState &&
+            (!previous || (previous.name === intent.name && previous.data.id === intent.data.id));
+          // A pending seal covers every accepted publication for this asset. Keep its original
+          // execution owner and attach accounting aliases; these are obligations, not replacements.
+          if (intent.options?.deduplication?.keepLastIfActive && (!sharedSealing || existing.state === 'active')) {
             const deferred = existing.state === 'active' || existing.ownsProducerState;
-            const previous = existing.latestPending;
-            const superseded = await supersedeSelectionLineage(
-              db,
-              deferred
-                ? {
-                    items:
-                      previous?.runId && previous.itemKey
-                        ? [
-                            { runId: previous.runId, itemKey: previous.itemKey, stage: previous.name },
-                            ...(previous.memberships ?? []).map((member) => ({ ...member, stage: previous.name })),
-                          ]
-                        : [],
-                  }
-                : { jobIds: [existing.id] },
-              intent,
-            );
+            if (sharedSealing && previous) {
+              const memberships = [...(intent.memberships ?? []), ...(previous.memberships ?? [])];
+              if (previous.runId && previous.itemKey)
+                memberships.push({
+                  runId: previous.runId,
+                  itemKey: previous.itemKey,
+                  rootItemKey: previous.rootItemKey ?? null,
+                });
+              intent.memberships = new Map(
+                memberships.map((member) => [JSON.stringify([member.runId, member.itemKey]), member]),
+              )
+                .values()
+                .toArray();
+            }
+            // The active seal may already have enumerated the old files. Retain one future pass
+            // and all earlier future-pass aliases until that pass reports its fenced outcome.
+            const superseded = sharedSealing
+              ? []
+              : await supersedeSelectionLineage(
+                  db,
+                  deferred
+                    ? {
+                        items:
+                          previous?.runId && previous.itemKey
+                            ? [
+                                { runId: previous.runId, itemKey: previous.itemKey, stage: previous.name },
+                                ...(previous.memberships ?? []).map((member) => ({ ...member, stage: previous.name })),
+                              ]
+                            : [],
+                      }
+                    : { jobIds: [existing.id] },
+                  intent,
+                );
             // A stopped producer may still own a durable snapshot/checkpoint. Rewriting it would
             // orphan its original run and retry state; let it settle before scheduling the latest.
             if (deferred) {
