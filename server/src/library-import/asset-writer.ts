@@ -32,6 +32,7 @@ export class CanonicalAssetWriter {
   private readonly sourceFiles: Map<string, ImportManifest['files'][number]>;
   private readonly plannedFiles: Map<string, DestinationImportPlan['files'][number]>;
   private readonly plan: DestinationImportPlan;
+  private readonly livePhotos: Map<string, string>;
   constructor(
     private readonly db: ImportDatabase,
     context: {
@@ -44,6 +45,9 @@ export class CanonicalAssetWriter {
     this.binding = structuredClone(context.binding);
     this.plan = bindDestinationImportPlan(context.plan, this.binding, context.manifest, context.destinationId);
     const manifest = parseImportManifest(context.manifest);
+    this.livePhotos = new Map(
+      (manifest.version === 5 ? manifest.livePhotos : []).map((pair) => [pair.photoAssetId, pair.videoAssetId]),
+    );
     this.assets = new Map(manifest.assets.map((asset) => [asset.id, asset]));
     this.sourceFiles = new Map(manifest.files.map((file) => [file.id, file]));
     this.plannedFiles = new Map(this.plan.files.map((file) => [file.id, file]));
@@ -106,14 +110,35 @@ export class CanonicalAssetWriter {
     const primary = files.find((file) => file.id === primaryId)!;
     const bytes = files.reduce((total, file) => total + BigInt(file.bytes), 0n);
     if (bytes > 9_223_372_036_854_775_807n) return refuse('ASSET_SIZE_UNREPRESENTABLE');
+    const livePhotoVideoSourceId = this.livePhotos.get(asset.id);
     const recordSha256 = createHash('sha256')
-      .update(JSON.stringify({ type: item.type, fileModifiedAt: item.fileModifiedAt, asset, files, ownerId }))
+      .update(
+        JSON.stringify({
+          type: item.type,
+          fileModifiedAt: item.fileModifiedAt,
+          asset,
+          files,
+          ownerId,
+          ...(livePhotoVideoSourceId === undefined ? {} : { livePhotoVideoSourceId }),
+        }),
+      )
       .digest('hex');
-    return structuredClone({ item, asset, metadata, ownerId, files, primary, bytes, recordSha256 });
+    return structuredClone({
+      item,
+      asset,
+      metadata,
+      ownerId,
+      files,
+      primary,
+      bytes,
+      recordSha256,
+      livePhotoVideoSourceId,
+    });
   }
 
   async write(input: unknown): Promise<string> {
-    const { item, asset, metadata, ownerId, files, primary, bytes, recordSha256 } = this.prepare(input);
+    const { item, asset, metadata, ownerId, files, primary, bytes, recordSha256, livePhotoVideoSourceId } =
+      this.prepare(input);
     try {
       return await new LibraryImportJournal(this.db).create(
         this.binding,
@@ -131,6 +156,32 @@ export class CanonicalAssetWriter {
             [this.binding.operationId, asset.ownerId, ownerId],
           );
           if (!owner) return refuse('ASSET_OWNER_MAPPING_REQUIRED');
+          let livePhotoVideoId: string | null = null;
+          if (livePhotoVideoSourceId !== undefined) {
+            const video = this.assets.get(livePhotoVideoSourceId)!;
+            if (!('type' in video)) return refuse('ASSET_LIVE_PHOTO_MOTION_INVALID');
+            const expected = this.prepare({
+              sourceAssetId: video.id,
+              type: video.type,
+              fileModifiedAt: video.fileModifiedAt,
+              originalFileNames: video.originalFileNames,
+            });
+            const rows = await tx.query(
+              `SELECT a.id::text,m.record_sha256 FROM public.frameleaf_library_import_mapping m
+              JOIN public.asset a ON a.id=m.destination_id WHERE m.operation_id=$1::uuid
+              AND m.entity_kind='asset' AND m.source_id=$2 AND a."ownerId"=$3::uuid
+              AND a.type='VIDEO' AND a.visibility='hidden' AND a.status='active' AND a."deletedAt" IS NULL
+              AND a."livePhotoVideoId" IS NULL AND a."stackId" IS NULL
+              AND NOT EXISTS(SELECT 1 FROM public.asset_lock l WHERE l."assetId"=a.id)
+              AND NOT EXISTS(SELECT 1 FROM public.album_asset aa WHERE aa."assetId"=a.id)
+              AND NOT EXISTS(SELECT 1 FROM public.asset p WHERE p."livePhotoVideoId"=a.id)
+              FOR UPDATE OF a`,
+              [this.binding.operationId, livePhotoVideoSourceId, ownerId],
+            );
+            if (rows.length !== 1 || rows[0].record_sha256 !== expected.recordSha256 || typeof rows[0].id !== 'string')
+              return refuse('ASSET_LIVE_PHOTO_MOTION_INVALID');
+            livePhotoVideoId = rows[0].id;
+          }
           if ((await tx.query('SELECT 1 FROM pg_timezone_names WHERE name=$1', [metadata.timeZone])).length !== 1)
             return refuse('ASSET_TIME_ZONE_UNSUPPORTED');
           await tx.query('SELECT pg_advisory_xact_lock_shared($1::bigint)', [BUDDY_CAPTURE_LOCK]);
@@ -157,9 +208,9 @@ export class CanonicalAssetWriter {
           }
           await tx.query(
             `INSERT INTO public.asset(id,"ownerId",type,"originalPath","physicalOriginalFileId",checksum,"checksumAlgorithm",
-          "fileCreatedAt","localDateTime","fileModifiedAt","originalFileName","isFavorite",visibility,status,"deletedAt")
+          "fileCreatedAt","localDateTime","fileModifiedAt","originalFileName","isFavorite",visibility,status,"deletedAt","livePhotoVideoId")
           VALUES($1::uuid,$2::uuid,$3,$4,$5::uuid,decode($6,'hex'),'sha256',$7::timestamptz,
-          ($7::timestamptz AT TIME ZONE $8) AT TIME ZONE 'UTC',$9::timestamptz,$10,$11,$12::asset_visibility_enum,$13::assets_status_enum,$14::timestamptz)`,
+          ($7::timestamptz AT TIME ZONE $8) AT TIME ZONE 'UTC',$9::timestamptz,$10,$11,$12::asset_visibility_enum,$13::assets_status_enum,$14::timestamptz,$15::uuid)`,
             [
               destinationId,
               ownerId,
@@ -175,6 +226,7 @@ export class CanonicalAssetWriter {
               asset.visibility === 'trash' ? 'timeline' : asset.visibility,
               asset.visibility === 'trash' ? 'trashed' : 'active',
               metadata.deletedAt ?? null,
+              livePhotoVideoId,
             ],
           );
           for (const file of files) {

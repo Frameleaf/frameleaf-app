@@ -57,7 +57,7 @@ export async function reconcileImportedAssets(
         })
         .sort((a, b) => String(a.id).localeCompare(String(b.id)));
       const stackIds = new Map<unknown, string>();
-      if (manifest.version === 4) {
+      if ('stacks' in manifest) {
         const rows = await tx.query(
           `SELECT source_id,destination_id::text,record_sha256 FROM public.frameleaf_library_import_mapping
           WHERE operation_id=$1::uuid AND entity_kind='stack'`,
@@ -91,6 +91,12 @@ export async function reconcileImportedAssets(
         ],
       );
       const byId = new Map(clocks.map((clock) => [clock.id, clock]));
+      const livePhotos = new Map(
+        (manifest.version === 5 ? manifest.livePhotos : []).map((pair) => [
+          pair.photoAssetId,
+          mapped.get(pair.videoAssetId)!.destination_id,
+        ]),
+      );
       const expectedPhotos = expected.map(({ id, item, asset, metadata, ownerId, primary }) => ({
         id,
         ownerId,
@@ -112,7 +118,7 @@ export async function reconcileImportedAssets(
         libraryPath: null,
         isExternal: false,
         isOffline: false,
-        livePhotoVideoId: null,
+        livePhotoVideoId: livePhotos.get(asset.id) ?? null,
         stackId: stackIds.get(id) ?? null,
         duplicateId: null,
         isEdited: false,

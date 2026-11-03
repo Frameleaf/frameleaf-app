@@ -34,7 +34,7 @@ The worker is not wired to a command, API or UI. Capacity preflight, durable roo
 
 ## Complete bundle file ownership
 
-Every physical file in manifest versions 1 through 4 must be referenced by at least one logical photo with a known source owner. This includes originals, sidecars and companions. Parsing and fingerprinting refuse an unreferenced file with `FILE_OWNER_RELATIONSHIP_REQUIRED`; bundle verification refuses it before accessing the filesystem. An archive-only file needs an explicit ownership contract before it can enter this inventory. Empty inventories and source users without photos remain valid, and valid owned inventories retain their existing fingerprints.
+Every physical file in manifest versions 1 through 5 must be referenced by at least one logical photo with a known source owner. This includes originals, sidecars and companions. Parsing and fingerprinting refuse an unreferenced file with `FILE_OWNER_RELATIONSHIP_REQUIRED`; bundle verification refuses it before accessing the filesystem. An archive-only file needs an explicit ownership contract before it can enter this inventory. Empty inventories and source users without photos remain valid, and valid owned inventories retain their existing fingerprints.
 
 Multiple photos may retain a relationship to the same source file without merging their owners. Structural links do not prove source ownership, permission equivalence or safe destination storage/deduplication; adapters and the controller must independently qualify those boundaries. The selected-file byte verifier remains independent of bundle ownership, and the photo writer still refuses unsupported sidecars or companions until their destination handling is implemented.
 
@@ -153,6 +153,8 @@ Manifest version 3 seals each photo's media type, microsecond modified timestamp
 
 Manifest version 4 additionally seals [explicit stack relationships](library-import-stacks.md). Its writer and independent readback preserve the selected primary and exact same-owner membership; incompatible visibility or effective album access refuses grouping. Legacy manifest versions retain their existing behavior.
 
+Manifest version 5 additionally seals [explicit Live Photo relationships](library-import-live-photos.md). Both original assets retain their own bytes, ownership and recovery records; imported regeneration preserves the selected motion reference.
+
 ## Internal owner intent and readback
 
 `CanonicalOwnerWriter` binds the complete manifest and destination plan before deriving source names and explicit destination owner UUIDs. It normalizes the privately supplied email and derives the owner mapping fingerprint itself, including the qualified password capability, source-login evidence and explicit password/claim disposition. A missing password capability never silently selects a claim. Replay refuses changed email, credentials or disposition; account creation and its separate private group commit atomically with the mapping, without email-based account merging or source administration.
@@ -183,7 +185,7 @@ This is an internal recovery primitive. The controller must retain the reviewed 
 
 ## Held regeneration preparation
 
-`JobRepository.prepareImportedLibraryWork` revalidates the retained version 3 or 4 manifest and destination plan against the exact verifying journal. It checks complete source-to-destination photo mappings, distinct canonical photo identities, explicit owner mappings, media types and eligible personal-library rows. The common importer lock and journal row remain held while one database transaction captures every regeneration stage and its prepared marker. Interruption rolls the entire preparation back; recovery reuses the deterministic run identity and audits retained membership without replacing missing or altered snapshots.
+`JobRepository.prepareImportedLibraryWork` revalidates the retained version 3, 4 or 5 manifest and destination plan against the exact verifying journal. It checks complete source-to-destination photo mappings, distinct canonical photo identities, explicit owner mappings, media types and eligible personal-library rows. The common importer lock and journal row remain held while one database transaction captures every regeneration stage and its prepared marker. Interruption rolls the entire preparation back; recovery reuses the deterministic run identity and audits retained membership without replacing missing or altered snapshots.
 
 The `library-import-derived` run retains metadata extraction, asset thumbnails, search embeddings, face detection, video encoding for videos and missing person thumbnails. Person thumbnail selections use each owner's own imported photos, including shared person groups. Face detection retains imported identities, and metadata extraction recognizes both generic runs and existing `import-immich` recovery runs, including shared active job memberships, so stale embedded face tags do not overwrite imported assignments. Imported capture/local/modified clocks remain unchanged; other manually imported metadata continues to use its existing EXIF locks. Generic preparation schedules no automatic identical-file merging.
 
