@@ -53,8 +53,9 @@ describe('absolute edit timezone extraction', () => {
       expect(extractTimeZone('2020-06-10T12:30:00')?.name).toBe('UTC');
       expect(extractTimeZone('2020-06-10T12:30:00-06:00')?.offset(0)).toBe(-360);
       expect(extractTimeZone('2020-06-10T12:30:00Z')?.offset(0)).toBe(0);
-      expect(extractTimeZone('2020-06-10t12:30:00+02:00[Europe/Paris]')?.offset(0)).toBe(120);
-      expect(extractTimeZone('2020-12-10T12:30:00[Europe/Paris]')?.offset(0)).toBe(60);
+      expect(extractTimeZone('2020-06-10t12:30:00+02:00[Europe/Paris]')?.name).toBe('Europe/Paris');
+      expect(extractTimeZone('2020-12-10T12:30:00[Europe/Paris]')?.name).toBe('Europe/Paris');
+      expect(extractTimeZone('2020-12-10T12:30:00[Invalid/Zone]')).toBeUndefined();
       expect(extractTimeZone()).toBeUndefined();
       expect(extractTimeZone('not-a-date')).toBeUndefined();
     },

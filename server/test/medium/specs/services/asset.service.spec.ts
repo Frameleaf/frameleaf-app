@@ -1255,6 +1255,28 @@ describe(AssetService.name, () => {
       });
     });
 
+    it.each([false, true])('retains a named zone for a later shift across DST (bulk: %s)', async (bulk) => {
+      const { sut, ctx } = setup();
+      ctx.getMock(JobRepository).queue.mockResolvedValue();
+      ctx.getMock(JobRepository).queueAll.mockResolvedValue();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newExif({ assetId: asset.id, timeZone: 'UTC' });
+      const dto = { dateTimeOriginal: '2020-03-07T12:30:00-07:00[America/Edmonton]' };
+      if (bulk) await sut.updateAll(auth, { ids: [asset.id], ...dto });
+      else await sut.update(auth, asset.id, dto);
+      await expect(ctx.get(AssetRepository).getById(asset.id, { exifInfo: true })).resolves.toMatchObject({
+        exifInfo: { timeZone: 'America/Edmonton' },
+      });
+      await sut.updateAll(auth, { ids: [asset.id], dateTimeRelative: 1440 });
+      await expect(ctx.get(AssetRepository).getById(asset.id, { exifInfo: true })).resolves.toMatchObject({
+        fileCreatedAt: new Date('2020-03-08T19:30:00Z'),
+        localDateTime: new Date('2020-03-08T13:30:00Z'),
+        exifInfo: { timeZone: 'America/Edmonton' },
+      });
+    });
+
     it('should update dateTimeOriginal', async () => {
       const { sut, ctx } = setup();
       ctx.getMock(JobRepository).queue.mockResolvedValue();
