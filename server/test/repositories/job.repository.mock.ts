@@ -28,6 +28,8 @@ export const newJobRepositoryMock = (): Mocked<RepositoryInterface<JobRepository
     listRunItems: vitest.fn().mockResolvedValue([]),
     listRuns: vitest.fn().mockResolvedValue([]),
     dispatchImportedWork: vitest.fn().mockResolvedValue('test-import-run'),
+    prepareImportedLibraryWork: vitest.fn().mockResolvedValue('test-import-run'),
+    isImportedMetadataJob: vitest.fn().mockResolvedValue(false),
     startWorkers: vitest.fn(),
     stopWorkers: vitest.fn().mockResolvedValue(undefined),
     watchWorkers: vitest.fn(),
