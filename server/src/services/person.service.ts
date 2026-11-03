@@ -80,6 +80,7 @@ import {
   matchAnchoredFaces,
   sameChecksum,
 } from 'src/utils/face-anchor.js';
+import { assignFaceCandidates } from 'src/utils/face-assignment.js';
 import { type FaceSource, getFaceSourceRevision } from 'src/utils/face-source.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
 import {
@@ -1076,7 +1077,6 @@ export class PersonService extends BaseService {
       const facesToAdd: (Insertable<AssetFaceTable> & { id: string })[] = [];
       const embeddings: FaceSearchTable[] = [];
       const mlFaceIds = new Set<string>();
-      const matchedFaceIds = new Set<string>();
       const decided = await this.getDecidedFaceIds(currentAsset);
 
       for (const face of currentAsset.faces) {
@@ -1085,27 +1085,30 @@ export class PersonService extends BaseService {
         }
       }
 
-      for (const { boundingBox, embedding } of faces) {
-        let match: (typeof currentAsset.faces)[number] | undefined;
-        let overlap = 0.5;
-        for (const face of currentAsset.faces) {
-          if (matchedFaceIds.has(face.id)) continue;
-          const widthScale = face.imageWidth / imageWidth;
-          const heightScale = face.imageHeight / imageHeight;
-          const score = this.iou(face, {
-            x1: boundingBox.x1 * widthScale,
-            y1: boundingBox.y1 * heightScale,
-            x2: boundingBox.x2 * widthScale,
-            y2: boundingBox.y2 * heightScale,
-          });
-          if (score > overlap) {
-            match = face;
-            overlap = score;
-          }
-        }
-
+      const retainedFaces = new Map(currentAsset.faces.map((face) => [face.id, face]));
+      const assignments = assignFaceCandidates(
+        faces.map(({ boundingBox }) =>
+          currentAsset.faces
+            .map((face) => {
+              const widthScale = face.imageWidth / imageWidth;
+              const heightScale = face.imageHeight / imageHeight;
+              return {
+                faceId: face.id,
+                overlap: this.iou(face, {
+                  x1: boundingBox.x1 * widthScale,
+                  y1: boundingBox.y1 * heightScale,
+                  x2: boundingBox.x2 * widthScale,
+                  y2: boundingBox.y2 * heightScale,
+                }),
+              };
+            })
+            .filter(({ overlap }) => overlap > 0.5),
+        ),
+      );
+      for (const [index, { boundingBox, embedding }] of faces.entries()) {
+        const matchId = assignments.get(index);
+        const match = matchId === undefined ? undefined : retainedFaces.get(matchId);
         if (match) {
-          matchedFaceIds.add(match.id);
           // Keep the face identity and owner decisions while refreshing derived search data.
           // Imported ML faces can have no face_search row even though detection still matches them.
           mlFaceIds.delete(match.id);

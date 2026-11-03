@@ -533,8 +533,9 @@ describe(PersonService.name, () => {
       },
     );
 
-    it('publishes overlapping detections once per retained manual face', async () => {
+    it.each([false, true])('retains manual-face overlaps (contested=%s)', async (contested) => {
       const { sut, ctx } = setup();
+      ctx.getMock(JobRepository).queueAll.mockResolvedValue();
       const { user } = await ctx.newUser();
       const { asset } = await ctx.newAsset({ ownerId: user.id });
       await ctx.newExif({ assetId: asset.id, description: '' });
@@ -556,10 +557,10 @@ describe(PersonService.name, () => {
         {
           imageWidth: 200,
           imageHeight: 250,
-          boundingBoxX1: 55,
-          boundingBoxY1: 55,
-          boundingBoxX2: 105,
-          boundingBoxY2: 105,
+          boundingBoxX1: contested ? 60 : 55,
+          boundingBoxY1: contested ? 60 : 55,
+          boundingBoxX2: contested ? 110 : 105,
+          boundingBoxY2: contested ? 110 : 105,
         },
       ];
       const ids: string[] = [];
@@ -589,8 +590,16 @@ describe(PersonService.name, () => {
         imageWidth: 400,
         imageHeight: 500,
         faces: [
-          { boundingBox: { x1: 100, y1: 100, x2: 200, y2: 200 }, embedding: embeddings[0], score: 1 },
-          { boundingBox: { x1: 110, y1: 110, x2: 210, y2: 210 }, embedding: embeddings[1], score: 1 },
+          {
+            boundingBox: contested ? { x1: 105, y1: 105, x2: 205, y2: 205 } : { x1: 100, y1: 100, x2: 200, y2: 200 },
+            embedding: embeddings[0],
+            score: 1,
+          },
+          {
+            boundingBox: contested ? { x1: 90, y1: 90, x2: 190, y2: 190 } : { x1: 110, y1: 110, x2: 210, y2: 210 },
+            embedding: embeddings[1],
+            score: 1,
+          },
         ],
       });
       await expect(sut.handleDetectFaces({ id: asset.id, preserveImportedFaces: true })).resolves.toBe(
@@ -614,7 +623,7 @@ describe(PersonService.name, () => {
           .execute(),
       ).toEqual(
         ids
-          .map((faceId, index) => ({ faceId, embedding: embeddings[index] }))
+          .map((faceId, index) => ({ faceId, embedding: embeddings[contested ? 1 - index : index] }))
           .sort((a, b) => a.faceId.localeCompare(b.faceId)),
       );
       expect(ctx.getMock(JobRepository).queueAll).not.toHaveBeenCalled();
