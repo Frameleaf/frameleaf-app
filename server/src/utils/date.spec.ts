@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { asDateString, asDateTimeString } from 'src/utils/date.js';
+import { asDateString, asDateTimeString, extractTimeZone } from 'src/utils/date.js';
 
 describe('asDateString', () => {
   afterEach(() => {
@@ -42,4 +42,19 @@ describe('asDateTimeString', () => {
     const date = new Date('2000-01-15T12:00:00.000Z');
     expect(asDateTimeString(date)).toBe('2000-01-15T12:00:00.000Z');
   });
+});
+
+describe('absolute edit timezone extraction', () => {
+  afterEach(() => vi.unstubAllEnvs());
+  it.each(['America/Edmonton', 'Asia/Tokyo'])(
+    'uses the same UTC fallback as asset clocks when the server zone is %s',
+    (zone) => {
+      vi.stubEnv('TZ', zone);
+      expect(extractTimeZone('2020-06-10T12:30:00')?.name).toBe('UTC');
+      expect(extractTimeZone('2020-06-10T12:30:00-06:00')?.offset(0)).toBe(-360);
+      expect(extractTimeZone('2020-06-10T12:30:00Z')?.offset(0)).toBe(0);
+      expect(extractTimeZone()).toBeUndefined();
+      expect(extractTimeZone('not-a-date')).toBeUndefined();
+    },
+  );
 });
