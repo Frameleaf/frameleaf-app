@@ -3,9 +3,11 @@ import { link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  MEDIA_CONCURRENCY,
   assertMediaPolicy,
   lostOriginalPath,
   lostOriginalReason,
+  mapInOrder,
   mapMediaPath,
   verifyMediaFile,
   verifyMediaRoots,
@@ -247,5 +249,21 @@ describe('offline media verification', () => {
     await expect(verifyMediaFile(join(directory, 'source', 'photo.jpg'), roots)).rejects.toThrow(
       'MEDIA_SYMLINK_ESCAPE',
     );
+  });
+});
+
+describe('mapInOrder', () => {
+  it('checks files concurrently up to the limit and keeps results in input order', async () => {
+    let active = 0;
+    let peak = 0;
+    const items = Array.from({ length: 250 }, (_, index) => index);
+    const results = await mapInOrder(items, async (item) => {
+      peak = Math.max(peak, ++active);
+      await new Promise((resolve) => setTimeout(resolve, (item * 7) % 5));
+      active--;
+      return item * 2;
+    });
+    expect(results).toEqual(items.map((item) => item * 2));
+    expect(peak).toBe(MEDIA_CONCURRENCY);
   });
 });

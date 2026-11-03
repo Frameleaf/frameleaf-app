@@ -8,7 +8,7 @@ import {
   newestContainedRelease,
   withForkContent,
 } from 'src/immich-import/adapters.js';
-import { assertMediaPolicy, lostOriginalReason, verifyMediaFile } from 'src/immich-import/media.js';
+import { assertMediaPolicy, lostOriginalReason, mapInOrder, verifyMediaFile } from 'src/immich-import/media.js';
 import { readSourceStructure, verifyReadableStructure, verifySourceStructure } from 'src/immich-import/schema.js';
 import {
   FrozenSource,
@@ -82,48 +82,43 @@ export class ImmichSource {
       }
       hash.update(table);
       for await (const batch of this.batches(table)) {
-        for (const { row } of batch) {
-          hash.update(canonicalJson(row));
-          hash.update('\n');
-          if (this.config.media?.mode === 'manager-in-place') {
-            for (const column of PATH_COLUMNS[table] ?? []) {
-              const path = row[column];
-              if (typeof path !== 'string' || !path) continue;
-              hash.update(canonicalJson({ column, path }));
-              try {
-                await verifyMediaFile(
-                  path,
-                  this.config.mediaRoots,
-                  undefined,
-                  undefined,
-                  this.config.media,
-                  (sha256) => {
-                    hash.update(sha256);
-                  },
-                );
-              } catch (error) {
-                const lost =
-                  table === 'asset'
-                    ? await lostOriginalReason(error, path, this.config.mediaRoots, this.config.media)
-                    : null;
-                if (lost) {
-                  hash.update(`lost-original:${lost}`);
-                } else if (
-                  (error as NodeJS.ErrnoException).code !== 'ENOENT' ||
-                  (table !== 'asset_file' && table !== 'person')
-                ) {
-                  throw error;
-                } else {
-                  hash.update('missing-regenerable-output');
-                }
-              }
-              hash.update('\n');
-            }
-          }
+        // Files are checked concurrently; their fingerprint parts are applied in row order.
+        for (const parts of await mapInOrder(batch, ({ row }) => this.rowFingerprint(table, row))) {
+          for (const part of parts) hash.update(part);
         }
       }
     }
     return hash.digest('hex');
+  }
+
+  private async rowFingerprint(table: string, row: ImportRow): Promise<string[]> {
+    const parts = [canonicalJson(row), '\n'];
+    if (this.config.media?.mode !== 'manager-in-place') return parts;
+    for (const column of PATH_COLUMNS[table] ?? []) {
+      const path = row[column];
+      if (typeof path !== 'string' || !path) continue;
+      parts.push(canonicalJson({ column, path }));
+      try {
+        await verifyMediaFile(path, this.config.mediaRoots, undefined, undefined, this.config.media, (sha256) => {
+          parts.push(sha256);
+        });
+      } catch (error) {
+        const lost =
+          table === 'asset' ? await lostOriginalReason(error, path, this.config.mediaRoots, this.config.media) : null;
+        if (lost) {
+          parts.push(`lost-original:${lost}`);
+        } else if (
+          (error as NodeJS.ErrnoException).code !== 'ENOENT' ||
+          (table !== 'asset_file' && table !== 'person')
+        ) {
+          throw error;
+        } else {
+          parts.push('missing-regenerable-output');
+        }
+      }
+      parts.push('\n');
+    }
+    return parts;
   }
 
   async *batches(table: string, after: string[] | null = null): AsyncGenerator<{ row: ImportRow; cursor: string[] }[]> {
