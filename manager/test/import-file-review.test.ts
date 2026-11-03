@@ -15,6 +15,7 @@ import {
 } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
+import { Readable } from 'node:stream';
 import { join } from 'node:path';
 import { test, mock } from 'node:test';
 import { reviewImportFiles } from '../src/import-file-review.js';
@@ -261,6 +262,7 @@ for (const change of ['bytes', 'path', 'root'])
     const prototype = Object.getPrototypeOf(probe);
     const original = prototype.createReadStream;
     let changed = false;
+    let mutationCompleted = false;
     const intercepted = mock.method(
       prototype,
       'createReadStream',
@@ -268,30 +270,34 @@ for (const change of ['bytes', 'path', 'root'])
         if (!changed) {
           changed = true;
           const stream = original.apply(this, args);
-          stream.once('data', () => {
-            // Pause the stream until the synthetic source mutation is complete.
-            stream.pause();
-            void (async () => {
-              if (change === 'bytes')
-                await writeFile(
-                  join(f.source, 'original.jpg'),
-                  'changed source',
-                );
-              else if (change === 'path') {
-                await rename(
-                  join(f.source, 'original.jpg'),
-                  join(f.source, 'saved.jpg'),
-                );
-                await writeFile(join(f.source, 'original.jpg'), f.bytes);
-              } else {
-                await rename(f.source, join(f.root, 'saved-source'));
-                await mkdir(f.source);
-                await writeFile(join(f.source, 'original.jpg'), f.bytes);
+          return Readable.from(
+            (async function* () {
+              for await (const chunk of stream) {
+                if (mutationCompleted) {
+                  yield chunk;
+                  continue;
+                }
+                if (change === 'bytes')
+                  await writeFile(
+                    join(f.source, 'original.jpg'),
+                    'changed source',
+                  );
+                else if (change === 'path') {
+                  await rename(
+                    join(f.source, 'original.jpg'),
+                    join(f.source, 'saved.jpg'),
+                  );
+                  await writeFile(join(f.source, 'original.jpg'), f.bytes);
+                } else {
+                  await rename(f.source, join(f.root, 'saved-source'));
+                  await mkdir(f.source);
+                  await writeFile(join(f.source, 'original.jpg'), f.bytes);
+                }
+                mutationCompleted = true;
+                yield chunk;
               }
-              stream.resume();
-            })().catch((error) => stream.destroy(error));
-          });
-          return stream;
+            })(),
+          );
         }
         return original.apply(this, args);
       },
@@ -299,6 +305,7 @@ for (const change of ['bytes', 'path', 'root'])
     try {
       await assert.rejects(reviewImportFiles(f.input), /import_file_review_/);
       assert.equal(changed, true);
+      assert.equal(mutationCompleted, true);
     } finally {
       intercepted.mock.restore();
       await probe.close();
