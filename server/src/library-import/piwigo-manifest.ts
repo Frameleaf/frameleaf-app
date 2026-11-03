@@ -1,5 +1,5 @@
-import { posix } from 'node:path';
 import { DateTime } from 'luxon';
+import { posix } from 'node:path';
 import { z } from 'zod';
 import type { PiwigoRow, PiwigoTable } from 'src/library-import/piwigo-source.js';
 import fixture from 'src/library-import/fixtures/piwigo/16.4.0-mariadb.json' with { type: 'json' };
@@ -239,7 +239,7 @@ export async function readPiwigoManifest(
       !info ||
       typeof info.level !== 'bigint' ||
       info.level < image.level ||
-      !(memberships.get(id) ?? []).some((row) => categoryAllowed(ownerId, key(row.category_id)))
+      (memberships.get(id) ?? []).every((row) => !categoryAllowed(ownerId, key(row.category_id)))
     )
       return refuse('PIWIGO_OWNER_REVIEW_REQUIRED');
     const originals = resolvePiwigoOriginals(row, formats.get(id) ?? []);
@@ -286,7 +286,7 @@ export async function readPiwigoManifest(
     if (image.date_creation === null) loss('PIWIGO_CAPTURE_TIME_FALLBACK', id);
     archive.push({ table: 'frameleaf_capture_offset_review', value: { image_id: id, offset_minutes: BigInt(offset) } });
     const coordinates = [image.latitude, image.longitude].map((value) =>
-      value === null ? null : typeof value === 'string' && value.trim() === '' ? Number.NaN : Number(value),
+      value === null ? null : typeof value === 'string' && value.trim() === '' ? NaN : Number(value),
     );
     if (
       (coordinates[0] === null) !== (coordinates[1] === null) ||

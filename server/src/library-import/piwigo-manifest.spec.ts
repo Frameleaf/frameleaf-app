@@ -256,16 +256,48 @@ describe('Piwigo common manifest mapping', () => {
     'path',
   ] as const)('refuses %s before destination writes', async (kind) => {
     const value = input();
-    if (kind === 'schema') value.source.schemaSha256 = '0'.repeat(64);
-    else if (kind === 'revision') value.inventory.revisionAfter = 'changed';
-    else if (kind === 'complete') value.inventory.complete = false;
-    else if (kind === 'owners') value.photoOwners.stale = '3';
-    else if (kind === 'offset') delete value.reviewedCaptureOffsets['4'];
-    else if (kind === 'offset-range') value.reviewedCaptureOffsets['4'] = 900;
-    else if (kind === 'missing-review') value.reviewedMissingImageIds = [];
-    else if (kind === 'extra-review') value.reviewedMissingImageIds.push('999');
-    else if (kind === 'file') value.files.pop();
-    else value.files[0].path = '../escape.png';
+    switch (kind) {
+      case 'schema': {
+        value.source.schemaSha256 = '0'.repeat(64);
+        break;
+      }
+      case 'revision': {
+        value.inventory.revisionAfter = 'changed';
+        break;
+      }
+      case 'complete': {
+        value.inventory.complete = false;
+        break;
+      }
+      case 'owners': {
+        value.photoOwners.stale = '3';
+        break;
+      }
+      case 'offset': {
+        delete value.reviewedCaptureOffsets['4'];
+        break;
+      }
+      case 'offset-range': {
+        value.reviewedCaptureOffsets['4'] = 900;
+        break;
+      }
+      case 'missing-review': {
+        value.reviewedMissingImageIds = [];
+        break;
+      }
+      case 'extra-review': {
+        value.reviewedMissingImageIds.push('999');
+        break;
+      }
+      case 'file': {
+        value.files.pop();
+        break;
+      }
+      case 'path': {
+        value.files[0].path = '../escape.png';
+        break;
+      }
+    }
     await expect(read(value)).rejects.toThrow(/PIWIGO_/);
   });
   it('refuses a category cycle and unknown dangling tag references', async () => {
