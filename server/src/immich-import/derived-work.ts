@@ -82,7 +82,10 @@ export async function transferImportedWork(
       throw new ImportRefused('DERIVED_RUN_IDENTITY_MISMATCH');
     }
     const setup = existing?.selection?.managerSetup;
-    if (existing?.selection?.managerSetupRequired !== undefined && existing.selection.managerSetupRequired !== true)
+    if (
+      existing?.selection?.managerSetupRequired !== undefined &&
+      (existing.selection.managerSetupRequired !== true || !managed)
+    )
       throw new ImportRefused('DERIVED_MANAGER_SETUP_IDENTITY_MISMATCH');
     if (
       existing &&
