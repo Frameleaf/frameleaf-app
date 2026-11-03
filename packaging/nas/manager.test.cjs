@@ -67,15 +67,16 @@ root = pathlib.Path(sys.argv[1])
 profile = ET.parse(root / 'ca_profile.xml').getroot()
 assert profile.tag == 'CommunityApplications'
 assert 'Manager' in profile.findtext('Profile', '')
-assert profile.findtext('Forum') == 'https://frameleaf.app/help'
-assert profile.findtext('WebPage') == 'https://frameleaf.app/docs'
-assert profile.findtext('Discord') == 'https://discord.gg/bMP5vjyC'
+assert profile.findtext('Forum') == 'https://frameleaf.app/help/community/'
+assert profile.findtext('WebPage') == 'https://frameleaf.app'
+assert profile.findtext('Discord') == 'https://discord.gg/cN3U3mv4'
 assert profile.findtext('Twitter') == 'https://x.com/frameleafapp'
 assert profile.findtext('Video') == 'https://www.youtube.com/watch?v=rNgyZZoZoEg'
 assert profile.findtext('Photo') == 'https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/manager-overview.jpg'
-for field in ['Reddit', 'Facebook', 'DonateLink', 'DonateText']:
-    assert profile.find(field) is not None
-    assert not profile.findtext(field)
+assert profile.findtext('Reddit') == 'https://www.reddit.com/r/Frameleaf/'
+assert profile.findtext('DonateLink') == 'https://frameleaf.app/pricing/#supporter'
+assert profile.findtext('DonateText') == 'Support Frameleaf with a supporter licence'
+assert profile.find('Facebook') is None
 readme = (root / 'README.md').read_text()
 assert '[Help center](https://frameleaf.app/help)' in readme
 assert '[Documentation](https://frameleaf.app/docs)' in readme

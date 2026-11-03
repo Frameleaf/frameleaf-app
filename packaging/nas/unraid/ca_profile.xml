@@ -1,14 +1,14 @@
 <CommunityApplications>
-  <Profile>Official Frameleaf Manager for installing and managing a self-hosted photo and video library on Unraid. Manager coordinates sibling services through the Docker socket. Its encrypted recovery checkpoints cover the database and configuration, not photo or video originals. Manual Server and optional Machine Learning templates are published only after a compatible signed application release is available. Read the setup guide before installing.</Profile>
+  <Profile>Bring your photo and video collection home to hardware you control. Frameleaf combines a visual library, smart search, people and places, albums, sharing and editing, with optional local machine learning. Install Frameleaf Manager for guided storage setup, signed application releases, service controls and encrypted database recovery points. Experienced Docker users can choose the separate Server and Machine Learning templates. The self-hosted library needs no Cloud account; optional Cloud services are separate. Visit the Help Center for setup guides, walkthroughs and the community. Manager backups cover the database and recovery configuration; keep an independent backup of original photos and videos.</Profile>
   <Icon>https://raw.githubusercontent.com/Frameleaf/frameleaf-app/main/design/frameleaf/mark.png</Icon>
-  <WebPage>https://frameleaf.app/docs</WebPage>
-  <Forum>https://frameleaf.app/help</Forum>
-  <Discord>https://discord.gg/bMP5vjyC</Discord>
-  <Reddit></Reddit>
+  <WebPage>https://frameleaf.app</WebPage>
+  <Forum>https://frameleaf.app/help/community/</Forum>
+  <Discord>https://discord.gg/cN3U3mv4</Discord>
+  <Reddit>https://www.reddit.com/r/Frameleaf/</Reddit>
   <Twitter>https://x.com/frameleafapp</Twitter>
-  <Facebook></Facebook>
-  <DonateLink></DonateLink>
-  <DonateText></DonateText>
+  <DonateLink>https://frameleaf.app/pricing/#supporter</DonateLink>
+  <DonateText>Support Frameleaf with a supporter licence</DonateText>
   <Photo>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/manager-overview.jpg</Photo>
   <Video>https://www.youtube.com/watch?v=rNgyZZoZoEg</Video>
+  <Video>https://www.youtube.com/watch?v=bTfFBDHc6OE</Video>
 </CommunityApplications>
