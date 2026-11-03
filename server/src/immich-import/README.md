@@ -84,10 +84,15 @@ credential or proof that fencing occurred. Source database read-only-role,
 session, structure and content checks still apply unchanged.
 
 In-place verification requires identical resolved paths and device/inode identity,
-checks containment, regular-file type, complete content hashes, original checksums
-and before/after file metadata. The source fingerprint additionally includes the
-SHA-256 of every present referenced media file, including legacy path-checksummed
-external originals. Changed media therefore invalidates a resumed operation.
+checks containment, regular-file type and before/after file metadata, and reads no file
+content (FL-1146): Manager has stopped Immich and mounts the media read-only, so the
+library opens as soon as its rows are in. The source fingerprint includes each present
+referenced file's device, inode, size and modification time, so changed media still
+invalidates a resumed operation. Original checksums are compared after activation by
+Library Care's full health scan, which first setup runs for every account: a mismatch
+is kept and listed there, and smart search, faces and identical-file merging wait for
+that scan while metadata and thumbnails start at once (setup bar in the web app).
+Independent-copy imports keep full content hashes and checksum verification.
 Missing regenerable files are recorded consistently. An original Immich had already lost
 (shown there as unavailable), one whose bytes no longer match Immich's checksum, or one
 outside every mapped root is still imported, never dropped and never a reason to stop:

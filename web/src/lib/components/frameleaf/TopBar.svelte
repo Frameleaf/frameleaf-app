@@ -10,6 +10,7 @@
   import UploadMenuButton from '$lib/components/frameleaf/UploadMenuButton.svelte';
   import NotificationPanel from '$lib/components/shared-components/navigation-bar/NotificationPanel.svelte';
   import SearchEntry from '$lib/components/frameleaf/SearchEntry.svelte';
+  import SetupBar from '$lib/components/frameleaf/SetupBar.svelte';
   import TabBar from '$lib/components/frameleaf/TabBar.svelte';
   import SkipLink from '$lib/elements/SkipLink.svelte';
   import { helpPanel } from '$lib/frameleaf/help-panel.svelte';
@@ -252,6 +253,8 @@
   data-theme={appTheme}
 >
   <SkipLink text={$t('skip_to_content')} />
+  <!-- FL-1146: after an Immich import, the setup bar sits above the bar's row and adds to its height. -->
+  <SetupBar />
   <div class="fl-topbar-grid">
     <!-- Brand and workspaces share the bar's leading track; on phones they sit in the grid directly. -->
     <div class="fl-topbar-start">
@@ -457,7 +460,7 @@
     display: flex;
     align-items: center;
     column-gap: 1.125rem;
-    height: 100%;
+    height: calc(100% - var(--fl-setup-bar-height, 0px));
     padding: 0 max(1.5rem, var(--fl-safe-right)) 0 max(1.125rem, var(--fl-safe-left));
   }
   .fl-topbar-start {
