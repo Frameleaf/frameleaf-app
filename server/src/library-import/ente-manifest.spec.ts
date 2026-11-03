@@ -63,12 +63,10 @@ const input = () => {
         name,
         directory: name,
         root: { format: 'ente-photos-export', version: 1, userID: id, sourceVerifier: undefined as string | undefined },
-        files: [...new Map(selected.map((row) => [row.inventory.id, row.inventory])).values()],
-        albums: [
-          ...new Map(
-            selected.map((row) => [row.album.ente.albumID, { directory: row.folder, record: row.album }]),
-          ).values(),
-        ],
+        files: new Map(selected.map((row) => [row.inventory.id, row.inventory])).values().toArray(),
+        albums: new Map(selected.map((row) => [row.album.ente.albumID, { directory: row.folder, record: row.album }]))
+          .values()
+          .toArray(),
         placements: selected.map((row) => {
           const expected = row.expected.find((file) => file.role === row.record.ente.component)!;
           const bytes = expected.input === 'photo.jpg' ? image : video;
@@ -189,8 +187,10 @@ describe('Ente common manifest mapping', () => {
       album = account.albums.find((album) => album.record.ente.albumID === media.ids.bobAlbum)!;
     const old = album.directory;
     album.directory = 'Trash';
-    for (const placement of account.placements.filter((placement) => placement.albumId === media.ids.bobAlbum))
+    for (const placement of account.placements) {
+      if (placement.albumId !== media.ids.bobAlbum) continue;
       placement.file.path = placement.file.path.replace('/' + old + '/', '/Trash/');
+    }
     expect(read(value).manifest.assets.find((asset) => asset.id === media.ids.bobFile)!.visibility).toBe('timeline');
   });
   it('retains precise source clocks without assigning a regional zone when an offset is unavailable', () => {
@@ -198,7 +198,8 @@ describe('Ente common manifest mapping', () => {
     for (const account of value.accounts) {
       const file = account.files.find((file) => file.id === '10000128')!;
       file.createdAt = '2023-11-14T22:13:20.123456Z';
-      for (const placement of account.placements.filter((placement) => placement.record.ente.fileID === file.id)) {
+      for (const placement of account.placements) {
+        if (placement.record.ente.fileID !== file.id) continue;
         placement.record.photoTakenTime.timestamp = '1700000000';
         placement.record.creationTime.timestamp = '1700000000';
         Reflect.set(placement.record.ente.metadata, 'creationTime', 1_700_000_000_123_456);
@@ -217,10 +218,24 @@ describe('Ente common manifest mapping', () => {
   });
   it.each(['version', 'schema', 'root', 'account'] as const)('refuses an unqualified %s binding', (kind) => {
     const value = input();
-    if (kind === 'version') value.source.version = 'ente-cli-unknown';
-    if (kind === 'schema') value.source.schemaSha256 = '0'.repeat(64);
-    if (kind === 'root') value.accounts[0].root.version = 2;
-    if (kind === 'account') value.accounts[0].root.userID = media.users.bob;
+    switch (kind) {
+      case 'version': {
+        value.source.version = 'ente-cli-unknown';
+        break;
+      }
+      case 'schema': {
+        value.source.schemaSha256 = '0'.repeat(64);
+        break;
+      }
+      case 'root': {
+        value.accounts[0].root.version = 2;
+        break;
+      }
+      case 'account': {
+        value.accounts[0].root.userID = media.users.bob;
+        break;
+      }
+    }
     expect(() => read(value)).toThrow(/ENTE_/);
   });
   it.each(['complete', 'ownershipComplete', 'privacyComplete', 'writersStopped'] as const)(
