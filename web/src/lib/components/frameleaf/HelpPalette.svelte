@@ -111,6 +111,12 @@
     return item ? { item, anchor: hash ? decodeURIComponent(hash) : null } : undefined;
   };
 
+  /**
+   * Whether the body is a list of options the search field drives (M1): it is the article reader or
+   * the Ask transcript otherwise, which ARIA does not allow inside a listbox.
+   */
+  const listing = $derived(!!index && !reading && (mode === 'help' || (turns.length === 0 && canAsk)));
+
   /* Every row the arrow keys can reach, in screen order, with what Enter does. */
   const rows = $derived.by<Row[]>(() => {
     if (!index || reading) {
@@ -395,8 +401,8 @@
           bind:value={text}
           aria-label={mode === 'ask' ? $t('frameleaf_help_panel_ask') : $t('frameleaf_help_panel_search')}
           role="combobox"
-          aria-expanded="true"
-          aria-controls="hp-results"
+          aria-expanded={listing}
+          aria-controls={listing ? 'hp-results' : undefined}
           aria-activedescendant={active >= 0 ? `hp-item-${active}` : undefined}
           autocomplete="off"
           maxlength={4000}
@@ -482,7 +488,12 @@
     {/if}
 
     <div class="sp-body">
-      <div class="sp-results" id="hp-results" role="listbox" aria-label={$t('frameleaf_help_panel_title')}>
+      <div
+        class="sp-results"
+        id="hp-results"
+        role={listing ? 'listbox' : 'region'}
+        aria-label={$t('frameleaf_help_panel_title')}
+      >
         {#if !index}
           <p class="sp-empty">
             {loadFailed ? $t('frameleaf_help_panel_load_failed') : $t('frameleaf_help_panel_loading')}

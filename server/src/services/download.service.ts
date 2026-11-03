@@ -120,6 +120,11 @@ export class DownloadService extends BaseService {
       throw new BadRequestException('Portable library exports require a manifest and original files');
     }
     await this.requireAccess({ auth, permission: Permission.AssetDownload, ids: request.assetIds });
+    // A shared link's visitor is always given what the owner published, never the owner's working copy:
+    // the same rule as a single original download (`AssetMediaService.downloadOriginal`)
+    if (auth.sharedLink) {
+      request = { ...request, edited: true };
+    }
 
     const dto = await this.withDownloadPreferences(auth, request);
     const assets =

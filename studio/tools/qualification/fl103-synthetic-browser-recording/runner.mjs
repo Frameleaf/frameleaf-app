@@ -30,19 +30,54 @@ import {
 } from './controls.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
-const inputRoot = process.env.FL103_SOURCE_ROOT
-const output = process.env.FL103_EVIDENCE
-const executable =
-  '/Users/adamtaylor/Library/Caches/ms-playwright/chromium_headless_shell-1223/chrome-headless-shell-mac-arm64/chrome-headless-shell'
+// The prepared input root: the repository checkout whose `studio/` tree is measured. It defaults
+// to the checkout this tool lives in; FL103_SOURCE_ROOT points at a separate prepared worktree.
+const inputRoot = path.resolve(process.env.FL103_SOURCE_ROOT || path.join(here, '..', '..', '..', '..'))
+const output = process.env.FL103_EVIDENCE ? path.resolve(process.env.FL103_EVIDENCE) : undefined
+
+/** Playwright's browser cache for this platform (PLAYWRIGHT_BROWSERS_PATH, else its default location). */
+function playwrightBrowsersPath() {
+  if (process.env.PLAYWRIGHT_BROWSERS_PATH) return path.resolve(process.env.PLAYWRIGHT_BROWSERS_PATH)
+  const home = process.env.HOME || process.env.USERPROFILE || ''
+  if (process.platform === 'darwin') return path.join(home, 'Library', 'Caches', 'ms-playwright')
+  if (process.platform === 'win32')
+    return path.join(process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'ms-playwright')
+  return path.join(process.env.XDG_CACHE_HOME || path.join(home, '.cache'), 'ms-playwright')
+}
+
+/** The pinned headless-shell executable: FL103_BROWSER_EXECUTABLE, else Playwright's cache layout for PINS.revision. */
+function pinnedExecutable() {
+  if (process.env.FL103_BROWSER_EXECUTABLE) return path.resolve(process.env.FL103_BROWSER_EXECUTABLE)
+  const platform =
+    process.platform === 'darwin'
+      ? process.arch === 'arm64'
+        ? 'mac-arm64'
+        : 'mac'
+      : process.platform === 'win32'
+        ? 'win64'
+        : 'linux64'
+  const binary = process.platform === 'win32' ? 'chrome-headless-shell.exe' : 'chrome-headless-shell'
+  return path.join(
+    playwrightBrowsersPath(),
+    `chromium_headless_shell-${PINS.revision}`,
+    `chrome-headless-shell-${platform}`,
+    binary,
+  )
+}
+// Whatever path is chosen, bindings() pins the executable's SHA-256 (PINS.executable) before any launch.
+const executable = pinnedExecutable()
 const json = async (file) => JSON.parse(await readFile(file, 'utf8'))
 const git = (...args) => execFileSync('git', args, { cwd: inputRoot, encoding: 'utf8' }).trim()
 
 async function safeInputs() {
-  assert.equal(
-    inputRoot,
-    '/Users/adamtaylor/.codex/worktrees/fl105-durable-sidecar/immich',
-    'only the reviewed read-only prepared input root is permitted',
+  assert(output, 'FL103_EVIDENCE (an existing private evidence directory) is required')
+  assert(
+    path.isAbsolute(executable) && (await lstat(executable)).isFile(),
+    `pinned browser executable not found at ${executable}; set FL103_BROWSER_EXECUTABLE`,
   )
+  // Structural admission of the input root: a clean git worktree holding the prepared engine build.
+  assert.equal(git('rev-parse', '--show-toplevel'), inputRoot, 'input root must be a git worktree root')
+  assert((await lstat(path.join(inputRoot, 'studio', 'engine-build.json'))).isFile(), 'prepared engine build required')
   for (const dir of [inputRoot, output]) {
     assert(dir && path.isAbsolute(dir), 'absolute source/evidence roots required')
     assert.equal(await realpath(dir), dir, 'no symlink roots')

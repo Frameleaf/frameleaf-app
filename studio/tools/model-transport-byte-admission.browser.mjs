@@ -51,10 +51,10 @@ export async function runModelTransportAdmission() {
       const worker = new Worker(URL.createObjectURL(new Blob([`import {run} from '${location.origin}/contract.mjs'; run().then(r=>postMessage({result:r}),e=>postMessage({error:e.stack}));`],{type:'text/javascript'})),{type:'module'});
       return new Promise((resolve,reject)=>{worker.onmessage=({data})=>{worker.terminate();data.error?reject(Error(data.error)):resolve(data.result)};worker.onerror=e=>reject(Error(e.message))});
     },{realm});
-    assert.deepEqual(result.versions,['4.1.0','3.8.1']);
+    assert.deepEqual(result.versions,['4.3.1','3.8.1']);
     assert.equal(result.kokoro,true); assert.equal(result.checked,true);
     await context.close();
   }
-  return { chromium: true, window: true, worker: true, versions: ['4.1.0', '3.8.1'], kokoro: true };
+  return { chromium: true, window: true, worker: true, versions: ['4.3.1', '3.8.1'], kokoro: true };
   } finally { for (const close of cleanup.reverse()) await close(); }
 }

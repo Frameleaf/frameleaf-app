@@ -39,6 +39,9 @@ export const fromQueueSlug = (slug: string): QueueName | undefined => {
   }
 };
 
+const isSignInPage = (pathname: string) =>
+  /^\/auth(?:\/|$)/.test(pathname) && !/^\/auth\/allow-extension\/?$/.test(pathname);
+
 export const Route = {
   /** `shoot` opens that shoot; `section: 'galleries'` opens its galleries (the editor's Proof, FL-420). */
   photography: (params?: { shoot?: string; section?: 'galleries' }) => '/photography' + asQueryString(params),
@@ -284,10 +287,15 @@ export const Route = {
     return /^\/(?:[/\\]|auth(?:\/|$))/.test(path) ? '/photos' : path;
   },
 
+  /**
+   * A same-origin address to land on, or the fallback. Another sign-in page is never a landing
+   * (`?continue=/auth/logout` would sign the visitor out on a single GET); the extension's allow
+   * page is the one `/auth` target a sign-in legitimately continues to (FL-655).
+   */
   continue: (url: string | null, fallback: string): string | URL => {
     const resolved = new URL(url ?? fallback, document.baseURI);
 
-    if (resolved.origin !== location.origin) {
+    if (resolved.origin !== location.origin || isSignInPage(resolved.pathname)) {
       return fallback;
     }
 

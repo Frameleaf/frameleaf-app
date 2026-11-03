@@ -31,6 +31,11 @@ const configuredEdgeSecret = process.env.FRAMELEAF_EDGE_SECRET;
 
 /** FL-165: how long a restart waits for the edge worker's 5 s teardown before killing it. */
 const EDGE_STOP_MS = 10_000;
+/**
+ * How often in a row a restarted worker may fail within a minute of starting (1 s, 2 s, 4 s … then a
+ * minute between tries: about five minutes in all) before the server stops instead of trying again.
+ */
+const MAX_CONSECUTIVE_WORKER_FAILURES = 10;
 
 /**
  * FL-161 (instance contract "Via-header contract"): the secret the edge worker sends as
@@ -71,7 +76,7 @@ export class Workers {
   /** FL-291: a SIGTERM or SIGINT asked the server to stop; nothing starts again from here on. */
   private databaseRestarts = new Set<FrameleafWorker>();
   private workerRestarts = new Map<FrameleafWorker, NodeJS.Timeout>();
-  /** When each restarted worker last started, and how often in a row it failed. */
+  /** When each restarted worker last started, and how often in a row it failed (within a minute of starting). */
   private workerStartedAt = new Map<FrameleafWorker, number>();
   private workerFailures = new Map<FrameleafWorker, number>();
   private lifecycle = {};
@@ -433,6 +438,7 @@ export class Workers {
     // Database cleanup failure poisons only its originating pool. Restart that worker; keep the
     // other API/edge/executor pools available. Safe queue publications remain token fenced.
     // FL-646: likewise an API worker whose start-up lost a transient PostgreSQL lock conflict.
+    let fatalExitCode = exitCode;
     if (
       this.databaseRestarts.delete(name) ||
       name === FrameleafWorker.Microservices ||
@@ -445,32 +451,44 @@ export class Workers {
       const ranMs = Date.now() - (this.workerStartedAt.get(name) ?? 0);
       const failures = ranMs > 60_000 ? 1 : (this.workerFailures.get(name) ?? 0) + 1;
       this.workerFailures.set(name, failures);
-      const delay = Math.min(60_000, 1000 * 2 ** (failures - 1));
-      console.error(`${name} worker exited with code ${exitCode}; starting it again in ${delay / 1000} s`);
-      const timer = setTimeout(() => {
-        this.workerRestarts.delete(name);
-        const permitted = this.maintenanceMode
-          ? name === FrameleafWorker.Maintenance
-          : name !== FrameleafWorker.Maintenance;
-        if (
-          lifecycle === this.lifecycle &&
-          permitted &&
-          !this.stopper.stopping &&
-          !this.restarting &&
-          !this.workers[name]
-        ) {
-          this.startWorker(name);
-        }
-      }, delay);
-      this.workerRestarts.set(name, timer);
-      return;
+      if (failures > MAX_CONSECUTIVE_WORKER_FAILURES) {
+        // A worker that never gets going (bad environment, a held migration lock, a missing binary)
+        // is not restarted forever behind a serving API: the server stops, loudly, and whatever runs
+        // it can start it again or page someone.
+        console.error(
+          `${name} worker exited with code ${exitCode} ${failures} times in a row without running for a minute; giving up and stopping the server`,
+        );
+        fatalExitCode = exitCode || 1;
+      } else {
+        const delay = Math.min(60_000, 1000 * 2 ** (failures - 1));
+        console.error(
+          `${name} worker exited with code ${exitCode}; starting it again in ${delay / 1000} s (failure ${failures} of ${MAX_CONSECUTIVE_WORKER_FAILURES} before the server stops)`,
+        );
+        const timer = setTimeout(() => {
+          this.workerRestarts.delete(name);
+          const permitted = this.maintenanceMode
+            ? name === FrameleafWorker.Maintenance
+            : name !== FrameleafWorker.Maintenance;
+          if (
+            lifecycle === this.lifecycle &&
+            permitted &&
+            !this.stopper.stopping &&
+            !this.restarting &&
+            !this.workers[name]
+          ) {
+            this.startWorker(name);
+          }
+        }, delay);
+        this.workerRestarts.set(name, timer);
+        return;
+      }
     }
 
     // shutdown the entire process
     delete this.workers[name];
 
-    if (exitCode !== 0) {
-      console.error(`${name} worker exited with code ${exitCode}`);
+    if (fatalExitCode !== 0) {
+      console.error(`${name} worker exited with code ${fatalExitCode}`);
 
       if (Object.hasOwn(this.workers, FrameleafWorker.Api) && name !== FrameleafWorker.Api) {
         console.error('Killing api process');
@@ -484,7 +502,7 @@ export class Workers {
       this.workers[FrameleafWorker.Edge]!.stop();
     }
 
-    process.exit(exitCode);
+    process.exit(fatalExitCode);
   }
 }
 

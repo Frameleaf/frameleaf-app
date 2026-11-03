@@ -41,7 +41,27 @@ const QUERYLESS_ROUTES = /^\/(?:api\/)?(?:link|admin\/license|license|users\/me\
 const BODYLESS_ROUTES =
   /^\/(?:api\/)?admin\/(?:cloud\/backup\/(?:check|setup|escrow|key(?:\/.*)?)|buddy-backup\/key(?:\/.*)?|config\/credentials\/[^/]+)\/?$/i;
 
+/**
+ * Routes that carry a bearer secret in the path itself: a cast URL's signed token, a render worker's
+ * input grant and a gallery's zip ticket. The segment is masked like a query parameter would be.
+ */
+const PATH_SECRET_ROUTES = [
+  /^(\/(?:api\/)?cast\/)[^/?#]+/i,
+  /^(\/(?:api\/)?render-workers\/operations\/[^/?#]+\/inputs\/)[^/?#]+/i,
+  /^(\/(?:api\/)?photography\/galleries\/[^/?#]+\/zip\/)[^/?#]+/i,
+];
+
+const redactPathSecrets = (url: string) => {
+  for (const route of PATH_SECRET_ROUTES) {
+    if (route.test(url)) {
+      return url.replace(route, (_match, prefix: string) => `${prefix}${REDACTED}`);
+    }
+  }
+  return url;
+};
+
 export const redactLogUrl = (url: string) => {
+  url = redactPathSecrets(url);
   const queryStart = url.indexOf('?');
   if (queryStart === -1) {
     return url;

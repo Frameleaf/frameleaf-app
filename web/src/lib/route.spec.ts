@@ -139,5 +139,24 @@ describe('Route', () => {
     it(String.raw`should block \/ URLs`, () => {
       expect(Route.continue(String.raw`\/malicious.com`, '/fallback')).toBe('/fallback');
     });
+
+    it.each(['/auth/logout', '/auth/logout/', '/auth', '/auth/change-password?x=1', '/auth/login#top'])(
+      'should return fallback for the sign-in page %s',
+      (target) => {
+        expect(Route.continue(target, '/fallback')).toBe('/fallback');
+        expect(Route.continue(`https://photos.example.com${target}`, '/fallback')).toBe('/fallback');
+      },
+    );
+
+    it('should keep the extension allow page (FL-655)', () => {
+      expect(Route.continue('/auth/allow-extension?client=chrome', '/fallback')).property(
+        'href',
+        'https://photos.example.com/auth/allow-extension?client=chrome',
+      );
+    });
+
+    it('should keep paths that only start with auth', () => {
+      expect(Route.continue('/authors', '/fallback')).property('href', 'https://photos.example.com/authors');
+    });
   });
 });

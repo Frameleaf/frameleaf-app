@@ -193,6 +193,13 @@ test('rendered PostgreSQL uses its new host directory; media volume identity sta
         target: '/var/lib/postgresql',
         bind: { create_host_path: false },
       },
+      {
+        type: 'bind',
+        source: join(stack, 'database-password'),
+        target: '/run/frameleaf/database-password',
+        read_only: true,
+        bind: { create_host_path: false },
+      },
     ]);
     assert.equal(compose.volumes.database, undefined);
     assert.equal(compose.services.redis, undefined);
@@ -237,7 +244,9 @@ test('rendered PostgreSQL uses its new host directory; media volume identity sta
     await renderCompose(release, installation, 'new-database-password', stack, application);
     const restored = JSON.parse(await readFile(join(stack, 'compose.json'), 'utf8'));
     assert.equal(restored.services['frameleaf-server'].environment.IMMICH_MEDIA_LOCATION, '/custom/library');
-    assert.equal(restored.services['frameleaf-server'].environment.DB_PASSWORD, 'new-database-password');
+    assert.equal(restored.services['frameleaf-server'].environment.DB_PASSWORD, undefined);
+    assert.equal(restored.services['frameleaf-server'].environment.DB_PASSWORD_FILE, '/run/frameleaf/database-password');
+    assert.equal(await readFile(join(stack, 'database-password'), 'utf8'), 'new-database-password');
     const settings = JSON.parse(await readFile(join(stack, 'application-settings.json'), 'utf8'));
     assert.deepEqual(settings.image, application.settings.image);
     assert.equal(settings.machineLearning.enabled, false);
@@ -250,8 +259,11 @@ test('rendered PostgreSQL uses its new host directory; media volume identity sta
     const literal = JSON.parse(await readFile(join(stack, 'compose.json'), 'utf8'));
     assert.equal(literal.services.database.volumes[0].source, installation.databasePath + '-$$tenant');
     assert.equal(literal.services['frameleaf-server'].volumes[0].source, '/fixtures/$$tenant/$${library}');
-    assert.equal(literal.services.database.environment.POSTGRES_PASSWORD, 'secret$$VALUE$${TOKEN}$$$$tail');
-    assert.equal(literal.services['frameleaf-server'].environment.DB_PASSWORD, 'secret$$VALUE$${TOKEN}$$$$tail');
+    // The password file is read by the entrypoints directly, so it holds the literal secret, never a Compose-escaped one.
+    assert.equal(literal.services.database.environment.POSTGRES_PASSWORD, undefined);
+    assert.equal(literal.services['frameleaf-server'].environment.DB_PASSWORD, undefined);
+    assert.equal(await readFile(join(stack, 'database-password'), 'utf8'), 'secret$VALUE${TOKEN}$$tail');
+    assert.ok(!JSON.stringify(literal).includes('secret$$VALUE'));
     await assert.rejects(
       renderCompose(release, installation, 'new-database-password', stack, {
         ...application,

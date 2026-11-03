@@ -18,7 +18,7 @@
   import { maintenancePageState, type MaintenanceTaskStatus } from '$lib/frameleaf/maintenance-page';
   import { handleSetMaintenanceMode } from '$lib/services/maintenance.service';
   import { maintenanceStore } from '$lib/stores/maintenance.store';
-  import { loadMaintenanceStatus, maintenanceReturnUrl } from '$lib/utils/maintenance';
+  import { loadMaintenanceStatus, maintenanceReturnUrl, maintenanceTokenOf } from '$lib/utils/maintenance';
   import { websocketEvents } from '$lib/stores/websocket';
   import { MaintenanceAction } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
@@ -112,10 +112,11 @@
     check();
   };
 
-  // strip token from URL after load
+  // strip token from URL after load (the fragment, or the query of a link the server issued)
   const url = new URL(location.href);
-  if (url.searchParams.get('token')) {
+  if (maintenanceTokenOf(url)) {
     url.searchParams.delete('token');
+    url.hash = '';
     history.replaceState({}, document.title, url);
   }
 

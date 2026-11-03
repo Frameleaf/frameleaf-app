@@ -35,6 +35,14 @@ export class Store {
       .prepare('INSERT INTO settings VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value')
       .run(key, JSON.stringify(value));
   }
+  /** Setting keys that start with a prefix, e.g. every `restore:` review. */
+  keys(prefix: string): string[] {
+    return (
+      this.db.prepare("SELECT key FROM settings WHERE substr(key, 1, ?) = ? AND value <> 'null' ORDER BY key").all(prefix.length, prefix) as {
+        key: string;
+      }[]
+    ).map((row) => row.key);
+  }
   createOnce(key: string, value: unknown): boolean {
     return this.db.prepare('INSERT OR IGNORE INTO settings VALUES (?,?)').run(key, JSON.stringify(value)).changes === 1;
   }

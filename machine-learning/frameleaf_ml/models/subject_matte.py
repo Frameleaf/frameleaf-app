@@ -44,6 +44,8 @@ MAX_FRAMES = 600
 MAX_EDGE = 1024
 MAX_MATTE_EDGE = 512
 MAX_POINTS = 64
+# The largest encoded frame accepted; a MAX_EDGE frame is a few megabytes at most, even as PNG.
+MAX_FRAME_BYTES = 16 * 1024 * 1024
 
 SeedKind = Literal["face", "subject"]
 
@@ -119,6 +121,25 @@ def matte_png(probability: NDArray[np.float32], width: int, height: int) -> str:
     png = io.BytesIO()
     image.save(png, format="PNG", optimize=True)
     return base64.b64encode(png.getvalue()).decode("ascii")
+
+
+def open_frame(data: bytes, size: tuple[int, int] | None = None) -> Image.Image:
+    """Decode one uploaded frame, refusing it from its header before any pixel is decoded.
+
+    The header's size must be within MAX_EDGE and, after the first frame, equal `size`. Checked here,
+    a request of MAX_FRAMES oversized frames costs one header read; checked after decoding, every frame
+    would first be expanded to RGB in memory.
+    """
+    if len(data) > MAX_FRAME_BYTES:
+        raise ValueError(f"A cut-out frame is at most {MAX_FRAME_BYTES // (1024 * 1024)} MiB")
+    image = Image.open(io.BytesIO(data))
+    width, height = image.size
+    if width <= 0 or height <= 0 or max(width, height) > MAX_EDGE:
+        raise ValueError(f"Cut-out frames must have an edge of at most {MAX_EDGE} pixels")
+    if size is not None and (width, height) != size:
+        raise ValueError("Every cut-out frame must be the same size")
+    image.load()
+    return image if image.mode == "RGB" else image.convert("RGB")
 
 
 def check_frames(frames: Sequence[Image.Image]) -> tuple[int, int]:
@@ -235,7 +256,8 @@ class SubjectMatteModel(InferenceModel):
         width, height = check_frames(frames)
         if not (1 <= matteWidth <= MAX_MATTE_EDGE and 1 <= matteHeight <= MAX_MATTE_EDGE):
             raise ValueError(f"A matte has an edge of at most {MAX_MATTE_EDGE} pixels")
-        rgb = [frame.convert("RGB") for frame in frames]
+        # Frames already in RGB are used as they are; convert() would copy every one of them.
+        rgb = [frame if frame.mode == "RGB" else frame.convert("RGB") for frame in frames]
         total = len(rgb)
         # The handler advances this generator on any thread of the pool, and inference mode is
         # thread-local: it is entered around each unit of model work, never across a yield.

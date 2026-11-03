@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { platform, tmpdir } from 'node:os';
-import { dirname, isAbsolute, join, relative } from 'node:path';
-import { Batcher, CrawlOptions, crawl } from 'src/utils.js';
+import { dirname, isAbsolute, join, relative, sep } from 'node:path';
+import { Batcher, CrawlOptions, crawl, discoverEndpoint, globBase } from 'src/utils.js';
 import { Mock } from 'vitest';
 
 vi.mock('node:os', async (importOriginal) => {
@@ -314,6 +314,61 @@ describe('crawl', () => {
     },
   );
 
+  it.skipIf(process.platform === 'win32')(
+    'never follows a linked folder inside an upload root, but crawls a linked folder named on the command line',
+    async () => {
+      const elsewhere = await mkdtemp(join(tmpdir(), 'frameleaf-cli-elsewhere-'));
+      try {
+        await writeFile(join(elsewhere, 'original.jpg'), 'on the nas');
+        await mkdir(join(directory, 'nested', 'deeper'), { recursive: true });
+        await writeFile(join(directory, 'nested', 'deeper', 'mine.jpg'), 'mine');
+        await symlink(elsewhere, join(directory, 'nested', 'shared'));
+        await symlink(join(elsewhere, 'original.jpg'), join(directory, 'nested', 'link.jpg'));
+
+        // a crawl of the root (as `upload --delete -r` does) stays inside it: the linked file is
+        // uploaded through its link (removing the link is harmless), the linked folder is not entered
+        const inside = await crawl({ pathsToCrawl: [directory], recursive: true, extensions });
+        expect(inside).toEqual([
+          join(directory, 'nested', 'deeper', 'mine.jpg'),
+          join(directory, 'nested', 'link.jpg'),
+        ]);
+        expect(inside.map((path) => readContent(path))).toEqual(['mine', 'on the nas']);
+        expect(inside.some((path) => path.startsWith(elsewhere))).toBe(false);
+
+        // the link itself, named on purpose, is crawled (fast-glob resolves the named folder)
+        const named = await crawl({ pathsToCrawl: [join(directory, 'nested', 'shared')], recursive: true, extensions });
+        expect(named.map((path) => readContent(path))).toEqual(['on the nas']);
+        // ... also when its parent is named as well: the deepest named root decides
+        const both = await crawl({
+          pathsToCrawl: [directory, join(directory, 'nested', 'shared')],
+          recursive: true,
+          extensions,
+        });
+        expect(both.map((path) => readContent(path))).toEqual(['mine', 'on the nas', 'on the nas']);
+        // a wildcard pattern starts from its literal folder and does not leave it through a link either
+        // (`nested/*` names the folders under nested, so the file link directly in nested is not matched)
+        const wildcard = await crawl({ pathsToCrawl: [join(directory, 'nested', '*')], recursive: true, extensions });
+        expect(wildcard.map((path) => readContent(path))).toEqual(['mine']);
+        expect(wildcard.some((path) => path.startsWith(elsewhere) || path.includes(`${sep}shared${sep}`))).toBe(false);
+        // a linked file named on purpose is uploaded through the link
+        const file = await crawl({ pathsToCrawl: [join(directory, 'nested', 'link.jpg')], extensions });
+        expect(file).toEqual([join(directory, 'nested', 'link.jpg')]);
+      } finally {
+        await rm(elsewhere, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it('globBase keeps a filesystem root with its separator and cuts other patterns at a separator', () => {
+    expect(globBase('/*')).toBe('/');
+    expect(globBase('/photos/*')).toBe('/photos');
+    expect(globBase('/photos/2024-*/**')).toBe('/photos');
+    const backslash = String.fromCodePoint(92);
+    expect(globBase(`D:${backslash}*`)).toBe(`D:${backslash}`);
+    expect(globBase(`D:${backslash}photos${backslash}*.jpg`)).toBe(`D:${backslash}photos`);
+    expect(globBase('/photos')).toBeUndefined();
+  });
+
   it('should preserve escaped glob characters in Windows ignore patterns', async () => {
     await writeFile(join(directory, 'image[1].jpg'), 'ignored');
     await writeFile(join(directory, 'image1.jpg'), 'included');
@@ -362,6 +417,50 @@ describe('crawl', () => {
         expect(actual.map((path) => readContent(path)).toSorted()).toEqual(expected.toSorted());
       });
     }
+  });
+});
+
+/** A `.well-known/immich` answer naming `endpoint`. */
+const answer = (endpoint: string) =>
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ json: () => Promise.resolve({ api: { endpoint } }) }));
+
+describe('discoverEndpoint', () => {
+  const url = 'https://photos.example.com/';
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('takes a relative endpoint and an absolute one on the same origin', async () => {
+    answer('/api');
+    await expect(discoverEndpoint(url)).resolves.toBe('https://photos.example.com/api');
+    expect(vi.mocked(fetch)).toHaveBeenCalledWith(new URL('https://photos.example.com/.well-known/immich'));
+    answer('https://photos.example.com/frameleaf/api');
+    await expect(discoverEndpoint(url)).resolves.toBe('https://photos.example.com/frameleaf/api');
+  });
+
+  it('ignores an endpoint on another origin, with a warning, so the API key is never sent elsewhere', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    for (const elsewhere of [
+      'https://evil.example.net/api',
+      // eslint-disable-next-line unicorn/prefer-https
+      'http://photos.example.com/api',
+      'https://photos.example.com:8443/api',
+      '//evil.example.net/api',
+    ]) {
+      answer(elsewhere);
+      await expect(discoverEndpoint(url)).resolves.toBeUndefined();
+    }
+    expect(warn).toHaveBeenCalledTimes(4);
+    expect(warn.mock.calls[0][0]).toContain('https://evil.example.net');
+  });
+
+  it('is null when there is no well-known document or it is not usable', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
+    await expect(discoverEndpoint(url)).resolves.toBeUndefined();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ json: () => Promise.resolve({ unrelated: true }) }));
+    await expect(discoverEndpoint(url)).resolves.toBeUndefined();
   });
 });
 
