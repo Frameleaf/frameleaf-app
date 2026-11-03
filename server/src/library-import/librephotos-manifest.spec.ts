@@ -202,6 +202,17 @@ describe('LibrePhotos common manifest mapping', () => {
     expect(manifest.assets.find((asset) => asset.id === photoId('bob'))?.fileIds).toHaveLength(1);
     expect(manifest.files.some((file) => file.id.startsWith('copy:'))).toBe(false);
     expect(archive.filter((record) => record.table === 'api_filecopy')).toHaveLength(1);
+    expect(archive).toContainEqual({
+      table: 'frameleaf_file_copy_verification',
+      value: {
+        copy_id: 1n,
+        file_id: originals.copies[0].source.file_id,
+        path: originals.copies[0].expected.path,
+        sha256: originals.copies[0].expected.sha256,
+        bytes: originals.copies[0].expected.bytes,
+        modified_at: input().files[0].modifiedAt,
+      },
+    });
     expect(manifest.losses).toContainEqual({ code: 'LIBREPHOTOS_DUPLICATE_PATHS_ARCHIVED', acknowledged: false });
   });
 
@@ -378,6 +389,7 @@ describe('LibrePhotos common manifest mapping', () => {
     'missing-primary',
     'companion',
     'changed-schema',
+    'unknown-member-role',
   ])('refuses incomplete or conflicting capture evidence: %s', async (failure) => {
     const options = input();
     switch (failure) {
@@ -415,6 +427,9 @@ describe('LibrePhotos common manifest mapping', () => {
         break;
       case 'changed-schema':
         options.source.schemaSha256 = 'a'.repeat(64);
+        break;
+      case 'unknown-member-role':
+        database.prepare("UPDATE api_albumuser_shared_to SET role='unknown'").run();
         break;
     }
     await expect(read(snapshot(), options)).rejects.toThrow(/LIBREPHOTOS_/);
