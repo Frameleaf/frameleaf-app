@@ -21,6 +21,9 @@ export const LOCKED_PEPPER_FILE = 'locked-pin-pepper.key';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const isMissing = (error: unknown) => (error as NodeJS.ErrnoException).code === 'ENOENT';
+/** A wrap entry `hasPepperedWrap` can classify: a plain object, so `.pepper` reads its own metadata. */
+const isWrapRecord = (wrap: unknown): wrap is { pepper?: unknown } =>
+  typeof wrap === 'object' && wrap !== null && !Array.isArray(wrap);
 
 /**
  * The pepper file cannot be used: it is damaged, or missing while key files hold PIN wraps made with
@@ -97,7 +100,10 @@ export class LockedKeyRepository {
         'missing',
       );
     }
-    await fs.mkdir(join(path, '..'), { recursive: true, mode: 0o700 });
+    const directory = join(path, '..');
+    await fs.mkdir(directory, { recursive: true, mode: 0o700 });
+    // an identity directory that already existed keeps the mode it was made with: enforce ours
+    await fs.chmod(directory, 0o700);
     const pepper = randomBytes(PEPPER_BYTES);
     let handle: fs.FileHandle;
     try {
@@ -113,6 +119,8 @@ export class LockedKeyRepository {
           }
           await new Promise((resolve) => setTimeout(resolve, 20));
         }
+        // still empty: the winner's file never filled, which is a damaged pepper file, not a race
+        await this.readPepper(path);
       }
       throw error;
     }
@@ -169,7 +177,7 @@ export class LockedKeyRepository {
       } catch {
         file = null;
       }
-      if (!file || !Array.isArray(file.wraps)) {
+      if (!file || !Array.isArray(file.wraps) || file.wraps.some((wrap) => !isWrapRecord(wrap))) {
         throw new LockedPepperFileError(
           `The Locked pepper file is missing and the key file ${join(this.directory(), name)} cannot be inspected. No new pepper is made until every key file can be read: restore the pepper file from a backup, or repair or remove that key file.`,
           'missing',
