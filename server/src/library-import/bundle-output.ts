@@ -4,8 +4,8 @@ import { basename, join } from 'node:path';
 import { openImportRoot } from '#library-import-transfer/import-copy';
 import { importPlanSha256, parseImportPlan } from '#library-import-transfer/import-plan';
 import { privateImportPathSchema } from 'src/library-import/command-input.js';
-import { bindDestinationImportPlan, type DestinationImportPlan } from 'src/library-import/destination-plan.js';
-import { manifestFingerprint, parseImportManifest, type ImportManifest } from 'src/library-import/manifest.js';
+import { type DestinationImportPlan, bindDestinationImportPlan } from 'src/library-import/destination-plan.js';
+import { type ImportManifest, manifestFingerprint, parseImportManifest } from 'src/library-import/manifest.js';
 import { preparePrivateOwnerInputs } from 'src/library-import/private-owners.js';
 import {
   EMPTY_SOURCE_ARCHIVE_HASH,

@@ -15,7 +15,7 @@ const { assertImportExecutionLock } = await import('src/library-import/execution
 await assertImportExecutionLock(stateDirectory);
 const { Kysely } = await import('kysely');
 const { connectImportDatabase } = await import('src/immich-import/database.js');
-const { publishPhotoprismImportBundle } = await import('src/library-import/photoprism-bundle.js');
+const { publishPhotoprismSqliteBundle } = await import('src/library-import/photoprism-bundle.js');
 const { loadLibraryImportBundle } = await import('src/library-import/bundle-input.js');
 const { executeLibraryImportCommand } = await import('src/library-import/command.js');
 const { libraryImportDerivedRunId } = await import('src/library-import/derived-work.js');
@@ -163,7 +163,6 @@ const reviewedLosses = new Set([
   'PHOTOPRISM_ALBUM_SNAPSHOT',
 ]);
 const snapshot = openPhotoprismSnapshot(captured.path, fixture.source.version);
-let credential;
 try {
   const user = [...snapshot.rows('users')].flat().find((row) => row.user_uid === input.sourceUserId);
   assert.equal(user.id, 1n);
@@ -177,33 +176,28 @@ try {
   assert.equal(user.base_path, '');
   assert.equal(user.expires_at, null);
   assert.equal(user.deleted_at, null);
-  credential = await snapshot.password({ operationId, sourceUserId: input.sourceUserId, destinationUserId: ownerId });
-  assert(credential);
 } finally {
   snapshot.close();
 }
-const owners = [
+const ownerIntents = [
   {
-    intent: {
-      sourceUserId: input.sourceUserId,
-      email: 'native-owner@example.test',
-      login: {
-        revision,
-        snapshotSha256: revision,
-        accountEnabled: true,
-        passwordLoginEnabled: true,
-        secondFactorRequired: false,
-        externalIdentityRequired: false,
-        ownedLibraryAccess: 'full',
-        otherRestrictions: 'none',
-      },
-      disposition: { kind: 'preserve' },
+    sourceUserId: input.sourceUserId,
+    email: 'native-owner@example.test',
+    login: {
+      revision,
+      snapshotSha256: revision,
+      accountEnabled: true,
+      passwordLoginEnabled: true,
+      secondFactorRequired: false,
+      externalIdentityRequired: false,
+      ownedLibraryAccess: 'full',
+      otherRestrictions: 'none',
     },
-    credential,
+    disposition: { kind: 'preserve' },
   },
 ];
 const publication = {
-  records,
+  snapshotPath: captured.path,
   observed: sourceEvidence,
   approvedLossCodes: reviewedLosses,
   stagingRoot: directory,
@@ -212,15 +206,15 @@ const publication = {
   roots,
   placements: drafts,
   ownerMappings: [{ sourceId: input.sourceUserId, destinationId: ownerId }],
-  owners,
+  ownerIntents,
   verifySource: authorize,
 };
 await assert.rejects(
-  publishPhotoprismImportBundle({ ...publication, approvedLossCodes: new Set() }),
+  publishPhotoprismSqliteBundle({ ...publication, approvedLossCodes: new Set() }),
   /IMPORT_LOSSES_NOT_ACKNOWLEDGED/,
 );
 assert(!(await readdir(directory)).some((name) => name.startsWith(`bundle-${operationId}-`)));
-const bundle = await publishPhotoprismImportBundle(publication);
+const bundle = await publishPhotoprismSqliteBundle(publication);
 const config = {
   format: 'frameleaf-library-import-command',
   version: 1,
