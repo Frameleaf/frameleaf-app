@@ -253,37 +253,28 @@ describe('the Command Center (FL-71)', () => {
     const pages = () => [
       ...sections,
       serverSection('computers', 'Computers'),
-      serverSection('routing', 'Where work runs'),
       serverSection('hardware', 'Graphics card check'),
     ];
 
-    it('names the area in plain words and opens it on its own page, not a list of links', () => {
+    it('names the area in plain words and opens it on Background work, with no landing page (approved design, 2026-11-04)', () => {
       open('/user-settings?area=processing');
-      render(SettingsHost, { sections: pages() });
+      const { container } = render(SettingsHost, { sections: pages() });
 
       expect(areaNames()).toContain('Computers & background work');
       expect(areaNames()).not.toContain('Compute & jobs');
-      expect(screen.getByRole('heading', { level: 1, name: 'Computers & background work' })).toBeInTheDocument();
-      expect(screen.getByText('Which computers do the heavy work, and how it is going.')).toBeInTheDocument();
-      expect(screen.getByTestId('computers-landing')).toBeInTheDocument();
-      // Its pages are listed on that page, as Backup's are, not under it in the navigation.
-      expect(screen.queryByRole('group', { name: /pages/i })).not.toBeInTheDocument();
+      expect(container.querySelector('#setting-queues')).toBeInTheDocument();
+      expect(screen.queryByTestId('computers-landing')).not.toBeInTheDocument();
     });
 
-    it('puts the way back under the heading of one of its pages', () => {
+    it('has no way back to a landing page from one of its pages', () => {
       open('/user-settings?area=processing&section=hardware');
       render(SettingsHost, { sections: pages() });
 
-      const heading = screen.getByRole('heading', { level: 1, name: 'Graphics card check' }).parentElement!;
-      expect(heading.querySelector('.cc-overline')).toHaveTextContent('Computers & background work');
-      expect(within(heading).queryByRole('button')).toBeNull();
-      expect(screen.getByRole('link', { name: 'Computers & background work' })).toHaveAttribute(
-        'href',
-        '/user-settings?area=processing',
-      );
+      expect(screen.getByRole('heading', { level: 1, name: 'Graphics card check' })).toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Computers & background work' })).toBeNull();
     });
 
-    it.each(['workers', 'render-workers'])('opens Computers for the old address of "%s"', (section) => {
+    it.each(['workers', 'render-workers', 'routing'])('opens Computers for the old address of "%s"', (section) => {
       open(`/user-settings?area=processing&section=${section}`);
       const { container } = render(SettingsHost, { sections: pages() });
 

@@ -12,10 +12,8 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
-  import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
-  import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
   import Pill from '$lib/components/frameleaf/settings/kit/Pill.svelte';
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
@@ -84,6 +82,8 @@
   import {
     mdiChevronDown,
     mdiChevronUp,
+    mdiCloudOutline,
+    mdiDesktopTowerMonitor,
     mdiLanDisconnect,
     mdiPlus,
     mdiServerOutline,
@@ -239,6 +239,35 @@
   const named = (names: string[]) =>
     names.length < 3 || names.every((name) => !name.includes(',')) ? list(names) : names.join('; ');
   const workName = (kind: WorkKind) => $t(workKindNameKey(kind));
+  /**
+   * The approved who-does-what grid (2026-11-04): every place any row can choose, in one order, so each
+   * row's choices line up as columns; a place a row cannot use is shown and switched off.
+   */
+  const columnOrder = (id: RouteChoice) =>
+    id === FOLLOW ? 0 : isServer(id) ? 1 : id === CLOUD ? 3 : id === ASK ? 4 : id === NONE ? 5 : 2;
+  const columns = $derived(
+    [...new Set(ROUTED.flatMap((kind) => choicesFor(kind, facts)))].sort((a, b) => columnOrder(a) - columnOrder(b)),
+  );
+  const columnIcon = (id: RouteChoice) =>
+    id === CLOUD
+      ? mdiCloudOutline
+      : [FOLLOW, ASK, NONE].includes(id)
+        ? undefined
+        : isServer(id)
+          ? mdiServerOutline
+          : mdiDesktopTowerMonitor;
+  const SHORT: Partial<Record<RouteChoice, Translations>> = {
+    [NONE]: 'frameleaf_workruns_choice_none_short',
+    [ASK]: 'frameleaf_workruns_choice_ask_short',
+    [FOLLOW]: 'frameleaf_workruns_choice_order_short',
+  };
+  /** The full name behind a short column name, for its tooltip. */
+  const fullName = (id: RouteChoice) => ([FOLLOW, ASK, NONE].includes(id) ? choiceLabel(id) : undefined);
+  /** A column's short name; the full one is its tooltip. */
+  const columnLabel = (id: RouteChoice) => {
+    const short = SHORT[id];
+    return short ? $t(short) : id === CLOUD ? choiceLabel(id) : placeName(id);
+  };
   const place = (id: string) => destinations?.find((destination) => destination.id === id);
   const isServer = (id: string) => place(id)?.kind === MlDestinationKind.Local;
   const placeName = (id: string) =>
@@ -384,9 +413,45 @@
           : $t('frameleaf_workruns_change_place', { values: { name, place: choiceLabel(to) } });
   };
   const anyAsk = $derived(ROUTED.some((kind) => choice(kind) === ASK));
+
+  /**
+   * Which part to draw (approved design, 2026-11-04): Computers › Everyday shows the who-does-what grid
+   * with its Save, Computers › Advanced the order to try and the related settings elsewhere. Without
+   * one, the whole page as it was.
+   */
+  let { part = 'all' }: { part?: 'all' | 'everyday' | 'advanced' } = $props();
 </script>
 
-<KitPage>
+{#snippet saveBar()}
+  {#if locked && cloudOn}
+    <p class="hint">{$t('frameleaf_workruns_locked')}</p>
+  {/if}
+  {#if failed}
+    <p class="failed" role="alert">{failed}</p>
+  {/if}
+  {#if dirty}
+    <div class="save-bar" role="region" aria-label={$t('frameleaf_workruns_unsaved')}>
+      <p>
+        <strong>{$t('frameleaf_workruns_changes', { values: { count: changedRows.length || 1 } })}</strong>
+        <span>
+          {[
+            orderChanged
+              ? $t('frameleaf_order_changed', { values: { names: list(order.map((source) => sourceName(source))) } })
+              : '',
+            ...changedRows.map((kind) => changeWords(kind)),
+            suggestChanged ? $t('frameleaf_workruns_change_suggest') : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
+        </span>
+      </p>
+      <Button disabled={saving} onclick={undo}>{$t('frameleaf_workruns_undo')}</Button>
+      <Button variant="primary" disabled={saving} onclick={() => void save()}>{$t('frameleaf_workruns_save')}</Button>
+    </div>
+  {/if}
+{/snippet}
+
+{#snippet body()}
   {#if loadError}
     <InlineError message={$t('frameleaf_workruns_unread')} onRetry={load} />
   {:else if !destinations}
@@ -403,28 +468,165 @@
       <p class="said" role="status">{said}</p>
     {/if}
 
-    <Hero
-      tone={hero.tone}
-      icon={hero.icon}
-      title={hero.title}
-      body={hero.body}
-      label={$t('frameleaf_workruns_status_label')}
-    >
-      {#snippet actions()}
-        {#if hero.kind === 'silent'}
-          <a class="button primary" href={Route.computers()}>{$t('frameleaf_workruns_see_computers')}</a>
-        {:else if solo}
-          <a class="button primary" href={commandCenterUrl('processing', 'computers', { add: 'name' })}>
-            <Icon icon={mdiPlus} size="16" aria-hidden />{$t('frameleaf_computers_add')}
-          </a>
-          {#if !cloudOn}
-            <a class="button" href={commandCenterUrl('cloud')}>{$t('frameleaf_workruns_link_cloud')}</a>
+    {#if part === 'all'}
+      <Hero
+        tone={hero.tone}
+        icon={hero.icon}
+        title={hero.title}
+        body={hero.body}
+        label={$t('frameleaf_workruns_status_label')}
+      >
+        {#snippet actions()}
+          {#if hero.kind === 'silent'}
+            <a class="button primary" href={Route.computers()}>{$t('frameleaf_workruns_see_computers')}</a>
+          {:else if solo}
+            <a class="button primary" href={commandCenterUrl('processing', 'computers', { add: 'name' })}>
+              <Icon icon={mdiPlus} size="16" aria-hidden />{$t('frameleaf_computers_add')}
+            </a>
+            {#if !cloudOn}
+              <a class="button" href={commandCenterUrl('cloud')}>{$t('frameleaf_workruns_link_cloud')}</a>
+            {/if}
           {/if}
-        {/if}
-      {/snippet}
-    </Hero>
+        {/snippet}
+      </Hero>
+    {/if}
 
-    {#if processing}
+    {#if part !== 'advanced'}
+      <Section
+        title={$t('frameleaf_workruns_who')}
+        description={$t(solo ? 'frameleaf_workruns_table_description_solo' : 'frameleaf_workruns_table_description')}
+      >
+        <ul class="grid">
+          {#each ROUTED as kind (kind)}
+            {@const options = choicesFor(kind, facts)}
+            {@const current = choice(kind)}
+            {@const fixed = options.length === 0}
+            {@const waiting = current !== ASK && current !== CLOUD && current !== NONE && silent(current)}
+            <li class="work" class:is-waiting={waiting}>
+              <div class="work-name">
+                <strong>{workName(kind)}</strong>
+                <small>{$t(`frameleaf_workruns_use_${kind}` as Translations)}</small>
+                <small class="work-note">
+                  {[
+                    waiting ? $t('frameleaf_workruns_waiting_note', { values: { name: placeName(current) } }) : '',
+                    reason(kind, current, fixed),
+                    isIndexWork(kind) && current !== NONE ? $t('frameleaf_index_one_place') : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                </small>
+              </div>
+              {#if fixed && current === NONE}
+                <a class="button" href={commandCenterUrl('processing', 'computers', { add: 'name' })}>
+                  {$t('frameleaf_computers_add')}
+                </a>
+              {:else if fixed}
+                <span class="value">{choiceLabel(current)}</span>
+              {:else}
+                <div
+                  class="choices"
+                  role="radiogroup"
+                  aria-label={$t('frameleaf_workruns_where', { values: { name: workName(kind) } })}
+                  style:--columns={columns.length}
+                >
+                  {#each columns as option (option)}
+                    {@const can =
+                      options.includes(option) &&
+                      !(locked && (option === ASK || (option === CLOUD && !isIndexWork(kind))))}
+                    {@const icon = columnIcon(option)}
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={current === option}
+                      class:is-on={current === option}
+                      disabled={!can || saving}
+                      title={can ? fullName(option) : $t('frameleaf_workruns_cannot_here')}
+                      onclick={() => (picked = { ...picked, [kind]: option })}
+                    >
+                      {#if icon}<Icon {icon} size="15" aria-hidden />{/if}
+                      <span>{columnLabel(option)}</span>
+                    </button>
+                  {/each}
+                </div>
+              {/if}
+            </li>
+          {/each}
+          <li class="work">
+            <div class="work-name">
+              <strong>{workName('render')}</strong>
+              <small>{$t('frameleaf_workruns_use_render')}</small>
+              <small class="work-note">
+                {$t(
+                  exportCan === undefined
+                    ? 'frameleaf_workruns_why_render_unknown'
+                    : exportCan
+                      ? 'frameleaf_workruns_home_render'
+                      : 'frameleaf_workruns_why_render_none',
+                )}
+              </small>
+            </div>
+            {#if exportCan}
+              <span class="value">
+                {studioComputers.length > 0 ? list(studioComputers) : $t('frameleaf_workruns_home_computer')}
+              </span>
+            {:else if exportCan === false}
+              <Pill tone="warn">{$t('frameleaf_workruns_cannot_yet')}</Pill>
+            {:else}
+              <Pill tone="off">{$t('frameleaf_computers_cover_unknown')}</Pill>
+            {/if}
+          </li>
+        </ul>
+
+        {@render saveBar()}
+      </Section>
+    {/if}
+
+    {#if part !== 'everyday' && (followerChoices('pets', facts).length > 3 || followerChoices('creative', facts).length > 3 || follower('pets') !== SAME || follower('creative') !== SAME) && (Object.keys(FOLLOWERS) as Follower[]).some((id) => followerChoices(id, facts).length > 0)}
+      <Section title={$t('frameleaf_workruns_finer')} description={$t('frameleaf_workruns_finer_help')}>
+        {#each Object.keys(FOLLOWERS) as Follower[] as id (id)}
+          {@const options = followerChoices(id, facts)}
+          {#if options.length > 0}
+            <Row
+              label={$t(`frameleaf_workruns_finer_${id}` as Translations)}
+              help={$t(`frameleaf_workruns_finer_${id}_help` as Translations)}
+            >
+              <select
+                class="fl-control"
+                aria-label={$t('frameleaf_workruns_where', {
+                  values: { name: $t(`frameleaf_workruns_finer_${id}` as Translations) },
+                })}
+                value={follower(id)}
+                disabled={saving}
+                onchange={(event) => (pickedFollowers = { ...pickedFollowers, [id]: event.currentTarget.value })}
+              >
+                {#each options as option (option)}
+                  <option value={option}>{choiceLabel(option, workName(FOLLOWERS[id].follows))}</option>
+                {/each}
+              </select>
+            </Row>
+          {/if}
+        {/each}
+      </Section>
+    {/if}
+
+    {#if cloudOn && cloudMl && anyAsk && part !== 'everyday'}
+      <Section title={$t('frameleaf_workruns_ask_title')}>
+        <Row label={$t('frameleaf_workruns_ask_row')} help={$t('frameleaf_workruns_ask_help')}>
+          <select
+            class="fl-control"
+            aria-label={$t('frameleaf_workruns_ask_label')}
+            value={suggest ?? savedCloudMl?.startWith}
+            disabled={saving || locked}
+            onchange={(event) => (suggest = event.currentTarget.value as StartWith)}
+          >
+            <option value={StartWith.Local}>{$t('frameleaf_workruns_ask_home')}</option>
+            <option value={StartWith.Cloud}>{$t('frameleaf_workruns_choice_cloud')}</option>
+          </select>
+        </Row>
+      </Section>
+    {/if}
+
+    {#if processing && part !== 'everyday'}
       <!-- FL-456: no prototype screen yet; kept to the kit's rows, one per place, moved with up and down. -->
       <Section title={$t('frameleaf_order_title')} description={$t('frameleaf_order_description')}>
         <ol class="order" aria-label={$t('frameleaf_order_title')}>
@@ -465,172 +667,33 @@
       </Section>
     {/if}
 
-    <Section
-      title={$t('frameleaf_workruns_table')}
-      description={$t(solo ? 'frameleaf_workruns_table_description_solo' : 'frameleaf_workruns_table_description')}
-    >
-      <div class="rule">
-        <Notice tone="info" title={$t('frameleaf_workruns_rule_title')}>{$t('frameleaf_workruns_rule')}</Notice>
-      </div>
-      {#each ROUTED as kind (kind)}
-        {@const options = choicesFor(kind, facts)}
-        {@const current = choice(kind)}
-        {@const fixed = options.length === 0}
-        <Row
-          label={workName(kind)}
-          help={[
-            $t(`frameleaf_workruns_use_${kind}` as Translations),
-            reason(kind, current, fixed),
-            isIndexWork(kind) && current !== NONE ? $t('frameleaf_index_one_place') : '',
-          ]
-            .filter(Boolean)
-            .join(' ')}
-        >
-          <div class="runs">
-            {#if current !== ASK && current !== CLOUD && current !== NONE && silent(current)}
-              <Pill tone="warn">{$t('frameleaf_workruns_waiting')}</Pill>
-            {/if}
-            {#if fixed && current === NONE}
-              <Pill tone="warn">{$t('frameleaf_workruns_cannot_yet')}</Pill>
-            {:else if fixed}
-              <span class="value">{choiceLabel(current)}</span>
-            {:else}
-              <select
-                class="fl-control"
-                aria-label={$t('frameleaf_workruns_where', { values: { name: workName(kind) } })}
-                value={current}
-                disabled={saving}
-                onchange={(event) => (picked = { ...picked, [kind]: event.currentTarget.value })}
-              >
-                {#each options as option (option)}
-                  <!-- The cloud record is part of the settings file when one manages them; search and faces
-                       reach Frameleaf Cloud through their own route instead. -->
-                  <option
-                    value={option}
-                    disabled={locked && (option === ASK || (option === CLOUD && !isIndexWork(kind)))}
-                  >
-                    {choiceLabel(option)}
-                  </option>
-                {/each}
-              </select>
-            {/if}
-          </div>
+    {#if part === 'advanced'}
+      {@render saveBar()}
+    {/if}
+
+    {#if part === 'all'}
+      <Section title={$t('frameleaf_workruns_elsewhere')} description={$t('frameleaf_workruns_elsewhere_description')}>
+        <Row label={$t('frameleaf_workruns_quality')} help={$t('frameleaf_workruns_quality_help')}>
+          <a class="button" href={Route.systemSettings({ isOpen: OpenQueryParam.IMAGE_DESCRIPTION })}>
+            {$t('frameleaf_workruns_quality_open')}
+          </a>
         </Row>
-      {/each}
-      <Row
-        label={workName('render')}
-        help={`${$t('frameleaf_workruns_use_render')} ${$t(
-          exportCan === undefined
-            ? 'frameleaf_workruns_why_render_unknown'
-            : exportCan
-              ? 'frameleaf_workruns_home_render'
-              : 'frameleaf_workruns_why_render_none',
-        )}`}
-      >
-        <div class="runs">
-          {#if exportCan}
-            <span class="value">
-              {studioComputers.length > 0 ? list(studioComputers) : $t('frameleaf_workruns_home_computer')}
-            </span>
-          {:else if exportCan === false}
-            <Pill tone="warn">{$t('frameleaf_workruns_cannot_yet')}</Pill>
-          {:else}
-            <Pill tone="off">{$t('frameleaf_computers_cover_unknown')}</Pill>
-          {/if}
-        </div>
-      </Row>
-
-      <!-- A follower with one possible place has nothing to choose: it stays with its row. -->
-      {#if followerChoices('pets', facts).length > 3 || followerChoices('creative', facts).length > 3 || follower('pets') !== SAME || follower('creative') !== SAME}
-        <Advanced summary={$t('frameleaf_workruns_finer')}>
-          <p class="hint">{$t('frameleaf_workruns_finer_help')}</p>
-          {#each Object.keys(FOLLOWERS) as Follower[] as id (id)}
-            {@const options = followerChoices(id, facts)}
-            {#if options.length > 0}
-              <Row
-                label={$t(`frameleaf_workruns_finer_${id}` as Translations)}
-                help={$t(`frameleaf_workruns_finer_${id}_help` as Translations)}
-              >
-                <select
-                  class="fl-control"
-                  aria-label={$t('frameleaf_workruns_where', {
-                    values: { name: $t(`frameleaf_workruns_finer_${id}` as Translations) },
-                  })}
-                  value={follower(id)}
-                  disabled={saving}
-                  onchange={(event) => (pickedFollowers = { ...pickedFollowers, [id]: event.currentTarget.value })}
-                >
-                  {#each options as option (option)}
-                    <option value={option}>{choiceLabel(option, workName(FOLLOWERS[id].follows))}</option>
-                  {/each}
-                </select>
-              </Row>
-            {/if}
-          {/each}
-        </Advanced>
-      {/if}
-
-      {#if locked && cloudOn}
-        <p class="hint">{$t('frameleaf_workruns_locked')}</p>
-      {/if}
-      {#if failed}
-        <p class="failed" role="alert">{failed}</p>
-      {/if}
-      {#if dirty}
-        <Notice tone="info" title={$t('frameleaf_workruns_changes', { values: { count: changedRows.length || 1 } })}>
-          {[
-            orderChanged
-              ? $t('frameleaf_order_changed', { values: { names: list(order.map((source) => sourceName(source))) } })
-              : '',
-            ...changedRows.map((kind) => changeWords(kind)),
-            suggestChanged ? $t('frameleaf_workruns_change_suggest') : '',
-          ]
-            .filter(Boolean)
-            .join(' ')}
-        </Notice>
-      {/if}
-      {#if facts.destinations.length > 1 || cloudOn || dirty || processing}
-        <div class="actions">
-          <Button variant="primary" disabled={!dirty || saving} onclick={() => void save()}>
-            {$t('frameleaf_workruns_save')}
-          </Button>
-          <Button disabled={!dirty || saving} onclick={undo}>{$t('frameleaf_workruns_undo')}</Button>
-        </div>
-      {/if}
-    </Section>
-
-    {#if cloudOn && cloudMl && anyAsk}
-      <Section title={$t('frameleaf_workruns_ask_title')}>
-        <Row label={$t('frameleaf_workruns_ask_row')} help={$t('frameleaf_workruns_ask_help')}>
-          <select
-            class="fl-control"
-            aria-label={$t('frameleaf_workruns_ask_label')}
-            value={suggest ?? savedCloudMl?.startWith}
-            disabled={saving || locked}
-            onchange={(event) => (suggest = event.currentTarget.value as StartWith)}
-          >
-            <option value={StartWith.Local}>{$t('frameleaf_workruns_ask_home')}</option>
-            <option value={StartWith.Cloud}>{$t('frameleaf_workruns_choice_cloud')}</option>
-          </select>
+        <Row label={$t('frameleaf_workruns_cloud_row')} help={$t('frameleaf_workruns_cloud_help')}>
+          <a class="button" href={commandCenterUrl('cloud')}>{$t('frameleaf_workruns_cloud_open')}</a>
+        </Row>
+        <Row label={$t('frameleaf_workruns_speed')} help={$t('frameleaf_workruns_speed_help')}>
+          <a class="button" href={Route.hardware()}>{$t('frameleaf_computers_page_hardware')}</a>
         </Row>
       </Section>
     {/if}
-
-    <Section title={$t('frameleaf_workruns_elsewhere')} description={$t('frameleaf_workruns_elsewhere_description')}>
-      <Row label={$t('frameleaf_workruns_quality')} help={$t('frameleaf_workruns_quality_help')}>
-        <a class="button" href={Route.systemSettings({ isOpen: OpenQueryParam.IMAGE_DESCRIPTION })}>
-          {$t('frameleaf_workruns_quality_open')}
-        </a>
-      </Row>
-      <Row label={$t('frameleaf_workruns_cloud_row')} help={$t('frameleaf_workruns_cloud_help')}>
-        <a class="button" href={commandCenterUrl('cloud')}>{$t('frameleaf_workruns_cloud_open')}</a>
-      </Row>
-      <Row label={$t('frameleaf_workruns_speed')} help={$t('frameleaf_workruns_speed_help')}>
-        <a class="button" href={Route.hardware()}>{$t('frameleaf_computers_page_hardware')}</a>
-      </Row>
-    </Section>
   {/if}
-</KitPage>
+{/snippet}
+
+{#if part === 'all'}
+  <KitPage>{@render body()}</KitPage>
+{:else}
+  {@render body()}
+{/if}
 
 <style>
   .loading {
@@ -672,9 +735,6 @@
     color: var(--fl-danger);
     border-color: color-mix(in srgb, var(--fl-danger) 45%, var(--fl-border));
   }
-  .rule {
-    padding-bottom: var(--fl-space-3);
-  }
   .runs {
     display: flex;
     flex-wrap: wrap;
@@ -714,18 +774,128 @@
     color: var(--fl-muted);
     font-size: var(--fl-font-callout);
   }
-  .actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--fl-space-2);
-    padding: var(--fl-space-4) 0 var(--fl-space-6);
-  }
   @container kit (max-width: 620px) {
     .runs {
       justify-content: flex-start;
     }
     select {
       width: 100%;
+    }
+  }
+  /* Who does what (approved design, 2026-11-04): every row's choices line up as columns. */
+  .grid {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .work {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--fl-space-4);
+    padding: 14px 0;
+  }
+  .work + .work {
+    border-top: 1px solid var(--fl-border);
+  }
+  .work-name strong {
+    display: block;
+    font-weight: 600;
+  }
+  .work-name small {
+    display: block;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+  }
+  .work-name .work-note {
+    margin-top: 2px;
+    color: var(--fl-text);
+  }
+  .work.is-waiting .work-note {
+    color: var(--fl-warning);
+  }
+  .choices {
+    display: grid;
+    grid-template-columns: repeat(var(--columns), minmax(96px, 124px));
+    padding: 2px;
+    background: var(--fl-raised);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control);
+  }
+  .choices button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 30px;
+    padding: 0 8px;
+    color: var(--fl-muted);
+    font: inherit;
+    font-size: var(--fl-font-small);
+    white-space: nowrap;
+    background: none;
+    border: 0;
+    border-radius: var(--fl-radius-sm);
+    cursor: pointer;
+  }
+  .choices button span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .choices button:hover:not(:disabled, .is-on) {
+    color: var(--fl-text);
+  }
+  .choices button.is-on {
+    color: var(--fl-text);
+    font-weight: 600;
+    background: var(--fl-panel);
+    box-shadow: var(--fl-shadow-1);
+  }
+  .choices button.is-on :global(svg) {
+    color: var(--fl-accent);
+  }
+  .choices button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .save-bar {
+    position: sticky;
+    bottom: var(--fl-space-4);
+    z-index: var(--fl-z-sticky);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--fl-space-2);
+    margin: var(--fl-space-3) 0;
+    padding: 10px 12px;
+    background: var(--fl-material);
+    border: 1px solid var(--fl-material-edge);
+    border-radius: var(--fl-radius-card);
+    box-shadow: var(--fl-shadow-2);
+    backdrop-filter: var(--fl-material-blur);
+  }
+  .save-bar p {
+    display: grid;
+    flex: 1;
+    min-width: 12rem;
+    margin: 0;
+  }
+  .save-bar p span {
+    color: var(--fl-on-material-muted);
+    font-size: var(--fl-font-small);
+  }
+  @media (max-width: 1100px) {
+    .work {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 10px;
+    }
+    .choices {
+      grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    }
+  }
+  @media (max-width: 700px) {
+    .choices {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
 </style>

@@ -56,6 +56,8 @@ vi.mock('@frameleaf/sdk', async (importOriginal) => ({
   createJob: vi.fn(),
   retryFailedQueueJobs: vi.fn(),
   retryQueueJob: vi.fn(),
+  listMlDestinations: vi.fn().mockResolvedValue([]),
+  getMlWorkloadRoutes: vi.fn().mockResolvedValue({ routes: [] }),
   startQueueJob: vi.fn(),
   runQueueOnOne: vi.fn(),
   searchUsersAdmin: vi.fn(),

@@ -12,46 +12,33 @@
    * managers for addresses, access keys, connection codes, limits and history are kept under
    * Details, closed until needed.
    */
+  import { replaceState } from '$app/navigation';
   import { page } from '$app/state';
+  import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
+  import WhereWorkRuns from '$lib/components/frameleaf/computers/WhereWorkRuns.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import MlDestinationsPanel from '$lib/components/frameleaf/MlDestinationsPanel.svelte';
-  import Coverage, { type CoverageRow } from '$lib/components/frameleaf/settings/kit/Coverage.svelte';
-  import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
-  import Item from '$lib/components/frameleaf/settings/kit/Item.svelte';
-  import ItemList from '$lib/components/frameleaf/settings/kit/ItemList.svelte';
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
   import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
-  import type { KitTone } from '$lib/components/frameleaf/settings/kit/Pill.svelte';
+  import Pill, { type KitTone } from '$lib/components/frameleaf/settings/kit/Pill.svelte';
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import WorkerInventoryPanel from '$lib/components/frameleaf/WorkerInventoryPanel.svelte';
-  import {
-    aiState,
-    canRunStudioWork,
-    computersFrom,
-    entryState,
-    notAnswering,
-    whereOf,
-    type Computer,
-  } from '$lib/frameleaf/computers';
+  import { aiState, computersFrom, notAnswering, whereOf, type Computer } from '$lib/frameleaf/computers';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
+  import { Route } from '$lib/route';
+  import { OpenQueryParam } from '$lib/constants';
   import { locale } from '$lib/stores/preferences.store';
-  import {
-    getRenderWorkerCompatibility,
-    getWorkerInventory,
-    WorkerInventorySource,
-    type RenderWorkerCompatibilityResponseDto,
-  } from '@frameleaf/sdk';
+  import { getWorkerInventory, WorkerInventorySource } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import {
     mdiAlertCircleOutline,
     mdiCheckCircleOutline,
     mdiChevronRight,
     mdiCloudOutline,
-    mdiCreation,
+    mdiPlus,
     mdiDesktopTowerMonitor,
-    mdiMovieOpenOutline,
     mdiServerOutline,
   } from '@mdi/js';
   import { onMount, tick } from 'svelte';
@@ -62,7 +49,6 @@
   const { data }: { data: ComputersData } = $props();
 
   let inventory = $state(data.processing.inventory);
-  let compatibility = $state<RenderWorkerCompatibilityResponseDto | null>();
   let inventoryKey = $state(0);
   let retrying = $state(false);
 
@@ -76,13 +62,10 @@
   };
   const refresh = async () => {
     retrying = true;
-    [inventory, compatibility] = await Promise.all([read(getWorkerInventory), read(getRenderWorkerCompatibility)]);
+    inventory = await read(getWorkerInventory);
     inventoryKey += 1;
     retrying = false;
   };
-  onMount(async () => {
-    compatibility = await read(getRenderWorkerCompatibility);
-  });
 
   const list = (names: string[]) => new Intl.ListFormat($locale, { style: 'long', type: 'conjunction' }).format(names);
   const computers = $derived(computersFrom(inventory));
@@ -121,64 +104,6 @@
             body: $t('frameleaf_computers_list_ready_body'),
           },
   );
-
-  /** The computers that are switched on, answering and set to do AI work. */
-  const aiComputers = $derived(
-    computers.filter(
-      (computer) =>
-        computer.place !== 'cloud' &&
-        (computer.place === 'server' ? ai === 'ready' || ai === 'unchecked' : computer.state === 'ready') &&
-        computer.entries.some(
-          (entry) => entry.source === WorkerInventorySource.MlDestination && entry.routedWorkloads.length > 0,
-        ),
-    ),
-  );
-  const studioComputers = $derived(
-    computers.filter((computer) =>
-      computer.entries.some(
-        (entry) => entry.source === WorkerInventorySource.RenderWorker && entryState(entry) === 'ready',
-      ),
-    ),
-  );
-  const exportCan = $derived(canRunStudioWork(compatibility, 'export'));
-  const coverage = $derived.by((): CoverageRow[] => [
-    {
-      icon: mdiCreation,
-      name: $t('frameleaf_computers_fact_ai'),
-      detail: $t('frameleaf_computers_fact_ai_detail'),
-      ...(inventory === null
-        ? { tone: 'off', value: $t('frameleaf_computers_fact_ai_unread') }
-        : ai === 'off'
-          ? { tone: 'off', value: $t('frameleaf_computers_fact_ai_off') }
-          : ai === 'not-answering' && aiComputers.length === 0
-            ? { tone: 'warn', value: $t('frameleaf_computers_fact_ai_silent') }
-            : {
-                tone: 'good',
-                value: list(aiComputers.map((computer) => name(computer))) || $t('frameleaf_computers_this_server'),
-              }),
-    },
-    {
-      icon: mdiMovieOpenOutline,
-      name: $t('frameleaf_computers_fact_studio'),
-      ...(exportCan
-        ? {
-            tone: 'good',
-            detail: $t('frameleaf_computers_fact_studio_detail_ok'),
-            value: list(studioComputers.map((computer) => name(computer))) || $t('frameleaf_workruns_home_computer'),
-          }
-        : exportCan === false
-          ? {
-              tone: 'warn',
-              detail: $t('frameleaf_computers_fact_studio_detail'),
-              value: $t('frameleaf_computers_fact_studio_none'),
-            }
-          : {
-              tone: 'off',
-              detail: $t('frameleaf_computers_fact_studio_detail'),
-              value: $t('frameleaf_computers_fact_ai_unread'),
-            }),
-    },
-  ]);
 
   const ICONS = { server: mdiServerOutline, home: mdiDesktopTowerMonitor, cloud: mdiCloudOutline };
   const TONES: Record<Computer['state'], KitTone> = {
@@ -219,33 +144,62 @@
   const doing = (computer: Computer) =>
     computer.entries.reduce((total, entry) => total + entry.routedWorkloads.length + entry.renderKinds.length, 0);
 
+  // ---- Everyday | Advanced (approved design, 2026-11-04) ----------------------------------------------
+  // Everyday: the computers, adding one, and who does what. Advanced: each computer's details (addresses,
+  // checks, Studio helpers with their limits and history), the order to try and the settings elsewhere.
+  let view = $state<'everyday' | 'advanced'>(
+    page.url.searchParams.get('view') === 'advanced' ? 'advanced' : 'everyday',
+  );
+  const showView = async (next: 'everyday' | 'advanced') => {
+    view = next;
+    const url = new URL(page.url.href);
+    if (next === 'advanced') {
+      url.searchParams.set('view', 'advanced');
+    } else {
+      url.searchParams.delete('view');
+    }
+    try {
+      await replaceState(url, page.state);
+    } catch {
+      // Before the router's first navigation the address stays as it was; the view still changes.
+    }
+    await tick();
+  };
+  /** With only this server, Frameleaf Cloud is the other way to get heavy work done faster. */
+  const offerCloud = $derived(atHome.length === 1 && computers.every((computer) => computer.place !== 'cloud'));
+
   // ---- add a computer, and the managers under Details ----------------------------------------------
 
   let addRequest = $state(0);
   let enrolRequest = $state(0);
-  let aiDetails = $state<HTMLDetailsElement>();
-  let studioDetails = $state<HTMLDetailsElement>();
+  let aiDetails = $state<HTMLElement>();
+  let studioDetails = $state<HTMLElement>();
   let addSection = $state<HTMLElement>();
-  const open = async (details: HTMLDetailsElement | undefined) => {
+  /** The tile's two ways to connect a computer; links that say `?add=` open them. */
+  let addOpen = $state(page.url.searchParams.has('add'));
+  const open = async (target: () => HTMLElement | undefined) => {
+    if (view !== 'advanced') {
+      await showView('advanced');
+    }
+    const details = target();
     if (!details) {
       return;
     }
-    details.open = true;
     await tick();
     details.scrollIntoView({ block: 'start' });
   };
   const connectByAddress = async () => {
-    await open(aiDetails);
+    await open(() => aiDetails);
     addRequest += 1;
   };
   const connectStudio = async () => {
-    await open(studioDetails);
+    await open(() => studioDetails);
     enrolRequest += 1;
   };
   const manage = (computer: Computer) =>
-    open(
+    open(() =>
       computer.entries.some((entry) => entry.source === WorkerInventorySource.MlDestination) ||
-        computer.place === 'server'
+      computer.place === 'server'
         ? aiDetails
         : studioDetails,
     );
@@ -258,96 +212,158 @@
 </script>
 
 <KitPage>
+  <div class="views">
+    <SegmentedControl
+      label={$t('frameleaf_computers_view_label')}
+      options={[
+        { value: 'everyday', label: $t('frameleaf_bgwork_view_everyday') },
+        { value: 'advanced', label: $t('frameleaf_bgwork_view_advanced') },
+      ]}
+      value={view}
+      onChange={(next) => void showView(next as 'everyday' | 'advanced')}
+    />
+    <span
+      >{view === 'advanced'
+        ? $t('frameleaf_computers_view_advanced_hint')
+        : $t('frameleaf_computers_view_everyday_hint')}</span
+    >
+  </div>
   {#if inventory === null}
     <InlineError compact message={$t('admin.frameleaf_workers_load_failed')} onRetry={refresh} {retrying} />
   {/if}
 
-  <Hero
-    tone={hero.tone}
-    icon={hero.icon}
-    title={hero.title}
-    body={hero.body}
-    label={$t('frameleaf_computers_list_status_label')}
-  >
-    {#snippet actions()}
-      <a class="button" class:primary={computers.length === 1} href="#add-a-computer">{$t('frameleaf_computers_add')}</a
-      >
-    {/snippet}
-    <Coverage rows={coverage} />
-  </Hero>
-
-  {#if ai === 'off'}
-    <Notice tone="info" title={$t('frameleaf_computers_ai_off_title')}>
-      {$t('frameleaf_computers_ai_off_body')}
-      {#snippet action()}
-        <a class="button" href={commandCenterUrl('intelligence', 'machine-learning')}>
-          {$t('frameleaf_computers_ai_turn_on')}
-        </a>
-      {/snippet}
-    </Notice>
-  {/if}
-
-  <Section title={$t('frameleaf_computers_list_title')} description={$t('frameleaf_computers_list_description')}>
-    <ItemList>
+  {#if view === 'everyday'}
+    {#if ai === 'off'}
+      <Notice tone="info" title={$t('frameleaf_computers_ai_off_title')}>
+        {$t('frameleaf_computers_ai_off_body')}
+        {#snippet action()}
+          <a class="button" href={commandCenterUrl('intelligence', 'machine-learning')}>
+            {$t('frameleaf_computers_ai_turn_on')}
+          </a>
+        {/snippet}
+      </Notice>
+    {/if}
+    {#if silent.length > 0}
+      <Notice tone="warn" title={hero.title}>{hero.body}</Notice>
+    {/if}
+    <!-- The approved cards (2026-11-04): each computer with its state, what it does and one way in. -->
+    <ul class="computers" aria-label={$t('frameleaf_computers_list_title')}>
       {#each computers as computer (computer.key)}
         {@const state = status(computer)}
-        <Item
-          icon={ICONS[whereOf(computer)]}
-          off={computer.state === 'off'}
-          name={name(computer)}
-          detail={[$t(`frameleaf_computers_where_${whereOf(computer)}` as Translations), computer.card]
+        <li class="computer" class:is-warn={state.tone === 'warn'} class:is-off={computer.state === 'off'}>
+          <span class="computer-icon"><Icon icon={ICONS[whereOf(computer)]} size="22" aria-hidden /></span>
+          <div class="computer-name">
+            <strong>{name(computer)}</strong>
+            <small>
+              {[$t(`frameleaf_computers_where_${whereOf(computer)}` as Translations), computer.card]
+                .filter(Boolean)
+                .join(' · ')}
+            </small>
+          </div>
+          <div class="computer-status">
+            <Pill tone={state.tone}>{state.words}</Pill>
+            <small>{state.note ?? $t('frameleaf_computers_doing', { values: { count: doing(computer) } })}</small>
+          </div>
+          {#if computer.place === 'server'}
+            <a class="button" href={commandCenterUrl('processing', 'hardware')}>
+              {$t('frameleaf_computers_page_hardware')}<Icon icon={mdiChevronRight} size="16" aria-hidden />
+            </a>
+          {:else if computer.place === 'cloud'}
+            <a class="button" href={commandCenterUrl('cloud', 'cloud-account')}>
+              {$t('frameleaf_computers_cloud_credit')}<Icon icon={mdiChevronRight} size="16" aria-hidden />
+            </a>
+          {:else}
+            <Button
+              label={$t('frameleaf_computers_manage_named', { values: { name: name(computer) } })}
+              onclick={() => void manage(computer)}
+            >
+              {$t('frameleaf_computers_details')}<Icon icon={mdiChevronRight} size="16" aria-hidden />
+            </Button>
+          {/if}
+        </li>
+      {/each}
+      {#if offerCloud}
+        <li class="computer is-off">
+          <span class="computer-icon"><Icon icon={mdiCloudOutline} size="22" aria-hidden /></span>
+          <div class="computer-name">
+            <strong>{$t('frameleaf_computers_cloud')}</strong>
+            <small>{$t('frameleaf_computers_cloud_offer')}</small>
+          </div>
+          <div class="computer-status">
+            <Pill tone="off">{$t('frameleaf_computers_cloud_not_set_up')}</Pill>
+          </div>
+          <a class="button" href={commandCenterUrl('cloud', 'cloud-processing')}>
+            {$t('frameleaf_computers_cloud_set_up')}<Icon icon={mdiChevronRight} size="16" aria-hidden />
+          </a>
+        </li>
+      {/if}
+      <li class="add-tile">
+        <button
+          type="button"
+          class="add"
+          aria-expanded={addOpen}
+          aria-controls="add-a-computer"
+          onclick={() => (addOpen = !addOpen)}
+        >
+          <Icon icon={mdiPlus} size="20" aria-hidden />
+          <span>
+            <strong>{$t('frameleaf_computers_add')}</strong>
+            <small>{$t('frameleaf_computers_add_tile')}</small>
+          </span>
+        </button>
+      </li>
+    </ul>
+    {#if addOpen}
+      <div bind:this={addSection} id="add-a-computer" class="anchor">
+        <Section title={$t('frameleaf_computers_add')} description={$t('frameleaf_computers_add_description')}>
+          <Row label={$t('frameleaf_computers_add_address')} help={$t('frameleaf_computers_add_address_help')}>
+            <Button onclick={() => void connectByAddress()}>{$t('frameleaf_computers_add_address_button')}</Button>
+          </Row>
+          <Row label={$t('frameleaf_computers_add_studio')} help={$t('frameleaf_computers_add_studio_help')}>
+            <Button onclick={() => void connectStudio()}>{$t('frameleaf_computers_add_studio_button')}</Button>
+          </Row>
+        </Section>
+      </div>
+    {/if}
+    <WhereWorkRuns part="everyday" />
+  {:else}
+    <Section title={$t('frameleaf_computers_each')} description={$t('frameleaf_computers_each_description')}>
+      {#each computers as computer (computer.key)}
+        {@const state = status(computer)}
+        <Row
+          label={name(computer)}
+          help={[
+            $t(`frameleaf_computers_where_${whereOf(computer)}` as Translations),
+            computer.card,
+            state.words,
+            helps(computer).length > 0 ? list(helps(computer)) : '',
+          ]
             .filter(Boolean)
             .join(' · ')}
-          tone={state.tone}
-          status={state.words}
-          note={state.note}
         >
-          {#snippet measure()}
-            <div class="doing">
-              <strong>{$t('frameleaf_computers_doing', { values: { count: doing(computer) } })}</strong>
-              <span>{list(helps(computer))}</span>
-            </div>
-          {/snippet}
-          {#snippet action()}
-            {#if computer.place === 'cloud'}
-              <a
-                class="button"
-                href={commandCenterUrl('cloud')}
-                aria-label={$t('frameleaf_computers_manage_named', { values: { name: name(computer) } })}
-              >
-                {$t('frameleaf_computers_manage')}<Icon icon={mdiChevronRight} size="16" aria-hidden />
-              </a>
-            {:else}
-              <Button
-                label={$t('frameleaf_computers_manage_named', { values: { name: name(computer) } })}
-                onclick={() => void manage(computer)}
-              >
-                {$t('frameleaf_computers_manage')}
-              </Button>
-            {/if}
-          {/snippet}
-        </Item>
+          {#if computer.place === 'cloud'}
+            <a class="button" href={commandCenterUrl('cloud')}>
+              {$t('frameleaf_computers_manage')}<Icon icon={mdiChevronRight} size="16" aria-hidden />
+            </a>
+          {:else}
+            <Button
+              label={$t('frameleaf_computers_manage_named', { values: { name: name(computer) } })}
+              onclick={() => void manage(computer)}
+            >
+              {$t('frameleaf_computers_manage')}<Icon icon={mdiChevronRight} size="16" aria-hidden />
+            </Button>
+          {/if}
+        </Row>
       {/each}
-    </ItemList>
-  </Section>
-
-  <div bind:this={addSection} id="add-a-computer" class="anchor">
-    <Section title={$t('frameleaf_computers_add')} description={$t('frameleaf_computers_add_description')}>
-      <Row label={$t('frameleaf_computers_add_address')} help={$t('frameleaf_computers_add_address_help')}>
-        <Button onclick={() => void connectByAddress()}>{$t('frameleaf_computers_add_address_button')}</Button>
-      </Row>
-      <Row label={$t('frameleaf_computers_add_studio')} help={$t('frameleaf_computers_add_studio_help')}>
-        <Button onclick={() => void connectStudio()}>{$t('frameleaf_computers_add_studio_button')}</Button>
-      </Row>
     </Section>
-  </div>
-
-  <Section title={$t('frameleaf_computers_details_title')} description={$t('frameleaf_computers_details_description')}>
-    <!-- Plain disclosures with ids: the managers' own buttons and the rows above open them by name. -->
-    <details class="more" id="ml-destinations" bind:this={aiDetails}>
-      <summary>{$t('frameleaf_computers_details_ai')}</summary>
-      <div class="body">
-        <p class="hint">{$t('frameleaf_computers_details_ai_help')}</p>
+    <WhereWorkRuns part="advanced" />
+    <div id="studio-helpers" class="anchor" bind:this={studioDetails}>
+      <Section title={$t('frameleaf_computers_details_studio')}>
+        <RenderWorkersSection data={data.render} {enrolRequest} onChanged={() => void refresh()} />
+      </Section>
+    </div>
+    <div id="ml-destinations" class="anchor" bind:this={aiDetails}>
+      <Section title={$t('frameleaf_computers_details_ai')} description={$t('frameleaf_computers_details_ai_help')}>
         <MlDestinationsPanel
           destinations={data.processing.destinations}
           routes={data.processing.routes}
@@ -355,24 +371,35 @@
           showRoutes={false}
           onChanged={() => void refresh()}
         />
-        {#if inventory}
-          <h3>{$t('frameleaf_computers_details_checks')}</h3>
-          <WorkerInventoryPanel
-            {inventory}
-            destinations={data.processing.destinations}
-            refreshKey={inventoryKey}
-            onInventory={(next) => (inventory = next)}
-          />
-        {/if}
-      </div>
-    </details>
-    <details class="more" id="studio-helpers" bind:this={studioDetails}>
-      <summary>{$t('frameleaf_computers_details_studio')}</summary>
-      <div class="body">
-        <RenderWorkersSection data={data.render} {enrolRequest} onChanged={() => void refresh()} />
-      </div>
-    </details>
-  </Section>
+      </Section>
+    </div>
+    {#if inventory}
+      <Section
+        title={$t('frameleaf_computers_details_checks')}
+        description={$t('frameleaf_computers_checks_description')}
+      >
+        <WorkerInventoryPanel
+          {inventory}
+          destinations={data.processing.destinations}
+          refreshKey={inventoryKey}
+          onInventory={(next) => (inventory = next)}
+        />
+      </Section>
+    {/if}
+    <Section title={$t('frameleaf_workruns_elsewhere')} description={$t('frameleaf_workruns_elsewhere_description')}>
+      <Row label={$t('frameleaf_workruns_quality')} help={$t('frameleaf_workruns_quality_help')}>
+        <a class="button" href={Route.systemSettings({ isOpen: OpenQueryParam.IMAGE_DESCRIPTION })}>
+          {$t('frameleaf_workruns_quality_open')}
+        </a>
+      </Row>
+      <Row label={$t('frameleaf_workruns_cloud_row')} help={$t('frameleaf_workruns_cloud_help')}>
+        <a class="button" href={commandCenterUrl('cloud')}>{$t('frameleaf_workruns_cloud_open')}</a>
+      </Row>
+      <Row label={$t('frameleaf_workruns_speed')} help={$t('frameleaf_workruns_speed_help')}>
+        <a class="button" href={Route.hardware()}>{$t('frameleaf_computers_page_hardware')}</a>
+      </Row>
+    </Section>
+  {/if}
 </KitPage>
 
 <style>
@@ -384,71 +411,124 @@
     text-decoration: none;
     white-space: nowrap;
   }
-  a.button:focus-visible,
-  summary:focus-visible {
+  a.button:focus-visible {
     outline: var(--fl-focus-ring);
     outline-offset: var(--fl-focus-offset);
-  }
-  .doing {
-    display: grid;
-    gap: var(--fl-space-1);
-    font-size: var(--fl-font-callout);
-  }
-  .doing span {
-    color: var(--fl-muted);
   }
   /* A link that jumps here leaves room above the heading. */
   .anchor {
     scroll-margin-top: var(--fl-space-6);
   }
-  .more {
-    padding: var(--fl-space-1) 0;
-    border-top: 1px solid var(--fl-border);
-    scroll-margin-top: var(--fl-space-6);
-  }
-  .more summary {
+  /* The same disclosure mark the kit's Advanced draws. */
+  .views {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    min-height: var(--fl-control-height);
+    gap: var(--fl-space-3);
+    margin-block-end: var(--fl-space-4);
+  }
+  .views > span {
     color: var(--fl-muted);
-    font-size: var(--fl-font-callout);
-    font-weight: 600;
-    cursor: pointer;
-    gap: var(--fl-space-2);
+    font-size: var(--fl-font-small);
+  }
+  /* The approved computer cards (2026-11-04). */
+  .computers {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 10px;
+    margin: 0 0 var(--fl-space-6);
+    padding: 0;
     list-style: none;
   }
-  .more summary::-webkit-details-marker {
-    display: none;
-  }
-  /* The same disclosure mark the kit's Advanced draws. */
-  .more summary::before {
-    content: '';
-    width: 0;
-    height: 0;
-    border-block: 4px solid transparent;
-    border-inline-start: 6px solid currentcolor;
-    transition: transform var(--fl-motion-fast) var(--fl-ease);
-  }
-  .more[open] > summary::before {
-    transform: rotate(90deg);
-  }
-  .more summary:hover {
-    color: var(--fl-text);
-  }
-  .more .body {
+  .computer {
     display: grid;
-    gap: var(--fl-space-4);
-    min-width: 0;
-    padding: var(--fl-space-2) 0 var(--fl-space-6);
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+    align-items: center;
+    gap: 10px 12px;
+    padding: var(--fl-space-4);
+    background: var(--fl-panel);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-card);
   }
-  .more h3 {
-    margin: var(--fl-space-2) 0 0;
-    font-size: var(--fl-font-callout);
+  .computer.is-warn {
+    border-color: color-mix(in srgb, var(--fl-warning) 45%, var(--fl-border));
+  }
+  .computer-name strong {
+    display: block;
     font-weight: 600;
   }
-  .hint {
-    margin: 0;
+  .computer-name small,
+  .computer-status small {
+    display: block;
     color: var(--fl-muted);
-    font-size: var(--fl-font-callout);
+    font-size: var(--fl-font-small);
+  }
+  .computer-icon {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    color: var(--fl-accent);
+    background: var(--fl-accent-soft);
+    border-radius: var(--fl-radius-sm);
+  }
+  .computer.is-warn .computer-icon {
+    color: var(--fl-warning);
+    background: color-mix(in srgb, var(--fl-warning) 14%, transparent);
+  }
+  .computer.is-off .computer-icon {
+    color: var(--fl-muted);
+    background: var(--fl-raised);
+  }
+  .computer-status {
+    display: grid;
+    justify-items: end;
+    gap: 2px;
+    text-align: end;
+  }
+  .computer > :global(.button),
+  .computer > :global(button) {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+  .add-tile {
+    display: grid;
+  }
+  .add {
+    display: flex;
+    align-items: center;
+    gap: var(--fl-space-3);
+    padding: var(--fl-space-4);
+    color: var(--fl-text);
+    font: inherit;
+    text-align: start;
+    background: none;
+    border: 1px dashed var(--fl-border-strong);
+    border-radius: var(--fl-radius-card);
+    cursor: pointer;
+  }
+  .add:hover,
+  .add[aria-expanded='true'] {
+    background: var(--fl-accent-soft);
+    border-color: var(--fl-accent);
+  }
+  .add > :global(svg) {
+    flex: none;
+    color: var(--fl-accent);
+  }
+  .add strong {
+    display: block;
+    font-weight: 600;
+  }
+  .add small {
+    display: block;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+  }
+  @media (max-width: 700px) {
+    .computers {
+      grid-template-columns: 1fr;
+    }
   }
 </style>

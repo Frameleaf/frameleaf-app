@@ -434,7 +434,7 @@
       </Button>
     </Row>
     <Row label={$t('frameleaf_care_prog_where')} help={$t('frameleaf_care_prog_where_help')}>
-      <Button onclick={() => goto(commandCenterUrl('processing', 'routing'))}>
+      <Button onclick={() => goto(commandCenterUrl('processing', 'computers'))}>
         {$t('frameleaf_care_prog_where_open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden />
       </Button>
     </Row>

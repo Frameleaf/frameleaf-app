@@ -78,7 +78,7 @@
 
   <Section title={$t('frameleaf_editing_restore_runs')} description={$t('frameleaf_editing_restore_runs_help')}>
     {#snippet action()}
-      <Button onclick={() => goto(commandCenterUrl('processing', 'routing'))}>
+      <Button onclick={() => goto(commandCenterUrl('processing', 'computers'))}>
         {$t('frameleaf_editing_restore_runs_button')}
       </Button>
     {/snippet}

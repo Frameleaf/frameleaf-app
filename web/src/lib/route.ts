@@ -207,7 +207,7 @@ export const Route = {
   systemMaintenance: (params?: { section?: MaintenanceSectionKey; continue?: string }) =>
     commandCenterUrl('maintenance', params?.section, { continue: params?.continue }),
   /** Processing destinations (FL-110): where machine-learning work may run, with consent and cost controls. */
-  systemProcessingDestinations: () => commandCenterUrl('processing', 'routing'),
+  systemProcessingDestinations: () => commandCenterUrl('processing', 'computers'),
   /** Computers (FL-364): this server and every computer that helps it. */
   computers: () => commandCenterUrl('processing', 'computers'),
   /** Workers & endpoints (FL-72) is part of Computers; older callers keep this name. */

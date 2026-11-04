@@ -12,8 +12,7 @@
   import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
-  import Item from '$lib/components/frameleaf/settings/kit/Item.svelte';
-  import ItemList from '$lib/components/frameleaf/settings/kit/ItemList.svelte';
+  import Pill from '$lib/components/frameleaf/settings/kit/Pill.svelte';
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import type { KitTone } from '$lib/components/frameleaf/settings/kit/Pill.svelte';
@@ -24,7 +23,14 @@
   import { WORK_FEATURES, type WorkFeature, type WorkFeatureId } from '$lib/frameleaf/work-features';
   import type { OverviewTask } from '$lib/components/frameleaf/jobs/BackgroundWorkOverview.svelte';
   import { Route } from '$lib/route';
-  import type { QueueName } from '@frameleaf/sdk';
+  import {
+    getMlWorkloadRoutes,
+    listMlDestinations,
+    MlDestinationKind,
+    MlWorkload,
+    type QueueName,
+  } from '@frameleaf/sdk';
+  import { onMount } from 'svelte';
   import { Icon } from '@frameleaf/ui';
   import {
     mdiAlertCircleOutline,
@@ -160,6 +166,37 @@
       : $t(`frameleaf_bgwork_state_${state.replaceAll('-', '_')}` as Translations);
   const left = (feature: WorkFeature) => rowsOf(feature).reduce((total, row) => total + workLeft(row), 0);
   const firstFailed = $derived(summary.failed[0]?.definition.name);
+
+  /** Where each routed feature runs now, by the place's name (the who-does-what grid in Computers). */
+  const WORKLOADS: Partial<Record<WorkFeatureId, MlWorkload>> = {
+    faces: MlWorkload.Face,
+    search: MlWorkload.Clip,
+    text: MlWorkload.Ocr,
+    descriptions: MlWorkload.Enrichment,
+  };
+  let places = $state<Partial<Record<WorkFeatureId, string>>>({});
+  onMount(async () => {
+    try {
+      const [destinations, { routes }] = await Promise.all([listMlDestinations(), getMlWorkloadRoutes()]);
+      const named: Partial<Record<WorkFeatureId, string>> = {};
+      for (const [id, workload] of Object.entries(WORKLOADS) as [WorkFeatureId, MlWorkload][]) {
+        const destination = destinations.find(
+          (item) => item.id === routes.find((route) => route.workload === workload)?.destinationId,
+        );
+        if (destination) {
+          named[id] =
+            destination.kind === MlDestinationKind.Local
+              ? $t('frameleaf_computers_this_server')
+              : destination.kind === MlDestinationKind.FrameleafCloud
+                ? $t('frameleaf_computers_cloud')
+                : destination.name;
+        }
+      }
+      places = named;
+    } catch {
+      // Without the routes each feature still links to Computers.
+    }
+  });
 </script>
 
 {#if unavailable}
@@ -236,73 +273,75 @@
 </Section>
 
 <Section title={$t('frameleaf_bgwork_features')} description={$t('frameleaf_bgwork_features_description')}>
-  <ItemList>
+  <ul class="features">
     {#each WORK_FEATURES as feature (feature.id)}
       {@const own = rowsOf(feature)}
       {@const state = featureState(feature)}
       {@const remaining = left(feature)}
       {@const name = featureName(feature)}
-      <Item
-        icon={feature.icon}
-        {name}
-        detail={$t(`frameleaf_work_feature_${feature.id}_does` as Translations)}
-        tone={TONES[state] ?? 'off'}
-        status={own.length > 0 ? stateWords(state) : undefined}
-        note={remaining > 0 ? $t('frameleaf_bgwork_left', { values: { count: remaining } }) : undefined}
-      >
-        {#snippet action()}
-          <div class="actions">
-            {#if feature.routed}
-              <a class="button" href={computersHref}>{$t('frameleaf_bgwork_where')}</a>
+      <li class="feature">
+        <span class="feature-icon"><Icon icon={feature.icon} size="20" aria-hidden /></span>
+        <div class="feature-name">
+          <strong>{name}</strong>
+          <small>{$t(`frameleaf_work_feature_${feature.id}_does` as Translations)}</small>
+        </div>
+        {#if feature.routed}
+          <a class="where" href={computersHref}>{places[feature.id] ?? $t('frameleaf_bgwork_where')}</a>
+        {:else}
+          <span class="where is-fixed">{$t('frameleaf_computers_this_server')}</span>
+        {/if}
+        <div class="feature-state">
+          {#if own.length > 0}
+            <Pill tone={TONES[state] ?? 'off'}>{stateWords(state)}</Pill>
+          {/if}
+          {#if remaining > 0}
+            <small>{$t('frameleaf_bgwork_left', { values: { count: remaining } })}</small>
+          {/if}
+        </div>
+        <Menu label={$t('frameleaf_bgwork_feature_more', { values: { name } })} align="end">
+          {#snippet trigger()}<Icon icon={mdiDotsHorizontal} size="18" aria-hidden />{/snippet}
+          {#if own.length === 0}
+            <p class="menu-note">{$t(`frameleaf_work_feature_${feature.id}_started` as Translations)}</p>
+          {:else}
+            <MenuItem onSelect={() => onFeature(feature, state === 'paused' ? 'resume' : 'pause')}>
+              <Icon icon={state === 'paused' ? mdiPlay : mdiPause} size="16" aria-hidden />
+              {state === 'paused' ? $t('frameleaf_bgwork_resume') : $t('frameleaf_bgwork_pause')}
+            </MenuItem>
+            {#if own.some((row) => row.definition.run)}
+              <MenuItem onSelect={() => onFeature(feature, 'run')}>
+                <Icon icon={mdiPlaylistCheck} size="16" aria-hidden />{$t('frameleaf_bgwork_catch_up_missing')}
+              </MenuItem>
             {/if}
-            <Menu label={$t('frameleaf_bgwork_feature_more', { values: { name } })} align="end">
-              {#snippet trigger()}<Icon icon={mdiDotsHorizontal} size="18" aria-hidden />{/snippet}
-              {#if own.length === 0}
-                <p class="menu-note">{$t(`frameleaf_work_feature_${feature.id}_started` as Translations)}</p>
-              {:else}
-                <MenuItem onSelect={() => onFeature(feature, state === 'paused' ? 'resume' : 'pause')}>
-                  <Icon icon={state === 'paused' ? mdiPlay : mdiPause} size="16" aria-hidden />
-                  {state === 'paused' ? $t('frameleaf_bgwork_resume') : $t('frameleaf_bgwork_pause')}
-                </MenuItem>
-                {#if own.some((row) => row.definition.run)}
-                  <MenuItem onSelect={() => onFeature(feature, 'run')}>
-                    <Icon icon={mdiPlaylistCheck} size="16" aria-hidden />{$t('frameleaf_bgwork_catch_up_missing')}
-                  </MenuItem>
-                {/if}
-                {#if feature.id === 'descriptions'}
-                  <!-- Redo descriptions is this feature's "Do it all again…" (audit 2026-11-03). -->
-                  <MenuItem onSelect={() => onTask('descriptions')}>
-                    <Icon icon={mdiRefresh} size="16" aria-hidden />{$t('frameleaf_bgwork_redo_all_ask')}
-                  </MenuItem>
-                  <MenuItem onSelect={() => onTask('smart-albums')}>
-                    <Icon icon={mdiImageSearchOutline} size="16" aria-hidden />{$t(
-                      'frameleaf_bgwork_task_smart_albums',
-                    )}
-                  </MenuItem>
-                {:else if own.some((row) => row.definition.force)}
-                  <MenuItem onSelect={() => onFeature(feature, 'force')}>
-                    <Icon icon={mdiRefresh} size="16" aria-hidden />{$t('frameleaf_bgwork_redo_all_ask')}
-                  </MenuItem>
-                {/if}
-                {#if feature.id === 'upkeep'}
-                  <MenuItem onSelect={() => onTask('damage')}>
-                    <Icon icon={mdiShieldCheckOutline} size="16" aria-hidden />{$t('frameleaf_bgwork_task_damage')}
-                  </MenuItem>
-                  <MenuItem onSelect={() => onTask('count')}>
-                    <Icon icon={mdiChartLine} size="16" aria-hidden />{$t('frameleaf_bgwork_task_count')}
-                  </MenuItem>
-                {/if}
-                <MenuItem onSelect={() => onAdvanced(feature.id)}>
-                  <Icon icon={mdiFormatListChecks} size="16" aria-hidden />
-                  {$t('frameleaf_bgwork_feature_tasks', { values: { count: own.length } })}
-                </MenuItem>
-              {/if}
-            </Menu>
-          </div>
-        {/snippet}
-      </Item>
+            {#if feature.id === 'descriptions'}
+              <!-- Redo descriptions is this feature's "Do it all again…" (audit 2026-11-03). -->
+              <MenuItem onSelect={() => onTask('descriptions')}>
+                <Icon icon={mdiRefresh} size="16" aria-hidden />{$t('frameleaf_bgwork_redo_all_ask')}
+              </MenuItem>
+              <MenuItem onSelect={() => onTask('smart-albums')}>
+                <Icon icon={mdiImageSearchOutline} size="16" aria-hidden />{$t('frameleaf_bgwork_task_smart_albums')}
+              </MenuItem>
+            {:else if own.some((row) => row.definition.force)}
+              <MenuItem onSelect={() => onFeature(feature, 'force')}>
+                <Icon icon={mdiRefresh} size="16" aria-hidden />{$t('frameleaf_bgwork_redo_all_ask')}
+              </MenuItem>
+            {/if}
+            {#if feature.id === 'upkeep'}
+              <MenuItem onSelect={() => onTask('damage')}>
+                <Icon icon={mdiShieldCheckOutline} size="16" aria-hidden />{$t('frameleaf_bgwork_task_damage')}
+              </MenuItem>
+              <MenuItem onSelect={() => onTask('count')}>
+                <Icon icon={mdiChartLine} size="16" aria-hidden />{$t('frameleaf_bgwork_task_count')}
+              </MenuItem>
+            {/if}
+            <MenuItem onSelect={() => onAdvanced(feature.id)}>
+              <Icon icon={mdiFormatListChecks} size="16" aria-hidden />
+              {$t('frameleaf_bgwork_feature_tasks', { values: { count: own.length } })}
+            </MenuItem>
+          {/if}
+        </Menu>
+      </li>
     {/each}
-  </ItemList>
+  </ul>
   <p class="hint">{$t('frameleaf_bgwork_everyone')}</p>
 </Section>
 
@@ -315,8 +354,7 @@
 </Section>
 
 <style>
-  .inline,
-  .actions {
+  .inline {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -332,5 +370,70 @@
   .menu-note {
     max-width: 16rem;
     margin: var(--fl-space-2);
+  }
+  /* One row per feature (approved design, 2026-11-04): icon, name, where it runs, state, menu. */
+  .features {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .feature {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) 140px 150px auto;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 0;
+  }
+  .feature + .feature {
+    border-top: 1px solid var(--fl-border);
+  }
+  .feature-icon {
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    color: var(--fl-muted);
+    background: var(--fl-raised);
+    border-radius: var(--fl-radius-sm);
+  }
+  .feature-name strong {
+    display: block;
+    font-weight: 600;
+  }
+  .feature-name small,
+  .feature-state small {
+    display: block;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+  }
+  .feature-state {
+    display: grid;
+    justify-items: start;
+    gap: 2px;
+  }
+  .where {
+    justify-self: start;
+    color: var(--fl-accent);
+    font-size: var(--fl-font-small);
+    text-decoration: none;
+  }
+  a.where:hover {
+    text-decoration: underline;
+  }
+  .where.is-fixed {
+    color: var(--fl-muted);
+  }
+  @media (max-width: 700px) {
+    .feature {
+      grid-template-columns: auto minmax(0, 1fr) auto;
+    }
+    .feature > .where,
+    .feature > .feature-state {
+      grid-column: 2;
+    }
+    .feature > :global(.menu-root) {
+      grid-column: 3;
+      grid-row: 1;
+    }
   }
 </style>

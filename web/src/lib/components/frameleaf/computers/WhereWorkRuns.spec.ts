@@ -69,9 +69,21 @@ const cloudMl = (routing = {}) => ({
   },
 });
 
-/** One row of the table: its text, and its picker when it has one. */
+/** One row: a who-does-what row (approved design, 2026-11-04) or a kit row (the order to try). */
 const row = (name: string) =>
-  screen.getByText(name, { selector: '.kit-row strong' }).closest('.kit-row') as HTMLElement;
+  screen.getByText(name, { selector: '.kit-row strong, .work-name strong' }).closest('.kit-row, .work') as HTMLElement;
+/** A row's choices, one button for each place, lined up as columns. */
+const choices = (name: string) => screen.findByRole('radiogroup', { name: `Where ${name} runs` });
+const enabled = (group: HTMLElement) =>
+  within(group)
+    .getAllByRole('radio')
+    .filter((radio) => !(radio as HTMLButtonElement).disabled)
+    .map((radio) => radio.textContent?.trim());
+const checked = (group: HTMLElement) =>
+  within(group)
+    .getAllByRole('radio')
+    .find((radio) => radio.getAttribute('aria-checked') === 'true')
+    ?.textContent?.trim();
 
 describe('Where work runs (FL-364)', () => {
   beforeAll(() => {
@@ -97,14 +109,15 @@ describe('Where work runs (FL-364)', () => {
 
     expect(await screen.findByRole('heading', { name: 'Everything runs on this server' })).toBeInTheDocument();
     expect(screen.getByText(/Studio exports can’t run yet/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Add a computer' })).toBeInTheDocument();
-    expect(screen.queryAllByRole('combobox')).toHaveLength(0);
+    expect(screen.getAllByRole('link', { name: 'Add a computer' }).length).toBeGreaterThan(0);
+    expect(screen.queryAllByRole('radiogroup')).toHaveLength(0);
     // One table, nine rows, in the household names.
     expect(within(row('Faces & identity')).getByText('This server')).toBeInTheDocument();
     expect(row('Faces & identity')).toHaveTextContent(
       'Works here. Runs at home unless face recognition is turned on for Frameleaf Cloud.',
     );
-    expect(within(row('Enhance & upscale')).getByText('Can’t run yet')).toBeInTheDocument();
+    // Work that nothing here can do offers to add a computer, as the approved grid does.
+    expect(within(row('Enhance & upscale')).getByRole('link', { name: 'Add a computer' })).toBeInTheDocument();
     expect(row('Studio export')).toHaveTextContent('Exports are never made on Frameleaf Cloud.');
     expect(screen.queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument();
     for (const old of ['Smart search', 'Frame interpolation', 'Studio renders', 'Local only']) {
@@ -145,22 +158,18 @@ describe('Where work runs (FL-364)', () => {
     sdkMock.setMlWorkloadRoute.mockResolvedValue(routes({ ...HOME, [MlWorkload.Enrichment]: 'office' }) as never);
     render(WhereWorkRuns);
 
-    const picker = await screen.findByRole('combobox', { name: 'Where Descriptions & tags runs' });
-    expect(picker).toHaveValue('srv');
-    expect(
-      within(picker)
-        .getAllByRole('option')
-        .map((option) => option.textContent?.trim()),
-    ).toEqual(['This server', 'Office PC', 'Nowhere (keep this off)']);
-    const save = screen.getByRole('button', { name: 'Save changes' });
-    expect(save).toBeDisabled();
+    const picker = await choices('Descriptions & tags');
+    expect(checked(picker)).toBe('This server');
+    expect(enabled(picker)).toEqual(['This server', 'Office PC', 'Nowhere']);
+    // The save bar appears only once something has changed.
+    expect(screen.queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument();
 
-    await fireEvent.change(picker, { target: { value: 'office' } });
+    await fireEvent.click(within(picker).getByRole('radio', { name: 'Office PC' }));
     expect(screen.getByText('1 change not saved yet')).toBeInTheDocument();
     expect(screen.getByText('Descriptions & tags moves to Office PC.')).toBeInTheDocument();
     expect(sdkMock.setMlWorkloadRoute).not.toHaveBeenCalled();
 
-    await fireEvent.click(save);
+    await fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
     await waitFor(() =>
       expect(sdkMock.setMlWorkloadRoute).toHaveBeenCalledWith({
         workload: MlWorkload.Enrichment,
@@ -168,7 +177,7 @@ describe('Where work runs (FL-364)', () => {
       }),
     );
     expect(await screen.findByText(/^Saved\. New work follows these choices\./)).toBeInTheDocument();
-    expect(screen.getByRole('combobox', { name: 'Where Descriptions & tags runs' })).toHaveValue('office');
+    expect(checked(await choices('Descriptions & tags'))).toBe('Office PC');
   });
 
   it('shows the cloud record as Ask me each time and saves a change to both records together', async () => {
@@ -183,13 +192,13 @@ describe('Where work runs (FL-364)', () => {
     sdkMock.setMlWorkloadRoute.mockResolvedValue(routes({ ...HOME, [MlWorkload.Enrichment]: null }) as never);
     render(WhereWorkRuns);
 
-    const picker = await screen.findByRole('combobox', { name: 'Where Descriptions & tags runs' });
-    expect(picker).toHaveValue('ask');
+    const picker = await choices('Descriptions & tags');
+    expect(checked(picker)).toBe('Ask each time');
     expect(row('Descriptions & tags')).toHaveTextContent('You choose each time you start one.');
     // Faces has no Frameleaf Cloud choice in this table; it reaches the cloud only through its destination route (FL-455).
-    expect(screen.queryByRole('combobox', { name: 'Where Faces & identity runs' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('radiogroup', { name: 'Where Faces & identity runs' })).not.toBeInTheDocument();
 
-    await fireEvent.change(picker, { target: { value: 'none' } });
+    await fireEvent.click(within(picker).getByRole('radio', { name: 'Nowhere' }));
     expect(screen.getByText('Descriptions & tags turns off.')).toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
 
@@ -224,12 +233,13 @@ describe('Where work runs (FL-364)', () => {
     render(WhereWorkRuns);
 
     const name = en.frameleaf_workruns_name_search;
-    const picker = await screen.findByRole('combobox', { name: `Where ${name} runs` });
-    expect(picker).toHaveValue('cloud');
-    expect([...(picker as HTMLSelectElement).options].map((option) => option.value)).toEqual(['srv', 'cloud', 'none']);
+    const picker = await choices(name);
+    expect(checked(picker)).toBe('Frameleaf Cloud');
+    // Never Ask: a column another row offers is shown here switched off.
+    expect(enabled(picker)).toEqual(['This server', 'Frameleaf Cloud', 'Nowhere']);
     expect(row(name)).toHaveTextContent('Runs in one place only, so results never mix two models.');
 
-    await fireEvent.change(picker, { target: { value: 'srv' } });
+    await fireEvent.click(within(picker).getByRole('radio', { name: 'This server' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
 
     await waitFor(() =>
@@ -256,11 +266,9 @@ describe('Where work runs (FL-364)', () => {
 
     expect(await screen.findByRole('heading', { name: 'Office PC isn’t answering' })).toBeInTheDocument();
     expect(screen.getByText(/Descriptions & tags waits until it’s back\./)).toBeInTheDocument();
-    expect(within(row('Descriptions & tags')).getByText('Waiting')).toBeInTheDocument();
+    expect(row('Descriptions & tags')).toHaveTextContent('Waiting: Office PC isn’t answering.');
     expect(row('Descriptions & tags')).toHaveTextContent('Waits until Office PC answers. Nothing moves on its own.');
-    expect(
-      within(row('Descriptions & tags')).getByRole('option', { name: 'Office PC (not answering)' }),
-    ).toBeInTheDocument();
+    expect(checked(await choices('Descriptions & tags'))).toBe('Office PC');
   });
 
   describe('the order to try (FL-456)', () => {
@@ -296,6 +304,7 @@ describe('Where work runs (FL-364)', () => {
       expect(screen.getByRole('button', { name: 'Move This server up' })).toBeDisabled();
       expect(screen.getByRole('button', { name: 'Move Frameleaf Cloud down' })).toBeDisabled();
       // rows that follow the order say so
+      // A row with only one answer says it, with no choices to make.
       expect(within(row('Faces & identity')).getByText('First available, in order')).toBeInTheDocument();
     });
 
