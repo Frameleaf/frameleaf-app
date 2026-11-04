@@ -1,8 +1,8 @@
 import { type ImportDatabase } from 'src/immich-import/types.js';
+import { ensureImportBootstrapAdmin } from 'src/library-import/bootstrap-admin.js';
 import { loadLibraryImportBundle, loadRetainedLibraryImportBundle } from 'src/library-import/bundle-input.js';
 import { summarizeReviewedImport } from 'src/library-import/bundle-output.js';
-import { ensureImportBootstrapAdmin } from 'src/library-import/bootstrap-admin.js';
-import { readPrivateImportJSON, type LibraryImportCommandConfig } from 'src/library-import/command-input.js';
+import { type LibraryImportCommandConfig, readPrivateImportJSON } from 'src/library-import/command-input.js';
 import { LibraryImportController } from 'src/library-import/controller.js';
 import { type ManagerLibrarySetup } from 'src/library-import/derived-work.js';
 import { withLibraryImportExecution, withLibraryImportInspection } from 'src/library-import/execution-binding.js';
