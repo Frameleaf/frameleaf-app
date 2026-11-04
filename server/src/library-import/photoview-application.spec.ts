@@ -30,13 +30,19 @@ describe.skipIf(!path)('native Photoview application', () => {
       try {
         return openPhotoviewSnapshot(snapshot.path, fixture.source.version);
       } catch (error) {
-        const schema = new DatabaseSync(snapshot.path, { readOnly: true, allowExtension: false });
         try {
-          expect(schema.prepare('SELECT type,name,tbl_name,sql FROM sqlite_schema ORDER BY type,name').all()).toEqual(
-            fixture.objects,
-          );
-        } finally {
-          schema.close();
+          const schema = new DatabaseSync(snapshot.path, { readOnly: true, allowExtension: false });
+          try {
+            console.error('Native Photoview schema:', {
+              applicationId: schema.prepare('PRAGMA application_id').get(),
+              userVersion: schema.prepare('PRAGMA user_version').get(),
+              objects: schema.prepare('SELECT type,name,tbl_name,sql FROM sqlite_schema ORDER BY type,name').all(),
+            });
+          } finally {
+            schema.close();
+          }
+        } catch {
+          console.error('Native Photoview schema diagnostics unavailable');
         }
         throw error;
       }
