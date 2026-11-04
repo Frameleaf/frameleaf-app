@@ -102,7 +102,8 @@ const percent = (done: number, total: number) =>
 const fromQueue = (queue: DurableQueueRun): BackgroundWorkCard | null => {
   const running = queue.active;
   const waiting = queue.waiting;
-  if (running + waiting <= 0) {
+  // A queue the server could not read has no counts to go on: it still shows, or Activity says nothing runs.
+  if (running + waiting <= 0 && !queue.unavailable) {
     return null;
   }
   // Work quiet hours hold is waiting for tonight, not paused until someone starts it again (FL-711).

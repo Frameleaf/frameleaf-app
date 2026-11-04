@@ -176,6 +176,13 @@ describe('buildBackgroundWorkCards (SHARING-P1)', () => {
     expect(card).toMatchObject({ stage: 'running', statusKey: 'frameleaf_activity_bg_unreadable', stuck: true });
   });
 
+  it('shows a queue the server could not read even with no counts to go on', () => {
+    const [card] = buildBackgroundWorkCards(
+      summary({ queues: [queue(QueueName.ThumbnailGeneration, { unavailable: true, state: 'unavailable' })] }),
+    );
+    expect(card).toMatchObject({ stage: 'queued', statusKey: 'frameleaf_activity_bg_unreadable', stuck: true });
+  });
+
   it.each([false, true])('keeps the more telling reason of two queued runs of one kind (reverse=%s)', (reverse) => {
     const runs = [
       run(QueueName.MetadataExtraction, { id: 'waiting', state: 'waiting', paused: 0, waiting: 5 }),
