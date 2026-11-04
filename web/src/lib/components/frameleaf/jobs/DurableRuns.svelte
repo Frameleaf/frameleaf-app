@@ -8,7 +8,7 @@
   } from '@frameleaf/sdk';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import { untrack } from 'svelte';
-  import { locale, t, type Translations } from 'svelte-i18n';
+  import { locale, t } from 'svelte-i18n';
   import type { ActivityFilter } from '$lib/frameleaf/activity';
   import {
     DURABLE_OUTCOMES,
@@ -17,6 +17,7 @@
     runOutcomeKey,
     runReasonKey,
     runStateKey,
+    runTitleKey,
     settledItems,
   } from '$lib/frameleaf/durable-runs';
   import { jobQueue } from '$lib/frameleaf/job-queues';
@@ -42,10 +43,8 @@
   let pendingItemsId: string | null = null;
   const visible = $derived(runs.filter((run) => matchesRunFilter(run, filter)));
   const number = (value: number) => value.toLocaleString($locale ?? undefined);
-  const title = (run: DurableJobRun) => {
-    const queue = jobQueue(run.kind as QueueName);
-    return queue ? $t(`frameleaf_jobs_queue_${queue.key}` as Translations) : $t('frameleaf_job_runs_server_work');
-  };
+  const title = (run: DurableJobRun) =>
+    $t(runTitleKey(run.kind, jobQueue(run.kind as QueueName)?.key, 'frameleaf_job_runs_server_work'));
   const loadItems = async (id: string, skip = 0) => {
     if (itemsLoading && pendingItemsId === id) {
       return;
