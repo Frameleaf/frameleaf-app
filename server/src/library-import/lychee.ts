@@ -101,3 +101,5 @@ export const openLycheeSnapshot = (path: string, version: string) => {
     close: () => database.close(),
   };
 };
+
+export { readLycheeManifest } from 'src/library-import/lychee-manifest.js';
