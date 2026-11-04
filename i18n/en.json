@@ -2433,6 +2433,7 @@
   "frameleaf_activity_bg_tonight": "Saved for tonight, starts at {time}",
   "frameleaf_activity_bg_tonight_day": "Saved for the night, starts {day} at {time}",
   "frameleaf_activity_bg_tonight_unscheduled": "Saved for the night",
+  "frameleaf_activity_bg_unreadable": "Status unavailable right now",
   "frameleaf_activity_bg_waiting": "{count} waiting",
   "frameleaf_activity_bg_where_server": "This server",
   "frameleaf_activity_bulk_cancelled": "Cancelled",

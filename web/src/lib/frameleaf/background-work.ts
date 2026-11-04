@@ -87,8 +87,12 @@ const statusOf = (stage: BackgroundWorkStage, state: DurableJobState | null | un
 /** The more telling of two cards' reasons, so the order the runs arrive in never hides a warning. */
 const strongerReason = (a: DurableJobState | null, b: DurableJobState | null) => {
   const rank = (state: DurableJobState | null) => (state ? WAITING_REASONS.indexOf(state) : -1);
-  if (rank(a) === -1) return b;
-  if (rank(b) === -1) return a;
+  if (rank(a) === -1) {
+    return b;
+  }
+  if (rank(b) === -1) {
+    return a;
+  }
   return rank(a) <= rank(b) ? a : b;
 };
 
@@ -111,6 +115,8 @@ const fromQueue = (queue: DurableQueueRun): BackgroundWorkCard | null => {
     queueName: queue.name,
     stage,
     ...statusOf(stage, queue.unavailable ? 'unavailable' : queue.state),
+    // The server could not read this queue: say so, not that its worker is missing.
+    ...(queue.unavailable && { statusKey: 'frameleaf_activity_bg_unreadable' as Translations }),
     waiting,
     running,
     progress: stage === 'running' && !queue.unavailable ? percent(Math.min(queue.processed, total), total) : null,
@@ -178,7 +184,13 @@ export const buildBackgroundWorkCards = (summary: DurableRunningJobs | null | un
       byKind.set(card.queueName, card);
     } else if (existing.id.startsWith('run:')) {
       // Two unfinished runs of one kind: one card with both runs' items.
-      const stage = existing.stage === 'running' || card.stage === 'running' ? 'running' : existing.stage;
+      // Whatever order the runs arrive in: running, then paused, then queued.
+      const stage: BackgroundWorkStage =
+        existing.stage === 'running' || card.stage === 'running'
+          ? 'running'
+          : existing.stage === 'paused' || card.stage === 'paused'
+            ? 'paused'
+            : 'queued';
       byKind.set(card.queueName, {
         ...existing,
         stage,

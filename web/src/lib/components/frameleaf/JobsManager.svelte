@@ -792,7 +792,11 @@
    */
   const accountName = (job: QueueJobResponseDto) =>
     job.account?.name ??
-    $t(SUBJECT_KEYS.some((key) => key in job.data) ? 'frameleaf_jobs_account_none' : 'frameleaf_jobs_account_server');
+    $t(
+      SUBJECT_KEYS.some((key) => Object.hasOwn(job.data, key))
+        ? 'frameleaf_jobs_account_none'
+        : 'frameleaf_jobs_account_server',
+    );
   const WORKER_LABEL: Record<QueueJobWorkerKind, Translations> = {
     [QueueJobWorkerKind.Server]: 'frameleaf_jobs_worker_server',
     [QueueJobWorkerKind.Local]: 'frameleaf_jobs_worker_local',

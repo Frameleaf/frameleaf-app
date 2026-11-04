@@ -179,7 +179,9 @@ export async function legacyListRuns(db: Kysely<any>, take: number, skip: number
     from runs r left join item_counts items on items."runId" = r.id
     left join stage_counts stage on stage."runId" = r.id left join latest on latest."runId" = r.id
     order by ((r."finishedAt" is not null and not exists (select 1 from job j
-          where j."runId" = r.id and j.state in ('pending','waiting','active'))) or r."librarySourceAttention"), r."createdAt" desc, r.id desc`.execute(db);
+          where j."runId" = r.id and j.state in ('pending','waiting','active'))) or r."librarySourceAttention"), r."createdAt" desc, r.id desc`.execute(
+    db,
+  );
   return rows.map((raw) => {
     const row = raw;
     const state = runState(row);
