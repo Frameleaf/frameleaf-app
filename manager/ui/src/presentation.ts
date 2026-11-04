@@ -41,6 +41,7 @@ export const stepNames: Record<string, string> = {
   'copy-current-database': 'Copy the current stopped database',
   'database-backup': 'Create and verify a database backup',
   'stage-bootstrap-admin': 'Secure the destination administrator details',
+  'capture-common-source': 'Capture the source snapshot',
   'preflight-common-import': 'Verify the reviewed import before transfer',
   'cancel-common-import': 'Verify rollback before restarting the source',
   'configure-offline-import': 'Prepare the offline importer',
@@ -195,8 +196,10 @@ export const readable = (value: string, detail?: string) => {
   return detail ? `${text} ${detail}` : text;
 };
 export function operationProgress(operation: JournalOperation, backupSkipped = false) {
+  const capture = operation.step === 'capture-common-source' || operation.completed.includes('capture-common-source');
+  const planned = operation.commonImport ? plans['common-import'] : capture ? [] : plans[operation.kind] ?? [];
   const ids = [
-    ...new Set([...(plans[operation.commonImport ? 'common-import' : operation.kind] ?? []), ...operation.completed, ...(operation.step ? [operation.step] : [])]),
+    ...new Set([...(capture ? ['capture-common-source'] : []), ...planned, ...operation.completed, ...(operation.step ? [operation.step] : [])]),
   ].filter(
     (id) =>
       (id !== 'stage-bootstrap-admin' || operation.commonImport?.requiresBootstrap) &&

@@ -83,3 +83,15 @@ test('common import recovery shows its own credential and transfer steps', () =>
     (step) => step.id === 'stage-bootstrap-admin',
   ));
 });
+
+
+test('captured imports show a named snapshot step before preflight', () => {
+  const capture = {
+    kind: 'import', state: 'awaiting-review', step: null, completed: ['capture-common-source'], error: null,
+  };
+  assert.deepEqual(operationProgress(capture).steps, [
+    { id: 'capture-common-source', label: 'Capture the source snapshot', state: 'complete' },
+  ]);
+  const approved = operationProgress({ ...capture, commonImport: { requiresBootstrap: false } });
+  assert.deepEqual(approved.steps.slice(0, 2).map(({ id }) => id), ['capture-common-source', 'preflight']);
+});

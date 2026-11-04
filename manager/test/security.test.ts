@@ -7,6 +7,14 @@ import type { Request, Response } from 'express';
 import { Store } from '../src/store.js';
 import { Security, defaultGateway, trustedProxyList } from '../src/security.js';
 
+test('import bootstrap credentials require an explicitly configured HTTPS origin', () => {
+  const configured = (origin?: string) => new Security({} as Store, origin);
+  assert.doesNotThrow(() => configured('https://manager.test:9443').requireImportBootstrapTransport());
+  for (const origin of [undefined, 'http://manager.test:9443']) {
+    assert.throws(() => configured(origin).requireImportBootstrapTransport(), /import_bootstrap_secure_transport_required/);
+  }
+});
+
 test('credential changes invalidate existing sessions and in-flight old-password logins', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'manager-credentials-'));
   const store = new Store(directory),

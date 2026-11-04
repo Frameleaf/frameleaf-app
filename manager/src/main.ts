@@ -271,12 +271,12 @@ class Api {
   @Post('review') review(@Body() input: unknown, @Req() request: Request) {
     return operations.review(ReviewInput.parse(input), managerPort(request));
   }
-  @Post('install') install(@Body() input: unknown, @Req() request: Request) {
+  @Post('install') install(@Body() input: unknown) {
     const value = z.object({
       reviewId: z.string().uuid(), key: RequestKey, bootstrap: CommonImportBootstrapCredentials.optional(),
       approvalToken: z.uuid().optional(),
     }).strict().parse(input);
-    if (value.bootstrap && !request.secure) throw new Refusal('import_bootstrap_secure_transport_required');
+    if (value.bootstrap) security.requireImportBootstrapTransport();
     const { id } = operations.start(value.reviewId, value.key, value.bootstrap, value.approvalToken);
     return { id };
   }
@@ -299,9 +299,9 @@ class Api {
     await operations.recover(value.id);
     return { sourceStopped: true };
   }
-  @Post('resume') resume(@Body() input: unknown, @Req() request: Request) {
+  @Post('resume') resume(@Body() input: unknown) {
     const { id, bootstrap } = z.object({ id: z.string().uuid(), bootstrap: CommonImportBootstrapCredentials.optional() }).strict().parse(input);
-    if (bootstrap && !request.secure) throw new Refusal('import_bootstrap_secure_transport_required');
+    if (bootstrap) security.requireImportBootstrapTransport();
     return { id: operations.resume(id, bootstrap).id };
   }
   @Post('review-update') reviewUpdate(@Body() input: unknown) {
