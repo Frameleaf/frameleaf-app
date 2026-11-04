@@ -1,6 +1,7 @@
 import { cloudBackupCommands } from 'src/commands/cloud-backup.command.js';
 import { GrantAdminCommand, PromptEmailQuestion, RevokeAdminCommand } from 'src/commands/grant-admin.js';
 import { ImportImmichCommand } from 'src/commands/import-immich.command.js';
+import { ImportLibraryCommand } from 'src/commands/import-library.command.js';
 import { ListUsersCommand } from 'src/commands/list-users.command.js';
 import { DisableMaintenanceModeCommand, EnableMaintenanceModeCommand } from 'src/commands/maintenance-mode.js';
 import {
@@ -19,6 +20,7 @@ import { VersionCommand } from 'src/commands/version.command.js';
 // Frameleaf administration commands.
 export const commandsAndQuestions = [
   ImportImmichCommand,
+  ImportLibraryCommand,
   RestoreStateCommand,
   ValidateRestoreCommand,
   // FL-164: bare-metal restore from a cloud backup bucket

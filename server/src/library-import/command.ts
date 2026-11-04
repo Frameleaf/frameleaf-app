@@ -26,7 +26,7 @@ export async function executeLibraryImportCommand(input: {
   jobs: JobRepository;
   state: LocalLibraryImportState;
   manager?: ManagerLibrarySetup;
-  authorize: (action: Action, context: Context) => Promise<void>;
+  authorize: (action: Action, context: Pick<Context, 'binding' | 'destinationId'>) => Promise<void>;
 }) {
   const { action, config, source, db, state } = input;
   if (input.activate && action !== 'verify') throw new LibraryImportRefused('IMPORT_ACTIVATION_REQUIRES_VERIFY');
@@ -77,6 +77,7 @@ export async function executeLibraryImportCommand(input: {
     (!status.run || ['copying', 'abandoned'].includes(status.run.status));
   // Preparation retains metadata before any media intent. Cancellation must also work if that export was lost.
   if (untouched && localBinding && (action === 'abandon' || action === 'rollback')) {
+    await input.authorize(action, { binding: localBinding, destinationId: config.destinationId });
     if (local.abandoned) {
       if (status.run && status.run.status !== 'abandoned') throw new LibraryImportRefused('IMPORT_PHASE_CHANGED');
       return { run: reportedRun, mappings: status.mappings, execution: local };

@@ -11,6 +11,7 @@ const destination = resolve(server, 'resources/library-import');
 const modules = [
   'contracts',
   'import-plan',
+  'import-source-authority',
   'import-sqlite',
   'import-transfer-journal',
   'import-copy',

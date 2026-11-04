@@ -42,6 +42,7 @@ test('packages the actual Manager transfer modules and matching declarations wit
     assert(copied.split(/\s+/u).includes('./' + source.name), `Server image omits ${source.name}`);
   for (const name of [
     'import-plan',
+    'import-source-authority',
     'import-sqlite',
     'import-transfer-journal',
     'import-copy',

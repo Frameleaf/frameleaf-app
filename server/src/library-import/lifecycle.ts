@@ -133,8 +133,13 @@ export async function executeLibraryImportAction(input: {
   }
 
   await assertImportDestinations(journal, operationId, roots);
+  const assertSourceUnchanged = async (session?: ImportDatabase) => {
+    await input.authorize('verify');
+    await bundle.assertUnchanged(session);
+  };
   if (!local?.writersMayHaveStarted) {
     const report = await controller.verify();
+    await assertSourceUnchanged();
     const runId = await jobs.dispatchImportedLibraryWork(context, manager);
     if (runId !== libraryImportDerivedRunId(binding)) return refuse('DERIVED_RUN_IDENTITY_MISMATCH');
     // These digests are certified only after each reconciler independently matches expected and destination records.
@@ -151,17 +156,11 @@ export async function executeLibraryImportAction(input: {
       regenerationRunId: runId,
     });
     if (!input.activate) return { ...(await finish()), verification: report };
-    journal.writersStarting(operationId);
   } else if (!journal.review(operationId).verification) return refuse('IMPORT_LOCAL_ACTIVATION_EVIDENCE_MISSING');
+  await assertSourceUnchanged();
+  if (!local?.writersMayHaveStarted) journal.writersStarting(operationId);
   state.mark(operationId, 'activating');
-  const activation = await controller.activate(
-    jobs,
-    async (session) => {
-      await input.authorize('verify');
-      await bundle.assertUnchanged(session);
-    },
-    manager,
-  );
+  const activation = await controller.activate(jobs, assertSourceUnchanged, manager);
   state.mark(operationId, 'activated');
   return { ...(await finish()), activation };
 }
