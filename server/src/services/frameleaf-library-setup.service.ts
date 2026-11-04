@@ -9,6 +9,7 @@ import { AdminConfigDto } from 'src/dtos/config.dto.js';
 import { LibrarySetupProgressDto } from 'src/dtos/frameleaf-library-setup.dto.js';
 import { FrameleafWorker, JobName, MediaOperationKind, QueueName, SyncEntityType } from 'src/enum.js';
 import { readImportedSetupRun } from 'src/library-import/setup-run.js';
+import { lockQueueCatalogue } from 'src/queue/catalogue.js';
 import { listRuns } from 'src/queue/run-query.js';
 import { unfinishedRunItems } from 'src/queue/selection-state.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -153,7 +154,7 @@ export class FrameleafLibrarySetupService {
         return;
       }
       if (retry && previous?.phase === 'needs-attention') {
-        await sql`SELECT name FROM job_queue ORDER BY name FOR NO KEY UPDATE`.execute(db);
+        await lockQueueCatalogue(db);
         const imported = await this.importedRun(db, true);
         if (
           this.importedSetupMatches(previous, imported) &&
@@ -281,7 +282,7 @@ export class FrameleafLibrarySetupService {
       current.run.selection.managerSetupRequired === true
     )
       return;
-    await sql`SELECT name FROM job_queue ORDER BY name FOR NO KEY UPDATE`.execute(db);
+    await lockQueueCatalogue(db);
     // Queue claims and pause changes serialize before the run and selection locks.
     // Capture cannot re-hold snapshots after observing this committed start acknowledgement.
     const imported = await this.importedRun(db, true);
@@ -429,7 +430,8 @@ export class FrameleafLibrarySetupService {
     const disabled = run ? await this.disabledImportStages() : [];
     const { rows: stages } = run
       ? await sql<{ stage: string; total: number; done: number }>`SELECT i.stage, count(*)::int AS total,
-          count(*) FILTER (WHERE coalesce(j.state,i.state)='completed')::int AS done
+          -- Settled, not only completed: an item's failure is listed in Background work and never holds setup (FL-1165).
+          count(*) FILTER (WHERE coalesce(j.state,i.state) NOT IN ('pending','waiting','active'))::int AS done
           FROM job_run_item i LEFT JOIN job j ON j.id=i."jobId"
           WHERE i."runId"=${run.id}::uuid AND i.stage<>all(${disabled}::text[]) GROUP BY i.stage`.execute(this.db)
       : { rows: [] };
@@ -447,7 +449,11 @@ export class FrameleafLibrarySetupService {
     const {
       rows: [check],
     } = await sql<{ total: number; done: number; flagged: number }>`SELECT
-        coalesce(sum(corrupt."totalAssets"),0)::int AS total, coalesce(sum(corrupt."checkedAssets"),0)::int AS done,
+        -- The health runs count only once a scan ends; the operation carries the live count. A scan still
+        -- waiting its turn (one runs at a time) counts its owner's items, so the bar never looks nearly done.
+        coalesce(sum(greatest(op."totalUnits", corrupt."totalAssets", CASE WHEN op."totalUnits" IS NULL THEN
+          (SELECT count(*) FROM asset a WHERE a."ownerId"=op."ownerId" AND a."deletedAt" IS NULL) END)),0)::int AS total,
+        coalesce(sum(greatest(op."processedUnits", corrupt."checkedAssets")),0)::int AS done,
         (coalesce(sum(corrupt."foundAssets"),0) + coalesce(sum(missing."foundAssets"),0))::int AS flagged
       FROM media_operation op
       LEFT JOIN asset_health_run missing ON missing.id=(op.snapshot->>'missingRunId')::uuid
@@ -514,7 +520,7 @@ export class FrameleafLibrarySetupService {
       const state = await this.read<SetupState>(this.key(), db);
       if (!state || !!state.paused === paused) return;
       state.paused = paused;
-      await sql`SELECT name FROM job_queue ORDER BY name FOR NO KEY UPDATE`.execute(db);
+      await lockQueueCatalogue(db);
       const imported = await this.importedRun(db, true);
       if (this.importedSetupRequired(state, imported) && !this.importedSetupMatches(state, imported))
         throw new BadRequestException('Imported setup identity mismatch');
@@ -714,11 +720,13 @@ export class FrameleafLibrarySetupService {
                 OR EXISTS(SELECT 1 FROM job_run_item i WHERE i."runId"=${imported.run.id}::uuid AND i.state='active'
                   AND NOT EXISTS(SELECT 1 FROM job j WHERE j.id=i."jobId" AND j.state NOT IN ('pending','waiting','active')))) AS unfinished,
               (EXISTS(SELECT 1 FROM job_run_item i LEFT JOIN job j ON j.id=i."jobId"
-                WHERE i."runId"=${imported.run.id}::uuid AND
+                WHERE i."runId"=${imported.run.id}::uuid AND i.queue=ANY(${[...HALTING_QUEUES]}::text[]) AND
                   (i.state IN ('failed','needs_attention','cancelled','blocked') OR j.state IN ('failed','needs_attention','cancelled','blocked')))
                 OR EXISTS(SELECT 1 FROM job_selection WHERE "runId"=${imported.run.id}::uuid
                   AND state IN ('needs_attention','cancelled'))) AS failed`.execute(db);
             importedUnfinished = rows[0]?.unfinished ?? true;
+            // FL-1165: one item's thumbnail, metadata or other per-file step that failed is listed in Background work
+            // and Library Care, never a reason to halt; only the halting queues' items and a failed source stop setup.
             if (rows[0]?.failed) state.phase = 'needs-attention';
           }
         }

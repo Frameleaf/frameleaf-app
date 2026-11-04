@@ -189,7 +189,11 @@ const startFakeCloud = async (): Promise<FakeCloud> => {
           return send(200, cloudContractFixture('ml/catalog.json'));
         }
         case 'GET /ml-eu/v2/wallet': {
-          return send(200, cloudContractFixture('ml/wallet.json'));
+          const wallet = cloudContractFixture<Record<string, unknown>>('ml/wallet.json');
+          return send(
+            200,
+            request.headers['frameleaf-wallet-details'] === 'auto-top-up' ? { ...wallet, autoTopUp: true } : wallet,
+          );
         }
         case 'GET /ml-eu/v2/usage': {
           return send(200, cloudContractFixture('ml/usage.json'));
@@ -523,7 +527,11 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
     });
     await expect(ml.getWallet(resolution.gateway)).resolves.toMatchObject({
       settingsUrl: 'https://frameleaf.cloud/wallet',
+      autoTopUp: true,
     });
+    cloud.respond = ({ path }) =>
+      path === '/ml-eu/v2/wallet' ? { status: 200, body: cloudContractFixture('ml/wallet.json') } : undefined;
+    await expect(ml.getWallet(resolution.gateway)).resolves.toMatchObject({ autoTopUp: false });
     await expect(ml.getUsage(resolution.gateway, new Date('2026-09-01T00:00:00.000Z'))).resolves.toMatchObject({
       items: [{ jobId: '0192f1b0-1a2b-7c3d-8e4f-5a6b7c8d9e0f', modelSku: 'ms_K6WT70CS' }],
     });

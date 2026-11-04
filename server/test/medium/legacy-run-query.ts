@@ -136,8 +136,10 @@ export async function legacyListRuns(db: Kysely<any>, take: number, skip: number
           and r.selection->'managerSetup'->>'startedAt' is null,false) "managerSetupPending"
       from job_run r
       ${runId === undefined ? sql`` : sql`where r.id = ${runId}::uuid`}
-      -- A library scan that failed or was cancelled lists with the finished runs (FL-588).
-      order by (r."finishedAt" is not null or exists (select 1 from job_selection_run m join job_selection s on s.id = m."selectionId"
+      -- Same order as listRuns: a run marked finished that still has live jobs sorts as unfinished;
+      -- a library scan that failed or was cancelled lists with the finished runs (FL-588).
+      order by ((r."finishedAt" is not null and not exists (select 1 from job j
+          where j."runId" = r.id and j.state in ('pending','waiting','active'))) or exists (select 1 from job_selection_run m join job_selection s on s.id = m."selectionId"
           where m."runId" = r.id and s."sourceKind" = 'library-initial' and s.state = 'needs_attention')),
         r."createdAt" desc, r.id desc limit ${take} offset ${skip}
     ), stages as (${stagesFor(sql<boolean>`i."runId" in (select id from runs)`, sql<string>`select id from runs`)}), run_stages as (
@@ -176,7 +178,10 @@ export async function legacyListRuns(db: Kysely<any>, take: number, skip: number
         coalesce(latest."meaningfulAt", r."createdAt") < now() - interval '2 minutes', false) "noDispatchBacklog"
     from runs r left join item_counts items on items."runId" = r.id
     left join stage_counts stage on stage."runId" = r.id left join latest on latest."runId" = r.id
-    order by (r."finishedAt" is not null or r."librarySourceAttention"), r."createdAt" desc, r.id desc`.execute(db);
+    order by ((r."finishedAt" is not null and not exists (select 1 from job j
+          where j."runId" = r.id and j.state in ('pending','waiting','active'))) or r."librarySourceAttention"), r."createdAt" desc, r.id desc`.execute(
+    db,
+  );
   return rows.map((raw) => {
     const row = raw;
     const state = runState(row);

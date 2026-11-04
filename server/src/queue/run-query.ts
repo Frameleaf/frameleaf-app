@@ -358,7 +358,13 @@ const librarySourceAttention = sql<boolean>`exists (select 1 from job_selection_
 
 export async function listRuns(db: Kysely<any>, take: number, skip: number, runId?: string): Promise<RunRead[]> {
   const { rows } = await sql<Aggregate>`with runs as (
-      select r.id, r.kind, r."createdAt", r."finishedAt", (r."enumerationDone" and not (${libraryRunPending(sql<string>`r.id`)})) "enumerationDone",
+      select r.id, r.kind, r."createdAt", r."finishedAt",
+        -- A run with live jobs sorts with the unfinished ones even if it was marked finished, so the
+        -- first page (Activity reads only that) never drops busy work. A failed library scan lists
+        -- with the finished runs (FL-588).
+        ((r."finishedAt" is not null and not exists (select 1 from job j
+          where j."runId" = r.id and j.state in ('pending','waiting','active'))) or ${librarySourceAttention}) "sortsFinished",
+        (r."enumerationDone" and not (${libraryRunPending(sql<string>`r.id`)})) "enumerationDone",
         ${librarySourceAttention} "librarySourceAttention",
         coalesce(r.kind in ('immich-import-derived','library-import-derived')
           and r.selection->'managerSetup'->>'installation' ~ '^[a-f0-9]{12}$'
@@ -367,7 +373,7 @@ export async function listRuns(db: Kysely<any>, take: number, skip: number, runI
           and r.selection->'managerSetup'->>'startedAt' is null,false) "managerSetupPending"
       from job_run r
       ${runId === undefined ? sql`` : sql`where r.id = ${runId}::uuid`}
-      order by (r."finishedAt" is not null or ${librarySourceAttention}), r."createdAt" desc, r.id desc limit ${take} offset ${skip}
+      order by "sortsFinished", r."createdAt" desc, r.id desc limit ${take} offset ${skip}
     ), stages as (${stagesFor(sql<boolean>`i."runId" in (select id from runs)`, sql<string>`select id from runs`, true)}), run_stages as (
       select s.* from stages s
     ), selected as (
@@ -406,7 +412,7 @@ export async function listRuns(db: Kysely<any>, take: number, skip: number, runI
         coalesce(latest."meaningfulAt", r."createdAt") < now() - interval '2 minutes', false) "noDispatchBacklog"
     from runs r left join item_counts items on items."runId" = r.id
     left join stage_counts stage on stage."runId" = r.id left join latest on latest."runId" = r.id
-    order by (r."finishedAt" is not null or r."librarySourceAttention"), r."createdAt" desc, r.id desc`.execute(db);
+    order by r."sortsFinished", r."createdAt" desc, r.id desc`.execute(db);
   return rows.map((raw) => {
     const row = raw;
     const state = runState(row);
@@ -484,7 +490,7 @@ export async function observeQueueRun(db: Kysely<any>, name: string) {
   }>`with current_jobs as (
       select j.*, q.paused, p.state "parentState" from job j join job_queue q on q.name = j.queue
       left join job_run r on r.id = j."runId" left join job p on p.id = j."parentId"
-      where j.queue = ${name} and (r."finishedAt" is null and (j."runId" is not null or j.state in ('pending','waiting','active')))
+      where j.queue = ${name} and (j.state in ('pending','waiting','active') or (j."runId" is not null and r."finishedAt" is null))
     ), loose_done as (
       -- Jobs outside a run (upload thumbnails, metadata…) leave the live set when they finish: count the ones
       -- finished since the oldest still waiting was queued, or Activity's percentage stays at 0 (FL-588).

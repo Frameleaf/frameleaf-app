@@ -57,7 +57,7 @@
   /** The prototype's line: the state, what is waiting and running, how far, and where. */
   const detailOf = (card: BackgroundWorkCard) =>
     [
-      card.tonight ? tonightOf(card.tonight) : $t(ACTIVITY_STAGE_KEYS[card.stage]),
+      card.tonight ? tonightOf(card.tonight) : $t(card.statusKey),
       card.waiting > 0 ? $t('frameleaf_activity_bg_waiting', { values: { count: number(card.waiting) } }) : null,
       card.running > 0 ? $t('frameleaf_activity_bg_running', { values: { count: number(card.running) } }) : null,
       card.progress === null ? null : `${card.progress}%`,
@@ -110,7 +110,7 @@
           <a
             class="fla-bg"
             class:is-info={card.stage === 'running'}
-            class:is-warning={card.stage === 'paused'}
+            class:is-warning={card.stage === 'paused' || card.stuck}
             href={Route.viewQueue({ name: card.queueName })}
             aria-label={$t('frameleaf_activity_bg_row_label', { values: { title, detail } })}
           >

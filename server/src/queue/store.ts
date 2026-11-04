@@ -2,6 +2,7 @@ import { Kysely, type QueryExecutorProvider, type RawBuilder, Transaction, sql }
 import { createHash, randomUUID } from 'node:crypto';
 import type { DB } from 'src/schema/index.js';
 import { JobName, QueueName } from 'src/enum.js';
+import { enterQueueTurnstile, isLockContention, lockQueues, withQueueCatalogue } from 'src/queue/catalogue.js';
 import {
   publishLibraryFollowups,
   redactLibraryPayloads,
@@ -76,6 +77,17 @@ export const settleRunQuery = (runIds: string[]) => sql`update job_run r set "fi
     and not (${unfinishedRunItems(sql<string>`r.id`)})`;
 
 /**
+ * A run item `i` whose state mirrors its job `j`. A library alias item, and an item of another run sharing a
+ * library-owned execution, keep their own outcome: the job's state says nothing about them.
+ */
+const itemFollowsJob = sql<boolean>`not exists (select 1 from job_selection s where s.id = i."selectionId"
+    and s."sourceKind" != 'frozen' and i."runId" != s."runId")
+  and (i."runId" = j."runId" or (not exists (select 1 from job_library_source_producer link where link."producerId" = j.id)
+    and not exists (select 1 from job_run_item canonical join job_selection s on s.id=canonical."selectionId"
+      where canonical."jobId"=j.id and canonical."runId"=s."runId" and s."sourceKind"!='frozen')
+    and not exists (select 1 from job_selection s where s."producerId"=j.id and s."librarySharesExecution")))`;
+
+/**
  * All methods own short transactions. No connection escapes to a handler or an enumerator.
  * Bind serialized JSON as text before casting: postgres.js otherwise JSON-encodes it a second time.
  */
@@ -108,6 +120,7 @@ export class SqlQueueStore {
 
   private async insertBatch(intents: QueueIntent[], db: Executor, lockedManifestItems?: ReadonlySet<QueueIntent>) {
     // Same lock order as admission/completion, including multi-queue follow-ups.
+    await enterQueueTurnstile(db);
     for (const queue of [...new Set(intents.map((intent) => intent.queue))].sort()) {
       await sql`insert into job_queue(name) values (${queue}) on conflict do nothing`.execute(db);
       await sql`select name from job_queue where name = ${queue} for no key update`.execute(db);
@@ -214,10 +227,7 @@ export class SqlQueueStore {
           // Runs must never count a deduplicated selection as silently absent.
           if (intent.runId && intent.itemKey) {
             if (!lockedManifestItems?.has(intent)) await this.insertRunItem(intent, db, existing.state);
-            await sql`update job_run_item set "jobId" = ${existing.id}::uuid
-              where "runId" = ${intent.runId}::uuid and "itemKey" = ${intent.itemKey} and stage = ${intent.name}`.execute(
-              db,
-            );
+            await this.linkRunItem(intent, sql`${existing.id}::uuid`, db);
             // This metadata marks only accepted immutable roots sharing a library executor.
             // It drives bounded header settlement, never grants whole-operation child entitlement.
             await sql`update job_selection source set "librarySharesExecution"=true,
@@ -248,9 +258,9 @@ export class SqlQueueStore {
         ${intent.itemKey ?? null}, ${intent.rootItemKey ?? null}, ${intent.parentId ?? null}::uuid)
         on conflict do nothing returning id`.execute(db);
       if (intent.runId && intent.itemKey) {
-        await sql`update job_run_item set "jobId" = (select id from job where "runId" = ${intent.runId}::uuid
-          and "itemKey" = ${intent.itemKey} and name = ${intent.name})
-          where "runId" = ${intent.runId}::uuid and "itemKey" = ${intent.itemKey} and stage = ${intent.name}`.execute(
+        await this.linkRunItem(
+          intent,
+          sql`(select id from job where "runId" = ${intent.runId}::uuid and "itemKey" = ${intent.itemKey} and name = ${intent.name})`,
           db,
         );
         if (inserted.length === 0) await this.rearmRunStage(intent, key, db);
@@ -287,6 +297,28 @@ export class SqlQueueStore {
       and not (${libraryRunPending(sql<string>`r.id`)})`.execute(db);
     // settleRuns separately requires every retained descendant stage to be terminal, including
     // manifest items not yet admitted to job. Never infer completion from the live job table.
+  }
+
+  /**
+   * Point a run item at the job doing its work. An item that already ended (`insertRunItem` keeps the
+   * old row) comes back to life with a live job, and its run reopens: otherwise the run settles while
+   * that job still runs, and Activity loses it.
+   */
+  private async linkRunItem(intent: QueueIntent, jobId: RawBuilder<unknown>, db: Executor) {
+    const item = sql`i."runId" = ${intent.runId}::uuid and i."itemKey" = ${intent.itemKey} and i.stage = ${intent.name}`;
+    await sql`update job_run_item i set "jobId" = ${jobId} where ${item}`.execute(db);
+    // Only an item `syncItem` keeps in step with its job: a library alias never learns the job finished,
+    // so reviving one would leave its run open for good. The run reopens whenever the item is live with a
+    // live job, a new item created pending in a finished run included.
+    const { rows } = await sql<{ runId: string }>`update job_run_item i set state = case
+        when i.state in ('pending','waiting','active') then i.state else j.state end
+      from job j where ${item} and j.id = i."jobId" and j.state in ('pending','waiting','active') and ${itemFollowsJob}
+      returning i."runId"`.execute(db);
+    if (rows.length > 0) {
+      await sql`update job_run set "finishedAt" = null where id = ${rows[0].runId}::uuid and "finishedAt" is not null`.execute(
+        db,
+      );
+    }
   }
 
   /**
@@ -391,7 +423,10 @@ export class SqlQueueStore {
   }
 
   async feedManifest(queue: string) {
-    await shareSelectionPage(this.db, { queue });
+    // Sharing advances one page per visit; a visit that loses the catalogue wait still feeds and claims this queue.
+    await shareSelectionPage(this.db, { queue }).catch((error: unknown) => {
+      if (!isLockContention(error)) throw error;
+    });
     // The feeder retains these exact canonical tuples under row locks until this transaction commits.
     return feedManifest(this.db, queue, (intents, tx) => this.insertBatch(intents, tx, new Set(intents)));
   }
@@ -408,6 +443,8 @@ export class SqlQueueStore {
       });
     }
     return this.db.transaction().execute(async (tx) => {
+      // A claim waits its turn behind a catalogue lock instead of overtaking it (see `enterQueueTurnstile`).
+      await enterQueueTurnstile(tx);
       const {
         rows: [config],
       } = await sql<{ paused: boolean; concurrency: number }>`
@@ -496,13 +533,13 @@ export class SqlQueueStore {
     adopt?: (tx: Transaction<DB>) => Promise<void>,
     publication?: QueuePublication,
   ) {
-    return withSelectionSharing(
-      this.db,
+    // Publications may construct additional child intents after reading their accepted rows, for queues
+    // unknown until then. Lock the finite queue catalogue in one order before any job/asset rows, including
+    // those destinations. Media work has already finished; only the short publication is serialized, and a
+    // lost wait for the catalogue starts the publication over instead of failing the job.
+    return withQueueCatalogue(
+      (work) => withSelectionSharing(this.db, work, publication),
       async (tx) => {
-        // Publications may construct additional child intents after reading their accepted rows.
-        // Lock the finite queue catalogue in one order before any job/asset rows, including those
-        // destinations. Media work has already finished; only the short publication is serialized.
-        await sql`select name from job_queue order by name for no key update`.execute(tx);
         const {
           rows: [job],
         } = await sql<{ latestPending: QueueIntent | null }>`
@@ -540,7 +577,6 @@ export class SqlQueueStore {
         await this.settleRuns(tx, [...affectedRuns, ...latest.runIds]);
         return true;
       },
-      publication,
     );
   }
 
@@ -615,7 +651,7 @@ export class SqlQueueStore {
   /** A dependency refusal is not an execution failure. Keep the item and audit, refund its retry credit. */
   async defer(claim: QueueClaim, reason: JobDependencyReason) {
     return this.db.transaction().execute(async (tx) => {
-      await sql`select name from job_queue where name = ${claim.queue} for no key update`.execute(tx);
+      await lockQueues(tx, [claim.queue]);
       const { rows } = await sql`update job set state = 'pending', token = null, "leaseExpiresAt" = null,
         "workerId" = null, "cancelRequestedAt" = null, "cancelReason" = null, "finishedAt" = null, error = null,
         "retryBaseAttempt" = "retryBaseAttempt" + 1, "dependencyReason" = ${reason},
@@ -645,7 +681,7 @@ export class SqlQueueStore {
     return withSelectionSharing(
       this.db,
       async (tx) => {
-        await sql`select name from job_queue where name = ${claim.queue} for no key update`.execute(tx);
+        await lockQueues(tx, [claim.queue]);
         const owned = options.queuedCancellation
           ? sql`queue = ${claim.queue} and state in ('pending','waiting') and token is null and "cancelRequestedAt" is not null
               and "cancelReason" is distinct from 'deadline'`
@@ -879,13 +915,7 @@ export class SqlQueueStore {
   private async syncItem(jobId: string | string[], tx: Executor) {
     const jobIds = Array.isArray(jobId) ? jobId : [jobId];
     const { rows } = await sql<{ runId: string }>`update job_run_item i set state = j.state from job j
-      where j.id = any(${jobIds}::uuid[]) and i."jobId" = j.id
-        and not exists (select 1 from job_selection s where s.id = i."selectionId"
-          and s."sourceKind" != 'frozen' and i."runId" != s."runId")
-        and (i."runId" = j."runId" or (not exists (select 1 from job_library_source_producer link where link."producerId" = j.id)
-          and not exists (select 1 from job_run_item canonical join job_selection s on s.id=canonical."selectionId"
-            where canonical."jobId"=j.id and canonical."runId"=s."runId" and s."sourceKind"!='frozen')
-          and not exists (select 1 from job_selection s where s."producerId"=j.id and s."librarySharesExecution")))
+      where j.id = any(${jobIds}::uuid[]) and i."jobId" = j.id and ${itemFollowsJob}
       returning i."runId"`.execute(tx);
     await redactLibraryPayloads(tx, jobIds);
     const mirrored = await mirrorSelectionLineage(tx, { jobIds });
@@ -1020,7 +1050,7 @@ export class SqlQueueStore {
   private async cancel(queue: string, states: QueueState[], about: RawBuilder<unknown>, wholeQueue: boolean) {
     // Keep run accounting and dependency history. Clearing hides payloads and cancels pending work.
     await withSelectionSharing(this.db, async (tx) => {
-      await sql`select name from job_queue where name = ${queue} for no key update`.execute(tx);
+      await lockQueues(tx, [queue]);
       const { rows: cancelledLatest } = await sql<LineageItemIdentity & { rootItemKey: string | null }>`
         update job_run_item i set state = 'cancelled' where i."jobId" is null and exists (
         select 1 from job j where j.queue = ${queue} and j.state = any(${states}::text[]) and j.state != 'active'
@@ -1105,7 +1135,7 @@ export class SqlQueueStore {
     let total = 0;
     for (;;) {
       const count = await this.db.transaction().execute(async (tx) => {
-        await sql`select name from job_queue where name = ${queue} for no key update`.execute(tx);
+        await lockQueues(tx, [queue]);
         const { rows } = await sql<{ id: string; runId: string | null }>`update job j set state = 'pending',
           "availableAt" = now(), "finishedAt" = null, error = null, "retryBaseAttempt" = attempt
           where id in (

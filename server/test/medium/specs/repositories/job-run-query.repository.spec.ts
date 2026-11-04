@@ -325,3 +325,13 @@ it('counts jobs outside a run that finished since the oldest waiting one was que
   await loose('pending', 10, null);
   expect(await observeQueueRun(db, 'test')).toMatchObject({ active: 1, waiting: 1, processed: 2 });
 });
+
+it('counts live queue jobs of a run already marked finished', async () => {
+  const id = await run();
+  const key = await stage(id, 'root', 'Thumbnail', 'active');
+  await job(id, key, 'Thumbnail', { state: 'active' });
+  const waitingKey = await stage(id, 'root-2', 'Thumbnail', 'pending');
+  await job(id, waitingKey, 'Thumbnail');
+  await sql`update job_run set "finishedAt" = now() where id = ${id}::uuid`.execute(db);
+  expect(await observeQueueRun(db, 'test')).toMatchObject({ active: 1, waiting: 1 });
+});
