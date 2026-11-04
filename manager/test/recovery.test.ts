@@ -11,7 +11,7 @@ import { Fencing } from '../src/fencing.js';
 import { HostAutostart } from '../src/unraid-autostart.js';
 import { Docker, command, SERVER_ADMIN, type Container } from '../src/docker.js';
 import { sourceFingerprint } from '../src/discovery.js';
-import { type Source, type Mount, type Installation } from '../src/contracts.js';
+import { type Source, type SourceFence, type Mount, type Installation } from '../src/contracts.js';
 import { copyVerified, fileHash } from '../src/files.js';
 import { BACKUP_INDEX, Backups } from '../src/backups.js';
 import { Operations } from '../src/operations.js';
@@ -67,24 +67,24 @@ test('an unlabelled competing writer, stopped auto-restarting writer and a volum
     await rm(directory, { recursive: true });
   }
 });
-test('source fencing resumes after a crash between restart-policy changes without accepting other changes', async () => {
+for (const layout of ['legacy', 'sqlite', 'database'] as const) test(`source fencing resumes after a crash without accepting other changes (${layout})`, async () => {
   const directory = await mkdtemp(join(tmpdir(), 'manager-fence-')),
     store = new Store(directory);
   const app = container('a'),
     worker = container('b'),
     database = container('c');
   database.Mounts = [];
-  const all = [app, worker, database];
+  const all = layout === 'sqlite' ? [app, worker] : [app, worker, database];
   const source = {
     id: app.Id,
     app: app.Id,
     workers: [app.Id, worker.Id],
     mounts: media,
     platform: 'docker',
-    database: { container: database.Id },
+    ...(layout === 'legacy' ? { database: { container: database.Id } } : { containers: all.map((c) => c.Id) }),
     fingerprint: sourceFingerprint(structuredClone(all)),
     restart: Object.fromEntries([app, worker].map((c) => [c.Id, structuredClone(c.HostConfig.RestartPolicy)])),
-  } as Source;
+  } as Source | SourceFence;
   let interrupt = true;
   const docker = {
     inventory: async () => structuredClone(all),
@@ -105,6 +105,12 @@ test('source fencing resumes after a crash between restart-policy changes withou
     await assert.rejects(new Fencing(docker, store).stop(source), /simulated process termination/);
     await new Fencing(docker, store).stop(source);
     await new Fencing(docker, store).verify(source);
+    await new Fencing(docker, store).recover(source, null);
+    for (const c of [app, worker]) {
+      assert.equal(c.State.Running, false);
+      assert.deepEqual(c.HostConfig.RestartPolicy, source.restart[c.Id]);
+    }
+    assert.equal(database.State.Running, true);
     worker.Config.Env.push('IMMICH_MEDIA_LOCATION=/changed');
     await assert.rejects(new Fencing(docker, store).verify(source), /source_changed_review_again/);
   } finally {
@@ -112,6 +118,34 @@ test('source fencing resumes after a crash between restart-policy changes withou
     await rm(directory, { recursive: true });
   }
 });
+for (const defect of ['empty containers', 'duplicate containers', 'empty workers', 'unknown worker', 'missing restart', 'changed restart']) {
+  test(`incomplete common source fencing makes no changes: ${defect}`, async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'manager-common-fence-'));
+    const store = new Store(directory);
+    const app = container('a');
+    const source: SourceFence = {
+      id: app.Id, workers: [app.Id], containers: [app.Id], mounts: media, platform: 'docker',
+      fingerprint: sourceFingerprint([app]), restart: { [app.Id]: structuredClone(app.HostConfig.RestartPolicy) },
+    };
+    switch (defect) {
+      case 'empty containers': source.containers = []; break;
+      case 'duplicate containers': source.containers.push(app.Id); break;
+      case 'empty workers': source.workers = []; break;
+      case 'unknown worker': source.workers.push('b'.repeat(64)); break;
+      case 'missing restart': delete source.restart[app.Id]; break;
+      case 'changed restart': source.restart[app.Id].Name = 'always'; break;
+    }
+    let changes = 0;
+    const docker = { inventory: async () => [app], restartPolicy: async () => { changes++; }, stop: async () => { changes++; } } as unknown as Docker;
+    try {
+      await assert.rejects(new Fencing(docker, store).stop(source), /source_changed_review_again/);
+      assert.equal(changes, 0);
+    } finally {
+      store.close();
+      await rm(directory, { recursive: true });
+    }
+  });
+}
 for (const automatic of [false, true]) test(`verified import retires source services and recovery restores them (${automatic ? 'automatic Unraid access' : 'mounted file'})`, async () => {
   const directory = await mkdtemp(join(tmpdir(), 'manager-retire-')),
     store = new Store(directory);
