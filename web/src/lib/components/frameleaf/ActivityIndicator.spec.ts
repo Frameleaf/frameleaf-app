@@ -8,7 +8,9 @@ const state = vi.hoisted(() => ({
   indicator: { count: 0, progress: null as number | null, running: undefined as number | undefined },
   isAdmin: false,
   cards: 0,
+  cloudRows: [] as { operationId: string; stage: string; progress: number | null }[],
   watchRunningJobs: vi.fn(() => () => {}),
+  watchCloudWork: vi.fn(() => () => {}),
 }));
 vi.mock('$lib/frameleaf/activity', () => ({
   buildActivityList: () => [],
@@ -17,6 +19,15 @@ vi.mock('$lib/frameleaf/activity', () => ({
     progress: state.indicator.progress,
   }),
   activityInProgressCount: (_items: unknown[], background: number) => state.indicator.count + background,
+  isShownAsCloudWork: () => false,
+}));
+vi.mock('$lib/frameleaf/cloud-work-session.svelte', () => ({
+  cloudWorkSession: {
+    get rows() {
+      return state.cloudRows;
+    },
+    watch: state.watchCloudWork,
+  },
 }));
 vi.mock('$lib/frameleaf/activity-session.svelte', () => ({
   activitySession: { operations: [], watch: () => () => {} },
@@ -52,7 +63,9 @@ describe('ActivityIndicator', () => {
     state.indicator = { count: 0, progress: null, running: undefined };
     state.isAdmin = false;
     state.cards = 0;
+    state.cloudRows = [];
     state.watchRunningJobs.mockClear();
+    state.watchCloudWork.mockClear();
   });
   afterEach(() => vi.useRealTimers());
 
@@ -86,12 +99,23 @@ describe('ActivityIndicator', () => {
     expect(container.querySelector('.fl-activity-arc')).toHaveClass('is-indeterminate');
   });
 
+  it('counts the cloud backup Activity shows, even one another administrator owns', async () => {
+    state.isAdmin = true;
+    state.cloudRows = [{ operationId: 'scheduled-backup', stage: 'running', progress: 30 }];
+    render(ActivityIndicator);
+    await report({ count: 0, progress: null });
+
+    expect(state.watchCloudWork).toHaveBeenCalled();
+    expect(screen.getByRole('link', { name: 'frameleaf_activity_indicator_in_progress' })).toHaveTextContent('1');
+  });
+
   it('does not ask for background work for anyone else: the server sends them none', async () => {
     state.cards = 2;
     render(ActivityIndicator);
     await report({ count: 1, progress: null });
 
     expect(state.watchRunningJobs).not.toHaveBeenCalled();
+    expect(state.watchCloudWork).not.toHaveBeenCalled();
     expect(screen.getByRole('link', { name: 'frameleaf_activity_indicator' })).toHaveTextContent('1');
   });
 

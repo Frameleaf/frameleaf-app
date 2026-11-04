@@ -26,7 +26,7 @@
   } from '$lib/frameleaf/activity';
   import { activitySession } from '$lib/frameleaf/activity-session.svelte';
   import { buildBackgroundWorkCards } from '$lib/frameleaf/background-work';
-  import { cloudWorkRows } from '$lib/frameleaf/cloud-backup';
+  import { cloudWorkSession } from '$lib/frameleaf/cloud-work-session.svelte';
   import { cloudCostFacts } from '$lib/frameleaf/cloud-jobs';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { runningJobsSession } from '$lib/frameleaf/running-jobs-session.svelte';
@@ -39,13 +39,7 @@
   import { downloadUrl, getAssetMediaUrl } from '$lib/utils';
   import { getByteUnitString } from '$lib/utils/byte-units';
   import { handleError } from '$lib/utils/handle-error';
-  import {
-    AssetMediaSize,
-    getBaseUrl,
-    getCloudBackupStatus,
-    getStudioBundleOperation,
-    type CloudBackupStatusResponseDto,
-  } from '@frameleaf/sdk';
+  import { AssetMediaSize, getBaseUrl, getStudioBundleOperation } from '@frameleaf/sdk';
   import { Icon, Theme, themeManager } from '@frameleaf/ui';
   import {
     mdiAutoFix,
@@ -67,7 +61,7 @@
     mdiWifi,
     mdiWifiOff,
   } from '@mdi/js';
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { locale, t } from 'svelte-i18n';
 
   /**
@@ -97,33 +91,12 @@
   // read-only background work, not among their own jobs; finished, they list here. FL-162: that work is
   // the last group of the In progress section (prototype Activity.jsx), so the section counts it too.
   const isAdmin = $derived(authManager.authenticated && authManager.user.isAdmin);
-  /** How often the cloud backup status is read again while something runs, and while nothing does. */
-  const CLOUD_WORK_ACTIVE_POLL_MS = 5000;
-  const CLOUD_WORK_IDLE_POLL_MS = 30_000;
-  let cloudBackupStatus = $state<CloudBackupStatusResponseDto | null>(null);
-  const cloudWork = $derived(isAdmin ? cloudWorkRows(cloudBackupStatus) : []);
-  const loadCloudWork = async () => {
-    try {
-      cloudBackupStatus = await getCloudBackupStatus();
-    } catch {
-      // not set up, or unreachable: nothing to show
-      cloudBackupStatus = null;
-    }
-  };
+  /** The top-bar indicator reads the same cloud status, so both count the same runs. */
+  const cloudWork = $derived(isAdmin ? cloudWorkSession.rows : []);
   $effect(() => {
     if (isAdmin) {
-      void loadCloudWork();
+      return untrack(() => cloudWorkSession.watch());
     }
-  });
-  $effect(() => {
-    if (!isAdmin) {
-      return;
-    }
-    const timer = setInterval(
-      () => void loadCloudWork(),
-      cloudWork.length > 0 ? CLOUD_WORK_ACTIVE_POLL_MS : CLOUD_WORK_IDLE_POLL_MS,
-    );
-    return () => clearInterval(timer);
   });
   const allItems = $derived(
     buildActivityList({
@@ -141,7 +114,7 @@
   );
   $effect(() => {
     if (cloudWorkBehind) {
-      void loadCloudWork();
+      void cloudWorkSession.refresh();
     }
   });
   const counts = $derived(activityCounts(items));
@@ -656,7 +629,7 @@
         {/if}
       {/each}
       {#if backgroundCount > 0}
-        <BackgroundWorkRows cards={serverWork} cloudStatus={isAdmin ? cloudBackupStatus : null} />
+        <BackgroundWorkRows cards={serverWork} cloudStatus={isAdmin ? cloudWorkSession.status : null} />
       {/if}
     </section>
   {/if}

@@ -1,7 +1,13 @@
 <script lang="ts">
-  import { activityInProgressCount, activityIndicatorState, buildActivityList } from '$lib/frameleaf/activity';
+  import {
+    activityInProgressCount,
+    activityIndicatorState,
+    buildActivityList,
+    isShownAsCloudWork,
+  } from '$lib/frameleaf/activity';
   import { activitySession } from '$lib/frameleaf/activity-session.svelte';
   import { buildBackgroundWorkCards } from '$lib/frameleaf/background-work';
+  import { cloudWorkSession } from '$lib/frameleaf/cloud-work-session.svelte';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { runningJobsSession } from '$lib/frameleaf/running-jobs-session.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -44,9 +50,15 @@
   const isAdmin = $derived(authManager.authenticated && authManager.user.isAdmin);
   /** The same number as Activity's In progress: paused work and background work count too. */
   const indicator = $derived.by(() => {
-    const cards = isAdmin ? buildBackgroundWorkCards(runningJobsSession.summary) : [];
-    const { count: running, progress } = activityIndicatorState(items, cards);
-    const count = activityInProgressCount(items, cards.length);
+    // As Activity: an administrator's background cards and cloud rows, and a cloud operation the
+    // cloud rows already show counted once, as its row.
+    const background = isAdmin
+      ? [...buildBackgroundWorkCards(runningJobsSession.summary), ...cloudWorkSession.rows]
+      : [];
+    const shown = new Set(isAdmin ? cloudWorkSession.rows.map((row) => row.operationId) : []);
+    const own = items.filter((item) => !isShownAsCloudWork(item, shown));
+    const { count: running, progress } = activityIndicatorState(own, background);
+    const count = activityInProgressCount(own, background.length);
     return { count, running, progress };
   });
 
@@ -55,7 +67,14 @@
   $effect(() => {
     if (isAdmin) {
       // Only the role decides; what watching reads and writes must not re-run this effect.
-      return untrack(() => runningJobsSession.watch());
+      return untrack(() => {
+        const stopJobs = runningJobsSession.watch();
+        const stopCloud = cloudWorkSession.watch();
+        return () => {
+          stopJobs();
+          stopCloud();
+        };
+      });
     }
   });
 
