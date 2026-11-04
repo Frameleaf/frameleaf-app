@@ -129,6 +129,10 @@ await page.route('**/manager-api/**', async (route) => {
   if (path === 'status') value = { claimed: true };
   else if (path === 'dashboard') value = dashboard;
   else if (path === 'sources') value = { sources, refused };
+  else if (path === 'captured-review') {
+    assert.equal(body.id, commonReview.id);
+    value = commonReview;
+  }
   else if (path === 'source-review')
     value = {
       source: sources.find((s) => s.id === body.sourceId),
@@ -651,13 +655,18 @@ try {
     await page.getByRole('checkbox', { name: 'Docker or Unraid', exact: false }).check();
     await mainButton('Check and review cutover').click();
     await page.getByRole('heading', { name: 'Review library import', exact: true }).waitFor();
-    const capture = { id: commonReview.id, kind: 'import', state: 'awaiting-review', completed: [], canCancel: true };
+    const capture = { id: commonReview.id, kind: 'import', state: 'awaiting-review', completed: [], canCancel: true, canReviewCapture: true };
     dashboard.operations = [{ ...capture, id: 'another-capture' }];
     await refresh();
     await page.getByRole('checkbox', { name: 'I’ve reviewed the transfer and recovery information.' }).check();
     assert.equal(await mainButton('Start import').isDisabled(), true);
     dashboard.operations = [capture];
-    await refresh();
+    await page.goto(origin);
+    await mainButton('Recover the stopped source').waitFor();
+    await mainButton('Open saved import review').click();
+    await page.getByRole('heading', { name: 'Review library import', exact: true }).waitFor();
+    assert.equal(await mainButton('Start import').isDisabled(), true);
+    await page.getByRole('checkbox', { name: 'I’ve reviewed the transfer and recovery information.' }).check();
     assert.equal(await mainButton('Start import').isEnabled(), true);
     await mainButton('Start import').click();
     await mainButton('Resume safely').waitFor();

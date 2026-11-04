@@ -866,8 +866,19 @@ test('common review reports the source and space without exposing the private bu
     source: 'photoprism', version: 'fixture', requiresBootstrap: true, requiredMediaBytes: 42, summary: common.summary,
   });
   const publicReview = JSON.stringify(review);
+  const reopened = f.operations.capturedReview(operation.id);
+  assert.equal(reopened.approvalToken, review.approvalToken);
+  assert.equal(reopened.expires, review.expires);
+  assert.deepEqual(reopened.commonImport, review.commonImport);
+  assert.equal(f.operations.history().find(({ id }) => id === operation.id)?.canReviewCapture, true);
+  const stored = f.store.get<{ expires: number }>(`review:${review.id}`)!;
+  f.store.set(`review:${review.id}`, { ...stored, expires: Date.now() - 1 });
+  assert.throws(() => f.operations.capturedReview(operation.id), /review_expired/);
+  assert.equal(f.operations.history().find(({ id }) => id === operation.id)?.canReviewCapture, false);
+  f.store.set(`review:${review.id}`, stored);
+
   for (const value of [common.bundleName, common.destinationId, common.bootstrapAdminId, common.binding.source.identity]) {
-    assert(value && !publicReview.includes(value));
+    assert(value && !publicReview.includes(value) && !JSON.stringify(reopened).includes(value));
   }
   assert.deepEqual(f.store.get<{ common: CommonImportReview }>(`review:${review.id}`)?.common, common);
   const lowSpaceId = randomUUID();

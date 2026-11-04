@@ -554,6 +554,35 @@ export class Operations {
       this.executing.delete(operationId);
     }
   }
+  private commonReviewView(review: Review, common: CommonImportReview) {
+    const { owners, assets, files, albums, preservationDifferences } = common.summary;
+    return {
+      id: review.id,
+      expires: review.expires,
+      approvalToken: review.approvalToken,
+      commonImport: {
+        source: common.binding.source.kind,
+        version: common.binding.source.version,
+        requiresBootstrap: !!common.bootstrapAdminId,
+        requiredMediaBytes: common.requiredMediaBytes,
+        summary: { owners, assets, files, albums, preservationDifferences },
+      },
+      downtime: 'The original app stays stopped while Frameleaf imports and prepares the library.',
+      recovery: 'Manager verifies the original files before starting Frameleaf. Automatic rollback ends at the recorded writer boundary.',
+    };
+  }
+  /** Reopen the approved-to-review snapshot without renewing its expiry or exposing its private bundle. */
+  capturedReview(operationId: string) {
+    const snapshot = this.capturedImport(operationId);
+    const review = this.store.get<Review>(`review:${operationId}`);
+    if (!review?.common || !review.approvalToken || review.expires <= Date.now()) throw new Refusal('review_expired');
+    if (
+      review.id !== operationId || review.common.binding.operationId !== operationId ||
+      digest(review.common.fence) !== digest(snapshot.fence) ||
+      digest(review.common.binding.source) !== digest(snapshot.source)
+    ) throw new Refusal('invalid_import_authority');
+    return this.commonReviewView(review, review.common);
+  }
   async review(input: z.infer<typeof ReviewInput>, managerPort?: number, common?: CommonImportReview) {
     if (this.installation()) throw new Refusal('installation_already_exists');
     const compatibility = await this.docker.compatibility();
@@ -613,24 +642,10 @@ export class Operations {
           }
         : null,
       backup: common ? null : backup ? { action: 'reuse', name: backup.name, takenAt: backup.takenAt } : { action: 'create' },
-      ...(common && { approvalToken: review.approvalToken, commonImport: {
-        source: common.binding.source.kind,
-        version: common.binding.source.version,
-        requiresBootstrap: !!common.bootstrapAdminId,
-        requiredMediaBytes: common.requiredMediaBytes,
-        summary: {
-          owners: common.summary.owners,
-          assets: common.summary.assets,
-          files: common.summary.files,
-          albums: common.summary.albums,
-          preservationDifferences: common.summary.preservationDifferences,
-        },
-      } }),
       requiredBytes: (source?.summary.databaseBytes ?? 1024 ** 3) * 3,
       downtime: `${source?.product ?? 'The original app'} stays stopped while Frameleaf imports and prepares the library.`,
-      recovery: common
-        ? 'Manager verifies the original files before starting Frameleaf. Automatic rollback ends at the recorded writer boundary.'
-        : `Database only. Photos, videos and external libraries stay in place. After Frameleaf writes to media, a database backup alone cannot safely return the library to ${source?.product ?? 'the original app'}.`,
+      recovery: `Database only. Photos, videos and external libraries stay in place. After Frameleaf writes to media, a database backup alone cannot safely return the library to ${source?.product ?? 'the original app'}.`,
+      ...(common && this.commonReviewView(review, common)),
     };
   }
   /**
@@ -2034,6 +2049,8 @@ export class Operations {
       ...(typeof receipts['reviewed-common-import'] === 'string' && { commonImport: {
         requiresBootstrap: !!this.store.get<Review>(`review:${input.commonCapture ? operation.id : input.reviewId}`)?.common?.bootstrapAdminId,
       } }),
+      canReviewCapture: operation.state === 'awaiting-review' && !!input.commonCapture &&
+        (this.store.get<Review>(`review:${operation.id}`)?.expires ?? 0) > Date.now(),
       replacesInstallation:
         operation.kind === 'restore' && !!this.store.get<RestoreReview>(`restore:${input.reviewId}`)?.current,
       canStop: operation.kind === 'move-library' && operation.state === 'running' && !receipts['move-writes-intent'],

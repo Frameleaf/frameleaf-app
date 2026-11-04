@@ -271,6 +271,10 @@ class Api {
   @Post('review') review(@Body() input: unknown, @Req() request: Request) {
     return operations.review(ReviewInput.parse(input), managerPort(request));
   }
+  @Post('captured-review') capturedReview(@Body() input: unknown) {
+    const { id } = z.strictObject({ id: z.uuid() }).parse(input);
+    return operations.capturedReview(id);
+  }
   @Post('install') install(@Body() input: unknown, @Req() request: Request) {
     const value = z.object({
       reviewId: z.string().uuid(), key: RequestKey, bootstrap: CommonImportBootstrapCredentials.optional(),

@@ -446,6 +446,12 @@
     await go('progress');
     dialog?.close();
   }
+  async function reopenCapturedReview(id: string) {
+    review = await api('captured-review', { id });
+    cutoverAccepted = false;
+    step = lastImportStep;
+    await go('import');
+  }
   async function startCommonImport() {
     try {
       await start('install', { reviewId: review.id, approvalToken: review.approvalToken }, review.commonImport.requiresBootstrap
@@ -762,7 +768,7 @@
                 <label class="check-row mt24"><input type="checkbox" bind:checked={cutoverAccepted}/><span>I’ve reviewed the transfer and recovery information.</span></label>
               </div>
               <div class="card-footer">
-                <button type="button" class="button quiet" onclick={() => { review = null; step = 0; importAdminPassword = ''; }}>Back</button>
+                <button type="button" class="button quiet" onclick={() => { review = null; step = 0; importAdminPassword = ''; if (activeOperation?.state === 'awaiting-review') void run(() => go('progress')); }}>Back</button>
                 <button class="button primary" disabled={busy || !cutoverAccepted || (!!activeOperation && (activeOperation.id !== review.id || activeOperation.state !== 'awaiting-review')) || (review.commonImport.requiresBootstrap && location.protocol !== 'https:')}>Start import</button>
               </div>
             </form>
@@ -814,7 +820,7 @@
                 <div class="mt16">{@render notice('Secure connection required', 'Open Manager over HTTPS to re-enter the destination administrator password.', 'warning')}</div>
               {/if}
             {/if}
-            <div class="wizard-footer"><button class="button quiet" onclick={() => run(() => go('activity'))}>Operation history</button><div class="actions">{#if operation.kind === 'move-library' && operation.state === 'running'}<button class="button quiet" disabled={busy || !operation.canStop} onclick={() => run(async () => { await api('stop-move', { id: operation.id }); await refresh(); })}>Stop safely</button>{/if}{#if ['failed', 'interrupted'].includes(operation.state)}{#if operation.error !== 'import_bootstrap_credentials_required'}<button class="button primary" disabled={busy} onclick={() => run(async () => { await api('resume', { id: operation.id }); await refresh(); })}>Resume safely</button>{/if}{#if (operation.canCancel ?? canCancel(operation, installation))}<button class="button danger" disabled={busy} onclick={() => showModal('recover')}>{operation.kind === 'move-library' ? 'Cancel safely' : operation.kind === 'backup' ? 'Cancel backup' : operation.kind === 'update' ? 'Cancel update and restart' : 'Recover the stopped source'}</button>{/if}{:else if timeline.successful}<button class="button primary" onclick={() => run(() => go(['install', 'import', 'restore'].includes(operation.kind) && !dashboard.onboardingFinished ? 'success' : 'overview'))}>Continue</button>{/if}</div></div>
+            <div class="wizard-footer"><button class="button quiet" onclick={() => run(() => go('activity'))}>Operation history</button><div class="actions">{#if operation.kind === 'move-library' && operation.state === 'running'}<button class="button quiet" disabled={busy || !operation.canStop} onclick={() => run(async () => { await api('stop-move', { id: operation.id }); await refresh(); })}>Stop safely</button>{/if}{#if ['failed', 'interrupted'].includes(operation.state)}{#if operation.error !== 'import_bootstrap_credentials_required'}<button class="button primary" disabled={busy} onclick={() => run(async () => { await api('resume', { id: operation.id }); await refresh(); })}>Resume safely</button>{/if}{#if (operation.canCancel ?? canCancel(operation, installation))}<button class="button danger" disabled={busy} onclick={() => showModal('recover')}>{operation.kind === 'move-library' ? 'Cancel safely' : operation.kind === 'backup' ? 'Cancel backup' : operation.kind === 'update' ? 'Cancel update and restart' : 'Recover the stopped source'}</button>{/if}{:else if operation.state === 'awaiting-review'}{#if operation.canReviewCapture}<button class="button primary" disabled={busy} onclick={() => run(() => reopenCapturedReview(operation.id))}>Open saved import review</button>{/if}{#if operation.canCancel}<button class="button danger" disabled={busy} onclick={() => showModal('recover')}>Recover the stopped source</button>{/if}{:else if timeline.successful}<button class="button primary" onclick={() => run(() => go(['install', 'import', 'restore'].includes(operation.kind) && !dashboard.onboardingFinished ? 'success' : 'overview'))}>Continue</button>{/if}</div></div>
           {:else}{@render heading('No recorded operation', 'Start setup or choose a maintenance operation.')}<button class="button primary" onclick={() => run(() => go(installation ? 'overview' : 'welcome'))}>Continue</button>{/if}
         {:else if screen === 'success'}
           {@render steps(onboardingSteps, 0)}<div class="success-icon"><Icon name="check"/></div>{@render heading(installation?.origin === 'new_import' ? 'Your import is in Frameleaf' : 'Your server is ready', 'Now make it yours and connect your phone. Library preparation continues in the background.')}{@render notice('Services are ready', installation?.origin === 'new_import' ? 'Your users, albums and settings are imported. The original app remains stopped, and your media stays in place.' : 'Continue with your local photo account and mobile app.')}{@render regeneration()}<div class="wizard-footer"><span class="meta">Library preparation continues</span><button class="button primary" onclick={() => run(() => go('profile'))}>Continue to your details <Icon name="arrow"/></button></div>
