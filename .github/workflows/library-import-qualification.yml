@@ -78,10 +78,15 @@ jobs:
           node server/scripts/prepare-import-transfer-runtime.mjs
       - name: Verify scoped cancellation cleanup
         run: node --test server/test/photoview-qualification-cleanup.test.mjs
-      - name: Qualify native accounts and directory access
+      - name: Qualify five fresh native installations
         env:
           TMPDIR: ${{ runner.temp }}/frameleaf-photoview-${{ github.run_id }}-${{ github.run_attempt }}
-        run: node server/scripts/qualify-photoview-application.mjs
+        run: |
+          for attempt in 1 2 3 4 5; do
+            echo "Native Photoview installation $attempt/5"
+            install -d -m700 "$TMPDIR"
+            node server/scripts/qualify-photoview-application.mjs
+          done
       - name: Remove disposable Docker fixture after cancellation
         if: always()
         env:
