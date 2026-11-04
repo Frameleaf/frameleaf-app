@@ -1128,14 +1128,12 @@ export class PersonService extends BaseService {
           embeddings.push({ faceId, embedding });
         }
       }
-      // FL-57: a face with an explicit decision stays even when this detection no longer finds it
-      const faceIdsToRemove = [...mlFaceIds.difference(decided)];
-
-      if (preserveImportedFaces && faceIdsToRemove.length > 0) {
-        // Frozen imports have no Frameleaf correction history to reconcile a replacement against.
-        // Fail the accepted publication before any mutation; the retained stage owns the retry budget.
-        throw new Error('Imported face regeneration unresolved: detection did not match retained faces');
-      }
+      // FL-57: a face with an explicit decision stays even when this detection no longer finds it.
+      // An imported face counts as decided: the source's detector or threshold found it, and it has no
+      // Frameleaf correction history to reconcile a replacement against. It keeps its person, no embedding.
+      // ponytail: a source box overlapping a new one at or below 0.5 can leave both; add a looser
+      // imported-only match if duplicates show up.
+      const faceIdsToRemove = preserveImportedFaces ? [] : [...mlFaceIds.difference(decided)];
 
       if (facesToAdd.length > 0 || faceIdsToRemove.length > 0 || embeddings.length > 0) {
         await this.personRepository.refreshFaces(facesToAdd, faceIdsToRemove, embeddings);

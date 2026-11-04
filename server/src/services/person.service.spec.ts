@@ -2103,6 +2103,38 @@ describe(PersonService.name, () => {
       expect(mocks.person.reassignFaces).not.toHaveBeenCalled();
     });
 
+    it('keeps an unmatched imported face and still adds the new one', async () => {
+      const assetId = newUuid();
+      const face = AssetFaceFactory.create({
+        assetId,
+        boundingBoxX1: 200,
+        boundingBoxX2: 300,
+        boundingBoxY1: 200,
+        boundingBoxY2: 300,
+      });
+      const asset = AssetFactory.from({ id: assetId })
+        .face({ sourceType: SourceType.MachineLearning, correctedAt: null, personGroupId: newUuid() })
+        .file({ type: AssetFileType.Preview })
+        .exif()
+        .build();
+      mocks.machineLearning.detectFaces.mockResolvedValue(getAsDetectedFace(face));
+      mocks.assetJob.getForDetectFacesJob.mockResolvedValue(getForDetectedFaces(asset));
+      mocks.crypto.randomUUID.mockReturnValue(face.id);
+      mocks.person.refreshFaces.mockResolvedValue();
+
+      await expect(sut.handleDetectFaces({ id: asset.id, preserveImportedFaces: true })).resolves.toBe(
+        JobStatus.Success,
+      );
+
+      expect(mocks.person.refreshFaces).toHaveBeenCalledWith(
+        [expect.objectContaining({ id: face.id, assetId: asset.id })],
+        [],
+        [{ faceId: face.id, embedding: '[1, 2, 3, 4]' }],
+      );
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.FacialRecognition, data: { id: face.id } }]);
+      expect(mocks.asset.upsertJobStatus).toHaveBeenCalledWith({ assetId, facesRecognizedAt: expect.any(Date) });
+    });
+
     it('repairs a matched imported ML face only at publication without replacing its identity', async () => {
       const face = AssetFaceFactory.create({
         sourceType: SourceType.MachineLearning,

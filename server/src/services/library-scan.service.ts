@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { Stats } from 'node:fs';
+import { Stats, constants } from 'node:fs';
 import path from 'node:path';
 import picomatch from 'picomatch';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
@@ -479,6 +479,19 @@ export class LibraryScanService {
     const roots = [...new Set(library.importPaths.map((importPath) => normalizeImportPath(importPath)))];
     await this.requireSources(roots, signal);
     signal.throwIfAborted();
+
+    // A folder this server cannot write (a `:ro` mount, as Immich libraries usually are) makes the library
+    // read-only, so edits keep their sidecars in Frameleaf's folder instead of failing beside the originals.
+    // ponytail: one way only; a later read-write remount keeps it read-only, which is always safe.
+    if (
+      !library.readOnly &&
+      (await Promise.all(roots.map((root) => this.storageRepository.checkFileExists(root, constants.W_OK)))).includes(
+        false,
+      )
+    ) {
+      await this.libraryRepository.update(library.id, { readOnly: true });
+      this.logger.log(`Library ${library.id} is read-only: an import folder cannot be written`);
+    }
 
     if (!(await this.start(id, claimToken, result))) {
       // cancelled between the claim and this write, or the claim is gone

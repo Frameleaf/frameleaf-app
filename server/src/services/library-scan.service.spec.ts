@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { Stats } from 'node:fs';
+import { Stats, constants } from 'node:fs';
 import type { createPostgres } from '@frameleaf/sql-tools';
 import type { QueueExecution } from 'src/queue/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -628,6 +628,21 @@ describe(LibraryScanService.name, () => {
         expect.objectContaining({ originalPath: '/mnt/photos/mine.jpg' }),
       ]);
     });
+
+    it.each([true, false])(
+      'marks the library read-only only when a folder cannot be written (writable=%s)',
+      async (writable) => {
+        mocks.storage.checkFileExists.mockImplementation((_path: string, mode?: number) =>
+          Promise.resolve(writable || mode !== constants.W_OK),
+        );
+
+        await sut.run(operationOf(), 'token');
+
+        const marked = mocks.library.update.mock.calls.filter(([, patch]) => 'readOnly' in patch);
+        expect(marked).toEqual(writable ? [] : [[library.id, { readOnly: true }]]);
+        expect(operations.complete).toHaveBeenCalledTimes(1);
+      },
+    );
 
     it('fails, changing nothing, when an import folder does not exist', async () => {
       mocks.storage.stat.mockImplementation(() => enoent());

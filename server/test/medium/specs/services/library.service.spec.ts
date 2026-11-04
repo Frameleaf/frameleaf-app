@@ -1,6 +1,6 @@
 import { Kysely, sql } from 'kysely';
 import { existsSync } from 'node:fs';
-import { copyFile, mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises';
+import { chmod, copyFile, mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import type { QueueExecution } from 'src/queue/types.js';
@@ -595,6 +595,25 @@ describe(LibraryService.name, () => {
 
       await expect(ctx.getAssetPaths(library.id)).resolves.toEqual([assetA, assetB].sort());
     });
+
+    // root writes anywhere, so a mode-0555 folder only stands in for a `:ro` mount for other users
+    it.skipIf(process.getuid?.() === 0).each([true, false])(
+      'marks the library read-only when an import folder cannot be written (writable=%s)',
+      async (writable) => {
+        const { ctx } = setup();
+        const assetPath = await createFile(join(importPath, 'assetA.png'));
+        const library = await ctx.createLibrary({ importPaths: [importPath] });
+        if (!writable) await chmod(importPath, 0o555);
+        try {
+          await ctx.scan(library.id);
+        } finally {
+          await chmod(importPath, 0o755);
+        }
+
+        await expect(ctx.getAssetPaths(library.id)).resolves.toEqual([assetPath]);
+        await expect(ctx.get(LibraryRepository).get(library.id)).resolves.toMatchObject({ readOnly: !writable });
+      },
+    );
 
     // https://github.com/immich-app/immich/issues/10699
     it('should scan multiple import paths with commas', async () => {
