@@ -145,22 +145,33 @@ it.each([
 ])('refuses %s without replacing earlier captures or exposing raw failure text', async (failure) => {
   const value = input();
   let candidate: Parameters<typeof writeLibraryImportBundle>[0] = value;
-  if (failure === 'missing owner') candidate = { ...value, owners: value.owners.slice(1) };
-  else if (failure === 'wrong destination') candidate = { ...value, destinationId: randomUUID() };
-  else if (failure === 'credential archive')
-    candidate = { ...value, records: [{ table: 'users', value: { password: 'private-verifier-value' } }] };
-  else if (failure === 'interrupted inventory')
-    candidate = {
-      ...value,
-      records: (async function* () {
-        yield await Promise.resolve(records[0]);
-        throw new Error('private-verifier-value');
-      })(),
-    };
-  else if (failure === 'shared staging') await chmod(stagingRoot, 0o755);
-  else if (failure === 'symlink staging') {
-    await symlink(stagingRoot, join(stagingRoot, 'alias'));
-    candidate = { ...value, stagingRoot: join(stagingRoot, 'alias') };
+  switch (failure) {
+    case 'missing owner':
+      candidate = { ...value, owners: value.owners.slice(1) };
+      break;
+    case 'wrong destination':
+      candidate = { ...value, destinationId: randomUUID() };
+      break;
+    case 'credential archive':
+      candidate = { ...value, records: [{ table: 'users', value: { password: 'private-verifier-value' } }] };
+      break;
+    case 'interrupted inventory':
+      candidate = {
+        ...value,
+        records: (async function* () {
+          yield records[0];
+          await readFile(join(stagingRoot, 'previous.json'));
+          throw new Error('private-verifier-value');
+        })(),
+      };
+      break;
+    case 'shared staging':
+      await chmod(stagingRoot, 0o755);
+      break;
+    case 'symlink staging':
+      await symlink(stagingRoot, join(stagingRoot, 'alias'));
+      candidate = { ...value, stagingRoot: join(stagingRoot, 'alias') };
+      break;
   }
   const failureResult: unknown = await writeLibraryImportBundle(candidate).catch((error: unknown) => error);
   expect(failureResult).toMatchObject({ message: expect.stringMatching(/^Library import refused:/u) });
@@ -172,7 +183,7 @@ it.each([
 });
 
 it('refuses a staging path the common reader cannot reopen', async () => {
-  const unsupported = join(stagingRoot, 'unsupported\\path');
+  const unsupported = join(stagingRoot, String.raw`unsupported\path`);
   await mkdir(unsupported, { mode: 0o700 });
   await expect(writeLibraryImportBundle({ ...input(), stagingRoot: unsupported })).rejects.toThrow(
     'IMPORT_BUNDLE_STAGING_INVALID',
