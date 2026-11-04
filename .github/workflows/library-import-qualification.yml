@@ -50,7 +50,6 @@ jobs:
     timeout-minutes: 20
     env:
       FRAMELEAF_PHOTOVIEW_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
-      TMPDIR: ${{ runner.temp }}/frameleaf-photoview-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -71,6 +70,8 @@ jobs:
           pnpm --filter @frameleaf/sdk build
           pnpm --filter @frameleaf/plugin-sdk build
       - name: Prepare import runtime
+        env:
+          TMPDIR: ${{ runner.temp }}/frameleaf-photoview-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           install -d -m700 "$TMPDIR"
           node studio/tools/prepare-server-subtitle-runtime.mjs
@@ -78,9 +79,13 @@ jobs:
       - name: Verify scoped cancellation cleanup
         run: node --test server/test/photoview-qualification-cleanup.test.mjs
       - name: Qualify native accounts and directory access
+        env:
+          TMPDIR: ${{ runner.temp }}/frameleaf-photoview-${{ github.run_id }}-${{ github.run_attempt }}
         run: node server/scripts/qualify-photoview-application.mjs
       - name: Remove disposable Docker fixture after cancellation
         if: always()
+        env:
+          TMPDIR: ${{ runner.temp }}/frameleaf-photoview-${{ github.run_id }}-${{ github.run_attempt }}
         run: node server/scripts/cleanup-photoview-qualification.mjs
   sqlite-source-text:
     name: SQLite source text admission
