@@ -2648,6 +2648,11 @@ export enum DatabaseLock {
    * uploads of the same new content never store it twice.
    */
   UniversalStorageChecksum = 980,
+  /**
+   * FL-1172: the queue catalogue's turnstile (`src/queue/catalogue.ts`). Whole-catalogue lockers hold it exclusively,
+   * single-queue lockers share it, so a catalogue lock waits once instead of behind every queue in turn.
+   */
+  QueueCatalogue = 990,
 }
 
 export enum MaintenanceAction {

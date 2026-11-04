@@ -18,6 +18,7 @@ import { validatePreparedLibraryImportWork } from 'src/library-import/activation
 import { type ManagerLibrarySetup, prepareLibraryImportWork } from 'src/library-import/derived-work.js';
 import { ReviewedImportContext } from 'src/library-import/reviewed-inputs.js';
 import { QUEUE_EXECUTION_CAPACITY, queueAdmission } from 'src/queue/admission.js';
+import { lockQueues, withQueueCatalogue } from 'src/queue/catalogue.js';
 import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
 import {
   type LibrarySourceIdentity,
@@ -650,25 +651,27 @@ export class JobRepository {
       // The run and its parent-dependent intents become visible only with successful publication.
       context.adoptions.push(admit);
     } else {
-      await this.store.db.transaction().execute(async (tx) => {
+      await withQueueCatalogue(
+        (work) => this.store.db.transaction().execute(work),
         // Keep the established queue -> parent job -> run/item lock order across every captured batch.
-        await sql`select name from job_queue order by name for no key update`.execute(tx);
-        if (context) {
-          const { rows } = await sql`select id from job where id = ${context.claim.id}::uuid
+        async (tx) => {
+          if (context) {
+            const { rows } = await sql`select id from job where id = ${context.claim.id}::uuid
             and token = ${context.claim.token}::uuid and state = 'active' and "leaseExpiresAt" > clock_timestamp()
             and "cancelRequestedAt" is null for update`.execute(tx);
-          if (rows.length === 0) throw new Error('Producer lost its claim');
-        }
-        await admit(tx);
-        if (context) {
-          context.signal.throwIfAborted();
-          const { rows } = await sql`select id from job where id = ${context.claim.id}::uuid
+            if (rows.length === 0) throw new Error('Producer lost its claim');
+          }
+          await admit(tx);
+          if (context) {
+            context.signal.throwIfAborted();
+            const { rows } = await sql`select id from job where id = ${context.claim.id}::uuid
             and token = ${context.claim.token}::uuid and state = 'active' and "leaseExpiresAt" > clock_timestamp()
             and "cancelRequestedAt" is null`.execute(tx);
-          if (rows.length === 0) throw new Error('Producer lost its claim during admission');
-          context.signal.throwIfAborted();
-        }
-      });
+            if (rows.length === 0) throw new Error('Producer lost its claim during admission');
+            context.signal.throwIfAborted();
+          }
+        },
+      );
     }
     return id;
   }
@@ -743,10 +746,10 @@ export class JobRepository {
   async ensureProducerRun(): Promise<string | undefined> {
     const context = queueExecution.getStore();
     if (!context) return;
-    const result = await this.store.db.transaction().execute(async (tx) => {
-      await sql`select name from job_queue order by name for no key update`.execute(tx);
-      return attachProducerRun(tx, context.claim);
-    });
+    const result = await withQueueCatalogue(
+      (work) => this.store.db.transaction().execute(work),
+      (tx) => attachProducerRun(tx, context.claim),
+    );
     context.claim.runId = result.runId;
     context.claim.itemKey = result.producerItemKey;
     return result.runId;
@@ -757,23 +760,25 @@ export class JobRepository {
     const context = queueExecution.getStore();
     if (!context) return prepare();
     const { claim } = context;
-    return this.store.db.transaction().execute(async (tx) => {
-      await sql`select name from job_queue order by name for no key update`.execute(tx);
-      const {
-        rows: [job],
-      } = await sql<{ checkpoints: Record<string, T> | null }>`select data->'_producerCheckpoints' checkpoints
+    return withQueueCatalogue(
+      (work) => this.store.db.transaction().execute(work),
+      async (tx) => {
+        const {
+          rows: [job],
+        } = await sql<{ checkpoints: Record<string, T> | null }>`select data->'_producerCheckpoints' checkpoints
         from job where id = ${claim.id}::uuid and token = ${claim.token}::uuid and state = 'active'
         and "leaseExpiresAt" > clock_timestamp() and "cancelRequestedAt" is null for update`.execute(tx);
-      if (!job) throw new Error('Producer checkpoint lost its claim');
-      if (job.checkpoints && Object.hasOwn(job.checkpoints, key)) return job.checkpoints[key];
-      const value = await publicationTransaction.run(tx, prepare);
-      const { rows } = await sql`update job set data = jsonb_set(data, '{_producerCheckpoints}',
+        if (!job) throw new Error('Producer checkpoint lost its claim');
+        if (job.checkpoints && Object.hasOwn(job.checkpoints, key)) return job.checkpoints[key];
+        const value = await publicationTransaction.run(tx, prepare);
+        const { rows } = await sql`update job set data = jsonb_set(data, '{_producerCheckpoints}',
         coalesce(data->'_producerCheckpoints', '{}'::jsonb) || jsonb_build_object(${key}::text, ${JSON.stringify(value)}::text::jsonb))
         where id = ${claim.id}::uuid and token = ${claim.token}::uuid and "leaseExpiresAt" > clock_timestamp()
           and "cancelRequestedAt" is null returning id`.execute(tx);
-      if (rows.length === 0) throw new Error('Producer checkpoint lost its claim');
-      return value;
-    });
+        if (rows.length === 0) throw new Error('Producer checkpoint lost its claim');
+        return value;
+      },
+    );
   }
 
   /** A queue producer cannot leave a new domain scan behind after losing its own acceptance fence. */
@@ -969,9 +974,7 @@ export class JobRepository {
       for (let offset = 0; offset < intents.length; offset += 250) {
         const batch = intents.slice(offset, offset + 250);
         await this.store.db.transaction().execute(async (tx) => {
-          for (const queue of [...new Set(batch.map((item) => item.queue))].sort()) {
-            await sql`select name from job_queue where name = ${queue} for no key update`.execute(tx);
-          }
+          await lockQueues(tx, [...new Set(batch.map((item) => item.queue))]);
           const { rows } = await sql`select id from job where id = ${context.claim.id}::uuid
             and token = ${context.claim.token}::uuid and state = 'active' and "leaseExpiresAt" > clock_timestamp()
             and "cancelRequestedAt" is null for update`.execute(tx);

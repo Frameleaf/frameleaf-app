@@ -2,6 +2,7 @@ import { Kysely, type QueryExecutorProvider, RawBuilder, SelectQueryBuilder, Tra
 import { randomUUID } from 'node:crypto';
 import type { DB } from 'src/schema/index.js';
 import { JobName } from 'src/enum.js';
+import { enterQueueTurnstile, lockQueueCatalogue } from 'src/queue/catalogue.js';
 import { jobSignal } from 'src/queue/context.js';
 import {
   attachLibraryParticipants,
@@ -84,7 +85,7 @@ export async function freezeSelection(
   const attach = async (tx: Transaction<DB>) => {
     // This short phase follows publication's catalogue -> job -> run lock order.
     await sql`insert into job_queue(name) values (${intent.queue}) on conflict do nothing`.execute(tx);
-    if (claim) await sql`select name from job_queue order by name for no key update`.execute(tx);
+    if (claim) await lockQueueCatalogue(tx);
     if (readiness && submittedRunId) {
       // Take the setup gate before inserting selection foreign keys or touching existing headers.
       await sql`select id from job_run where id = ${submittedRunId}::uuid for update`.execute(tx);
@@ -260,7 +261,7 @@ export async function assertSelectionsShared(tx: QueryExecutorProvider, producer
 /** Each call copies at most one page. Outcome mirroring and publication share the same short guard. */
 export async function shareSelectionPage(db: Executor, filter: { producerId: string } | { queue: string }) {
   const copy = async (tx: Executor) => {
-    await sql`select name from job_queue order by name for no key update`.execute(tx);
+    await lockQueueCatalogue(tx);
     if ('queue' in filter && (await redactLibrarySourcePage(tx, filter.queue))) return true;
     if (await discoverLibraryChildOrigins(tx, filter)) return true;
     if (await attachLibraryParticipants(tx, filter)) return true;
@@ -461,6 +462,7 @@ export async function feedManifest(
   enqueue: (intents: QueueIntent[], tx: Transaction<DB>) => Promise<void>,
 ) {
   return db.transaction().execute(async (tx) => {
+    await enterQueueTurnstile(tx);
     const {
       rows: [config],
     } = await sql<{ paused: boolean; manifestFilling: boolean }>`select paused, "manifestFilling"

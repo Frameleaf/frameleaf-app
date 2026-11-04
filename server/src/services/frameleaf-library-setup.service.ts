@@ -9,6 +9,7 @@ import { AdminConfigDto } from 'src/dtos/config.dto.js';
 import { LibrarySetupProgressDto } from 'src/dtos/frameleaf-library-setup.dto.js';
 import { FrameleafWorker, JobName, MediaOperationKind, QueueName, SyncEntityType } from 'src/enum.js';
 import { readImportedSetupRun } from 'src/library-import/setup-run.js';
+import { lockQueueCatalogue } from 'src/queue/catalogue.js';
 import { listRuns } from 'src/queue/run-query.js';
 import { unfinishedRunItems } from 'src/queue/selection-state.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -153,7 +154,7 @@ export class FrameleafLibrarySetupService {
         return;
       }
       if (retry && previous?.phase === 'needs-attention') {
-        await sql`SELECT name FROM job_queue ORDER BY name FOR NO KEY UPDATE`.execute(db);
+        await lockQueueCatalogue(db);
         const imported = await this.importedRun(db, true);
         if (
           this.importedSetupMatches(previous, imported) &&
@@ -281,7 +282,7 @@ export class FrameleafLibrarySetupService {
       current.run.selection.managerSetupRequired === true
     )
       return;
-    await sql`SELECT name FROM job_queue ORDER BY name FOR NO KEY UPDATE`.execute(db);
+    await lockQueueCatalogue(db);
     // Queue claims and pause changes serialize before the run and selection locks.
     // Capture cannot re-hold snapshots after observing this committed start acknowledgement.
     const imported = await this.importedRun(db, true);
@@ -514,7 +515,7 @@ export class FrameleafLibrarySetupService {
       const state = await this.read<SetupState>(this.key(), db);
       if (!state || !!state.paused === paused) return;
       state.paused = paused;
-      await sql`SELECT name FROM job_queue ORDER BY name FOR NO KEY UPDATE`.execute(db);
+      await lockQueueCatalogue(db);
       const imported = await this.importedRun(db, true);
       if (this.importedSetupRequired(state, imported) && !this.importedSetupMatches(state, imported))
         throw new BadRequestException('Imported setup identity mismatch');

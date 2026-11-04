@@ -5,6 +5,7 @@ import type { AssetVisibility } from 'src/enum.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { JobName, LibraryScope, PetObservationState, PetRecognitionRunStatus, PetSpecies } from 'src/enum.js';
+import { lockQueueCatalogue } from 'src/queue/catalogue.js';
 import { selectionItemContext, selectionItemState, unfinishedRunItems } from 'src/queue/selection-state.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -876,7 +877,7 @@ export class PetRepository {
   ): Promise<PetRecognitionRun> {
     return this.forkWrite(async (tx) => {
       // Admission and producer checkpoints take catalogue locks before any pet domain locks.
-      if (enqueue) await sql`select name from job_queue order by name for no key update`.execute(tx);
+      if (enqueue) await lockQueueCatalogue(tx);
       const {
         rows: [run],
       } = await sql<PetRecognitionRun>`
