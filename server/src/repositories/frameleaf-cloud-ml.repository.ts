@@ -625,7 +625,11 @@ export class FrameleafCloudMlRepository {
   }
 
   getWallet(gateway: CloudMlGateway): Promise<CloudWallet> {
-    return this.request(gateway, walletResponseSchema, { url: `${gateway.url}/v2/wallet`, dpop: gateway.token });
+    return this.request(gateway, walletResponseSchema, {
+      url: `${gateway.url}/v2/wallet`,
+      dpop: gateway.token,
+      headers: { 'Frameleaf-Wallet-Details': 'auto-top-up' },
+    });
   }
 
   /** `PATCH /v2/wallet`: change the daily cap or automatic top-up; answers with the wallet. */
