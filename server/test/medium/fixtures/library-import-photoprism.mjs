@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -15,7 +15,7 @@ const { assertImportExecutionLock } = await import('src/library-import/execution
 await assertImportExecutionLock(stateDirectory);
 const { Kysely } = await import('kysely');
 const { connectImportDatabase } = await import('src/immich-import/database.js');
-const { writeLibraryImportBundle } = await import('src/library-import/bundle-output.js');
+const { publishPhotoprismImportBundle } = await import('src/library-import/photoprism-bundle.js');
 const { loadLibraryImportBundle } = await import('src/library-import/bundle-input.js');
 const { executeLibraryImportCommand } = await import('src/library-import/command.js');
 const { libraryImportDerivedRunId } = await import('src/library-import/derived-work.js');
@@ -25,10 +25,8 @@ const { default: fixture } = await import('src/library-import/fixtures/photopris
 const { LocalLibraryImportState } = await import('src/library-import/local-transfer-state.js');
 const { verifyImportedPassword } = await import('src/library-import/passwords.js');
 const { readPhotoprismInventory } = await import('src/library-import/photoprism-inventory.js');
-const { assemblePhotoprismManifest } = await import('src/library-import/photoprism-manifest.js');
 const { openPhotoprismSnapshot } = await import('src/library-import/photoprism.js');
 const { captureSqliteSnapshot } = await import('src/library-import/sqlite.js');
-const { reviewImportFiles } = await import('src/library-import/transfer-runtime.js');
 const { JobName, QueueName } = await import('src/enum.js');
 const { DatabaseRepository } = await import('src/repositories/database.repository.js');
 const { JobRepository } = await import('src/repositories/job.repository.js');
@@ -142,7 +140,7 @@ for (const file of originals) {
     expectedSha256: expected.sha256,
   });
 }
-const assembled = assemblePhotoprismManifest(records, {
+const sourceEvidence = {
   source,
   inventory: {
     complete: true,
@@ -156,7 +154,7 @@ const assembled = assemblePhotoprismManifest(records, {
   albumOwners: Object.fromEntries(albums.map((album) => [album.id, input.sourceUserId])),
   files: observed,
   materializedAlbums: input.nativeLibrary.materializedAlbums,
-});
+};
 const reviewedLosses = new Set([
   'PHOTOPRISM_SOURCE_METADATA_ARCHIVED',
   'PHOTOPRISM_TITLE_ARCHIVED',
@@ -164,18 +162,6 @@ const reviewedLosses = new Set([
   'PHOTOPRISM_SHARING_RESTRICTED',
   'PHOTOPRISM_ALBUM_SNAPSHOT',
 ]);
-for (const loss of assembled.manifest.losses) {
-  assert(reviewedLosses.has(loss.code), 'Unreviewed native fixture preservation difference');
-  loss.acknowledged = true;
-}
-const plan = await reviewImportFiles({
-  version: 2,
-  source,
-  destinationId,
-  owners: [{ sourceId: input.sourceUserId, destinationId: ownerId }],
-  roots,
-  files: drafts,
-});
 const snapshot = openPhotoprismSnapshot(captured.path, fixture.source.version);
 let credential;
 try {
@@ -216,15 +202,25 @@ const owners = [
     credential,
   },
 ];
-const bundle = await writeLibraryImportBundle({
+const publication = {
+  records,
+  observed: sourceEvidence,
+  approvedLossCodes: reviewedLosses,
   stagingRoot: directory,
   operationId,
   destinationId,
-  manifest: assembled.manifest,
-  plan,
+  roots,
+  placements: drafts,
+  ownerMappings: [{ sourceId: input.sourceUserId, destinationId: ownerId }],
   owners,
-  records: assembled.archive,
-});
+  verifySource: authorize,
+};
+await assert.rejects(
+  publishPhotoprismImportBundle({ ...publication, approvedLossCodes: new Set() }),
+  /IMPORT_LOSSES_NOT_ACKNOWLEDGED/,
+);
+assert(!(await readdir(directory)).some((name) => name.startsWith(`bundle-${operationId}-`)));
+const bundle = await publishPhotoprismImportBundle(publication);
 const config = {
   format: 'frameleaf-library-import-command',
   version: 1,
@@ -298,7 +294,7 @@ try {
       assets: 2,
       files: 2,
       albums: albums.length,
-      preservationDifferences: assembled.manifest.losses.length,
+      preservationDifferences: loaded.context.manifest.losses.length,
     },
   });
   assert.equal(activated.activation.runId, libraryImportDerivedRunId(bundle.receipt.binding));
