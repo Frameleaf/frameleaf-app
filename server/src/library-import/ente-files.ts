@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { importFilePathSchema } from 'src/library-import/manifest.js';
 
+export { ENTE_EXPORT_SCHEMA_SHA256, readEnteManifest } from 'src/library-import/ente-manifest.js';
+
 const id = z
   .string()
   .regex(/^[1-9]\d{0,18}$/)
