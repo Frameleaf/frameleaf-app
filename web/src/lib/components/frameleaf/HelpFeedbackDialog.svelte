@@ -4,10 +4,13 @@
    * SystemPanels.jsx:226-315`) — a list of help rows and the third-party notices — in place of the
    * upstream modal's list of the upstream project's resources.
    *
-   * The help rows use the addresses this installation is configured with (`FRAMELEAF_DOCS_URL`,
-   * `FRAMELEAF_SUPPORT_URL`, … validated https by the server, FL-135) and a row without one is left
-   * out; nothing falls back to another project's sites. FL-190: the upstream attribution lives on the
-   * About screen only, so this dialog names neither the upstream project nor its sites.
+   * The rows are Frameleaf's own help (approved design, 2026-11-04): the website's Help Center,
+   * documentation, Discord and community, where Report a problem is Community › Bugs and Feature
+   * requests is Community › Ideas, then the source. An address this installation is configured with
+   * (`FRAMELEAF_DOCS_URL`, `FRAMELEAF_SUPPORT_URL`, `FRAMELEAF_BUG_FEATURE_URL`, `FRAMELEAF_SOURCE_URL`,
+   * validated https by the server, FL-135) replaces its row's default; nothing falls back to another
+   * project's sites. FL-190: the upstream attribution lives on the About screen only, so this dialog
+   * names neither the upstream project nor its sites.
    */
   import AcknowledgementsList from '$lib/components/frameleaf/AcknowledgementsList.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
@@ -17,9 +20,11 @@
     mdiBookOpenOutline,
     mdiBugOutline,
     mdiCertificateOutline,
+    mdiChatQuestionOutline,
     mdiChevronDown,
     mdiCommentTextOutline,
     mdiGithub,
+    mdiLifebuoy,
     mdiLightbulbOnOutline,
     mdiOpenInNew,
   } from '@mdi/js';
@@ -41,43 +46,69 @@
 
   type Row = { id: string; icon: string; title: Translations; text: Translations; href?: string };
 
+  /** The website's Help Center and community (frameleaf.app/help), and the source, 2026-11-04. */
+  const FRAMELEAF_HELP = {
+    helpCenter: 'https://frameleaf.app/help/',
+    documentation: 'https://frameleaf.app/docs/start/introduction/',
+    discord: 'https://discord.gg/cN3U3mv4',
+    community: 'https://frameleaf.app/help/community',
+    problem: 'https://frameleaf.app/help/community/c/bug-reports',
+    feature: 'https://frameleaf.app/help/community/c/ideas-feedback',
+    source: 'https://github.com/Frameleaf/frameleaf-app',
+  };
+
   const rows: Row[] = $derived(
     (
       [
+        {
+          id: 'help-center',
+          icon: mdiLifebuoy,
+          title: 'frameleaf_help_center',
+          text: 'frameleaf_help_center_text',
+          href: FRAMELEAF_HELP.helpCenter,
+        },
         {
           id: 'documentation',
           icon: mdiBookOpenOutline,
           title: 'documentation',
           text: 'frameleaf_help_documentation_text',
-          href: info.thirdPartyDocumentationUrl,
+          href: info.thirdPartyDocumentationUrl ?? FRAMELEAF_HELP.documentation,
+        },
+        {
+          id: 'discord',
+          icon: mdiChatQuestionOutline,
+          title: 'frameleaf_help_discord',
+          text: 'frameleaf_help_discord_text',
+          href: FRAMELEAF_HELP.discord,
         },
         {
           id: 'community',
           icon: mdiCommentTextOutline,
           title: 'frameleaf_help_community',
           text: 'frameleaf_help_community_text',
-          href: info.thirdPartySupportUrl,
+          href: info.thirdPartySupportUrl ?? FRAMELEAF_HELP.community,
         },
         {
           id: 'problem',
           icon: mdiBugOutline,
           title: 'frameleaf_help_problem',
           text: 'frameleaf_help_problem_text',
-          href: info.thirdPartyBugFeatureUrl,
+          href: info.thirdPartyBugFeatureUrl ?? FRAMELEAF_HELP.problem,
         },
         {
           id: 'feature',
           icon: mdiLightbulbOnOutline,
           title: 'frameleaf_help_feature',
           text: 'frameleaf_help_feature_text',
-          href: info.thirdPartyBugFeatureUrl,
+          // One configured tracker takes problems and requests alike, as before.
+          href: info.thirdPartyBugFeatureUrl ?? FRAMELEAF_HELP.feature,
         },
         {
           id: 'source',
           icon: mdiGithub,
           title: 'frameleaf_help_source',
           text: 'frameleaf_help_source_text',
-          href: info.thirdPartySourceUrl ?? info.repositoryUrl,
+          href: info.thirdPartySourceUrl ?? info.repositoryUrl ?? FRAMELEAF_HELP.source,
         },
       ] satisfies Row[]
     ).filter((row) => row.href),
