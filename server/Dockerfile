@@ -383,7 +383,7 @@ RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter 'fram
 
 COPY ./server ./server/
 COPY ./manager/package.json ./manager/package.json
-COPY ./manager/src/contracts.ts ./manager/src/import-plan.ts ./manager/src/import-sqlite.ts ./manager/src/import-transfer-journal.ts ./manager/src/import-copy.ts ./manager/src/import-file-review.ts ./manager/src/import-adoption.ts ./manager/src/import-relocation.ts ./manager/src/
+COPY ./manager/src/contracts.ts ./manager/src/import-plan.ts ./manager/src/import-source-authority.ts ./manager/src/import-sqlite.ts ./manager/src/import-transfer-journal.ts ./manager/src/import-copy.ts ./manager/src/import-file-review.ts ./manager/src/import-adoption.ts ./manager/src/import-relocation.ts ./manager/src/
 COPY ./manager/import-rename.c ./manager/import-rename.c
 COPY ./studio/runtime/subtitle-sidecar.mjs ./studio/runtime/subtitle-sidecar.d.mts ./studio/runtime/
 COPY ./studio/tools/owned-subtitle-runtime.mjs ./studio/tools/prepare-server-subtitle-runtime.mjs ./studio/tools/
