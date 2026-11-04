@@ -763,6 +763,29 @@ test('common review reports the source and space without exposing the private bu
     );
   }
   f.docker.pull = async (candidate) => { assert.equal(candidate, image); };
+  const inventory = {
+    photos: 2, privatePhotos: 1, albums: 1, originals: 2, sidecars: 0, accounts: [], albumsRequiringSnapshot: [],
+  };
+  f.docker.inspectImportSource = async (directory, candidate, authority) => {
+    assert.equal(directory, f.operations.directory());
+    assert.equal(candidate, image);
+    const staged = await readFile(join(root, 'prepare.json'));
+    assert.deepEqual(JSON.parse(staged.toString('utf8')), {
+      operationId: operation.id, destinationId: request.destinationId, source: request.observed.source,
+      snapshotPath: request.snapshotPath, format: 'frameleaf-inspect-library-import', version: 1, adapter: 'photoprism-sqlite',
+    });
+    assert.equal(authority.preparationSha256, createHash('sha256').update(staged).digest('hex'));
+    await authority.verify();
+    return inventory;
+  };
+  await assert.rejects(
+    f.operations.inspectCommonCapture(randomUUID(), request.destinationId, input.tag),
+    /invalid_import_authority/,
+  );
+  assert.deepEqual(await f.operations.inspectCommonCapture(operation.id, request.destinationId, input.tag), inventory);
+  assert.equal(fenceChecks, 2);
+  fenceChecks = 0;
+
   f.docker.prepareImportBundle = async (directory, candidate, authority, reviewedMedia) => {
     assert.equal(directory, f.operations.directory());
     assert.equal(candidate, image);

@@ -341,3 +341,31 @@ test('preparation uses read-only media, live fencing and the exact receipt bindi
     /invalid_import_response/,
   );
 });
+
+test('inventory inspection mounts only private staging read-only and refuses a substituted source receipt', async () => {
+  const operationId = randomUUID();
+  const approved = authorityFor('photoprism', operationId);
+  const authority = {
+    operationId,
+    destinationId: approved.destinationId,
+    source: approved.binding.source,
+    preparationSha256: 'd'.repeat(64),
+    verify: async () => {},
+  };
+  const inventory = {
+    photos: 2, privatePhotos: 1, albums: 1, originals: 2, sidecars: 0,
+    accounts: [{ id: 'owner', name: 'Owner', role: 'admin', canLogin: true }],
+    albumsRequiringSnapshot: [],
+  };
+  let source = authority.source;
+  const docker = new Docker(async (_binary, args) => {
+    const mounts = args.flatMap((arg, index) => arg === '--mount' ? [args[index + 1]] : []);
+    assert.deepEqual(mounts, [
+      `type=bind,src=/private/manager/import-runtime-${operationId},dst=/run/frameleaf/import-preparation,readonly`,
+    ]);
+    return JSON.stringify({ operationId, destinationId: authority.destinationId, source, inventory });
+  });
+  assert.deepEqual(await docker.inspectImportSource('/private/manager', image, authority), inventory);
+  source = { ...source, revision: 'substituted' };
+  await assert.rejects(docker.inspectImportSource('/private/manager', image, authority), /invalid_import_response/);
+});

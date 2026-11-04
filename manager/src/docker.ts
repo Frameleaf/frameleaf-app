@@ -29,6 +29,21 @@ const preparationReceipt = z.strictObject({
   summary: z.strictObject({ owners: count, assets: count, files: count, albums: count, preservationDifferences: count }),
 });
 
+const inspectionReceipt = z.strictObject({
+  operationId: z.uuid(),
+  destinationId: z.uuid(),
+  source: importSourceSchema,
+  inventory: z.strictObject({
+    photos: count,
+    privatePhotos: count,
+    albums: count,
+    originals: count,
+    sidecars: count,
+    accounts: z.array(z.strictObject({ id: z.string().min(1), name: z.string(), role: z.string(), canLogin: z.boolean() })),
+    albumsRequiringSnapshot: z.array(z.strictObject({ id: z.string().min(1), name: z.string() })),
+  }),
+});
+
 export type Container = {
   Id: string;
   Name: string;
@@ -496,12 +511,26 @@ export class Docker {
       .map((line) => line.trim())
       .filter((line) => targets.includes(line));
   }
-  /** Prepare an operation-private bundle with source and destination originals mounted read-only. */
-  async prepareImportBundle(
+  /** Inspect only the captured database. The container cannot access the source originals or write to staging. */
+  async inspectImportSource(directory: string, image: string, authority: ImportPreparationAuthority) {
+    const output = await this.runImportPreparation(directory, image, authority, [], true);
+    try {
+      const result = inspectionReceipt.parse(JSON.parse(output));
+      if (
+        result.operationId !== authority.operationId || result.destinationId !== authority.destinationId ||
+        JSON.stringify(result.source) !== JSON.stringify(importSourceSchema.parse(authority.source))
+      ) throw new Error('Inspection binding changed');
+      return result.inventory;
+    } catch {
+      throw new Refusal('invalid_import_response');
+    }
+  }
+  private async runImportPreparation(
     directory: string,
     image: string,
     authority: ImportPreparationAuthority,
     media: { source: string; target: string }[],
+    readOnly = false,
   ) {
     const { operationId, destinationId, source, preparationSha256 } = authority;
     if (
@@ -522,7 +551,7 @@ export class Docker {
     const output = await this.execute('docker', [
       'run', '--rm', '--interactive', '--network', 'none', '--log-driver', 'none', '--pull', 'never',
       '--name', `frameleaf-import-prepare-${operationId}`,
-      '--mount', `type=bind,src=${root},dst=${IMPORT_PREPARATION_TARGET}`,
+      '--mount', `type=bind,src=${root},dst=${IMPORT_PREPARATION_TARGET}${readOnly ? ',readonly' : ''}`,
       ...media.flatMap(({ source, target }) => ['--mount', `type=bind,src=${source},dst=${target},readonly`]),
       '--entrypoint', SERVER_ADMIN, image, 'prepare-library-import', '--config', `${IMPORT_PREPARATION_TARGET}/prepare.json`,
     ], {
@@ -531,8 +560,19 @@ export class Docker {
       reply: (line) => replyImportPreparationAuthority(line, authority),
     });
     await authority.verify();
+    return output.trim().split('\n').at(-1)!;
+  }
+  /** Prepare an operation-private bundle with source and destination originals mounted read-only. */
+  async prepareImportBundle(
+    directory: string,
+    image: string,
+    authority: ImportPreparationAuthority,
+    media: { source: string; target: string }[],
+  ) {
+    const { operationId, destinationId, source } = authority;
+    const output = await this.runImportPreparation(directory, image, authority, media);
     try {
-      const result = preparationReceipt.parse(JSON.parse(output.trim().split('\n').at(-1)!));
+      const result = preparationReceipt.parse(JSON.parse(output));
       const prefix = `bundle-${operationId}-`;
       if (
         result.binding.operationId !== operationId || result.destinationId !== destinationId ||

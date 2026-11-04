@@ -388,6 +388,56 @@ export class Operations {
     await this.fencing.verify(snapshot.fence);
     return snapshot;
   }
+  private capturedImport(operationId: string) {
+    const captured = this.store.history().find((item) => item.id === operationId && typeof item.input.commonCapture === 'string');
+    const snapshot = captured?.receipts['capture-common-source'] as Awaited<ReturnType<typeof capturePhotoprismSqliteSource>> | undefined;
+    if (
+      this.installation() || !z.uuid().safeParse(operationId).success ||
+      captured?.state !== 'awaiting-review' || this.executing.has(operationId) || !snapshot
+    ) throw new Refusal('invalid_import_authority');
+    const stagingRoot = join(this.directory(), `import-runtime-${operationId}`);
+    const path = relative(stagingRoot, snapshot.snapshotPath);
+    if (!path || path === '..' || path.startsWith('../') || isAbsolute(path))
+      throw new Refusal('invalid_import_authority');
+    return { ...snapshot, snapshotPath: `${IMPORT_PREPARATION_TARGET}/${path}` };
+  }
+  private async importPreparationAuthority(
+    seal: Omit<ImportPreparationSeal, 'preparationSha256'>,
+    fence: SourceFence,
+    request: unknown,
+  ) {
+    const path = await stageCommonImportPreparation(this.directory(), seal.operationId, request);
+    const preparationSha256 = await fileHash(path);
+    return {
+      ...seal, preparationSha256,
+      verify: async () => {
+        await this.fencing.verify(fence);
+        if ((await fileHash(path)) !== preparationSha256) throw new Refusal('import_common_review_changed');
+      },
+    };
+  }
+  /** Private source facts for review, before any owner or storage decisions are applied. */
+  async inspectCommonCapture(operationId: string, destinationId: string, tag: string) {
+    const { fence, source, snapshotPath } = this.capturedImport(operationId);
+    if (source.kind !== 'photoprism' || !z.uuid().safeParse(destinationId).success)
+      throw new Refusal('invalid_import_authority');
+    this.executing.add(operationId);
+    try {
+      const platform = (await this.docker.compatibility()).platform;
+      const release = await this.releases.acquire(tag);
+      if (!release.nas.platforms.includes(platform)) throw new Refusal('release_architecture_unavailable');
+      await this.fencing.verify(fence);
+      const image = release.nas.images.server;
+      await this.docker.pull(image, platform);
+      const seal = { operationId, destinationId, source };
+      const authority = await this.importPreparationAuthority(seal, fence, {
+        ...seal, snapshotPath, format: 'frameleaf-inspect-library-import', version: 1, adapter: 'photoprism-sqlite',
+      });
+      return await this.docker.inspectImportSource(this.directory(), image, authority);
+    } finally {
+      this.executing.delete(operationId);
+    }
+  }
   /** Internal adapter handoff after snapshot, account and privacy review, with the source already fenced. */
   async prepareCommonReview(
     input: z.infer<typeof ReviewInput>,
@@ -408,14 +458,9 @@ export class Operations {
     if (this.installation() || input.kind !== 'import' || input.sourceId !== fence.id || !input.mediaPath ||
       !media.some((mount) => mount.target === '/data' && mount.source === input.mediaPath && !mount.readOnly))
       throw new Refusal('invalid_import_authority');
-    const captured = this.store.history().find((item) => item.id === operationId && typeof item.input.commonCapture === 'string');
-    const snapshot = captured?.receipts['capture-common-source'] as Awaited<ReturnType<typeof capturePhotoprismSqliteSource>> | undefined;
-    const stagingRoot = join(this.directory(), `import-runtime-${operationId}`);
-    const snapshotPath = snapshot && relative(stagingRoot, snapshot.snapshotPath);
+    const snapshot = this.capturedImport(operationId);
     if (
-      captured?.state !== 'awaiting-review' || this.executing.has(operationId) || !snapshot ||
-      !snapshotPath || snapshotPath === '..' || snapshotPath.startsWith('../') || isAbsolute(snapshotPath) ||
-      request.snapshotPath !== `${IMPORT_PREPARATION_TARGET}/${snapshotPath}` ||
+      request.snapshotPath !== snapshot.snapshotPath ||
       digest(snapshot.fence) !== digest(fence) || digest(snapshot.source) !== digest(source)
     ) throw new Refusal('invalid_import_authority');
     this.executing.add(operationId);
@@ -434,15 +479,8 @@ export class Operations {
       await this.fencing.verify(fence);
       await this.docker.pull(release.nas.images.server, platform);
       this.store.delete(`review:${operationId}`);
-      const path = await stageCommonImportPreparation(this.directory(), operationId, request);
-      const preparationSha256 = await fileHash(path);
-      const receipt = await this.docker.prepareImportBundle(this.directory(), release.nas.images.server, {
-        operationId, destinationId, source, preparationSha256,
-        verify: async () => {
-          await this.fencing.verify(fence);
-          if ((await fileHash(path)) !== preparationSha256) throw new Refusal('import_common_review_changed');
-        },
-      }, media);
+      const authority = await this.importPreparationAuthority({ operationId, destinationId, source }, fence, request);
+      const receipt = await this.docker.prepareImportBundle(this.directory(), release.nas.images.server, authority, media);
       return await this.review(input, managerPort, { ...receipt, fence, media, bootstrapAdminId });
     } finally {
       this.executing.delete(operationId);
