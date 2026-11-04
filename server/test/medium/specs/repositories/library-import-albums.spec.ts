@@ -25,7 +25,7 @@ const wrap = (connection: Kysely<any>): ImportDatabase => ({
     (await connection.executeQuery(CompiledQuery.raw(statement, parameters))).rows as Record<string, unknown>[],
   transaction: (body) => connection.transaction().execute((tx) => body(wrap(tx))),
 });
-const setup = async (description?: string) => {
+const setup = async (description?: string, locked = false) => {
   const plan = parseDestinationImportPlan(fixture.plan);
   plan.owners = ['owner', 'viewer', 'editor', 'unrelated'].map((sourceId) => ({
     sourceId,
@@ -66,7 +66,7 @@ const setup = async (description?: string) => {
       ownerId: 'owner',
       fileIds: [file.id],
       primaryFileId: file.id,
-      visibility: 'timeline',
+      visibility: locked && file.id === 'shared' ? 'locked' : 'timeline',
       metadata: { takenAt: '2020-01-02T03:04:05Z', timeZone: 'UTC' },
     })),
     albums: [
@@ -242,6 +242,18 @@ it('refuses a target photo that became Locked before creating any album grants',
   expect(await db.selectFrom('album_user').select('userId').execute()).toEqual([]);
 });
 
+it('keeps a source-Locked photo in its albums and verifies its lock', async () => {
+  // Owner 2026-11-04: a source's private item imports Locked; a Locked item keeps its albums
+  const { context, photos } = await readyAlbums(undefined, true);
+  expect(
+    await db.selectFrom('album_asset').select('albumId').where('assetId', '=', photos.shared).execute(),
+  ).not.toEqual([]);
+  expect(await db.selectFrom('asset_lock').select('assetId').execute()).toEqual([{ assetId: photos.shared }]);
+  await expect(reconcileImportedAlbums(wrap(db), context)).resolves.toMatchObject({ albums: 2 });
+  await sql`DELETE FROM public.asset_lock`.execute(db);
+  await expect(reconcileImportedAlbums(wrap(db), context)).rejects.toThrow('ALBUM_RECONCILIATION_MISMATCH');
+});
+
 it('refuses a source member entry that would replace or duplicate album ownership', async () => {
   const { context } = await setup();
   context.manifest.albums[0].members.push({ userId: 'owner', role: 'viewer' });
@@ -252,8 +264,8 @@ it('refuses a source member entry that would replace or duplicate album ownershi
   expect(await db.selectFrom('album').select('id').execute()).toEqual([]);
 });
 
-const readyAlbums = async (description?: string) => {
-  const fixture = await setup(description);
+const readyAlbums = async (description?: string, locked = false) => {
+  const fixture = await setup(description, locked);
   const albums: Record<string, string> = {};
   for (const album of fixture.context.manifest.albums) {
     albums[album.id] = await new CanonicalAlbumWriter(wrap(db), fixture.context).write(album.id);

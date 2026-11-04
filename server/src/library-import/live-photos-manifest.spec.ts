@@ -82,10 +82,15 @@ describe('sealed Live Photo import relationships', () => {
     value.assets[1].visibility = 'timeline';
     expect(() => parseImportManifest(value)).toThrow('LIVE_PHOTO_STATE_UNSUPPORTED');
   });
-  it.each(['locked', 'trash'])('refuses unqualified %s pair semantics', (visibility) => {
+  it('refuses unqualified trash pair semantics', () => {
     const value = inventory();
-    value.assets[0].visibility = visibility;
+    value.assets[0].visibility = 'trash';
     expect(() => parseImportManifest(value)).toThrow('LIVE_PHOTO_STATE_UNSUPPORTED');
+  });
+  it('accepts a Locked still whose motion part stays hidden', () => {
+    const value = inventory();
+    value.assets[0].visibility = 'locked';
+    expect(parseImportManifest(value)).toEqual(value);
   });
   it('refuses independent motion album memberships instead of removing them', () => {
     const value = inventory();

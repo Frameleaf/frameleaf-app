@@ -128,6 +128,16 @@ describe('Ente common manifest mapping', () => {
     expect(Object.values(asset.originalFileNames)).toEqual(['Manual cover.jpg']);
     expect(asset.metadata).not.toHaveProperty('timeZone');
   });
+  it('imports a hidden file as Locked', () => {
+    const value = input();
+    for (const account of value.accounts) {
+      for (const file of account.files) if (file.id === media.ids.first) file.visibility = 'hidden';
+      for (const placement of account.placements)
+        if (placement.record.ente.fileID === media.ids.first)
+          placement.record.ente.magicMetadata = { ...placement.record.ente.magicMetadata, visibility: 2 };
+    }
+    expect(read(value).manifest.assets.find((asset) => asset.id === media.ids.first)!.visibility).toBe('locked');
+  });
   it('keeps equal bytes belonging to different source IDs and owners distinct', () => {
     const { manifest } = read();
     const first = manifest.assets.find((asset) => asset.id === media.ids.first)!;

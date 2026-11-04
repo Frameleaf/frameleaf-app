@@ -241,7 +241,8 @@ export async function readLibrephotosManifest(snapshot: Snapshot, input: Input) 
           .filter((fileId) => proofs.get(fileId)!.role === 'original')
           .map((fileId) => [fileId, posix.basename(proofs.get(fileId)!.path)]),
       ),
-      visibility: trashed ? 'trash' : photo.state.hidden ? 'hidden' : photo.state.archived ? 'archive' : 'timeline',
+      // Owner 2026-11-04: a hidden photo imports Locked.
+      visibility: trashed ? 'trash' : photo.state.hidden ? 'locked' : photo.state.archived ? 'archive' : 'timeline',
       metadata: {
         ...metadata,
         takenAt,

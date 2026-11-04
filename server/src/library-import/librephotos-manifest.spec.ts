@@ -285,11 +285,11 @@ describe('LibrePhotos common manifest mapping', () => {
     expect(query).not.toHaveBeenCalled();
   });
 
-  it('preserves hidden, archive, trash and explicitly removed location state', async () => {
+  it('imports hidden as Locked and preserves archive, trash and explicitly removed location state', async () => {
     database.prepare('UPDATE api_photo SET exif_gps_lat=NULL,exif_gps_lon=NULL WHERE id=?').run(photoId('alice'));
     const { manifest } = await read(snapshot(), input());
     for (const [name, visibility] of [
-      ['hidden', 'hidden'],
+      ['hidden', 'locked'],
       ['archived', 'archive'],
       ['trash', 'trash'],
     ] as const)

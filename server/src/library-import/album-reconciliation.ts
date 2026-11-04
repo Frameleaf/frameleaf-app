@@ -42,6 +42,10 @@ export async function reconcileImportedAlbums(
         mappings.filter((row) => row.entity_kind === 'asset').map((row) => [row.source_id, row.destination_id]),
       );
       if (plan.owners.some((owner) => owners.get(owner.sourceId) !== owner.destinationId.toLowerCase())) mismatch();
+      // A Locked item keeps its albums (owner 2026-09-27); only the source's private items are Locked.
+      const locked = new Set(
+        manifest.assets.filter((asset) => asset.visibility === 'locked').map((asset) => assets.get(asset.id)),
+      );
       const albumMappings = new Map(
         mappings.filter((row) => row.entity_kind === 'album').map((row) => [row.source_id, row]),
       );
@@ -123,7 +127,12 @@ export async function reconcileImportedAlbums(
         const owner = members.filter((member) => member.role === 'owner');
         if (owner.length !== 1) return mismatch();
         const photos = photosByAlbum.get(album.id) ?? [];
-        if (photos.some((photo) => photo.ownerId !== owner[0].userId || photo.locked)) return mismatch();
+        if (
+          photos.some(
+            (photo) => photo.ownerId !== owner[0].userId || photo.locked !== locked.has(String(photo.assetId)),
+          )
+        )
+          return mismatch();
         return {
           id: album.id,
           name: album.name,

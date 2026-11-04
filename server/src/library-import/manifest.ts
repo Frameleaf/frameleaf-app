@@ -146,6 +146,9 @@ const manifestSchema = z.discriminatedUnion('version', [
   }),
 ]);
 export type ImportManifest = z.infer<typeof manifestSchema>;
+/** The stored `asset.visibility`: Trash is a status and Locked an `asset_lock` row (FL-34), neither a visibility. */
+export const storedVisibility = (visibility: ImportManifest['assets'][number]['visibility']) =>
+  visibility === 'trash' || visibility === 'locked' ? 'timeline' : visibility;
 
 /** This validates bundle structure; source adapters must independently establish inventory evidence. */
 export const parseImportManifest = (input: unknown): ImportManifest => {
@@ -265,8 +268,8 @@ export const parseImportManifest = (input: unknown): ImportManifest => {
       claimed.add(pair.photoAssetId);
       claimed.add(pair.videoAssetId);
       if (photo!.ownerId !== video!.ownerId) fail('LIVE_PHOTO_OWNER_INVALID');
+      // A Locked photo locks its motion part too; the motion part stays hidden.
       if (
-        photo!.visibility === 'locked' ||
         photo!.visibility === 'trash' ||
         video!.visibility !== 'hidden' ||
         photo!.metadata.deletedAt !== undefined ||
