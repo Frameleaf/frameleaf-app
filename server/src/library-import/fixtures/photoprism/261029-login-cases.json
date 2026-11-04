@@ -8,19 +8,118 @@
     "deleted_at": null
   },
   "cases": [
-    { "name": "local-admin", "fields": {}, "status": 200 },
-    { "name": "super-admin-login-flag", "fields": { "can_login": 0 }, "status": 200 },
-    { "name": "super-admin-expiry", "fields": { "expires_at": "2000-01-01T00:00:00Z" }, "status": 200 },
-    { "name": "disabled-admin", "fields": { "super_admin": 0, "can_login": 0 }, "status": 401 },
-    { "name": "expired-admin", "fields": { "super_admin": 0, "expires_at": "2000-01-01T00:00:00Z" }, "status": 401 },
-    { "name": "deleted-super-admin", "fields": { "deleted_at": "2000-01-01T00:00:00Z" }, "status": 401 },
-    { "name": "disabled-provider", "fields": { "auth_provider": "none" }, "status": 401 },
-    { "name": "external-provider", "fields": { "auth_provider": "oidc" }, "status": 401 },
-    { "name": "mfa-2fa", "fields": { "auth_method": "2fa" }, "status": 401 },
-    { "name": "mfa-totp", "fields": { "auth_method": "totp" }, "status": 401 },
-    { "name": "mfa-otp", "fields": { "auth_method": "otp" }, "status": 401 },
-    { "name": "mfa-alias", "fields": { "auth_method": "mfa" }, "status": 401 },
-    { "name": "initial-provider-fallback", "fields": { "auth_provider": "" }, "status": 200 },
-    { "name": "default-provider", "fields": { "auth_provider": "default" }, "status": 200 }
+    {
+      "name": "local-admin",
+      "fields": {},
+      "status": 200
+    },
+    {
+      "name": "super-admin-login-flag",
+      "fields": {
+        "can_login": 0
+      },
+      "status": 200
+    },
+    {
+      "name": "super-admin-expiry",
+      "fields": {
+        "expires_at": "2000-01-01T00:00:00Z"
+      },
+      "status": 200
+    },
+    {
+      "name": "disabled-admin",
+      "fields": {
+        "super_admin": 0,
+        "can_login": 0
+      },
+      "status": 401
+    },
+    {
+      "name": "expired-admin",
+      "fields": {
+        "super_admin": 0,
+        "expires_at": "2000-01-01T00:00:00Z"
+      },
+      "status": 401
+    },
+    {
+      "name": "deleted-super-admin",
+      "fields": {
+        "deleted_at": "2000-01-01T00:00:00Z"
+      },
+      "status": 401
+    },
+    {
+      "name": "disabled-provider",
+      "fields": {
+        "auth_provider": "none"
+      },
+      "status": 401
+    },
+    {
+      "name": "oidc-with-local-password",
+      "fields": {
+        "auth_provider": "oidc"
+      },
+      "status": 200
+    },
+    {
+      "name": "mfa-2fa",
+      "fields": {
+        "auth_method": "2fa"
+      },
+      "status": 401
+    },
+    {
+      "name": "mfa-totp",
+      "fields": {
+        "auth_method": "totp"
+      },
+      "status": 401
+    },
+    {
+      "name": "mfa-otp",
+      "fields": {
+        "auth_method": "otp"
+      },
+      "status": 401
+    },
+    {
+      "name": "mfa-alias",
+      "fields": {
+        "auth_method": "mfa"
+      },
+      "status": 401
+    },
+    {
+      "name": "initial-provider-fallback",
+      "fields": {
+        "auth_provider": ""
+      },
+      "status": 200
+    },
+    {
+      "name": "default-provider",
+      "fields": {
+        "auth_provider": "default"
+      },
+      "status": 200
+    },
+    {
+      "name": "ldap-provider",
+      "fields": {
+        "auth_provider": "ldap"
+      },
+      "status": 401
+    },
+    {
+      "name": "oidc-mfa",
+      "fields": {
+        "auth_provider": "oidc",
+        "auth_method": "2fa"
+      },
+      "status": 401
+    }
   ]
 }
