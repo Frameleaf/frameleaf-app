@@ -35,7 +35,10 @@ export class Retention {
   }
   /** Whether a review is still in use: an operation that is not complete points at it, or it has not expired. */
   private live(review: Reviewed | null | undefined, id: string, operations: Operation[], now: number): boolean {
-    const referencing = operations.filter((operation) => operation.input.reviewId === id);
+    const referencing = operations.filter((operation) =>
+      operation.input.reviewId === id ||
+      (operation.kind === 'import' && operation.id === id && typeof operation.receipts['reviewed-common-import'] === 'string'),
+    );
     if (referencing.some((operation) => operation.state !== 'complete')) return true;
     if (referencing.length) return false; // its operation finished; the review is spent
     return !!review && typeof review.expires === 'number' && review.expires > now;

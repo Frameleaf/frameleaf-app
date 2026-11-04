@@ -161,6 +161,33 @@ test('restore reviews, move state and release bundles are kept only while a revi
   }
 });
 
+test('an approved captured import pins its release bundle through interruption and review expiry', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-retention-capture-'));
+  const store = new Store(directory);
+  try {
+    const releases = join(directory, 'releases');
+    const release = randomUUID();
+    await bundle(releases, release, 60);
+    const operation = store.start('import', 'capture', { commonCapture: 'source' }).operation;
+    operation.state = 'interrupted';
+    operation.receipts['reviewed-common-import'] = 'a'.repeat(64);
+    store.save(operation);
+    const releasePath = join(releases, release);
+    const now = Date.now();
+    store.set(`review:${operation.id}`, { expires: now - 1, release: { directory: releasePath } });
+    const retention = new Retention(store, directory, releases, 0);
+    await retention.sweep(now);
+    assert.equal(await exists(releasePath), true);
+    operation.state = 'complete';
+    store.save(operation);
+    await retention.sweep(now);
+    assert.equal(await exists(releasePath), false);
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('Manager prunes at start and after every operation settles, and the sweep never fails an operation', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'manager-retention-ops-'));
   const store = new Store(directory);
