@@ -47,6 +47,7 @@ test('an edit removes unsupported keys until the source settings change', async 
       unsupportedSettings: ['forkOnly'],
       settingsAuthority: 'database',
       database: { name: 'immich', user: 'u', host: 'h', port: 5432, password: 'p' },
+      postgres: { major: 19, extensions: [{ name: 'vector' }] },
       environment: {},
       restart: {},
     } as unknown as Source;
@@ -55,6 +56,10 @@ test('an edit removes unsupported keys until the source settings change', async 
     (operations as unknown as { discovery: unknown }).discovery = { revalidate: async () => {} };
 
     const view = operations.sourceSettings(source.id);
+    assert.deepEqual((view.source as unknown as { configuration: unknown }).configuration, [
+      { icon: 'database', title: 'PostgreSQL 19', detail: 'Database: immich · vector', status: 'configured' },
+      { icon: 'network', title: 'Database connection resolved', detail: 'h:5432 · Settings from database' },
+    ]);
     const { forkOnly: _, ...edited } = view.settings as Record<string, unknown>;
     const saved = await operations.saveSourceSettings(source.id, edited);
     assert.deepEqual(saved.source.unsupportedSettings, []);

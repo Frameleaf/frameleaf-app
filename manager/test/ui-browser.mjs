@@ -57,6 +57,10 @@ const source = {
     { type: 'bind', source: '/fixture/archive', target: '/archive', readOnly: true },
   ],
   database: { name: 'immich', host: 'database', port: 5432, credentials: 'configured' },
+  configuration: [
+    { icon: 'database', title: 'PostgreSQL 14', detail: 'Database: immich · vector', status: 'configured' },
+    { icon: 'network', title: 'Database connection resolved', detail: 'database:5432 · Settings from database' },
+  ],
   postgres: { major: 14, extensions: [{ name: 'vector' }] },
   settings: ['smtp'],
   environment: ['TZ'],
@@ -455,6 +459,37 @@ try {
     await mainButton('Finish setup').click();
     await mainButton('Open overview').waitFor();
     assert.equal(dashboard.onboardingFinished, true);
+  });
+  // Rendering fixtures only: no source discovery, capture or migration qualification is implied.
+  await check('one source-configuration panel renders all ten families without PostgreSQL-specific fields', async () => {
+    dashboard.installation = null;
+    dashboard.operations = [];
+    dashboard.onboardingFinished = false;
+    await refresh();
+    for (const [product, title] of [
+      ['Immich', 'PostgreSQL 19'],
+      ['PhotoPrism', 'MariaDB 11.4'],
+      ['LibrePhotos', 'SQLite snapshot'],
+      ['Photoview', 'SQLite snapshot'],
+      ['Piwigo', 'MySQL 8'],
+      ['Lychee', 'SQLite snapshot'],
+      ['PiGallery2', 'SQLite snapshot'],
+      ['Ente Photos', 'Decrypted staging export'],
+      ['Nextcloud Photos / Memories', 'Decrypted staging export'],
+      ['Synology Photos', 'Private exporter bundle'],
+    ]) {
+      sources = [{
+        ...source, product, postgres: undefined, database: undefined,
+        configuration: [{ icon: 'folder', title, detail: 'Synthetic setup summary' }],
+      }];
+      await chooser();
+      await mainButton('Review import').click();
+      await page.getByRole('heading', { name: `Review your ${product} installation`, exact: true }).waitFor();
+      await page.getByText(title, { exact: true }).waitFor();
+      assert.deepEqual(errors, [], product + ': configuration rendering');
+    }
+    sources = [source];
+    await chooser();
   });
   await check('single and multiple source import, backup reuse, missing backup and refused source', async () => {
     dashboard.installation = null;
