@@ -4,6 +4,7 @@ import { importHash, importSourceSchema } from './import-plan.js';
 
 const uuid = z.uuid().transform((value) => value.toLowerCase());
 const sealSchema = z.strictObject({
+  installation: z.string().regex(/^[a-f0-9]{12}$/u),
   binding: z.strictObject({
     operationId: uuid,
     manifestSha256: importHash,
@@ -46,6 +47,7 @@ export function encodeImportSourceAuthorityRequest(
   nonce: string,
 ): string {
   const parsed = requestSchema.safeParse({
+    installation: seal.installation,
     binding: seal.binding,
     destinationId: seal.destinationId,
     format: requestFormat,
@@ -79,8 +81,16 @@ export async function replyImportSourceAuthority(
     !request.success ||
     !expected.success ||
     request.data.action !== action ||
-    JSON.stringify({ binding: request.data.binding, destinationId: request.data.destinationId }) !==
-      JSON.stringify({ binding: expected.data.binding, destinationId: expected.data.destinationId })
+    JSON.stringify({
+      installation: request.data.installation,
+      binding: request.data.binding,
+      destinationId: request.data.destinationId,
+    }) !==
+      JSON.stringify({
+        installation: expected.data.installation,
+        binding: expected.data.binding,
+        destinationId: expected.data.destinationId,
+      })
   )
     throw new Refusal('import_source_authority_invalid');
   try {

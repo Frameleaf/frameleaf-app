@@ -10,6 +10,7 @@ const fixture = () => {
   const input = new PassThrough(),
     output = new PassThrough();
   const authority: ImportSourceAuthority = {
+    installation: 'a'.repeat(12),
     binding: {
       operationId: randomUUID(),
       manifestSha256: 'a'.repeat(64),

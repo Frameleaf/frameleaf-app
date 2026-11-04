@@ -39,7 +39,9 @@ export type CommandOptions = {
   /** Fixed packaged executable selected by a trusted adapter, never an HTTP request. */
   executable?: string;
   input?: string;
-  /** Offline importer challenges only; stdin stays open until the child finishes. */
+  /** Offline importer challenges; stdin remains open until the child finishes.
+   * Known source-authority refusal codes/statuses are public; private details are discarded.
+   */
   reply?: (line: string) => Promise<string | undefined>;
   inputFile?: string;
   /** The reader may stop once it has what it needs (pg_restore --list reads only the table of contents). */
@@ -117,8 +119,14 @@ export async function command(
               child.stdin.write(response, (error) => error ? reject(error) : resolve()));
           }
         }
-      } catch {
-        // Source-check failures can contain private evidence; never pass them to command logging.
+      } catch (error) {
+        // Relay only known public authority classifications, never private callback details.
+        if (error instanceof Refusal && [
+          'import_source_authority_required',
+          'import_source_authority_invalid',
+          'import_source_authority_refused',
+        ].includes(error.code) && Number.isInteger(error.status) && error.status >= 400 && error.status < 600)
+          throw new Refusal(error.code, error.status);
         throw new Refusal('command_reply_failed');
       } finally {
         lines.close();
@@ -503,7 +511,8 @@ export class Docker {
       throw new Refusal('invalid_import_command');
     const authority = common?.authority === undefined ? undefined : parseImportSourceAuthority(common.authority);
     if (common && action !== 'status' && !authority) throw new Refusal('import_source_authority_required');
-    if (authority && (authority.binding.operationId !== operationId || authority.binding.source.kind !== common?.source))
+    if (authority && (authority.installation !== project.slice('frameleaf-'.length) ||
+      authority.binding.operationId !== operationId || authority.binding.source.kind !== common?.source))
       throw new Refusal('import_source_authority_invalid');
     const name = `${project}-import-${operationId}`;
     const existing = (await this.inventory()).find((c) => c.Name === `/${name}`);

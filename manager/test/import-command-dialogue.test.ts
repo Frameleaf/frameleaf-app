@@ -129,6 +129,7 @@ test('unknown refusal codes and invalid status values remain generic and private
   try {
     for (const failure of [
       new Refusal(privateValue, 409, privateValue),
+      new Refusal('import_source_authority_refused', 200, privateValue),
       new Refusal('import_source_authority_refused', privateValue as never, privateValue),
     ]) {
       await assert.rejects(

@@ -71,6 +71,7 @@ export class ImportLibraryCommand extends CommandRunner {
         authorize: async (requested, context) => {
           if (!manager) throw new LibraryImportRefused('IMPORT_MANAGER_AUTHORITY_REQUIRED');
           await requestImportSourceAuthority(requested, {
+            installation: manager.installation,
             binding: context.binding,
             destinationId: context.destinationId,
           });

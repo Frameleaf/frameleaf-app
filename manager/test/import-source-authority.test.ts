@@ -23,6 +23,7 @@ const sources = [
 const fixture = (kind: (typeof sources)[number] = 'photoprism') => {
   let checked = 0;
   const authority: ImportSourceAuthority = {
+    installation: 'a'.repeat(12),
     binding: {
       operationId: randomUUID(),
       manifestSha256: 'a'.repeat(64),
@@ -51,6 +52,9 @@ for (const source of sources) {
 test('changed operation, manifest, file plan, source, destination or action never reaches source checks', async () => {
   const { authority, line, checked } = fixture();
   for (const change of [
+    (input: any) => {
+      input.installation = 'b'.repeat(12);
+    },
     (input: any) => {
       input.binding.operationId = randomUUID();
     },

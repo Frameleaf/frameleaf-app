@@ -24,6 +24,7 @@ const actions = ['preflight', 'run', 'status', 'resume', 'verify', 'rollback', '
 const project = 'frameleaf-aaaaaaaaaaaa';
 // Synthetic argument/protocol checks only; this callback does not qualify real source access.
 const authorityFor = (source: (typeof sources)[number], operationId: string): ImportSourceAuthority => ({
+  installation: project.slice('frameleaf-'.length),
   binding: {
     operationId,
     manifestSha256: 'a'.repeat(64),

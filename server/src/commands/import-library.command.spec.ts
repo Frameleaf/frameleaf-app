@@ -81,7 +81,7 @@ it.each(sourceKinds)('routes %s through the same locked common command and live 
       manager: { installation: 'a'.repeat(12), operationId },
     }),
   );
-  expect(mocks.request).toHaveBeenCalledWith('run', { binding, destinationId });
+  expect(mocks.request).toHaveBeenCalledWith('run', { installation: 'a'.repeat(12), binding, destinationId });
   expect(local.close).toHaveBeenCalledOnce();
   expect(connection.close).toHaveBeenCalledOnce();
   expect(process.exitCode).toBeUndefined();
