@@ -428,7 +428,7 @@ export async function listRuns(db: Kysely<any>, take: number, skip: number, runI
         coalesce(sum(s.weight) filter (where s.outcome in ('waiting','retrying') and coalesce(s."availableAt", now()) <= now()
           and not s.held), 0) ready,
         coalesce(sum(s.weight) filter (where s.outcome = 'active'), 0) active,
-        -- Photos only: an Immich import's one identical-files item is not one.
+        -- Photos only: a server import's one identical-files item is not one.
         count(distinct s."rootItemKey") filter (where s.held and s.stage <> ${JobName.IdenticalFilesCheck}) held
       from run_stages s group by s."runId"
     ), latest as (
