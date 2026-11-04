@@ -3,6 +3,7 @@ import { type FileHandle, mkdtemp, open, rm } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { openImportRoot } from '#library-import-transfer/import-copy';
 import { importPlanSha256, parseImportPlan } from '#library-import-transfer/import-plan';
+import { privateImportPathSchema } from 'src/library-import/command-input.js';
 import { bindDestinationImportPlan } from 'src/library-import/destination-plan.js';
 import { manifestFingerprint, parseImportManifest } from 'src/library-import/manifest.js';
 import { preparePrivateOwnerInputs } from 'src/library-import/private-owners.js';
@@ -25,7 +26,11 @@ export async function writeLibraryImportBundle(input: {
   records: AsyncIterable<unknown> | Iterable<unknown>;
 }): Promise<{ bundleDirectory: string }> {
   let root: FileHandle | undefined, directory: FileHandle | undefined, temporary: string | undefined;
+  let result: { bundleDirectory: string } | undefined;
+  let failure: LibraryImportRefused | undefined;
   try {
+    if (!privateImportPathSchema.safeParse(input.stagingRoot).success)
+      throw new LibraryImportRefused('IMPORT_BUNDLE_STAGING_INVALID');
     const manifest = parseImportManifest(input.manifest);
     if (manifest.version !== 3) throw new LibraryImportRefused('IMPORT_REQUIRES_SEALED_MANIFEST');
     const parsedPlan = parseImportPlan(input.plan);
@@ -49,6 +54,9 @@ export async function writeLibraryImportBundle(input: {
     if ((parent.mode & 0o777n) !== 0o700n || parent.uid !== BigInt(process.geteuid?.() ?? -1))
       throw new LibraryImportRefused('IMPORT_BUNDLE_STAGING_INVALID');
     temporary = await mkdtemp(`/proc/self/fd/${root.fd}/bundle-`);
+    const bundleDirectory = join(input.stagingRoot, basename(temporary));
+    if (!privateImportPathSchema.safeParse(join(bundleDirectory, 'manifest.json')).success)
+      throw new LibraryImportRefused('IMPORT_BUNDLE_STAGING_INVALID');
     directory = await open(temporary, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
     const directoryPath = `/proc/self/fd/${directory.fd}`;
     const write = async (name: string, value: unknown) => {
@@ -96,7 +104,6 @@ export async function writeLibraryImportBundle(input: {
     );
     await directory.sync();
     await root.sync();
-    const bundleDirectory = join(input.stagingRoot, basename(temporary));
     const visible = await openImportRoot(bundleDirectory);
     try {
       const expected = await directory.stat({ bigint: true }),
@@ -106,21 +113,22 @@ export async function writeLibraryImportBundle(input: {
     } finally {
       await visible.close();
     }
-    return { bundleDirectory };
+    result = { bundleDirectory };
   } catch (error) {
+    failure = error instanceof LibraryImportRefused ? error : new LibraryImportRefused('IMPORT_BUNDLE_WRITE_FAILED');
     if (temporary) {
       try {
         await rm(temporary, { recursive: true });
         await root!.sync();
       } catch {
-        throw new LibraryImportRefused('IMPORT_BUNDLE_CLEANUP_FAILED');
+        failure = new LibraryImportRefused('IMPORT_BUNDLE_CLEANUP_FAILED');
       }
     }
-    if (error instanceof LibraryImportRefused) throw error;
-    throw new LibraryImportRefused('IMPORT_BUNDLE_WRITE_FAILED');
   } finally {
     const closed = await Promise.allSettled([directory?.close(), root?.close()]);
     if (closed.some((result) => result.status === 'rejected'))
-      throw new LibraryImportRefused('IMPORT_BUNDLE_CLEANUP_FAILED');
+      failure = new LibraryImportRefused('IMPORT_BUNDLE_CLEANUP_FAILED');
   }
+  if (failure) throw failure;
+  return result!;
 }

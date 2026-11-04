@@ -21,6 +21,7 @@ const path = z
       !value.includes('\\') &&
       [...value].every((character) => character >= ' '),
   );
+export { path as privateImportPathSchema };
 const argumentsSchema = z
   .strictObject({
     action: z.enum(actions),

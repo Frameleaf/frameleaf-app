@@ -1,12 +1,12 @@
 import { hash } from 'bcrypt';
-import { chmod, mkdtemp, readFile, readdir, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { chmod, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
 import { loadLibraryImportBundle } from 'src/library-import/bundle-input.js';
 import { writeLibraryImportBundle } from 'src/library-import/bundle-output.js';
 import fixture from 'src/library-import/fixtures/manager-plan-v2.json' with { type: 'json' };
-import { sourceKinds, type SourceKind } from 'src/library-import/manifest.js';
+import { type SourceKind, sourceKinds } from 'src/library-import/manifest.js';
 import { ImportedPassword, verifyImportedPassword } from 'src/library-import/passwords.js';
 
 let stagingRoot: string;
@@ -16,7 +16,7 @@ beforeEach(async () => {
 });
 afterEach(async () => rm(stagingRoot, { recursive: true, force: true }));
 const records = [
-  { table: 'photos', value: { id: 1n, caption: 'Edited caption\u0000retained', bytes: Buffer.from([0, 255]) } },
+  { table: 'photos', value: { id: 1n, caption: 'Edited caption\0retained', bytes: Buffer.from([0, 255]) } },
   { table: 'albums', value: { id: 'album-1', description: 'Manual album description' } },
 ];
 const input = (kind: SourceKind = 'photoprism') => {
@@ -146,19 +146,19 @@ it.each([
   const value = input();
   let candidate: Parameters<typeof writeLibraryImportBundle>[0] = value;
   if (failure === 'missing owner') candidate = { ...value, owners: value.owners.slice(1) };
-  if (failure === 'wrong destination') candidate = { ...value, destinationId: randomUUID() };
-  if (failure === 'credential archive')
+  else if (failure === 'wrong destination') candidate = { ...value, destinationId: randomUUID() };
+  else if (failure === 'credential archive')
     candidate = { ...value, records: [{ table: 'users', value: { password: 'private-verifier-value' } }] };
-  if (failure === 'interrupted inventory')
+  else if (failure === 'interrupted inventory')
     candidate = {
       ...value,
       records: (async function* () {
-        yield records[0];
+        yield await Promise.resolve(records[0]);
         throw new Error('private-verifier-value');
       })(),
     };
-  if (failure === 'shared staging') await chmod(stagingRoot, 0o755);
-  if (failure === 'symlink staging') {
+  else if (failure === 'shared staging') await chmod(stagingRoot, 0o755);
+  else if (failure === 'symlink staging') {
     await symlink(stagingRoot, join(stagingRoot, 'alias'));
     candidate = { ...value, stagingRoot: join(stagingRoot, 'alias') };
   }
@@ -169,4 +169,13 @@ it.each([
     failure === 'symlink staging' ? ['alias', 'previous.json'] : ['previous.json'],
   );
   expect(await readFile(join(stagingRoot, 'previous.json'), 'utf8')).toBe('retained');
+});
+
+it('refuses a staging path the common reader cannot reopen', async () => {
+  const unsupported = join(stagingRoot, 'unsupported\\path');
+  await mkdir(unsupported, { mode: 0o700 });
+  await expect(writeLibraryImportBundle({ ...input(), stagingRoot: unsupported })).rejects.toThrow(
+    'IMPORT_BUNDLE_STAGING_INVALID',
+  );
+  expect(await readdir(unsupported)).toEqual([]);
 });
