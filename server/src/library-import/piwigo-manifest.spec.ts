@@ -1,0 +1,359 @@
+import { createHash, randomUUID } from 'node:crypto';
+import { describe, expect, it, vi } from 'vitest';
+import type { SourceArchiveRecord } from 'src/library-import/source-archive-codec.js';
+import { CanonicalAssetWriter } from 'src/library-import/asset-writer.js';
+import { destinationPlanFingerprint, parseDestinationImportPlan } from 'src/library-import/destination-plan.js';
+import planFixture from 'src/library-import/fixtures/manager-plan-v2.json' with { type: 'json' };
+import content from 'src/library-import/fixtures/piwigo/16.4.0-content.json' with { type: 'json' };
+import fixture from 'src/library-import/fixtures/piwigo/16.4.0-mariadb.json' with { type: 'json' };
+import { type ImportManifest, manifestFingerprint } from 'src/library-import/manifest.js';
+import { piwigoProjections } from 'src/library-import/piwigo-projections.js';
+import * as piwigo from 'src/library-import/piwigo-source.js';
+
+type Result = { manifest: ImportManifest; archive: SourceArchiveRecord[] };
+const input = () => ({
+  source: {
+    kind: 'piwigo' as const,
+    version: '16.4.0',
+    identity: 'synthetic-restore',
+    revision: 'frozen-1',
+    schemaSha256: fixture.schemaSha256,
+  },
+  inventory: {
+    complete: true,
+    ownershipComplete: true,
+    privacyComplete: true,
+    writersStopped: true,
+    revisionBefore: 'frozen-1',
+    revisionAfter: 'frozen-1',
+  },
+  photoOwners: Object.fromEntries(content.rows.images.map((row) => [String(row.id), '3'])),
+  albumOwners: Object.fromEntries(content.rows.categories.map((row) => [String(row.id), '3'])),
+  reviewedCaptureOffsets: Object.fromEntries(content.rows.images.map((row) => [String(row.id), 0])),
+  reviewedMissingImageIds: ['1', '2'],
+  files: content.originals.map((row) => ({
+    id: 'image:' + row.id + ':original',
+    path: row.path.replace(/^\.\//u, ''),
+    bytes: row.bytes,
+    sha256: row.sha256,
+    role: 'original' as const,
+    modifiedAt: '2026-11-01T21:59:22Z',
+  })),
+});
+const rows = () =>
+  Object.fromEntries(
+    Object.entries({ ...content.rows, rate: [] }).map(([table, records]) => [
+      table,
+      records.map((record) =>
+        Object.fromEntries(
+          Object.entries(record).map(([name, value]) => [
+            name,
+            typeof value === 'number' && Number.isSafeInteger(value) ? BigInt(value) : value,
+          ]),
+        ),
+      ),
+    ]),
+  ) as Record<piwigo.PiwigoTable, piwigo.PiwigoRow[]>;
+const read = async (value = input(), records = rows()): Promise<Result> => {
+  const adapter = Reflect.get(piwigo, 'readPiwigoManifest') as
+    | ((
+        source: AsyncIterable<{ table: piwigo.PiwigoTable; rows: piwigo.PiwigoRow[] }>,
+        value: unknown,
+      ) => Promise<Result>)
+    | undefined;
+  expect(adapter).toBeTypeOf('function');
+  async function* source() {
+    for (const table of Object.keys(piwigoProjections) as piwigo.PiwigoTable[])
+      yield { table, rows: await Promise.resolve(records[table]) };
+  }
+  return adapter!(source(), value);
+};
+describe('Piwigo common manifest mapping', () => {
+  it('maps the chosen owner rating independently of the public aggregate and other voters', async () => {
+    const records = rows();
+    records.rate = [
+      { element_id: 4n, user_id: 3n, anonymous_id: '192.0.2', rate: 4n, date: '2020-01-01' },
+      { element_id: 4n, user_id: 4n, anonymous_id: '198.51.100', rate: 1n, date: '2020-01-02' },
+    ];
+    const { manifest, archive } = await read(input(), records);
+    expect(manifest.assets.find((asset) => asset.id === '4')!.metadata.rating).toBe(4);
+    expect(manifest.assets.find((asset) => asset.id === '5')!.metadata.rating).toBe(0);
+    expect(archive.filter((record) => record.table === 'rate')).toHaveLength(2);
+    expect(JSON.stringify(manifest)).not.toContain('192.0.2');
+  });
+
+  it('requires review rather than picking one conflicting owner vote', async () => {
+    const records = rows();
+    records.rate = [
+      { element_id: 4n, user_id: 3n, anonymous_id: '192.0.2', rate: 4n, date: '2020-01-01' },
+      { element_id: 4n, user_id: 3n, anonymous_id: '198.51.100', rate: 1n, date: '2020-01-02' },
+    ];
+    await expect(read(input(), records)).rejects.toThrow('PIWIGO_RATING_REVIEW_REQUIRED');
+  });
+
+  it('archives an unrepresentable owner score without rescaling it silently', async () => {
+    const records = rows();
+    records.rate = [{ element_id: 4n, user_id: 3n, anonymous_id: '192.0.2', rate: 8n, date: '2020-01-01' }];
+    const { manifest, archive } = await read(input(), records);
+    expect(manifest.losses).toContainEqual({
+      code: 'PIWIGO_OWNER_RATING_ARCHIVED',
+      entityId: '4',
+      acknowledged: false,
+    });
+    expect(manifest.assets.find((asset) => asset.id === '4')!.metadata.rating).toBe(0);
+    expect(archive.find((record) => record.table === 'rate')!.value.rate).toBe(8n);
+  });
+
+  it('does not use guest or generic account ratings as a personal owner preference', async () => {
+    const records = rows();
+    records.user_infos.find((row) => row.user_id === 3n)!.status = 'generic';
+    records.rate = [{ element_id: 4n, user_id: 3n, anonymous_id: '192.0.2', rate: 4n, date: '2020-01-01' }];
+    const { manifest } = await read(input(), records);
+    expect(manifest.assets.find((asset) => asset.id === '4')!.metadata.rating).toBe(0);
+    expect(manifest.losses).toContainEqual({
+      code: 'PIWIGO_OWNER_RATING_ARCHIVED',
+      entityId: '4',
+      acknowledged: false,
+    });
+  });
+
+  it('preserves native originals, manual metadata, album membership and owner favourites', async () => {
+    const { manifest, archive } = await read();
+    expect(manifest.assets).toHaveLength(4);
+    expect(manifest.files).toHaveLength(4);
+    expect(manifest.users.map((user) => user.id)).toEqual(['1', '3', '4', '5']);
+    expect(manifest.assets.find((asset) => asset.id === '4')).toMatchObject({
+      ownerId: '3',
+      primaryFileId: 'image:4:original',
+      localDateTime: '2019-03-17T14:15:16',
+      metadata: {
+        description: 'Manually edited caption',
+        takenAt: '2019-03-17T14:15:16.000Z',
+        latitude: null,
+        longitude: null,
+      },
+    });
+    expect(manifest.assets.find((asset) => asset.id === '6')?.metadata.favorite).toBe(true);
+    expect(manifest.albums.find((album) => album.id === '2:owner:3')?.assetIds).toEqual(['4']);
+    for (const album of manifest.albums) expect(album.members).toEqual([]);
+    expect(archive.length).toBeGreaterThan(30);
+    expect(archive.find((record) => record.table === 'images' && record.value.id === 4n)?.value.name).toBe(
+      'Manually edited title',
+    );
+    for (const original of content.originals)
+      expect(manifest.files.find((file) => file.path === original.path.slice(2))?.sha256).toBe(
+        createHash('sha256').update(Buffer.from(original.originalBase64, 'base64')).digest('hex'),
+      );
+  });
+  it('prepares all mapped metadata with the canonical destination writer', async () => {
+    const { manifest } = await read(),
+      template = planFixture.plan.files[0];
+    const files = new Map(manifest.files.map((file) => [file.id, file]));
+    const plan = parseDestinationImportPlan({
+      ...planFixture.plan,
+      source: manifest.source,
+      owners: manifest.users.map((user) => ({ sourceId: user.id, destinationId: randomUUID() })),
+      files: manifest.assets.flatMap((asset) =>
+        asset.fileIds.map((id, index) => {
+          const file = files.get(id)!;
+          return {
+            ...template,
+            id: 'placement:' + asset.id + ':' + id,
+            sourceAssetId: asset.id,
+            sourceFileId: id,
+            sourcePath: file.path,
+            destinationPath: asset.ownerId + '/' + asset.id + '/' + file.path,
+            bytes: file.bytes,
+            sha256: file.sha256,
+            sourceIdentity: { ...template.sourceIdentity, inode: String(index + 1), bytes: file.bytes },
+          };
+        }),
+      ),
+    });
+    const query = vi.fn();
+    const writer = new CanonicalAssetWriter(
+      { query, transaction: vi.fn() },
+      {
+        manifest,
+        plan,
+        destinationId: plan.destinationId,
+        binding: {
+          operationId: randomUUID(),
+          source: manifest.source,
+          manifestSha256: manifestFingerprint(manifest),
+          planSha256: destinationPlanFingerprint(plan),
+        },
+      },
+    );
+    for (const asset of manifest.assets) {
+      if (!('type' in asset)) throw new Error('Sealed source asset required');
+      expect(
+        writer.prepare({
+          sourceAssetId: asset.id,
+          type: asset.type,
+          fileModifiedAt: asset.fileModifiedAt,
+          originalFileNames: asset.originalFileNames,
+        }),
+      ).toBeDefined();
+    }
+    expect(manifest.losses).toContainEqual({ code: 'PIWIGO_TITLE_ARCHIVED', entityId: '4', acknowledged: false });
+    expect(query).not.toHaveBeenCalled();
+  });
+  it.each(Object.entries(content.expected.visibleImageIds))(
+    'matches independently captured visibility for %s',
+    async (name, ids) => {
+      const owner = { alice: '3', bob: '4', mallory: '5' }[name]!;
+      for (const photo of content.rows.images) {
+        const value = input();
+        value.photoOwners[String(photo.id)] = owner;
+        if (ids.includes(photo.id)) await expect(read(value)).resolves.toBeDefined();
+        else await expect(read(value)).rejects.toThrow('PIWIGO_OWNER_REVIEW_REQUIRED');
+      }
+    },
+  );
+  it('keeps private category metadata from an owner who sees the photo through another category', async () => {
+    const value = input();
+    value.photoOwners['6'] = '4';
+    const records = rows();
+    records.image_category.push({ image_id: 6n, category_id: 2n, rank: 99n });
+    const { manifest } = await read(value, records);
+    expect(manifest.albums.some((album) => album.id === '2:owner:4')).toBe(false);
+    expect(manifest.losses).toContainEqual({
+      code: 'PIWIGO_ALBUM_MEMBERSHIP_RESTRICTED',
+      entityId: '2:6',
+      acknowledged: false,
+    });
+  });
+  it('does not infer ownership from uploader, displayed author or matching email', async () => {
+    const value = input();
+    delete value.photoOwners['4'];
+    await expect(read(value)).rejects.toThrow('PIWIGO_OWNER_REVIEW_REQUIRED');
+  });
+  it('keeps each owner favourite separate when changing an explicitly accessible owner', async () => {
+    const value = input();
+    value.photoOwners['6'] = '4';
+    const { manifest } = await read(value);
+    expect(manifest.assets.find((asset) => asset.id === '6')?.metadata.favorite).toBe(false);
+    expect(manifest.albums.find((album) => album.id === '3:owner:4')?.assetIds).toEqual(['6']);
+  });
+  it('rejects owners restricted from downloading originals', async () => {
+    const records = rows();
+    records.user_infos.find((row) => row.user_id === 3n)!.enabled_high = 'false';
+    await expect(read(input(), records)).rejects.toThrow('PIWIGO_OWNER_REVIEW_REQUIRED');
+  });
+  it('does not treat admin status as a private-category grant', async () => {
+    const value = input();
+    value.photoOwners['4'] = '1';
+    const records = rows();
+    records.user_access = records.user_access.filter((row) => !(row.user_id === 1n && row.cat_id === 2n));
+    await expect(read(value, records)).rejects.toThrow('PIWIGO_OWNER_REVIEW_REQUIRED');
+  });
+  it('preserves exact SQL wall-clock precision with an explicitly reviewed offset', async () => {
+    const records = rows();
+    records.images.find((row) => row.id === 4n)!.date_creation = '2019-03-17 14:15:16.123456';
+    const value = input();
+    value.reviewedCaptureOffsets['4'] = 120;
+    expect((await read(value, records)).manifest.assets.find((asset) => asset.id === '4')).toMatchObject({
+      localDateTime: '2019-03-17T14:15:16.123456',
+      metadata: { takenAt: '2019-03-17T12:15:16.123456Z' },
+    });
+  });
+  it('retains additional original formats instead of representatives', async () => {
+    const records = rows();
+    records.image_format.push({ format_id: 10n, image_id: 4n, ext: 'dng', filesize: 1n });
+    const value = input();
+    value.files.push({
+      ...value.files[1],
+      id: 'image:4:format:10',
+      path: value.files[1].path.replace(/([^/]+)\.png$/u, 'pwg_format/$1.dng'),
+      sha256: 'b'.repeat(64),
+    });
+    const { manifest } = await read(value, records);
+    expect(manifest.assets.find((asset) => asset.id === '4')?.fileIds).toEqual([
+      'image:4:original',
+      'image:4:format:10',
+    ]);
+  });
+  it('preserves manual tags, GPS and category descriptions', async () => {
+    const records = rows();
+    records.tags.push({ id: 10n, name: 'Manual tag', url_name: 'manual-tag' });
+    records.image_tag.push({ image_id: 4n, tag_id: 10n });
+    Object.assign(
+      records.images.find((row) => row.id === 4n)!,
+      { latitude: '52.123456', longitude: '-113.123456' },
+    );
+    records.categories.find((row) => row.id === 2n)!.comment = 'Manual album caption';
+    const { manifest } = await read(input(), records);
+    expect(manifest.assets.find((asset) => asset.id === '4')?.metadata).toMatchObject({
+      latitude: 52.123456,
+      longitude: -113.123456,
+      tags: ['Manual tag'],
+    });
+    expect(manifest.albums.find((album) => album.id === '2:owner:3')?.description).toBe('Manual album caption');
+  });
+  it.each([
+    'schema',
+    'revision',
+    'complete',
+    'owners',
+    'offset',
+    'offset-range',
+    'missing-review',
+    'extra-review',
+    'file',
+    'path',
+  ] as const)('refuses %s before destination writes', async (kind) => {
+    const value = input();
+    switch (kind) {
+      case 'schema': {
+        value.source.schemaSha256 = '0'.repeat(64);
+        break;
+      }
+      case 'revision': {
+        value.inventory.revisionAfter = 'changed';
+        break;
+      }
+      case 'complete': {
+        value.inventory.complete = false;
+        break;
+      }
+      case 'owners': {
+        value.photoOwners.stale = '3';
+        break;
+      }
+      case 'offset': {
+        delete value.reviewedCaptureOffsets['4'];
+        break;
+      }
+      case 'offset-range': {
+        value.reviewedCaptureOffsets['4'] = 900;
+        break;
+      }
+      case 'missing-review': {
+        value.reviewedMissingImageIds = [];
+        break;
+      }
+      case 'extra-review': {
+        value.reviewedMissingImageIds.push('999');
+        break;
+      }
+      case 'file': {
+        value.files.pop();
+        break;
+      }
+      case 'path': {
+        value.files[0].path = '../escape.png';
+        break;
+      }
+    }
+    await expect(read(value)).rejects.toThrow(/PIWIGO_/);
+  });
+  it('refuses a category cycle and unknown dangling tag references', async () => {
+    const records = rows();
+    records.categories[0].id_uppercat = 1n;
+    await expect(read(input(), records)).rejects.toThrow('PIWIGO_CATEGORY_GRAPH_INVALID');
+    const other = rows();
+    other.image_tag.push({ image_id: 4n, tag_id: 999n });
+    await expect(read(input(), other)).rejects.toThrow('PIWIGO_RELATIONSHIPS_INVALID');
+  });
+});
