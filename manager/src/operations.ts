@@ -365,9 +365,9 @@ export class Operations {
         : null,
       backup: backup ? { action: 'reuse', name: backup.name, takenAt: backup.takenAt } : { action: 'create' },
       requiredBytes: (source?.summary.databaseBytes ?? 1024 ** 3) * 3,
-      downtime: 'Immich stays stopped while Frameleaf imports and prepares the library.',
+      downtime: `${source?.product ?? 'The original app'} stays stopped while Frameleaf imports and prepares the library.`,
       recovery:
-        'Database only. Photos, videos and external libraries stay in place. After Frameleaf writes to media, a database backup alone cannot safely return the library to Immich.',
+        `Database only. Photos, videos and external libraries stay in place. After Frameleaf writes to media, a database backup alone cannot safely return the library to ${source?.product ?? 'the original app'}.`,
     };
   }
   /**
