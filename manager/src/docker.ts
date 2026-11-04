@@ -9,6 +9,11 @@ import { publishFile } from './files.js';
 import { DOCKERMAN_TEMPLATES, saveDockermanTemplates } from './dockerman.js';
 import { configureUnraidCompose } from './compose.js';
 import { importSourceKinds, type ImportPlan } from './import-plan.js';
+import {
+  parseImportSourceAuthority,
+  replyImportSourceAuthority,
+  type ImportSourceAuthority,
+} from './import-source-authority.js';
 
 export type Container = {
   Id: string;
@@ -475,7 +480,11 @@ export class Docker {
     project: string,
     operationId: string,
     action: 'status' | 'preflight' | 'run' | 'resume' | 'verify' | 'rollback' | 'abandon',
-    common?: { source: ImportPlan['source']['kind']; activate?: boolean },
+    common?: {
+      source: ImportPlan['source']['kind'];
+      activate?: boolean;
+      authority?: ImportSourceAuthority;
+    },
   ): Promise<Record<string, any>> {
     if (
       !/^frameleaf-[a-f0-9]{12}$/.test(project) ||
@@ -492,6 +501,10 @@ export class Docker {
           (common.activate === true && action !== 'verify')))
     )
       throw new Refusal('invalid_import_command');
+    const authority = common?.authority === undefined ? undefined : parseImportSourceAuthority(common.authority);
+    if (common && action !== 'status' && !authority) throw new Refusal('import_source_authority_required');
+    if (authority && (authority.binding.operationId !== operationId || authority.binding.source.kind !== common?.source))
+      throw new Refusal('import_source_authority_invalid');
     const name = `${project}-import-${operationId}`;
     const existing = (await this.inventory()).find((c) => c.Name === `/${name}`);
     if (existing) {
@@ -513,6 +526,7 @@ export class Docker {
         name,
         '--no-deps',
         '-T',
+        ...(common ? ['--interactive'] : []),
         '--entrypoint',
         SERVER_ADMIN,
         'frameleaf-server',
@@ -523,7 +537,11 @@ export class Docker {
         common ? '/run/frameleaf/import-library.json' : '/run/frameleaf/import.json',
         ...(common?.activate ? ['--activate'] : []),
       ],
-      { cwd: directory, timeout: 86_400_000 },
+      {
+        cwd: directory,
+        timeout: 86_400_000,
+        ...(common ? { reply: (line: string) => replyImportSourceAuthority(line, action, authority) } : {}),
+      },
     );
     const line = output
       .trim()

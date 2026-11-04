@@ -80,6 +80,7 @@ test('all ten source families use the same fixed common importer for all seven a
         '/run/frameleaf/import-library.json',
       ]);
       assert(command.includes(`${project}-import-${operation}`));
+      assert(command.includes('--interactive'));
     }
   assert.equal(approvals, sources.length * (actions.length - 1));
 });

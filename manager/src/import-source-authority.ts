@@ -31,6 +31,14 @@ export type ImportSourceAuthoritySeal = z.infer<typeof sealSchema>;
 type Seal = ImportSourceAuthoritySeal;
 export type ImportSourceAuthorityAction = z.infer<typeof actionSchema>;
 export type ImportSourceAuthority = Seal & { verify: () => Promise<void> };
+const authoritySchema = sealSchema.extend({
+  verify: z.custom<() => Promise<void>>((value) => typeof value === 'function'),
+});
+export function parseImportSourceAuthority(input: unknown): ImportSourceAuthority {
+  const parsed = authoritySchema.safeParse(input);
+  if (!parsed.success) throw new Refusal('import_source_authority_invalid');
+  return parsed.data;
+}
 
 export function encodeImportSourceAuthorityRequest(
   action: ImportSourceAuthorityAction,
@@ -66,17 +74,17 @@ export async function replyImportSourceAuthority(
     throw new Refusal('import_source_authority_invalid');
   }
   const request = requestSchema.safeParse(input);
-  const expected = sealSchema.safeParse({ binding: authority.binding, destinationId: authority.destinationId });
+  const expected = authoritySchema.safeParse(authority);
   if (
     !request.success ||
     !expected.success ||
     request.data.action !== action ||
     JSON.stringify({ binding: request.data.binding, destinationId: request.data.destinationId }) !==
-      JSON.stringify(expected.data)
+      JSON.stringify({ binding: expected.data.binding, destinationId: expected.data.destinationId })
   )
     throw new Refusal('import_source_authority_invalid');
   try {
-    await authority.verify();
+    await expected.data.verify();
   } catch {
     throw new Refusal('import_source_authority_refused');
   }
