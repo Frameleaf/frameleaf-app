@@ -45,7 +45,19 @@ export class WarmLibrarySetupDto extends createZodDto(z.object({ reset: z.boolea
 const SetupStageSchema = z.object({
   id: z.enum(['check', 'thumbnails', 'search']).meta({ id: 'LibrarySetupStageId' }),
   status: z.enum(['done', 'running', 'paused', 'waiting']).meta({ id: 'LibrarySetupStageStatus' }),
-  disabled: z.boolean().optional().describe('Optional processing is turned off; retained work can resume when enabled'),
+  disabled: z
+    .boolean()
+    .optional()
+    .describe('AI processing is turned off; retained work can resume when enabled. Videos still count in the stage'),
+  heldForNight: z
+    .boolean()
+    .optional()
+    .describe('Quiet hours saved this stage for the overnight window; it starts again by itself'),
+  resumesAt: z.iso
+    .datetime()
+    .nullable()
+    .optional()
+    .describe('When quiet hours start this stage again; null when the overnight schedule never starts'),
   done: z.number().int().nonnegative(),
   total: z.number().int().nonnegative(),
 });
