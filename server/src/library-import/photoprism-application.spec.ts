@@ -34,7 +34,7 @@ describe.skipIf(!path)('native PhotoPrism application local account', () => {
       expect(credential).toBeDefined();
       expect(await verifyImportedPassword(config.password, credential!.forImport())).toBe(true);
       expect(await verifyImportedPassword('wrong-' + config.password, credential!.forImport())).toBe(false);
-      expect(JSON.stringify(credential)).not.toContain(config.password);
+      expect(JSON.stringify(credential).includes(config.password)).toBe(false);
       expect(user).not.toHaveProperty('hash');
       expect(user).not.toHaveProperty('reset_token');
     } finally {
