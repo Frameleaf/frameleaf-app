@@ -174,6 +174,8 @@ describe('SetupBar', () => {
     render(SetupBar);
     await fireEvent.click(await screen.findByRole('button', { name: /Details/ }));
     expect(screen.getByRole('region', { name: 'Setting up your library' })).toHaveTextContent('Saved for the night');
+    // Only videos wait for the night; the stage still says AI processing is off.
+    expect(screen.getByText('AI processing is turned off. You can enable it later.')).toBeInTheDocument();
     expect(
       screen.queryByText('Getting videos ready to play. AI processing is turned off. You can enable it later.'),
     ).not.toBeInTheDocument();

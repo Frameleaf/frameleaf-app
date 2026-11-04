@@ -352,6 +352,10 @@
                     >
                   </div>
                   <p>{stageDetail(stage)}</p>
+                  {#if stage.heldForNight && stage.disabled}
+                    <!-- Only videos are saved for the night; AI processing stays off. -->
+                    <p>{$t('setup_bar_stage_search_disabled')}</p>
+                  {/if}
                   {#if partial}
                     <div class="fl-setup-bar-progress is-stage" aria-hidden="true">
                       <span style:width="{share * 100}%"></span>
