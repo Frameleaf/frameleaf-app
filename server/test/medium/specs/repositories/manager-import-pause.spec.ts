@@ -217,7 +217,7 @@ for (const kind of ['immich-import-derived', 'library-import-derived'])
       // Give SKIP LOCKED a full coordinator scan interval, but inspect the first nonempty claim.
       const claims = await vi.waitUntil(async () => {
         const batch = await store.claim(queue, worker, 1);
-        return batch.length ? batch : undefined;
+        return batch.length > 0 ? batch : undefined;
       }, QUEUE_TIMING.scan);
       expect(claims).toHaveLength(1);
       expect(claims[0].runId).toBeNull();
