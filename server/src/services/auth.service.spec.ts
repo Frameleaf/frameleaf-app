@@ -38,6 +38,9 @@ const dto = {
 
 const home = { ip: '192.168.1.5', via: null };
 
+/** FL-1160: the server's Locked pepper every PIN wrap depends on. */
+const PEPPER = Buffer.alloc(32, 7);
+
 describe(AuthService.name, () => {
   let sut: AuthService;
   let mocks: ServiceMocks;
@@ -52,6 +55,8 @@ describe(AuthService.name, () => {
     mocks.lockedKey.exists.mockResolvedValue(false);
     mocks.lockedKey.write.mockResolvedValue();
     mocks.lockedKey.delete.mockResolvedValue();
+    // FL-1160: PIN wraps depend on the server's Locked pepper
+    mocks.lockedKey.pepper.mockResolvedValue(PEPPER);
     mocks.session.getPinUnlockedUntil.mockResolvedValue(null);
   });
 
@@ -2945,7 +2950,7 @@ describe(AuthService.name, () => {
       expect(mocks.lockedKey.write).toHaveBeenCalledTimes(1);
       const written = mocks.lockedKey.write.mock.calls[0][0];
       expect(written.publicKey).toBe(file.publicKey);
-      await expect(unwrapKey(written, 'pin', '654321')).resolves.toHaveLength(32);
+      await expect(unwrapKey(written, 'pin', '654321', { pepper: PEPPER })).resolves.toHaveLength(32);
       expect(mocks.user.setPinCodeAndLockSessions).toHaveBeenCalledWith(
         auth.user.id,
         expect.anything(),
@@ -2980,7 +2985,7 @@ describe(AuthService.name, () => {
 
       const written: LockedKeyFile = mocks.lockedKey.write.mock.calls[0][0];
       expect(written).toMatchObject({ userId: auth.user.id, mode: 'pin', encrypting: false });
-      await expect(unwrapKey(written, 'pin', PIN)).resolves.toHaveLength(32);
+      await expect(unwrapKey(written, 'pin', PIN, { pepper: PEPPER })).resolves.toHaveLength(32);
     }, 20_000);
 
     it('unlockSession in PIN mode loads the key until pinExpiresAt', async () => {
@@ -3068,7 +3073,7 @@ describe(AuthService.name, () => {
       expect(outcomes.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
       const pin = pinHash.replace(' (hashed)', '');
       expect(['111111', '222222']).toContain(pin);
-      await expect(unwrapKey(stored, 'pin', pin)).resolves.toHaveLength(32);
+      await expect(unwrapKey(stored, 'pin', pin, { pepper: PEPPER })).resolves.toHaveLength(32);
     }, 30_000);
 
     it('refreshPinExpiry extending an elevated session also extends the loaded key expiresAt', async () => {
