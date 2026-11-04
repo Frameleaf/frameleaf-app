@@ -3,7 +3,11 @@ import { mkdtempSync, mkdirSync, existsSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { cleanupQualification, qualificationImage } from '../scripts/cleanup-photoprism-qualification.mjs';
+import {
+  applicationQualificationImage,
+  cleanupQualification,
+  qualificationImage,
+} from '../scripts/cleanup-photoprism-qualification.mjs';
 
 const fixture = (t) => {
   const parent = mkdtempSync(join(tmpdir(), 'photoprism-cleanup-check-'));
@@ -39,6 +43,7 @@ test('removes only the cancelled run credentials and labelled Docker resources',
   assert.equal(lists.length, 2);
   assert.ok(lists.every((args) => args.includes('label=app.frameleaf.qualification-run=123-1')));
   assert.ok(calls.some((args) => args[0] === 'rm' && args.includes('a'.repeat(64))));
+  assert.ok(calls.some((args) => args[0] === 'rm' && args.includes('-v')));
   assert.ok(calls.some((args) => args[0] === 'image' && args[1] === 'rm'));
 });
 test('retains an image while another container still uses it', (t) => {
@@ -84,4 +89,18 @@ test('retains a pre-existing image and supports repeated cleanup', (t) => {
   cleanupQualification('123-1', root, docker);
   cleanupQualification('123-1', root, docker);
   assert.equal(existsSync(root), false);
+});
+
+test('removes only the application image pulled by this run and scopes application containers to the same family', (t) => {
+  const { root } = fixture(t);
+  writeFileSync(join(root, 'image.json'), JSON.stringify({ createdImage: false }));
+  writeFileSync(join(root, 'application-image.json'), JSON.stringify({ createdImage: true }));
+  const calls = [];
+  cleanupQualification('123-1', root, (args) => {
+    calls.push(args);
+    return args[0] === 'image' && args[1] === 'ls' ? 'application-image' : '';
+  });
+  assert.ok(calls.some((args) => args[0] === 'image' && args[1] === 'rm' && args[2] === applicationQualificationImage));
+  assert.ok(!calls.some((args) => args[0] === 'image' && args[1] === 'rm' && args[2] === qualificationImage));
+  assert.ok(calls.some((args) => args.includes('label=app.frameleaf.qualification-family=photoprism')));
 });
