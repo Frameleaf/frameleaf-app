@@ -129,6 +129,18 @@ await page.route('**/manager-api/**', async (route) => {
   if (path === 'status') value = { claimed: true };
   else if (path === 'dashboard') value = dashboard;
   else if (path === 'sources') value = { sources, refused };
+  else if (path === 'capture-library-import') {
+    const id = 'e885b27f-f5d1-47ee-b2e0-beb10fe2ea40';
+    dashboard.operations = [{ id, kind: 'import', state: 'awaiting-review', completed: ['capture-common-source'], canInspectCapture: true, canCancel: true }];
+    value = { id };
+  } else if (path === 'inspect-library-import') {
+    assert.equal(body.id, dashboard.operations[0].id);
+    value = {
+      destinationId: 'c47d6c6a-5842-417c-a556-207ae35f1b36', sourceId: source.id,
+      inventory: { photos: 2, albums: 1, originals: 2, privatePhotos: 1, accounts: [{ id: 'owner' }] },
+    };
+  }
+
   else if (path === 'captured-review') {
     assert.equal(body.id, commonReview.id);
     value = commonReview;
@@ -674,6 +686,29 @@ try {
     assert.equal(approval.reviewId, commonReview.id);
     assert.equal(approval.approvalToken, commonReview.approvalToken);
     commonReview = null;
+  });
+  await check('qualification capture is hidden by default and requires explicit permission to stop the source', async () => {
+    dashboard.installation = null;
+    dashboard.operations = [];
+    await page.goto(origin);
+    await mainButton('Review import').waitFor();
+    assert.equal(await mainButton('Qualify a library import').count(), 0);
+    dashboard.importQualificationEnabled = true;
+    await refresh();
+    await mainButton('Qualify a library import').click();
+    await page.getByLabel('PhotoPrism container ID').fill(source.id);
+    assert.equal(await mainButton('Capture source snapshot').isDisabled(), true);
+    await page.getByRole('checkbox', { name: 'I understand Manager will stop PhotoPrism before taking its snapshot.' }).check();
+    await mainButton('Capture source snapshot').click();
+    await mainButton('Inspect captured library').click();
+    await page.getByRole('heading', { name: 'Review the captured library', exact: true }).waitFor();
+    await page.getByText('2 photos and videos · 1 albums · 2 originals', { exact: true }).waitFor();
+    const capture = requests.findLast((request) => request.path === 'capture-library-import').body;
+    assert.equal(capture.confirmStop, true);
+    assert.equal(capture.source, 'photoprism');
+    assert.equal(capture.container, source.id);
+    assert.ok(requests.findLast((request) => request.path === 'inspect-library-import').body.tag);
+    delete dashboard.importQualificationEnabled;
   });
   assert.deepEqual(errors, []);
   console.log('All Manager browser checks passed.');

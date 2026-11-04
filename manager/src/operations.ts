@@ -441,7 +441,7 @@ export class Operations {
         operation.receipts['common-inspection-destination'] = destinationId;
         this.store.save(operation);
       }
-      return { destinationId, inventory };
+      return { destinationId, sourceId: fence.id, inventory };
     } finally {
       this.executing.delete(operationId);
     }
@@ -2059,6 +2059,7 @@ export class Operations {
       ...(typeof receipts['reviewed-common-import'] === 'string' && { commonImport: {
         requiresBootstrap: !!this.store.get<Review>(`review:${input.commonCapture ? operation.id : input.reviewId}`)?.common?.bootstrapAdminId,
       } }),
+      canInspectCapture: operation.state === 'awaiting-review' && !!input.commonCapture,
       canReviewCapture: operation.state === 'awaiting-review' && !!input.commonCapture &&
         (this.store.get<Review>(`review:${operation.id}`)?.expires ?? 0) > Date.now(),
       replacesInstallation:

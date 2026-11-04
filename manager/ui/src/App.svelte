@@ -43,6 +43,10 @@
     advancedOpen = $state(false),
     tag = $state(''),
     review = $state<any>(null);
+  let qualificationCapture = $state(false),
+    qualificationContainer = $state(''),
+    qualificationStopAccepted = $state(false),
+    qualificationInspection = $state<any>(null);
   let libraryName = $state('Home library');
   let kind = $state<'install' | 'import'>('install'),
     step = $state(0),
@@ -365,6 +369,10 @@
     containers = emptyContainers();
     containersOpen = false;
     sourceReview = null;
+    qualificationCapture = false;
+    qualificationContainer = '';
+    qualificationStopAccepted = false;
+    qualificationInspection = null;
     mappingsAccepted = false;
     lifecycle = false;
     cutoverAccepted = false;
@@ -445,6 +453,25 @@
     await refresh();
     await go('progress');
     dialog?.close();
+  }
+  async function chooseQualificationCapture() {
+    await choose('import');
+    qualificationCapture = true;
+  }
+  async function startQualificationCapture() {
+    await start('capture-library-import', {
+      source: 'photoprism',
+      container: qualificationContainer.trim(),
+      confirmStop: qualificationStopAccepted,
+    });
+  }
+  async function inspectQualificationCapture(id: string) {
+    if (!releasesLoaded) await loadReleases();
+    if (!tag) tag = releases[0]?.tag ?? '';
+    qualificationInspection = await api('inspect-library-import', { id, tag });
+    qualificationCapture = true;
+    kind = 'import';
+    await go('import');
   }
   async function reopenCapturedReview(id: string) {
     review = await api('captured-review', { id });
@@ -742,6 +769,9 @@
             {:else}<section class="card"><div class="card-body"><div class="row mb16"><Icon name="import"/><h2>{discoveryLoaded ? 'No supported photo installation found' : 'Find your existing library'}</h2></div><p class="muted">Manager detects installations through the host Docker engine. Review discovered sources before making any change.</p><button class="button quiet mt16" disabled={busy} onclick={() => run(loadSources)}>Find installations</button></div></section>{/if}
             {#if refused.length}<div class="notice warning mt16"><Icon name="warning"/><div><strong>Some installations need attention</strong>{#each refused as item}<p>{readable(item.code)}</p>{/each}</div></div>{/if}
             <p class="section-label">Or start another way</p><div class="two-cols"><section class="card option-card"><div class="card-body"><div class="icon-tile"><Icon name="plus"/></div><h2>Set up a new library</h2><p>Choose your storage and let Manager prepare a fresh Frameleaf installation.</p><button class="text-button" disabled={busy || !!activeOperation} onclick={() => run(() => choose('install'))}>Set up Frameleaf</button></div></section><section class="card option-card"><div class="card-body"><div class="icon-tile"><Icon name="restore"/></div><h2>Restore a backup</h2><p>Restore your database and reconnect media that already exists on your server.</p><button class="text-button" disabled={busy || !!activeOperation} onclick={() => run(() => startRestore())}>Choose a backup</button></div></section></div>
+            {#if dashboard.importQualificationEnabled}
+              <button class="button quiet mt16" disabled={busy || !!activeOperation} onclick={() => run(chooseQualificationCapture)}>Qualify a library import</button>
+            {/if}
             <p class="quiet-note"><Icon name="info"/>You can review every change before setup or import begins.</p>
           {/if}
         {:else if screen === 'import'}
@@ -772,6 +802,24 @@
                 <button class="button primary" disabled={busy || !cutoverAccepted || (!!activeOperation && (activeOperation.id !== review.id || activeOperation.state !== 'awaiting-review')) || (review.commonImport.requiresBootstrap && location.protocol !== 'https:')}>Start import</button>
               </div>
             </form>
+          {:else if qualificationCapture}
+            {#if qualificationInspection}
+              {@render heading('Review the captured library', 'The original app is stopped. Review the account and media inventory before preparing the transfer.')}
+              <section class="card"><div class="card-body">
+                <p>{qualificationInspection.inventory.photos} photos and videos · {qualificationInspection.inventory.albums} albums · {qualificationInspection.inventory.originals} originals</p>
+                <p class="meta mt16">{qualificationInspection.inventory.accounts.length} source accounts · {qualificationInspection.inventory.privatePhotos} private photos</p>
+                <button class="button quiet mt16" onclick={() => run(() => go('progress'))}>Back to capture progress</button>
+              </div></section>
+            {:else}
+              {@render heading('Capture a PhotoPrism library', 'Choose the PhotoPrism container to stop and capture for review.')}
+              <form class="card" onsubmit={(event) => { event.preventDefault(); void run(startQualificationCapture); }}>
+                <div class="card-body stack">
+                  <label class="field"><span>PhotoPrism container ID</span><input bind:value={qualificationContainer} required pattern={'[a-f0-9]{64}'} autocomplete="off"/></label>
+                  <label class="check-row"><input type="checkbox" bind:checked={qualificationStopAccepted}/><span>I understand Manager will stop PhotoPrism before taking its snapshot.</span></label>
+                </div>
+                <div class="card-footer"><button class="button primary" disabled={busy || !qualificationStopAccepted || !!activeOperation}>Capture source snapshot</button></div>
+              </form>
+            {/if}
           {:else if step === 0}
             {@render heading(sources.length > 1 ? 'Choose a photo installation' : `Review your ${source?.product ?? 'photo'} installation`, 'Your existing database will be kept for recovery.')}
             {#if !sources.length}{@render notice('No supported source available', 'Find and resolve the source installation before starting an import.', 'warning')}<button class="button quiet mt16" onclick={() => run(loadSources)}>Find installations</button>{/if}
@@ -820,7 +868,7 @@
                 <div class="mt16">{@render notice('Secure connection required', 'Open Manager over HTTPS to re-enter the destination administrator password.', 'warning')}</div>
               {/if}
             {/if}
-            <div class="wizard-footer"><button class="button quiet" onclick={() => run(() => go('activity'))}>Operation history</button><div class="actions">{#if operation.kind === 'move-library' && operation.state === 'running'}<button class="button quiet" disabled={busy || !operation.canStop} onclick={() => run(async () => { await api('stop-move', { id: operation.id }); await refresh(); })}>Stop safely</button>{/if}{#if ['failed', 'interrupted'].includes(operation.state)}{#if operation.error !== 'import_bootstrap_credentials_required'}<button class="button primary" disabled={busy} onclick={() => run(async () => { await api('resume', { id: operation.id }); await refresh(); })}>Resume safely</button>{/if}{#if (operation.canCancel ?? canCancel(operation, installation))}<button class="button danger" disabled={busy} onclick={() => showModal('recover')}>{operation.kind === 'move-library' ? 'Cancel safely' : operation.kind === 'backup' ? 'Cancel backup' : operation.kind === 'update' ? 'Cancel update and restart' : 'Recover the stopped source'}</button>{/if}{:else if operation.state === 'awaiting-review'}{#if operation.canReviewCapture}<button class="button primary" disabled={busy} onclick={() => run(() => reopenCapturedReview(operation.id))}>Open saved import review</button>{/if}{#if operation.canCancel}<button class="button danger" disabled={busy} onclick={() => showModal('recover')}>Recover the stopped source</button>{/if}{:else if timeline.successful}<button class="button primary" onclick={() => run(() => go(['install', 'import', 'restore'].includes(operation.kind) && !dashboard.onboardingFinished ? 'success' : 'overview'))}>Continue</button>{/if}</div></div>
+            <div class="wizard-footer"><button class="button quiet" onclick={() => run(() => go('activity'))}>Operation history</button><div class="actions">{#if operation.kind === 'move-library' && operation.state === 'running'}<button class="button quiet" disabled={busy || !operation.canStop} onclick={() => run(async () => { await api('stop-move', { id: operation.id }); await refresh(); })}>Stop safely</button>{/if}{#if ['failed', 'interrupted'].includes(operation.state)}{#if operation.error !== 'import_bootstrap_credentials_required'}<button class="button primary" disabled={busy} onclick={() => run(async () => { await api('resume', { id: operation.id }); await refresh(); })}>Resume safely</button>{/if}{#if (operation.canCancel ?? canCancel(operation, installation))}<button class="button danger" disabled={busy} onclick={() => showModal('recover')}>{operation.kind === 'move-library' ? 'Cancel safely' : operation.kind === 'backup' ? 'Cancel backup' : operation.kind === 'update' ? 'Cancel update and restart' : 'Recover the stopped source'}</button>{/if}{:else if operation.state === 'awaiting-review'} {#if dashboard.importQualificationEnabled && operation.canInspectCapture && !operation.canReviewCapture}<button class="button primary" disabled={busy} onclick={() => run(() => inspectQualificationCapture(operation.id))}>Inspect captured library</button>{/if}{#if operation.canReviewCapture}<button class="button primary" disabled={busy} onclick={() => run(() => reopenCapturedReview(operation.id))}>Open saved import review</button>{/if}{#if operation.canCancel}<button class="button danger" disabled={busy} onclick={() => showModal('recover')}>Recover the stopped source</button>{/if}{:else if timeline.successful}<button class="button primary" onclick={() => run(() => go(['install', 'import', 'restore'].includes(operation.kind) && !dashboard.onboardingFinished ? 'success' : 'overview'))}>Continue</button>{/if}</div></div>
           {:else}{@render heading('No recorded operation', 'Start setup or choose a maintenance operation.')}<button class="button primary" onclick={() => run(() => go(installation ? 'overview' : 'welcome'))}>Continue</button>{/if}
         {:else if screen === 'success'}
           {@render steps(onboardingSteps, 0)}<div class="success-icon"><Icon name="check"/></div>{@render heading(installation?.origin === 'new_import' ? 'Your import is in Frameleaf' : 'Your server is ready', 'Now make it yours and connect your phone. Library preparation continues in the background.')}{@render notice('Services are ready', installation?.origin === 'new_import' ? 'Your users, albums and settings are imported. The original app remains stopped, and your media stays in place.' : 'Continue with your local photo account and mobile app.')}{@render regeneration()}<div class="wizard-footer"><span class="meta">Library preparation continues</span><button class="button primary" onclick={() => run(() => go('profile'))}>Continue to your details <Icon name="arrow"/></button></div>

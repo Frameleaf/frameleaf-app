@@ -784,6 +784,7 @@ test('common review reports the source and space without exposing the private bu
   );
   const inspected = await f.operations.inspectCommonCapture(operation.id, input.tag);
   assert.deepEqual(inspected.inventory, inventory);
+  assert.equal(inspected.sourceId, fence.id);
   assert.equal(f.store.history().find(({ id }) => id === operation.id)?.receipts['common-inspection-destination'], inspected.destinationId);
   assert.deepEqual(await f.operations.inspectCommonCapture(operation.id, input.tag), inspected);
   assert.equal(fenceChecks, 4);
