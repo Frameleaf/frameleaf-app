@@ -279,13 +279,15 @@ try {
   assert.equal(await verifyImportedPassword('wrong-' + input.password, owner.password), false);
   for (const expected of input.nativeLibrary.photos) {
     const rows = await connection.db.query(
-      'SELECT a."ownerId"::text AS owner,a."originalPath",a."isFavorite",a.visibility,e.description,e."timeZone",e.latitude,e.longitude,e."lockedProperties" FROM public.frameleaf_library_import_mapping m JOIN public.asset a ON a.id=m.destination_id JOIN public.asset_exif e ON e."assetId"=a.id WHERE m.operation_id=$1::uuid AND m.entity_kind=\'asset\' AND m.source_id=$2',
+      'SELECT a."ownerId"::text AS owner,a."originalPath",a."isFavorite",a.visibility,EXISTS(SELECT 1 FROM public.asset_lock l WHERE l."assetId"=a.id) AS locked,e.description,e."timeZone",e.latitude,e.longitude,e."lockedProperties" FROM public.frameleaf_library_import_mapping m JOIN public.asset a ON a.id=m.destination_id JOIN public.asset_exif e ON e."assetId"=a.id WHERE m.operation_id=$1::uuid AND m.entity_kind=\'asset\' AND m.source_id=$2',
       [operationId, expected.uid],
     );
     assert.equal(rows.length, 1);
     const asset = rows[0];
     assert.equal(asset.owner, ownerId);
-    assert.equal(asset.visibility, 'hidden');
+    // Owner 2026-11-04: a private PhotoPrism photo imports Locked
+    assert.equal(asset.visibility, 'timeline');
+    assert.equal(asset.locked, true);
     assert.equal(asset.description, expected.caption);
     assert.equal(asset.isFavorite, expected.favorite);
     assert.equal(asset.timeZone, 'America/Edmonton');
