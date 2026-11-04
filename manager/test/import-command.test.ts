@@ -142,3 +142,20 @@ test('missing or substituted review authority is refused before Docker is invoke
   }
   assert.equal(calls, 0);
 });
+
+test('a reviewed import cannot be launched for another installation', async () => {
+  let calls = 0;
+  const docker = new Docker(async (_binary, args) => {
+    calls++;
+    return args.includes('run') ? '{}' : '';
+  });
+  const operation = randomUUID();
+  await assert.rejects(
+    docker.importCommand('/synthetic', 'frameleaf-bbbbbbbbbbbb', operation, 'run', {
+      source: 'photoprism',
+      authority: authorityFor('photoprism', operation),
+    }),
+    { message: 'import_source_authority_invalid' },
+  );
+  assert.equal(calls, 0);
+});

@@ -20,7 +20,7 @@ Use the internal `importClaimPending` flag when credentials cannot be securely t
 
 Pending owners cannot sign in with a password, OAuth or Frameleaf, or authenticate through sessions, API keys or public links. An administrator uses the existing emailed, single-use password link to claim the account. This requires configured outgoing email and a public server address. Only the link hash is stored; changing the destination email invalidates the link. Redemption checks expiry after acquiring the account lock and activates the owner in the same transaction that removes stale sessions, API keys, identity links and public links. Imported sharing must be reconstructed separately after its permissions have been verified.
 
-Existing accounts default to their previous behavior. A database downgrade refuses to remove the flag while any owner remains unclaimed. These primitives do not yet connect the generic importer or Manager account mapping, and do not establish source or combined migration qualification.
+Existing accounts default to their previous behavior. A database downgrade refuses to remove the flag while any owner remains unclaimed. The common importer uses these account checks. Manager account mapping and full source/combined migration qualification remain under development.
 
 ## PHP account password formats
 
