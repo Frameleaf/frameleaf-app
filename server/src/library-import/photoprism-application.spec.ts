@@ -30,6 +30,7 @@ describe.skipIf(!path)('native PhotoPrism application local account', () => {
     try {
       const user = [...source.rows('users')].flat().find((row) => row.user_uid === config.sourceUserId);
       expect(user).toMatchObject({
+        id: 1n,
         user_name: 'admin',
         user_role: 'admin',
         auth_provider: expected.auth_provider,

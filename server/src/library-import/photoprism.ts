@@ -31,7 +31,7 @@ export const photoprismProjections = {
   users: {
     name: 'auth_users',
     columns:
-      'user_uid,user_name,display_name,user_email,auth_provider,auth_method,created_at,updated_at,user_role,user_scope,user_attr,super_admin,can_login,base_path,upload_path,expires_at,deleted_at',
+      'id,user_uid,user_name,display_name,user_email,auth_provider,auth_method,created_at,updated_at,user_role,user_scope,user_attr,super_admin,can_login,base_path,upload_path,expires_at,deleted_at',
   },
   'user-settings': {
     name: 'auth_users_settings',
