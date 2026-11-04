@@ -106,7 +106,7 @@ describe('Photoview pinned SQLite extraction', () => {
     (table) => {
       const expected = fixture.objects.find((object) => object.type === 'table' && object.name === table)!.sql!;
       const [columns, ...constraints] = expected.slice(0, -1).split(',CONSTRAINT ');
-      const foreignKeys = constraints.filter((clause) => clause.startsWith('`fk_')).reverse();
+      const foreignKeys = constraints.filter((clause) => clause.startsWith('`fk_')).toReversed();
       const other = constraints.filter((clause) => !clause.startsWith('`fk_'));
       const sql = [columns, ...foreignKeys, ...other].join(',CONSTRAINT ') + ')';
       database.exec('PRAGMA writable_schema=ON');

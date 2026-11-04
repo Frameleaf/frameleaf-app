@@ -170,7 +170,7 @@ describe('Photoview common manifest mapping', () => {
     database.exec('PRAGMA writable_schema=ON');
     database
       .prepare("UPDATE sqlite_schema SET sql=? WHERE name='image_faces'")
-      .run([columns, ...constraints.reverse()].join(',CONSTRAINT ') + ')');
+      .run([columns, ...constraints.toReversed()].join(',CONSTRAINT ') + ')');
     const source = photoview.openPhotoviewSnapshot(path, fixture.source.version);
     opened.push(source);
     expect(source.schemaSha256).not.toBe(fixture.schemaSha256);
