@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
+import { AssetLockReason } from 'src/enum.js';
 import { ImportDatabase } from 'src/immich-import/types.js';
 import { CanonicalAssetWriter } from 'src/library-import/asset-writer.js';
 import { parseDestinationImportPlan } from 'src/library-import/destination-plan.js';
 import { BundleVerificationError, verifyImportFiles } from 'src/library-import/files.js';
-import { parseImportManifest } from 'src/library-import/manifest.js';
+import { parseImportManifest, storedVisibility } from 'src/library-import/manifest.js';
 import {
   LibraryImportBinding,
   LibraryImportJournal,
@@ -111,7 +112,7 @@ export async function reconcileImportedAssets(
         fileModifiedAt: byId.get(id)!.modified,
         originalFileName: primary.name,
         isFavorite: metadata.favorite ?? false,
-        visibility: asset.visibility === 'trash' ? 'timeline' : asset.visibility,
+        visibility: storedVisibility(asset),
         status: asset.visibility === 'trash' ? 'trashed' : 'active',
         deletedAt: byId.get(id)!.deleted,
         libraryScope: 'personal',
@@ -240,7 +241,23 @@ export async function reconcileImportedAssets(
       const actualSidecars = await tx.query(`SELECT "assetId"::text,type,path,"physicalFileId"::text,"isEdited"
         FROM public.asset_file ORDER BY "assetId"`);
       same(expectedSidecars, actualSidecars);
-      if ((await tx.query('SELECT 1 FROM public.asset_lock LIMIT 1')).length > 0) mismatch();
+      // Owner 2026-11-04: exactly the source's private items are Locked, each Live Photo as a whole.
+      const expectedLocks = expected
+        .filter(({ asset }) => asset.visibility === 'locked')
+        .flatMap(({ id, asset }) => [id, livePhotos.get(asset.id)].filter((lock) => lock !== undefined))
+        .map(String)
+        .sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)))
+        .map((assetId) => ({
+          assetId,
+          reason: AssetLockReason.Marked,
+          lockedBy: null,
+          previousVisibility: null,
+          inherited: false,
+          pendingUnlockAt: null,
+        }));
+      const actualLocks = await tx.query(`SELECT "assetId"::text,reason,"lockedBy"::text,"previousVisibility"::text,
+        inherited,"pendingUnlockAt" FROM public.asset_lock ORDER BY "assetId"::text COLLATE "C"`);
+      same(expectedLocks, actualLocks);
       const quota = new Map<string, bigint>();
       for (const photo of expected) quota.set(photo.ownerId, (quota.get(photo.ownerId) ?? 0n) + photo.bytes);
       const ownerMappings = await tx.query(

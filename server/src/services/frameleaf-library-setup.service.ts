@@ -318,7 +318,7 @@ export class FrameleafLibrarySetupService {
       current.run.selection.managerSetup.paused === !!state.paused &&
       current.run.selection.managerSetupRequired === true
     )
-      return;
+      return this.reconcileParkedStages(state, current.run.id, current.run.selection.managerSetup.parkedStages, db);
     await lockQueueCatalogue(db);
     // Queue claims and pause changes serialize before the run and selection locks.
     // Capture cannot re-hold snapshots after observing this committed start acknowledgement.
@@ -362,15 +362,57 @@ export class FrameleafLibrarySetupService {
       WHERE id=${run.id}::uuid`.execute(db);
     // A setup paused before the run was prepared stays held; resuming releases these stages.
     if (!state.paused) {
-      await this.releaseStages(run.id, state.checkReleasedAt ? null : EARLY_STAGES, db);
+      await this.releaseStages(run.id, !!state.checkReleasedAt, db);
     }
   }
 
-  /** Lets the queue admit a held stage's items. Stages that wait for the file check are released by `advance`. */
-  private async releaseStages(runId: string, stages: string[] | null, db: Kysely<DB>) {
-    await sql`UPDATE job_selection SET state='ready' WHERE "runId"=${runId}::uuid
-      AND "capturedAt" IS NOT NULL AND state='enumerating'
-      ${stages ? sql`AND stage=ANY(${stages}::text[])` : sql``}`.execute(db);
+  /**
+   * Lets the queue admit a held stage's items: before the file check only the early stages, after it (`checked`)
+   * every stage whose work is switched on. Stages that wait for the file check are released by `advance`.
+   *
+   * FL-1177: after the check, a stage whose machine learning is off stays held, "parked" in the run's marker, and the
+   * run settles without it rather than waiting for machine learning for good. Switching it on releases it (see
+   * `reconcileParkedStages`) and reopens the run, which the queue only admits while open. A stage that already has
+   * live jobs is never parked: they wait for machine learning as before. The caller holds the queue catalogue.
+   */
+  private async releaseStages(runId: string, checked: boolean, db: Kysely<DB>) {
+    if (!checked) {
+      await sql`UPDATE job_selection SET state='ready' WHERE "runId"=${runId}::uuid
+        AND "capturedAt" IS NOT NULL AND state='enumerating' AND stage=ANY(${EARLY_STAGES}::text[])`.execute(db);
+      return;
+    }
+    const { rows } = await sql<{ stage: string }>`SELECT s.stage FROM job_selection s WHERE s."runId"=${runId}::uuid
+      AND s."capturedAt" IS NOT NULL AND s.state='enumerating' AND s.stage=ANY(${await this.disabledImportStages()}::text[])
+      AND NOT EXISTS (SELECT 1 FROM job_run_item i WHERE i."selectionId"=s.id AND i."jobId" IS NOT NULL
+        AND i.state IN ('pending','waiting','active'))
+      ORDER BY s.stage`.execute(db);
+    const parked = rows.map(({ stage }) => stage);
+    const { numAffectedRows } = await sql`UPDATE job_selection SET state='ready' WHERE "runId"=${runId}::uuid
+      AND "capturedAt" IS NOT NULL AND state='enumerating' AND stage<>ALL(${parked}::text[])`.execute(db);
+    await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup,parkedStages}',${JSON.stringify(parked)}::text::jsonb)
+      ${numAffectedRows ? sql`,"finishedAt"=NULL` : sql``} WHERE id=${runId}::uuid`.execute(db);
+    await sql`UPDATE job_run SET "finishedAt"=now() WHERE id=${runId}::uuid AND "enumerationDone" AND "finishedAt" IS NULL
+      AND NOT (${unfinishedRunItems(sql<string>`${runId}::uuid`, parked)})`.execute(db);
+  }
+
+  /**
+   * FL-1177, on every setup poll once the file check has released the stages: releases a parked stage whose machine
+   * learning has been switched on since, and settles the run once only parked stages are left. It reads first, so a
+   * poll with nothing to do takes no queue lock.
+   */
+  private async reconcileParkedStages(state: SetupState, runId: string, marker: unknown, db: Kysely<DB>) {
+    const parked = Array.isArray(marker) ? marker.filter((stage) => typeof stage === 'string') : [];
+    if (!state.checkReleasedAt || state.paused || parked.length === 0) return;
+    const disabled: string[] = await this.disabledImportStages();
+    if (parked.every((stage) => disabled.includes(stage))) {
+      const { rows } = await sql`SELECT 1 FROM job_run WHERE id=${runId}::uuid AND "enumerationDone"
+        AND "finishedAt" IS NULL AND NOT (${unfinishedRunItems(sql<string>`${runId}::uuid`, parked)})`.execute(db);
+      if (rows.length === 0) return;
+    }
+    await lockQueueCatalogue(db);
+    const imported = await this.importedRun(db, true);
+    if (this.importedSetupMatches(state, imported) && imported?.run?.selection.managerSetup?.startedAt)
+      await this.releaseStages(imported.run.id, true, db);
   }
 
   private async regenerationStatus(state: SetupState) {
@@ -603,7 +645,7 @@ export class FrameleafLibrarySetupService {
           await sql`UPDATE job_selection SET state='enumerating' WHERE "runId"=${imported.run.id}::uuid
             AND state='ready'`.execute(db);
         } else {
-          await this.releaseStages(imported.run.id, state.checkReleasedAt ? null : EARLY_STAGES, db);
+          await this.releaseStages(imported.run.id, !!state.checkReleasedAt, db);
         }
       }
       for (const [ownerId, operationId] of Object.entries(state.health)) {
@@ -807,9 +849,11 @@ export class FrameleafLibrarySetupService {
           ),
         );
         if (scansFinished && healthFinished && !state.checkReleasedAt && !state.paused) {
+          // Catalogue before the run lock, as every other release does: settling a run serializes with queue work.
+          await lockQueueCatalogue(db);
           const imported = await this.importedRun(db, true);
           if (this.importedSetupMatches(state, imported) && imported?.run?.selection.managerSetup?.startedAt) {
-            await this.releaseStages(imported.run.id, null, db);
+            await this.releaseStages(imported.run.id, true, db);
           }
           state.checkReleasedAt = new Date().toISOString();
         }

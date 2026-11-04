@@ -1648,6 +1648,17 @@ export class PersonRepository {
     `.execute(this.db);
     return new Map(rows.map(({ faceId, assetChecksum }) => [faceId, assetChecksum]));
   }
+  /** The faces without an embedding: imported ones, since every face detected here is stored with one. */
+  async getUnembeddedFaceIds(faceIds: string[]): Promise<Set<string>> {
+    if (faceIds.length === 0) {
+      return new Set();
+    }
+    const { rows } = await sql<{ id: string }>`
+      SELECT f.id FROM public.asset_face f WHERE f.id = ANY(${`{${faceIds.join(',')}}`}::uuid[])
+        AND NOT EXISTS (SELECT 1 FROM public.face_search s WHERE s."faceId" = f.id)
+    `.execute(this.db);
+    return new Set(rows.map(({ id }) => id));
+  }
   /** Whether a person has any face at all (FL-57: a move to a person with none is a move to someone new). */
   async hasFaces(personGroupId: string): Promise<boolean> {
     const row = await this.db

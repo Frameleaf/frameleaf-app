@@ -12,6 +12,7 @@
   import { ACTIVITY_STAGE_KEYS } from '$lib/frameleaf/activity';
   import { tonightLabel, type BackgroundWorkCard } from '$lib/frameleaf/background-work';
   import { cloudWorkRows, type CloudWorkRow } from '$lib/frameleaf/cloud-backup';
+  import { runTitleKey } from '$lib/frameleaf/durable-runs';
   import { jobQueue } from '$lib/frameleaf/job-queues';
   import { backupPageUrl, commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { Route } from '$lib/route';
@@ -19,7 +20,7 @@
   import { CloudBackupTargetSetting, type CloudBackupStatusResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import { mdiBackupRestore, mdiChevronRight, mdiCloudUploadOutline, mdiCogOutline } from '@mdi/js';
-  import { locale, t, type Translations } from 'svelte-i18n';
+  import { locale, t } from 'svelte-i18n';
 
   let {
     cards = [],
@@ -31,10 +32,11 @@
   const headingId = $props.id();
   const number = (value: number) => value.toLocaleString($locale ?? undefined);
 
-  const titleOf = (card: BackgroundWorkCard) => {
-    const queue = jobQueue(card.queueName);
-    return queue ? $t(`frameleaf_jobs_queue_${queue.key}` as Translations) : $t('frameleaf_activity_background_work');
-  };
+  const titleOf = (card: BackgroundWorkCard) =>
+    $t(runTitleKey(card.queueName, jobQueue(card.queueName)?.key, 'frameleaf_activity_background_work'));
+  /** A run with no queue of its own (FL-1177: a Manager import) opens Background work, where its run is listed. */
+  const hrefOf = (card: BackgroundWorkCard) =>
+    jobQueue(card.queueName) ? Route.viewQueue({ name: card.queueName }) : commandCenterUrl('processing', 'queues');
 
   /** The prototype's line: the state, what is waiting and running, how far, and where. */
   const detailOf = (card: BackgroundWorkCard) =>
@@ -93,7 +95,7 @@
             class="fla-bg"
             class:is-info={card.stage === 'running'}
             class:is-warning={card.stage === 'paused' || card.stuck}
-            href={Route.viewQueue({ name: card.queueName })}
+            href={hrefOf(card)}
             aria-label={$t('frameleaf_activity_bg_row_label', { values: { title, detail } })}
           >
             <span class="fla-bg-icon" aria-hidden="true">

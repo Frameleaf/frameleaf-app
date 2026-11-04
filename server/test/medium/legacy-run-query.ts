@@ -47,7 +47,7 @@ const stagesFor = (
   filter: RawBuilder<boolean>,
   runScope: RawBuilder<string>,
 ) => sql`with initial_entitlements as materialized (${initialSelectionEntitlementRows(runScope)})
-  select "runId","rootItemKey",stage,state,"availableAt","dependencyReason","meaningfulAt",
+  select "runId","rootItemKey",stage,state,"availableAt","dependencyReason","meaningfulAt",held,
   case
     when state = 'needs_attention' then 'needsAttention'
     when state not in ('pending','waiting') then state
@@ -61,14 +61,18 @@ const stagesFor = (
   select i."runId", i."rootItemKey", i.stage, ${selectionItemState} state, j."availableAt", j.attempt, j."retryBaseAttempt",
   case when j."dependencyReason"='destination-capacity' then 'destination-unavailable' else j."dependencyReason" end "dependencyReason", q.paused,
   greatest(j."progressAt", j."startedAt", j."finishedAt") "meaningfulAt",
-  p.state "parentState"
+  p.state "parentState",
+  case when snapshot."sourceKind"='frozen' and snapshot.state='enumerating' and j.id is null and i.state='pending'
+    then exists (select 1 from job_run held_run where held_run.id=i."runId"
+      and held_run.kind in ('immich-import-derived','library-import-derived')
+      and jsonb_typeof(held_run.selection->'managerSetup')='object') else false end held
   ${selectionItemContext(runScope, materializedInitialEntitlementContext)}
   left join job_queue q on q.name = coalesce(j.queue, i.queue)
   left join lateral (select parent.state from job parent where j."parentId" is not null
     and parent.id = j."parentId" limit 1) p on true
   where ${filter} and not coalesce((${simpleInitialState}),false) offset 0
   ) union all (
-  select "runId","rootItemKey",stage,state,"availableAt",attempt,"retryBaseAttempt","dependencyReason",paused,"meaningfulAt","parentState"
+  select "runId","rootItemKey",stage,state,"availableAt",attempt,"retryBaseAttempt","dependencyReason",paused,"meaningfulAt","parentState",false held
   from (
   select i."runId",i."rootItemKey",i.stage,
     case when i."runId"!=snapshot."libraryOperationId" and not coalesce(initial_entitlement.entitled,false) then 'cancelled'
@@ -161,8 +165,9 @@ export async function legacyListRuns(db: Kysely<any>, take: number, skip: number
         array_remove(array[${sql.join([...DEPENDENCY_REASONS].sort().map((reason) => sql`case when bool_or(s.state in ('pending','waiting') and s."dependencyReason"=${reason}) then ${reason}::text end`))}],null) "dependencyReasons",
         bool_or(s."dependencyReason" is not null and s.state in ('pending','waiting')) "dependencyUnavailable",
         bool_or(s.outcome = 'blocked' and s.state in ('pending','waiting')) "dependencyWaiting",
-        count(*) filter (where s.outcome in ('waiting','retrying') and coalesce(s."availableAt", now()) <= now()) ready,
-        count(*) filter (where s.outcome = 'active') active
+        count(*) filter (where s.outcome in ('waiting','retrying') and coalesce(s."availableAt", now()) <= now() and not s.held) ready,
+        count(*) filter (where s.outcome = 'active') active,
+        count(distinct s."rootItemKey") filter (where s.held and s.stage <> 'IdenticalFilesCheck') held
       from run_stages s group by s."runId"
     ), latest as (
       select distinct on ("runId") "runId", stage, "meaningfulAt" from run_stages
@@ -170,7 +175,7 @@ export async function legacyListRuns(db: Kysely<any>, take: number, skip: number
     ) select r.*, coalesce(items.totals, ${JSON.stringify(Object.fromEntries(['total', ...RUN_OUTCOMES].map((k) => [k, 0])))}::text::jsonb) counts,
       coalesce(stage.totals, ${JSON.stringify(Object.fromEntries(['total', ...RUN_OUTCOMES].map((k) => [k, 0])))}::text::jsonb) "stageTotals",
       coalesce(stage.unfinished, 0)::int "unfinishedStages", coalesce(stage."dependencyWaiting", false) "dependencyWaiting",
-      coalesce(stage.ready, 0)::int "readyStages",
+      coalesce(stage.ready, 0)::int "readyStages", coalesce(stage.held, 0)::int held,
       coalesce(stage."dependencyUnavailable", false) "dependencyUnavailable", stage."dependencyReasons",
       coalesce(stage."dependencyFailed", false) "dependencyFailed",
       latest."meaningfulAt" "lastProgressAt", latest.stage "lastStage", ${workerAvailable} "workerAvailable",
@@ -198,6 +203,7 @@ export async function legacyListRuns(db: Kysely<any>, take: number, skip: number
       lastStage: row.lastStage,
       reasons: runReasons(row),
       noDispatchBacklog: row.noDispatchBacklog,
+      held: row.held,
     };
   });
 }

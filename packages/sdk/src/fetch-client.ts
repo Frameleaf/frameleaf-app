@@ -9150,6 +9150,8 @@ export type JobRunResponseDto = {
     enumerationDone: boolean;
     failed: number;
     finishedAt: string | null;
+    /** Selected items an import's first setup still holds back: until Library Care's file check ends, or while setup is paused */
+    held?: number;
     id: string;
     kind: string;
     lastProgressAt: string | null;

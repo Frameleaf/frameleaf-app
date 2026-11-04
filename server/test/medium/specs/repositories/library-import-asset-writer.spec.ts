@@ -359,16 +359,13 @@ it('refuses existing paths without overwriting their recorded identity or leavin
   ).toEqual([existing]);
 });
 
-it.each(['locked', 'title', 'multiple-sidecars', 'clock', 'trash'])(
+// A source's private item is Locked since 2026-11-04 (library-import-live-photos and -albums specs).
+it.each(['title', 'multiple-sidecars', 'clock', 'trash'])(
   'refuses unsupported or incomplete source facts: %s',
   async (kind) => {
     const { context, item } = await setup();
     const asset = context.manifest.assets[0];
     switch (kind) {
-      case 'locked': {
-        asset.visibility = 'locked';
-        break;
-      }
       case 'title': {
         asset.metadata.title = 'Source title';
         break;

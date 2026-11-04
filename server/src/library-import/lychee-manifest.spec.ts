@@ -244,9 +244,9 @@ describe('Lychee common manifest mapping', () => {
     expect(asset).toHaveProperty('primaryFileId', `variant:${variant.id}`);
     expect(read(value).manifest.files.some((f) => f.path.includes('watermarked'))).toBe(false);
   });
-  it('retains unvalidated photos as hidden pending explicit review', () => {
+  it('imports unvalidated photos as Locked for the owner to review', () => {
     database.prepare('UPDATE photos SET is_validated=0 WHERE id=?').run(photo.id);
-    expect(read().manifest.assets.find((p) => p.id === photo.id)?.visibility).toBe('hidden');
+    expect(read().manifest.assets.find((p) => p.id === photo.id)?.visibility).toBe('locked');
   });
   it('preserves empty album descriptions and archives cross-owner membership without exposing another album title', () => {
     const bob = content.rows.photos.find((p) => p.owner_id === 3)!;

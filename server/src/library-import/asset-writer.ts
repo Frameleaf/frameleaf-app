@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { posix } from 'node:path';
 import { z } from 'zod';
+import { AssetLockReason } from 'src/enum.js';
 import { ImportDatabase } from 'src/immich-import/types.js';
 import { DestinationImportPlan, bindDestinationImportPlan } from 'src/library-import/destination-plan.js';
 import { BundleVerificationError, verifyImportFiles } from 'src/library-import/files.js';
@@ -9,6 +10,7 @@ import {
   importOriginalFileNameSchema,
   importTimestampSchema as timestamp,
   parseImportManifest,
+  storedVisibility,
 } from 'src/library-import/manifest.js';
 import { LibraryImportBinding, LibraryImportJournal, LibraryImportRefused } from 'src/library-import/state.js';
 import { writeImportedTags } from 'src/library-import/tags.js';
@@ -77,7 +79,6 @@ export class CanonicalAssetWriter {
     const originals = sourceFiles.filter((file) => file.role === 'original');
     // shortcut: richer relationships require dedicated writers before this internal path can accept them.
     if (
-      asset.visibility === 'locked' ||
       metadata.title !== undefined ||
       sourceFiles.some((file) => file.role === 'companion') ||
       sourceFiles.filter((file) => file.role === 'sidecar').length > 1
@@ -259,7 +260,7 @@ export class CanonicalAssetWriter {
               item.fileModifiedAt,
               primary.name,
               metadata.favorite ?? false,
-              asset.visibility === 'trash' ? 'timeline' : asset.visibility,
+              storedVisibility(asset),
               asset.visibility === 'trash' ? 'trashed' : 'active',
               metadata.deletedAt ?? null,
               livePhotoVideoId,
@@ -317,6 +318,12 @@ export class CanonicalAssetWriter {
             ],
           );
           if (metadata.tags !== undefined) await writeImportedTags(tx, ownerId, destinationId, metadata.tags);
+          // Owner 2026-11-04: a source's private item is Locked, a Live Photo as a whole (FL-34).
+          if (asset.visibility === 'locked')
+            await tx.query(`INSERT INTO public.asset_lock("assetId",reason) SELECT unnest($1::uuid[]),$2`, [
+              [destinationId, ...(livePhotoVideoId === null ? [] : [livePhotoVideoId])],
+              AssetLockReason.Marked,
+            ]);
           const charged = await tx.query(
             `UPDATE public."user" SET "quotaUsageInBytes"="quotaUsageInBytes"+$2::bigint WHERE id=$1::uuid
           AND ("quotaSizeInBytes" IS NULL OR "quotaUsageInBytes"+$2::bigint<="quotaSizeInBytes") RETURNING id`,

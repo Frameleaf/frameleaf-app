@@ -116,7 +116,7 @@ export async function prepareLibraryImportWork(
       ) or exists (select 1 from (${mappedAssets}) m group by destination_id having count(*)<>1)
         or exists (select 1 from asset a where not exists (select 1 from (${mappedAssets}) m where m.destination_id=a.id))
         or exists (select 1 from asset where "libraryScope"<>'personal' or "libraryId" is not null
-          or "isExternal" or "isOffline") or exists (select 1 from asset_lock)
+          or "isExternal" or "isOffline")
         or exists (select 1 from (${expectedOwners}) o left join "user" u on u.id=o.id
           where u.id is null or u.status<>'active' or u."deletedAt" is not null or u."isAdmin")`.execute(tx);
       if (invalidAssets.length > 0) return refuse('DERIVED_ASSET_COHORT_MISMATCH');
