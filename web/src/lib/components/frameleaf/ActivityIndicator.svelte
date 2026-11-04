@@ -44,11 +44,9 @@
   const isAdmin = $derived(authManager.authenticated && authManager.user.isAdmin);
   /** The same number as Activity's In progress: paused work and background work count too. */
   const indicator = $derived.by(() => {
-    const { count: running, progress } = activityIndicatorState(items);
-    const count = activityInProgressCount(
-      items,
-      isAdmin ? buildBackgroundWorkCards(runningJobsSession.summary).length : 0,
-    );
+    const cards = isAdmin ? buildBackgroundWorkCards(runningJobsSession.summary) : [];
+    const { count: running, progress } = activityIndicatorState(items, cards);
+    const count = activityInProgressCount(items, cards.length);
     return { count, running, progress };
   });
 

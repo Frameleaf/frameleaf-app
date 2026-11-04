@@ -984,8 +984,12 @@ export const activityCounts = (items: readonly ActivityItem[]): ActivityCounts =
 export const activityInProgressCount = (items: readonly ActivityItem[], backgroundCards: number) =>
   items.filter((item) => matchesActivityFilter(item, 'running')).length + backgroundCards;
 
-export const activityIndicatorState = (items: readonly ActivityItem[]) => {
-  const running = items.filter((item) => item.running);
+export const activityIndicatorState = (
+  items: readonly ActivityItem[],
+  /** An administrator's background work cards: a running one runs, and its figure counts. */
+  background: readonly { stage: string; progress: number | null }[] = [],
+) => {
+  const running = [...items.filter((item) => item.running), ...background.filter((card) => card.stage === 'running')];
   const measured = running.filter((item) => item.progress !== null);
   const progress =
     measured.length > 0

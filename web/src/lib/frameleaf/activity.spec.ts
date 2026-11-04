@@ -582,6 +582,15 @@ describe('counts and the indicator', () => {
     expect(activityIndicatorState([])).toEqual({ count: 0, progress: null });
   });
 
+  it('runs and measures an administrator’s running background cards with the jobs', () => {
+    const cards = [
+      { stage: 'running', progress: 20 },
+      { stage: 'queued', progress: null },
+    ];
+    expect(activityIndicatorState(items, cards)).toEqual({ count: 3, progress: 40 });
+    expect(activityIndicatorState([], cards)).toEqual({ count: 1, progress: 20 });
+  });
+
   it('counts what Activity’s In progress counts: paused work and background cards too', () => {
     const paused = fromMediaOperation(operation({ status: MediaOperationStatus.Paused }));
     expect(activityInProgressCount([...items, paused], 3)).toBe(2 + 1 + 3);
