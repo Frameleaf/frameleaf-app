@@ -35,19 +35,19 @@ const qualifiedSchema = (database: DatabaseSync) => {
     const expected = fixture.objects.find((entry) => entry.type === object.type && entry.name === object.name);
     if (object.type !== 'table' || typeof object.sql !== 'string' || !expected?.sql) return object;
     // Native migrations reorder these known foreign-key and unique clauses; all other SQL must still match.
-    const constraints = expected.sql
-      .slice(0, -1)
-      .split(',CONSTRAINT ')
-      .filter((clause) => clause.startsWith('`fk_') || clause.startsWith('`uni_'))
-      .map((clause) => ',CONSTRAINT ' + clause);
-    let actualSql = object.sql,
-      expectedSql = expected.sql;
-    for (const clause of constraints) {
-      if (!actualSql.includes(clause)) return object;
-      actualSql = actualSql.replace(clause, '');
-      expectedSql = expectedSql.replace(clause, '');
-    }
-    return actualSql === expectedSql ? { ...object, sql: expected.sql } : object;
+    const separator = ',CONSTRAINT ';
+    const [columns, ...constraints] = expected.sql.slice(0, -1).split(separator);
+    if (
+      constraints.length === 0 ||
+      constraints.some((clause) => !clause.startsWith('`fk_') && !clause.startsWith('`uni_'))
+    )
+      return object;
+    const prefix = columns + separator;
+    if (!object.sql.startsWith(prefix) || !object.sql.endsWith(')')) return object;
+    const actualConstraints = object.sql.slice(prefix.length, -1).split(separator);
+    return JSON.stringify(actualConstraints.toSorted()) === JSON.stringify(constraints.toSorted())
+      ? { ...object, sql: expected.sql }
+      : object;
   });
   const actual = {
     applicationId: database.prepare('PRAGMA application_id').get(),
