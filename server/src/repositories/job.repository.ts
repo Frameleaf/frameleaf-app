@@ -978,7 +978,7 @@ export class JobRepository {
           if (rows.length === 0) {
             throw new Error('Producer lost its claim');
           }
-          await this.store.enqueue(batch, tx);
+          await this.store.enqueueFollowups(context.claim, batch, tx);
         });
       }
     } else {
@@ -1032,13 +1032,9 @@ export class JobRepository {
     return new Set(rows.map((row) => `${row.jobId}/${row.token}`));
   }
 
-  async removeJob(name: JobName, jobID: string): Promise<void> {
-    // The removed job gives up its run stage, so the replacement queued in the same run takes over the run item.
-    await sql`update job set state = 'cancelled', data = '{}'::jsonb, "finishedAt" = now(),
-        "runId" = null, "itemKey" = null, "rootItemKey" = null
-      where queue = ${this.getQueueName(name)} and "externalId" = ${jobID} and state in ('pending','waiting')`.execute(
-      this.store.db,
-    );
+  /** Cancels like `clear` (items, dependents, runs settle); a replacement in the same run re-arms the row. */
+  removeJob(name: JobName, jobID: string): Promise<void> {
+    return this.store.cancelQueued(this.getQueueName(name), jobID);
   }
 
   async dispatchImportedWork(config?: ImportConfig): Promise<string> {
