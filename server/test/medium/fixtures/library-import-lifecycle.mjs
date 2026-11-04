@@ -313,6 +313,13 @@ try {
     }
     if (process.env.FRAMELEAF_INTEGRATION_MODE === 'prepare-abandon') {
       await rm(bundleDirectory, { recursive: true });
+      const before = await executeLibraryImportCommand({ ...options(), action: 'status' });
+      isSourceReady = false;
+      for (const action of ['rollback', 'abandon']) {
+        await assert.rejects(executeLibraryImportCommand({ ...options(), action }), /must remain fenced/);
+        assert.deepEqual(await executeLibraryImportCommand({ ...options(), action: 'status' }), before);
+      }
+      isSourceReady = true;
       const abandoned = await executeLibraryImportCommand({ ...options(), action: 'abandon' });
       assert.equal(abandoned.run.status, 'abandoned');
       assert.equal(abandoned.execution.abandoned, true);
