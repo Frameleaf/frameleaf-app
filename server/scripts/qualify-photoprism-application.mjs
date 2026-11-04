@@ -149,9 +149,14 @@ try {
       body: body ? JSON.stringify(body) : undefined,
       signal: AbortSignal.timeout(30_000),
     });
-    if (!response.ok) throw new Error('Native fixture API refused ' + method);
+    if (!response.ok) {
+      phase += ': HTTP ' + response.status;
+      await response.body?.cancel();
+      throw new Error('Native fixture API refused ' + method);
+    }
     return response.json();
   };
+  phase = 'native API photo inventory';
   const indexed = await request('/photos?count=100');
   if (
     !Array.isArray(indexed) ||
@@ -163,6 +168,7 @@ try {
   const nativeLibrary = { photos: [], album: undefined };
   for (const photo of indexed) {
     if (!/^p[a-z0-9]{15}$/u.test(photo.UID)) throw new Error('Native photo identity changed');
+    phase = 'native original-byte readback';
     const download = await fetch(
       origin + '/api/v1/photos/' + photo.UID + '/dl?t=' + encodeURIComponent(session.config.downloadToken),
       {
@@ -178,6 +184,7 @@ try {
       throw new Error('Native download did not return a distinct seeded original');
     const favorite = seed.name === 'blue';
     const caption = 'Native ' + seed.name + ' caption';
+    phase = 'native manual photo edits';
     const edited = await request('/photos/' + photo.UID, 'PUT', {
       Title: 'Native ' + seed.name + ' title',
       TitleSrc: 'manual',
@@ -206,6 +213,7 @@ try {
       throw new Error('Native manual photo readback changed');
     nativeLibrary.photos.push({ ...seed, uid: photo.UID, caption, favorite });
   }
+  phase = 'native private album edits';
   const created = await request('/albums', 'POST', { Title: 'Native private album', Favorite: true });
   if (!/^a[a-z0-9]{15}$/u.test(created.UID)) throw new Error('Native album identity changed');
   await request('/albums/' + created.UID, 'PUT', {
@@ -226,6 +234,27 @@ try {
   )
     throw new Error('Native private album readback changed');
   nativeLibrary.album = { uid: album.UID, name: album.Title, description: album.Description };
+  phase = 'native folder snapshots';
+  nativeLibrary.materializedAlbums = {};
+  const indexedDatabase = new DatabaseSync(join(storage, 'index.db'), { readOnly: true, allowExtension: false });
+  let folders;
+  try {
+    indexedDatabase.exec('PRAGMA query_only=ON; PRAGMA trusted_schema=OFF; BEGIN');
+    folders = indexedDatabase.prepare("SELECT album_uid,album_filter FROM albums WHERE album_type='folder'").all();
+  } finally {
+    indexedDatabase.close();
+  }
+  for (const folder of folders) {
+    const photos = await request('/photos?count=100&q=' + encodeURIComponent(folder.album_filter));
+    if (
+      !Array.isArray(photos) ||
+      photos.length > seeds.length ||
+      photos.some((photo) => !nativeLibrary.photos.some((item) => item.uid === photo.UID))
+    )
+      throw new Error('Native folder snapshot exceeded the complete fixture cohort');
+    nativeLibrary.materializedAlbums[folder.album_uid] = photos.map((photo) => photo.UID);
+  }
+
   nativeLibrary.containerId = run(['inspect', '--format', '{{.Id}}', container]);
   nativeLibrary.imageId = run(['inspect', '--format', '{{.Image}}', container]);
   nativeLibrary.scope = session.scope;
