@@ -32,7 +32,7 @@ export async function writeLibraryImportBundle(input: {
     if (!privateImportPathSchema.safeParse(input.stagingRoot).success)
       throw new LibraryImportRefused('IMPORT_BUNDLE_STAGING_INVALID');
     const manifest = parseImportManifest(input.manifest);
-    if (manifest.version !== 3) throw new LibraryImportRefused('IMPORT_REQUIRES_SEALED_MANIFEST');
+    if (manifest.version < 3) throw new LibraryImportRefused('IMPORT_REQUIRES_SEALED_MANIFEST');
     const parsedPlan = parseImportPlan(input.plan);
     const binding = parseLibraryImportBinding({
       operationId: input.operationId,

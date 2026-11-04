@@ -107,6 +107,59 @@ it.each(sourceKinds)('round-trips the common private bundle contract for %s', as
   expect(await readFile(join(stagingRoot, 'previous.json'), 'utf8')).toBe('retained');
 });
 
+it.each(sourceKinds.flatMap((kind) => [4, 5].map((version) => ({ kind, version }))))(
+  'round-trips version $version media relationships for $kind',
+  async ({ kind, version }) => {
+    const value = input(kind);
+    const files = ['still', 'alternate', 'motion'].map((id, index) => ({
+      ...fixture.plan.files[0],
+      id: `placement-${id}`,
+      sourceAssetId: id,
+      sourceFileId: id,
+      sourcePath: id,
+      destinationPath: `owner/${id}`,
+      sha256: String(index + 1).repeat(64),
+    }));
+    const manifest = {
+      ...value.manifest,
+      version,
+      files: files.map((file) => ({
+        id: file.sourceFileId,
+        path: file.sourcePath,
+        bytes: file.bytes,
+        sha256: file.sha256,
+        role: 'original',
+      })),
+      assets: files.map((file) => ({
+        id: file.sourceAssetId,
+        ownerId: value.plan.owners[0].sourceId,
+        fileIds: [file.sourceFileId],
+        primaryFileId: file.sourceFileId,
+        type: file.sourceAssetId === 'motion' ? 'VIDEO' : 'IMAGE',
+        fileModifiedAt: '2020-01-02T03:04:05Z',
+        originalFileNames: { [file.sourceFileId]: file.sourcePath },
+        visibility: file.sourceAssetId === 'motion' ? 'hidden' : 'timeline',
+        metadata: { description: 'Manual caption' },
+      })),
+      stacks: [
+        {
+          id: 'stack',
+          ownerId: value.plan.owners[0].sourceId,
+          primaryAssetId: 'alternate',
+          assetIds: ['still', 'alternate'],
+        },
+      ],
+      ...(version === 5 && { livePhotos: [{ photoAssetId: 'still', videoAssetId: 'motion' }] }),
+    };
+    const candidate = { ...value, manifest, plan: { ...value.plan, files } };
+    const result = await writeLibraryImportBundle(candidate);
+    const bundle = await load(value, result.bundleDirectory);
+    await bundle.assertUnchanged();
+    expect(bundle.context.manifest).toEqual(manifest);
+    expect(bundle.context.plan).toEqual(candidate.plan);
+  },
+);
+
 it('retains a compatible password capability privately with its explicit owner and operation binding', async () => {
   const value = input();
   const password = 'Synthetic migrated account password';
