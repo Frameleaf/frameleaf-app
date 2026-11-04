@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetFile } from 'src/database.js';
 import { AssetResponseDto } from 'src/dtos/asset-response.dto.js';
-import { AssetJobName, AssetStatsResponseDto } from 'src/dtos/asset.dto.js';
+import { AssetBulkUpdateDto, AssetJobName, AssetStatsResponseDto, UpdateAssetDto } from 'src/dtos/asset.dto.js';
 import { defaults } from 'src/dtos/config.dto.js';
 import { AssetEditAction, type AssetEditActionItem, VideoTrimMode } from 'src/dtos/editing.dto.js';
 import {
@@ -47,6 +47,39 @@ const statResponse: AssetStatsResponseDto = {
   videos: 23,
   total: 33,
 };
+
+describe('capture-date request offsets', () => {
+  it.each([
+    '2020-12-10T12:30:00+01:60[Europe/Paris]',
+    '2020-12-10T12:30:00-0160',
+    '2020-12-10t12:30:00+24:00[Europe/Paris]',
+    '2020-12-10T12:30:00+2460',
+    '2020-12-10T12:30:00+99',
+    '2020-12-10T12:30:00-00:60',
+    '2020-06-10T12:30:00-07:00[Europe/Paris]',
+    '2020-06-10T12:30:00Z[Europe/Paris]',
+    '2020-03-08T02:30:00-05:00[America/New_York]',
+  ])('rejects malformed offsets before single and bulk edits: %s', (dateTimeOriginal) => {
+    expect(UpdateAssetDto.schema.safeParse({ dateTimeOriginal }).success).toBe(false);
+    expect(AssetBulkUpdateDto.schema.safeParse({ ids: [], dateTimeOriginal }).success).toBe(false);
+  });
+
+  it.each([
+    '2020-12-10T12:30:00',
+    '2020-12-10T12:30:00Z',
+    '2020-12-10T12:30:00+01:59',
+    '2020-12-10T12:30:00+01:00[Europe/Paris]',
+    '2020-11-01T01:30:00-04:00[America/New_York]',
+    '2020-11-01T01:30:00-05:00[America/New_York]',
+    '20201210T123000+0100[Europe/Paris]',
+    '2020-12-10t12:30:00.123456-2359',
+    '2020-12-10T12:30:00+01',
+    '2020-12-10T12:30:00[Europe/Paris]',
+  ])('keeps supported date forms for single and bulk edits: %s', (dateTimeOriginal) => {
+    expect(UpdateAssetDto.schema.safeParse({ dateTimeOriginal }).success).toBe(true);
+    expect(AssetBulkUpdateDto.schema.safeParse({ ids: [], dateTimeOriginal }).success).toBe(true);
+  });
+});
 
 describe(AssetService.name, () => {
   let sut: AssetService;
