@@ -5,7 +5,11 @@ import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { cleanupQualification, qualificationImage } from '../scripts/cleanup-photoview-qualification.mjs';
+import {
+  cleanupQualification,
+  hasQualificationImage,
+  qualificationImage,
+} from '../scripts/cleanup-photoview-qualification.mjs';
 
 const fixture = (t) => {
   const parent = mkdtempSync(join(tmpdir(), 'photoview-cleanup-check-'));
@@ -22,7 +26,7 @@ test('removes only the labelled run and its unused newly pulled image', (t) => {
   cleanupQualification('123-1', root, (args) => {
     calls.push(args);
     if (args.includes('label=app.frameleaf.qualification-run=123-1')) return 'a'.repeat(64);
-    if (args[0] === 'image' && args[1] === 'ls') return 'image-id';
+    if (args[0] === 'image' && args[1] === 'ls') return qualificationImage.split('@')[1];
     return '';
   });
   assert.equal(existsSync(root), false);
@@ -100,8 +104,19 @@ process.exit(args[0] === 'image' ? 1 : 0);
     .trim()
     .split('\n')
     .map((line) => JSON.parse(line));
-  assert.deepEqual(recorded[0].args, ['image', 'ls', '-q', qualificationImage]);
+  assert.deepEqual(recorded[0].args, ['image', 'ls', '--all', '--digests', '--format', '{{.Digest}}']);
   assert.ok(recorded.every(({ marker }) => !marker));
   assert.ok(recorded.every(({ args }) => args[0] !== 'run' && !(args[0] === 'image' && args[1] === 'rm')));
   assert.equal(existsSync(root), false);
+});
+
+test('requires the pinned digest in the local image inventory', () => {
+  assert.equal(
+    hasQualificationImage(() => '<none>\nsha256:' + '0'.repeat(64)),
+    false,
+  );
+  assert.equal(
+    hasQualificationImage(() => '<none>\n' + qualificationImage.split('@')[1]),
+    true,
+  );
 });

@@ -7,7 +7,11 @@ import { basename, join } from 'node:path';
 import { setTimeout } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
-import { cleanupQualification, qualificationImage as image } from './cleanup-photoview-qualification.mjs';
+import {
+  cleanupQualification,
+  hasQualificationImage,
+  qualificationImage as image,
+} from './cleanup-photoview-qualification.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const runId = process.env.FRAMELEAF_PHOTOVIEW_RUN_ID;
@@ -33,7 +37,7 @@ const run = (args) => {
 let phase = 'initialization';
 let failure = false;
 try {
-  const hadImage = run(['image', 'ls', '-q', image]) !== '';
+  const hadImage = hasQualificationImage(run);
   writeFileSync(join(tmpdir(), 'image.json'), JSON.stringify({ createdImage: !hadImage }), { mode: 0o600 });
   const seeds = [];
   for (const [owner, color] of [

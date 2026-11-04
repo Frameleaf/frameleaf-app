@@ -7,6 +7,10 @@ import { fileURLToPath } from 'node:url';
 export const qualificationImage = JSON.parse(
   readFileSync(new URL('../src/library-import/fixtures/photoview/2.4.0-sqlite.json', import.meta.url), 'utf8'),
 ).source.image;
+export const hasQualificationImage = (command) => {
+  const digest = qualificationImage.split('@')[1];
+  return command(['image', 'ls', '--all', '--digests', '--format', '{{.Digest}}']).split(/\s+/u).includes(digest);
+};
 const docker = (args) => {
   const result = spawnSync('docker', args, { encoding: 'utf8', timeout: 30_000 });
   if (result.status !== 0) throw new Error('Photoview qualification cleanup failed');
@@ -41,7 +45,7 @@ export function cleanupQualification(runId, directory = tmpdir(), command = dock
       existsSync(marker) &&
       JSON.parse(readFileSync(marker, 'utf8')).createdImage === true &&
       command(['ps', '-aq', '--filter', `ancestor=${qualificationImage}`]) === '' &&
-      command(['image', 'ls', '-q', qualificationImage]) !== ''
+      hasQualificationImage(command)
     )
       command(['image', 'rm', qualificationImage]);
   });
