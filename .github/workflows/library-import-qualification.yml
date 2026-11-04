@@ -130,7 +130,7 @@ jobs:
         working-directory: server
         env:
           NODE_OPTIONS: --max-old-space-size=6144
-        run: pnpm exec eslint src/library-import/sqlite*.ts src/library-import/photoprism.ts src/library-import/photoprism.spec.ts src/library-import/photoprism-application.spec.ts src/library-import/photoprism-mariadb-source.spec.ts src/library-import/librephotos.ts src/library-import/photoview*.ts src/library-import/lychee.ts src/library-import/pigallery2.ts src/library-import/pigallery2.spec.ts src/library-import/nextcloud.ts src/library-import/*manifest*.ts src/library-import/manager-authority*.ts src/library-import/command*.ts src/library-import/controller*.ts src/library-import/lifecycle*.ts src/commands/import-library.command*.ts src/commands/index*.ts --max-warnings 0
+        run: pnpm exec eslint src/library-import/sqlite*.ts src/library-import/photoprism.ts src/library-import/photoprism.spec.ts src/library-import/photoprism-application.spec.ts src/library-import/photoprism-mariadb-source.spec.ts src/library-import/librephotos.ts src/library-import/photoview*.ts src/library-import/lychee.ts src/library-import/pigallery2.ts src/library-import/pigallery2.spec.ts src/library-import/nextcloud.ts src/library-import/*manifest*.ts src/library-import/manager-authority*.ts src/library-import/bootstrap-admin.ts src/library-import/photoprism-bundle.ts src/library-import/command*.ts src/library-import/controller*.ts src/library-import/lifecycle*.ts src/commands/import-library.command*.ts src/commands/index*.ts --max-warnings 0
   source-manifests:
     name: Source manifest mapping
     if: github.repository == 'Frameleaf/frameleaf-app'

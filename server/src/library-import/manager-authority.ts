@@ -3,8 +3,10 @@ import { createInterface } from 'node:readline';
 import { type Readable, type Writable } from 'node:stream';
 import { Refusal } from '#library-import-transfer/contracts';
 import {
+  type ImportPreparationSeal,
   type ImportSourceAuthorityAction,
   type ImportSourceAuthoritySeal,
+  encodeImportPreparationRequest,
   encodeImportSourceAuthorityRequest,
   parseImportSourceAuthorityResponse,
 } from '#library-import-transfer/import-source-authority';
@@ -17,7 +19,19 @@ export async function requestImportSourceAuthority(
   output: Writable = process.stdout,
 ): Promise<void> {
   const nonce = randomUUID();
-  const challenge = encodeImportSourceAuthorityRequest(action, seal, nonce);
+  await exchangeImportAuthority(encodeImportSourceAuthorityRequest(action, seal, nonce), nonce, input, output);
+}
+
+export async function requestImportPreparationAuthority(
+  seal: ImportPreparationSeal,
+  input: Readable = process.stdin,
+  output: Writable = process.stdout,
+): Promise<void> {
+  const nonce = randomUUID();
+  await exchangeImportAuthority(encodeImportPreparationRequest(seal, nonce), nonce, input, output);
+}
+
+async function exchangeImportAuthority(challenge: string, nonce: string, input: Readable, output: Writable) {
   if (input.destroyed || input.readableEnded || output.destroyed)
     throw new Refusal('import_source_authority_unavailable');
   await new Promise<void>((resolve, reject) => {

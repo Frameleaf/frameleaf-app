@@ -57,6 +57,9 @@
     mappingsAccepted = $state(false),
     cutoverAccepted = $state(false),
     restoreAccepted = $state(false);
+  let importAdminName = $state(''),
+    importAdminEmail = $state(''),
+    importAdminPassword = $state('');
   let backupStatus = $state({ configured: false, unlocked: false, keyAvailable: false });
   let recoveryKey = $state(''),
     snapshot = $state(''),
@@ -270,6 +273,7 @@
       value = 'storage';
       history.replaceState(null, '', location.pathname + location.search);
     }
+    if (screen !== value) importAdminPassword = '';
     screen = value;
     menu = false;
     accountMenu = false;
@@ -344,6 +348,7 @@
     dashboard = null;
     csrf = '';
     password = '';
+    importAdminPassword = '';
     recoveryKey = '';
     logs = '';
     accountMenu = false;
@@ -363,6 +368,7 @@
     mappingsAccepted = false;
     lifecycle = false;
     cutoverAccepted = false;
+    importAdminName = importAdminEmail = importAdminPassword = '';
     await refresh();
     await loadReleases();
     tag = releases[0]?.tag ?? '';
@@ -422,19 +428,43 @@
     if (kind === 'install') step = 1;
     else step = lastImportStep;
   }
-  async function start(path: string, body: Record<string, unknown>) {
+  async function start(
+    path: string,
+    body: Record<string, unknown>,
+    bootstrap?: { name: string; email: string; password: string },
+  ) {
     const identity = JSON.stringify([path, body]);
     let key = requests.get(identity);
     if (!key) {
       key = requestKey();
       requests.set(identity, key);
     }
-    const result = await api(path, { ...body, key });
+    const result = await api(path, { ...body, key, ...(bootstrap && { bootstrap }) });
     requests.delete(identity);
     selectedOperation = result.id;
     await refresh();
     await go('progress');
     dialog?.close();
+  }
+  async function startCommonImport() {
+    try {
+      await start('install', { reviewId: review.id, approvalToken: review.approvalToken }, review.commonImport.requiresBootstrap
+        ? { name: importAdminName, email: importAdminEmail, password: importAdminPassword }
+        : undefined);
+    } finally {
+      importAdminPassword = '';
+    }
+  }
+  async function resumeCommonImport(id: string) {
+    try {
+      await api('resume', {
+        id,
+        bootstrap: { name: importAdminName, email: importAdminEmail, password: importAdminPassword },
+      });
+      await refresh();
+    } finally {
+      importAdminPassword = '';
+    }
   }
   async function control(action: string) {
     await start('control', { action });
@@ -603,6 +633,13 @@
 {#snippet notice(title: string, detail: string, type = 'good', icon = 'shield')}
   <div class="notice {type}"><Icon name={icon}/><div class="grow"><strong>{title}</strong><p>{detail}</p></div></div>
 {/snippet}
+{#snippet importAdministratorFields()}
+  <div class="form-grid mt16">
+                      <label class="field"><span>Name</span><input bind:value={importAdminName} autocomplete="name" required maxlength="200"/></label>
+                      <label class="field"><span>Email</span><input type="email" bind:value={importAdminEmail} autocomplete="email" required maxlength="254"/></label>
+                      <label class="field full"><span>Password</span><input type="password" bind:value={importAdminPassword} autocomplete="new-password" required minlength="8" maxlength="72"/></label>
+                    </div>
+{/snippet}
 {#snippet mappings(items: any[])}
   <div class="table-wrap"><table><thead><tr><th>Source location</th><th>Inside container</th><th>Access</th></tr></thead><tbody>{#each items as mount}<tr><td class="mapping-source"><strong><code>{mount.source}</code></strong><small>{mount.type === 'volume' ? 'Named volume' : 'Bind mount'}</small></td><td><code>{mount.target}</code></td><td><span class="badge">{mount.readOnly ? 'Read only' : 'Read & write'}</span></td></tr>{/each}</tbody></table></div>
 {/snippet}
@@ -703,7 +740,33 @@
           {/if}
         {:else if screen === 'import'}
           {@render steps(importSteps, step)}
-          {#if step === 0}
+          {#if review?.commonImport}
+            {@render heading('Review library import', review.downtime)}
+            <form class="card" onsubmit={(event) => { event.preventDefault(); void run(startCommonImport); }}>
+              <div class="card-header"><h2>Reviewed library</h2><span class="badge">{review.commonImport.source} {review.commonImport.version}</span></div>
+              <div class="card-body">
+                <p>{review.commonImport.summary.assets} photos and videos · {review.commonImport.summary.albums} albums · {review.commonImport.summary.owners} accounts</p>
+                <p class="meta mt16">Media space required: {formatBytes(review.commonImport.requiredMediaBytes)}</p>
+                {#if review.commonImport.summary.preservationDifferences}
+                  <p class="meta mt16">Preservation differences recorded: {review.commonImport.summary.preservationDifferences}</p>
+                {/if}
+                <p class="meta mt16">{review.recovery}</p>
+                {#if review.commonImport.requiresBootstrap}
+                  {#if location.protocol !== 'https:'}
+                    <div class="mt16">{@render notice('Secure connection required', 'Open Manager over HTTPS to set the destination administrator password.', 'warning')}</div>
+                  {:else}
+                    <h3 class="mt16">Destination administrator</h3>
+                    {@render importAdministratorFields()}
+                  {/if}
+                {/if}
+                <label class="check-row mt24"><input type="checkbox" bind:checked={cutoverAccepted}/><span>I’ve reviewed the transfer and recovery information.</span></label>
+              </div>
+              <div class="card-footer">
+                <button type="button" class="button quiet" onclick={() => { review = null; step = 0; importAdminPassword = ''; }}>Back</button>
+                <button class="button primary" disabled={busy || !cutoverAccepted || (!!activeOperation && (activeOperation.id !== review.id || activeOperation.state !== 'awaiting-review')) || (review.commonImport.requiresBootstrap && location.protocol !== 'https:')}>Start import</button>
+              </div>
+            </form>
+          {:else if step === 0}
             {@render heading(sources.length > 1 ? 'Choose a photo installation' : `Review your ${source?.product ?? 'photo'} installation`, 'Your existing database will be kept for recovery.')}
             {#if !sources.length}{@render notice('No supported source available', 'Find and resolve the source installation before starting an import.', 'warning')}<button class="button quiet mt16" onclick={() => run(loadSources)}>Find installations</button>{/if}
             <div class="stack">{#each sources as item}<label class="radio-card"><input type="radio" bind:group={sourceId} value={item.id}/><div><div class="spread"><strong>{item.project ?? item.id.slice(0, 12)}</strong><span class="badge">{item.product} {item.version}</span></div><p>{item.summary.assets.toLocaleString()} items · {item.summary.users} users · {item.summary.albums} albums</p><p>{formatBytes(item.summary.databaseBytes)} database · {item.mounts.length} media mappings</p></div></label>{/each}</div>
@@ -740,7 +803,18 @@
         {:else if screen === 'progress'}
           {#if operation && timeline}{@render heading(operationNames[operation.kind] ?? 'Manager operation', operation.state === 'running' ? 'You can close this page. Manager records every completed step.' : operation.state === 'complete' && !operation.error ? 'The recorded operation completed successfully.' : 'Review the saved step before continuing.')}
             <section class="card"><div class="card-body">{#if setupMode}<div class="progress-hero"><div class="progress-ring" class:done={timeline.successful} style="--p: {timeline.percent}" role="progressbar" aria-label="Operation progress" aria-valuenow={timeline.percent} aria-valuemin="0" aria-valuemax="100">{#if timeline.successful}<Icon name="check"/>{:else}<strong>{timeline.percent}%</strong>{/if}</div><div><strong>{timeline.successful ? 'All done' : readable(operation.step ?? operation.state)}</strong><p class="meta">{operation.state === 'running' ? 'This usually takes a few minutes.' : readable(operation.state)}</p></div></div>{:else}<div class="spread progress-label"><span>{readable(operation.step ?? operation.state)}</span><strong>{timeline.percent}%</strong></div><progress class="progress" aria-label="Operation progress" value={timeline.percent} max="100"></progress>{/if}<ol class="timeline mt16">{#each timeline.steps as item, index}<li class:done={item.state === 'complete'} class:running={item.state === 'running'}><span class="stage-icon">{#if item.state === 'complete'}<Icon name="check"/>{:else if item.state === 'running'}<Icon name="loader" class="spin"/>{:else}{index + 1}{/if}</span><div><strong>{item.label}</strong></div><span class="stage-time">{readable(item.state)}</span></li>{/each}</ol>{#if operation.error}<div class="notice warning mt16" role="alert"><Icon name="warning"/><div><strong>{readable(operation.error, operation.detail)}</strong><p>Completed journal steps are retained. Resume runs the next safe step.</p></div></div>{/if}</div><div class="card-footer"><span class="safety-note"><Icon name="shield"/>Completed steps are recorded</span><span class="badge" class:good={timeline.successful}>{readable(operation.state)}</span></div></section>
-            <div class="wizard-footer"><button class="button quiet" onclick={() => run(() => go('activity'))}>Operation history</button><div class="actions">{#if operation.kind === 'move-library' && operation.state === 'running'}<button class="button quiet" disabled={busy || !operation.canStop} onclick={() => run(async () => { await api('stop-move', { id: operation.id }); await refresh(); })}>Stop safely</button>{/if}{#if ['failed', 'interrupted'].includes(operation.state)}<button class="button primary" disabled={busy} onclick={() => run(async () => { await api('resume', { id: operation.id }); await refresh(); })}>Resume safely</button>{#if (operation.canCancel ?? canCancel(operation, installation))}<button class="button danger" disabled={busy} onclick={() => showModal('recover')}>{operation.kind === 'move-library' ? 'Cancel safely' : operation.kind === 'backup' ? 'Cancel backup' : operation.kind === 'update' ? 'Cancel update and restart' : 'Recover the stopped source'}</button>{/if}{:else if timeline.successful}<button class="button primary" onclick={() => run(() => go(['install', 'import', 'restore'].includes(operation.kind) && !dashboard.onboardingFinished ? 'success' : 'overview'))}>Continue</button>{/if}</div></div>
+            {#if operation.error === 'import_bootstrap_credentials_required'}
+              {#if location.protocol === 'https:'}
+                <form class="card mt16" onsubmit={(event) => { event.preventDefault(); void run(() => resumeCommonImport(operation.id)); }}>
+                  <div class="card-header"><h2>Re-enter destination administrator details</h2></div>
+                  <div class="card-body">{@render importAdministratorFields()}</div>
+                  <div class="card-footer"><button class="button primary" disabled={busy}>Resume safely</button></div>
+                </form>
+              {:else}
+                <div class="mt16">{@render notice('Secure connection required', 'Open Manager over HTTPS to re-enter the destination administrator password.', 'warning')}</div>
+              {/if}
+            {/if}
+            <div class="wizard-footer"><button class="button quiet" onclick={() => run(() => go('activity'))}>Operation history</button><div class="actions">{#if operation.kind === 'move-library' && operation.state === 'running'}<button class="button quiet" disabled={busy || !operation.canStop} onclick={() => run(async () => { await api('stop-move', { id: operation.id }); await refresh(); })}>Stop safely</button>{/if}{#if ['failed', 'interrupted'].includes(operation.state)}{#if operation.error !== 'import_bootstrap_credentials_required'}<button class="button primary" disabled={busy} onclick={() => run(async () => { await api('resume', { id: operation.id }); await refresh(); })}>Resume safely</button>{/if}{#if (operation.canCancel ?? canCancel(operation, installation))}<button class="button danger" disabled={busy} onclick={() => showModal('recover')}>{operation.kind === 'move-library' ? 'Cancel safely' : operation.kind === 'backup' ? 'Cancel backup' : operation.kind === 'update' ? 'Cancel update and restart' : 'Recover the stopped source'}</button>{/if}{:else if timeline.successful}<button class="button primary" onclick={() => run(() => go(['install', 'import', 'restore'].includes(operation.kind) && !dashboard.onboardingFinished ? 'success' : 'overview'))}>Continue</button>{/if}</div></div>
           {:else}{@render heading('No recorded operation', 'Start setup or choose a maintenance operation.')}<button class="button primary" onclick={() => run(() => go(installation ? 'overview' : 'welcome'))}>Continue</button>{/if}
         {:else if screen === 'success'}
           {@render steps(onboardingSteps, 0)}<div class="success-icon"><Icon name="check"/></div>{@render heading(installation?.origin === 'new_import' ? 'Your import is in Frameleaf' : 'Your server is ready', 'Now make it yours and connect your phone. Library preparation continues in the background.')}{@render notice('Services are ready', installation?.origin === 'new_import' ? 'Your users, albums and settings are imported. The original app remains stopped, and your media stays in place.' : 'Continue with your local photo account and mobile app.')}{@render regeneration()}<div class="wizard-footer"><span class="meta">Library preparation continues</span><button class="button primary" onclick={() => run(() => go('profile'))}>Continue to your details <Icon name="arrow"/></button></div>

@@ -111,3 +111,52 @@ export function parseImportSourceAuthorityResponse(line: string, nonce: string):
   }
   throw new Refusal('import_source_authority_unavailable');
 }
+
+const preparationFormat = 'frameleaf-import-preparation-authority-request';
+const preparationSealSchema = z.strictObject({
+  operationId: uuid,
+  destinationId: uuid,
+  source: importSourceSchema,
+  preparationSha256: importHash,
+});
+const preparationRequestSchema = z.strictObject({
+  format: z.literal(preparationFormat),
+  version: z.literal(1),
+  nonce: uuid,
+  seal: preparationSealSchema,
+});
+export type ImportPreparationSeal = z.infer<typeof preparationSealSchema>;
+export type ImportPreparationAuthority = ImportPreparationSeal & { verify: () => Promise<void> };
+
+export function encodeImportPreparationRequest(seal: ImportPreparationSeal, nonce: string): string {
+  const parsed = preparationRequestSchema.safeParse({ format: preparationFormat, version: 1, nonce, seal });
+  if (!parsed.success) throw new Refusal('import_source_authority_invalid');
+  return JSON.stringify(parsed.data) + '\n';
+}
+
+/** Preparation checks the frozen source and private request before a manifest or transfer plan exists. */
+export async function replyImportPreparationAuthority(
+  line: string,
+  authority?: ImportPreparationAuthority,
+): Promise<string | undefined> {
+  if (!line.startsWith(`{"format":"${preparationFormat}",`)) return undefined;
+  if (!authority || typeof authority.verify !== 'function') throw new Refusal('import_source_authority_required');
+  if (Buffer.byteLength(line) > 65_536) throw new Refusal('import_source_authority_invalid');
+  const { verify, ...seal } = authority;
+  const expected = preparationSealSchema.safeParse(seal);
+  let input: unknown;
+  try {
+    input = JSON.parse(line);
+  } catch {
+    throw new Refusal('import_source_authority_invalid');
+  }
+  const request = preparationRequestSchema.safeParse(input);
+  if (!request.success || !expected.success || JSON.stringify(request.data.seal) !== JSON.stringify(expected.data))
+    throw new Refusal('import_source_authority_invalid');
+  try {
+    await verify();
+  } catch {
+    throw new Refusal('import_source_authority_refused');
+  }
+  return JSON.stringify({ format: responseFormat, version: 1, nonce: request.data.nonce, allowed: true }) + '\n';
+}

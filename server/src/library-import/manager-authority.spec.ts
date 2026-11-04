@@ -2,9 +2,13 @@ import { randomUUID } from 'node:crypto';
 import { PassThrough, Writable } from 'node:stream';
 import {
   type ImportSourceAuthority,
+  replyImportPreparationAuthority,
   replyImportSourceAuthority,
 } from '#library-import-transfer/import-source-authority';
-import { requestImportSourceAuthority } from 'src/library-import/manager-authority.js';
+import {
+  requestImportPreparationAuthority,
+  requestImportSourceAuthority,
+} from 'src/library-import/manager-authority.js';
 
 const fixture = () => {
   const input = new PassThrough(),
@@ -158,4 +162,23 @@ it('refuses output write failure without leaving an unhandled stream error', asy
   await expect(requestImportSourceAuthority('run', authority, input, output)).rejects.toThrow(
     'import_source_authority_unavailable',
   );
+});
+
+it('checks the reviewed preparation input through the same bounded Manager pipe', async () => {
+  const { input, output, authority } = fixture();
+  const seal = {
+    operationId: authority.binding.operationId,
+    destinationId: authority.destinationId,
+    source: authority.binding.source,
+    preparationSha256: 'd'.repeat(64),
+  };
+  output.on('data', (chunk: Buffer) => {
+    const line = chunk.toString('utf8').trimEnd();
+    void replyImportPreparationAuthority(line, { ...seal, verify: authority.verify }).then((response) => {
+      input.write(response!);
+    });
+  });
+  await requestImportPreparationAuthority(seal, input, output);
+  expect(authority.verify).toHaveBeenCalledOnce();
+  expect(input.listenerCount('data')).toBe(0);
 });

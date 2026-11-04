@@ -1,6 +1,8 @@
 import { type ImportDatabase } from 'src/immich-import/types.js';
+import { ensureImportBootstrapAdmin } from 'src/library-import/bootstrap-admin.js';
 import { loadLibraryImportBundle, loadRetainedLibraryImportBundle } from 'src/library-import/bundle-input.js';
-import { type LibraryImportCommandConfig } from 'src/library-import/command-input.js';
+import { summarizeReviewedImport } from 'src/library-import/bundle-output.js';
+import { type LibraryImportCommandConfig, readPrivateImportJSON } from 'src/library-import/command-input.js';
 import { LibraryImportController } from 'src/library-import/controller.js';
 import { type ManagerLibrarySetup } from 'src/library-import/derived-work.js';
 import { withLibraryImportExecution, withLibraryImportInspection } from 'src/library-import/execution-binding.js';
@@ -144,6 +146,16 @@ export async function executeLibraryImportCommand(input: {
   const controller = new LibraryImportController(db, bundle.context);
   const inspect = async () => {
     await input.authorize(action, bundle.context);
+    if (action === 'preflight' && config.bootstrapAdmin) {
+      const { value } = await readPrivateImportJSON(config.bootstrapAdmin.path, 8192);
+      await ensureImportBootstrapAdmin(db, value, {
+        operationId: config.operationId,
+        destinationId: config.destinationId,
+        userId: config.bootstrapAdmin.userId,
+        ownerIds: bundle.context.plan.owners.map(({ destinationId }) => destinationId.toLowerCase()),
+        ownerEmails: bundle.owners.map(({ intent }) => intent.email.toLowerCase()),
+      });
+    }
     const report = await controller.preflight(bundle.owners);
     const { plan } = bundle.context;
     if (plan.version !== 2) throw new LibraryImportRefused('IMPORT_FILE_REVIEW_PLAN_VERSION');
@@ -169,7 +181,7 @@ export async function executeLibraryImportCommand(input: {
       throw new LibraryImportRefused('IMPORT_PLAN_CHANGED');
     await bundle.assertUnchanged();
     await input.authorize(action, bundle.context);
-    return report;
+    return { ...report, ...summarizeReviewedImport(bundle.context.manifest, plan) };
   };
   if (action === 'preflight') return withLibraryImportInspection(db, inspect);
   if (action === 'run' && !status.run) await withLibraryImportInspection(db, inspect);
