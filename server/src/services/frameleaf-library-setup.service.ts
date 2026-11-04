@@ -76,6 +76,10 @@ const KEY = 'frameleaf-manager-library-setup';
 const EARLY_STAGES: string[] = [JobName.AssetExtractMetadata, JobName.AssetGenerateThumbnails];
 const SEARCH_STAGES: string[] = [JobName.SmartSearch, JobName.AssetDetectFaces];
 const phoneKey = (sessionId: string) => `:phone:${sessionId}`;
+/** Library Care's full check of an account: every original, not only recent changes or chosen photos. */
+const fullScan = (table: string) =>
+  sql`${sql.ref(`${table}.kind`)}='media_health' AND ${sql.ref(`${table}.snapshot`)}->>'mode'='scan'
+    AND NOT (${sql.ref(`${table}.snapshot`)} ? 'changedSince') AND NOT (${sql.ref(`${table}.snapshot`)} ? 'assetIds')`;
 
 /** Additive API: the existing photo, setup and synchronization endpoints keep their contracts. */
 @Injectable()
@@ -627,6 +631,13 @@ export class FrameleafLibrarySetupService {
           return state;
         }
         for (const libraryId of state.libraries) {
+          const library = await this.libraries.get(libraryId);
+          // A library deleted since setup began holds nothing to wait for, nor does its scan, which stopped with it.
+          if (!library) {
+            state.libraries = state.libraries.filter((id) => id !== libraryId);
+            delete state.scans[libraryId];
+            continue;
+          }
           if (state.scans[libraryId]) {
             continue;
           }
@@ -634,12 +645,6 @@ export class FrameleafLibrarySetupService {
           const existing = await sql<{ id: string }>`SELECT id FROM media_operation WHERE kind='library_scan'
             AND snapshot->>'libraryId'=${libraryId} AND "createdAt" >= ${state.startedAt}::timestamptz
             ORDER BY "createdAt" LIMIT 1`.execute(db);
-          const library = await this.libraries.get(libraryId);
-          // A library deleted since setup began holds nothing to wait for.
-          if (!library) {
-            state.libraries = state.libraries.filter((id) => id !== libraryId);
-            continue;
-          }
           if (state.paused && !existing.rows[0]) {
             continue; // A paused setup admits no new library scan; resuming admits it.
           }
@@ -685,15 +690,25 @@ export class FrameleafLibrarySetupService {
             id: string;
           }>`SELECT id FROM "user" WHERE id=ANY(${state.owners}::uuid[])`.execute(db);
           state.owners = state.owners.filter((id) => live.some((row) => row.id === id));
+          // A scan recorded that is not the account's full check (one of chosen photos adopted before they were told
+          // apart, or one gone since) is forgotten, so a full check starts in its place.
+          const recorded = Object.values(state.health);
+          const { rows: full } =
+            recorded.length > 0
+              ? await sql<{ id: string }>`SELECT id FROM media_operation WHERE id=ANY(${recorded}::uuid[])
+                AND ${fullScan('media_operation')} AND "createdAt" >= ${state.healthAfter}::timestamptz`.execute(db)
+              : { rows: [] };
+          for (const [ownerId, id] of Object.entries(state.health)) {
+            if (full.every((row) => row.id !== id)) delete state.health[ownerId];
+          }
         }
         if (scansFinished && !state.paused) {
           for (const ownerId of state.owners) {
             if (state.health[ownerId]) {
               continue;
             }
-            const existing = await sql<{ id: string }>`SELECT id FROM media_operation WHERE kind='media_health'
-            AND "ownerId"=${ownerId}::uuid AND snapshot->>'mode'='scan' AND NOT (snapshot ? 'changedSince')
-            AND NOT (snapshot ? 'assetIds')
+            const existing = await sql<{ id: string }>`SELECT id FROM media_operation
+            WHERE "ownerId"=${ownerId}::uuid AND ${fullScan('media_operation')}
             AND "createdAt" >= ${state.healthAfter}::timestamptz ORDER BY "createdAt" LIMIT 1`.execute(db);
             let operationId: string | null | undefined = existing.rows[0]?.id;
             try {
@@ -709,8 +724,7 @@ export class FrameleafLibrarySetupService {
               throw new BadRequestException('Library integrity scan could not be queued');
             }
             const eligible = await sql<{ id: string }>`SELECT id FROM media_operation WHERE id=${operationId}::uuid
-              AND kind='media_health' AND "ownerId"=${ownerId}::uuid AND snapshot->>'mode'='scan'
-              AND NOT (snapshot ? 'changedSince') AND NOT (snapshot ? 'assetIds')
+              AND "ownerId"=${ownerId}::uuid AND ${fullScan('media_operation')}
               AND "createdAt" >= ${state.healthAfter}::timestamptz`.execute(db);
             if (eligible.rows.length === 0) {
               continue; // Wait for an incompatible active scan before admitting ours.
@@ -728,8 +742,7 @@ export class FrameleafLibrarySetupService {
           FROM media_operation op
           LEFT JOIN asset_health_run missing ON missing.id=(op.snapshot->>'missingRunId')::uuid
           LEFT JOIN asset_health_run corrupt ON corrupt.id=(op.snapshot->>'corruptRunId')::uuid
-          WHERE op.id=ANY(${healthIds}::uuid[]) AND op.kind='media_health' AND op.snapshot->>'mode'='scan'
-            AND NOT (op.snapshot ? 'changedSince') AND NOT (op.snapshot ? 'assetIds')
+          WHERE op.id=ANY(${healthIds}::uuid[]) AND ${fullScan('op')}
             AND op."createdAt" >= ${state.healthAfter}::timestamptz`.execute(db)
             : { rows: [] };
         // FL-1146: a missing or changed original is kept and listed in Library Care; it never stops setup.

@@ -483,6 +483,75 @@ it('keeps the file check moving past libraries and accounts it cannot check, and
   }
 });
 
+it("forgets a deleted library's scan and a recorded scan that is not the account's full check", async () => {
+  const db = await getKyselyDB('fl_manager_forget_scans');
+  const { ctx } = newMediumService(SyncService, { database: db, real: [], mock: [LoggingRepository] });
+  const names = ['FRAMELEAF_MANAGER_INSTALLATION', 'FRAMELEAF_MANAGER_ORIGIN', 'FRAMELEAF_MANAGER_ML_ENABLED'];
+  const previous = Object.fromEntries(names.map((name) => [name, process.env[name]]));
+  const key = 'frameleaf-manager-library-setup:dddddddd2222';
+  const value = async () =>
+    (
+      await sql<{
+        value: { phase: string; libraries: string[]; scans: Record<string, string>; health: Record<string, string> };
+      }>`SELECT value FROM system_metadata WHERE key=${key}`.execute(db)
+    ).rows[0].value;
+  try {
+    const { user } = await ctx.newUser();
+    await ctx.newAsset({ ownerId: user.id });
+    process.env.FRAMELEAF_MANAGER_INSTALLATION = 'dddddddd2222';
+    process.env.FRAMELEAF_MANAGER_ORIGIN = 'new_library';
+    delete process.env.FRAMELEAF_MANAGER_ML_ENABLED;
+    const [libraryId, scan, chosen, full] = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+    await sql`INSERT INTO media_operation (id, "ownerId", kind, destination, label, snapshot, settings)
+      VALUES (${scan}::uuid, ${user.id}::uuid, 'library_scan', 'local', 'Library', '{}'::jsonb, '{}'::jsonb)`.execute(
+      db,
+    );
+    let deleted = false;
+    const libraries = {
+      getAll: vi.fn().mockResolvedValue([{ id: libraryId }]),
+      get: vi.fn().mockImplementation(() => Promise.resolve(deleted ? undefined : { id: libraryId })),
+    };
+    const scans = { queue: vi.fn().mockResolvedValue({ operation: { id: scan } }) };
+    const mediaHealth = { startMissingScan: vi.fn().mockResolvedValue({ operationId: full }) };
+    const service = new FrameleafLibrarySetupService(
+      db,
+      libraries as never,
+      scans as never,
+      { getJobCounts: vi.fn().mockResolvedValue({ active: 0, waiting: 0, delayed: 0, paused: 0, failed: 0 }) } as never,
+      { hasAdmin: vi.fn().mockResolvedValue(true), getAdmin: vi.fn().mockResolvedValue(user) } as never,
+      {} as never,
+      mediaHealth as never,
+      {} as never,
+      {} as never,
+    );
+    await service.status();
+    expect((await value()).scans).toEqual({ [libraryId]: scan });
+    // Removing the library stops its scan; setup carries on without either.
+    deleted = true;
+    await sql`UPDATE media_operation SET status='cancelled' WHERE id=${scan}::uuid`.execute(db);
+    await service.status();
+    expect(await value()).toMatchObject({ phase: 'rescanning', libraries: [], scans: {} });
+    await service.status(); // the integrity check starts
+    // A setup that adopted a scan of chosen photos (before they were told apart) starts a full check instead.
+    await sql`INSERT INTO media_operation (id, "ownerId", kind, destination, label, snapshot, settings)
+      VALUES (${chosen}::uuid, ${user.id}::uuid, 'media_health', 'local', 'Chosen photos',
+      ${JSON.stringify({ mode: 'scan', assetIds: [randomUUID()] })}::text::jsonb, '{}'::jsonb),
+      (${full}::uuid, ${user.id}::uuid, 'media_health', 'local', 'Full scan', '{"mode":"scan"}'::jsonb, '{}'::jsonb)`.execute(
+      db,
+    );
+    await sql`UPDATE system_metadata SET value=jsonb_set(value, '{health}', ${JSON.stringify({ [user.id]: chosen })}::text::jsonb)
+      WHERE key=${key}`.execute(db);
+    await service.status();
+    expect((await value()).health).toEqual({ [user.id]: full });
+  } finally {
+    for (const [name, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    await db.destroy();
+  }
+});
+
 it('keeps a retried setup paused, and resuming it resumes the scans the earlier attempt held', async () => {
   const db = await getKyselyDB('fl_manager_retry_paused');
   const { ctx } = newMediumService(SyncService, { database: db, real: [], mock: [LoggingRepository] });
@@ -650,7 +719,13 @@ it('serializes setup, resumes from persisted intent and keeps device completion 
       real: [],
       mock: [LoggingRepository],
     }).ctx.newUser();
-    await sql`UPDATE system_metadata SET value=value || ${JSON.stringify({ owners: [owner.id], health: { [owner.id]: randomUUID() }, quietSince: Date.now() - 20_000 })}::text::jsonb WHERE key=${pendingKey}`.execute(
+    // Its full check is admitted but has not finished.
+    const pendingCheck = randomUUID();
+    await sql`INSERT INTO media_operation (id, "ownerId", kind, destination, label, snapshot, settings)
+      VALUES (${pendingCheck}::uuid, ${owner.id}::uuid, 'media_health', 'local', 'Full scan', '{"mode":"scan"}'::jsonb, '{}'::jsonb)`.execute(
+      db,
+    );
+    await sql`UPDATE system_metadata SET value=value || ${JSON.stringify({ owners: [owner.id], health: { [owner.id]: pendingCheck }, quietSince: Date.now() - 20_000 })}::text::jsonb WHERE key=${pendingKey}`.execute(
       db,
     );
     expect((await make().status(auth)).phase).not.toBe('complete');

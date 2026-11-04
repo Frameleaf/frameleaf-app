@@ -152,8 +152,10 @@ export class MediaHealthOperationService {
         ? this.scan(operation, claimToken, snapshot, progress)
         : this.locate(operation, claimToken, snapshot, progress));
     } catch (error) {
-      // A step cut short by shutdown (a lock wait given up, a closing connection) is not the job failing.
-      if (this.stopping && (await this.handBack(operation.id, claimToken))) {
+      // A step cut short by shutdown (a lock wait given up, a closing connection) is not the job failing. A claim
+      // that cannot be handed back is left to the lease.
+      if (this.stopping) {
+        await this.handBack(operation.id, claimToken);
         return;
       }
       const message = bulkErrorMessage(error);
@@ -243,7 +245,12 @@ export class MediaHealthOperationService {
    * would fail it.
    */
   private handBack(id: string, claimToken: string): Promise<boolean> {
-    return this.operations.requeue(id, claimToken, { delayMs: 0, returnAttempt: true }).catch(() => false);
+    return this.operations.requeue(id, claimToken, { delayMs: 0, returnAttempt: true }).catch((error: unknown) => {
+      this.logger.warn(
+        `Library Care job ${id} could not be handed back on stopping; its lease will: ${bulkErrorMessage(error)}`,
+      );
+      return false;
+    });
   }
 
   /** Repeats a step that lost a lock wait; a scan step is an upsert, so running it again is harmless. */
