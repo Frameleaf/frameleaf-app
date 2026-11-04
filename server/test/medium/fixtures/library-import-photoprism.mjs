@@ -15,6 +15,7 @@ const { assertImportExecutionLock } = await import('src/library-import/execution
 await assertImportExecutionLock(stateDirectory);
 const { Kysely } = await import('kysely');
 const { connectImportDatabase } = await import('src/immich-import/database.js');
+const { ensureImportBootstrapAdmin } = await import('src/library-import/bootstrap-admin.js');
 const { writeLibraryImportBundle } = await import('src/library-import/bundle-output.js');
 const { loadLibraryImportBundle } = await import('src/library-import/bundle-input.js');
 const { executeLibraryImportCommand } = await import('src/library-import/command.js');
@@ -237,8 +238,19 @@ const connection = connectImportDatabase(process.env.DB_URL, false);
 const database = new Kysely(getKyselyConfig({ connectionType: 'url', url: process.env.DB_URL }));
 let local;
 try {
-  await connection.db.query(
-    'WITH g AS (INSERT INTO public.cluster_group DEFAULT VALUES RETURNING id) INSERT INTO public."user"(email,"clusterGroupId","isAdmin") SELECT \'bootstrap@example.test\',id,true FROM g',
+  const administrator = {
+    operationId,
+    destinationId,
+    userId: randomUUID(),
+    email: 'bootstrap@example.test',
+    name: 'Fixture administrator',
+    password: randomUUID(),
+  };
+  assert.equal(await ensureImportBootstrapAdmin(connection.db, administrator), administrator.userId);
+  assert.equal(await ensureImportBootstrapAdmin(connection.db, administrator), administrator.userId);
+  await assert.rejects(
+    ensureImportBootstrapAdmin(connection.db, { ...administrator, password: randomUUID() }),
+    /IMPORT_BOOTSTRAP_ADMIN_CHANGED/,
   );
   local = await LocalLibraryImportState.open(stateDirectory, { create: true });
   const jobs = new JobRepository({}, {}, {}, { setContext() {} }, database);
