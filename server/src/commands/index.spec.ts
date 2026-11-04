@@ -1,8 +1,8 @@
 import { Reflector } from '@nestjs/core';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { ImportLibraryCommand } from 'src/commands/import-library.command.js';
 import { ImportImmichCommand } from 'src/commands/import-immich.command.js';
+import { ImportLibraryCommand } from 'src/commands/import-library.command.js';
 import { commandsAndQuestions } from 'src/commands/index.js';
 
 // nest-commander stores @QuestionSet options under this key (`QuestionSetMeta`, not exported).

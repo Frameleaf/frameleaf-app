@@ -1,8 +1,8 @@
 import { Command, CommandRunner, Option } from 'nest-commander';
 import { Refusal } from '#library-import-transfer/contracts';
 import { connectImportDatabase } from 'src/immich-import/database.js';
-import { executeLibraryImportCommand } from 'src/library-import/command.js';
 import { loadLibraryImportConfig, parseLibraryImportArguments } from 'src/library-import/command-input.js';
+import { executeLibraryImportCommand } from 'src/library-import/command.js';
 import { LocalLibraryImportState } from 'src/library-import/local-transfer-state.js';
 import { requestImportSourceAuthority } from 'src/library-import/manager-authority.js';
 import { LibraryImportRefused } from 'src/library-import/state.js';

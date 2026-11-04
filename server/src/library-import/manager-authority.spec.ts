@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { PassThrough, Writable } from 'node:stream';
 import {
-  replyImportSourceAuthority,
   type ImportSourceAuthority,
+  replyImportSourceAuthority,
 } from '#library-import-transfer/import-source-authority';
 import { requestImportSourceAuthority } from 'src/library-import/manager-authority.js';
 
@@ -75,9 +75,21 @@ it('refuses a lost Manager connection while waiting', async () => {
   );
 });
 
+it.each(['input', 'output'] as const)('refuses an already destroyed %s without sending a challenge', async (side) => {
+  const { input, output, authority } = fixture();
+  const sent = vi.fn();
+  output.on('data', sent);
+  ({ input, output })[side].destroy();
+  await expect(requestImportSourceAuthority('run', authority, input, output)).rejects.toThrow(
+    'import_source_authority_unavailable',
+  );
+  expect(sent).not.toHaveBeenCalled();
+  expect(input.listenerCount('data')).toBe(0);
+});
+
 it('bounds an unterminated response before attempting JSON parsing', async () => {
   const { input, output, authority } = fixture();
-  output.on('data', () => input.write('x'.repeat(65537)));
+  output.on('data', () => input.write('x'.repeat(65_537)));
   await expect(requestImportSourceAuthority('run', authority, input, output)).rejects.toThrow(
     'import_source_authority_unavailable',
   );
@@ -89,7 +101,7 @@ it('cannot wait indefinitely for source-fence verification', async () => {
   const checked = expect(requestImportSourceAuthority('run', authority, input, output)).rejects.toThrow(
     'import_source_authority_unavailable',
   );
-  await vi.advanceTimersByTimeAsync(120001);
+  await vi.advanceTimersByTimeAsync(120_001);
   await checked;
   expect(input.listenerCount('data')).toBe(0);
 });

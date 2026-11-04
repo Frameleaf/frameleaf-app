@@ -3,10 +3,10 @@ import { createInterface } from 'node:readline';
 import { type Readable, type Writable } from 'node:stream';
 import { Refusal } from '#library-import-transfer/contracts';
 import {
-  encodeImportSourceAuthorityRequest,
-  parseImportSourceAuthorityResponse,
   type ImportSourceAuthorityAction,
   type ImportSourceAuthoritySeal,
+  encodeImportSourceAuthorityRequest,
+  parseImportSourceAuthorityResponse,
 } from '#library-import-transfer/import-source-authority';
 
 /** The Manager owns live fencing; a bundle or earlier approval never authorizes a later boundary. */
@@ -18,13 +18,13 @@ export async function requestImportSourceAuthority(
 ): Promise<void> {
   const nonce = randomUUID();
   const challenge = encodeImportSourceAuthorityRequest(action, seal, nonce);
+  if (input.destroyed || input.readableEnded || output.destroyed)
+    throw new Refusal('import_source_authority_unavailable');
   await new Promise<void>((resolve, reject) => {
     let settled = false;
     let bytes = 0;
     let writing = false;
     let writeFailed = false;
-    let reader: ReturnType<typeof createInterface> | undefined;
-    let timer: ReturnType<typeof setTimeout> | undefined;
     const stream = input as Readable & { ref?: () => void; unref?: () => void };
     const finish = (allowed: boolean) => {
       if (settled) return;
@@ -34,9 +34,9 @@ export async function requestImportSourceAuthority(
       input.off('error', refused);
       input.off('end', refused);
       if (!writing && !writeFailed) output.off('error', outputFailed);
-      reader?.off('line', received);
-      reader?.off('close', refused);
-      reader?.close();
+      reader.off('line', received);
+      reader.off('close', refused);
+      reader.close();
       input.pause();
       stream.unref?.();
       if (allowed) resolve();
@@ -49,7 +49,7 @@ export async function requestImportSourceAuthority(
     };
     const bounded = (chunk: Buffer | string) => {
       bytes += typeof chunk === 'string' ? Buffer.byteLength(chunk) : chunk.length;
-      if (bytes > 65536) refused();
+      if (bytes > 65_536) refused();
     };
     const received = (line: string) => {
       try {
@@ -59,17 +59,16 @@ export async function requestImportSourceAuthority(
         refused();
       }
     };
-    if (input.destroyed || input.readableEnded || output.destroyed) return refused();
     stream.ref?.();
+    const reader = createInterface({ input, crlfDelay: Infinity });
+    const timer = setTimeout(refused, 120_000);
     input.on('data', bounded);
     input.once('error', refused);
     input.once('end', refused);
     output.once('error', outputFailed);
-    reader = createInterface({ input, crlfDelay: Infinity });
     reader.once('close', refused);
     reader.once('error', refused);
     reader.once('line', received);
-    timer = setTimeout(refused, 120_000);
     try {
       writing = true;
       output.write(challenge, (error) => {
