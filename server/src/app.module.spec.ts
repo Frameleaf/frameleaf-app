@@ -5,7 +5,7 @@ import { DatabaseService } from 'src/services/database.service.js';
 import { services } from 'src/services/index.js';
 import { StorageService } from 'src/services/storage.service.js';
 
-it('prepares a fresh offline import without starting media workers', async () => {
+it.each(['import-immich', 'import-library'])('prepares %s offline without starting media workers', async (command) => {
   const initialize = vi.fn().mockResolvedValue(undefined);
   const setup = vi.fn();
   const startWorkers = vi.fn();
@@ -17,7 +17,7 @@ it('prepares a fresh offline import without starting media workers', async () =>
     { initializeMediaLocation } as unknown as StorageService,
   );
   const previous = process.argv;
-  process.argv = ['node', 'immich-admin', 'import-immich', 'preflight'];
+  process.argv = ['node', 'immich-admin', command, 'preflight'];
   try {
     await admin.onModuleInit();
   } finally {
