@@ -94,6 +94,15 @@ describe('queue run settlement', () => {
     expect(await finishedAt(runId)).not.toBeNull();
   });
 
+  it('a request without a parent coalesces onto a finished stage in the same run (known limit)', async () => {
+    const runId = await store.createRun('no-parent', {});
+    await store.enqueue([intent({ name: 'child', runId, itemKey: 'asset' })]);
+    const [child] = await store.claim(queue, worker);
+    await store.complete(child, []);
+    await store.enqueue([intent({ name: 'child', runId, itemKey: 'asset', data: { revision: 2 } })]);
+    expect(await store.claim(queue, worker)).toEqual([]);
+  });
+
   it('does not re-run a finished stage that a different job asks for in the same run', async () => {
     const runId = await store.createRun('no-loop', {});
     await store.enqueue([intent({ name: 'first', runId, itemKey: 'asset' })]);

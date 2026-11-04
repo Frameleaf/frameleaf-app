@@ -307,6 +307,8 @@ export class SqlQueueStore {
       "workerId" = null, "latestPending" = null, "dependencyReason" = null
       where "runId" = ${intent.runId}::uuid and "itemKey" = ${intent.itemKey} and name = ${intent.name}
         and state in ('completed','failed','needs_attention','cancelled','blocked')
+        -- A request without a parent (a direct enqueue) never matches (null = null is unknown): it re-arms
+        -- only a cancelled row. Nothing ties it to one requester, so it coalesces like a loop would.
         and (state = 'cancelled' or "parentId" = ${intent.parentId ?? null}::uuid)
       returning id`.execute(db);
     if (rows.length === 0) return;
