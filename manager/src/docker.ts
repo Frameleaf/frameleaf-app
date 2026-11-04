@@ -33,7 +33,10 @@ const inspectionReceipt = z.strictObject({
   operationId: z.uuid(),
   destinationId: z.uuid(),
   source: importSourceSchema,
-  inventory: z.strictObject({
+  inventory: z.unknown(),
+});
+const inspectionInventories = {
+  photoprism: z.strictObject({
     photos: count,
     privatePhotos: count,
     albums: count,
@@ -42,7 +45,13 @@ const inspectionReceipt = z.strictObject({
     accounts: z.array(z.strictObject({ id: z.string().min(1), name: z.string(), role: z.string(), canLogin: z.boolean() })),
     albumsRequiringSnapshot: z.array(z.strictObject({ id: z.string().min(1), name: z.string() })),
   }),
-});
+  photoview: z.strictObject({
+    assets: count,
+    albums: count,
+    assetsWithAlbumGrants: count,
+    accounts: z.array(z.strictObject({ id: z.string().min(1), name: z.string().min(1), role: z.enum(['admin', 'user']) })),
+  }),
+} as const;
 
 export type Container = {
   Id: string;
@@ -513,6 +522,8 @@ export class Docker {
   }
   /** Inspect only the captured database. The container cannot access the source originals or write to staging. */
   async inspectImportSource(directory: string, image: string, authority: ImportPreparationAuthority) {
+    const kind = authority.source.kind;
+    if (kind !== 'photoprism' && kind !== 'photoview') throw new Refusal('invalid_import_authority');
     const output = await this.runImportPreparation(directory, image, authority, [], true);
     try {
       const result = inspectionReceipt.parse(JSON.parse(output));
@@ -520,7 +531,7 @@ export class Docker {
         result.operationId !== authority.operationId || result.destinationId !== authority.destinationId ||
         JSON.stringify(result.source) !== JSON.stringify(importSourceSchema.parse(authority.source))
       ) throw new Error('Inspection binding changed');
-      return result.inventory;
+      return inspectionInventories[kind].parse(result.inventory);
     } catch {
       throw new Refusal('invalid_import_response');
     }

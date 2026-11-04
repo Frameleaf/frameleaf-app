@@ -358,14 +358,27 @@ test('inventory inspection mounts only private staging read-only and refuses a s
     albumsRequiringSnapshot: [],
   };
   let source = authority.source;
+  let returned: unknown = inventory;
   const docker = new Docker(async (_binary, args) => {
     const mounts = args.flatMap((arg, index) => arg === '--mount' ? [args[index + 1]] : []);
     assert.deepEqual(mounts, [
       `type=bind,src=/private/manager/import-runtime-${operationId},dst=/run/frameleaf/import-preparation,readonly`,
     ]);
-    return JSON.stringify({ operationId, destinationId: authority.destinationId, source, inventory });
+    return JSON.stringify({ operationId, destinationId: authority.destinationId, source, inventory: returned });
   });
   assert.deepEqual(await docker.inspectImportSource('/private/manager', image, authority), inventory);
+  const photoview = {
+    assets: 2, albums: 1, assetsWithAlbumGrants: 1, accounts: [{ id: '1', name: 'Owner', role: 'admin' }],
+  };
+  source = { ...authority.source, kind: 'photoview' };
+  const photoviewAuthority = { ...authority, source };
+  returned = photoview;
+  assert.deepEqual(await docker.inspectImportSource('/private/manager', image, photoviewAuthority), photoview);
+  returned = { ...photoview, accounts: [{ ...photoview.accounts[0], password: 'forbidden' }] };
+  await assert.rejects(docker.inspectImportSource('/private/manager', image, photoviewAuthority), /invalid_import_response/);
+  returned = inventory;
+  await assert.rejects(docker.inspectImportSource('/private/manager', image, photoviewAuthority), /invalid_import_response/);
+  source = authority.source;
   source = { ...source, revision: 'substituted' };
   await assert.rejects(docker.inspectImportSource('/private/manager', image, authority), /invalid_import_response/);
 });

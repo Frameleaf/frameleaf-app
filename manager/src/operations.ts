@@ -56,6 +56,9 @@ export const ReviewInput = z
     services: ServiceOverrides.optional(),
   })
   .strict();
+type CapturedImport = Omit<Awaited<ReturnType<typeof capturePhotoprismSqliteSource>>, 'source'> & {
+  source: ImportPreparationSeal['source'];
+};
 export type CommonImportReview = {
   fence: SourceFence;
   destinationId: string;
@@ -390,7 +393,7 @@ export class Operations {
   }
   private capturedImport(operationId: string) {
     const captured = this.store.history().find((item) => item.id === operationId && typeof item.input.commonCapture === 'string');
-    const snapshot = captured?.receipts['capture-common-source'] as Awaited<ReturnType<typeof capturePhotoprismSqliteSource>> | undefined;
+    const snapshot = captured?.receipts['capture-common-source'] as CapturedImport | undefined;
     if (
       this.installation() || !z.uuid().safeParse(operationId).success ||
       captured?.state !== 'awaiting-review' || this.executing.has(operationId) || !snapshot
@@ -421,7 +424,7 @@ export class Operations {
     const { operation, fence, source, snapshotPath } = this.capturedImport(operationId);
     const recorded = operation.receipts['common-inspection-destination'];
     const destination = z.uuid().safeParse(recorded ?? randomUUID());
-    if (source.kind !== 'photoprism' || !destination.success)
+    if ((source.kind !== 'photoprism' && source.kind !== 'photoview') || !destination.success)
       throw new Refusal('invalid_import_authority');
     const destinationId = destination.data;
     this.executing.add(operationId);
@@ -434,7 +437,7 @@ export class Operations {
       await this.docker.pull(image, platform);
       const seal = { operationId, destinationId, source };
       const authority = await this.importPreparationAuthority(seal, fence, {
-        ...seal, snapshotPath, format: 'frameleaf-inspect-library-import', version: 1, adapter: 'photoprism-sqlite',
+        ...seal, snapshotPath, format: 'frameleaf-inspect-library-import', version: 1, adapter: `${source.kind}-sqlite`,
       });
       const inventory = await this.docker.inspectImportSource(this.directory(), image, authority);
       if (recorded === undefined) {
