@@ -89,7 +89,10 @@ export class CanonicalAssetWriter {
         metadata.tags.some((tag) => !tag || tag.includes('\0') || normalizeTagValue(tag) !== tag))
     )
       return refuse('ASSET_TAGS_INVALID');
-    if (!timestamp.safeParse(metadata.takenAt).success || !metadata.timeZone)
+    if (
+      !timestamp.safeParse(metadata.takenAt).success ||
+      (!metadata.timeZone && !('localDateTime' in asset && asset.localDateTime))
+    )
       return refuse('ASSET_CAPTURE_CLOCK_REQUIRED');
     if (
       (asset.visibility === 'trash') !== (metadata.deletedAt !== undefined) ||
@@ -197,7 +200,10 @@ export class CanonicalAssetWriter {
               return refuse('ASSET_LIVE_PHOTO_MOTION_INVALID');
             livePhotoVideoId = rows[0].id;
           }
-          if ((await tx.query('SELECT 1 FROM pg_timezone_names WHERE name=$1', [metadata.timeZone])).length !== 1)
+          if (
+            metadata.timeZone !== undefined &&
+            (await tx.query('SELECT 1 FROM pg_timezone_names WHERE name=$1', [metadata.timeZone])).length !== 1
+          )
             return refuse('ASSET_TIME_ZONE_UNSUPPORTED');
           await tx.query('SELECT pg_advisory_xact_lock_shared($1::bigint)', [BUDDY_CAPTURE_LOCK]);
           for (const path of files.map((file) => file.absolutePath).sort())
@@ -240,7 +246,7 @@ export class CanonicalAssetWriter {
             `INSERT INTO public.asset(id,"ownerId",type,"originalPath","physicalOriginalFileId",checksum,"checksumAlgorithm",
           "fileCreatedAt","localDateTime","fileModifiedAt","originalFileName","isFavorite",visibility,status,"deletedAt","livePhotoVideoId")
           VALUES($1::uuid,$2::uuid,$3,$4,$5::uuid,decode($6,'hex'),'sha256',$7::timestamptz,
-          ($7::timestamptz AT TIME ZONE $8) AT TIME ZONE 'UTC',$9::timestamptz,$10,$11,$12::asset_visibility_enum,$13::assets_status_enum,$14::timestamptz,$15::uuid)`,
+          COALESCE($16::timestamp AT TIME ZONE 'UTC',($7::timestamptz AT TIME ZONE $8) AT TIME ZONE 'UTC'),$9::timestamptz,$10,$11,$12::asset_visibility_enum,$13::assets_status_enum,$14::timestamptz,$15::uuid)`,
             [
               destinationId,
               ownerId,
@@ -249,7 +255,7 @@ export class CanonicalAssetWriter {
               physical.get(primary.id),
               primary.sha256,
               metadata.takenAt,
-              metadata.timeZone,
+              metadata.timeZone ?? null,
               item.fileModifiedAt,
               primary.name,
               metadata.favorite ?? false,
@@ -257,6 +263,7 @@ export class CanonicalAssetWriter {
               asset.visibility === 'trash' ? 'trashed' : 'active',
               metadata.deletedAt ?? null,
               livePhotoVideoId,
+              'localDateTime' in asset ? (asset.localDateTime ?? null) : null,
             ],
           );
           for (const file of files) {
@@ -300,7 +307,7 @@ export class CanonicalAssetWriter {
               destinationId,
               primary.bytes,
               metadata.takenAt,
-              metadata.timeZone,
+              metadata.timeZone ?? null,
               metadata.description ?? '',
               metadata.rating ?? null,
               metadata.latitude ?? null,

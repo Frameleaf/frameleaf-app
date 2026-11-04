@@ -2,6 +2,7 @@ import { CompiledQuery, Kysely, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import { PhysicalFileType } from 'src/enum.js';
 import { ImportDatabase } from 'src/immich-import/types.js';
+import { reconcileImportedAssets } from 'src/library-import/asset-reconciliation.js';
 import { CanonicalAssetWriter } from 'src/library-import/asset-writer.js';
 import { destinationPlanFingerprint, parseDestinationImportPlan } from 'src/library-import/destination-plan.js';
 import { verifyImportFiles } from 'src/library-import/files.js';
@@ -23,7 +24,7 @@ const wrap = (connection: Kysely<any>): ImportDatabase => ({
     (await connection.executeQuery(CompiledQuery.raw(statement, parameters))).rows as Record<string, unknown>[],
   transaction: (body) => connection.transaction().execute((tx) => body(wrap(tx))),
 });
-const setup = async (tags?: string[], locationRemoved = false) => {
+const setup = async (tags?: string[], locationRemoved = false, localDateTime?: string) => {
   const ownerId = randomUUID();
   const plan = parseDestinationImportPlan(fixture.plan);
   plan.owners = [{ sourceId: 'owner', destinationId: ownerId }];
@@ -47,7 +48,7 @@ const setup = async (tags?: string[], locationRemoved = false) => {
   ];
   const manifest = parseImportManifest({
     format: 'frameleaf-library-import',
-    version: 2,
+    version: localDateTime === undefined ? 2 : 3,
     source: plan.source,
     inventory: {
       complete: true,
@@ -67,6 +68,14 @@ const setup = async (tags?: string[], locationRemoved = false) => {
     })),
     assets: [
       {
+        ...(localDateTime === undefined
+          ? {}
+          : {
+              localDateTime,
+              type: 'IMAGE',
+              fileModifiedAt: '2020-07-02T01:02:03.456789Z',
+              originalFileNames: { jpeg: 'camera.jpg', raw: 'camera.raw' },
+            }),
         id: 'photo',
         ownerId: 'owner',
         fileIds: ['jpeg', 'raw'],
@@ -74,7 +83,7 @@ const setup = async (tags?: string[], locationRemoved = false) => {
         visibility: 'archive',
         metadata: {
           takenAt: '2020-07-01T12:34:56.123456Z',
-          timeZone: 'America/Edmonton',
+          ...(localDateTime === undefined ? { timeZone: 'America/Edmonton' } : {}),
           description: 'Manual caption',
           rating: 5,
           latitude: locationRemoved ? null : 51.1,
@@ -180,6 +189,37 @@ it('commits the selected primary, every original, clocks, source metadata and ex
       .quotaUsageInBytes,
   ).toBe(17);
   expect(verifyImportFiles).toHaveBeenCalled();
+});
+
+it('preserves an exact source wall clock and instant without inventing a named time zone', async () => {
+  const { context, item } = await setup(undefined, false, '2020-07-01T18:19:56.123456');
+  const id = await new CanonicalAssetWriter(wrap(db), context).write(item);
+  const clocks = (
+    await sql`SELECT to_char("fileCreatedAt" AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS.US') AS taken,
+    to_char("localDateTime" AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS.US') AS local FROM public.asset WHERE id=${id}::uuid`.execute(
+      db,
+    )
+  ).rows[0];
+  expect(clocks).toEqual({ taken: '2020-07-01 12:34:56.123456', local: '2020-07-01 18:19:56.123456' });
+  await new AssetRepository(db).upsertExif({
+    exif: { assetId: id, timeZone: 'UTC', dateTimeOriginal: new Date('2030-01-01T00:00:00Z') },
+    lockedPropertiesBehavior: 'skip',
+  });
+  const exif = await db
+    .selectFrom('asset_exif')
+    .select(['timeZone', 'lockedProperties'])
+    .where('assetId', '=', id)
+    .executeTakeFirstOrThrow();
+  expect(exif.timeZone).toBeNull();
+  expect(exif.lockedProperties).toEqual(expect.arrayContaining(['dateTimeOriginal', 'timeZone']));
+  await new LibraryImportJournal(wrap(db)).phase(context.binding, 'verifying');
+  await expect(reconcileImportedAssets(wrap(db), context, [item])).resolves.toMatchObject({ assets: 1, originals: 2 });
+  await db
+    .updateTable('asset')
+    .set({ localDateTime: new Date('2020-07-01T18:20:56.123Z') })
+    .where('id', '=', id)
+    .execute();
+  await expect(reconcileImportedAssets(wrap(db), context, [item])).rejects.toThrow('ASSET_RECONCILIATION_MISMATCH');
 });
 
 it('keeps source-removed coordinates empty when regeneration encounters embedded GPS', async () => {

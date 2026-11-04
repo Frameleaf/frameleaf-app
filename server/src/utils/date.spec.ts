@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { asDateString, asDateTimeString } from 'src/utils/date.js';
+import { asDateString, asDateTimeString, extractTimeZone, withDateTimeOffset } from 'src/utils/date.js';
 
 describe('asDateString', () => {
   afterEach(() => {
@@ -41,5 +41,48 @@ describe('asDateTimeString', () => {
   it('should return an ISO 8601 datetime string for a Date', () => {
     const date = new Date('2000-01-15T12:00:00.000Z');
     expect(asDateTimeString(date)).toBe('2000-01-15T12:00:00.000Z');
+  });
+});
+
+describe('absolute edit timezone extraction', () => {
+  afterEach(() => vi.unstubAllEnvs());
+  it.each(['America/Edmonton', 'Asia/Tokyo'])(
+    'uses the same UTC fallback as asset clocks when the server zone is %s',
+    (zone) => {
+      vi.stubEnv('TZ', zone);
+      expect(extractTimeZone('2020-06-10T12:30:00')?.name).toBe('UTC');
+      expect(extractTimeZone('2020-06-10T12:30:00-06:00')?.offset(0)).toBe(-360);
+      expect(extractTimeZone('2020-06-10T12:30:00Z')?.offset(0)).toBe(0);
+      expect(extractTimeZone('2020-06-10t12:30:00+02:00[Europe/Paris]')?.name).toBe('Europe/Paris');
+      expect(extractTimeZone('2020-12-10T12:30:00[Europe/Paris]')?.name).toBe('Europe/Paris');
+      expect(extractTimeZone('2020-12-10T12:30:00[Invalid/Zone]')).toBeUndefined();
+      expect(extractTimeZone()).toBeUndefined();
+      expect(extractTimeZone('not-a-date')).toBeUndefined();
+    },
+  );
+});
+
+describe('explicit edit offsets', () => {
+  it.each([
+    ['2020-06-10T12:30:00.123456', '2020-06-10T12:30:00.123456Z'],
+    ['2020-06-10t12:30:00.123456Z', '2020-06-10T12:30:00.123456Z'],
+    ['2020-06-10t12:30:00.123456', '2020-06-10T12:30:00.123456Z'],
+    ['2020-06-10t12:30:00.123456+02:00[Europe/Paris]', '2020-06-10T12:30:00.123456+02:00'],
+    ['2020-06-10T12:30:00.123456[Europe/Paris]', '2020-06-10T12:30:00.123456+02:00'],
+    ['2020-12-10T12:30:00.123456[Europe/Paris]', '2020-12-10T12:30:00.123456+01:00'],
+    ['2020-06-10T12:30:00.123456-06:00', '2020-06-10T12:30:00.123456-06:00'],
+    ['2020-06-10T12:30:00.123456+0530', '2020-06-10T12:30:00.123456+05:30'],
+    ['2020-06-10T12:30:00.123456Z', '2020-06-10T12:30:00.123456Z'],
+    ['2020-06-10', '2020-06-10T00:00:00Z'],
+    ['2020-06-10t12:30:00,123456', '2020-06-10T12:30:00.123456Z'],
+    ['2020-06-10T12:30:00,123456+02:00', '2020-06-10T12:30:00.123456+02:00'],
+    ['20200610T123000.123456+0200', '2020-06-10T12:30:00.123456+02:00'],
+    ['2020-11-01T01:30:00.123456-04:00[America/New_York]', '2020-11-01T01:30:00.123456-04:00'],
+    ['2020-11-01T01:30:00.123456-05:00[America/New_York]', '2020-11-01T01:30:00.123456-05:00'],
+    ['2020-11-01T01:30:00.123456-07:00[America/Edmonton]', '2020-11-01T01:30:00.123456-07:00'],
+    ['not-a-date', 'not-a-date'],
+    [undefined, undefined],
+  ])('preserves precision and existing offsets for %s', (input, expected) => {
+    expect(withDateTimeOffset(input)).toBe(expected);
   });
 });

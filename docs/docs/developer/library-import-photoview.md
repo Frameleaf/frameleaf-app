@@ -35,6 +35,16 @@ The resulting reader IDs are source access evidence, never destination owners. A
 
 This inventory does not assert complete pagination, source fencing, public sharing equivalence, destination permission enforcement or ownership mapping. Missing preference records retain the source's default false state rather than assigning another user's favourite.
 
+## Common manifest mapping
+
+`readPhotoviewManifest` maps the admitted SQLite reader into the existing common import manifest. It requires complete, unchanged, stopped-writer inventory, explicit source-user ownership decisions for every photo and directory album, a source mount prefix and independently hashed original/XMP evidence. Ownership must be supported by the directory's actual inherited source grants; administrative status and another viewer's favourite never establish ownership. Source path hashes and cached rendition paths are not byte evidence. Recorded original rendition sizes are checked when available.
+
+The mapper preserves original names and media types, captions including deliberate empty captions, paired GPS state, the selected owner's favourite and current source capture clocks. Frameleaf's existing writer prepares the resulting assets; the adapter does not write accounts, databases or files. Passwords remain on the reader's existing separate protected credential channel. Generated renditions, blur hashes and face descriptors are not imported.
+
+Source EXIF parsing can tag floating wall clocks as UTC. The mapper retains the source's stored timestamp and wall clock without inventing a regional zone, and reports this uncertainty for review. Destination clocks retain up to six fractional digits; any extra source precision remains in the protected archive and is reported. Current media dates take precedence over older EXIF rows.
+
+Directory albums start owner-only. Mixed-owner directories receive private owner partitions backed by the source access inventory. Source sharing, other viewers' preferences, custom media titles, directory ancestry, people and remaining source-only metadata stay in the protected archive with unacknowledged preservation differences. These differences must be reviewed before activation; face geometry and active directory hierarchy are not yet mapped. Source capture authority, public command registration and the common Manager flow remain separate unfinished work.
+
 ## Outstanding acceptance
 
 MariaDB/MySQL and PostgreSQL, source media beyond the generated PNG fixture, named-face geometry, manual metadata, sidecars, complete public/inherited access paths, destination ownership/privacy, byte transfer, archive persistence, recovery, Manager integration and end-to-end migration remain unqualified. The source image reports a Darktable version-check warning; RAW handling needs separate native acceptance. No source compatibility or release claim follows from this reader stage. Protected Unraid shares remain entirely outside qualification and agent access.

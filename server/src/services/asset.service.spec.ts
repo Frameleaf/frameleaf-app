@@ -829,6 +829,86 @@ describe(AssetService.name, () => {
       expect(mocks.asset.update).not.toHaveBeenCalled();
     });
 
+    it.each([false, true])(
+      'honors an explicit UTC absolute edit on an unknown-zone capture (live photo: %s)',
+      async (livePhoto) => {
+        const asset = AssetFactory.from({
+          ownerId: authStub.admin.user.id,
+          fileCreatedAt: new Date('2020-06-10T18:30:00Z'),
+          localDateTime: new Date('2020-06-10T12:30:00Z'),
+        })
+          .exif({ dateTimeOriginal: new Date('2020-06-10T18:30:00Z'), timeZone: null })
+          .build();
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+        mocks.asset.getByIds.mockResolvedValue([asset] as never);
+        mocks.asset.update.mockResolvedValue(getForAsset(asset));
+        mocks.asset.withLivePhotoUpdate.mockImplementation(async (_id, _motionId, write) =>
+          write(mocks.asset as never, mocks.access as never),
+        );
+        await sut.update(authStub.admin, asset.id, {
+          dateTimeOriginal: '2020-06-10T19:30:00Z',
+          ...(livePhoto ? { livePhotoVideoId: null } : {}),
+        });
+        expect(mocks.asset.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            id: asset.id,
+            fileCreatedAt: new Date('2020-06-10T19:30:00Z'),
+            localDateTime: new Date('2020-06-10T19:30:00Z'),
+          }),
+        );
+        expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+          expect.objectContaining({
+            exif: expect.objectContaining({
+              assetId: asset.id,
+              dateTimeOriginal: '2020-06-10T19:30:00Z',
+              timeZone: 'UTC',
+            }),
+          }),
+        );
+      },
+    );
+
+    it.each([false, true])(
+      'uses UTC consistently for an offsetless absolute edit (live photo: %s)',
+      async (livePhoto) => {
+        const asset = AssetFactory.from({
+          ownerId: authStub.admin.user.id,
+          fileCreatedAt: new Date('2020-06-10T18:30:00Z'),
+          localDateTime: new Date('2020-06-10T12:30:00Z'),
+        })
+          .exif({ dateTimeOriginal: new Date('2020-06-10T18:30:00Z'), timeZone: 'America/Edmonton' })
+          .build();
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+        mocks.asset.getByIds.mockResolvedValue([asset] as never);
+        mocks.asset.update.mockResolvedValue(getForAsset(asset));
+        mocks.asset.withLivePhotoUpdate.mockImplementation(async (_id, _motionId, write) =>
+          write(mocks.asset as never, mocks.access as never),
+        );
+        await sut.update(authStub.admin, asset.id, {
+          dateTimeOriginal: '2020-06-10T12:30:00',
+          ...(livePhoto ? { livePhotoVideoId: null } : {}),
+        });
+        expect(mocks.asset.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            id: asset.id,
+            fileCreatedAt: new Date('2020-06-10T12:30:00Z'),
+            localDateTime: new Date('2020-06-10T12:30:00Z'),
+          }),
+        );
+        expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+          expect.objectContaining({
+            exif: expect.objectContaining({
+              assetId: asset.id,
+              dateTimeOriginal: '2020-06-10T12:30:00Z',
+              timeZone: 'UTC',
+            }),
+          }),
+        );
+      },
+    );
+
     it('should update the asset', async () => {
       const asset = AssetFactory.create();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
@@ -1810,6 +1890,111 @@ describe(AssetService.name, () => {
       expect(mocks.asset.updateAll).toHaveBeenCalled();
     });
 
+    it('honors the explicit offset in an absolute bulk edit instead of retaining an old unknown-zone difference', async () => {
+      const asset = AssetFactory.create({
+        id: 'asset-1',
+        fileCreatedAt: new Date('2020-06-10T18:30:00Z'),
+        localDateTime: new Date('2020-06-10T12:30:00Z'),
+      });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getByIds.mockResolvedValue([asset] as never);
+      mocks.asset.updateDateTimeOriginal.mockResolvedValue([
+        { assetId: asset.id, dateTimeOriginal: new Date('2020-06-10T19:30:00Z'), timeZone: 'UTC' },
+      ]);
+      await sut.updateAll(authStub.admin, { ids: [asset.id], dateTimeOriginal: '2020-06-10T19:30:00Z' });
+      expect(mocks.asset.updateDateTimeOriginal).toHaveBeenCalledWith([asset.id], undefined, 'UTC');
+      expect(mocks.asset.update).toHaveBeenCalledWith({
+        id: asset.id,
+        fileCreatedAt: new Date('2020-06-10T19:30:00Z'),
+        localDateTime: new Date('2020-06-10T19:30:00Z'),
+      });
+    });
+
+    it.each(['-04:00', '-05:00'])('honours the explicit %s offset during a named-zone overlap', async (offset) => {
+      const asset = AssetFactory.create({ id: 'asset-1' });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      const dateTimeOriginal = '2020-11-01T01:30:00' + offset + '[America/New_York]';
+      mocks.asset.updateDateTimeOriginal.mockResolvedValue([]);
+      await sut.updateAll(authStub.admin, { ids: [asset.id], dateTimeOriginal });
+      expect(mocks.asset.updateDateTimeOriginal).toHaveBeenCalledWith([asset.id], undefined, 'America/New_York');
+      expect(mocks.asset.updateAll).toHaveBeenCalledWith(
+        [asset.id],
+        expect.objectContaining({
+          fileCreatedAt: new Date('2020-11-01T01:30:00' + offset),
+          localDateTime: new Date('2020-11-01T01:30:00Z'),
+        }),
+      );
+    });
+
+    it('uses UTC consistently for an offsetless absolute bulk edit', async () => {
+      const asset = AssetFactory.create({
+        id: 'asset-1',
+        fileCreatedAt: new Date('2020-06-10T18:30:00Z'),
+        localDateTime: new Date('2020-06-10T12:30:00Z'),
+      });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.updateDateTimeOriginal.mockResolvedValue([
+        { assetId: asset.id, dateTimeOriginal: new Date('2020-06-10T12:30:00Z'), timeZone: 'UTC' },
+      ]);
+      await sut.updateAll(authStub.admin, { ids: [asset.id], dateTimeOriginal: '2020-06-10T12:30:00' });
+      expect(mocks.asset.updateAllExif).toHaveBeenCalledWith(
+        [asset.id],
+        { dateTimeOriginal: '2020-06-10T12:30:00Z' },
+        [],
+      );
+      expect(mocks.asset.updateDateTimeOriginal).toHaveBeenCalledWith([asset.id], undefined, 'UTC');
+      expect(mocks.asset.update).toHaveBeenCalledWith({
+        id: asset.id,
+        fileCreatedAt: new Date('2020-06-10T12:30:00Z'),
+        localDateTime: new Date('2020-06-10T12:30:00Z'),
+      });
+    });
+
+    it('shifts an unknown-zone wall clock by the same amount as its capture instant', async () => {
+      const asset = AssetFactory.create({
+        id: 'asset-1',
+        fileCreatedAt: new Date('2020-11-01T07:30:00Z'),
+        localDateTime: new Date('2020-11-01T01:30:00Z'),
+      });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getByIds.mockResolvedValue([asset] as never);
+      mocks.asset.updateDateTimeOriginal.mockResolvedValue([
+        { assetId: asset.id, dateTimeOriginal: new Date('2020-11-01T08:30:00Z'), timeZone: null },
+      ]);
+      await sut.updateAll(authStub.admin, { ids: [asset.id], dateTimeRelative: 60 });
+      expect(mocks.asset.update).toHaveBeenCalledWith({
+        id: asset.id,
+        fileCreatedAt: new Date('2020-11-01T08:30:00Z'),
+        localDateTime: new Date('2020-11-01T02:30:00Z'),
+      });
+    });
+
+    it('keeps the final shifted clocks when an absolute date and relative shift are supplied together', async () => {
+      const asset = AssetFactory.create({ id: 'asset-1' });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      const apply = (value: { fileCreatedAt?: unknown; localDateTime?: unknown }) => {
+        if (value.fileCreatedAt instanceof Date) asset.fileCreatedAt = value.fileCreatedAt;
+        if (value.localDateTime instanceof Date) asset.localDateTime = value.localDateTime;
+      };
+      mocks.asset.updateAll.mockImplementation((_ids, value) => Promise.resolve(apply(value)));
+      mocks.asset.update.mockImplementation((value) => {
+        apply(value);
+        return Promise.resolve(getForAsset(asset));
+      });
+      mocks.asset.getByIds.mockImplementation(() => Promise.resolve([asset] as never));
+      mocks.asset.updateDateTimeOriginal.mockResolvedValue([
+        { assetId: asset.id, dateTimeOriginal: new Date('2020-06-11T01:05:00Z'), timeZone: 'America/Edmonton' },
+      ]);
+      await sut.updateAll(authStub.admin, {
+        ids: [asset.id],
+        dateTimeOriginal: '2020-06-10T18:30:00-06:00',
+        dateTimeRelative: 35,
+        timeZone: 'America/Edmonton',
+      });
+      expect(asset.fileCreatedAt.toISOString()).toBe('2020-06-11T01:05:00.000Z');
+      expect(asset.localDateTime.toISOString()).toBe('2020-06-10T19:05:00.000Z');
+    });
+
     it('should update exif table if dateTimeRelative and timeZone field is provided', async () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
       const dateTimeRelative = 35;
@@ -1826,7 +2011,7 @@ describe(AssetService.name, () => {
       expect(mocks.asset.update).toHaveBeenCalledWith({
         id: 'asset-1',
         fileCreatedAt: new Date('2020-02-25T04:41:00.000Z'),
-        localDateTime: new Date('2020-02-25T04:41:00.000Z'),
+        localDateTime: new Date('2020-02-25T06:41:00.000Z'),
       });
       expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.SidecarWrite, data: { id: 'asset-1' } }]);
     });
@@ -1906,6 +2091,36 @@ describe(AssetService.name, () => {
       });
       expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.SidecarWrite, data: { id: 'asset-1' } }]);
     });
+
+    it.each(['America/Edmonton', null])(
+      'keeps a durable date shift correct across retries (zone: %s)',
+      async (timeZone) => {
+        const asset = AssetFactory.create({
+          id: 'asset-1',
+          fileCreatedAt: new Date('2020-11-01T07:30:00Z'),
+          localDateTime: new Date('2020-11-01T01:30:00Z'),
+        });
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.asset.getByIds.mockImplementation(() => Promise.resolve([asset] as never));
+        mocks.asset.setDateTimeOriginal.mockResolvedValue({
+          assetId: asset.id,
+          dateTimeOriginal: new Date('2020-11-01T08:30:00Z'),
+          timeZone,
+        } as never);
+        mocks.asset.update.mockImplementation((value) => {
+          if (value.fileCreatedAt instanceof Date) asset.fileCreatedAt = value.fileCreatedAt;
+          if (value.localDateTime instanceof Date) asset.localDateTime = value.localDateTime;
+          return Promise.resolve(getForAsset(asset));
+        });
+        const items = [{ id: asset.id, from: new Date('2020-11-01T07:30:00Z') }];
+        await sut.shiftDateTimeOriginalFrom(authStub.admin, items, 60);
+        const expected = timeZone ? '2020-11-01T01:30:00.000Z' : '2020-11-01T02:30:00.000Z';
+        expect(asset.localDateTime.toISOString()).toBe(expected);
+        await sut.shiftDateTimeOriginalFrom(authStub.admin, items, 60);
+        expect(asset.localDateTime.toISOString()).toBe(expected);
+        expect(asset.fileCreatedAt.toISOString()).toBe('2020-11-01T08:30:00.000Z');
+      },
+    );
 
     it("makes the shifted date the owner's on partner copies and passes it to copies that follow (FL-326)", async () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
@@ -2657,6 +2872,49 @@ describe(AssetService.name, () => {
 
     beforeEach(() => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['source', 'target']));
+    });
+
+    it('releases only the capture lock for an explicitly copied sidecar before extraction is queued', async () => {
+      const locks = new Set(['dateTimeOriginal', 'timeZone', 'tags']);
+      const source = forCopy('source', { files: [sidecar('source', '/synthetic/source.xmp')] });
+      const target = forCopy('target', {});
+      mocks.asset.getForCopy.mockResolvedValueOnce(source as never).mockResolvedValueOnce(target as never);
+      mocks.asset.unlockProperties.mockImplementation((_id, properties) => {
+        for (const property of properties) locks.delete(property);
+        return Promise.resolve([]);
+      });
+      await sut.copy(authStub.user1, {
+        sourceId: 'source',
+        targetId: 'target',
+        albums: false,
+        sharedLinks: false,
+        stack: false,
+        favorite: false,
+      });
+      expect(locks).toEqual(new Set(['timeZone', 'tags']));
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.AssetExtractMetadata, data: { id: 'target' } });
+      expect(mocks.asset.unlockProperties.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.job.queue.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('retains the capture lock and queues no extraction when an explicit sidecar copy fails', async () => {
+      const source = forCopy('source', { files: [sidecar('source', '/synthetic/source.xmp')] });
+      const target = forCopy('target', {});
+      mocks.asset.getForCopy.mockResolvedValueOnce(source as never).mockResolvedValueOnce(target as never);
+      mocks.storage.copyFile.mockRejectedValue(new Error('synthetic copy failure'));
+      await expect(
+        sut.copy(authStub.user1, {
+          sourceId: 'source',
+          targetId: 'target',
+          albums: false,
+          sharedLinks: false,
+          stack: false,
+          favorite: false,
+        }),
+      ).rejects.toThrow('synthetic copy failure');
+      expect(mocks.asset.unlockProperties).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
     });
 
     it('copies into a fresh managed directory without deleting a read-only library source sidecar', async () => {

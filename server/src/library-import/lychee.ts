@@ -2,7 +2,7 @@ import { DatabaseSync, SQLOutputValue } from 'node:sqlite';
 import fixture from 'src/library-import/fixtures/lychee/7.12.0-sqlite.json' with { type: 'json' };
 import { ImportedPasswordContext } from 'src/library-import/passwords.js';
 import { readSqlitePassword } from 'src/library-import/sqlite-password.js';
-import { sqliteSchemaFingerprint } from 'src/library-import/sqlite.js';
+import { assertSqliteTextSafe, sqliteSchemaFingerprint } from 'src/library-import/sqlite.js';
 
 const projections = {
   photos: '*',
@@ -48,6 +48,7 @@ export const openLycheeSnapshot = (path: string, version: string) => {
     database.exec('PRAGMA query_only=ON; PRAGMA trusted_schema=OFF; BEGIN');
     if (sqliteSchemaFingerprint(database) !== fixture.schemaSha256)
       throw new LycheeReadError('LYCHEE_SCHEMA_UNQUALIFIED');
+    assertSqliteTextSafe(database, 'SELECT migration,batch FROM migrations');
     const expected = new Set(fixture.migrations.map((row) => row.migration));
     const migrations = database.prepare('SELECT migration,batch FROM migrations');
     migrations.setReadBigInts(true);
@@ -85,10 +86,12 @@ export const openLycheeSnapshot = (path: string, version: string) => {
         const next = database.prepare(`${select} WHERE rowid>? ORDER BY rowid LIMIT 1000`);
         first.setReadBigInts(true);
         next.setReadBigInts(true);
+        assertSqliteTextSafe(database, first.sourceSQL);
         let batch = first.all();
         while (batch.length > 0) {
           const cursor = batch.at(-1)!.__frameleaf_cursor;
           yield batch.map(({ __frameleaf_cursor: _cursor, ...row }) => row);
+          assertSqliteTextSafe(database, next.sourceSQL, [cursor]);
           batch = next.all(cursor);
         }
       } catch {

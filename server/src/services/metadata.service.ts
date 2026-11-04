@@ -707,11 +707,16 @@ export class MetadataService extends BaseService {
       ? values
       : pick(values, lockedProperties);
 
+    const sidecarTimeZone = timeZone ?? asset.exifInfo.timeZone;
     const exif = omitBy(
       <Tags>{
         Description: description,
         ImageDescription: description,
-        DateTimeOriginal: mergeTimeZone(dateTimeOriginal, timeZone)?.toISO(),
+        DateTimeOriginal: dateTimeOriginal
+          ? sidecarTimeZone
+            ? mergeTimeZone(dateTimeOriginal, sidecarTimeZone)?.toISO()
+            : asset.localDateTime.toISOString().slice(0, -1)
+          : undefined,
         GPSLatitude: latitude,
         GPSLongitude: longitude,
         Rating: rating,
@@ -751,10 +756,12 @@ export class MetadataService extends BaseService {
     // older list as the file's and dropped the tags added since.
     // LIB-02: so does a time zone set in Frameleaf: the sidecar holds only an offset, and the next read would
     // take the zone of the GPS position instead.
+    // Capture edits stay authoritative: sidecars lose source precision and may not carry the original zone.
     const keptLocked = new Set<string>([
       ...placeProperties,
       'tags',
       'timeZone',
+      'dateTimeOriginal',
       ...(locationRemoved ? ['latitude', 'longitude'] : []),
     ]);
     await this.assetRepository.unlockProperties(
