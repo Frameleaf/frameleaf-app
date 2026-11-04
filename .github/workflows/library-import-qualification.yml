@@ -72,6 +72,11 @@ jobs:
           node scripts/prepare-import-transfer-runtime.mjs
           node --test test/runtime/import-transfer-runtime.test.mjs
           pnpm exec vitest run --config test/vitest.config.mjs src/library-import/sqlite.spec.ts src/library-import/sqlite-password.spec.ts src/library-import/photoprism.spec.ts src/library-import/librephotos.spec.ts src/library-import/photoview.spec.ts src/library-import/lychee.spec.ts src/library-import/pigallery2.spec.ts src/library-import/nextcloud.spec.ts src/services/auth.service.spec.ts --maxWorkers=1
+      - name: Typecheck source and destination import contracts
+        working-directory: server
+        env:
+          NODE_OPTIONS: --max-old-space-size=12288
+        run: pnpm exec tsc --noEmit
       - name: Lint import readers and manifest mappings
         working-directory: server
         env:
