@@ -28,7 +28,7 @@ const wrap = (connection: Kysely<any>): ImportDatabase => ({
     (await connection.executeQuery(CompiledQuery.raw(statement, parameters))).rows as Record<string, unknown>[],
   transaction: (body) => connection.transaction().execute((tx) => body(wrap(tx))),
 });
-const setup = async (stacked = false, placements = false, locked = false) => {
+const setup = async (stacked = false, placements = false, locked = false, archived = false) => {
   let plan = parseDestinationImportPlan(fixture.plan);
   plan.owners = ['owner', 'viewer', 'editor', 'unrelated'].map((sourceId) => ({
     sourceId,
@@ -73,6 +73,7 @@ const setup = async (stacked = false, placements = false, locked = false) => {
       fileModifiedAt: '2020-01-02T03:04:05Z',
       originalFileNames: { [file.id]: file.id + '.jpg' },
       visibility: file.id === 'motion' ? 'hidden' : locked ? 'locked' : 'timeline',
+      ...(file.id !== 'motion' && archived ? { archived: true } : {}),
       metadata: { takenAt: '2020-01-02T03:04:05Z', timeZone: 'UTC' },
     })),
     albums: [],
@@ -418,6 +419,34 @@ it('locks a private Live Photo and its stack as a whole, then reconciles and reg
 
   await sql`DELETE FROM public.asset_lock WHERE "assetId"=${photos.motion}`.execute(db);
   await expect(reconcileImportedAssets(wrap(db), context, inputs)).rejects.toThrow();
+});
+
+it('keeps a Locked archived Live Photo stack in the Archive for when it is unlocked', async () => {
+  const { context, writer, input, photos } = await setup(true, false, true, true);
+  const id = await writer.write(input('still'));
+  await new CanonicalStackWriter(wrap(db), context).write('stack');
+  expect((await sql`SELECT count(*)::int AS count FROM public.asset_lock`.execute(db)).rows).toEqual([{ count: 3 }]);
+  expect(
+    (await sql`SELECT id::text,visibility FROM public.asset ORDER BY id`.execute(db)).rows.map(({ id, visibility }) => [
+      id,
+      visibility,
+    ]),
+  ).toEqual(
+    [
+      [id, 'archive'],
+      [photos.motion, 'hidden'],
+      [photos.outside, 'archive'],
+    ].sort(([a], [b]) => a.localeCompare(b)),
+  );
+  await new LibraryImportJournal(wrap(db)).phase(context.binding, 'verifying');
+  await expect(reconcileImportedStacks(wrap(db), context)).resolves.toMatchObject({ stacks: 1 });
+  await expect(
+    reconcileImportedAssets(
+      wrap(db),
+      context,
+      context.manifest.assets.map((asset) => input(asset.id)),
+    ),
+  ).resolves.toMatchObject({ assets: 3 });
 });
 
 it('recovers the committed pair after losing its acknowledgement', async () => {

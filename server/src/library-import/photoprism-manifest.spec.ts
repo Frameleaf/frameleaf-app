@@ -515,6 +515,8 @@ describe('PhotoPrism common manifest assembly', () => {
       input,
     );
     expect(result.manifest.assets[0].visibility).toBe(state);
+    // Unlocking returns an archived private photo to the Archive
+    expect(result.manifest.assets[0].archived).toBe(state === 'locked' ? true : undefined);
     expect(result.manifest.assets[0].metadata.deletedAt).toBe(state === 'trash' ? '2026-11-01T00:00:00Z' : undefined);
   });
 

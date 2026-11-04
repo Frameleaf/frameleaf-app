@@ -72,7 +72,7 @@ export async function reconcileImportedStacks(
             ownerId,
             primaryAssetId,
             assetIds,
-            visibility: storedVisibility(primary.visibility),
+            visibility: storedVisibility(primary),
             status: primary.visibility === 'trash' ? 'trashed' : 'active',
             ownerEligible: true,
             membersOwned: true,

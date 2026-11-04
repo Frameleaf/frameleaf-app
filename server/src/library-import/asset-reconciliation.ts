@@ -112,7 +112,7 @@ export async function reconcileImportedAssets(
         fileModifiedAt: byId.get(id)!.modified,
         originalFileName: primary.name,
         isFavorite: metadata.favorite ?? false,
-        visibility: storedVisibility(asset.visibility),
+        visibility: storedVisibility(asset),
         status: asset.visibility === 'trash' ? 'trashed' : 'active',
         deletedAt: byId.get(id)!.deleted,
         libraryScope: 'personal',

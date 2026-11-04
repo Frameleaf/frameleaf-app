@@ -187,6 +187,7 @@ export function assemblePhotoprismManifest(records: Iterable<PhotoprismInventory
           : photo.state.archived
             ? 'archive'
             : 'timeline',
+      ...(!photo.state.removed && photo.state.private && photo.state.archived ? { archived: true as const } : {}),
       metadata: { ...metadata, ...(photo.state.removed ? { deletedAt: photo.stateChangedAt } : {}) },
     };
   });

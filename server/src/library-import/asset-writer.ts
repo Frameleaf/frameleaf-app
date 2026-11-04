@@ -260,7 +260,7 @@ export class CanonicalAssetWriter {
               item.fileModifiedAt,
               primary.name,
               metadata.favorite ?? false,
-              storedVisibility(asset.visibility),
+              storedVisibility(asset),
               asset.visibility === 'trash' ? 'trashed' : 'active',
               metadata.deletedAt ?? null,
               livePhotoVideoId,

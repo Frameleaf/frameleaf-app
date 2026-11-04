@@ -60,7 +60,7 @@ export class CanonicalStackWriter {
               const locked = source.visibility === 'locked';
               return (
                 asset.ownerId !== ownerId ||
-                asset.visibility !== storedVisibility(source.visibility) ||
+                asset.visibility !== storedVisibility(source) ||
                 asset.locked !== locked ||
                 asset.status !== (source.visibility === 'trash' ? 'trashed' : 'active')
               );
