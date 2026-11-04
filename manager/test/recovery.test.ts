@@ -67,21 +67,21 @@ test('an unlabelled competing writer, stopped auto-restarting writer and a volum
     await rm(directory, { recursive: true });
   }
 });
-test('source fencing resumes after a crash between restart-policy changes without accepting other changes', async () => {
+for (const layout of ['legacy', 'sqlite', 'database'] as const) test(`source fencing resumes after a crash without accepting other changes (${layout})`, async () => {
   const directory = await mkdtemp(join(tmpdir(), 'manager-fence-')),
     store = new Store(directory);
   const app = container('a'),
     worker = container('b'),
     database = container('c');
   database.Mounts = [];
-  const all = [app, worker, database];
+  const all = layout === 'sqlite' ? [app, worker] : [app, worker, database];
   const source = {
     id: app.Id,
     app: app.Id,
     workers: [app.Id, worker.Id],
     mounts: media,
     platform: 'docker',
-    database: { container: database.Id },
+    ...(layout === 'legacy' ? { database: { container: database.Id } } : { containers: all.map((c) => c.Id) }),
     fingerprint: sourceFingerprint(structuredClone(all)),
     restart: Object.fromEntries([app, worker].map((c) => [c.Id, structuredClone(c.HostConfig.RestartPolicy)])),
   } as Source;
