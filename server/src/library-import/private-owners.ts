@@ -21,7 +21,7 @@ const refuse = (code: string): never => {
   throw new LibraryImportRefused(code);
 };
 const checksum = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
-const prepare = (context: PrivateContext, inventory: unknown) => {
+export const preparePrivateOwnerInputs = (context: PrivateContext, inventory: unknown) => {
   const owners = prepareImportedOwners(context, inventory).sort(({ owner: a }, { owner: b }) =>
     a.sourceUserId < b.sourceUserId ? -1 : a.sourceUserId > b.sourceUserId ? 1 : 0,
   );
@@ -67,7 +67,7 @@ export const parsePrivateOwnerInputs = (input: unknown, context: PrivateContext)
     }
     return { intent, credential };
   });
-  const prepared = prepare(context, inventory);
+  const prepared = preparePrivateOwnerInputs(context, inventory);
   return { owners: prepared.owners, sha256: prepared.sha256 };
 };
 
@@ -89,7 +89,7 @@ export async function retainPrivateOwnerInputs(
 ): Promise<void> {
   return withImportInputRun(db, context, true, async (tx, bound) => {
     const reviewed = { ...bound, ...(await readRetainedImportInputs(tx, bound)) };
-    const prepared = prepare(reviewed, inventory);
+    const prepared = preparePrivateOwnerInputs(reviewed, inventory);
     const row = await readPrivateRow(tx);
     if (row.private_owners !== null || row.private_owners_sha256 !== null) {
       if (restorePrivateOwnerInputs(row, reviewed).sha256 !== prepared.sha256)
