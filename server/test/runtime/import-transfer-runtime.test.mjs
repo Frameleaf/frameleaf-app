@@ -28,6 +28,11 @@ test('packages the actual Manager transfer modules and matching declarations wit
   const manifest = await verifyImportTransferRuntime(directory);
   assert.equal(manifest.format, 'frameleaf-import-transfer-runtime');
   assert.equal(manifest.version, 1);
+  assert.equal(manifest.platform, process.platform);
+  assert.equal(
+    manifest.files.some(({ name }) => name === 'frameleaf-import-rename'),
+    process.platform === 'linux',
+  );
   const dockerfile = await readFile(new URL('../../Dockerfile', import.meta.url), 'utf8');
   const copied = dockerfile
     .split('\n')

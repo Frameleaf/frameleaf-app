@@ -27,6 +27,7 @@ const sources = [
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const sourceHashes = async () =>
   Promise.all(sources.map(async (name) => ({ name, sha256: hash(await readFile(resolve(repository, name))) })));
+const supportedPlatforms = ['linux', 'darwin', 'win32'];
 const names = (platform) =>
   [
     ...modules.flatMap((name) => [`${name}.js`, `${name}.d.ts`]),
@@ -41,7 +42,7 @@ export async function verifyImportTransferRuntime(directory, canonical = directo
   const manifest = JSON.parse(await readFile(join(directory, 'runtime.json'), 'utf8'));
   assert.equal(manifest.format, 'frameleaf-import-transfer-runtime');
   assert.equal(manifest.version, 1);
-  assert(['linux', 'darwin'].includes(manifest.platform), 'unsupported import runtime platform');
+  assert(supportedPlatforms.includes(manifest.platform), 'unsupported import runtime platform');
   assert.deepEqual(
     manifest.files.map(({ name }) => name),
     names(manifest.platform),
@@ -99,7 +100,7 @@ export async function packageImportTransferRuntime(packageDirectory, canonical =
 
 /** Compile only the existing transfer workers, using Server's installed compiler and dependencies. */
 export async function prepareImportTransferRuntime(directory = destination) {
-  assert(['linux', 'darwin'].includes(process.platform), 'unsupported import runtime build platform');
+  assert(supportedPlatforms.includes(process.platform), 'unsupported import runtime build platform');
   directory = resolve(directory);
   await mkdir(dirname(directory), { recursive: true });
   const staging = await mkdtemp(join(dirname(directory), '.import-runtime-'));
@@ -126,7 +127,7 @@ export async function prepareImportTransferRuntime(directory = destination) {
         files: modules.map((name) => resolve(repository, `manager/src/${name}.ts`)),
       }),
     );
-    execFileSync(resolve(server, 'node_modules/.bin/tsc'), ['-p', config], {
+    execFileSync(process.execPath, [resolve(server, 'node_modules/@typescript/native/bin/tsc'), '-p', config], {
       cwd: server,
       stdio: 'inherit',
       timeout: 120_000,
