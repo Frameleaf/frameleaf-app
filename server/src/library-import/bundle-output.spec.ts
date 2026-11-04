@@ -146,16 +146,19 @@ it.each([
   const value = input();
   let candidate: Parameters<typeof writeLibraryImportBundle>[0] = value;
   switch (failure) {
-    case 'missing owner':
+    case 'missing owner': {
       candidate = { ...value, owners: value.owners.slice(1) };
       break;
-    case 'wrong destination':
+    }
+    case 'wrong destination': {
       candidate = { ...value, destinationId: randomUUID() };
       break;
-    case 'credential archive':
+    }
+    case 'credential archive': {
       candidate = { ...value, records: [{ table: 'users', value: { password: 'private-verifier-value' } }] };
       break;
-    case 'interrupted inventory':
+    }
+    case 'interrupted inventory': {
       candidate = {
         ...value,
         records: (async function* () {
@@ -165,13 +168,16 @@ it.each([
         })(),
       };
       break;
-    case 'shared staging':
+    }
+    case 'shared staging': {
       await chmod(stagingRoot, 0o755);
       break;
-    case 'symlink staging':
+    }
+    case 'symlink staging': {
       await symlink(stagingRoot, join(stagingRoot, 'alias'));
       candidate = { ...value, stagingRoot: join(stagingRoot, 'alias') };
       break;
+    }
   }
   const failureResult: unknown = await writeLibraryImportBundle(candidate).catch((error: unknown) => error);
   expect(failureResult).toMatchObject({ message: expect.stringMatching(/^Library import refused:/u) });
