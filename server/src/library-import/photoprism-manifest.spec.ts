@@ -131,11 +131,22 @@ describe('PhotoPrism common manifest assembly', () => {
       assignment(photo.id as bigint, 6n),
     );
     addLabel(rows, label(7n, 'Hidden label', { label_priority: -1n }), assignment(photo.id as bigint, 7n));
+    addLabel(
+      rows,
+      label(8n, 'Zero timestamp label', { deleted_at: '0001-01-01T00:00:00Z' }),
+      assignment(photo.id as bigint, 8n, 'manual', 99n),
+    );
     const result = assemblePhotoprismManifest(rows, input);
-    expect(result.manifest.assets[0].metadata.tags).toEqual(['family', 'summer', 'Mountain Trail', 'Reviewed batch']);
+    expect(result.manifest.assets[0].metadata.tags).toEqual([
+      'family',
+      'summer',
+      'Mountain Trail',
+      'Reviewed batch',
+      'Zero timestamp label',
+    ]);
     expect(rows.find((row) => row.type === 'photo')?.value.metadata.tags).toEqual(['family', 'summer']);
-    expect(result.archive.filter((row) => row.table === 'labels')).toHaveLength(7);
-    expect(result.archive.filter((row) => row.table === 'photos_labels')).toHaveLength(7);
+    expect(result.archive.filter((row) => row.table === 'labels')).toHaveLength(8);
+    expect(result.archive.filter((row) => row.table === 'photos_labels')).toHaveLength(8);
   });
   it('archives an unrepresentable manual label and explicitly reports the loss', () => {
     const { rows, input, photo } = setup();
