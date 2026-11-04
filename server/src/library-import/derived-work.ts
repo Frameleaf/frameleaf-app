@@ -11,6 +11,7 @@ import {
   LibraryImportRefused,
   parseLibraryImportBinding,
 } from 'src/library-import/state.js';
+import { lockQueueCatalogue } from 'src/queue/catalogue.js';
 import { freezeSelection } from 'src/queue/manifest.js';
 import { QueueIntent } from 'src/queue/types.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
@@ -131,7 +132,7 @@ export async function prepareLibraryImportWork(
       // Preserve the queue's catalogue -> run -> selection lock order.
       for (const queue of [...new Set(stages.map((intent) => intent.queue))].sort())
         await sql`insert into job_queue(name) values (${queue}) on conflict do nothing`.execute(tx);
-      await sql`select name from job_queue order by name for no key update`.execute(tx);
+      await lockQueueCatalogue(tx);
       const selection = {
         version: 1,
         operationId: binding.operationId,

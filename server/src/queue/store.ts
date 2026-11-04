@@ -2,6 +2,7 @@ import { Kysely, type QueryExecutorProvider, type RawBuilder, Transaction, sql }
 import { createHash, randomUUID } from 'node:crypto';
 import type { DB } from 'src/schema/index.js';
 import { JobName, QueueName } from 'src/enum.js';
+import { enterQueueTurnstile, isLockContention, lockQueues, withQueueCatalogue } from 'src/queue/catalogue.js';
 import {
   publishLibraryFollowups,
   redactLibraryPayloads,
@@ -119,6 +120,7 @@ export class SqlQueueStore {
 
   private async insertBatch(intents: QueueIntent[], db: Executor, lockedManifestItems?: ReadonlySet<QueueIntent>) {
     // Same lock order as admission/completion, including multi-queue follow-ups.
+    await enterQueueTurnstile(db);
     for (const queue of [...new Set(intents.map((intent) => intent.queue))].sort()) {
       await sql`insert into job_queue(name) values (${queue}) on conflict do nothing`.execute(db);
       await sql`select name from job_queue where name = ${queue} for no key update`.execute(db);
@@ -421,7 +423,10 @@ export class SqlQueueStore {
   }
 
   async feedManifest(queue: string) {
-    await shareSelectionPage(this.db, { queue });
+    // Sharing advances one page per visit; a visit that loses the catalogue wait still feeds and claims this queue.
+    await shareSelectionPage(this.db, { queue }).catch((error: unknown) => {
+      if (!isLockContention(error)) throw error;
+    });
     // The feeder retains these exact canonical tuples under row locks until this transaction commits.
     return feedManifest(this.db, queue, (intents, tx) => this.insertBatch(intents, tx, new Set(intents)));
   }
@@ -438,6 +443,8 @@ export class SqlQueueStore {
       });
     }
     return this.db.transaction().execute(async (tx) => {
+      // A claim waits its turn behind a catalogue lock instead of overtaking it (see `enterQueueTurnstile`).
+      await enterQueueTurnstile(tx);
       const {
         rows: [config],
       } = await sql<{ paused: boolean; concurrency: number }>`
@@ -526,13 +533,13 @@ export class SqlQueueStore {
     adopt?: (tx: Transaction<DB>) => Promise<void>,
     publication?: QueuePublication,
   ) {
-    return withSelectionSharing(
-      this.db,
+    // Publications may construct additional child intents after reading their accepted rows, for queues
+    // unknown until then. Lock the finite queue catalogue in one order before any job/asset rows, including
+    // those destinations. Media work has already finished; only the short publication is serialized, and a
+    // lost wait for the catalogue starts the publication over instead of failing the job.
+    return withQueueCatalogue(
+      (work) => withSelectionSharing(this.db, work, publication),
       async (tx) => {
-        // Publications may construct additional child intents after reading their accepted rows.
-        // Lock the finite queue catalogue in one order before any job/asset rows, including those
-        // destinations. Media work has already finished; only the short publication is serialized.
-        await sql`select name from job_queue order by name for no key update`.execute(tx);
         const {
           rows: [job],
         } = await sql<{ latestPending: QueueIntent | null }>`
@@ -570,7 +577,6 @@ export class SqlQueueStore {
         await this.settleRuns(tx, [...affectedRuns, ...latest.runIds]);
         return true;
       },
-      publication,
     );
   }
 
@@ -645,7 +651,7 @@ export class SqlQueueStore {
   /** A dependency refusal is not an execution failure. Keep the item and audit, refund its retry credit. */
   async defer(claim: QueueClaim, reason: JobDependencyReason) {
     return this.db.transaction().execute(async (tx) => {
-      await sql`select name from job_queue where name = ${claim.queue} for no key update`.execute(tx);
+      await lockQueues(tx, [claim.queue]);
       const { rows } = await sql`update job set state = 'pending', token = null, "leaseExpiresAt" = null,
         "workerId" = null, "cancelRequestedAt" = null, "cancelReason" = null, "finishedAt" = null, error = null,
         "retryBaseAttempt" = "retryBaseAttempt" + 1, "dependencyReason" = ${reason},
@@ -675,7 +681,7 @@ export class SqlQueueStore {
     return withSelectionSharing(
       this.db,
       async (tx) => {
-        await sql`select name from job_queue where name = ${claim.queue} for no key update`.execute(tx);
+        await lockQueues(tx, [claim.queue]);
         const owned = options.queuedCancellation
           ? sql`queue = ${claim.queue} and state in ('pending','waiting') and token is null and "cancelRequestedAt" is not null
               and "cancelReason" is distinct from 'deadline'`
@@ -1044,7 +1050,7 @@ export class SqlQueueStore {
   private async cancel(queue: string, states: QueueState[], about: RawBuilder<unknown>, wholeQueue: boolean) {
     // Keep run accounting and dependency history. Clearing hides payloads and cancels pending work.
     await withSelectionSharing(this.db, async (tx) => {
-      await sql`select name from job_queue where name = ${queue} for no key update`.execute(tx);
+      await lockQueues(tx, [queue]);
       const { rows: cancelledLatest } = await sql<LineageItemIdentity & { rootItemKey: string | null }>`
         update job_run_item i set state = 'cancelled' where i."jobId" is null and exists (
         select 1 from job j where j.queue = ${queue} and j.state = any(${states}::text[]) and j.state != 'active'
@@ -1129,7 +1135,7 @@ export class SqlQueueStore {
     let total = 0;
     for (;;) {
       const count = await this.db.transaction().execute(async (tx) => {
-        await sql`select name from job_queue where name = ${queue} for no key update`.execute(tx);
+        await lockQueues(tx, [queue]);
         const { rows } = await sql<{ id: string; runId: string | null }>`update job j set state = 'pending',
           "availableAt" = now(), "finishedAt" = null, error = null, "retryBaseAttempt" = attempt
           where id in (

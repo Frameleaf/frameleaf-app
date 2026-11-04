@@ -2,6 +2,7 @@ import { type Kysely, type QueryExecutorProvider, type RawBuilder, type Transact
 import { createHash, randomUUID } from 'node:crypto';
 import type { DB } from 'src/schema/index.js';
 import { JobName, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
+import { withQueueCatalogue } from 'src/queue/catalogue.js';
 import { attachProducerRun } from 'src/queue/manifest.js';
 import { libraryCanonicalState, libraryMembershipEntitled } from 'src/queue/selection-state.js';
 import { QUEUE_BATCH, type QueueExecution, type QueueIntent } from 'src/queue/types.js';
@@ -36,22 +37,24 @@ export async function withLibraryQueueFence<T>(
   work: (tx: Transaction<DB>) => Promise<T>,
 ): Promise<T> {
   context?.signal.throwIfAborted();
-  return db.transaction().execute(async (tx) => {
-    await sql`select name from job_queue order by name for no key update`.execute(tx);
-    const fence = async (lock: boolean) => {
-      context?.signal.throwIfAborted();
-      if (!context) return;
-      const { rows } = await sql`select id from job where id = ${context.claim.id}::uuid
+  return withQueueCatalogue(
+    (fenced) => db.transaction().execute(fenced),
+    async (tx) => {
+      const fence = async (lock: boolean) => {
+        context?.signal.throwIfAborted();
+        if (!context) return;
+        const { rows } = await sql`select id from job where id = ${context.claim.id}::uuid
         and token = ${context.claim.token}::uuid and state = 'active' and "leaseExpiresAt" > clock_timestamp()
         and "cancelRequestedAt" is null ${lock ? sql`for update` : sql``}`.execute(tx);
-      if (rows.length === 0) throw new Error('Library scan queue claim is no longer active');
-      context.signal.throwIfAborted();
-    };
-    await fence(true);
-    const value = await work(tx);
-    await fence(false);
-    return value;
-  });
+        if (rows.length === 0) throw new Error('Library scan queue claim is no longer active');
+        context.signal.throwIfAborted();
+      };
+      await fence(true);
+      const value = await work(tx);
+      await fence(false);
+      return value;
+    },
+  );
 }
 
 /** Small setup only. Domain sources never attach their lifetime to the current producer job. */
