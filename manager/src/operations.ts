@@ -466,6 +466,21 @@ export class Operations {
     this.executing.add(operationId);
     try {
       await storagePath(input.mediaPath, this.roots, 0);
+      if (request.copyRoots !== undefined) {
+        const { copyRoots, roots } = z.object({
+          copyRoots: z.object({ source: z.string(), destination: z.string() }),
+          roots: z.array(z.object({ id: z.string(), path: z.string() })),
+        }).safeParse(request).data ?? {};
+        const sourceRoot = roots?.find((root) => root.id === copyRoots?.source);
+        const destinationRoot = roots?.find((root) => root.id === copyRoots?.destination);
+        if (
+          !sourceRoot || destinationRoot?.path !== '/data' ||
+          !media.some((mount) => mount.source === snapshot.originalsPath && mount.target === sourceRoot.path && mount.readOnly) ||
+          input.mediaPath === snapshot.originalsPath ||
+          input.mediaPath.startsWith(snapshot.originalsPath + '/') ||
+          snapshot.originalsPath.startsWith(input.mediaPath + '/')
+        ) throw new Refusal('import_runtime_media_invalid');
+      }
       const sourceRoots = fence.mounts.filter((mount) => mount.type === 'bind').map(({ source }) => source);
       for (const mount of media) {
         if (mount.target === '/data') continue;

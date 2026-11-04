@@ -803,6 +803,17 @@ test('common review reports the source and space without exposing the private bu
     }),
     /import_runtime_media_invalid/,
   );
+  await assert.rejects(
+    f.operations.prepareCommonReview(input, {
+      fence, media: [...media, { source: f.root, target: '/import-media/source', readOnly: true }], bootstrapAdminId,
+      request: {
+        ...request,
+        copyRoots: { source: 'source', destination: 'destination' },
+        roots: [{ id: 'source', path: '/import-media/source' }, { id: 'destination', path: '/data' }],
+      },
+    }),
+    /import_runtime_media_invalid/,
+  );
   assert.equal(fenceChecks, 0);
   const prepared = { fence, media, bootstrapAdminId, request };
   const prepareBundle = f.docker.prepareImportBundle;

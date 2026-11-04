@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { type BigIntStats } from 'node:fs';
+import { posix } from 'node:path';
 import { writeLibraryImportBundle } from 'src/library-import/bundle-output.js';
 import { openPrivateImportFile } from 'src/library-import/command-input.js';
 import { parseImportedOwnerIntent } from 'src/library-import/owner-reconciliation.js';
@@ -11,6 +12,31 @@ import { reviewImportFiles } from 'src/library-import/transfer-runtime.js';
 
 type BundleInput = Parameters<typeof writeLibraryImportBundle>[0];
 type ManifestEvidence = Parameters<typeof assemblePhotoprismManifest>[1];
+
+export function photoprismCopyPlacements(
+  records: PhotoprismInventoryRecord[],
+  roots: { source: string; destination: string },
+) {
+  return records.flatMap((record) => {
+    if (record.type !== 'file' || !record.value.role) return [];
+    const file = record.value;
+    const extension = posix.extname(file.path);
+    if (Buffer.byteLength(extension) > 180) throw new LibraryImportRefused('PHOTOPRISM_FILE_NAME_UNSUPPORTED');
+    return [
+      {
+        id: file.id,
+        sourceAssetId: file.photoId,
+        sourceFileId: file.id,
+        mode: 'copy' as const,
+        sourceRoot: roots.source,
+        sourcePath: file.path,
+        destinationRoot: roots.destination,
+        destinationPath: `import-${createHash('sha256').update(file.id).digest('hex')}${extension}`,
+        expectedBytes: file.bytes,
+      },
+    ];
+  });
+}
 
 export function photoprismFileEvidence(
   records: PhotoprismInventoryRecord[],
@@ -48,7 +74,8 @@ export async function publishPhotoprismImportBundle(input: {
   observed: Omit<ManifestEvidence, 'files'> & { files?: ManifestEvidence['files'] };
   approvedLossCodes: ReadonlySet<string>;
   roots: unknown;
-  placements: unknown;
+  placements?: unknown;
+  copyRoots?: { source: string; destination: string };
   ownerMappings: unknown;
   owners: BundleInput['owners'];
   stagingRoot: string;
@@ -64,8 +91,21 @@ export async function publishPhotoprismImportBundle(input: {
     destinationId: input.destinationId,
     owners: input.ownerMappings,
     roots: input.roots,
-    files: input.placements,
+    files: input.copyRoots ? photoprismCopyPlacements(records, input.copyRoots) : input.placements,
   });
+  if (input.copyRoots) {
+    const source = plan.roots.find(({ id }) => id === input.copyRoots?.source);
+    const destination = plan.roots.find(({ id }) => id === input.copyRoots?.destination);
+    if (
+      !source ||
+      !destination ||
+      source.path === destination.path ||
+      source.path.startsWith(destination.path + '/') ||
+      destination.path.startsWith(source.path + '/') ||
+      (source.device === destination.device && source.inode === destination.inode)
+    )
+      throw new LibraryImportRefused('IMPORT_COPY_ROOTS_OVERLAP');
+  }
   const files = input.observed.files ?? photoprismFileEvidence(records, plan);
   const { manifest, archive } = assemblePhotoprismManifest(records, { ...input.observed, files });
   for (const loss of manifest.losses) {

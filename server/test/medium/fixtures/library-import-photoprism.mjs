@@ -46,7 +46,6 @@ assert.match(input.nativeLibrary.containerId, /^[a-f0-9]{64}$/u);
 const sourceRoot = join(sourceDirectory, 'originals');
 const destinationRoot = join(directory, 'destination');
 await mkdir(destinationRoot, { mode: 0o700 });
-await mkdir(join(destinationRoot, 'owner/camera'), { recursive: true, mode: 0o700 });
 const sha256 = async (path) =>
   createHash('sha256')
     .update(await readFile(path))
@@ -109,7 +108,6 @@ for (const [id, path] of [
   const info = await stat(path, { bigint: true });
   roots.push({ id, path, device: String(info.dev), inode: String(info.ino) });
 }
-const drafts = [];
 for (const file of originals) {
   assert.equal(file.role, 'original');
   const expected = input.nativeLibrary.photos.find((photo) => photo.path === file.path);
@@ -118,18 +116,6 @@ for (const file of originals) {
   const info = await stat(path, { bigint: true });
   assert.equal(await sha256(path), expected.sha256);
   assert.equal(String(info.size), expected.bytes);
-  drafts.push({
-    id: file.id,
-    sourceAssetId: file.photoId,
-    sourceFileId: file.id,
-    mode: 'copy',
-    sourceRoot: 'source',
-    sourcePath: file.path,
-    destinationRoot: 'destination',
-    destinationPath: 'owner/' + file.path,
-    expectedBytes: expected.bytes,
-    expectedSha256: expected.sha256,
-  });
 }
 const sourceEvidence = {
   source,
@@ -196,7 +182,7 @@ const publication = {
   operationId,
   destinationId,
   roots,
-  placements: drafts,
+  copyRoots: { source: 'source', destination: 'destination' },
   ownerMappings: [{ sourceId: input.sourceUserId, destinationId: ownerId }],
   ownerIntents,
 };
@@ -298,6 +284,11 @@ try {
   const activated = await executeLibraryImportCommand({ ...options, action: 'verify', activate: true });
   assert.equal(activated.run.status, 'activated');
   const loaded = await loadLibraryImportBundle(config, 'photoprism');
+  for (const placement of loaded.context.plan.files) {
+    const original = input.nativeLibrary.photos.find((photo) => photo.path === placement.sourcePath);
+    assert(original, 'Each placement must refer to a native original');
+    assert.equal(await sha256(join(destinationRoot, placement.destinationPath)), original.sha256);
+  }
   assert.deepEqual(bundle.receipt, {
     bundleName: basename(bundle.bundleDirectory),
     binding: loaded.context.binding,

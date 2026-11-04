@@ -41,7 +41,8 @@ const prepareSchema = z.strictObject({
   }),
   approvedLossCodes: z.array(id),
   roots: z.array(z.unknown()),
-  placements: z.array(z.unknown()),
+  placements: z.array(z.unknown()).optional(),
+  copyRoots: z.strictObject({ source: id, destination: id }).optional(),
   ownerMappings: z.array(z.strictObject({ sourceId: id, destinationId: z.uuid() })),
   ownerIntents: z.array(z.unknown()),
 });
@@ -71,6 +72,11 @@ export async function prepareLibraryImport(configPath: string, authorize = reque
     await verify();
     return { operationId: input.operationId, destinationId: input.destinationId, source, inventory };
   }
+  if (
+    (input.placements === undefined) === (input.copyRoots === undefined) ||
+    (input.copyRoots && input.copyRoots.source === input.copyRoots.destination)
+  )
+    throw new LibraryImportRefused('IMPORT_PREPARATION_INPUT_INVALID');
   const result = await publishPhotoprismSqliteBundle({
     ...input,
     stagingRoot,

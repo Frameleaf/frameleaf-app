@@ -11,7 +11,7 @@ import metadata from 'src/library-import/fixtures/photoprism/261029-metadata.jso
 import recordsFixture from 'src/library-import/fixtures/photoprism/261029-records.json' with { type: 'json' };
 import schema from 'src/library-import/fixtures/photoprism/261029-sqlite.json' with { type: 'json' };
 import { manifestFingerprint } from 'src/library-import/manifest.js';
-import { photoprismFileEvidence } from 'src/library-import/photoprism-bundle.js';
+import { photoprismCopyPlacements, photoprismFileEvidence } from 'src/library-import/photoprism-bundle.js';
 import {
   type PhotoprismInventoryRecord,
   normalizePhotoprismInventoryRow,
@@ -100,6 +100,22 @@ const setup = (timeZone?: string) => {
 };
 
 describe('PhotoPrism common manifest assembly', () => {
+  it('derives distinct copy destinations for originals and sidecars with source extensions', () => {
+    const { rows, file } = setup();
+    for (const [file_uid, file_name, file_root, file_sidecar] of [
+      ['second', 'elsewhere/photo.jpg', '/', 0n],
+      ['sidecar', 'camera/photo.xmp', '/', 1n],
+      ['preview', 'camera/preview.jpg', 'sidecar', 0n],
+    ] as const) {
+      rows.push(...normalizePhotoprismInventoryRow('files', { ...file, file_uid, file_name, file_root, file_sidecar }));
+    }
+    const placements = photoprismCopyPlacements(rows, { source: 'source', destination: 'destination' });
+    expect(placements.map((item) => item.sourceFileId)).toEqual(['jpeg', 'second', 'sidecar']);
+    expect(new Set(placements.map((item) => item.destinationPath)).size).toBe(3);
+    expect(placements.map((item) => item.destinationPath.split('.').at(-1))).toEqual(['jpg', 'jpg', 'xmp']);
+    expect(placements.every((item) => item.mode === 'copy' && item.sourceRoot === 'source')).toBe(true);
+  });
+
   it('binds byte evidence and modification time to the original snapshot relationship', () => {
     const { rows, input, photo } = setup();
     const [original] = input.files;
