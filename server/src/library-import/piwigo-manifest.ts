@@ -346,7 +346,7 @@ export async function readPiwigoManifest(
         longitude: coordinates[1],
         tags: photoTags as string[],
         favorite: favourites.has(JSON.stringify([id, ownerId])),
-        ...(ownerRating !== undefined && ownerRating <= 5n ? { rating: Number(ownerRating) } : {}),
+        rating: ownerRating !== undefined && ownerRating <= 5n ? Number(ownerRating) : null,
       },
     });
   }
