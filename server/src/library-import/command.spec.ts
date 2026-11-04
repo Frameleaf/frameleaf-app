@@ -65,7 +65,7 @@ describe('common library command trust boundary', () => {
       },
     };
     const local = {
-      identity: { lock },
+      identity: { lock, database: { device: '1', inode: '3' } },
       db: {
         prepare: vi.fn().mockReturnValue({
           get: () => ({
