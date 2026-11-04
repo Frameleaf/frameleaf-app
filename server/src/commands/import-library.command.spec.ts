@@ -31,7 +31,7 @@ const config = {
 };
 const local = { close: vi.fn() },
   connection = { db: {}, close: vi.fn() };
-let previousExit: number | undefined;
+let previousExit: typeof process.exitCode;
 beforeEach(() => {
   previousExit = process.exitCode;
   process.exitCode = undefined;
