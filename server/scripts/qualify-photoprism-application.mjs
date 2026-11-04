@@ -211,6 +211,25 @@ try {
       observed.TimeZone !== 'America/Edmonton'
     )
       throw new Error('Native manual photo readback changed');
+    phase = 'native private original access';
+    const privateOriginal = await fetch(
+      origin + '/api/v1/photos/' + photo.UID + '/dl?t=' + encodeURIComponent(session.config.downloadToken),
+      {
+        signal: AbortSignal.timeout(30_000),
+      },
+    );
+    if (
+      !privateOriginal.ok ||
+      createHash('sha256')
+        .update(Buffer.from(await privateOriginal.arrayBuffer()))
+        .digest('hex') !== seed.sha256
+    )
+      throw new Error('Native private original access changed');
+    const anonymous = await fetch(origin + '/api/v1/photos/' + photo.UID + '/dl', {
+      signal: AbortSignal.timeout(30_000),
+    });
+    await anonymous.body?.cancel();
+    if (anonymous.status !== 403) throw new Error('Native private original did not reject anonymous access');
     nativeLibrary.photos.push({ ...seed, uid: photo.UID, caption, favorite });
   }
   phase = 'native private album edits';
