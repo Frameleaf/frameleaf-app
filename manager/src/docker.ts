@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
+import { createInterface } from 'node:readline';
 import { access, open, readFile, rename, rm } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { Refusal, containerId, imageDigest, redact, type Database, type Mount } from './contracts.js';
@@ -33,6 +34,8 @@ export type CommandOptions = {
   /** Fixed packaged executable selected by a trusted adapter, never an HTTP request. */
   executable?: string;
   input?: string;
+  /** Offline importer challenges only; stdin stays open until the child finishes. */
+  reply?: (line: string) => Promise<string | undefined>;
   inputFile?: string;
   /** The reader may stop once it has what it needs (pg_restore --list reads only the table of contents). */
   inputMayCloseEarly?: boolean;
@@ -51,6 +54,10 @@ export async function command(
     (!options.executable || options.executable.includes('\0') ||
       !isAbsolute(options.executable) || resolve(options.executable) !== options.executable))
     throw new Refusal('command_executable_invalid');
+  if (options.reply !== undefined &&
+    (typeof options.reply !== 'function' || options.input !== undefined ||
+      options.inputFile !== undefined || options.outputFile !== undefined))
+    throw new Refusal('command_dialogue_invalid');
   // An incomplete transfer is never a receipt; the operation lock makes its retry exclusive.
   if (options.outputFile) await rm(`${options.outputFile}.partial`, { force: true });
   const child = spawn(options.executable ?? binary, args, {
@@ -87,7 +94,33 @@ export async function command(
         child.kill('SIGKILL');
       } else result = Buffer.concat([result, chunk]);
     });
-  if (options.inputFile)
+  if (options.reply) {
+    const reply = options.reply;
+    const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
+    child.stdin.on('error', () => {});
+    transfers.push((async () => {
+      try {
+        for await (const line of lines) {
+          const response = await Promise.race([
+            Promise.resolve().then(() => reply(line)),
+            exited.then(() => { throw new Error('Child exited during source check'); }),
+          ]);
+          if (response !== undefined) {
+            if (typeof response !== 'string' || Buffer.byteLength(response) > 65536)
+              throw new Error('Invalid offline response');
+            await new Promise<void>((resolve, reject) =>
+              child.stdin.write(response, (error) => error ? reject(error) : resolve()));
+          }
+        }
+      } catch {
+        // Source-check failures can contain private evidence; never pass them to command logging.
+        throw new Refusal('command_reply_failed');
+      } finally {
+        lines.close();
+        child.stdin.end();
+      }
+    })());
+  } else if (options.inputFile)
     transfers.push(
       pipeline(createReadStream(options.inputFile), child.stdin).catch((error: NodeJS.ErrnoException) => {
         // The exit code still decides success; only the reader hanging up early is tolerated.
