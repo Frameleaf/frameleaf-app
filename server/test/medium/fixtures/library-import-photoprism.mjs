@@ -15,7 +15,7 @@ const { assertImportExecutionLock } = await import('src/library-import/execution
 await assertImportExecutionLock(stateDirectory);
 const { Kysely } = await import('kysely');
 const { connectImportDatabase } = await import('src/immich-import/database.js');
-const { publishPhotoprismSqliteBundle } = await import('src/library-import/photoprism-bundle.js');
+const { prepareLibraryImport } = await import('src/library-import/prepare-command.js');
 const { loadLibraryImportBundle } = await import('src/library-import/bundle-input.js');
 const { executeLibraryImportCommand } = await import('src/library-import/command.js');
 const { libraryImportDerivedRunId } = await import('src/library-import/derived-work.js');
@@ -197,24 +197,30 @@ const ownerIntents = [
   },
 ];
 const publication = {
+  format: 'frameleaf-prepare-library-import',
+  version: 1,
+  adapter: 'photoprism-sqlite',
   snapshotPath: captured.path,
   observed: sourceEvidence,
-  approvedLossCodes: reviewedLosses,
-  stagingRoot: directory,
+  approvedLossCodes: [...reviewedLosses],
   operationId,
   destinationId,
   roots,
   placements: drafts,
   ownerMappings: [{ sourceId: input.sourceUserId, destinationId: ownerId }],
   ownerIntents,
-  verifySource: authorize,
 };
-await assert.rejects(
-  publishPhotoprismSqliteBundle({ ...publication, approvedLossCodes: new Set() }),
-  /IMPORT_LOSSES_NOT_ACKNOWLEDGED/,
-);
+const preparationPath = join(directory, 'prepare.json');
+await writeFile(preparationPath, JSON.stringify({ ...publication, approvedLossCodes: [] }), { mode: 0o600 });
+const approvePreparation = async (seal) => {
+  assert.deepEqual(seal, { operationId, destinationId, source, preparationSha256: await sha256(preparationPath) });
+  await authorize();
+};
+await assert.rejects(prepareLibraryImport(preparationPath, approvePreparation), /IMPORT_LOSSES_NOT_ACKNOWLEDGED/);
 assert(!(await readdir(directory)).some((name) => name.startsWith(`bundle-${operationId}-`)));
-const bundle = await publishPhotoprismSqliteBundle(publication);
+await writeFile(preparationPath, JSON.stringify(publication), { mode: 0o600 });
+const receipt = await prepareLibraryImport(preparationPath, approvePreparation);
+const bundle = { receipt, bundleDirectory: join(directory, receipt.bundleName) };
 const config = {
   format: 'frameleaf-library-import-command',
   version: 1,

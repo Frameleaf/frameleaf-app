@@ -1,6 +1,13 @@
 /** Load replacement-local recovery authority before any application/configuration import. */
 async function start() {
   const command = process.argv[2];
+  if ((command === 'frameleaf-admin' || command === 'immich-admin') && process.argv[3] === 'prepare-library-import') {
+    const [, , , , option, path, ...rest] = process.argv;
+    if (option !== '--config' || !path || rest.length) throw new Error('Invalid preparation arguments');
+    const { prepareLibraryImport } = await import('./library-import/prepare-command.js');
+    console.log(JSON.stringify(await prepareLibraryImport(path)));
+    return;
+  }
   if ((command === 'frameleaf-admin' || command === 'immich-admin') && process.argv[3] === 'import-library') {
     const { loadLibraryImportConfig, parseLibraryImportArguments } = await import('./library-import/command-input.js');
     const { enterImportExecutionLock } = await import('./library-import/execution-lock.js');

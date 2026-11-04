@@ -9,9 +9,9 @@ import { Releases, type VerifiedRelease } from './releases.js';
 import { compareReleases, isNewerRelease } from './release-order.js';
 import { Backups, sourceBackups } from './backups.js';
 import { Fencing } from './fencing.js';
-import { prepareCommonImportRuntime, removeCommonImportBootstrap, stageCommonImportBootstrap } from './common-import-runtime.js';
+import { prepareCommonImportRuntime, removeCommonImportBootstrap, stageCommonImportBootstrap, stageCommonImportPreparation } from './common-import-runtime.js';
 import { rollbackCommonImport } from './common-import-lifecycle.js';
-import type { ImportSourceAuthoritySeal } from './import-source-authority.js';
+import type { ImportPreparationSeal, ImportSourceAuthoritySeal } from './import-source-authority.js';
 import type { AutostartFile } from './unraid-autostart.js';
 import { ApplicationConfig, checkServiceOverrides, releaseImages, renderCompose, ServiceOverrides, STUDIO_WORKER_TARGET, storagePath } from './compose.js';
 import { atomicJson, copyVerified, fileHash } from './files.js';
@@ -338,6 +338,41 @@ export class Operations {
       backup: backup ? { action: 'reuse', name: backup.name, takenAt: backup.takenAt } : { action: 'create' },
     };
   }
+  /** Internal adapter handoff after snapshot, account and privacy review, with the source already fenced. */
+  async prepareCommonReview(
+    input: z.infer<typeof ReviewInput>,
+    prepared: {
+      fence: SourceFence;
+      request: Pick<ImportPreparationSeal, 'operationId' | 'destinationId'> & {
+        observed: { source: ImportPreparationSeal['source'] };
+        [key: string]: unknown;
+      };
+      media: CommonImportReview['media'];
+      bootstrapAdminId?: string;
+    },
+    managerPort?: number,
+  ) {
+    const { fence, request, media, bootstrapAdminId } = prepared;
+    const { operationId, destinationId, observed: { source } } = request;
+    if (this.installation() || input.kind !== 'import' || input.sourceId !== fence.id || !input.mediaPath ||
+      !media.some((mount) => mount.target === '/data' && mount.source === input.mediaPath && !mount.readOnly))
+      throw new Refusal('invalid_import_authority');
+    const platform = (await this.docker.compatibility()).platform;
+    const release = await this.releases.acquire(input.tag);
+    if (!release.nas.platforms.includes(platform)) throw new Refusal('release_architecture_unavailable');
+    await this.fencing.verify(fence);
+    await this.docker.pull(release.nas.images.server, platform);
+    const path = await stageCommonImportPreparation(this.directory(), operationId, request);
+    const preparationSha256 = await fileHash(path);
+    const receipt = await this.docker.prepareImportBundle(this.directory(), release.nas.images.server, {
+      operationId, destinationId, source, preparationSha256,
+      verify: async () => {
+        await this.fencing.verify(fence);
+        if ((await fileHash(path)) !== preparationSha256) throw new Refusal('import_common_review_changed');
+      },
+    }, media);
+    return this.review(input, managerPort, { ...receipt, fence, media, bootstrapAdminId });
+  }
   async review(input: z.infer<typeof ReviewInput>, managerPort?: number, common?: CommonImportReview) {
     if (this.installation()) throw new Refusal('installation_already_exists');
     const compatibility = await this.docker.compatibility();
@@ -349,7 +384,7 @@ export class Operations {
         !input.mediaPath || !Number.isSafeInteger(common.requiredMediaBytes) || common.requiredMediaBytes < 0 ||
         !common.media.some((mount) => mount.target === '/data' && mount.source === input.mediaPath && !mount.readOnly)
       ) throw new Refusal('invalid_import_authority');
-      await this.discovery.revalidate(common.fence);
+      await this.fencing.verify(common.fence);
       await storagePath(input.mediaPath, this.roots, common.requiredMediaBytes);
     } else if (input.kind === 'import') {
       ({ source, backup } = await this.reviewedSource(input.sourceId ?? ''));
@@ -589,7 +624,8 @@ export class Operations {
     await this.step(operation, 'preflight', async () => {
       if (this.installation()) throw new Refusal('installation_already_exists');
       await this.releases.eligible(review.input.tag);
-      if (sourceFence) await this.discovery.revalidate(sourceFence);
+      if (common) await this.fencing.verify(common.fence);
+      else if (sourceFence) await this.discovery.revalidate(sourceFence);
       if (common) await storagePath(review.input.mediaPath!, this.roots, common.requiredMediaBytes);
       await this.checkPort(review.input.port, null, sourceFence, review.managerPort);
       await this.databaseStorage.validate(

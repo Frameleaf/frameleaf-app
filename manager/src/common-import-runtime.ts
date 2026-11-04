@@ -242,3 +242,25 @@ export async function stageCommonImportBootstrap(
   )
     throw new Refusal('import_runtime_bootstrap_changed');
 }
+
+/** Publish only into the existing operation-private snapshot directory. */
+export async function stageCommonImportPreparation(directory: string, operationId: string, request: unknown) {
+  if (!z.uuid().safeParse(operationId).success) throw new Refusal('invalid_import_authority');
+  const root = join(directory, `import-runtime-${operationId}`);
+  await privateDirectory(root);
+  const path = join(root, 'prepare.json');
+  const file = await open(path, 'wx', 0o600);
+  try {
+    await file.writeFile(JSON.stringify(request));
+    await file.sync();
+  } finally {
+    await file.close();
+  }
+  const parent = await open(root, 'r');
+  try {
+    await parent.sync();
+  } finally {
+    await parent.close();
+  }
+  return path;
+}

@@ -701,11 +701,11 @@ test('common review reports the source and space without exposing the private bu
   await mkdir(mediaPath);
   const internal = f.operations as unknown as {
     roots: string[];
-    discovery: { revalidate(): Promise<void> };
+    fencing: { verify(): Promise<void> };
     databaseStorage: { validate(): Promise<{ root: string }> };
   };
   internal.roots = [f.root];
-  internal.discovery.revalidate = async () => {};
+  internal.fencing.verify = async () => {};
   internal.databaseStorage.validate = async () => ({ root: f.root });
   f.docker.compatibility = async () => ({ platform: 'linux/arm64' }) as Awaited<ReturnType<Docker['compatibility']>>;
   f.operations.releases.acquire = async () => ({

@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
 import {
+  encodeImportPreparationRequest,
   encodeImportSourceAuthorityRequest,
   parseImportSourceAuthorityResponse,
+  replyImportPreparationAuthority,
   replyImportSourceAuthority,
   type ImportSourceAuthority,
 } from '../src/import-source-authority.js';
@@ -124,4 +126,35 @@ test('responses must approve this exact one-use challenge without extra fields',
       message: 'import_source_authority_unavailable',
     });
   }
+});
+
+test('preparation approves only its exact private input before a bundle binding exists', async () => {
+  const { authority, nonce, checked, line: transfer } = fixture();
+  const seal = {
+    operationId: authority.binding.operationId,
+    destinationId: authority.destinationId,
+    source: authority.binding.source,
+    preparationSha256: 'd'.repeat(64),
+  };
+  const live = { ...seal, verify: authority.verify };
+  const line = encodeImportPreparationRequest(seal, nonce).trimEnd();
+  assert.equal(await replyImportSourceAuthority(line, 'run', authority), undefined);
+  assert.equal(await replyImportPreparationAuthority(transfer.trimEnd(), live), undefined);
+  await assert.rejects(
+    replyImportPreparationAuthority(line, { ...live, preparationSha256: 'e'.repeat(64) }),
+    /import_source_authority_invalid/,
+  );
+  await assert.rejects(
+    replyImportPreparationAuthority(line, { ...live, destinationId: randomUUID() }),
+    /import_source_authority_invalid/,
+  );
+  assert.equal(checked(), 0);
+  const response = await replyImportPreparationAuthority(line, live);
+  assert(response);
+  parseImportSourceAuthorityResponse(response.trimEnd(), nonce);
+  assert.equal(checked(), 1);
+  await assert.rejects(
+    replyImportPreparationAuthority(line, { ...live, verify: () => Promise.reject(new Error('private fixture')) }),
+    { message: 'import_source_authority_refused' },
+  );
 });

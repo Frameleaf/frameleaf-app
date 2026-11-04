@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { Docker, SERVER_ADMIN } from '../src/docker.js';
 import {
+  encodeImportPreparationRequest,
   encodeImportSourceAuthorityRequest,
   parseImportSourceAuthorityResponse,
   type ImportSourceAuthority,
@@ -289,4 +290,54 @@ test('completes a reviewed import through the launcher and reuses its preflight 
   calls.length = 0;
   await docker.completeReviewedImport(directory, project, authority, media, preflight);
   assert.deepEqual(calls, ['status']);
+});
+
+test('preparation uses read-only media, live fencing and the exact receipt binding', async () => {
+  const operationId = randomUUID();
+  const runtimeAuthority = authorityFor('photoprism', operationId);
+  let checks = 0;
+  const seal = {
+    operationId,
+    destinationId: runtimeAuthority.destinationId,
+    source: runtimeAuthority.binding.source,
+    preparationSha256: 'd'.repeat(64),
+  };
+  const authority = {
+    ...seal,
+    verify: async () => {
+      checks++;
+    },
+  };
+  const receipt = {
+    bundleName: `bundle-${operationId}-aBc123`,
+    binding: runtimeAuthority.binding,
+    destinationId: runtimeAuthority.destinationId,
+    requiredMediaBytes: 123,
+    summary: { owners: 1, assets: 1, files: 1, albums: 0, preservationDifferences: 0 },
+  };
+  let returned = receipt;
+  const docker = new Docker(async (binary, args, options) => {
+    assert.equal(binary, 'docker');
+    assert(args.includes('none'));
+    assert(args.includes(`frameleaf-import-prepare-${operationId}`));
+    assert(args.includes('type=bind,src=/fixtures/originals,dst=/import-media/source,readonly'));
+    assert(args.includes('type=bind,src=/fixtures/destination,dst=/data,readonly'));
+    assert.deepEqual(args.slice(-3), [
+      'prepare-library-import',
+      '--config',
+      '/run/frameleaf/import-preparation/prepare.json',
+    ]);
+    const nonce = randomUUID();
+    const reply = await options?.reply?.(encodeImportPreparationRequest(seal, nonce).trimEnd());
+    assert(reply);
+    parseImportSourceAuthorityResponse(reply.trimEnd(), nonce);
+    return JSON.stringify(returned);
+  });
+  assert.deepEqual(await docker.prepareImportBundle('/private/manager', image, authority, media), receipt);
+  assert.equal(checks, 3);
+  returned = { ...receipt, bundleName: '../wrong-bundle' };
+  await assert.rejects(
+    docker.prepareImportBundle('/private/manager', image, authority, media),
+    /invalid_import_response/,
+  );
 });

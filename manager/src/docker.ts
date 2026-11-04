@@ -3,6 +3,7 @@ import { createReadStream, createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { createInterface } from 'node:readline';
 import { access, open, readFile, rename, rm } from 'node:fs/promises';
+import { z } from 'zod';
 import { isAbsolute, join, resolve } from 'node:path';
 import { Refusal, containerId, imageDigest, redact, type Database, type Mount } from './contracts.js';
 import { publishFile } from './files.js';
@@ -10,12 +11,24 @@ import { completeCommonImport } from './common-import-lifecycle.js';
 import { COMMON_IMPORT_CONFIG, writeCommonImportCompose } from './common-import-runtime.js';
 import { DOCKERMAN_TEMPLATES, saveDockermanTemplates } from './dockerman.js';
 import { configureUnraidCompose } from './compose.js';
-import { importSourceKinds, type ImportPlan } from './import-plan.js';
+import { importHash, importSourceKinds, importSourceSchema, type ImportPlan } from './import-plan.js';
 import {
   parseImportSourceAuthority,
+  replyImportPreparationAuthority,
   replyImportSourceAuthority,
+  type ImportPreparationAuthority,
   type ImportSourceAuthority,
 } from './import-source-authority.js';
+
+const preparationTarget = '/run/frameleaf/import-preparation';
+const count = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+const preparationReceipt = z.strictObject({
+  bundleName: z.string(),
+  binding: z.strictObject({ operationId: z.uuid(), source: importSourceSchema, manifestSha256: importHash, planSha256: importHash }),
+  destinationId: z.uuid(),
+  requiredMediaBytes: count,
+  summary: z.strictObject({ owners: count, assets: count, files: count, albums: count, preservationDifferences: count }),
+});
 
 export type Container = {
   Id: string;
@@ -483,6 +496,54 @@ export class Docker {
       .split('\n')
       .map((line) => line.trim())
       .filter((line) => targets.includes(line));
+  }
+  /** Prepare an operation-private bundle with source and destination originals mounted read-only. */
+  async prepareImportBundle(
+    directory: string,
+    image: string,
+    authority: ImportPreparationAuthority,
+    media: { source: string; target: string }[],
+  ) {
+    const { operationId, destinationId, source, preparationSha256 } = authority;
+    if (
+      !imageDigest.safeParse(image).success || !z.uuid().safeParse(operationId).success ||
+      !z.uuid().safeParse(destinationId).success || !importHash.safeParse(preparationSha256).success ||
+      !importSourceSchema.safeParse(source).success || typeof authority.verify !== 'function'
+    ) throw new Refusal('invalid_import_authority');
+    const root = join(directory, `import-runtime-${operationId}`);
+    const safePath = (value: string) => value !== '/' && resolve(value) === value && !/[\x00-\x1f,]/u.test(value);
+    if (
+      !safePath(root) || new Set(media.map(({ target }) => target)).size !== media.length ||
+      media.some(({ source, target }) =>
+        !safePath(source) || !/^\/(?:data|import-media\/[a-z0-9][a-z0-9_-]*)$/u.test(target) ||
+        root === source || root.startsWith(source + '/') || source.startsWith(root + '/'),
+      )
+    ) throw new Refusal('import_runtime_media_invalid');
+    await authority.verify();
+    const output = await this.execute('docker', [
+      'run', '--rm', '--interactive', '--network', 'none', '--log-driver', 'none', '--pull', 'never',
+      '--name', `frameleaf-import-prepare-${operationId}`,
+      '--mount', `type=bind,src=${root},dst=${preparationTarget}`,
+      ...media.flatMap(({ source, target }) => ['--mount', `type=bind,src=${source},dst=${target},readonly`]),
+      '--entrypoint', SERVER_ADMIN, image, 'prepare-library-import', '--config', `${preparationTarget}/prepare.json`,
+    ], {
+      cwd: directory,
+      timeout: 86_400_000,
+      reply: (line) => replyImportPreparationAuthority(line, authority),
+    });
+    await authority.verify();
+    try {
+      const result = preparationReceipt.parse(JSON.parse(output.trim().split('\n').at(-1)!));
+      const prefix = `bundle-${operationId}-`;
+      if (
+        result.binding.operationId !== operationId || result.destinationId !== destinationId ||
+        JSON.stringify(result.binding.source) !== JSON.stringify(importSourceSchema.parse(source)) ||
+        !result.bundleName.startsWith(prefix) || !/^[a-zA-Z0-9]{6}$/u.test(result.bundleName.slice(prefix.length))
+      ) throw new Error('Preparation binding changed');
+      return result;
+    } catch {
+      throw new Refusal('invalid_import_response');
+    }
   }
   /** Fixed offline command only; container identity survives a Manager restart. */
   async importCommand(
