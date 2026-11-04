@@ -206,6 +206,19 @@ export function publicSource(source: Source) {
   return {
     ...safe,
     settingsEdited: !!settingsBase,
+    configuration: [
+      {
+        icon: 'database',
+        title: `PostgreSQL ${source.postgres.major}`,
+        detail: `Database: ${database.name} · ${source.postgres.extensions.map(({ name }) => name).join(', ')}`,
+        status: database.password ? 'configured' : 'missing',
+      },
+      {
+        icon: 'network',
+        title: 'Database connection resolved',
+        detail: `${database.host}:${database.port} · Settings from ${source.settingsAuthority === 'file' ? 'configuration file' : 'database'}`,
+      },
+    ],
     database: {
       name: database.name,
       user: database.user,

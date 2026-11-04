@@ -56,7 +56,7 @@ test('an edit removes unsupported keys until the source settings change', async 
     (operations as unknown as { discovery: unknown }).discovery = { revalidate: async () => {} };
 
     const view = operations.sourceSettings(source.id);
-    assert.deepEqual((view.source as unknown as { configuration: unknown }).configuration, [
+    assert.deepEqual(view.source.configuration, [
       { icon: 'database', title: 'PostgreSQL 19', detail: 'Database: immich · vector', status: 'configured' },
       { icon: 'network', title: 'Database connection resolved', detail: 'h:5432 · Settings from database' },
     ]);
