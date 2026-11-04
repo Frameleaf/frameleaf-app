@@ -785,6 +785,32 @@ test('common review reports the source and space without exposing the private bu
   assert.deepEqual(await f.operations.inspectCommonCapture(operation.id, request.destinationId, input.tag), inventory);
   assert.equal(fenceChecks, 2);
   fenceChecks = 0;
+  const prepareReview = f.operations.prepareCommonReview;
+  let called = false;
+  f.operations.prepareCommonReview = async (_input, prepared, port) => {
+    called = true;
+    assert.equal(port, 9443);
+    assert.deepEqual(prepared.fence, fence);
+    assert.equal(prepared.request.snapshotPath, request.snapshotPath);
+    assert.deepEqual(prepared.request.observed, {
+      source: request.observed.source, singleOwner: { sourceId: 'owner', confirmEntireLibrary: true },
+      materializedAlbums: {},
+    });
+    assert.deepEqual(prepared.request.copyRoots, { source: 'source', destination: 'destination' });
+    assert.deepEqual(prepared.media, [
+      { source: f.root, target: '/import-media/source', readOnly: true },
+      { source: mediaPath, target: '/data', readOnly: false },
+    ]);
+    assert.ok(prepared.bootstrapAdminId);
+    throw new Error('fixture captured request');
+  };
+  await assert.rejects(f.operations.preparePhotoprismCopyReview(input, operation.id, request.destinationId, {
+    sourceOwnerId: 'owner', ownerEmail: 'owner@example.test', confirmEntireLibrary: true,
+    materializedAlbums: {}, approvedLossCodes: ['PHOTOPRISM_SHARING_RESTRICTED'],
+  }, 9443), /fixture captured request/);
+  assert(called);
+  f.operations.prepareCommonReview = prepareReview;
+
 
   f.docker.prepareImportBundle = async (directory, candidate, authority, reviewedMedia) => {
     assert.equal(directory, f.operations.directory());

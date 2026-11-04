@@ -438,13 +438,75 @@ export class Operations {
       this.executing.delete(operationId);
     }
   }
+  /** Build the copy request from the fenced capture and the administrator's reviewed choices. */
+  async preparePhotoprismCopyReview(
+    input: z.infer<typeof ReviewInput>,
+    operationId: string,
+    destinationId: string,
+    choice: {
+      sourceOwnerId: string;
+      ownerEmail: string;
+      confirmEntireLibrary: true;
+      materializedAlbums: Record<string, string[]>;
+      approvedLossCodes: string[];
+    },
+    managerPort?: number,
+  ) {
+    const { fence, source, originalsPath, snapshotPath } = this.capturedImport(operationId);
+    if (
+      source.kind !== 'photoprism' || !input.mediaPath || input.sourceId !== fence.id ||
+      !z.uuid().safeParse(destinationId).success || !choice.confirmEntireLibrary ||
+      !z.email().max(254).safeParse(choice.ownerEmail).success
+    ) throw new Refusal('invalid_import_authority');
+    await storagePath(input.mediaPath, this.roots, 0);
+    const mounts = [
+      { id: 'source', source: originalsPath, target: '/import-media/source', readOnly: true },
+      { id: 'destination', source: input.mediaPath, target: '/data', readOnly: false },
+    ];
+    const roots = await Promise.all(mounts.map(async (mount) => {
+      const info = await stat(mount.source, { bigint: true });
+      return { id: mount.id, path: mount.target, device: String(info.dev), inode: String(info.ino) };
+    }));
+    return this.prepareCommonReview(input, {
+      fence,
+      media: mounts.map(({ source, target, readOnly }) => ({ source, target, readOnly })),
+      bootstrapAdminId: randomUUID(),
+      request: {
+        format: 'frameleaf-prepare-library-import',
+        version: 1,
+        adapter: 'photoprism-sqlite',
+        operationId,
+        destinationId,
+        snapshotPath,
+        observed: {
+          source,
+          singleOwner: { sourceId: choice.sourceOwnerId, confirmEntireLibrary: choice.confirmEntireLibrary },
+          materializedAlbums: choice.materializedAlbums,
+        },
+        approvedLossCodes: choice.approvedLossCodes,
+        roots,
+        copyRoots: { source: 'source', destination: 'destination' },
+        ownerMappings: [{ sourceId: choice.sourceOwnerId, destinationId: randomUUID() }],
+        ownerIntents: [{
+          sourceUserId: choice.sourceOwnerId,
+          email: choice.ownerEmail,
+          login: {
+            revision: source.revision, snapshotSha256: source.revision,
+            accountEnabled: true, passwordLoginEnabled: true, secondFactorRequired: false,
+            externalIdentityRequired: false, ownedLibraryAccess: 'full', otherRestrictions: 'none',
+          },
+          disposition: { kind: 'preserve' },
+        }],
+      },
+    }, managerPort);
+  }
   /** Internal adapter handoff after snapshot, account and privacy review, with the source already fenced. */
   async prepareCommonReview(
     input: z.infer<typeof ReviewInput>,
     prepared: {
       fence: SourceFence;
       request: Pick<ImportPreparationSeal, 'operationId' | 'destinationId'> & {
-        observed: { source: ImportPreparationSeal['source'] };
+        observed: { source: ImportPreparationSeal['source']; [key: string]: unknown };
         snapshotPath: string;
         [key: string]: unknown;
       };
