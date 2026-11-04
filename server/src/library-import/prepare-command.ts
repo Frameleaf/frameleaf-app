@@ -24,21 +24,28 @@ const inspectSchema = z.strictObject({
 const prepareSchema = z.strictObject({
   ...snapshotRequest,
   format: z.literal('frameleaf-prepare-library-import'),
-  observed: z.strictObject({
-    source: importSourceSchema,
-    inventory: z.strictObject({
-      complete: z.literal(true),
-      ownershipComplete: z.literal(true),
-      privacyComplete: z.literal(true),
-      writersStopped: z.literal(true),
-      revisionBefore: id,
-      revisionAfter: id,
+  observed: z.union([
+    z.strictObject({
+      source: importSourceSchema,
+      inventory: z.strictObject({
+        complete: z.literal(true),
+        ownershipComplete: z.literal(true),
+        privacyComplete: z.literal(true),
+        writersStopped: z.literal(true),
+        revisionBefore: id,
+        revisionAfter: id,
+      }),
+      photoOwners: z.record(id, id),
+      albumOwners: z.record(id, id),
+      files: z.array(importFileSchema.extend({ modifiedAt: importTimestampSchema })).optional(),
+      materializedAlbums: z.record(id, z.array(id)),
     }),
-    photoOwners: z.record(id, id),
-    albumOwners: z.record(id, id),
-    files: z.array(importFileSchema.extend({ modifiedAt: importTimestampSchema })).optional(),
-    materializedAlbums: z.record(id, z.array(id)),
-  }),
+    z.strictObject({
+      source: importSourceSchema,
+      materializedAlbums: z.record(id, z.array(id)),
+      singleOwner: z.strictObject({ sourceId: id, confirmEntireLibrary: z.literal(true) }),
+    }),
+  ]),
   approvedLossCodes: z.array(id),
   roots: z.array(z.unknown()),
   placements: z.array(z.unknown()).optional(),

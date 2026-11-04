@@ -6,7 +6,7 @@ import { openPrivateImportFile } from 'src/library-import/command-input.js';
 import { parseImportedOwnerIntent } from 'src/library-import/owner-reconciliation.js';
 import { type PhotoprismInventoryRecord, readPhotoprismInventory } from 'src/library-import/photoprism-inventory.js';
 import { assemblePhotoprismManifest } from 'src/library-import/photoprism-manifest.js';
-import { openPhotoprismSnapshot } from 'src/library-import/photoprism.js';
+import { type PhotoprismRow, openPhotoprismSnapshot } from 'src/library-import/photoprism.js';
 import { LibraryImportRefused } from 'src/library-import/state.js';
 import { reviewImportFiles } from 'src/library-import/transfer-runtime.js';
 
@@ -150,10 +150,80 @@ export function photoprismSnapshotVerifier(snapshotPath: string, revision: strin
   };
 }
 
+function isQualifiedLocalAdmin(user: PhotoprismRow | undefined) {
+  return (
+    user?.id === 1n &&
+    user.auth_provider === 'local' &&
+    user.auth_method === '' &&
+    user.super_admin === 1n &&
+    user.can_login === 1n &&
+    user.user_role === 'admin' &&
+    user.user_scope === '*' &&
+    user.user_attr === '' &&
+    user.base_path === '' &&
+    user.expires_at === null &&
+    user.deleted_at === null
+  );
+}
+
+type SingleOwnerReview = Pick<ManifestEvidence, 'source' | 'materializedAlbums'> & {
+  singleOwner: { sourceId: string; confirmEntireLibrary: true };
+};
+
+export function photoprismSingleOwnerEvidence(
+  records: PhotoprismInventoryRecord[],
+  review: SingleOwnerReview,
+): Omit<ManifestEvidence, 'files'> {
+  const {
+    source,
+    materializedAlbums,
+    singleOwner: { sourceId, confirmEntireLibrary },
+  } = review;
+  const accounts = records.flatMap((record) =>
+    record.type === 'principal' && !record.value.system ? [record.value.id] : [],
+  );
+  const user = records.find(
+    (record) => record.type === 'archive' && record.table === 'users' && record.value.user_uid === sourceId,
+  );
+  if (
+    !confirmEntireLibrary ||
+    accounts.length !== 1 ||
+    accounts[0] !== sourceId ||
+    user?.type !== 'archive' ||
+    !isQualifiedLocalAdmin(user.value)
+  )
+    throw new LibraryImportRefused('PHOTOPRISM_SINGLE_OWNER_UNQUALIFIED');
+
+  const photos = records.filter((record) => record.type === 'photo');
+  const albums = records.filter((record) => record.type === 'album');
+  if ([...photos, ...albums].some(({ value }) => value.createdBy && value.createdBy !== sourceId))
+    throw new LibraryImportRefused('PHOTOPRISM_SINGLE_OWNER_UNQUALIFIED');
+  return {
+    source,
+    materializedAlbums,
+    photoOwners: Object.fromEntries(photos.map(({ value }) => [value.id, sourceId])),
+    albumOwners: Object.fromEntries(albums.map(({ value }) => [value.id, sourceId])),
+    // This entry point holds the source fence and verifies the frozen SQLite inventory.
+    // The manifest retains private media and gives destination albums only owner access.
+    inventory: {
+      complete: true,
+      ownershipComplete: true,
+      privacyComplete: true,
+      writersStopped: true,
+      revisionBefore: source.revision,
+      revisionAfter: source.revision,
+    },
+  };
+}
+
 /** Read compatible verifiers from the same sealed SQLite snapshot as the asset inventory. */
 export async function publishPhotoprismSqliteBundle(
-  input: Omit<Parameters<typeof publishPhotoprismImportBundle>[0], 'records' | 'owners' | 'ownerMappings'> & {
+  input: Omit<
+    Parameters<typeof publishPhotoprismImportBundle>[0],
+    'records' | 'owners' | 'ownerMappings' | 'observed'
+  > & {
     snapshotPath: string;
+    observed: Parameters<typeof publishPhotoprismImportBundle>[0]['observed'] | SingleOwnerReview;
     ownerMappings: { sourceId: string; destinationId: string }[];
     ownerIntents: unknown[];
   },
@@ -163,6 +233,9 @@ export async function publishPhotoprismSqliteBundle(
   await verifySource();
   const snapshot = openPhotoprismSnapshot(input.snapshotPath, source.version);
   try {
+    const records = [...readPhotoprismInventory(input.snapshotPath, source.version, source.schemaSha256)];
+    const observed =
+      'singleOwner' in input.observed ? photoprismSingleOwnerEvidence(records, input.observed) : input.observed;
     const mapped = new Map(input.ownerMappings.map(({ sourceId, destinationId }) => [sourceId, destinationId]));
     const users = new Map([...snapshot.rows('users')].flat().map((row) => [row.user_uid, row]));
     const owners = [];
@@ -175,21 +248,7 @@ export async function publishPhotoprismSqliteBundle(
         intent.disposition.kind === 'preserve' ||
         (intent.disposition.kind === 'restricted' && intent.disposition.credential === 'preserve');
       const user = users.get(intent.sourceUserId);
-      if (
-        preserve &&
-        (!user ||
-          user.id !== 1n ||
-          user.auth_provider !== 'local' ||
-          user.auth_method !== '' ||
-          user.super_admin !== 1n ||
-          user.can_login !== 1n ||
-          user.user_role !== 'admin' ||
-          user.user_scope !== '*' ||
-          user.user_attr !== '' ||
-          user.base_path !== '' ||
-          user.expires_at !== null ||
-          user.deleted_at !== null)
-      )
+      if (preserve && !isQualifiedLocalAdmin(user))
         throw new LibraryImportRefused('PHOTOPRISM_PASSWORD_POLICY_UNQUALIFIED');
       const credential = preserve
         ? await snapshot.password({
@@ -202,7 +261,8 @@ export async function publishPhotoprismSqliteBundle(
     }
     return await publishPhotoprismImportBundle({
       ...input,
-      records: readPhotoprismInventory(input.snapshotPath, source.version),
+      records,
+      observed,
       owners,
       verifySource,
     });

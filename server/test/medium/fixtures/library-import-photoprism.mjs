@@ -119,16 +119,7 @@ for (const file of originals) {
 }
 const sourceEvidence = {
   source,
-  inventory: {
-    complete: true,
-    ownershipComplete: true,
-    privacyComplete: true,
-    writersStopped: true,
-    revisionBefore: revision,
-    revisionAfter: revision,
-  },
-  photoOwners: Object.fromEntries(photos.map((photo) => [photo.id, input.sourceUserId])),
-  albumOwners: Object.fromEntries(albums.map((album) => [album.id, input.sourceUserId])),
+  singleOwner: { sourceId: input.sourceUserId, confirmEntireLibrary: true },
   materializedAlbums: input.nativeLibrary.materializedAlbums,
 };
 const reviewedLosses = new Set([

@@ -5,6 +5,7 @@ import { DatabaseSync, SQLInputValue } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import records from 'src/library-import/fixtures/photoprism/261029-records.json' with { type: 'json' };
 import fixture from 'src/library-import/fixtures/photoprism/261029-sqlite.json' with { type: 'json' };
+import { photoprismSingleOwnerEvidence } from 'src/library-import/photoprism-bundle.js';
 import { readPhotoprismInventory, reviewPhotoprismInventory } from 'src/library-import/photoprism-inventory.js';
 
 describe('PhotoPrism snapshot inventory reconciliation', () => {
@@ -88,6 +89,31 @@ describe('PhotoPrism snapshot inventory reconciliation', () => {
       accounts: [{ id: records.tables.users[2].user_uid, name: 'Admin', role: 'admin', canLogin: true }],
     });
     expect(JSON.stringify(review)).not.toMatch(/file_name|reset_token|invite_token|preview_token|passwd|user_name/u);
+  });
+  it('requires an explicit sole qualified administrator and refuses another creator', () => {
+    const sourceId = records.tables.users[2].user_uid;
+    database.exec('UPDATE auth_users SET id=id+10');
+    database.prepare('UPDATE auth_users SET id=1 WHERE user_uid=?').run(sourceId);
+    const review = {
+      source: {
+        kind: 'photoprism' as const,
+        version: fixture.source.version,
+        identity: 'fixture',
+        revision: 'frozen',
+        schemaSha256: fixture.schemaSha256,
+      },
+      singleOwner: { sourceId, confirmEntireLibrary: true as const },
+      materializedAlbums: {},
+    };
+    const evidence = () =>
+      photoprismSingleOwnerEvidence([...readPhotoprismInventory(path, fixture.source.version)], review);
+    expect(Object.values(evidence().photoOwners)).toEqual([sourceId, sourceId]);
+    expect(Object.values(evidence().albumOwners)).toEqual([sourceId, sourceId, sourceId]);
+    insert('auth_users', { ...records.tables.users[2], user_uid: 'another-owner', user_name: 'another-owner' });
+    expect(evidence).toThrow('PHOTOPRISM_SINGLE_OWNER_UNQUALIFIED');
+    database.exec("DELETE FROM auth_users WHERE user_uid='another-owner'");
+    database.exec("UPDATE photos SET created_by='another-owner' WHERE id=(SELECT min(id) FROM photos)");
+    expect(evidence).toThrow('PHOTOPRISM_SINGLE_OWNER_UNQUALIFIED');
   });
   it('retains every physical original within a logical photo without deduplicating bytes', () => {
     const original = records.tables.files[0];
