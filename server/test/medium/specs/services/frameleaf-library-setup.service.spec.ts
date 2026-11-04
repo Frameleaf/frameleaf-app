@@ -378,6 +378,7 @@ it('serializes setup, resumes from persisted intent and keeps device completion 
   const counts = { active: 0, waiting: 0, delayed: 0, paused: 0, failed: 3 };
   let acknowledged = false;
   let sidecarWaiting = 0;
+  let thumbnailFailures = 0;
   const make = () =>
     new FrameleafLibrarySetupService(
       db,
@@ -387,6 +388,7 @@ it('serializes setup, resumes from persisted intent and keeps device completion 
         getJobCounts: (queue: QueueName) =>
           Promise.resolve({
             ...counts,
+            failed: queue === QueueName.ThumbnailGeneration ? counts.failed + thumbnailFailures : counts.failed,
             waiting: queue === QueueName.Sidecar ? sidecarWaiting : 0,
           }),
       } as never,
@@ -413,6 +415,9 @@ it('serializes setup, resumes from persisted intent and keeps device completion 
       value->>'origin' AS origin FROM system_metadata WHERE key=${key}`.execute(db);
     expect(persisted.rows).toEqual([{ type: 'object', origin: 'new_library' }]);
     expect((await first.status(auth)).canFinish).toBe(false);
+    // FL-1165: a thumbnail failing on a damaged original is listed, not a reason to stop setup
+    thumbnailFailures = 40;
+    expect((await first.status(auth)).phase).not.toBe('needs-attention');
     counts.failed = 4;
     expect((await first.status(auth)).phase).toBe('needs-attention');
     await first.begin(true);
