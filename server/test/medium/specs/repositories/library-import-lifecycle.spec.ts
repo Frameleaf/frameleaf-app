@@ -38,6 +38,7 @@ describe.skipIf(process.platform !== 'linux')('common import lifecycle on native
     await cp(join(server, 'src/schema/catalog'), join(build, 'src/schema/catalog'), { recursive: true });
     await cp(join(server, 'src/schema/migrations/ORDER'), join(build, 'src/schema/migrations/ORDER'));
     await cp(join(server, 'test/medium/fixtures/library-import-lifecycle.mjs'), join(build, 'runner.mjs'));
+    await cp(join(server, 'test/medium/fixtures/library-import-photoprism.mjs'), join(build, 'native-runner.mjs'));
     const { version } = JSON.parse(await readFile(join(server, 'package.json'), 'utf8'));
     await writeFile(
       join(build, 'package.json'),
@@ -67,8 +68,16 @@ describe.skipIf(process.platform !== 'linux')('common import lifecycle on native
     expect(cleanupFailures).toEqual([]);
   });
 
-  it.each(['activate', 'rollback', 'prepare-empty', 'prepare-page', 'prepare-abandon'] as const)(
-    'recovers interrupted %s with copy/adoption/relocation and retained metadata',
+  const modes = [
+    'activate',
+    'rollback',
+    'prepare-empty',
+    'prepare-page',
+    'prepare-abandon',
+    ...(process.env.FRAMELEAF_PHOTOPRISM_APPLICATION_CONFIG ? ['native-source'] : []),
+  ];
+  it.each(modes)(
+    'executes %s with journalled files and retained metadata',
     async (mode) => {
       let db: Kysely<DB> | undefined;
       const directory = await realpath(await mkdtemp(join(tmpdir(), 'frameleaf-import-lifecycle-')));
@@ -88,7 +97,11 @@ describe.skipIf(process.platform !== 'linux')('common import lifecycle on native
         lock = await open(join(state, 'execution.lock'), 'wx', 0o600);
         child = spawn(
           join(build, 'resources/library-import/frameleaf-import-rename'),
-          ['--exec-locked', process.execPath, join(build, 'runner.mjs')],
+          [
+            '--exec-locked',
+            process.execPath,
+            join(build, mode === 'native-source' ? 'native-runner.mjs' : 'runner.mjs'),
+          ],
           {
             detached: true,
             stdio: ['ignore', 'pipe', 'pipe', lock.fd],
@@ -137,11 +150,21 @@ describe.skipIf(process.platform !== 'linux')('common import lifecycle on native
           sourceQualified: false,
           productionCoordinator: true,
           commonCommand: true,
-          sidecars: 1,
+          sidecars: mode === 'native-source' ? 0 : 1,
           phase: mode === 'rollback' || mode === 'prepare-abandon' ? 'abandoned' : 'activated',
         });
         if (mode.startsWith('prepare-')) expect(result.interruptedPreparationRecovered).toBe(true);
-        if (mode === 'prepare-abandon') expect(result.noMediaTransferred).toBe(true);
+        if (mode === 'native-source')
+          expect(result).toMatchObject({
+            nativeSource: true,
+            nativeScope: 'single-local-admin-copy',
+            originalFiles: 2,
+            managerRun: true,
+            writerBoundary: true,
+            sourceRetained: true,
+            metadataAndAlbumsVerified: true,
+          });
+        else if (mode === 'prepare-abandon') expect(result.noMediaTransferred).toBe(true);
         else {
           expect(result.interruptedForwardCheckpointRecovered).toBe(true);
           if (mode === 'rollback')

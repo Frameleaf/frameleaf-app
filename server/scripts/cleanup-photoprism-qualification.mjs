@@ -45,6 +45,7 @@ export const cleanupQualification = (runId, directory = tmpdir(), command = dock
   for (const [name, image] of [
     ['image.json', qualificationImage],
     ['application-image.json', applicationQualificationImage],
+    ['target-image.json', `frameleaf-postgres:photoprism-${runId}`],
   ]) {
     attempt(() => {
       const marker = join(directory, name);

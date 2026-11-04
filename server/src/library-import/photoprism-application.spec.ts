@@ -42,6 +42,18 @@ describe.skipIf(!path)('native PhotoPrism application local account', () => {
         if (expected[name] === null) expect(user?.[name]).toBeNull();
         else expect(Date.parse(String(user?.[name]))).toBe(Date.parse(expected[name]));
       }
+      expect([...source.rows('photos')].flat()).toHaveLength(2);
+      expect(config.nativeLibrary?.photos).toHaveLength(2);
+      expect(config.nativeLibrary?.album?.name).toBe('Native private album');
+      for (const photo of config.nativeLibrary.photos) {
+        const captured = [...source.rows('photos')].flat().find((row) => row.photo_uid === photo.uid);
+        expect(captured).toMatchObject({
+          photo_caption: photo.caption,
+          caption_src: 'manual',
+          photo_private: 1n,
+          photo_favorite: BigInt(photo.favorite),
+        });
+      }
       const credential = await source.password({
         operationId: randomUUID(),
         sourceUserId: config.sourceUserId,

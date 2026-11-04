@@ -104,3 +104,25 @@ test('removes only the application image pulled by this run and scopes applicati
   assert.ok(!calls.some((args) => args[0] === 'image' && args[1] === 'rm' && args[2] === qualificationImage));
   assert.ok(calls.some((args) => args.includes('label=app.frameleaf.qualification-family=photoprism')));
 });
+
+for (const createdImage of [true, false]) {
+  test(`native destination image cleanup preserves pre-existing images: created=${createdImage}`, (t) => {
+    const { root } = fixture(t);
+    writeFileSync(join(root, 'image.json'), JSON.stringify({ createdImage: false }));
+    writeFileSync(join(root, 'target-image.json'), JSON.stringify({ createdImage }));
+    const calls = [];
+    cleanupQualification('123-1', root, (args) => {
+      calls.push(args);
+      return args[0] === 'image' && args[1] === 'ls' ? 'destination-image' : '';
+    });
+    assert.equal(
+      calls.some((args) => args[0] === 'image' && args[1] === 'rm'),
+      createdImage,
+    );
+    if (createdImage)
+      assert.deepEqual(
+        calls.find((args) => args[0] === 'image' && args[1] === 'rm'),
+        ['image', 'rm', 'frameleaf-postgres:photoprism-123-1'],
+      );
+  });
+}
