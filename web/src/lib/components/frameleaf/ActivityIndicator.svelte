@@ -6,10 +6,7 @@
     isShownAsCloudWork,
   } from '$lib/frameleaf/activity';
   import { activitySession } from '$lib/frameleaf/activity-session.svelte';
-  import { buildBackgroundWorkCards } from '$lib/frameleaf/background-work';
-  import { cloudWorkSession } from '$lib/frameleaf/cloud-work-session.svelte';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
-  import { runningJobsSession } from '$lib/frameleaf/running-jobs-session.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { downloadManager } from '$lib/managers/download-manager.svelte';
   import { Route } from '$lib/route';
@@ -48,14 +45,14 @@
   );
   /** The server sends its background work to administrators only. */
   const isAdmin = $derived(authManager.authenticated && authManager.user.isAdmin);
+  /** Loaded for administrators only, so the bar costs nobody else anything. */
+  let admin = $state<typeof import('$lib/frameleaf/activity-indicator-admin') | null>(null);
   /** The same number as Activity's In progress: paused work and background work count too. */
   const indicator = $derived.by(() => {
     // As Activity: an administrator's background cards and cloud rows, and a cloud operation the
     // cloud rows already show counted once, as its row.
-    const background = isAdmin
-      ? [...buildBackgroundWorkCards(runningJobsSession.summary), ...cloudWorkSession.rows]
-      : [];
-    const shown = new Set(isAdmin ? cloudWorkSession.rows.map((row) => row.operationId) : []);
+    const background = isAdmin && admin ? admin.adminBackgroundWork() : [];
+    const shown = isAdmin && admin ? admin.adminCloudOperationIds() : new Set<string>();
     const own = items.filter((item) => !isShownAsCloudWork(item, shown));
     const { count: running, progress } = activityIndicatorState(own, background);
     const count = activityInProgressCount(own, background.length);
@@ -65,17 +62,22 @@
   // Watching keeps the count current; it polls only while work is in flight and stops with the bar.
   onMount(() => activitySession.watch());
   $effect(() => {
-    if (isAdmin) {
-      // Only the role decides; what watching reads and writes must not re-run this effect.
-      return untrack(() => {
-        const stopJobs = runningJobsSession.watch();
-        const stopCloud = cloudWorkSession.watch();
-        return () => {
-          stopJobs();
-          stopCloud();
-        };
-      });
+    if (!isAdmin) {
+      return;
     }
+    // Only the role decides; what loading and watching read and write must not re-run this effect.
+    let stop: (() => void) | undefined;
+    let left = false;
+    void import('$lib/frameleaf/activity-indicator-admin').then((module) => {
+      if (!left) {
+        admin = module;
+        stop = untrack(() => module.watchAdminWork());
+      }
+    });
+    return () => {
+      left = true;
+      stop?.();
+    };
   });
 
   /** How long the tick stays after the last job ends. */

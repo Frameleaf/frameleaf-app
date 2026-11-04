@@ -11,25 +11,39 @@ export const CLOUD_WORK_IDLE_POLL_MS = 30_000;
  * runs, including a scheduled backup another administrator owns. Watch it only as an administrator.
  */
 export class CloudWorkSession {
-  /** Null while unread, not set up or unreachable: nothing is shown as cloud work then. */
+  /** The server's last answer; null until the first. A server without cloud backup answers too. */
   status = $state<CloudBackupStatusResponseDto | null>(null);
+  /** The last read failed. The status stays, stale rather than gone, so a running backup is not dropped. */
+  unreachable = $state(false);
   rows = $derived(cloudWorkRows(this.status));
 
   #subscribers = 0;
   #timer: ReturnType<typeof setTimeout> | null = null;
   #inFlight: Promise<void> | null = null;
+  #again = false;
 
-  /** Ask the server now. Concurrent callers share the one request. */
+  /**
+   * Ask the server now. A call while a request is out asks once more after it, since that request may
+   * have left before the change the caller saw; every caller waits for the answer it needs.
+   */
   refresh(): Promise<void> {
-    this.#inFlight ??= (async () => {
-      try {
-        this.status = await getCloudBackupStatus();
-      } catch {
-        this.status = null;
-      }
-    })().finally(() => {
+    if (this.#inFlight) {
+      this.#again = true;
+      return this.#inFlight;
+    }
+    this.#inFlight = (async () => {
+      do {
+        this.#again = false;
+        try {
+          this.status = await getCloudBackupStatus();
+          this.unreachable = false;
+        } catch {
+          this.unreachable = true;
+        }
+      } while (this.#again);
+      // Cleared here, not in a later `finally`, so a call arriving after the last check starts a new request.
       this.#inFlight = null;
-    });
+    })();
     return this.#inFlight;
   }
 

@@ -9,17 +9,18 @@ const state = vi.hoisted(() => ({
   isAdmin: false,
   cards: 0,
   cloudRows: [] as { operationId: string; stage: string; progress: number | null }[],
+  items: [] as unknown[],
   watchRunningJobs: vi.fn(() => () => {}),
   watchCloudWork: vi.fn(() => () => {}),
 }));
-vi.mock('$lib/frameleaf/activity', () => ({
-  buildActivityList: () => [],
+vi.mock('$lib/frameleaf/activity', async (importOriginal) => ({
+  buildActivityList: () => [...state.items],
   activityIndicatorState: () => ({
     count: state.indicator.running ?? state.indicator.count,
     progress: state.indicator.progress,
   }),
-  activityInProgressCount: (_items: unknown[], background: number) => state.indicator.count + background,
-  isShownAsCloudWork: () => false,
+  activityInProgressCount: (items: unknown[], background: number) => state.indicator.count + items.length + background,
+  isShownAsCloudWork: (await importOriginal<typeof import('$lib/frameleaf/activity')>()).isShownAsCloudWork,
 }));
 vi.mock('$lib/frameleaf/cloud-work-session.svelte', () => ({
   cloudWorkSession: {
@@ -64,6 +65,7 @@ describe('ActivityIndicator', () => {
     state.isAdmin = false;
     state.cards = 0;
     state.cloudRows = [];
+    state.items = [];
     state.watchRunningJobs.mockClear();
     state.watchCloudWork.mockClear();
   });
@@ -91,6 +93,7 @@ describe('ActivityIndicator', () => {
     state.isAdmin = true;
     state.cards = 2;
     const { container } = render(ActivityIndicator);
+    await vi.waitFor(() => expect(state.watchCloudWork).toHaveBeenCalled());
     await report({ count: 1, progress: null });
 
     expect(state.watchRunningJobs).toHaveBeenCalled();
@@ -103,10 +106,22 @@ describe('ActivityIndicator', () => {
     state.isAdmin = true;
     state.cloudRows = [{ operationId: 'scheduled-backup', stage: 'running', progress: 30 }];
     render(ActivityIndicator);
+    await vi.waitFor(() => expect(state.watchCloudWork).toHaveBeenCalled());
     await report({ count: 0, progress: null });
 
     expect(state.watchCloudWork).toHaveBeenCalled();
     expect(screen.getByRole('link', { name: 'frameleaf_activity_indicator_in_progress' })).toHaveTextContent('1');
+  });
+
+  it('counts a cloud operation once when both its row and the admin’s own job show it', async () => {
+    state.isAdmin = true;
+    state.items = [{ operationId: 'op-1', cloudWork: true, finished: false }];
+    state.cloudRows = [{ operationId: 'op-1', stage: 'running', progress: 30 }];
+    render(ActivityIndicator);
+    await vi.waitFor(() => expect(state.watchCloudWork).toHaveBeenCalled());
+    await report({ count: 0, progress: null });
+
+    expect(screen.getByTestId('frameleaf-activity-indicator')).toHaveTextContent('1');
   });
 
   it('does not ask for background work for anyone else: the server sends them none', async () => {

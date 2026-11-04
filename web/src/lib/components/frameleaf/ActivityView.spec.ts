@@ -513,6 +513,8 @@ describe('Frameleaf Activity page', () => {
       expect(await screen.findByRole('article', { name: 'Nightly cloud backup' })).toBeInTheDocument();
       await vi.waitFor(() => expect(sdkMock.getCloudBackupStatus.mock.calls.length).toBeGreaterThanOrEqual(2));
       expect(screen.getByRole('article', { name: 'Nightly cloud backup' })).toBeInTheDocument();
+      // The cloud status could not be read, so Activity says its background numbers may be stale.
+      expect(screen.getByText(en.frameleaf_activity_background_stale)).toBeInTheDocument();
     } finally {
       restore();
     }

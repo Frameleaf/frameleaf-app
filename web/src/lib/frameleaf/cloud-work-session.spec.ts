@@ -21,7 +21,7 @@ describe('CloudWorkSession', () => {
     vi.resetAllMocks();
   });
 
-  it('shows the run in progress as a cloud row, and nothing when the status cannot be read', async () => {
+  it('shows the run in progress as a cloud row, and keeps it, marked unreachable, when a read fails', async () => {
     const session = new CloudWorkSession();
     sdkMock.getCloudBackupStatus.mockResolvedValue(running);
     await session.refresh();
@@ -29,8 +29,23 @@ describe('CloudWorkSession', () => {
 
     sdkMock.getCloudBackupStatus.mockRejectedValue(new Error('unavailable'));
     await session.refresh();
-    expect(session.status).toBeNull();
+    expect(session.unreachable).toBe(true);
+    expect(session.rows.map((row) => row.operationId)).toEqual(['op-1']);
+
+    sdkMock.getCloudBackupStatus.mockResolvedValue({ ...running, activeRun: null });
+    await session.refresh();
+    expect(session.unreachable).toBe(false);
     expect(session.rows).toEqual([]);
+  });
+
+  it('asks once more when called while a request is out, so a change seen meanwhile is not missed', async () => {
+    const session = new CloudWorkSession();
+    sdkMock.getCloudBackupStatus.mockResolvedValueOnce({ ...running, activeRun: null }).mockResolvedValueOnce(running);
+    const first = session.refresh();
+    const second = session.refresh();
+    await Promise.all([first, second]);
+    expect(sdkMock.getCloudBackupStatus).toHaveBeenCalledTimes(2);
+    expect(session.rows.map((row) => row.operationId)).toEqual(['op-1']);
   });
 
   it('shares one timer between watchers and stops when the last one leaves', async () => {

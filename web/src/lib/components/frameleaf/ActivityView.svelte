@@ -390,7 +390,7 @@
         <Icon icon={mdiWifi} size="1.125rem" aria-hidden={true} />{$t('frameleaf_activity_reconnect')}
       </Button>
     </div>
-  {:else if isAdmin && runningJobsSession.unreachable}
+  {:else if isAdmin && (runningJobsSession.unreachable || cloudWorkSession.unreachable)}
     <!-- Background work keeps its last numbers when a read fails; say they may be out of date. -->
     <div class="fla-offline" role="status">
       <Icon icon={mdiWifiOff} size="1.125rem" aria-hidden={true} />
