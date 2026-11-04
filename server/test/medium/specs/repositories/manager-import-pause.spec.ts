@@ -8,6 +8,7 @@ import { parseLibraryImportBinding } from 'src/library-import/state.js';
 import { freezeSelection } from 'src/queue/manifest.js';
 import { pruneQueueHistory } from 'src/queue/retention.js';
 import { SqlQueueStore } from 'src/queue/store.js';
+import { QUEUE_TIMING } from 'src/queue/types.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { type DB } from 'src/schema/index.js';
 import { FrameleafLibrarySetupService } from 'src/services/frameleaf-library-setup.service.js';
@@ -213,12 +214,12 @@ for (const kind of ['immich-import-derived', 'library-import-derived'])
       }
       expect(await store.complete(active, [])).toBe(true);
       await enqueue();
-      // Admission uses SKIP LOCKED: retry an empty scan, but inspect the first actual claim.
-      const claims = await vi.waitFor(async () => {
-        const claims = await store.claim(queue, worker, 1);
-        expect(claims).toHaveLength(1);
-        return claims;
-      });
+      // Give SKIP LOCKED a full coordinator scan interval, but inspect the first nonempty claim.
+      const claims = await vi.waitUntil(async () => {
+        const batch = await store.claim(queue, worker, 1);
+        return batch.length > 0 ? batch : undefined;
+      }, QUEUE_TIMING.scan);
+      expect(claims).toHaveLength(1);
       expect(claims[0].runId).toBeNull();
       expect(
         (
