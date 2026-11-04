@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { ImportDatabase } from 'src/immich-import/types.js';
 import { bindDestinationImportPlan } from 'src/library-import/destination-plan.js';
-import { ImportManifest, parseImportManifest } from 'src/library-import/manifest.js';
+import { ImportManifest, parseImportManifest, storedVisibility } from 'src/library-import/manifest.js';
 import { LibraryImportBinding, LibraryImportJournal, LibraryImportRefused } from 'src/library-import/state.js';
 
 type Stack = Extract<ImportManifest, { version: 4 }>['stacks'][number];
@@ -45,11 +45,11 @@ export class CanonicalStackWriter {
           );
           if (owners.length !== 1) throw new LibraryImportRefused('STACK_OWNER_MAPPING_REQUIRED');
           const assets = await tx.query(
-            `SELECT m.source_id,a.id::text,a."ownerId"::text,a.visibility,a.status FROM public.frameleaf_library_import_mapping m
-            JOIN public.asset a ON a.id=m.destination_id
+            `SELECT m.source_id,a.id::text,a."ownerId"::text,a.visibility,a.status,
+            EXISTS(SELECT 1 FROM public.asset_lock l WHERE l."assetId"=a.id) AS locked
+            FROM public.frameleaf_library_import_mapping m JOIN public.asset a ON a.id=m.destination_id
             WHERE m.operation_id=$1::uuid AND m.entity_kind='asset' AND m.source_id=ANY($2::text[])
-            AND a."stackId" IS NULL AND NOT EXISTS(SELECT 1 FROM public.asset_lock l WHERE l."assetId"=a.id)
-            ORDER BY a.id FOR UPDATE OF a`,
+            AND a."stackId" IS NULL ORDER BY a.id FOR UPDATE OF a`,
             [this.binding.operationId, stack.assetIds],
           );
           if (
@@ -57,9 +57,11 @@ export class CanonicalStackWriter {
             new Set(assets.map((asset) => asset.id)).size !== assets.length ||
             assets.some((asset) => {
               const source = this.assets.get(String(asset.source_id))!;
+              const locked = source.visibility === 'locked';
               return (
                 asset.ownerId !== ownerId ||
-                asset.visibility !== (source.visibility === 'trash' ? 'timeline' : source.visibility) ||
+                asset.visibility !== storedVisibility(source) ||
+                asset.locked !== locked ||
                 asset.status !== (source.visibility === 'trash' ? 'trashed' : 'active')
               );
             })

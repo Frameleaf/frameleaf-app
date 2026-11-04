@@ -422,7 +422,7 @@ describe(PersonService.name, () => {
 
   describe('handleDetectFaces', () => {
     it.each(['empty', 'nonmatching'] as const)(
-      'settles an imported %s detection as failed without losing people or featured faces, including retry',
+      'keeps imported faces, people and featured faces through an imported %s detection',
       async (result) => {
         const { sut, ctx } = setup();
         const { user } = await ctx.newUser();
@@ -484,54 +484,96 @@ describe(PersonService.name, () => {
           },
         ]);
         await store.finishEnumeration(runId);
-        const reason = 'Imported face regeneration unresolved: detection did not match retained faces';
-        for (const attempt of [1, 2]) {
-          const [claim] = await new SqlQueueStore(ctx.database).claim(queue, worker);
-          expect(claim).toMatchObject({ attempt, runId, data: { id: asset.id, preserveImportedFaces: true } });
-          const execution: QueueExecution = {
-            claim,
-            signal: new AbortController().signal,
-            progress: vi.fn(),
-            progressUnits: 0,
-            adoptions: [],
-            followups: [],
-            buffering: false,
-          };
-          await queueExecution.run(execution, () =>
-            sut.handleDetectFaces(claim.data as unknown as JobOf<JobName.AssetDetectFaces>),
-          );
-          await expect(
-            store.complete(claim, execution.followups, (tx) =>
-              publicationTransaction.run(tx, () =>
-                queueExecution.run(execution, async () => {
-                  execution.buffering = true;
-                  for (const adopt of execution.adoptions) await adopt(tx);
-                }),
-              ),
-            ),
-          ).rejects.toThrow(reason);
-          expect(await store.fail(claim, reason)).toBe(true);
-          expect({ faces: await readFaces(), person: await readPerson() }).toEqual(before);
-          expect(
-            await ctx.database.selectFrom('face_search').selectAll().where('faceId', '=', assetFace.id).execute(),
-          ).toEqual([]);
-          expect(execution.followups).toEqual([]);
-          await sql`update job set "availableAt" = now() where id = ${claim.id}::uuid`.execute(ctx.database);
-        }
-        expect(await store.claim(queue, worker)).toEqual([]);
-        expect(
-          (
-            await sql`select state, attempt, "retryBaseAttempt", error from job where "runId" = ${runId}::uuid`.execute(
-              ctx.database,
-            )
-          ).rows,
-        ).toEqual([{ state: 'failed', attempt: 2, retryBaseAttempt: 0, error: reason }]);
-        expect(
-          (await sql`select state from job_run_item where "runId" = ${runId}::uuid`.execute(ctx.database)).rows,
-        ).toEqual([{ state: 'failed' }]);
-        expect(ctx.getMock(JobRepository).queueAll).not.toHaveBeenCalled();
+        ctx.getMock(JobRepository).queueAll.mockResolvedValue();
+        const [claim] = await store.claim(queue, worker);
+        expect(claim).toMatchObject({ attempt: 1, runId, data: { id: asset.id, preserveImportedFaces: true } });
+        const execution: QueueExecution = {
+          claim,
+          signal: new AbortController().signal,
+          progress: vi.fn(),
+          progressUnits: 0,
+          adoptions: [],
+          followups: [],
+          buffering: false,
+        };
+        await queueExecution.run(execution, () =>
+          sut.handleDetectFaces(claim.data as unknown as JobOf<JobName.AssetDetectFaces>),
+        );
+        await store.complete(claim, execution.followups, (tx) =>
+          publicationTransaction.run(tx, () =>
+            queueExecution.run(execution, async () => {
+              execution.buffering = true;
+              for (const adopt of execution.adoptions) await adopt(tx);
+            }),
+          ),
+        );
+
+        const faces = await readFaces();
+        expect(faces).toEqual(expect.arrayContaining(before.faces));
+        expect(faces).toHaveLength(result === 'empty' ? 1 : 2);
+        expect(await readPerson()).toEqual(before.person);
+        const added = faces.filter(({ id }) => id !== assetFace.id).map(({ id }) => id);
+        const embedded = await ctx.database
+          .selectFrom('face_search')
+          .select('faceId')
+          .where('faceId', 'in', [assetFace.id, ...added])
+          .execute();
+        expect(embedded.map(({ faceId }) => faceId)).toEqual(added);
+        // Recognised, so a later "Missing" face detection (no preservation) leaves the photo alone
+        await expect(
+          ctx.database
+            .selectFrom('asset_job_status')
+            .select('facesRecognizedAt')
+            .where('assetId', '=', asset.id)
+            .executeTakeFirstOrThrow(),
+        ).resolves.toEqual({ facesRecognizedAt: expect.any(Date) });
+        expect((await sql`select state from job where "runId" = ${runId}::uuid`.execute(ctx.database)).rows).toEqual([
+          { state: 'completed' },
+        ]);
+        expect(ctx.getMock(JobRepository).queueAll).toHaveBeenCalledTimes(result === 'empty' ? 0 : 1);
       },
     );
+
+    it('still removes a face detected here that an imported detection no longer finds', async () => {
+      const { sut, ctx } = setup();
+      ctx.getMock(JobRepository).queueAll.mockResolvedValue();
+      const { user } = await ctx.newUser();
+      const { person } = await ctx.newPerson({ ownerId: user.id });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newExif({ assetId: asset.id, description: '' });
+      await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Preview, path: 'detected-preview.jpg' });
+      const face = { imageWidth: 100, imageHeight: 100, boundingBoxX1: 10, boundingBoxY1: 10 };
+      const { assetFace: detected } = await ctx.newAssetFace({
+        ...face,
+        assetId: asset.id,
+        personGroupId: person.personGroupId,
+        sourceType: SourceType.MachineLearning,
+        boundingBoxX2: 30,
+        boundingBoxY2: 30,
+      });
+      // one face detected here (stored with its embedding), one imported (none)
+      await ctx.database.insertInto('face_search').values({ faceId: detected.id, embedding: newEmbedding() }).execute();
+      const { assetFace: imported } = await ctx.newAssetFace({
+        ...face,
+        assetId: asset.id,
+        personGroupId: person.personGroupId,
+        sourceType: SourceType.MachineLearning,
+        boundingBoxX1: 60,
+        boundingBoxY1: 60,
+        boundingBoxX2: 90,
+        boundingBoxY2: 90,
+      });
+      ctx
+        .getMock(MachineLearningRepository)
+        .detectFaces.mockResolvedValue({ imageWidth: 100, imageHeight: 100, faces: [] });
+
+      await expect(sut.handleDetectFaces({ id: asset.id, preserveImportedFaces: true })).resolves.toBe(
+        JobStatus.Success,
+      );
+      expect(
+        await ctx.database.selectFrom('asset_face').select('id').where('assetId', '=', asset.id).execute(),
+      ).toEqual([{ id: imported.id }]);
+    });
 
     it.each([false, true])('retains manual-face overlaps (contested=%s)', async (contested) => {
       const { sut, ctx } = setup();

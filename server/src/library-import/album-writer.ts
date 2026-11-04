@@ -10,6 +10,7 @@ export class CanonicalAlbumWriter {
   private readonly binding: LibraryImportBinding;
   private readonly albums: Map<string, ImportManifest['albums'][number]>;
   private readonly owners: Map<string, string>;
+  private readonly locked: Set<string>;
   constructor(
     private readonly db: ImportDatabase,
     context: {
@@ -24,6 +25,7 @@ export class CanonicalAlbumWriter {
     const manifest = parseImportManifest(context.manifest);
     this.albums = new Map(manifest.albums.map((album) => [album.id, album]));
     this.owners = new Map(plan.owners.map((owner) => [owner.sourceId, owner.destinationId.toLowerCase()]));
+    this.locked = new Set(manifest.assets.filter((asset) => asset.visibility === 'locked').map((asset) => asset.id));
   }
 
   async write(sourceAlbumId: unknown): Promise<string> {
@@ -60,13 +62,18 @@ export class CanonicalAlbumWriter {
           )
             throw new LibraryImportRefused('ALBUM_OWNERS_INCOMPLETE');
           const assets = await tx.query(
-            `SELECT a.id::text FROM public.frameleaf_library_import_mapping m
+            `SELECT m.source_id,a.id::text,EXISTS(SELECT 1 FROM public.asset_lock l WHERE l."assetId"=a.id) AS locked
+          FROM public.frameleaf_library_import_mapping m
           JOIN public.asset a ON a.id=m.destination_id WHERE m.operation_id=$1::uuid AND m.entity_kind='asset'
-          AND m.source_id=ANY($2::text[]) AND a."ownerId"=$3::uuid
-          AND NOT EXISTS(SELECT 1 FROM public.asset_lock l WHERE l."assetId"=a.id) ORDER BY a.id FOR SHARE OF a`,
+          AND m.source_id=ANY($2::text[]) AND a."ownerId"=$3::uuid ORDER BY a.id FOR SHARE OF a`,
             [this.binding.operationId, album.assetIds, ownerId],
           );
-          if (assets.length !== album.assetIds.length) throw new LibraryImportRefused('ALBUM_ASSETS_INCOMPLETE');
+          // A Locked item keeps its albums (owner 2026-09-27); only the source's private items are Locked.
+          if (
+            assets.length !== album.assetIds.length ||
+            assets.some((asset) => asset.locked !== this.locked.has(String(asset.source_id)))
+          )
+            throw new LibraryImportRefused('ALBUM_ASSETS_INCOMPLETE');
           // Source comments/activities need their own preservation contract before enabling new ones.
           await tx.query(
             `INSERT INTO public.album(id,"albumName",description,"isActivityEnabled") VALUES($1::uuid,$2,$3,false)`,

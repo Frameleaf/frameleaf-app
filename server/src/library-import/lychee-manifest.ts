@@ -266,7 +266,8 @@ export function readLycheeManifest(snapshot: ReturnType<typeof openLycheeSnapsho
       fileModifiedAt: primaryProof.modifiedAt,
       originalFileNames: Object.fromEntries(originalsProof.map((file) => [file.id, posix.basename(file.path)])),
       ...(localDateTime === undefined ? {} : { localDateTime }),
-      visibility: photo.is_validated ? 'timeline' : 'hidden',
+      // Owner 2026-11-04: an upload the Lychee owner never approved imports Locked, for review.
+      visibility: photo.is_validated ? 'timeline' : 'locked',
       metadata,
     });
     const companion = related.find((file) => file.role === 'companion');

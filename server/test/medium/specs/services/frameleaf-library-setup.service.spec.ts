@@ -1,3 +1,4 @@
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { Writable } from 'node:stream';
@@ -280,6 +281,50 @@ it('applies the initial machine learning choice once through normal settings and
   }
 });
 
+it('starts an import whose settings file already carries the processing choice', async () => {
+  const db = await getKyselyDB('fl_manager_file_settings');
+  const names = ['FRAMELEAF_MANAGER_INSTALLATION', 'FRAMELEAF_MANAGER_ORIGIN', 'FRAMELEAF_MANAGER_ML_ENABLED'];
+  const legacy = ['IMMICH_CONFIG_FILE', 'FRAMELEAF_CONFIG_FILE'];
+  const previous = Object.fromEntries([...names, ...legacy].map((name) => [name, process.env[name]]));
+  const config = { getAdminConfigWithRevision: vi.fn(), updateAdminConfigWithRevision: vi.fn() };
+  const service = new FrameleafLibrarySetupService(
+    db,
+    { getAll: vi.fn().mockResolvedValue([]) } as never,
+    {} as never,
+    { getJobCounts: vi.fn().mockResolvedValue({ active: 0, waiting: 0, delayed: 0, paused: 0, failed: 0 }) } as never,
+    { hasAdmin: vi.fn().mockResolvedValue(true) } as never,
+    {} as never,
+    {} as never,
+    config as never,
+    {} as never,
+  );
+  const phase = async (installation: string) =>
+    (
+      await sql<{ value: { phase: string } }>`SELECT value FROM system_metadata
+        WHERE key=${`frameleaf-manager-library-setup:${installation}`}`.execute(db)
+    ).rows[0]?.value.phase;
+  try {
+    process.env.FRAMELEAF_MANAGER_ORIGIN = 'new_import';
+    delete process.env.FRAMELEAF_MANAGER_ML_ENABLED;
+    for (const name of legacy) delete process.env[name];
+    process.env.FRAMELEAF_MANAGER_INSTALLATION = 'eeeeeeeeffff';
+    await service.begin();
+    expect(await phase('eeeeeeeeffff')).toBe('awaiting-account'); // database settings still wait for Manager's choice
+    // Manager mounts the imported server's settings file under the legacy name and sets no ML variable.
+    process.env.IMMICH_CONFIG_FILE = '/run/frameleaf/settings.json';
+    process.env.FRAMELEAF_MANAGER_INSTALLATION = 'eeeeeeee0000';
+    await service.begin();
+    expect(await phase('eeeeeeee0000')).toBe('rescanning');
+    expect(config.updateAdminConfigWithRevision).not.toHaveBeenCalled();
+  } finally {
+    for (const [name, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    await db.destroy();
+  }
+});
+
 it('waits for a fresh full integrity scan when the existing operation is incremental or predates discovery', async () => {
   const db = await getKyselyDB('fl334_manager_full_scan');
   const { ctx } = newMediumService(SyncService, { database: db, real: [], mock: [LoggingRepository] });
@@ -358,6 +403,235 @@ it('waits for a fresh full integrity scan when the existing operation is increme
       } else {
         process.env[key!] = value;
       }
+    }
+    await db.destroy();
+  }
+});
+
+it('keeps the file check moving past libraries and accounts it cannot check, and never adopts a scan of chosen photos', async () => {
+  const db = await getKyselyDB('fl_manager_unscannable');
+  const { ctx } = newMediumService(SyncService, { database: db, real: [], mock: [LoggingRepository] });
+  const names = ['FRAMELEAF_MANAGER_INSTALLATION', 'FRAMELEAF_MANAGER_ORIGIN', 'FRAMELEAF_MANAGER_ML_ENABLED'];
+  const previous = Object.fromEntries(names.map((name) => [name, process.env[name]]));
+  const key = 'frameleaf-manager-library-setup:ddddddddeeee';
+  const state = async () =>
+    (
+      await sql<{
+        value: { libraries: string[]; owners: string[]; health: Record<string, string> };
+      }>`SELECT value FROM system_metadata WHERE key=${key}`.execute(db)
+    ).rows[0].value;
+  try {
+    const { user } = await ctx.newUser();
+    await ctx.newAsset({ ownerId: user.id });
+    const { user: leaving } = await ctx.newUser();
+    process.env.FRAMELEAF_MANAGER_INSTALLATION = 'ddddddddeeee';
+    process.env.FRAMELEAF_MANAGER_ORIGIN = 'new_library';
+    delete process.env.FRAMELEAF_MANAGER_ML_ENABLED;
+    const { user: trashedOwner } = await ctx.newUser();
+    await sql`UPDATE "user" SET "deletedAt"=now() WHERE id=${trashedOwner.id}::uuid`.execute(db);
+    const [empty, trashed, removed] = [randomUUID(), randomUUID(), randomUUID()];
+    const libraries = {
+      getAll: vi.fn().mockResolvedValue([{ id: empty }, { id: trashed }, { id: removed }]),
+      get: vi
+        .fn()
+        .mockImplementation((id: string) =>
+          Promise.resolve(id === removed ? undefined : { id, ownerId: id === trashed ? trashedOwner.id : user.id }),
+        ),
+    };
+    // What LibraryScanService.queue refuses on every try: a library with no import folder.
+    const scans = { queue: vi.fn().mockRejectedValue(new BadRequestException('Add at least one import folder')) };
+    const fresh = randomUUID();
+    const mediaHealth = {
+      startMissingScan: vi
+        .fn()
+        .mockImplementation(({ user: { id } }: AuthDto) =>
+          id === user.id
+            ? Promise.reject(new ConflictException('A scan of other photos is running'))
+            : Promise.resolve({ operationId: fresh }),
+        ),
+    };
+    const service = new FrameleafLibrarySetupService(
+      db,
+      libraries as never,
+      scans as never,
+      { getJobCounts: vi.fn().mockResolvedValue({ active: 0, waiting: 0, delayed: 0, paused: 0, failed: 0 }) } as never,
+      { hasAdmin: vi.fn().mockResolvedValue(true), getAdmin: vi.fn().mockResolvedValue(user) } as never,
+      {} as never,
+      mediaHealth as never,
+      {} as never,
+      {} as never,
+    );
+    await service.status();
+    expect((await state()).libraries).toEqual([]);
+    expect(scans.queue).toHaveBeenCalledOnce(); // only the library with a live owner was asked to scan
+    expect((await service.status()).phase).toBe('rescanning'); // the integrity check starts
+    // Chosen photos, scanned after the check began, are no full check of the account.
+    const chosen = randomUUID();
+    await sql`INSERT INTO media_operation (id, "ownerId", kind, destination, label, snapshot, settings)
+      VALUES (${chosen}::uuid, ${user.id}::uuid, 'media_health', 'local', 'Chosen photos',
+      ${JSON.stringify({ mode: 'scan', assetIds: [randomUUID()] })}::text::jsonb, '{}'::jsonb)`.execute(db);
+    await sql`INSERT INTO media_operation (id, "ownerId", kind, destination, label, snapshot, settings)
+      VALUES (${fresh}::uuid, ${leaving.id}::uuid, 'media_health', 'local', 'Full scan', '{"mode":"scan"}'::jsonb, '{}'::jsonb)`.execute(
+      db,
+    );
+    await service.status();
+    expect((await state()).health).toEqual({ [leaving.id]: fresh });
+    // The account removed mid-check takes its scan with it and is no longer waited on.
+    await sql`DELETE FROM media_operation WHERE id=${fresh}::uuid`.execute(db);
+    await sql`DELETE FROM "user" WHERE id=${leaving.id}::uuid`.execute(db);
+    await service.status();
+    expect((await state()).owners).toEqual([user.id]);
+  } finally {
+    for (const [name, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    await db.destroy();
+  }
+});
+
+it('forgets the scans of deleted libraries and trashed owners, and a recorded scan that is not a full check', async () => {
+  const db = await getKyselyDB('fl_manager_forget_scans');
+  const { ctx } = newMediumService(SyncService, { database: db, real: [], mock: [LoggingRepository] });
+  const names = ['FRAMELEAF_MANAGER_INSTALLATION', 'FRAMELEAF_MANAGER_ORIGIN', 'FRAMELEAF_MANAGER_ML_ENABLED'];
+  const previous = Object.fromEntries(names.map((name) => [name, process.env[name]]));
+  const key = 'frameleaf-manager-library-setup:dddddddd2222';
+  const value = async () =>
+    (
+      await sql<{
+        value: { phase: string; libraries: string[]; scans: Record<string, string>; health: Record<string, string> };
+      }>`SELECT value FROM system_metadata WHERE key=${key}`.execute(db)
+    ).rows[0].value;
+  try {
+    const { user } = await ctx.newUser();
+    await ctx.newAsset({ ownerId: user.id });
+    process.env.FRAMELEAF_MANAGER_INSTALLATION = 'dddddddd2222';
+    process.env.FRAMELEAF_MANAGER_ORIGIN = 'new_library';
+    delete process.env.FRAMELEAF_MANAGER_ML_ENABLED;
+    const { user: lender } = await ctx.newUser();
+    const [libraryId, lent, scan, lentScan, chosen, full] = Array.from({ length: 6 }, () => randomUUID());
+    await sql`INSERT INTO media_operation (id, "ownerId", kind, destination, label, snapshot, settings)
+      VALUES (${scan}::uuid, ${user.id}::uuid, 'library_scan', 'local', 'Library', '{}'::jsonb, '{}'::jsonb),
+      (${lentScan}::uuid, ${user.id}::uuid, 'library_scan', 'local', 'Lent', '{}'::jsonb, '{}'::jsonb)`.execute(db);
+    let deleted = false;
+    const libraries = {
+      getAll: vi.fn().mockResolvedValue([{ id: libraryId }, { id: lent }]),
+      get: vi
+        .fn()
+        .mockImplementation((id: string) =>
+          Promise.resolve(
+            id === lent ? { id, ownerId: lender.id } : deleted ? undefined : { id: libraryId, ownerId: user.id },
+          ),
+        ),
+    };
+    const scans = {
+      queue: vi
+        .fn()
+        .mockImplementation(({ id }: { id: string }) =>
+          Promise.resolve({ operation: { id: id === lent ? lentScan : scan } }),
+        ),
+    };
+    const mediaHealth = { startMissingScan: vi.fn().mockResolvedValue({ operationId: full }) };
+    const service = new FrameleafLibrarySetupService(
+      db,
+      libraries as never,
+      scans as never,
+      { getJobCounts: vi.fn().mockResolvedValue({ active: 0, waiting: 0, delayed: 0, paused: 0, failed: 0 }) } as never,
+      { hasAdmin: vi.fn().mockResolvedValue(true), getAdmin: vi.fn().mockResolvedValue(user) } as never,
+      {} as never,
+      mediaHealth as never,
+      {} as never,
+      {} as never,
+    );
+    await service.status();
+    expect((await value()).scans).toEqual({ [libraryId]: scan, [lent]: lentScan });
+    // Removing a library, or trashing its owner's account, stops its scan; setup carries on without either.
+    deleted = true;
+    await sql`UPDATE "user" SET "deletedAt"=now() WHERE id=${lender.id}::uuid`.execute(db);
+    await sql`UPDATE media_operation SET status='cancelled' WHERE id=ANY(${[scan, lentScan]}::uuid[])`.execute(db);
+    await service.status();
+    expect(await value()).toMatchObject({ phase: 'rescanning', libraries: [], scans: {} });
+    await service.status(); // the integrity check starts
+    // A setup that adopted a scan of chosen photos (before they were told apart) starts a full check instead.
+    await sql`INSERT INTO media_operation (id, "ownerId", kind, destination, label, snapshot, settings)
+      VALUES (${chosen}::uuid, ${user.id}::uuid, 'media_health', 'local', 'Chosen photos',
+      ${JSON.stringify({ mode: 'scan', assetIds: [randomUUID()] })}::text::jsonb, '{}'::jsonb),
+      (${full}::uuid, ${user.id}::uuid, 'media_health', 'local', 'Full scan', '{"mode":"scan"}'::jsonb, '{}'::jsonb)`.execute(
+      db,
+    );
+    await sql`UPDATE system_metadata SET value=jsonb_set(value, '{health}', ${JSON.stringify({ [user.id]: chosen })}::text::jsonb)
+      WHERE key=${key}`.execute(db);
+    await service.status();
+    expect((await value()).health).toEqual({ [user.id]: full });
+  } finally {
+    for (const [name, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    await db.destroy();
+  }
+});
+
+it('keeps a retried setup paused, and resuming it resumes the scans the earlier attempt held', async () => {
+  const db = await getKyselyDB('fl_manager_retry_paused');
+  const { ctx } = newMediumService(SyncService, { database: db, real: [], mock: [LoggingRepository] });
+  const names = ['FRAMELEAF_MANAGER_INSTALLATION', 'FRAMELEAF_MANAGER_ORIGIN', 'FRAMELEAF_MANAGER_ML_ENABLED'];
+  const previous = Object.fromEntries(names.map((name) => [name, process.env[name]]));
+  const key = 'frameleaf-manager-library-setup:cccccccc1111';
+  try {
+    const { user } = await ctx.newUser();
+    process.env.FRAMELEAF_MANAGER_INSTALLATION = 'cccccccc1111';
+    process.env.FRAMELEAF_MANAGER_ORIGIN = 'new_library';
+    delete process.env.FRAMELEAF_MANAGER_ML_ENABLED;
+    const [libraryId, scan, check] = [randomUUID(), randomUUID(), randomUUID()];
+    await sql`INSERT INTO media_operation (id, "ownerId", kind, destination, label, snapshot, settings)
+      VALUES (${scan}::uuid, ${user.id}::uuid, 'library_scan', 'local', 'Library', '{}'::jsonb, '{}'::jsonb)`.execute(
+      db,
+    );
+    await sql`INSERT INTO media_operation (id, "ownerId", kind, destination, label, snapshot, settings)
+      VALUES (${check}::uuid, ${user.id}::uuid, 'media_health', 'local', 'Full scan', '{"mode":"scan"}'::jsonb, '{}'::jsonb)`.execute(
+      db,
+    );
+    const operations = {
+      resume: vi.fn().mockImplementation((id: string) => Promise.resolve({ id })),
+      notifyCancellation: vi.fn(),
+    };
+    const service = new FrameleafLibrarySetupService(
+      db,
+      { getAll: vi.fn().mockResolvedValue([]) } as never,
+      {} as never,
+      { getJobCounts: vi.fn().mockResolvedValue({ active: 0, waiting: 0, delayed: 0, paused: 0, failed: 0 }) } as never,
+      { hasAdmin: vi.fn().mockResolvedValue(true) } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      operations as never,
+    );
+    await service.begin();
+    await sql`UPDATE system_metadata SET value=value || ${JSON.stringify({
+      phase: 'needs-attention',
+      paused: true,
+      libraries: [libraryId],
+      scans: { [libraryId]: scan },
+      health: { [user.id]: check },
+    })}::text::jsonb WHERE key=${key}`.execute(db);
+    await service.begin(true);
+    const value = async () =>
+      (
+        await sql<{ value: { phase: string; paused: boolean; scans: object } }>`SELECT value FROM system_metadata
+          WHERE key=${key}`.execute(db)
+      ).rows[0].value;
+    // FL-1146: a retry keeps the owner's pause; it starts its own scans, forgetting the earlier ones.
+    expect(await value()).toMatchObject({ phase: 'rescanning', paused: true, scans: {} });
+    expect(operations.resume).not.toHaveBeenCalled();
+    await service.setPaused(false);
+    expect(operations.resume).toHaveBeenCalledWith(scan, user.id, expect.anything());
+    expect(operations.resume).toHaveBeenCalledWith(check, user.id, expect.anything());
+    expect(await value()).toMatchObject({ paused: false });
+  } finally {
+    for (const [name, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
     }
     await db.destroy();
   }
@@ -460,7 +734,18 @@ it('serializes setup, resumes from persisted intent and keeps device completion 
     expect((await make().status(auth)).canFinish).toBe(false);
     // Managed uploads require their durable integrity receipt even when every queue is idle.
     const pendingKey = 'frameleaf-manager-library-setup:dcbaabcdabcd';
-    await sql`UPDATE system_metadata SET value=value || ${JSON.stringify({ owners: [auth.user.id], health: { [auth.user.id]: randomUUID() }, quietSince: Date.now() - 20_000 })}::text::jsonb WHERE key=${pendingKey}`.execute(
+    const { user: owner } = await newMediumService(SyncService, {
+      database: db,
+      real: [],
+      mock: [LoggingRepository],
+    }).ctx.newUser();
+    // Its full check is admitted but has not finished.
+    const pendingCheck = randomUUID();
+    await sql`INSERT INTO media_operation (id, "ownerId", kind, destination, label, snapshot, settings)
+      VALUES (${pendingCheck}::uuid, ${owner.id}::uuid, 'media_health', 'local', 'Full scan', '{"mode":"scan"}'::jsonb, '{}'::jsonb)`.execute(
+      db,
+    );
+    await sql`UPDATE system_metadata SET value=value || ${JSON.stringify({ owners: [owner.id], health: { [owner.id]: pendingCheck }, quietSince: Date.now() - 20_000 })}::text::jsonb WHERE key=${pendingKey}`.execute(
       db,
     );
     expect((await make().status(auth)).phase).not.toBe('complete');

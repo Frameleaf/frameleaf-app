@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { Stats } from 'node:fs';
+import { Stats, constants } from 'node:fs';
 import type { createPostgres } from '@frameleaf/sql-tools';
 import type { QueueExecution } from 'src/queue/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -627,6 +627,25 @@ describe(LibraryScanService.name, () => {
       expect(mocks.asset.createAll).toHaveBeenCalledWith([
         expect.objectContaining({ originalPath: '/mnt/photos/mine.jpg' }),
       ]);
+    });
+
+    it.each([
+      [null, false],
+      ['EROFS', true],
+      ['EACCES', true],
+      ['EPERM', true],
+      // the folder went away after the source check: no evidence it is read-only
+      ['ENOENT', false],
+      ['EIO', false],
+    ])('marks the library read-only only when writing is denied (%s)', async (code, readOnly) => {
+      mocks.storage.accessError.mockResolvedValue(code);
+
+      await sut.run(operationOf(), 'token');
+
+      expect(mocks.storage.accessError).toHaveBeenCalledWith('/mnt/photos', constants.W_OK);
+      const marked = mocks.library.update.mock.calls.filter(([, patch]) => 'readOnly' in patch);
+      expect(marked).toEqual(readOnly ? [[library.id, { readOnly: true }]] : []);
+      expect(operations.complete).toHaveBeenCalledTimes(1);
     });
 
     it('fails, changing nothing, when an import folder does not exist', async () => {

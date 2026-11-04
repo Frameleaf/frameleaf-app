@@ -88,6 +88,8 @@ const legacyManifestSchema = z.strictObject({
       ownerId: id,
       fileIds: z.array(id).min(1),
       visibility: z.enum(['timeline', 'archive', 'hidden', 'locked', 'trash']),
+      /** A Locked item that is also archived returns to the Archive when unlocked. */
+      archived: z.literal(true).optional(),
       metadata,
     }),
   ),
@@ -146,6 +148,16 @@ const manifestSchema = z.discriminatedUnion('version', [
   }),
 ]);
 export type ImportManifest = z.infer<typeof manifestSchema>;
+/** The stored `asset.visibility`: Trash is a status and Locked an `asset_lock` row (FL-34), neither a visibility. */
+export const storedVisibility = ({
+  visibility,
+  archived,
+}: Pick<ImportManifest['assets'][number], 'visibility' | 'archived'>) =>
+  visibility === 'locked' && archived
+    ? 'archive'
+    : visibility === 'trash' || visibility === 'locked'
+      ? 'timeline'
+      : visibility;
 
 /** This validates bundle structure; source adapters must independently establish inventory evidence. */
 export const parseImportManifest = (input: unknown): ImportManifest => {
@@ -181,6 +193,7 @@ export const parseImportManifest = (input: unknown): ImportManifest => {
   const referencedFiles = new Set<string>();
   for (const asset of value.assets) {
     if (!indexes.users.has(asset.ownerId)) fail('UNKNOWN_OWNER');
+    if (asset.archived && asset.visibility !== 'locked') fail('ASSET_ARCHIVED_REQUIRES_LOCKED');
     if (new Set(asset.fileIds).size !== asset.fileIds.length) fail('DUPLICATE_FILE_REFERENCE');
     if (asset.fileIds.some((fileId) => !files.has(fileId))) fail('UNKNOWN_FILE');
     const originals = asset.fileIds.filter((fileId) => files.get(fileId)?.role === 'original');
@@ -242,7 +255,9 @@ export const parseImportManifest = (input: unknown): ImportManifest => {
       for (const assetId of stack.assetIds) {
         if (claimed.has(assetId)) fail('STACK_MEMBERSHIP_CONFLICT');
         claimed.add(assetId);
-        if (assets.get(assetId)!.visibility !== primary.visibility) fail('STACK_VISIBILITY_MISMATCH');
+        const member = assets.get(assetId)!;
+        if (member.visibility !== primary.visibility || member.archived !== primary.archived)
+          fail('STACK_VISIBILITY_MISMATCH');
         if (access(assetId) !== expectedAccess) fail('STACK_ACCESS_MISMATCH');
       }
     }
@@ -265,8 +280,8 @@ export const parseImportManifest = (input: unknown): ImportManifest => {
       claimed.add(pair.photoAssetId);
       claimed.add(pair.videoAssetId);
       if (photo!.ownerId !== video!.ownerId) fail('LIVE_PHOTO_OWNER_INVALID');
+      // A Locked photo locks its motion part too; the motion part stays hidden.
       if (
-        photo!.visibility === 'locked' ||
         photo!.visibility === 'trash' ||
         video!.visibility !== 'hidden' ||
         photo!.metadata.deletedAt !== undefined ||

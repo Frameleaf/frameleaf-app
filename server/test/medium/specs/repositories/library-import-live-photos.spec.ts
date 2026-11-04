@@ -28,7 +28,7 @@ const wrap = (connection: Kysely<any>): ImportDatabase => ({
     (await connection.executeQuery(CompiledQuery.raw(statement, parameters))).rows as Record<string, unknown>[],
   transaction: (body) => connection.transaction().execute((tx) => body(wrap(tx))),
 });
-const setup = async (stacked = false, placements = false) => {
+const setup = async (stacked = false, placements = false, locked = false, archived = false) => {
   let plan = parseDestinationImportPlan(fixture.plan);
   plan.owners = ['owner', 'viewer', 'editor', 'unrelated'].map((sourceId) => ({
     sourceId,
@@ -72,7 +72,8 @@ const setup = async (stacked = false, placements = false) => {
       type: file.id === 'motion' ? 'VIDEO' : 'IMAGE',
       fileModifiedAt: '2020-01-02T03:04:05Z',
       originalFileNames: { [file.id]: file.id + '.jpg' },
-      visibility: file.id === 'motion' ? 'hidden' : 'timeline',
+      visibility: file.id === 'motion' ? 'hidden' : locked ? 'locked' : 'timeline',
+      ...(file.id !== 'motion' && archived ? { archived: true } : {}),
       metadata: { takenAt: '2020-01-02T03:04:05Z', timeZone: 'UTC' },
     })),
     albums: [],
@@ -381,6 +382,72 @@ it('preserves a still stack alongside its explicit motion link', async () => {
       context.manifest.assets.map((asset) => input(asset.id)),
     ),
   ).resolves.toMatchObject({ assets: 3, originals: 3 });
+});
+
+it('locks a private Live Photo and its stack as a whole, then reconciles and regenerates them', async () => {
+  // Owner 2026-11-04: a source's private items import Locked; the motion part stays hidden
+  const { context, writer, input, photos } = await setup(true, false, true);
+  const id = await writer.write(input('still'));
+  await new CanonicalStackWriter(wrap(db), context).write('stack');
+  expect((await sql`SELECT "assetId"::text,reason FROM public.asset_lock ORDER BY "assetId"`.execute(db)).rows).toEqual(
+    [id, photos.motion, photos.outside].sort().map((assetId) => ({ assetId, reason: AssetLockReason.Marked })),
+  );
+  expect((await sql`SELECT id::text,visibility FROM public.asset ORDER BY id`.execute(db)).rows).toEqual(
+    [
+      { id, visibility: 'timeline' },
+      { id: photos.motion, visibility: 'hidden' },
+      { id: photos.outside, visibility: 'timeline' },
+    ].sort((a, b) => a.id.localeCompare(b.id)),
+  );
+  await retainReviewedImportInputs(wrap(db), context, { manifest: context.manifest, plan: context.plan });
+  await new LibraryImportJournal(wrap(db)).phase(context.binding, 'verifying');
+  await expect(reconcileImportedStacks(wrap(db), context)).resolves.toMatchObject({ stacks: 1, memberships: 2 });
+  const inputs = context.manifest.assets.map((asset) => input(asset.id));
+  await expect(reconcileImportedAssets(wrap(db), context, inputs)).resolves.toMatchObject({ assets: 3 });
+
+  const repository = new JobRepository({} as never, {} as never, {} as never, { setContext: vi.fn() } as never, db);
+  for (const [jobName, queueName] of [
+    [JobName.AssetExtractMetadata, QueueName.MetadataExtraction],
+    [JobName.AssetGenerateThumbnails, QueueName.ThumbnailGeneration],
+    [JobName.SmartSearch, QueueName.SmartSearch],
+    [JobName.AssetDetectFaces, QueueName.FaceDetection],
+    [JobName.AssetEncodeVideo, QueueName.VideoConversion],
+    [JobName.PersonGenerateThumbnail, QueueName.ThumbnailGeneration],
+  ] as const)
+    repository['handlers'][jobName] = { jobName, queueName, handler: vi.fn(), label: 'synthetic import' };
+  await expect(repository.prepareImportedLibraryWork(context)).resolves.toEqual(expect.any(String));
+
+  await sql`DELETE FROM public.asset_lock WHERE "assetId"=${photos.motion}`.execute(db);
+  await expect(reconcileImportedAssets(wrap(db), context, inputs)).rejects.toThrow();
+});
+
+it('keeps a Locked archived Live Photo stack in the Archive for when it is unlocked', async () => {
+  const { context, writer, input, photos } = await setup(true, false, true, true);
+  const id = await writer.write(input('still'));
+  await new CanonicalStackWriter(wrap(db), context).write('stack');
+  expect((await sql`SELECT count(*)::int AS count FROM public.asset_lock`.execute(db)).rows).toEqual([{ count: 3 }]);
+  expect(
+    (
+      await sql<{ id: string; visibility: string }>`SELECT id::text,visibility FROM public.asset ORDER BY id`.execute(
+        db,
+      )
+    ).rows.map(({ id, visibility }) => [id, visibility]),
+  ).toEqual(
+    [
+      [id, 'archive'],
+      [photos.motion, 'hidden'],
+      [photos.outside, 'archive'],
+    ].sort(([a], [b]) => a.localeCompare(b)),
+  );
+  await new LibraryImportJournal(wrap(db)).phase(context.binding, 'verifying');
+  await expect(reconcileImportedStacks(wrap(db), context)).resolves.toMatchObject({ stacks: 1 });
+  await expect(
+    reconcileImportedAssets(
+      wrap(db),
+      context,
+      context.manifest.assets.map((asset) => input(asset.id)),
+    ),
+  ).resolves.toMatchObject({ assets: 3 });
 });
 
 it('recovers the committed pair after losing its acknowledgement', async () => {

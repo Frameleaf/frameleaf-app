@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
@@ -7,7 +7,7 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { OnEvent } from 'src/decorators.js';
 import { AdminConfigDto } from 'src/dtos/config.dto.js';
 import { LibrarySetupProgressDto } from 'src/dtos/frameleaf-library-setup.dto.js';
-import { FrameleafWorker, JobName, MediaOperationKind, QueueName, SyncEntityType } from 'src/enum.js';
+import { FrameleafWorker, JobName, MediaOperationKind, QueueName, SyncEntityType, UserStatus } from 'src/enum.js';
 import { readImportedSetupRun } from 'src/library-import/setup-run.js';
 import { lockQueueCatalogue } from 'src/queue/catalogue.js';
 import { listRuns } from 'src/queue/run-query.js';
@@ -21,6 +21,7 @@ import { DB } from 'src/schema/index.js';
 import { LibraryScanService } from 'src/services/library-scan.service.js';
 import { MediaHealthService } from 'src/services/media-health.service.js';
 import { SystemConfigService } from 'src/services/system-config.service.js';
+import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { fromAck } from 'src/utils/sync.js';
 
 type SetupState = {
@@ -46,6 +47,11 @@ type SetupState = {
   checkReleasedAt?: string | null;
   /** FL-1146: when everything finished, for the one-time completion window. */
   completedAt?: string | null;
+  /**
+   * Scans a paused setup held when it was retried. The retry starts its own, and resuming resumes these too: left
+   * paused, one would hold the file check with nothing left to resume it.
+   */
+  heldScans?: string[];
 };
 type PhoneState = { revision: string; tokenHash: string; finished: boolean };
 const SETUP_QUEUES = [
@@ -70,6 +76,10 @@ const KEY = 'frameleaf-manager-library-setup';
 const EARLY_STAGES: string[] = [JobName.AssetExtractMetadata, JobName.AssetGenerateThumbnails];
 const SEARCH_STAGES: string[] = [JobName.SmartSearch, JobName.AssetDetectFaces];
 const phoneKey = (sessionId: string) => `:phone:${sessionId}`;
+/** Library Care's full check of an account: every original, not only recent changes or chosen photos. */
+const fullScan = (table: string) =>
+  sql`${sql.ref(`${table}.kind`)}='media_health' AND ${sql.ref(`${table}.snapshot`)}->>'mode'='scan'
+    AND NOT (${sql.ref(`${table}.snapshot`)} ? 'changedSince') AND NOT (${sql.ref(`${table}.snapshot`)} ? 'assetIds')`;
 
 /** Additive API: the existing photo, setup and synchronization endpoints keep their contracts. */
 @Injectable()
@@ -180,6 +190,11 @@ export class FrameleafLibrarySetupService {
         await this.config.updateAdminConfigWithRevision({ config, expectedRevision: revision });
         processingChoiceApplied = true;
       }
+      // An imported server that read its settings from a file keeps that file: Manager writes the processing choice
+      // into it and passes no FRAMELEAF_MANAGER_ML_ENABLED, so the choice is already applied.
+      if (identity.origin === 'new_import' && ml === undefined && readAliasedEnv('FRAMELEAF_CONFIG_FILE')) {
+        processingChoiceApplied = true;
+      }
       const hasAdmin = await this.users.hasAdmin();
       const libraries = hasAdmin ? await this.libraries.getAll() : [];
       // Every account, including one whose photos survive only as untracked files in its upload folder.
@@ -196,6 +211,15 @@ export class FrameleafLibrarySetupService {
         owners,
         // A retry keeps the owner's pause and what the file check already released (FL-1146).
         paused: previous?.paused,
+        heldScans: previous?.paused
+          ? [
+              ...new Set([
+                ...(previous.heldScans ?? []),
+                ...Object.values(previous.scans),
+                ...Object.values(previous.health),
+              ]),
+            ]
+          : undefined,
         importRunId: previous?.importRunId,
         importOperationId: previous?.importOperationId,
         checkReleasedAt: previous?.checkReleasedAt ?? null,
@@ -281,7 +305,7 @@ export class FrameleafLibrarySetupService {
       current.run.selection.managerSetup.paused === !!state.paused &&
       current.run.selection.managerSetupRequired === true
     )
-      return;
+      return this.reconcileParkedStages(state, current.run.id, current.run.selection.managerSetup.parkedStages, db);
     await lockQueueCatalogue(db);
     // Queue claims and pause changes serialize before the run and selection locks.
     // Capture cannot re-hold snapshots after observing this committed start acknowledgement.
@@ -325,15 +349,57 @@ export class FrameleafLibrarySetupService {
       WHERE id=${run.id}::uuid`.execute(db);
     // A setup paused before the run was prepared stays held; resuming releases these stages.
     if (!state.paused) {
-      await this.releaseStages(run.id, state.checkReleasedAt ? null : EARLY_STAGES, db);
+      await this.releaseStages(run.id, !!state.checkReleasedAt, db);
     }
   }
 
-  /** Lets the queue admit a held stage's items. Stages that wait for the file check are released by `advance`. */
-  private async releaseStages(runId: string, stages: string[] | null, db: Kysely<DB>) {
-    await sql`UPDATE job_selection SET state='ready' WHERE "runId"=${runId}::uuid
-      AND "capturedAt" IS NOT NULL AND state='enumerating'
-      ${stages ? sql`AND stage=ANY(${stages}::text[])` : sql``}`.execute(db);
+  /**
+   * Lets the queue admit a held stage's items: before the file check only the early stages, after it (`checked`)
+   * every stage whose work is switched on. Stages that wait for the file check are released by `advance`.
+   *
+   * FL-1177: after the check, a stage whose machine learning is off stays held, "parked" in the run's marker, and the
+   * run settles without it rather than waiting for machine learning for good. Switching it on releases it (see
+   * `reconcileParkedStages`) and reopens the run, which the queue only admits while open. A stage that already has
+   * live jobs is never parked: they wait for machine learning as before. The caller holds the queue catalogue.
+   */
+  private async releaseStages(runId: string, checked: boolean, db: Kysely<DB>) {
+    if (!checked) {
+      await sql`UPDATE job_selection SET state='ready' WHERE "runId"=${runId}::uuid
+        AND "capturedAt" IS NOT NULL AND state='enumerating' AND stage=ANY(${EARLY_STAGES}::text[])`.execute(db);
+      return;
+    }
+    const { rows } = await sql<{ stage: string }>`SELECT s.stage FROM job_selection s WHERE s."runId"=${runId}::uuid
+      AND s."capturedAt" IS NOT NULL AND s.state='enumerating' AND s.stage=ANY(${await this.disabledImportStages()}::text[])
+      AND NOT EXISTS (SELECT 1 FROM job_run_item i WHERE i."selectionId"=s.id AND i."jobId" IS NOT NULL
+        AND i.state IN ('pending','waiting','active'))
+      ORDER BY s.stage`.execute(db);
+    const parked = rows.map(({ stage }) => stage);
+    const { numAffectedRows } = await sql`UPDATE job_selection SET state='ready' WHERE "runId"=${runId}::uuid
+      AND "capturedAt" IS NOT NULL AND state='enumerating' AND stage<>ALL(${parked}::text[])`.execute(db);
+    await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup,parkedStages}',${JSON.stringify(parked)}::text::jsonb)
+      ${numAffectedRows ? sql`,"finishedAt"=NULL` : sql``} WHERE id=${runId}::uuid`.execute(db);
+    await sql`UPDATE job_run SET "finishedAt"=now() WHERE id=${runId}::uuid AND "enumerationDone" AND "finishedAt" IS NULL
+      AND NOT (${unfinishedRunItems(sql<string>`${runId}::uuid`, parked)})`.execute(db);
+  }
+
+  /**
+   * FL-1177, on every setup poll once the file check has released the stages: releases a parked stage whose machine
+   * learning has been switched on since, and settles the run once only parked stages are left. It reads first, so a
+   * poll with nothing to do takes no queue lock.
+   */
+  private async reconcileParkedStages(state: SetupState, runId: string, marker: unknown, db: Kysely<DB>) {
+    const parked = Array.isArray(marker) ? marker.filter((stage) => typeof stage === 'string') : [];
+    if (!state.checkReleasedAt || state.paused || parked.length === 0) return;
+    const disabled: string[] = await this.disabledImportStages();
+    if (parked.every((stage) => disabled.includes(stage))) {
+      const { rows } = await sql`SELECT 1 FROM job_run WHERE id=${runId}::uuid AND "enumerationDone"
+        AND "finishedAt" IS NULL AND NOT (${unfinishedRunItems(sql<string>`${runId}::uuid`, parked)})`.execute(db);
+      if (rows.length === 0) return;
+    }
+    await lockQueueCatalogue(db);
+    const imported = await this.importedRun(db, true);
+    if (this.importedSetupMatches(state, imported) && imported?.run?.selection.managerSetup?.startedAt)
+      await this.releaseStages(imported.run.id, true, db);
   }
 
   private async regenerationStatus(state: SetupState) {
@@ -534,7 +600,7 @@ export class FrameleafLibrarySetupService {
           await sql`UPDATE job_selection SET state='enumerating' WHERE "runId"=${imported.run.id}::uuid
             AND state='ready'`.execute(db);
         } else {
-          await this.releaseStages(imported.run.id, state.checkReleasedAt ? null : EARLY_STAGES, db);
+          await this.releaseStages(imported.run.id, !!state.checkReleasedAt, db);
         }
       }
       for (const [ownerId, operationId] of Object.entries(state.health)) {
@@ -554,6 +620,12 @@ export class FrameleafLibrarySetupService {
             ? this.operations.requestPause(scan.id, scan.ownerId, [MediaOperationKind.LibraryScan], db)
             : this.operations.resume(scan.id, scan.ownerId, db)),
         );
+      }
+      if (!paused && state.heldScans?.length) {
+        const { rows: held } = await sql<{ id: string; ownerId: string }>`SELECT id,"ownerId" FROM media_operation
+          WHERE id=ANY(${state.heldScans}::uuid[]) FOR UPDATE`.execute(db);
+        for (const scan of held) changed.push(await this.operations.resume(scan.id, scan.ownerId, db));
+        state.heldScans = undefined;
       }
       await this.write(this.key(), state, db);
     });
@@ -601,6 +673,20 @@ export class FrameleafLibrarySetupService {
           return state;
         }
         for (const libraryId of state.libraries) {
+          const library = await this.libraries.get(libraryId);
+          // A library deleted since setup began, or whose owner's account was deleted, holds nothing to wait for, nor
+          // does its scan, which stopped with it (LibraryScanService.onUserTrash).
+          const {
+            rows: [owner],
+          } = library
+            ? await sql<{ active: boolean }>`SELECT "deletedAt" IS NULL AND status=${UserStatus.Active} AS active
+                FROM "user" WHERE id=${library.ownerId}::uuid`.execute(db)
+            : { rows: [] };
+          if (!library || !owner?.active) {
+            state.libraries = state.libraries.filter((id) => id !== libraryId);
+            delete state.scans[libraryId];
+            continue;
+          }
           if (state.scans[libraryId]) {
             continue;
           }
@@ -608,16 +694,19 @@ export class FrameleafLibrarySetupService {
           const existing = await sql<{ id: string }>`SELECT id FROM media_operation WHERE kind='library_scan'
             AND snapshot->>'libraryId'=${libraryId} AND "createdAt" >= ${state.startedAt}::timestamptz
             ORDER BY "createdAt" LIMIT 1`.execute(db);
-          const library = await this.libraries.get(libraryId);
-          if (!library) {
-            throw new BadRequestException('A setup library is unavailable');
-          }
           if (state.paused && !existing.rows[0]) {
             continue; // A paused setup admits no new library scan; resuming admits it.
           }
-          state.scans[libraryId] =
-            existing.rows[0]?.id ??
-            (await this.scans.queue(library, { ownerId: admin.id, trigger: 'manual' })).operation.id;
+          try {
+            state.scans[libraryId] =
+              existing.rows[0]?.id ??
+              (await this.scans.queue(library, { ownerId: admin.id, trigger: 'manual' })).operation.id;
+          } catch (error) {
+            // Nothing to scan: an imported library with no folder, or one whose owner's account is deleted.
+            // Refused on every try, it would otherwise hold setup for good.
+            if (!(error instanceof BadRequestException)) throw error;
+            state.libraries = state.libraries.filter((id) => id !== libraryId);
+          }
         }
         const ids = Object.values(state.scans);
         const records =
@@ -644,23 +733,48 @@ export class FrameleafLibrarySetupService {
         // Library Care's durable full scan covers managed uploads as well as external files,
         // including original-file integrity. Reuse its operation after a lost acknowledgement.
         // A paused setup starts no new scan; resuming starts it.
+        if (scansFinished) {
+          // An account removed since the check began has no originals left to check, nor its scan.
+          const { rows: live } = await sql<{
+            id: string;
+          }>`SELECT id FROM "user" WHERE id=ANY(${state.owners}::uuid[])`.execute(db);
+          state.owners = state.owners.filter((id) => live.some((row) => row.id === id));
+          // A scan recorded that is not the account's full check (one of chosen photos adopted before they were told
+          // apart, or one gone since) is forgotten, so a full check starts in its place.
+          const recorded = Object.values(state.health);
+          const { rows: full } =
+            recorded.length > 0
+              ? await sql<{ id: string }>`SELECT id FROM media_operation WHERE id=ANY(${recorded}::uuid[])
+                AND ${fullScan('media_operation')} AND "createdAt" >= ${state.healthAfter}::timestamptz`.execute(db)
+              : { rows: [] };
+          for (const [ownerId, id] of Object.entries(state.health)) {
+            if (full.every((row) => row.id !== id)) delete state.health[ownerId];
+          }
+        }
         if (scansFinished && !state.paused) {
           for (const ownerId of state.owners) {
             if (state.health[ownerId]) {
               continue;
             }
-            const existing = await sql<{ id: string }>`SELECT id FROM media_operation WHERE kind='media_health'
-            AND "ownerId"=${ownerId}::uuid AND snapshot->>'mode'='scan' AND NOT (snapshot ? 'changedSince')
+            const existing = await sql<{ id: string }>`SELECT id FROM media_operation
+            WHERE "ownerId"=${ownerId}::uuid AND ${fullScan('media_operation')}
             AND "createdAt" >= ${state.healthAfter}::timestamptz ORDER BY "createdAt" LIMIT 1`.execute(db);
-            const operationId =
-              existing.rows[0]?.id ??
-              (await this.mediaHealth.startMissingScan({ user: { id: ownerId } } as AuthDto)).operationId;
+            let operationId: string | null | undefined = existing.rows[0]?.id;
+            try {
+              operationId ??= (await this.mediaHealth.startMissingScan({ user: { id: ownerId } } as AuthDto))
+                .operationId;
+            } catch (error) {
+              // Another kind of scan (recent changes, chosen photos, a search for originals) is under way for this
+              // account: wait for it, as for an incompatible scan below.
+              if (error instanceof ConflictException) continue;
+              throw error;
+            }
             if (!operationId) {
               throw new BadRequestException('Library integrity scan could not be queued');
             }
             const eligible = await sql<{ id: string }>`SELECT id FROM media_operation WHERE id=${operationId}::uuid
-              AND kind='media_health' AND "ownerId"=${ownerId}::uuid AND snapshot->>'mode'='scan'
-              AND NOT (snapshot ? 'changedSince') AND "createdAt" >= ${state.healthAfter}::timestamptz`.execute(db);
+              AND "ownerId"=${ownerId}::uuid AND ${fullScan('media_operation')}
+              AND "createdAt" >= ${state.healthAfter}::timestamptz`.execute(db);
             if (eligible.rows.length === 0) {
               continue; // Wait for an incompatible active scan before admitting ours.
             }
@@ -677,8 +791,8 @@ export class FrameleafLibrarySetupService {
           FROM media_operation op
           LEFT JOIN asset_health_run missing ON missing.id=(op.snapshot->>'missingRunId')::uuid
           LEFT JOIN asset_health_run corrupt ON corrupt.id=(op.snapshot->>'corruptRunId')::uuid
-          WHERE op.id=ANY(${healthIds}::uuid[]) AND op.kind='media_health' AND op.snapshot->>'mode'='scan'
-            AND NOT (op.snapshot ? 'changedSince') AND op."createdAt" >= ${state.healthAfter}::timestamptz`.execute(db)
+          WHERE op.id=ANY(${healthIds}::uuid[]) AND ${fullScan('op')}
+            AND op."createdAt" >= ${state.healthAfter}::timestamptz`.execute(db)
             : { rows: [] };
         // FL-1146: a missing or changed original is kept and listed in Library Care; it never stops setup.
         if (health.rows.some((record) => ['failed', 'cancelled'].includes(record.status))) {
@@ -690,9 +804,11 @@ export class FrameleafLibrarySetupService {
           ),
         );
         if (scansFinished && healthFinished && !state.checkReleasedAt && !state.paused) {
+          // Catalogue before the run lock, as every other release does: settling a run serializes with queue work.
+          await lockQueueCatalogue(db);
           const imported = await this.importedRun(db, true);
           if (this.importedSetupMatches(state, imported) && imported?.run?.selection.managerSetup?.startedAt) {
-            await this.releaseStages(imported.run.id, null, db);
+            await this.releaseStages(imported.run.id, true, db);
           }
           state.checkReleasedAt = new Date().toISOString();
         }

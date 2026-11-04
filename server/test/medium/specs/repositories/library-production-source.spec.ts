@@ -100,6 +100,9 @@ scaleIt('scans %i paths through manual/QueueAll/tick entrypoints with bounded co
     checkFileExists() {
       return Promise.resolve(true);
     },
+    accessError() {
+      return Promise.resolve(null);
+    },
     async *walkLibrary(options: Parameters<StorageRepository['walkLibrary']>[0]) {
       activeIterators++;
       maximumActiveIterators = Math.max(maximumActiveIterators, activeIterators);

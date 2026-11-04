@@ -20,6 +20,8 @@ type SetupSelection = Record<string, unknown> & {
     preparedAt: string | null;
     startedAt: string | null;
     paused?: boolean;
+    /** FL-1177: stages held after the file check because their machine learning is off; see `releaseStages`. */
+    parkedStages?: unknown;
   };
 };
 type SetupRun = { id: string; kind: string; selection: SetupSelection; enumerationDone: boolean };

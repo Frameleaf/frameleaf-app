@@ -893,6 +893,25 @@ export class JobRepository {
     });
   }
 
+  /**
+   * Whether the preview a job waits for can still arrive. A job of a run whose own thumbnail item for the asset
+   * has ended waits for nothing: that original made no preview (damaged or unsupported) and never will, so it
+   * fails like any other per-item failure instead of waiting forever and keeping the run, and an import's setup,
+   * open. Outside a run, or with no thumbnail item in it, the job keeps waiting.
+   */
+  async previewMayArrive(assetId: string): Promise<boolean> {
+    const runId = queueExecution.getStore()?.claim.runId;
+    if (!runId) return true;
+    const { rows } = await sql<{
+      live: boolean;
+    }>`select coalesce(j.state, i.state) in ('pending','waiting','active') live
+      from job_run_item i left join job j on j.id = i."jobId"
+      where i."runId" = ${runId}::uuid and i."itemKey" = ${assetId} and i.stage = ${JobName.AssetGenerateThumbnails}`.execute(
+      publicationTransaction.getStore() ?? this.store.db,
+    );
+    return rows[0]?.live ?? true;
+  }
+
   /** Persist before admission. A retry keeps its original destination even if routing changes. */
   /**
    * FL-456: the destination this job already pinned for `workload`, if any, without pinning one. Outside

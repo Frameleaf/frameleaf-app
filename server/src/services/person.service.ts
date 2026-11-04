@@ -991,14 +991,19 @@ export class PersonService extends BaseService {
 
     await this.jobRepository.guardAssetSource(id);
     const asset = await this.assetJobRepository.getForDetectFacesJob(id);
-    const previewFile = asset?.files.find((file) => file.isEdited) ?? asset?.files[0];
-    if (asset && !previewFile) deferJobUntilDependency('source-unavailable');
-    if (!asset || !previewFile) {
+    if (!asset) {
       return JobStatus.Failed;
     }
 
+    // Before the preview: a hidden asset (a Live Photo's motion part) never gets one.
     if (asset.visibility === AssetVisibility.Hidden) {
       return JobStatus.Skipped;
+    }
+
+    const previewFile = asset.files.find((file) => file.isEdited) ?? asset.files[0];
+    if (!previewFile) {
+      if (await this.jobRepository.previewMayArrive(id)) deferJobUntilDependency('source-unavailable');
+      return JobStatus.Failed;
     }
 
     // FL-455: routed to Frameleaf Cloud, the photo waits for a batch (an imported face set is always
@@ -1128,14 +1133,16 @@ export class PersonService extends BaseService {
           embeddings.push({ faceId, embedding });
         }
       }
-      // FL-57: a face with an explicit decision stays even when this detection no longer finds it
-      const faceIdsToRemove = [...mlFaceIds.difference(decided)];
-
-      if (preserveImportedFaces && faceIdsToRemove.length > 0) {
-        // Frozen imports have no Frameleaf correction history to reconcile a replacement against.
-        // Fail the accepted publication before any mutation; the retained stage owns the retry budget.
-        throw new Error('Imported face regeneration unresolved: detection did not match retained faces');
-      }
+      // FL-57: a face with an explicit decision stays even when this detection no longer finds it.
+      // An imported face (no embedding: one is stored with every face detected here) counts as decided too:
+      // the source's detector or threshold found it, and it has no Frameleaf correction history to reconcile
+      // a replacement against. It keeps its person. Faces detected here are cleaned up as usual.
+      // ponytail: a source box overlapping a new one at or below 0.5 can leave both; add a looser
+      // imported-only match if duplicates show up.
+      const imported = preserveImportedFaces
+        ? await this.personRepository.getUnembeddedFaceIds([...mlFaceIds])
+        : new Set<string>();
+      const faceIdsToRemove = [...mlFaceIds.difference(decided).difference(imported)];
 
       if (facesToAdd.length > 0 || faceIdsToRemove.length > 0 || embeddings.length > 0) {
         await this.personRepository.refreshFaces(facesToAdd, faceIdsToRemove, embeddings);

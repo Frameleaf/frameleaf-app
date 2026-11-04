@@ -418,7 +418,8 @@ export function readEnteManifest(input: {
       fileModifiedAt: primary.proof.modifiedAt,
       originalFileNames: { [primaryId]: primary.name },
       localDateTime,
-      visibility: file.visibility === 'archived' ? 'archive' : file.visibility === 'hidden' ? 'hidden' : 'timeline',
+      // Owner 2026-11-04: a hidden file imports Locked.
+      visibility: file.visibility === 'archived' ? 'archive' : file.visibility === 'hidden' ? 'locked' : 'timeline',
       metadata,
     });
     if (file.type === 'livephoto') {

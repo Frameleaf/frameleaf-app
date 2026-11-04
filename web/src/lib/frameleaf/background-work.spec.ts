@@ -213,6 +213,52 @@ describe('buildBackgroundWorkCards (SHARING-P1)', () => {
     expect(card).toMatchObject({ stage: 'running', statusKey: 'frameleaf_activity_stage_running', stuck: false });
   });
 
+  describe('a Frameleaf Manager import (FL-1177)', () => {
+    const importRun = (patch: Partial<DurableJobRun> = {}) =>
+      run('library-import-derived' as QueueName, {
+        state: 'waiting',
+        paused: 0,
+        waiting: 120,
+        active: 0,
+        held: 100,
+        ...patch,
+      });
+
+    it('counts only the photos its first setup holds back, not the ones its queues already show', () => {
+      const cards = buildBackgroundWorkCards(
+        summary({
+          queues: [queue(QueueName.ThumbnailGeneration, { active: 2, waiting: 18, total: 20, state: 'running' })],
+          durableRuns: [importRun()],
+        }),
+      );
+      expect(cards).toHaveLength(2);
+      expect(cards.find(({ id }) => id.startsWith('run:'))).toEqual({
+        id: 'run:run-library-import-derived',
+        queueName: 'library-import-derived',
+        stage: 'queued',
+        statusKey: 'frameleaf_activity_bg_import_check',
+        stuck: false,
+        reason: null,
+        waiting: 100,
+        running: 0,
+        progress: null,
+      });
+    });
+
+    it('says a paused setup is paused', () => {
+      const [card] = buildBackgroundWorkCards(summary({ durableRuns: [importRun({ state: 'paused' })] }));
+      expect(card).toMatchObject({ stage: 'paused', statusKey: 'frameleaf_activity_stage_paused', waiting: 100 });
+    });
+
+    it.each([
+      ['released to its queues', { held: 0, state: 'running', active: 4 }],
+      ['from a server that does not count held photos', { held: undefined }],
+      ['settled with machine learning off', { held: 0, state: 'completed', waiting: 0 }],
+    ] as const)('makes no card once nothing is held: %s', (_, patch) => {
+      expect(buildBackgroundWorkCards(summary({ durableRuns: [importRun(patch)] }))).toEqual([]);
+    });
+  });
+
   it('shows nothing to somebody the server sends no queues or runs to', () => {
     expect(
       buildBackgroundWorkCards(

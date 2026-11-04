@@ -553,7 +553,8 @@ export class MapRepository {
     }
 
     this.logger.log(
-      `Empty response from database for city reverse geocoding lat: ${point.latitude}, lon: ${point.longitude}. Likely cause: no nearby large populated place (500+ within ${reverseGeocodeMaxDistance / 1000}km). Falling back to country boundaries.`,
+      // Never the coordinates: a photo's location is private and this logs at the default level.
+      `Empty response from database for city reverse geocoding. Likely cause: no nearby large populated place (500+ within ${reverseGeocodeMaxDistance / 1000}km). Falling back to country boundaries.`,
     );
 
     const boundary = await this.db
@@ -564,9 +565,7 @@ export class MapRepository {
       .executeTakeFirst();
 
     if (!boundary) {
-      this.logger.log(
-        `Empty response from database for natural earth country reverse geocoding lat: ${point.latitude}, lon: ${point.longitude}`,
-      );
+      this.logger.log('Empty response from database for natural earth country reverse geocoding');
 
       return { country: null, state: null, city: null };
     }

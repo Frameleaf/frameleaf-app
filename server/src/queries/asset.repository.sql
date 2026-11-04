@@ -1673,7 +1673,12 @@ where
 select
   "asset_exif"."tags",
   "asset_exif"."updateId",
-  "asset_exif"."timeZone"
+  "asset_exif"."timeZone",
+  "asset_exif"."latitude",
+  "asset_exif"."longitude",
+  "asset_exif"."city",
+  "asset_exif"."state",
+  "asset_exif"."country"
 from
   "asset_exif"
 where

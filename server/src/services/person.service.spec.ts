@@ -14,6 +14,7 @@ import {
   SystemMetadataKey,
 } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
+import { JobDependencyUnavailable } from 'src/queue/dependency.js';
 import { PersonService } from 'src/services/person.service.js';
 import { getFaceSourceRevision } from 'src/utils/face-source.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
@@ -48,6 +49,8 @@ describe(PersonService.name, () => {
     mocks.person.getAssetIdsForPeople.mockResolvedValue([]);
     mocks.person.getOrphanedFaceCorrections.mockResolvedValue([]);
     mocks.person.getFaceDecisionChecksums.mockResolvedValue(new Map());
+    // imported faces arrive without an embedding
+    mocks.person.getUnembeddedFaceIds.mockImplementation((ids) => Promise.resolve(new Set(ids)));
     mocks.person.recordFaceCorrections.mockResolvedValue([]);
     // FL-326: no person copies follow anyone unless a test says so
     mocks.partnerOrigin.getPersonFollowers.mockResolvedValue([]);
@@ -1864,6 +1867,27 @@ describe(PersonService.name, () => {
       },
     );
 
+    it('waits for a missing preview only while one can still arrive, and never for a hidden asset', async () => {
+      const execution = {
+        claim: { id: 'job', token: 'token', data: {} },
+        signal: new AbortController().signal,
+      } as unknown as QueueExecution;
+      const detect = (id: string) => queueExecution.run(execution, () => sut.handleDetectFaces({ id }));
+      // A Live Photo's motion part is hidden and never gets a preview.
+      mocks.assetJob.getForDetectFacesJob.mockResolvedValue(
+        getForDetectedFaces(AssetFactory.from({ visibility: AssetVisibility.Hidden }).exif().build()),
+      );
+      await expect(detect('hidden')).resolves.toBe(JobStatus.Skipped);
+
+      mocks.assetJob.getForDetectFacesJob.mockResolvedValue(getForDetectedFaces(AssetFactory.from().exif().build()));
+      await expect(detect('pending')).rejects.toThrow(JobDependencyUnavailable);
+      // The run's thumbnail item for this damaged original has ended without a preview.
+      mocks.job.previewMayArrive.mockResolvedValue(false);
+      await expect(detect('damaged')).resolves.toBe(JobStatus.Failed);
+      expect(mocks.job.previewMayArrive).toHaveBeenCalledWith('damaged');
+      expect(mocks.machineLearning.detectFaces).not.toHaveBeenCalled();
+    });
+
     it('keeps face rows and recognition intents unpublished until acceptance, refusing changed previews', async () => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Preview }).exif().build();
       const face = AssetFaceFactory.create({ assetId: asset.id });
@@ -2102,6 +2126,44 @@ describe(PersonService.name, () => {
       expect(mocks.person.reassignFace).not.toHaveBeenCalled();
       expect(mocks.person.reassignFaces).not.toHaveBeenCalled();
     });
+
+    it.each([true, false])(
+      'keeps an unmatched imported face and still adds the new one (imported=%s)',
+      async (imported) => {
+        const assetId = newUuid();
+        const face = AssetFaceFactory.create({
+          assetId,
+          boundingBoxX1: 200,
+          boundingBoxX2: 300,
+          boundingBoxY1: 200,
+          boundingBoxY2: 300,
+        });
+        const asset = AssetFactory.from({ id: assetId })
+          .face({ sourceType: SourceType.MachineLearning, correctedAt: null, personGroupId: newUuid() })
+          .file({ type: AssetFileType.Preview })
+          .exif()
+          .build();
+        mocks.machineLearning.detectFaces.mockResolvedValue(getAsDetectedFace(face));
+        mocks.assetJob.getForDetectFacesJob.mockResolvedValue(getForDetectedFaces(asset));
+        mocks.crypto.randomUUID.mockReturnValue(face.id);
+        mocks.person.refreshFaces.mockResolvedValue();
+        // a face detected here has an embedding, so it is cleaned up as usual
+        if (!imported) mocks.person.getUnembeddedFaceIds.mockResolvedValue(new Set());
+
+        await expect(sut.handleDetectFaces({ id: asset.id, preserveImportedFaces: true })).resolves.toBe(
+          JobStatus.Success,
+        );
+
+        expect(mocks.person.getUnembeddedFaceIds).toHaveBeenCalledWith([asset.faces[0].id]);
+        expect(mocks.person.refreshFaces).toHaveBeenCalledWith(
+          [expect.objectContaining({ id: face.id, assetId: asset.id })],
+          imported ? [] : [asset.faces[0].id],
+          [{ faceId: face.id, embedding: '[1, 2, 3, 4]' }],
+        );
+        expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.FacialRecognition, data: { id: face.id } }]);
+        expect(mocks.asset.upsertJobStatus).toHaveBeenCalledWith({ assetId, facesRecognizedAt: expect.any(Date) });
+      },
+    );
 
     it('repairs a matched imported ML face only at publication without replacing its identity', async () => {
       const face = AssetFaceFactory.create({

@@ -85,6 +85,9 @@ const makeFaceTags = (
   },
 });
 
+/** The stored location and place an asset's exif row has when nothing set them. */
+const noPlace = { latitude: null, longitude: null, city: null, state: null, country: null };
+
 const emptyPackets = {
   totalDuration: 0,
   packetCount: 0,
@@ -760,6 +763,7 @@ describe(MetadataService.name, () => {
       const asset = AssetFactory.create({ fileCreatedAt: savedAt });
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
       mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        ...noPlace,
         tags: [],
         timeZone: 'UTC-6',
         updateId: '00000000-0000-0000-0000-000000000001',
@@ -926,6 +930,45 @@ describe(MetadataService.name, () => {
       expect(exif).not.toHaveProperty('country');
     });
 
+    it.each([
+      { stored: { city: null, state: null, country: null }, geocoded: true },
+      { stored: { city: 'Lyon', state: 'Rhône', country: 'France' }, geocoded: false },
+    ])('names the place of imported coordinates once, keeping a stored place (%#)', async ({ stored, geocoded }) => {
+      const asset = AssetFactory.from().exif().build();
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(['latitude', 'longitude']);
+      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        ...noPlace,
+        tags: null,
+        updateId: 'update',
+        timeZone: null,
+        latitude: 48.85,
+        longitude: 2.35,
+        ...stored,
+      } as never);
+      mocks.systemMetadata.get.mockResolvedValue({ reverseGeocoding: { enabled: true } });
+      mocks.map.reverseGeocode.mockResolvedValue({ country: 'France', state: 'Île-de-France', city: 'Paris' });
+      mocks.storage.stat.mockResolvedValue({
+        size: 123_456,
+        mtime: asset.fileModifiedAt,
+        mtimeMs: asset.fileModifiedAt.valueOf(),
+        birthtimeMs: asset.fileCreatedAt.valueOf(),
+      } as Stats);
+      mockReadTags({ GPSLatitude: 10, GPSLongitude: 20 });
+
+      await sut.handleMetadataExtraction({ id: asset.id });
+
+      const [{ exif }] = mocks.asset.upsertExif.mock.calls.at(-1)!;
+      if (geocoded) {
+        // the stored (imported) coordinates, never the file's own
+        expect(mocks.map.reverseGeocode).toHaveBeenCalledExactlyOnceWith({ latitude: 48.85, longitude: 2.35 });
+        expect(exif).toMatchObject({ city: 'Paris', state: 'Île-de-France', country: 'France' });
+      } else {
+        expect(mocks.map.reverseGeocode).not.toHaveBeenCalled();
+        expect(exif).not.toHaveProperty('city');
+      }
+    });
+
     it('should discard latitude and longitude on null island', async () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
@@ -948,6 +991,7 @@ describe(MetadataService.name, () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
       mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        ...noPlace,
         tags: ['Parent'],
         timeZone: null,
         updateId: '00000000-0000-0000-0000-000000000001',
@@ -964,6 +1008,7 @@ describe(MetadataService.name, () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
       mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        ...noPlace,
         tags: ['Parent/Child'],
         timeZone: null,
         updateId: '00000000-0000-0000-0000-000000000001',
@@ -990,6 +1035,7 @@ describe(MetadataService.name, () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
       mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        ...noPlace,
         tags: ['Parent'],
         timeZone: null,
         updateId: '00000000-0000-0000-0000-000000000001',
@@ -1006,6 +1052,7 @@ describe(MetadataService.name, () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
       mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        ...noPlace,
         tags: ['Parent'],
         timeZone: null,
         updateId: '00000000-0000-0000-0000-000000000001',
@@ -1022,6 +1069,7 @@ describe(MetadataService.name, () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
       mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        ...noPlace,
         tags: ['Parent', '2024'],
         timeZone: null,
         updateId: '00000000-0000-0000-0000-000000000001',
@@ -1039,6 +1087,7 @@ describe(MetadataService.name, () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
       mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        ...noPlace,
         tags: ['Parent/Child'],
         timeZone: null,
         updateId: '00000000-0000-0000-0000-000000000001',
@@ -1063,6 +1112,7 @@ describe(MetadataService.name, () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
       mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        ...noPlace,
         tags: ['Parent/Child', 'Child'],
         timeZone: null,
         updateId: '00000000-0000-0000-0000-000000000001',
@@ -1088,6 +1138,7 @@ describe(MetadataService.name, () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
       mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        ...noPlace,
         tags: ['Parent/Child', 'TagA'],
         timeZone: null,
         updateId: '00000000-0000-0000-0000-000000000001',
@@ -1123,6 +1174,7 @@ describe(MetadataService.name, () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
       mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        ...noPlace,
         tags: expected,
         timeZone: null,
         updateId: 'fixture',
@@ -1141,6 +1193,7 @@ describe(MetadataService.name, () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
       mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        ...noPlace,
         tags: ['Parent', '2024'],
         timeZone: null,
         updateId: '00000000-0000-0000-0000-000000000001',
@@ -1158,6 +1211,7 @@ describe(MetadataService.name, () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
       mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        ...noPlace,
         tags: ['Mom|Dad'],
         timeZone: null,
         updateId: '00000000-0000-0000-0000-000000000001',
@@ -1178,6 +1232,7 @@ describe(MetadataService.name, () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
       mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        ...noPlace,
         tags: ['Parent/Child', 'Parent2/Child2'],
         timeZone: null,
         updateId: '00000000-0000-0000-0000-000000000001',
@@ -1203,6 +1258,7 @@ describe(MetadataService.name, () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
       let stored = {
+        ...noPlace,
         tags: ['Parent/Child', 'Kept'],
         timeZone: null,
         updateId: '00000000-0000-0000-0000-000000000001',
@@ -1899,6 +1955,7 @@ describe(MetadataService.name, () => {
         mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
         mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(['dateTimeOriginal', 'timeZone']);
         mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+          ...noPlace,
           tags: null,
           updateId: 'revision',
           timeZone: 'America/Edmonton',
@@ -1938,7 +1995,12 @@ describe(MetadataService.name, () => {
         expect(locks.has('dateTimeOriginal')).toBe(true);
 
         mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
-        mocks.asset.getForMetadataExtractionTags.mockResolvedValue({ tags: null, updateId: 'revision', timeZone });
+        mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+          ...noPlace,
+          tags: null,
+          updateId: 'revision',
+          timeZone,
+        });
         mocks.job.isImportedMetadataJob.mockResolvedValue(false);
         mockReadTags({ DateTimeOriginal: ExifDateTime.fromISO(instant.toISOString()), zone: 'UTC' });
         await sut.handleMetadataExtraction({ id: asset.id });
@@ -1955,8 +2017,8 @@ describe(MetadataService.name, () => {
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
       mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue([]);
       mocks.asset.getForMetadataExtractionTags
-        .mockResolvedValue({ tags: null, updateId: 'new-revision', timeZone: 'America/Edmonton' })
-        .mockResolvedValueOnce({ tags: null, updateId: 'old-revision', timeZone: 'UTC' });
+        .mockResolvedValue({ ...noPlace, tags: null, updateId: 'new-revision', timeZone: 'America/Edmonton' })
+        .mockResolvedValueOnce({ ...noPlace, tags: null, updateId: 'old-revision', timeZone: 'UTC' });
       mockReadTags({ DateTimeOriginal: ExifDateTime.fromISO('2001-01-01T12:00:00Z'), zone: 'UTC' });
       await sut.handleMetadataExtraction({ id: asset.id });
       expect(mocks.asset.update.mock.calls[0][0]).not.toHaveProperty('fileCreatedAt');
@@ -1968,6 +2030,7 @@ describe(MetadataService.name, () => {
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
       mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(['timeZone']);
       mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        ...noPlace,
         tags: null,
         updateId: 'revision',
         timeZone: 'America/Edmonton',

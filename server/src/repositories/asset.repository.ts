@@ -3659,7 +3659,16 @@ export class AssetRepository {
   async getForMetadataExtractionTags(id: string) {
     return this.db
       .selectFrom('asset_exif')
-      .select(['asset_exif.tags', 'asset_exif.updateId', 'asset_exif.timeZone'])
+      .select([
+        'asset_exif.tags',
+        'asset_exif.updateId',
+        'asset_exif.timeZone',
+        'asset_exif.latitude',
+        'asset_exif.longitude',
+        'asset_exif.city',
+        'asset_exif.state',
+        'asset_exif.country',
+      ])
       .where('asset_exif.assetId', '=', id)
       .executeTakeFirst();
   }

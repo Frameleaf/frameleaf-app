@@ -18,6 +18,7 @@ export const newJobRepositoryMock = (): Mocked<RepositoryInterface<JobRepository
       .fn()
       .mockImplementation(async (_identity, _examined, work) => (await work(undefined as never)).value),
     guardAssetSource: vitest.fn().mockResolvedValue(undefined),
+    previewMayArrive: vitest.fn().mockResolvedValue(true),
     pinDestination: vitest.fn().mockImplementation((_workload, destinationId) => Promise.resolve(destinationId)),
     pinnedDestination: vitest.fn().mockResolvedValue(null),
     collectFollowups: vitest.fn().mockImplementation((action) => action()),
