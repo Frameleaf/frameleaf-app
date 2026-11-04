@@ -7,7 +7,11 @@ const timeout = 5000;
 
 test('offline import dialogue handles fragmented lines and awaits each source check before replying', async () => {
   const seen: string[] = [];
-  const output = await command('docker', ['-e', `
+  const output = await command(
+    'docker',
+    [
+      '-e',
+      `
     process.stdout.write('ready\\nauth');
     setTimeout(() => process.stdout.write('?\\n'), 10);
     let input = '';
@@ -19,15 +23,19 @@ test('offline import dialogue handles fragmented lines and awaits each source ch
         process.stdin.pause();
       }
     });
-  `], {
-    executable, timeout,
-    reply: async (line: string) => {
-      seen.push(line);
-      if (line !== 'auth?') return undefined;
-      await new Promise((resolve) => setTimeout(resolve, 20));
-      return 'approved\n';
+  `,
+    ],
+    {
+      executable,
+      timeout,
+      reply: async (line: string) => {
+        seen.push(line);
+        if (line !== 'auth?') return undefined;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return 'approved\n';
+      },
     },
-  });
+  );
   assert.equal(output, 'ready\nauth?\ncomplete\n');
   assert.deepEqual(seen, ['ready', 'auth?', 'complete']);
 });
@@ -38,29 +46,47 @@ test('a failed source check terminates the child without logging private callbac
   const previous = console.error;
   console.error = (...args) => lines.push(args);
   try {
-    await assert.rejects(command('docker', ['-e',
-      "process.stdout.write('auth?\\n');process.stdin.resume()"], {
-      executable, timeout,
-      reply: async () => { throw new Error(privateValue); },
-    }), { message: 'command_reply_failed' });
+    await assert.rejects(
+      command('docker', ['-e', "process.stdout.write('auth?\\n');process.stdin.resume()"], {
+        executable,
+        timeout,
+        reply: async () => {
+          throw new Error(privateValue);
+        },
+      }),
+      { message: 'command_reply_failed' },
+    );
     assert(!JSON.stringify(lines).includes(privateValue));
   } finally {
     console.error = previous;
   }
 });
 
-test('a child exiting during a pending source check cannot leave command recovery waiting', { timeout: 3000 }, async () => {
-  await assert.rejects(command('docker', ['-e',
-    "process.stdout.write('auth?\\n');setTimeout(()=>process.exit(0),20)"], {
-    executable, timeout,
-    reply: () => new Promise<string>(() => {}),
-  }), { message: 'command_reply_failed' });
-});
+test(
+  'a child exiting during a pending source check cannot leave command recovery waiting',
+  { timeout: 3000 },
+  async () => {
+    await assert.rejects(
+      command('docker', ['-e', "process.stdout.write('auth?\\n');setTimeout(()=>process.exit(0),20)"], {
+        executable,
+        timeout,
+        reply: () => new Promise<string>(() => {}),
+      }),
+      { message: 'command_reply_failed' },
+    );
+  },
+);
 
 test('dialogue cannot share input or file-transfer modes', async () => {
   for (const options of [{ input: '' }, { inputFile: '/never-read' }, { outputFile: '/never-write' }]) {
-    await assert.rejects(command('docker', ['-e', 'process.exit(99)'], {
-      executable, timeout, ...options, reply: async () => undefined,
-    }), { message: 'command_dialogue_invalid' });
+    await assert.rejects(
+      command('docker', ['-e', 'process.exit(99)'], {
+        executable,
+        timeout,
+        ...options,
+        reply: async () => undefined,
+      }),
+      { message: 'command_dialogue_invalid' },
+    );
   }
 });
