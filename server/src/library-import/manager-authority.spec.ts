@@ -80,14 +80,13 @@ it('refuses an in-flight input close without waiting for the authority timeout',
   const { input, output, authority } = fixture();
   output.on('data', () => input.destroy());
   let result = 'waiting';
-  const request = requestImportSourceAuthority('run', authority, input, output).then(
-    () => {
+  const request = requestImportSourceAuthority('run', authority, input, output)
+    .then(() => {
       result = 'allowed';
-    },
-    () => {
+    })
+    .catch(() => {
       result = 'refused';
-    },
-  );
+    });
   await vi.advanceTimersByTimeAsync(1);
   try {
     expect(result).toBe('refused');
