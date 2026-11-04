@@ -170,12 +170,17 @@ test('Manager prunes at start and after every operation settles, and the sweep n
     previous.state = 'complete';
     store.save(previous);
     await checkpoint(directory, previous.id);
-    const docker = { compose: async () => {}, inventory: async () => [] } as unknown as Docker;
+    const stopped = Promise.withResolvers<void>();
+    const docker = { compose: () => stopped.promise, inventory: async () => [] } as unknown as Docker;
     const operations = new Operations(store, docker, {} as never, {} as never, [], { verify: async () => {} } as never);
     (operations as any).fencing = { assertMedia: async () => {} };
     assert.equal((await operations.prune()).length, 2);
     const stop = operations.control('stop', 'stop-1');
-    await checkpoint(directory, stop.id);
+    try {
+      await checkpoint(directory, stop.id);
+    } finally {
+      stopped.resolve();
+    }
     for (const deadline = Date.now() + 5000; store.history()[0].state === 'running' && Date.now() < deadline; )
       await new Promise((resolve) => setTimeout(resolve, 5));
     assert.equal(store.history()[0].state, 'complete');
