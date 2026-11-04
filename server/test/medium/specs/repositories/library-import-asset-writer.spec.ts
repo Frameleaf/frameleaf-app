@@ -24,7 +24,7 @@ const wrap = (connection: Kysely<any>): ImportDatabase => ({
     (await connection.executeQuery(CompiledQuery.raw(statement, parameters))).rows as Record<string, unknown>[],
   transaction: (body) => connection.transaction().execute((tx) => body(wrap(tx))),
 });
-const setup = async (tags?: string[], locationRemoved = false, localDateTime?: string) => {
+const setup = async (tags?: string[], locationRemoved = false, localDateTime?: string, rating: number | null = 5) => {
   const ownerId = randomUUID();
   const plan = parseDestinationImportPlan(fixture.plan);
   plan.owners = [{ sourceId: 'owner', destinationId: ownerId }];
@@ -85,7 +85,7 @@ const setup = async (tags?: string[], locationRemoved = false, localDateTime?: s
           takenAt: '2020-07-01T12:34:56.123456Z',
           ...(localDateTime === undefined ? { timeZone: 'America/Edmonton' } : {}),
           description: 'Manual caption',
-          rating: 5,
+          rating,
           latitude: locationRemoved ? null : 51.1,
           longitude: locationRemoved ? null : -114.1,
           favorite: true,
@@ -140,6 +140,18 @@ beforeEach(async () => {
   );
 });
 afterAll(async () => db?.destroy());
+
+it.each([null, 0])('locks an explicit imported rating of %s without substituting a value', async (rating) => {
+  const { context, item } = await setup(undefined, false, undefined, rating);
+  const id = await new CanonicalAssetWriter(wrap(db), context).write(item);
+  const exif = await db
+    .selectFrom('asset_exif')
+    .select(['rating', 'lockedProperties'])
+    .where('assetId', '=', id)
+    .executeTakeFirstOrThrow();
+  expect(exif.rating).toBe(rating);
+  expect(exif.lockedProperties).toContain('rating');
+});
 
 it('commits the selected primary, every original, clocks, source metadata and exact quota once', async () => {
   const { context, item, ownerId } = await setup();

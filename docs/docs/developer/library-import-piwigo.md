@@ -102,8 +102,9 @@ Other users' and anonymous/shared-account votes remain in the protected archive.
 Voter identifiers never enter the destination photo metadata.
 
 A representable owner score of zero through five is retained directly, ahead of
-embedded ratings. Missing or out-of-scale owner votes leave the destination rating
-unset; an explicit zero is retained. Conflicting owner scores require review; values
+embedded ratings. Missing or out-of-scale owner votes explicitly clear and lock the
+destination rating, so regeneration cannot restore a stale embedded score; an explicit
+zero is retained. Conflicting owner scores require review; values
 outside the destination scale are archived and disclosed rather than silently rescaled. The public aggregate remains a
 separate archived value. Synthetic owner/other-voter, generic-account, conflict,
 custom-scale and text-cursor cases test this mapping. They do not extend the

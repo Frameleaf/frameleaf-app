@@ -23,6 +23,8 @@ const UpdateAssetBaseSchema = z
       .string()
       .refine(
         (value) => {
+          // Luxon accepts bare clocks and supplies today's date; captures need an explicit ISO date.
+          if (!/^(?:[+-]\d{6}|\d{4})(?:(?:-?\d{2}){1,2}|-?\d{3}|-?W\d{2}(?:-?\d)?)?(?:t|$)/iu.test(value)) return false;
           if (!DateTime.fromISO(value, { setZone: true, zone: 'UTC' }).isValid) return false;
           const [clock, zone] = value.split('[', 2);
           const offset = /t.*(?:Z|[+-](\d{2})(?::?(\d{2}))?)$/iu.exec(clock);

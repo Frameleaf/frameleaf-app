@@ -125,6 +125,22 @@ describe(MetadataService.name, () => {
       ).toEqual({ make: null, model: null });
     });
 
+    it.each([null, 0])('preserves an imported unrated value through metadata extraction: %s', async (rating) => {
+      const { sut, ctx } = setup();
+      const { filePath } = await createTestFile({ Rating: 5 });
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id, originalPath: filePath });
+      await ctx.newExif({ assetId: asset.id, rating, lockedProperties: ['rating'] });
+      await sut.handleMetadataExtraction({ id: asset.id });
+      const exif = await ctx.database
+        .selectFrom('asset_exif')
+        .select(['rating', 'lockedProperties'])
+        .where('assetId', '=', asset.id)
+        .executeTakeFirstOrThrow();
+      expect(exif.rating).toBe(rating);
+      expect(exif.lockedProperties).toContain('rating');
+    });
+
     it.each([false, true])('roundtrips rejected XMP ratings and respects a catalog lock: %s', async (locked) => {
       const { sut, ctx } = setup();
       const { filePath } = await createTestFile({ Rating: -1 });
