@@ -61,6 +61,8 @@
   let loading = false;
   let requested = 0;
   let applied = 0;
+  /** The kept answer is shared: an answer that lands after this bar has gone must not replace the next page's. */
+  let disposed = false;
 
   // The kept answer belongs to an administrator; another account never sees it.
   const visible = $derived(!!authManager.user?.isAdmin && !!progress?.active && !progress.completedAt);
@@ -144,7 +146,7 @@
   const latest = async (request: Promise<LibrarySetupProgressDto>) => {
     const id = ++requested;
     const next = await request;
-    if (id > applied) {
+    if (!disposed && id > applied) {
       applied = id;
       show(next);
     }
@@ -208,7 +210,10 @@
   $effect(() => {
     document.documentElement.style.setProperty('--fl-setup-bar-height', visible ? `${setupProgress.height}px` : '0px');
   });
-  onDestroy(() => document.documentElement.style.removeProperty('--fl-setup-bar-height'));
+  onDestroy(() => {
+    disposed = true;
+    document.documentElement.style.removeProperty('--fl-setup-bar-height');
+  });
 </script>
 
 {#if visible && progress}

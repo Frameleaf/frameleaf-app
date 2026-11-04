@@ -199,6 +199,23 @@ describe('SetupBar', () => {
     expect(screen.queryByText('Setting up your library')).not.toBeInTheDocument();
   });
 
+  it('ignores an answer that lands after its page has gone', async () => {
+    let answerLate: (value: LibrarySetupProgressDto) => void = () => {};
+    sdkMock.getLibrarySetupProgress.mockReturnValueOnce(new Promise((resolve) => (answerLate = resolve)));
+    const first = render(SetupBar);
+    first.unmount();
+
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(progress());
+    render(SetupBar);
+    expect(await screen.findByText(/Checking original files · 312,640 of 823,034/)).toBeInTheDocument();
+
+    answerLate(progress({ paused: true }));
+    // Let the late answer settle before looking.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByText('Setting up your library')).toBeInTheDocument();
+    expect(screen.queryByText('Setup is paused')).not.toBeInTheDocument();
+  });
+
   it('formats progress using the chosen number locale', async () => {
     locale.set('de-DE');
     sdkMock.getLibrarySetupProgress.mockResolvedValue(progress());
