@@ -53,7 +53,9 @@ export async function writeLibraryImportBundle(input: {
     const parent = await root.stat({ bigint: true });
     if ((parent.mode & 0o777n) !== 0o700n || parent.uid !== BigInt(process.geteuid?.() ?? -1))
       throw new LibraryImportRefused('IMPORT_BUNDLE_STAGING_INVALID');
-    temporary = await mkdtemp(`/proc/self/fd/${root.fd}/bundle-`);
+    // Persist ownership before sensitive writes, including interruptions that cannot return a bundle path.
+    temporary = await mkdtemp(`/proc/self/fd/${root.fd}/bundle-${binding.operationId}-`);
+    await root.sync();
     const bundleDirectory = join(input.stagingRoot, basename(temporary));
     if (!privateImportPathSchema.safeParse(join(bundleDirectory, 'manifest.json')).success)
       throw new LibraryImportRefused('IMPORT_BUNDLE_STAGING_INVALID');
