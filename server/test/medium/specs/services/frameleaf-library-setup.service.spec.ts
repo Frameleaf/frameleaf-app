@@ -427,12 +427,18 @@ it('keeps the file check moving past libraries and accounts it cannot check, and
     process.env.FRAMELEAF_MANAGER_INSTALLATION = 'ddddddddeeee';
     process.env.FRAMELEAF_MANAGER_ORIGIN = 'new_library';
     delete process.env.FRAMELEAF_MANAGER_ML_ENABLED;
+    const { user: trashedOwner } = await ctx.newUser();
+    await sql`UPDATE "user" SET "deletedAt"=now() WHERE id=${trashedOwner.id}::uuid`.execute(db);
     const [empty, trashed, removed] = [randomUUID(), randomUUID(), randomUUID()];
     const libraries = {
       getAll: vi.fn().mockResolvedValue([{ id: empty }, { id: trashed }, { id: removed }]),
-      get: vi.fn().mockImplementation((id: string) => Promise.resolve(id === removed ? undefined : { id })),
+      get: vi
+        .fn()
+        .mockImplementation((id: string) =>
+          Promise.resolve(id === removed ? undefined : { id, ownerId: id === trashed ? trashedOwner.id : user.id }),
+        ),
     };
-    // What LibraryScanService.queue refuses on every try: no import folder, or the owner's account is deleted.
+    // What LibraryScanService.queue refuses on every try: a library with no import folder.
     const scans = { queue: vi.fn().mockRejectedValue(new BadRequestException('Add at least one import folder')) };
     const fresh = randomUUID();
     const mediaHealth = {
@@ -457,6 +463,7 @@ it('keeps the file check moving past libraries and accounts it cannot check, and
     );
     await service.status();
     expect((await state()).libraries).toEqual([]);
+    expect(scans.queue).toHaveBeenCalledOnce(); // only the library with a live owner was asked to scan
     expect((await service.status()).phase).toBe('rescanning'); // the integrity check starts
     // Chosen photos, scanned after the check began, are no full check of the account.
     const chosen = randomUUID();
@@ -483,7 +490,7 @@ it('keeps the file check moving past libraries and accounts it cannot check, and
   }
 });
 
-it("forgets a deleted library's scan and a recorded scan that is not the account's full check", async () => {
+it('forgets the scans of deleted libraries and trashed owners, and a recorded scan that is not a full check', async () => {
   const db = await getKyselyDB('fl_manager_forget_scans');
   const { ctx } = newMediumService(SyncService, { database: db, real: [], mock: [LoggingRepository] });
   const names = ['FRAMELEAF_MANAGER_INSTALLATION', 'FRAMELEAF_MANAGER_ORIGIN', 'FRAMELEAF_MANAGER_ML_ENABLED'];
@@ -501,17 +508,29 @@ it("forgets a deleted library's scan and a recorded scan that is not the account
     process.env.FRAMELEAF_MANAGER_INSTALLATION = 'dddddddd2222';
     process.env.FRAMELEAF_MANAGER_ORIGIN = 'new_library';
     delete process.env.FRAMELEAF_MANAGER_ML_ENABLED;
-    const [libraryId, scan, chosen, full] = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+    const { user: lender } = await ctx.newUser();
+    const [libraryId, lent, scan, lentScan, chosen, full] = Array.from({ length: 6 }, () => randomUUID());
     await sql`INSERT INTO media_operation (id, "ownerId", kind, destination, label, snapshot, settings)
-      VALUES (${scan}::uuid, ${user.id}::uuid, 'library_scan', 'local', 'Library', '{}'::jsonb, '{}'::jsonb)`.execute(
-      db,
-    );
+      VALUES (${scan}::uuid, ${user.id}::uuid, 'library_scan', 'local', 'Library', '{}'::jsonb, '{}'::jsonb),
+      (${lentScan}::uuid, ${user.id}::uuid, 'library_scan', 'local', 'Lent', '{}'::jsonb, '{}'::jsonb)`.execute(db);
     let deleted = false;
     const libraries = {
-      getAll: vi.fn().mockResolvedValue([{ id: libraryId }]),
-      get: vi.fn().mockImplementation(() => Promise.resolve(deleted ? undefined : { id: libraryId })),
+      getAll: vi.fn().mockResolvedValue([{ id: libraryId }, { id: lent }]),
+      get: vi
+        .fn()
+        .mockImplementation((id: string) =>
+          Promise.resolve(
+            id === lent ? { id, ownerId: lender.id } : deleted ? undefined : { id: libraryId, ownerId: user.id },
+          ),
+        ),
     };
-    const scans = { queue: vi.fn().mockResolvedValue({ operation: { id: scan } }) };
+    const scans = {
+      queue: vi
+        .fn()
+        .mockImplementation(({ id }: { id: string }) =>
+          Promise.resolve({ operation: { id: id === lent ? lentScan : scan } }),
+        ),
+    };
     const mediaHealth = { startMissingScan: vi.fn().mockResolvedValue({ operationId: full }) };
     const service = new FrameleafLibrarySetupService(
       db,
@@ -525,10 +544,11 @@ it("forgets a deleted library's scan and a recorded scan that is not the account
       {} as never,
     );
     await service.status();
-    expect((await value()).scans).toEqual({ [libraryId]: scan });
-    // Removing the library stops its scan; setup carries on without either.
+    expect((await value()).scans).toEqual({ [libraryId]: scan, [lent]: lentScan });
+    // Removing a library, or trashing its owner's account, stops its scan; setup carries on without either.
     deleted = true;
-    await sql`UPDATE media_operation SET status='cancelled' WHERE id=${scan}::uuid`.execute(db);
+    await sql`UPDATE "user" SET "deletedAt"=now() WHERE id=${lender.id}::uuid`.execute(db);
+    await sql`UPDATE media_operation SET status='cancelled' WHERE id=ANY(${[scan, lentScan]}::uuid[])`.execute(db);
     await service.status();
     expect(await value()).toMatchObject({ phase: 'rescanning', libraries: [], scans: {} });
     await service.status(); // the integrity check starts

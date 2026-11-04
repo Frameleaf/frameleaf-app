@@ -101,6 +101,20 @@ describe(MediaHealthOperationService.name, () => {
       },
     );
 
+    it('cancels on stopping a job its owner asked to cancel, instead of leaving it to its lease', async () => {
+      vi.mocked(operations.requeue).mockResolvedValue(false); // a cancel is pending
+      mediaHealth.scanPage.mockImplementationOnce(async () => {
+        await sut.onShutdown();
+        throw new Error('Connection terminated');
+      });
+
+      await sut.run(operationOf(scanSnapshot), 'token');
+
+      expect(operations.acknowledgeCancel).toHaveBeenCalledWith(expect.any(String), 'token', { released: false });
+      expect(mediaHealth.setRunState).toHaveBeenLastCalledWith(scanSnapshot, 'cancelled', expect.anything());
+      expect(operations.fail).not.toHaveBeenCalled();
+    });
+
     it('leaves a claim it cannot hand back on stopping to its lease, without failing the job', async () => {
       vi.mocked(operations.requeue).mockRejectedValue(new Error('Connection terminated'));
       mediaHealth.scanPage.mockImplementationOnce(async () => {

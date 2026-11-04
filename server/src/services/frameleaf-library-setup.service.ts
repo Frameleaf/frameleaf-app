@@ -7,7 +7,7 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { OnEvent } from 'src/decorators.js';
 import { AdminConfigDto } from 'src/dtos/config.dto.js';
 import { LibrarySetupProgressDto } from 'src/dtos/frameleaf-library-setup.dto.js';
-import { FrameleafWorker, JobName, MediaOperationKind, QueueName, SyncEntityType } from 'src/enum.js';
+import { FrameleafWorker, JobName, MediaOperationKind, QueueName, SyncEntityType, UserStatus } from 'src/enum.js';
 import { readImportedSetupRun } from 'src/library-import/setup-run.js';
 import { lockQueueCatalogue } from 'src/queue/catalogue.js';
 import { listRuns } from 'src/queue/run-query.js';
@@ -632,8 +632,15 @@ export class FrameleafLibrarySetupService {
         }
         for (const libraryId of state.libraries) {
           const library = await this.libraries.get(libraryId);
-          // A library deleted since setup began holds nothing to wait for, nor does its scan, which stopped with it.
-          if (!library) {
+          // A library deleted since setup began, or whose owner's account was deleted, holds nothing to wait for, nor
+          // does its scan, which stopped with it (LibraryScanService.onUserTrash).
+          const {
+            rows: [owner],
+          } = library
+            ? await sql<{ active: boolean }>`SELECT "deletedAt" IS NULL AND status=${UserStatus.Active} AS active
+                FROM "user" WHERE id=${library.ownerId}::uuid`.execute(db)
+            : { rows: [] };
+          if (!library || !owner?.active) {
             state.libraries = state.libraries.filter((id) => id !== libraryId);
             delete state.scans[libraryId];
             continue;

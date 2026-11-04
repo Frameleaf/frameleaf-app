@@ -155,7 +155,7 @@ export class MediaHealthOperationService {
       // A step cut short by shutdown (a lock wait given up, a closing connection) is not the job failing. A claim
       // that cannot be handed back is left to the lease.
       if (this.stopping) {
-        await this.handBack(operation.id, claimToken);
+        await this.handBack(operation.id, claimToken, snapshot, progress.counts);
         return;
       }
       const message = bulkErrorMessage(error);
@@ -200,7 +200,7 @@ export class MediaHealthOperationService {
 
     while (!result.restored) {
       if (this.stopping) {
-        await this.handBack(id, claimToken);
+        await this.handBack(id, claimToken, snapshot, result);
         return;
       }
 
@@ -242,15 +242,22 @@ export class MediaHealthOperationService {
   /**
    * Stopping hands the job back at once, attempt returned, as a library scan does: left to its lease, the restart
    * would count as a lost worker and use the job's one automatic retry, so a second restart during a long scan
-   * would fail it.
+   * would fail it. A job its owner asked to cancel is not handed back but cancelled now, so another scan can start
+   * without waiting for the lease. A claim that cannot be settled while the database closes is left to the lease.
    */
-  private handBack(id: string, claimToken: string): Promise<boolean> {
-    return this.operations.requeue(id, claimToken, { delayMs: 0, returnAttempt: true }).catch((error: unknown) => {
+  private async handBack(id: string, claimToken: string, snapshot: MediaHealthOperationSnapshot, counts: Counts) {
+    try {
+      if (await this.operations.requeue(id, claimToken, { delayMs: 0, returnAttempt: true })) {
+        return;
+      }
+      if (await this.operations.acknowledgeCancel(id, claimToken, { released: false })) {
+        await this.mediaHealth.setRunState(snapshot, 'cancelled', counts);
+      }
+    } catch (error) {
       this.logger.warn(
         `Library Care job ${id} could not be handed back on stopping; its lease will: ${bulkErrorMessage(error)}`,
       );
-      return false;
-    });
+    }
   }
 
   /** Repeats a step that lost a lock wait; a scan step is an upsert, so running it again is harmless. */
@@ -287,7 +294,7 @@ export class MediaHealthOperationService {
     let complete = false;
     while (!complete) {
       if (this.stopping) {
-        await this.handBack(id, claimToken);
+        await this.handBack(id, claimToken, snapshot, result);
         return;
       }
 
