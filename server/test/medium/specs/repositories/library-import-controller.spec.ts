@@ -252,6 +252,23 @@ const jobs = () => {
     repository['handlers'][jobName] = { jobName, queueName, handler: vi.fn(), label: 'synthetic import' };
   return repository;
 };
+it('keeps regeneration absent when the first fresh activation source check refuses', async () => {
+  const { context, owners } = setup();
+  const controller = new LibraryImportController(connection.db, context);
+  await controller.run(owners, descriptor, stream());
+  const repository = jobs();
+  const dispatch = vi.spyOn(repository, 'dispatchImportedLibraryWork');
+  await expect(
+    controller.activate(repository, async () => {
+      throw new Error('private source changed');
+    }),
+  ).rejects.toThrow('IMPORT_CONTROLLER_UNAVAILABLE');
+  expect(dispatch).not.toHaveBeenCalled();
+  expect(
+    await connection.db.query('SELECT id FROM job_run WHERE id=$1::uuid', [libraryImportDerivedRunId(context.binding)]),
+  ).toEqual([]);
+  expect((await controller.status()).run?.status).toBe('verifying');
+});
 it.each([false, true])(
   'atomically activates verified imports with Manager=%s and recovers a lost acknowledgement',
   async (managed) => {
@@ -307,8 +324,10 @@ it('recovers a committed activation after the connection loses its acknowledgeme
   const uncertain: ImportDatabase = {
     ...connection.db,
     withSession: async (body) => {
-      await connection.db.withSession!(body);
-      throw new Error('synthetic lost commit acknowledgement');
+      const result = await connection.db.withSession!(body);
+      // Only the session returning the committed proof loses its acknowledgement.
+      if (result !== null) throw new Error('synthetic lost commit acknowledgement');
+      return result;
     },
   };
   await expect(new LibraryImportController(uncertain, context).activate(jobs(), async () => {})).rejects.toThrow(
