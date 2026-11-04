@@ -83,6 +83,27 @@ describe('PhotoPrism pinned SQLite extraction', () => {
     expect(() => [...source.rows('passwords' as never)]).toThrow('PHOTOPRISM_TABLE_NOT_ALLOWED');
     expect(() => [...source.rows('auth_sessions' as never)]).toThrow('PHOTOPRISM_TABLE_NOT_ALLOWED');
   });
+  it('retains account preferences separately from credentials without treating download choices as permissions', () => {
+    database.exec(
+      "INSERT INTO auth_users_settings (user_uid,ui_language,ui_time_zone,download_originals,download_media_raw,download_media_sidecar,upload_path) VALUES ('u-fixture','fr','Europe/Paris',1,-1,0,'family/uploads')",
+    );
+    const source = openPhotoprismSnapshot(path, fixture.source.version);
+    try {
+      expect([...source.rows('user-settings')].flat()).toEqual([
+        expect.objectContaining({
+          user_uid: 'u-fixture',
+          ui_language: 'fr',
+          ui_time_zone: 'Europe/Paris',
+          download_originals: 1n,
+          download_media_raw: -1n,
+          download_media_sidecar: 0n,
+          upload_path: 'family/uploads',
+        }),
+      ]);
+    } finally {
+      source.close();
+    }
+  });
   it('refuses schema drift before extracting content', () => {
     database.exec('ALTER TABLE photos ADD COLUMN unexpected_private_state TEXT');
     expect(() => openPhotoprismSnapshot(path, fixture.source.version)).toThrow('PHOTOPRISM_SCHEMA_UNQUALIFIED');

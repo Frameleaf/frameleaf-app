@@ -33,6 +33,11 @@ export const photoprismProjections = {
     columns:
       'user_uid,user_name,display_name,user_email,auth_provider,auth_method,created_at,updated_at,user_role,user_scope,user_attr,super_admin,can_login,base_path,upload_path,expires_at,deleted_at',
   },
+  'user-settings': {
+    name: 'auth_users_settings',
+    columns:
+      'user_uid,ui_theme,ui_start_page,ui_language,ui_time_zone,maps_style,maps_animate,index_path,index_rescan,import_path,import_move,download_originals,download_media_raw,download_media_sidecar,search_list_view,search_show_titles,search_show_captions,upload_path,created_at,updated_at',
+  },
   markers: {
     name: 'markers',
     columns:
@@ -48,7 +53,8 @@ export const photoprismProjections = {
     columns: 'user_uid,share_uid,link_uid,expires_at,comment,perm,created_at,updated_at',
   },
 } as Record<PhotoprismTable, { name: string; columns: string }>;
-export type PhotoprismTable = (typeof contentTables)[number] | 'users' | 'markers' | 'links' | 'shares';
+export type PhotoprismTable =
+  (typeof contentTables)[number] | 'users' | 'user-settings' | 'markers' | 'links' | 'shares';
 export type PhotoprismRow = Record<string, SQLOutputValue>;
 export const photoprismTables = Object.keys(photoprismProjections) as PhotoprismTable[];
 
