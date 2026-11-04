@@ -25,3 +25,5 @@ Records remain readable and verifiable after abandonment or activation; further 
 ## Integration boundary
 
 The controller must obtain and retain a complete, consistently ordered source inventory, calculate its descriptor independently, retain unsupported metadata before activation, and reconcile normalized destination records separately. This store does not prove source completeness, permission equivalence, original-file integrity or writer fencing. It does not transfer files, activate a library or release regeneration work. Full controller/CLI/Manager integration and combined ten-source qualification remain outstanding.
+
+Private bundle directories include the normalized import operation UUID. The parent directory entry is synced before credential-bearing files are written, so an interrupted producer or final close failure leaves attributable private artifacts. Callers must retain that ownership through recovery and validate the existing bundle seals and source authority before reuse; a directory name is not migration authority.
