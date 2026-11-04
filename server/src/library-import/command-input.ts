@@ -37,6 +37,12 @@ const configSchema = z.strictObject({
   destinationId: z.uuid().transform((value) => value.toLowerCase()),
   bundleDirectory: path,
   stateDirectory: path,
+  bootstrapAdmin: z
+    .strictObject({
+      userId: z.uuid().transform((value) => value.toLowerCase()),
+      path,
+    })
+    .optional(),
 });
 export type LibraryImportCommandConfig = z.infer<typeof configSchema>;
 
@@ -121,7 +127,13 @@ export async function readPrivateImportJSON(filename: string, limit: number) {
 export async function loadLibraryImportConfig(configPath: string): Promise<LibraryImportCommandConfig> {
   const { value } = await readPrivateImportJSON(configPath, 65_536);
   const parsed = configSchema.safeParse(value);
-  if (!parsed.success || parsed.data.bundleDirectory === parsed.data.stateDirectory)
+  if (
+    !parsed.success ||
+    parsed.data.bundleDirectory === parsed.data.stateDirectory ||
+    (parsed.data.bootstrapAdmin?.path &&
+      (basename(parsed.data.bootstrapAdmin.path) !== 'bootstrap-admin.json' ||
+        dirname(parsed.data.bootstrapAdmin.path) !== dirname(configPath)))
+  )
     throw new Refusal('import_command_configuration_invalid');
   return parsed.data;
 }

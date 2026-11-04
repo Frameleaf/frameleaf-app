@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, readFile, stat } from 'node:fs/promises';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -15,7 +15,6 @@ const { assertImportExecutionLock } = await import('src/library-import/execution
 await assertImportExecutionLock(stateDirectory);
 const { Kysely } = await import('kysely');
 const { connectImportDatabase } = await import('src/immich-import/database.js');
-const { ensureImportBootstrapAdmin } = await import('src/library-import/bootstrap-admin.js');
 const { writeLibraryImportBundle } = await import('src/library-import/bundle-output.js');
 const { loadLibraryImportBundle } = await import('src/library-import/bundle-input.js');
 const { executeLibraryImportCommand } = await import('src/library-import/command.js');
@@ -233,6 +232,7 @@ const config = {
   destinationId,
   bundleDirectory: bundle.bundleDirectory,
   stateDirectory,
+  bootstrapAdmin: { userId: randomUUID(), path: join(directory, 'bootstrap-admin.json') },
 };
 const connection = connectImportDatabase(process.env.DB_URL, false);
 const database = new Kysely(getKyselyConfig({ connectionType: 'url', url: process.env.DB_URL }));
@@ -241,17 +241,13 @@ try {
   const administrator = {
     operationId,
     destinationId,
-    userId: randomUUID(),
+    userId: config.bootstrapAdmin.userId,
     email: 'bootstrap@example.test',
     name: 'Fixture administrator',
     password: randomUUID(),
   };
-  assert.equal(await ensureImportBootstrapAdmin(connection.db, administrator), administrator.userId);
-  assert.equal(await ensureImportBootstrapAdmin(connection.db, administrator), administrator.userId);
-  await assert.rejects(
-    ensureImportBootstrapAdmin(connection.db, { ...administrator, password: randomUUID() }),
-    /IMPORT_BOOTSTRAP_ADMIN_CHANGED/,
-  );
+  const writeAdministrator = (value) => writeFile(config.bootstrapAdmin.path, JSON.stringify(value), { mode: 0o600 });
+  await writeAdministrator(administrator);
   local = await LocalLibraryImportState.open(stateDirectory, { create: true });
   const jobs = new JobRepository({}, {}, {}, { setContext() {} }, database);
   for (const [jobName, queueName] of [
@@ -272,7 +268,20 @@ try {
     manager: { installation: '110400000001', operationId },
     authorize,
   };
+  await writeAdministrator({ ...administrator, destinationId: randomUUID() });
+  await assert.rejects(
+    executeLibraryImportCommand({ ...options, action: 'preflight' }),
+    /IMPORT_BOOTSTRAP_ADMIN_BINDING_CHANGED/,
+  );
+  await writeAdministrator(administrator);
   assert.equal((await executeLibraryImportCommand({ ...options, action: 'preflight' })).assets, 2);
+  assert.equal((await executeLibraryImportCommand({ ...options, action: 'preflight' })).assets, 2);
+  await writeAdministrator({ ...administrator, password: randomUUID() });
+  await assert.rejects(
+    executeLibraryImportCommand({ ...options, action: 'preflight' }),
+    /IMPORT_BOOTSTRAP_ADMIN_CHANGED/,
+  );
+  await writeAdministrator(administrator);
   await executeLibraryImportCommand({ ...options, action: 'run' });
   const verified = await executeLibraryImportCommand({ ...options, action: 'verify' });
   assert.equal(verified.run.status, 'verifying');
@@ -283,6 +292,14 @@ try {
     bundleName: basename(bundle.bundleDirectory),
     binding: loaded.context.binding,
     destinationId,
+    requiredMediaBytes: input.nativeLibrary.photos.reduce((total, photo) => total + Number(photo.bytes), 0),
+    summary: {
+      owners: 1,
+      assets: 2,
+      files: 2,
+      albums: albums.length,
+      preservationDifferences: assembled.manifest.losses.length,
+    },
   });
   assert.equal(activated.activation.runId, libraryImportDerivedRunId(bundle.receipt.binding));
   await new DatabaseRepository(database, { setContext() {} }, {}).assertImportActivated();

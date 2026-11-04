@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Operations } from '../src/operations.js';
+import { Operations, type CommonImportReview } from '../src/operations.js';
 import { Store } from '../src/store.js';
 import { Docker, SERVER_ADMIN, type Container } from '../src/docker.js';
 import { digest, type Installation, type Source, type Operation } from '../src/contracts.js';
@@ -14,8 +14,8 @@ import type { PostgresStorage } from '../src/postgres-storage.js';
 
 // Exercise real orchestration and file publication with Docker/role execution mocked.
 // These tests do not qualify a live Docker network, PostgreSQL grants, or source fencing.
-async function fixture() {
-  const root = await mkdtemp(join(tmpdir(), 'manager-import-authority-'));
+async function fixture(base = tmpdir()) {
+  const root = await mkdtemp(join(base, 'manager-import-authority-'));
   const directory = join(root, '$tenant');
   const store = new Store(directory);
   const installation = {
@@ -518,6 +518,8 @@ test('common setup persists preflight and the writer boundary before activation'
   const common = {
     fence: { ...source, containers: [] },
     destinationId: 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa',
+    requiredMediaBytes: 128,
+    summary: { owners: 1, assets: 1, files: 1, albums: 0, preservationDifferences: 0 },
     binding: {
       operationId: operation.id,
       manifestSha256: 'a'.repeat(64),
@@ -529,10 +531,14 @@ test('common setup persists preflight and the writer boundary before activation'
   const calls: string[] = [];
   const internal = operations as any;
   internal.fencing.verify = async () => { calls.push('fence'); };
+  let reportedBytes = 64;
   docker.completeReviewedImport = async (_directory, _project, authority, _media, preflight, beforeActivation) => {
     assert.equal(authority.binding.operationId, operation.id);
     await authority.verify();
-    await preflight(async () => { calls.push('preflight'); });
+    await preflight(async () => {
+      calls.push('preflight');
+      return { summary: common.summary, requiredMediaBytes: reportedBytes };
+    });
     assert(operation.completed.includes('preflight-common-import'));
     await beforeActivation();
     assert.equal(store.get<Installation>('installation')?.mayHaveWrittenMedia, true);
@@ -543,6 +549,11 @@ test('common setup persists preflight and the writer boundary before activation'
     /invalid_import_authority/,
   );
   assert.deepEqual(calls, []);
+  await assert.rejects(internal.runCommonImport(operation, common, installation), /import_common_review_changed/);
+  assert.deepEqual(calls, ['fence', 'preflight']);
+  assert(!operation.completed.includes('preflight-common-import'));
+  calls.length = 0;
+  reportedBytes = common.requiredMediaBytes;
   await internal.runCommonImport(operation, common, installation);
   assert.deepEqual(calls, ['fence', 'preflight', 'activate']);
   assert(operation.completed.includes('import-canonical-database'));
@@ -647,4 +658,88 @@ test('starts a common import with its reviewed operation ID and keeps request re
   );
   assert.throws(() => f.operations.start(reviewId, 'another-request'), /operation_in_progress/);
   assert.deepEqual(launched, [reviewId]);
+});
+
+test('journals credential staging without retaining the administrator password in operation state', async (t) => {
+  const f = await fixture();
+  t.after(f.cleanup);
+  const root = join(f.operations.directory(), `import-runtime-${f.operation.id}`);
+  await mkdir(root, { mode: 0o700 });
+  await mkdir(join(root, 'bundle'), { mode: 0o700 });
+  const common = {
+    fence: { ...f.source, containers: [] },
+    destinationId: randomUUID(),
+    bootstrapAdminId: randomUUID(),
+    binding: { operationId: f.operation.id },
+  };
+  f.operation.receipts['reviewed-common-import'] = digest(common);
+  f.operation.completed.push('preflight');
+  const credentials = { email: 'fixture-admin@example.test', name: 'Fixture administrator', password: 'fixture-secret' };
+  const internal = f.operations as unknown as {
+    install(operation: Operation, review: unknown, credentials?: unknown): Promise<void>;
+  };
+  await assert.rejects(
+    internal.install(f.operation, { source: null, common, release: { directory: '/fixture' }, input: { tag: 'fixture' } }, credentials),
+    /releases.verify is not a function/,
+  );
+  assert(f.operation.completed.includes('stage-bootstrap-admin'));
+  assert(!JSON.stringify(f.store.history()).includes(credentials.password));
+  assert.deepEqual(JSON.parse(await readFile(join(root, 'config', 'bootstrap-admin.json'), 'utf8')), {
+    operationId: f.operation.id,
+    destinationId: common.destinationId,
+    userId: common.bootstrapAdminId,
+    ...credentials,
+  });
+});
+
+test('common review reports the source and space without exposing the private bundle binding', async (t) => {
+  const f = await fixture(await realpath(tmpdir()));
+  t.after(f.cleanup);
+  f.inventory.length = 0;
+  f.store.set('installation', null);
+  const mediaPath = join(f.root, 'destination');
+  await mkdir(mediaPath);
+  const internal = f.operations as unknown as {
+    roots: string[];
+    discovery: { revalidate(): Promise<void> };
+    databaseStorage: { validate(): Promise<{ root: string }> };
+  };
+  internal.roots = [f.root];
+  internal.discovery.revalidate = async () => {};
+  internal.databaseStorage.validate = async () => ({ root: f.root });
+  f.docker.compatibility = async () => ({ platform: 'linux/arm64' }) as Awaited<ReturnType<Docker['compatibility']>>;
+  f.operations.releases.acquire = async () => ({
+    nas: { platforms: ['linux/arm64'] },
+  }) as Awaited<ReturnType<Releases['acquire']>>;
+  const common: CommonImportReview = {
+    fence: { ...f.source, workers: [], containers: [] },
+    destinationId: randomUUID(),
+    bundleName: 'private-fixture-bundle',
+    bootstrapAdminId: randomUUID(),
+    requiredMediaBytes: 42,
+    summary: { owners: 1, assets: 2, files: 2, albums: 1, preservationDifferences: 3 },
+    binding: {
+      operationId: randomUUID(),
+      manifestSha256: 'a'.repeat(64),
+      planSha256: 'b'.repeat(64),
+      source: { kind: 'photoprism', version: 'fixture', identity: 'private-source', revision: 'frozen', schemaSha256: 'c'.repeat(64) },
+    },
+    media: [{ source: mediaPath, target: '/data', readOnly: false }],
+  };
+  const input = {
+    kind: 'import', sourceId: f.source.id, mediaPath, databaseRoot: f.root,
+    tag: 'frameleaf-v1.0.0', port: 2283, ml: false, lifecycle: 'docker-only',
+  } as const;
+  const review = await f.operations.review(input, undefined, common);
+  assert.equal(review.id, common.binding.operationId);
+  assert.equal(review.backup, null);
+  assert.deepEqual(review.commonImport, {
+    source: 'photoprism', version: 'fixture', requiresBootstrap: true, requiredMediaBytes: 42, summary: common.summary,
+  });
+  const publicReview = JSON.stringify(review);
+  for (const value of [common.bundleName, common.destinationId, common.bootstrapAdminId, common.binding.source.identity]) {
+    assert(value && !publicReview.includes(value));
+  }
+  assert.deepEqual(f.store.get<{ common: CommonImportReview }>(`review:${review.id}`)?.common, common);
+  await assert.rejects(f.operations.review(input, undefined, common), /invalid_import_authority/);
 });

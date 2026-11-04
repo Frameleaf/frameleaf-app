@@ -8,6 +8,7 @@ export type JournalOperation = {
   error: string | null;
   detail?: string | null;
   replacesInstallation?: boolean;
+  commonImport?: { requiresBootstrap: boolean };
 };
 export const operationNames: Record<string, string> = {
   'move-library': 'Moving your library',
@@ -39,6 +40,9 @@ export const stepNames: Record<string, string> = {
   'capture-fenced-settings': 'Preserve the stopped source settings',
   'copy-current-database': 'Copy the current stopped database',
   'database-backup': 'Create and verify a database backup',
+  'stage-bootstrap-admin': 'Secure the destination administrator details',
+  'preflight-common-import': 'Verify the reviewed import before transfer',
+  'cancel-common-import': 'Verify rollback before restarting the source',
   'configure-offline-import': 'Prepare the offline importer',
   'import-canonical-database': 'Import into Frameleaf',
   'verify-import': 'Verify the imported library',
@@ -69,6 +73,10 @@ const plans: Record<string, string[]> = {
     'move-start',
   ],
   install: ['preflight', 'download-images', 'configure', 'start-database', 'start-frameleaf', 'prepare-library'],
+  'common-import': [
+    'preflight', 'stage-bootstrap-admin', 'download-images', 'configure', 'fence-source', 'start-database',
+    'preflight-common-import', 'import-canonical-database', 'start-frameleaf', 'prepare-library',
+  ],
   import: [
     'preflight',
     'download-images',
@@ -188,9 +196,10 @@ export const readable = (value: string, detail?: string) => {
 };
 export function operationProgress(operation: JournalOperation, backupSkipped = false) {
   const ids = [
-    ...new Set([...(plans[operation.kind] ?? []), ...operation.completed, ...(operation.step ? [operation.step] : [])]),
+    ...new Set([...(plans[operation.commonImport ? 'common-import' : operation.kind] ?? []), ...operation.completed, ...(operation.step ? [operation.step] : [])]),
   ].filter(
     (id) =>
+      (id !== 'stage-bootstrap-admin' || operation.commonImport?.requiresBootstrap) &&
       (id !== 'database-backup' || !backupSkipped) &&
       (!['stop-previous-installation', 'archive-previous-installation'].includes(id) || operation.replacesInstallation),
   );

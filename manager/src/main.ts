@@ -28,6 +28,7 @@ import { Docker, command } from './docker.js';
 import { Security, trustedProxyList } from './security.js';
 import { Backups } from './backups.js';
 import { Releases } from './releases.js';
+import { CommonImportBootstrapCredentials } from './common-import-runtime.js';
 import { Operations, ReviewInput } from './operations.js';
 import { Refusal, publicSource, redact, secretEnvironmentValues } from './contracts.js';
 import { appdataDefaults } from './appdata.js';
@@ -270,9 +271,12 @@ class Api {
   @Post('review') review(@Body() input: unknown, @Req() request: Request) {
     return operations.review(ReviewInput.parse(input), managerPort(request));
   }
-  @Post('install') install(@Body() input: unknown) {
-    const value = z.object({ reviewId: z.string().uuid(), key: RequestKey }).strict().parse(input);
-    const { id } = operations.start(value.reviewId, value.key);
+  @Post('install') install(@Body() input: unknown, @Req() request: Request) {
+    const value = z.object({
+      reviewId: z.string().uuid(), key: RequestKey, bootstrap: CommonImportBootstrapCredentials.optional(),
+    }).strict().parse(input);
+    if (value.bootstrap && !request.secure) throw new Refusal('import_bootstrap_secure_transport_required');
+    const { id } = operations.start(value.reviewId, value.key, value.bootstrap);
     return { id };
   }
   @Post('control') control(@Body() input: unknown) {
@@ -294,9 +298,10 @@ class Api {
     await operations.recover(value.id);
     return { sourceStopped: true };
   }
-  @Post('resume') resume(@Body() input: unknown) {
-    const { id } = z.object({ id: z.string().uuid() }).strict().parse(input);
-    return { id: operations.resume(id).id };
+  @Post('resume') resume(@Body() input: unknown, @Req() request: Request) {
+    const { id, bootstrap } = z.object({ id: z.string().uuid(), bootstrap: CommonImportBootstrapCredentials.optional() }).strict().parse(input);
+    if (bootstrap && !request.secure) throw new Refusal('import_bootstrap_secure_transport_required');
+    return { id: operations.resume(id, bootstrap).id };
   }
   @Post('review-update') reviewUpdate(@Body() input: unknown) {
     const { tag } = z.object({ tag: ReviewInput.shape.tag }).strict().parse(input);

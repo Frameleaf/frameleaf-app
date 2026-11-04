@@ -26,10 +26,22 @@ const adminSchema = z.strictObject({
 });
 
 /** Offline bootstrap for a reviewed fresh destination. The caller owns source and operation authority. */
-export async function ensureImportBootstrapAdmin(db: ImportDatabase, input: unknown): Promise<string> {
+export async function ensureImportBootstrapAdmin(
+  db: ImportDatabase,
+  input: unknown,
+  expected: { operationId: string; destinationId: string; userId: string; ownerIds: string[]; ownerEmails: string[] },
+): Promise<string> {
   const parsed = adminSchema.safeParse(input);
   if (!parsed.success) throw new LibraryImportRefused('IMPORT_BOOTSTRAP_ADMIN_INVALID');
   const { operationId, destinationId, userId, email, name, password } = parsed.data;
+  if (
+    operationId !== expected.operationId ||
+    destinationId !== expected.destinationId ||
+    userId !== expected.userId ||
+    expected.ownerIds.includes(userId) ||
+    expected.ownerEmails.includes(email)
+  )
+    throw new LibraryImportRefused('IMPORT_BOOTSTRAP_ADMIN_BINDING_CHANGED');
   const detail = `library-import-bootstrap:${operationId}:${destinationId}`;
   try {
     return await db.transaction(async (session) => {

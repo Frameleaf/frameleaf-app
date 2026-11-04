@@ -4,8 +4,8 @@ import { basename, join } from 'node:path';
 import { openImportRoot } from '#library-import-transfer/import-copy';
 import { importPlanSha256, parseImportPlan } from '#library-import-transfer/import-plan';
 import { privateImportPathSchema } from 'src/library-import/command-input.js';
-import { bindDestinationImportPlan } from 'src/library-import/destination-plan.js';
-import { manifestFingerprint, parseImportManifest } from 'src/library-import/manifest.js';
+import { bindDestinationImportPlan, type DestinationImportPlan } from 'src/library-import/destination-plan.js';
+import { manifestFingerprint, parseImportManifest, type ImportManifest } from 'src/library-import/manifest.js';
 import { preparePrivateOwnerInputs } from 'src/library-import/private-owners.js';
 import {
   EMPTY_SOURCE_ARCHIVE_HASH,
@@ -19,9 +19,29 @@ import {
   parseLibraryImportBinding,
 } from 'src/library-import/state.js';
 
+export function summarizeReviewedImport(manifest: ImportManifest, plan: DestinationImportPlan) {
+  const copyBytes = plan.files.reduce((total, file) => total + (file.mode === 'copy' ? BigInt(file.bytes) : 0n), 0n);
+  if (copyBytes > BigInt(Number.MAX_SAFE_INTEGER))
+    throw new LibraryImportRefused('IMPORT_BUNDLE_MEDIA_SIZE_UNSUPPORTED');
+  return {
+    requiredMediaBytes: Number(copyBytes),
+    summary: {
+      owners: manifest.users.length,
+      assets: manifest.assets.length,
+      files: plan.files.length,
+      albums: manifest.albums.length,
+      preservationDifferences: manifest.losses.length,
+    },
+  };
+}
+
 type BundleOutput = {
   bundleDirectory: string;
-  receipt: { bundleName: string; binding: LibraryImportBinding; destinationId: string };
+  receipt: {
+    bundleName: string;
+    binding: LibraryImportBinding;
+    destinationId: string;
+  } & ReturnType<typeof summarizeReviewedImport>;
 };
 
 /** Serialize qualified adapter output only; source fencing, ownership/privacy evidence and activation remain caller duties. */
@@ -50,6 +70,7 @@ export async function writeLibraryImportBundle(input: {
       source: manifest.source,
     });
     const plan = bindDestinationImportPlan(parsedPlan, binding, manifest, input.destinationId);
+    const summary = summarizeReviewedImport(manifest, plan);
     const owners = preparePrivateOwnerInputs(
       { binding, destinationId: input.destinationId, manifest, plan },
       input.owners,
@@ -126,7 +147,12 @@ export async function writeLibraryImportBundle(input: {
     }
     result = {
       bundleDirectory,
-      receipt: { bundleName: basename(bundleDirectory), binding, destinationId: plan.destinationId },
+      receipt: {
+        bundleName: basename(bundleDirectory),
+        binding,
+        destinationId: plan.destinationId,
+        ...summary,
+      },
     };
   } catch (error) {
     failure = error instanceof LibraryImportRefused ? error : new LibraryImportRefused('IMPORT_BUNDLE_WRITE_FAILED');

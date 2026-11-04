@@ -9,6 +9,7 @@ import { Releases, type VerifiedRelease } from './releases.js';
 import { compareReleases, isNewerRelease } from './release-order.js';
 import { Backups, sourceBackups } from './backups.js';
 import { Fencing } from './fencing.js';
+import { prepareCommonImportRuntime, removeCommonImportBootstrap, stageCommonImportBootstrap } from './common-import-runtime.js';
 import { rollbackCommonImport } from './common-import-lifecycle.js';
 import type { ImportSourceAuthoritySeal } from './import-source-authority.js';
 import type { AutostartFile } from './unraid-autostart.js';
@@ -53,10 +54,13 @@ export const ReviewInput = z
     services: ServiceOverrides.optional(),
   })
   .strict();
-type CommonImportReview = {
+export type CommonImportReview = {
   fence: SourceFence;
   destinationId: string;
   bundleName?: string;
+  bootstrapAdminId?: string;
+  requiredMediaBytes: number;
+  summary: { owners: number; assets: number; files: number; albums: number; preservationDifferences: number };
   binding: ImportSourceAuthoritySeal['binding'];
   media: { source: string; target: string; readOnly: boolean }[];
 };
@@ -334,18 +338,26 @@ export class Operations {
       backup: backup ? { action: 'reuse', name: backup.name, takenAt: backup.takenAt } : { action: 'create' },
     };
   }
-  async review(input: z.infer<typeof ReviewInput>, managerPort?: number) {
+  async review(input: z.infer<typeof ReviewInput>, managerPort?: number, common?: CommonImportReview) {
     if (this.installation()) throw new Refusal('installation_already_exists');
     const compatibility = await this.docker.compatibility();
     let source: Source | null = null,
       backup: Backup | null = null;
-    if (input.kind === 'import') {
+    if (common) {
+      if (
+        input.kind !== 'import' || input.sourceId !== common.fence.id ||
+        !input.mediaPath || !Number.isSafeInteger(common.requiredMediaBytes) || common.requiredMediaBytes < 0 ||
+        !common.media.some((mount) => mount.target === '/data' && mount.source === input.mediaPath && !mount.readOnly)
+      ) throw new Refusal('invalid_import_authority');
+      await this.discovery.revalidate(common.fence);
+      await storagePath(input.mediaPath, this.roots, common.requiredMediaBytes);
+    } else if (input.kind === 'import') {
       ({ source, backup } = await this.reviewedSource(input.sourceId ?? ''));
     } else {
       if (!input.mediaPath) throw new Refusal('media_path_required');
       await storagePath(input.mediaPath, this.roots, 1024 ** 3);
     }
-    await this.checkPort(input.port, null, source, managerPort);
+    await this.checkPort(input.port, null, common?.fence ?? source, managerPort);
     // The same conflict check the stack generator runs, against the mounts this installation will have.
     checkServiceOverrides((source?.mounts ?? [{ target: '/data' }]).map(({ target }) => target), input.services ?? {}, this.mountRoots());
     const databaseStorage = await this.databaseStorage.validate(
@@ -356,16 +368,19 @@ export class Operations {
     const release = await this.releases.acquire(input.tag);
     if (!release.nas.platforms.includes(compatibility.platform)) throw new Refusal('release_architecture_unavailable');
     const review: Review = {
-      id: randomUUID(),
+      id: common?.binding.operationId ?? randomUUID(),
       expires: Date.now() + 900_000,
       managerPort,
       input,
       release,
       source,
+      ...(common && { common }),
       backup,
       platform: compatibility.platform,
     };
-    this.store.set(`review:${review.id}`, review);
+    if (common) {
+      if (!this.store.createOnce(`review:${review.id}`, review)) throw new Refusal('invalid_import_authority');
+    } else this.store.set(`review:${review.id}`, review);
     return {
       id: review.id,
       expires: review.expires,
@@ -381,11 +396,25 @@ export class Operations {
             settings: Object.keys(source.settings ?? {}),
           }
         : null,
-      backup: backup ? { action: 'reuse', name: backup.name, takenAt: backup.takenAt } : { action: 'create' },
+      backup: common ? null : backup ? { action: 'reuse', name: backup.name, takenAt: backup.takenAt } : { action: 'create' },
+      ...(common && { commonImport: {
+        source: common.binding.source.kind,
+        version: common.binding.source.version,
+        requiresBootstrap: !!common.bootstrapAdminId,
+        requiredMediaBytes: common.requiredMediaBytes,
+        summary: {
+          owners: common.summary.owners,
+          assets: common.summary.assets,
+          files: common.summary.files,
+          albums: common.summary.albums,
+          preservationDifferences: common.summary.preservationDifferences,
+        },
+      } }),
       requiredBytes: (source?.summary.databaseBytes ?? 1024 ** 3) * 3,
       downtime: `${source?.product ?? 'The original app'} stays stopped while Frameleaf imports and prepares the library.`,
-      recovery:
-        `Database only. Photos, videos and external libraries stay in place. After Frameleaf writes to media, a database backup alone cannot safely return the library to ${source?.product ?? 'the original app'}.`,
+      recovery: common
+        ? 'Manager verifies the original files before starting Frameleaf. Automatic rollback ends at the recorded writer boundary.'
+        : `Database only. Photos, videos and external libraries stay in place. After Frameleaf writes to media, a database backup alone cannot safely return the library to ${source?.product ?? 'the original app'}.`,
     };
   }
   /**
@@ -426,7 +455,7 @@ export class Operations {
     )
       throw new Refusal('port_in_use');
   }
-  start(reviewId: string, key: string): Operation {
+  start(reviewId: string, key: string, bootstrap?: unknown): Operation {
     const prior = this.store.request(undefined, key, { reviewId });
     if (prior) {
       if (!['install', 'import'].includes(prior.kind)) throw new Refusal('request_key_reused');
@@ -436,10 +465,12 @@ export class Operations {
     if (!review || review.expires < Date.now()) throw new Refusal('review_expired');
     if (review.common && (review.id !== reviewId || review.common.binding.operationId !== reviewId || review.source))
       throw new Refusal('invalid_import_authority');
+    if (!!review.common?.bootstrapAdminId !== (bootstrap !== undefined))
+      throw new Refusal('import_bootstrap_credentials_required');
     const { operation, created } = this.store.start(
       review.input.kind, key, { reviewId }, review.common ? { id: reviewId, sha256: digest(review.common) } : undefined,
     );
-    if (created) this.launch(operation, () => this.install(operation, review));
+    if (created) this.launch(operation, () => this.install(operation, review, bootstrap));
     return operation;
   }
   private launch(operation: Operation, work: () => Promise<void>): void {
@@ -467,10 +498,16 @@ export class Operations {
         void this.retention.sweep();
       });
   }
-  resume(id: string): Operation {
+  resume(id: string, bootstrap?: unknown): Operation {
     const operation = this.store.history().find((o) => o.id === id);
     if (!operation || this.executing.has(id) || !['failed', 'interrupted'].includes(operation.state))
       throw new Refusal('operation_not_recoverable');
+    if (bootstrap !== undefined && (
+      operation.kind !== 'import' ||
+      operation.receipts['cancellation-intent'] ||
+      operation.completed.includes('preflight-common-import') ||
+      !this.store.get<Review>(`review:${operation.input.reviewId}`)?.common?.bootstrapAdminId
+    )) throw new Refusal('invalid_import_authority');
     operation.state = 'running';
     operation.error = null;
     operation.detail = null;
@@ -529,7 +566,7 @@ export class Operations {
         await this.docker.compose(this.directory(), installation.project, 'up', ['database']);
       }
       if (restoring) await this.applyRestore(operation, review as RestoreReview);
-      else await this.install(operation, review as Review);
+      else await this.install(operation, review as Review, bootstrap);
     });
     return operation;
   }
@@ -544,7 +581,7 @@ export class Operations {
     this.store.save(operation);
     return receipt;
   }
-  private async install(operation: Operation, review: Review): Promise<void> {
+  private async install(operation: Operation, review: Review, bootstrap?: unknown): Promise<void> {
     const common = review.common;
     assertCommonImportReview(operation, common);
     if (common && (operation.kind !== 'import' || review.source)) throw new Refusal('invalid_import_authority');
@@ -553,6 +590,7 @@ export class Operations {
       if (this.installation()) throw new Refusal('installation_already_exists');
       await this.releases.eligible(review.input.tag);
       if (sourceFence) await this.discovery.revalidate(sourceFence);
+      if (common) await storagePath(review.input.mediaPath!, this.roots, common.requiredMediaBytes);
       await this.checkPort(review.input.port, null, sourceFence, review.managerPort);
       await this.databaseStorage.validate(
         review.input.databaseRoot,
@@ -560,6 +598,22 @@ export class Operations {
       );
       return true;
     });
+    if (common?.bootstrapAdminId && !operation.completed.includes('preflight-common-import')) {
+      const stage = async () => {
+        if (bootstrap === undefined) throw new Refusal('import_bootstrap_credentials_required');
+        const root = join(this.directory(), `import-runtime-${operation.id}`);
+        await prepareCommonImportRuntime(root, operation.id, common.destinationId, common.bundleName, common.bootstrapAdminId);
+        await stageCommonImportBootstrap(this.directory(), {
+          operationId: operation.id,
+          destinationId: common.destinationId,
+          userId: common.bootstrapAdminId!,
+        }, bootstrap);
+        return true;
+      };
+      if (operation.completed.includes('stage-bootstrap-admin')) {
+        if (bootstrap !== undefined) await stage();
+      } else await this.step(operation, 'stage-bootstrap-admin', stage);
+    }
     await this.step(operation, 'download-images', async () => {
       const release = await this.releases.verify(review.release.directory, review.input.tag);
       for (const image of await releaseImages(release.nas.images, review.input))
@@ -813,9 +867,14 @@ export class Operations {
         common.media,
         async (preflight) => {
           await this.step(operation, 'preflight-common-import', async () => {
-            await preflight();
+            const report = await preflight();
+            if (
+              report.requiredMediaBytes !== common.requiredMediaBytes ||
+              !Object.entries(common.summary).every(([name, count]) => report.summary?.[name] === count)
+            ) throw new Refusal('import_common_review_changed');
             return true;
           });
+          if (common.bootstrapAdminId) await removeCommonImportBootstrap(this.directory(), operation.id);
           operation.step = 'import-canonical-database';
           this.store.save(operation);
         },
@@ -824,6 +883,7 @@ export class Operations {
           this.store.set('installation', installation);
         },
         common.bundleName,
+        common.bootstrapAdminId,
       );
       return true;
     });
@@ -1632,6 +1692,7 @@ export class Operations {
             source: source.kind,
             destinationId: common.destinationId,
             bundleName: common.bundleName,
+            bootstrapAdminId: common.bootstrapAdminId,
             media: common.media,
             authority: {
               installation: installation.id,
@@ -1644,6 +1705,7 @@ export class Operations {
         return true;
       });
     }
+    if (common?.bootstrapAdminId) await removeCommonImportBootstrap(this.directory(), operation.id);
     if (installation) {
       await this.step(operation, 'cancel-stop-target', async () => {
         // Configuration may not have been published when setup failed. Reconcile exact owned
@@ -1715,6 +1777,9 @@ export class Operations {
     return this.store.history().map(({ input, receipts, ...operation }) => ({
       ...operation,
       backupSkipped: operation.kind === 'import' && !!this.store.get<Review>(`review:${input.reviewId}`)?.backup,
+      ...(typeof receipts['reviewed-common-import'] === 'string' && { commonImport: {
+        requiresBootstrap: !!this.store.get<Review>(`review:${input.reviewId}`)?.common?.bootstrapAdminId,
+      } }),
       replacesInstallation:
         operation.kind === 'restore' && !!this.store.get<RestoreReview>(`restore:${input.reviewId}`)?.current,
       canStop: operation.kind === 'move-library' && operation.state === 'running' && !receipts['move-writes-intent'],

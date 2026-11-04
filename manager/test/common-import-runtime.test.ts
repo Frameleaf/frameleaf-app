@@ -4,7 +4,11 @@ import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink } from 'node:fs/prom
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { prepareCommonImportRuntime } from '../src/common-import-runtime.js';
+import {
+  prepareCommonImportRuntime,
+  removeCommonImportBootstrap,
+  stageCommonImportBootstrap,
+} from '../src/common-import-runtime.js';
 
 test('mounts private import configuration and bundle read-only and recovery state writable', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'frameleaf-import-'));
@@ -70,4 +74,42 @@ test('mounts the bundle published for this operation and refuses substituted dir
       /import_runtime_bundle_invalid/,
     );
   }
+});
+
+test('keeps the reviewed bootstrap identity in configuration and removes only the private credential', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'frameleaf-import-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const operationId = randomUUID();
+  const destinationId = randomUUID();
+  const userId = randomUUID();
+  const root = join(directory, `import-runtime-${operationId}`);
+  await mkdir(root, { mode: 0o700 });
+  await mkdir(join(root, 'bundle'), { mode: 0o700 });
+  await prepareCommonImportRuntime(root, operationId, destinationId, 'bundle', userId);
+  const config = join(root, 'config', 'command.json');
+  const contents = JSON.parse(await readFile(config, 'utf8'));
+  assert.deepEqual(contents.bootstrapAdmin, { userId, path: '/run/frameleaf/import-private/bootstrap-admin.json' });
+  await assert.rejects(
+    prepareCommonImportRuntime(root, operationId, destinationId, 'bundle', randomUUID()),
+    /import_runtime_configuration_changed/,
+  );
+  const credential = join(root, 'config', 'bootstrap-admin.json');
+  const input = { email: 'fixture@example.test', name: 'Fixture admin', password: 'synthetic-private-credential' };
+  await stageCommonImportBootstrap(directory, { operationId, destinationId, userId }, input);
+  await stageCommonImportBootstrap(directory, { operationId, destinationId, userId }, input);
+  assert.equal((await stat(credential)).mode & 0o777, 0o600);
+  assert.deepEqual(JSON.parse(await readFile(credential, 'utf8')), { operationId, destinationId, userId, ...input });
+  assert(!JSON.stringify(contents).includes(input.password));
+  await assert.rejects(
+    stageCommonImportBootstrap(
+      directory,
+      { operationId, destinationId, userId },
+      { ...input, password: 'different-private-password' },
+    ),
+    /import_runtime_bootstrap_changed/,
+  );
+  await removeCommonImportBootstrap(directory, operationId);
+  await removeCommonImportBootstrap(directory, operationId);
+  await assert.rejects(stat(credential), { code: 'ENOENT' });
+  assert.deepEqual(JSON.parse(await readFile(config, 'utf8')), contents);
 });

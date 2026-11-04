@@ -494,6 +494,7 @@ export class Docker {
       source: ImportPlan['source']['kind'];
       destinationId: string;
       bundleName?: string;
+      bootstrapAdminId?: string;
       media: { source: string; target: string; readOnly: boolean }[];
       activate?: boolean;
       authority?: ImportSourceAuthority;
@@ -531,7 +532,7 @@ export class Docker {
       await this.execute('docker', ['rm', existing.Id]);
     }
     const compose = common
-      ? await writeCommonImportCompose(directory, project, operationId, common.destinationId, common.media, common.bundleName)
+      ? await writeCommonImportCompose(directory, project, operationId, common.destinationId, common.media, common.bundleName, common.bootstrapAdminId)
       : 'import-compose.json';
     const output = await this.execute(
       'docker',
@@ -576,9 +577,10 @@ export class Docker {
     project: string,
     sourceAuthority: ImportSourceAuthority,
     media: { source: string; target: string; readOnly: boolean }[],
-    preflight: (run: () => Promise<void>) => Promise<void>,
+    preflight: (run: () => Promise<Record<string, any>>) => Promise<void>,
     beforeActivation?: () => Promise<void>,
     bundleName?: string,
+    bootstrapAdminId?: string,
   ): Promise<void> {
     const authority = parseImportSourceAuthority(sourceAuthority);
     const { installation, destinationId, binding: { operationId, source } } = authority;
@@ -590,14 +592,13 @@ export class Docker {
         source: source.kind,
         destinationId,
         bundleName,
+        bootstrapAdminId,
         media,
         activate,
         authority,
       });
     };
-    await preflight(async () => {
-      await launch('preflight');
-    });
+    await preflight(() => launch('preflight'));
     await completeCommonImport(operationId, source, launch);
     await authority.verify();
   }

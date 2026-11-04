@@ -1,10 +1,11 @@
-import { lstat, mkdir, open, readFile } from 'node:fs/promises';
+import { lstat, mkdir, open, readFile, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { z } from 'zod';
 import { DATABASE_PASSWORD_FILE } from './compose.js';
 import { imageDigest, Refusal } from './contracts.js';
 import { atomicJson, atomicSecret } from './files.js';
 
+const bootstrapName = 'bootstrap-admin.json';
 const configTarget = '/run/frameleaf/import-private';
 const bundleTarget = '/run/frameleaf/import-bundle';
 const stateTarget = '/run/frameleaf/import-state';
@@ -27,8 +28,13 @@ export async function prepareCommonImportRuntime(
   operationId: string,
   destinationId: string,
   bundleName = 'bundle',
+  bootstrapAdminId?: string,
 ) {
-  if (![operationId, destinationId].every((id) => z.uuid().safeParse(id).success))
+  if (
+    ![operationId, destinationId, ...(bootstrapAdminId === undefined ? [] : [bootstrapAdminId])].every(
+      (id) => z.uuid().safeParse(id).success,
+    )
+  )
     throw new Refusal('invalid_import_authority');
   const prefix = `bundle-${operationId}-`;
   if (
@@ -51,6 +57,7 @@ export async function prepareCommonImportRuntime(
     destinationId,
     bundleDirectory: bundleTarget,
     stateDirectory: stateTarget,
+    ...(bootstrapAdminId && { bootstrapAdmin: { userId: bootstrapAdminId, path: `${configTarget}/${bootstrapName}` } }),
   };
   const existing = await lstat(filename).catch((error: NodeJS.ErrnoException) => {
     if (error.code !== 'ENOENT') throw error;
@@ -92,6 +99,7 @@ export async function writeCommonImportCompose(
   destinationId: string,
   media: { source: string; target: string; readOnly: boolean }[],
   bundleName?: string,
+  bootstrapAdminId?: string,
 ) {
   const mounts = z
     .array(
@@ -117,7 +125,7 @@ export async function writeCommonImportCompose(
   if (stack.name !== project || !image.success) throw new Refusal('invalid_import_authority');
 
   const root = join(directory, `import-runtime-${operationId}`);
-  const volumes = await prepareCommonImportRuntime(root, operationId, destinationId, bundleName);
+  const volumes = await prepareCommonImportRuntime(root, operationId, destinationId, bundleName, bootstrapAdminId);
   const passwordPath = join(directory, DATABASE_PASSWORD_FILE);
   const info = await lstat(passwordPath);
   if (
@@ -165,4 +173,72 @@ export async function writeCommonImportCompose(
     networks: { default: { external: true, name: `${project}_default` } },
   });
   return compose;
+}
+
+/** The caller has saved the preflight receipt or completed rollback. */
+export async function removeCommonImportBootstrap(directory: string, operationId: string) {
+  if (!z.uuid().safeParse(operationId).success) throw new Refusal('invalid_import_authority');
+  const root = join(directory, `import-runtime-${operationId}`);
+  const config = join(root, 'config');
+  try {
+    await privateDirectory(root);
+    await privateDirectory(config);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw error;
+  }
+  await rm(join(config, bootstrapName), { force: true });
+  const handle = await open(config, 'r');
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
+export const CommonImportBootstrapCredentials = z.strictObject({
+  email: z
+    .email()
+    .max(254)
+    .transform((value) => value.toLowerCase()),
+  name: z.string().trim().min(1).max(200),
+  password: z
+    .string()
+    .min(8)
+    .refine((value) => Buffer.byteLength(value) <= 72 && !value.includes('\0')),
+});
+
+/** Stage reviewed credentials under the operation lock. Only identifiers go in the Manager journal. */
+export async function stageCommonImportBootstrap(
+  directory: string,
+  identity: { operationId: string; destinationId: string; userId: string },
+  input: unknown,
+) {
+  const { operationId, destinationId, userId } = identity;
+  const credentials = CommonImportBootstrapCredentials.safeParse(input);
+  if (!credentials.success || ![operationId, destinationId, userId].every((id) => z.uuid().safeParse(id).success))
+    throw new Refusal('import_runtime_bootstrap_invalid');
+  const root = join(directory, `import-runtime-${operationId}`);
+  const config = join(root, 'config');
+  await privateDirectory(root);
+  await privateDirectory(config);
+  const path = join(config, bootstrapName);
+  const value = { operationId, destinationId, userId, ...credentials.data };
+  const info = await lstat(path).catch((error: NodeJS.ErrnoException) => {
+    if (error.code !== 'ENOENT') throw error;
+    return null;
+  });
+  if (!info) {
+    await atomicJson(path, value);
+    return;
+  }
+  if (
+    !info.isFile() ||
+    info.nlink !== 1 ||
+    info.uid !== process.geteuid?.() ||
+    (info.mode & 0o777) !== 0o600 ||
+    info.size > 8192 ||
+    (await readFile(path, 'utf8')) !== JSON.stringify(value, null, 2)
+  )
+    throw new Refusal('import_runtime_bootstrap_changed');
 }

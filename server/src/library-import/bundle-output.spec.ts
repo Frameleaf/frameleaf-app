@@ -88,6 +88,8 @@ it.each(sourceKinds)('round-trips the common private bundle contract for %s', as
     bundleName: basename(result.bundleDirectory),
     binding: bundle.context.binding,
     destinationId: bundle.context.destinationId,
+    requiredMediaBytes: 0,
+    summary: { owners: value.manifest.users.length, assets: 0, files: 0, albums: 0, preservationDifferences: 0 },
   });
   await bundle.assertUnchanged();
   expect(bundle.context.manifest).toEqual(value.manifest);
