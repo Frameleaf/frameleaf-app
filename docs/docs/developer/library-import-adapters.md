@@ -68,6 +68,8 @@ The two built-in anonymous principals are identified by pinned IDs and checked a
 
 Qualification remains incomplete. Synthetic SQLite originals, API-edited metadata and a private manual album have been exercised. The free PhotoPrism installation also runs locally in Docker with MariaDB, as described below. Additional restricted account roles refused setup in the pinned binary without membership; their privacy behavior remains unqualified. Destination mapping, complete preservation, rollback and combined acceptance remain unfinished.
 
+The SQLite and MariaDB account projections retain PhotoPrism's numeric account `id` alongside its stable `user_uid`, without converting integers through JavaScript `Number`. The numeric identity is required to resolve the source's authentication-provider fallback when `auth_provider` is empty. It remains protected source metadata; the UID still identifies the mapped owner. Retaining either identity does not authorize login or transfer source administrative privileges.
+
 ### Password interoperability checks
 
 `fixtures/password-vectors.json` contains synthetic bcrypt verifiers generated independently by Go `golang.org/x/crypto/bcrypt` v0.22.0 and the recorded native PHP runtime. The Go runtime image is pinned by its recorded image ID. These vectors exercise Unicode, embedded NUL bytes, PHP `$2y$` normalization and the 72-byte bcrypt boundary, including the source verifier's behavior for longer inputs. A separate Python-generated PBKDF2-SHA256 vector exercises Django's encoded format. They contain no real account credentials.
