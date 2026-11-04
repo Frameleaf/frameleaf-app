@@ -66,4 +66,5 @@ test('shared discovery refusals do not misidentify a source app', () => {
   }
   assert.match(readable('source_version_unreachable'), /IMMICH_PORT and IMMICH_HOST/u);
   assert.match(readable('database_connection_ambiguous'), /DB_HOSTNAME/u);
+  assert.match(readable('unsupported_database_connection'), /password and a port.*1 to 65535/u);
 });

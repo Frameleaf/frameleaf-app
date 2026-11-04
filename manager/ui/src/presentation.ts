@@ -174,7 +174,7 @@ const refusals: Record<string, string> = {
     'Manager found this photo server but could not ask it for its version. Check that it is running and healthy; Manager uses its IMMICH_PORT and IMMICH_HOST settings.',
   database_connection_ambiguous:
     'Manager could not tell which container holds this database. Its DB_HOSTNAME must name or address the database container.',
-  unsupported_database_connection: 'This database connection is not supported yet: it needs a password.',
+  unsupported_database_connection: 'Check the database connection: it needs a password and a port that is a whole number from 1 to 65535.',
   manager_unexpected_response:
     'Manager sent an unexpected answer. It may be restarting, or a proxy in front of it may have failed. Wait a moment, then try again.',
   operation_failed:
