@@ -22,7 +22,9 @@ async function setup(t: TestContext) {
   const database = new DatabaseSync(databasePath);
   database.exec("PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0; CREATE TABLE photos(id INTEGER PRIMARY KEY, caption TEXT); INSERT INTO photos VALUES(1,'Edited caption')");
   const store = new Store(join(root, 'manager'));
-  t.after(async () => { database.close(); store.close(); await rm(root, { recursive: true, force: true }); });
+  let sourceOpen = true;
+  const closeSource = () => { database.close(); sourceOpen = false; };
+  t.after(async () => { if (sourceOpen) database.close(); store.close(); await rm(root, { recursive: true, force: true }); });
   const app: Container = {
     Id: 'a'.repeat(64), Name: '/synthetic-photo-source', Image: 'sha256:' + 'b'.repeat(64),
     State: { Running: true },
@@ -45,7 +47,7 @@ async function setup(t: TestContext) {
   } as unknown as Docker;
   const fencing = new Fencing(docker, store);
   const input = { databasePath, stagingRoot, expectedSchemaSha256: sqliteSchemaFingerprint(database) };
-  return { root, sourceRoot, stagingRoot, databasePath, database, source, app, fault, fencing, input, mutations: () => mutations };
+  return { root, sourceRoot, stagingRoot, databasePath, database, closeSource, source, app, fault, fencing, input, mutations: () => mutations };
 }
 
 test('captures committed WAL metadata privately and binds the snapshot to the actual source fence', async (t) => {
@@ -64,6 +66,15 @@ test('captures committed WAL metadata privately and binds the snapshot to the ac
   assert.deepEqual(await Promise.all([readFile(f.databasePath), readFile(f.databasePath + '-wal')]), before);
   assert.equal(f.app.State.Running, false);
   assert.equal(f.app.HostConfig.RestartPolicy.Name, 'no');
+});
+
+test('captures a closed WAL-mode source without requiring leftover WAL files', async (t) => {
+  const f = await setup(t);
+  f.closeSource();
+  const snapshot = await captureFencedSqliteSource(f.fencing, f.source, f.input);
+  const copy = new DatabaseSync(snapshot.path, { readOnly: true });
+  try { assert.equal(copy.prepare('SELECT count(*) AS total FROM photos').get()?.total, 1); }
+  finally { copy.close(); }
 });
 
 test('unknown schemas remove only their own snapshot and keep the source fenced', async (t) => {
