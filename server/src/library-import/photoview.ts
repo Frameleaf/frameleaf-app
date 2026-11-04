@@ -27,6 +27,38 @@ class PhotoviewReadError extends Error {
   }
 }
 
+const qualifiedSchema = (database: DatabaseSync) => {
+  const schemaSha256 = sqliteSchemaFingerprint(database);
+  if (schemaSha256 === fixture.schemaSha256) return schemaSha256;
+  const objects = database.prepare('SELECT type,name,tbl_name,sql FROM sqlite_schema ORDER BY type,name').all();
+  const normalized = objects.map((object) => {
+    const expected = fixture.objects.find((entry) => entry.type === object.type && entry.name === object.name);
+    if (object.type !== 'table' || typeof object.sql !== 'string' || !expected?.sql) return object;
+    // Native migrations vary these known foreign-key clause orders; every clause and all other SQL must still match.
+    const foreignKeys = expected.sql
+      .slice(0, -1)
+      .split(',CONSTRAINT ')
+      .filter((clause) => clause.startsWith('`fk_'))
+      .map((clause) => ',CONSTRAINT ' + clause);
+    let actualSql = object.sql,
+      expectedSql = expected.sql;
+    for (const clause of foreignKeys) {
+      if (!actualSql.includes(clause)) return object;
+      actualSql = actualSql.replace(clause, '');
+      expectedSql = expectedSql.replace(clause, '');
+    }
+    return actualSql === expectedSql ? { ...object, sql: expected.sql } : object;
+  });
+  const actual = {
+    applicationId: database.prepare('PRAGMA application_id').get(),
+    userVersion: database.prepare('PRAGMA user_version').get(),
+    objects: normalized,
+  };
+  const expected = { applicationId: fixture.applicationId, userVersion: fixture.userVersion, objects: fixture.objects };
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new PhotoviewReadError('PHOTOVIEW_SCHEMA_UNQUALIFIED');
+  return schemaSha256;
+};
+
 /** Source identity, stopped-writer evidence, ownership and original bytes remain caller obligations. */
 export const openPhotoviewSnapshot = (path: string, version: string) => {
   if (version !== fixture.source.version) throw new PhotoviewReadError('PHOTOVIEW_VERSION_UNQUALIFIED');
@@ -36,10 +68,10 @@ export const openPhotoviewSnapshot = (path: string, version: string) => {
   } catch {
     throw new PhotoviewReadError('PHOTOVIEW_SNAPSHOT_UNAVAILABLE');
   }
+  let schemaSha256: string;
   try {
     database.exec('PRAGMA query_only=ON; PRAGMA trusted_schema=OFF; BEGIN');
-    if (sqliteSchemaFingerprint(database) !== fixture.schemaSha256)
-      throw new PhotoviewReadError('PHOTOVIEW_SCHEMA_UNQUALIFIED');
+    schemaSha256 = qualifiedSchema(database);
     if (database.prepare('PRAGMA foreign_key_check').get())
       throw new PhotoviewReadError('PHOTOVIEW_RELATIONSHIPS_INVALID');
   } catch (error) {
@@ -49,7 +81,7 @@ export const openPhotoviewSnapshot = (path: string, version: string) => {
   }
   return {
     version,
-    schemaSha256: fixture.schemaSha256,
+    schemaSha256,
     password: (context: ImportedPasswordContext) =>
       readSqlitePassword(database, context, 'bcrypt', 'SELECT password FROM users WHERE id=?'),
     *rows(table: PhotoviewTable): Generator<PhotoviewRow[]> {

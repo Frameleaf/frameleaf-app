@@ -100,6 +100,40 @@ describe('Photoview pinned SQLite extraction', () => {
     database.exec('ALTER TABLE media ADD COLUMN unexpected TEXT');
     expect(() => openPhotoviewSnapshot(path, 'v2.4.0')).toThrow('PHOTOVIEW_SCHEMA_UNQUALIFIED');
   });
+
+  it.each(['image_faces', 'media', 'share_tokens', 'user_albums'])(
+    'admits only the known foreign-key order permutations in %s and retains their raw fingerprint',
+    (table) => {
+      const expected = fixture.objects.find((object) => object.type === 'table' && object.name === table)!.sql!;
+      const [columns, ...constraints] = expected.slice(0, -1).split(',CONSTRAINT ');
+      const foreignKeys = constraints.filter((clause) => clause.startsWith('`fk_')).reverse();
+      const other = constraints.filter((clause) => !clause.startsWith('`fk_'));
+      const sql = [columns, ...foreignKeys, ...other].join(',CONSTRAINT ') + ')';
+      database.exec('PRAGMA writable_schema=ON');
+      database.prepare("UPDATE sqlite_schema SET sql=? WHERE type='table' AND name=?").run(sql, table);
+      const source = openPhotoviewSnapshot(path, fixture.source.version);
+      try {
+        expect(source.schemaSha256).not.toBe(fixture.schemaSha256);
+        expect([...source.rows('media')].flat()).toHaveLength(content.rows.media.length);
+      } finally {
+        source.close();
+      }
+    },
+  );
+
+  it.each(['missing', 'duplicate', 'changed'] as const)('refuses a %s foreign key', (change) => {
+    const expected = fixture.objects.find((object) => object.type === 'table' && object.name === 'image_faces')!.sql!;
+    const clause = ',CONSTRAINT ' + expected.slice(0, -1).split(',CONSTRAINT ')[1];
+    const sql =
+      change === 'missing'
+        ? expected.replace(clause, '')
+        : change === 'duplicate'
+          ? expected.replace(clause, clause + clause.replace('`fk_media_faces`', '`fk_extra`'))
+          : expected.replace('ON DELETE CASCADE', 'ON DELETE SET NULL');
+    database.exec('PRAGMA writable_schema=ON');
+    database.prepare("UPDATE sqlite_schema SET sql=? WHERE name='image_faces'").run(sql);
+    expect(() => openPhotoviewSnapshot(path, fixture.source.version)).toThrow('PHOTOVIEW_SCHEMA_UNQUALIFIED');
+  });
   it('refuses broken native foreign-key relationships', () => {
     database.exec('UPDATE media SET album_id=999 WHERE id=1');
     expect(() => openPhotoviewSnapshot(path, 'v2.4.0')).toThrow('PHOTOVIEW_RELATIONSHIPS_INVALID');
