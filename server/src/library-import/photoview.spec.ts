@@ -13,7 +13,7 @@ describe('Photoview pinned SQLite extraction', () => {
   let root: string;
   let path: string;
   let database: DatabaseSync;
-  const mediaSchemaVariant = (sql: string) => {
+  const tableSchemaVariant = (table: 'media' | 'image_faces', sql: string) => {
     const candidatePath = join(root, 'schema-variant.sqlite');
     const candidate = new DatabaseSync(candidatePath);
     try {
@@ -21,7 +21,7 @@ describe('Photoview pinned SQLite extraction', () => {
       for (const type of ['table', 'index', 'trigger', 'view'])
         for (const object of fixture.objects)
           if (object.type === type && object.sql && !object.name.startsWith('sqlite_'))
-            candidate.exec(object.type === 'table' && object.name === 'media' ? sql : object.sql);
+            candidate.exec(object.type === 'table' && object.name === table ? sql : object.sql);
       expect(candidate.prepare('PRAGMA integrity_check').get()?.integrity_check).toBe('ok');
     } finally {
       candidate.close();
@@ -155,7 +155,7 @@ describe('Photoview pinned SQLite extraction', () => {
     const [columns, ...constraints] = expected.slice(0, -1).split(',CONSTRAINT ');
     const foreignKeys = constraints.filter((clause) => clause.startsWith('`fk_'));
     const unique = constraints.filter((clause) => clause.startsWith('`uni_')).toReversed();
-    const candidate = mediaSchemaVariant([columns, ...foreignKeys, ...unique].join(',CONSTRAINT ') + ')');
+    const candidate = tableSchemaVariant('media', [columns, ...foreignKeys, ...unique].join(',CONSTRAINT ') + ')');
     const source = openPhotoviewSnapshot(candidate, fixture.source.version);
     try {
       expect(source.schemaSha256).not.toBe(fixture.schemaSha256);
@@ -174,7 +174,7 @@ describe('Photoview pinned SQLite extraction', () => {
         : change === 'duplicate'
           ? expected.replace(clause, () => clause + clause.replace('`uni_media_path_hash`', '`uni_extra`'))
           : expected.replace(clause, () => clause.replace('UNIQUE (`path_hash`)', 'UNIQUE (`side_car_hash`)'));
-    const candidate = mediaSchemaVariant(sql);
+    const candidate = tableSchemaVariant('media', sql);
     expect(() => openPhotoviewSnapshot(candidate, fixture.source.version)).toThrow('PHOTOVIEW_SCHEMA_UNQUALIFIED');
   });
 
@@ -182,7 +182,14 @@ describe('Photoview pinned SQLite extraction', () => {
     const expected = fixture.objects.find((object) => object.type === 'table' && object.name === 'media')!.sql!;
     const clause = ',CONSTRAINT `uni_media_path_hash` UNIQUE (`path_hash`)';
     const sql = expected.replace(clause, '').replace('`title`', () => '`title' + clause + '`');
-    const candidate = mediaSchemaVariant(sql);
+    const candidate = tableSchemaVariant('media', sql);
+    expect(() => openPhotoviewSnapshot(candidate, fixture.source.version)).toThrow('PHOTOVIEW_SCHEMA_UNQUALIFIED');
+  });
+  it('refuses a foreign-key clause hidden inside a quoted column without changing the index inventory', () => {
+    const expected = fixture.objects.find((object) => object.type === 'table' && object.name === 'image_faces')!.sql!;
+    const clause = ',CONSTRAINT `fk_media_faces` FOREIGN KEY (`media_id`) REFERENCES `media`(`id`) ON DELETE CASCADE';
+    const sql = expected.replace(clause, '').replace('`descriptor`', () => '`descriptor' + clause + '`');
+    const candidate = tableSchemaVariant('image_faces', sql);
     expect(() => openPhotoviewSnapshot(candidate, fixture.source.version)).toThrow('PHOTOVIEW_SCHEMA_UNQUALIFIED');
   });
   it('refuses broken native foreign-key relationships', () => {
