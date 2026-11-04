@@ -62,7 +62,10 @@ const stagesFor = (
   case when j."dependencyReason"='destination-capacity' then 'destination-unavailable' else j."dependencyReason" end "dependencyReason", q.paused,
   greatest(j."progressAt", j."startedAt", j."finishedAt") "meaningfulAt",
   p.state "parentState",
-  coalesce(snapshot."sourceKind"='frozen' and snapshot.state='enumerating' and j.id is null and i.state='pending',false) held
+  case when snapshot."sourceKind"='frozen' and snapshot.state='enumerating' and j.id is null and i.state='pending'
+    then exists (select 1 from job_run held_run where held_run.id=i."runId"
+      and held_run.kind in ('immich-import-derived','library-import-derived')
+      and jsonb_typeof(held_run.selection->'managerSetup')='object') else false end held
   ${selectionItemContext(runScope, materializedInitialEntitlementContext)}
   left join job_queue q on q.name = coalesce(j.queue, i.queue)
   left join lateral (select parent.state from job parent where j."parentId" is not null
@@ -164,7 +167,7 @@ export async function legacyListRuns(db: Kysely<any>, take: number, skip: number
         bool_or(s.outcome = 'blocked' and s.state in ('pending','waiting')) "dependencyWaiting",
         count(*) filter (where s.outcome in ('waiting','retrying') and coalesce(s."availableAt", now()) <= now() and not s.held) ready,
         count(*) filter (where s.outcome = 'active') active,
-        count(distinct s."rootItemKey") filter (where s.held) held
+        count(distinct s."rootItemKey") filter (where s.held and s.stage <> 'IdenticalFilesCheck') held
       from run_stages s group by s."runId"
     ), latest as (
       select distinct on ("runId") "runId", stage, "meaningfulAt" from run_stages

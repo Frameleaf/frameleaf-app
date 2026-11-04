@@ -1,5 +1,5 @@
 import { Kysely, RawBuilder, sql } from 'kysely';
-import { QueueName } from 'src/enum.js';
+import { JobName, QueueName } from 'src/enum.js';
 import {
   initialCanonicalOutcomeContext,
   initialSelectionEntitlementRows,
@@ -154,6 +154,8 @@ const stagesFor = (
   filter: RawBuilder<boolean>,
   runScope: RawBuilder<string>,
   collapse = false,
+  /** FL-1177: whether a row's run is a Manager import, whose first setup holds its stages. */
+  heldRun: RawBuilder<boolean> = sql<boolean>`false`,
 ) => sql`with initial_entitlements as materialized (${initialSelectionEntitlementRows(runScope)})${
   collapse
     ? sql`, shared_roots as materialized (
@@ -185,8 +187,9 @@ const stagesFor = (
   case when j."dependencyReason"='destination-capacity' then 'destination-unavailable' else j."dependencyReason" end "dependencyReason", q.paused,
   greatest(j."progressAt", j."startedAt", j."finishedAt") "meaningfulAt",
   p.state "parentState"${collapse ? sql`,1::bigint weight,false fast` : sql``},
-  -- FL-1177: a frozen stage not yet released (an import's first setup holds it) has nothing to dispatch.
-  coalesce(snapshot."sourceKind"='frozen' and snapshot.state='enumerating' and j.id is null and i.state='pending',false) held
+  -- FL-1177: a stage a Manager import's first setup has not released yet has nothing to dispatch.
+  case when snapshot."sourceKind"='frozen' and snapshot.state='enumerating' and j.id is null and i.state='pending'
+    then ${heldRun} else false end held
   ${selectionItemContext(runScope, materializedInitialEntitlementContext)}
   left join job_queue q on q.name = coalesce(j.queue, i.queue)
   left join lateral (select parent.state from job parent where j."parentId" is not null
@@ -330,12 +333,12 @@ export const runState = (
     }
     return 'completed';
   }
+  // FL-1177: a paused first setup is paused while its last admitted jobs finish, and before it has started.
+  if (row.setupPaused && row.held) return 'paused';
   if (stages.active > 0) {
     return 'running';
   }
   if (row.managerSetupPending) return 'blocked';
-  // FL-1177: what a paused first setup holds back is paused, not waiting its turn.
-  if (row.setupPaused && row.held) return 'paused';
   if (stages.paused > 0 && stages.waiting + stages.retrying + stages.delayed === 0) {
     return 'paused';
   }
@@ -387,16 +390,20 @@ export async function listRuns(db: Kysely<any>, take: number, skip: number, runI
           and nullif(r.selection->'managerSetup'->>'operationId','') is not null
           and r.selection->'managerSetup' ? 'startedAt'
           and r.selection->'managerSetup'->>'startedAt' is null,false) "managerSetupPending",
+        (r.kind in ('immich-import-derived','library-import-derived')
+          and coalesce(jsonb_typeof(r.selection->'managerSetup') = 'object', false)) "managerImport",
         coalesce(r.selection #> '{managerSetup,paused}' = 'true'::jsonb, false) "setupPaused",
         ${parkedStages(sql`r.selection`)} "parkedStages"
       from job_run r
       ${runId === undefined ? sql`` : sql`where r.id = ${runId}::uuid`}
       order by "sortsFinished", r."createdAt" desc, r.id desc limit ${take} offset ${skip}
     ), stages as (${stagesFor(
-      sql<boolean>`i."runId" in (select id from runs)
-        and not exists (select 1 from runs parked where parked.id = i."runId" and i.stage = any(parked."parkedStages"))`,
+      // A parked stage's unstarted items leave the summary; its finished and failed ones stay in it.
+      sql<boolean>`i."runId" in (select id from runs) and not (i."jobId" is null and i.state = 'pending'
+        and exists (select 1 from runs parked where parked.id = i."runId" and i.stage = any(parked."parkedStages")))`,
       sql<string>`select id from runs`,
       true,
+      sql<boolean>`exists (select 1 from runs manager where manager.id = i."runId" and manager."managerImport")`,
     )}), run_stages as (
       select s.* from stages s
     ), selected as (
@@ -421,7 +428,8 @@ export async function listRuns(db: Kysely<any>, take: number, skip: number, runI
         coalesce(sum(s.weight) filter (where s.outcome in ('waiting','retrying') and coalesce(s."availableAt", now()) <= now()
           and not s.held), 0) ready,
         coalesce(sum(s.weight) filter (where s.outcome = 'active'), 0) active,
-        count(distinct s."rootItemKey") filter (where s.held) held
+        -- Photos only: an Immich import's one identical-files item is not one.
+        count(distinct s."rootItemKey") filter (where s.held and s.stage <> ${JobName.IdenticalFilesCheck}) held
       from run_stages s group by s."runId"
     ), latest as (
       select distinct on ("runId") "runId", stage, "meaningfulAt" from run_stages
@@ -469,15 +477,15 @@ export async function listRunItems(
   if (exists.length === 0) {
     return;
   }
-  // An array expression, not `<> all (subquery)`, which would compare each stage with the whole array.
+  // An array expression, not `= any (subquery)`, which would compare each stage with the whole array.
   const parked = sql<
     string[]
   >`coalesce((select ${parkedStages(sql`r.selection`)} from job_run r where r.id = ${runId}::uuid), '{}'::text[])`;
   const { rows } = await sql<RunItemRead>`with roots as materialized (
       select distinct "rootItemKey" from job_run_item where "runId" = ${runId}::uuid and "rootItemKey" is not null
-        and stage <> all(${parked})
+        and not ("jobId" is null and state = 'pending' and stage = any(${parked}))
       order by "rootItemKey" limit ${take} offset ${skip}
-    ), stages as (${stagesFor(sql<boolean>`i."runId" = ${runId}::uuid and i."rootItemKey" in (select "rootItemKey" from roots) and i.stage <> all(${parked})`, sql<string>`${runId}::uuid`)}), selected as (
+    ), stages as (${stagesFor(sql<boolean>`i."runId" = ${runId}::uuid and i."rootItemKey" in (select "rootItemKey" from roots) and not (i."jobId" is null and i.state = 'pending' and i.stage = any(${parked}))`, sql<string>`${runId}::uuid`)}), selected as (
     select s."rootItemKey", ${selectedOutcome()} outcome, ${counts('s')} "stageTotals",
       max(s."meaningfulAt") "lastProgressAt", bool_or(s.state = 'blocked') "dependencyFailed",
       array_agg(distinct s."dependencyReason") filter (where s.state in ('pending','waiting') and s."dependencyReason" = any(${[...DEPENDENCY_REASONS]}::text[])) "dependencyReasons",
