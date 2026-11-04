@@ -195,6 +195,7 @@ test('reset joins unsafe edits while preserving bounded refusals and cleanup', a
           failure = error;
           return /Reset failed/.test(error.message);
         });
+        if (behavior === 'stop') assert.match(failure.message, /lastUnfinishedQueues=unknown/);
         assert.equal(order.includes('mutated'), behavior === 'cleanup');
         assert.equal(order.at(-1), 'closed');
         if (['deadline', 'paused', 'abort'].includes(behavior)) {

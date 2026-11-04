@@ -33,7 +33,7 @@ const run = (args) => {
 let phase = 'initialization';
 let failure = false;
 try {
-  const hadImage = command(['image', 'inspect', image], { stdio: 'ignore' }).status === 0;
+  const hadImage = run(['image', 'ls', '-q', image]) !== '';
   writeFileSync(join(tmpdir(), 'image.json'), JSON.stringify({ createdImage: !hadImage }), { mode: 0o600 });
   const seeds = [];
   for (const [owner, color] of [

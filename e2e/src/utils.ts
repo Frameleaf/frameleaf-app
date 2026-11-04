@@ -295,7 +295,7 @@ export const utils = {
     let phase = 'connect';
     let cleanupPhase = 'not started';
     let lastUnfinished: boolean | undefined;
-    let lastUnfinishedQueues: string[] = [];
+    let lastUnfinishedQueues: string[] | undefined;
     try {
       await ownedWait(
         'Resetting test database',
@@ -705,8 +705,10 @@ export const utils = {
       );
     } catch (error) {
       // Do not let a retry/new test mutate data after uncertain cancellation or cleanup.
+      const unfinishedQueues =
+        lastUnfinishedQueues === undefined ? 'unknown' : lastUnfinishedQueues.join(',') || 'none';
       resetFailure = new Error(
-        `Reset failed: lastControlPhase=${phase}; lastCleanupPhase=${cleanupPhase}; elapsedMs=${Math.round(performance.now() - started)}; lastUnfinished=${lastUnfinished ?? 'unknown'}; lastUnfinishedQueues=${lastUnfinishedQueues.join(',') || 'none'}`,
+        `Reset failed: lastControlPhase=${phase}; lastCleanupPhase=${cleanupPhase}; elapsedMs=${Math.round(performance.now() - started)}; lastUnfinished=${lastUnfinished ?? 'unknown'}; lastUnfinishedQueues=${unfinishedQueues}`,
         { cause: error },
       );
       throw resetFailure;

@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { cleanupQualification, qualificationImage } from '../scripts/cleanup-photoview-qualification.mjs';
 
 const fixture = (t) => {
@@ -31,10 +33,11 @@ test('removes only the labelled run and its unused newly pulled image', (t) => {
   assert.ok(calls.some((args) => args[0] === 'rm' && args.includes('-v') && args.includes('a'.repeat(64))));
   assert.ok(calls.some((args) => args[0] === 'image' && args[1] === 'rm' && args[2] === qualificationImage));
 });
-for (const reason of ['preexisting', 'in-use'])
+for (const reason of ['preexisting', 'in-use', 'unrecorded'])
   test(`retains an ${reason} image`, (t) => {
     const { root } = fixture(t);
     if (reason === 'preexisting') writeFileSync(join(root, 'image.json'), JSON.stringify({ createdImage: false }));
+    if (reason === 'unrecorded') rmSync(join(root, 'image.json'));
     const calls = [];
     cleanupQualification('123-1', root, (args) => {
       calls.push(args);
@@ -58,4 +61,47 @@ test('refuses a mismatched root and cleans private state even when Docker fails'
   );
   assert.equal(existsSync(root), false);
   assert.equal(existsSync(other), true);
+});
+
+test('failed image lookup never records ownership or starts a fixture', (t) => {
+  const { root, parent } = fixture(t);
+  rmSync(join(root, 'image.json'));
+  const bin = join(parent, 'bin'),
+    calls = join(parent, 'calls.jsonl');
+  mkdirSync(bin);
+  writeFileSync(
+    join(bin, 'docker'),
+    `#!/usr/bin/env node
+const { appendFileSync, existsSync } = require('node:fs');
+const { join } = require('node:path');
+const args = process.argv.slice(2);
+appendFileSync(process.env.PHOTOVIEW_FIXTURE_CALLS, JSON.stringify({args, marker: existsSync(join(process.env.TMPDIR, 'image.json'))}) + '\\n');
+process.exit(args[0] === 'image' ? 1 : 0);
+`,
+    { mode: 0o700 },
+  );
+  const result = spawnSync(
+    process.execPath,
+    [fileURLToPath(new URL('../scripts/qualify-photoview-application.mjs', import.meta.url))],
+    {
+      encoding: 'utf8',
+      timeout: 10_000,
+      env: {
+        ...process.env,
+        TMPDIR: root,
+        FRAMELEAF_PHOTOVIEW_RUN_ID: '123-1',
+        PHOTOVIEW_FIXTURE_CALLS: calls,
+        PATH: bin + delimiter + process.env.PATH,
+      },
+    },
+  );
+  assert.equal(result.status, 1);
+  const recorded = readFileSync(calls, 'utf8')
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line));
+  assert.deepEqual(recorded[0].args, ['image', 'ls', '-q', qualificationImage]);
+  assert.ok(recorded.every(({ marker }) => !marker));
+  assert.ok(recorded.every(({ args }) => args[0] !== 'run' && !(args[0] === 'image' && args[1] === 'rm')));
+  assert.equal(existsSync(root), false);
 });
