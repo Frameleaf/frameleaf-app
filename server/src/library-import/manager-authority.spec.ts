@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { PassThrough } from 'node:stream';
+import { PassThrough, Writable } from 'node:stream';
 import {
   replyImportSourceAuthority,
   type ImportSourceAuthority,
@@ -102,4 +102,24 @@ it('refuses malformed review identity before sending a challenge', async () => {
     'import_source_authority_invalid',
   );
   expect(sent).not.toHaveBeenCalled();
+});
+
+it('refuses input errors without exposing the channel error', async () => {
+  const { input, output, authority } = fixture();
+  output.on('data', () => input.emit('error', new Error('synthetic-private-input')));
+  await expect(requestImportSourceAuthority('run', authority, input, output)).rejects.toThrow(
+    'import_source_authority_unavailable',
+  );
+});
+
+it('refuses output write failure without leaving an unhandled stream error', async () => {
+  const { input, authority } = fixture();
+  const output = new Writable({
+    write(_chunk, _encoding, done) {
+      done(new Error('synthetic-private-output'));
+    },
+  });
+  await expect(requestImportSourceAuthority('run', authority, input, output)).rejects.toThrow(
+    'import_source_authority_unavailable',
+  );
 });

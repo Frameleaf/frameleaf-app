@@ -21,6 +21,8 @@ export async function requestImportSourceAuthority(
   await new Promise<void>((resolve, reject) => {
     let settled = false;
     let bytes = 0;
+    let writing = false;
+    let writeFailed = false;
     let reader: ReturnType<typeof createInterface> | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const stream = input as Readable & { ref?: () => void; unref?: () => void };
@@ -31,8 +33,9 @@ export async function requestImportSourceAuthority(
       input.off('data', bounded);
       input.off('error', refused);
       input.off('end', refused);
-      output.off('error', refused);
-      reader?.removeAllListeners();
+      if (!writing && !writeFailed) output.off('error', outputFailed);
+      reader?.removeAllListeners('line');
+      reader?.removeAllListeners('close');
       reader?.close();
       input.pause();
       stream.unref?.();
@@ -40,6 +43,10 @@ export async function requestImportSourceAuthority(
       else reject(new Refusal('import_source_authority_unavailable'));
     };
     const refused = () => finish(false);
+    const outputFailed = () => {
+      writeFailed = true;
+      refused();
+    };
     const bounded = (chunk: Buffer | string) => {
       bytes += typeof chunk === 'string' ? Buffer.byteLength(chunk) : chunk.length;
       if (bytes > 65536) refused();
@@ -49,9 +56,10 @@ export async function requestImportSourceAuthority(
     input.on('data', bounded);
     input.once('error', refused);
     input.once('end', refused);
-    output.once('error', refused);
+    output.once('error', outputFailed);
     reader = createInterface({ input, crlfDelay: Infinity });
     reader.once('close', refused);
+    reader.once('error', refused);
     reader.once('line', (line) => {
       try {
         parseImportSourceAuthorityResponse(line, nonce);
@@ -62,10 +70,14 @@ export async function requestImportSourceAuthority(
     });
     timer = setTimeout(refused, 120_000);
     try {
+      writing = true;
       output.write(challenge, (error) => {
-        if (error) refused();
+        writing = false;
+        if (error) outputFailed();
+        else if (settled) output.off('error', outputFailed);
       });
     } catch {
+      writing = false;
       refused();
     }
   });
