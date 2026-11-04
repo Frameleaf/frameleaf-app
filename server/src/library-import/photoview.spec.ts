@@ -177,6 +177,14 @@ describe('Photoview pinned SQLite extraction', () => {
     const candidate = mediaSchemaVariant(sql);
     expect(() => openPhotoviewSnapshot(candidate, fixture.source.version)).toThrow('PHOTOVIEW_SCHEMA_UNQUALIFIED');
   });
+
+  it('refuses a constraint hidden inside a quoted column name instead of the qualified table tail', () => {
+    const expected = fixture.objects.find((object) => object.type === 'table' && object.name === 'media')!.sql!;
+    const clause = ',CONSTRAINT `uni_media_path_hash` UNIQUE (`path_hash`)';
+    const sql = expected.replace(clause, '').replace('`title`', () => '`title' + clause + '`');
+    const candidate = mediaSchemaVariant(sql);
+    expect(() => openPhotoviewSnapshot(candidate, fixture.source.version)).toThrow('PHOTOVIEW_SCHEMA_UNQUALIFIED');
+  });
   it('refuses broken native foreign-key relationships', () => {
     database.exec('UPDATE media SET album_id=999 WHERE id=1');
     expect(() => openPhotoviewSnapshot(path, 'v2.4.0')).toThrow('PHOTOVIEW_RELATIONSHIPS_INVALID');
