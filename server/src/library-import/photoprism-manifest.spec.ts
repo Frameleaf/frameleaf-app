@@ -148,6 +148,25 @@ describe('PhotoPrism common manifest assembly', () => {
     expect(result.archive.filter((row) => row.table === 'labels')).toHaveLength(8);
     expect(result.archive.filter((row) => row.table === 'photos_labels')).toHaveLength(8);
   });
+  it.each(['none', 'generated', 'rejected'])('deduplicates stored keywords with %s labels', (state) => {
+    const { rows, input, photo } = setup();
+    const logical = rows.find((row) => row.type === 'photo')!;
+    logical.value.metadata.tags = ['family', 'family', 'summer'];
+    if (state !== 'none')
+      addLabel(
+        rows,
+        label(1n, 'Excluded label'),
+        assignment(
+          photo.id as bigint,
+          1n,
+          state === 'generated' ? 'image' : 'manual',
+          state === 'rejected' ? 100n : 0n,
+        ),
+      );
+    const result = assemblePhotoprismManifest(rows, input);
+    expect(result.manifest.assets[0].metadata.tags).toEqual(['family', 'summer']);
+    expect(logical.value.metadata.tags).toEqual(['family', 'family', 'summer']);
+  });
   it('archives an unrepresentable manual label and explicitly reports the loss', () => {
     const { rows, input, photo } = setup();
     addLabel(rows, label(1n, 'Family//Travel'), assignment(photo.id as bigint, 1n));
