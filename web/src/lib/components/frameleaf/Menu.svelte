@@ -262,7 +262,7 @@
   };
 </script>
 
-<div class="menu-root" bind:this={root}>
+<div class="menu-root" class:no-trigger={hideTrigger} bind:this={root}>
   {#if !hideTrigger}
     <button
       bind:this={triggerElement}
@@ -304,6 +304,11 @@
   .menu-root {
     position: relative;
     display: inline-flex;
+  }
+  /* Without a trigger the menu only floats on the page, so its root takes no place in the layout
+     (a sidebar's menu sits beside the sidebar in the page grid). */
+  .menu-root.no-trigger {
+    display: contents;
   }
   button {
     display: inline-flex;

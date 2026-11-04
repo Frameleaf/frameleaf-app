@@ -16,6 +16,16 @@
   color: var(--pc-text);
   min-height: 100dvh;
   font-family: 'Google Sans', sans-serif;
+  /* A column, so a short page still ends with its footer at the bottom of the window, not halfway up
+     it (approved design, 2026-11-04). */
+  display: flex;
+  flex-direction: column;
+}
+.pc > * {
+  flex-shrink: 0;
+}
+.pc > .pc-footer {
+  margin-top: auto;
 }
 .pc[data-palette='ivory'] {
   --pc-bg: #f6f3ed;
@@ -302,6 +312,8 @@
   text-align: center;
 }
 .pc-main {
+  /* Full width up to its cap: the page is a column, where auto margins alone would shrink it. */
+  width: 100%;
   margin: 0 auto;
   max-width: 1500px;
   padding: 70px 5vw;
@@ -530,10 +542,6 @@
   margin-top: 16px;
 }
 /* The entrance sits between the studio's header and footer, in the studio's colours. */
-.pc-gate {
-  display: flex;
-  flex-direction: column;
-}
 .pc-access {
   flex: 1;
   min-height: 480px;

@@ -1,11 +1,22 @@
 <script lang="ts">
+  /**
+   * Watermarks: the one place to design the watermark (approved design, 2026-11-04). Reusable presets,
+   * the default for proofs, web previews and exports, and the branding mark proofs and web previews
+   * carry when no preset is chosen. Branding shows the result and leads here.
+   */
   import { onMount, onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
+  import { AssetMediaSize } from '@frameleaf/sdk';
   import Button from './Button.svelte';
   import { photographyErrorKey } from './PhotographyStatus.svelte';
+  import PhotographyThumb from './PhotographyThumb.svelte';
   import PhotographyWatermarkEditor from './PhotographyWatermarkEditor.svelte';
-  import { loadBrand, saveBrand, type Branding } from '$lib/frameleaf/photography/api';
+  import { brandFonts, loadBrand, saveBrand, type Brand, type Branding } from '$lib/frameleaf/photography/api';
   import { defaultWatermark } from '$lib/frameleaf/photography/workflow-api';
+  import { getAssetMediaUrl } from '$lib/utils';
+
+  /** `photoId`: one of the photographer's own photos, behind the branding mark's preview. */
+  let { photoId = null }: { photoId?: string | null } = $props();
   let draft = $state<Branding | null>(null);
   let active = $state('');
   let busy = $state(false);
@@ -75,6 +86,15 @@
       }
     }
   }
+  /** Quick settings for the branding mark. */
+  function quick(position: Brand['watermarkPosition'], opacity: number, size: number) {
+    if (!draft || busy) {
+      return;
+    }
+    draft.brand.watermarkPosition = position;
+    draft.brand.watermarkOpacity = opacity;
+    draft.brand.watermarkSize = size;
+  }
   function remove() {
     if (!draft || !preset) {
       return;
@@ -96,12 +116,9 @@
 </script>
 
 <div class="phd" aria-busy={busy}>
+  <!-- The page header names the page; this row says what it holds and saves it. -->
   <div class="phd-toolbar">
-    <div>
-      <span class="phd-eyebrow">{$t('frameleaf_photography_studio_branding')}</span>
-      <h2>{$t('frameleaf_photography_watermarks')}</h2>
-      <p>{$t('frameleaf_photography_watermarks_body')}</p>
-    </div>
+    <p>{$t('frameleaf_photography_watermarks_body')}</p>
     <div class="phd-actions">
       <Button disabled={busy} onclick={reload}>{$t('frameleaf_photography_reload')}</Button><Button
         variant="primary"
@@ -162,6 +179,70 @@
       <p>
         {$t('frameleaf_photography_defaults_note')}
       </p>
+    </section>
+    <section class="phd-card phw-branding-mark" aria-busy={busy}>
+      <h3>{$t('frameleaf_photography_branding_mark')}</h3>
+      <p>{$t('frameleaf_photography_branding_mark_body')}</p>
+      <fieldset disabled={busy}>
+        <div class="phw-brand-buttons" role="group" aria-label={$t('frameleaf_photography_watermark_quick')}>
+          <Button onclick={() => quick('bottom-right', 35, 4)}>{$t('frameleaf_photography_watermark_subtle')}</Button
+          ><Button onclick={() => quick('bottom-right', 45, 6)}
+            >{$t('frameleaf_photography_watermark_signature')}</Button
+          ><Button onclick={() => quick('center', 20, 8)}>{$t('frameleaf_photography_position_centre')}</Button>
+        </div>
+        <div class="phd-fields">
+          <label
+            >{$t('frameleaf_photography_position')}<select bind:value={draft.brand.watermarkPosition}
+              ><option value="bottom-right">{$t('frameleaf_photography_position_bottom_right')}</option><option
+                value="bottom-left">{$t('frameleaf_photography_position_bottom_left')}</option
+              ><option value="center">{$t('frameleaf_photography_position_centre')}</option><option value="top-right"
+                >{$t('frameleaf_photography_position_top_right')}</option
+              ></select
+            ></label
+          >
+          <label
+            >{$t('frameleaf_photography_watermark_colour')}<input
+              type="color"
+              bind:value={draft.brand.watermarkColor}
+            /></label
+          >
+          <label
+            >{$t('frameleaf_photography_opacity_value', { values: { value: draft.brand.watermarkOpacity } })}<input
+              type="range"
+              min="10"
+              max="100"
+              step="1"
+              bind:value={draft.brand.watermarkOpacity}
+            /></label
+          >
+          <label
+            >{$t('frameleaf_photography_size_value', { values: { value: draft.brand.watermarkSize } })}<input
+              type="range"
+              min="3"
+              max="12"
+              step="1"
+              bind:value={draft.brand.watermarkSize}
+            /></label
+          >
+        </div>
+      </fieldset>
+      <div
+        class="phw-watermark-guide"
+        class:has-photo={!!photoId}
+        aria-label={$t('frameleaf_photography_placement_guide_label')}
+      >
+        {#if photoId}<PhotographyThumb
+            src={getAssetMediaUrl({ id: photoId, size: AssetMediaSize.Preview })}
+            loading="eager"
+          />{:else}<span class="phw-guide-label">{$t('frameleaf_photography_placement_guide')}</span>{/if}<span
+          class="phw-guide-mark"
+          data-position={draft.brand.watermarkPosition}
+          style:color={draft.brand.watermarkColor}
+          style:opacity={draft.brand.watermarkOpacity / 100}
+          style:font-size={`${draft.brand.watermarkSize * 3}px`}
+          style:font-family={brandFonts[draft.brand.font]}>{draft.brand.logoInitials || draft.brand.name}</span
+        >
+      </div>
     </section>
   {:else}<p role="status">
       {busy ? $t('frameleaf_photography_loading_presets') : $t('frameleaf_photography_reload_to_retry')}

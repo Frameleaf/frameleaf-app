@@ -1,6 +1,9 @@
 <script module lang="ts">
-  /** A shoot's own sections, in working order: the tabs under the shoot strip. */
-  export const shootTabs = ['photos', 'intake', 'workflow', 'orders', 'presentation'] as const;
+  /**
+   * A shoot's own sections, in working order: the tabs under the shoot strip. The gallery is one of
+   * them (approved design, 2026-11-04), so the row always shows where you are.
+   */
+  export const shootTabs = ['photos', 'intake', 'workflow', 'orders', 'galleries', 'presentation'] as const;
   export type ShootTab = (typeof shootTabs)[number];
 </script>
 

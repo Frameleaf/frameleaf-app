@@ -3,10 +3,11 @@
    * The photography workspace: a photographer's shoots, each linked to an album they own, with
    * culling, client workflow, presentation and publishing.
    *
-   * One noun, "shoot", everywhere. The rail holds the studio-wide places (Shoots, Galleries, Studio
-   * website, Watermarks, Branding). An open shoot's own sections are tabs under its strip
-   * (PhotographyShootTabs); a section's header names the section and carries a shoot picker, so the
-   * shoot stays open while moving between them and each section has one name (PhotographyStatus).
+   * One noun, "shoot", everywhere. The rail holds Shoots, then the pages of one shoot under its name
+   * (Intake & assembly, Client workflow, Orders & delivery, Gallery, Presentation), then the Studio
+   * pages (Website, Watermarks, Branding) (approved design, 2026-11-04). The same shoot pages are tabs
+   * under the shoot's strip (PhotographyShootTabs); a shoot page's header carries the shoot picker, so
+   * the shoot stays open while moving between them and each page has one name (PhotographyStatus).
    *
    * Culling never stops: a rating shows at once and saves behind it, one tile at a time. A rating
    * that could not be saved puts that tile back and offers a retry on the tile. Click a photograph to
@@ -26,7 +27,9 @@
     type AssetDevelopResponseDto,
   } from '@frameleaf/sdk';
   import {
+    mdiAccountHeartOutline,
     mdiArrowLeft,
+    mdiBrushOutline,
     mdiCameraIris,
     mdiCameraOutline,
     mdiCheckAll,
@@ -35,6 +38,7 @@
     mdiClockOutline,
     mdiCloseCircleOutline,
     mdiEmailOutline,
+    mdiFolderDownloadOutline,
     mdiHeartOutline,
     mdiImageEditOutline,
     mdiImageMultipleOutline,
@@ -47,7 +51,7 @@
     mdiStarOutline,
     mdiTrayArrowDown,
     mdiTune,
-    mdiWatermark,
+    mdiViewDashboardOutline,
     mdiWeb,
   } from '@mdi/js';
   import type { Translations } from 'svelte-i18n';
@@ -91,17 +95,22 @@
 
   /** A shoot's tabs after Photographs; Photographs itself is the open shoot under `shoots`. */
   type ShootSection = Exclude<ShootTab, 'photos'>;
-  type Section = 'shoots' | 'galleries' | 'branding' | 'watermarks' | 'website' | ShootSection;
+  type Section = 'shoots' | 'branding' | 'watermarks' | 'website' | ShootSection;
   type PhotoFilter = 'all' | 'selected' | 'edited';
   type ShootFilter = 'all' | 'active' | 'Proofing' | 'Delivered';
   type NextAction = { label: string; icon: string; section: Section; rank: number };
 
-  const shootSectionIds: ReadonlySet<Section> = new Set<ShootSection>(['intake', 'workflow', 'orders', 'presentation']);
-  const isShootSection = (value: Section): value is ShootSection => shootSectionIds.has(value);
-  /** Sections that work on one shoot at a time, chosen with the picker in the header. */
-  const picksShoot = (value: Section) => isShootSection(value) || value === 'galleries';
-  /** The prototype's subtitle for each section that works on one shoot. */
-  const sectionLeads: Record<ShootSection | 'galleries', Translations> = {
+  /** The pages of one shoot, in the rail under its name; the shoot is chosen with the picker in the header. */
+  const shootPages: { id: ShootSection; icon: string }[] = [
+    { id: 'intake', icon: mdiFolderDownloadOutline },
+    { id: 'workflow', icon: mdiAccountHeartOutline },
+    { id: 'orders', icon: mdiClipboardCheckOutline },
+    { id: 'galleries', icon: mdiImageMultipleOutline },
+    { id: 'presentation', icon: mdiViewDashboardOutline },
+  ];
+  const isShootSection = (value: Section): value is ShootSection => shootPages.some(({ id }) => id === value);
+  /** The prototype's subtitle for each page of a shoot. */
+  const sectionLeads: Record<ShootSection, Translations> = {
     intake: 'frameleaf_photography_intake_lead',
     workflow: 'frameleaf_photography_workflow_lead',
     orders: 'frameleaf_photography_orders_lead',
@@ -153,6 +162,9 @@
   let sort = $state('date');
   // svelte-ignore state_referenced_locally
   let activeId = $state<string | null>(initialShoot ?? null);
+  /** The shoot opened last: the rail keeps its pages after going back to the list of shoots. */
+  // svelte-ignore state_referenced_locally
+  let lastShootId = $state<string | null>(initialShoot ?? null);
   let photos = $state<Photo[]>([]);
   let photoLoading = $state(false);
   let photoError = $state('');
@@ -170,6 +182,15 @@
   let versionsLoading = $state(false);
   let grid = $state<HTMLElement>();
   let scroller = $state<HTMLElement>();
+  let railNav = $state<HTMLElement>();
+  // Phones show the rail as one row that scrolls sideways: keep the page you're on in view.
+  $effect(() => {
+    void section;
+    void railShoot;
+    if (railNav && matchMedia('(max-width: 600px)').matches) {
+      railNav.querySelector('[aria-current="page"]')?.scrollIntoView({ inline: 'center', block: 'nearest' });
+    }
+  });
   // Opening a shoot or another section starts at its top, not at the scroll offset the list had.
   $effect(() => {
     void activeId;
@@ -243,12 +264,10 @@
       : section === 'watermarks'
         ? $t('frameleaf_photography_watermarks')
         : section === 'website'
-          ? $t('frameleaf_photography_studio_website')
-          : section === 'galleries'
-            ? $t('frameleaf_photography_galleries')
-            : isShootSection(section)
-              ? $t(shootSectionKeys[section])
-              : (active?.name ?? $t('frameleaf_photography_shoots')),
+          ? $t('frameleaf_photography_website')
+          : isShootSection(section)
+            ? $t(shootSectionKeys[section])
+            : (active?.name ?? $t('frameleaf_photography_shoots')),
   );
   const subtitle = $derived(
     section === 'branding'
@@ -257,16 +276,18 @@
         ? $t('frameleaf_photography_watermarks_lead')
         : section === 'website'
           ? $t('frameleaf_photography_website_lead')
-          : picksShoot(section)
-            ? $t(sectionLeads[section as ShootSection | 'galleries'])
+          : isShootSection(section)
+            ? $t(sectionLeads[section])
             : active
               ? `${active.client} · ${$t(shootTypeKeys[active.type])} · ${dateLabel(active.date)}`
               : $t('frameleaf_photography_shoots_lead'),
   );
   const summaryFor = (id: string) => workflowSummaries.find((row) => row.shootId === id);
-  /** Client galleries that have been published: the rail's count beside Galleries. */
-  const galleryCount = $derived(
-    workflowSummaries.filter((row) => row.published && workspace.shoots.some(({ id }) => id === row.shootId)).length,
+  /** The shoot whose pages the rail lists: the open one, else the one opened last, else the newest. */
+  const railShoot = $derived(
+    active ??
+      workspace.shoots.find(({ id }) => id === lastShootId) ??
+      [...workspace.shoots].sort((a, b) => b.date.localeCompare(a.date))[0],
   );
   /** A photo of the photographer's own for the branding preview: the open shoot's cover, else any. */
   const samplePhotoId = $derived(
@@ -447,6 +468,7 @@
       }
       return;
     }
+    lastShootId = id;
     details = { name: shoot.name, client: shoot.client, stage: shoot.stage };
     photos = [];
     nextCursor = null;
@@ -528,17 +550,12 @@
     await openShoot(id);
   }
 
-  /** Galleries works on one shoot: the open one, else the first with a published gallery. */
-  function openGalleries() {
-    section = 'galleries';
+  /** A shoot's page from the rail: of the open shoot, else of the shoot the rail names. */
+  function openPage(page: ShootSection) {
     if (active) {
-      return;
-    }
-    const id =
-      workflowSummaries.find((row) => row.published && workspace.shoots.some((shoot) => shoot.id === row.shootId))
-        ?.shootId ?? workspace.shoots[0]?.id;
-    if (id) {
-      void openShoot(id);
+      section = page;
+    } else if (railShoot) {
+      void openShootAt(railShoot.id, page);
     }
   }
 
@@ -757,10 +774,10 @@
       <span class="phw-brand-mark"><Icon icon={mdiCameraIris} size="1.2rem" aria-hidden={true} /></span>
       <div><strong>{authManager.user.name}</strong><small>{$t('frameleaf_photography_workspace')}</small></div>
     </div>
-    <nav aria-label={$t('frameleaf_photography_workspace')}>
+    <nav aria-label={$t('frameleaf_photography_workspace')} bind:this={railNav}>
       <button
         type="button"
-        aria-current={section === 'shoots' && !active ? 'page' : undefined}
+        aria-current={section === 'shoots' ? 'page' : undefined}
         disabled={busy}
         onclick={() => {
           const returning = section !== 'shoots';
@@ -770,16 +787,22 @@
           }
         }}><Icon icon={mdiCameraOutline} size="1.2rem" aria-hidden={true} />{$t('frameleaf_photography_shoots')}</button
       >
-      <button
-        type="button"
-        aria-current={section === 'galleries' ? 'page' : undefined}
-        disabled={busy}
-        onclick={openGalleries}
-        ><Icon icon={mdiImageMultipleOutline} size="1.2rem" aria-hidden={true} /><span
-          >{$t('frameleaf_photography_galleries')}</span
-        >{#if galleryCount}<small class="phw-nav-count">{galleryCount}</small>{/if}</button
-      >
-      {#each [['website', $t('frameleaf_photography_studio_website'), mdiWeb], ['watermarks', $t('frameleaf_photography_watermarks'), mdiWatermark], ['branding', $t('frameleaf_photography_branding'), mdiPaletteOutline]] as const as [id, label, icon] (id)}
+      {#if railShoot}
+        <p class="phw-rail-heading" title={$t('frameleaf_photography_pages_for', { values: { name: railShoot.name } })}>
+          <Icon icon={mdiCameraOutline} size="0.8rem" aria-hidden={true} /><span>{railShoot.name}</span>
+        </p>
+        {#each shootPages as page (page.id)}
+          <button
+            type="button"
+            aria-current={section === page.id ? 'page' : undefined}
+            disabled={busy}
+            onclick={() => openPage(page.id)}
+            ><Icon icon={page.icon} size="1.2rem" aria-hidden={true} />{$t(shootSectionKeys[page.id])}</button
+          >
+        {/each}
+      {/if}
+      <p class="phw-rail-heading">{$t('frameleaf_photography_studio_heading')}</p>
+      {#each [['website', $t('frameleaf_photography_website'), mdiWeb], ['watermarks', $t('frameleaf_photography_watermarks'), mdiBrushOutline], ['branding', $t('frameleaf_photography_branding'), mdiPaletteOutline]] as const as [id, label, icon] (id)}
         <button
           type="button"
           aria-current={section === id ? 'page' : undefined}
@@ -820,11 +843,13 @@
             savedLabel={message}
           />
         </span>
-        {#if section === 'shoots'}<span class="phw-new-shoot-action" class:in-shoot={!!active}
-            ><Button variant="primary" disabled={loading || busy || !!error} onclick={startShoot}
-              ><Icon icon={mdiPlus} size="1rem" aria-hidden={true} />{$t('frameleaf_photography_new_shoot')}</Button
-            ></span
-          >{:else if picksShoot(section) && workspace.shoots.length > 0}<select
+        <!-- A shoot's own page has no New shoot (approved design, 2026-11-04). -->
+        {#if section === 'shoots' && !active}<Button
+            variant="primary"
+            disabled={loading || busy || !!error}
+            onclick={startShoot}
+            ><Icon icon={mdiPlus} size="1rem" aria-hidden={true} />{$t('frameleaf_photography_new_shoot')}</Button
+          >{:else if isShootSection(section) && workspace.shoots.length > 0}<select
             class="phw-shoot-picker"
             aria-label={$t('frameleaf_photography_current_shoot')}
             value={activeId ?? ''}
@@ -849,16 +874,17 @@
           onSaved={() => {
             void reload();
           }}
+          onDesignWatermark={() => (section = 'watermarks')}
         />
-      {:else if section === 'watermarks'}<PhotographyWatermarks />
+      {:else if section === 'watermarks'}<PhotographyWatermarks photoId={samplePhotoId} />
       {:else if section === 'website'}<PhotographyWebsite
           shoots={workspace.shoots}
           onEditBrand={() => (section = 'branding')}
         />
-      {:else if picksShoot(section)}
+      {:else if isShootSection(section)}
         {#if active}{#key `${active.id}:${section}`}<PhotographyWorkflow
               shoot={active}
-              panel={section === 'galleries' ? 'publishing' : (section as ShootSection)}
+              panel={section === 'galleries' ? 'publishing' : section}
               onSection={openTab}
               onGalleries={() => (section = 'galleries')}
             />{/key}

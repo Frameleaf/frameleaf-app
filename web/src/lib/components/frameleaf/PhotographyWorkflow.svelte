@@ -46,10 +46,11 @@
     onGalleries,
   }: {
     shoot: Shoot;
-    panel?: Exclude<ShootTab, 'photos'> | 'publishing';
+    /** `publishing` is the shoot's Gallery tab. */
+    panel?: Exclude<ShootTab, 'photos' | 'galleries'> | 'publishing';
     /** Another tab under the strip; without it the tabs are not shown. */
     onSection?: (tab: ShootTab) => void;
-    /** The Galleries section, where invitations, passwords and expiry live. */
+    /** The shoot's Gallery, where invitations, passwords and expiry live. */
     onGalleries?: () => void;
   } = $props();
   /** The three ways of working a client gallery, as cards (PhotographyWorkflow.jsx WORKFLOW_MODES). */
@@ -572,7 +573,7 @@
         )}</Button
       >
     </div>
-    {#if onSection && panel !== 'publishing'}<PhotographyShootTabs current={panel} {onSection} />{/if}
+    {#if onSection}<PhotographyShootTabs current={panel === 'publishing' ? 'galleries' : panel} {onSection} />{/if}
   </div>
   {#if error}<div class="phw-notice" role="alert">
       {error}<Button disabled={busy} onclick={reload}>{$t('frameleaf_photography_reload')}</Button>
@@ -1457,9 +1458,13 @@
           /></label
         >{#each draft.orders as order (order.id)}<article class="phd-order">
             <div class="phd-row">
-              <strong>{recipient(order.recipientId)} · {money(order.total, order.currency)}</strong><span
-                >{named('order', order.status)}</span
-              >
+              <strong>{recipient(order.recipientId)}</strong><span>{named('order', order.status)}</span>
+              <!-- The amount says what it is (approved design, 2026-11-04). -->
+              <p class="phd-order-total">
+                <small>{$t('frameleaf_photography_order_total')}</small><strong
+                  >{money(order.total, order.currency)}</strong
+                >
+              </p>
             </div>
             <p>
               {$t('frameleaf_photography_photographs_count', { values: { count: order.captureIds.length } })} · {order.paymentTiming ===

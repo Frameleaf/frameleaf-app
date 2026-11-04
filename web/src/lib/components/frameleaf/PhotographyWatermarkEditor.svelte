@@ -119,26 +119,27 @@
           ><option value="sans">{$t('frameleaf_photography_wm_font_sans')}</option></select
         ></label
       >
-      <label
-        >{$t('frameleaf_photography_wm_logo_field')}<select bind:value={value.logoAssetId}
-          ><option value={null}>{$t('frameleaf_photography_wm_choose_logo')}</option
-          >{#each logos as logo (logo.id)}<option value={logo.id}>{logo.fileName}</option>{/each}</select
-        ></label
-      >
-      <label
-        >{$t('frameleaf_photography_wm_logo_variant')}<select bind:value={value.logoVariant}
-          ><option value="original">{$t('frameleaf_photography_wm_variant_original')}</option><option value="light"
-            >{$t('frameleaf_photography_light')}</option
-          ><option value="dark">{$t('frameleaf_photography_dark')}</option></select
-        ></label
-      >
-      <label
-        >{$t('frameleaf_photography_wm_logo_placement')}<select bind:value={value.logoPosition}
-          >{#each ['above', 'below', 'left', 'right'] as const as position (position)}<option value={position}
-              >{positionLabel(position)}</option
-            >{/each}</select
-        ></label
-      >
+      <!-- The logo is asked for only when the mark uses it (approved design, 2026-11-04). -->
+      {#if value.type !== 'text'}<label
+          >{$t('frameleaf_photography_wm_logo_field')}<select bind:value={value.logoAssetId}
+            ><option value={null}>{$t('frameleaf_photography_wm_choose_logo')}</option
+            >{#each logos as logo (logo.id)}<option value={logo.id}>{logo.fileName}</option>{/each}</select
+          ></label
+        >
+        <label
+          >{$t('frameleaf_photography_wm_logo_variant')}<select bind:value={value.logoVariant}
+            ><option value="original">{$t('frameleaf_photography_wm_variant_original')}</option><option value="light"
+              >{$t('frameleaf_photography_light')}</option
+            ><option value="dark">{$t('frameleaf_photography_dark')}</option></select
+          ></label
+        >
+        <label
+          >{$t('frameleaf_photography_wm_logo_placement')}<select bind:value={value.logoPosition}
+            >{#each ['above', 'below', 'left', 'right'] as const as position (position)}<option value={position}
+                >{positionLabel(position)}</option
+              >{/each}</select
+          ></label
+        >{/if}
       <label
         >{$t('frameleaf_photography_wm_alignment')}<select bind:value={value.alignment}
           >{#each ['left', 'center', 'right'] as const as alignment (alignment)}<option value={alignment}
@@ -147,11 +148,11 @@
         ></label
       >
     </div>
-    <div class="phd-actions">
-      <Button onclick={uploadLogo}>{$t('frameleaf_photography_wm_upload_logo')}</Button>{#if cursor}<Button
-          onclick={moreLogos}>{$t('frameleaf_photography_wm_more_logos')}</Button
-        >{/if}
-    </div>
+    {#if value.type !== 'text'}<div class="phd-actions">
+        <Button onclick={uploadLogo}>{$t('frameleaf_photography_wm_upload_logo')}</Button>{#if cursor}<Button
+            onclick={moreLogos}>{$t('frameleaf_photography_wm_more_logos')}</Button
+          >{/if}
+      </div>{/if}
     <div class="phd-fields">
       <label
         >{$t('frameleaf_photography_wm_pattern')}<select bind:value={value.pattern}
@@ -178,15 +179,15 @@
           bind:value={value.size}
         /></label
       >
-      <label
-        >{$t('frameleaf_photography_wm_logo_scale', { values: { value: value.logoScale } })}<input
-          type="range"
-          min="0.25"
-          max="4"
-          step="0.25"
-          bind:value={value.logoScale}
-        /></label
-      >
+      {#if value.type !== 'text'}<label
+          >{$t('frameleaf_photography_wm_logo_scale', { values: { value: value.logoScale } })}<input
+            type="range"
+            min="0.25"
+            max="4"
+            step="0.25"
+            bind:value={value.logoScale}
+          /></label
+        >{/if}
       <label
         >{$t('frameleaf_photography_opacity_value', { values: { value: value.opacity } })}<input
           type="range"

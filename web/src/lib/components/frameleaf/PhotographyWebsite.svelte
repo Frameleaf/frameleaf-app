@@ -318,12 +318,9 @@
 </script>
 
 <div class="phd" aria-busy={busy}>
+  <!-- The page header names the page (approved design, 2026-11-04); this row publishes and saves it. -->
   <div class="phd-toolbar">
-    <div>
-      <span class="phd-eyebrow">{$t('frameleaf_photography_site_eyebrow')}</span>
-      <h2>{$t('frameleaf_photography_studio_website')}</h2>
-      <p>{$t('frameleaf_photography_site_lead')}</p>
-    </div>
+    <p>{$t('frameleaf_photography_site_lead')}</p>
     <div class="phd-actions">
       {#if draft}
         <label class="sse-switch"

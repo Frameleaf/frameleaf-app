@@ -93,6 +93,12 @@ export type Brand = {
   exportWatermarkPresetId?: string | null;
 };
 export type Branding = { revision: string | null; brand: Brand; logoUnavailable: boolean };
+/** The font stack each brand typography choice previews with. */
+export const brandFonts: Record<Brand['font'], string> = {
+  editorial: 'Georgia, serif',
+  modern: 'system-ui, sans-serif',
+  classic: 'Palatino, Georgia, serif',
+};
 export type LogoPage = { nextCursor: string | null; logos: { id: string; fileName: string }[] };
 export const loadBrand = () => request<Branding>('/branding');
 export const saveBrand = (

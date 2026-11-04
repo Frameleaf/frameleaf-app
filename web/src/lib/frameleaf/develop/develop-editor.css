@@ -566,10 +566,31 @@
   background: var(--fl-panel);
   scrollbar-width: thin;
 }
+/* Thumbnail on top; below it the checkbox and the stars share one row, never overlapping. The file type
+   is a corner badge on the thumbnail (approved design, 2026-11-04). */
 .rde-film-frame {
   position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  row-gap: 7px;
   width: 92px;
   flex-shrink: 0;
+}
+.rde-film-frame > .rde-film-photo {
+  grid-column: 1 / -1;
+}
+.rde-film-ext {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: #0007;
+  color: white;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.3;
 }
 .rde-film-photo {
   position: relative;
@@ -617,19 +638,14 @@
 .rde-film-select {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 8px;
   color: var(--fl-muted);
-  font-size: 9px;
 }
 .rde-film-select input {
   width: 12px !important;
   height: 12px !important;
 }
 .rde-film-frame > .rde-stars {
-  position: absolute;
-  right: 0;
-  bottom: -1px;
+  justify-self: end;
   gap: 0;
 }
 
@@ -1216,8 +1232,18 @@
   .rde-workspace:has(.rde-inspector.open) .rde-film-frame {
     width: 70px;
   }
-  .rde-workspace:has(.rde-inspector.open) .rde-film-select span {
-    display: none;
+  /* Narrow frames: the checkbox moves onto the thumbnail's corner and the stars take the row. */
+  .rde-workspace:has(.rde-inspector.open) .rde-film-select {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    padding: 2px;
+    border-radius: 3px;
+    background: #0007;
+  }
+  .rde-workspace:has(.rde-inspector.open) .rde-film-frame > .rde-stars {
+    grid-column: 1 / -1;
+    justify-self: center;
   }
   .rde-image-status {
     padding-inline: 16px;

@@ -81,6 +81,31 @@
   align-items: center;
   margin: 12px 0;
 }
+/* Rhythm inside a panel (approved design, 2026-11-04): rows, buttons and notes never sit on what comes
+   before, and checkboxes that follow each other are divided. */
+.phd-card > :where(label, .phd-fields, .phd-order, p) + :where(.phd-row, .phd-actions, .fl-control),
+.phd-order > .fl-control {
+  margin-top: 18px;
+}
+.phd-order-total {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  margin: 0 0 0 auto;
+}
+.phd-order-total small {
+  font-size: var(--fl-font-small);
+}
+.phd-order-total strong {
+  font-size: var(--fl-font-title);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.phd-card > label:has(> input[type='checkbox']) + label:has(> input[type='checkbox']) {
+  margin-top: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--fl-border);
+}
 .phd :where(input:not([type='checkbox'], [type='range'], [type='color']), select, textarea) {
   width: 100%;
   padding: 10px var(--fl-space-3);
@@ -99,9 +124,27 @@
 .phd input[type='range'] {
   width: 100%;
 }
-.phd input[type='color'] {
-  height: 38px;
-  width: 100%;
+/* The browser's colour picker, dressed like the rest of Clients (approved design, 2026-11-04). */
+.phw input[type='color'] {
+  flex: none;
+  width: 56px;
+  height: 36px;
+  padding: 3px;
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-control);
+  background: var(--fl-raised);
+  cursor: pointer;
+}
+.phw input[type='color']::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+.phw input[type='color']::-webkit-color-swatch {
+  border: 1px solid var(--fl-border);
+  border-radius: 5px;
+}
+.phw input[type='color']::-moz-color-swatch {
+  border: 0;
+  border-radius: 5px;
 }
 .phd small {
   display: block;
@@ -374,6 +417,36 @@
 .phw-rail nav button[aria-current='page'] > svg,
 .phw-rail-bottom > svg,
 .phw-save svg {
+  color: var(--fl-accent);
+}
+/* Groups in the rail: the shoot chosen in the header, then the studio (approved design, 2026-11-04). */
+.phw-rail-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin: 14px 10px 4px;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-micro);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.phw-rail-heading span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The shoot's own name reads as a name, not a label. */
+.phw-rail-heading:has(svg) {
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+  letter-spacing: 0;
+  text-transform: none;
+}
+.phw-rail-heading svg {
+  flex: none;
   color: var(--fl-accent);
 }
 .phw-rail-bottom {
@@ -710,11 +783,44 @@
   height: 100%;
   object-fit: cover;
 }
+/* The same round selector as the library's photos (approved design, 2026-11-04): it shows on hover or
+   focus, on touch screens, and on every photo once anything is selected. */
 .phw-photo-select {
   position: absolute;
-  top: 9px;
-  left: 9px;
-  accent-color: var(--fl-accent);
+  top: 8px;
+  left: 8px;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  appearance: none;
+  border: 2px solid rgb(255 255 255 / 90%);
+  border-radius: 50%;
+  background: rgb(0 0 0 / 30%) center / 14px no-repeat;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 40%);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity var(--fl-motion-fast) var(--fl-ease),
+    background-color var(--fl-motion-fast) var(--fl-ease);
+}
+.phw-photo:hover .phw-photo-select,
+.phw-photo:focus-within .phw-photo-select,
+.phw-photo-grid:has(.phw-photo-select:checked) .phw-photo-select {
+  opacity: 1;
+}
+.phw-photo-select:checked {
+  border-color: var(--fl-accent);
+  background-color: var(--fl-accent);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='white' d='M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z'/%3E%3C/svg%3E");
+}
+.phw-photo-select:focus-visible {
+  outline: var(--fl-focus-ring);
+  outline-offset: var(--fl-focus-offset);
+}
+@media (hover: none) {
+  .phw-photo-select {
+    opacity: 1;
+  }
 }
 .phw-raw,
 .phw-edited {
@@ -915,7 +1021,8 @@
   .phw {
     flex-direction: column;
   }
-  /* The prototype's phone rail: the back link over a grid of icon tiles, every section in view. */
+  /* The phone rail: the back link over one row of pages that scrolls sideways, like the library's
+     filters (approved design, 2026-11-04). */
   .phw-rail {
     flex-basis: auto;
     flex-shrink: 0;
@@ -928,22 +1035,31 @@
     display: none;
   }
   .phw-rail nav {
-    display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 4px;
-    margin-bottom: 0;
+    flex-direction: row;
+    gap: 6px;
+    margin: 0 -12px;
+    padding: 2px 12px 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .phw-rail nav::-webkit-scrollbar {
+    display: none;
+  }
+  .phw-rail-heading {
+    display: none;
   }
   .phw-rail nav button {
-    flex-direction: column;
-    justify-content: center;
-    gap: 3px;
-    min-height: 48px;
-    padding: 6px 2px;
-    font-size: 10px;
-    text-align: center;
+    flex: none;
+    gap: 6px;
+    min-height: 34px;
+    padding: 7px 12px;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-pill);
+    font-size: var(--fl-font-small);
+    white-space: nowrap;
   }
-  .phw-rail nav .phw-nav-heading {
-    grid-column: 1 / -1;
+  .phw-rail nav button[aria-current='page'] {
+    border-color: color-mix(in srgb, var(--fl-accent) 45%, var(--fl-border));
   }
   .phw-return {
     padding: 4px 3px;
@@ -1025,62 +1141,73 @@
 .phw-brand-main {
   min-width: 0;
 }
-.phw-brand-intro {
-  margin: 0 0 20px;
-}
-.phw-brand-intro h2 {
-  font-size: 16px;
-  font-weight: 600;
-  margin-bottom: 8px;
-}
-.phw-brand-intro p {
-  font-size: var(--fl-font-small);
-  color: var(--fl-muted);
-  line-height: 1.6;
-}
-.phw-brand-card {
+/* Branding (approved design, 2026-11-04): the identity on a quiet card, the watermark as a small
+   preview with a summary that leads to Watermarks, then the colours. */
+.phw-brand-preview {
   display: flex;
   flex-direction: column;
+  justify-content: center;
   align-items: center;
-  padding: 52px 24px;
+  min-height: 220px;
+  padding: 26px;
   border: 1px solid var(--fl-border);
   border-radius: var(--fl-radius-card);
-  margin-bottom: 28px;
+  background: var(--fl-panel);
   text-align: center;
   overflow-wrap: anywhere;
 }
-.phw-brand-logo {
-  display: grid;
-  place-items: center;
-  width: 76px;
-  height: 76px;
-  margin-bottom: 22px;
-  border-radius: 50%;
+.phw-brand-mark.large {
+  width: 56px;
+  height: 64px;
+  margin-bottom: 15px;
   overflow: hidden;
-  color: white;
-  font-size: 24px;
+  font-family: Georgia, serif;
+  font-size: 26px;
+  letter-spacing: -1px;
 }
-.phw-brand-logo img {
+.phw-brand-mark img {
   width: 100%;
   height: 100%;
   object-fit: contain;
 }
-.phw-brand-card h2 {
-  font-size: 30px;
-  margin-bottom: 8px;
+.phw-brand-preview h2 {
+  font-size: var(--fl-font-title);
+  font-weight: 400;
 }
-.phw-brand-card > p {
+.phw-brand-preview p {
+  margin: 8px 0 12px;
+  color: var(--fl-muted);
   font-size: var(--fl-font-callout);
 }
-.phw-brand-contact {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 18px;
-  font:
-    11px system-ui,
-    sans-serif;
-  margin-top: 28px;
+.phw-brand-preview > span:last-child {
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+}
+.phw-brand-watermark {
+  display: grid;
+  grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: center;
+  margin-top: 24px;
+  padding: 16px;
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-card);
+  background: var(--fl-panel);
+}
+.phw-brand-watermark h2 {
+  margin: 0 0 6px;
+  font-size: var(--fl-font-size);
+  font-weight: 600;
+}
+.phw-brand-watermark p {
+  margin: 0 0 14px;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-callout);
+}
+@media (max-width: 700px) {
+  .phw-brand-watermark {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .phw-watermark-guide {
   position: relative;
@@ -1096,6 +1223,22 @@
   height: auto;
   aspect-ratio: 16 / 9;
   max-height: 520px;
+}
+.phw-watermark-guide.is-small {
+  height: 160px;
+  aspect-ratio: auto;
+  margin: 0;
+}
+.phw-watermark-guide.is-small > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.phw-branding-mark .phw-watermark-guide {
+  max-width: 560px;
+  margin: 18px 0 0;
 }
 .phw-watermark-guide > img,
 .phw-watermark-guide > .ph-thumb-missing {
@@ -1140,25 +1283,24 @@
 }
 .phw-brand-swatches {
   display: flex;
-  gap: 16px;
-  margin-top: 16px;
+  gap: 8px;
+  align-items: center;
+  margin-top: 20px;
 }
-.phw-brand-swatches > div {
-  display: flex;
-  flex-direction: column;
-  gap: var(--fl-space-2);
-  font-size: var(--fl-font-micro);
-}
-.phw-brand-swatches i {
-  width: 64px;
-  height: 44px;
-  border-radius: var(--fl-radius-sm);
+.phw-brand-swatches > span {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
   border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-sm);
 }
-.phw-brand-swatches small {
+.phw-brand-swatches p {
+  margin: 0 0 0 7px;
   color: var(--fl-muted);
+  font-size: var(--fl-font-small);
 }
-.phw-brand-controls fieldset {
+.phw-brand-controls fieldset,
+.phw-branding-mark fieldset {
   border: 0;
   padding: 0;
   min-width: 0;
@@ -1172,10 +1314,6 @@
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
-}
-.phw-color-field input {
-  width: 40px;
-  padding: 3px;
 }
 .phw-logo-grid {
   display: grid;
@@ -1278,11 +1416,6 @@
 }
 
 /* PhotographyWorkflow.jsx: the shoot list's overview, the shoot strip and its tabs (STUDIO-P2, P4). */
-.phw-nav-count {
-  margin-inline-start: auto;
-  font-size: var(--fl-font-micro);
-  color: var(--fl-muted);
-}
 .phw-shoot-picker {
   max-width: 260px;
   min-height: var(--fl-control-height-compact);
@@ -1585,21 +1718,6 @@
   }
   .phw-shoot-picker {
     max-width: 150px;
-  }
-  /* With a shoot open the phone header keeps its width for the shoot's name. */
-  .phw-new-shoot-action.in-shoot {
-    display: none;
-  }
-  /* On the phone's icon tiles the count is a small badge in the tile's corner. */
-  .phw-rail nav button {
-    position: relative;
-  }
-  .phw-nav-count {
-    position: absolute;
-    top: 4px;
-    right: 6px;
-    margin: 0;
-    font-size: 10px;
   }
   /* The counts wrap under the shoot's name rather than vanish behind the Client preview button. */
   .phx-project-text small {
