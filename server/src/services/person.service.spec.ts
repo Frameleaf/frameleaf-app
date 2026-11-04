@@ -48,6 +48,8 @@ describe(PersonService.name, () => {
     mocks.person.getAssetIdsForPeople.mockResolvedValue([]);
     mocks.person.getOrphanedFaceCorrections.mockResolvedValue([]);
     mocks.person.getFaceDecisionChecksums.mockResolvedValue(new Map());
+    // imported faces arrive without an embedding
+    mocks.person.getUnembeddedFaceIds.mockImplementation((ids) => Promise.resolve(new Set(ids)));
     mocks.person.recordFaceCorrections.mockResolvedValue([]);
     // FL-326: no person copies follow anyone unless a test says so
     mocks.partnerOrigin.getPersonFollowers.mockResolvedValue([]);
@@ -2103,37 +2105,43 @@ describe(PersonService.name, () => {
       expect(mocks.person.reassignFaces).not.toHaveBeenCalled();
     });
 
-    it('keeps an unmatched imported face and still adds the new one', async () => {
-      const assetId = newUuid();
-      const face = AssetFaceFactory.create({
-        assetId,
-        boundingBoxX1: 200,
-        boundingBoxX2: 300,
-        boundingBoxY1: 200,
-        boundingBoxY2: 300,
-      });
-      const asset = AssetFactory.from({ id: assetId })
-        .face({ sourceType: SourceType.MachineLearning, correctedAt: null, personGroupId: newUuid() })
-        .file({ type: AssetFileType.Preview })
-        .exif()
-        .build();
-      mocks.machineLearning.detectFaces.mockResolvedValue(getAsDetectedFace(face));
-      mocks.assetJob.getForDetectFacesJob.mockResolvedValue(getForDetectedFaces(asset));
-      mocks.crypto.randomUUID.mockReturnValue(face.id);
-      mocks.person.refreshFaces.mockResolvedValue();
+    it.each([true, false])(
+      'keeps an unmatched imported face and still adds the new one (imported=%s)',
+      async (imported) => {
+        const assetId = newUuid();
+        const face = AssetFaceFactory.create({
+          assetId,
+          boundingBoxX1: 200,
+          boundingBoxX2: 300,
+          boundingBoxY1: 200,
+          boundingBoxY2: 300,
+        });
+        const asset = AssetFactory.from({ id: assetId })
+          .face({ sourceType: SourceType.MachineLearning, correctedAt: null, personGroupId: newUuid() })
+          .file({ type: AssetFileType.Preview })
+          .exif()
+          .build();
+        mocks.machineLearning.detectFaces.mockResolvedValue(getAsDetectedFace(face));
+        mocks.assetJob.getForDetectFacesJob.mockResolvedValue(getForDetectedFaces(asset));
+        mocks.crypto.randomUUID.mockReturnValue(face.id);
+        mocks.person.refreshFaces.mockResolvedValue();
+        // a face detected here has an embedding, so it is cleaned up as usual
+        if (!imported) mocks.person.getUnembeddedFaceIds.mockResolvedValue(new Set());
 
-      await expect(sut.handleDetectFaces({ id: asset.id, preserveImportedFaces: true })).resolves.toBe(
-        JobStatus.Success,
-      );
+        await expect(sut.handleDetectFaces({ id: asset.id, preserveImportedFaces: true })).resolves.toBe(
+          JobStatus.Success,
+        );
 
-      expect(mocks.person.refreshFaces).toHaveBeenCalledWith(
-        [expect.objectContaining({ id: face.id, assetId: asset.id })],
-        [],
-        [{ faceId: face.id, embedding: '[1, 2, 3, 4]' }],
-      );
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.FacialRecognition, data: { id: face.id } }]);
-      expect(mocks.asset.upsertJobStatus).toHaveBeenCalledWith({ assetId, facesRecognizedAt: expect.any(Date) });
-    });
+        expect(mocks.person.getUnembeddedFaceIds).toHaveBeenCalledWith([asset.faces[0].id]);
+        expect(mocks.person.refreshFaces).toHaveBeenCalledWith(
+          [expect.objectContaining({ id: face.id, assetId: asset.id })],
+          imported ? [] : [asset.faces[0].id],
+          [{ faceId: face.id, embedding: '[1, 2, 3, 4]' }],
+        );
+        expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.FacialRecognition, data: { id: face.id } }]);
+        expect(mocks.asset.upsertJobStatus).toHaveBeenCalledWith({ assetId, facesRecognizedAt: expect.any(Date) });
+      },
+    );
 
     it('repairs a matched imported ML face only at publication without replacing its identity', async () => {
       const face = AssetFaceFactory.create({

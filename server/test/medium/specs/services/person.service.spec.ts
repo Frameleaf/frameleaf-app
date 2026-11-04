@@ -534,6 +534,47 @@ describe(PersonService.name, () => {
       },
     );
 
+    it('still removes a face detected here that an imported detection no longer finds', async () => {
+      const { sut, ctx } = setup();
+      ctx.getMock(JobRepository).queueAll.mockResolvedValue();
+      const { user } = await ctx.newUser();
+      const { person } = await ctx.newPerson({ ownerId: user.id });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newExif({ assetId: asset.id, description: '' });
+      await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Preview, path: 'detected-preview.jpg' });
+      const face = { imageWidth: 100, imageHeight: 100, boundingBoxX1: 10, boundingBoxY1: 10 };
+      const { assetFace: detected } = await ctx.newAssetFace({
+        ...face,
+        assetId: asset.id,
+        personGroupId: person.personGroupId,
+        sourceType: SourceType.MachineLearning,
+        boundingBoxX2: 30,
+        boundingBoxY2: 30,
+      });
+      // one face detected here (stored with its embedding), one imported (none)
+      await ctx.database.insertInto('face_search').values({ faceId: detected.id, embedding: newEmbedding() }).execute();
+      const { assetFace: imported } = await ctx.newAssetFace({
+        ...face,
+        assetId: asset.id,
+        personGroupId: person.personGroupId,
+        sourceType: SourceType.MachineLearning,
+        boundingBoxX1: 60,
+        boundingBoxY1: 60,
+        boundingBoxX2: 90,
+        boundingBoxY2: 90,
+      });
+      ctx
+        .getMock(MachineLearningRepository)
+        .detectFaces.mockResolvedValue({ imageWidth: 100, imageHeight: 100, faces: [] });
+
+      await expect(sut.handleDetectFaces({ id: asset.id, preserveImportedFaces: true })).resolves.toBe(
+        JobStatus.Success,
+      );
+      expect(
+        await ctx.database.selectFrom('asset_face').select('id').where('assetId', '=', asset.id).execute(),
+      ).toEqual([{ id: imported.id }]);
+    });
+
     it.each([false, true])('retains manual-face overlaps (contested=%s)', async (contested) => {
       const { sut, ctx } = setup();
       ctx.getMock(JobRepository).queueAll.mockResolvedValue();
