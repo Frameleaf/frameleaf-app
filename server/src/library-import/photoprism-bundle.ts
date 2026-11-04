@@ -10,11 +10,42 @@ import { LibraryImportRefused } from 'src/library-import/state.js';
 import { reviewImportFiles } from 'src/library-import/transfer-runtime.js';
 
 type BundleInput = Parameters<typeof writeLibraryImportBundle>[0];
+type ManifestEvidence = Parameters<typeof assemblePhotoprismManifest>[1];
+
+export function photoprismFileEvidence(
+  records: PhotoprismInventoryRecord[],
+  plan: Awaited<ReturnType<typeof reviewImportFiles>>,
+): ManifestEvidence['files'] {
+  const originals = records.flatMap((record) =>
+    record.type === 'file' && record.value.role ? [{ ...record.value, role: record.value.role }] : [],
+  );
+  if (plan.version !== 2 || originals.length !== plan.files.length)
+    throw new LibraryImportRefused('PHOTOPRISM_FILE_EVIDENCE_MISMATCH');
+  const reviewed = new Map(plan.files.map((file) => [file.sourceFileId, file]));
+  return originals.map((original) => {
+    const file = reviewed.get(original.id);
+    if (
+      !file ||
+      file.sourceAssetId !== original.photoId ||
+      file.sourcePath !== original.path ||
+      file.bytes !== original.bytes
+    )
+      throw new LibraryImportRefused('PHOTOPRISM_FILE_EVIDENCE_MISMATCH');
+    return {
+      id: original.id,
+      path: original.path,
+      bytes: file.bytes,
+      sha256: file.sha256,
+      role: original.role,
+      modifiedAt: new Date(Number(BigInt(file.sourceIdentity.mtimeNs) / 1_000_000n)).toISOString(),
+    };
+  });
+}
 
 /** The adapter supplies qualified account, privacy, and original-file evidence from its frozen snapshot. */
 export async function publishPhotoprismImportBundle(input: {
   records: Iterable<PhotoprismInventoryRecord>;
-  observed: Parameters<typeof assemblePhotoprismManifest>[1];
+  observed: Omit<ManifestEvidence, 'files'> & { files?: ManifestEvidence['files'] };
   approvedLossCodes: ReadonlySet<string>;
   roots: unknown;
   placements: unknown;
@@ -26,19 +57,21 @@ export async function publishPhotoprismImportBundle(input: {
   verifySource: () => Promise<void>;
 }) {
   await input.verifySource();
-  const { manifest, archive } = assemblePhotoprismManifest(input.records, input.observed);
-  for (const loss of manifest.losses) {
-    if (!input.approvedLossCodes.has(loss.code)) throw new LibraryImportRefused('IMPORT_LOSSES_NOT_ACKNOWLEDGED');
-    loss.acknowledged = true;
-  }
+  const records = [...input.records];
   const plan = await reviewImportFiles({
     version: 2,
-    source: manifest.source,
+    source: input.observed.source,
     destinationId: input.destinationId,
     owners: input.ownerMappings,
     roots: input.roots,
     files: input.placements,
   });
+  const files = input.observed.files ?? photoprismFileEvidence(records, plan);
+  const { manifest, archive } = assemblePhotoprismManifest(records, { ...input.observed, files });
+  for (const loss of manifest.losses) {
+    if (!input.approvedLossCodes.has(loss.code)) throw new LibraryImportRefused('IMPORT_LOSSES_NOT_ACKNOWLEDGED');
+    loss.acknowledged = true;
+  }
   await input.verifySource();
   const bundle = await writeLibraryImportBundle({
     stagingRoot: input.stagingRoot,

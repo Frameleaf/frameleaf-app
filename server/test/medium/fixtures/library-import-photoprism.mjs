@@ -109,8 +109,7 @@ for (const [id, path] of [
   const info = await stat(path, { bigint: true });
   roots.push({ id, path, device: String(info.dev), inode: String(info.ino) });
 }
-const observed = [],
-  drafts = [];
+const drafts = [];
 for (const file of originals) {
   assert.equal(file.role, 'original');
   const expected = input.nativeLibrary.photos.find((photo) => photo.path === file.path);
@@ -119,14 +118,6 @@ for (const file of originals) {
   const info = await stat(path, { bigint: true });
   assert.equal(await sha256(path), expected.sha256);
   assert.equal(String(info.size), expected.bytes);
-  observed.push({
-    id: file.id,
-    path: file.path,
-    bytes: expected.bytes,
-    sha256: expected.sha256,
-    role: 'original',
-    modifiedAt: info.mtime.toISOString(),
-  });
   drafts.push({
     id: file.id,
     sourceAssetId: file.photoId,
@@ -152,7 +143,6 @@ const sourceEvidence = {
   },
   photoOwners: Object.fromEntries(photos.map((photo) => [photo.id, input.sourceUserId])),
   albumOwners: Object.fromEntries(albums.map((album) => [album.id, input.sourceUserId])),
-  files: observed,
   materializedAlbums: input.nativeLibrary.materializedAlbums,
 };
 const reviewedLosses = new Set([

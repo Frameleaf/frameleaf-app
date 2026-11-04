@@ -36,7 +36,7 @@ const prepareSchema = z.strictObject({
     }),
     photoOwners: z.record(id, id),
     albumOwners: z.record(id, id),
-    files: z.array(importFileSchema.extend({ modifiedAt: importTimestampSchema })),
+    files: z.array(importFileSchema.extend({ modifiedAt: importTimestampSchema })).optional(),
     materializedAlbums: z.record(id, z.array(id)),
   }),
   approvedLossCodes: z.array(id),

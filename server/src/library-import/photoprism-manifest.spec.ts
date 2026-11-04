@@ -11,6 +11,7 @@ import metadata from 'src/library-import/fixtures/photoprism/261029-metadata.jso
 import recordsFixture from 'src/library-import/fixtures/photoprism/261029-records.json' with { type: 'json' };
 import schema from 'src/library-import/fixtures/photoprism/261029-sqlite.json' with { type: 'json' };
 import { manifestFingerprint } from 'src/library-import/manifest.js';
+import { photoprismFileEvidence } from 'src/library-import/photoprism-bundle.js';
 import {
   type PhotoprismInventoryRecord,
   normalizePhotoprismInventoryRow,
@@ -99,6 +100,32 @@ const setup = (timeZone?: string) => {
 };
 
 describe('PhotoPrism common manifest assembly', () => {
+  it('binds byte evidence and modification time to the original snapshot relationship', () => {
+    const { rows, input, photo } = setup();
+    const [original] = input.files;
+    const template = planFixture.plan.files[0];
+    const placement = {
+      ...template,
+      sourceAssetId: String(photo.photo_uid),
+      sourceFileId: original.id,
+      sourcePath: original.path,
+      bytes: original.bytes,
+      sha256: original.sha256,
+      sourceIdentity: {
+        ...template.sourceIdentity,
+        bytes: original.bytes,
+        mtimeNs: String(BigInt(Date.parse(original.modifiedAt)) * 1_000_000n),
+      },
+    };
+    const plan = parseDestinationImportPlan({ ...planFixture.plan, files: [placement] });
+    expect(photoprismFileEvidence(rows, plan)).toEqual([{ ...original, modifiedAt: '2020-06-10T18:31:00.000Z' }]);
+    const substituted = parseDestinationImportPlan({
+      ...planFixture.plan,
+      files: [{ ...placement, sourcePath: 'camera/substitute.jpg' }],
+    });
+    expect(() => photoprismFileEvidence(rows, substituted)).toThrow('PHOTOPRISM_FILE_EVIDENCE_MISMATCH');
+  });
+
   const label = (id: bigint, name: string, change: Record<string, unknown> = {}) => ({
     id,
     label_name: name,
