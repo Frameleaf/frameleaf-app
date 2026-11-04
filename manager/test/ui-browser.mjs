@@ -49,6 +49,7 @@ const requests = [];
 const source = {
   id: 'a'.repeat(64),
   project: 'family',
+  product: 'Noodle Gallery',
   version: '3.1.0',
   summary: { assets: 24860, users: 4, albums: 126, databaseBytes: 1024 ** 3 },
   mounts: [
@@ -462,6 +463,8 @@ try {
     await refresh();
     await chooser();
     await mainButton('Review import').click();
+    await page.getByRole('heading', { name: 'Review your Noodle Gallery installation' }).waitFor();
+    assert.doesNotMatch(await page.locator('main').innerText(), /Immich/u);
     await mainButton('Review library & settings').click();
     await page.getByRole('heading', { name: 'Your library, in the same place' }).waitFor();
     assert.equal(await page.locator('.setup-rail ul li').count(), 3);
@@ -471,6 +474,7 @@ try {
     await page.getByRole('checkbox', { name: 'Docker or Unraid', exact: false }).check();
     await mainButton('Check and review cutover').click();
     await page.getByText('Preflight passed', { exact: true }).waitFor();
+    assert.doesNotMatch(await page.locator('main').innerText(), /Immich/u);
     assert.equal(await mainButton('Start import').isDisabled(), true);
     await page.getByRole('checkbox').check();
     await screenshot('import-cutover');
@@ -478,7 +482,7 @@ try {
     backupAction = 'create';
     sources = [source, { ...source, id: 'e'.repeat(64), project: 'another-library' }];
     await mainButton('Review import').click();
-    await page.getByRole('heading', { name: 'Choose an Immich installation' }).waitFor();
+    await page.getByRole('heading', { name: 'Choose a photo installation' }).waitFor();
     assert.equal(await page.getByRole('radio').count(), 2);
     await page.getByRole('radio').last().check();
     await mainButton('Review library & settings').click();
@@ -486,7 +490,7 @@ try {
     assert.equal(await page.locator('.setup-rail ul li').count(), 4);
     await page.getByRole('checkbox').check();
     await mainButton('Review database backup').click();
-    await page.getByRole('heading', { name: 'Back up the Immich database' }).waitFor();
+    await page.getByRole('heading', { name: 'Back up the source database' }).waitFor();
     sources = [{ ...source, settings: ['forkOnly', 'oauth'], unsupportedSettings: ['forkOnly'] }];
     await chooser();
     await mainButton('Review import').click();

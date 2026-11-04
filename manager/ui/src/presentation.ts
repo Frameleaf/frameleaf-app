@@ -34,7 +34,7 @@ export const stepNames: Record<string, string> = {
   'download-images': 'Download the verified image set',
   configure: 'Prepare separate database storage',
   'review-source': 'Revalidate the source installation',
-  'fence-source': 'Stop Immich and disable automatic restart',
+  'fence-source': 'Stop the original app and disable automatic restart',
   'start-database': 'Start the new PostgreSQL database',
   'capture-fenced-settings': 'Preserve the stopped source settings',
   'copy-current-database': 'Copy the current stopped database',
@@ -43,7 +43,7 @@ export const stepNames: Record<string, string> = {
   'import-canonical-database': 'Import into Frameleaf',
   'verify-import': 'Verify the imported library',
   'import-settings': 'Apply compatible settings',
-  'retire-source-services': "Stop Immich's database and Redis",
+  'retire-source-services': "Stop the original database and supporting services",
   'start-frameleaf': 'Start Frameleaf',
   'prepare-library': 'Begin library preparation',
   'stop-application': 'Pause application writes',
@@ -145,7 +145,7 @@ const refusals: Record<string, string> = {
   media_path_unsupported_character: 'A folder name contains a comma or a control character, which Docker cannot accept. Rename the folder, then review again.',
   settings_not_json: 'Settings must be a JSON object. Check for a missing comma or bracket, then save again.',
   masked_secret_missing: 'A secret value can only be kept as [unchanged] where it already exists. Enter the value, or restore the original line.',
-  incompatible_settings_require_review: 'Some Immich settings aren’t recognised by Frameleaf. Review them in Advanced settings on the next step.',
+  incompatible_settings_require_review: 'Some source settings aren’t recognised by Frameleaf. Review them in Advanced settings on the next step.',
   release_service_unavailable: 'GitHub could not complete the Frameleaf release check. Try again shortly.',
   select_a_new_release: 'Choose a release newer than the one this server runs. To go back to an older release, restore a database recovery point taken on it from Backups.',
   release_not_eligible:'This Frameleaf release is not offered to this server. Choose another release.',
@@ -156,16 +156,16 @@ const refusals: Record<string, string> = {
   release_verification_failed: 'This release did not pass signature and checksum verification, so Manager will not use it.',
   release_architecture_unavailable: 'This release has no images for this server’s processor type.',
   source_changed_review_again:
-    'The Immich installation changed after it was reviewed. Review the import again so Manager works from its current settings.',
+    'The original installation changed after it was reviewed. Review the import again so Manager works from its current settings.',
   port_in_use:
-    'Another app on this server is already using that port. Choose a different Frameleaf port. Immich’s own port is fine for an import, because Immich is stopped first.',
+    'Another app on this server is already using that port. Choose a different Frameleaf port. The original app’s port is fine for an import, because it is stopped first.',
   docker_operation_failed:
     'A Docker command did not finish. The Manager container log has the command, exit code and error output. Fix the cause, then resume.',
   docker_unavailable: 'Manager could not run Docker. Check that the Docker socket is mapped into Manager.',
   database_overlaps_existing_container_data:
     'Another container can write inside this database folder. Change that container’s mapping to read-only or a narrower folder, or choose a database folder outside it.',
   unraid_autostart_file_required:
-    'Manager could not configure Unraid’s autostart list. Check that Unraid’s Docker service is running, then try again. Immich must stay unable to restart at boot during the import.',
+    'Manager could not configure Unraid’s autostart list. Check that Unraid’s Docker service is running, then try again. The original app must stay unable to restart at boot during the import.',
   unraid_autostart_unavailable:
     'Manager could not access Unraid’s autostart list automatically. Check that Unraid’s Docker service is running and its existing unraid-autostart file is available and writable, then try again.',
   database_path_not_mounted:
