@@ -138,12 +138,12 @@ describe('Photoview pinned SQLite extraction', () => {
 
   it.each(['missing', 'duplicate', 'changed'] as const)('refuses a %s foreign key', (change) => {
     const expected = fixture.objects.find((object) => object.type === 'table' && object.name === 'image_faces')!.sql!;
-    const clause = ',CONSTRAINT ' + expected.slice(0, -1).split(',CONSTRAINT ')[1];
+    const clause = ',CONSTRAINT ' + expected.slice(0, -1).split(',CONSTRAINT ', 2)[1];
     const sql =
       change === 'missing'
         ? expected.replace(clause, '')
         : change === 'duplicate'
-          ? expected.replace(clause, clause + clause.replace('`fk_media_faces`', '`fk_extra`'))
+          ? expected.replace(clause, () => clause + clause.replace('`fk_media_faces`', '`fk_extra`'))
           : expected.replace('ON DELETE CASCADE', 'ON DELETE SET NULL');
     database.exec('PRAGMA writable_schema=ON');
     database.prepare("UPDATE sqlite_schema SET sql=? WHERE name='image_faces'").run(sql);
@@ -172,8 +172,8 @@ describe('Photoview pinned SQLite extraction', () => {
       change === 'missing'
         ? expected.replace(clause, '')
         : change === 'duplicate'
-          ? expected.replace(clause, clause + clause.replace('`uni_media_path_hash`', '`uni_extra`'))
-          : expected.replace(clause, clause.replace('UNIQUE (`path_hash`)', 'UNIQUE (`side_car_hash`)'));
+          ? expected.replace(clause, () => clause + clause.replace('`uni_media_path_hash`', '`uni_extra`'))
+          : expected.replace(clause, () => clause.replace('UNIQUE (`path_hash`)', 'UNIQUE (`side_car_hash`)'));
     const candidate = mediaSchemaVariant(sql);
     expect(() => openPhotoviewSnapshot(candidate, fixture.source.version)).toThrow('PHOTOVIEW_SCHEMA_UNQUALIFIED');
   });

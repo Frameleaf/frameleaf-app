@@ -81,7 +81,8 @@ describe.skipIf(!path)('native Photoview application', () => {
         expect(JSON.stringify(credential).includes(owner.password)).toBe(false);
       }
       const shared = access.find((row) => row.id === config.sharedMediaId)!;
-      expect(shared.readerIds.toSorted()).toEqual([config.actors.alice.id, config.actors.bob.id].sort());
+      expect(shared.readerIds).toHaveLength(2);
+      expect(shared.readerIds).toEqual(expect.arrayContaining([config.actors.alice.id, config.actors.bob.id]));
       expect(shared.favorites).toContainEqual({ userId: config.actors.alice.id, favorite: true });
       expect(shared.favorites.some((row) => row.userId === config.actors.bob.id && row.favorite)).toBe(false);
       const originals = [...source.rows('media')].flat();
