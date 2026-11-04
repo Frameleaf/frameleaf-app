@@ -13914,6 +13914,10 @@ export type QueueRetryFailedResponseDto = {
     /** How many failed jobs were put back in the queue */
     count: number;
 };
+export type QueueRunOneDto = {
+    /** The photo or video to run this task on */
+    assetId: string;
+};
 export type QueueOwnerStatisticsResponseDto = {
     /** Number of active jobs */
     active: number;
@@ -19333,6 +19337,11 @@ export type PreservationRestoreItemsQueryDto = {
 };
 export type PushKnownEventsDto = {
     events: PushEventType[];
+};
+export type QueueJobParamDto = {
+    /** Job ID */
+    id: string;
+    name: QueueName;
 };
 export type QueueJobSearchDto = {
     /** Only jobs whose item belongs to this account (FL-71 account filter) */
@@ -30889,6 +30898,43 @@ export function retryFailedQueueJobs({ name }: {
         status: 200;
         data: QueueRetryFailedResponseDto;
     }>(`/queues/${encodeURIComponent(name)}/jobs/retry-failed`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Run a task on one item
+ */
+export function runQueueOnOne({ name, queueRunOneDto }: {
+    name: QueueName;
+    queueRunOneDto: QueueRunOneDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/queues/${encodeURIComponent(name)}/jobs/run-one`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: queueRunOneDto
+    })));
+}
+/**
+ * Retry a failed job
+ */
+export function retryQueueJob({ id, name }: {
+    id: string;
+    name: QueueName;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/queues/${encodeURIComponent(name)}/jobs/${encodeURIComponent(id)}/retry`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Start a waiting job now
+ */
+export function startQueueJob({ id, name }: {
+    id: string;
+    name: QueueName;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/queues/${encodeURIComponent(name)}/jobs/${encodeURIComponent(id)}/start`, {
         ...opts,
         method: "POST"
     }));

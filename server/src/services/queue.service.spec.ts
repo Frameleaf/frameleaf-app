@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { SystemConfig, defaults } from 'src/dtos/config.dto.js';
 import {
+  AssetType,
   DatabaseLock,
   FrameleafWorker,
   JobName,
@@ -612,6 +613,58 @@ describe(QueueService.name, () => {
     it('reports zero when no failed work can be safely replayed', async () => {
       mocks.job.retryFailed.mockResolvedValue(0);
       await expect(sut.retryFailedJobs(factory.auth(), QueueName.SmartSearch)).resolves.toEqual({ count: 0 });
+    });
+  });
+
+  describe('one job at a time (approved design, 2026-11-04)', () => {
+    const jobId = '9a1d7c6e-2b0f-4c55-9b0e-6b8f2c1c1a01';
+    const assetId = '9a1d7c6e-2b0f-4c55-9b0e-6b8f2c1c1a02';
+
+    it('retries one failed job and refuses one that cannot run again', async () => {
+      mocks.job.retryFailed.mockResolvedValueOnce(1);
+      await sut.retryJob(factory.auth(), QueueName.FaceDetection, jobId);
+      expect(mocks.job.retryFailed).toHaveBeenCalledWith(QueueName.FaceDetection, jobId);
+      mocks.job.retryFailed.mockResolvedValueOnce(0);
+      await expect(sut.retryJob(factory.auth(), QueueName.FaceDetection, jobId)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+
+    it('starts one waiting job now and refuses one that is not waiting', async () => {
+      mocks.job.startNow.mockResolvedValueOnce(true);
+      await sut.startJob(factory.auth(), QueueName.Ocr, jobId);
+      expect(mocks.job.startNow).toHaveBeenCalledWith(QueueName.Ocr, jobId);
+      mocks.job.startNow.mockResolvedValueOnce(false);
+      await expect(sut.startJob(factory.auth(), QueueName.Ocr, jobId)).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('runs a task on one item: queues its job for that item and starts it now', async () => {
+      mocks.asset.getById.mockResolvedValue({ id: assetId, type: AssetType.Image } as never);
+      mocks.job.findWaitingJob.mockResolvedValue(jobId);
+      mocks.job.startNow.mockResolvedValue(true);
+      await sut.runOne(factory.auth(), QueueName.ThumbnailGeneration, { assetId });
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.AssetGenerateThumbnails, data: { id: assetId } });
+      expect(mocks.job.findWaitingJob).toHaveBeenCalledWith(
+        QueueName.ThumbnailGeneration,
+        JobName.AssetGenerateThumbnails,
+        assetId,
+      );
+      expect(mocks.job.startNow).toHaveBeenCalledWith(QueueName.ThumbnailGeneration, jobId);
+    });
+
+    it('runs on one item only for the tasks that work one item at a time, and videos only for playback', async () => {
+      await expect(sut.runOne(factory.auth(), QueueName.SmartSearch, { assetId })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      mocks.asset.getById.mockResolvedValue({ id: assetId, type: AssetType.Image } as never);
+      await expect(sut.runOne(factory.auth(), QueueName.VideoConversion, { assetId })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      mocks.asset.getById.mockResolvedValue(undefined as never);
+      await expect(sut.runOne(factory.auth(), QueueName.MetadataExtraction, { assetId })).rejects.toThrow(
+        'Asset not found',
+      );
+      expect(mocks.job.queue).not.toHaveBeenCalled();
     });
   });
 

@@ -33,6 +33,11 @@
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import CloudBackgroundWork from '$lib/components/frameleaf/cloud/CloudBackgroundWork.svelte';
   import SettingsOverline from '$lib/components/frameleaf/settings/SettingsOverline.svelte';
+  import BackgroundWorkEveryday, {
+    type FeatureAction,
+  } from '$lib/components/frameleaf/jobs/BackgroundWorkEveryday.svelte';
+  import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
+  import { workFeature, type WorkFeature, type WorkFeatureId } from '$lib/frameleaf/work-features';
   import BackgroundWorkOverview, {
     type OverviewTask,
   } from '$lib/components/frameleaf/jobs/BackgroundWorkOverview.svelte';
@@ -95,6 +100,9 @@
     getImageDescriptionRequeueEstimate,
     getAnalyticsScopes,
     getQueueJobs,
+    retryQueueJob,
+    runQueueOnOne,
+    startQueueJob,
     getQueueOwnerStatistics,
     QueueCommand,
     QueueJobWorkerKind,
@@ -103,7 +111,7 @@
     runQueueCommandLegacy,
     type JobName,
     type QueueJobResponseDto,
-    type QueueJobStatus,
+    QueueJobStatus,
     type QueueOwnerStatisticsResponseDto,
     type QueueResponseDto,
     type QueueStatisticsDto,
@@ -229,6 +237,29 @@
   const selected = $derived(rows.find((row) => row.definition.name === selectedName));
   const requestedTab = $derived(page.url.searchParams.get('tab'));
   const tab: JobTab = $derived(isJobTab(requestedTab) ? requestedTab : 'active');
+
+  /**
+   * Everyday or Advanced (approved design, 2026-11-04). Everyday is the pace, when heavy work runs and
+   * the eight features; Advanced is every task in detail, as this page was, optionally one feature's.
+   */
+  const view = $derived(page.url.searchParams.get('view') === 'advanced' ? 'advanced' : 'everyday');
+  const featureFilter = $derived(workFeature(page.url.searchParams.get('feature')));
+  const showView = (next: 'everyday' | 'advanced', feature?: WorkFeatureId) => {
+    const url = new URL(page.url.href);
+    url.searchParams.delete('queue');
+    url.searchParams.delete('tab');
+    if (next === 'advanced') {
+      url.searchParams.set('view', 'advanced');
+    } else {
+      url.searchParams.delete('view');
+    }
+    if (feature) {
+      url.searchParams.set('feature', feature);
+    } else {
+      url.searchParams.delete('feature');
+    }
+    void gotoWithFocusAndScroll(url.pathname + url.search, { keepFocus: true, noScroll: true });
+  };
 
   const counts = $derived(
     selected
@@ -414,6 +445,8 @@
   type Review = {
     command: Command;
     name?: QueueName;
+    /** A feature's command runs on each of these tasks (Everyday's feature menu). */
+    names?: QueueName[];
     manual?: ManualJobDefinition;
     title: string;
     detail: string;
@@ -604,8 +637,54 @@
     reviewOpen = true;
   };
 
+  /** Everyday's feature menu: one review, then the command on each of the feature's tasks it applies to. */
+  const requestFeature = (feature: WorkFeature, action: FeatureAction) => {
+    const names = rows
+      .filter(({ definition, queue }) => {
+        if (!feature.queues.includes(definition.name)) {
+          return false;
+        }
+        switch (action) {
+          case 'pause': {
+            return definition.canPause && !queue.isPaused;
+          }
+          case 'resume': {
+            return queue.isPaused;
+          }
+          case 'run': {
+            return !!definition.run;
+          }
+          default: {
+            return !!definition.force;
+          }
+        }
+      })
+      .map(({ definition }) => definition.name);
+    const name = $t(`frameleaf_work_feature_${feature.id}` as Translations);
+    review = {
+      command: action,
+      names,
+      title: $t(`frameleaf_bgwork_feature_review_${action}` as Translations, { values: { name } }),
+      detail: $t(`frameleaf_bgwork_feature_review_${action}_detail` as Translations),
+      affected: names.length,
+      dangerous: action === 'force',
+      error: names.length === 0 ? $t('frameleaf_bgwork_feature_review_nothing') : undefined,
+    };
+    acknowledged = false;
+    reviewOpen = true;
+  };
+
   /** Runs a reviewed command; a returned message replaces the done notice. */
-  const perform = async ({ command, name, manual, kind }: Review): Promise<string | undefined> => {
+  const perform = async (current: Review): Promise<string | undefined> => {
+    if (current.names) {
+      for (const name of current.names) {
+        await performOne({ ...current, names: undefined, name });
+      }
+      return;
+    }
+    return performOne(current);
+  };
+  const performOne = async ({ command, name, manual, kind }: Review): Promise<string | undefined> => {
     if (command === 'resume-all') {
       for (const { queue } of pausedQueues) {
         await handleResumeQueue(queue);
@@ -721,6 +800,61 @@
   let jobsFailed = $state(false);
   let shown = $state(PAGE_SIZE);
   let jobsReload = $state(0);
+  /**
+   * One job at a time (approved design, 2026-11-04): Start now for a job still to run, even while the
+   * task is paused or busy, and Retry for one that failed; Run on one item for the tasks that work on
+   * one photo or video.
+   */
+  const STARTABLE = new Set<string>([QueueJobStatus.Waiting, QueueJobStatus.Paused, QueueJobStatus.Delayed]);
+  const RUN_ONE = new Set<QueueName>([
+    QueueName.ThumbnailGeneration,
+    QueueName.MetadataExtraction,
+    QueueName.FaceDetection,
+    QueueName.Ocr,
+    QueueName.VideoConversion,
+  ]);
+  const oneJob = async (job: JobRow, action: 'start' | 'retry') => {
+    if (!selected || !job.id) {
+      return;
+    }
+    error = '';
+    try {
+      await (action === 'start' ? startQueueJob : retryQueueJob)({ name: selected.definition.name, id: job.id });
+      notice = $t(action === 'start' ? 'frameleaf_jobs_started_one' : 'frameleaf_jobs_retried_one', {
+        values: { name: jobTitle(job.name) },
+      });
+      detailOpen = false;
+    } catch (error_) {
+      error = getServerErrorMessage(error_) ?? $t('errors.something_went_wrong');
+    } finally {
+      await queueManager.refresh();
+      jobsReload++;
+    }
+  };
+  let runOneOpen = $state(false);
+  let runOneText = $state('');
+  let runOneError = $state('');
+  /** A pasted link to the photo or video, or its ID. */
+  const runOneId = $derived(/[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}/i.exec(runOneText)?.[0]);
+  const runOne = async () => {
+    if (!selected || !runOneId) {
+      return;
+    }
+    runOneError = '';
+    try {
+      await runQueueOnOne({ name: selected.definition.name, queueRunOneDto: { assetId: runOneId } });
+      notice = $t('frameleaf_jobs_ran_one', { values: { name: runLabelFor(selected.definition) } });
+      runOneOpen = false;
+      runOneText = '';
+    } catch (error_) {
+      runOneError = getServerErrorMessage(error_) ?? $t('errors.something_went_wrong');
+    } finally {
+      await queueManager.refresh();
+      jobsReload++;
+    }
+  };
+  const runLabelFor = (definition: JobQueueDefinition) => $t(`frameleaf_work_${definition.key}` as Translations);
+
   let detail = $state<JobRow | null>(null);
   /** The jobs-over-time graph draws only while its disclosure is open. */
   let trendOpen = $state(false);
@@ -1013,28 +1147,75 @@
     {#if hasMessages}
       <div class="jm-first">{@render messages()}</div>
     {/if}
-    <BackgroundWorkOverview
-      rows={overviewRows}
-      unknown={owner === 'all' ? undefined : failedStats}
-      pending={queuesPending || countsLoading}
-      unavailable={queuesUnavailable}
-      accountName={owner === 'all' ? undefined : ownerName}
-      {flags}
-      store={draft}
-      locked={flags.configFile}
-      href={(name, next) => scoped(Route.viewQueue({ name, tab: next }))}
-      onPauseAll={() => request('pause-all')}
-      onResumeAll={() => request('resume-all')}
-      onTask={runTask}
-      onRetry={() => void queueManager.refresh()}
-    />
-    <!-- FL-164: Frameleaf Cloud backup and restore work, with pause, resume and cancel -->
-    <CloudBackgroundWork />
-    <Section title={$t('frameleaf_bgwork_recent')} description={$t('frameleaf_bgwork_recent_description')}>
-      <Advanced summary={$t('frameleaf_bgwork_recent_details')}>
-        {@render earlier()}
-      </Advanced>
-    </Section>
+    <div class="jm-views">
+      <SegmentedControl
+        label={$t('frameleaf_bgwork_view_label')}
+        options={[
+          { value: 'everyday', label: $t('frameleaf_bgwork_view_everyday') },
+          { value: 'advanced', label: $t('frameleaf_bgwork_view_advanced') },
+        ]}
+        value={view}
+        onChange={(next) => showView(next as 'everyday' | 'advanced')}
+      />
+      <span
+        >{view === 'advanced'
+          ? $t('frameleaf_bgwork_view_advanced_hint')
+          : $t('frameleaf_bgwork_view_everyday_hint')}</span
+      >
+    </div>
+    {#if view === 'everyday'}
+      <BackgroundWorkEveryday
+        {rows}
+        pending={queuesPending}
+        unavailable={queuesUnavailable}
+        store={draft}
+        locked={flags.configFile}
+        href={(name, next) => scoped(Route.viewQueue({ name, tab: next }))}
+        computersHref={commandCenterUrl('processing', 'computers')}
+        overnightHref={commandCenterUrl('processing', 'nightly-tasks')}
+        onPauseAll={() => request('pause-all')}
+        onResumeAll={() => request('resume-all')}
+        onFeature={requestFeature}
+        onTask={runTask}
+        onAdvanced={(feature) => showView('advanced', feature)}
+        onRetry={() => void queueManager.refresh()}
+      />
+    {:else}
+      {#if featureFilter}
+        <p class="jm-feature-filter">
+          {$t('frameleaf_bgwork_feature_filter', {
+            values: { name: $t(`frameleaf_work_feature_${featureFilter.id}` as Translations) },
+          })}
+          <button type="button" class="jm-link" onclick={() => showView('advanced')}
+            >{$t('frameleaf_bgwork_feature_filter_clear')}</button
+          >
+        </p>
+      {/if}
+      <BackgroundWorkOverview
+        rows={featureFilter
+          ? overviewRows.filter((row) => featureFilter.queues.includes(row.definition.name))
+          : overviewRows}
+        unknown={owner === 'all' ? undefined : failedStats}
+        pending={queuesPending || countsLoading}
+        unavailable={queuesUnavailable}
+        accountName={owner === 'all' ? undefined : ownerName}
+        {flags}
+        store={draft}
+        locked={flags.configFile}
+        href={(name, next) => scoped(Route.viewQueue({ name, tab: next }))}
+        onPauseAll={() => request('pause-all')}
+        onResumeAll={() => request('resume-all')}
+        onTask={runTask}
+        onRetry={() => void queueManager.refresh()}
+      />
+      <!-- FL-164: Frameleaf Cloud backup and restore work, with pause, resume and cancel -->
+      <CloudBackgroundWork />
+      <Section title={$t('frameleaf_bgwork_recent')} description={$t('frameleaf_bgwork_recent_description')}>
+        <Advanced summary={$t('frameleaf_bgwork_recent_details')}>
+          {@render earlier()}
+        </Advanced>
+      </Section>
+    {/if}
   </KitPage>
 {:else}
   {@const { definition, queue } = selected}
@@ -1123,6 +1304,9 @@
           <span title={blocked || undefined}>
             <Button disabled={!!blocked} onclick={() => request('force', selected)}>{forceLabel(definition)}</Button>
           </span>
+        {/if}
+        {#if RUN_ONE.has(definition.name)}
+          <Button onclick={() => (runOneOpen = true)}>{$t('frameleaf_jobs_run_one')}</Button>
         {/if}
       </div>
     </div>
@@ -1225,6 +1409,15 @@
               <td>{@render queueStatus(job.status)}</td>
               <td><time datetime={new Date(job.timestamp).toISOString()}>{timestamp(job.timestamp)}</time></td>
               <td class="jm-row-actions">
+                {#if job.id && STARTABLE.has(job.status)}
+                  <Button variant="quiet" onclick={() => void oneJob(job, 'start')}
+                    >{$t('frameleaf_bgwork_start_now')}</Button
+                  >
+                {:else if job.id && job.status === QueueJobStatus.Failed}
+                  <Button variant="quiet" onclick={() => void oneJob(job, 'retry')}
+                    >{$t('frameleaf_jobs_retry_one')}</Button
+                  >
+                {/if}
                 <button
                   type="button"
                   class="jm-icon-button"
@@ -1355,6 +1548,32 @@
   {/if}
 </Dialog>
 
+{#if selected && RUN_ONE.has(selected.definition.name)}
+  <Dialog title={$t('frameleaf_jobs_run_one_title')} closeLabel={$t('close')} bind:open={runOneOpen}>
+    <form
+      class="jm-run-one"
+      onsubmit={(event) => {
+        event.preventDefault();
+        void runOne();
+      }}
+    >
+      <p>
+        {$t('frameleaf_jobs_run_one_body', { values: { name: runLabelFor(selected.definition) } })}
+        {#if selected.queue.isPaused}{$t('frameleaf_jobs_run_one_paused')}{/if}
+      </p>
+      <label>
+        <span>{$t('frameleaf_jobs_run_one_label')}</span>
+        <input bind:value={runOneText} placeholder={$t('frameleaf_jobs_run_one_placeholder')} autocomplete="off" />
+      </label>
+      {#if runOneError}<p class="jm-run-one-error" role="alert">{runOneError}</p>{/if}
+      <footer>
+        <Button onclick={() => (runOneOpen = false)}>{$t('cancel')}</Button>
+        <Button type="submit" variant="primary" disabled={!runOneId}>{$t('frameleaf_bgwork_start_now')}</Button>
+      </footer>
+    </form>
+  </Dialog>
+{/if}
+
 <Dialog title={detail ? jobTitle(detail.name) : ''} closeLabel={$t('close')} bind:open={detailOpen}>
   {#if detail}
     <div class="jm-job-detail">
@@ -1388,6 +1607,17 @@
           <h3>{$t('frameleaf_jobs_detail_error')}</h3>
           <p>{detail.failedReason || $t('frameleaf_jobs_detail_error_none')}</p>
           <Button onclick={() => void goto(Route.systemWorkers())}>{$t('frameleaf_jobs_check_workers')}</Button>
+          {#if detail.id}
+            <Button variant="primary" onclick={() => detail && void oneJob(detail, 'retry')}>
+              {$t('frameleaf_jobs_retry_one')}
+            </Button>
+          {/if}
+        </div>
+      {:else if detail.id && STARTABLE.has(detail.status)}
+        <div class="jm-detail-actions">
+          <Button variant="primary" onclick={() => detail && void oneJob(detail, 'start')}>
+            {$t('frameleaf_bgwork_start_now')}
+          </Button>
         </div>
       {/if}
       <details>
@@ -1982,5 +2212,63 @@
     .jm-header h1 {
       font-size: 21px;
     }
+  }
+  /* Everyday | Advanced (approved design, 2026-11-04). */
+  .jm-views {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--fl-space-3);
+    margin-block-end: var(--fl-space-4);
+  }
+  .jm-views > span,
+  .jm-feature-filter {
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+  }
+  .jm-feature-filter {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--fl-space-2);
+    margin: 0 0 var(--fl-space-4);
+  }
+  .jm-link {
+    padding: 0;
+    min-height: 0;
+    color: var(--fl-accent);
+    background: none;
+    border: 0;
+    text-decoration: underline;
+  }
+  .jm-detail-actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+  .jm-run-one {
+    display: grid;
+    gap: var(--fl-space-3);
+  }
+  .jm-run-one p {
+    margin: 0;
+  }
+  .jm-run-one label {
+    display: grid;
+    gap: var(--fl-space-1);
+  }
+  .jm-run-one input {
+    padding: 0.5rem 0.75rem;
+    font: inherit;
+    color: var(--fl-text);
+    background: var(--fl-panel);
+    border: 1px solid var(--fl-border-strong);
+    border-radius: var(--fl-radius-control);
+  }
+  .jm-run-one-error {
+    color: var(--fl-danger);
+  }
+  .jm-run-one footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--fl-space-2);
   }
 </style>

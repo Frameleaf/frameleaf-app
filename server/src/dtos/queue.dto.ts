@@ -86,6 +86,20 @@ const QueueJobResponseSchema = z
   })
   .meta({ id: 'QueueJobResponseDto' });
 
+// Approved design (2026-11-04): one job at a time, from the jobs manager's rows and details.
+const QueueJobParamSchema = z
+  .object({
+    name: QueueNameSchema,
+    id: z.uuidv4().describe('Job ID'),
+  })
+  .meta({ id: 'QueueJobParamDto' });
+
+const QueueRunOneSchema = z
+  .object({
+    assetId: z.uuidv4().describe('The photo or video to run this task on'),
+  })
+  .meta({ id: 'QueueRunOneDto' });
+
 const QueueRetryFailedResponseSchema = z
   .object({
     count: z.int().nonnegative().describe('How many failed jobs were put back in the queue'),
@@ -146,6 +160,8 @@ const StorageMigrationStatusResponseSchema = z
 
 export class StorageMigrationStatusResponseDto extends createZodDto(StorageMigrationStatusResponseSchema) {}
 export class QueueNameParamDto extends createZodDto(QueueNameParamSchema) {}
+export class QueueJobParamDto extends createZodDto(QueueJobParamSchema) {}
+export class QueueRunOneDto extends createZodDto(QueueRunOneSchema) {}
 export class QueueCommandDto extends createZodDto(QueueCommandSchemaDto) {}
 export class QueueUpdateDto extends createZodDto(QueueUpdateSchema) {}
 export class QueueDeleteDto extends createZodDto(QueueDeleteSchema) {}

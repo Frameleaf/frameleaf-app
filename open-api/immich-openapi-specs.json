@@ -42508,6 +42508,185 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/queues/{name}/jobs/run-one": {
+      "post": {
+        "description": "Queues the task's job for one photo or video and starts it at once, even while the task is paused or busy. Only thumbnails, metadata, faces, text recognition and playback videos.",
+        "operationId": "runQueueOnOne",
+        "parameters": [
+          {
+            "name": "name",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/QueueName"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QueueRunOneDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Run a task on one item",
+        "tags": [
+          "Queues"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "queueJob.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/queues/{name}/jobs/{id}/retry": {
+      "post": {
+        "description": "Puts one failed job back in its queue with its saved data.",
+        "operationId": "retryQueueJob",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Job ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/QueueName"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retry a failed job",
+        "tags": [
+          "Queues"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "queueJob.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/queues/{name}/jobs/{id}/start": {
+      "post": {
+        "description": "Starts one waiting job at the next pass, even while its queue is paused or busy.",
+        "operationId": "startQueueJob",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Job ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/QueueName"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Start a waiting job now",
+        "tags": [
+          "Queues"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "queueJob.create",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/queues/{name}/statistics": {
       "get": {
         "description": "Counts, per state, the jobs of the specified queue that work on one account's items. At most 1,000 jobs of each state are read; `truncated` marks lower bounds.",
@@ -127873,6 +128052,24 @@
         ],
         "type": "object"
       },
+      "QueueJobParamDto": {
+        "properties": {
+          "id": {
+            "description": "Job ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "name": {
+            "$ref": "#/components/schemas/QueueName"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
       "QueueJobResponseDto": {
         "properties": {
           "account": {
@@ -128240,6 +128437,20 @@
           "startedAt",
           "total",
           "waiting"
+        ],
+        "type": "object"
+      },
+      "QueueRunOneDto": {
+        "properties": {
+          "assetId": {
+            "description": "The photo or video to run this task on",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId"
         ],
         "type": "object"
       },
