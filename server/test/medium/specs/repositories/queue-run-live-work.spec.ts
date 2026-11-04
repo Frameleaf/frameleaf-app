@@ -72,6 +72,52 @@ describe('runs with live work', () => {
     expect(run.finishedAt).toBeNull();
   });
 
+  it('reopens a finished run whose new item joins another run’s live job', async () => {
+    const owner = await store.createRun('owner', {});
+    const keyed = (runId: string) => ({
+      ...intent(runId, 'Thumbnail'),
+      options: { deduplication: { id: 'thumbnail:shared' } },
+    });
+    await store.enqueue([keyed(owner)]);
+    const late = await store.createRun('late', {});
+    await sql`update job_run set "enumerationDone" = true, "finishedAt" = now() where id = ${late}::uuid`.execute(db);
+
+    await store.enqueue([keyed(late)]);
+
+    const {
+      rows: [run],
+    } = await sql<{ finishedAt: Date | null }>`select "finishedAt" from job_run where id = ${late}::uuid`.execute(db);
+    expect(run.finishedAt).toBeNull();
+  });
+
+  it('leaves an item of a library-owned execution as it was, so its run can still settle', async () => {
+    const owner = await store.createRun('library', {});
+    const keyed = (runId: string) => ({
+      ...intent(runId, 'Thumbnail'),
+      options: { deduplication: { id: 'thumbnail:library' } },
+    });
+    await store.enqueue([keyed(owner)]);
+    const {
+      rows: [{ id: jobId }],
+    } = await sql<{ id: string }>`select id from job where "runId" = ${owner}::uuid`.execute(db);
+    // The job is a library source producer: an ordinary run sharing it keeps its own outcome.
+    const selectionId = randomUUID();
+    await sql`insert into job_selection(id, "runId", stage, queue, "safeToRetry", sensitive, "deadlineMs", state)
+      values (${selectionId}::uuid, ${owner}::uuid, 'Thumbnail', ${queue}, true, false, 600000, 'ready')`.execute(db);
+    await sql`insert into job_library_source_producer("selectionId", "producerId")
+      values (${selectionId}::uuid, ${jobId}::uuid)`.execute(db);
+    const alias = await store.createRun('alias', {});
+    await sql`insert into job_run_item("runId", "itemKey", "rootItemKey", stage, queue, selection, state)
+      values (${alias}::uuid, 'asset', 'asset', 'Thumbnail', ${queue}, '{}', 'completed')`.execute(db);
+
+    await store.enqueue([keyed(alias)]);
+
+    const {
+      rows: [item],
+    } = await sql<{ state: string }>`select state from job_run_item where "runId" = ${alias}::uuid`.execute(db);
+    expect(item.state).toBe('completed');
+  });
+
   it('lists a run marked finished with live jobs ahead of finished runs', async () => {
     const busy = await store.createRun('busy', {});
     await store.enqueue([intent(busy, 'Thumbnail')]);

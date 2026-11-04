@@ -76,6 +76,17 @@ export const settleRunQuery = (runIds: string[]) => sql`update job_run r set "fi
     and not (${unfinishedRunItems(sql<string>`r.id`)})`;
 
 /**
+ * A run item `i` whose state mirrors its job `j`. A library alias item, and an item of another run sharing a
+ * library-owned execution, keep their own outcome: the job's state says nothing about them.
+ */
+const itemFollowsJob = sql<boolean>`not exists (select 1 from job_selection s where s.id = i."selectionId"
+    and s."sourceKind" != 'frozen' and i."runId" != s."runId")
+  and (i."runId" = j."runId" or (not exists (select 1 from job_library_source_producer link where link."producerId" = j.id)
+    and not exists (select 1 from job_run_item canonical join job_selection s on s.id=canonical."selectionId"
+      where canonical."jobId"=j.id and canonical."runId"=s."runId" and s."sourceKind"!='frozen')
+    and not exists (select 1 from job_selection s where s."producerId"=j.id and s."librarySharesExecution")))`;
+
+/**
  * All methods own short transactions. No connection escapes to a handler or an enumerator.
  * Bind serialized JSON as text before casting: postgres.js otherwise JSON-encodes it a second time.
  */
@@ -294,12 +305,17 @@ export class SqlQueueStore {
   private async linkRunItem(intent: QueueIntent, jobId: RawBuilder<unknown>, db: Executor) {
     const item = sql`i."runId" = ${intent.runId}::uuid and i."itemKey" = ${intent.itemKey} and i.stage = ${intent.name}`;
     await sql`update job_run_item i set "jobId" = ${jobId} where ${item}`.execute(db);
-    const { rows } = await sql<{ runId: string }>`update job_run_item i set state = j.state from job j
-      where ${item} and j.id = i."jobId" and j.state in ('pending','waiting','active')
-        and i.state not in ('pending','waiting','active')
+    // Only an item `syncItem` keeps in step with its job: a library alias never learns the job finished,
+    // so reviving one would leave its run open for good. The run reopens whenever the item is live with a
+    // live job, a new item created pending in a finished run included.
+    const { rows } = await sql<{ runId: string }>`update job_run_item i set state = case
+        when i.state in ('pending','waiting','active') then i.state else j.state end
+      from job j where ${item} and j.id = i."jobId" and j.state in ('pending','waiting','active') and ${itemFollowsJob}
       returning i."runId"`.execute(db);
     if (rows.length > 0) {
-      await sql`update job_run set "finishedAt" = null where id = ${rows[0].runId}::uuid`.execute(db);
+      await sql`update job_run set "finishedAt" = null where id = ${rows[0].runId}::uuid and "finishedAt" is not null`.execute(
+        db,
+      );
     }
   }
 
@@ -893,13 +909,7 @@ export class SqlQueueStore {
   private async syncItem(jobId: string | string[], tx: Executor) {
     const jobIds = Array.isArray(jobId) ? jobId : [jobId];
     const { rows } = await sql<{ runId: string }>`update job_run_item i set state = j.state from job j
-      where j.id = any(${jobIds}::uuid[]) and i."jobId" = j.id
-        and not exists (select 1 from job_selection s where s.id = i."selectionId"
-          and s."sourceKind" != 'frozen' and i."runId" != s."runId")
-        and (i."runId" = j."runId" or (not exists (select 1 from job_library_source_producer link where link."producerId" = j.id)
-          and not exists (select 1 from job_run_item canonical join job_selection s on s.id=canonical."selectionId"
-            where canonical."jobId"=j.id and canonical."runId"=s."runId" and s."sourceKind"!='frozen')
-          and not exists (select 1 from job_selection s where s."producerId"=j.id and s."librarySharesExecution")))
+      where j.id = any(${jobIds}::uuid[]) and i."jobId" = j.id and ${itemFollowsJob}
       returning i."runId"`.execute(tx);
     await redactLibraryPayloads(tx, jobIds);
     const mirrored = await mirrorSelectionLineage(tx, { jobIds });
