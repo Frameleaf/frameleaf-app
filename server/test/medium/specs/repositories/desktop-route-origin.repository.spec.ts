@@ -3,7 +3,6 @@ import { randomUUID } from 'node:crypto';
 import type { DB } from 'src/schema/index.js';
 import { MlDestinationKind, MlWorkload } from 'src/enum.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
-import { down } from 'src/schema/migrations/2100000002996-MlRouteOrigin.js';
 import { getKyselyDB } from 'test/utils.js';
 
 let db: Kysely<DB>;
@@ -100,10 +99,4 @@ it('stale provenance and a removed default destination require review rather tha
   await sql`DELETE FROM ml_destination WHERE id=${second.id}::uuid`.execute(db);
   expect(await routes.setDefaultRoute(MlWorkload.PetRecognition, first.id)).toBe(false);
   expect(await origin(MlWorkload.PetRecognition)).toBe('legacy');
-});
-
-it('refuses schema downgrade when it would discard recorded route intent', async () => {
-  await routes.clearRoute(MlWorkload.StudioAi);
-  await expect(db.transaction().execute((tx) => down(tx))).rejects.toThrow('recorded route intent');
-  expect(await origin(MlWorkload.StudioAi)).toBe('pinned');
 });

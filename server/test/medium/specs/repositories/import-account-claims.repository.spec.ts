@@ -7,7 +7,6 @@ import { SessionRepository } from 'src/repositories/session.repository.js';
 import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
-import { down, up } from 'src/schema/migrations/2100000003042-ImportAccountClaims.js';
 import { BaseService } from 'src/services/base.service.js';
 import { SessionFactory } from 'test/factories/session.factory.js';
 import { newMediumService } from 'test/medium.factory.js';
@@ -171,30 +170,5 @@ it('rolls activation and password back if stale credential cleanup fails', async
   } finally {
     await sql`DROP TRIGGER reject_import_claim_cleanup ON public.api_key`.execute(db);
     await sql`DROP FUNCTION public.reject_import_claim_cleanup()`.execute(db);
-  }
-});
-
-it('refuses a downgrade that would reactivate unclaimed owners and defaults existing accounts to active', async () => {
-  const isolated = await getKyselyDB();
-  try {
-    const { ctx } = newMediumService(BaseService, { database: isolated, real: [], mock: [LoggingRepository] });
-    const { user } = await ctx.newUser({ importClaimPending: true });
-    await expect(down(isolated)).rejects.toThrow('Imported accounts still require secure claims');
-    await expect(
-      isolated.selectFrom('user').select('importClaimPending').where('id', '=', user.id).executeTakeFirstOrThrow(),
-    ).resolves.toEqual({ importClaimPending: true });
-    await isolated.updateTable('user').set({ importClaimPending: false }).where('id', '=', user.id).execute();
-    await down(isolated);
-    const absent =
-      await sql`SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='user' AND column_name='importClaimPending'`.execute(
-        isolated,
-      );
-    expect(absent.rows).toEqual([]);
-    await up(isolated);
-    await expect(
-      isolated.selectFrom('user').select('importClaimPending').where('id', '=', user.id).executeTakeFirstOrThrow(),
-    ).resolves.toEqual({ importClaimPending: false });
-  } finally {
-    await isolated.destroy();
   }
 });

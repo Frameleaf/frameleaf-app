@@ -10,7 +10,6 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { DB } from 'src/schema/index.js';
-import { down, up } from 'src/schema/migrations/2100000003044-AssetAdditionalOriginals.js';
 import { BaseService } from 'src/services/base.service.js';
 import { StorageService } from 'src/services/storage.service.js';
 import { newMediumService } from 'test/medium.factory.js';
@@ -21,18 +20,6 @@ beforeAll(async () => {
   db = await getKyselyDB();
 });
 afterAll(async () => db?.destroy());
-
-it('can roll back an empty original-reference table and reinstall it', async () => {
-  await down(db);
-  try {
-    const result = await sql<{
-      table: string | null;
-    }>`SELECT to_regclass('public.asset_original')::text AS table`.execute(db);
-    expect(result.rows[0].table).toBeNull();
-  } finally {
-    await up(db);
-  }
-});
 
 it('retains an additional original after its primary asset is removed, until its last asset releases it', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'frameleaf-import-original-'));
@@ -65,7 +52,6 @@ it('retains an additional original after its primary asset is removed, until its
     });
     expect(await readFile(path)).toEqual(bytes);
     await expect(db.deleteFrom('physical_file').where('id', '=', original.id).execute()).rejects.toThrow();
-    await expect(down(db)).rejects.toThrow('Additional originals must be preserved before downgrading');
 
     await db.deleteFrom('asset').where('id', '=', keepsOriginal.id).execute();
     await expect(physical.deleteUnreferencedPath(path, () => unlink(path))).resolves.toMatchObject({

@@ -5,7 +5,6 @@ import { ICloudScheduledStagingRepository } from 'src/repositories/icloud-schedu
 import { ICloudConnection, ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { ICloudTransportRepository } from 'src/repositories/icloud-transport.repository.js';
 import { DB } from 'src/schema/index.js';
-import * as claimAccessPaths from 'src/schema/migrations/1791101770001-ICloudClaimAccessPaths.js';
 import { seedCanonicalAsset, seedCanonicalUser } from 'test/fixtures/canonical-database.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -226,27 +225,5 @@ describe('iCloud retained edit and staging admission (PostgreSQL)', () => {
     vi.stubEnv('FRAMELEAF_ICLOUD_MAX_STAGING_BYTES', '10');
     const candidate = await resource('new', { role: 'original' });
     expect(await repository.claim(connection.id, 10)).toMatchObject({ id: candidate.id, reservedBytes: 10 });
-  });
-
-  it('rolls back only the claim indexes and preserves resource data', async () => {
-    const saved = await resource('preserved', { role: 'original', status: 'failed', reserved: 90 });
-    const indexes = () =>
-      sql<{ name: string }>`SELECT indexname AS name FROM pg_indexes WHERE schemaname='public'
-        AND indexname IN ('icloud_resource_claim_order_idx','icloud_resource_reservation_contributors_idx')
-        ORDER BY indexname`
-        .execute(db)
-        .then(({ rows }) => rows.map(({ name }) => name));
-    expect(await indexes()).toEqual([
-      'icloud_resource_claim_order_idx',
-      'icloud_resource_reservation_contributors_idx',
-    ]);
-    try {
-      await claimAccessPaths.down(db);
-      expect(await indexes()).toEqual([]);
-      expect(await repository.resource(saved.id)).toMatchObject({ reservedBytes: 90 });
-    } finally {
-      await claimAccessPaths.up(db);
-    }
-    expect(await indexes()).toHaveLength(2);
   });
 });

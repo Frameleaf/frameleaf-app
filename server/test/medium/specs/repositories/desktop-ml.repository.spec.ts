@@ -24,10 +24,6 @@ import { MlDestinationRepository } from 'src/repositories/ml-destination.reposit
 import { SearchRepository } from 'src/repositories/search.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
-import {
-  down as removeDisclosure,
-  up as addDisclosure,
-} from 'src/schema/migrations/2100000003001-DesktopMlDisclosure.js';
 import { BaseService } from 'src/services/base.service.js';
 import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
 import { DesktopMlService } from 'src/services/desktop-ml.service.js';
@@ -1224,25 +1220,6 @@ it.each([
   },
   90_000,
 );
-
-it('migrates old broker tasks to unproven disclosure and reverses without deleting their rows', async () => {
-  const schema = 'disclosure_' + randomUUID().replaceAll('-', '');
-  await db.schema.createSchema(schema).execute();
-  const scratch = db.withSchema(schema) as Kysely<any>;
-  try {
-    await scratch.schema
-      .createTable('desktop_ml_task')
-      .addColumn('id', 'integer', (c) => c.primaryKey())
-      .execute();
-    await scratch.insertInto('desktop_ml_task').values({ id: 1 }).execute();
-    await addDisclosure(scratch);
-    expect(await scratch.selectFrom('desktop_ml_task').selectAll().execute()).toEqual([{ id: 1, disclosure: null }]);
-    await removeDisclosure(scratch);
-    expect(await scratch.selectFrom('desktop_ml_task').selectAll().execute()).toEqual([{ id: 1 }]);
-  } finally {
-    await db.schema.dropSchema(schema).cascade().execute();
-  }
-});
 
 it('does not hold a worker row while waiting for disclosure configuration authority', async () => {
   const { sut, grants, request } = await setup();

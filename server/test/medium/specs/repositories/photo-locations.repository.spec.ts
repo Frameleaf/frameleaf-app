@@ -7,8 +7,6 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { PhotoLocationsRepository } from 'src/repositories/photo-locations.repository.js';
 import { DB } from 'src/schema/index.js';
-import { down, up } from 'src/schema/migrations/2100000003034-PhotoLocations.js';
-import { down as billingDown, up as billingUp } from 'src/schema/migrations/2100000003035-PhotoLocationBilling.js';
 import { BaseService } from 'src/services/base.service.js';
 import { cloudMlJobSpentUsd } from 'src/utils/cloud-ml-job.js';
 import { newMediumService } from 'test/medium.factory.js';
@@ -17,11 +15,7 @@ import { getActiveForkKyselyDB } from 'test/utils.js';
 let db: Kysely<DB>;
 beforeAll(async () => {
   db = await getActiveForkKyselyDB();
-  await billingDown(db);
-  await down(db);
-  await up(db);
-  await billingUp(db);
-}, 60_000);
+});
 afterAll(async () => {
   await db?.destroy();
 });

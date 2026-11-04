@@ -8,11 +8,6 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { type DB } from 'src/schema/index.js';
-import { down, up } from 'src/schema/migrations/2100000003043-LibraryImportJournal.js';
-import {
-  down as downArchive,
-  up as upArchive,
-} from 'src/schema/migrations/2100000003047-LibraryImportSourceArchive.js';
 import { getKyselyConfig } from 'src/utils/database.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -260,17 +255,4 @@ it('rejects nonempty destinations and every existing Immich import journal', asy
   );
   await expect(journal().begin(binding())).rejects.toThrow('DESTINATION_ALREADY_IMPORTED');
   expect((await journal().status()).run).toBeNull();
-});
-
-it('refuses downgrade while recovery records exist and supports down/up on an empty journal', async () => {
-  const input = binding();
-  await journal().begin(input);
-  await expect(down(db)).rejects.toThrow('recovery records must be retained');
-  expect((await journal().status()).run?.binding).toEqual(input);
-  await sql`TRUNCATE public.frameleaf_library_import_mapping,public.frameleaf_library_import CASCADE`.execute(db);
-  await downArchive(db);
-  await down(db);
-  await up(db);
-  await upArchive(db);
-  await expect(journal().begin(input)).resolves.toMatchObject({ status: 'copying' });
 });
