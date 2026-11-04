@@ -77,7 +77,7 @@ describe('Piwigo common manifest mapping', () => {
     ];
     const { manifest, archive } = await read(input(), records);
     expect(manifest.assets.find((asset) => asset.id === '4')!.metadata.rating).toBe(4);
-    expect(manifest.assets.find((asset) => asset.id === '5')!.metadata).not.toHaveProperty('rating');
+    expect(manifest.assets.find((asset) => asset.id === '5')!.metadata.rating).toBeNull();
     expect(archive.filter((record) => record.table === 'rate')).toHaveLength(2);
     expect(JSON.stringify(manifest)).not.toContain('192.0.2');
   });
@@ -107,7 +107,7 @@ describe('Piwigo common manifest mapping', () => {
       entityId: '4',
       acknowledged: false,
     });
-    expect(manifest.assets.find((asset) => asset.id === '4')!.metadata).not.toHaveProperty('rating');
+    expect(manifest.assets.find((asset) => asset.id === '4')!.metadata.rating).toBeNull();
     expect(archive.find((record) => record.table === 'rate')!.value.rate).toBe(8n);
   });
 
@@ -116,7 +116,7 @@ describe('Piwigo common manifest mapping', () => {
     records.user_infos.find((row) => row.user_id === 3n)!.status = 'generic';
     records.rate = [{ element_id: 4n, user_id: 3n, anonymous_id: '192.0.2', rate: 4n, date: '2020-01-01' }];
     const { manifest } = await read(input(), records);
-    expect(manifest.assets.find((asset) => asset.id === '4')!.metadata).not.toHaveProperty('rating');
+    expect(manifest.assets.find((asset) => asset.id === '4')!.metadata.rating).toBeNull();
     expect(manifest.losses).toContainEqual({
       code: 'PIWIGO_OWNER_RATING_ARCHIVED',
       entityId: '4',
