@@ -1,7 +1,6 @@
 import { type QueryExecutorProvider, type Transaction, sql } from 'kysely';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { DB } from 'src/schema/index.js';
-import { DatabaseLock } from 'src/enum.js';
 import { jobSignal } from 'src/queue/context.js';
 
 /**
@@ -16,11 +15,12 @@ import { jobSignal } from 'src/queue/context.js';
  * without waiting. The rows remain the fence; the lock order and their conflicts are unchanged. Foreign-key checks
  * never take the turnstile, and a row locker that skips it is only as unfair as before.
  */
-// The comments name job_queue in pg_stat_activity, where a wait on the turnstile shows up as an advisory lock.
+// Keyed by name in the selection locks' hashtextextended space, clear of the small DatabaseLock ids. The comments
+// name job_queue in pg_stat_activity, where a wait on the turnstile shows up as an advisory lock.
+export const queueTurnstileKey = sql`hashtextextended('frameleaf-queue-catalogue', 0)`;
+
 export const enterQueueTurnstile = (db: QueryExecutorProvider) =>
-  sql`select pg_advisory_xact_lock_shared(${DatabaseLock.QueueCatalogue}::bigint) /* job_queue turnstile */`.execute(
-    db,
-  );
+  sql`select pg_advisory_xact_lock_shared(${queueTurnstileKey}) /* job_queue turnstile */`.execute(db);
 
 /** One queue's row. Several queues: pass them all, they are locked in name order. */
 export async function lockQueues(db: QueryExecutorProvider, queues: string[]) {
@@ -29,7 +29,7 @@ export async function lockQueues(db: QueryExecutorProvider, queues: string[]) {
 }
 
 export async function lockQueueCatalogue(db: QueryExecutorProvider) {
-  await sql`select pg_advisory_xact_lock(${DatabaseLock.QueueCatalogue}::bigint) /* job_queue catalogue */`.execute(db);
+  await sql`select pg_advisory_xact_lock(${queueTurnstileKey}) /* job_queue catalogue */`.execute(db);
   await sql`select name from job_queue order by name for no key update`.execute(db);
 }
 
@@ -57,7 +57,14 @@ export async function withQueueCatalogue<T>(
         locked = false;
         await lockQueueCatalogue(tx);
         locked = true;
-        return work(tx);
+        try {
+          return await work(tx);
+        } catch (error) {
+          // Selection sharing restarts the transaction after such an error; its sharing pages, run in between,
+          // take the catalogue too, and a lost wait there is contention like the first lock.
+          if (!isLockContention(error)) locked = false;
+          throw error;
+        }
       });
     } catch (error) {
       if (locked || !isLockContention(error) || (!signal && attempt >= UNCLAIMED_ATTEMPTS)) throw error;

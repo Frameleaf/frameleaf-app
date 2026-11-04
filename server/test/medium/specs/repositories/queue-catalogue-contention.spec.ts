@@ -1,6 +1,6 @@
 import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
-import { DatabaseLock } from 'src/enum.js';
+import { queueTurnstileKey } from 'src/queue/catalogue.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { QUEUE_TIMING, QueueIntent } from 'src/queue/types.js';
 import { getKyselyConfig } from 'src/utils/database.js';
@@ -166,7 +166,7 @@ describe('queue catalogue contention', () => {
     let taken!: () => void;
     const holding = new Promise<void>((resolve) => (taken = resolve));
     const holder = db.transaction().execute(async (tx) => {
-      await sql`select pg_advisory_xact_lock(${DatabaseLock.QueueCatalogue}::bigint)`.execute(tx);
+      await sql`select pg_advisory_xact_lock(${queueTurnstileKey})`.execute(tx);
       taken();
       await held;
     });
