@@ -99,6 +99,90 @@ const setup = (timeZone?: string) => {
 };
 
 describe('PhotoPrism common manifest assembly', () => {
+  const label = (id: bigint, name: string, change: Record<string, unknown> = {}) => ({
+    id,
+    label_name: name,
+    label_priority: 0n,
+    deleted_at: null,
+    ...change,
+  });
+  const assignment = (photo: bigint, id: bigint, source = 'manual', uncertainty = 0n) => ({
+    photo_id: photo,
+    label_id: id,
+    label_src: source,
+    uncertainty,
+  });
+  const addLabel = (rows: PhotoprismInventoryRecord[], definition: PhotoprismRow, relationship: PhotoprismRow) => {
+    rows.push(
+      ...normalizePhotoprismInventoryRow('labels', definition),
+      ...normalizePhotoprismInventoryRow('photos_labels', relationship),
+    );
+  };
+  it('preserves manual and batch labels alongside keywords without copying generated or rejected labels', () => {
+    const { rows, input, photo } = setup();
+    addLabel(rows, label(1n, 'Mountain Trail'), assignment(photo.id as bigint, 1n));
+    addLabel(rows, label(2n, 'Reviewed batch'), assignment(photo.id as bigint, 2n, 'batch'));
+    addLabel(rows, label(3n, 'summer'), assignment(photo.id as bigint, 3n));
+    addLabel(rows, label(4n, 'Generated label'), assignment(photo.id as bigint, 4n, 'image'));
+    addLabel(rows, label(5n, 'Rejected label'), assignment(photo.id as bigint, 5n, 'manual', 100n));
+    addLabel(
+      rows,
+      label(6n, 'Deleted label', { deleted_at: '2024-01-01T00:00:00Z' }),
+      assignment(photo.id as bigint, 6n),
+    );
+    addLabel(rows, label(7n, 'Hidden label', { label_priority: -1n }), assignment(photo.id as bigint, 7n));
+    const result = assemblePhotoprismManifest(rows, input);
+    expect(result.manifest.assets[0].metadata.tags).toEqual(['family', 'summer', 'Mountain Trail', 'Reviewed batch']);
+    expect(rows.find((row) => row.type === 'photo')?.value.metadata.tags).toEqual(['family', 'summer']);
+    expect(result.archive.filter((row) => row.table === 'labels')).toHaveLength(7);
+    expect(result.archive.filter((row) => row.table === 'photos_labels')).toHaveLength(7);
+  });
+  it('archives an unrepresentable manual label and explicitly reports the loss', () => {
+    const { rows, input, photo } = setup();
+    addLabel(rows, label(1n, 'Family//Travel'), assignment(photo.id as bigint, 1n));
+    const result = assemblePhotoprismManifest(rows, input);
+    expect(result.manifest.assets[0].metadata.tags).toEqual(['family', 'summer']);
+    expect(result.manifest.losses).toContainEqual({
+      code: 'PHOTOPRISM_LABEL_TAG_UNREPRESENTABLE',
+      entityId: '1',
+      acknowledged: false,
+    });
+    expect(result.archive.find((row) => row.table === 'labels')?.value.label_name).toBe('Family//Travel');
+  });
+  it.each(['missing label', 'missing photo', 'duplicate label', 'duplicate assignment', 'invalid uncertainty'])(
+    'refuses inconsistent manual-label relationships: %s',
+    (failure) => {
+      const { rows, input, photo } = setup();
+      addLabel(rows, label(1n, 'Manual tag'), assignment(photo.id as bigint, 1n));
+      switch (failure) {
+        case 'missing label': {
+          rows.push(...normalizePhotoprismInventoryRow('photos_labels', assignment(photo.id as bigint, 2n)));
+          break;
+        }
+        case 'missing photo': {
+          rows.push(...normalizePhotoprismInventoryRow('photos_labels', assignment(999n, 1n)));
+          break;
+        }
+        case 'duplicate label': {
+          rows.push(...normalizePhotoprismInventoryRow('labels', label(1n, 'Conflicting label')));
+          break;
+        }
+        case 'duplicate assignment': {
+          rows.push(...normalizePhotoprismInventoryRow('photos_labels', assignment(photo.id as bigint, 1n, 'batch')));
+          break;
+        }
+        case 'invalid uncertainty': {
+          rows.push(
+            ...normalizePhotoprismInventoryRow('labels', label(2n, 'Invalid confidence')),
+            ...normalizePhotoprismInventoryRow('photos_labels', assignment(photo.id as bigint, 2n, 'manual', 101n)),
+          );
+          break;
+        }
+      }
+      expect(() => assemblePhotoprismManifest(rows, input)).toThrow(/PHOTOPRISM_LABEL/u);
+    },
+  );
+
   it.each([null, ''])('preserves nullable and empty album description semantics: %j', (description) => {
     const { rows, input, album } = setup();
     const records = rows.filter((row) => row.type !== 'album' && !(row.type === 'archive' && row.table === 'albums'));
@@ -241,11 +325,25 @@ describe('PhotoPrism common manifest assembly', () => {
         role: 'original',
         modifiedAt: new Date(file.mod_time * 1000).toISOString(),
       }));
+      db.prepare('INSERT INTO labels(id,label_name,label_priority,deleted_at) VALUES(?,?,?,?)').run(
+        900,
+        'SQLite manual label',
+        0,
+        null,
+      );
+      db.prepare('INSERT INTO photos_labels(photo_id,label_id,label_src,uncertainty) VALUES(?,?,?,?)').run(
+        recordsFixture.tables.photos[0].id,
+        900,
+        'manual',
+        0,
+      );
       const result = readPhotoprismSqliteManifest(path, input);
       expect(result.manifest.assets.map((asset) => asset.id)).toEqual(
         recordsFixture.tables.photos.map((photo) => photo.photo_uid),
       );
       expect(result.manifest.users).toEqual([{ id: ownerId, name: 'Admin' }]);
+      expect(result.manifest.assets[0].metadata.tags).toContain('SQLite manual label');
+      expect(result.manifest.assets[1].metadata.tags).not.toContain('SQLite manual label');
       expect(result.manifest.files).toHaveLength(2);
       expect(result.archive.filter((row) => row.table === 'photos_keywords')).toHaveLength(7);
       db.exec('CREATE TABLE unexpected (id INTEGER)');
