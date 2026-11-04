@@ -6,7 +6,9 @@
     "image": "viktorstrate/photoview@sha256:a2216ed2ba7423121f5eee8b36e4fd016975e62821245c8d384ed11c988fa1b4",
     "database": {
       "engine": "sqlite",
-      "version": "3.40.1"
+      "version": "3.45.1",
+      "writerVersionNumber": 3045001,
+      "snapshotHelperVersion": "3.40.1"
     }
   },
   "schemaSha256": "d6dd07880bb4ee9eee48052a42ed394dd3e33dab75f2f0476c21d9f556871952",

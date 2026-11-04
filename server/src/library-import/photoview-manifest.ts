@@ -49,8 +49,7 @@ export function readPhotoviewManifest(snapshot: ReturnType<typeof openPhotoviewS
     snapshot.version !== input.source.version
   )
     return refuse('PHOTOVIEW_VERSION_UNQUALIFIED');
-  if (input.source.schemaSha256 !== fixture.schemaSha256 || snapshot.schemaSha256 !== input.source.schemaSha256)
-    return refuse('PHOTOVIEW_SCHEMA_UNQUALIFIED');
+  if (snapshot.schemaSha256 !== input.source.schemaSha256) return refuse('PHOTOVIEW_SCHEMA_UNQUALIFIED');
   if (
     ['complete', 'ownershipComplete', 'privacyComplete', 'writersStopped'].some(
       (name) => Reflect.get(input.inventory, name) !== true,

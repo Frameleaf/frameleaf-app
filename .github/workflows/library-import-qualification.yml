@@ -43,6 +43,55 @@ concurrency:
   group: library-import-qualification-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  photoview-native-application:
+    name: Photoview SQLite native application
+    if: github.repository == 'Frameleaf/frameleaf-app'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    env:
+      FRAMELEAF_PHOTOVIEW_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Setup Mise
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8
+        with:
+          persist_github_token: false
+          install_args: --locked
+          version: 2026.10.8
+      - name: Configure public Docker Hub mirror
+        run: bash scripts/configure-dockerhub-mirror.sh
+      - name: Install locked Server dependencies
+        run: pnpm --filter 'frameleaf...' install --frozen-lockfile
+      - name: Build required SDKs
+        run: |
+          pnpm --filter @frameleaf/sdk build
+          pnpm --filter @frameleaf/plugin-sdk build
+      - name: Prepare import runtime
+        env:
+          TMPDIR: ${{ runner.temp }}/frameleaf-photoview-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          install -d -m700 "$TMPDIR"
+          node studio/tools/prepare-server-subtitle-runtime.mjs
+          node server/scripts/prepare-import-transfer-runtime.mjs
+      - name: Verify scoped cancellation cleanup
+        run: node --test server/test/photoview-qualification-cleanup.test.mjs
+      - name: Qualify five fresh native installations
+        env:
+          TMPDIR: ${{ runner.temp }}/frameleaf-photoview-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          for attempt in 1 2 3 4 5; do
+            echo "Native Photoview installation $attempt/5"
+            install -d -m700 "$TMPDIR"
+            node server/scripts/qualify-photoview-application.mjs
+          done
+      - name: Remove disposable Docker fixture after cancellation
+        if: always()
+        env:
+          TMPDIR: ${{ runner.temp }}/frameleaf-photoview-${{ github.run_id }}-${{ github.run_attempt }}
+        run: node server/scripts/cleanup-photoview-qualification.mjs
   sqlite-source-text:
     name: SQLite source text admission
     if: github.repository == 'Frameleaf/frameleaf-app'
@@ -81,7 +130,7 @@ jobs:
         working-directory: server
         env:
           NODE_OPTIONS: --max-old-space-size=6144
-        run: pnpm exec eslint src/library-import/sqlite*.ts src/library-import/photoprism.ts src/library-import/photoprism.spec.ts src/library-import/photoprism-application.spec.ts src/library-import/photoprism-mariadb-source.spec.ts src/library-import/librephotos.ts src/library-import/photoview.ts src/library-import/lychee.ts src/library-import/pigallery2.ts src/library-import/pigallery2.spec.ts src/library-import/nextcloud.ts src/library-import/*manifest*.ts --max-warnings 0
+        run: pnpm exec eslint src/library-import/sqlite*.ts src/library-import/photoprism.ts src/library-import/photoprism.spec.ts src/library-import/photoprism-application.spec.ts src/library-import/photoprism-mariadb-source.spec.ts src/library-import/librephotos.ts src/library-import/photoview*.ts src/library-import/lychee.ts src/library-import/pigallery2.ts src/library-import/pigallery2.spec.ts src/library-import/nextcloud.ts src/library-import/*manifest*.ts --max-warnings 0
   source-manifests:
     name: Source manifest mapping
     if: github.repository == 'Frameleaf/frameleaf-app'
