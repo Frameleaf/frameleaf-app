@@ -15,9 +15,22 @@ export const asDateString = (x: Date | string | null): string | null => {
   return x instanceof Date ? isoDateToDate.encode(x) : x;
 };
 
+/** Bind offsetless edits to UTC before PostgreSQL parses them, preserving source fractional precision. */
+export const withDateTimeOffset = (value?: string) => {
+  if (!value) return value;
+  const parsed = DateTime.fromISO(value, { setZone: true, zone: 'UTC' });
+  if (!parsed.isValid) return value;
+  const explicit = /t.+(?:Z|[+-]\d{2}(?::?\d{2})?)\[/iu.test(value);
+  const resolved = explicit ? DateTime.fromISO(value.split('[', 1)[0], { setZone: true, zone: 'UTC' }) : parsed;
+  if (!resolved.isValid) return value;
+  const fraction = /t.*?[.,](\d+)/iu.exec(value)?.[1];
+  const normalized = resolved.toISO({ suppressMilliseconds: !fraction })!;
+  return fraction ? normalized.replace(/\.\d+(?=[Z+-])/u, () => '.' + fraction) : normalized;
+};
+
 export const extractTimeZone = (dateTimeOriginal?: string | null) => {
-  const extractedTimeZone = dateTimeOriginal ? DateTime.fromISO(dateTimeOriginal, { setZone: true }).zone : undefined;
-  return extractedTimeZone?.type === 'fixed' ? extractedTimeZone : undefined;
+  const parsed = dateTimeOriginal ? DateTime.fromISO(dateTimeOriginal, { setZone: true, zone: 'UTC' }) : undefined;
+  return parsed?.isValid && (parsed.zone.type === 'fixed' || parsed.zone.type === 'iana') ? parsed.zone : undefined;
 };
 
 export const mergeTimeZone = (dateTimeOriginal?: string | null, timeZone?: string | null) => {

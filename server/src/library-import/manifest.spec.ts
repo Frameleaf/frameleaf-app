@@ -273,6 +273,36 @@ describe('sealed photo preparation in manifest version three', () => {
       })),
     };
   };
+  it.each(['2020-06-10T12:30:00', '2020-06-10T12:30:00.123456'])(
+    'preserves source wall clock %s without assigning a time zone',
+    (localDateTime) => {
+      const value = prepared();
+      Object.assign(value.assets[0], { localDateTime });
+      const parsed = parseImportManifest(value);
+      expect(parsed.assets[0]).toHaveProperty('localDateTime', localDateTime);
+      expect(parsed.assets[0].metadata.timeZone).toBeUndefined();
+      const changed = structuredClone(value);
+      Object.assign(changed.assets[0], { localDateTime: '2020-06-10T13:30:00' });
+      expect(manifestFingerprint(parsed)).not.toBe(manifestFingerprint(parseImportManifest(changed)));
+    },
+  );
+  it.each([
+    '2020-06-10T12:30:00Z',
+    '2020-06-10T12:30:00+05:45',
+    '2020-02-30T12:30:00',
+    '2020-06-10T12:30:00.1234567',
+    '2020-06-10 12:30:00',
+  ])('refuses an invalid or non-local wall clock %s', (localDateTime) => {
+    const value = prepared();
+    Object.assign(value.assets[0], { localDateTime });
+    expect(() => parseImportManifest(value)).toThrow();
+  });
+  it('requires one source clock representation instead of silently overriding a named zone', () => {
+    const value = prepared();
+    Object.assign(value.assets[0], { localDateTime: '2020-06-10T12:30:00' });
+    Object.assign(value.assets[0].metadata, { timeZone: 'UTC' });
+    expect(() => parseImportManifest(value)).toThrow();
+  });
   it('retains the qualified media type, microsecond modified time and original names', () => {
     const value = prepared();
     expect(parseImportManifest(value)).toEqual(value);

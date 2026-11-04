@@ -1910,6 +1910,46 @@ describe(MetadataService.name, () => {
       },
     );
 
+    it.each([null, 'UTC'])(
+      'preserves authoritative capture clocks through sidecar writes and ordinary extraction (zone: %s)',
+      async (timeZone) => {
+        const instant = new Date('2020-06-10T18:30:00.123Z');
+        const local = timeZone ? instant : new Date('2020-06-10T12:30:00.123Z');
+        const asset = AssetFactory.from({ fileCreatedAt: instant, localDateTime: local })
+          .file({ type: AssetFileType.Sidecar })
+          .exif({ dateTimeOriginal: instant, timeZone })
+          .build();
+        const locks = new Set<LockableProperty>(['dateTimeOriginal', 'timeZone']);
+        mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockImplementation(() => Promise.resolve([...locks]));
+        mocks.asset.unlockProperties.mockImplementation((_id, properties) => {
+          for (const property of properties) locks.delete(property);
+          return Promise.resolve([]);
+        });
+        const sidecarSource = getForSidecarWrite(asset);
+        if (timeZone) sidecarSource.exifInfo.dateTimeOriginal = '2020-06-10T18:30:00.123456+00:00';
+        mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(sidecarSource);
+        await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
+        expect(mocks.metadata.writeTags).toHaveBeenCalledWith(
+          asset.files[0].path,
+          expect.objectContaining({
+            DateTimeOriginal: timeZone ? '2020-06-10T18:30:00.123Z' : '2020-06-10T12:30:00.123',
+          }),
+        );
+        expect(locks.has('dateTimeOriginal')).toBe(true);
+
+        mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+        mocks.asset.getForMetadataExtractionTags.mockResolvedValue({ tags: null, updateId: 'revision', timeZone });
+        mocks.job.isImportedMetadataJob.mockResolvedValue(false);
+        mockReadTags({ DateTimeOriginal: ExifDateTime.fromISO(instant.toISOString()), zone: 'UTC' });
+        await sut.handleMetadataExtraction({ id: asset.id });
+        expect(mocks.asset.update.mock.calls[0][0]).not.toHaveProperty('fileCreatedAt');
+        expect(mocks.asset.update.mock.calls[0][0]).not.toHaveProperty('localDateTime');
+        expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+          expect.objectContaining({ lockedPropertiesBehavior: 'skip' }),
+        );
+      },
+    );
+
     it('does not publish capture clocks from a metadata revision changed while reading the file', async () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
@@ -3115,6 +3155,49 @@ describe(MetadataService.name, () => {
       expect(mocks.metadata.writeTags).not.toHaveBeenCalled();
     });
 
+    it('keeps a known source zone in the sidecar even when only the capture date is locked', async () => {
+      const asset = AssetFactory.from({
+        fileCreatedAt: new Date('2020-06-10T18:30:00.123Z'),
+        localDateTime: new Date('2020-06-10T12:30:00.123Z'),
+      })
+        .file({ type: AssetFileType.Sidecar })
+        .exif({ dateTimeOriginal: new Date('2020-06-10T18:30:00.123Z'), timeZone: 'America/Edmonton' })
+        .build();
+      mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(getForSidecarWrite(asset));
+      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(['dateTimeOriginal']);
+      await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
+      expect(mocks.metadata.writeTags).toHaveBeenCalledWith(asset.files[0].path, {
+        DateTimeOriginal: '2020-06-10T12:30:00.123-06:00',
+      });
+    });
+
+    it.each(['UTC', 'Pacific/Auckland'])(
+      'writes unknown-zone capture times without adopting the server zone (%s)',
+      async (serverZone) => {
+        process.env.TZ = serverZone;
+        const localDateTime = new Date('2020-06-10T12:30:00.123Z');
+        const asset = AssetFactory.from({
+          fileCreatedAt: new Date('2020-06-10T18:30:00.123Z'),
+          localDateTime,
+        })
+          .file({ type: AssetFileType.Sidecar })
+          .exif({ dateTimeOriginal: new Date('2020-06-10T18:30:00.123Z'), timeZone: null, tags: ['edited'] })
+          .build();
+        const snapshot = { ...getForSidecarWrite(asset), localDateTime };
+        mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(snapshot);
+        mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue([
+          'dateTimeOriginal',
+          'timeZone',
+          'tags',
+        ]);
+        await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
+        expect(mocks.metadata.writeTags).toHaveBeenCalledWith(
+          asset.files[0].path,
+          expect.objectContaining({ DateTimeOriginal: '2020-06-10T12:30:00.123', TagsList: ['edited'] }),
+        );
+      },
+    );
+
     it('should write tags', async () => {
       const description = 'this is a description';
       const gps = 12;
@@ -3147,7 +3230,7 @@ describe(MetadataService.name, () => {
       // LIB-02: the sidecar holds only an offset, so a time zone set in Frameleaf stays locked
       expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(
         asset.id,
-        ['description', 'latitude', 'longitude', 'dateTimeOriginal'],
+        ['description', 'latitude', 'longitude'],
         undefined,
       );
     });

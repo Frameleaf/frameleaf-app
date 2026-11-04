@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { mkdtemp, open, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { DatabaseSync, backup } from 'node:sqlite';
+import { DatabaseSync, SQLInputValue, backup } from 'node:sqlite';
 
 /** The caller fences source writers and authorizes both paths; a snapshot alone does not qualify an app schema. */
 export const captureSqliteSnapshot = async (
@@ -53,10 +53,27 @@ export const captureSqliteSnapshot = async (
 
 /** Schema identity only: source content and source application identity are verified separately. */
 export const sqliteSchemaFingerprint = (database: DatabaseSync): string => {
+  const query = 'SELECT type,name,tbl_name,sql FROM sqlite_schema ORDER BY type,name';
+  assertSqliteTextSafe(database, query);
   const structure = {
     applicationId: database.prepare('PRAGMA application_id').get(),
     userVersion: database.prepare('PRAGMA user_version').get(),
-    objects: database.prepare('SELECT type,name,tbl_name,sql FROM sqlite_schema ORDER BY type,name').all(),
+    objects: database.prepare(query).all(),
   };
   return createHash('sha256').update(JSON.stringify(structure)).digest('hex');
+};
+
+/** Fixed adapter-owned queries only; inspect text inside SQLite before Node 22 truncates embedded NULs. */
+export const assertSqliteTextSafe = (database: DatabaseSync, query: string, parameters: SQLInputValue[] = []): void => {
+  const predicate = database
+    .prepare(query)
+    .columns()
+    .map(({ name }) => {
+      const column = '"' + name.replaceAll('"', '""') + '"';
+      return `(typeof(${column})='text' AND instr(${column},char(0))>0)`;
+    })
+    .join(' OR ');
+  if (!predicate || database.prepare(`SELECT 1 FROM (${query}) WHERE ${predicate} LIMIT 1`).get(...parameters)) {
+    throw new Error('SQLite source refused: SQLITE_TEXT_UNQUALIFIED');
+  }
 };

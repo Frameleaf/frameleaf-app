@@ -75,9 +75,9 @@ export async function reconcileImportedAssets(
       const clocks = await tx.query(
         `SELECT p.id,to_char(p.taken::timestamptz AT TIME ZONE 'UTC',${format}) AS taken,
         to_char(p.modified::timestamptz AT TIME ZONE 'UTC',${format}) AS modified,
-        to_char(p.taken::timestamptz AT TIME ZONE p.zone,${format}) AS local,
+        to_char(COALESCE(p.local_clock::timestamp,p.taken::timestamptz AT TIME ZONE p.zone),${format}) AS local,
         to_char(p.deleted::timestamptz AT TIME ZONE 'UTC',${format}) AS deleted
-        FROM jsonb_to_recordset($1::text::jsonb) AS p(id text,taken text,modified text,zone text,deleted text)`,
+        FROM jsonb_to_recordset($1::text::jsonb) AS p(id text,taken text,modified text,zone text,deleted text,local_clock text)`,
         [
           JSON.stringify(
             expected.map((photo) => ({
@@ -85,6 +85,7 @@ export async function reconcileImportedAssets(
               taken: photo.metadata.takenAt,
               modified: photo.item.fileModifiedAt,
               zone: photo.metadata.timeZone,
+              local_clock: 'localDateTime' in photo.asset ? photo.asset.localDateTime : undefined,
               deleted: photo.metadata.deletedAt ?? null,
             })),
           ),
@@ -126,7 +127,7 @@ export async function reconcileImportedAssets(
         exif: {
           fileSizeInByte: primary.bytes,
           dateTimeOriginal: byId.get(id)!.taken,
-          timeZone: metadata.timeZone,
+          timeZone: metadata.timeZone ?? null,
           description: metadata.description ?? '',
           rating: metadata.rating ?? null,
           latitude: metadata.latitude ?? null,
