@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -705,14 +705,16 @@ test('common review reports the source and space without exposing the private bu
     databaseStorage: { validate(): Promise<{ root: string }> };
   };
   internal.roots = [f.root];
-  internal.fencing.verify = async () => {};
+  let fenceChecks = 0;
+  internal.fencing.verify = async () => { fenceChecks++; };
   internal.databaseStorage.validate = async () => ({ root: f.root });
   f.docker.compatibility = async () => ({ platform: 'linux/arm64' }) as Awaited<ReturnType<Docker['compatibility']>>;
+  const image = `ghcr.io/frameleaf/frameleaf-server@sha256:${'a'.repeat(64)}`;
   f.operations.releases.acquire = async () => ({
-    nas: { platforms: ['linux/arm64'] },
+    nas: { platforms: ['linux/arm64'], images: { server: image } },
   }) as Awaited<ReturnType<Releases['acquire']>>;
   const common: CommonImportReview = {
-    fence: { ...f.source, workers: [], containers: [] },
+    fence: { ...f.source, workers: [], containers: [], mounts: [] },
     destinationId: randomUUID(),
     bundleName: 'private-fixture-bundle',
     bootstrapAdminId: randomUUID(),
@@ -730,7 +732,35 @@ test('common review reports the source and space without exposing the private bu
     kind: 'import', sourceId: f.source.id, mediaPath, databaseRoot: f.root,
     tag: 'frameleaf-v1.0.0', port: 2283, ml: false, lifecycle: 'docker-only',
   } as const;
-  const review = await f.operations.review(input, undefined, common);
+  const { fence, media, bootstrapAdminId, ...receipt } = common;
+  const request = {
+    operationId: common.binding.operationId,
+    destinationId: common.destinationId,
+    observed: { source: common.binding.source },
+  };
+  const root = join(f.operations.directory(), `import-runtime-${request.operationId}`);
+  await mkdir(root, { mode: 0o700 });
+  f.docker.pull = async (candidate) => { assert.equal(candidate, image); };
+  f.docker.prepareImportBundle = async (directory, candidate, authority, reviewedMedia) => {
+    assert.equal(directory, f.operations.directory());
+    assert.equal(candidate, image);
+    assert.deepEqual(reviewedMedia, media);
+    const staged = await readFile(join(root, 'prepare.json'));
+    assert.deepEqual(JSON.parse(staged.toString('utf8')), request);
+    assert.equal(authority.preparationSha256, createHash('sha256').update(staged).digest('hex'));
+    await authority.verify();
+    return receipt as Awaited<ReturnType<Docker['prepareImportBundle']>>;
+  };
+  await assert.rejects(
+    f.operations.prepareCommonReview(input, {
+      fence, media: [...media, { source: f.root, target: '/import-media/foreign', readOnly: true }],
+      bootstrapAdminId, request,
+    }),
+    /import_runtime_media_invalid/,
+  );
+  assert.equal(fenceChecks, 0);
+  const review = await f.operations.prepareCommonReview(input, { fence, media, bootstrapAdminId, request });
+  assert.equal(fenceChecks, 3);
   assert.equal(review.id, common.binding.operationId);
   assert.equal(review.backup, null);
   assert.deepEqual(review.commonImport, {
@@ -741,5 +771,12 @@ test('common review reports the source and space without exposing the private bu
     assert(value && !publicReview.includes(value));
   }
   assert.deepEqual(f.store.get<{ common: CommonImportReview }>(`review:${review.id}`)?.common, common);
+  const lowSpaceId = randomUUID();
+  await assert.rejects(f.operations.review(input, undefined, {
+    ...common,
+    binding: { ...common.binding, operationId: lowSpaceId },
+    requiredMediaBytes: Number.MAX_SAFE_INTEGER,
+  }), /insufficient_disk_space/);
+  assert.equal(f.store.get(`review:${lowSpaceId}`), null);
   await assert.rejects(f.operations.review(input, undefined, common), /invalid_import_authority/);
 });

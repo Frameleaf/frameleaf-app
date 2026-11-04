@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto';
-import { mkdir, readFile, writeFile, stat, rename, open } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, stat, rename, open, realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { Store } from './store.js';
@@ -357,6 +357,14 @@ export class Operations {
     if (this.installation() || input.kind !== 'import' || input.sourceId !== fence.id || !input.mediaPath ||
       !media.some((mount) => mount.target === '/data' && mount.source === input.mediaPath && !mount.readOnly))
       throw new Refusal('invalid_import_authority');
+    await storagePath(input.mediaPath, this.roots, 0);
+    const sourceRoots = fence.mounts.filter((mount) => mount.type === 'bind').map(({ source }) => source);
+    for (const mount of media) {
+      if (mount.target === '/data') continue;
+      if (!sourceRoots.some((root) => mount.source === root || mount.source.startsWith(root + '/')) ||
+        await realpath(mount.source).catch(() => null) !== mount.source)
+        throw new Refusal('import_runtime_media_invalid');
+    }
     const platform = (await this.docker.compatibility()).platform;
     const release = await this.releases.acquire(input.tag);
     if (!release.nas.platforms.includes(platform)) throw new Refusal('release_architecture_unavailable');
