@@ -335,6 +335,19 @@ test('configuration reset authenticates without existing work, then drains admit
   );
   assert.equal(joinedSignal.aborted, true);
   assert.deepEqual(order, ['owned-admin', 'cleaned-admin', 'restored', 'closed']);
+  bindings.ownedWait = (description, timeout, run, signal) =>
+    withDeadline(description, Math.min(80, timeout), run, signal);
+  bindings.utils.resetAdminConfig = async () => {
+    unfinished = true;
+  };
+  bindings.emptyQueue = async () => {};
+  order.length = 0;
+  await assert.rejects(
+    makeDrain()(async () => assert.fail('unfinished queue reset mutated data'), undefined, true),
+    /lastUnfinished=true; lastUnfinishedQueues=metadata/,
+  );
+  assert.deepEqual(order, ['owned-admin', 'cleaned-admin', 'restored', 'closed']);
+  assert.equal(paused, false);
 });
 
 test('only metadata resets request configuration reconciliation and never delete its epoch pair', async () => {
