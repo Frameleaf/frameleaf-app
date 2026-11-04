@@ -159,8 +159,9 @@ it.each([
     await symlink(stagingRoot, join(stagingRoot, 'alias'));
     candidate = { ...value, stagingRoot: join(stagingRoot, 'alias') };
   }
-  await expect(writeLibraryImportBundle(candidate)).rejects.toThrow(/Library import refused:/);
-  await expect(writeLibraryImportBundle(candidate)).rejects.not.toThrow(/private-verifier-value/);
+  const failureResult: unknown = await writeLibraryImportBundle(candidate).catch((error: unknown) => error);
+  expect(failureResult).toMatchObject({ message: expect.stringMatching(/^Library import refused:/u) });
+  expect(String(failureResult)).not.toContain('private-verifier-value');
   expect((await readdir(stagingRoot)).sort()).toEqual(
     failure === 'symlink staging' ? ['alias', 'previous.json'] : ['previous.json'],
   );
