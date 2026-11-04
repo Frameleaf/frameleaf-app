@@ -7,7 +7,15 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { OnEvent } from 'src/decorators.js';
 import { AdminConfigDto } from 'src/dtos/config.dto.js';
 import { LibrarySetupProgressDto } from 'src/dtos/frameleaf-library-setup.dto.js';
-import { FrameleafWorker, JobName, MediaOperationKind, QueueName, SyncEntityType, UserStatus } from 'src/enum.js';
+import {
+  FrameleafWorker,
+  JobName,
+  MediaOperationKind,
+  QueueName,
+  SyncEntityType,
+  SystemMetadataKey,
+  UserStatus,
+} from 'src/enum.js';
 import { readImportedSetupRun } from 'src/library-import/setup-run.js';
 import { lockQueueCatalogue } from 'src/queue/catalogue.js';
 import { listRuns } from 'src/queue/run-query.js';
@@ -22,6 +30,8 @@ import { LibraryScanService } from 'src/services/library-scan.service.js';
 import { MediaHealthService } from 'src/services/media-health.service.js';
 import { SystemConfigService } from 'src/services/system-config.service.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
+import { OvernightState, quietHoursHolds } from 'src/utils/overnight.js';
+import { serverTimeZone } from 'src/utils/server-time-zone.js';
 import { fromAck } from 'src/utils/sync.js';
 
 type SetupState = {
@@ -74,7 +84,10 @@ const KEY = 'frameleaf-manager-library-setup';
  * once; the stages below wait for Library Care's checksum scan of every original, then start by themselves.
  */
 const EARLY_STAGES: string[] = [JobName.AssetExtractMetadata, JobName.AssetGenerateThumbnails];
-const SEARCH_STAGES: string[] = [JobName.SmartSearch, JobName.AssetDetectFaces];
+/** The setup bar's later stage: the heavy work that waits for the file check, and that quiet hours save for the night. */
+const SEARCH_STAGES: string[] = [JobName.SmartSearch, JobName.AssetDetectFaces, JobName.AssetEncodeVideo];
+/** The setup bar's early stage: what starts with the file check. */
+const THUMBNAIL_STAGES: string[] = [...EARLY_STAGES, JobName.PersonGenerateThumbnail];
 const phoneKey = (sessionId: string) => `:phone:${sessionId}`;
 /** Library Care's full check of an account: every original, not only recent changes or chosen photos. */
 const fullScan = (table: string) =>
@@ -495,11 +508,18 @@ export class FrameleafLibrarySetupService {
         : null;
     const disabled = run ? await this.disabledImportStages() : [];
     const { rows: stages } = run
-      ? await sql<{ stage: string; total: number; done: number }>`SELECT i.stage, count(*)::int AS total,
+      ? await sql<{
+          stage: string;
+          queue: string;
+          total: number;
+          done: number;
+        }>`SELECT i.stage, i.queue, count(*)::int AS total,
           -- Settled, not only completed: an item's failure is listed in Background work and never holds setup (FL-1165).
           count(*) FILTER (WHERE coalesce(j.state,i.state) NOT IN ('pending','waiting','active'))::int AS done
           FROM job_run_item i LEFT JOIN job j ON j.id=i."jobId"
-          WHERE i."runId"=${run.id}::uuid AND i.stage<>all(${disabled}::text[]) GROUP BY i.stage`.execute(this.db)
+          WHERE i."runId"=${run.id}::uuid AND i.stage<>all(${disabled}::text[]) GROUP BY i.stage, i.queue`.execute(
+          this.db,
+        )
       : { rows: [] };
     const sum = (names: string[]) => {
       const part = { total: 0, done: 0 };
@@ -531,9 +551,10 @@ export class FrameleafLibrarySetupService {
       (SELECT count(*) FROM asset WHERE "deletedAt" IS NULL)::int AS items,
       (SELECT count(*) FROM person WHERE name <> '')::int AS people,
       (SELECT count(*) FROM album WHERE "deletedAt" IS NULL)::int AS albums`.execute(this.db);
-    const thumbnails = sum([JobName.AssetGenerateThumbnails, JobName.PersonGenerateThumbnail]);
+    const thumbnails = sum(THUMBNAIL_STAGES);
     const search = sum(SEARCH_STAGES);
     const checked = !!state.checkReleasedAt;
+    const night = checked && !state.paused && search.done < search.total ? await this.heldForNight(stages) : null;
     const status = (part: { total: number; done: number }, released: boolean) =>
       (part.total > 0 || (run?.enumerationDone && state.phase === 'complete')) && part.done >= part.total
         ? 'done'
@@ -570,12 +591,36 @@ export class FrameleafLibrarySetupService {
         { id: 'thumbnails' as const, status: status(thumbnails, !!run), ...thumbnails },
         {
           id: 'search' as const,
-          status: disabled.length === 2 && search.total === 0 ? ('waiting' as const) : status(search, !!run && checked),
-          disabled: disabled.length === 2 && search.total === 0,
+          // With AI processing off only videos are left in this stage; with none, it has nothing to wait for.
+          status:
+            (disabled.length === 2 && search.total === 0) || night
+              ? ('waiting' as const)
+              : status(search, !!run && checked),
+          disabled: disabled.length === 2,
+          ...(night && { heldForNight: true, resumesAt: night.resumesAt }),
           ...search,
         },
       ],
     };
+  }
+
+  /**
+   * FL-577: quiet hours pause the search stage's queues outside the overnight window. When every queue that still
+   * holds some of its work is saved for the night, the bar says when it starts again instead of "In progress".
+   */
+  private async heldForNight(rows: { stage: string; queue: string; total: number; done: number }[]) {
+    const queues = new Set(
+      rows.filter((row) => SEARCH_STAGES.includes(row.stage) && row.done < row.total).map((row) => row.queue),
+    );
+    const overnight = await this.read<OvernightState>(SystemMetadataKey.OvernightSequence);
+    if (!overnight?.quiet?.holding?.length) return null;
+    const { config } = await this.config.getAdminConfigWithRevision();
+    const holds = quietHoursHolds(overnight, config.nightlyTasks, serverTimeZone(config.server));
+    for (const queue of queues) {
+      // A queue an administrator resumed during the day is no longer held.
+      if (!holds.has(queue as QueueName) || !(await this.jobs.isPaused(queue as QueueName))) return null;
+    }
+    return { resumesAt: holds.values().next().value ?? null };
   }
 
   /** FL-1146: Pause holds new work and Library Care's scans at their next checkpoint; nothing is lost. */

@@ -16,12 +16,15 @@
    * Setup bar (FL-1146, owner 2026-11-02; prototype SetupBar.jsx): an Immich import opens the library as soon as its
    * rows are in. Until the work behind it is done, administrators see this row above the top bar on every page:
    * the file check reads every original and compares it with Immich's checksum, thumbnails are made alongside it,
-   * and smart search and faces wait for the check. When everything has finished, the completion window opens once.
+   * and smart search, faces and videos wait for the check. Quiet hours (FL-577) save those for the night, and the bar
+   * says when they start. When everything has finished, the completion window opens once.
    */
   import { clickOutside } from '$lib/actions/click-outside';
   import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { tonightLabel } from '$lib/frameleaf/background-work';
   import { Route } from '$lib/route';
   import { locale } from '$lib/stores/preferences.store';
+  import { setupProgress } from '$lib/stores/setup-progress.svelte';
   import { handleError } from '$lib/utils/handle-error';
   import {
     beginLibrarySetup,
@@ -48,30 +51,31 @@
   import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
 
-  let progress = $state<LibrarySetupProgressDto | null>(null);
+  type Stage = LibrarySetupProgressDto['stages'][number];
+
+  const progress = $derived(setupProgress.progress);
   let open = $state(false);
   let celebrating = $state(false);
-  let height = $state(0);
   let busy = $state(false);
-  /** The first reading of the current stage, for the time-left estimate. */
-  let since = $state<{ id: LibrarySetupStageId; at: number; done: number } | null>(null);
   let timer: ReturnType<typeof setInterval> | undefined;
   let loading = false;
-  let requested = 0;
-  let applied = 0;
 
-  const visible = $derived(!!progress?.active && !progress.completedAt);
+  // The kept answer belongs to an administrator; another account never sees it.
+  const visible = $derived(!!authManager.user?.isAdmin && !!progress?.active && !progress.completedAt);
   const attention = $derived(progress?.phase === Phase.NeedsAttention);
+  /** A stage with AI processing off still has work while videos are left in it. */
+  const hasWork = (stage: Stage) => !stage.disabled || stage.done < stage.total;
   const current = $derived(
     progress?.stages.find(
       (stage) =>
-        !stage.disabled &&
+        hasWork(stage) &&
         (stage.status === LibrarySetupStageStatus.Running || stage.status === LibrarySetupStageStatus.Paused),
-    ) ?? progress?.stages.find((stage) => !stage.disabled && stage.status === LibrarySetupStageStatus.Waiting),
+    ) ?? progress?.stages.find((stage) => hasWork(stage) && stage.status === LibrarySetupStageStatus.Waiting),
   );
   const part = $derived(current && current.total > 0 ? Math.min(1, current.done / current.total) : 0);
   const percent = $derived(Math.floor(part * 100));
   const secondsLeft = $derived.by(() => {
+    const since = setupProgress.since;
     if (!current || !since || since.id !== current.id || progress?.paused) {
       return null;
     }
@@ -81,12 +85,16 @@
   });
 
   const stageTitle = (id: LibrarySetupStageId) => $t(`setup_bar_stage_${id}`);
-  const stageDetail = (id: LibrarySetupStageId, status: LibrarySetupStageStatus, disabled = false) =>
-    disabled
-      ? $t('setup_bar_stage_search_disabled')
-      : id === LibrarySetupStageId.Search && status === LibrarySetupStageStatus.Waiting
-        ? $t('setup_bar_stage_search_waiting')
-        : $t(`setup_bar_stage_${id}_detail`);
+  const tonight = (stage: Stage) => tonightLabel(stage.resumesAt ?? null, $t, $locale);
+  // Work quiet hours saved for the night says when it starts, AI processing off or on.
+  const stageDetail = (stage: Stage) =>
+    stage.heldForNight
+      ? tonight(stage)
+      : stage.disabled
+        ? $t(hasWork(stage) ? 'setup_bar_stage_videos_detail' : 'setup_bar_stage_search_disabled')
+        : stage.id === LibrarySetupStageId.Search && stage.status === LibrarySetupStageStatus.Waiting
+          ? $t('setup_bar_stage_search_waiting')
+          : $t(`setup_bar_stage_${stage.id}_detail`);
   // The stage status has no failed value (native clients decode it strictly); a halted setup means the check stopped.
   const stopped = (stage: { id: LibrarySetupStageId; status: LibrarySetupStageStatus }) =>
     attention && stage.id === LibrarySetupStageId.Check && stage.status !== LibrarySetupStageStatus.Done;
@@ -115,11 +123,11 @@
   const show = (next: LibrarySetupProgressDto) => {
     const stage = next.stages.find((item) => item.status === LibrarySetupStageStatus.Running);
     if (!stage) {
-      since = null;
-    } else if (since?.id !== stage.id) {
-      since = { id: stage.id, at: Date.now(), done: stage.done };
+      setupProgress.since = null;
+    } else if (setupProgress.since?.id !== stage.id) {
+      setupProgress.since = { id: stage.id, at: Date.now(), done: stage.done };
     }
-    progress = next;
+    setupProgress.progress = next;
     if (next.completedAt && readCelebrated() !== next.completedAt) {
       celebrating = true;
     }
@@ -130,13 +138,24 @@
     }
   };
 
-  /** Only the newest answer is shown: a slow poll must not undo a later one, or a pause. */
+  /**
+   * Only the newest answer is shown, across pages: a slow poll, or one from a page that has gone, must not undo a later
+   * answer or a pause. Returns whether this answer was shown.
+   */
   const latest = async (request: Promise<LibrarySetupProgressDto>) => {
-    const id = ++requested;
+    const id = ++setupProgress.requested;
     const next = await request;
-    if (id > applied) {
-      applied = id;
-      show(next);
+    if (id <= setupProgress.applied) {
+      return false;
+    }
+    setupProgress.applied = id;
+    show(next);
+    return true;
+  };
+  /** An action's answer that lost to a newer one (asked before the action took effect) asks again. */
+  const afterAction = async (request: Promise<LibrarySetupProgressDto>) => {
+    if (!(await latest(request))) {
+      await latest(getLibrarySetupProgress());
     }
   };
 
@@ -168,7 +187,7 @@
     }
   };
   const togglePause = () =>
-    act(() => latest(pauseLibrarySetup({ librarySetupPauseDto: { paused: !progress!.paused } })));
+    act(() => afterAction(pauseLibrarySetup({ librarySetupPauseDto: { paused: !progress!.paused } })));
   // A failed or cancelled file check stops setup; starting it again is the only way on (Library Care says why).
   const retry = () =>
     act(async () => {
@@ -196,7 +215,7 @@
 
   // Pages size themselves from --fl-topbar-height, which adds this bar's height (app.css).
   $effect(() => {
-    document.documentElement.style.setProperty('--fl-setup-bar-height', visible ? `${height}px` : '0px');
+    document.documentElement.style.setProperty('--fl-setup-bar-height', visible ? `${setupProgress.height}px` : '0px');
   });
   onDestroy(() => document.documentElement.style.removeProperty('--fl-setup-bar-height'));
 </script>
@@ -206,7 +225,7 @@
     class="fl-setup-bar"
     class:is-paused={progress.paused}
     class:is-attention={attention}
-    bind:clientHeight={height}
+    bind:clientHeight={setupProgress.height}
     use:clickOutside={{ onOutclick: () => (open = false), onEscape: () => (open = false) }}
   >
     <Icon
@@ -237,7 +256,11 @@
         {:else if current}
           {stageTitle(current.id)}
         {/if}
-        {#if secondsLeft !== null && !attention}
+        {#if attention}
+          <!-- The attention line says it all. -->
+        {:else if current?.heldForNight}
+          · {tonight(current)}
+        {:else if secondsLeft !== null}
           · {timeLeft(secondsLeft)}
         {/if}
       </span>
@@ -308,14 +331,14 @@
             {#each progress.stages as stage (stage.id)}
               {@const share = stage.total > 0 ? stage.done / stage.total : 0}
               {@const partial =
-                !stage.disabled && share > 0 && share < 1 && stage.status !== LibrarySetupStageStatus.Done}
+                hasWork(stage) && share > 0 && share < 1 && stage.status !== LibrarySetupStageStatus.Done}
               <li
                 class:is-done={stage.status === LibrarySetupStageStatus.Done}
                 class:is-running={stage.status === LibrarySetupStageStatus.Running && !stopped(stage)}
                 class:is-waiting={stage.status === LibrarySetupStageStatus.Waiting}
               >
                 <Icon
-                  icon={stage.disabled
+                  icon={!hasWork(stage)
                     ? mdiPauseCircleOutline
                     : stopped(stage)
                       ? mdiAlertCircleOutline
@@ -332,12 +355,16 @@
                         ? $t('setup_bar_status_stopped')
                         : partial
                           ? `${Math.floor(share * 100)}%`
-                          : stage.disabled
+                          : !hasWork(stage)
                             ? $t('setup_bar_status_disabled')
                             : $t(`setup_bar_status_${stage.status}`)}</span
                     >
                   </div>
-                  <p>{stageDetail(stage.id, stage.status, stage.disabled)}</p>
+                  <p>{stageDetail(stage)}</p>
+                  {#if stage.heldForNight && stage.disabled}
+                    <!-- Only videos are saved for the night; AI processing stays off. -->
+                    <p>{$t('setup_bar_stage_search_disabled')}</p>
+                  {/if}
                   {#if partial}
                     <div class="fl-setup-bar-progress is-stage" aria-hidden="true">
                       <span style:width="{share * 100}%"></span>

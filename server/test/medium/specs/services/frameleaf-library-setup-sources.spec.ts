@@ -44,6 +44,7 @@ const cases = [
     'repeated-begin',
     'scans-pause',
     'pause-rollback',
+    'quiet-hours',
   ].map((outcome) => ({
     kind: 'photoprism' as SourceKind,
     mismatch: '',
@@ -146,6 +147,7 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
     return Promise.resolve({});
   });
   const operations = new MediaOperationRepository(db);
+  const isPaused = vi.fn().mockResolvedValue(true);
   const make = (connection = db) =>
     new FrameleafLibrarySetupService(
       connection,
@@ -153,6 +155,7 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
       {} as never,
       {
         getJobCounts: vi.fn().mockResolvedValue({ active: 0, waiting: 0, delayed: 0, paused: 0, failed: 0 }),
+        isPaused,
       } as never,
       users as never,
       { getNow: vi.fn().mockResolvedValue({ nowId: randomUUID() }) } as never,
@@ -476,6 +479,46 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
           ).toEqual([]);
           break;
         }
+        case 'quiet-hours': {
+          // Metadata counts with thumbnails, and video conversion with smart search and faces: setup waits for both.
+          await sql`INSERT INTO job_run_item("runId","itemKey",stage,queue,state,selection) VALUES
+            (${id}::uuid,'synthetic-metadata',${JobName.AssetExtractMetadata},${QueueName.MetadataExtraction},'pending','{}'::jsonb),
+            (${id}::uuid,'synthetic-video',${JobName.AssetEncodeVideo},${QueueName.VideoConversion},'pending','{}'::jsonb)`.execute(
+            db,
+          );
+          const stage = async (name: string) => (await make().progress()).stages.find(({ id }) => id === name);
+          expect(await stage('thumbnails')).toMatchObject({ status: 'running', done: 2, total: 3 });
+          expect(await stage('search')).toEqual({
+            id: 'search',
+            status: 'running',
+            disabled: false,
+            done: 2,
+            total: 3,
+          });
+          // FL-577: quiet hours hold the remaining video conversion by day, so the stage waits for tonight.
+          await sql`INSERT INTO system_metadata(key,value) VALUES('overnight-sequence',${JSON.stringify({
+            run: null,
+            nights: [],
+            quiet: { holding: [QueueName.SmartSearch, QueueName.FaceDetection, QueueName.VideoConversion] },
+          })}::text::jsonb)`.execute(db);
+          expect(await stage('search')).toMatchObject({
+            status: 'waiting',
+            heldForNight: true,
+            resumesAt: expect.any(String),
+            done: 2,
+            total: 3,
+          });
+          expect(isPaused).toHaveBeenCalledWith(QueueName.VideoConversion);
+          // A queue an administrator resumed during the day runs, and a paused setup says paused.
+          isPaused.mockResolvedValue(false);
+          expect(await stage('search')).toMatchObject({ status: 'running' });
+          expect(await stage('search')).not.toHaveProperty('heldForNight');
+          isPaused.mockResolvedValue(true);
+          await make().setPaused(true);
+          expect(await stage('search')).toMatchObject({ status: 'paused' });
+          expect(await stage('search')).not.toHaveProperty('heldForNight');
+          break;
+        }
         case 'empty': {
           await sql`UPDATE job_run SET "enumerationDone"=false WHERE id=${id}::uuid`.execute(db);
           expect((await make().progress()).stages.find(({ id }) => id === 'thumbnails')?.status).toBe('running');
@@ -544,7 +587,21 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
               ).rejects.toMatchObject({ reason: 'workload-disabled' });
               expect(await store.defer(claim, 'workload-disabled')).toBe(true);
             }
-            if (outcome === 'disabled-people') {
+            if (outcome === 'disabled') {
+              // With AI processing off, videos still count in the stage, which still says AI is off.
+              await sql`INSERT INTO job_run_item("runId","itemKey",stage,queue,state,selection)
+                VALUES(${id}::uuid,'synthetic-video',${JobName.AssetEncodeVideo},${QueueName.VideoConversion},'pending','{}'::jsonb)`.execute(
+                db,
+              );
+              expect((await make().progress()).stages.find(({ id }) => id === 'search')).toEqual({
+                id: 'search',
+                status: 'running',
+                disabled: true,
+                done: 0,
+                total: 1,
+              });
+              await sql`DELETE FROM job_run_item WHERE "runId"=${id}::uuid AND "itemKey"='synthetic-video'`.execute(db);
+            } else if (outcome === 'disabled-people') {
               // A retained people-preview child remains required while the AI stages wait for enablement.
               await sql`INSERT INTO job_run_item("runId","itemKey",stage,queue,state,selection)
             VALUES(${id}::uuid,${randomUUID()},${JobName.PersonGenerateThumbnail},${QueueName.ThumbnailGeneration},'pending','{}'::jsonb)`.execute(
@@ -552,7 +609,8 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
               );
               expect((await make().status()).phase).toBe('verifying');
               const previews = (await make().progress()).stages.find(({ id }) => id === 'thumbnails');
-              expect(previews).toMatchObject({ total: 2, done: 1, status: 'running' });
+              // The photo's metadata and thumbnail are done; the person preview is not.
+              expect(previews).toMatchObject({ total: 3, done: 2, status: 'running' });
               await sql`UPDATE job_run_item SET state='completed' WHERE "runId"=${id}::uuid AND stage=${JobName.PersonGenerateThumbnail}`.execute(
                 db,
               );

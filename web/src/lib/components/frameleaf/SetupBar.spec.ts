@@ -4,6 +4,7 @@ import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import SetupBar from '$lib/components/frameleaf/SetupBar.svelte';
 import { locale } from '$lib/stores/preferences.store';
+import { setupProgress } from '$lib/stores/setup-progress.svelte';
 import { handleError } from '$lib/utils/handle-error';
 import en from '../../../../../i18n/en.json';
 
@@ -38,6 +39,7 @@ beforeAll(() => {
 });
 beforeEach(() => {
   vi.clearAllMocks();
+  setupProgress.reset();
   localStorage.clear();
   locale.set('en-US');
   auth.user.isAdmin = true;
@@ -104,6 +106,155 @@ describe('SetupBar', () => {
         'Everything you imported is in Frameleaf. Every original was checked, and smart search and faces are ready to use.',
       ),
     ).not.toBeInTheDocument();
+  });
+
+  it('says when quiet hours start the stage saved for the night, never that it is in progress', async () => {
+    const tonight = new Date();
+    tonight.setHours(23, 30, 0, 0);
+    const value = progress({ phase: Phase.Verifying });
+    value.stages = [
+      { id: LibrarySetupStageId.Check, status: LibrarySetupStageStatus.Done, done: 823_034, total: 823_034 },
+      { id: LibrarySetupStageId.Thumbnails, status: LibrarySetupStageStatus.Done, done: 1_646_068, total: 1_646_068 },
+      {
+        id: LibrarySetupStageId.Search,
+        status: LibrarySetupStageStatus.Waiting,
+        heldForNight: true,
+        resumesAt: tonight.toISOString(),
+        done: 1200,
+        total: 1_646_200,
+      },
+    ];
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(value);
+    render(SetupBar);
+    expect(
+      await screen.findByText(
+        /Smart search, faces and videos · 1,200 of 1,646,200 · Saved for tonight, starts at 11:30\sPM/,
+      ),
+    ).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: /Details/ }));
+    expect(screen.getByRole('region', { name: 'Setting up your library' })).toHaveTextContent(
+      /Saved for tonight, starts at 11:30\sPM/,
+    );
+    expect(screen.queryByText('In progress')).not.toBeInTheDocument();
+  });
+
+  it('keeps counting videos while AI processing is off', async () => {
+    const value = progress({ phase: Phase.Verifying });
+    value.stages = [
+      { id: LibrarySetupStageId.Check, status: LibrarySetupStageStatus.Done, done: 823_034, total: 823_034 },
+      { id: LibrarySetupStageId.Thumbnails, status: LibrarySetupStageStatus.Done, done: 823_034, total: 823_034 },
+      { id: LibrarySetupStageId.Search, status: LibrarySetupStageStatus.Running, disabled: true, done: 4, total: 10 },
+    ];
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(value);
+    render(SetupBar);
+    expect(await screen.findByText(/Smart search, faces and videos · 4 of 10/)).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: /Details/ }));
+    expect(
+      screen.getByText('Getting videos ready to play. AI processing is turned off. You can enable it later.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Off')).not.toBeInTheDocument();
+  });
+
+  it('says when quiet hours start the videos left while AI processing is off', async () => {
+    const value = progress({ phase: Phase.Verifying });
+    value.stages = [
+      { id: LibrarySetupStageId.Check, status: LibrarySetupStageStatus.Done, done: 823_034, total: 823_034 },
+      { id: LibrarySetupStageId.Thumbnails, status: LibrarySetupStageStatus.Done, done: 823_034, total: 823_034 },
+      {
+        id: LibrarySetupStageId.Search,
+        status: LibrarySetupStageStatus.Waiting,
+        disabled: true,
+        heldForNight: true,
+        resumesAt: null,
+        done: 4,
+        total: 10,
+      },
+    ];
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(value);
+    render(SetupBar);
+    await fireEvent.click(await screen.findByRole('button', { name: /Details/ }));
+    expect(screen.getByRole('region', { name: 'Setting up your library' })).toHaveTextContent('Saved for the night');
+    // Only videos wait for the night; the stage still says AI processing is off.
+    expect(screen.getByText('AI processing is turned off. You can enable it later.')).toBeInTheDocument();
+    expect(
+      screen.queryByText('Getting videos ready to play. AI processing is turned off. You can enable it later.'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('keeps the last answer across pages, so the bar never hides and comes back', async () => {
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(progress());
+    const first = render(SetupBar);
+    expect(await screen.findByText('Setting up your library')).toBeInTheDocument();
+    first.unmount();
+
+    // The next page shows it before its own request answers.
+    sdkMock.getLibrarySetupProgress.mockReturnValue(new Promise(() => {}));
+    const next = render(SetupBar);
+    expect(await screen.findByText(/Checking original files · 312,640 of 823,034/)).toBeInTheDocument();
+    next.unmount();
+
+    // Another account never sees it.
+    auth.user.isAdmin = false;
+    render(SetupBar);
+    expect(screen.queryByText('Setting up your library')).not.toBeInTheDocument();
+  });
+
+  it('ignores an answer that lands after its page has gone', async () => {
+    let answerLate: (value: LibrarySetupProgressDto) => void = () => {};
+    sdkMock.getLibrarySetupProgress.mockReturnValueOnce(new Promise((resolve) => (answerLate = resolve)));
+    const first = render(SetupBar);
+    first.unmount();
+
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(progress());
+    render(SetupBar);
+    expect(await screen.findByText(/Checking original files · 312,640 of 823,034/)).toBeInTheDocument();
+
+    answerLate(progress({ paused: true }));
+    // Let the late answer settle before looking.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByText('Setting up your library')).toBeInTheDocument();
+    expect(screen.queryByText('Setup is paused')).not.toBeInTheDocument();
+  });
+
+  it('shows a pause that finishes after its page has gone', async () => {
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(progress());
+    let answerPause: (value: LibrarySetupProgressDto) => void = () => {};
+    sdkMock.pauseLibrarySetup.mockReturnValueOnce(new Promise((resolve) => (answerPause = resolve)));
+    const first = render(SetupBar);
+    await fireEvent.click((await screen.findAllByRole('button', { name: 'Pause' }))[0]);
+    first.unmount();
+
+    // The next page asked before the pause took effect.
+    render(SetupBar);
+    expect(await screen.findByText('Setting up your library')).toBeInTheDocument();
+
+    // Its answer lost to the next page's, so the bar asks again and shows the pause.
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(progress({ paused: true }));
+    answerPause(progress({ paused: true }));
+    expect(await screen.findByText('Setup is paused')).toBeInTheDocument();
+  });
+
+  it('never lets a pause from an old page undo a later resume', async () => {
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(progress());
+    let answerPause: (value: LibrarySetupProgressDto) => void = () => {};
+    sdkMock.pauseLibrarySetup.mockReturnValueOnce(new Promise((resolve) => (answerPause = resolve)));
+    const first = render(SetupBar);
+    await fireEvent.click((await screen.findAllByRole('button', { name: 'Pause' }))[0]);
+    first.unmount();
+
+    // The next page sees the pause and resumes.
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(progress({ paused: true }));
+    render(SetupBar);
+    sdkMock.pauseLibrarySetup.mockResolvedValueOnce(progress());
+    await fireEvent.click((await screen.findAllByRole('button', { name: 'Resume' }))[0]);
+    expect(await screen.findByText('Setting up your library')).toBeInTheDocument();
+
+    // The old page's pause answer lands last; the server says setup runs.
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(progress());
+    answerPause(progress({ paused: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByText('Setting up your library')).toBeInTheDocument();
+    expect(screen.queryByText('Setup is paused')).not.toBeInTheDocument();
   });
 
   it('formats progress using the chosen number locale', async () => {

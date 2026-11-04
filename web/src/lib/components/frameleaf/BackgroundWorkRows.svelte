@@ -10,7 +10,7 @@
    * Activity indicator do.
    */
   import { ACTIVITY_STAGE_KEYS } from '$lib/frameleaf/activity';
-  import { tonightStart, type BackgroundWorkCard } from '$lib/frameleaf/background-work';
+  import { tonightLabel, type BackgroundWorkCard } from '$lib/frameleaf/background-work';
   import { cloudWorkRows, type CloudWorkRow } from '$lib/frameleaf/cloud-backup';
   import { runTitleKey } from '$lib/frameleaf/durable-runs';
   import { jobQueue } from '$lib/frameleaf/job-queues';
@@ -38,28 +38,10 @@
   const hrefOf = (card: BackgroundWorkCard) =>
     jobQueue(card.queueName) ? Route.viewQueue({ name: card.queueName }) : commandCenterUrl('processing', 'queues');
 
-  /**
-   * FL-711: work quiet hours saved for the overnight window starts again by itself, so it says when,
-   * never "Paused". Tonight's start reads as a time; a start further off names its day as well.
-   */
-  const tonightOf = ({ startsAt }: NonNullable<BackgroundWorkCard['tonight']>) => {
-    const when = tonightStart(startsAt);
-    if (when === 'unscheduled' || !startsAt) {
-      return $t('frameleaf_activity_bg_tonight_unscheduled');
-    }
-    const at = new Date(startsAt);
-    const time = new Intl.DateTimeFormat($locale ?? undefined, { hour: 'numeric', minute: '2-digit' }).format(at);
-    if (when === 'tonight') {
-      return $t('frameleaf_activity_bg_tonight', { values: { time } });
-    }
-    const day = new Intl.DateTimeFormat($locale ?? undefined, { weekday: 'long' }).format(at);
-    return $t('frameleaf_activity_bg_tonight_day', { values: { day, time } });
-  };
-
   /** The prototype's line: the state, what is waiting and running, how far, and where. */
   const detailOf = (card: BackgroundWorkCard) =>
     [
-      card.tonight ? tonightOf(card.tonight) : $t(card.statusKey),
+      card.tonight ? tonightLabel(card.tonight.startsAt, $t, $locale ?? undefined) : $t(card.statusKey),
       card.waiting > 0 ? $t('frameleaf_activity_bg_waiting', { values: { count: number(card.waiting) } }) : null,
       card.running > 0 ? $t('frameleaf_activity_bg_running', { values: { count: number(card.running) } }) : null,
       card.progress === null ? null : `${card.progress}%`,

@@ -99413,7 +99413,7 @@
             "items": {
               "properties": {
                 "disabled": {
-                  "description": "Optional processing is turned off; retained work can resume when enabled",
+                  "description": "AI processing is turned off; retained work can resume when enabled. Videos still count in the stage",
                   "type": "boolean"
                 },
                 "done": {
@@ -99421,8 +99421,19 @@
                   "minimum": 0,
                   "type": "integer"
                 },
+                "heldForNight": {
+                  "description": "Quiet hours saved this stage for the overnight window; it starts again by itself",
+                  "type": "boolean"
+                },
                 "id": {
                   "$ref": "#/components/schemas/LibrarySetupStageId"
+                },
+                "resumesAt": {
+                  "description": "When quiet hours start this stage again; null when the overnight schedule never starts",
+                  "format": "date-time",
+                  "nullable": true,
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                  "type": "string"
                 },
                 "status": {
                   "$ref": "#/components/schemas/LibrarySetupStageStatus"
