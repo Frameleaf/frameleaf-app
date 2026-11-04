@@ -6,7 +6,7 @@
     isShownAsCloudWork,
   } from '$lib/frameleaf/activity';
   import { activitySession } from '$lib/frameleaf/activity-session.svelte';
-  import { librarySession } from '$lib/frameleaf/library-session.svelte';
+  import { libraryBulkOperations } from '$lib/frameleaf/library-bulk-operations.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { downloadManager } from '$lib/managers/download-manager.svelte';
   import { Route } from '$lib/route';
@@ -40,7 +40,7 @@
       operations: activitySession.operations,
       uploads: $uploadAssetsStore,
       downloads: pendingDownloads,
-      bulk: librarySession.session.operations,
+      bulk: libraryBulkOperations.operations,
     }),
   );
   /** The server sends its background work to administrators only. */
