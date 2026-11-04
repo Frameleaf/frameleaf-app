@@ -15,7 +15,7 @@ import { NestFactory } from '@nestjs/core';
 import express, { type Request, type Response } from 'express';
 import { createReadStream, fstatSync } from 'node:fs';
 import { createNativeService } from './runtime/native-service.js';
-import { chmod, mkdir, readFile, realpath, stat, statfs } from 'node:fs/promises';
+import { chmod, mkdir, readFile, realpath, rm, stat, statfs } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { isIP } from 'node:net';
 import { join, resolve } from 'node:path';
@@ -33,6 +33,7 @@ import { Operations, ReviewInput } from './operations.js';
 import { Refusal, publicSource, redact, secretEnvironmentValues } from './contracts.js';
 import { appdataDefaults } from './appdata.js';
 import { nativeListener } from './runtime/native-listener.js';
+import { publishNativeClaimProof, requireNativeClaimProof } from './runtime/native-claim.js';
 import { PostgresStorage } from './postgres-storage.js';
 import { HostAutostart } from './unraid-autostart.js';
 import { ServiceOverrides, detectAcceleration, hostInstallations, suggestedPort } from './compose.js';
@@ -68,6 +69,7 @@ const security = new Security(store, origin, process.env.MANAGER_FRAME_ORIGIN, {
   trustedProxies: trustedProxyList(process.env.MANAGER_TRUSTED_PROXIES),
   loopbackPublished: runtime === 'docker' && (bindAddress === '::1' || /^127\./.test(bindAddress)),
 });
+const nativeClaimProof = native && !security.claimed() ? randomBytes(32) : null;
 const seed = store.get<string>('release-seed') ?? randomBytes(32).toString('hex');
 store.createOnce('release-seed', seed);
 const releases = new Releases(join(directory, 'releases'), seed);
@@ -129,15 +131,19 @@ class Errors implements ExceptionFilter {
 @Controller('manager-api')
 class Api {
   @Get('status') status() {
-    return { claimed: security.claimed() };
+    const claimed = security.claimed();
+    return { claimed, claimProofRequired: !!native && !claimed };
   }
 
   @Post('claim') async claim(@Body() input: unknown, @Req() request: Request, @Res({ passthrough: true }) response: Response) {
-    const value = z
-      .object({ name: z.string().min(1).max(120), password: Password })
-      .strict()
-      .parse(input);
+    const claim = z.object({ name: z.string().min(1).max(120), password: Password }).strict();
+    const value = (native ? claim.extend({ proof: z.string().max(64).optional() }) : claim).parse(input);
+    if (native && !security.claimed()) requireNativeClaimProof(nativeClaimProof, 'proof' in value ? value.proof : undefined);
     await security.claim(value.name, value.password, security.clientAddress(request));
+    if (native) {
+      nativeClaimProof?.fill(0);
+      await rm(join(store.directory, 'claim-key'), { force: true });
+    }
     const session = await security.login(value.password);
     security.issueSession(response, session.session);
     return { csrf: session.csrf };
@@ -513,8 +519,16 @@ async function main() {
   }
   app.use(express.static(ui, { index: 'index.html', dotfiles: 'deny' }));
   app.enableShutdownHooks();
-  if (native) await app.listen(nativeAddress!.port, nativeAddress!.host);
-  else if (http) await app.listen(9443, '0.0.0.0');
+  if (native) {
+    await app.listen(nativeAddress!.port, nativeAddress!.host);
+    try {
+      // A process that cannot acquire the listener must not replace the running Manager's proof.
+      if (nativeClaimProof) await publishNativeClaimProof(store.directory, nativeClaimProof);
+    } catch (error) {
+      await app.close();
+      throw error;
+    }
+  } else if (http) await app.listen(9443, '0.0.0.0');
   else {
     // Docker: browsers send a typed "IP:port" as http://, so redirect it instead of an empty reply.
     await app.init();
