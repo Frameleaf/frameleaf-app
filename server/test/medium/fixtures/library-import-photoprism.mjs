@@ -120,6 +120,7 @@ for (const file of originals) {
 const sourceEvidence = {
   source,
   singleOwner: { sourceId: input.sourceUserId, confirmEntireLibrary: true },
+  ownerEmail: 'native-owner@example.test',
   materializedAlbums: input.nativeLibrary.materializedAlbums,
 };
 const reviewedLosses = new Set([
@@ -146,23 +147,6 @@ try {
 } finally {
   snapshot.close();
 }
-const ownerIntents = [
-  {
-    sourceUserId: input.sourceUserId,
-    email: 'native-owner@example.test',
-    login: {
-      revision,
-      snapshotSha256: revision,
-      accountEnabled: true,
-      passwordLoginEnabled: true,
-      secondFactorRequired: false,
-      externalIdentityRequired: false,
-      ownedLibraryAccess: 'full',
-      otherRestrictions: 'none',
-    },
-    disposition: { kind: 'preserve' },
-  },
-];
 const publication = {
   format: 'frameleaf-prepare-library-import',
   version: 1,
@@ -175,7 +159,6 @@ const publication = {
   roots,
   copyRoots: { source: 'source', destination: 'destination' },
   ownerMappings: [{ sourceId: input.sourceUserId, destinationId: ownerId }],
-  ownerIntents,
 };
 const preparationPath = join(directory, 'prepare.json');
 const approvePreparation = async (seal) => {

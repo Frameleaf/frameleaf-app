@@ -482,21 +482,12 @@ export class Operations {
           source,
           singleOwner: { sourceId: choice.sourceOwnerId, confirmEntireLibrary: choice.confirmEntireLibrary },
           materializedAlbums: choice.materializedAlbums,
+          ownerEmail: choice.ownerEmail,
         },
         approvedLossCodes: choice.approvedLossCodes,
         roots,
         copyRoots: { source: 'source', destination: 'destination' },
         ownerMappings: [{ sourceId: choice.sourceOwnerId, destinationId: randomUUID() }],
-        ownerIntents: [{
-          sourceUserId: choice.sourceOwnerId,
-          email: choice.ownerEmail,
-          login: {
-            revision: source.revision, snapshotSha256: source.revision,
-            accountEnabled: true, passwordLoginEnabled: true, secondFactorRequired: false,
-            externalIdentityRequired: false, ownedLibraryAccess: 'full', otherRestrictions: 'none',
-          },
-          disposition: { kind: 'preserve' },
-        }],
       },
     }, managerPort);
   }

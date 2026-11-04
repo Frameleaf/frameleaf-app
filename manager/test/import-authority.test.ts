@@ -794,7 +794,7 @@ test('common review reports the source and space without exposing the private bu
     assert.equal(prepared.request.snapshotPath, request.snapshotPath);
     assert.deepEqual(prepared.request.observed, {
       source: request.observed.source, singleOwner: { sourceId: 'owner', confirmEntireLibrary: true },
-      materializedAlbums: {},
+      materializedAlbums: {}, ownerEmail: 'owner@example.test',
     });
     assert.deepEqual(prepared.request.copyRoots, { source: 'source', destination: 'destination' });
     assert.deepEqual(prepared.media, [

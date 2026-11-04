@@ -44,6 +44,7 @@ const prepareSchema = z.strictObject({
       source: importSourceSchema,
       materializedAlbums: z.record(id, z.array(id)),
       singleOwner: z.strictObject({ sourceId: id, confirmEntireLibrary: z.literal(true) }),
+      ownerEmail: z.email().max(254),
     }),
   ]),
   approvedLossCodes: z.array(id),
@@ -51,7 +52,7 @@ const prepareSchema = z.strictObject({
   placements: z.array(z.unknown()).optional(),
   copyRoots: z.strictObject({ source: id, destination: id }).optional(),
   ownerMappings: z.array(z.strictObject({ sourceId: id, destinationId: z.uuid() })),
-  ownerIntents: z.array(z.unknown()),
+  ownerIntents: z.array(z.unknown()).optional(),
 });
 
 const requestSchema = z.discriminatedUnion('format', [inspectSchema, prepareSchema]);
@@ -83,6 +84,8 @@ export async function prepareLibraryImport(configPath: string, authorize = reque
     (input.placements === undefined) === (input.copyRoots === undefined) ||
     (input.copyRoots && input.copyRoots.source === input.copyRoots.destination)
   )
+    throw new LibraryImportRefused('IMPORT_PREPARATION_INPUT_INVALID');
+  if ('singleOwner' in input.observed === (input.ownerIntents !== undefined))
     throw new LibraryImportRefused('IMPORT_PREPARATION_INPUT_INVALID');
   const result = await publishPhotoprismSqliteBundle({
     ...input,

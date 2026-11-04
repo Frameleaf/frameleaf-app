@@ -223,9 +223,10 @@ export async function publishPhotoprismSqliteBundle(
     'records' | 'owners' | 'ownerMappings' | 'observed'
   > & {
     snapshotPath: string;
-    observed: Parameters<typeof publishPhotoprismImportBundle>[0]['observed'] | SingleOwnerReview;
+    observed:
+      Parameters<typeof publishPhotoprismImportBundle>[0]['observed'] | (SingleOwnerReview & { ownerEmail: string });
     ownerMappings: { sourceId: string; destinationId: string }[];
-    ownerIntents: unknown[];
+    ownerIntents?: unknown[];
   },
 ) {
   const { source } = input.observed;
@@ -239,7 +240,34 @@ export async function publishPhotoprismSqliteBundle(
     const mapped = new Map(input.ownerMappings.map(({ sourceId, destinationId }) => [sourceId, destinationId]));
     const users = new Map([...snapshot.rows('users')].flat().map((row) => [row.user_uid, row]));
     const owners = [];
-    for (const raw of input.ownerIntents) {
+    if ('singleOwner' in input.observed) {
+      const sourceUserId = input.observed.singleOwner.sourceId;
+      const destinationUserId = mapped.get(sourceUserId);
+      if (input.ownerIntents !== undefined || input.ownerMappings.length !== 1 || !destinationUserId)
+        throw new LibraryImportRefused('OWNER_QUALIFICATION_CHANGED');
+      const credential = await snapshot.password({ operationId: input.operationId, sourceUserId, destinationUserId });
+      owners.push({
+        intent: parseImportedOwnerIntent({
+          sourceUserId,
+          email: input.observed.ownerEmail,
+          login: {
+            revision: source.revision,
+            snapshotSha256: source.revision,
+            accountEnabled: true,
+            passwordLoginEnabled: true,
+            secondFactorRequired: false,
+            externalIdentityRequired: false,
+            ownedLibraryAccess: 'full',
+            otherRestrictions: 'none',
+          },
+          disposition: credential
+            ? { kind: 'preserve' }
+            : { kind: 'claim', reason: 'no-local-verifier', claimPermitted: true },
+        }),
+        credential,
+      });
+    }
+    for (const raw of input.ownerIntents ?? []) {
       const intent = parseImportedOwnerIntent(raw);
       const destinationUserId = mapped.get(intent.sourceUserId);
       if (!destinationUserId || intent.login.snapshotSha256 !== source.revision)
