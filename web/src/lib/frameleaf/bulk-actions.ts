@@ -566,6 +566,36 @@ export const menuBulkActions = (actions: BulkAction[], trash: boolean, locked = 
     .filter((group) => group.items.length > 0);
 };
 
+/**
+ * What a right-click on photos offers after the bar's buttons (approved design, 2026-11-04,
+ * PhotoMenu.jsx): the edits, Lock or Unlock, Archive, Stack and the album's own commands, for one
+ * photo or the whole selection. The rest (Live Photo links, refresh jobs, export) stays under More.
+ */
+export const CONTEXT_BULK_ACTIONS: readonly BulkActionId[] = [
+  'tag',
+  'change-date',
+  'change-location',
+  'change-description',
+  'mark-sensitive',
+  'unmark-sensitive',
+  'archive',
+  'unarchive',
+  'stack',
+  'set-album-cover',
+  'remove-from-album',
+];
+
+/** The right-click menu: the bar's buttons (without "Send a copy…"), then the above, with Delete last. */
+export const contextBulkActions = (actions: BulkAction[], trash: boolean, locked = false): BulkAction[] => {
+  const primary = primaryBulkActions(actions, trash, locked).filter((action) => action.id !== 'send-copy');
+  const shown = new Set(primary.map((action) => action.id));
+  const byId = bulkActionById(actions);
+  const extra = CONTEXT_BULK_ACTIONS.map((id) => byId[id]).filter(
+    (action): action is BulkAction => !!action?.available && !shown.has(action.id),
+  );
+  return [...primary.filter((action) => !action.danger), ...extra, ...primary.filter((action) => action.danger)];
+};
+
 /** The name of a bulk action as the page shows it (`add-to-album` → `frameleaf_bulk_add_to_album`). */
 export const bulkActionTitleKey = (action: string): Translations =>
   `frameleaf_bulk_${action.replaceAll('-', '_')}` as Translations;

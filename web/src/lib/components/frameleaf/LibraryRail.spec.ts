@@ -1,4 +1,4 @@
-import { LibraryViewScope, AlbumKind } from '@frameleaf/sdk';
+import { LibraryViewScope, AlbumKind, AlbumUserRole } from '@frameleaf/sdk';
 import { mdiCameraBurst, mdiFolderOutline, mdiHeartOutline } from '@mdi/js';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
@@ -509,5 +509,127 @@ describe('LibraryRail in Boards', () => {
     app.page.url = new URL('http://localhost/photos');
     render(LibraryRail);
     expect(document.documentElement).not.toHaveAttribute('data-fl-boards-rail');
+  });
+});
+
+describe('LibraryRail right-click menu (approved design, 2026-11-04)', () => {
+  const me = userAdminFactory.build({ id: 'me' });
+  const mine = (overrides: Parameters<typeof albumFactory.build>[0]) =>
+    albumFactory.build({ albumUsers: [{ user: me, role: AlbumUserRole.Owner }], ...overrides });
+  const family = mine({ id: 'family', albumName: 'Family', kind: AlbumKind.Collection });
+  const rockies = mine({
+    id: 'rockies',
+    albumName: 'Rockies',
+    kind: AlbumKind.Album,
+    parentId: 'family',
+    assetCount: 3,
+  });
+
+  beforeAll(() => {
+    HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
+      this.open = true;
+    };
+    HTMLDialogElement.prototype.close ??= function (this: HTMLDialogElement) {
+      this.open = false;
+    };
+  });
+
+  beforeEach(() => {
+    authManager.setUser(me);
+    albumTreeDropdown.set(true);
+    sdkMock.getAlbumHierarchy.mockResolvedValue({
+      roots: [{ album: family, children: [{ album: rockies, children: [] }] }],
+    });
+  });
+
+  it('offers an album’s commands at the pointer, including taking it out of its collection', async () => {
+    render(LibraryRail);
+    await fireEvent.contextMenu(await screen.findByRole('link', { name: 'Rockies' }), { clientX: 50, clientY: 60 });
+
+    const menu = await screen.findByRole('menu', { name: 'Actions for Rockies' });
+    expect(menu.parentElement).toBe(document.body);
+    expect(menu.style.left).toBe('50px');
+    expect(
+      within(menu)
+        .getAllByRole('menuitem')
+        .map((item) => item.textContent?.trim()),
+    ).toEqual([
+      'New album in Rockies',
+      'Rename',
+      'Icon and colour…',
+      'Edit details',
+      'Move to…',
+      'Take out of “Family”',
+      'Upload photos',
+      'Share',
+      'Create link',
+      'Delete',
+    ]);
+  });
+
+  it('deletes from the sidebar through the same confirmation as the Albums page, without leaving the page', async () => {
+    sdkMock.deleteAlbum.mockResolvedValue(undefined as never);
+    render(LibraryRail);
+    await fireEvent.contextMenu(await screen.findByRole('link', { name: 'Rockies' }), { clientX: 50, clientY: 60 });
+    await fireEvent.click(
+      within(await screen.findByRole('menu', { name: 'Actions for Rockies' })).getByRole('menuitem', {
+        name: 'Delete',
+      }),
+    );
+
+    await screen.findByRole('dialog', { name: 'Delete “Rockies”?' });
+    await fireEvent.click(screen.getByRole('button', { name: 'Delete album' }));
+    await waitFor(() => expect(sdkMock.deleteAlbum).toHaveBeenCalledWith({ id: 'rockies' }));
+  });
+
+  it('renames a collection in its row: Enter keeps the new name, Escape puts the old one back', async () => {
+    sdkMock.updateAlbumInfo.mockResolvedValue({ ...family, albumName: 'Our family' });
+    render(LibraryRail);
+    const open = async () => {
+      await fireEvent.contextMenu(await screen.findByRole('link', { name: 'Family' }), { clientX: 20, clientY: 20 });
+      await fireEvent.click(
+        within(await screen.findByRole('menu', { name: 'Actions for Family' })).getByRole('menuitem', {
+          name: 'Rename',
+        }),
+      );
+      return screen.findByRole('textbox', { name: 'New name for Family' });
+    };
+
+    let field = await open();
+    expect(field).toHaveValue('Family');
+    expect(document.activeElement).toBe(field);
+    await fireEvent.input(field, { target: { value: 'Ignored' } });
+    await fireEvent.keyDown(field, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('textbox')).toBeNull());
+    expect(sdkMock.updateAlbumInfo).not.toHaveBeenCalled();
+
+    field = await open();
+    await fireEvent.input(field, { target: { value: 'Our family' } });
+    await fireEvent.keyDown(field, { key: 'Enter' });
+    await waitFor(() =>
+      expect(sdkMock.updateAlbumInfo).toHaveBeenCalledWith({
+        id: 'family',
+        updateAlbumDto: { albumName: 'Our family' },
+      }),
+    );
+    // A collection can hold a smart album too.
+    await fireEvent.contextMenu(await screen.findByRole('link', { name: 'Family' }), { clientX: 20, clientY: 20 });
+    expect(
+      within(await screen.findByRole('menu', { name: 'Actions for Family' })).getByRole('menuitem', {
+        name: 'New smart album in Family',
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it('offers what can be made on the Albums heading', async () => {
+    const { container } = render(LibraryRail);
+    await screen.findByRole('link', { name: 'Rockies' });
+    await fireEvent.contextMenu(container.querySelector('[data-rail-create="albums"]')!, { clientX: 10, clientY: 10 });
+    const menu = await screen.findByRole('menu', { name: 'New' });
+    expect(
+      within(menu)
+        .getAllByRole('menuitem')
+        .map((item) => item.textContent?.trim()),
+    ).toEqual(['New album', 'New smart album', 'New collection']);
   });
 });

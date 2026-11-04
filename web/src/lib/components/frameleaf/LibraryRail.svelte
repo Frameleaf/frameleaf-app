@@ -2,6 +2,7 @@
   import { browser } from '$app/env';
   import { page } from '$app/state';
   import AlbumMark from '$lib/components/frameleaf/AlbumMark.svelte';
+  import RailAlbumMenu from '$lib/components/frameleaf/RailAlbumMenu.svelte';
   import RailSavedSearches from '$lib/components/frameleaf/RailSavedSearches.svelte';
   import Sidebar from '$lib/components/sidebar/Sidebar.svelte';
   import {
@@ -54,6 +55,7 @@
   import { Route } from '$lib/route';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { albumTreeDropdown, sidebarCollapsed } from '$lib/stores/preferences.store';
+  import { handleUpdateAlbumInfo } from '$lib/services/album.service';
   import { handleError } from '$lib/utils/handle-error';
   import {
     AssetTypeEnum,
@@ -61,6 +63,7 @@
     LibraryScope,
     LibraryViewScope,
     getAlbumHierarchy,
+    type AlbumHierarchyNode,
     type AlbumResponseDto,
     searchLibraryItems,
     type SearchFilter,
@@ -89,7 +92,7 @@
     mdiViewDashboardOutline,
   } from '@mdi/js';
   import { debounce } from 'lodash-es';
-  import { onMount, onDestroy, untrack, type Snippet } from 'svelte';
+  import { onMount, onDestroy, tick, untrack, type Snippet } from 'svelte';
   import type { Translations } from 'svelte-i18n';
   import { t } from 'svelte-i18n';
   import { SvelteSet } from 'svelte/reactivity';
@@ -121,6 +124,10 @@
   let { children }: Props = $props();
 
   let tree = $state<FrameleafAlbumTree>(emptyAlbumTree());
+  /** The same albums as the server sent them, for the right-click menu's dialogs. */
+  let albumRecords = $state<AlbumResponseDto[]>([]);
+  const flattenHierarchy = (nodes: AlbumHierarchyNode[]): AlbumResponseDto[] =>
+    nodes.flatMap((node) => [node.album, ...flattenHierarchy(node.children)]);
   const albumRoots = $derived(
     (tree.roots ?? [...tree.collections, ...tree.albums]).filter(({ kind }) => kind !== 'space'),
   );
@@ -157,6 +164,7 @@
       const response = await getAlbumHierarchy(scope ? { libraryScope: scope } : {});
       if (version === treeRequest && current() && scope === workspaceScope) {
         tree = buildAlbumTree(response);
+        albumRecords = flattenHierarchy(response.roots);
       }
     } catch (error) {
       if (version === treeRequest && current()) {
@@ -168,6 +176,7 @@
     const scope = workspaceScope;
     untrack(() => {
       tree = emptyAlbumTree();
+      albumRecords = [];
       void refreshAlbums(scope);
     });
   });
@@ -177,6 +186,7 @@
       treeRequest++;
       partnerRequest++;
       tree = emptyAlbumTree();
+      albumRecords = [];
       partners = [];
       if (authManager.authenticated) {
         void refreshAlbums();
@@ -205,8 +215,95 @@
     }
   };
 
+  /*
+   * Right-click (approved design, 2026-11-04): an album, collection or space opens its menu at the
+   * pointer, the Albums or Shared spaces heading opens what can be created there. Shift+F10 or the
+   * menu key opens the focused row's menu under it. Rename edits the row in place.
+   */
+  let railMenu: RailAlbumMenu | undefined = $state();
+  let renaming = $state<string | null>(null);
+  const contextTarget = (target: EventTarget | null) => {
+    const element = target instanceof Element ? target : null;
+    if (!element || !railElement?.contains(element) || iconOnly) {
+      return null;
+    }
+    return element.closest<HTMLElement>('[data-album-id], [data-rail-create]');
+  };
+  const openRailMenu = (holder: HTMLElement, point?: { x: number; y: number }) => {
+    const rect = holder.getBoundingClientRect();
+    const at = point ?? { x: rect.left + 12, y: rect.bottom };
+    const section = holder.dataset.railCreate;
+    if (section === 'albums' || section === 'spaces') {
+      railMenu?.openHeading(section, at);
+      return true;
+    }
+    return !!holder.dataset.albumId && !!railMenu?.openFor(holder.dataset.albumId, at);
+  };
+  const onRailContextMenu = (event: MouseEvent) => {
+    const holder = contextTarget(event.target);
+    // The menu key sends no pointer position.
+    if (
+      holder &&
+      openRailMenu(holder, event.clientX || event.clientY ? { x: event.clientX, y: event.clientY } : undefined)
+    ) {
+      event.preventDefault();
+    }
+  };
+  const onRailKeydown = (event: KeyboardEvent) => {
+    const holder = event.key === 'F10' && event.shiftKey ? contextTarget(document.activeElement) : null;
+    if (holder && openRailMenu(holder)) {
+      event.preventDefault();
+    }
+  };
+  const finishRename = async (node: FrameleafAlbumNode, value: string | null) => {
+    renaming = null;
+    const name = value?.trim();
+    if (name && name !== node.name) {
+      // The rail refreshes on AlbumUpdate, which the save emits.
+      await handleUpdateAlbumInfo(
+        node.id,
+        { albumName: name },
+        { message: $t('frameleaf_albums_saved', { values: { name } }) },
+      );
+    }
+    await tick();
+    railElement?.querySelector<HTMLElement>(`a[data-album-id="${CSS.escape(node.id)}"]`)?.focus();
+  };
+  /** The rename field takes focus with its text selected; Enter keeps, Escape puts the name back. */
+  const renameField = (input: HTMLInputElement, node: FrameleafAlbumNode) => {
+    input.focus();
+    input.select();
+    let done = false;
+    const finish = (value: string | null) => {
+      if (!done) {
+        done = true;
+        void finishRename(node, value);
+      }
+    };
+    const onKeydown = (event: KeyboardEvent) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        finish(input.value);
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        finish(null);
+      }
+    };
+    const onBlur = () => finish(input.value);
+    input.addEventListener('keydown', onKeydown);
+    input.addEventListener('blur', onBlur);
+    return {
+      destroy: () => {
+        input.removeEventListener('keydown', onKeydown);
+        input.removeEventListener('blur', onBlur);
+      },
+    };
+  };
+
   const refreshAccessAlbums = () => {
     tree = emptyAlbumTree();
+    albumRecords = [];
     void refreshAlbums();
   };
   onMount(() => {
@@ -594,25 +691,42 @@
   });
 </script>
 
+{#snippet renameRow(node: FrameleafAlbumNode, nested: boolean)}
+  <div class="fl-link fl-renaming" class:fl-nested={nested}>
+    <AlbumMark icon={node.icon} color={node.color} size="1.25em" class="fl-icon" />
+    <input
+      class="fl-rename"
+      value={node.name}
+      aria-label={$t('frameleaf_albums_rename_label', { values: { name: node.name } })}
+      use:renameField={node}
+    />
+  </div>
+{/snippet}
+
 {#snippet railLink(label: string, icon: string | FrameleafAlbumNode, href: string, current: boolean, nested: boolean)}
-  <a
-    {href}
-    class="fl-link"
-    class:fl-nested={nested && !iconOnly}
-    class:fl-current={current}
-    aria-current={current ? 'page' : undefined}
-    title={iconOnly || nested ? label : undefined}
-    aria-label={iconOnly ? label : undefined}
-    data-sveltekit-preload-data="hover"
-  >
-    {#if typeof icon === 'string'}
-      <Icon {icon} size="1.25em" aria-hidden={true} class="fl-icon" />
-    {:else}
-      <AlbumMark icon={icon.icon} color={icon.color} size="1.25em" class="fl-icon" />
-    {/if}
-    {#if !iconOnly}<span class="fl-label">{label}</span>{/if}
-    {#if boards && typeof icon !== 'string' && !iconOnly}<small class="fl-count">{icon.itemCount}</small>{/if}
-  </a>
+  {#if typeof icon !== 'string' && renaming === icon.id}
+    {@render renameRow(icon, nested && !iconOnly)}
+  {:else}
+    <a
+      {href}
+      class="fl-link"
+      class:fl-nested={nested && !iconOnly}
+      class:fl-current={current}
+      aria-current={current ? 'page' : undefined}
+      title={iconOnly || nested ? label : undefined}
+      aria-label={iconOnly ? label : undefined}
+      data-album-id={typeof icon === 'string' ? undefined : icon.id}
+      data-sveltekit-preload-data="hover"
+    >
+      {#if typeof icon === 'string'}
+        <Icon {icon} size="1.25em" aria-hidden={true} class="fl-icon" />
+      {:else}
+        <AlbumMark icon={icon.icon} color={icon.color} size="1.25em" class="fl-icon" />
+      {/if}
+      {#if !iconOnly}<span class="fl-label">{label}</span>{/if}
+      {#if boards && typeof icon !== 'string' && !iconOnly}<small class="fl-count">{icon.itemCount}</small>{/if}
+    </a>
+  {/if}
 {/snippet}
 
 {#snippet destinationLink(destination: RailDestination)}
@@ -644,16 +758,21 @@
           <!-- One chevron that turns, in step with the section headings. -->
           <Icon icon={mdiChevronRight} size="1em" aria-hidden={true} class="fl-chevron" />
         </button>
-        <a
-          href={scopedHref(Route.viewAlbum({ id: node.id }))}
-          class="fl-link"
-          aria-current={isAlbumCurrent(node) ? 'page' : undefined}
-          data-sveltekit-preload-data="hover"
-        >
-          <AlbumMark icon={node.icon} color={node.color} size="1.25em" class="fl-icon" />
-          <span class="fl-label" title={node.name}>{node.name}</span>
-          {#if boards}<small class="fl-count">{node.itemCount}</small>{/if}
-        </a>
+        {#if renaming === node.id}
+          {@render renameRow(node, false)}
+        {:else}
+          <a
+            href={scopedHref(Route.viewAlbum({ id: node.id }))}
+            class="fl-link"
+            aria-current={isAlbumCurrent(node) ? 'page' : undefined}
+            data-album-id={node.id}
+            data-sveltekit-preload-data="hover"
+          >
+            <AlbumMark icon={node.icon} color={node.color} size="1.25em" class="fl-icon" />
+            <span class="fl-label" title={node.name}>{node.name}</span>
+            {#if boards}<small class="fl-count">{node.itemCount}</small>{/if}
+          </a>
+        {/if}
       </div>
       {#if isCollectionOpen(node.id)}
         {#each node.children as album (album.id)}
@@ -885,6 +1004,8 @@
   </div>
 {/snippet}
 
+<svelte:document oncontextmenu={onRailContextMenu} onkeydown={onRailKeydown} />
+
 <Sidebar ariaLabel={$t('frameleaf_rail_navigation')} header={railHeader} footer={railFooter}>
   <div
     bind:this={railElement}
@@ -914,7 +1035,7 @@
           <div class="fl-heading fl-heading-rule" aria-hidden="true"></div>
         {:else if section.labelKey}
           {@const create = SECTION_CREATE[section.id]}
-          <div class="fl-heading">
+          <div class="fl-heading" data-rail-create={create ? section.id : undefined}>
             <!-- The heading folds its section away (LibraryRail.jsx `heading`). -->
             <h2>
               <button
@@ -994,6 +1115,13 @@
     <div bind:this={railEnd} class="fl-rail-end" aria-hidden="true"></div>
   </div>
 </Sidebar>
+
+<RailAlbumMenu
+  bind:this={railMenu}
+  albums={albumRecords}
+  onRename={(id) => (renaming = id)}
+  onRefresh={() => refreshAlbums()}
+/>
 
 {#if extensionOpen}{#await import('$lib/components/frameleaf/BoardsExtensionDialog.svelte') then { default: BoardsExtensionDialog }}
     <BoardsExtensionDialog bind:open={extensionOpen} />
@@ -1277,6 +1405,27 @@
   }
   .fl-nested {
     padding-inline-start: 42px;
+  }
+  /* Rename in place (approved design, 2026-11-04): the row keeps its height and icon. */
+  .fl-renaming,
+  .fl-renaming:hover {
+    background: var(--fl-raised);
+  }
+  .fl-rename {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    height: 24px;
+    margin-block: -3px;
+    padding: 0 6px;
+    font: inherit;
+    color: var(--fl-text);
+    background: var(--fl-panel);
+    border: 1px solid var(--fl-accent);
+    border-radius: var(--fl-radius-xs);
+  }
+  .fl-rename:focus-visible {
+    outline-offset: 0;
   }
   .fl-label {
     min-width: 0;

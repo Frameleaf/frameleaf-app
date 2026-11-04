@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   bulkActionById,
   bulkActions,
+  contextBulkActions,
   livePhotoPair,
   menuBulkActions,
   primaryBulkActions,
@@ -51,6 +52,27 @@ describe('bulk action descriptors', () => {
     // Trash-only actions stay out of a live selection.
     expect(ids).not.toContain('restore');
     expect(ids).not.toContain('delete-permanently');
+  });
+
+  it('offers Lock and the edits on a right-click, for one photo or many, with Delete last', () => {
+    const ids = (context: Parameters<typeof bulkActions>[0]) =>
+      contextBulkActions(bulkActions(context), false).map((action) => action.id);
+    for (const assets of [[photo('a')], [photo('a'), photo('b')]]) {
+      const menu = ids({ assets, canSendCopy: true });
+      expect(menu).toEqual(
+        expect.arrayContaining(['favorite', 'add-to-album', 'tag', 'change-date', 'mark-sensitive', 'archive']),
+      );
+      expect(menu).not.toContain('send-copy');
+      expect(menu.at(-1)).toBe('delete');
+      expect(new Set(menu).size).toBe(menu.length);
+    }
+    expect(ids({ assets: [photo('a'), photo('b')] })).toContain('stack');
+    // A locked photo offers Unlock instead.
+    expect(ids({ assets: [photo('a', { isLocked: true })] })).toContain('unmark-sensitive');
+    // Inside an album: the album's own commands, with the album they act on.
+    const inAlbum = contextBulkActions(bulkActions({ assets: [photo('a')], albumId: 'album-1' }), false);
+    expect(inAlbum.find((action) => action.id === 'remove-from-album')?.albumId).toBe('album-1');
+    expect(inAlbum.map((action) => action.id)).toContain('set-album-cover');
   });
 
   it('makes Delete the confirmed permanent delete when the server has no trash', () => {

@@ -280,6 +280,27 @@ describe('AlbumDirectory', () => {
     expect(app.replaceState).not.toHaveBeenCalled();
   });
 
+  it('opens an album’s menu at the pointer on a right-click, and a collection’s on its shelf', async () => {
+    renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
+
+    const tile = document.querySelector('article[aria-label="Summer in the Rockies"]') as HTMLElement;
+    await fireEvent.contextMenu(tile, { clientX: 120, clientY: 80 });
+    const menu = await screen.findByRole('menu', { name: 'Actions for Summer in the Rockies' });
+    // It floats on the page (outside the frosted cards) at the pointer.
+    expect(menu.parentElement).toBe(document.body);
+    expect(menu.style.left).toBe('120px');
+    expect(within(menu).getByRole('menuitem', { name: 'Delete' })).toBeInTheDocument();
+    // The album inside the shelf gets its own menu, not the collection's.
+    expect(screen.queryByRole('menu', { name: 'Actions for Family' })).toBeNull();
+
+    await fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('menu', { name: 'Actions for Summer in the Rockies' })).toBeNull());
+
+    const shelf = screen.getByRole('region', { name: 'Family' });
+    await fireEvent.contextMenu(shelf, { clientX: 40, clientY: 40 });
+    expect(await screen.findByRole('menu', { name: 'Actions for Family' })).toBeInTheDocument();
+  });
+
   it('deletes an owned album through the Frameleaf confirmation, keeping its items', async () => {
     const onRefresh = vi.fn();
     sdkMock.deleteAlbum.mockResolvedValue(undefined as never);

@@ -16,11 +16,18 @@
    * Activating an item closes the popup and returns focus to the trigger, unless that
    * MenuItem was given `keepOpen` (FL-38: a "Reassign…" command that swaps the popup's
    * content for a search field rather than completing immediately).
+   *
+   * `at` opens the same menu at a point instead, for a right-click (approved design, 2026-11-04):
+   * the popup floats on the page at the pointer, kept inside the window, and closes when the page
+   * scrolls or resizes. Focus goes back to what had it before, or to the trigger. Closing sets `at`
+   * back to null.
    */
   let {
     label,
     align = 'start',
     open = $bindable(false),
+    at = $bindable(null),
+    hideTrigger = false,
     trigger,
     children,
   }: {
@@ -28,6 +35,10 @@
     label: string;
     align?: 'start' | 'end';
     open?: boolean;
+    /** Opens the menu at this point (a right-click's clientX/clientY) instead of under the trigger. */
+    at?: { x: number; y: number } | null;
+    /** No trigger button: the menu only opens at a point (the sidebar's right-click). */
+    hideTrigger?: boolean;
     /** Visible trigger content; falls back to `label`. */
     trigger?: Snippet;
     children: Snippet;
@@ -44,6 +55,53 @@
   let cancelLeave: (() => void) | undefined;
   // Deliberately not $state: whether the last run of the effect below saw the popup open.
   let wasOpen = false;
+  // Deliberately not $state: where focus goes back to after a menu opened at a point.
+  let returnTo: HTMLElement | null = null;
+  // True while the open popup floats at a point (a right-click) rather than hanging from the trigger.
+  let floating = $state(false);
+
+  /** Puts a floating popup at the point, inside the window with an 8px margin. */
+  const place = (menu: HTMLElement, point: { x: number; y: number }) => {
+    menu.style.left = `${Math.max(8, Math.min(point.x, innerWidth - menu.offsetWidth - 8))}px`;
+    menu.style.top = `${Math.max(8, Math.min(point.y, innerHeight - menu.offsetHeight - 8))}px`;
+  };
+
+  /**
+   * A floating popup lives on <body>: a frosted rail or a card mid-animation would otherwise hold a
+   * fixed popup inside it.
+   */
+  const float = (menu: HTMLElement, point: { x: number; y: number } | null) => {
+    if (!point) {
+      return;
+    }
+    document.body.append(menu);
+    place(menu, point);
+    return { destroy: () => menu.remove() };
+  };
+
+  // A right-click opens the menu where it happened; another right-click moves it there.
+  $effect(() => {
+    const point = at;
+    if (!point) {
+      return;
+    }
+    untrack(() => {
+      if (!open) {
+        const active = document.activeElement;
+        returnTo = active instanceof HTMLElement && active !== document.body ? active : null;
+        floating = true;
+        pendingFocus = 'first';
+        open = true;
+      } else if (floating && menuElement) {
+        place(menuElement, point);
+      }
+    });
+  });
+  $effect(() => {
+    if (!open && untrack(() => at)) {
+      at = null;
+    }
+  });
 
   // Before the DOM updates, so the popup is still there to fade when `open` turns false.
   $effect.pre(() => {
@@ -85,7 +143,7 @@
     if (restoreFocus) {
       // Focus the still-mounted trigger before the popup unmounts, so focus never
       // falls back to the document body.
-      triggerElement?.focus();
+      (floating && returnTo?.isConnected ? returnTo : triggerElement)?.focus();
     }
   };
 
@@ -149,8 +207,11 @@
       close(true);
     };
 
+    // A floating popup is on <body>, outside the container, so both count as inside.
+    const inside = (node: Node | null) => !!node && (container.contains(node) || menu.contains(node));
+
     const onPointerDown = (event: PointerEvent) => {
-      if (!container.contains(event.target as Node)) {
+      if (!inside(event.target as Node)) {
         close(false);
       }
     };
@@ -158,7 +219,14 @@
     const onFocusOut = (event: FocusEvent) => {
       const next = event.relatedTarget as Node | null;
       // A null relatedTarget means focus went nowhere yet; the pointer handler covers that.
-      if (next && !container.contains(next)) {
+      if (next && !inside(next)) {
+        close(false);
+      }
+    };
+
+    // A floating popup stays where it was put, so the page moving away from it closes it.
+    const onMove = (event: Event) => {
+      if (floating && !(event.target instanceof Node && menu.contains(event.target))) {
         close(false);
       }
     };
@@ -167,13 +235,19 @@
     document.addEventListener('keydown', onEscape, { capture: true });
     menu.addEventListener('click', onClick);
     container.addEventListener('focusout', onFocusOut);
+    menu.addEventListener('focusout', onFocusOut);
     document.addEventListener('pointerdown', onPointerDown, { capture: true });
+    document.addEventListener('scroll', onMove, { capture: true, passive: true });
+    addEventListener('resize', onMove);
     return () => {
       menu.removeEventListener('keydown', onKeydown);
       document.removeEventListener('keydown', onEscape, true);
       menu.removeEventListener('click', onClick);
       container.removeEventListener('focusout', onFocusOut);
+      menu.removeEventListener('focusout', onFocusOut);
       document.removeEventListener('pointerdown', onPointerDown, true);
+      document.removeEventListener('scroll', onMove, true);
+      removeEventListener('resize', onMove);
     };
   });
 
@@ -183,26 +257,30 @@
     }
     event.preventDefault();
     pendingFocus = event.key === 'ArrowUp' ? 'last' : 'first';
+    floating = false;
     open = true;
   };
 </script>
 
 <div class="menu-root" bind:this={root}>
-  <button
-    bind:this={triggerElement}
-    type="button"
-    aria-haspopup="menu"
-    aria-expanded={open}
-    aria-controls={open ? menuId : undefined}
-    aria-label={trigger ? label : undefined}
-    onkeydown={onTriggerKeydown}
-    onclick={() => {
-      pendingFocus = 'first';
-      open = !open;
-    }}
-  >
-    {#if trigger}{@render trigger()}{:else}{label}{/if}
-  </button>
+  {#if !hideTrigger}
+    <button
+      bind:this={triggerElement}
+      type="button"
+      aria-haspopup="menu"
+      aria-expanded={open}
+      aria-controls={open ? menuId : undefined}
+      aria-label={trigger ? label : undefined}
+      onkeydown={onTriggerKeydown}
+      onclick={() => {
+        pendingFocus = 'first';
+        floating = false;
+        open = !open;
+      }}
+    >
+      {#if trigger}{@render trigger()}{:else}{label}{/if}
+    </button>
+  {/if}
   {#if open || leaving}
     <div
       bind:this={menuElement}
@@ -213,6 +291,9 @@
       inert={leaving && !open}
       tabindex="-1"
       class:end={align === 'end'}
+      class:floating
+      use:float={floating ? at : null}
+      oncontextmenu={(event) => event.preventDefault()}
     >
       {@render children()}
     </div>
@@ -267,6 +348,14 @@
     transform-origin: top right;
   }
   [role='menu'].end:dir(rtl) {
+    transform-origin: top left;
+  }
+  /* On <body>, outside every .frameleaf root, so it carries the type and layer itself. */
+  [role='menu'].floating {
+    position: fixed;
+    inset: auto;
+    z-index: var(--fl-z-menu);
+    font: var(--fl-type-body);
     transform-origin: top left;
   }
   /*
