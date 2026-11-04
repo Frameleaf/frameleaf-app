@@ -5,7 +5,7 @@ import { DatabaseSync, SQLInputValue } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import records from 'src/library-import/fixtures/photoprism/261029-records.json' with { type: 'json' };
 import fixture from 'src/library-import/fixtures/photoprism/261029-sqlite.json' with { type: 'json' };
-import { readPhotoprismInventory } from 'src/library-import/photoprism-inventory.js';
+import { readPhotoprismInventory, reviewPhotoprismInventory } from 'src/library-import/photoprism-inventory.js';
 
 describe('PhotoPrism snapshot inventory reconciliation', () => {
   let root: string;
@@ -74,6 +74,20 @@ describe('PhotoPrism snapshot inventory reconciliation', () => {
     expect(inventory.archive.photos_keywords).toHaveLength(7);
     expect(inventory.photos.every((photo) => photo.createdBy === undefined)).toBe(true);
     expect(JSON.stringify(inventory.principals)).not.toMatch(/reset_token|invite_token|preview_token/u);
+  });
+  it('summarizes the frozen inventory without releasing credentials or archived rows', () => {
+    const review = reviewPhotoprismInventory(path, fixture.source.version, fixture.schemaSha256);
+    expect(() => reviewPhotoprismInventory(path, fixture.source.version, '0'.repeat(64))).toThrow(
+      'PHOTOPRISM_SCHEMA_UNQUALIFIED',
+    );
+    expect(review).toMatchObject({
+      photos: 2,
+      albums: 3,
+      originals: 2,
+      sidecars: 0,
+      accounts: [{ id: records.tables.users[2].user_uid, name: 'Admin', role: 'admin', canLogin: true }],
+    });
+    expect(JSON.stringify(review)).not.toMatch(/file_name|reset_token|invite_token|preview_token|passwd|user_name/u);
   });
   it('retains every physical original within a logical photo without deduplicating bytes', () => {
     const original = records.tables.files[0];

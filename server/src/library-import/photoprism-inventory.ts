@@ -119,9 +119,15 @@ export function* normalizePhotoprismInventoryRow(
 }
 
 /** Streams separate logical records and credential-free archive records; it does not establish ownership, byte integrity or permission equivalence. */
-export function* readPhotoprismInventory(path: string, version: string): Generator<PhotoprismInventoryRecord, void> {
+export function* readPhotoprismInventory(
+  path: string,
+  version: string,
+  expectedSchemaSha256?: string,
+): Generator<PhotoprismInventoryRecord, void> {
   const source = openPhotoprismSnapshot(path, version);
   try {
+    if (expectedSchemaSha256 !== undefined && source.schemaSha256 !== expectedSchemaSha256)
+      throw new Error('PhotoPrism source refused: PHOTOPRISM_SCHEMA_UNQUALIFIED');
     source.validateRelationships();
     for (const table of photoprismTables) {
       for (const batch of source.rows(table)) {
@@ -137,4 +143,45 @@ export function* readPhotoprismInventory(path: string, version: string): Generat
   } finally {
     source.close();
   }
+}
+
+/** Summarize observations for account and preservation review. Ownership still requires separate evidence. */
+export function reviewPhotoprismInventory(path: string, version: string, schemaSha256: string) {
+  let photos = 0;
+  let privatePhotos = 0;
+  let albums = 0;
+  let originals = 0;
+  let sidecars = 0;
+  const accounts: { id: string; name: string; role: string; canLogin: boolean }[] = [];
+  const albumsRequiringSnapshot: { id: string; name: string }[] = [];
+  for (const record of readPhotoprismInventory(path, version, schemaSha256)) {
+    const { type, value } = record;
+    switch (type) {
+      case 'photo': {
+        photos++;
+        if (value.state.private) privatePhotos++;
+        break;
+      }
+      case 'album': {
+        albums++;
+        if (!value.deletedAt && value.review.length > 0)
+          albumsRequiringSnapshot.push({ id: value.id, name: value.name });
+        break;
+      }
+      case 'file': {
+        if (value.role === 'original') originals++;
+        else if (value.role === 'sidecar') sidecars++;
+        break;
+      }
+      case 'principal': {
+        if (!value.system)
+          accounts.push({ id: value.id, name: value.name, role: value.role, canLogin: value.canLogin });
+        break;
+      }
+      default: {
+        break;
+      }
+    }
+  }
+  return { photos, privatePhotos, albums, originals, sidecars, accounts, albumsRequiringSnapshot };
 }

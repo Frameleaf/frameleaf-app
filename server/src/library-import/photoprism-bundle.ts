@@ -53,26 +53,19 @@ export async function publishPhotoprismImportBundle(input: {
   return bundle;
 }
 
-/** Read compatible verifiers from the same sealed SQLite snapshot as the asset inventory. */
-export async function publishPhotoprismSqliteBundle(
-  input: Omit<Parameters<typeof publishPhotoprismImportBundle>[0], 'records' | 'owners' | 'ownerMappings'> & {
-    snapshotPath: string;
-    ownerMappings: { sourceId: string; destinationId: string }[];
-    ownerIntents: unknown[];
-  },
-) {
-  const { source } = input.observed;
+/** Verify the approved bytes once, then check the same file identity at each authority boundary. */
+export function photoprismSnapshotVerifier(snapshotPath: string, revision: string, authorize: () => Promise<void>) {
   const identity = (stat: BigIntStats) => [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].join(':');
   let sealed: string | undefined;
-  const verifySource = async () => {
-    await input.verifySource();
-    const file = await openPrivateImportFile(input.snapshotPath);
+  return async () => {
+    await authorize();
+    const file = await openPrivateImportFile(snapshotPath);
     try {
       const before = identity(await file.stat({ bigint: true }));
       if (sealed === undefined) {
         const hash = createHash('sha256');
         for await (const bytes of file.createReadStream({ autoClose: false })) hash.update(bytes);
-        if (hash.digest('hex') !== source.revision || identity(await file.stat({ bigint: true })) !== before)
+        if (hash.digest('hex') !== revision || identity(await file.stat({ bigint: true })) !== before)
           throw new LibraryImportRefused('IMPORT_SOURCE_SNAPSHOT_CHANGED');
         sealed = before;
       } else if (sealed !== before) {
@@ -82,6 +75,18 @@ export async function publishPhotoprismSqliteBundle(
       await file.close();
     }
   };
+}
+
+/** Read compatible verifiers from the same sealed SQLite snapshot as the asset inventory. */
+export async function publishPhotoprismSqliteBundle(
+  input: Omit<Parameters<typeof publishPhotoprismImportBundle>[0], 'records' | 'owners' | 'ownerMappings'> & {
+    snapshotPath: string;
+    ownerMappings: { sourceId: string; destinationId: string }[];
+    ownerIntents: unknown[];
+  },
+) {
+  const { source } = input.observed;
+  const verifySource = photoprismSnapshotVerifier(input.snapshotPath, source.revision, input.verifySource);
   await verifySource();
   const snapshot = openPhotoprismSnapshot(input.snapshotPath, source.version);
   try {
