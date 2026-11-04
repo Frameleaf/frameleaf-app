@@ -172,6 +172,8 @@ for (const invalid of [
   'database file mapping',
   'shared staging',
   'staging in source',
+  'trailing slash source mount',
+  'root source mount',
 ]) {
   test(`invalid capture paths make no container changes: ${invalid}`, async (t) => {
     const f = await setup(t);
@@ -192,6 +194,14 @@ for (const invalid of [
         f.app.Mounts.push({ Type: 'bind', Source: f.databasePath, Destination: '/catalog.sqlite', RW: true });
         f.source.fingerprint = sourceFingerprint([f.app]);
         break;
+      case 'trailing slash source mount':
+      case 'root source mount': {
+        const source = invalid === 'root source mount' ? '/' : f.root + '/';
+        f.source.mounts.push({ type: 'bind', source, target: '/additional', readOnly: false });
+        f.app.Mounts.push({ Type: 'bind', Source: source, Destination: '/additional', RW: true });
+        f.source.fingerprint = sourceFingerprint([f.app]);
+        break;
+      }
       case 'shared staging':
         await chmod(f.stagingRoot, 0o755);
         break;

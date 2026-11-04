@@ -16,7 +16,7 @@ const inputSchema = z.strictObject({
   stagingRoot: canonicalPath,
   expectedSchemaSha256: z.string().regex(/^[a-f0-9]{64}$/u),
 });
-const within = (path: string, root: string) => path === root || path.startsWith(root + '/');
+const within = (path: string, root: string) => root === '/' || path === root || path.startsWith(root + '/');
 const identity = (info: BigIntStats) =>
   [info.dev, info.ino, info.size, info.mtimeNs, info.ctimeNs, info.nlink].join(':');
 async function databaseState(path: string) {
@@ -44,7 +44,10 @@ export async function captureFencedSqliteSource(fencing: Fencing, sourceInput: S
     .map((mount) => mount.source);
   const root = roots.filter((root) => within(databasePath, root)).sort((a, b) => b.length - a.length)[0];
   if (!root || root === databasePath) throw new Refusal('source_snapshot_export_required');
-  if (roots.some((root) => within(stagingRoot, root))) throw new Refusal('source_snapshot_staging_in_source');
+  const allSources = source.mounts
+    .filter((mount) => mount.type === 'bind' && mount.source.startsWith('/'))
+    .map((mount) => resolve(mount.source));
+  if (allSources.some((root) => within(stagingRoot, root))) throw new Refusal('source_snapshot_staging_in_source');
   let snapshot: Awaited<ReturnType<typeof captureSqliteSnapshot>> | undefined;
   try {
     if ((await realpath(databasePath)) !== databasePath || (await realpath(stagingRoot)) !== stagingRoot)

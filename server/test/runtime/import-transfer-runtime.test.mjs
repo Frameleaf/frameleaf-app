@@ -28,8 +28,16 @@ test('packages the actual Manager transfer modules and matching declarations wit
   const manifest = await verifyImportTransferRuntime(directory);
   assert.equal(manifest.format, 'frameleaf-import-transfer-runtime');
   assert.equal(manifest.version, 1);
+  const dockerfile = await readFile(new URL('../../Dockerfile', import.meta.url), 'utf8');
+  const copied = dockerfile
+    .split('\n')
+    .filter((line) => line.startsWith('COPY '))
+    .join(' ');
+  for (const source of manifest.sources.filter(({ name }) => name.startsWith('manager/src/')))
+    assert(copied.split(/\s+/u).includes('./' + source.name), `Server image omits ${source.name}`);
   for (const name of [
     'import-plan',
+    'import-sqlite',
     'import-transfer-journal',
     'import-copy',
     'import-file-review',
