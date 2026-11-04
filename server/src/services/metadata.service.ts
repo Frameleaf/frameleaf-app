@@ -379,7 +379,20 @@ export class MetadataService extends BaseService {
       if (reverseGeocoding.enabled) {
         geo = await this.mapRepository.reverseGeocode({ latitude, longitude });
       }
+    } else if (
+      locationLocked &&
+      reverseGeocoding.enabled &&
+      typeof previous?.latitude === 'number' &&
+      typeof previous.longitude === 'number' &&
+      !previous.city &&
+      !previous.state &&
+      !previous.country
+    ) {
+      // An import locks the source app's coordinates but brings no place names: name the place once from the
+      // stored coordinates. A location the owner set already carries its place, and a removed one has none.
+      geo = await this.mapRepository.reverseGeocode({ latitude: previous.latitude, longitude: previous.longitude });
     }
+    const named = !!(geo.country || geo.state || geo.city);
 
     const tags = this.getTagList(exifTags);
 
@@ -417,7 +430,7 @@ export class MetadataService extends BaseService {
       latitude,
       longitude,
       gpsAccuracyM: locationLocked ? null : photoGpsAccuracy(exifTags.GPSHPositioningError),
-      ...(!locationLocked && { country: geo.country, state: geo.state, city: geo.city }),
+      ...((!locationLocked || named) && { country: geo.country, state: geo.state, city: geo.city }),
 
       // image/file
       fileSizeInByte: stats.size,

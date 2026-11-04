@@ -991,14 +991,19 @@ export class PersonService extends BaseService {
 
     await this.jobRepository.guardAssetSource(id);
     const asset = await this.assetJobRepository.getForDetectFacesJob(id);
-    const previewFile = asset?.files.find((file) => file.isEdited) ?? asset?.files[0];
-    if (asset && !previewFile) deferJobUntilDependency('source-unavailable');
-    if (!asset || !previewFile) {
+    if (!asset) {
       return JobStatus.Failed;
     }
 
+    // Before the preview: a hidden asset (a Live Photo's motion part) never gets one.
     if (asset.visibility === AssetVisibility.Hidden) {
       return JobStatus.Skipped;
+    }
+
+    const previewFile = asset.files.find((file) => file.isEdited) ?? asset.files[0];
+    if (!previewFile) {
+      if (await this.jobRepository.previewMayArrive(id)) deferJobUntilDependency('source-unavailable');
+      return JobStatus.Failed;
     }
 
     // FL-455: routed to Frameleaf Cloud, the photo waits for a batch (an imported face set is always

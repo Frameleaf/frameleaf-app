@@ -62,6 +62,7 @@ describe(MediaHealthOperationService.name, () => {
       acknowledgeCancel: vi.fn().mockResolvedValue(true),
       settlePause: vi.fn().mockResolvedValue(true),
       heartbeat: vi.fn().mockResolvedValue(true),
+      requeue: vi.fn().mockResolvedValue(true),
     } as unknown as MediaOperationRepository;
     mediaHealth = {
       countScanAssets: vi.fn().mockResolvedValue(30),
@@ -78,6 +79,28 @@ describe(MediaHealthOperationService.name, () => {
   });
 
   describe('scan', () => {
+    it.each(['between batches', 'mid-batch'])(
+      'hands the scan back when the server stops %s, so a restart does not use its automatic retry',
+      async (when) => {
+        mediaHealth.scanPage.mockImplementationOnce(async () => {
+          await sut.onShutdown();
+          if (when === 'mid-batch') {
+            throw Object.assign(new Error('lock timeout'), { code: '55P03' });
+          }
+          return page(MEDIA_HEALTH_SCAN_BATCH, 'asset-25');
+        });
+
+        await sut.run(operationOf(scanSnapshot), 'token');
+
+        expect(operations.requeue).toHaveBeenCalledExactlyOnceWith(expect.any(String), 'token', {
+          delayMs: 0,
+          returnAttempt: true,
+        });
+        expect(operations.fail).not.toHaveBeenCalled();
+        expect(operations.complete).not.toHaveBeenCalled();
+      },
+    );
+
     it.each([true, false])('records final cancellation only after acknowledging it: %s', async (acknowledged) => {
       mediaHealth.scanPage.mockResolvedValue(page(5, 'asset-5'));
       vi.mocked(operations.beginValidation).mockResolvedValue(false);

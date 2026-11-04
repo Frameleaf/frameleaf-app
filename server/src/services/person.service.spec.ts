@@ -14,6 +14,7 @@ import {
   SystemMetadataKey,
 } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
+import { JobDependencyUnavailable } from 'src/queue/dependency.js';
 import { PersonService } from 'src/services/person.service.js';
 import { getFaceSourceRevision } from 'src/utils/face-source.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
@@ -1863,6 +1864,27 @@ describe(PersonService.name, () => {
         expect(mocks.job.queueAll).not.toHaveBeenCalled();
       },
     );
+
+    it('waits for a missing preview only while one can still arrive, and never for a hidden asset', async () => {
+      const execution = {
+        claim: { id: 'job', token: 'token', data: {} },
+        signal: new AbortController().signal,
+      } as unknown as QueueExecution;
+      const detect = (id: string) => queueExecution.run(execution, () => sut.handleDetectFaces({ id }));
+      // A Live Photo's motion part is hidden and never gets a preview.
+      mocks.assetJob.getForDetectFacesJob.mockResolvedValue(
+        getForDetectedFaces(AssetFactory.from({ visibility: AssetVisibility.Hidden }).exif().build()),
+      );
+      await expect(detect('hidden')).resolves.toBe(JobStatus.Skipped);
+
+      mocks.assetJob.getForDetectFacesJob.mockResolvedValue(getForDetectedFaces(AssetFactory.from().exif().build()));
+      await expect(detect('pending')).rejects.toThrow(JobDependencyUnavailable);
+      // The run's thumbnail item for this damaged original has ended without a preview.
+      mocks.job.previewMayArrive.mockResolvedValue(false);
+      await expect(detect('damaged')).resolves.toBe(JobStatus.Failed);
+      expect(mocks.job.previewMayArrive).toHaveBeenCalledWith('damaged');
+      expect(mocks.machineLearning.detectFaces).not.toHaveBeenCalled();
+    });
 
     it('keeps face rows and recognition intents unpublished until acceptance, refusing changed previews', async () => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Preview }).exif().build();

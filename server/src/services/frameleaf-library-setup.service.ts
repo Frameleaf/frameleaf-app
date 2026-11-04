@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
@@ -21,6 +21,7 @@ import { DB } from 'src/schema/index.js';
 import { LibraryScanService } from 'src/services/library-scan.service.js';
 import { MediaHealthService } from 'src/services/media-health.service.js';
 import { SystemConfigService } from 'src/services/system-config.service.js';
+import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { fromAck } from 'src/utils/sync.js';
 
 type SetupState = {
@@ -46,6 +47,11 @@ type SetupState = {
   checkReleasedAt?: string | null;
   /** FL-1146: when everything finished, for the one-time completion window. */
   completedAt?: string | null;
+  /**
+   * Scans a paused setup held when it was retried. The retry starts its own, and resuming resumes these too: left
+   * paused, one would hold the file check with nothing left to resume it.
+   */
+  heldScans?: string[];
 };
 type PhoneState = { revision: string; tokenHash: string; finished: boolean };
 const SETUP_QUEUES = [
@@ -180,6 +186,11 @@ export class FrameleafLibrarySetupService {
         await this.config.updateAdminConfigWithRevision({ config, expectedRevision: revision });
         processingChoiceApplied = true;
       }
+      // An imported server that read its settings from a file keeps that file: Manager writes the processing choice
+      // into it and passes no FRAMELEAF_MANAGER_ML_ENABLED, so the choice is already applied.
+      if (identity.origin === 'new_import' && ml === undefined && readAliasedEnv('FRAMELEAF_CONFIG_FILE')) {
+        processingChoiceApplied = true;
+      }
       const hasAdmin = await this.users.hasAdmin();
       const libraries = hasAdmin ? await this.libraries.getAll() : [];
       // Every account, including one whose photos survive only as untracked files in its upload folder.
@@ -196,6 +207,15 @@ export class FrameleafLibrarySetupService {
         owners,
         // A retry keeps the owner's pause and what the file check already released (FL-1146).
         paused: previous?.paused,
+        heldScans: previous?.paused
+          ? [
+              ...new Set([
+                ...(previous.heldScans ?? []),
+                ...Object.values(previous.scans),
+                ...Object.values(previous.health),
+              ]),
+            ]
+          : undefined,
         importRunId: previous?.importRunId,
         importOperationId: previous?.importOperationId,
         checkReleasedAt: previous?.checkReleasedAt ?? null,
@@ -555,6 +575,12 @@ export class FrameleafLibrarySetupService {
             : this.operations.resume(scan.id, scan.ownerId, db)),
         );
       }
+      if (!paused && state.heldScans?.length) {
+        const { rows: held } = await sql<{ id: string; ownerId: string }>`SELECT id,"ownerId" FROM media_operation
+          WHERE id=ANY(${state.heldScans}::uuid[]) FOR UPDATE`.execute(db);
+        for (const scan of held) changed.push(await this.operations.resume(scan.id, scan.ownerId, db));
+        state.heldScans = undefined;
+      }
       await this.write(this.key(), state, db);
     });
     for (const row of changed) this.operations.notifyCancellation(row);
@@ -609,15 +635,24 @@ export class FrameleafLibrarySetupService {
             AND snapshot->>'libraryId'=${libraryId} AND "createdAt" >= ${state.startedAt}::timestamptz
             ORDER BY "createdAt" LIMIT 1`.execute(db);
           const library = await this.libraries.get(libraryId);
+          // A library deleted since setup began holds nothing to wait for.
           if (!library) {
-            throw new BadRequestException('A setup library is unavailable');
+            state.libraries = state.libraries.filter((id) => id !== libraryId);
+            continue;
           }
           if (state.paused && !existing.rows[0]) {
             continue; // A paused setup admits no new library scan; resuming admits it.
           }
-          state.scans[libraryId] =
-            existing.rows[0]?.id ??
-            (await this.scans.queue(library, { ownerId: admin.id, trigger: 'manual' })).operation.id;
+          try {
+            state.scans[libraryId] =
+              existing.rows[0]?.id ??
+              (await this.scans.queue(library, { ownerId: admin.id, trigger: 'manual' })).operation.id;
+          } catch (error) {
+            // Nothing to scan: an imported library with no folder, or one whose owner's account is deleted.
+            // Refused on every try, it would otherwise hold setup for good.
+            if (!(error instanceof BadRequestException)) throw error;
+            state.libraries = state.libraries.filter((id) => id !== libraryId);
+          }
         }
         const ids = Object.values(state.scans);
         const records =
@@ -644,6 +679,13 @@ export class FrameleafLibrarySetupService {
         // Library Care's durable full scan covers managed uploads as well as external files,
         // including original-file integrity. Reuse its operation after a lost acknowledgement.
         // A paused setup starts no new scan; resuming starts it.
+        if (scansFinished) {
+          // An account removed since the check began has no originals left to check, nor its scan.
+          const { rows: live } = await sql<{
+            id: string;
+          }>`SELECT id FROM "user" WHERE id=ANY(${state.owners}::uuid[])`.execute(db);
+          state.owners = state.owners.filter((id) => live.some((row) => row.id === id));
+        }
         if (scansFinished && !state.paused) {
           for (const ownerId of state.owners) {
             if (state.health[ownerId]) {
@@ -651,16 +693,25 @@ export class FrameleafLibrarySetupService {
             }
             const existing = await sql<{ id: string }>`SELECT id FROM media_operation WHERE kind='media_health'
             AND "ownerId"=${ownerId}::uuid AND snapshot->>'mode'='scan' AND NOT (snapshot ? 'changedSince')
+            AND NOT (snapshot ? 'assetIds')
             AND "createdAt" >= ${state.healthAfter}::timestamptz ORDER BY "createdAt" LIMIT 1`.execute(db);
-            const operationId =
-              existing.rows[0]?.id ??
-              (await this.mediaHealth.startMissingScan({ user: { id: ownerId } } as AuthDto)).operationId;
+            let operationId: string | null | undefined = existing.rows[0]?.id;
+            try {
+              operationId ??= (await this.mediaHealth.startMissingScan({ user: { id: ownerId } } as AuthDto))
+                .operationId;
+            } catch (error) {
+              // Another kind of scan (recent changes, chosen photos, a search for originals) is under way for this
+              // account: wait for it, as for an incompatible scan below.
+              if (error instanceof ConflictException) continue;
+              throw error;
+            }
             if (!operationId) {
               throw new BadRequestException('Library integrity scan could not be queued');
             }
             const eligible = await sql<{ id: string }>`SELECT id FROM media_operation WHERE id=${operationId}::uuid
               AND kind='media_health' AND "ownerId"=${ownerId}::uuid AND snapshot->>'mode'='scan'
-              AND NOT (snapshot ? 'changedSince') AND "createdAt" >= ${state.healthAfter}::timestamptz`.execute(db);
+              AND NOT (snapshot ? 'changedSince') AND NOT (snapshot ? 'assetIds')
+              AND "createdAt" >= ${state.healthAfter}::timestamptz`.execute(db);
             if (eligible.rows.length === 0) {
               continue; // Wait for an incompatible active scan before admitting ours.
             }
@@ -678,7 +729,8 @@ export class FrameleafLibrarySetupService {
           LEFT JOIN asset_health_run missing ON missing.id=(op.snapshot->>'missingRunId')::uuid
           LEFT JOIN asset_health_run corrupt ON corrupt.id=(op.snapshot->>'corruptRunId')::uuid
           WHERE op.id=ANY(${healthIds}::uuid[]) AND op.kind='media_health' AND op.snapshot->>'mode'='scan'
-            AND NOT (op.snapshot ? 'changedSince') AND op."createdAt" >= ${state.healthAfter}::timestamptz`.execute(db)
+            AND NOT (op.snapshot ? 'changedSince') AND NOT (op.snapshot ? 'assetIds')
+            AND op."createdAt" >= ${state.healthAfter}::timestamptz`.execute(db)
             : { rows: [] };
         // FL-1146: a missing or changed original is kept and listed in Library Care; it never stops setup.
         if (health.rows.some((record) => ['failed', 'cancelled'].includes(record.status))) {

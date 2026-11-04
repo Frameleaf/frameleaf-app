@@ -152,6 +152,10 @@ export class MediaHealthOperationService {
         ? this.scan(operation, claimToken, snapshot, progress)
         : this.locate(operation, claimToken, snapshot, progress));
     } catch (error) {
+      // A step cut short by shutdown (a lock wait given up, a closing connection) is not the job failing.
+      if (this.stopping && (await this.handBack(operation.id, claimToken))) {
+        return;
+      }
       const message = bulkErrorMessage(error);
       this.logger.error(`Library Care job ${operation.id} failed: ${message}`);
       const failed = await this.operations.fail(operation.id, claimToken, {
@@ -194,6 +198,7 @@ export class MediaHealthOperationService {
 
     while (!result.restored) {
       if (this.stopping) {
+        await this.handBack(id, claimToken);
         return;
       }
 
@@ -232,6 +237,15 @@ export class MediaHealthOperationService {
     await this.finish(id, claimToken, snapshot, result);
   }
 
+  /**
+   * Stopping hands the job back at once, attempt returned, as a library scan does: left to its lease, the restart
+   * would count as a lost worker and use the job's one automatic retry, so a second restart during a long scan
+   * would fail it.
+   */
+  private handBack(id: string, claimToken: string): Promise<boolean> {
+    return this.operations.requeue(id, claimToken, { delayMs: 0, returnAttempt: true }).catch(() => false);
+  }
+
   /** Repeats a step that lost a lock wait; a scan step is an upsert, so running it again is harmless. */
   private async contended<T>(step: () => Promise<T>): Promise<T> {
     for (let attempt = 1; ; attempt++) {
@@ -266,6 +280,7 @@ export class MediaHealthOperationService {
     let complete = false;
     while (!complete) {
       if (this.stopping) {
+        await this.handBack(id, claimToken);
         return;
       }
 
