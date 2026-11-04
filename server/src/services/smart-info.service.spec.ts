@@ -2,6 +2,7 @@ import type { QueueExecution } from 'src/queue/types.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
 import { AssetFileType, AssetVisibility, FrameleafWorker, JobName, JobStatus, MlWorkload } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
+import { JobDependencyUnavailable } from 'src/queue/dependency.js';
 import { SmartInfoService } from 'src/services/smart-info.service.js';
 import { getCLIPModelInfo } from 'src/utils/misc.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
@@ -344,6 +345,27 @@ describe(SmartInfoService.name, () => {
 
       expect(mocks.machineLearning.encodeImage).not.toHaveBeenCalled();
       expect(mocks.search.upsert).not.toHaveBeenCalled();
+    });
+
+    it('waits for a missing preview only while one can still arrive, and never for a hidden asset', async () => {
+      const execution = {
+        claim: { id: 'job', token: 'token', data: {} },
+        signal: new AbortController().signal,
+      } as unknown as QueueExecution;
+      const encode = (id: string) => queueExecution.run(execution, () => sut.handleEncodeClip({ id }));
+      // A Live Photo's motion part is hidden and never gets a preview.
+      mocks.assetJob.getForClipEncoding.mockResolvedValue(
+        AssetFactory.from({ visibility: AssetVisibility.Hidden }).build(),
+      );
+      await expect(encode('hidden')).resolves.toBe(JobStatus.Skipped);
+
+      mocks.assetJob.getForClipEncoding.mockResolvedValue(AssetFactory.from().build());
+      await expect(encode('pending')).rejects.toThrow(JobDependencyUnavailable);
+      // The run's thumbnail item for this damaged original has ended without a preview.
+      mocks.job.previewMayArrive.mockResolvedValue(false);
+      await expect(encode('damaged')).resolves.toBe(JobStatus.Failed);
+      expect(mocks.job.previewMayArrive).toHaveBeenCalledWith('damaged');
+      expect(mocks.machineLearning.encodeImage).not.toHaveBeenCalled();
     });
 
     it('should fail if asset could not be found', async () => {
