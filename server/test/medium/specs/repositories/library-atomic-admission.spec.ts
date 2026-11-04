@@ -32,7 +32,11 @@ import { LibraryService } from 'src/services/library.service.js';
 import { recordStoppedAttempt } from 'src/utils/attempt-evidence.js';
 import { withExecutionCleanup } from 'src/utils/execution-signal.js';
 import { emptyLibraryScanResult, libraryAssetFromFile, libraryPathsFingerprint } from 'src/utils/library-scan.js';
-import { explainLibrarySettlement, getLibraryQueueDB } from 'test/medium/library-queue-database.js';
+import {
+  explainLibraryRunRead,
+  explainLibrarySettlement,
+  getLibraryQueueDB,
+} from 'test/medium/library-queue-database.js';
 import { SCALE_ITEMS, scaleIt } from 'test/medium/scale.js';
 import { MediumTestContext } from 'test/medium.factory.js';
 
@@ -49,7 +53,14 @@ describe('library atomic source admission', () => {
   let queue: string;
   let worker: string;
   let sequence: number;
-  afterEach(async () => {
+  afterEach(async (context) => {
+    if (context.task.result?.state === 'fail' && db) {
+      try {
+        console.info('library-failed-run-read-plan', JSON.stringify(await explainLibraryRunRead(db)));
+      } catch {
+        console.info('library-failed-run-read-plan-unavailable');
+      }
+    }
     await db?.destroy();
   });
   beforeEach(async () => {
