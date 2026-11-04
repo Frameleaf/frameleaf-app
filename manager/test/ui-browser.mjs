@@ -489,7 +489,6 @@ try {
       assert.deepEqual(errors, [], product + ': configuration rendering');
     }
     sources = [source];
-    await chooser();
   });
   await check('single and multiple source import, backup reuse, missing backup and refused source', async () => {
     dashboard.installation = null;
