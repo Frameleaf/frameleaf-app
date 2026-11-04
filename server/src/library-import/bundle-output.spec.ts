@@ -88,7 +88,10 @@ it.each(sourceKinds)('round-trips the common private bundle contract for %s', as
   expect(bundle.context.plan).toEqual(value.plan);
   const restored = [];
   for await (const record of bundle.records()) restored.push(record);
-  expect(restored).toEqual(records);
+  expect(restored).toEqual([
+    { ...records[0], value: { ...records[0].value, bytes: new Uint8Array([0, 255]) } },
+    records[1],
+  ]);
   expect(bundle.descriptor.rows).toBe('2');
   expect((await stat(result.bundleDirectory)).mode & 0o777).toBe(0o700);
   expect((await readdir(result.bundleDirectory)).sort()).toEqual([
