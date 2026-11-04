@@ -3,7 +3,11 @@ import { mkdtempSync, mkdirSync, existsSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { applicationQualificationImage, cleanupQualification, qualificationImage } from '../scripts/cleanup-photoprism-qualification.mjs';
+import {
+  applicationQualificationImage,
+  cleanupQualification,
+  qualificationImage,
+} from '../scripts/cleanup-photoprism-qualification.mjs';
 
 const fixture = (t) => {
   const parent = mkdtempSync(join(tmpdir(), 'photoprism-cleanup-check-'));

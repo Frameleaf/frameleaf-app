@@ -146,6 +146,10 @@ jobs:
         run: |
           install -d -m700 "$TMPDIR"
           node server/scripts/qualify-photoprism-mariadb.mjs
+      - name: Qualify the native PhotoPrism local account contract
+        env:
+          TMPDIR: ${{ runner.temp }}/frameleaf-photoprism-${{ github.run_id }}-${{ github.run_attempt }}
+        run: node server/scripts/qualify-photoprism-application.mjs
       - name: Remove disposable Docker fixtures after cancellation
         if: always()
         env:

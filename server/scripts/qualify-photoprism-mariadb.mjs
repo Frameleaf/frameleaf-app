@@ -35,6 +35,8 @@ try {
   writeFileSync(join(directory, 'client.cnf'), `[client]\nuser=root\npassword=${password}\n`, { mode: 0o600 });
   const labels = [
     '--label',
+    'app.frameleaf.qualification-family=photoprism',
+    '--label',
     'app.frameleaf.test=photoprism-mariadb',
     '--label',
     `app.frameleaf.qualification-run=${runId ?? id}`,
