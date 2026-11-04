@@ -30,6 +30,25 @@ The reader admits the schema before locking, acquires READ locks over all 34 kno
 
 Iteration completion, refusal and early consumer return destroy the private connection and release its locks. Consumers must close an iterator they stop consuming. Connection/query timeouts are bounded; lost connections are never replaced. Errors use stable refusal messages without raw driver details. The native product reader reconciled all 34 selected content records, blocked a competing write lock, released locks on early return, refused a source schema change and failed after its own backend was terminated. Separate native probes refused an account without complete catalog visibility and a pending lounge record. This is transport evidence, not semantic relationship validation or a successful destination migration; source dangling references remain explicit records requiring reconciliation.
 
+## Common manifest mapping
+
+`readPiwigoManifest` consumes the admitted restore stream and independently verified original-file receipts. It requires explicit photo and category owners, complete unchanged capture evidence, reviewed capture offsets and an exact review of missing image IDs referenced by the snapshot. Uploader IDs, displayed authors and email matches never establish ownership. The controller must prove capture authority; supplied completeness flags do not authorize migration.
+
+Source access follows the pinned application's category rules: private categories need direct or group grants, locked categories remain restricted to source administrators, and each photo retains its privacy-level and original-download restrictions. Administrator status alone does not grant private-category access. Destination albums stay private and partition by owner. A photo visible through another category does not expose a private category's title, caption or membership to that photo's destination owner.
+
+| Source field                                              | Handling                                                                                                                                  |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Original and additional-format paths                      | Preserve separately verified files; never substitute representatives or previews                                                          |
+| Manual caption and category description                   | Preserve destination descriptions                                                                                                         |
+| Capture date and encoded local clock                      | Prefer `date_creation`; otherwise disclose the `date_available` fallback. Require a reviewed offset and retain exact wall-clock precision |
+| Coordinates and tags                                      | Preserve current values; explicitly clear absent location; refuse unrepresentable tags                                                    |
+| Favourites                                                | Use only the chosen owner's favourite state                                                                                               |
+| Titles, displayed authors, rotation and aggregate ratings | Retain source records in the protected archive; disclose unsupported title, rotation and aggregate-rating mapping                         |
+| Category hierarchy, access rules and excluded memberships | Preserve source records and disclose restrictions; never broaden destination sharing                                                      |
+| Dangling image memberships and representative IDs         | Require the exact missing-ID review, archive the records and disclose excluded relationships                                              |
+
+The synthetic mapper tests compare owner choices against independently captured native visibility, cover restricted downloads and group/direct grants, and prepare mapped originals through the actual canonical writer. This remains an internal mapping stage. It does not qualify source account provisioning, full metadata extraction, native additional-format bytes, transfer recovery, source capture authority or a completed migration. Owner rating records are mapped as described below; native populated-vote capture and unsupported source features still require qualification before combined release.
+
 ## Original path resolution
 
 `resolvePiwigoOriginals` retains the image's `path` as its primary original and resolves every supplied `image_format` record under the sibling `pwg_format` directory. It matches the pinned application's `original_to_format` helper, including filenames with multiple dots, Unicode names and literal percent sequences. The synthetic path fixture records three native PHP comparisons against both format and representative helpers. Representatives, thumbnails and other generated paths never substitute for originals. Native additional-format upload, format bytes and media decoding remain unqualified; the helper comparisons establish path calculations only.
@@ -70,3 +89,25 @@ The callback has a 30-second inactivity deadline, renewed when an account read s
 The pinned default `PasswordHash(13, true)` produces portable PHPass `$P$G` verifiers. The importer supports the same iterative MD5 protocol at costs 7–18, with a 4,096-byte password limit, bounded concurrency and regular event-loop yields. Higher costs and custom formats refuse preflight. Legacy lowercase MD5 verifiers are supported with strict digest equality; PHP's legacy loose numeric comparison is deliberately not retained. Both formats are wrapped with the destination bcrypt policy; the original digest is not stored in the destination. Synthetic vectors were independently generated and verified by the pinned Piwigo PHP 8.4.16 fixture. PHPass was written by Solar Designer and placed in the public domain; see the pinned [source](https://github.com/Piwigo/Piwigo/blob/bef1a4ac424b4e986589e4cfc9f4d134f1b16f15/include/passwordhash.class.php).
 
 Readable credentials do not establish account eligibility. Source `password_verify`, `pass_convert`, external authentication, login hooks and MFA policy must be qualified before enabling any destination owner. Guest access and source administrative roles must not become destination login or administration grants. This protected channel does not complete the migration controller or source authentication qualification.
+
+### Owner ratings
+
+The mapper reads the pinned `rate` table with its complete `(element_id, user_id,
+anonymous_id)` key. The last key is bound as text, including IPv6 voter values;
+it is never interpolated into SQL or treated as a media checksum. Piwigo writes
+an IP-derived anonymous key for signed-in votes too, so an empty key does not
+identify a personal vote. Only the explicitly selected image owner's vote from
+a normal, administrator or webmaster account becomes the destination rating.
+Other users' and anonymous/shared-account votes remain in the protected archive.
+Voter identifiers never enter the destination photo metadata.
+
+A representable owner score of zero through five is retained directly, ahead of
+embedded ratings. An absent owner vote imports as unrated. Conflicting
+owner scores require review; values outside the destination scale are archived
+and disclosed rather than silently rescaled. The public aggregate remains a
+separate archived value. Synthetic owner/other-voter, generic-account, conflict,
+custom-scale and text-cursor cases test this mapping. They do not extend the
+native fixture's evidence to populated rating records or qualify a whole migration.
+
+The interpretation follows the pinned [rating implementation](https://github.com/Piwigo/Piwigo/blob/16.4.0/include/functions_rate.inc.php)
+and [table definition](https://github.com/Piwigo/Piwigo/blob/16.4.0/install/piwigo_structure-mysql.sql).
