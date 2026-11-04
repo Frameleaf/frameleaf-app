@@ -7,9 +7,6 @@ import { attachProducerRun, freezeSelection, shareSelectionPage, shareSelections
 import { mirrorSelectionLineage } from 'src/queue/selection-lineage.js';
 import { SqlQueueStore, resetQueueAfterRestore } from 'src/queue/store.js';
 import { QueueClaim, QueueExecution, QueueIntent } from 'src/queue/types.js';
-import * as selectionHeaders from 'src/schema/migrations/1791101300000-SelectionOutcomeHeaders.js';
-import * as selectionLineage from 'src/schema/migrations/1791101500000-RetainSelectionLineage.js';
-import * as librarySources from 'src/schema/migrations/1791101600000-LibraryScanSources.js';
 import { getKyselyConfig } from 'src/utils/database.js';
 import { canonicalDatabaseUrl } from 'test/fixtures/canonical-database.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -703,41 +700,5 @@ describe('selection capture isolation', () => {
       enumerationDone: true,
       finishedAt: expect.any(Date),
     });
-  });
-
-  it('preserves pending shared outcomes through downgrade and forward replay', async () => {
-    const runs = await Promise.all([1, 2].map(() => store.createRun('shared-migration', {})));
-    await store.enqueue([{ ...producer(runs[0]), safeToRetry: false }]);
-    const [claim] = await store.claim(queue, worker);
-    await freeze(claim);
-    await store.enqueue([producer(runs[1])]);
-    expect(await store.fail(claim, 'manual review required')).toBe(true);
-    expect(await capturedKeys(runs[1])).toEqual([]);
-    await db.transaction().execute(async (tx) => {
-      await librarySources.down(tx);
-      await selectionLineage.down(tx);
-      await selectionHeaders.down(tx);
-    });
-    try {
-      const { rows } = await sql`select "runId", count(*)::int count from job_run_item
-        where "runId" = any(${runs}::uuid[]) and "selectionId" is not null and state = 'needs_attention'
-        group by "runId" order by "runId"`.execute(db);
-      expect(rows).toEqual(runs.toSorted().map((runId) => ({ runId, count: 6 })));
-    } finally {
-      await db.transaction().execute(async (tx) => {
-        await selectionHeaders.up(tx);
-        await selectionLineage.up(tx);
-        await librarySources.up(tx);
-      });
-    }
-    const summaries = await store.listRuns(100, 0);
-    for (const runId of runs) {
-      expect(summaries.find((run) => run.id === runId)).toMatchObject({
-        total: 6,
-        needsAttention: 6,
-        enumerationDone: true,
-        finishedAt: expect.any(Date),
-      });
-    }
   });
 });

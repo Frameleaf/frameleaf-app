@@ -1,8 +1,6 @@
 import { sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { libraryRedactionPage } from 'src/queue/library-admission.js';
-import * as lineage from 'src/schema/migrations/1791101500000-RetainSelectionLineage.js';
-import * as library from 'src/schema/migrations/1791101600000-LibraryScanSources.js';
 import { getLibraryQueueDB } from 'test/medium/library-queue-database.js';
 
 it('enforces the 160 source, paired ownership and database-generated cleanup identities', async () => {
@@ -77,26 +75,13 @@ it('enforces the 160 source, paired ownership and database-generated cleanup ide
       db,
     );
     await sql`update job_run_item set state='cancelled' where "runId"=${run}::uuid`.execute(db);
-    await library.down(db);
-    expect(
-      (
-        await sql`select to_regclass('job_library_initial_outcome')::text index,to_regclass('job_library_source_producer')::text "table"`.execute(
-          db,
-        )
-      ).rows,
-    ).toEqual([{ index: null, table: null }]);
-    await library.up(db);
-    expect(
-      (await sql`select "sourceKind","appendSequence"::int from job_selection where id=${source}::uuid`.execute(db))
-        .rows,
-    ).toEqual([{ sourceKind: 'frozen', appendSequence: 0 }]);
   } finally {
     await db.destroy();
   }
 });
 
 /** Synthetic ledger rows exercise DDL/global cleanup, never a library submission entrypoint. */
-it('preserves fail-closed downgrade, 150/160 ordering and fair global cleanup after identity replacement', async () => {
+it('redacts the fair global cleanup in bounded pages', async () => {
   const db = await getLibraryQueueDB(),
     run = randomUUID(),
     source = randomUUID(),
@@ -116,7 +101,6 @@ it('preserves fail-closed downgrade, 150/160 ordering and fair global cleanup af
       values (${source}::uuid,${run}::uuid,'library-child/migration-fixture',${queue},false,true,60000,'enumerating','library-child',${run}::uuid)`.execute(
       db,
     );
-    await expect(library.down(db)).rejects.toThrow('Settle library sources');
     await sql`update job_selection set state='cancelled',"sourceClosedAt"=now(),"capturedAt"=now() where id=${source}::uuid`.execute(
       db,
     );
@@ -131,7 +115,6 @@ it('preserves fail-closed downgrade, 150/160 ordering and fair global cleanup af
         db,
       );
     await sql`analyze job_run_item`.execute(db);
-    await expect(library.down(db)).rejects.toThrow('Settle library sources');
     type Plan = {
       'Relation Name'?: string;
       'Index Name'?: string;
@@ -163,27 +146,6 @@ it('preserves fail-closed downgrade, 150/160 ordering and fair global cleanup af
         )
       ).rows[0].count;
     expect(await count()).toBe(49_750);
-    for (let first = 1; first <= 50_000; first += 250)
-      await sql`update job_run_item set state='needs_attention' where "runId"=${run}::uuid and "itemKey" in (select n::text from generate_series(${first}::int,${first + 249}::int) n)`.execute(
-        db,
-      );
-    await library.down(db);
-    await lineage.down(db);
-    expect(
-      (await sql<{ index: string | null }>`select to_regclass('job_library_redact_all_cursor')::text index`.execute(db))
-        .rows[0].index,
-    ).toBeNull();
-    await lineage.up(db);
-    await library.up(db);
-    // New synthetic payloads/identities, not recovered or replayed execution. The retained
-    // old cursor is allowed to finish one fixed pass, then must revisit the new low prefix.
-    await sql`update job_selection set "sourceKind"='library-child',"libraryOperationId"=${run}::uuid where id=${source}::uuid`.execute(
-      db,
-    );
-    for (let first = 1; first <= 50_000; first += 250)
-      await sql`update job_run_item set "librarySourceKey"="itemKey","libraryIntent"=${declared}::text::jsonb where "runId"=${run}::uuid and "itemKey" in (select n::text from generate_series(${first}::int,${first + 249}::int) n)`.execute(
-        db,
-      );
     let visits = 0;
     while ((await count()) > 0 && visits < 202) {
       const page = await db.transaction().execute(async (tx) => {

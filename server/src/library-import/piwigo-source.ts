@@ -1,3 +1,4 @@
+export { readPiwigoManifest } from 'src/library-import/piwigo-manifest.js';
 import { type Connection, type RowDataPacket, createConnection } from 'mysql2/promise';
 import { isIP } from 'node:net';
 import { z } from 'zod';
@@ -190,8 +191,9 @@ export async function* readPiwigoRestore(
         );
         if (rows.length === 0) break;
         if (rows.length > 1000) refuse('PIWIGO_SOURCE_BATCH_INVALID');
-        cursor = projection.keys.map((key) => {
+        cursor = projection.keys.map((key: string) => {
           const value = rows.at(-1)![key];
+          if (name === 'rate' && key === 'anonymous_id' && typeof value === 'string') return value;
           if (typeof value !== 'bigint' || value < 0n) refuse('PIWIGO_SOURCE_CURSOR_INVALID');
           return String(value);
         });

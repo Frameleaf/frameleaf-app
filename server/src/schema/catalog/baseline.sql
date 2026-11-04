@@ -51,6 +51,12 @@ CREATE TYPE public.assets_status_enum AS ENUM (
     'deleted'
 );
 
+CREATE TYPE public.library_scope_enum AS ENUM (
+    'personal',
+    'design',
+    'both'
+);
+
 CREATE TYPE public.sourcetype AS ENUM (
     'machine-learning',
     'exif',
@@ -73,6 +79,18 @@ CREATE FUNCTION public.album_asset_delete_audit() RETURNS trigger
       RETURN NULL;
     END
   $$;
+
+CREATE FUNCTION public.album_library_scope_refresh() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF OLD."libraryScope" = 'design' AND NEW."libraryScope" <> 'design' THEN
+    UPDATE album_asset SET "updatedAt" = clock_timestamp() WHERE "albumId" = NEW.id;
+    UPDATE album_user SET "updatedAt" = clock_timestamp() WHERE "albumId" = NEW.id;
+  END IF;
+  RETURN NEW;
+END
+$$;
 
 CREATE FUNCTION public.album_parent_cycle_check() RETURNS trigger
     LANGUAGE plpgsql
@@ -208,6 +226,36 @@ CREATE FUNCTION public.asset_edit_insert() RETURNS trigger
     END
   $$;
 
+CREATE FUNCTION public.asset_exif_landmark_match() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+    BEGIN
+      IF TG_OP = 'UPDATE' AND OLD.latitude IS NOT DISTINCT FROM NEW.latitude
+        AND OLD.longitude IS NOT DISTINCT FROM NEW.longitude THEN
+        RETURN NULL;
+      END IF;
+      DELETE FROM public.asset_landmark WHERE "assetId" = NEW."assetId";
+      IF NEW.latitude IS NOT NULL AND NEW.longitude IS NOT NULL THEN
+        INSERT INTO public.asset_landmark ("assetId", "landmarkId")
+        SELECT NEW."assetId", l.id
+        FROM public.landmark l
+        WHERE public.earth_box(public.ll_to_earth_public(NEW.latitude, NEW.longitude), 200000)
+            OPERATOR(public.@>) public.ll_to_earth_public(l.latitude, l.longitude)
+          AND public.earth_distance(
+            public.ll_to_earth_public(NEW.latitude, NEW.longitude),
+            public.ll_to_earth_public(l.latitude, l.longitude)) <= l."radiusM"
+          AND (NOT EXISTS (SELECT FROM public.landmark_area a WHERE a."landmarkId" = l.id)
+            OR EXISTS (SELECT FROM public.landmark_area a
+              WHERE a."landmarkId" = l.id AND a.area @> point(NEW.longitude, NEW.latitude)))
+        ON CONFLICT DO NOTHING;
+      END IF;
+      RETURN NULL;
+    EXCEPTION WHEN OTHERS THEN
+      RAISE WARNING 'asset_exif_landmark_match: %', SQLERRM;
+      RETURN NULL;
+    END
+  $$;
+
 CREATE FUNCTION public.asset_face_audit() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -218,6 +266,21 @@ CREATE FUNCTION public.asset_face_audit() RETURNS trigger
       RETURN NULL;
     END
   $$;
+
+CREATE FUNCTION public.asset_library_scope_refresh() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF OLD."libraryScope" = 'design' AND NEW."libraryScope" <> 'design' THEN
+    UPDATE asset_exif SET "updatedAt" = clock_timestamp() WHERE "assetId" = NEW.id;
+    UPDATE asset_edit SET "updatedAt" = clock_timestamp() WHERE "assetId" = NEW.id;
+    UPDATE asset_face SET "updatedAt" = clock_timestamp() WHERE "assetId" = NEW.id;
+    UPDATE asset_metadata SET "updatedAt" = clock_timestamp() WHERE "assetId" = NEW.id;
+    UPDATE asset_ocr SET "updatedAt" = clock_timestamp() WHERE "assetId" = NEW.id;
+  END IF;
+  RETURN NEW;
+END
+$$;
 
 CREATE FUNCTION public.asset_metadata_audit() RETURNS trigger
     LANGUAGE plpgsql
@@ -240,6 +303,20 @@ CREATE FUNCTION public.asset_ocr_delete_audit() RETURNS trigger
       RETURN NULL;
     END
   $$;
+
+CREATE FUNCTION public.desktop_clip_producer_guard() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+    DECLARE role text;
+    BEGIN
+      IF TG_TABLE_NAME = 'smart_search_description' THEN role := 'text';
+      ELSIF TG_TABLE_NAME IN ('smart_search', 'asset_video_duplicate_frame', 'video_moment_frame_embedding') THEN role := 'image';
+      ELSE RAISE EXCEPTION 'unsupported_clip_store';
+      END IF;
+      NEW."producerAdmissionKey" := CASE WHEN NEW."producerModelKey" IS NULL THEN 'legacy' ELSE role || ':' || NEW."producerModelKey" END;
+      INSERT INTO public.desktop_clip_producer (key) VALUES (NEW."producerAdmissionKey") ON CONFLICT DO NOTHING;
+      RETURN NEW;
+    END$$;
 
 CREATE FUNCTION public.f_concat_ws(text, text[]) RETURNS text
     LANGUAGE sql IMMUTABLE PARALLEL SAFE
@@ -390,6 +467,21 @@ CREATE FUNCTION public.pet_update_id() RETURNS trigger
     LANGUAGE plpgsql
     AS $$BEGIN NEW."updateId" := immich_uuid_v7(); RETURN NEW; END$$;
 
+CREATE FUNCTION public.photo_location_invalidate() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+    BEGIN
+      IF OLD.latitude IS DISTINCT FROM NEW.latitude OR OLD.longitude IS DISTINCT FROM NEW.longitude THEN
+        DELETE FROM public.asset_location_insight WHERE "assetId" = NEW."assetId";
+      ELSIF OLD."gpsAccuracyM" IS DISTINCT FROM NEW."gpsAccuracyM"
+        OR COALESCE('latitude' = ANY(OLD."lockedProperties"), false) IS DISTINCT FROM COALESCE('latitude' = ANY(NEW."lockedProperties"), false) THEN
+        DELETE FROM public.asset_location_insight WHERE "assetId" = NEW."assetId" AND NOT dismissed;
+      ELSE RETURN NULL;
+      END IF;
+      DELETE FROM public.photo_location_scan_item WHERE "assetId" = NEW."assetId";
+      RETURN NULL;
+    END; $$;
+
 CREATE FUNCTION public.retire_icloud_weekly_authority() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -525,6 +617,9 @@ CREATE TABLE public.album (
     "isActivityEnabled" boolean DEFAULT true NOT NULL,
     "order" character varying DEFAULT 'desc'::character varying NOT NULL,
     "updateId" uuid DEFAULT public.immich_uuid_v7() NOT NULL,
+    "libraryScope" public.library_scope_enum DEFAULT 'personal'::public.library_scope_enum NOT NULL,
+    color text,
+    CONSTRAINT album_color_check CHECK (((color IS NULL) OR (color = ANY (ARRAY['grey'::text, 'green'::text, 'teal'::text, 'blue'::text, 'purple'::text, 'pink'::text, 'amber'::text, 'red'::text])))),
     CONSTRAINT album_kind_check CHECK ((kind = ANY (ARRAY['album'::text, 'collection'::text, 'space'::text])))
 );
 
@@ -552,6 +647,12 @@ CREATE TABLE public.album_audit (
     "albumId" uuid NOT NULL,
     "userId" uuid NOT NULL,
     "deletedAt" timestamp with time zone DEFAULT clock_timestamp() NOT NULL
+);
+
+CREATE TABLE public.album_bookmark (
+    "albumId" uuid NOT NULL,
+    "bookmarkId" uuid NOT NULL,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL
 );
 
 CREATE TABLE public.album_closure (
@@ -586,7 +687,8 @@ CREATE TABLE public.album_position (
 CREATE TABLE public.album_source_asset (
     "linkId" uuid NOT NULL,
     "assetId" uuid NOT NULL,
-    "addedAt" timestamp with time zone DEFAULT clock_timestamp() NOT NULL
+    "addedAt" timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    "membershipUpdateId" uuid
 );
 
 CREATE TABLE public.album_source_link (
@@ -602,6 +704,18 @@ CREATE TABLE public.album_source_link (
     CONSTRAINT album_source_link_device_check CHECK ((("deviceKey" IS NULL) OR ((length("deviceKey") >= 1) AND (length("deviceKey") <= 256)))),
     CONSTRAINT album_source_link_kind_check CHECK (("sourceKind" = ANY (ARRAY['ios-photos'::text, 'android-folder'::text]))),
     CONSTRAINT album_source_link_source_check CHECK (((length("sourceId") >= 1) AND (length("sourceId") <= 1024)))
+);
+
+CREATE TABLE public.album_suggestion_auto_add (
+    "albumId" uuid NOT NULL,
+    "userId" uuid NOT NULL,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL
+);
+
+CREATE TABLE public.album_suggestion_dismissal (
+    "albumId" uuid NOT NULL,
+    "assetId" uuid NOT NULL,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL
 );
 
 CREATE TABLE public.album_user (
@@ -688,7 +802,28 @@ CREATE TABLE public.asset (
     width integer,
     height integer,
     "isEdited" boolean DEFAULT false NOT NULL,
-    is_nsfw boolean DEFAULT false NOT NULL
+    is_nsfw boolean DEFAULT false NOT NULL,
+    "libraryPath" character varying,
+    "libraryScope" public.library_scope_enum DEFAULT 'personal'::public.library_scope_enum NOT NULL
+);
+
+CREATE TABLE public.asset_annotation (
+    "assetId" uuid NOT NULL,
+    version integer NOT NULL,
+    "sourceRevision" text NOT NULL,
+    items jsonb NOT NULL,
+    "updatedAt" timestamp with time zone DEFAULT now() NOT NULL
+);
+
+CREATE TABLE public.asset_audio (
+    "assetId" uuid NOT NULL,
+    bitrate integer NOT NULL,
+    index smallint NOT NULL,
+    profile smallint,
+    "codecName" text NOT NULL,
+    channels smallint,
+    "channelLayout" text,
+    "sampleRate" integer
 );
 
 CREATE TABLE public.asset_audit (
@@ -784,8 +919,14 @@ CREATE TABLE public.asset_develop_revision (
     status text DEFAULT 'saved'::text NOT NULL,
     "updatedAt" timestamp with time zone DEFAULT now() NOT NULL,
     width integer,
+    "hdrMasterPath" text,
+    "hdrPreviewPath" text,
+    "hdrRenditionChecksum" bytea,
+    "sourceAssetId" uuid,
+    "batchChargedBytes" bigint DEFAULT 0 NOT NULL,
     CONSTRAINT asset_develop_revision_attempts_check CHECK ((attempts >= 0)),
     CONSTRAINT "asset_develop_revision_fileName_check" CHECK ((("fileName" IS NULL) OR ((length("fileName") >= 1) AND (length("fileName") <= 255)))),
+    CONSTRAINT asset_develop_revision_hdr_set_check CHECK (((("hdrMasterPath" IS NULL) AND ("hdrPreviewPath" IS NULL) AND ("hdrRenditionChecksum" IS NULL)) OR (("hdrMasterPath" IS NOT NULL) AND ("hdrPreviewPath" IS NOT NULL) AND ("hdrRenditionChecksum" IS NOT NULL) AND (octet_length("hdrRenditionChecksum") = 32)))),
     CONSTRAINT asset_develop_revision_kind_check CHECK ((kind = ANY (ARRAY['recipe'::text, 'external'::text]))),
     CONSTRAINT asset_develop_revision_label_check CHECK (((label IS NULL) OR ((length(label) >= 1) AND (length(label) <= 120)))),
     CONSTRAINT asset_develop_revision_progress_check CHECK (((progress >= 0) AND (progress <= 100))),
@@ -866,7 +1007,9 @@ CREATE TABLE public.asset_exif (
     tags character varying[],
     "updatedAt" timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
     "updateId" uuid DEFAULT public.immich_uuid_v7() NOT NULL,
-    "lockedProperties" character varying[]
+    "lockedProperties" character varying[],
+    "imageEncoding" jsonb,
+    "gpsAccuracyM" double precision
 );
 
 CREATE TABLE public.asset_face (
@@ -894,6 +1037,13 @@ CREATE TABLE public.asset_face_audit (
     "deletedAt" timestamp with time zone DEFAULT clock_timestamp() NOT NULL
 );
 
+CREATE TABLE public.asset_face_outfit (
+    "faceId" uuid NOT NULL,
+    "modelName" text NOT NULL,
+    embedding text,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL
+);
+
 CREATE TABLE public.asset_file (
     id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
     "assetId" uuid NOT NULL,
@@ -905,7 +1055,8 @@ CREATE TABLE public.asset_file (
     "updateId" uuid DEFAULT public.immich_uuid_v7() NOT NULL,
     "isEdited" boolean DEFAULT false NOT NULL,
     "isProgressive" boolean DEFAULT false NOT NULL,
-    "isTransparent" boolean DEFAULT false NOT NULL
+    "isTransparent" boolean DEFAULT false NOT NULL,
+    "renditionIdentity" character varying
 );
 
 CREATE TABLE public.asset_health (
@@ -970,13 +1121,66 @@ CREATE TABLE public.asset_job_status (
     "ocrAt" timestamp with time zone
 );
 
+CREATE TABLE public.asset_keyframe (
+    "assetId" uuid NOT NULL,
+    pts integer[] NOT NULL,
+    "accDuration" integer[] NOT NULL,
+    "ownDuration" integer[] NOT NULL,
+    "totalDuration" integer NOT NULL,
+    "packetCount" integer NOT NULL,
+    "outputFrames" integer NOT NULL
+);
+
+CREATE TABLE public.asset_landmark (
+    "assetId" uuid NOT NULL,
+    "landmarkId" character varying(20) NOT NULL,
+    inference character varying,
+    "sourceAssetIds" uuid[],
+    CONSTRAINT asset_landmark_inference_check CHECK (((((inference IS NULL) AND ("sourceAssetIds" IS NULL)) OR (((inference)::text = 'temporal'::text) AND (cardinality("sourceAssetIds") = 1)) OR (((inference)::text = 'visual'::text) AND ((cardinality("sourceAssetIds") >= 2) AND (cardinality("sourceAssetIds") <= 3)))) IS TRUE))
+);
+
+CREATE TABLE public.asset_local_effect (
+    "ownerId" uuid NOT NULL,
+    sequence bigint NOT NULL,
+    "effectId" uuid NOT NULL,
+    bundle jsonb NOT NULL,
+    "bundleSha256" bytea NOT NULL,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT asset_local_effect_bundle_check CHECK (((jsonb_typeof(bundle) = 'object'::text) AND ((bundle ->> 'formatVersion'::text) = '1'::text))),
+    CONSTRAINT asset_local_effect_digest_check CHECK ((octet_length("bundleSha256") = 32)),
+    CONSTRAINT asset_local_effect_sequence_check CHECK ((sequence > 0))
+);
+
+CREATE TABLE public.asset_local_effect_cursor (
+    "ownerId" uuid NOT NULL,
+    "acknowledgedSequence" bigint,
+    CONSTRAINT asset_local_effect_cursor_sequence_check CHECK ((("acknowledgedSequence" IS NULL) OR ("acknowledgedSequence" > 0)))
+);
+
+CREATE TABLE public.asset_local_effect_stream (
+    "ownerId" uuid NOT NULL,
+    "streamEpoch" uuid NOT NULL,
+    "nextSequence" bigint DEFAULT 1 NOT NULL,
+    CONSTRAINT asset_local_effect_stream_sequence_check CHECK (("nextSequence" > 0))
+);
+
+CREATE TABLE public.asset_location_insight (
+    "assetId" uuid NOT NULL,
+    latitude double precision NOT NULL,
+    longitude double precision NOT NULL,
+    insight jsonb,
+    dismissed boolean DEFAULT false NOT NULL,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL
+);
+
 CREATE TABLE public.asset_lock (
     "assetId" uuid NOT NULL,
     reason character varying NOT NULL,
     "lockedAt" timestamp with time zone DEFAULT now() NOT NULL,
     "lockedBy" uuid,
     "previousVisibility" public.asset_visibility_enum,
-    inherited boolean DEFAULT false NOT NULL
+    inherited boolean DEFAULT false NOT NULL,
+    "pendingUnlockAt" timestamp with time zone
 );
 
 CREATE TABLE public.asset_metadata (
@@ -1030,6 +1234,33 @@ CREATE TABLE public.asset_origin (
     "sourceAssetId" uuid
 );
 
+CREATE TABLE public.asset_original (
+    "assetId" uuid NOT NULL,
+    "physicalFileId" uuid NOT NULL,
+    "originalFileName" character varying NOT NULL
+);
+
+CREATE TABLE public.asset_palette (
+    "assetId" uuid NOT NULL,
+    version integer NOT NULL,
+    "sourceRevision" text NOT NULL,
+    "ownerOnly" boolean DEFAULT false NOT NULL,
+    status text NOT NULL,
+    swatches jsonb NOT NULL,
+    "hasTransparency" boolean NOT NULL,
+    representative text NOT NULL,
+    "updatedAt" timestamp with time zone DEFAULT now() NOT NULL
+);
+
+CREATE TABLE public.asset_palette_swatch (
+    "assetId" uuid NOT NULL,
+    "position" integer NOT NULL,
+    l double precision NOT NULL,
+    a double precision NOT NULL,
+    b double precision NOT NULL,
+    weight double precision NOT NULL
+);
+
 CREATE TABLE public.asset_restoration (
     id uuid DEFAULT public.immich_uuid_v7() NOT NULL,
     "assetId" uuid NOT NULL,
@@ -1073,6 +1304,29 @@ CREATE TABLE public.asset_restoration (
     "updateId" uuid DEFAULT public.immich_uuid_v7() NOT NULL
 );
 
+CREATE TABLE public.asset_source (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    "assetId" uuid NOT NULL,
+    "captureId" uuid NOT NULL,
+    "pageUrl" text NOT NULL,
+    "mediaUrl" text,
+    title text NOT NULL,
+    "capturedAt" timestamp with time zone NOT NULL,
+    note text,
+    creator text,
+    "licenseUrl" text,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
+    "importedFrom" character varying,
+    CONSTRAINT "asset_source_importedFrom_check" CHECK ((("importedFrom")::text = 'eagle'::text))
+);
+
+CREATE TABLE public.asset_source_epoch (
+    "assetId" uuid NOT NULL,
+    "ownerId" uuid NOT NULL,
+    "lastTrashSequence" bigint NOT NULL,
+    CONSTRAINT asset_source_epoch_sequence_check CHECK (("lastTrashSequence" > 0))
+);
+
 CREATE TABLE public.asset_upload_part (
     id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
     "resourceId" uuid NOT NULL,
@@ -1113,14 +1367,30 @@ CREATE TABLE public.asset_user_share (
     "sharedWithId" uuid NOT NULL
 );
 
-CREATE TABLE public.asset_video_duplicate_frame (
+CREATE TABLE public.asset_video (
     "assetId" uuid NOT NULL,
-    "frameIndex" integer NOT NULL,
-    "timestampMs" integer NOT NULL,
-    path character varying NOT NULL,
-    embedding public.vector(512) NOT NULL,
-    "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
-    "updatedAt" timestamp with time zone DEFAULT now() NOT NULL
+    bitrate integer NOT NULL,
+    "frameCount" integer NOT NULL,
+    "timeBase" integer NOT NULL,
+    index smallint NOT NULL,
+    profile smallint,
+    level smallint,
+    "colorPrimaries" smallint NOT NULL,
+    "colorTransfer" smallint NOT NULL,
+    "colorMatrix" smallint NOT NULL,
+    "dvProfile" smallint,
+    "dvLevel" smallint,
+    "dvBlSignalCompatibilityId" smallint,
+    "codecName" text NOT NULL,
+    "formatName" text NOT NULL,
+    "formatLongName" text NOT NULL,
+    "pixelFormat" text NOT NULL
+);
+
+CREATE TABLE public.asset_video_fingerprint (
+    "assetId" uuid NOT NULL,
+    "durationMs" integer NOT NULL,
+    hashes bigint[] NOT NULL
 );
 
 CREATE TABLE public.backup_device (
@@ -1149,12 +1419,72 @@ CREATE TABLE public.backup_reconciliation (
     progress jsonb NOT NULL
 );
 
+CREATE TABLE public.bookmark (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    "ownerId" uuid NOT NULL,
+    url text NOT NULL,
+    title text NOT NULL,
+    note text,
+    "previewAssetId" uuid,
+    "libraryScope" public.library_scope_enum DEFAULT 'design'::public.library_scope_enum NOT NULL,
+    "isArchived" boolean DEFAULT false NOT NULL,
+    "isLocked" boolean DEFAULT false NOT NULL,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
+    "updatedAt" timestamp with time zone DEFAULT now() NOT NULL,
+    "deletedAt" timestamp with time zone,
+    "updateId" uuid DEFAULT public.immich_uuid_v7() NOT NULL,
+    source jsonb,
+    rating integer,
+    CONSTRAINT bookmark_rating_check CHECK (((rating IS NULL) OR (rating = '-1'::integer) OR ((rating >= 1) AND (rating <= 5))))
+);
+
+CREATE TABLE public.bookmark_tag (
+    "bookmarkId" uuid NOT NULL,
+    "tagId" uuid NOT NULL
+);
+
+CREATE TABLE public.browser_extension_access (
+    "apiKeyId" uuid NOT NULL,
+    "userId" uuid NOT NULL,
+    client character varying NOT NULL,
+    "redirectOrigin" character varying NOT NULL,
+    "installationId" character varying NOT NULL,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT browser_extension_access_client_check CHECK (((client)::text = ANY (ARRAY[('chrome'::character varying)::text, ('edge'::character varying)::text])))
+);
+
+CREATE TABLE public.browser_extension_sign_in_code (
+    "codeHash" bytea NOT NULL,
+    "userId" uuid NOT NULL,
+    "sessionId" uuid NOT NULL,
+    "codeChallenge" character varying NOT NULL,
+    "redirectUri" character varying NOT NULL,
+    client character varying NOT NULL,
+    "installationId" character varying NOT NULL,
+    "serverId" character varying NOT NULL,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
+    "expiresAt" timestamp with time zone NOT NULL,
+    CONSTRAINT browser_extension_sign_in_code_client_check CHECK (((client)::text = ANY (ARRAY[('chrome'::character varying)::text, ('edge'::character varying)::text]))),
+    CONSTRAINT browser_extension_sign_in_code_hash_check CHECK ((octet_length("codeHash") = 32))
+);
+
 CREATE TABLE public.buddy_backup_reference (
     "createdAt" timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
     "deleteRequested" boolean DEFAULT false NOT NULL,
     path text NOT NULL,
     released boolean DEFAULT false NOT NULL,
     "runId" uuid NOT NULL
+);
+
+CREATE TABLE public.capture_receipt (
+    "ownerId" uuid NOT NULL,
+    "captureId" uuid NOT NULL,
+    "actorId" text NOT NULL,
+    "requestHash" bytea NOT NULL,
+    kind text NOT NULL,
+    "itemId" uuid NOT NULL,
+    status text NOT NULL,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL
 );
 
 CREATE TABLE public.classification_match (
@@ -1187,7 +1517,60 @@ CREATE TABLE public.classification_rule (
     "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
     "updatedAt" timestamp with time zone DEFAULT now() NOT NULL,
     "lastAppliedAt" timestamp with time zone,
+    filter jsonb,
     CONSTRAINT classification_rule_archive_consent_chk CHECK (((NOT archive) OR ("archiveConsentAt" IS NOT NULL)))
+);
+
+CREATE TABLE public.cloud_backup_coverage_report (
+    "runId" uuid NOT NULL,
+    "instanceId" uuid,
+    "revisionId" uuid NOT NULL,
+    sequence integer NOT NULL,
+    "inventoryAt" timestamp with time zone NOT NULL,
+    "accountCount" integer NOT NULL,
+    "pageCount" integer NOT NULL,
+    snapshot jsonb,
+    pages text[] NOT NULL,
+    "runReport" jsonb,
+    "revisionAccepted" boolean DEFAULT false NOT NULL,
+    status text NOT NULL,
+    attempts integer DEFAULT 0 NOT NULL,
+    "nextAttemptAt" timestamp with time zone,
+    "lastError" text,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
+    "publishedAt" timestamp with time zone,
+    CONSTRAINT cloud_backup_coverage_report_pages_check CHECK ((("accountCount" >= 0) AND ("pageCount" = cardinality(pages)) AND ("pageCount" = (("accountCount" + 31) / 32)))),
+    CONSTRAINT cloud_backup_coverage_report_sequence_check CHECK ((sequence >= 1)),
+    CONSTRAINT cloud_backup_coverage_report_status_check CHECK ((status = ANY (ARRAY['local'::text, 'pending'::text, 'published'::text, 'rejected'::text, 'expired'::text])))
+);
+
+CREATE TABLE public.cloud_backup_decision_account (
+    "runId" uuid NOT NULL,
+    "userId" uuid NOT NULL,
+    "userFingerprint" text NOT NULL,
+    "selectionHash" text,
+    "totalOriginals" integer NOT NULL,
+    "selectedOriginals" integer NOT NULL,
+    "licenceEligible" boolean NOT NULL,
+    "includedOriginals" integer,
+    CONSTRAINT cloud_backup_decision_account_counts_check CHECK ((("totalOriginals" >= 0) AND ("selectedOriginals" >= 0) AND ("selectedOriginals" <= "totalOriginals") AND (("includedOriginals" IS NULL) OR (("includedOriginals" >= 0) AND ("includedOriginals" <= "selectedOriginals"))) AND ("licenceEligible" OR ("includedOriginals" IS NULL) OR ("includedOriginals" = 0))))
+);
+
+CREATE TABLE public.cloud_backup_decision_asset (
+    "runId" uuid NOT NULL,
+    "assetId" uuid NOT NULL,
+    "ownerId" uuid NOT NULL,
+    reason text NOT NULL,
+    CONSTRAINT cloud_backup_decision_asset_reason_check CHECK ((reason = ANY (ARRAY['included'::text, 'selection'::text, 'licence'::text])))
+);
+
+CREATE TABLE public.cloud_backup_decision_run (
+    "runId" uuid NOT NULL,
+    "manifestKey" text NOT NULL,
+    "inventoryAt" timestamp with time zone NOT NULL,
+    "licenceScope" text NOT NULL,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT "cloud_backup_decision_run_licenceScope_check" CHECK (("licenceScope" = ANY (ARRAY['all'::text, 'users'::text, 'none'::text, 'own-bucket'::text])))
 );
 
 CREATE TABLE public.cloud_backup_manifest (
@@ -1240,6 +1623,21 @@ CREATE TABLE public.cloud_backup_object_verification (
     "checkedAt" timestamp with time zone DEFAULT clock_timestamp() NOT NULL
 );
 
+CREATE TABLE public.cloud_backup_selection (
+    "userId" uuid NOT NULL,
+    destination text NOT NULL,
+    "albumIds" uuid[] DEFAULT '{}'::uuid[] NOT NULL,
+    "collectionIds" uuid[] DEFAULT '{}'::uuid[] NOT NULL,
+    "personIds" uuid[] DEFAULT '{}'::uuid[] NOT NULL,
+    "tagIds" uuid[] DEFAULT '{}'::uuid[] NOT NULL,
+    folders text[] DEFAULT '{}'::text[] NOT NULL,
+    favorites boolean DEFAULT false NOT NULL,
+    "dateRanges" jsonb DEFAULT '[]'::jsonb NOT NULL,
+    "updatedAt" timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT "cloud_backup_selection_dateRanges_check" CHECK ((jsonb_typeof("dateRanges") = 'array'::text)),
+    CONSTRAINT cloud_backup_selection_destination_check CHECK ((destination = 'cloud'::text))
+);
+
 CREATE TABLE public.cluster_group (
     id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
     name character varying,
@@ -1253,6 +1651,170 @@ CREATE TABLE public.cluster_group_request (
     "clusterGroupId" uuid NOT NULL,
     "userId" uuid NOT NULL,
     "createdAt" timestamp with time zone DEFAULT now() NOT NULL
+);
+
+CREATE TABLE public.desktop_clip_index (
+    scope text NOT NULL,
+    "revisionId" uuid NOT NULL,
+    space jsonb,
+    CONSTRAINT desktop_clip_index_scope_check CHECK ((scope = ANY (ARRAY['unadmitted'::text, 'clip'::text]))),
+    CONSTRAINT desktop_clip_index_space_check CHECK ((((scope = 'unadmitted'::text) AND (space IS NULL)) OR ((scope = 'clip'::text) AND (space IS NOT NULL) AND (jsonb_typeof(space) = 'object'::text))))
+);
+
+CREATE TABLE public.desktop_clip_producer (
+    key text NOT NULL,
+    scope text DEFAULT 'unadmitted'::text NOT NULL,
+    CONSTRAINT desktop_clip_producer_key_check CHECK (((key = 'legacy'::text) OR (key ~ '^(image|text):clip:[a-f0-9]{64}$'::text)))
+);
+
+CREATE TABLE public.desktop_device (
+    "userId" uuid NOT NULL,
+    "installationId" uuid NOT NULL,
+    "publicKey" character varying NOT NULL,
+    "authorizationEpoch" integer DEFAULT 1 NOT NULL,
+    architecture character varying NOT NULL,
+    mode character varying NOT NULL,
+    name character varying NOT NULL,
+    "revokedAt" timestamp with time zone,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
+    state character varying NOT NULL,
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    platform character varying NOT NULL
+);
+
+CREATE TABLE public.desktop_ml_attempt (
+    "authorizationEpoch" integer NOT NULL,
+    "deviceId" uuid NOT NULL,
+    "taskId" uuid NOT NULL,
+    outcome character varying,
+    "expiresAt" timestamp with time zone NOT NULL,
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    generation integer NOT NULL,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
+    "workerSessionId" uuid,
+    "qualificationId" uuid
+);
+
+CREATE TABLE public.desktop_ml_task (
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
+    "modelKey" character varying NOT NULL,
+    "authorityKey" character varying NOT NULL,
+    result jsonb,
+    "ownerId" uuid NOT NULL,
+    "inputSha256" character varying NOT NULL,
+    "inputKind" character varying NOT NULL,
+    state character varying DEFAULT 'pending'::character varying NOT NULL,
+    input bytea,
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    config jsonb NOT NULL,
+    generation integer DEFAULT 0 NOT NULL,
+    "attemptId" uuid,
+    "configSha256" character varying NOT NULL,
+    "deadlineAt" timestamp with time zone NOT NULL,
+    "resultSha256" character varying,
+    disclosure jsonb,
+    CONSTRAINT desktop_ml_task_input_size_check CHECK ((octet_length(input) <= 16777216)),
+    CONSTRAINT desktop_ml_task_kind_check CHECK ((("inputKind")::text = ANY (ARRAY[('image'::character varying)::text, ('text'::character varying)::text]))),
+    CONSTRAINT desktop_ml_task_state_check CHECK (((state)::text = ANY (ARRAY[('pending'::character varying)::text, ('running'::character varying)::text, ('completed'::character varying)::text, ('cancelled'::character varying)::text, ('failed'::character varying)::text, ('consumed'::character varying)::text])))
+);
+
+CREATE TABLE public.desktop_worker_challenge (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    "deviceId" uuid NOT NULL,
+    "sessionId" uuid NOT NULL,
+    "requestId" uuid NOT NULL,
+    "authorizationEpoch" integer NOT NULL,
+    "credentialHash" bytea NOT NULL,
+    "modelKey" character varying NOT NULL,
+    "profileSha256" character varying NOT NULL,
+    runtime jsonb NOT NULL,
+    "specJson" character varying NOT NULL,
+    "bindingSha256" character varying NOT NULL,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
+    "expiresAt" timestamp with time zone NOT NULL,
+    "reportSha256" character varying,
+    "runtimeFingerprint" character varying,
+    "reportedAt" timestamp with time zone,
+    CONSTRAINT desktop_worker_challenge_credential_check CHECK ((octet_length("credentialHash") = 32)),
+    CONSTRAINT desktop_worker_challenge_receipt_check CHECK (((("reportSha256" IS NULL) AND ("runtimeFingerprint" IS NULL) AND ("reportedAt" IS NULL)) OR (("reportSha256" IS NOT NULL) AND ("runtimeFingerprint" IS NOT NULL) AND ("reportedAt" IS NOT NULL)))),
+    CONSTRAINT desktop_worker_challenge_size_check CHECK (((octet_length(("specJson")::text) >= 1) AND (octet_length(("specJson")::text) <= 1048576)))
+);
+
+CREATE TABLE public.desktop_worker_qualification (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    "deviceId" uuid NOT NULL,
+    "sessionId" uuid NOT NULL,
+    "authorizationEpoch" integer NOT NULL,
+    "modelKey" character varying NOT NULL,
+    "profileSha256" character varying NOT NULL,
+    "configSha256" character varying NOT NULL,
+    "inputKind" character varying NOT NULL,
+    runtime jsonb NOT NULL,
+    "runtimeFingerprint" character varying NOT NULL,
+    "reportSha256" character varying NOT NULL,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
+    "expiresAt" timestamp with time zone NOT NULL,
+    CONSTRAINT desktop_worker_qualification_kind_check CHECK ((("inputKind")::text = ANY (ARRAY[('image'::character varying)::text, ('text'::character varying)::text]))),
+    CONSTRAINT desktop_worker_qualification_lifetime_check CHECK ((("expiresAt" > "createdAt") AND ("expiresAt" <= ("createdAt" + '01:00:00'::interval))))
+);
+
+CREATE TABLE public.desktop_worker_session (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    "deviceId" uuid NOT NULL,
+    "photoSessionId" uuid NOT NULL,
+    "tokenHash" bytea NOT NULL,
+    "authorizationEpoch" integer NOT NULL,
+    "lastSequence" integer DEFAULT 0 NOT NULL,
+    "modelKeys" jsonb DEFAULT '[]'::jsonb NOT NULL,
+    "expiresAt" timestamp with time zone NOT NULL,
+    "revokedAt" timestamp with time zone,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
+    "lastSeenAt" timestamp with time zone
+);
+
+CREATE TABLE public.develop_batch (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    "ownerId" uuid NOT NULL,
+    status text DEFAULT 'open'::text NOT NULL,
+    "includeSidecars" boolean DEFAULT true NOT NULL,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT develop_batch_status_check CHECK ((status = ANY (ARRAY['open'::text, 'cancelled'::text])))
+);
+
+CREATE TABLE public.develop_batch_item (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    "batchId" uuid NOT NULL,
+    "assetId" uuid NOT NULL,
+    "exportId" uuid,
+    "exportName" text NOT NULL,
+    "fileName" text NOT NULL,
+    "hasSidecar" boolean DEFAULT false NOT NULL,
+    error text,
+    "errorCode" text,
+    status text DEFAULT 'pending'::text NOT NULL,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT develop_batch_item_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'prepared'::text, 'failed'::text])))
+);
+
+CREATE TABLE public.develop_batch_return (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    "itemId" uuid NOT NULL,
+    checksum text NOT NULL,
+    "confirmationId" uuid NOT NULL,
+    "expectedCurrentRevisionId" uuid,
+    "activationInvalidated" boolean DEFAULT false NOT NULL,
+    "revisionId" uuid,
+    "sourceIdentity" bytea,
+    "pendingMasterPath" text,
+    "stagedAt" timestamp with time zone,
+    locked boolean NOT NULL,
+    "sessionId" uuid,
+    "apiKeyId" uuid,
+    status text DEFAULT 'confirmed'::text NOT NULL,
+    error text,
+    "errorCode" text,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT develop_batch_return_status_check CHECK ((status = ANY (ARRAY['confirmed'::text, 'imported'::text, 'completed'::text, 'conflict'::text, 'failed'::text, 'cancelled'::text])))
 );
 
 CREATE TABLE public.develop_export (
@@ -1288,6 +1850,40 @@ CREATE TABLE public.duplicate_decision (
     "appliedAt" timestamp with time zone,
     "undoOperationId" uuid,
     "undoneAt" timestamp with time zone
+);
+
+CREATE TABLE public.eagle_import (
+    id uuid DEFAULT public.immich_uuid_v7() NOT NULL,
+    "ownerId" uuid NOT NULL,
+    "rootId" character varying NOT NULL,
+    "relativePath" character varying NOT NULL,
+    "libraryPath" character varying NOT NULL,
+    "libraryName" character varying NOT NULL,
+    fingerprint character varying NOT NULL,
+    target jsonb NOT NULL,
+    "existingTop" jsonb DEFAULT '[]'::jsonb NOT NULL,
+    status character varying DEFAULT 'running'::character varying NOT NULL,
+    total integer DEFAULT 0 NOT NULL,
+    "rootAlbumId" uuid,
+    albums jsonb DEFAULT '{}'::jsonb NOT NULL,
+    "tagIds" jsonb DEFAULT '{}'::jsonb NOT NULL,
+    failed jsonb DEFAULT '[]'::jsonb NOT NULL,
+    recent jsonb DEFAULT '[]'::jsonb NOT NULL,
+    error text,
+    "leaseOwner" character varying,
+    "leaseExpiresAt" timestamp with time zone,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
+    "updatedAt" timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT eagle_import_status_check CHECK (((status)::text = ANY (ARRAY[('running'::character varying)::text, ('stopping'::character varying)::text, ('stopped'::character varying)::text, ('finished'::character varying)::text])))
+);
+
+CREATE TABLE public.eagle_import_item (
+    id uuid DEFAULT public.immich_uuid_v7() NOT NULL,
+    "importId" uuid NOT NULL,
+    "itemId" character varying NOT NULL,
+    "assetId" uuid NOT NULL,
+    duplicate boolean NOT NULL,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL
 );
 
 CREATE TABLE public.face_correction (
@@ -1376,6 +1972,72 @@ CREATE TABLE public.frameleaf_immich_import_work (
     kind text NOT NULL,
     dispatched_at timestamp with time zone,
     CONSTRAINT frameleaf_immich_import_work_kind_check CHECK ((kind = ANY (ARRAY['metadata'::text, 'thumbnail'::text, 'smart-search'::text, 'face-detection'::text])))
+);
+
+CREATE TABLE public.frameleaf_library_import (
+    singleton boolean DEFAULT true NOT NULL,
+    operation_id uuid NOT NULL,
+    binding jsonb NOT NULL,
+    status text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    reviewed_manifest jsonb,
+    reviewed_plan jsonb,
+    private_owners jsonb,
+    private_owners_sha256 text,
+    activation jsonb,
+    activation_sha256 text,
+    CONSTRAINT frameleaf_library_import_activation_hash CHECK (((activation_sha256 IS NULL) OR (activation_sha256 ~ '^[a-f0-9]{64}$'::text))),
+    CONSTRAINT frameleaf_library_import_activation_object CHECK (((activation IS NULL) OR (jsonb_typeof(activation) = 'object'::text))),
+    CONSTRAINT frameleaf_library_import_activation_pair CHECK (((activation IS NULL) = (activation_sha256 IS NULL))),
+    CONSTRAINT frameleaf_library_import_activation_phase CHECK (((activation IS NULL) OR (status = 'activated'::text))),
+    CONSTRAINT frameleaf_library_import_binding_check CHECK ((jsonb_typeof(binding) = 'object'::text)),
+    CONSTRAINT frameleaf_library_import_check CHECK ((((binding ->> 'operationId'::text) IS NOT NULL) AND ((binding ->> 'operationId'::text) = (operation_id)::text))),
+    CONSTRAINT frameleaf_library_import_inputs_pair CHECK (((reviewed_manifest IS NULL) = (reviewed_plan IS NULL))),
+    CONSTRAINT frameleaf_library_import_manifest_object CHECK (((reviewed_manifest IS NULL) OR (jsonb_typeof(reviewed_manifest) = 'object'::text))),
+    CONSTRAINT frameleaf_library_import_plan_object CHECK (((reviewed_plan IS NULL) OR (jsonb_typeof(reviewed_plan) = 'object'::text))),
+    CONSTRAINT frameleaf_library_import_private_owners_hash CHECK (((private_owners_sha256 IS NULL) OR (private_owners_sha256 ~ '^[a-f0-9]{64}$'::text))),
+    CONSTRAINT frameleaf_library_import_private_owners_object CHECK (((private_owners IS NULL) OR (jsonb_typeof(private_owners) = 'object'::text))),
+    CONSTRAINT frameleaf_library_import_private_owners_pair CHECK (((private_owners IS NULL) = (private_owners_sha256 IS NULL))),
+    CONSTRAINT frameleaf_library_import_singleton_check CHECK (singleton),
+    CONSTRAINT frameleaf_library_import_status_check CHECK ((status = ANY (ARRAY['copying'::text, 'verifying'::text, 'activated'::text, 'abandoned'::text])))
+);
+
+CREATE TABLE public.frameleaf_library_import_archive (
+    operation_id uuid NOT NULL,
+    destination_id uuid NOT NULL,
+    version integer NOT NULL,
+    expected_count bigint NOT NULL,
+    expected_sha256 text NOT NULL,
+    written_count bigint DEFAULT 0 NOT NULL,
+    sealed boolean DEFAULT false NOT NULL,
+    CONSTRAINT frameleaf_library_import_archive_check CHECK (((written_count >= 0) AND (written_count <= expected_count))),
+    CONSTRAINT frameleaf_library_import_archive_check1 CHECK (((NOT sealed) OR (written_count = expected_count))),
+    CONSTRAINT frameleaf_library_import_archive_expected_count_check CHECK ((expected_count >= 0)),
+    CONSTRAINT frameleaf_library_import_archive_expected_sha256_check CHECK ((expected_sha256 ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT frameleaf_library_import_archive_version_check CHECK ((version = 1))
+);
+
+CREATE TABLE public.frameleaf_library_import_archive_record (
+    operation_id uuid NOT NULL,
+    ordinal bigint NOT NULL,
+    payload jsonb NOT NULL,
+    sha256 text NOT NULL,
+    CONSTRAINT frameleaf_library_import_archive_record_ordinal_check CHECK ((ordinal >= 0)),
+    CONSTRAINT frameleaf_library_import_archive_record_payload_check CHECK ((jsonb_typeof(payload) = 'object'::text)),
+    CONSTRAINT frameleaf_library_import_archive_record_sha256_check CHECK ((sha256 ~ '^[a-f0-9]{64}$'::text))
+);
+
+CREATE TABLE public.frameleaf_library_import_mapping (
+    operation_id uuid NOT NULL,
+    entity_kind text NOT NULL,
+    source_id text NOT NULL,
+    destination_id uuid NOT NULL,
+    record_sha256 text NOT NULL,
+    applied_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT frameleaf_library_import_mapping_entity_kind_check CHECK ((entity_kind = ANY (ARRAY['owner'::text, 'library'::text, 'asset'::text, 'file'::text, 'album'::text, 'person'::text, 'stack'::text]))),
+    CONSTRAINT frameleaf_library_import_mapping_record_sha256_check CHECK ((record_sha256 ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT frameleaf_library_import_mapping_source_id_check CHECK (((length(source_id) >= 1) AND (length(source_id) <= 1024)))
 );
 
 CREATE TABLE public.frameleaf_rate_limit (
@@ -1491,6 +2153,51 @@ CREATE TABLE public.icloud_connection (
     CONSTRAINT "icloud_connection_authAttempts_check" CHECK (("authAttempts" >= 0)),
     CONSTRAINT icloud_connection_config_check CHECK ((jsonb_typeof(config) = 'object'::text)),
     CONSTRAINT icloud_connection_label_check CHECK (((length(label) >= 1) AND (length(label) <= 256)))
+);
+
+CREATE TABLE public.icloud_edit_alias (
+    "ownerId" uuid NOT NULL,
+    item text NOT NULL,
+    holder text NOT NULL,
+    "sourceIncarnation" uuid NOT NULL,
+    "nativeVersion" text NOT NULL,
+    "versionId" uuid NOT NULL
+);
+
+CREATE TABLE public.icloud_edit_authority (
+    "ownerId" uuid NOT NULL,
+    item text NOT NULL,
+    generation integer NOT NULL,
+    holder text NOT NULL,
+    "sourceIncarnation" uuid NOT NULL,
+    "currentVersionId" uuid NOT NULL,
+    "baselineDecisionId" uuid NOT NULL,
+    CONSTRAINT icloud_edit_authority_generation_check CHECK ((generation > 0))
+);
+
+CREATE TABLE public.icloud_edit_decision (
+    id uuid NOT NULL,
+    "ownerId" uuid NOT NULL,
+    item text NOT NULL,
+    kind text NOT NULL,
+    generation integer NOT NULL,
+    "versionId" uuid NOT NULL,
+    evidence jsonb NOT NULL,
+    channel text,
+    "resourceId" uuid,
+    "assetId" uuid,
+    events jsonb NOT NULL,
+    CONSTRAINT icloud_edit_decision_kind_check CHECK ((kind = ANY (ARRAY['baseline'::text, 'successor'::text])))
+);
+
+CREATE TABLE public.icloud_edit_version (
+    id uuid NOT NULL,
+    "ownerId" uuid NOT NULL,
+    item text NOT NULL,
+    "assetId" uuid NOT NULL,
+    sha256 bytea NOT NULL,
+    "isOriginal" boolean NOT NULL,
+    CONSTRAINT icloud_edit_version_digest_check CHECK ((octet_length(sha256) = 32))
 );
 
 CREATE TABLE public.icloud_identity_audit (
@@ -1741,6 +2448,20 @@ CREATE TABLE public.icloud_weekly_member (
     CONSTRAINT "icloud_weekly_member_technicalEligibility_check" CHECK (("technicalEligibility" = ANY (ARRAY['current'::text, 'stale'::text])))
 );
 
+CREATE TABLE public.identical_file_change (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    "runId" uuid NOT NULL,
+    kind character varying NOT NULL,
+    "assetId" uuid NOT NULL,
+    "keptAssetId" uuid,
+    "ownPath" character varying NOT NULL,
+    checksum bytea NOT NULL,
+    "sizeInBytes" bigint NOT NULL,
+    "trashEntryId" uuid,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
+    "undoneAt" timestamp with time zone
+);
+
 CREATE TABLE public.integrity_report (
     id uuid DEFAULT public.immich_uuid_v7() NOT NULL,
     type character varying NOT NULL,
@@ -1780,6 +2501,8 @@ CREATE TABLE public.job (
     "cancelRequestedAt" timestamp with time zone,
     "dependencyReason" text,
     error text,
+    "cancelReason" text,
+    CONSTRAINT job_cancel_reason_check CHECK (("cancelReason" = ANY (ARRAY['deadline'::text, 'request'::text]))),
     CONSTRAINT job_check CHECK (((state = 'active'::text) = (token IS NOT NULL))),
     CONSTRAINT job_state_check CHECK ((state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text, 'completed'::text, 'failed'::text, 'needs_attention'::text, 'cancelled'::text, 'blocked'::text])))
 )
@@ -1796,6 +2519,11 @@ CREATE TABLE public.job_attempt (
     error text
 )
 WITH (autovacuum_vacuum_scale_factor='0.02', autovacuum_analyze_scale_factor='0.05', autovacuum_vacuum_threshold='50', autovacuum_analyze_threshold='50');
+
+CREATE TABLE public.job_library_source_producer (
+    "selectionId" uuid NOT NULL,
+    "producerId" uuid NOT NULL
+);
 
 CREATE TABLE public.job_queue (
     name text NOT NULL,
@@ -1824,9 +2552,30 @@ CREATE TABLE public.job_run_item (
     "selectionId" uuid,
     "jobId" uuid,
     state text DEFAULT 'pending'::text NOT NULL,
+    "selectionVersion" integer DEFAULT 0 NOT NULL,
+    "libraryCleanupId" bigint NOT NULL,
+    "librarySourceKey" text,
+    "libraryProducerId" uuid,
+    "libraryOriginComplete" boolean DEFAULT false NOT NULL,
+    "libraryOriginAfter" uuid,
+    "libraryExecutionRunId" uuid,
+    "libraryExecutionItemKey" text,
+    "libraryIntent" jsonb,
+    "libraryParentId" uuid,
+    CONSTRAINT job_library_execution_identity CHECK ((("libraryExecutionRunId" IS NULL) = ("libraryExecutionItemKey" IS NULL))),
+    CONSTRAINT job_run_item_library_intent CHECK ((("librarySourceKey" IS NULL) = ("libraryIntent" IS NULL))),
     CONSTRAINT job_run_item_state_check CHECK ((state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text, 'completed'::text, 'failed'::text, 'needs_attention'::text, 'cancelled'::text, 'blocked'::text])))
 )
 WITH (autovacuum_vacuum_scale_factor='0.02', autovacuum_analyze_scale_factor='0.05', autovacuum_vacuum_threshold='50', autovacuum_analyze_threshold='50');
+
+ALTER TABLE public.job_run_item ALTER COLUMN "libraryCleanupId" ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public."job_run_item_libraryCleanupId_seq"
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
 
 CREATE TABLE public.job_selection (
     id uuid NOT NULL,
@@ -1839,7 +2588,44 @@ CREATE TABLE public.job_selection (
     "deadlineMs" integer NOT NULL,
     state text NOT NULL,
     "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT job_selection_state_check CHECK ((state = ANY (ARRAY['enumerating'::text, 'ready'::text, 'needs_attention'::text])))
+    "capturedAt" timestamp with time zone,
+    "sourceKind" text DEFAULT 'frozen'::text NOT NULL,
+    "libraryFrozenProducerId" uuid,
+    "librarySharesExecution" boolean DEFAULT false NOT NULL,
+    "libraryOperationId" uuid,
+    "sourceClosedAt" timestamp with time zone,
+    "appendSequence" bigint DEFAULT 0 NOT NULL,
+    CONSTRAINT job_selection_append_sequence CHECK (("appendSequence" >= 0)),
+    CONSTRAINT job_selection_library_source CHECK (((("sourceKind" = 'frozen'::text) AND ("libraryOperationId" IS NULL)) OR (("sourceKind" = ANY (ARRAY['library-initial'::text, 'library-child'::text])) AND ("libraryOperationId" IS NOT NULL) AND ("libraryOperationId" = "runId") AND ("producerId" IS NULL)))),
+    CONSTRAINT job_selection_state_check CHECK ((state = ANY (ARRAY['enumerating'::text, 'ready'::text, 'needs_attention'::text, 'cancelled'::text])))
+);
+
+CREATE TABLE public.job_selection_lineage (
+    id bigint NOT NULL,
+    "selectionId" uuid NOT NULL,
+    "runId" uuid NOT NULL,
+    "itemKey" text NOT NULL,
+    stage text NOT NULL,
+    superseded boolean DEFAULT false NOT NULL,
+    "libraryChildOrigin" boolean DEFAULT false NOT NULL
+);
+
+ALTER TABLE public.job_selection_lineage ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.job_selection_lineage_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+CREATE TABLE public.job_selection_run (
+    "runId" uuid NOT NULL,
+    "selectionId" uuid NOT NULL,
+    "copyAfter" text,
+    "copyComplete" boolean DEFAULT false NOT NULL,
+    "lineageAfter" bigint DEFAULT 0 NOT NULL,
+    "libraryVersion" bigint DEFAULT 0 NOT NULL
 );
 
 CREATE TABLE public.job_worker (
@@ -1851,6 +2637,32 @@ CREATE TABLE public.job_worker (
 )
 WITH (autovacuum_vacuum_scale_factor='0.02', autovacuum_analyze_scale_factor='0.05', autovacuum_vacuum_threshold='50', autovacuum_analyze_threshold='50');
 
+CREATE TABLE public.landmark (
+    id character varying(20) NOT NULL,
+    name text NOT NULL,
+    names jsonb DEFAULT '{}'::jsonb NOT NULL,
+    kind character varying(20) NOT NULL,
+    latitude double precision NOT NULL,
+    longitude double precision NOT NULL,
+    "radiusM" integer NOT NULL,
+    rank integer NOT NULL
+);
+
+CREATE TABLE public.landmark_area (
+    id integer NOT NULL,
+    "landmarkId" character varying(20) NOT NULL,
+    area polygon NOT NULL
+);
+
+ALTER TABLE public.landmark_area ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.landmark_area_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
 CREATE TABLE public.library (
     id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
     name character varying NOT NULL,
@@ -1861,7 +2673,20 @@ CREATE TABLE public.library (
     "updatedAt" timestamp with time zone DEFAULT now() NOT NULL,
     "deletedAt" timestamp with time zone,
     "refreshedAt" timestamp with time zone,
-    "updateId" uuid DEFAULT public.immich_uuid_v7() NOT NULL
+    "updateId" uuid DEFAULT public.immich_uuid_v7() NOT NULL,
+    "readOnly" boolean DEFAULT false NOT NULL
+);
+
+CREATE TABLE public.locked_encryption (
+    "userId" uuid NOT NULL,
+    mode text NOT NULL,
+    status text NOT NULL,
+    "askAgainHours" integer DEFAULT 72,
+    "recoveryKeyCreatedAt" timestamp with time zone NOT NULL,
+    "enabledAt" timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT "locked_encryption_askAgainHours_check" CHECK (("askAgainHours" = ANY (ARRAY[8, 24, 72]))),
+    CONSTRAINT locked_encryption_mode_check CHECK ((mode = ANY (ARRAY['pin'::text, 'advanced'::text]))),
+    CONSTRAINT locked_encryption_status_check CHECK ((status = ANY (ARRAY['encrypting'::text, 'on'::text, 'decrypting'::text])))
 );
 
 CREATE TABLE public.media_operation (
@@ -1935,7 +2760,11 @@ CREATE TABLE public.media_operation_checkpoint (
     "completedAt" timestamp with time zone,
     "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
     "updatedAt" timestamp with time zone DEFAULT now() NOT NULL,
-    "updateId" uuid DEFAULT public.immich_uuid_v7() NOT NULL
+    "updateId" uuid DEFAULT public.immich_uuid_v7() NOT NULL,
+    "subtitlePath" character varying,
+    "subtitleChecksum" bytea,
+    "subtitleSizeInBytes" bigint,
+    CONSTRAINT media_operation_checkpoint_subtitle_identity_check CHECK (((("subtitlePath" IS NULL) AND ("subtitleChecksum" IS NULL) AND ("subtitleSizeInBytes" IS NULL)) OR (("subtitlePath" IS NOT NULL) AND ("subtitleChecksum" IS NOT NULL) AND ("subtitleSizeInBytes" IS NOT NULL) AND (octet_length("subtitleChecksum") = 32) AND ("subtitleSizeInBytes" >= 0))))
 );
 
 CREATE TABLE public.memory (
@@ -2053,6 +2882,13 @@ CREATE TABLE public.ml_destination (
     CONSTRAINT ml_destination_kind_check CHECK ((kind = ANY (ARRAY['local'::text, 'lan'::text, 'frameleaf-cloud'::text])))
 );
 
+CREATE TABLE public.ml_processing_order (
+    scope text NOT NULL,
+    sources jsonb NOT NULL,
+    "updatedAt" timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ml_processing_order_sources_check CHECK ((jsonb_typeof(sources) = 'array'::text))
+);
+
 CREATE TABLE public.ml_workload_accounting (
     id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
     "destinationId" uuid,
@@ -2077,6 +2913,15 @@ CREATE TABLE public.ml_workload_route (
     "destinationId" uuid NOT NULL,
     "modelId" text,
     "updatedAt" timestamp with time zone DEFAULT now() NOT NULL
+);
+
+CREATE TABLE public.ml_workload_route_origin (
+    workload text NOT NULL,
+    origin text NOT NULL,
+    "revisionId" uuid NOT NULL,
+    "destinationId" uuid,
+    "updatedAt" timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ml_workload_route_origin_kind_check CHECK ((origin = ANY (ARRAY['default'::text, 'pinned'::text])))
 );
 
 CREATE TABLE public.move_history (
@@ -2326,6 +3171,89 @@ CREATE TABLE public.pet_recognition_run (
     CONSTRAINT pet_recognition_run_status_check CHECK ((status = ANY (ARRAY['queued'::text, 'running'::text, 'completed'::text, 'cancelled'::text, 'failed'::text])))
 );
 
+CREATE TABLE public.photo_location_estimate (
+    id uuid DEFAULT public.immich_uuid_v7() NOT NULL,
+    "ownerId" uuid NOT NULL,
+    record jsonb NOT NULL,
+    "expiresAt" timestamp with time zone NOT NULL,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL
+);
+
+CREATE TABLE public.photo_location_scan (
+    id uuid DEFAULT public.immich_uuid_v7() NOT NULL,
+    "ownerId" uuid NOT NULL,
+    status text NOT NULL,
+    refresh boolean NOT NULL,
+    total integer DEFAULT 0 NOT NULL,
+    processed integer DEFAULT 0 NOT NULL,
+    matched integer DEFAULT 0 NOT NULL,
+    unmatched integer DEFAULT 0 NOT NULL,
+    skipped integer DEFAULT 0 NOT NULL,
+    failed integer DEFAULT 0 NOT NULL,
+    error text,
+    reason text,
+    "cloudUrl" text NOT NULL,
+    "instanceId" uuid NOT NULL,
+    "linkedAt" text NOT NULL,
+    state jsonb DEFAULT '{}'::jsonb NOT NULL,
+    "leaseToken" uuid,
+    "leaseUntil" timestamp with time zone,
+    "nextAttemptAt" timestamp with time zone DEFAULT now() NOT NULL,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
+    "estimateId" uuid,
+    "eligiblePhotos" integer DEFAULT 0 NOT NULL,
+    "selectedPhotos" integer DEFAULT 0 NOT NULL,
+    "estimatedMicros" double precision DEFAULT 0 NOT NULL,
+    billing jsonb
+);
+
+CREATE TABLE public.photo_location_scan_item (
+    "scanId" uuid NOT NULL,
+    "assetId" uuid NOT NULL,
+    "itemKey" text NOT NULL,
+    latitude double precision NOT NULL,
+    longitude double precision NOT NULL,
+    "accuracyM" double precision,
+    completed boolean DEFAULT false NOT NULL
+);
+
+CREATE TABLE public.photo_source (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    "ownerId" uuid NOT NULL,
+    "deviceId" uuid NOT NULL,
+    "photoSessionId" uuid NOT NULL,
+    kind character varying NOT NULL,
+    mode character varying NOT NULL,
+    name character varying NOT NULL,
+    "scopeFingerprint" character varying NOT NULL,
+    "revokedAt" timestamp with time zone,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL
+);
+
+CREATE TABLE public.photo_source_resource (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    "runId" uuid NOT NULL,
+    "resourceKey" character varying NOT NULL,
+    version character varying NOT NULL,
+    checksum bytea NOT NULL,
+    bytes bigint NOT NULL,
+    state character varying DEFAULT 'planned'::character varying NOT NULL,
+    "assetId" uuid,
+    "uploadResourceId" uuid,
+    "verifiedAt" timestamp with time zone,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL
+);
+
+CREATE TABLE public.photo_source_run (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    "sourceId" uuid NOT NULL,
+    "maxBytes" bigint NOT NULL,
+    "maxItems" integer NOT NULL,
+    state character varying DEFAULT 'open'::character varying NOT NULL,
+    "inventoryComplete" boolean DEFAULT false NOT NULL,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL
+);
+
 CREATE TABLE public.photography_studio_site (
     "ownerId" uuid NOT NULL,
     revision uuid NOT NULL,
@@ -2497,7 +3425,8 @@ CREATE TABLE public.push_device_activity (
     "activityId" text NOT NULL,
     kind text NOT NULL,
     token text NOT NULL,
-    "updatedAt" timestamp with time zone DEFAULT now() NOT NULL
+    "updatedAt" timestamp with time zone DEFAULT now() NOT NULL,
+    "operationId" uuid
 );
 
 CREATE TABLE public.recipient_group (
@@ -2531,7 +3460,8 @@ CREATE TABLE public.render_worker (
     "createdBy" uuid,
     "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
     "updatedAt" timestamp with time zone DEFAULT now() NOT NULL,
-    "updateId" uuid DEFAULT public.immich_uuid_v7() NOT NULL
+    "updateId" uuid DEFAULT public.immich_uuid_v7() NOT NULL,
+    "gpuWorkingBudgetApproval" jsonb
 );
 
 CREATE TABLE public.render_worker_audit (
@@ -2570,7 +3500,8 @@ CREATE TABLE public.render_worker_session (
     "expiresAt" timestamp with time zone NOT NULL,
     "revokedAt" timestamp with time zone,
     "lastUsedAt" timestamp with time zone,
-    "createdAt" timestamp with time zone DEFAULT now() NOT NULL
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
+    "gpuWorkingBudgetEvidence" jsonb
 );
 
 CREATE TABLE public.render_worker_session_capability (
@@ -2704,7 +3635,8 @@ CREATE TABLE public.smart_album (
     kind text NOT NULL,
     "ownerId" uuid NOT NULL,
     "albumId" uuid NOT NULL,
-    "createdAt" timestamp with time zone DEFAULT now() NOT NULL
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
+    "hiddenAt" timestamp with time zone
 );
 
 CREATE TABLE public.smart_album_asset (
@@ -2722,12 +3654,18 @@ CREATE TABLE public.smart_album_exclusion (
 
 CREATE TABLE public.smart_search (
     "assetId" uuid NOT NULL,
-    embedding public.vector(768) NOT NULL
+    embedding public.vector(768) NOT NULL,
+    "producerModelKey" character varying,
+    "producerAdmissionKey" text DEFAULT 'legacy'::text NOT NULL,
+    CONSTRAINT smart_search_producer_key_check CHECK ((("producerModelKey" IS NULL) OR (("producerModelKey")::text ~ '^clip:[a-f0-9]{64}$'::text)))
 );
 
 CREATE TABLE public.smart_search_description (
     "assetId" uuid NOT NULL,
-    embedding public.vector(768) NOT NULL
+    embedding public.vector(768) NOT NULL,
+    "producerModelKey" character varying,
+    "producerAdmissionKey" text DEFAULT 'legacy'::text NOT NULL,
+    CONSTRAINT smart_search_description_producer_key_check CHECK ((("producerModelKey" IS NULL) OR (("producerModelKey")::text ~ '^clip:[a-f0-9]{64}$'::text)))
 );
 
 CREATE TABLE public.socket_io_attachments (
@@ -2744,6 +3682,97 @@ CREATE SEQUENCE public.socket_io_attachments_id_seq
     CACHE 1;
 
 ALTER SEQUENCE public.socket_io_attachments_id_seq OWNED BY public.socket_io_attachments.id;
+
+CREATE TABLE public.source_original (
+    "assetId" uuid NOT NULL,
+    "resourceId" uuid NOT NULL,
+    "scopeFingerprint" character varying NOT NULL,
+    "authorizationEpoch" integer NOT NULL,
+    CONSTRAINT source_original_epoch_check CHECK (("authorizationEpoch" > 0))
+);
+
+CREATE TABLE public.source_resource_grant (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    "sourceId" uuid NOT NULL,
+    "photoSessionId" uuid NOT NULL,
+    "tokenHash" bytea NOT NULL,
+    "scopeFingerprint" character varying NOT NULL,
+    "authorizationEpoch" integer NOT NULL,
+    "lastSequence" integer DEFAULT 0 NOT NULL,
+    "expiresAt" timestamp with time zone NOT NULL,
+    "revokedAt" timestamp with time zone,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL
+);
+
+CREATE TABLE public.source_resource_grant_nonce (
+    "sourceId" uuid NOT NULL,
+    "requestId" uuid NOT NULL,
+    "expiresAt" timestamp with time zone NOT NULL
+);
+
+CREATE TABLE public.source_resource_read (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    "assetId" uuid NOT NULL,
+    "resourceId" uuid NOT NULL,
+    "sourceId" uuid NOT NULL,
+    "ownerId" uuid NOT NULL,
+    "deviceId" uuid NOT NULL,
+    "scopeFingerprint" character varying NOT NULL,
+    "authorizationEpoch" integer NOT NULL,
+    state character varying DEFAULT 'pending'::character varying NOT NULL,
+    "claimFence" integer DEFAULT 0 NOT NULL,
+    "claimTokenHash" bytea,
+    "claimCredentialHash" bytea,
+    "leaseUntil" timestamp with time zone,
+    deadline timestamp with time zone NOT NULL,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT source_resource_read_claim_check CHECK (((("claimTokenHash" IS NULL) OR (octet_length("claimTokenHash") = 32)) AND (("claimCredentialHash" IS NULL) OR (octet_length("claimCredentialHash") = 32)) AND (((state)::text <> ALL (ARRAY[('claimed'::character varying)::text, ('delivering'::character varying)::text])) OR (("claimFence" > 0) AND ("claimTokenHash" IS NOT NULL) AND ("claimCredentialHash" IS NOT NULL) AND ("leaseUntil" IS NOT NULL))))),
+    CONSTRAINT source_resource_read_epoch_check CHECK ((("authorizationEpoch" > 0) AND ("claimFence" >= 0))),
+    CONSTRAINT source_resource_read_state_check CHECK (((state)::text = ANY (ARRAY[('pending'::character varying)::text, ('claimed'::character varying)::text, ('delivering'::character varying)::text, ('ready'::character varying)::text, ('unavailable'::character varying)::text])))
+);
+
+CREATE TABLE public.speech_checkpoint (
+    "operationId" uuid NOT NULL,
+    "assetId" uuid NOT NULL,
+    "nextChunk" integer NOT NULL,
+    tail jsonb NOT NULL,
+    model text,
+    language text
+);
+
+CREATE TABLE public.speech_settings (
+    "ownerId" uuid NOT NULL,
+    enabled boolean DEFAULT false NOT NULL,
+    scope text DEFAULT 'library'::text NOT NULL,
+    "albumIds" uuid[] DEFAULT '{}'::uuid[] NOT NULL,
+    "destinationId" uuid,
+    generation uuid NOT NULL,
+    "modelFingerprint" text,
+    cursor uuid,
+    "nextScanAt" timestamp with time zone DEFAULT now() NOT NULL
+);
+
+CREATE TABLE public.speech_transcript (
+    "assetId" uuid NOT NULL,
+    "ownerId" uuid NOT NULL,
+    "operationId" uuid NOT NULL,
+    generation uuid NOT NULL,
+    checksum bytea NOT NULL,
+    "indexVersion" integer NOT NULL,
+    "modelFingerprint" text NOT NULL,
+    model text,
+    language text,
+    "completedAt" timestamp with time zone
+);
+
+CREATE TABLE public.speech_window (
+    "operationId" uuid NOT NULL,
+    sequence integer NOT NULL,
+    "assetId" uuid NOT NULL,
+    vector tsvector NOT NULL,
+    tokens text[] NOT NULL,
+    words jsonb NOT NULL
+);
 
 CREATE TABLE public.stack (
     id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
@@ -2815,7 +3844,12 @@ CREATE TABLE public.studio_export_version (
     "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
     "updatedAt" timestamp with time zone DEFAULT now() NOT NULL,
     "publishedAt" timestamp with time zone,
-    "cancelledAt" timestamp with time zone
+    "cancelledAt" timestamp with time zone,
+    "subtitlePath" character varying,
+    "subtitleChecksum" bytea,
+    "subtitleSizeInBytes" bigint,
+    "subtitleRemovedAt" timestamp with time zone,
+    CONSTRAINT studio_export_version_subtitle_identity_check CHECK (((("subtitlePath" IS NULL) AND ("subtitleChecksum" IS NULL) AND ("subtitleSizeInBytes" IS NULL)) OR (("subtitlePath" IS NOT NULL) AND ("subtitleChecksum" IS NOT NULL) AND ("subtitleSizeInBytes" IS NOT NULL) AND (octet_length("subtitleChecksum") = 32) AND ("subtitleSizeInBytes" >= 0))))
 );
 
 CREATE TABLE public.studio_export_version_source (
@@ -2829,7 +3863,9 @@ CREATE TABLE public.studio_export_version_source (
     "sourceAccess" character varying NOT NULL,
     locked boolean,
     "lockReason" character varying,
-    sensitive boolean
+    sensitive boolean,
+    "sourceEpoch" bigint,
+    CONSTRAINT studio_export_version_source_epoch_check CHECK ((("sourceEpoch" IS NULL) OR ("sourceEpoch" >= 0)))
 );
 
 CREATE TABLE public.studio_generated_resource (
@@ -2856,6 +3892,27 @@ CREATE TABLE public.studio_hdr_intermediate (
     status text NOT NULL,
     CONSTRAINT studio_hdr_intermediate_path_check CHECK (((status = 'ready'::text) = (path IS NOT NULL))),
     CONSTRAINT studio_hdr_intermediate_status_check CHECK ((status = ANY (ARRAY['ready'::text, 'ineligible'::text, 'failed'::text])))
+);
+
+CREATE TABLE public.studio_import_publication (
+    "ownerId" uuid NOT NULL,
+    "importId" uuid NOT NULL,
+    "targetPath" text,
+    "stagedPath" text,
+    "createdAt" timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    state text NOT NULL,
+    "projectId" uuid NOT NULL,
+    "stagedIdentity" jsonb,
+    declaration jsonb,
+    "expiresAt" timestamp with time zone NOT NULL,
+    id uuid NOT NULL,
+    CONSTRAINT studio_import_publication_declaration_check CHECK (((declaration IS NULL) OR (jsonb_typeof(declaration) = 'object'::text))),
+    CONSTRAINT studio_import_publication_expiry_check CHECK (("expiresAt" = ("createdAt" + '06:00:00'::interval))),
+    CONSTRAINT studio_import_publication_file_fields_check CHECK (((("stagedPath" IS NULL) AND ("targetPath" IS NULL) AND (declaration IS NULL) AND ("stagedIdentity" IS NULL)) OR (("stagedPath" IS NOT NULL) AND ("targetPath" IS NOT NULL) AND (declaration IS NOT NULL) AND ("stagedIdentity" IS NOT NULL)))),
+    CONSTRAINT studio_import_publication_identity_check CHECK ((("stagedIdentity" IS NULL) OR (jsonb_typeof("stagedIdentity") = 'object'::text))),
+    CONSTRAINT studio_import_publication_preparing_check CHECK (((state <> 'preparing'::text) OR ("stagedPath" IS NOT NULL))),
+    CONSTRAINT studio_import_publication_registered_check CHECK (((state <> 'registered'::text) OR ("stagedPath" IS NULL))),
+    CONSTRAINT studio_import_publication_state_check CHECK ((state = ANY (ARRAY['registered'::text, 'preparing'::text, 'published'::text, 'aborted'::text])))
 );
 
 CREATE TABLE public.studio_preview_frame (
@@ -2911,7 +3968,9 @@ CREATE TABLE public.studio_project (
     "importOperationId" uuid,
     "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
     "updatedAt" timestamp with time zone DEFAULT now() NOT NULL,
-    "updateId" uuid DEFAULT public.immich_uuid_v7() NOT NULL
+    "updateId" uuid DEFAULT public.immich_uuid_v7() NOT NULL,
+    "createRequestKey" text,
+    "createRequestDigest" text
 );
 
 CREATE TABLE public.studio_project_comment (
@@ -2941,6 +4000,7 @@ CREATE TABLE public.studio_project_import (
     path text NOT NULL,
     "projectId" uuid NOT NULL,
     "sizeBytes" bigint NOT NULL,
+    "processingProvenance" jsonb,
     CONSTRAINT studio_project_import_checksum_check CHECK ((checksum ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT studio_project_import_references_check CHECK ((("externalReferences" IS NULL) OR ("externalReferences" >= 0))),
     CONSTRAINT studio_project_import_size_check CHECK (("sizeBytes" > 0))
@@ -3106,7 +4166,12 @@ CREATE TABLE public."user" (
     status character varying DEFAULT 'active'::character varying NOT NULL,
     "profileChangedAt" timestamp with time zone DEFAULT now() NOT NULL,
     "updateId" uuid DEFAULT public.immich_uuid_v7() NOT NULL,
-    "clusterGroupId" uuid NOT NULL
+    "clusterGroupId" uuid NOT NULL,
+    "uploadsPaused" boolean DEFAULT false NOT NULL,
+    "passwordLinkHash" bytea,
+    "passwordLinkExpiresAt" timestamp with time zone,
+    "importClaimPending" boolean DEFAULT false NOT NULL,
+    "importOperationId" uuid
 );
 
 CREATE TABLE public.user_audit (
@@ -3225,7 +4290,10 @@ CREATE TABLE public.video_moment_frame (
 CREATE TABLE public.video_moment_frame_embedding (
     "frameId" uuid NOT NULL,
     embedding public.vector(512) NOT NULL,
-    "modelName" character varying NOT NULL
+    "modelName" character varying NOT NULL,
+    "producerModelKey" character varying,
+    "producerAdmissionKey" text DEFAULT 'legacy'::text NOT NULL,
+    CONSTRAINT video_moment_frame_embedding_producer_key_check CHECK ((("producerModelKey" IS NULL) OR (("producerModelKey")::text ~ '^clip:[a-f0-9]{64}$'::text)))
 );
 
 CREATE TABLE public.video_moment_index (
@@ -3285,10 +4353,62 @@ CREATE TABLE public.workflow (
     logging boolean DEFAULT false NOT NULL
 );
 
+CREATE TABLE public.workflow_batch (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    "workflowId" uuid NOT NULL,
+    "ownerId" uuid NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    reason text NOT NULL,
+    definition jsonb NOT NULL,
+    source jsonb NOT NULL,
+    embedding text,
+    "embeddingKey" text,
+    "definitionSha256" text NOT NULL,
+    "snapshotAt" timestamp with time zone DEFAULT now() NOT NULL,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
+    "updatedAt" timestamp with time zone DEFAULT now() NOT NULL,
+    "finishedAt" timestamp with time zone,
+    total integer DEFAULT 0 NOT NULL,
+    completed integer DEFAULT 0 NOT NULL,
+    skipped integer DEFAULT 0 NOT NULL,
+    failed integer DEFAULT 0 NOT NULL,
+    error text,
+    CONSTRAINT workflow_batch_reason_check CHECK ((reason = ANY (ARRAY['manual'::text, 'schedule'::text]))),
+    CONSTRAINT workflow_batch_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'running'::text, 'completed'::text, 'cancelled'::text, 'failed'::text])))
+);
+
+CREATE TABLE public.workflow_batch_item (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    "batchId" uuid NOT NULL,
+    "assetId" uuid NOT NULL,
+    attempt integer DEFAULT 0 NOT NULL,
+    "fromStepId" uuid,
+    status text DEFAULT 'pending'::text NOT NULL,
+    CONSTRAINT workflow_batch_item_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'completed'::text, 'skipped'::text, 'failed'::text])))
+);
+
+CREATE TABLE public.workflow_causation (
+    "chainId" uuid NOT NULL,
+    "workflowId" uuid NOT NULL,
+    "assetId" uuid NOT NULL,
+    "runId" uuid NOT NULL,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL
+);
+
 CREATE TABLE public.workflow_definition (
     "workflowId" uuid NOT NULL,
     definition jsonb NOT NULL,
     "updatedAt" timestamp with time zone DEFAULT now() NOT NULL
+);
+
+CREATE TABLE public.workflow_log (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
+    "workflowId" uuid NOT NULL,
+    result character varying NOT NULL,
+    "workflowStepId" uuid,
+    "triggerDataId" uuid,
+    "runId" uuid NOT NULL
 );
 
 CREATE TABLE public.workflow_log_detail (
@@ -3305,6 +4425,13 @@ CREATE TABLE public.workflow_run_step (
     "workflowId" uuid NOT NULL,
     halted boolean DEFAULT false NOT NULL,
     "createdAt" timestamp with time zone DEFAULT now() NOT NULL
+);
+
+CREATE TABLE public.workflow_schedule (
+    "workflowId" uuid NOT NULL,
+    "definitionSha256" text NOT NULL,
+    "nextAt" timestamp with time zone NOT NULL,
+    "lastAt" timestamp with time zone
 );
 
 CREATE TABLE public.workflow_step (
@@ -3339,6 +4466,9 @@ ALTER TABLE ONLY public.album_asset
 ALTER TABLE ONLY public.album_audit
     ADD CONSTRAINT album_audit_pkey PRIMARY KEY (id);
 
+ALTER TABLE ONLY public.album_bookmark
+    ADD CONSTRAINT album_bookmark_pkey PRIMARY KEY ("albumId", "bookmarkId");
+
 ALTER TABLE ONLY public.album_closure
     ADD CONSTRAINT album_closure_pkey PRIMARY KEY (id_ancestor, id_descendant);
 
@@ -3360,6 +4490,12 @@ ALTER TABLE ONLY public.album_source_asset
 ALTER TABLE ONLY public.album_source_link
     ADD CONSTRAINT album_source_link_pkey PRIMARY KEY (id);
 
+ALTER TABLE ONLY public.album_suggestion_auto_add
+    ADD CONSTRAINT album_suggestion_auto_add_pkey PRIMARY KEY ("albumId", "userId");
+
+ALTER TABLE ONLY public.album_suggestion_dismissal
+    ADD CONSTRAINT album_suggestion_dismissal_pkey PRIMARY KEY ("albumId", "assetId");
+
 ALTER TABLE ONLY public.album_user_audit
     ADD CONSTRAINT album_user_audit_pkey PRIMARY KEY (id);
 
@@ -3377,6 +4513,12 @@ ALTER TABLE ONLY public.archive_operation
 
 ALTER TABLE ONLY public.archive_operation
     ADD CONSTRAINT archive_operation_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.asset_annotation
+    ADD CONSTRAINT asset_annotation_pkey PRIMARY KEY ("assetId");
+
+ALTER TABLE ONLY public.asset_audio
+    ADD CONSTRAINT asset_audio_pkey PRIMARY KEY ("assetId");
 
 ALTER TABLE ONLY public.asset_audit
     ADD CONSTRAINT asset_audit_pkey PRIMARY KEY (id);
@@ -3420,6 +4562,9 @@ ALTER TABLE ONLY public.asset_exif
 ALTER TABLE ONLY public.asset_face_audit
     ADD CONSTRAINT asset_face_audit_pkey PRIMARY KEY (id);
 
+ALTER TABLE ONLY public.asset_face_outfit
+    ADD CONSTRAINT asset_face_outfit_pkey PRIMARY KEY ("faceId");
+
 ALTER TABLE ONLY public.asset_face
     ADD CONSTRAINT asset_face_pkey PRIMARY KEY (id);
 
@@ -3450,6 +4595,27 @@ ALTER TABLE ONLY public.asset_integrity_verification
 ALTER TABLE ONLY public.asset_job_status
     ADD CONSTRAINT asset_job_status_pkey PRIMARY KEY ("assetId");
 
+ALTER TABLE ONLY public.asset_keyframe
+    ADD CONSTRAINT asset_keyframe_pkey PRIMARY KEY ("assetId");
+
+ALTER TABLE ONLY public.asset_landmark
+    ADD CONSTRAINT asset_landmark_pkey PRIMARY KEY ("assetId", "landmarkId");
+
+ALTER TABLE ONLY public.asset_local_effect_cursor
+    ADD CONSTRAINT asset_local_effect_cursor_pkey PRIMARY KEY ("ownerId");
+
+ALTER TABLE ONLY public.asset_local_effect
+    ADD CONSTRAINT asset_local_effect_id_uq UNIQUE ("effectId");
+
+ALTER TABLE ONLY public.asset_local_effect
+    ADD CONSTRAINT asset_local_effect_pkey PRIMARY KEY ("ownerId", sequence);
+
+ALTER TABLE ONLY public.asset_local_effect_stream
+    ADD CONSTRAINT asset_local_effect_stream_pkey PRIMARY KEY ("ownerId");
+
+ALTER TABLE ONLY public.asset_location_insight
+    ADD CONSTRAINT asset_location_insight_pkey PRIMARY KEY ("assetId");
+
 ALTER TABLE ONLY public.asset_lock
     ADD CONSTRAINT asset_lock_pkey PRIMARY KEY ("assetId");
 
@@ -3468,6 +4634,15 @@ ALTER TABLE ONLY public.asset_ocr
 ALTER TABLE ONLY public.asset_origin
     ADD CONSTRAINT asset_origin_pkey PRIMARY KEY ("assetId");
 
+ALTER TABLE ONLY public.asset_original
+    ADD CONSTRAINT asset_original_pkey PRIMARY KEY ("assetId", "physicalFileId");
+
+ALTER TABLE ONLY public.asset_palette
+    ADD CONSTRAINT asset_palette_pkey PRIMARY KEY ("assetId");
+
+ALTER TABLE ONLY public.asset_palette_swatch
+    ADD CONSTRAINT asset_palette_swatch_pkey PRIMARY KEY ("assetId", "position");
+
 ALTER TABLE ONLY public.asset
     ADD CONSTRAINT asset_pkey PRIMARY KEY (id);
 
@@ -3476,6 +4651,15 @@ ALTER TABLE ONLY public.asset_restoration
 
 ALTER TABLE ONLY public.asset_restoration
     ADD CONSTRAINT asset_restoration_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.asset_source
+    ADD CONSTRAINT "asset_source_captureId_uq" UNIQUE ("captureId");
+
+ALTER TABLE ONLY public.asset_source_epoch
+    ADD CONSTRAINT asset_source_epoch_pkey PRIMARY KEY ("assetId");
+
+ALTER TABLE ONLY public.asset_source
+    ADD CONSTRAINT asset_source_pkey PRIMARY KEY (id);
 
 ALTER TABLE ONLY public.asset_upload_part
     ADD CONSTRAINT asset_upload_part_pkey PRIMARY KEY (id);
@@ -3489,8 +4673,11 @@ ALTER TABLE ONLY public.asset_user_share
 ALTER TABLE ONLY public.asset_user_share
     ADD CONSTRAINT asset_user_share_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY public.asset_video_duplicate_frame
-    ADD CONSTRAINT asset_video_duplicate_frame_pkey PRIMARY KEY ("assetId", "frameIndex");
+ALTER TABLE ONLY public.asset_video_fingerprint
+    ADD CONSTRAINT asset_video_fingerprint_pkey PRIMARY KEY ("assetId");
+
+ALTER TABLE ONLY public.asset_video
+    ADD CONSTRAINT asset_video_pkey PRIMARY KEY ("assetId");
 
 ALTER TABLE ONLY public.backup_device
     ADD CONSTRAINT "backup_device_ownerId_deviceKey_uq" UNIQUE ("ownerId", "deviceKey");
@@ -3501,8 +4688,26 @@ ALTER TABLE ONLY public.backup_device
 ALTER TABLE ONLY public.backup_reconciliation
     ADD CONSTRAINT backup_reconciliation_pkey PRIMARY KEY (id);
 
+ALTER TABLE ONLY public.bookmark
+    ADD CONSTRAINT bookmark_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.bookmark_tag
+    ADD CONSTRAINT bookmark_tag_pkey PRIMARY KEY ("bookmarkId", "tagId");
+
+ALTER TABLE ONLY public.browser_extension_access
+    ADD CONSTRAINT browser_extension_access_installation_uq UNIQUE ("userId", client, "redirectOrigin", "installationId");
+
+ALTER TABLE ONLY public.browser_extension_access
+    ADD CONSTRAINT browser_extension_access_pkey PRIMARY KEY ("apiKeyId");
+
+ALTER TABLE ONLY public.browser_extension_sign_in_code
+    ADD CONSTRAINT browser_extension_sign_in_code_pkey PRIMARY KEY ("codeHash");
+
 ALTER TABLE ONLY public.buddy_backup_reference
     ADD CONSTRAINT buddy_backup_reference_pkey PRIMARY KEY ("runId", path);
+
+ALTER TABLE ONLY public.capture_receipt
+    ADD CONSTRAINT capture_receipt_pkey PRIMARY KEY ("ownerId", "captureId");
 
 ALTER TABLE ONLY public.classification_match
     ADD CONSTRAINT classification_match_pkey PRIMARY KEY ("ruleId", "assetId");
@@ -3512,6 +4717,18 @@ ALTER TABLE ONLY public.classification_rule
 
 ALTER TABLE ONLY public.classification_rule
     ADD CONSTRAINT classification_rule_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.cloud_backup_coverage_report
+    ADD CONSTRAINT cloud_backup_coverage_report_pkey PRIMARY KEY ("runId");
+
+ALTER TABLE ONLY public.cloud_backup_decision_account
+    ADD CONSTRAINT cloud_backup_decision_account_pkey PRIMARY KEY ("runId", "userId");
+
+ALTER TABLE ONLY public.cloud_backup_decision_asset
+    ADD CONSTRAINT cloud_backup_decision_asset_pkey PRIMARY KEY ("runId", "assetId");
+
+ALTER TABLE ONLY public.cloud_backup_decision_run
+    ADD CONSTRAINT cloud_backup_decision_run_pkey PRIMARY KEY ("runId");
 
 ALTER TABLE ONLY public.cloud_backup_manifest_entry
     ADD CONSTRAINT cloud_backup_manifest_entry_pkey PRIMARY KEY ("manifestId", "fileKey");
@@ -3528,6 +4745,9 @@ ALTER TABLE ONLY public.cloud_backup_object
 ALTER TABLE ONLY public.cloud_backup_object_verification
     ADD CONSTRAINT cloud_backup_object_verification_pkey PRIMARY KEY (bucket, sha256, "operationId");
 
+ALTER TABLE ONLY public.cloud_backup_selection
+    ADD CONSTRAINT cloud_backup_selection_pkey PRIMARY KEY ("userId", destination);
+
 ALTER TABLE ONLY public.cluster_group
     ADD CONSTRAINT cluster_group_pkey PRIMARY KEY (id);
 
@@ -3536,6 +4756,54 @@ ALTER TABLE ONLY public.cluster_group_request
 
 ALTER TABLE ONLY public.cluster_group_request
     ADD CONSTRAINT cluster_group_request_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.desktop_clip_index
+    ADD CONSTRAINT desktop_clip_index_pkey PRIMARY KEY (scope);
+
+ALTER TABLE ONLY public.desktop_clip_producer
+    ADD CONSTRAINT desktop_clip_producer_pkey PRIMARY KEY (key);
+
+ALTER TABLE ONLY public.desktop_device
+    ADD CONSTRAINT desktop_device_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.desktop_device
+    ADD CONSTRAINT desktop_device_userid_installationid_uq UNIQUE ("userId", "installationId");
+
+ALTER TABLE ONLY public.desktop_ml_attempt
+    ADD CONSTRAINT desktop_ml_attempt_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.desktop_ml_attempt
+    ADD CONSTRAINT desktop_ml_attempt_taskid_generation_uq UNIQUE ("taskId", generation);
+
+ALTER TABLE ONLY public.desktop_ml_task
+    ADD CONSTRAINT desktop_ml_task_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.desktop_worker_challenge
+    ADD CONSTRAINT desktop_worker_challenge_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.desktop_worker_challenge
+    ADD CONSTRAINT "desktop_worker_challenge_sessionId_requestId_uq" UNIQUE ("sessionId", "requestId");
+
+ALTER TABLE ONLY public.desktop_worker_qualification
+    ADD CONSTRAINT desktop_worker_qualification_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.desktop_worker_qualification
+    ADD CONSTRAINT "desktop_worker_qualification_sessionId_modelKey_uq" UNIQUE ("sessionId", "modelKey");
+
+ALTER TABLE ONLY public.desktop_worker_session
+    ADD CONSTRAINT desktop_worker_session_deviceid_uq UNIQUE ("deviceId");
+
+ALTER TABLE ONLY public.desktop_worker_session
+    ADD CONSTRAINT desktop_worker_session_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.develop_batch_item
+    ADD CONSTRAINT develop_batch_item_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.develop_batch
+    ADD CONSTRAINT develop_batch_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.develop_batch_return
+    ADD CONSTRAINT develop_batch_return_pkey PRIMARY KEY (id);
 
 ALTER TABLE ONLY public.develop_export
     ADD CONSTRAINT develop_export_pkey PRIMARY KEY (id);
@@ -3551,6 +4819,15 @@ ALTER TABLE ONLY public.duplicate_decision
 
 ALTER TABLE ONLY public.duplicate_decision
     ADD CONSTRAINT duplicate_decision_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.eagle_import_item
+    ADD CONSTRAINT "eagle_import_item_importId_itemId_uq" UNIQUE ("importId", "itemId");
+
+ALTER TABLE ONLY public.eagle_import_item
+    ADD CONSTRAINT eagle_import_item_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.eagle_import
+    ADD CONSTRAINT eagle_import_pkey PRIMARY KEY (id);
 
 ALTER TABLE ONLY public.face_correction
     ADD CONSTRAINT face_correction_pkey PRIMARY KEY (id);
@@ -3578,6 +4855,21 @@ ALTER TABLE ONLY public.frameleaf_immich_import
 
 ALTER TABLE ONLY public.frameleaf_immich_import_work
     ADD CONSTRAINT frameleaf_immich_import_work_pkey PRIMARY KEY (asset_id, kind);
+
+ALTER TABLE ONLY public.frameleaf_library_import_archive
+    ADD CONSTRAINT frameleaf_library_import_archive_pkey PRIMARY KEY (operation_id);
+
+ALTER TABLE ONLY public.frameleaf_library_import_archive_record
+    ADD CONSTRAINT frameleaf_library_import_archive_record_pkey PRIMARY KEY (operation_id, ordinal);
+
+ALTER TABLE ONLY public.frameleaf_library_import_mapping
+    ADD CONSTRAINT frameleaf_library_import_mapping_pkey PRIMARY KEY (operation_id, entity_kind, source_id);
+
+ALTER TABLE ONLY public.frameleaf_library_import
+    ADD CONSTRAINT frameleaf_library_import_operation_id_key UNIQUE (operation_id);
+
+ALTER TABLE ONLY public.frameleaf_library_import
+    ADD CONSTRAINT frameleaf_library_import_pkey PRIMARY KEY (singleton);
 
 ALTER TABLE ONLY public.frameleaf_rate_limit
     ADD CONSTRAINT frameleaf_rate_limit_pkey PRIMARY KEY (key);
@@ -3626,6 +4918,24 @@ ALTER TABLE ONLY public.icloud_connection
 
 ALTER TABLE ONLY public.icloud_connection
     ADD CONSTRAINT icloud_connection_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.icloud_edit_alias
+    ADD CONSTRAINT icloud_edit_alias_pkey PRIMARY KEY ("ownerId", item, holder, "sourceIncarnation", "nativeVersion");
+
+ALTER TABLE ONLY public.icloud_edit_authority
+    ADD CONSTRAINT icloud_edit_authority_pkey PRIMARY KEY ("ownerId", item);
+
+ALTER TABLE ONLY public.icloud_edit_decision
+    ADD CONSTRAINT icloud_edit_decision_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.icloud_edit_decision
+    ADD CONSTRAINT icloud_edit_decision_resource_uq UNIQUE ("ownerId", channel, "resourceId");
+
+ALTER TABLE ONLY public.icloud_edit_version
+    ADD CONSTRAINT icloud_edit_version_asset_uq UNIQUE ("ownerId", item, "assetId");
+
+ALTER TABLE ONLY public.icloud_edit_version
+    ADD CONSTRAINT icloud_edit_version_pkey PRIMARY KEY (id);
 
 ALTER TABLE ONLY public.icloud_identity_audit
     ADD CONSTRAINT icloud_identity_audit_pkey PRIMARY KEY (id);
@@ -3690,6 +5000,9 @@ ALTER TABLE ONLY public.icloud_weekly_member
 ALTER TABLE ONLY public.icloud_weekly_member
     ADD CONSTRAINT icloud_weekly_member_pkey PRIMARY KEY ("cohortId", ordinal);
 
+ALTER TABLE ONLY public.identical_file_change
+    ADD CONSTRAINT identical_file_change_pkey PRIMARY KEY (id);
+
 ALTER TABLE ONLY public.integrity_report
     ADD CONSTRAINT integrity_report_pkey PRIMARY KEY (id);
 
@@ -3701,6 +5014,9 @@ ALTER TABLE ONLY public.job_attempt
 
 ALTER TABLE ONLY public.job_attempt
     ADD CONSTRAINT job_attempt_token_key UNIQUE (token);
+
+ALTER TABLE ONLY public.job_library_source_producer
+    ADD CONSTRAINT job_library_source_producer_pkey PRIMARY KEY ("selectionId", "producerId");
 
 ALTER TABLE ONLY public.job
     ADD CONSTRAINT job_pkey PRIMARY KEY (id);
@@ -3714,6 +5030,12 @@ ALTER TABLE ONLY public.job_run_item
 ALTER TABLE ONLY public.job_run
     ADD CONSTRAINT job_run_pkey PRIMARY KEY (id);
 
+ALTER TABLE ONLY public.job_selection_lineage
+    ADD CONSTRAINT job_selection_lineage_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.job_selection_lineage
+    ADD CONSTRAINT "job_selection_lineage_selectionId_itemKey_stage_key" UNIQUE ("selectionId", "itemKey", stage);
+
 ALTER TABLE ONLY public.job_selection
     ADD CONSTRAINT job_selection_pkey PRIMARY KEY (id);
 
@@ -3723,11 +5045,23 @@ ALTER TABLE ONLY public.job_selection
 ALTER TABLE ONLY public.job_selection
     ADD CONSTRAINT "job_selection_runId_stage_key" UNIQUE ("runId", stage);
 
+ALTER TABLE ONLY public.job_selection_run
+    ADD CONSTRAINT job_selection_run_pkey PRIMARY KEY ("runId", "selectionId");
+
 ALTER TABLE ONLY public.job_worker
     ADD CONSTRAINT job_worker_pkey PRIMARY KEY (id);
 
+ALTER TABLE ONLY public.landmark_area
+    ADD CONSTRAINT landmark_area_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.landmark
+    ADD CONSTRAINT landmark_pkey PRIMARY KEY (id);
+
 ALTER TABLE ONLY public.library
     ADD CONSTRAINT library_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.locked_encryption
+    ADD CONSTRAINT locked_encryption_pkey PRIMARY KEY ("userId");
 
 ALTER TABLE ONLY public.media_operation_checkpoint
     ADD CONSTRAINT "media_operation_checkpoint_operationId_sequence_uq" UNIQUE ("operationId", sequence);
@@ -3765,8 +5099,14 @@ ALTER TABLE ONLY public.ml_cloud_model_choice
 ALTER TABLE ONLY public.ml_destination
     ADD CONSTRAINT ml_destination_pkey PRIMARY KEY (id);
 
+ALTER TABLE ONLY public.ml_processing_order
+    ADD CONSTRAINT ml_processing_order_pkey PRIMARY KEY (scope);
+
 ALTER TABLE ONLY public.ml_workload_accounting
     ADD CONSTRAINT ml_workload_accounting_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.ml_workload_route_origin
+    ADD CONSTRAINT ml_workload_route_origin_pkey PRIMARY KEY (workload);
 
 ALTER TABLE ONLY public.ml_workload_route
     ADD CONSTRAINT ml_workload_route_pkey PRIMARY KEY (workload);
@@ -3848,6 +5188,27 @@ ALTER TABLE ONLY public.pet
 
 ALTER TABLE ONLY public.pet_recognition_run
     ADD CONSTRAINT pet_recognition_run_pkey PRIMARY KEY ("ownerId");
+
+ALTER TABLE ONLY public.photo_location_estimate
+    ADD CONSTRAINT photo_location_estimate_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.photo_location_scan_item
+    ADD CONSTRAINT photo_location_scan_item_pkey PRIMARY KEY ("scanId", "assetId");
+
+ALTER TABLE ONLY public.photo_location_scan
+    ADD CONSTRAINT photo_location_scan_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.photo_source
+    ADD CONSTRAINT photo_source_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.photo_source_resource
+    ADD CONSTRAINT photo_source_resource_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.photo_source_resource
+    ADD CONSTRAINT photo_source_resource_runid_resourcekey_version_uq UNIQUE ("runId", "resourceKey", version);
+
+ALTER TABLE ONLY public.photo_source_run
+    ADD CONSTRAINT photo_source_run_pkey PRIMARY KEY (id);
 
 ALTER TABLE ONLY public.photography_studio_site
     ADD CONSTRAINT photography_studio_site_pkey PRIMARY KEY ("ownerId");
@@ -3999,6 +5360,39 @@ ALTER TABLE ONLY public.smart_search
 ALTER TABLE ONLY public.socket_io_attachments
     ADD CONSTRAINT socket_io_attachments_pkey PRIMARY KEY (id);
 
+ALTER TABLE ONLY public.source_original
+    ADD CONSTRAINT source_original_pkey PRIMARY KEY ("assetId");
+
+ALTER TABLE ONLY public.source_original
+    ADD CONSTRAINT "source_original_resourceId_uq" UNIQUE ("resourceId");
+
+ALTER TABLE ONLY public.source_resource_grant_nonce
+    ADD CONSTRAINT source_resource_grant_nonce_pkey PRIMARY KEY ("sourceId", "requestId");
+
+ALTER TABLE ONLY public.source_resource_grant
+    ADD CONSTRAINT source_resource_grant_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.source_resource_grant
+    ADD CONSTRAINT source_resource_grant_sourceid_uq UNIQUE ("sourceId");
+
+ALTER TABLE ONLY public.source_resource_read
+    ADD CONSTRAINT source_resource_read_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.speech_checkpoint
+    ADD CONSTRAINT speech_checkpoint_pkey PRIMARY KEY ("operationId");
+
+ALTER TABLE ONLY public.speech_settings
+    ADD CONSTRAINT speech_settings_pkey PRIMARY KEY ("ownerId");
+
+ALTER TABLE ONLY public.speech_transcript
+    ADD CONSTRAINT "speech_transcript_operationId_key" UNIQUE ("operationId");
+
+ALTER TABLE ONLY public.speech_transcript
+    ADD CONSTRAINT speech_transcript_pkey PRIMARY KEY ("assetId");
+
+ALTER TABLE ONLY public.speech_window
+    ADD CONSTRAINT speech_window_pkey PRIMARY KEY ("operationId", sequence);
+
 ALTER TABLE ONLY public.stack_audit
     ADD CONSTRAINT stack_audit_pkey PRIMARY KEY (id);
 
@@ -4038,6 +5432,9 @@ ALTER TABLE ONLY public.studio_hdr_intermediate
 ALTER TABLE ONLY public.studio_hdr_intermediate
     ADD CONSTRAINT studio_hdr_intermediate_pkey PRIMARY KEY ("assetId");
 
+ALTER TABLE ONLY public.studio_import_publication
+    ADD CONSTRAINT studio_import_publication_pkey PRIMARY KEY (id);
+
 ALTER TABLE ONLY public.studio_preview_frame
     ADD CONSTRAINT "studio_preview_frame_cacheKey_uq" UNIQUE ("cacheKey");
 
@@ -4055,6 +5452,9 @@ ALTER TABLE ONLY public.studio_project
 
 ALTER TABLE ONLY public.studio_project_import
     ADD CONSTRAINT studio_project_import_pkey PRIMARY KEY ("projectId", id);
+
+ALTER TABLE ONLY public.studio_project
+    ADD CONSTRAINT "studio_project_ownerId_createRequestKey_uq" UNIQUE ("ownerId", "createRequestKey");
 
 ALTER TABLE ONLY public.studio_project
     ADD CONSTRAINT studio_project_pkey PRIMARY KEY (id);
@@ -4179,11 +5579,26 @@ ALTER TABLE ONLY public.video_stream_session
 ALTER TABLE ONLY public.video_stream_variant
     ADD CONSTRAINT video_stream_variant_pkey PRIMARY KEY (id);
 
+ALTER TABLE ONLY public.workflow_batch_item
+    ADD CONSTRAINT "workflow_batch_item_batchId_assetId_key" UNIQUE ("batchId", "assetId");
+
+ALTER TABLE ONLY public.workflow_batch_item
+    ADD CONSTRAINT workflow_batch_item_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.workflow_batch
+    ADD CONSTRAINT workflow_batch_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.workflow_causation
+    ADD CONSTRAINT workflow_causation_pkey PRIMARY KEY ("chainId", "workflowId", "assetId");
+
 ALTER TABLE ONLY public.workflow_definition
     ADD CONSTRAINT workflow_definition_pkey PRIMARY KEY ("workflowId");
 
 ALTER TABLE ONLY public.workflow_log_detail
     ADD CONSTRAINT workflow_log_detail_pkey PRIMARY KEY ("logId");
+
+ALTER TABLE ONLY public.workflow_log
+    ADD CONSTRAINT workflow_log_pkey PRIMARY KEY (id);
 
 ALTER TABLE ONLY public.workflow
     ADD CONSTRAINT workflow_pkey PRIMARY KEY (id);
@@ -4191,12 +5606,37 @@ ALTER TABLE ONLY public.workflow
 ALTER TABLE ONLY public.workflow_run_step
     ADD CONSTRAINT workflow_run_step_pkey PRIMARY KEY ("executionId", "stepId");
 
+ALTER TABLE ONLY public.workflow_schedule
+    ADD CONSTRAINT workflow_schedule_pkey PRIMARY KEY ("workflowId");
+
 ALTER TABLE ONLY public.workflow_step
     ADD CONSTRAINT workflow_step_pkey PRIMARY KEY (id);
 
 CREATE INDEX "IDX_asset_exif_gist_earthcoord" ON public.asset_exif USING gist (public.ll_to_earth_public(latitude, longitude));
 
-CREATE INDEX "IDX_geodata_gist_earthcoord" ON public.geodata_places USING btree (public.ll_to_earth_public(latitude, longitude));
+CREATE INDEX "IDX_develop_batch_item_assetId" ON public.develop_batch_item USING btree ("assetId");
+
+CREATE UNIQUE INDEX "IDX_develop_batch_item_batchId_assetId" ON public.develop_batch_item USING btree ("batchId", "assetId");
+
+CREATE INDEX "IDX_develop_batch_item_exportId" ON public.develop_batch_item USING btree ("exportId");
+
+CREATE INDEX "IDX_develop_batch_ownerId" ON public.develop_batch USING btree ("ownerId");
+
+CREATE INDEX "IDX_develop_batch_owner_cursor" ON public.develop_batch USING btree ("ownerId", "createdAt", id);
+
+CREATE UNIQUE INDEX "IDX_develop_batch_return_itemId_checksum" ON public.develop_batch_return USING btree ("itemId", checksum);
+
+CREATE INDEX "IDX_develop_batch_return_pending" ON public.develop_batch_return USING btree ("stagedAt") WHERE (("pendingMasterPath" IS NOT NULL) AND ("revisionId" IS NULL));
+
+CREATE UNIQUE INDEX "IDX_develop_batch_return_revisionId" ON public.develop_batch_return USING btree ("revisionId");
+
+CREATE INDEX "IDX_geodata_gist_earthcoord" ON public.geodata_places USING gist (public.ll_to_earth_public(latitude, longitude));
+
+CREATE INDEX "IDX_speech_transcript_ownerId" ON public.speech_transcript USING btree ("ownerId");
+
+CREATE INDEX "IDX_speech_window_assetId_operationId" ON public.speech_window USING btree ("assetId", "operationId");
+
+CREATE INDEX "IDX_speech_window_vector" ON public.speech_window USING gin (vector);
 
 CREATE INDEX "IDX_user_metadata_audit_deleted_at" ON public.user_metadata_audit USING btree ("deletedAt");
 
@@ -4250,6 +5690,10 @@ CREATE INDEX "album_audit_deletedAt_idx" ON public.album_audit USING btree ("del
 
 CREATE INDEX "album_audit_userId_idx" ON public.album_audit USING btree ("userId");
 
+CREATE INDEX "album_bookmark_albumId_idx" ON public.album_bookmark USING btree ("albumId");
+
+CREATE INDEX "album_bookmark_bookmarkId_idx" ON public.album_bookmark USING btree ("bookmarkId");
+
 CREATE INDEX album_closure_id_ancestor_idx ON public.album_closure USING btree (id_ancestor);
 
 CREATE INDEX album_closure_id_descendant_idx ON public.album_closure USING btree (id_descendant);
@@ -4269,6 +5713,14 @@ CREATE INDEX album_source_asset_asset_idx ON public.album_source_asset USING btr
 CREATE INDEX album_source_link_album_idx ON public.album_source_link USING btree ("albumId");
 
 CREATE UNIQUE INDEX album_source_link_source_idx ON public.album_source_link USING btree ("userId", "sourceKind", "sourceId", COALESCE("deviceKey", ''::text));
+
+CREATE INDEX "album_suggestion_auto_add_albumId_idx" ON public.album_suggestion_auto_add USING btree ("albumId");
+
+CREATE INDEX "album_suggestion_auto_add_userId_idx" ON public.album_suggestion_auto_add USING btree ("userId");
+
+CREATE INDEX "album_suggestion_dismissal_albumId_idx" ON public.album_suggestion_dismissal USING btree ("albumId");
+
+CREATE INDEX "album_suggestion_dismissal_assetId_idx" ON public.album_suggestion_dismissal USING btree ("assetId");
 
 CREATE INDEX "album_updateId_idx" ON public.album USING btree ("updateId");
 
@@ -4322,7 +5774,7 @@ CREATE INDEX "asset_createdAt_idx" ON public.asset USING btree ("createdAt");
 
 CREATE INDEX asset_develop_artifact_owner_idx ON public.asset_develop_artifact USING btree ("ownerId");
 
-CREATE UNIQUE INDEX asset_develop_artifact_path_key ON public.asset_develop_artifact USING btree (path);
+CREATE INDEX asset_develop_artifact_path_idx ON public.asset_develop_artifact USING btree (path);
 
 CREATE INDEX asset_develop_revision_asset_idx ON public.asset_develop_revision USING btree ("assetId", revision DESC);
 
@@ -4348,6 +5800,8 @@ CREATE INDEX asset_exif_city_idx ON public.asset_exif USING btree (city);
 
 CREATE INDEX "asset_exif_livePhotoCID_idx" ON public.asset_exif USING btree ("livePhotoCID");
 
+CREATE INDEX asset_exif_rating_order_idx ON public.asset_exif USING btree (COALESCE(rating, 0) DESC, "assetId");
+
 CREATE INDEX "asset_exif_updateId_idx" ON public.asset_exif USING btree ("updateId");
 
 CREATE INDEX "asset_face_assetId_personGroupId_idx" ON public.asset_face USING btree ("assetId", "personGroupId");
@@ -4359,6 +5813,8 @@ CREATE INDEX "asset_face_audit_assetId_idx" ON public.asset_face_audit USING btr
 CREATE INDEX "asset_face_audit_deletedAt_idx" ON public.asset_face_audit USING btree ("deletedAt");
 
 CREATE INDEX "asset_face_correctedAt_idx" ON public.asset_face USING btree ("correctedAt");
+
+CREATE INDEX "asset_face_outfit_faceId_idx" ON public.asset_face_outfit USING btree ("faceId");
 
 CREATE INDEX "asset_face_personGroupId_assetId_idx" ON public.asset_face USING btree ("personGroupId", "assetId");
 
@@ -4391,6 +5847,8 @@ CREATE INDEX "asset_health_run_ownerId_startedAt_idx" ON public.asset_health_run
 CREATE INDEX "asset_id_stackId_idx" ON public.asset USING btree (id, "stackId");
 
 CREATE INDEX "asset_id_timeline_notDeleted_idx" ON public.asset USING btree (id) WHERE ((visibility = 'timeline'::public.asset_visibility_enum) AND ("deletedAt" IS NULL));
+
+CREATE INDEX "asset_landmark_landmarkId_idx" ON public.asset_landmark USING btree ("landmarkId");
 
 CREATE INDEX "asset_libraryId_idx" ON public.asset USING btree ("libraryId");
 
@@ -4430,9 +5888,21 @@ CREATE INDEX "asset_originalFilename_trigram_idx" ON public.asset USING gin (pub
 
 CREATE INDEX "asset_originalPath_libraryId_idx" ON public.asset USING btree ("originalPath", "libraryId");
 
+CREATE INDEX "asset_original_physicalFileId_idx" ON public.asset_original USING btree ("physicalFileId");
+
 CREATE INDEX "asset_ownerId_idx" ON public.asset USING btree ("ownerId");
 
 CREATE UNIQUE INDEX "asset_ownerId_libraryId_checksum_idx" ON public.asset USING btree ("ownerId", "libraryId", checksum) WHERE ("libraryId" IS NOT NULL);
+
+CREATE INDEX asset_owner_added_page_idx ON public.asset USING btree ("ownerId", (date_trunc('MONTH'::text, ("createdAt" AT TIME ZONE 'UTC'::text)) AT TIME ZONE 'UTC'::text), ((("createdAt" AT TIME ZONE 'UTC'::text))::date), "createdAt", "originalFileName", id);
+
+CREATE INDEX asset_owner_filename_order_idx ON public.asset USING btree ("ownerId", "originalFileName" COLLATE "und-x-icu", "fileCreatedAt" DESC, id);
+
+CREATE INDEX asset_owner_scope_idx ON public.asset USING btree ("ownerId", "libraryScope");
+
+CREATE INDEX asset_owner_taken_page_idx ON public.asset USING btree ("ownerId", (date_trunc('MONTH'::text, ("localDateTime" AT TIME ZONE 'UTC'::text)) AT TIME ZONE 'UTC'::text), ((("localDateTime" AT TIME ZONE 'UTC'::text))::date), "fileCreatedAt", "originalFileName", id);
+
+CREATE INDEX asset_palette_swatch_color_idx ON public.asset_palette_swatch USING btree (l, a, b, weight);
 
 CREATE INDEX "asset_physicalOriginalFileId_idx" ON public.asset USING btree ("physicalOriginalFileId");
 
@@ -4454,6 +5924,10 @@ CREATE INDEX "asset_restoration_resultExpiresAt_idx" ON public.asset_restoration
 
 CREATE INDEX "asset_restoration_status_previewExpiresAt_idx" ON public.asset_restoration USING btree (status, "previewExpiresAt");
 
+CREATE INDEX "asset_source_assetId_idx" ON public.asset_source USING btree ("assetId");
+
+CREATE INDEX asset_source_epoch_owner_sequence_idx ON public.asset_source_epoch USING btree ("ownerId", "lastTrashSequence", "assetId");
+
 CREATE INDEX "asset_stackId_idx" ON public.asset USING btree ("stackId");
 
 CREATE INDEX "asset_updateId_idx" ON public.asset USING btree ("updateId");
@@ -4470,13 +5944,27 @@ CREATE INDEX asset_user_share_owner_idx ON public.asset_user_share USING btree (
 
 CREATE INDEX asset_user_share_recipient_idx ON public.asset_user_share USING btree ("sharedWithId", "createdAt");
 
-CREATE INDEX "asset_video_duplicate_frame_assetId_idx" ON public.asset_video_duplicate_frame USING btree ("assetId");
-
 CREATE INDEX "backup_device_ownerId_idx" ON public.backup_device USING btree ("ownerId");
 
 CREATE INDEX "backup_reconciliation_deviceId_idx" ON public.backup_reconciliation USING btree ("deviceId");
 
 CREATE INDEX "backup_reconciliation_ownerId_idx" ON public.backup_reconciliation USING btree ("ownerId");
+
+CREATE INDEX "bookmark_ownerId_libraryScope_idx" ON public.bookmark USING btree ("ownerId", "libraryScope");
+
+CREATE INDEX "bookmark_previewAssetId_idx" ON public.bookmark USING btree ("previewAssetId");
+
+CREATE INDEX "bookmark_tag_bookmarkId_idx" ON public.bookmark_tag USING btree ("bookmarkId");
+
+CREATE INDEX "bookmark_tag_tagId_idx" ON public.bookmark_tag USING btree ("tagId");
+
+CREATE INDEX "bookmark_updateId_idx" ON public.bookmark USING btree ("updateId");
+
+CREATE INDEX "browser_extension_sign_in_code_expiresAt_idx" ON public.browser_extension_sign_in_code USING btree ("expiresAt");
+
+CREATE INDEX "browser_extension_sign_in_code_sessionId_idx" ON public.browser_extension_sign_in_code USING btree ("sessionId");
+
+CREATE INDEX "browser_extension_sign_in_code_userId_idx" ON public.browser_extension_sign_in_code USING btree ("userId");
 
 CREATE INDEX buddy_backup_reference_path_idx ON public.buddy_backup_reference USING btree (path);
 
@@ -4496,6 +5984,10 @@ CREATE INDEX clip_description_index ON public.smart_search_description USING hns
 
 CREATE INDEX clip_index ON public.smart_search USING hnsw (embedding public.vector_cosine_ops) WITH (ef_construction='300', m='16');
 
+CREATE INDEX cloud_backup_coverage_report_pending_idx ON public.cloud_backup_coverage_report USING btree ("nextAttemptAt") WHERE (status = 'pending'::text);
+
+CREATE INDEX "cloud_backup_decision_run_manifestKey_idx" ON public.cloud_backup_decision_run USING btree ("manifestKey");
+
 CREATE INDEX "cloud_backup_manifest_original_manifestId_idx" ON public.cloud_backup_manifest_original USING btree ("manifestId");
 
 CREATE INDEX "cloud_backup_object_verification_operationId_idx" ON public.cloud_backup_object_verification USING btree ("operationId");
@@ -4505,6 +5997,24 @@ CREATE INDEX "cluster_group_request_clusterGroupId_idx" ON public.cluster_group_
 CREATE INDEX "cluster_group_request_userId_idx" ON public.cluster_group_request USING btree ("userId");
 
 CREATE INDEX "cluster_group_updateId_idx" ON public.cluster_group USING btree ("updateId");
+
+CREATE INDEX desktop_ml_attempt_deviceid_expiresat_idx ON public.desktop_ml_attempt USING btree ("deviceId", "expiresAt");
+
+CREATE INDEX desktop_ml_attempt_taskid_createdat_idx ON public.desktop_ml_attempt USING btree ("taskId", "createdAt");
+
+CREATE INDEX desktop_ml_task_modelkey_state_createdat_idx ON public.desktop_ml_task USING btree ("modelKey", state, "createdAt");
+
+CREATE INDEX "desktop_worker_challenge_deviceId_expiresAt_idx" ON public.desktop_worker_challenge USING btree ("deviceId", "expiresAt");
+
+CREATE INDEX "desktop_worker_challenge_deviceId_idx" ON public.desktop_worker_challenge USING btree ("deviceId");
+
+CREATE INDEX "desktop_worker_challenge_sessionId_idx" ON public.desktop_worker_challenge USING btree ("sessionId");
+
+CREATE INDEX "desktop_worker_qualification_deviceId_expiresAt_idx" ON public.desktop_worker_qualification USING btree ("deviceId", "expiresAt");
+
+CREATE INDEX "desktop_worker_qualification_deviceId_idx" ON public.desktop_worker_qualification USING btree ("deviceId");
+
+CREATE INDEX "desktop_worker_qualification_sessionId_idx" ON public.desktop_worker_qualification USING btree ("sessionId");
 
 CREATE INDEX "develop_export_assetId_idx" ON public.develop_export USING btree ("assetId");
 
@@ -4521,6 +6031,16 @@ CREATE INDEX "duplicate_decision_ownerId_duplicateId_idx" ON public.duplicate_de
 CREATE INDEX "duplicate_decision_ownerId_idx" ON public.duplicate_decision USING btree ("ownerId");
 
 CREATE INDEX "duplicate_decision_undoOperationId_idx" ON public.duplicate_decision USING btree ("undoOperationId");
+
+CREATE UNIQUE INDEX eagle_import_active_library_uq ON public.eagle_import USING btree ("ownerId", "libraryPath") WHERE ((status)::text = ANY (ARRAY[('running'::character varying)::text, ('stopping'::character varying)::text]));
+
+CREATE INDEX "eagle_import_item_importId_idx" ON public.eagle_import_item USING btree ("importId");
+
+CREATE INDEX "eagle_import_ownerId_createdAt_idx" ON public.eagle_import USING btree ("ownerId", "createdAt");
+
+CREATE INDEX "eagle_import_ownerId_idx" ON public.eagle_import USING btree ("ownerId");
+
+CREATE INDEX "eagle_import_rootAlbumId_idx" ON public.eagle_import USING btree ("rootAlbumId");
 
 CREATE INDEX face_correction_asset_idx ON public.face_correction USING btree ("assetId");
 
@@ -4574,6 +6094,12 @@ CREATE INDEX icloud_resource_asset_idx ON public.icloud_resource USING btree ("a
 
 CREATE UNIQUE INDEX icloud_resource_audit_request_key ON public.icloud_resource USING btree ("auditRequestId") WHERE ("auditRequestId" IS NOT NULL);
 
+CREATE INDEX icloud_resource_claim_order_idx ON public.icloud_resource USING btree ("connectionId", (
+CASE
+    WHEN (status = 'committed'::text) THEN 0
+    ELSE 1
+END), "createdAt", id) WHERE (("auditRequestId" IS NULL) AND (status = ANY (ARRAY['pending'::text, 'retry'::text, 'staging'::text, 'validated'::text, 'promoted'::text, 'committed'::text])));
+
 CREATE INDEX icloud_resource_jobs_idx ON public.icloud_resource USING btree ("connectionId", id) WHERE ("pendingJobs" <> '[]'::jsonb);
 
 CREATE INDEX icloud_resource_lease_idx ON public.icloud_resource USING btree ("leaseExpiresAt") WHERE ("leaseToken" IS NOT NULL);
@@ -4584,11 +6110,19 @@ CREATE INDEX icloud_resource_owner_idx ON public.icloud_resource USING btree ("o
 
 CREATE INDEX icloud_resource_pending_idx ON public.icloud_resource USING btree ("connectionId", status, "nextAttemptAt", id) WHERE (status = ANY (ARRAY['pending'::text, 'retry'::text]));
 
+CREATE INDEX icloud_resource_reservation_contributors_idx ON public.icloud_resource USING btree ("connectionId") WHERE ((status <> ALL (ARRAY['finalized'::text, 'removed'::text])) AND (("reservedBytes" > 0) OR ("leaseExpiresAt" IS NOT NULL)));
+
 CREATE INDEX icloud_run_connection_started_idx ON public.icloud_run USING btree ("connectionId", "startedAt" DESC);
 
 CREATE INDEX icloud_source_identity_asset_idx ON public.icloud_source_identity USING btree ("assetId");
 
 CREATE INDEX icloud_source_identity_sha256_idx ON public.icloud_source_identity USING btree ("ownerId", sha256);
+
+CREATE INDEX "identical_file_change_assetId_idx" ON public.identical_file_change USING btree ("assetId");
+
+CREATE INDEX "identical_file_change_keptAssetId_idx" ON public.identical_file_change USING btree ("keptAssetId");
+
+CREATE INDEX "identical_file_change_runId_idx" ON public.identical_file_change USING btree ("runId");
 
 CREATE INDEX idx_asset_exif_description_trigram ON public.asset_exif USING gin (public.f_unaccent(description) public.gin_trgm_ops);
 
@@ -4610,13 +6144,47 @@ CREATE INDEX "integrity_report_assetId_idx" ON public.integrity_report USING btr
 
 CREATE INDEX "integrity_report_fileAssetId_idx" ON public.integrity_report USING btree ("fileAssetId");
 
+CREATE INDEX job_attempt_worker_reference ON public.job_attempt USING btree ("workerId");
+
+CREATE INDEX job_cancel_pending ON public.job USING btree (queue, "createdAt", id) WHERE ((state = ANY (ARRAY['pending'::text, 'waiting'::text])) AND ("cancelRequestedAt" IS NOT NULL) AND ("cancelReason" IS DISTINCT FROM 'deadline'::text));
+
 CREATE INDEX job_claim ON public.job USING btree (queue, "availableAt", "createdAt") WHERE (state = ANY (ARRAY['pending'::text, 'waiting'::text]));
 
 CREATE UNIQUE INDEX job_dedup_live ON public.job USING btree (queue, "dedupKey") WHERE (("dedupKey" IS NOT NULL) AND (state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text])));
 
+CREATE INDEX job_dependency_pending ON public.job USING btree ("parentId") WHERE (("parentId" IS NOT NULL) AND (state = ANY (ARRAY['pending'::text, 'waiting'::text])));
+
 CREATE INDEX job_lease ON public.job USING btree ("leaseExpiresAt") WHERE (state = 'active'::text);
 
+CREATE INDEX job_library_canonical_job ON public.job_run_item USING btree ("jobId", "runId", "itemKey", stage) WHERE (("jobId" IS NOT NULL) AND ("libraryIntent" IS NOT NULL));
+
+CREATE INDEX job_library_execution_owner ON public.job_run_item USING btree ("libraryExecutionRunId", "libraryExecutionItemKey", stage) WHERE ("libraryExecutionRunId" IS NOT NULL);
+
+CREATE INDEX job_library_feeder_ready ON public.job_run_item USING btree ("selectionId", "runId", "itemKey") WHERE (("jobId" IS NULL) AND (state = 'pending'::text) AND ("libraryIntent" IS NOT NULL) AND "libraryOriginComplete");
+
+CREATE INDEX job_library_initial_outcome ON public.job_run_item USING btree ("selectionId", "runId", "itemKey", stage) WHERE (("libraryIntent" IS NOT NULL) AND (("jobId" IS NOT NULL) OR (state <> 'pending'::text) OR ("libraryExecutionRunId" IS NOT NULL)));
+
+CREATE INDEX job_library_operation_source ON public.job_selection USING btree ("libraryOperationId", "sourceKind") WHERE ("libraryOperationId" IS NOT NULL);
+
+CREATE INDEX job_library_origin_pending ON public.job_run_item USING btree ("selectionId", "runId", "itemKey") WHERE (("libraryIntent" IS NOT NULL) AND (NOT "libraryOriginComplete"));
+
+CREATE INDEX job_library_origin_request ON public.job_run_item USING btree (COALESCE("libraryProducerId", "jobId"), "runId") WHERE ("rootItemKey" IS NULL);
+
+CREATE INDEX job_library_redact_all_cursor ON public.job_run_item USING btree ("libraryCleanupId") WHERE (("jobId" IS NULL) AND (("libraryIntent" ->> 'sensitive'::text) = 'true'::text) AND (("libraryIntent" ? 'options'::text) OR (("libraryIntent" -> 'data'::text) <> '{}'::jsonb)));
+
+CREATE INDEX job_library_redact_cursor ON public.job_run_item USING btree (queue, "libraryCleanupId") WHERE (("jobId" IS NULL) AND (("libraryIntent" ->> 'sensitive'::text) = 'true'::text) AND (("libraryIntent" ? 'options'::text) OR (("libraryIntent" -> 'data'::text) <> '{}'::jsonb)));
+
+CREATE UNIQUE INDEX job_library_source_identity ON public.job_run_item USING btree ("selectionId", "runId", "librarySourceKey") WHERE ("librarySourceKey" IS NOT NULL);
+
+CREATE INDEX job_library_source_parent ON public.job_run_item USING btree ("libraryParentId") WHERE ("libraryParentId" IS NOT NULL);
+
+CREATE INDEX job_library_source_producer_job ON public.job_library_source_producer USING btree ("producerId", "selectionId");
+
+CREATE INDEX job_live_queue ON public.job USING btree (queue, state, "createdAt", id) WHERE (state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text]));
+
 CREATE INDEX job_manifest_pending ON public.job_run_item USING btree ("selectionId", "itemKey") WHERE (("jobId" IS NULL) AND (state = 'pending'::text));
+
+CREATE INDEX job_manifest_source_pending ON public.job_run_item USING btree ("selectionId", "runId", "itemKey") WHERE (("jobId" IS NULL) AND (state = 'pending'::text));
 
 CREATE INDEX job_parent ON public.job USING btree ("parentId") WHERE ("parentId" IS NOT NULL);
 
@@ -4627,6 +6195,40 @@ CREATE INDEX job_run_item_job ON public.job_run_item USING btree ("jobId") WHERE
 CREATE INDEX job_run_root_item ON public.job_run_item USING btree ("runId", "rootItemKey");
 
 CREATE UNIQUE INDEX job_run_stage ON public.job USING btree ("runId", "itemKey", name) WHERE ("runId" IS NOT NULL);
+
+CREATE INDEX job_run_unfinished ON public.job_run_item USING btree ("runId") WHERE (state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text]));
+
+CREATE INDEX job_run_unfinished_execution ON public.job_run_item USING btree ("runId") WHERE ((state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text])) AND (("selectionId" IS NULL) OR ("jobId" IS NOT NULL)));
+
+CREATE INDEX job_selection_enumerating ON public.job_selection USING btree (queue) WHERE (state = 'enumerating'::text);
+
+CREATE INDEX job_selection_feed ON public.job_selection USING btree (queue, "createdAt", id) WHERE (state = 'ready'::text);
+
+CREATE INDEX job_selection_generic_lineage ON public.job_selection_lineage USING btree ("selectionId", id) WHERE (NOT "libraryChildOrigin");
+
+CREATE INDEX job_selection_lineage_page ON public.job_selection_lineage USING btree ("selectionId", id);
+
+CREATE INDEX job_selection_lineage_source ON public.job_selection_lineage USING btree ("runId", "itemKey", stage);
+
+CREATE INDEX job_selection_live ON public.job_selection USING btree (queue, id) WHERE (state = ANY (ARRAY['ready'::text, 'enumerating'::text]));
+
+CREATE INDEX job_selection_membership ON public.job_run_item USING btree ("selectionId", "itemKey", stage) WHERE ("selectionId" IS NOT NULL);
+
+CREATE INDEX job_selection_run_copy ON public.job_selection_run USING btree ("selectionId", "runId") WHERE (NOT "copyComplete");
+
+CREATE INDEX job_selection_run_selection ON public.job_selection_run USING btree ("selectionId", "runId");
+
+CREATE INDEX job_selection_source ON public.job_run_item USING btree ("selectionId", "runId", "itemKey") WHERE ("selectionId" IS NOT NULL);
+
+CREATE INDEX job_unadmitted_execution_queue ON public.job_run_item USING btree (queue) WHERE (("jobId" IS NULL) AND ("selectionId" IS NULL) AND (state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text])));
+
+CREATE INDEX job_unadmitted_queue ON public.job_run_item USING btree (queue) WHERE (("jobId" IS NULL) AND (state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text])));
+
+CREATE INDEX job_worker_reference ON public.job USING btree ("workerId") WHERE ("workerId" IS NOT NULL);
+
+CREATE INDEX "landmark_area_landmarkId_idx" ON public.landmark_area USING btree ("landmarkId");
+
+CREATE INDEX landmark_gist_earthcoord_idx ON public.landmark USING gist (public.ll_to_earth_public(latitude, longitude));
 
 CREATE INDEX "library_ownerId_idx" ON public.library USING btree ("ownerId");
 
@@ -4648,7 +6250,7 @@ CREATE INDEX "media_operation_ownerId_idx" ON public.media_operation USING btree
 
 CREATE INDEX "media_operation_resultAssetId_idx" ON public.media_operation USING btree ("resultAssetId");
 
-CREATE UNIQUE INDEX "media_operation_retryOfId_active_uq" ON public.media_operation USING btree ("retryOfId") WHERE (("retryOfId" IS NOT NULL) AND ((status)::text <> ALL ((ARRAY['completed'::character varying, 'cancelled'::character varying, 'failed'::character varying])::text[])));
+CREATE UNIQUE INDEX "media_operation_retryOfId_active_uq" ON public.media_operation USING btree ("retryOfId") WHERE (("retryOfId" IS NOT NULL) AND ((status)::text <> ALL (ARRAY[('completed'::character varying)::text, ('cancelled'::character varying)::text, ('failed'::character varying)::text])));
 
 CREATE INDEX "media_operation_retryOfId_idx" ON public.media_operation USING btree ("retryOfId");
 
@@ -4701,6 +6303,8 @@ CREATE INDEX "ml_workload_accounting_destinationId_startedAt_idx" ON public.ml_w
 CREATE INDEX "ml_workload_accounting_jobId_jobName_startedAt_idx" ON public.ml_workload_accounting USING btree ("jobId", "jobName", "startedAt" DESC) WHERE ("jobId" IS NOT NULL);
 
 CREATE INDEX "ml_workload_route_destinationId_idx" ON public.ml_workload_route USING btree ("destinationId");
+
+CREATE INDEX "ml_workload_route_origin_destinationId_idx" ON public.ml_workload_route_origin USING btree ("destinationId");
 
 CREATE INDEX "notification_updateId_idx" ON public.notification USING btree ("updateId");
 
@@ -4786,6 +6390,28 @@ CREATE INDEX "pet_ownerId_isHidden_idx" ON public.pet USING btree ("ownerId", "i
 
 CREATE INDEX "pet_updateId_idx" ON public.pet USING btree ("updateId");
 
+CREATE INDEX "photo_location_estimate_ownerId_idx" ON public.photo_location_estimate USING btree ("ownerId");
+
+CREATE UNIQUE INDEX photo_location_scan_estimate_idx ON public.photo_location_scan USING btree ("estimateId");
+
+CREATE INDEX photo_location_scan_item_assetid_idx ON public.photo_location_scan_item USING btree ("assetId");
+
+CREATE INDEX photo_location_scan_item_point_idx ON public.photo_location_scan_item USING btree ("scanId", "itemKey");
+
+CREATE INDEX photo_location_scan_item_scanid_idx ON public.photo_location_scan_item USING btree ("scanId");
+
+CREATE UNIQUE INDEX photo_location_scan_one_active_idx ON public.photo_location_scan USING btree ("ownerId") WHERE (status = ANY (ARRAY['queued'::text, 'preparing'::text, 'uploading'::text, 'running'::text, 'paused'::text]));
+
+CREATE INDEX photo_location_scan_owner_created_idx ON public.photo_location_scan USING btree ("ownerId", "createdAt");
+
+CREATE INDEX photo_location_scan_ownerid_idx ON public.photo_location_scan USING btree ("ownerId");
+
+CREATE INDEX photo_source_deviceid_idx ON public.photo_source USING btree ("deviceId");
+
+CREATE INDEX photo_source_ownerid_idx ON public.photo_source USING btree ("ownerId");
+
+CREATE INDEX photo_source_run_sourceid_idx ON public.photo_source_run USING btree ("sourceId");
+
 CREATE INDEX photography_workflow_owner_idx ON public.photography_workflow USING btree ("ownerId");
 
 CREATE INDEX "physical_file_canonicalAssetId_idx" ON public.physical_file USING btree ("canonicalAssetId");
@@ -4839,6 +6465,10 @@ CREATE INDEX "render_worker_createdBy_idx" ON public.render_worker USING btree (
 CREATE INDEX "render_worker_enrolmentSecret_idx" ON public.render_worker USING btree ("enrolmentSecret");
 
 CREATE INDEX "render_worker_limit_userId_idx" ON public.render_worker_limit USING btree ("userId");
+
+CREATE UNIQUE INDEX render_worker_session_budget_measurement_key ON public.render_worker_session USING btree ((("gpuWorkingBudgetEvidence" ->> 'measurementId'::text)));
+
+CREATE UNIQUE INDEX render_worker_session_budget_receipt_key ON public.render_worker_session USING btree ((("gpuWorkingBudgetEvidence" ->> 'receiptDigest'::text)));
 
 CREATE INDEX render_worker_session_token_idx ON public.render_worker_session USING btree (token);
 
@@ -4930,6 +6560,22 @@ CREATE INDEX "smart_album_ownerId_idx" ON public.smart_album USING btree ("owner
 
 CREATE INDEX socket_io_attachments_expiry ON public.socket_io_attachments USING btree (created_at);
 
+CREATE INDEX source_resource_grant_photosessionid_idx ON public.source_resource_grant USING btree ("photoSessionId");
+
+CREATE UNIQUE INDEX source_resource_read_active_uq ON public.source_resource_read USING btree ("assetId", "resourceId", "scopeFingerprint", "authorizationEpoch") WHERE ((state)::text = ANY (ARRAY[('pending'::character varying)::text, ('claimed'::character varying)::text, ('delivering'::character varying)::text]));
+
+CREATE INDEX "source_resource_read_assetId_idx" ON public.source_resource_read USING btree ("assetId");
+
+CREATE UNIQUE INDEX source_resource_read_claimed_source_uq ON public.source_resource_read USING btree ("sourceId") WHERE ((state)::text = ANY (ARRAY[('claimed'::character varying)::text, ('delivering'::character varying)::text]));
+
+CREATE INDEX "source_resource_read_deviceId_idx" ON public.source_resource_read USING btree ("deviceId");
+
+CREATE INDEX "source_resource_read_ownerId_idx" ON public.source_resource_read USING btree ("ownerId");
+
+CREATE INDEX "source_resource_read_resourceId_idx" ON public.source_resource_read USING btree ("resourceId");
+
+CREATE INDEX "source_resource_read_sourceId_state_createdAt_idx" ON public.source_resource_read USING btree ("sourceId", state, "createdAt");
+
 CREATE INDEX "stack_audit_deletedAt_idx" ON public.stack_audit USING btree ("deletedAt");
 
 CREATE INDEX "stack_ownerId_idx" ON public.stack USING btree ("ownerId");
@@ -4961,6 +6607,10 @@ CREATE INDEX "studio_export_version_source_assetId_idx" ON public.studio_export_
 CREATE INDEX "studio_export_version_source_versionId_idx" ON public.studio_export_version_source USING btree ("versionId");
 
 CREATE INDEX "studio_export_version_state_updatedAt_idx" ON public.studio_export_version USING btree (state, "updatedAt");
+
+CREATE UNIQUE INDEX studio_import_publication_active_import ON public.studio_import_publication USING btree ("projectId", "importId") WHERE (("stagedPath" IS NOT NULL) OR ("targetPath" IS NOT NULL));
+
+CREATE INDEX studio_import_publication_discovery ON public.studio_import_publication USING btree ("ownerId", "projectId", "createdAt", id);
 
 CREATE INDEX "studio_preview_frame_operationId_idx" ON public.studio_preview_frame USING btree ("operationId");
 
@@ -5092,7 +6742,15 @@ CREATE INDEX "video_stream_session_expiresAt_idx" ON public.video_stream_session
 
 CREATE UNIQUE INDEX "video_stream_variant_sessionId_bitrate_resolution_codec_idx" ON public.video_stream_variant USING btree ("sessionId", bitrate, resolution, codec);
 
+CREATE UNIQUE INDEX workflow_batch_active ON public.workflow_batch USING btree ("workflowId") WHERE (status = ANY (ARRAY['pending'::text, 'running'::text]));
+
+CREATE INDEX workflow_batch_item_pending ON public.workflow_batch_item USING btree ("batchId", id) WHERE (status = 'pending'::text);
+
 CREATE INDEX "workflow_log_detail_workflowId_idx" ON public.workflow_log_detail USING btree ("workflowId");
+
+CREATE INDEX "workflow_log_workflowId_idx" ON public.workflow_log USING btree ("workflowId");
+
+CREATE INDEX "workflow_log_workflowStepId_idx" ON public.workflow_log USING btree ("workflowStepId");
 
 CREATE INDEX "workflow_ownerId_idx" ON public.workflow USING btree ("ownerId");
 
@@ -5109,6 +6767,8 @@ CREATE TRIGGER "activity_updatedAt" BEFORE UPDATE ON public.activity FOR EACH RO
 CREATE TRIGGER album_asset_delete_audit AFTER DELETE ON public.album_asset REFERENCING OLD TABLE AS old FOR EACH STATEMENT WHEN ((pg_trigger_depth() <= 1)) EXECUTE FUNCTION public.album_asset_delete_audit();
 
 CREATE TRIGGER "album_asset_updatedAt" BEFORE UPDATE ON public.album_asset FOR EACH ROW EXECUTE FUNCTION public.updated_at();
+
+CREATE TRIGGER album_library_scope_refresh_trigger AFTER UPDATE ON public.album FOR EACH ROW EXECUTE FUNCTION public.album_library_scope_refresh();
 
 CREATE TRIGGER album_parent_cycle_check_trigger BEFORE INSERT OR UPDATE ON public.album FOR EACH ROW EXECUTE FUNCTION public.album_parent_cycle_check();
 
@@ -5136,6 +6796,12 @@ CREATE TRIGGER asset_edit_insert AFTER INSERT ON public.asset_edit REFERENCING N
 
 CREATE TRIGGER "asset_edit_updatedAt" BEFORE UPDATE ON public.asset_edit FOR EACH ROW EXECUTE FUNCTION public.updated_at();
 
+CREATE TRIGGER asset_exif_landmark_match_insert AFTER INSERT ON public.asset_exif FOR EACH ROW EXECUTE FUNCTION public.asset_exif_landmark_match();
+
+CREATE TRIGGER asset_exif_landmark_match_update AFTER UPDATE ON public.asset_exif FOR EACH ROW EXECUTE FUNCTION public.asset_exif_landmark_match();
+
+CREATE TRIGGER asset_exif_photo_location_invalidate AFTER UPDATE ON public.asset_exif FOR EACH ROW EXECUTE FUNCTION public.photo_location_invalidate();
+
 CREATE TRIGGER "asset_exif_updatedAt" BEFORE UPDATE ON public.asset_exif FOR EACH ROW EXECUTE FUNCTION public.updated_at();
 
 CREATE TRIGGER asset_face_audit AFTER DELETE ON public.asset_face REFERENCING OLD TABLE AS old FOR EACH STATEMENT WHEN ((pg_trigger_depth() = 0)) EXECUTE FUNCTION public.asset_face_audit();
@@ -5147,6 +6813,8 @@ CREATE TRIGGER "asset_file_updatedAt" BEFORE UPDATE ON public.asset_file FOR EAC
 CREATE TRIGGER "asset_health_candidate_updatedAt" BEFORE UPDATE ON public.asset_health_candidate FOR EACH ROW EXECUTE FUNCTION public.media_health_updated_at();
 
 CREATE TRIGGER "asset_health_updatedAt" BEFORE UPDATE ON public.asset_health FOR EACH ROW EXECUTE FUNCTION public.media_health_updated_at();
+
+CREATE TRIGGER asset_library_scope_refresh_trigger AFTER UPDATE ON public.asset FOR EACH ROW EXECUTE FUNCTION public.asset_library_scope_refresh();
 
 CREATE TRIGGER asset_metadata_audit AFTER DELETE ON public.asset_metadata REFERENCING OLD TABLE AS old FOR EACH STATEMENT WHEN ((pg_trigger_depth() = 0)) EXECUTE FUNCTION public.asset_metadata_audit();
 
@@ -5160,7 +6828,7 @@ CREATE TRIGGER "asset_restoration_updatedAt" BEFORE UPDATE ON public.asset_resto
 
 CREATE TRIGGER "asset_updatedAt" BEFORE UPDATE ON public.asset FOR EACH ROW EXECUTE FUNCTION public.updated_at();
 
-CREATE TRIGGER "asset_video_duplicate_frame_updatedAt" BEFORE UPDATE ON public.asset_video_duplicate_frame FOR EACH ROW EXECUTE FUNCTION public.media_health_updated_at();
+CREATE TRIGGER "bookmark_updatedAt" BEFORE UPDATE ON public.bookmark FOR EACH ROW EXECUTE FUNCTION public.updated_at();
 
 CREATE TRIGGER "cluster_group_updatedAt" BEFORE UPDATE ON public.cluster_group FOR EACH ROW EXECUTE FUNCTION public.updated_at();
 
@@ -5230,6 +6898,10 @@ CREATE TRIGGER "session_sync_checkpoint_updatedAt" BEFORE UPDATE ON public.sessi
 
 CREATE TRIGGER "session_updatedAt" BEFORE UPDATE ON public.session FOR EACH ROW EXECUTE FUNCTION public.updated_at();
 
+CREATE TRIGGER smart_search_description_producer_guard BEFORE INSERT OR UPDATE ON public.smart_search_description FOR EACH ROW EXECUTE FUNCTION public.desktop_clip_producer_guard();
+
+CREATE TRIGGER smart_search_producer_guard BEFORE INSERT OR UPDATE ON public.smart_search FOR EACH ROW EXECUTE FUNCTION public.desktop_clip_producer_guard();
+
 CREATE TRIGGER stack_delete_audit AFTER DELETE ON public.stack REFERENCING OLD TABLE AS old FOR EACH STATEMENT WHEN ((pg_trigger_depth() = 0)) EXECUTE FUNCTION public.stack_delete_audit();
 
 CREATE TRIGGER "stack_updatedAt" BEFORE UPDATE ON public.stack FOR EACH ROW EXECUTE FUNCTION public.updated_at();
@@ -5255,6 +6927,8 @@ CREATE TRIGGER user_metadata_audit AFTER DELETE ON public.user_metadata REFERENC
 CREATE TRIGGER user_metadata_updated_at BEFORE UPDATE ON public.user_metadata FOR EACH ROW EXECUTE FUNCTION public.updated_at();
 
 CREATE TRIGGER "user_updatedAt" BEFORE UPDATE ON public."user" FOR EACH ROW EXECUTE FUNCTION public.updated_at();
+
+CREATE TRIGGER video_moment_frame_embedding_producer_guard BEFORE INSERT OR UPDATE ON public.video_moment_frame_embedding FOR EACH ROW EXECUTE FUNCTION public.desktop_clip_producer_guard();
 
 CREATE TRIGGER "video_moment_frame_updatedAt" BEFORE UPDATE ON public.video_moment_frame FOR EACH ROW EXECUTE FUNCTION public.updated_at();
 
@@ -5297,6 +6971,12 @@ ALTER TABLE ONLY public.album_asset
 ALTER TABLE ONLY public.album_asset_audit
     ADD CONSTRAINT "album_asset_audit_albumId_fkey" FOREIGN KEY ("albumId") REFERENCES public.album(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
+ALTER TABLE ONLY public.album_bookmark
+    ADD CONSTRAINT "album_bookmark_albumId_fkey" FOREIGN KEY ("albumId") REFERENCES public.album(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.album_bookmark
+    ADD CONSTRAINT "album_bookmark_bookmarkId_fkey" FOREIGN KEY ("bookmarkId") REFERENCES public.bookmark(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
 ALTER TABLE ONLY public.album_closure
     ADD CONSTRAINT album_closure_id_ancestor_fkey FOREIGN KEY (id_ancestor) REFERENCES public.album(id) ON DELETE CASCADE;
 
@@ -5318,6 +6998,18 @@ ALTER TABLE ONLY public.album_source_link
 ALTER TABLE ONLY public.album_source_link
     ADD CONSTRAINT album_source_link_user_fkey FOREIGN KEY ("userId") REFERENCES public."user"(id) ON DELETE CASCADE;
 
+ALTER TABLE ONLY public.album_suggestion_auto_add
+    ADD CONSTRAINT "album_suggestion_auto_add_albumId_fkey" FOREIGN KEY ("albumId") REFERENCES public.album(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.album_suggestion_auto_add
+    ADD CONSTRAINT "album_suggestion_auto_add_userId_fkey" FOREIGN KEY ("userId") REFERENCES public."user"(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.album_suggestion_dismissal
+    ADD CONSTRAINT "album_suggestion_dismissal_albumId_fkey" FOREIGN KEY ("albumId") REFERENCES public.album(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.album_suggestion_dismissal
+    ADD CONSTRAINT "album_suggestion_dismissal_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES public.asset(id) ON DELETE CASCADE;
+
 ALTER TABLE ONLY public.album_user
     ADD CONSTRAINT "album_user_albumId_fkey" FOREIGN KEY ("albumId") REFERENCES public.album(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
@@ -5329,6 +7021,12 @@ ALTER TABLE ONLY public.api_key
 
 ALTER TABLE ONLY public.archive_operation_item
     ADD CONSTRAINT "archive_operation_item_operationId_fkey" FOREIGN KEY ("operationId") REFERENCES public.archive_operation(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.asset_annotation
+    ADD CONSTRAINT "asset_annotation_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.asset_audio
+    ADD CONSTRAINT "asset_audio_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES public.asset(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.asset_best_photo_score
     ADD CONSTRAINT "asset_best_photo_score_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE CASCADE;
@@ -5350,6 +7048,9 @@ ALTER TABLE ONLY public.asset_exif
 
 ALTER TABLE ONLY public.asset_face
     ADD CONSTRAINT "asset_face_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.asset_face_outfit
+    ADD CONSTRAINT "asset_face_outfit_faceId_fkey" FOREIGN KEY ("faceId") REFERENCES public.asset_face(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.asset_face
     ADD CONSTRAINT "asset_face_personGroupId_fkey" FOREIGN KEY ("personGroupId") REFERENCES public.person_group(id) ON UPDATE CASCADE ON DELETE SET NULL;
@@ -5378,11 +7079,32 @@ ALTER TABLE ONLY public.asset_integrity_verification
 ALTER TABLE ONLY public.asset_job_status
     ADD CONSTRAINT "asset_job_status_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
+ALTER TABLE ONLY public.asset_keyframe
+    ADD CONSTRAINT "asset_keyframe_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES public.asset(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.asset_landmark
+    ADD CONSTRAINT "asset_landmark_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
 ALTER TABLE ONLY public.asset
     ADD CONSTRAINT "asset_libraryId_fkey" FOREIGN KEY ("libraryId") REFERENCES public.library(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.asset
     ADD CONSTRAINT "asset_livePhotoVideoId_fkey" FOREIGN KEY ("livePhotoVideoId") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.asset_local_effect_cursor
+    ADD CONSTRAINT "asset_local_effect_cursor_ownerId_acknowledgedSequence_fkey" FOREIGN KEY ("ownerId", "acknowledgedSequence") REFERENCES public.asset_local_effect("ownerId", sequence);
+
+ALTER TABLE ONLY public.asset_local_effect_cursor
+    ADD CONSTRAINT "asset_local_effect_cursor_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES public.asset_local_effect_stream("ownerId") ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.asset_local_effect
+    ADD CONSTRAINT "asset_local_effect_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES public.asset_local_effect_stream("ownerId") ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.asset_local_effect_stream
+    ADD CONSTRAINT "asset_local_effect_stream_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES public."user"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.asset_location_insight
+    ADD CONSTRAINT "asset_location_insight_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.asset_lock
     ADD CONSTRAINT "asset_lock_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE CASCADE;
@@ -5396,8 +7118,20 @@ ALTER TABLE ONLY public.asset_metadata
 ALTER TABLE ONLY public.asset_ocr
     ADD CONSTRAINT "asset_ocr_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
+ALTER TABLE ONLY public.asset_original
+    ADD CONSTRAINT "asset_original_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.asset_original
+    ADD CONSTRAINT "asset_original_physicalFileId_fkey" FOREIGN KEY ("physicalFileId") REFERENCES public.physical_file(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+
 ALTER TABLE ONLY public.asset
     ADD CONSTRAINT "asset_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES public."user"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.asset_palette
+    ADD CONSTRAINT "asset_palette_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.asset_palette_swatch
+    ADD CONSTRAINT "asset_palette_swatch_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.asset
     ADD CONSTRAINT "asset_physicalOriginalFileId_fkey" FOREIGN KEY ("physicalOriginalFileId") REFERENCES public.physical_file(id) ON UPDATE CASCADE ON DELETE SET NULL;
@@ -5417,6 +7151,18 @@ ALTER TABLE ONLY public.asset_restoration
 ALTER TABLE ONLY public.asset_restoration
     ADD CONSTRAINT "asset_restoration_previewOperationId_fkey" FOREIGN KEY ("previewOperationId") REFERENCES public.media_operation(id) ON UPDATE CASCADE ON DELETE SET NULL;
 
+ALTER TABLE ONLY public.asset_source
+    ADD CONSTRAINT "asset_source_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.asset_source_epoch
+    ADD CONSTRAINT "asset_source_epoch_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.asset_source_epoch
+    ADD CONSTRAINT "asset_source_epoch_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES public.asset_local_effect_stream("ownerId") ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.asset_source_epoch
+    ADD CONSTRAINT "asset_source_epoch_ownerId_lastTrashSequence_fkey" FOREIGN KEY ("ownerId", "lastTrashSequence") REFERENCES public.asset_local_effect("ownerId", sequence);
+
 ALTER TABLE ONLY public.asset
     ADD CONSTRAINT "asset_stackId_fkey" FOREIGN KEY ("stackId") REFERENCES public.stack(id) ON UPDATE CASCADE ON DELETE SET NULL;
 
@@ -5426,8 +7172,11 @@ ALTER TABLE ONLY public.asset_upload_part
 ALTER TABLE ONLY public.asset_upload_resource
     ADD CONSTRAINT "asset_upload_resource_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES public."user"(id) ON UPDATE CASCADE ON DELETE SET NULL;
 
-ALTER TABLE ONLY public.asset_video_duplicate_frame
-    ADD CONSTRAINT "asset_video_duplicate_frame_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE CASCADE;
+ALTER TABLE ONLY public.asset_video
+    ADD CONSTRAINT "asset_video_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES public.asset(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.asset_video_fingerprint
+    ADD CONSTRAINT "asset_video_fingerprint_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.backup_device
     ADD CONSTRAINT "backup_device_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES public."user"(id) ON UPDATE CASCADE ON DELETE CASCADE;
@@ -5437,6 +7186,33 @@ ALTER TABLE ONLY public.backup_reconciliation
 
 ALTER TABLE ONLY public.backup_reconciliation
     ADD CONSTRAINT "backup_reconciliation_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES public."user"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.bookmark
+    ADD CONSTRAINT "bookmark_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES public."user"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.bookmark
+    ADD CONSTRAINT "bookmark_previewAssetId_fkey" FOREIGN KEY ("previewAssetId") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.bookmark_tag
+    ADD CONSTRAINT "bookmark_tag_bookmarkId_fkey" FOREIGN KEY ("bookmarkId") REFERENCES public.bookmark(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.bookmark_tag
+    ADD CONSTRAINT "bookmark_tag_tagId_fkey" FOREIGN KEY ("tagId") REFERENCES public.tag(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.browser_extension_access
+    ADD CONSTRAINT "browser_extension_access_apiKeyId_fkey" FOREIGN KEY ("apiKeyId") REFERENCES public.api_key(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.browser_extension_access
+    ADD CONSTRAINT "browser_extension_access_userId_fkey" FOREIGN KEY ("userId") REFERENCES public."user"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.browser_extension_sign_in_code
+    ADD CONSTRAINT "browser_extension_sign_in_code_sessionId_fkey" FOREIGN KEY ("sessionId") REFERENCES public.session(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.browser_extension_sign_in_code
+    ADD CONSTRAINT "browser_extension_sign_in_code_userId_fkey" FOREIGN KEY ("userId") REFERENCES public."user"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.capture_receipt
+    ADD CONSTRAINT "capture_receipt_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES public."user"(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.classification_match
     ADD CONSTRAINT "classification_match_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE CASCADE;
@@ -5453,17 +7229,71 @@ ALTER TABLE ONLY public.classification_rule
 ALTER TABLE ONLY public.classification_rule
     ADD CONSTRAINT "classification_rule_tagId_fkey" FOREIGN KEY ("tagId") REFERENCES public.tag(id) ON UPDATE CASCADE ON DELETE SET NULL;
 
+ALTER TABLE ONLY public.cloud_backup_decision_account
+    ADD CONSTRAINT "cloud_backup_decision_account_runId_fkey" FOREIGN KEY ("runId") REFERENCES public.cloud_backup_decision_run("runId") ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.cloud_backup_decision_asset
+    ADD CONSTRAINT "cloud_backup_decision_asset_runId_fkey" FOREIGN KEY ("runId") REFERENCES public.cloud_backup_decision_run("runId") ON UPDATE CASCADE ON DELETE CASCADE;
+
 ALTER TABLE ONLY public.cloud_backup_manifest_original
     ADD CONSTRAINT "cloud_backup_manifest_original_manifestId_fkey" FOREIGN KEY ("manifestId") REFERENCES public.cloud_backup_manifest(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.cloud_backup_object_verification
     ADD CONSTRAINT "cloud_backup_object_verification_operationId_fkey" FOREIGN KEY ("operationId") REFERENCES public.media_operation(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
+ALTER TABLE ONLY public.cloud_backup_selection
+    ADD CONSTRAINT "cloud_backup_selection_userId_fkey" FOREIGN KEY ("userId") REFERENCES public."user"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
 ALTER TABLE ONLY public.cluster_group_request
     ADD CONSTRAINT "cluster_group_request_clusterGroupId_fkey" FOREIGN KEY ("clusterGroupId") REFERENCES public.cluster_group(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.cluster_group_request
     ADD CONSTRAINT "cluster_group_request_userId_fkey" FOREIGN KEY ("userId") REFERENCES public."user"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.desktop_clip_producer
+    ADD CONSTRAINT desktop_clip_producer_scope_fkey FOREIGN KEY (scope) REFERENCES public.desktop_clip_index(scope) ON UPDATE RESTRICT ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.desktop_device
+    ADD CONSTRAINT "desktop_device_userId_fkey" FOREIGN KEY ("userId") REFERENCES public."user"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.desktop_ml_attempt
+    ADD CONSTRAINT "desktop_ml_attempt_deviceId_fkey" FOREIGN KEY ("deviceId") REFERENCES public.desktop_device(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.desktop_ml_attempt
+    ADD CONSTRAINT "desktop_ml_attempt_taskId_fkey" FOREIGN KEY ("taskId") REFERENCES public.desktop_ml_task(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.desktop_ml_task
+    ADD CONSTRAINT "desktop_ml_task_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES public."user"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.desktop_worker_challenge
+    ADD CONSTRAINT "desktop_worker_challenge_deviceId_fkey" FOREIGN KEY ("deviceId") REFERENCES public.desktop_device(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.desktop_worker_challenge
+    ADD CONSTRAINT "desktop_worker_challenge_sessionId_fkey" FOREIGN KEY ("sessionId") REFERENCES public.desktop_worker_session(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.desktop_worker_qualification
+    ADD CONSTRAINT "desktop_worker_qualification_deviceId_fkey" FOREIGN KEY ("deviceId") REFERENCES public.desktop_device(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.desktop_worker_qualification
+    ADD CONSTRAINT "desktop_worker_qualification_sessionId_fkey" FOREIGN KEY ("sessionId") REFERENCES public.desktop_worker_session(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.desktop_worker_session
+    ADD CONSTRAINT "desktop_worker_session_deviceId_fkey" FOREIGN KEY ("deviceId") REFERENCES public.desktop_device(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.desktop_worker_session
+    ADD CONSTRAINT "desktop_worker_session_photoSessionId_fkey" FOREIGN KEY ("photoSessionId") REFERENCES public.session(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.develop_batch_item
+    ADD CONSTRAINT "develop_batch_item_batchId_fkey" FOREIGN KEY ("batchId") REFERENCES public.develop_batch(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.develop_batch_item
+    ADD CONSTRAINT "develop_batch_item_exportId_fkey" FOREIGN KEY ("exportId") REFERENCES public.develop_export(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.develop_batch
+    ADD CONSTRAINT "develop_batch_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES public."user"(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.develop_batch_return
+    ADD CONSTRAINT "develop_batch_return_itemId_fkey" FOREIGN KEY ("itemId") REFERENCES public.develop_batch_item(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.develop_export
     ADD CONSTRAINT "develop_export_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE CASCADE;
@@ -5483,8 +7313,26 @@ ALTER TABLE ONLY public.duplicate_decision
 ALTER TABLE ONLY public.duplicate_decision
     ADD CONSTRAINT "duplicate_decision_undoOperationId_fkey" FOREIGN KEY ("undoOperationId") REFERENCES public.media_operation(id) ON UPDATE CASCADE ON DELETE SET NULL;
 
+ALTER TABLE ONLY public.eagle_import_item
+    ADD CONSTRAINT "eagle_import_item_importId_fkey" FOREIGN KEY ("importId") REFERENCES public.eagle_import(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.eagle_import
+    ADD CONSTRAINT "eagle_import_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES public."user"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.eagle_import
+    ADD CONSTRAINT "eagle_import_rootAlbumId_fkey" FOREIGN KEY ("rootAlbumId") REFERENCES public.album(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
 ALTER TABLE ONLY public.face_search
     ADD CONSTRAINT "face_search_faceId_fkey" FOREIGN KEY ("faceId") REFERENCES public.asset_face(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.frameleaf_library_import_archive
+    ADD CONSTRAINT frameleaf_library_import_archive_operation_id_fkey FOREIGN KEY (operation_id) REFERENCES public.frameleaf_library_import(operation_id);
+
+ALTER TABLE ONLY public.frameleaf_library_import_archive_record
+    ADD CONSTRAINT frameleaf_library_import_archive_record_operation_id_fkey FOREIGN KEY (operation_id) REFERENCES public.frameleaf_library_import_archive(operation_id);
+
+ALTER TABLE ONLY public.frameleaf_library_import_mapping
+    ADD CONSTRAINT frameleaf_library_import_mapping_operation_id_fkey FOREIGN KEY (operation_id) REFERENCES public.frameleaf_library_import(operation_id);
 
 ALTER TABLE ONLY public.icloud_album
     ADD CONSTRAINT "icloud_album_connectionId_fkey" FOREIGN KEY ("connectionId") REFERENCES public.icloud_connection(id) ON DELETE CASCADE;
@@ -5494,6 +7342,21 @@ ALTER TABLE ONLY public.icloud_identity_audit
 
 ALTER TABLE ONLY public.icloud_checkpoint
     ADD CONSTRAINT "icloud_checkpoint_connectionId_fkey" FOREIGN KEY ("connectionId") REFERENCES public.icloud_connection(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.icloud_edit_alias
+    ADD CONSTRAINT "icloud_edit_alias_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES public."user"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.icloud_edit_alias
+    ADD CONSTRAINT "icloud_edit_alias_versionId_fkey" FOREIGN KEY ("versionId") REFERENCES public.icloud_edit_version(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.icloud_edit_authority
+    ADD CONSTRAINT "icloud_edit_authority_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES public."user"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.icloud_edit_decision
+    ADD CONSTRAINT "icloud_edit_decision_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES public."user"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.icloud_edit_version
+    ADD CONSTRAINT "icloud_edit_version_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES public."user"(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.icloud_identity_audit
     ADD CONSTRAINT "icloud_identity_audit_connectionId_ownerId_fkey" FOREIGN KEY ("connectionId", "ownerId") REFERENCES public.icloud_connection(id, "ownerId") ON DELETE CASCADE;
@@ -5534,6 +7397,12 @@ ALTER TABLE ONLY public.icloud_weekly_member
 ALTER TABLE ONLY public.icloud_weekly_member
     ADD CONSTRAINT "icloud_weekly_member_cohortId_ownerId_connectionId_grantId_fkey" FOREIGN KEY ("cohortId", "ownerId", "connectionId", "grantId", "grantGeneration") REFERENCES public.icloud_weekly_cohort(id, "ownerId", "connectionId", "grantId", "grantGeneration");
 
+ALTER TABLE ONLY public.identical_file_change
+    ADD CONSTRAINT "identical_file_change_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.identical_file_change
+    ADD CONSTRAINT "identical_file_change_keptAssetId_fkey" FOREIGN KEY ("keptAssetId") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
 ALTER TABLE ONLY public.integrity_report
     ADD CONSTRAINT "integrity_report_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
@@ -5545,6 +7414,9 @@ ALTER TABLE ONLY public.job_attempt
 
 ALTER TABLE ONLY public.job_attempt
     ADD CONSTRAINT "job_attempt_workerId_fkey" FOREIGN KEY ("workerId") REFERENCES public.job_worker(id);
+
+ALTER TABLE ONLY public.job_library_source_producer
+    ADD CONSTRAINT "job_library_source_producer_selectionId_fkey" FOREIGN KEY ("selectionId") REFERENCES public.job_selection(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.job
     ADD CONSTRAINT "job_parentId_fkey" FOREIGN KEY ("parentId") REFERENCES public.job(id);
@@ -5559,6 +7431,9 @@ ALTER TABLE ONLY public.job
     ADD CONSTRAINT "job_runId_itemKey_name_fkey" FOREIGN KEY ("runId", "itemKey", name) REFERENCES public.job_run_item("runId", "itemKey", stage);
 
 ALTER TABLE ONLY public.job_run_item
+    ADD CONSTRAINT "job_run_item_libraryParentId_fkey" FOREIGN KEY ("libraryParentId") REFERENCES public.job(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.job_run_item
     ADD CONSTRAINT job_run_item_queue_fkey FOREIGN KEY (queue) REFERENCES public.job_queue(name);
 
 ALTER TABLE ONLY public.job_run_item
@@ -5566,6 +7441,12 @@ ALTER TABLE ONLY public.job_run_item
 
 ALTER TABLE ONLY public.job_run_item
     ADD CONSTRAINT "job_run_item_selectionId_fkey" FOREIGN KEY ("selectionId") REFERENCES public.job_selection(id);
+
+ALTER TABLE ONLY public.job_selection_lineage
+    ADD CONSTRAINT "job_selection_lineage_runId_itemKey_stage_fkey" FOREIGN KEY ("runId", "itemKey", stage) REFERENCES public.job_run_item("runId", "itemKey", stage) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.job_selection_lineage
+    ADD CONSTRAINT "job_selection_lineage_selectionId_fkey" FOREIGN KEY ("selectionId") REFERENCES public.job_selection(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.job_selection
     ADD CONSTRAINT "job_selection_producerId_fkey" FOREIGN KEY ("producerId") REFERENCES public.job(id) ON DELETE SET NULL;
@@ -5576,11 +7457,20 @@ ALTER TABLE ONLY public.job_selection
 ALTER TABLE ONLY public.job_selection
     ADD CONSTRAINT "job_selection_runId_fkey" FOREIGN KEY ("runId") REFERENCES public.job_run(id);
 
+ALTER TABLE ONLY public.job_selection_run
+    ADD CONSTRAINT "job_selection_run_runId_fkey" FOREIGN KEY ("runId") REFERENCES public.job_run(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.job_selection_run
+    ADD CONSTRAINT "job_selection_run_selectionId_fkey" FOREIGN KEY ("selectionId") REFERENCES public.job_selection(id) ON DELETE CASCADE;
+
 ALTER TABLE ONLY public.job
     ADD CONSTRAINT "job_workerId_fkey" FOREIGN KEY ("workerId") REFERENCES public.job_worker(id);
 
 ALTER TABLE ONLY public.library
     ADD CONSTRAINT "library_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES public."user"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.locked_encryption
+    ADD CONSTRAINT "locked_encryption_userId_fkey" FOREIGN KEY ("userId") REFERENCES public."user"(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.media_operation
     ADD CONSTRAINT "media_operation_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE SET NULL;
@@ -5629,6 +7519,9 @@ ALTER TABLE ONLY public.ml_workload_accounting
 
 ALTER TABLE ONLY public.ml_workload_route
     ADD CONSTRAINT "ml_workload_route_destinationId_fkey" FOREIGN KEY ("destinationId") REFERENCES public.ml_destination(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.ml_workload_route_origin
+    ADD CONSTRAINT "ml_workload_route_origin_destinationId_fkey" FOREIGN KEY ("destinationId") REFERENCES public.ml_destination(id) ON UPDATE CASCADE ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.notification
     ADD CONSTRAINT "notification_userId_fkey" FOREIGN KEY ("userId") REFERENCES public."user"(id) ON UPDATE CASCADE ON DELETE CASCADE;
@@ -5680,6 +7573,30 @@ ALTER TABLE ONLY public.pet_observation
 
 ALTER TABLE ONLY public.pet
     ADD CONSTRAINT "pet_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES public."user"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.photo_location_estimate
+    ADD CONSTRAINT "photo_location_estimate_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES public."user"(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.photo_location_scan_item
+    ADD CONSTRAINT "photo_location_scan_item_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.photo_location_scan_item
+    ADD CONSTRAINT "photo_location_scan_item_scanId_fkey" FOREIGN KEY ("scanId") REFERENCES public.photo_location_scan(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.photo_location_scan
+    ADD CONSTRAINT "photo_location_scan_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES public."user"(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.photo_source
+    ADD CONSTRAINT "photo_source_deviceId_fkey" FOREIGN KEY ("deviceId") REFERENCES public.desktop_device(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.photo_source
+    ADD CONSTRAINT "photo_source_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES public."user"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.photo_source_resource
+    ADD CONSTRAINT "photo_source_resource_runId_fkey" FOREIGN KEY ("runId") REFERENCES public.photo_source_run(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.photo_source_run
+    ADD CONSTRAINT "photo_source_run_sourceId_fkey" FOREIGN KEY ("sourceId") REFERENCES public.photo_source(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.physical_file
     ADD CONSTRAINT "physical_file_canonicalAssetId_fkey" FOREIGN KEY ("canonicalAssetId") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE SET NULL;
@@ -5837,6 +7754,57 @@ ALTER TABLE ONLY public.smart_search
 ALTER TABLE ONLY public.smart_search_description
     ADD CONSTRAINT "smart_search_description_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES public.asset(id) ON DELETE CASCADE;
 
+ALTER TABLE ONLY public.smart_search_description
+    ADD CONSTRAINT "smart_search_description_producerAdmissionKey_fkey" FOREIGN KEY ("producerAdmissionKey") REFERENCES public.desktop_clip_producer(key) ON UPDATE RESTRICT ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.smart_search
+    ADD CONSTRAINT "smart_search_producerAdmissionKey_fkey" FOREIGN KEY ("producerAdmissionKey") REFERENCES public.desktop_clip_producer(key) ON UPDATE RESTRICT ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.source_original
+    ADD CONSTRAINT "source_original_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.source_original
+    ADD CONSTRAINT "source_original_resourceId_fkey" FOREIGN KEY ("resourceId") REFERENCES public.photo_source_resource(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.source_resource_grant_nonce
+    ADD CONSTRAINT "source_resource_grant_nonce_sourceId_fkey" FOREIGN KEY ("sourceId") REFERENCES public.photo_source(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.source_resource_grant
+    ADD CONSTRAINT "source_resource_grant_photoSessionId_fkey" FOREIGN KEY ("photoSessionId") REFERENCES public.session(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.source_resource_grant
+    ADD CONSTRAINT "source_resource_grant_sourceId_fkey" FOREIGN KEY ("sourceId") REFERENCES public.photo_source(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.source_resource_read
+    ADD CONSTRAINT "source_resource_read_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.source_resource_read
+    ADD CONSTRAINT "source_resource_read_deviceId_fkey" FOREIGN KEY ("deviceId") REFERENCES public.desktop_device(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.source_resource_read
+    ADD CONSTRAINT "source_resource_read_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES public."user"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.source_resource_read
+    ADD CONSTRAINT "source_resource_read_resourceId_fkey" FOREIGN KEY ("resourceId") REFERENCES public.photo_source_resource(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.source_resource_read
+    ADD CONSTRAINT "source_resource_read_sourceId_fkey" FOREIGN KEY ("sourceId") REFERENCES public.photo_source(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.speech_checkpoint
+    ADD CONSTRAINT "speech_checkpoint_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES public.asset(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.speech_settings
+    ADD CONSTRAINT "speech_settings_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES public."user"(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.speech_transcript
+    ADD CONSTRAINT "speech_transcript_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES public.asset(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.speech_transcript
+    ADD CONSTRAINT "speech_transcript_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES public."user"(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.speech_window
+    ADD CONSTRAINT "speech_window_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES public.asset(id) ON DELETE CASCADE;
+
 ALTER TABLE ONLY public.stack
     ADD CONSTRAINT "stack_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES public."user"(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
@@ -5984,6 +7952,9 @@ ALTER TABLE ONLY public.video_moment_frame
 ALTER TABLE ONLY public.video_moment_frame_embedding
     ADD CONSTRAINT "video_moment_frame_embedding_frameId_fkey" FOREIGN KEY ("frameId") REFERENCES public.video_moment_frame(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
+ALTER TABLE ONLY public.video_moment_frame_embedding
+    ADD CONSTRAINT "video_moment_frame_embedding_producerAdmissionKey_fkey" FOREIGN KEY ("producerAdmissionKey") REFERENCES public.desktop_clip_producer(key) ON UPDATE RESTRICT ON DELETE RESTRICT;
+
 ALTER TABLE ONLY public.video_moment_index
     ADD CONSTRAINT "video_moment_index_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES public.asset(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
@@ -5999,17 +7970,38 @@ ALTER TABLE ONLY public.video_stream_session
 ALTER TABLE ONLY public.video_stream_variant
     ADD CONSTRAINT "video_stream_variant_sessionId_fkey" FOREIGN KEY ("sessionId") REFERENCES public.video_stream_session(id) ON DELETE CASCADE;
 
+ALTER TABLE ONLY public.workflow_batch_item
+    ADD CONSTRAINT "workflow_batch_item_batchId_fkey" FOREIGN KEY ("batchId") REFERENCES public.workflow_batch(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.workflow_batch
+    ADD CONSTRAINT "workflow_batch_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES public."user"(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.workflow_batch
+    ADD CONSTRAINT "workflow_batch_workflowId_fkey" FOREIGN KEY ("workflowId") REFERENCES public.workflow(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.workflow_causation
+    ADD CONSTRAINT "workflow_causation_workflowId_fkey" FOREIGN KEY ("workflowId") REFERENCES public.workflow(id) ON DELETE CASCADE;
+
 ALTER TABLE ONLY public.workflow_definition
     ADD CONSTRAINT "workflow_definition_workflowId_fkey" FOREIGN KEY ("workflowId") REFERENCES public.workflow(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.workflow_log_detail
     ADD CONSTRAINT "workflow_log_detail_workflowId_fkey" FOREIGN KEY ("workflowId") REFERENCES public.workflow(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
+ALTER TABLE ONLY public.workflow_log
+    ADD CONSTRAINT "workflow_log_workflowId_fkey" FOREIGN KEY ("workflowId") REFERENCES public.workflow(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.workflow_log
+    ADD CONSTRAINT "workflow_log_workflowStepId_fkey" FOREIGN KEY ("workflowStepId") REFERENCES public.workflow_step(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
 ALTER TABLE ONLY public.workflow
     ADD CONSTRAINT "workflow_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES public."user"(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.workflow_run_step
     ADD CONSTRAINT "workflow_run_step_workflowId_fkey" FOREIGN KEY ("workflowId") REFERENCES public.workflow(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.workflow_schedule
+    ADD CONSTRAINT "workflow_schedule_workflowId_fkey" FOREIGN KEY ("workflowId") REFERENCES public.workflow(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.workflow_step
     ADD CONSTRAINT "workflow_step_pluginMethodId_fkey" FOREIGN KEY ("pluginMethodId") REFERENCES public.plugin_method(id) ON UPDATE CASCADE ON DELETE CASCADE;

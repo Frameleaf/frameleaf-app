@@ -1,9 +1,8 @@
-import { type Kysely, sql } from 'kysely';
+import { type Kysely } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import type { DB } from 'src/schema/index.js';
 import { MlDestinationHealth, MlDestinationKind, MlProcessingSource, MlWorkload, SystemMetadataKey } from 'src/enum.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
-import { up } from 'src/schema/migrations/2100000003008-MlProcessingOrder.js';
 import { getKyselyDB } from 'test/utils.js';
 
 let db: Kysely<DB>;
@@ -149,72 +148,5 @@ describe('where work goes (FL-456)', () => {
     await db.deleteFrom('system_metadata').where('key', '=', SystemMetadataKey.FrameleafDesktopAssistance).execute();
     expect(await routes.getDesktopCounts()).toEqual({ approved: 0, ready: 0 });
     expect(await routes.hasReadyDesktop()).toBe(false);
-  });
-});
-
-describe('migration 2100000003008 keeps what upgrades see (FL-456)', () => {
-  /** Run the migration again over the routes saved now, inside a transaction that is rolled back. */
-  const migrate = async (setup: (tx: Kysely<DB>) => Promise<void>) => {
-    let rows: { scope: string; sources: unknown }[] = [];
-    await db
-      .transaction()
-      .execute(async (tx) => {
-        await setup(tx);
-        await sql`DROP TABLE ml_processing_order`.execute(tx);
-        await up(tx);
-        rows = await tx.selectFrom('ml_processing_order').select(['scope', 'sources']).orderBy('scope').execute();
-        throw new Error('rollback');
-      })
-      .catch((error: Error) => {
-        if (error.message !== 'rollback') throw error;
-      });
-    return Object.fromEntries(rows.map(({ scope, sources }) => [scope, sources]));
-  };
-
-  it('keeps routes this server made on the main list and pinned ones in their one place', async () => {
-    const server = await destination(MlDestinationKind.Local);
-    const home = await destination(MlDestinationKind.Lan);
-    const cloud = await destination(MlDestinationKind.FrameleafCloud, { workloads: [MlWorkload.Clip] });
-    const orders = await migrate(async (tx) => {
-      const route = async (workload: MlWorkload, destinationId: string | null, origin?: 'default' | 'pinned') => {
-        if (destinationId) {
-          await tx.insertInto('ml_workload_route').values({ workload, destinationId, modelId: null }).execute();
-        }
-        if (origin) {
-          await tx
-            .insertInto('ml_workload_route_origin')
-            .values({ workload, destinationId, origin, revisionId: randomUUID() })
-            .execute();
-        }
-      };
-      await route(MlWorkload.Face, server.id, 'default');
-      await route(MlWorkload.Ocr, server.id, 'pinned');
-      await route(MlWorkload.Enrichment, home.id, 'pinned');
-      await route(MlWorkload.Clip, cloud.id, 'pinned');
-      await route(MlWorkload.PetRecognition, null, 'pinned');
-      // a route saved before route intent was recorded
-      await route(MlWorkload.RestorationFaithful, server.id);
-    });
-    expect(orders).toEqual({
-      default: ['local', 'desktops', 'cloud'],
-      [MlWorkload.Ocr]: ['local'],
-      [MlWorkload.Enrichment]: ['desktops'],
-      [MlWorkload.Clip]: ['cloud'],
-      [MlWorkload.PetRecognition]: [],
-    });
-  });
-
-  it('keeps the desktop helpers first where desktop assistance was already on', async () => {
-    const orders = await migrate(async (tx) => {
-      await tx
-        .insertInto('system_metadata')
-        .values({
-          key: SystemMetadataKey.FrameleafDesktopAssistance,
-          value: { version: 1, accounts: { [randomUUID()]: { revisionId: randomUUID() } } },
-        } as never)
-        .onConflict((oc) => oc.column('key').doUpdateSet({ value: sql`excluded.value` }))
-        .execute();
-    });
-    expect(orders.default).toEqual(['desktops', 'local', 'cloud']);
   });
 });

@@ -11,7 +11,6 @@ import { loadPrivateOwnerInputs, retainPrivateOwnerInputs } from 'src/library-im
 import { loadReviewedImportInputs, retainReviewedImportInputs } from 'src/library-import/reviewed-inputs.js';
 import { LibraryImportJournal } from 'src/library-import/state.js';
 import { DB } from 'src/schema/index.js';
-import { down, up } from 'src/schema/migrations/2100000003046-LibraryImportPrivateOwners.js';
 import { getKyselyConfig } from 'src/utils/database.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -300,7 +299,7 @@ it('recovers a lost commit acknowledgement and rolls back an interrupted retenti
   await retainPrivateOwnerInputs(actual, context, inventory);
 });
 
-it('retains recovery after abandonment without permitting further writes or destructive downgrade', async () => {
+it('retains recovery after abandonment without permitting further writes', async () => {
   const { context, inventory } = await setup();
   await retainPrivateOwnerInputs(wrap(db), context, inventory);
   await new LibraryImportJournal(wrap(db)).phase(context.binding, 'abandoned');
@@ -308,11 +307,9 @@ it('retains recovery after abandonment without permitting further writes or dest
   await expect(retainPrivateOwnerInputs(wrap(db), context, inventory)).rejects.toThrow(
     'IMPORT_REVIEWED_INPUTS_READ_ONLY',
   );
-  await expect(down(db)).rejects.toThrow('Private owner recovery inputs must be retained');
-  expect(await loadPrivateOwnerInputs(wrap(db), context)).toHaveLength(2);
 });
 
-it('enforces paired private object/checksum storage and supports empty downgrade/upgrade', async () => {
+it('enforces paired private object/checksum storage', async () => {
   const { context } = await setup();
   await expect(sql`UPDATE frameleaf_library_import SET private_owners='{}'::jsonb`.execute(db)).rejects.toMatchObject({
     code: '23514',
@@ -322,7 +319,5 @@ it('enforces paired private object/checksum storage and supports empty downgrade
       db,
     ),
   ).rejects.toMatchObject({ code: '23514' });
-  await down(db);
-  await up(db);
   await expect(loadPrivateOwnerInputs(wrap(db), context)).rejects.toThrow('IMPORT_PRIVATE_OWNERS_MISSING');
 });

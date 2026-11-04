@@ -1,6 +1,10 @@
 import { MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
-import { MEDIA_HEALTH_SCAN_BATCH, MediaHealthOperationService } from 'src/services/media-health-operation.service.js';
+import {
+  MEDIA_HEALTH_LOCK_TRIES,
+  MEDIA_HEALTH_SCAN_BATCH,
+  MediaHealthOperationService,
+} from 'src/services/media-health-operation.service.js';
 import { MediaHealthService } from 'src/services/media-health.service.js';
 import { ServiceMocks, getMocks } from 'test/utils.js';
 
@@ -243,6 +247,42 @@ describe(MediaHealthOperationService.name, () => {
         expect.anything(),
         'disk offline',
       );
+    });
+
+    describe('when an import holds the rows it checks', () => {
+      const lockTimeout = () => Object.assign(new Error('canceling statement due to lock timeout'), { code: '55P03' });
+      beforeEach(() => vi.useFakeTimers());
+      afterEach(() => vi.useRealTimers());
+
+      it('waits and repeats a batch that lost a lock wait, without failing the scan', async () => {
+        mediaHealth.scanPage
+          .mockRejectedValueOnce(lockTimeout())
+          .mockRejectedValueOnce(lockTimeout())
+          .mockResolvedValueOnce(page(5, 'asset-5'));
+
+        const run = sut.run(operationOf(scanSnapshot), 'token');
+        await vi.advanceTimersByTimeAsync(5 * 60_000);
+        await run;
+
+        expect(mediaHealth.scanPage).toHaveBeenCalledTimes(3);
+        expect(mediaHealth.scanPage).toHaveBeenLastCalledWith(scanSnapshot, null, MEDIA_HEALTH_SCAN_BATCH);
+        expect(operations.fail).not.toHaveBeenCalled();
+        expect(operations.complete).toHaveBeenCalledOnce();
+      });
+
+      it('fails the scan as before once the lock waits are spent', async () => {
+        mediaHealth.scanPage.mockRejectedValue(lockTimeout());
+
+        const run = sut.run(operationOf(scanSnapshot), 'token');
+        await vi.advanceTimersByTimeAsync(5 * 60_000);
+        await run;
+
+        expect(mediaHealth.scanPage).toHaveBeenCalledTimes(MEDIA_HEALTH_LOCK_TRIES);
+        expect(operations.fail).toHaveBeenCalledWith(expect.any(String), 'token', {
+          error: 'canceling statement due to lock timeout',
+          errorCode: 'media_health_failed',
+        });
+      });
     });
 
     it('reports the failure once its automatic retry is spent', async () => {

@@ -132,6 +132,8 @@
   /** Background work belongs to In progress, so it shows under All and In progress (the `running` filter). */
   const showBackground = $derived(filter === 'all' || filter === 'running');
   const backgroundCount = $derived(showBackground ? busyServer : 0);
+  /** A chip counts what its filter shows, background work included (All and In progress list it). */
+  const chipCount = (name: ActivityFilter) => counts[name] + (name === 'all' || name === 'running' ? busyServer : 0);
   const hasFinished = $derived(items.some((item) => item.source === 'job' && item.finished));
   /** The prototype's summary: only the counts that are not zero, or "nothing" when idle. */
   const summary = $derived(
@@ -363,9 +365,11 @@
             onclick={() => setFilter(name)}
           >
             {$t(`frameleaf_activity_filter_${name}`)}
-            {#if counts[name] > 0}
-              <b aria-hidden="true">{counts[name]}</b>
-              <span class="sr-only">{$t('frameleaf_activity_filter_count', { values: { count: counts[name] } })}</span>
+            {#if chipCount(name) > 0}
+              <b aria-hidden="true">{chipCount(name)}</b>
+              <span class="sr-only"
+                >{$t('frameleaf_activity_filter_count', { values: { count: chipCount(name) } })}</span
+              >
             {/if}
           </button>
         {/each}

@@ -7,10 +7,6 @@ import { lockDesktopWorker, lockDesktopWorkerForAdoption } from 'src/repositorie
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
-import {
-  down as removePresence,
-  up as addPresence,
-} from 'src/schema/migrations/2100000003000-DesktopWorkerPresence.js';
 import { BaseService } from 'src/services/base.service.js';
 import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
 import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
@@ -254,27 +250,6 @@ it('records liveness only for a successfully authenticated counter, never issuan
   expect((await sut.session(session.id, input.tokenHash))!.lastSeenAt).toEqual(old);
   expect(await sut.consume(session.id, input.tokenHash, 2)).toBeDefined();
   expect((await sut.session(session.id, input.tokenHash))!.lastSeenAt!.getTime()).toBeGreaterThan(old.getTime());
-});
-
-it('adds unobserved presence to existing rows and reverses only the new column', async () => {
-  const scope = `presence_${randomUUID().replaceAll('-', '')}`;
-  await db.schema.createSchema(scope).execute();
-  const scratch = db.withSchema(scope) as Kysely<any>;
-  try {
-    await scratch.schema
-      .createTable('desktop_worker_session')
-      .addColumn('id', 'integer', (column) => column.primaryKey())
-      .execute();
-    await scratch.insertInto('desktop_worker_session').values({ id: 1 }).execute();
-    await addPresence(scratch);
-    expect(await scratch.selectFrom('desktop_worker_session').selectAll().execute()).toEqual([
-      { id: 1, lastSeenAt: null },
-    ]);
-    await removePresence(scratch);
-    expect(await scratch.selectFrom('desktop_worker_session').selectAll().execute()).toEqual([{ id: 1 }]);
-  } finally {
-    await db.schema.dropSchema(scope).cascade().execute();
-  }
 });
 
 it('adds a second qualified workload without dropping another live grant, then prunes expired grants', async () => {

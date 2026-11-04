@@ -1,7 +1,7 @@
 import { isIP } from 'node:net';
 import { posix } from 'node:path';
 import { Docker, environment, mounts, type Container } from './docker.js';
-import { Refusal, digest, type Source, type Mount } from './contracts.js';
+import { Refusal, digest, type Source, type SourceFence, type Mount } from './contracts.js';
 
 // Recognised by repository name on any registry or owner (forks, mirrors, Docker Hub). Compatibility is
 // decided by the version the running server reports, never by the image name.
@@ -257,12 +257,20 @@ export class Discovery {
       restart: Object.fromEntries(workers.map((c) => [c.Id, c.HostConfig.RestartPolicy])),
     };
   }
-  async revalidate(source: Source, fencing = false): Promise<void> {
+  async revalidate(source: Source | SourceFence, fencing = false): Promise<void> {
     const all = await this.docker.inventory();
-    const relevant = [...source.workers, source.database.container].map((id) => all.find((c) => c.Id === id));
+    const ids = 'containers' in source ? source.containers : [...source.workers, source.database.container];
+    if ('containers' in source && (
+      !Array.isArray(ids) || !ids.length || new Set(ids).size !== ids.length ||
+      !Array.isArray(source.workers) || !source.workers.length || new Set(source.workers).size !== source.workers.length ||
+      source.workers.some((id) => !ids.includes(id) || !source.restart?.[id])
+    )) throw new Refusal('source_changed_review_again');
+    const relevant = ids.map((id) => all.find((c) => c.Id === id));
     if (relevant.some((c) => !c)) throw new Refusal('source_changed_review_again');
     const normalized = (relevant as Container[]).map((c) => {
       const original = source.restart[c.Id];
+      if ('containers' in source && !fencing && source.workers.includes(c.Id) &&
+        digest(original) !== digest(c.HostConfig.RestartPolicy)) throw new Refusal('source_changed_review_again');
       if (!fencing || !original) return c;
       if (c.HostConfig.RestartPolicy.Name !== 'no' && digest(c.HostConfig.RestartPolicy) !== digest(original))
         throw new Refusal('source_changed_review_again');

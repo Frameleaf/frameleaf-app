@@ -34,6 +34,17 @@ export const MEDIA_HEALTH_TICK_MS = 5000;
 export const MEDIA_HEALTH_LEASE_MS = 5 * 60_000;
 /** Assets checked between two cursor writes. */
 export const MEDIA_HEALTH_SCAN_BATCH = 25;
+/**
+ * Tries a batch gets when PostgreSQL gives up waiting for a lock (the pool's 5 s lock_timeout) or picks it to
+ * break a deadlock. An import writes the same asset rows for hours; one contended batch must not fail a scan of
+ * hundreds of thousands, which setup then waits on for good. The waits (5, 10, … 45 s, under four minutes in
+ * all) stay inside the lease, which the keep-alive renews anyway.
+ */
+export const MEDIA_HEALTH_LOCK_TRIES = 10;
+export const MEDIA_HEALTH_LOCK_BACKOFF_MS = 5000;
+
+const isLockContention = (error: unknown) =>
+  error instanceof Error && 'code' in error && (error.code === '55P03' || error.code === '40P01');
 
 /**
  * The worker behind Library Care scans and searches (FL-69).
@@ -186,12 +197,13 @@ export class MediaHealthOperationService {
         return;
       }
 
-      const page = await this.mediaHealth.scanPage(snapshot, result.cursor, MEDIA_HEALTH_SCAN_BATCH);
+      const cursor = result.cursor;
+      const page = await this.contended(() => this.mediaHealth.scanPage(snapshot, cursor, MEDIA_HEALTH_SCAN_BATCH));
       const done = page.checked < MEDIA_HEALTH_SCAN_BATCH;
       // The last step: supported media in library storage that no asset tracks comes back. Not for a
       // scan of chosen photos (FL-737): it would turn the stray files File checks lists into photos.
       if (done && !snapshot.assetIds) {
-        await this.mediaHealth.restoreUntracked(snapshot.userId);
+        await this.contended(() => this.mediaHealth.restoreUntracked(snapshot.userId));
       }
 
       result = {
@@ -218,6 +230,21 @@ export class MediaHealthOperationService {
     }
 
     await this.finish(id, claimToken, snapshot, result);
+  }
+
+  /** Repeats a step that lost a lock wait; a scan step is an upsert, so running it again is harmless. */
+  private async contended<T>(step: () => Promise<T>): Promise<T> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await step();
+      } catch (error) {
+        if (!isLockContention(error) || attempt >= MEDIA_HEALTH_LOCK_TRIES || this.stopping) {
+          throw error;
+        }
+        this.logger.warn(`Library Care batch waited too long for a database lock; trying again (${attempt})`);
+        await new Promise((resolve) => setTimeout(resolve, MEDIA_HEALTH_LOCK_BACKOFF_MS * attempt));
+      }
+    }
   }
 
   /** A search for originals, one bounded step of the directory walk at a time. */
