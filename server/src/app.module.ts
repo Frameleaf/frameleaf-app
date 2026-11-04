@@ -172,7 +172,7 @@ export class ImmichAdminModule implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit() {
-    if (process.argv.includes('import-immich')) {
+    if (process.argv.includes('import-immich') || process.argv.includes('import-library')) {
       await this.databaseService.initialize({ allowInactiveImport: true });
     }
     this.storageService.initializeMediaLocation();
