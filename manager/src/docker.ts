@@ -8,7 +8,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { Refusal, containerId, imageDigest, redact, type Database, type Mount } from './contracts.js';
 import { publishFile } from './files.js';
 import { completeCommonImport } from './common-import-lifecycle.js';
-import { COMMON_IMPORT_CONFIG, writeCommonImportCompose } from './common-import-runtime.js';
+import { COMMON_IMPORT_CONFIG, IMPORT_PREPARATION_TARGET, writeCommonImportCompose } from './common-import-runtime.js';
 import { DOCKERMAN_TEMPLATES, saveDockermanTemplates } from './dockerman.js';
 import { configureUnraidCompose } from './compose.js';
 import { importHash, importSourceKinds, importSourceSchema, type ImportPlan } from './import-plan.js';
@@ -20,7 +20,6 @@ import {
   type ImportSourceAuthority,
 } from './import-source-authority.js';
 
-const preparationTarget = '/run/frameleaf/import-preparation';
 const count = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const preparationReceipt = z.strictObject({
   bundleName: z.string(),
@@ -523,9 +522,9 @@ export class Docker {
     const output = await this.execute('docker', [
       'run', '--rm', '--interactive', '--network', 'none', '--log-driver', 'none', '--pull', 'never',
       '--name', `frameleaf-import-prepare-${operationId}`,
-      '--mount', `type=bind,src=${root},dst=${preparationTarget}`,
+      '--mount', `type=bind,src=${root},dst=${IMPORT_PREPARATION_TARGET}`,
       ...media.flatMap(({ source, target }) => ['--mount', `type=bind,src=${source},dst=${target},readonly`]),
-      '--entrypoint', SERVER_ADMIN, image, 'prepare-library-import', '--config', `${preparationTarget}/prepare.json`,
+      '--entrypoint', SERVER_ADMIN, image, 'prepare-library-import', '--config', `${IMPORT_PREPARATION_TARGET}/prepare.json`,
     ], {
       cwd: directory,
       timeout: 86_400_000,

@@ -9,6 +9,7 @@ const bootstrapName = 'bootstrap-admin.json';
 const configTarget = '/run/frameleaf/import-private';
 const bundleTarget = '/run/frameleaf/import-bundle';
 const stateTarget = '/run/frameleaf/import-state';
+export const IMPORT_PREPARATION_TARGET = '/run/frameleaf/import-preparation';
 export const COMMON_IMPORT_CONFIG = `${configTarget}/command.json`;
 
 async function privateDirectory(path: string, create = false) {
