@@ -163,7 +163,7 @@ export function assemblePhotoprismManifest(records: Iterable<PhotoprismInventory
       return refuse('PHOTOPRISM_MEDIA_RELATIONSHIP_REVIEW_REQUIRED');
     const { title, ...metadata } = photo.metadata;
     const labels = manualTags.get(photo.sourceId);
-    if (labels?.size) metadata.tags = [...new Set([...(metadata.tags ?? []), ...labels])];
+    if (metadata.tags || labels?.size) metadata.tags = [...new Set([...(metadata.tags ?? []), ...(labels ?? [])])];
     if (title) loss('PHOTOPRISM_TITLE_ARCHIVED', photo.id);
     const type = media[0]!;
     const names = originals.map((file) => {
