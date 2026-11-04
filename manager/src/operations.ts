@@ -73,6 +73,7 @@ function assertCommonImportReview(operation: Operation, common?: CommonImportRev
 }
 type Review = {
   id: string;
+  approvalToken?: string;
   expires: number;
   /** The port the administrator reached Manager on, so the stack cannot be offered Manager's own port. */
   managerPort?: number;
@@ -483,7 +484,7 @@ export class Operations {
       input,
       release,
       source,
-      ...(common && { common }),
+      ...(common && { common, approvalToken: randomUUID() }),
       backup,
       platform: compatibility.platform,
     };
@@ -506,7 +507,7 @@ export class Operations {
           }
         : null,
       backup: common ? null : backup ? { action: 'reuse', name: backup.name, takenAt: backup.takenAt } : { action: 'create' },
-      ...(common && { commonImport: {
+      ...(common && { approvalToken: review.approvalToken, commonImport: {
         source: common.binding.source.kind,
         version: common.binding.source.version,
         requiresBootstrap: !!common.bootstrapAdminId,
@@ -564,7 +565,7 @@ export class Operations {
     )
       throw new Refusal('port_in_use');
   }
-  start(reviewId: string, key: string, bootstrap?: unknown): Operation {
+  start(reviewId: string, key: string, bootstrap?: unknown, approvalToken?: string): Operation {
     const prior = this.store.request(undefined, key, { reviewId });
     if (prior) {
       if (!['install', 'import'].includes(prior.kind)) throw new Refusal('request_key_reused');
@@ -573,23 +574,26 @@ export class Operations {
     const captured = this.store.history().find((item) => item.id === reviewId && typeof item.input.commonCapture === 'string');
     if (captured?.receipts['common-approval-key'] !== undefined) {
       if (captured.receipts['common-approval-key'] !== key) throw new Refusal('request_key_reused');
+      if (captured.receipts['common-approval-token'] !== approvalToken) throw new Refusal('invalid_import_authority');
       return captured;
     }
     const review = this.store.get<Review>(`review:${reviewId}`);
     if (!review || review.expires < Date.now()) throw new Refusal('review_expired');
     if (review.common && (review.id !== reviewId || review.common.binding.operationId !== reviewId || review.source))
       throw new Refusal('invalid_import_authority');
+    if (review.approvalToken !== approvalToken) throw new Refusal('invalid_import_authority');
     if (!!review.common?.bootstrapAdminId !== (bootstrap !== undefined))
       throw new Refusal('import_bootstrap_credentials_required');
     if (captured) {
       const snapshot = captured.receipts['capture-common-source'] as Awaited<ReturnType<typeof capturePhotoprismSqliteSource>> | undefined;
       if (
-        !review.common || captured.state !== 'awaiting-review' || this.executing.has(captured.id) ||
+        !review.common || !approvalToken || captured.state !== 'awaiting-review' || this.executing.has(captured.id) ||
         !snapshot || digest(snapshot.fence) !== digest(review.common.fence) ||
         digest(snapshot.source) !== digest(review.common.binding.source)
       ) throw new Refusal('invalid_import_authority');
       captured.receipts['reviewed-common-import'] = digest(review.common);
       captured.receipts['common-approval-key'] = key;
+      captured.receipts['common-approval-token'] = approvalToken;
       captured.state = 'running';
       this.store.save(captured);
       this.launch(captured, () => this.install(captured, review, bootstrap));

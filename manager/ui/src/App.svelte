@@ -448,7 +448,7 @@
   }
   async function startCommonImport() {
     try {
-      await start('install', { reviewId: review.id }, review.commonImport.requiresBootstrap
+      await start('install', { reviewId: review.id, approvalToken: review.approvalToken }, review.commonImport.requiresBootstrap
         ? { name: importAdminName, email: importAdminEmail, password: importAdminPassword }
         : undefined);
     } finally {
@@ -763,7 +763,7 @@
               </div>
               <div class="card-footer">
                 <button type="button" class="button quiet" onclick={() => { review = null; step = 0; importAdminPassword = ''; }}>Back</button>
-                <button class="button primary" disabled={busy || !cutoverAccepted || !!activeOperation || (review.commonImport.requiresBootstrap && location.protocol !== 'https:')}>Start import</button>
+                <button class="button primary" disabled={busy || !cutoverAccepted || (!!activeOperation && (activeOperation.id !== review.id || activeOperation.state !== 'awaiting-review')) || (review.commonImport.requiresBootstrap && location.protocol !== 'https:')}>Start import</button>
               </div>
             </form>
           {:else if step === 0}

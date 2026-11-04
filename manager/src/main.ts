@@ -274,9 +274,10 @@ class Api {
   @Post('install') install(@Body() input: unknown, @Req() request: Request) {
     const value = z.object({
       reviewId: z.string().uuid(), key: RequestKey, bootstrap: CommonImportBootstrapCredentials.optional(),
+      approvalToken: z.uuid().optional(),
     }).strict().parse(input);
     if (value.bootstrap && !request.secure) throw new Refusal('import_bootstrap_secure_transport_required');
-    const { id } = operations.start(value.reviewId, value.key, value.bootstrap);
+    const { id } = operations.start(value.reviewId, value.key, value.bootstrap, value.approvalToken);
     return { id };
   }
   @Post('control') control(@Body() input: unknown) {

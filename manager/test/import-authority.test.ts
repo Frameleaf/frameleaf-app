@@ -818,6 +818,14 @@ test('common review reports the source and space without exposing the private bu
   }), /insufficient_disk_space/);
   assert.equal(f.store.get(`review:${lowSpaceId}`), null);
   await assert.rejects(f.operations.review(input, undefined, common), /invalid_import_authority/);
+  const repeated = await f.operations.prepareCommonReview(input, prepared);
+  assert.equal(repeated.id, review.id);
+  assert.ok(review.approvalToken && repeated.approvalToken);
+  assert.notEqual(repeated.approvalToken, review.approvalToken);
+  assert.throws(
+    () => f.operations.start(review.id, 'stale-review', undefined, review.approvalToken),
+    /invalid_import_authority/,
+  );
 });
 
 test('cancels a fenced capture before the destination is configured', async (t) => {
@@ -890,18 +898,20 @@ test('capture reserves the Manager operation until the reviewed import is approv
   };
   const review = {
     id: operation.id,
+    approvalToken: randomUUID(),
     expires: Date.now() + 60_000,
     input: { kind: 'import' },
     source: null,
     common: { fence: detected.fence, binding: { operationId: operation.id, source: { ...source, revision: 'substituted' } } },
   };
   f.store.set(`review:${operation.id}`, review);
-  assert.throws(() => f.operations.start(operation.id, 'approval-request'), /invalid_import_authority/);
+  assert.throws(() => f.operations.start(operation.id, 'approval-request', undefined, review.approvalToken), /invalid_import_authority/);
   review.common.binding.source = source;
   f.store.set(`review:${operation.id}`, review);
-  assert.equal(f.operations.start(operation.id, 'approval-request').id, operation.id);
+  assert.throws(() => f.operations.start(operation.id, 'approval-request', undefined, randomUUID()), /invalid_import_authority/);
+  assert.equal(f.operations.start(operation.id, 'approval-request', undefined, review.approvalToken).id, operation.id);
   await new Promise<void>((resolve) => setImmediate(resolve));
-  assert.equal(f.operations.start(operation.id, 'approval-request').id, operation.id);
+  assert.equal(f.operations.start(operation.id, 'approval-request', undefined, review.approvalToken).id, operation.id);
   assert.throws(() => f.operations.start(operation.id, 'other-approval'), /request_key_reused/);
   assert.equal(installCalls, 1);
 });
