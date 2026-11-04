@@ -28,13 +28,27 @@ export async function lockQueues(db: QueryExecutorProvider, queues: string[]) {
   await sql`select name from job_queue where name = any(${queues}::text[]) order by name for no key update`.execute(db);
 }
 
-export async function lockQueueCatalogue(db: QueryExecutorProvider) {
-  await sql`select pg_advisory_xact_lock(${queueTurnstileKey}) /* job_queue catalogue */`.execute(db);
-  await sql`select name from job_queue order by name for no key update`.execute(db);
-}
-
 export const isLockContention = (error: unknown) =>
   typeof error === 'object' && error !== null && 'code' in error && (error.code === '55P03' || error.code === '40P01');
+
+/** The catalogue itself could not be taken. Keeps the PostgreSQL code, so `isLockContention` still matches it. */
+export class QueueCatalogueBusy extends Error {
+  readonly code: unknown;
+  constructor(cause: { code: unknown }) {
+    super('The job queue catalogue is busy', { cause });
+    this.code = cause.code;
+  }
+}
+
+export async function lockQueueCatalogue(db: QueryExecutorProvider) {
+  try {
+    await sql`select pg_advisory_xact_lock(${queueTurnstileKey}) /* job_queue catalogue */`.execute(db);
+    await sql`select name from job_queue order by name for no key update`.execute(db);
+  } catch (error) {
+    if (isLockContention(error)) throw new QueueCatalogueBusy(error as { code: unknown });
+    throw error;
+  }
+}
 
 /** Without a claim to bound it, a caller gives up after about 10 s of backoff. */
 const UNCLAIMED_ATTEMPTS = 8;
@@ -42,8 +56,8 @@ const UNCLAIMED_ATTEMPTS = 8;
 /**
  * Runs `work` in a transaction (`start` opens it) whose first statement takes the catalogue. A lost wait for that lock
  * is contention, not a failure of the work: nothing has run, so it starts over after a backoff, without spending the
- * job's retry. A claim keeps retrying until it is stopped (its deadline or a cancellation aborts the signal). Contention
- * anywhere after the catalogue is held still fails as before.
+ * job's retry. A claim keeps retrying until it is stopped (its deadline or a cancellation aborts the signal). Only a
+ * catalogue acquisition is retried: contention on any other lock, after the catalogue is held, fails as before.
  */
 export async function withQueueCatalogue<T>(
   start: <R>(work: (tx: Transaction<DB>) => Promise<R>) => Promise<R>,
@@ -61,13 +75,13 @@ export async function withQueueCatalogue<T>(
           return await work(tx);
         } catch (error) {
           // Selection sharing restarts the transaction after such an error; its sharing pages, run in between,
-          // take the catalogue too, and a lost wait there is contention like the first lock.
-          if (!isLockContention(error)) locked = false;
+          // take the catalogue too, and losing that wait is contention like the first lock.
+          if (!(error instanceof QueueCatalogueBusy)) locked = false;
           throw error;
         }
       });
     } catch (error) {
-      if (locked || !isLockContention(error) || (!signal && attempt >= UNCLAIMED_ATTEMPTS)) throw error;
+      if (locked || !(error instanceof QueueCatalogueBusy) || (!signal && attempt >= UNCLAIMED_ATTEMPTS)) throw error;
       signal?.throwIfAborted();
       const backoff = Math.min(2000, 50 * 2 ** attempt) * (0.5 + Math.random() / 2);
       await sleep(backoff, undefined, signal ? { signal } : undefined);
