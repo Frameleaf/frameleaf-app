@@ -96,6 +96,13 @@ try {
   const auth = { ...credential, 'X-CSRF-Token': csrf };
   const dashboard = await request('dashboard', undefined, auth);
   assert.equal(dashboard.status, 200);
+  assert.equal(dashboard.body.importQualificationEnabled, undefined);
+  for (const route of ['capture-library-import', 'inspect-library-import', 'prepare-library-import']) {
+    const disabled = await request(route, {}, auth);
+    assert.equal(disabled.status, 404);
+    assert.equal(disabled.body.code, 'import_qualification_unavailable');
+  }
+
   assert.equal(dashboard.body.databaseStorage.detectedPath, `${directory}/custom-appdata`);
   assert.equal(dashboard.body.databaseStorage.suggestedPath, `${directory}/custom-appdata`);
   evidence.checks.customUnraidAppdataDetection = 'passed';

@@ -30,7 +30,7 @@ import { Backups } from './backups.js';
 import { Releases } from './releases.js';
 import { CommonImportBootstrapCredentials } from './common-import-runtime.js';
 import { Operations, ReviewInput } from './operations.js';
-import { Refusal, publicSource, redact, secretEnvironmentValues } from './contracts.js';
+import { Refusal, containerId, publicSource, redact, secretEnvironmentValues } from './contracts.js';
 import { appdataDefaults } from './appdata.js';
 import { nativeListener } from './runtime/native-listener.js';
 import { PostgresStorage } from './postgres-storage.js';
@@ -81,6 +81,15 @@ async function databaseDefaults() {
   return appdataDefaults(process.env, config);
 }
 const defaults = native ? { roots: [], platform: 'native' as const } : await databaseDefaults();
+// Internal qualification only until the full source set is ready.
+const importQualificationEnabled = defaults.platform !== 'native' && process.env.MANAGER_IMPORT_QUALIFICATION === '1';
+function importQualificationPlatform() {
+  const { platform } = defaults;
+  if (!importQualificationEnabled || (platform !== 'docker' && platform !== 'unraid'))
+    throw new Refusal('import_qualification_unavailable', 404);
+  return platform;
+}
+
 // Preserve existing explicit mounts; Unraid otherwise discovers the file through the host engine.
 const mountedAutostart = '/run/frameleaf-host/unraid-autostart';
 const autostart = process.env.MANAGER_UNRAID_AUTOSTART || mountedAutostart;
@@ -183,6 +192,7 @@ class Api {
       csrf: security.session(request).csrf,
       installation,
       operations: operations.history(),
+      ...(importQualificationEnabled && { importQualificationEnabled }),
       profile: store.get('profile'),
       administrator: { name: store.get<{ name: string }>('administrator')?.name },
       managerOrigin: security.requestOrigin(request),
@@ -270,6 +280,39 @@ class Api {
   }
   @Post('review') review(@Body() input: unknown, @Req() request: Request) {
     return operations.review(ReviewInput.parse(input), managerPort(request));
+  }
+  @Post('capture-library-import') async captureLibraryImport(@Body() input: unknown) {
+    const platform = importQualificationPlatform();
+    const { container, key } = z.strictObject({
+      source: z.literal('photoprism'),
+      container: containerId,
+      confirmStop: z.literal(true),
+      key: RequestKey,
+    }).parse(input);
+    const { id } = await operations.startCommonCapture(container, key, platform);
+    return { id };
+  }
+  @Post('inspect-library-import') inspectLibraryImport(@Body() input: unknown) {
+    importQualificationPlatform();
+    const { id, tag } = z.strictObject({ id: z.uuid(), tag: ReviewInput.shape.tag }).parse(input);
+    return operations.inspectCommonCapture(id, tag);
+  }
+  @Post('prepare-library-import') prepareLibraryImport(@Body() input: unknown, @Req() request: Request) {
+    importQualificationPlatform();
+    const id = z.string().min(1).max(1024);
+    const { operationId, destinationId, settings, choice } = z.strictObject({
+      operationId: z.uuid(),
+      destinationId: z.uuid(),
+      settings: ReviewInput,
+      choice: z.strictObject({
+        sourceOwnerId: id,
+        ownerEmail: z.email().max(254),
+        confirmEntireLibrary: z.literal(true),
+        materializedAlbums: z.record(id, z.array(id)),
+        approvedLossCodes: z.array(id),
+      }),
+    }).parse(input);
+    return operations.preparePhotoprismCopyReview(settings, operationId, destinationId, choice, managerPort(request));
   }
   @Post('captured-review') capturedReview(@Body() input: unknown) {
     const { id } = z.strictObject({ id: z.uuid() }).parse(input);
