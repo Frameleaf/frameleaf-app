@@ -138,6 +138,7 @@ describe('PiGallery2 pinned SQLite extraction', () => {
 
   it.each([
     'UPDATE version_entity SET version=40',
+    "UPDATE version_entity SET version='41x' || char(0) || 'private'",
     'DELETE FROM version_entity',
     'INSERT INTO version_entity(id,version) VALUES(2,41)',
   ])('refuses unqualified structure-version state: %s', (statement) => {
