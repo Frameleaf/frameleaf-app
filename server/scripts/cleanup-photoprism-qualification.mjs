@@ -34,7 +34,7 @@ export const cleanupQualification = (runId, directory = tmpdir(), command = dock
     const containers = command(['ps', '-aq', ...filters])
       .split(/\s+/u)
       .filter(Boolean);
-    if (containers.length) command(['rm', '-f', ...containers]);
+    if (containers.length) command(['rm', '-f', '-v', ...containers]);
   });
   attempt(() => {
     const volumes = command(['volume', 'ls', '-q', ...filters])

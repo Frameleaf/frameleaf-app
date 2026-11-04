@@ -43,6 +43,7 @@ test('removes only the cancelled run credentials and labelled Docker resources',
   assert.equal(lists.length, 2);
   assert.ok(lists.every((args) => args.includes('label=app.frameleaf.qualification-run=123-1')));
   assert.ok(calls.some((args) => args[0] === 'rm' && args.includes('a'.repeat(64))));
+  assert.ok(calls.some((args) => args[0] === 'rm' && args.includes('-v')));
   assert.ok(calls.some((args) => args[0] === 'image' && args[1] === 'rm'));
 });
 test('retains an image while another container still uses it', (t) => {
