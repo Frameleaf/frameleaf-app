@@ -1,11 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import fixture from 'src/library-import/fixtures/photoview/2.4.0-sqlite.json' with { type: 'json' };
 import { verifyImportedPassword } from 'src/library-import/passwords.js';
 import { normalizePhotoviewAccess } from 'src/library-import/photoview-access.js';
 import { openPhotoviewSnapshot } from 'src/library-import/photoview.js';
+import { prepareLibraryImport } from 'src/library-import/prepare-command.js';
 import { captureSqliteSnapshot } from 'src/library-import/sqlite.js';
 
 const path = process.env.FRAMELEAF_PHOTOVIEW_APPLICATION_CONFIG;
@@ -59,6 +60,55 @@ describe.skipIf(!path)('native Photoview application', () => {
         preferences: [...source.rows('user_media_data')].flat(),
       });
       expect(access).toHaveLength(4);
+      const inspectionPath = join(directory, 'inspect.json');
+      const inspectedSource = {
+        kind: 'photoview',
+        version: fixture.source.version,
+        identity: 'native-fixture',
+        revision: createHash('sha256').update(readFileSync(snapshot.path)).digest('hex'),
+        schemaSha256: snapshot.schemaSha256,
+      };
+      const operationId = randomUUID();
+      const destinationId = randomUUID();
+      const inspection = JSON.stringify({
+        format: 'frameleaf-inspect-library-import',
+        version: 1,
+        adapter: 'photoview-sqlite',
+        operationId,
+        destinationId,
+        snapshotPath: snapshot.path,
+        source: inspectedSource,
+      });
+      writeFileSync(inspectionPath, inspection, { mode: 0o600, flag: 'wx' });
+      let authorizations = 0;
+      const reviewed = await prepareLibraryImport(inspectionPath, (seal) => {
+        expect(seal).toEqual({
+          operationId,
+          destinationId,
+          source: inspectedSource,
+          preparationSha256: createHash('sha256').update(inspection).digest('hex'),
+        });
+        authorizations++;
+        return Promise.resolve();
+      });
+      expect(authorizations).toBe(2);
+      expect(reviewed).toMatchObject({
+        operationId,
+        destinationId,
+        source: inspectedSource,
+        inventory: {
+          assets: 4,
+          assetsWithAlbumGrants: access.filter((row) => row.readerIds.length > 0).length,
+          accounts: expect.arrayContaining(
+            Object.entries(config.actors).map(([actor, owner]) => ({
+              id: (owner as { id: string }).id,
+              name: `fixture_${actor}`,
+              role: actor === 'admin' ? 'admin' : 'user',
+            })),
+          ),
+        },
+      });
+
       for (const actor of ['admin', 'alice', 'bob', 'mallory']) {
         const owner = config.actors[actor];
         const user = users.find((row) => String(row.id) === owner.id);

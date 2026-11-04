@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import content from 'src/library-import/fixtures/photoview/2.4.0-content.json' with { type: 'json' };
 import fixture from 'src/library-import/fixtures/photoview/2.4.0-sqlite.json' with { type: 'json' };
 import { verifyImportedPassword } from 'src/library-import/passwords.js';
+import { reviewPhotoviewInventory } from 'src/library-import/photoview-manifest.js';
 import { PhotoviewTable, openPhotoviewSnapshot } from 'src/library-import/photoview.js';
 
 describe('Photoview pinned SQLite extraction', () => {
@@ -78,6 +79,20 @@ describe('Photoview pinned SQLite extraction', () => {
       source.close();
     }
   };
+  it('reports admitted account and album-grant inventory without exporting credentials', () => {
+    const snapshot = openPhotoviewSnapshot(path, fixture.source.version);
+    try {
+      const result = reviewPhotoviewInventory(snapshot, fixture.schemaSha256);
+      expect(result.assets).toBe(content.rows.media.length);
+      expect(result.albums).toBe(content.rows.albums.length);
+      expect(result.accounts).toHaveLength(content.rows.users.length);
+      expect(result.assetsWithAlbumGrants).toBeGreaterThan(0);
+      expect(JSON.stringify(result)).not.toMatch(/excluded-password-hash|excluded-bearer-token/u);
+      expect(() => reviewPhotoviewInventory(snapshot, '0'.repeat(64))).toThrow('PHOTOVIEW_SCHEMA_UNQUALIFIED');
+    } finally {
+      snapshot.close();
+    }
+  });
   it('transfers an explicitly mapped owner password through a protected channel', async () => {
     const password = 'synthetic owner password';
     const encoded = await hash(password, 12);

@@ -1,12 +1,11 @@
 import { createHash } from 'node:crypto';
-import { type BigIntStats } from 'node:fs';
 import { posix } from 'node:path';
 import { writeLibraryImportBundle } from 'src/library-import/bundle-output.js';
-import { openPrivateImportFile } from 'src/library-import/command-input.js';
 import { parseImportedOwnerIntent } from 'src/library-import/owner-reconciliation.js';
 import { type PhotoprismInventoryRecord, readPhotoprismInventory } from 'src/library-import/photoprism-inventory.js';
 import { assemblePhotoprismManifest } from 'src/library-import/photoprism-manifest.js';
 import { type PhotoprismRow, openPhotoprismSnapshot } from 'src/library-import/photoprism.js';
+import { importSnapshotVerifier } from 'src/library-import/snapshot-proof.js';
 import { LibraryImportRefused } from 'src/library-import/state.js';
 import { reviewImportFiles } from 'src/library-import/transfer-runtime.js';
 
@@ -126,30 +125,6 @@ export async function publishPhotoprismImportBundle(input: {
   return bundle;
 }
 
-/** Verify the approved bytes once, then check the same file identity at each authority boundary. */
-export function photoprismSnapshotVerifier(snapshotPath: string, revision: string, authorize: () => Promise<void>) {
-  const identity = (stat: BigIntStats) => [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].join(':');
-  let sealed: string | undefined;
-  return async () => {
-    await authorize();
-    const file = await openPrivateImportFile(snapshotPath);
-    try {
-      const before = identity(await file.stat({ bigint: true }));
-      if (sealed === undefined) {
-        const hash = createHash('sha256');
-        for await (const bytes of file.createReadStream({ autoClose: false })) hash.update(bytes);
-        if (hash.digest('hex') !== revision || identity(await file.stat({ bigint: true })) !== before)
-          throw new LibraryImportRefused('IMPORT_SOURCE_SNAPSHOT_CHANGED');
-        sealed = before;
-      } else if (sealed !== before) {
-        throw new LibraryImportRefused('IMPORT_SOURCE_SNAPSHOT_CHANGED');
-      }
-    } finally {
-      await file.close();
-    }
-  };
-}
-
 function isQualifiedLocalAdmin(user: PhotoprismRow | undefined) {
   return (
     user?.id === 1n &&
@@ -230,7 +205,7 @@ export async function publishPhotoprismSqliteBundle(
   },
 ) {
   const { source } = input.observed;
-  const verifySource = photoprismSnapshotVerifier(input.snapshotPath, source.revision, input.verifySource);
+  const verifySource = importSnapshotVerifier(input.snapshotPath, source.revision, input.verifySource);
   await verifySource();
   const snapshot = openPhotoprismSnapshot(input.snapshotPath, source.version);
   try {

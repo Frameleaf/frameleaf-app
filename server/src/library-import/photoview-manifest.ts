@@ -41,6 +41,31 @@ const refuse = (code: string): never => {
 const key = (value: unknown): string =>
   typeof value === 'bigint' && value > 0n ? String(value) : refuse('PHOTOVIEW_RELATIONSHIPS_INVALID');
 
+/** Report only admitted source facts. Account grants do not establish destination ownership. */
+export function reviewPhotoviewInventory(snapshot: ReturnType<typeof openPhotoviewSnapshot>, schemaSha256: string) {
+  if (snapshot.schemaSha256 !== schemaSha256) return refuse('PHOTOVIEW_SCHEMA_UNQUALIFIED');
+  const users = [...snapshot.rows('users')].flat();
+  const albums = [...snapshot.rows('albums')].flat();
+  const media = [...snapshot.rows('media')].flat();
+  const access = normalizePhotoviewAccess({
+    users,
+    albums,
+    media,
+    userAlbums: [...snapshot.rows('user_albums')].flat(),
+    preferences: [...snapshot.rows('user_media_data')].flat(),
+  });
+  return {
+    assets: media.length,
+    albums: albums.length,
+    assetsWithAlbumGrants: access.filter((item) => item.readerIds.length > 0).length,
+    accounts: users.map(({ id, username, admin }) => {
+      if (typeof username !== 'string' || !username || (admin !== 0n && admin !== 1n))
+        return refuse('PHOTOVIEW_ACCOUNT_INVALID');
+      return { id: key(id), name: username, role: admin === 1n ? 'admin' : 'user' };
+    }),
+  };
+}
+
 /** Only admitted snapshots. Source fencing, private credentials and independent byte capture remain caller obligations. */
 export function readPhotoviewManifest(snapshot: ReturnType<typeof openPhotoviewSnapshot>, input: Input) {
   if (

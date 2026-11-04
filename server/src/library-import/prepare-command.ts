@@ -4,14 +4,16 @@ import { importSourceSchema } from '#library-import-transfer/import-plan';
 import { privateImportPathSchema, readPrivateImportJSON } from 'src/library-import/command-input.js';
 import { requestImportPreparationAuthority } from 'src/library-import/manager-authority.js';
 import { importFileSchema, importTimestampSchema } from 'src/library-import/manifest.js';
-import { photoprismSnapshotVerifier, publishPhotoprismSqliteBundle } from 'src/library-import/photoprism-bundle.js';
+import { publishPhotoprismSqliteBundle } from 'src/library-import/photoprism-bundle.js';
 import { reviewPhotoprismInventory } from 'src/library-import/photoprism-inventory.js';
+import { reviewPhotoviewInventory } from 'src/library-import/photoview-manifest.js';
+import { openPhotoviewSnapshot } from 'src/library-import/photoview.js';
+import { importSnapshotVerifier } from 'src/library-import/snapshot-proof.js';
 import { LibraryImportRefused } from 'src/library-import/state.js';
 
 const id = z.string().min(1).max(1024);
 const snapshotRequest = {
   version: z.literal(1),
-  adapter: z.literal('photoprism-sqlite'),
   operationId: z.uuid(),
   destinationId: z.uuid(),
   snapshotPath: privateImportPathSchema,
@@ -19,11 +21,13 @@ const snapshotRequest = {
 const inspectSchema = z.strictObject({
   ...snapshotRequest,
   format: z.literal('frameleaf-inspect-library-import'),
+  adapter: z.enum(['photoprism-sqlite', 'photoview-sqlite']),
   source: importSourceSchema,
 });
 const prepareSchema = z.strictObject({
   ...snapshotRequest,
   format: z.literal('frameleaf-prepare-library-import'),
+  adapter: z.literal('photoprism-sqlite'),
   observed: z.union([
     z.strictObject({
       source: importSourceSchema,
@@ -66,7 +70,7 @@ export async function prepareLibraryImport(configPath: string, authorize = reque
     throw new LibraryImportRefused('IMPORT_PREPARATION_INPUT_INVALID');
   const input = parsed.data;
   const source = input.format === 'frameleaf-inspect-library-import' ? input.source : input.observed.source;
-  if (source.kind !== 'photoprism') throw new LibraryImportRefused('IMPORT_PREPARATION_INPUT_INVALID');
+  if (input.adapter !== `${source.kind}-sqlite`) throw new LibraryImportRefused('IMPORT_PREPARATION_INPUT_INVALID');
   const seal = {
     operationId: input.operationId,
     destinationId: input.destinationId,
@@ -74,8 +78,18 @@ export async function prepareLibraryImport(configPath: string, authorize = reque
     preparationSha256: sha256,
   };
   if (input.format === 'frameleaf-inspect-library-import') {
-    const verify = photoprismSnapshotVerifier(input.snapshotPath, source.revision, () => authorize(seal));
+    const verify = importSnapshotVerifier(input.snapshotPath, source.revision, () => authorize(seal));
     await verify();
+    if (input.adapter === 'photoview-sqlite') {
+      const snapshot = openPhotoviewSnapshot(input.snapshotPath, source.version);
+      try {
+        const inventory = reviewPhotoviewInventory(snapshot, source.schemaSha256);
+        await verify();
+        return { operationId: input.operationId, destinationId: input.destinationId, source, inventory };
+      } finally {
+        snapshot.close();
+      }
+    }
     const inventory = reviewPhotoprismInventory(input.snapshotPath, source.version, source.schemaSha256);
     await verify();
     return { operationId: input.operationId, destinationId: input.destinationId, source, inventory };
