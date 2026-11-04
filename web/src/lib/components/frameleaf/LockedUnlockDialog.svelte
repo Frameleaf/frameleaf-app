@@ -116,6 +116,11 @@
         return;
       }
       access = status.pinCode ? 'ready' : 'no-pin';
+      // The PIN arrives after the dialog has given focus to its close button, so `autofocus` alone is
+      // too late: move focus to the PIN once it is drawn (approved design, 2026-11-04).
+      if (access === 'ready') {
+        void tick().then(() => dialog?.querySelector<HTMLInputElement>('.pin-input')?.focus());
+      }
     } catch (error) {
       if (active && open && request === revision) {
         access = isHttpError(error) && error.status === 401 ? 'unavailable' : 'offline';

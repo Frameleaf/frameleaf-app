@@ -29,7 +29,7 @@ describe('library shortcut table', () => {
     for (const entry of libraryShortcuts) {
       expect(entry.surfaces.length).toBeGreaterThan(0);
       expect(entry.keys.length).toBeGreaterThan(0);
-      expect(entry.key ?? entry.mouse).toBeTruthy();
+      expect(entry.key ?? entry.mouse ?? entry.handledElsewhere).toBeTruthy();
     }
   });
 
@@ -133,6 +133,23 @@ describe('help content', () => {
     expect(ratingRows[0].key).toEqual(['1-5']);
     expect(ratingRows[0].info).toBe('t:zero_to_clear_rating');
     expect(groups.general.some((row) => row.key.join('') === '←→')).toBe(true);
+  });
+
+  it('lists Shift+F10 for the focused photo and, in its own group, for an album in the sidebar', () => {
+    const groups = libraryShortcutGroups(translate, { surface: 'timeline', mac: true });
+    expect(groups.actions.find((row) => row.id === 'photo-menu')?.key).toEqual(['⇧', 'F10']);
+    expect(groups.albums.map((row) => row.id)).toEqual(['album-menu']);
+    // listed only: the tiles and the sidebar handle it, so the map never matches it
+    expect(
+      matchLibraryShortcut({ key: 'F10', shiftKey: true, metaKey: false, ctrlKey: false, altKey: false }),
+    ).toBeNull();
+    expect(libraryShortcutGroups(translate, { surface: 'viewer' }).albums).toEqual([]);
+  });
+
+  it('names Alt for the platform: ⌥ on a Mac', () => {
+    const entry = { keys: ['Alt', '↑'] } as never;
+    expect(formatShortcutKeys(entry, { mac: true })).toEqual(['⌥', '↑']);
+    expect(formatShortcutKeys(entry, { mac: false })).toEqual(['Alt', '↑']);
   });
 
   it('uses the prototype wording and marks the arrow rows as alternatives, not chords', () => {

@@ -62,8 +62,6 @@
     mdiMovieEditOutline,
     mdiPackageVariantClosed,
     mdiPlaylistRemove,
-    mdiShieldLockOutline,
-    mdiShieldOutline,
     mdiTagPlusOutline,
     mdiTextBoxOutline,
   } from '@mdi/js';
@@ -105,8 +103,6 @@
     mdiMovieEditOutline,
     mdiPackageVariantClosed,
     mdiPlaylistRemove,
-    mdiShieldLockOutline,
-    mdiShieldOutline,
     mdiTagPlusOutline,
     mdiTextBoxOutline,
   };

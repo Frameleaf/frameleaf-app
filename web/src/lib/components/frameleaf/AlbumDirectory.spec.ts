@@ -162,6 +162,41 @@ describe('AlbumDirectory', () => {
     expect(screen.getByRole('button', { name: 'Create album' })).toBeInTheDocument();
   });
 
+  it('puts an album dropped on a plain album inside it, and a smart album takes none', async () => {
+    sdkMock.moveAlbumToCollection.mockResolvedValue({ ...rockies, parentId: 'winter' });
+    renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
+    const dataTransfer = {
+      types: ['application/x-immich-album-id'],
+      getData: () => 'rockies',
+      setData: vi.fn(),
+      effectAllowed: 'move',
+      dropEffect: 'none',
+    };
+    await fireEvent.dragStart(screen.getByRole('article', { name: 'Summer in the Rockies' }), { dataTransfer });
+    const smart = screen.getByRole('article', { name: 'Trail camera' });
+    await fireEvent.dragOver(smart, { dataTransfer });
+    expect(smart).not.toHaveClass('drop-into');
+    const target = screen.getByRole('article', { name: 'Winter 2026' });
+    await fireEvent.dragOver(target, { dataTransfer });
+    expect(target).toHaveClass('drop-into');
+    await fireEvent.drop(target, { dataTransfer });
+    await waitFor(() =>
+      expect(sdkMock.moveAlbumToCollection).toHaveBeenCalledWith({
+        id: 'rockies',
+        moveAlbumDto: { collectionId: 'winter', expectedParentId: 'family' },
+      }),
+    );
+    // Undo puts it back in the collection it came from.
+    await fireEvent.click(await screen.findByRole('button', { name: 'Undo' }));
+    await waitFor(() =>
+      expect(sdkMock.moveAlbumToCollection).toHaveBeenLastCalledWith({
+        id: 'rockies',
+        moveAlbumDto: { collectionId: 'family', expectedParentId: 'winter' },
+      }),
+    );
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull());
+  });
+
   it('moves an album into a collection through the server and refreshes', async () => {
     const onRefresh = vi.fn();
     const moved = { ...rockies, parentId: null };

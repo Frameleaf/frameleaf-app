@@ -47,9 +47,12 @@
   import { Route } from '$lib/route';
   import { locale } from '$lib/stores/preferences.store';
   import { downloadBlob } from '$lib/utils';
+  import { motionScrollBehavior } from '$lib/frameleaf/motion';
   import { handleError } from '$lib/utils/handle-error';
   import {
+    AnalyticsMetadataField,
     AnalyticsRange,
+    AnalyticsView,
     AnalyticsScopeKind,
     createJob,
     ManualJobName,
@@ -105,6 +108,89 @@
   );
   const settingsArea = (area: SettingsAreaId) => commandCenterUrl(area);
 
+  /**
+   * The lower cards answer their own question (approved design, 2026-11-04): the old title is the kicker
+   * and the title says what the numbers say, as the panels above do.
+   */
+  const period = $derived(report.range === AnalyticsRange.Year ? 'month' : 'week');
+  const perPeriod = (total: number) => (report.series.length > 0 ? Math.round(total / report.series.length) : 0);
+  const arrivalsPerPeriod = $derived(
+    perPeriod(table('arrivals').rows.reduce((sum, row) => sum + (row[1] as number) + (row[2] as number), 0)),
+  );
+  const knownPercent = (field: AnalyticsMetadataField) => {
+    const row = report.metadata.find((entry) => entry.field === field);
+    return row?.total ? Math.round((row.present / row.total) * 100) : 0;
+  };
+  const timelineCount = $derived(report.views.find((row) => row.view === AnalyticsView.Timeline)?.total ?? 0);
+
+  /**
+   * Sticky section links for a long page; the one in view is marked (approved design, 2026-11-04). A
+   * section that is not on the page (people and places come with your own library only) is left out.
+   */
+  const JUMPS: [string[], Translations][] = [
+    [['an-overview'], 'frameleaf_analytics_jump_overview'],
+    [['an-growth'], 'frameleaf_analytics_jump_growth'],
+    [['an-years'], 'frameleaf_analytics_jump_habits'],
+    [['an-storage'], 'frameleaf_analytics_jump_storage'],
+    [['an-gear'], 'frameleaf_analytics_jump_gear'],
+    [['an-people', 'an-places', 'an-people-places'], 'frameleaf_analytics_jump_people'],
+    [['an-coverage'], 'frameleaf_analytics_jump_coverage'],
+    [['an-records'], 'frameleaf_analytics_jump_records'],
+    [['an-activity'], 'frameleaf_analytics_jump_activity'],
+    [['an-albums'], 'frameleaf_analytics_jump_albums'],
+    [['an-technical'], 'frameleaf_analytics_jump_technical'],
+  ];
+  let jumpBar = $state<HTMLElement>();
+  let jumps = $state<{ id: string; label: Translations }[]>([]);
+  let currentJump = $state('an-overview');
+  const section = (id: string) => document.querySelector<HTMLElement>(`#${CSS.escape(id)}`);
+  const updateJumps = () => {
+    jumps = JUMPS.flatMap(([ids, label]) => {
+      const id = ids.find((candidate) => section(candidate));
+      return id ? [{ id, label }] : [];
+    });
+    // The section in view is the last one whose top has passed just below the bar.
+    const line = (jumpBar?.getBoundingClientRect().bottom ?? 0) + 48;
+    let here = jumps[0]?.id ?? 'an-overview';
+    for (const { id } of jumps) {
+      if ((section(id)?.getBoundingClientRect().top ?? Infinity) <= line) {
+        here = id;
+      }
+    }
+    currentJump = here;
+  };
+  $effect(() => {
+    void report;
+    let frame = requestAnimationFrame(updateJumps);
+    const onScroll = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(updateJumps);
+    };
+    // The page scrolls inside the settings area, so listen for any scroll.
+    document.addEventListener('scroll', onScroll, { capture: true, passive: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener('scroll', onScroll, { capture: true });
+    };
+  });
+  // Keep the current link in view inside the bar only: scrollIntoView would also move the page.
+  $effect(() => {
+    const link = jumpBar?.querySelector<HTMLElement>(`[href="#${CSS.escape(currentJump)}"]`);
+    if (
+      jumpBar &&
+      link &&
+      (link.offsetLeft < jumpBar.scrollLeft ||
+        link.offsetLeft + link.offsetWidth > jumpBar.scrollLeft + jumpBar.clientWidth)
+    ) {
+      jumpBar.scrollTo({ left: link.offsetLeft - 12 });
+    }
+  });
+  const jumpTo = (event: MouseEvent, id: string) => {
+    event.preventDefault();
+    section(id)?.scrollIntoView({ behavior: motionScrollBehavior(), block: 'start' });
+    currentJump = id;
+  };
+
   // FL-363: "Count now" on the "No history yet" banner starts tonight's count straight away.
   let counting = $state(false);
   let counted = $state('');
@@ -149,9 +235,10 @@
   };
 </script>
 
-{#snippet cardHeading(title: string, caption: string, action?: { href: string; label: string })}
+{#snippet cardHeading(title: string, caption: string, action?: { href: string; label: string }, kicker?: string)}
   <header class="card-heading">
     <div>
+      {#if kicker}<p class="kicker">{kicker}</p>{/if}
       <h2>{title}</h2>
       {#if caption}<p>{caption}</p>{/if}
     </div>
@@ -226,9 +313,19 @@
   </div>
   <p class="export-status" role="status">{exportStatus}</p>
 
-  <LibraryHero {report} kicker={heroKicker} />
+  <nav class="jump" aria-label={$t('frameleaf_analytics_jump_label')} bind:this={jumpBar}>
+    {#each jumps as jump (jump.id)}
+      <a
+        href="#{jump.id}"
+        aria-current={currentJump === jump.id ? 'true' : undefined}
+        onclick={(event) => jumpTo(event, jump.id)}>{$t(jump.label)}</a
+      >
+    {/each}
+  </nav>
 
-  <div class="card growth-card fl-continuous-corners">
+  <div id="an-overview"><LibraryHero {report} kicker={heroKicker} /></div>
+
+  <div class="card growth-card fl-continuous-corners" id="an-growth">
     <figure class="growth">
       <figcaption>
         <div>
@@ -313,8 +410,15 @@
   {/if}
 
   <div class="grid">
-    <section class="card fl-continuous-corners">
-      {@render cardHeading($t('frameleaf_analytics_arrivals'), $t('frameleaf_analytics_arrivals_caption'))}
+    <section class="card fl-continuous-corners" id="an-activity">
+      {@render cardHeading(
+        arrivalsPerPeriod
+          ? $t('frameleaf_analytics_arrivals_answer', { values: { count: number(arrivalsPerPeriod), period } })
+          : $t('frameleaf_analytics_arrivals_none'),
+        $t('frameleaf_analytics_arrivals_caption'),
+        undefined,
+        $t('frameleaf_analytics_arrivals'),
+      )}
       <AnalyticsChart
         title={$t('frameleaf_analytics_arrivals_title')}
         {labels}
@@ -331,7 +435,11 @@
     <section class="card fl-continuous-corners">
       {#if report.processing.available}
         {@render cardHeading(
-          $t('frameleaf_analytics_processing'),
+          report.processing.attempts
+            ? $t('frameleaf_analytics_processing_answer', {
+                values: { count: number(perPeriod(report.processing.attempts)), period },
+              })
+            : $t('frameleaf_analytics_processing_none'),
           $t('frameleaf_analytics_processing_caption', {
             values: {
               attempts: number(report.processing.attempts),
@@ -344,6 +452,7 @@
             },
           }),
           { href: Route.queues(), label: $t('frameleaf_analytics_processing_link') },
+          $t('frameleaf_analytics_processing'),
         )}
         <AnalyticsChart
           title={$t('frameleaf_analytics_processing_title')}
@@ -374,10 +483,17 @@
     </section>
 
     <section class="card wide fl-continuous-corners">
-      {@render cardHeading($t('frameleaf_analytics_metadata'), $t('frameleaf_analytics_metadata_caption'), {
-        href: settingsArea('intelligence'),
-        label: $t('frameleaf_analytics_intelligence'),
-      })}
+      {@render cardHeading(
+        $t('frameleaf_analytics_metadata_answer', {
+          values: {
+            dates: knownPercent(AnalyticsMetadataField.CaptureDate),
+            places: knownPercent(AnalyticsMetadataField.Location),
+          },
+        }),
+        $t('frameleaf_analytics_metadata_caption'),
+        { href: settingsArea('intelligence'), label: $t('frameleaf_analytics_intelligence') },
+        $t('frameleaf_analytics_metadata'),
+      )}
       <AnalyticsChart
         title={$t('frameleaf_analytics_metadata_title')}
         horizontal
@@ -399,8 +515,15 @@
   </div>
 
   <div class="card fl-continuous-corners">
-    <section class="library-views">
-      {@render cardHeading($t('frameleaf_analytics_views'), $t('frameleaf_analytics_views_caption'))}
+    <section class="library-views" id="an-albums">
+      {@render cardHeading(
+        $t('frameleaf_analytics_views_answer', {
+          values: { count: number(timelineCount), view: $t('frameleaf_analytics_view_timeline') },
+        }),
+        $t('frameleaf_analytics_views_caption'),
+        undefined,
+        $t('frameleaf_analytics_views'),
+      )}
       <AnalyticsDataTable table={table('views')} />
       <dl class="stat-strip">
         {#each report.views as row (row.view)}
@@ -454,7 +577,7 @@
   </div>
 
   <!-- FL-363: "Technical details", closed until asked for; exact bytes stay in the export. -->
-  <details class="card technical fl-continuous-corners">
+  <details class="card technical fl-continuous-corners" id="an-technical">
     <summary>
       <span>{$t('frameleaf_analytics_under_the_hood')}</span>
       <small>{$t('frameleaf_analytics_under_the_hood_caption')}</small>
@@ -731,10 +854,72 @@
   .card-heading {
     margin-bottom: 12px;
   }
+  /* Sticky section links (approved design, 2026-11-04). */
+  .jump {
+    position: sticky;
+    top: -1px;
+    z-index: 3;
+    display: flex;
+    gap: 4px;
+    margin: 0 0 18px;
+    padding: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    border: 1px solid var(--fl-material-edge);
+    border-radius: var(--fl-radius-pill);
+    background: var(--fl-material);
+    backdrop-filter: var(--fl-material-blur);
+    box-shadow: var(--fl-shadow-1);
+  }
+  .jump:empty {
+    display: none;
+  }
+  .jump::-webkit-scrollbar {
+    display: none;
+  }
+  .jump a {
+    flex: none;
+    padding: 6px 12px;
+    border-radius: var(--fl-radius-pill);
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+    font-weight: 500;
+    text-decoration: none;
+    white-space: nowrap;
+    transition:
+      background var(--fl-motion-fast) var(--fl-ease),
+      color var(--fl-motion-fast) var(--fl-ease);
+  }
+  .jump a:hover {
+    color: var(--fl-text);
+    background: var(--fl-raised);
+  }
+  .jump a[aria-current='true'] {
+    color: var(--fl-accent-text);
+    background: var(--fl-accent);
+  }
+  .analytics :global([id^='an-']) {
+    scroll-margin-top: 72px;
+  }
   .card-heading h2 {
     font-size: 14px;
     font-weight: 550;
     letter-spacing: -0.15px;
+  }
+  /* A kicker over an answer, as the panels above (AnalyticsPanel `.an-kicker`). */
+  .card-heading .kicker {
+    margin: 0 0 6px;
+    color: var(--fl-accent);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .card-heading:has(.kicker) h2 {
+    font-size: 19px;
+    font-weight: 650;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
   }
   .card-heading p {
     max-width: 620px;

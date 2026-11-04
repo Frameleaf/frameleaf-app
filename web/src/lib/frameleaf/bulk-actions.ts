@@ -415,7 +415,7 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
       // everywhere until the session is unlocked, and the Locked view lists it.
       id: 'mark-sensitive',
       labelKey: 'frameleaf_bulk_mark_sensitive',
-      icon: 'mdiShieldLockOutline',
+      icon: 'mdiLockOutline',
       group: 'visibility',
       available: live && has && (unknown || any((asset) => !asset.isLocked)),
     },
@@ -425,7 +425,7 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
       // lists has no lock to remove, so it alone never offers it.
       id: 'unmark-sensitive',
       labelKey: 'frameleaf_bulk_unmark_sensitive',
-      icon: 'mdiShieldOutline',
+      icon: 'mdiLockOpenVariantOutline',
       group: 'visibility',
       undoable: true,
       available: !readOnly && has && (locked || live) && (unknown || any((asset) => !!asset.isLocked)),

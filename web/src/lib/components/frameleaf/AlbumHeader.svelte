@@ -228,11 +228,19 @@
     [840, ['links', 'map', 'movie', 'download']],
     [1060, ['links', 'map']],
   ];
+  /**
+   * A header this wide puts its actions beside the title, so the photos start higher; the title keeps
+   * about WIDE_TITLE px and the actions fold by what is left (approved design, 2026-11-04).
+   */
+  const WIDE = 1180;
+  const WIDE_TITLE = 560;
+  const wide = $derived(!compact && headerWidth >= WIDE);
   const foldedActions = $derived.by((): Set<FoldableAction> => {
     if (folded) {
       return new Set(['links', 'map', 'slideshow', 'movie', 'download', 'activity']);
     }
-    return new Set(headerWidth > 0 ? (WIDTH_FOLDS.find(([max]) => headerWidth <= max)?.[1] ?? []) : []);
+    const room = wide ? headerWidth - WIDE_TITLE : headerWidth;
+    return new Set(headerWidth > 0 ? (WIDTH_FOLDS.find(([max]) => room <= max)?.[1] ?? []) : []);
   });
   const inRow = (action: FoldableAction) => !foldedActions.has(action);
   /** Another collection, opened in Boards whatever its own scope (a "both" collection would open in Library). */
@@ -505,7 +513,7 @@
   const openLinks = () => openShare('links');
 </script>
 
-<header class="album-header" aria-label={kindLabel} bind:clientWidth={headerWidth}>
+<header class="album-header" class:wide aria-label={kindLabel} bind:clientWidth={headerWidth}>
   {#if compact && uploadScope === LibraryScope.Design}
     <!-- Boards on a phone: the rail is the "Collections and filters" sheet (prototype screen 22). -->
     <button
@@ -1363,6 +1371,24 @@
     /* 8px between buttons, 12px between the rows they wrap into. */
     gap: var(--fl-space-3) var(--fl-space-2);
     flex-wrap: wrap;
+  }
+  /* Wide headers: the actions sit beside the title instead of on a row of their own, so the photos
+     start about 50px higher. */
+  .album-header.wide {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    column-gap: var(--fl-space-6);
+  }
+  .album-header.wide > :not(.main, .actions) {
+    grid-column: 1 / -1;
+  }
+  .album-header.wide > .actions {
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+  }
+  .album-header.wide > .actions .spacer {
+    display: none;
   }
   .action,
   .trigger-content {

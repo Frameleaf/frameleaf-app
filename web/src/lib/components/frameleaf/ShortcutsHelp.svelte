@@ -32,6 +32,7 @@
   const groups = $derived([
     { id: 'general', title: $t('general'), items: shortcuts.general },
     { id: 'actions', title: $t('actions'), items: shortcuts.actions },
+    { id: 'albums', title: $t('frameleaf_shortcuts_albums'), items: shortcuts.albums },
   ]);
 
   $effect(() => {

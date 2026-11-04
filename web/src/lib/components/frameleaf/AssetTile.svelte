@@ -493,6 +493,16 @@
         quickActions.onContextMenu(event);
       }
     }}
+    onkeydown={(event) => {
+      // Shift+F10 opens the same menu under the photo on every platform; a Mac sends no contextmenu for it.
+      if (event.key === 'F10' && event.shiftKey && quickActions?.onContextMenu) {
+        event.preventDefault();
+        const box = event.currentTarget.getBoundingClientRect();
+        quickActions.onContextMenu(
+          new MouseEvent('contextmenu', { clientX: box.left + box.width / 2, clientY: box.top + box.height / 2 }),
+        );
+      }
+    }}
   >
     <span class="fl-tile-media">
       {#if imageRequested}

@@ -31,6 +31,9 @@
     /** In custom order (FL-52), another item of the same group may be dropped here to go just before this one. */
     acceptsReorder?: boolean;
     onReorderDrop?: (albumId: string) => void;
+    /** A plain album takes another album dropped on it, which then goes inside it (approved design, 2026-11-04). */
+    acceptsNest?: boolean;
+    onNestDrop?: (albumId: string) => void;
     actions?: Snippet;
     /** Where the tile opens. Defaults to the album view; a shared space opens its own page. */
     href?: string;
@@ -48,6 +51,8 @@
     onDragEnd,
     acceptsReorder = false,
     onReorderDrop,
+    acceptsNest = false,
+    onNestDrop,
     actions,
     href: hrefOverride,
     moved = false,
@@ -96,7 +101,7 @@
   };
 
   const handleDragOver = (event: DragEvent) => {
-    if (!(acceptsReorder && isAlbumDrag(event))) {
+    if (!((acceptsReorder || acceptsNest) && isAlbumDrag(event))) {
       return;
     }
     // Handled here, so the collection shelf around the tile does not take it as a move into the collection.
@@ -110,12 +115,16 @@
   const handleDrop = (event: DragEvent) => {
     over = false;
     const albumId = getAlbumDragData(event);
-    if (!(acceptsReorder && albumId)) {
+    if (!((acceptsReorder || acceptsNest) && albumId)) {
       return;
     }
     event.preventDefault();
     event.stopPropagation();
-    onReorderDrop?.(albumId);
+    if (acceptsReorder) {
+      onReorderDrop?.(albumId);
+    } else {
+      onNestDrop?.(albumId);
+    }
   };
 </script>
 
@@ -123,6 +132,7 @@
   class="tile {layout}"
   class:dragging
   class:drop-before={over && acceptsReorder}
+  class:drop-into={over && acceptsNest && !acceptsReorder}
   class:moved
   aria-label={name}
   {draggable}
@@ -225,7 +235,8 @@
     cursor: grab;
   }
   /* The item a custom-order drag lands before (FL-52), marked like the prototype's drop target (collections.css:657-660). */
-  .tile.drop-before {
+  .tile.drop-before,
+  .tile.drop-into {
     box-shadow: 0 0 0 2px var(--fl-accent);
     background: color-mix(in srgb, var(--fl-accent), transparent 90%);
   }

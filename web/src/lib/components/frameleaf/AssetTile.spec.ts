@@ -247,6 +247,14 @@ describe('AssetTile selection and touch', () => {
     expect(onContextMenu).toHaveBeenCalledOnce();
     expect(event.defaultPrevented).toBe(true);
   });
+
+  it('opens the same menu from Shift+F10, under the photo, where a Mac sends no contextmenu', async () => {
+    const onContextMenu = vi.fn();
+    render(AssetTile, { asset: asset(), width: 200, height: 133, quickActions: { onContextMenu } });
+    await fireEvent.keyDown(screen.getByRole('button', { name: /A photo/ }), { key: 'F10', shiftKey: true });
+    expect(onContextMenu).toHaveBeenCalledOnce();
+    expect(onContextMenu.mock.calls[0][0]).toBeInstanceOf(MouseEvent);
+  });
 });
 
 describe('AssetTile date labels', () => {

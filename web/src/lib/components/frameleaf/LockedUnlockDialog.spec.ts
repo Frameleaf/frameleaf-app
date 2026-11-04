@@ -37,6 +37,13 @@ beforeEach(() => {
 });
 
 describe('LockedUnlockDialog', () => {
+  it('puts focus on the PIN as soon as it appears', async () => {
+    vi.mocked(getAuthStatus).mockResolvedValue({ pinCode: true, isElevated: false, password: true } as never);
+    render(LockedUnlockDialog, { open: true, onUnlocked: vi.fn() });
+    const input = await screen.findByLabelText<HTMLInputElement>(en.frameleaf_locked_dialog_pin_label);
+    await waitFor(() => expect(input).toHaveFocus());
+  });
+
   it('keeps the dialog open after the SDK Wrong PIN 400 and allows a second attempt', async () => {
     const sdk = await vi.importActual<typeof import('@frameleaf/sdk')>('@frameleaf/sdk');
     vi.mocked(getAuthStatus).mockResolvedValue({ pinCode: true, isElevated: false, password: true } as never);

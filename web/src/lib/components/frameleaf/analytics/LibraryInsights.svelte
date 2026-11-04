@@ -58,11 +58,13 @@
     mdiCalendarCheckOutline,
     mdiChartLine,
     mdiClockTimeEightOutline,
+    mdiEyeOutline,
     mdiFileVideoOutline,
     mdiFire,
     mdiHdr,
     mdiLayersTripleOutline,
     mdiMotionPlayOutline,
+    mdiPlayBoxMultipleOutline,
     mdiRuler,
     mdiTimerOutline,
     mdiCameraIris,
@@ -177,6 +179,16 @@
   const records = $derived(insights.records);
   const yearsAgo = (date: string) => Math.max(0, throughYear - Number(date.slice(0, 4)));
   const prints = $derived(printRecords(report.summary.photos));
+  const lookSeconds = $derived(report.summary.photos * 3);
+  const watchSeconds = $derived(Math.round(records.videoHours * 3600));
+  /** "2 days 5 hours", or "7 hours" under a day. */
+  const timeSpan = (seconds: number) => {
+    const days = Math.floor(seconds / 86_400);
+    const hours = Math.floor((seconds % 86_400) / 3600);
+    return days
+      ? $t('frameleaf_analytics_span_days_hours', { values: { days, hours } })
+      : $t('frameleaf_analytics_span_hours', { values: { hours } });
+  };
 
   // ── Storage ──
   const host = $derived(report.host);
@@ -646,6 +658,23 @@
             })}</strong
           >
           <small>{$t('frameleaf_analytics_record_line_detail')}</small>
+        </div>
+      {/if}
+      <!-- Time it would take (approved design, 2026-11-04): every photo for 3 seconds, every video back to back. -->
+      {#if lookSeconds >= 3600}
+        <div class="an-record">
+          <Icon icon={mdiEyeOutline} size="20" aria-hidden />
+          <span>{$t('frameleaf_analytics_record_look')}</span>
+          <strong>{timeSpan(lookSeconds)}</strong>
+          <small>{$t('frameleaf_analytics_record_look_detail')}</small>
+        </div>
+      {/if}
+      {#if watchSeconds >= 3600}
+        <div class="an-record">
+          <Icon icon={mdiPlayBoxMultipleOutline} size="20" aria-hidden />
+          <span>{$t('frameleaf_analytics_record_watch')}</span>
+          <strong>{timeSpan(watchSeconds)}</strong>
+          <small>{$t('frameleaf_analytics_record_watch_detail')}</small>
         </div>
       {/if}
     </div>

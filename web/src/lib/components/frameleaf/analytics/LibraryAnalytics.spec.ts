@@ -122,6 +122,20 @@ describe('LibraryAnalytics', () => {
     expect(screen.getByText(/^Whole drive: /)).toBeInTheDocument();
   });
 
+  it('answers each lower card in its title under a kicker, and links its sections from a bar', async () => {
+    const report = analyticsReportFixture();
+    render(LibraryAnalytics, { report });
+    const added = report.series.reduce((total, row) => total + row.photos + row.videos, 0);
+    const each = Math.round(added / report.series.length).toLocaleString('en');
+    expect(
+      screen.getByRole('heading', { level: 2, name: new RegExp(`About ${each} new photos and videos a`) }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: /^Dates for \d+%, places for \d+%$/ })).toBeInTheDocument();
+    const bar = await screen.findByRole('navigation', { name: 'Sections of this page' });
+    expect(await within(bar).findByRole('link', { name: 'Overview' })).toHaveAttribute('href', '#an-overview');
+    expect(within(bar).getByRole('link', { name: 'Activity' })).toHaveAttribute('href', '#an-activity');
+  });
+
   it('pluralises photo and video counts', () => {
     render(LibraryAnalytics, { report: analyticsReportFixture() });
     expect(screen.getByText('5 photos · 1 video')).toBeInTheDocument();

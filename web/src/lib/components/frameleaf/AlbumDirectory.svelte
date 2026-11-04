@@ -320,6 +320,18 @@
       void saveOrder(album, group.parentId, ids, group.ids);
     }
   };
+  /**
+   * Outside custom order a plain album takes an album dropped on it, which goes inside it (albums nest
+   * in albums, approved design 2026-11-04): never itself, a smart album, or one already inside the dragged one.
+   */
+  const acceptsNest = (target: AlbumResponseDto) =>
+    !!dragged &&
+    !acceptsReorder(target) &&
+    target.kind === AlbumKind.Album &&
+    !target.isSmart &&
+    dragged.id !== target.id &&
+    canDropOnCollection(dragged, target, currentUserId) &&
+    albumAncestors(tree, target).every(({ id }) => id !== dragged?.id);
   /** In custom order everything can be dragged to arrange it; otherwise only an owner's album, to move it. */
   const canDrag = (album: AlbumResponseDto) =>
     reorderable || (album.kind !== AlbumKind.Space && isOwner(album, currentUserId));
@@ -529,10 +541,12 @@
             draggable={canDrag(album)}
             dragging={dragged?.id === album.id}
             acceptsReorder={acceptsReorder(album)}
+            acceptsNest={acceptsNest(album)}
             moved={movedId === album.id}
             onDragStart={startDrag}
             onDragEnd={endDrag}
             onReorderDrop={(albumId) => dropBefore(albumId, album)}
+            onNestDrop={(albumId) => void dropOnCollection(albumId, album)}
           >
             {#snippet actions()}{@render menu(album)}{/snippet}
           </AlbumTile>
@@ -568,10 +582,12 @@
             draggable={canDrag(album)}
             dragging={dragged?.id === album.id}
             acceptsReorder={acceptsReorder(album)}
+            acceptsNest={acceptsNest(album)}
             moved={movedId === album.id}
             onDragStart={startDrag}
             onDragEnd={endDrag}
             onReorderDrop={(albumId) => dropBefore(albumId, album)}
+            onNestDrop={(albumId) => void dropOnCollection(albumId, album)}
           >
             {#snippet actions()}{@render menu(album)}{/snippet}
           </AlbumTile>
