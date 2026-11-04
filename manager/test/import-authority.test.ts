@@ -771,7 +771,7 @@ test('common review reports the source and space without exposing the private bu
     assert.equal(candidate, image);
     const staged = await readFile(join(root, 'prepare.json'));
     assert.deepEqual(JSON.parse(staged.toString('utf8')), {
-      operationId: operation.id, destinationId: request.destinationId, source: request.observed.source,
+      operationId: operation.id, destinationId: authority.destinationId, source: request.observed.source,
       snapshotPath: request.snapshotPath, format: 'frameleaf-inspect-library-import', version: 1, adapter: 'photoprism-sqlite',
     });
     assert.equal(authority.preparationSha256, createHash('sha256').update(staged).digest('hex'));
@@ -779,11 +779,14 @@ test('common review reports the source and space without exposing the private bu
     return inventory;
   };
   await assert.rejects(
-    f.operations.inspectCommonCapture(randomUUID(), request.destinationId, input.tag),
+    f.operations.inspectCommonCapture(randomUUID(), input.tag),
     /invalid_import_authority/,
   );
-  assert.deepEqual(await f.operations.inspectCommonCapture(operation.id, request.destinationId, input.tag), inventory);
-  assert.equal(fenceChecks, 2);
+  const inspected = await f.operations.inspectCommonCapture(operation.id, input.tag);
+  assert.deepEqual(inspected.inventory, inventory);
+  assert.equal(f.store.history().find(({ id }) => id === operation.id)?.receipts['common-inspection-destination'], inspected.destinationId);
+  assert.deepEqual(await f.operations.inspectCommonCapture(operation.id, input.tag), inspected);
+  assert.equal(fenceChecks, 4);
   fenceChecks = 0;
   const prepareReview = f.operations.prepareCommonReview;
   let called = false;
@@ -792,6 +795,7 @@ test('common review reports the source and space without exposing the private bu
     assert.equal(port, 9443);
     assert.deepEqual(prepared.fence, fence);
     assert.equal(prepared.request.snapshotPath, request.snapshotPath);
+    assert.equal(prepared.request.destinationId, inspected.destinationId);
     assert.deepEqual(prepared.request.observed, {
       source: request.observed.source, singleOwner: { sourceId: 'owner', confirmEntireLibrary: true },
       materializedAlbums: {}, ownerEmail: 'owner@example.test',
@@ -804,10 +808,19 @@ test('common review reports the source and space without exposing the private bu
     assert.ok(prepared.bootstrapAdminId);
     throw new Error('fixture captured request');
   };
-  await assert.rejects(f.operations.preparePhotoprismCopyReview(input, operation.id, request.destinationId, {
-    sourceOwnerId: 'owner', ownerEmail: 'owner@example.test', confirmEntireLibrary: true,
+  const choice = {
+    sourceOwnerId: 'owner', ownerEmail: 'owner@example.test', confirmEntireLibrary: true as const,
     materializedAlbums: {}, approvedLossCodes: ['PHOTOPRISM_SHARING_RESTRICTED'],
-  }, 9443), /fixture captured request/);
+  };
+  await assert.rejects(
+    f.operations.preparePhotoprismCopyReview(input, operation.id, randomUUID(), choice, 9443),
+    /invalid_import_authority/,
+  );
+  assert.equal(called, false);
+  await assert.rejects(
+    f.operations.preparePhotoprismCopyReview(input, operation.id, inspected.destinationId, choice, 9443),
+    /fixture captured request/,
+  );
   assert(called);
   f.operations.prepareCommonReview = prepareReview;
 

@@ -399,7 +399,7 @@ export class Operations {
     const path = relative(stagingRoot, snapshot.snapshotPath);
     if (!path || path === '..' || path.startsWith('../') || isAbsolute(path))
       throw new Refusal('invalid_import_authority');
-    return { ...snapshot, snapshotPath: `${IMPORT_PREPARATION_TARGET}/${path}` };
+    return { ...snapshot, operation: captured, snapshotPath: `${IMPORT_PREPARATION_TARGET}/${path}` };
   }
   private async importPreparationAuthority(
     seal: Omit<ImportPreparationSeal, 'preparationSha256'>,
@@ -417,10 +417,13 @@ export class Operations {
     };
   }
   /** Private source facts for review, before any owner or storage decisions are applied. */
-  async inspectCommonCapture(operationId: string, destinationId: string, tag: string) {
-    const { fence, source, snapshotPath } = this.capturedImport(operationId);
-    if (source.kind !== 'photoprism' || !z.uuid().safeParse(destinationId).success)
+  async inspectCommonCapture(operationId: string, tag: string) {
+    const { operation, fence, source, snapshotPath } = this.capturedImport(operationId);
+    const recorded = operation.receipts['common-inspection-destination'];
+    const destination = z.uuid().safeParse(recorded ?? randomUUID());
+    if (source.kind !== 'photoprism' || !destination.success)
       throw new Refusal('invalid_import_authority');
+    const destinationId = destination.data;
     this.executing.add(operationId);
     try {
       const platform = (await this.docker.compatibility()).platform;
@@ -433,7 +436,12 @@ export class Operations {
       const authority = await this.importPreparationAuthority(seal, fence, {
         ...seal, snapshotPath, format: 'frameleaf-inspect-library-import', version: 1, adapter: 'photoprism-sqlite',
       });
-      return await this.docker.inspectImportSource(this.directory(), image, authority);
+      const inventory = await this.docker.inspectImportSource(this.directory(), image, authority);
+      if (recorded === undefined) {
+        operation.receipts['common-inspection-destination'] = destinationId;
+        this.store.save(operation);
+      }
+      return { destinationId, inventory };
     } finally {
       this.executing.delete(operationId);
     }
@@ -452,10 +460,11 @@ export class Operations {
     },
     managerPort?: number,
   ) {
-    const { fence, source, originalsPath, snapshotPath } = this.capturedImport(operationId);
+    const { operation, fence, source, originalsPath, snapshotPath } = this.capturedImport(operationId);
     if (
       source.kind !== 'photoprism' || !input.mediaPath || input.sourceId !== fence.id ||
-      !z.uuid().safeParse(destinationId).success || !choice.confirmEntireLibrary ||
+      !z.uuid().safeParse(destinationId).success || destinationId !== operation.receipts['common-inspection-destination'] ||
+      !choice.confirmEntireLibrary ||
       !z.email().max(254).safeParse(choice.ownerEmail).success
     ) throw new Refusal('invalid_import_authority');
     await storagePath(input.mediaPath, this.roots, 0);
@@ -514,6 +523,7 @@ export class Operations {
     const snapshot = this.capturedImport(operationId);
     if (
       request.snapshotPath !== snapshot.snapshotPath ||
+      (request.observed.singleOwner !== undefined && destinationId !== snapshot.operation.receipts['common-inspection-destination']) ||
       digest(snapshot.fence) !== digest(fence) || digest(snapshot.source) !== digest(source)
     ) throw new Refusal('invalid_import_authority');
     this.executing.add(operationId);
