@@ -76,6 +76,8 @@ export type RunRead = RunCounts & {
   lastStage: string | null;
   reasons: RunReason[];
   noDispatchBacklog: boolean;
+  /** FL-1177: selected items an import's first setup still holds back (the file check, or a paused setup). */
+  held: number;
 };
 export type RunItemRead = {
   id: string;
@@ -133,13 +135,13 @@ const initialCandidates = (filter: RawBuilder<boolean>, scope: RawBuilder<unknow
 const collapsedInitialRows = (filter: RawBuilder<boolean>) => sql`
   select "runId",null::text "rootItemKey",null::text stage,state,null::timestamptz "availableAt",null::int attempt,
     null::int "retryBaseAttempt",null::text "dependencyReason",paused,null::timestamptz "meaningfulAt",null::text "parentState",
-    count(*) weight,("rootItemKey" is not null) fast
+    count(*) weight,("rootItemKey" is not null) fast,false held
   from (${initialCandidates(filter)}) initial_candidates where "simpleInitial"
   group by "runId",state,paused,("rootItemKey" is not null) offset 0
   ) union all (
   select "runId",case when taken_back then null else "rootItemKey" end,case when taken_back then null else stage end,state,
     "availableAt",attempt,"retryBaseAttempt","dependencyReason",paused,"meaningfulAt","parentState",
-    case when taken_back then -1 else 1 end::bigint weight,taken_back fast
+    case when taken_back then -1 else 1 end::bigint weight,taken_back fast,false held
   from (${initialCandidates(
     filter,
     sql`join shared_roots on shared_roots."runId"=i."runId" and shared_roots."rootItemKey"=i."rootItemKey"`,
@@ -168,7 +170,7 @@ const stagesFor = (
     group by "runId","rootItemKey" having count(*) > 1)`
     : sql``
 }
-  select "runId","rootItemKey",stage,state,"availableAt","dependencyReason","meaningfulAt",${collapse ? sql`weight,fast,` : sql``}
+  select "runId","rootItemKey",stage,state,"availableAt","dependencyReason","meaningfulAt",held,${collapse ? sql`weight,fast,` : sql``}
   case
     when state = 'needs_attention' then 'needsAttention'
     when state not in ('pending','waiting') then state
@@ -182,7 +184,9 @@ const stagesFor = (
   select i."runId", i."rootItemKey", i.stage, ${selectionItemState} state, j."availableAt", j.attempt, j."retryBaseAttempt",
   case when j."dependencyReason"='destination-capacity' then 'destination-unavailable' else j."dependencyReason" end "dependencyReason", q.paused,
   greatest(j."progressAt", j."startedAt", j."finishedAt") "meaningfulAt",
-  p.state "parentState"${collapse ? sql`,1::bigint weight,false fast` : sql``}
+  p.state "parentState"${collapse ? sql`,1::bigint weight,false fast` : sql``},
+  -- FL-1177: a frozen stage not yet released (an import's first setup holds it) has nothing to dispatch.
+  coalesce(snapshot."sourceKind"='frozen' and snapshot.state='enumerating' and j.id is null and i.state='pending',false) held
   ${selectionItemContext(runScope, materializedInitialEntitlementContext)}
   left join job_queue q on q.name = coalesce(j.queue, i.queue)
   left join lateral (select parent.state from job parent where j."parentId" is not null
@@ -192,7 +196,7 @@ const stagesFor = (
   ${
     collapse
       ? collapsedInitialRows(filter)
-      : sql`select "runId","rootItemKey",stage,state,"availableAt",attempt,"retryBaseAttempt","dependencyReason",paused,"meaningfulAt","parentState"
+      : sql`select "runId","rootItemKey",stage,state,"availableAt",attempt,"retryBaseAttempt","dependencyReason",paused,"meaningfulAt","parentState",false held
   from (${initialCandidates(filter)}) initial_candidates where "simpleInitial" offset 0`
   }
   )) effective`;
@@ -234,6 +238,7 @@ const workerAvailable = sql<boolean>`exists (
 )`;
 
 type Aggregate = Omit<RunRead, keyof RunCounts | 'state' | 'reasons' | 'noDispatchBacklog'> & {
+  setupPaused?: boolean;
   counts: RunCounts;
   readyStages: number;
   unfinishedStages: number;
@@ -311,7 +316,8 @@ export const runState = (
     | 'readyStages'
     | 'librarySourceAttention'
     | 'managerSetupPending'
-  >,
+  > &
+    Partial<Pick<Aggregate, 'held' | 'setupPaused'>>,
 ): RunState => {
   const stages = row.stageTotals;
   if (row.librarySourceAttention && stages.active === 0) return 'needs_attention';
@@ -328,6 +334,8 @@ export const runState = (
     return 'running';
   }
   if (row.managerSetupPending) return 'blocked';
+  // FL-1177: what a paused first setup holds back is paused, not waiting its turn.
+  if (row.setupPaused && row.held) return 'paused';
   if (stages.paused > 0 && stages.waiting + stages.retrying + stages.delayed === 0) {
     return 'paused';
   }
@@ -352,6 +360,14 @@ export const runState = (
   return 'running';
 };
 
+/**
+ * FL-1177: the stages a Manager import parked after its file check because their machine learning is off. The run
+ * settles without them, so its summary and items leave them out; switching machine learning on releases them.
+ */
+const parkedStages = (selection: RawBuilder<unknown>) => sql<string[]>`coalesce(case
+  when jsonb_typeof(${selection} #> '{managerSetup,parkedStages}') = 'array'
+  then array(select jsonb_array_elements_text(${selection} #> '{managerSetup,parkedStages}')) end, '{}'::text[])`;
+
 /** A library scan that failed or was cancelled: nothing more will happen in it, so it lists with the finished runs (FL-588). */
 const librarySourceAttention = sql<boolean>`exists (select 1 from job_selection_run m join job_selection s on s.id = m."selectionId"
   where m."runId" = r.id and s."sourceKind" = 'library-initial' and s.state = 'needs_attention')`;
@@ -370,11 +386,18 @@ export async function listRuns(db: Kysely<any>, take: number, skip: number, runI
           and r.selection->'managerSetup'->>'installation' ~ '^[a-f0-9]{12}$'
           and nullif(r.selection->'managerSetup'->>'operationId','') is not null
           and r.selection->'managerSetup' ? 'startedAt'
-          and r.selection->'managerSetup'->>'startedAt' is null,false) "managerSetupPending"
+          and r.selection->'managerSetup'->>'startedAt' is null,false) "managerSetupPending",
+        coalesce(r.selection #> '{managerSetup,paused}' = 'true'::jsonb, false) "setupPaused",
+        ${parkedStages(sql`r.selection`)} "parkedStages"
       from job_run r
       ${runId === undefined ? sql`` : sql`where r.id = ${runId}::uuid`}
       order by "sortsFinished", r."createdAt" desc, r.id desc limit ${take} offset ${skip}
-    ), stages as (${stagesFor(sql<boolean>`i."runId" in (select id from runs)`, sql<string>`select id from runs`, true)}), run_stages as (
+    ), stages as (${stagesFor(
+      sql<boolean>`i."runId" in (select id from runs)
+        and not exists (select 1 from runs parked where parked.id = i."runId" and i.stage = any(parked."parkedStages"))`,
+      sql<string>`select id from runs`,
+      true,
+    )}), run_stages as (
       select s.* from stages s
     ), selected as (
       (select "runId", "rootItemKey", ${selectedOutcome(sql<number>`priority`)} outcome, 1::bigint weight
@@ -395,8 +418,10 @@ export async function listRuns(db: Kysely<any>, take: number, skip: number, runI
         array_remove(array[${sql.join([...DEPENDENCY_REASONS].sort().map((reason) => sql`case when bool_or(s.state in ('pending','waiting') and s."dependencyReason"=${reason}) then ${reason}::text end`))}],null) "dependencyReasons",
         bool_or(s."dependencyReason" is not null and s.state in ('pending','waiting')) "dependencyUnavailable",
         bool_or(s.outcome = 'blocked' and s.state in ('pending','waiting')) "dependencyWaiting",
-        coalesce(sum(s.weight) filter (where s.outcome in ('waiting','retrying') and coalesce(s."availableAt", now()) <= now()), 0) ready,
-        coalesce(sum(s.weight) filter (where s.outcome = 'active'), 0) active
+        coalesce(sum(s.weight) filter (where s.outcome in ('waiting','retrying') and coalesce(s."availableAt", now()) <= now()
+          and not s.held), 0) ready,
+        coalesce(sum(s.weight) filter (where s.outcome = 'active'), 0) active,
+        count(distinct s."rootItemKey") filter (where s.held) held
       from run_stages s group by s."runId"
     ), latest as (
       select distinct on ("runId") "runId", stage, "meaningfulAt" from run_stages
@@ -404,7 +429,7 @@ export async function listRuns(db: Kysely<any>, take: number, skip: number, runI
     ) select r.*, coalesce(items.totals, ${JSON.stringify(Object.fromEntries(['total', ...RUN_OUTCOMES].map((k) => [k, 0])))}::text::jsonb) counts,
       coalesce(stage.totals, ${JSON.stringify(Object.fromEntries(['total', ...RUN_OUTCOMES].map((k) => [k, 0])))}::text::jsonb) "stageTotals",
       coalesce(stage.unfinished, 0)::int "unfinishedStages", coalesce(stage."dependencyWaiting", false) "dependencyWaiting",
-      coalesce(stage.ready, 0)::int "readyStages",
+      coalesce(stage.ready, 0)::int "readyStages", coalesce(stage.held, 0)::int held,
       coalesce(stage."dependencyUnavailable", false) "dependencyUnavailable", stage."dependencyReasons",
       coalesce(stage."dependencyFailed", false) "dependencyFailed",
       latest."meaningfulAt" "lastProgressAt", latest.stage "lastStage", ${workerAvailable} "workerAvailable",
@@ -429,6 +454,7 @@ export async function listRuns(db: Kysely<any>, take: number, skip: number, runI
       lastStage: row.lastStage,
       reasons: runReasons(row),
       noDispatchBacklog: row.noDispatchBacklog,
+      held: row.held,
     };
   });
 }
@@ -443,10 +469,15 @@ export async function listRunItems(
   if (exists.length === 0) {
     return;
   }
+  // An array expression, not `<> all (subquery)`, which would compare each stage with the whole array.
+  const parked = sql<
+    string[]
+  >`coalesce((select ${parkedStages(sql`r.selection`)} from job_run r where r.id = ${runId}::uuid), '{}'::text[])`;
   const { rows } = await sql<RunItemRead>`with roots as materialized (
       select distinct "rootItemKey" from job_run_item where "runId" = ${runId}::uuid and "rootItemKey" is not null
+        and stage <> all(${parked})
       order by "rootItemKey" limit ${take} offset ${skip}
-    ), stages as (${stagesFor(sql<boolean>`i."runId" = ${runId}::uuid and i."rootItemKey" in (select "rootItemKey" from roots)`, sql<string>`${runId}::uuid`)}), selected as (
+    ), stages as (${stagesFor(sql<boolean>`i."runId" = ${runId}::uuid and i."rootItemKey" in (select "rootItemKey" from roots) and i.stage <> all(${parked})`, sql<string>`${runId}::uuid`)}), selected as (
     select s."rootItemKey", ${selectedOutcome()} outcome, ${counts('s')} "stageTotals",
       max(s."meaningfulAt") "lastProgressAt", bool_or(s.state = 'blocked') "dependencyFailed",
       array_agg(distinct s."dependencyReason") filter (where s.state in ('pending','waiting') and s."dependencyReason" = any(${[...DEPENDENCY_REASONS]}::text[])) "dependencyReasons",

@@ -26,6 +26,15 @@ export const runOutcomeKey = (state: DurableJobOutcome): Translations =>
   `frameleaf_job_runs_outcome_${state === 'needsAttention' ? 'needs_attention' : state}` as Translations;
 export const runReasonKey = (reason: DurableJobReason): Translations =>
   `frameleaf_job_runs_reason_${reason}` as Translations;
+/** FL-1177: a Frameleaf Manager import's run. It has no queue of its own: its work runs on the queues it feeds. */
+export const isImportRunKind = (kind: string) => kind === 'immich-import-derived' || kind === 'library-import-derived';
+/** What a run is called: its queue's name, a Manager import, or plain server processing. */
+export const runTitleKey = (kind: string, queueKey: string | undefined, fallback: Translations): Translations =>
+  queueKey
+    ? (`frameleaf_jobs_queue_${queueKey}` as Translations)
+    : isImportRunKind(kind)
+      ? 'frameleaf_job_runs_kind_import'
+      : fallback;
 /** A run needs attention only when its library scan failed or was cancelled: nothing more will run in it (FL-588). */
 export const isRunSettled = (run: Pick<DurableJobRun, 'state'>) =>
   ['completed', 'completed_with_errors', 'cancelled', 'needs_attention'].includes(run.state);

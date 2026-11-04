@@ -1,7 +1,7 @@
 import type { DurableJobRun, DurableJobState, DurableQueueRun, DurableRunningJobs, QueueName } from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 import { ACTIVITY_STAGE_KEYS } from '$lib/frameleaf/activity';
-import { isRunSettled, runStateKey, settledItems } from '$lib/frameleaf/durable-runs';
+import { isImportRunKind, isRunSettled, runStateKey, settledItems } from '$lib/frameleaf/durable-runs';
 import { JOB_QUEUES } from '$lib/frameleaf/job-queues';
 
 /**
@@ -125,9 +125,35 @@ const fromQueue = (queue: DurableQueueRun): BackgroundWorkCard | null => {
   };
 };
 
+/**
+ * FL-1177: an import's released work is on the cards of the queues it feeds (Thumbnails, Face detection…), so its own
+ * card counts only the photos its first setup still holds back: waiting for the file check, or a paused setup.
+ */
+const fromImportRun = (run: DurableJobRun): BackgroundWorkCard | null => {
+  const held = run.held ?? 0;
+  if (held <= 0) {
+    return null;
+  }
+  const stage: BackgroundWorkStage = run.state === 'paused' ? 'paused' : 'queued';
+  return {
+    id: `run:${run.id}`,
+    queueName: run.kind as QueueName,
+    stage,
+    statusKey: stage === 'paused' ? ACTIVITY_STAGE_KEYS.paused : 'frameleaf_activity_bg_import_check',
+    stuck: false,
+    reason: null,
+    waiting: held,
+    running: 0,
+    progress: null,
+  };
+};
+
 const fromRun = (run: DurableJobRun): BackgroundWorkCard | null => {
   if (isRunSettled(run)) {
     return null;
+  }
+  if (isImportRunKind(run.kind)) {
+    return fromImportRun(run);
   }
   const running = run.active;
   const waiting = run.waiting + run.delayed + run.paused + run.blocked + run.retrying;

@@ -12,6 +12,7 @@ import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { goto } from '$app/navigation';
 import en from '$i18n/en.json';
+import { durableRun } from '$lib/__mocks__/durable-runs.mock';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import ActivityView from '$lib/components/frameleaf/ActivityView.svelte';
 import { activitySession } from '$lib/frameleaf/activity-session.svelte';
@@ -451,6 +452,39 @@ describe('Frameleaf Activity page', () => {
       expect(screen.queryByText(/read-only/i)).not.toBeInTheDocument();
       expect(screen.queryByRole('heading', { name: 'Nothing in progress' })).not.toBeInTheDocument();
       expect(screen.queryByText(/stage|prerequisite/i)).not.toBeInTheDocument();
+    } finally {
+      runningJobsSession.summary = { operations: [], memoryExports: [], queues: [], canManageQueues: false };
+    }
+  });
+
+  it('names a held import and opens Background work, never a queue page it does not have (FL-1177)', async () => {
+    sdkMock.getRunningJobs.mockResolvedValue({
+      operations: [],
+      memoryExports: [],
+      canManageQueues: true,
+      canReadJobRuns: true,
+      queues: [],
+      durableRuns: [
+        durableRun({
+          kind: 'immich-import-derived',
+          state: 'waiting',
+          active: 0,
+          waiting: 40,
+          total: 40,
+          completed: 0,
+          held: 40,
+        }),
+      ],
+    });
+    try {
+      await mount([]);
+      const group = await screen.findByRole('group', { name: /background work/i });
+      const [card] = within(group).getAllByRole('link', { name: /open background work/i });
+      expect(card).toHaveAccessibleName(
+        'Library import: Waiting for the file check · 40 waiting · This server. Open Background work.',
+      );
+      expect(card).toHaveAttribute('href', expect.stringContaining('section=queues'));
+      expect(card.getAttribute('href')).not.toContain('immich-import-derived');
     } finally {
       runningJobsSession.summary = { operations: [], memoryExports: [], queues: [], canManageQueues: false };
     }

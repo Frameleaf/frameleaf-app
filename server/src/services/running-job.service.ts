@@ -197,6 +197,7 @@ export class RunningJobService {
           lastStage: row.lastStage,
           reasons: row.reasons,
           noDispatchBacklog: row.noDispatchBacklog,
+          held: row.held,
         })),
         unavailable: false,
       };

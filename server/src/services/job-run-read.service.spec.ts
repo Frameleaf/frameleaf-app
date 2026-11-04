@@ -29,6 +29,7 @@ const run: RunRead = {
   lastStage: 'AssetThumbnailGeneration',
   reasons: ['stage_failed'],
   noDispatchBacklog: false,
+  held: 0,
 };
 describe('durable run read service', () => {
   let sut: JobService;

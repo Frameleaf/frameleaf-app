@@ -84,6 +84,13 @@ export const JobRunResponseSchema = counts
     enumerationDone: z.boolean(),
     state: JobRunStateSchema,
     noDispatchBacklog: z.boolean(),
+    held: z
+      .int()
+      .min(0)
+      .optional()
+      .describe(
+        "Selected items an import's first setup still holds back: until Library Care's file check ends, or while setup is paused",
+      ),
   })
   .extend(progress.shape)
   .meta({ id: 'JobRunResponseDto' });

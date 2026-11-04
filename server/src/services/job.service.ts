@@ -141,6 +141,7 @@ export class JobService extends BaseService {
         lastStage: row.lastStage,
         reasons: row.reasons,
         noDispatchBacklog: row.noDispatchBacklog,
+        held: row.held,
       })),
       hasNextPage: rows.length > take,
     };
