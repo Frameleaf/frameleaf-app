@@ -1,3 +1,4 @@
+import { DateTime } from 'luxon';
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { HistoryBuilder } from 'src/decorators.js';
@@ -18,7 +19,23 @@ const UpdateAssetBaseSchema = z
     libraryScope: LibraryScopeSchema.optional(),
     isFavorite: z.boolean().optional().describe('Mark as favorite'),
     visibility: AssetVisibilitySchema.optional(),
-    dateTimeOriginal: z.string().optional().describe('Original date and time'),
+    dateTimeOriginal: z
+      .string()
+      .refine(
+        (value) => {
+          if (!DateTime.fromISO(value, { setZone: true, zone: 'UTC' }).isValid) return false;
+          const [clock, zone] = value.split('[');
+          const offset = /t.*(?:Z|[+-](\d{2})(?::?(\d{2}))?)$/iu.exec(clock);
+          if (!offset) return true;
+          if (Number(offset[1] ?? 0) >= 24 || Number(offset[2] ?? 0) >= 60) return false;
+          if (!zone) return true;
+          const explicit = DateTime.fromISO(clock, { setZone: true, zone: 'UTC' });
+          return explicit.setZone(zone.slice(0, -1)).offset === explicit.offset;
+        },
+        { message: 'Invalid capture date or time zone offset' },
+      )
+      .optional()
+      .describe('Original date and time'),
     latitude: latitudeSchema
       .nullable()
       .optional()
