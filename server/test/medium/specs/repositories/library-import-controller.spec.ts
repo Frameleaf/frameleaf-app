@@ -259,9 +259,7 @@ it('keeps regeneration absent when the first fresh activation source check refus
   const repository = jobs();
   const dispatch = vi.spyOn(repository, 'dispatchImportedLibraryWork');
   await expect(
-    controller.activate(repository, async () => {
-      throw new Error('private source changed');
-    }),
+    controller.activate(repository, () => Promise.reject(new Error('private source changed'))),
   ).rejects.toThrow('IMPORT_CONTROLLER_UNAVAILABLE');
   expect(dispatch).not.toHaveBeenCalled();
   expect(
