@@ -137,10 +137,22 @@ await page.route('**/manager-api/**', async (route) => {
     assert.equal(body.id, dashboard.operations[0].id);
     value = {
       destinationId: 'c47d6c6a-5842-417c-a556-207ae35f1b36', sourceId: source.id,
-      inventory: { photos: 2, albums: 1, originals: 2, privatePhotos: 1, accounts: [{ id: 'owner' }] },
+      inventory: { photos: 2, albums: 1, originals: 2, privatePhotos: 1, accounts: [{ id: 'owner', name: 'PhotoPrism owner' }] },
     };
   }
 
+  else if (path === 'prepare-library-import') {
+    assert.equal(body.operationId, dashboard.operations[0].id);
+    dashboard.operations[0].canReviewCapture = true;
+    value = {
+      id: body.operationId, approvalToken: '53c24489-c193-4cde-bcd8-d31ad7f13602',
+      downtime: 'The source stays stopped.', recovery: 'Originals remain in the source.',
+      commonImport: {
+        source: 'photoprism', version: 'fixture', requiresBootstrap: true, requiredMediaBytes: 4096,
+        summary: { assets: 2, albums: 1, owners: 1, preservationDifferences: 1 },
+      },
+    };
+  }
   else if (path === 'captured-review') {
     assert.equal(body.id, commonReview.id);
     value = commonReview;
@@ -708,6 +720,23 @@ try {
     assert.equal(capture.source, 'photoprism');
     assert.equal(capture.container, source.id);
     assert.ok(requests.findLast((request) => request.path === 'inspect-library-import').body.tag);
+    assert.equal(await mainButton('Prepare copy review').isDisabled(), true);
+    await page.getByLabel('Imported account email').fill('owner@example.test');
+    await page.getByLabel(/^Media location/).selectOption('/fixture/media');
+    await page.getByRole('checkbox', { name: 'Docker or Unraid', exact: false }).check();
+    await page.getByRole('checkbox', { name: 'I confirm this account owns the entire source library.' }).check();
+    await page.getByRole('checkbox', { name: 'I accept that sharing is restricted', exact: false }).check();
+    await mainButton('Prepare copy review').click();
+    await page.getByRole('heading', { name: 'Review library import', exact: true }).waitFor();
+    const prepared = requests.findLast((request) => request.path === 'prepare-library-import').body;
+    assert.equal(prepared.destinationId, 'c47d6c6a-5842-417c-a556-207ae35f1b36');
+    assert.equal(prepared.settings.sourceId, source.id);
+    assert.equal(prepared.settings.mediaPath, '/fixture/media');
+    assert.equal(prepared.choice.ownerEmail, 'owner@example.test');
+    assert.equal(prepared.choice.confirmEntireLibrary, true);
+    assert(prepared.choice.approvedLossCodes.includes('PHOTOPRISM_SHARING_RESTRICTED'));
+    assert.equal(await mainButton('Start import').isDisabled(), true);
+
     delete dashboard.importQualificationEnabled;
   });
   assert.deepEqual(errors, []);

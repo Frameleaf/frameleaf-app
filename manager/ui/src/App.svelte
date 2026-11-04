@@ -46,7 +46,16 @@
   let qualificationCapture = $state(false),
     qualificationContainer = $state(''),
     qualificationStopAccepted = $state(false),
-    qualificationInspection = $state<any>(null);
+    qualificationInspection = $state<any>(null),
+    qualificationOwnerEmail = $state(''),
+    qualificationOwnerAccepted = $state(false),
+    qualificationLossesAccepted = $state(false),
+    qualificationAlbums = $state('{}');
+  const qualificationLossCodes = [
+    'PHOTOPRISM_SHARING_RESTRICTED', 'PHOTOPRISM_SOURCE_METADATA_ARCHIVED', 'PHOTOPRISM_PEOPLE_ARCHIVED',
+    'PHOTOPRISM_LABELS_ARCHIVED', 'PHOTOPRISM_LABEL_TAG_UNREPRESENTABLE', 'PHOTOPRISM_TITLE_ARCHIVED',
+    'PHOTOPRISM_DELETED_ALBUM_ARCHIVED', 'PHOTOPRISM_ALBUM_SNAPSHOT',
+  ];
   let libraryName = $state('Home library');
   let kind = $state<'install' | 'import'>('install'),
     step = $state(0),
@@ -419,17 +428,39 @@
     }
     checking = true;
     try {
-      review = await api('review', {
+      const settings = {
         kind,
         tag,
         name: libraryName,
-        ...(kind === 'import' ? { sourceId } : { mediaPath }),
+        ...(qualificationInspection ? { sourceId: qualificationInspection.sourceId, mediaPath }
+          : kind === 'import' ? { sourceId } : { mediaPath }),
         databaseRoot,
         port,
         ml,
         lifecycle: 'docker-only',
         ...(Object.keys(overrides.services).length ? { services: overrides.services } : {}),
-      });
+      };
+      if (qualificationInspection) {
+        const [owner] = qualificationInspection.inventory.accounts;
+        if (!qualificationOwnerAccepted || !qualificationLossesAccepted || !owner ||
+          qualificationInspection.inventory.accounts.length !== 1 || !lifecycle) return;
+        review = await api('prepare-library-import', {
+          operationId: qualificationInspection.operationId,
+          destinationId: qualificationInspection.destinationId,
+          settings,
+          choice: {
+            sourceOwnerId: owner.id,
+            ownerEmail: qualificationOwnerEmail,
+            confirmEntireLibrary: true,
+            materializedAlbums: JSON.parse(qualificationAlbums),
+            approvedLossCodes: qualificationLossCodes,
+          },
+        });
+        cutoverAccepted = false;
+        await refresh();
+      } else {
+        review = await api('review', settings);
+      }
     } finally {
       checking = false;
     }
@@ -468,7 +499,10 @@
   async function inspectQualificationCapture(id: string) {
     if (!releasesLoaded) await loadReleases();
     if (!tag) tag = releases[0]?.tag ?? '';
-    qualificationInspection = await api('inspect-library-import', { id, tag });
+    qualificationInspection = { ...await api('inspect-library-import', { id, tag }), operationId: id };
+    qualificationOwnerEmail = '';
+    qualificationOwnerAccepted = qualificationLossesAccepted = false;
+    qualificationAlbums = '{}';
     qualificationCapture = true;
     kind = 'import';
     await go('import');
@@ -808,8 +842,17 @@
               <section class="card"><div class="card-body">
                 <p>{qualificationInspection.inventory.photos} photos and videos · {qualificationInspection.inventory.albums} albums · {qualificationInspection.inventory.originals} originals</p>
                 <p class="meta mt16">{qualificationInspection.inventory.accounts.length} source accounts · {qualificationInspection.inventory.privatePhotos} private photos</p>
-                <button class="button quiet mt16" onclick={() => run(() => go('progress'))}>Back to capture progress</button>
               </div></section>
+              {#if qualificationInspection.inventory.accounts.length === 1}
+                {@render configuration()}
+                <div class="wizard-footer">
+                  <button class="button quiet" onclick={() => run(() => go('progress'))}>Back to capture progress</button>
+                  <button type="submit" form="configuration-form" class="button primary" disabled={busy || !lifecycle || !qualificationOwnerAccepted || !qualificationLossesAccepted}>Prepare copy review</button>
+                </div>
+              {:else}
+                <div class="mt16">{@render notice('Account review required', 'This qualification path requires one source account.', 'warning')}</div>
+                <button class="button quiet mt16" onclick={() => run(() => go('progress'))}>Back to capture progress</button>
+              {/if}
             {:else}
               {@render heading('Capture a PhotoPrism library', 'Choose the PhotoPrism container to stop and capture for review.')}
               <form class="card" onsubmit={(event) => { event.preventDefault(); void run(startQualificationCapture); }}>
@@ -946,11 +989,23 @@
   <form id="configuration-form" onsubmit={(event) => { event.preventDefault(); void run(prepare); }}>
   <section class="card"><div class="card-header"><h2>Storage & access</h2></div><div class="card-body"><div class="form-grid">
     <label class="field full"><span>Library name</span><input bind:value={libraryName} required maxlength="120"/></label>
-    {#if kind === 'install'}<label class="field full"><span>Media location</span><select bind:value={mediaPath} required><option value="">Choose a mounted folder</option>{#each dashboard.storageRoots as root}<option value={root}>{root}</option>{/each}</select><small>Originals and generated media remain in this mounted location.</small></label>{/if}
+    {#if kind === 'install' || qualificationInspection}<label class="field full"><span>Media location</span><select bind:value={mediaPath} required><option value="">Choose a mounted folder</option>{#each dashboard.storageRoots as root}<option value={root}>{root}</option>{/each}</select><small>Originals and generated media remain in this mounted location.</small></label>{/if}
     <label class="field"><span>PostgreSQL appdata location</span><input bind:value={databaseRoot} list="database-roots" required autocomplete="off" spellcheck="false"/><small>New dedicated host-disk storage, outside Docker’s virtual disk.</small></label><label class="field"><span>Frameleaf port</span><input type="number" bind:value={port} min="1024" max="65535" required/><small>{kind === 'import' ? 'You can keep the original app’s port; it is stopped before Frameleaf starts. ' : ''}{#each otherInstallations.filter((i: any) => i.appPort) as other}{other.name} uses port {other.appPort}.{' '}{/each}Manager remains on its own port.</small></label>
     <label class="field"><span>Frameleaf release</span><select bind:value={tag} required><option value="">Select a verified release</option>{#each releases as release}<option value={release.tag}>{release.tag}</option>{/each}</select>{#if !releases.length}<small>No eligible signed release was offered. Refresh releases or check distribution availability.</small>{/if}</label><label class="field"><span>Database backup destination</span><input value={dashboard.backupRoot} readonly/><small>Mounted encrypted database backups only.</small></label>
     {#if dashboard.databaseStorage.detectedPath}<p class="meta full">Detected Unraid appdata: <code>{dashboard.databaseStorage.detectedPath}</code>. To use another disk, mount its folder into Manager at the identical host path.</p>{/if}
   </div></div></section><section class="card mt16"><div class="card-header"><h2>Processing</h2></div><div class="list-row"><Icon name="cpu"/><div><strong>{processorName(dashboard.host?.acceleration)}</strong><p>{hasGpu(dashboard.host?.acceleration) ? 'Detected on this server. Machine learning will use it.' : 'No supported graphics card detected. Machine learning runs on the CPU.'}</p></div><span class="badge" class:good={hasGpu(dashboard.host?.acceleration)}>{hasGpu(dashboard.host?.acceleration) ? 'Detected' : 'Default'}</span></div><div class="list-row"><Icon name="image"/><div><strong>Machine learning</strong><p>Face recognition and smart search</p></div><label class="toggle"><input type="checkbox" bind:checked={ml}/><span class="toggle-track"></span><span>Enable</span></label></div></section>{@render advancedContainers()}<label class="check-row mt24"><input type="checkbox" bind:checked={lifecycle}/><span>Docker or Unraid manages startup. I have disabled any additional scheduler or service that recreates these containers.</span></label>
+  {#if qualificationInspection}
+    <section class="card mt16"><div class="card-header"><h2>Accounts and preservation</h2></div><div class="card-body stack">
+      <p>Source account <strong>{qualificationInspection.inventory.accounts[0].name}</strong></p>
+      <label class="field"><span>Imported account email</span><input type="email" bind:value={qualificationOwnerEmail} required maxlength="254" autocomplete="off"/></label>
+      <label class="check-row"><input type="checkbox" bind:checked={qualificationOwnerAccepted}/><span>I confirm this account owns the entire source library.</span></label>
+      {#if qualificationInspection.inventory.albumsRequiringSnapshot?.length}
+        <label class="field"><span>Saved album memberships</span><textarea bind:value={qualificationAlbums} required spellcheck="false"></textarea><small>Enter a JSON object mapping each listed album ID to its reviewed photo IDs.</small></label>
+        <ul>{#each qualificationInspection.inventory.albumsRequiringSnapshot as album}<li>{album.name} <code>{album.id}</code></li>{/each}</ul>
+      {/if}
+      <label class="check-row"><input type="checkbox" bind:checked={qualificationLossesAccepted}/><span>I accept that sharing is restricted, saved albums may become snapshots, and unsupported titles, labels, people and deleted albums may be retained only in the protected archive.</span></label>
+    </div></section>
+  {/if}
   </form>
 {/snippet}
 <datalist id="database-roots">{#each dashboard?.databaseStorage?.roots ?? [] as root}<option value={root}></option>{/each}</datalist>
