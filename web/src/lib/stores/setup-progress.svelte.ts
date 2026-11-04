@@ -9,12 +9,17 @@ class SetupProgressStore {
   height = $state(0);
   /** The first reading of the current stage, for the time-left estimate. */
   since = $state<{ id: LibrarySetupStageId; at: number; done: number } | null>(null);
+  /** The newest request asked, and the newest shown, so a page that has gone cannot undo the next page's answer. */
+  requested = 0;
+  applied = 0;
 
   /** The next bar starts from nothing. */
   reset() {
     this.progress = null;
     this.height = 0;
     this.since = null;
+    this.requested = 0;
+    this.applied = 0;
   }
 }
 

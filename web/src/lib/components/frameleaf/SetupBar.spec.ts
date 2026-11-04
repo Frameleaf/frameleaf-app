@@ -228,8 +228,33 @@ describe('SetupBar', () => {
     render(SetupBar);
     expect(await screen.findByText('Setting up your library')).toBeInTheDocument();
 
+    // Its answer lost to the next page's, so the bar asks again and shows the pause.
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(progress({ paused: true }));
     answerPause(progress({ paused: true }));
     expect(await screen.findByText('Setup is paused')).toBeInTheDocument();
+  });
+
+  it('never lets a pause from an old page undo a later resume', async () => {
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(progress());
+    let answerPause: (value: LibrarySetupProgressDto) => void = () => {};
+    sdkMock.pauseLibrarySetup.mockReturnValueOnce(new Promise((resolve) => (answerPause = resolve)));
+    const first = render(SetupBar);
+    await fireEvent.click((await screen.findAllByRole('button', { name: 'Pause' }))[0]);
+    first.unmount();
+
+    // The next page sees the pause and resumes.
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(progress({ paused: true }));
+    render(SetupBar);
+    sdkMock.pauseLibrarySetup.mockResolvedValueOnce(progress());
+    await fireEvent.click((await screen.findAllByRole('button', { name: 'Resume' }))[0]);
+    expect(await screen.findByText('Setting up your library')).toBeInTheDocument();
+
+    // The old page's pause answer lands last; the server says setup runs.
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(progress());
+    answerPause(progress({ paused: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByText('Setting up your library')).toBeInTheDocument();
+    expect(screen.queryByText('Setup is paused')).not.toBeInTheDocument();
   });
 
   it('formats progress using the chosen number locale', async () => {

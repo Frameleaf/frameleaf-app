@@ -59,10 +59,6 @@
   let busy = $state(false);
   let timer: ReturnType<typeof setInterval> | undefined;
   let loading = false;
-  let requested = 0;
-  let applied = 0;
-  /** The kept answer is shared: an answer that lands after this bar has gone must not replace the next page's. */
-  let disposed = false;
 
   // The kept answer belongs to an administrator; another account never sees it.
   const visible = $derived(!!authManager.user?.isAdmin && !!progress?.active && !progress.completedAt);
@@ -143,15 +139,23 @@
   };
 
   /**
-   * Only the newest answer is shown: a slow poll must not undo a later one, or a pause. A poll that lands after its page
-   * has gone is dropped; an action's answer is still shown, since the next page may have asked before it took effect.
+   * Only the newest answer is shown, across pages: a slow poll, or one from a page that has gone, must not undo a later
+   * answer or a pause. Returns whether this answer was shown.
    */
-  const latest = async (request: Promise<LibrarySetupProgressDto>, action = false) => {
-    const id = ++requested;
+  const latest = async (request: Promise<LibrarySetupProgressDto>) => {
+    const id = ++setupProgress.requested;
     const next = await request;
-    if ((action || !disposed) && id > applied) {
-      applied = id;
-      show(next);
+    if (id <= setupProgress.applied) {
+      return false;
+    }
+    setupProgress.applied = id;
+    show(next);
+    return true;
+  };
+  /** An action's answer that lost to a newer one (asked before the action took effect) asks again. */
+  const afterAction = async (request: Promise<LibrarySetupProgressDto>) => {
+    if (!(await latest(request))) {
+      await latest(getLibrarySetupProgress());
     }
   };
 
@@ -183,12 +187,12 @@
     }
   };
   const togglePause = () =>
-    act(() => latest(pauseLibrarySetup({ librarySetupPauseDto: { paused: !progress!.paused } }), true));
+    act(() => afterAction(pauseLibrarySetup({ librarySetupPauseDto: { paused: !progress!.paused } })));
   // A failed or cancelled file check stops setup; starting it again is the only way on (Library Care says why).
   const retry = () =>
     act(async () => {
       await beginLibrarySetup();
-      await latest(getLibrarySetupProgress(), true);
+      await latest(getLibrarySetupProgress());
     });
 
   const closeCelebration = () => {
@@ -213,10 +217,7 @@
   $effect(() => {
     document.documentElement.style.setProperty('--fl-setup-bar-height', visible ? `${setupProgress.height}px` : '0px');
   });
-  onDestroy(() => {
-    disposed = true;
-    document.documentElement.style.removeProperty('--fl-setup-bar-height');
-  });
+  onDestroy(() => document.documentElement.style.removeProperty('--fl-setup-bar-height'));
 </script>
 
 {#if visible && progress}
