@@ -187,7 +187,8 @@
   }
   .mono {
     margin: 0;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: inherit;
+    font-variant-numeric: tabular-nums;
   }
   dl {
     display: grid;

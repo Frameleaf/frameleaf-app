@@ -341,7 +341,8 @@
     border-color: var(--fl-danger);
   }
   .mono {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: inherit;
+    font-variant-numeric: tabular-nums;
   }
   small,
   .hint {
@@ -406,7 +407,8 @@
   }
   code {
     padding: 0.25rem 0.5rem;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: inherit;
+    font-variant-numeric: tabular-nums;
     font-size: var(--fl-font-small);
     overflow-wrap: anywhere;
     background: var(--fl-raised);

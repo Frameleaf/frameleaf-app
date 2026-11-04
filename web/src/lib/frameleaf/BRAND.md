@@ -95,7 +95,9 @@ Status is never carried by colour alone: pair it with an icon or text.
 Three ways to use a step: the class (`fl-type-title`), the pair
 `font: var(--fl-type-title); letter-spacing: var(--fl-tracking-title);`, or just the size
 (`--fl-font-hero`, `-display`, `-title`, `-headline`, `-size`, `-callout`, `-small`, `-micro`).
-`fl-type-overline` is the uppercase section heading. `--fl-family-ui`, `--fl-family-mono`.
+`fl-type-overline` is the uppercase section heading. `--fl-family-ui` is the one family: no
+monospace anywhere, not even for codes, paths, keys or timecodes; digits that line up use
+`font-variant-numeric: tabular-nums` (tokens.spec.ts fails if a monospace face comes back).
 
 ### Spacing, elevation, layers, controls
 

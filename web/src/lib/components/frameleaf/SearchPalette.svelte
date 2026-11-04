@@ -1809,10 +1809,8 @@
     font-variant-numeric: tabular-nums;
   }
   .search-palette code {
-    font:
-      11px ui-monospace,
-      SFMono-Regular,
-      monospace;
+    font: 11px var(--fl-family-ui);
+    font-variant-numeric: tabular-nums;
   }
 
   /* field */

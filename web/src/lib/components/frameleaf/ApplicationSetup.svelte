@@ -218,7 +218,8 @@
   }
   .fingerprint {
     overflow-wrap: anywhere;
-    font-family: var(--fl-family-mono);
+    font-family: inherit;
+    font-variant-numeric: tabular-nums;
   }
   .checklist {
     list-style: none;

@@ -89,7 +89,8 @@ export const printRecoveryKey = (title: string, lines: string[]) => {
     const element = document_.createElement(index === 1 ? 'pre' : 'p');
     element.textContent = line;
     if (index === 1) {
-      element.style.font = '600 20px/1.4 ui-monospace, monospace';
+      element.style.font = '600 20px/1.4 system-ui, sans-serif';
+      element.style.fontVariantNumeric = 'tabular-nums';
       element.style.letterSpacing = '1px';
     }
     body.append(element);

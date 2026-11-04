@@ -1347,7 +1347,8 @@
   border: 1px solid color-mix(in srgb, var(--ed-ink) 16%, transparent);
   border-radius: 3px;
   color: var(--ed-text);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
   font-size: var(--fl-font-micro);
   text-align: center;
 }
@@ -1883,7 +1884,7 @@
   gap: 10px;
 }
 .ed-timecode {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: inherit;
   font-size: var(--fl-font-small);
   color: #cfd3d9;
   font-variant-numeric: tabular-nums;
@@ -2042,7 +2043,8 @@
   display: flex;
   justify-content: space-between;
   color: var(--fl-viewer-muted);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
   font-size: var(--fl-font-micro);
 }
 .ed-text-layer {

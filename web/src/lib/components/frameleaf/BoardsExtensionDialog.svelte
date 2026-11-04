@@ -13,8 +13,9 @@
    */
   let { open = $bindable(false) }: { open?: boolean } = $props();
 
-  /** The store listings, searched by name until the listing addresses are fixed. */
-  const CHROME_STORE_URL = 'https://chromewebstore.google.com/search/Frameleaf';
+  /** The Chrome Web Store listing (frameleaf.app, src/data/product.ts); Edge has no listing yet, so it is searched by name. */
+  const CHROME_STORE_URL =
+    'https://chromewebstore.google.com/detail/save-to-frameleaf/fggannkijbglmhnlhnclnehmoibfeila';
   const EDGE_STORE_URL = 'https://microsoftedge.microsoft.com/addons/search/Frameleaf';
   const apiKeysHref = `${Route.userSettings()}?area=privacy&section=api-keys`;
 </script>

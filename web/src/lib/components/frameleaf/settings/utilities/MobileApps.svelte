@@ -212,7 +212,8 @@
   }
   .mono {
     color: var(--fl-text);
-    font-family: var(--fl-font-mono, ui-monospace, monospace);
+    font-family: inherit;
+    font-variant-numeric: tabular-nums;
     word-break: break-all;
   }
 </style>

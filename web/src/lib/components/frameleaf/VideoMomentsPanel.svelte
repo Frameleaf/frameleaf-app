@@ -423,7 +423,7 @@
                 <div class="flex items-start gap-2">
                   <button
                     type="button"
-                    class="shrink-0 font-mono text-xs text-(--fl-accent) underline"
+                    class="shrink-0 text-xs text-(--fl-accent) tabular-nums underline"
                     onclick={() => seek(moment.timestampMs)}
                     aria-label={$t('frameleaf_moments_play_from', {
                       values: { time: formatMomentTime(moment.timestampMs) },
@@ -490,7 +490,7 @@
             <label class="block text-xs">
               <span class="text-(--fl-muted)">{$t('frameleaf_moments_time')}</span>
               <input
-                class="mt-1 w-full rounded-sm border border-(--fl-border-strong) bg-transparent px-2 py-1 font-mono"
+                class="mt-1 w-full rounded-sm border border-(--fl-border-strong) bg-transparent px-2 py-1 tabular-nums"
                 bind:value={editing.time}
                 placeholder="0:42"
                 inputmode="numeric"

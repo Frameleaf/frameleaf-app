@@ -138,7 +138,8 @@
   }
   .cpc .cpc-code {
     margin: 0;
-    font-family: var(--fl-family-mono);
+    font-family: inherit;
+    font-variant-numeric: tabular-nums;
     font-size: 34px;
     font-weight: 600;
     line-height: 1.1;

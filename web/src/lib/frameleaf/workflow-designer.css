@@ -154,7 +154,8 @@
 .wd-json,
 .wd-parameters pre,
 .wd-parameters code {
-  font-family: ui-monospace, monospace;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
   font-size: var(--fl-font-small);
   white-space: pre-wrap;
   overflow-wrap: anywhere;

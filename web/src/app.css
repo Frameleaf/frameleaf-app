@@ -34,33 +34,34 @@
    * (src/lib/frameleaf/tokens.css --fl-family-ui).
    */
   --font-sans: -apple-system, BlinkMacSystemFont, system-ui, Inter, 'Segoe UI', sans-serif;
-  --font-mono: var(--fl-family-mono);
+  /* No monospace (tokens.css): Tailwind's `font-mono` and the browser's code/kbd/pre face are the UI font. */
+  --font-mono: var(--fl-family-ui);
 
   /*
    * Neutrals: Tailwind's gray and neutral ramps become the Frameleaf neutrals
    * (src/lib/frameleaf/brand-tokens.json `neutral`; tokens.spec.ts keeps the two in step), so a
    * remaining `bg-gray-100 dark:bg-gray-800` reads as the Frameleaf raised surface in each theme.
    */
-  --color-gray-50: #f4f6f7;
+  --color-gray-50: #f3f5f6;
   --color-gray-100: #eef1f3;
-  --color-gray-200: #d6dce0;
+  --color-gray-200: #d6dde1;
   --color-gray-300: #b4bfc9;
-  --color-gray-400: #a1adb8;
+  --color-gray-400: #a2adb5;
   --color-gray-500: #64727d;
-  --color-gray-600: #53636d;
-  --color-gray-700: #303940;
-  --color-gray-800: #222a30;
+  --color-gray-600: #4c5b65;
+  --color-gray-700: #2c353b;
+  --color-gray-800: #21282d;
   --color-gray-900: #171d21;
   --color-gray-950: #101416;
-  --color-neutral-50: #f4f6f7;
+  --color-neutral-50: #f3f5f6;
   --color-neutral-100: #eef1f3;
-  --color-neutral-200: #d6dce0;
+  --color-neutral-200: #d6dde1;
   --color-neutral-300: #b4bfc9;
-  --color-neutral-400: #a1adb8;
+  --color-neutral-400: #a2adb5;
   --color-neutral-500: #64727d;
-  --color-neutral-600: #53636d;
-  --color-neutral-700: #303940;
-  --color-neutral-800: #222a30;
+  --color-neutral-600: #4c5b65;
+  --color-neutral-700: #2c353b;
+  --color-neutral-800: #21282d;
   --color-neutral-900: #171d21;
   --color-neutral-950: #101416;
 
@@ -125,14 +126,14 @@
     /* light */
     --immich-primary: 21 123 64;
     --immich-bg: 255 255 255;
-    --immich-fg: 24 37 43;
-    --immich-gray: 244 246 247;
+    --immich-fg: 20 32 38;
+    --immich-gray: 243 245 246;
 
     /* dark */
     --immich-dark-primary: 34 197 94;
     --immich-dark-bg: 16 20 22;
-    --immich-dark-fg: 229 231 235;
-    --immich-dark-gray: 34 42 48;
+    --immich-dark-fg: 232 236 238;
+    --immich-dark-gray: 33 40 45;
   }
 
   button:not(:disabled),
@@ -149,13 +150,6 @@
     font-style: normal;
     ascent-override: 106.25%;
     size-adjust: 106.25%;
-  }
-
-  @font-face {
-    font-family: 'GoogleSansCode';
-    src: url('$lib/assets/fonts/GoogleSansCode/GoogleSansCode.ttf') format('truetype-variations');
-    font-weight: 1 900;
-    font-style: monospace;
   }
 
   :root {

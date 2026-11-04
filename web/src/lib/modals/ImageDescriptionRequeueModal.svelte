@@ -126,13 +126,13 @@
             <dt class="text-immich-fg/70 dark:text-immich-dark-fg/70">
               {$t('admin.machine_learning_image_description_requeue_modal_active_backend')}
             </dt>
-            <dd class="font-mono text-xs font-medium">{estimate.activeBackend}</dd>
+            <dd class="text-xs font-medium tabular-nums">{estimate.activeBackend}</dd>
           </div>
           <div class="flex justify-between">
             <dt class="text-immich-fg/70 dark:text-immich-dark-fg/70">
               {$t('admin.machine_learning_image_description_requeue_modal_active_model')}
             </dt>
-            <dd class="font-mono text-xs font-medium">{estimate.activeModel}</dd>
+            <dd class="text-xs font-medium tabular-nums">{estimate.activeModel}</dd>
           </div>
         </dl>
       {/if}
