@@ -56,6 +56,9 @@ describe('capture-date request offsets', () => {
     '2020-12-10T12:30:00+2460',
     '2020-12-10T12:30:00+99',
     '2020-12-10T12:30:00-00:60',
+    '2020-06-10T12:30:00-07:00[Europe/Paris]',
+    '2020-06-10T12:30:00Z[Europe/Paris]',
+    '2020-03-08T02:30:00-05:00[America/New_York]',
   ])('rejects malformed offsets before single and bulk edits: %s', (dateTimeOriginal) => {
     expect(UpdateAssetDto.schema.safeParse({ dateTimeOriginal }).success).toBe(false);
     expect(AssetBulkUpdateDto.schema.safeParse({ ids: [], dateTimeOriginal }).success).toBe(false);
@@ -64,7 +67,11 @@ describe('capture-date request offsets', () => {
   it.each([
     '2020-12-10T12:30:00',
     '2020-12-10T12:30:00Z',
-    '2020-12-10T12:30:00+01:59[Europe/Paris]',
+    '2020-12-10T12:30:00+01:59',
+    '2020-12-10T12:30:00+01:00[Europe/Paris]',
+    '2020-11-01T01:30:00-04:00[America/New_York]',
+    '2020-11-01T01:30:00-05:00[America/New_York]',
+    '20201210T123000+0100[Europe/Paris]',
     '2020-12-10t12:30:00.123456-2359',
     '2020-12-10T12:30:00+01',
     '2020-12-10T12:30:00[Europe/Paris]',
