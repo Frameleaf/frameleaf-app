@@ -1,8 +1,8 @@
 # Nextcloud Photos / Memories import research
 
-This adapter is an internal frozen-snapshot reader. It does not import a library,
-resolve host files, grant destination access, or advertise compatibility. The ten-source
-release gate remains closed.
+This adapter contains an internal frozen-snapshot reader and common-manifest mapper.
+It does not resolve host files, grant destination access or advertise compatibility.
+The public import flow and combined ten-source release gate remain closed.
 
 ## Pinned installation
 
@@ -65,6 +65,50 @@ The five generated-original classifications match the captured native storage AP
 inventory below, including separate-owner duplicate bytes. This comparison reuses the
 existing pinned fixture; it is not a new full-source or filesystem acceptance run.
 
+## Common-manifest mapping
+
+`readNextcloudManifest` joins file-cache IDs, MIME types, storage identities, local
+home mounts and owners before matching independent original receipts. Each storage
+is bound to a distinct relative staging prefix; file-cache paths never become host
+paths. All readable home images and videos require receipts, including Nextcloud's
+stock media. The fifteen home originals in this fixture cannot be represented by
+only its five generated-original receipts. Unit tests label synthetic stock receipts
+separately from the five native byte proofs. Unmounted `appdata_` media in the local
+application storage is archived as generated content. Other unresolvable image/video
+records, remote storage, encryption, mismatched paths, timestamps or byte lengths
+refuse mapping rather than silently disappearing.
+
+The caller explicitly selects the current Photos or Memories metadata view. Photos
+date/GPS edits live in file metadata independently of original EXIF, whereas Memories
+edits are reflected in original EXIF and its indexed cache. These views can differ;
+the mapper does not silently combine conflicting date/location values. Photos'
+missing GPS key means cleared coordinates, including when Memories retains older
+coordinates. `editPermission` does not prove manual-edit provenance. Memories dates,
+source wall clocks, descriptions, ratings and coordinates are accepted only when its
+file modification time still matches the original's file-cache record. Source
+metadata outside the selected view remains in the protected archive.
+
+Known Memories capture instants and local clocks remain separate, with no invented
+regional timezone. Photos timestamps without an independently known source wall
+clock use disclosed UTC presentation. Missing capture dates use the admitted file
+modification time and require a separate preservation-loss acknowledgment. These
+fallbacks do not establish the original capture timezone. Original filenames,
+per-owner legacy tags/favourites and owner-private static album memberships are
+mapped. Source sharing, cross-owner album relationships and restricted system tags
+remain restricted/archived and disclosed. Dynamic album filters require a separately
+verified materialized export; they are not treated as complete static memberships.
+Named JPEG/MOV pairs are not automatically paired as Live Photos. Nonempty Memories
+Live Photo IDs are archived with a qualification disclosure until companion identity
+is independently verified.
+
+All projected noncredential records remain in the protected migration archive.
+Unsupported titles, album locations, extra EXIF fields and metadata from the other
+application view remain there rather than being silently discarded. Account password
+verifiers continue through the existing protected channel, outside this manifest and
+archive. Global authentication, hidden-content policy, people and sharing equivalence
+still need trusted capture and qualification before activation. The mapper's inventory
+fields describe its input contract; they do not authorize capture or activation.
+
 ## Native fixture evidence and limits
 
 An isolated installation with no external network or exposed ports created three
@@ -91,7 +135,7 @@ never includes their contents. Sources: [Photos stable35](https://github.com/nex
 [Memories 10.2.0](https://github.com/pulsejet/memories/tree/d59c33d94d4e9627565e2023eb3c5c798788ebe2).
 Inherited AGPL terms accompany the sanitized fixture.
 
-Full source inventory, account/privacy conversion, destination reconciliation,
+Full native source inventory qualification, account/privacy conversion, destination reconciliation,
 transfer/recovery, Manager journeys, every advertised engine and combined ten-source
 acceptance remain outstanding. No source-compatibility, release or deployment claim.
 

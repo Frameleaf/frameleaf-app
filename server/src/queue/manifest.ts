@@ -389,6 +389,11 @@ async function settleLibraryRunPage(tx: Executor, queue: string) {
         and ((select after from cursor) is null or m."runId">(select after from cursor))
       order by m."runId" limit ${QUEUE_BATCH}
   ), settled as (
+    -- No "enumerationDone" guard on purpose: attaching a run to a library/shared source clears the flag
+    -- (attachSelectionMemberships, attachLibraryParticipants), and this page is what sets it again once
+    -- that source is drained. A run's own enumeration adds nothing unseen here: its work is written in
+    -- one transaction before enumeration closes (admitRun, import preparation), or by a producer whose
+    -- live item or 'enumerating' source keeps unfinishedRunItems true below.
     update job_run r set "enumerationDone"=true,"finishedAt"=coalesce(r."finishedAt",now())
       where r.id in (select "runId" from candidates) and r."finishedAt" is null
         and not (${unfinishedRunItems(sql<string>`r.id`)}) returning id
