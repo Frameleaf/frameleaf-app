@@ -10,6 +10,7 @@
   let httpSession = '';
   let csrf = '',
     claimed = $state(false),
+    claimProofRequired = $state(false),
     signedIn = $state(false),
     loading = $state(true),
     busy = $state(false),
@@ -591,6 +592,8 @@
     void run(async () => {
       const status = await api('status');
       claimed = status.claimed;
+      claimProofRequired = status.claimProofRequired === true;
+      if (claimProofRequired) return;
       try {
         await refresh();
         signedIn = true;
@@ -714,6 +717,8 @@
         {#if error}<div class="notice warning error-notice" role="alert"><Icon name="warning"/><div><strong>Action needed</strong><p>{error}</p></div></div>{/if}
         {#if disconnected}{@render notice('Connection interrupted', 'Manager could not refresh the server state. Reconnect and refresh before taking another action.', 'warning', 'network')}{/if}
         {#if loading}<div class="loading-state"><Icon name="loader" class="spin"/><p>Connecting to your Manager…</p></div>
+        {:else if claimProofRequired}
+          {@render heading('Finish setup in Frameleaf Desktop', 'Open Frameleaf Desktop to create the local administrator account for this Manager.')}
         {:else if !signedIn}
           {@render heading(claimed ? 'Welcome back.' : 'Secure your Manager', claimed ? 'Sign in to manage this Frameleaf installation.' : 'Create the local administrator account used to manage this server.')}
           <form class="card" onsubmit={(event) => { event.preventDefault(); void run(signIn); }}><div class="card-header"><h2>Local administrator</h2></div><div class="card-body stack">

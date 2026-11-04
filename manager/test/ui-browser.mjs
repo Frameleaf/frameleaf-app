@@ -297,6 +297,15 @@ const screenshot = async (name) => {
   }
 };
 try {
+  await check('native first-run status directs setup to Desktop', async () => {
+    const statusRoute = '**/manager-api/status';
+    await page.route(statusRoute, (route) => route.fulfill({ json: { claimed: false, claimProofRequired: true } }));
+    await page.goto(origin);
+    await page.getByRole('heading', { name: 'Finish setup in Frameleaf Desktop' }).waitFor({ timeout: 5000 });
+    assert.equal(await button('Create administrator').count(), 0);
+    assert.equal(await page.getByLabel('Password').count(), 0);
+    await page.unroute(statusRoute);
+  });
   await page.goto(origin);
   await check('full installed navigation, real counts, service states and themes', async () => {
     await page.getByRole('heading', { name: 'Family library', exact: true }).waitFor();

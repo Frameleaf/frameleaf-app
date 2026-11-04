@@ -131,7 +131,8 @@ class Errors implements ExceptionFilter {
 @Controller('manager-api')
 class Api {
   @Get('status') status() {
-    return { claimed: security.claimed() };
+    const claimed = security.claimed();
+    return { claimed, claimProofRequired: !!native && !claimed };
   }
 
   @Post('claim') async claim(@Body() input: unknown, @Req() request: Request, @Res({ passthrough: true }) response: Response) {
