@@ -37,6 +37,7 @@ select
   "ownerId",
   "originalPath",
   "physicalOriginalFileId",
+  "localDateTime",
   (
     select
       "readOnly"

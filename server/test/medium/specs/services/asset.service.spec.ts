@@ -1225,19 +1225,77 @@ describe(AssetService.name, () => {
       });
     });
 
+    it.each([false, true])('keeps offsetless edits in UTC with a non-UTC SQL session (bulk: %s)', async (bulk) => {
+      await defaultDatabase.connection().execute(async (database) => {
+        const { sut, ctx } = setup(database);
+        ctx.getMock(JobRepository).queue.mockResolvedValue();
+        ctx.getMock(JobRepository).queueAll.mockResolvedValue();
+        const { user } = await ctx.newUser();
+        const auth = factory.auth({ user });
+        const { asset } = await ctx.newAsset({ ownerId: user.id });
+        await ctx.newExif({ assetId: asset.id, timeZone: 'America/Edmonton' });
+        await sql`SET TIME ZONE 'America/Edmonton'`.execute(database);
+        try {
+          const dto = { dateTimeOriginal: '2020-06-10T12:30:00.123456' };
+          if (bulk) await sut.updateAll(auth, { ids: [asset.id], ...dto });
+          else await sut.update(auth, asset.id, dto);
+          const exif = await database
+            .selectFrom('asset_exif')
+            .select([sql<number>`extract(epoch from "dateTimeOriginal")::float8`.as('instant'), 'timeZone'])
+            .where('assetId', '=', asset.id)
+            .executeTakeFirstOrThrow();
+          expect(exif).toEqual({ instant: 1_591_792_200.123456, timeZone: 'UTC' });
+          await expect(ctx.get(AssetRepository).getById(asset.id)).resolves.toMatchObject({
+            fileCreatedAt: new Date('2020-06-10T12:30:00.123Z'),
+            localDateTime: new Date('2020-06-10T12:30:00.123Z'),
+          });
+        } finally {
+          await sql`RESET TIME ZONE`.execute(database);
+        }
+      });
+    });
+
+    it.each([false, true])('retains a named zone for a later shift across DST (bulk: %s)', async (bulk) => {
+      const { sut, ctx } = setup();
+      ctx.getMock(JobRepository).queue.mockResolvedValue();
+      ctx.getMock(JobRepository).queueAll.mockResolvedValue();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newExif({ assetId: asset.id, timeZone: 'UTC' });
+      const dto = { dateTimeOriginal: '2020-03-07T12:30:00-07:00[America/Edmonton]' };
+      if (bulk) await sut.updateAll(auth, { ids: [asset.id], ...dto });
+      else await sut.update(auth, asset.id, dto);
+      await expect(ctx.get(AssetRepository).getById(asset.id, { exifInfo: true })).resolves.toMatchObject({
+        exifInfo: { timeZone: 'America/Edmonton' },
+      });
+      await sut.updateAll(auth, { ids: [asset.id], dateTimeRelative: 1440 });
+      await expect(ctx.get(AssetRepository).getById(asset.id, { exifInfo: true })).resolves.toMatchObject({
+        fileCreatedAt: new Date('2020-03-08T19:30:00Z'),
+        localDateTime: new Date('2020-03-08T13:30:00Z'),
+        exifInfo: { timeZone: 'America/Edmonton' },
+      });
+    });
+
     it('should update dateTimeOriginal', async () => {
       const { sut, ctx } = setup();
       ctx.getMock(JobRepository).queue.mockResolvedValue();
       const { user } = await ctx.newUser();
       const auth = factory.auth({ user });
       const { asset } = await ctx.newAsset({ ownerId: user.id });
-      await ctx.newExif({ assetId: asset.id, description: 'test' });
+      await ctx.newExif({ assetId: asset.id, description: 'test', timeZone: 'America/Edmonton' });
 
       await sut.update(auth, asset.id, { dateTimeOriginal: '2023-11-19T18:11:00' });
 
       await expect(ctx.get(AssetRepository).getById(asset.id, { exifInfo: true })).resolves.toEqual(
         expect.objectContaining({
-          exifInfo: expect.objectContaining({ dateTimeOriginal: '2023-11-19T18:11:00+00:00', timeZone: null }),
+          fileCreatedAt: new Date('2023-11-19T18:11:00Z'),
+          localDateTime: new Date('2023-11-19T18:11:00Z'),
+          exifInfo: expect.objectContaining({
+            dateTimeOriginal: '2023-11-19T18:11:00+00:00',
+            timeZone: 'UTC',
+            lockedProperties: expect.arrayContaining(['dateTimeOriginal', 'timeZone']),
+          }),
         }),
       );
     });
@@ -1471,13 +1529,19 @@ describe(AssetService.name, () => {
       const { user } = await ctx.newUser();
       const auth = factory.auth({ user });
       const { asset } = await ctx.newAsset({ ownerId: user.id });
-      await ctx.newExif({ assetId: asset.id, description: 'test' });
+      await ctx.newExif({ assetId: asset.id, description: 'test', timeZone: 'America/Edmonton' });
 
       await sut.updateAll(auth, { ids: [asset.id], dateTimeOriginal: '2023-11-19T18:11:00' });
 
       await expect(ctx.get(AssetRepository).getById(asset.id, { exifInfo: true })).resolves.toEqual(
         expect.objectContaining({
-          exifInfo: expect.objectContaining({ dateTimeOriginal: '2023-11-19T18:11:00+00:00', timeZone: null }),
+          fileCreatedAt: new Date('2023-11-19T18:11:00Z'),
+          localDateTime: new Date('2023-11-19T18:11:00Z'),
+          exifInfo: expect.objectContaining({
+            dateTimeOriginal: '2023-11-19T18:11:00+00:00',
+            timeZone: 'UTC',
+            lockedProperties: expect.arrayContaining(['dateTimeOriginal', 'timeZone']),
+          }),
         }),
       );
     });

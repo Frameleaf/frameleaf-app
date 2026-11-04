@@ -87,7 +87,9 @@ export function assemblePhotoprismManifest(records: Iterable<PhotoprismInventory
     return value;
   });
   const assets: SealedManifest['assets'] = photos.map((photo) => {
-    if (photo.review.length > 0) return refuse('PHOTOPRISM_METADATA_REVIEW_REQUIRED');
+    const localClock = photo.metadata.timeZone === undefined ? photo.localDateTime : undefined;
+    if (photo.review.some((code) => code !== 'LOCAL_TIME_ZONE_UNRESOLVED' || localClock === undefined))
+      return refuse('PHOTOPRISM_METADATA_REVIEW_REQUIRED');
     const related = photoFiles.get(photo.id) ?? [];
     if (related.filter((file) => file.role === 'sidecar').length > 1)
       return refuse('PHOTOPRISM_SIDECAR_REVIEW_REQUIRED');
@@ -115,6 +117,7 @@ export function assemblePhotoprismManifest(records: Iterable<PhotoprismInventory
       fileIds: related.map((file) => file.id),
       primaryFileId: primary[0].id,
       type,
+      ...(localClock === undefined ? {} : { localDateTime: localClock }),
       fileModifiedAt: observed.get(primary[0].id)!.modifiedAt,
       originalFileNames: Object.fromEntries(names),
       visibility: photo.state.removed

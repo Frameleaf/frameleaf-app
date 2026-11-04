@@ -3,7 +3,9 @@ import fixture from 'src/library-import/fixtures/pigallery2/3.5.2-sqlite.json' w
 import { ImportedPasswordContext } from 'src/library-import/passwords.js';
 import { pigallery2Projections as projections } from 'src/library-import/pigallery2-projections.js';
 import { readSqlitePassword } from 'src/library-import/sqlite-password.js';
-import { sqliteSchemaFingerprint } from 'src/library-import/sqlite.js';
+import { assertSqliteTextSafe, sqliteSchemaFingerprint } from 'src/library-import/sqlite.js';
+
+export { readPigallery2Manifest } from 'src/library-import/pigallery2-manifest.js';
 
 export type Pigallery2Table = keyof typeof projections;
 export type Pigallery2Row = Record<string, SQLOutputValue>;
@@ -51,10 +53,12 @@ export const openPigallery2Snapshot = (path: string, version: string) => {
         const next = database.prepare(`${select} WHERE rowid>? ORDER BY rowid LIMIT 1000`);
         first.setReadBigInts(true);
         next.setReadBigInts(true);
+        assertSqliteTextSafe(database, first.sourceSQL);
         let batch = first.all();
         while (batch.length > 0) {
           const cursor = batch.at(-1)!.__frameleaf_cursor;
           yield batch.map(({ __frameleaf_cursor: _cursor, ...row }) => row);
+          assertSqliteTextSafe(database, next.sourceSQL, [cursor]);
           batch = next.all(cursor);
         }
       } catch {

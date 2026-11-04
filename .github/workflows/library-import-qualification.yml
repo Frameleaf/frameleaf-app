@@ -4,29 +4,106 @@ name: Library import qualification
   pull_request:
     branches: [main]
     paths:
-      - 'server/src/library-import/**'
-      - 'server/scripts/cleanup-photoprism-qualification.mjs'
-      - 'server/scripts/qualify-photoprism-mariadb.mjs'
-      - 'server/test/photoprism-qualification-cleanup.test.mjs'
+      - 'server/**'
+      - 'scripts/**'
+      - 'manager/src/contracts.ts'
+      - 'manager/src/import*.ts'
+      - 'manager/import-rename.c'
+      - 'studio/runtime/subtitle-sidecar.*'
+      - 'studio/tools/prepare-server-subtitle-runtime.mjs'
+      - 'studio/tools/owned-subtitle-runtime.mjs'
+      - 'packages/**'
       - '.github/workflows/library-import-qualification.yml'
       - 'pnpm-lock.yaml'
-      - 'server/package.json'
+      - 'pnpm-workspace.yaml'
+      - 'package.json'
+      - 'mise.toml'
+      - 'mise.lock'
   push:
     branches: [main]
     paths:
-      - 'server/src/library-import/**'
-      - 'server/scripts/cleanup-photoprism-qualification.mjs'
-      - 'server/scripts/qualify-photoprism-mariadb.mjs'
-      - 'server/test/photoprism-qualification-cleanup.test.mjs'
+      - 'server/**'
+      - 'scripts/**'
+      - 'manager/src/contracts.ts'
+      - 'manager/src/import*.ts'
+      - 'manager/import-rename.c'
+      - 'studio/runtime/subtitle-sidecar.*'
+      - 'studio/tools/prepare-server-subtitle-runtime.mjs'
+      - 'studio/tools/owned-subtitle-runtime.mjs'
+      - 'packages/**'
       - '.github/workflows/library-import-qualification.yml'
       - 'pnpm-lock.yaml'
-      - 'server/package.json'
+      - 'pnpm-workspace.yaml'
+      - 'package.json'
+      - 'mise.toml'
+      - 'mise.lock'
 permissions:
   contents: read
 concurrency:
   group: library-import-qualification-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  sqlite-source-text:
+    name: SQLite source text admission
+    if: github.repository == 'Frameleaf/frameleaf-app'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Setup Mise
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8
+        with:
+          persist_github_token: false
+          install_args: --locked
+          version: 2026.10.8
+      - name: Install locked Server dependencies
+        run: pnpm --filter 'frameleaf...' install --frozen-lockfile
+      - name: Build required SDKs
+        run: |
+          pnpm --filter @frameleaf/sdk build
+          pnpm --filter @frameleaf/plugin-sdk build
+      - name: Verify SQLite text and source fixtures
+        working-directory: server
+        run: |
+          node ../studio/tools/prepare-server-subtitle-runtime.mjs
+          node scripts/prepare-import-transfer-runtime.mjs
+          pnpm exec vitest run --config test/vitest.config.mjs src/library-import/sqlite.spec.ts src/library-import/sqlite-password.spec.ts src/library-import/photoprism.spec.ts src/library-import/librephotos.spec.ts src/library-import/photoview.spec.ts src/library-import/lychee.spec.ts src/library-import/pigallery2.spec.ts src/library-import/nextcloud.spec.ts src/services/auth.service.spec.ts --maxWorkers=1
+      - name: Lint import readers and manifest mappings
+        working-directory: server
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+        run: pnpm exec eslint src/library-import/sqlite*.ts src/library-import/photoprism.ts src/library-import/photoprism.spec.ts src/library-import/librephotos.ts src/library-import/photoview.ts src/library-import/lychee.ts src/library-import/pigallery2.ts src/library-import/pigallery2.spec.ts src/library-import/nextcloud.ts src/library-import/*manifest*.ts --max-warnings 0
+  source-manifests:
+    name: Source manifest mapping
+    if: github.repository == 'Frameleaf/frameleaf-app'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Setup Mise
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8
+        with:
+          persist_github_token: false
+          install_args: --locked
+          version: 2026.10.8
+      - name: Install locked Server dependencies
+        run: pnpm --filter 'frameleaf...' install --frozen-lockfile
+      - name: Build required SDKs
+        run: |
+          pnpm --filter @frameleaf/sdk build
+          pnpm --filter @frameleaf/plugin-sdk build
+      - name: Verify source manifest mapping fixtures
+        working-directory: server
+        run: |
+          node ../studio/tools/prepare-server-subtitle-runtime.mjs
+          node scripts/prepare-import-transfer-runtime.mjs
+          pnpm exec vitest run --config test/vitest.config.mjs src/library-import/*manifest.spec.ts src/library-import/piwigo-source.spec.ts --maxWorkers=1
   photoprism-mariadb:
     name: PhotoPrism MariaDB native reader
     if: github.repository == 'Frameleaf/frameleaf-app'
@@ -53,6 +130,12 @@ jobs:
         run: |
           pnpm --filter @frameleaf/sdk build
           pnpm --filter @frameleaf/plugin-sdk build
+      - name: Verify imported metadata preservation
+        working-directory: server
+        run: |
+          node ../studio/tools/prepare-server-subtitle-runtime.mjs
+          node scripts/prepare-import-transfer-runtime.mjs
+          pnpm exec vitest run --config test/vitest.config.mjs src/services/metadata.service.spec.ts src/services/asset.service.spec.ts src/utils/date.spec.ts --maxWorkers=1
       - name: Verify scoped cancellation cleanup
         run: node --test server/test/photoprism-qualification-cleanup.test.mjs
       - name: Qualify native restored database extraction

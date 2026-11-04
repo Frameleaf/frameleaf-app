@@ -7,6 +7,8 @@ type RegenerationStatus = {
   needsAttention: number;
 };
 
+const FINISHED = new Set(['completed', 'completed_with_errors', 'cancelled']);
+
 export function regenerationPresentation(status: RegenerationStatus) {
   const labels: Record<string, string> = {
     pending_first_setup: 'Waiting for first setup prerequisites',
@@ -24,7 +26,11 @@ export function regenerationPresentation(status: RegenerationStatus) {
   };
   return {
     label: labels[status.state] ?? 'Waiting for regeneration status',
-    detail: `${status.completed.toLocaleString()} of ${status.total.toLocaleString()} items complete · ${status.failed.toLocaleString()} failed · ${status.blocked.toLocaleString()} blocked · ${status.needsAttention.toLocaleString()} need attention`,
+    // Before the run is counted every figure is 0, which read as "0 files imported" on the success screen.
+    detail:
+      status.total === 0 && !FINISHED.has(status.state)
+        ? 'Your photos are in place. Thumbnails, faces and search are rebuilt in the background; counts appear once they are tallied.'
+        : `${status.completed.toLocaleString()} of ${status.total.toLocaleString()} items complete · ${status.failed.toLocaleString()} failed · ${status.blocked.toLocaleString()} blocked · ${status.needsAttention.toLocaleString()} need attention`,
     attention: ['blocked', 'needs_attention', 'completed_with_errors', 'cancelled'].includes(status.state),
   };
 }

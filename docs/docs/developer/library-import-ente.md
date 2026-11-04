@@ -1,6 +1,6 @@
 # Ente Photos import contract
 
-This is an internal component resolver, not an enabled importer or a compatibility claim. The initial research target is the official Rust CLI `ente-cli-v0.4.2`, source commit `d536e8e913443b9d88c1e60e3a5463cb78ba5592`. Legacy Go CLI and desktop exports require separate qualification; Takeout-like fields do not establish an identical export contract.
+The component resolver and common-manifest mapper are internal; they do not enable an importer or establish source compatibility. The initial research target is the official Rust CLI `ente-cli-v0.4.2`, source commit `d536e8e913443b9d88c1e60e3a5463cb78ba5592`. Legacy Go CLI and desktop exports require separate qualification; Takeout-like fields do not establish an identical export contract.
 
 ## Inputs and ownership
 
@@ -24,6 +24,25 @@ The helper validates positive signed 64-bit source identities as decimal strings
 | Unsupported metadata                   | Requires a protected migration archive                            | Archive creation and review are not implemented here   |
 
 Ente's portable sidecar uses `livePhoto`, while the pinned CLI inventory uses `livephoto`. Neither spelling implies two independent logical photos. A sidecar for either Live Photo component describes both files; callers must reconcile repeated sidecars without discarding album relationships.
+
+## Common manifest mapping
+
+`readEnteManifest` binds each account to its root export identity and the pinned exporter contract fingerprint. It requires complete, unchanged authenticated inventories and receipts for every album placement and media component. The controller must independently establish this capture evidence; caller-supplied completeness flags do not authorize execution.
+
+The mapper coalesces repeated placements by source file ID and component, selects an original path from the owning account's export, and retains every placement receipt in the protected archive. Equal bytes with different source IDs or owners remain distinct. The canonical destination writer requires review of unresolved duplicate primary bytes within one owner; the adapter never silently drops those records.
+
+| Source evidence                               | Manifest handling                                                                                        |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Current caption, capture instant and location | Authenticated current values override stale embedded metadata; missing location remains explicitly empty |
+| Local clock and fixed offset                  | Preserve the encoded clock and six fractional digits; do not invent a named regional zone                |
+| Private visibility and favourite state        | Use the owning account's private state; keep sharee views in the protected archive                       |
+| Original album memberships                    | Preserve owner content and restrict destination sharing; disclose unsupported access differences         |
+| Favorites, hidden and uncategorized albums    | Preserve clearly named membership snapshots                                                              |
+| Live Photo components                         | Create the still/motion relationship, with the motion asset hidden                                       |
+| Folder named `Trash/`                         | Does not establish source trash state; unsupported authenticated visibility blocks mapping               |
+| Other metadata and placement evidence         | Preserve credential-free records in the protected archive                                                |
+
+The synthetic mapping suite expands the native fixture's complete ID inventories using its representative sidecars. It covers repeated placements, distinct owners with equal bytes, edited metadata, album relationships, Live Photos, incomplete or changed captures and safe refusal of unsupported inputs. This is mapping evidence, not a complete native migration or a release qualification. Encrypted account secrets and root verifiers are excluded from both manifest and archive; the export does not provide a compatible destination login verifier.
 
 ## Native evidence
 

@@ -27,6 +27,7 @@ import { getImmichImportState } from 'src/immich-import/state.js';
 import { ImportConfig, ImportDatabase, ImportRefused, ImportRow, quote } from 'src/immich-import/types.js';
 import { assertFreshImportDestination } from 'src/library-import/admission.js';
 import { LIBRARY_IMPORT_LOCK as IMPORT_LOCK } from 'src/library-import/lock.js';
+import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
 
 const localColumns = new Set(['updateId', 'createId']);
 const LOST_REPORT_ITEMS = 1000;
@@ -349,14 +350,38 @@ export class ImmichImportService {
     await this.destination.query(`UPDATE public.asset SET visibility=CASE
       WHEN EXISTS (SELECT 1 FROM public.asset still WHERE still."livePhotoVideoId"=asset.id) THEN 'hidden'
       ELSE 'timeline' END::asset_visibility_enum WHERE visibility='locked'`);
-    // ponytail: fork sensitive *detections* (asset.is_nsfw) are not carried; they only hid media when the admin
-    // switched detection hiding on. Owner marks are, from the imported ml-enrichment review.
+    // Owner marks come from the imported ml-enrichment review.
     await this.destination.query(
       `INSERT INTO public.asset_lock("assetId",reason,"lockedAt")
       SELECT "assetId",$1,"updatedAt" FROM public.asset_metadata
       WHERE key='ml-enrichment' AND value #>> '{nsfwDetection,review,isNsfw}'='true' ON CONFLICT DO NOTHING`,
       [AssetLockReason.Marked],
     );
+    // The fork-only asset.is_nsfw column is not in the copied shape; rebuild it with the server's own rule
+    // (deriveIsNsfwFromMetadata: a review decides, else a successful detection, else a high-confidence description
+    // with strong indicators). SQL only narrows the candidates. Detections hid media only while the source's "hide
+    // sensitive detections from the library" switch was on; then they lock, as 2100000000320 did.
+    const candidates = await this.destination.query(`SELECT "assetId" AS id, value FROM public.asset_metadata
+      WHERE key='ml-enrichment' AND (value #>> '{nsfwDetection,review,isNsfw}'='true'
+        OR value #>> '{nsfwDetection,result,isNsfw}'='true' OR value #>> '{description,result,safety,is_nsfw_likely}'='true')`);
+    const sensitive = candidates.filter((row) => deriveIsNsfwFromMetadata(row.value) === true).map((row) => row.id);
+    for (let index = 0; index < sensitive.length; index += 10_000) {
+      await this.destination.query(
+        `UPDATE public.asset SET is_nsfw=true WHERE NOT is_nsfw
+        AND id IN (SELECT jsonb_array_elements_text($1::text::jsonb)::uuid)`,
+        [JSON.stringify(sensitive.slice(index, index + 10_000))],
+      );
+    }
+    const [hiding] = await this.source.db.query(
+      `SELECT value #>> '{machineLearning,nsfwDetection,hideFromLibrary}' AS enabled
+      FROM public.system_metadata WHERE key='system-config'`,
+    );
+    if (hiding?.enabled === 'true') {
+      await this.destination.query(
+        `INSERT INTO public.asset_lock("assetId",reason) SELECT id,$1 FROM public.asset WHERE is_nsfw ON CONFLICT DO NOTHING`,
+        [AssetLockReason.Detected],
+      );
+    }
     // Stacks and live photos lock as a whole, from any member or either part. Repeat until no lock is added,
     // so a lock reached through one relationship spreads through the others.
     for (let added = true; added;) {

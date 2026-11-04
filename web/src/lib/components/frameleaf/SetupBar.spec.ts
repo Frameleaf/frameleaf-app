@@ -176,6 +176,14 @@ describe('SetupBar', () => {
     expect(sdkMock.beginLibrarySetup).toHaveBeenCalled();
   });
 
+  it('marks the file check stopped, not in progress, when setup needs attention', async () => {
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(progress({ phase: Phase.NeedsAttention }));
+    render(SetupBar);
+    await fireEvent.click(await screen.findByRole('button', { name: /Details/ }));
+    expect(screen.getByText('Stopped')).toBeInTheDocument();
+    expect(screen.queryByText('In progress')).not.toBeInTheDocument();
+  });
+
   it('keeps Retry and a general warning when attention follows completed stages', async () => {
     const value = progress({ phase: Phase.NeedsAttention });
     value.stages = value.stages.map((stage) => ({ ...stage, status: LibrarySetupStageStatus.Done, done: stage.total }));

@@ -59,7 +59,7 @@ import { getAssetEditFields, recordAssetEdit } from 'src/services/partner-copy.s
 import { requireAccess, requireElevatedPermission } from 'src/utils/access.js';
 import { getAssetFiles, getDimensions, getLivePhotoMotion, isPanorama } from 'src/utils/asset.util.js';
 import { updateLockedColumns } from 'src/utils/database.js';
-import { extractTimeZone } from 'src/utils/date.js';
+import { extractTimeZone, withDateTimeOffset } from 'src/utils/date.js';
 import { EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { EditOperationEdit } from 'src/utils/edit-operation.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
@@ -100,19 +100,29 @@ const getDurationMs = (duration: number | null | undefined) => {
   return Number.isFinite(value) && value > 0 ? value : null;
 };
 
-const getAssetDateTimeUpdates = (dateTimeOriginal?: string) => {
+const getAssetDateTimeUpdates = (
+  dateTimeOriginal?: string,
+  timeZone?: string | null,
+  previous?: { fileCreatedAt: Date; localDateTime: Date },
+) => {
   if (!dateTimeOriginal) {
     return {};
   }
 
-  const dateTime = DateTime.fromISO(dateTimeOriginal, { setZone: true, zone: 'UTC' });
+  const dateTime = DateTime.fromISO(withDateTimeOffset(dateTimeOriginal)!, { setZone: true, zone: 'UTC' });
   if (!dateTime.isValid) {
     return {};
   }
 
+  const zoned = timeZone ? dateTime.setZone(timeZone) : undefined;
+  const localDateTime = zoned?.isValid
+    ? zoned.setZone('UTC', { keepLocalTime: true }).toJSDate()
+    : previous
+      ? new Date(previous.localDateTime.getTime() + dateTime.toMillis() - previous.fileCreatedAt.getTime())
+      : dateTime.setZone('UTC', { keepLocalTime: true }).toJSDate();
   return {
     fileCreatedAt: dateTime.toUTC().toJSDate(),
-    localDateTime: dateTime.setZone('UTC', { keepLocalTime: true }).toJSDate(),
+    localDateTime,
   };
 };
 
@@ -530,7 +540,12 @@ export class AssetService extends BaseService {
           throw new ConflictException('Lock group changed; retry the update');
         const storedVisibility = visibility === AssetVisibility.Locked ? undefined : visibility;
         const assetDto = omitBy(
-          { isFavorite, visibility: storedVisibility, duplicateId, ...getAssetDateTimeUpdates(dateTimeOriginal) },
+          {
+            isFavorite,
+            visibility: storedVisibility,
+            duplicateId,
+            ...getAssetDateTimeUpdates(dateTimeOriginal, timeZone),
+          },
           isUndefined,
         );
         // FL-51: null coordinates remove the location (the geolocation utility's "Remove location")
@@ -541,7 +556,7 @@ export class AssetService extends BaseService {
             longitude: clearLocation ? undefined : (longitude ?? undefined),
             rating,
             description,
-            dateTimeOriginal,
+            dateTimeOriginal: withDateTimeOffset(dateTimeOriginal),
           },
           isUndefined,
         );
@@ -564,7 +579,7 @@ export class AssetService extends BaseService {
         const updatedDateTimes =
           (dateTimeRelative !== undefined && dateTimeRelative !== 0) ||
           timeZone !== undefined ||
-          extractedTimeZone?.type === 'fixed'
+          extractedTimeZone !== undefined
             ? await this.assetRepository.updateDateTimeOriginal(
                 ids,
                 dateTimeRelative,
@@ -572,15 +587,21 @@ export class AssetService extends BaseService {
               )
             : [];
 
-        for (const { assetId, dateTimeOriginal } of updatedDateTimes) {
-          await this.assetRepository.update({
-            id: assetId,
-            ...getAssetDateTimeUpdates(dateTimeOriginal?.toISOString()),
-          });
-        }
-
         if (Object.keys(assetDto).length > 0) {
           await this.assetRepository.updateAll(ids, assetDto);
+        }
+        const unknownZoneIds = updatedDateTimes.filter(({ timeZone }) => !timeZone).map(({ assetId }) => assetId);
+        const previousClocks = new Map(
+          (unknownZoneIds.length > 0 ? await this.assetRepository.getByIds(unknownZoneIds) : []).map((asset) => [
+            asset.id,
+            asset,
+          ]),
+        );
+        for (const { assetId, dateTimeOriginal, timeZone } of updatedDateTimes) {
+          await this.assetRepository.update({
+            id: assetId,
+            ...getAssetDateTimeUpdates(dateTimeOriginal?.toISOString(), timeZone, previousClocks.get(assetId)),
+          });
         }
 
         await this.partnerOriginRepository.markOverridden('asset', ids, getAssetEditFields(dto), auth.user.id);
@@ -841,12 +862,17 @@ export class AssetService extends BaseService {
 
     const fields = [AssetOriginField.DateTimeOriginal];
     await this.partnerOriginRepository.withOriginEdit('asset', ids, [], async () => {
+      const previousClocks = new Map((await this.assetRepository.getByIds(ids)).map((asset) => [asset.id, asset]));
       for (const { id, from } of items) {
         const updated = await this.assetRepository.setDateTimeOriginal(id, new Date(from.getTime() + minutes * 60_000));
         if (updated) {
           await this.assetRepository.update({
             id,
-            ...getAssetDateTimeUpdates(updated.dateTimeOriginal?.toISOString()),
+            ...getAssetDateTimeUpdates(
+              updated.dateTimeOriginal?.toISOString(),
+              updated.timeZone,
+              previousClocks.get(id),
+            ),
           });
         }
       }
@@ -973,6 +999,7 @@ export class AssetService extends BaseService {
     if (targetFile?.path && targetFile.path !== targetPath && !targetAsset.libraryReadOnly) {
       await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [targetFile.path] } });
     }
+    await this.assetRepository.unlockProperties(targetAsset.id, ['dateTimeOriginal']);
     await this.jobRepository.queue({ name: JobName.AssetExtractMetadata, data: { id: targetAsset.id } });
   }
 
@@ -1398,7 +1425,7 @@ export class AssetService extends BaseService {
     const writes = omitBy(
       {
         description,
-        dateTimeOriginal,
+        dateTimeOriginal: withDateTimeOffset(dateTimeOriginal),
         timeZone: extractTimeZone(dateTimeOriginal)?.name,
         latitude: clearLocation ? undefined : (latitude ?? undefined),
         longitude: clearLocation ? undefined : (longitude ?? undefined),

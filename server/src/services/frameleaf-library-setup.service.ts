@@ -55,6 +55,12 @@ const SETUP_QUEUES = [
   QueueName.VideoConversion,
   QueueName.MediaHealth,
 ];
+/**
+ * FL-1165: the queues whose failures stop setup. A thumbnail, metadata, sidecar or video job that fails on one
+ * damaged original is listed in Background work and Library Care like the original itself (FL-1146), never a
+ * reason to halt: a large import always holds some, and each one would otherwise put setup back to needs-attention.
+ */
+const HALTING_QUEUES = new Set<QueueName>([QueueName.Library, QueueName.MediaHealth]);
 const KEY = 'frameleaf-manager-library-setup';
 /**
  * FL-1146 (owner 2026-11-02): an import opens before its originals are read. Metadata and thumbnails start at
@@ -687,7 +693,11 @@ export class FrameleafLibrarySetupService {
         // Sidecar completion enqueues metadata, which enqueues derivatives. An idle downstream
         // queue alone cannot establish a final sync revision.
         const queues = await Promise.all(SETUP_QUEUES.map((q) => this.jobs.getJobCounts(q)));
-        if (queues.some((q, i) => q.failed > (state.failedBaseline?.[SETUP_QUEUES[i]] ?? 0))) {
+        if (
+          queues.some(
+            (q, i) => HALTING_QUEUES.has(SETUP_QUEUES[i]) && q.failed > (state.failedBaseline?.[SETUP_QUEUES[i]] ?? 0),
+          )
+        ) {
           state.phase = 'needs-attention';
         }
         const idle = queues.every((q) => q.active === 0 && q.waiting === 0 && q.delayed === 0 && q.paused === 0);

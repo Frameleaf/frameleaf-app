@@ -641,14 +641,14 @@
 }
 .phw-tabs {
   display: flex;
-  gap: 3px;
+  gap: var(--fl-space-1);
   background: var(--fl-panel);
-  padding: 3px;
+  padding: var(--fl-space-1);
   border: 1px solid var(--fl-border);
   border-radius: var(--fl-radius-control);
 }
 .phw-tabs button {
-  padding: 7px var(--fl-space-3);
+  padding: 7px var(--fl-space-4);
   color: var(--fl-muted);
   font-size: var(--fl-font-small);
   border-radius: var(--fl-radius-control);

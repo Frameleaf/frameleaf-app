@@ -1667,7 +1667,8 @@
      * this box, so a short album (one row) must not cut the "…" menu off under its last photo.
      */
     min-height: 100%;
-    overflow: clip;
+    /* Block axis only: the toolbar band reaches into the page gutter on both sides (LIB-P4). */
+    overflow: visible clip;
   }
   .fl-timeline-cards {
     flex: 1 1 auto;
