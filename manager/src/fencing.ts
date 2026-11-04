@@ -1,7 +1,7 @@
 import { open, readFile } from 'node:fs/promises';
 import { Docker, environment, sharesMedia, type Container } from './docker.js';
 import { databaseCandidates, Discovery } from './discovery.js';
-import { Refusal, type Source, type Installation, type Mount } from './contracts.js';
+import { Refusal, type Source, type SourceFence, type Installation, type Mount } from './contracts.js';
 import { Store } from './store.js';
 import type { AutostartFile } from './unraid-autostart.js';
 
@@ -33,7 +33,7 @@ export type RetiredService = {
   running: boolean;
   autostart: string | null;
 };
-const retiredKey = (source: Source) => `source-services:${source.id}`;
+const retiredKey = (source: Pick<Source, 'id'>) => `source-services:${source.id}`;
 /** Redis as the source server reaches it (REDIS_URL, else REDIS_HOSTNAME, else Immich's default `redis`). */
 function redisHost(env: Record<string, string>): string | null {
   if (env.REDIS_URL) {
@@ -169,7 +169,7 @@ export class Fencing {
         `Stop these containers and turn off their autostart, then try again: ${unexpected.map((c) => c.Name.replace(/^\//, '')).join(', ')}.`,
       );
   }
-  async stop(source: Source): Promise<void> {
+  async stop(source: Source | SourceFence): Promise<void> {
     // The durable intent permits only our own restart-policy changes on a retry. All other
     // configuration and container identities must still match the reviewed source.
     const intent = this.store.get<string>(`fence:${source.id}`);
@@ -196,11 +196,11 @@ export class Fencing {
     await this.verify(source);
   }
   /** The reviewed source, also accepting the retired database's own restart-policy change (FL-476). */
-  private pinned(source: Source): Source {
+  private pinned(source: Source | SourceFence): Source | SourceFence {
     const retired = this.retiredServices(source) ?? [];
     return { ...source, restart: { ...Object.fromEntries(retired.map((s) => [s.id, s.restart])), ...source.restart } };
   }
-  retiredServices(source: Source): RetiredService[] | null {
+  retiredServices(source: Pick<Source, 'id'>): RetiredService[] | null {
     return this.store.get<RetiredService[]>(retiredKey(source)) ?? null;
   }
   /**
@@ -262,7 +262,7 @@ export class Fencing {
     return retired;
   }
   /** Puts retired source services back as they were before the import; a no-op when none were retired. */
-  async restoreSourceServices(source: Source): Promise<void> {
+  async restoreSourceServices(source: Pick<Source, 'id' | 'platform'>): Promise<void> {
     const retired = this.retiredServices(source);
     if (!retired) return;
     if (source.platform === 'unraid' && this.autostartFile)
@@ -276,7 +276,7 @@ export class Fencing {
       if (service.running) await this.docker.start(service.id);
     }
   }
-  async verify(source: Source, installation?: Installation): Promise<void> {
+  async verify(source: Source | SourceFence, installation?: Installation): Promise<void> {
     await new Discovery(this.docker).revalidate(this.pinned(source), true);
     await this.assertMedia(source.mounts, installation, source.workers);
     const all = await this.docker.inventory();
@@ -291,7 +291,7 @@ export class Fencing {
       if (removeAutostart(text, names) !== text) throw new Refusal('source_autostart_enabled');
     }
   }
-  async recover(source: Source, installation: Installation | null): Promise<void> {
+  async recover(source: Source | SourceFence, installation: Installation | null): Promise<void> {
     if (installation?.mayHaveWrittenMedia) throw new Refusal('media_recovery_required_no_automatic_source_restart');
     // Repair a journalled partial write before retrying the fence or restoring any service.
     await this.reconcileAutostart();

@@ -72,6 +72,10 @@ export type Source = {
   };
   restart: Record<string, { Name: string; MaximumRetryCount: number }>;
 };
+/** Reviewed Docker identities only; schema, ownership and privacy qualification remain source-specific. */
+export type SourceFence = Pick<Source, 'id' | 'workers' | 'mounts' | 'fingerprint' | 'platform' | 'restart'> & {
+  containers: string[];
+};
 export type Backup = {
   name: string;
   source: string;
