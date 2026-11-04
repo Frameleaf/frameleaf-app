@@ -417,29 +417,35 @@ export class Operations {
       request.snapshotPath !== `${IMPORT_PREPARATION_TARGET}/${snapshotPath}` ||
       digest(snapshot.fence) !== digest(fence) || digest(snapshot.source) !== digest(source)
     ) throw new Refusal('invalid_import_authority');
-    await storagePath(input.mediaPath, this.roots, 0);
-    const sourceRoots = fence.mounts.filter((mount) => mount.type === 'bind').map(({ source }) => source);
-    for (const mount of media) {
-      if (mount.target === '/data') continue;
-      if (!sourceRoots.some((root) => mount.source === root || mount.source.startsWith(root + '/')) ||
-        await realpath(mount.source).catch(() => null) !== mount.source)
-        throw new Refusal('import_runtime_media_invalid');
+    this.executing.add(operationId);
+    try {
+      await storagePath(input.mediaPath, this.roots, 0);
+      const sourceRoots = fence.mounts.filter((mount) => mount.type === 'bind').map(({ source }) => source);
+      for (const mount of media) {
+        if (mount.target === '/data') continue;
+        if (!sourceRoots.some((root) => mount.source === root || mount.source.startsWith(root + '/')) ||
+          await realpath(mount.source).catch(() => null) !== mount.source)
+          throw new Refusal('import_runtime_media_invalid');
+      }
+      const platform = (await this.docker.compatibility()).platform;
+      const release = await this.releases.acquire(input.tag);
+      if (!release.nas.platforms.includes(platform)) throw new Refusal('release_architecture_unavailable');
+      await this.fencing.verify(fence);
+      await this.docker.pull(release.nas.images.server, platform);
+      this.store.delete(`review:${operationId}`);
+      const path = await stageCommonImportPreparation(this.directory(), operationId, request);
+      const preparationSha256 = await fileHash(path);
+      const receipt = await this.docker.prepareImportBundle(this.directory(), release.nas.images.server, {
+        operationId, destinationId, source, preparationSha256,
+        verify: async () => {
+          await this.fencing.verify(fence);
+          if ((await fileHash(path)) !== preparationSha256) throw new Refusal('import_common_review_changed');
+        },
+      }, media);
+      return await this.review(input, managerPort, { ...receipt, fence, media, bootstrapAdminId });
+    } finally {
+      this.executing.delete(operationId);
     }
-    const platform = (await this.docker.compatibility()).platform;
-    const release = await this.releases.acquire(input.tag);
-    if (!release.nas.platforms.includes(platform)) throw new Refusal('release_architecture_unavailable');
-    await this.fencing.verify(fence);
-    await this.docker.pull(release.nas.images.server, platform);
-    const path = await stageCommonImportPreparation(this.directory(), operationId, request);
-    const preparationSha256 = await fileHash(path);
-    const receipt = await this.docker.prepareImportBundle(this.directory(), release.nas.images.server, {
-      operationId, destinationId, source, preparationSha256,
-      verify: async () => {
-        await this.fencing.verify(fence);
-        if ((await fileHash(path)) !== preparationSha256) throw new Refusal('import_common_review_changed');
-      },
-    }, media);
-    return this.review(input, managerPort, { ...receipt, fence, media, bootstrapAdminId });
   }
   async review(input: z.infer<typeof ReviewInput>, managerPort?: number, common?: CommonImportReview) {
     if (this.installation()) throw new Refusal('installation_already_exists');

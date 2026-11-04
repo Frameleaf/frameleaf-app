@@ -35,6 +35,9 @@ export class Store {
       .prepare('INSERT INTO settings VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value')
       .run(key, JSON.stringify(value));
   }
+  delete(key: string): void {
+    this.db.prepare('DELETE FROM settings WHERE key=?').run(key);
+  }
   /** Setting keys that start with a prefix, e.g. every `restore:` review. */
   keys(prefix: string): string[] {
     return (

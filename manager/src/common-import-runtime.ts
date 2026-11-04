@@ -250,18 +250,6 @@ export async function stageCommonImportPreparation(directory: string, operationI
   const root = join(directory, `import-runtime-${operationId}`);
   await privateDirectory(root);
   const path = join(root, 'prepare.json');
-  const file = await open(path, 'wx', 0o600);
-  try {
-    await file.writeFile(JSON.stringify(request));
-    await file.sync();
-  } finally {
-    await file.close();
-  }
-  const parent = await open(root, 'r');
-  try {
-    await parent.sync();
-  } finally {
-    await parent.close();
-  }
+  await atomicJson(path, request);
   return path;
 }

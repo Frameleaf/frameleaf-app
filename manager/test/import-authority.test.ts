@@ -781,7 +781,24 @@ test('common review reports the source and space without exposing the private bu
     /import_runtime_media_invalid/,
   );
   assert.equal(fenceChecks, 0);
-  const review = await f.operations.prepareCommonReview(input, { fence, media, bootstrapAdminId, request });
+  const prepared = { fence, media, bootstrapAdminId, request };
+  const prepareBundle = f.docker.prepareImportBundle;
+  const entered = Promise.withResolvers<void>();
+  const finish = Promise.withResolvers<void>();
+  f.docker.prepareImportBundle = async () => {
+    entered.resolve();
+    await finish.promise;
+    throw new Error('interrupted preparation');
+  };
+  const preparing = f.operations.prepareCommonReview(input, prepared);
+  await entered.promise;
+  await assert.rejects(f.operations.prepareCommonReview(input, prepared), /invalid_import_authority/);
+  await assert.rejects(f.operations.recover(operation.id), /operation_not_recoverable/);
+  finish.resolve();
+  await assert.rejects(preparing, /interrupted preparation/);
+  f.docker.prepareImportBundle = prepareBundle;
+  fenceChecks = 0;
+  const review = await f.operations.prepareCommonReview(input, prepared);
   assert.equal(fenceChecks, 3);
   assert.equal(review.id, common.binding.operationId);
   assert.equal(review.backup, null);
