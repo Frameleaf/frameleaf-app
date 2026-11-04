@@ -21,6 +21,7 @@ test('offline import dialogue handles fragmented lines and awaits each source ch
         if (input !== 'approved\\n') process.exit(23);
         process.stdout.write('complete\\n');
         process.stdin.pause();
+        process.stdin.unref();
       }
     });
   `,
