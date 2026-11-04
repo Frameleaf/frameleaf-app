@@ -75,6 +75,30 @@ it('refuses a lost Manager connection while waiting', async () => {
   );
 });
 
+it('refuses an in-flight input close without waiting for the authority timeout', async () => {
+  vi.useFakeTimers();
+  const { input, output, authority } = fixture();
+  output.on('data', () => input.destroy());
+  let result = 'waiting';
+  const request = requestImportSourceAuthority('run', authority, input, output).then(
+    () => {
+      result = 'allowed';
+    },
+    () => {
+      result = 'refused';
+    },
+  );
+  await vi.advanceTimersByTimeAsync(1);
+  try {
+    expect(result).toBe('refused');
+    expect(input.listenerCount('close')).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    await vi.runAllTimersAsync();
+    await request;
+  }
+});
+
 it.each(['input', 'output'] as const)('refuses an already destroyed %s without sending a challenge', async (side) => {
   const { input, output, authority } = fixture();
   const sent = vi.fn();
