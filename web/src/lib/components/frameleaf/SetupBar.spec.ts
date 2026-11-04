@@ -155,6 +155,30 @@ describe('SetupBar', () => {
     expect(screen.queryByText('Off')).not.toBeInTheDocument();
   });
 
+  it('says when quiet hours start the videos left while AI processing is off', async () => {
+    const value = progress({ phase: Phase.Verifying });
+    value.stages = [
+      { id: LibrarySetupStageId.Check, status: LibrarySetupStageStatus.Done, done: 823_034, total: 823_034 },
+      { id: LibrarySetupStageId.Thumbnails, status: LibrarySetupStageStatus.Done, done: 823_034, total: 823_034 },
+      {
+        id: LibrarySetupStageId.Search,
+        status: LibrarySetupStageStatus.Waiting,
+        disabled: true,
+        heldForNight: true,
+        resumesAt: null,
+        done: 4,
+        total: 10,
+      },
+    ];
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(value);
+    render(SetupBar);
+    await fireEvent.click(await screen.findByRole('button', { name: /Details/ }));
+    expect(screen.getByRole('region', { name: 'Setting up your library' })).toHaveTextContent('Saved for the night');
+    expect(
+      screen.queryByText('Getting videos ready to play. AI processing is turned off. You can enable it later.'),
+    ).not.toBeInTheDocument();
+  });
+
   it('keeps the last answer across pages, so the bar never hides and comes back', async () => {
     sdkMock.getLibrarySetupProgress.mockResolvedValue(progress());
     const first = render(SetupBar);

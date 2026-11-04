@@ -88,11 +88,12 @@
 
   const stageTitle = (id: LibrarySetupStageId) => $t(`setup_bar_stage_${id}`);
   const tonight = (stage: Stage) => tonightLabel(stage.resumesAt ?? null, $t, $locale);
+  // Work quiet hours saved for the night says when it starts, AI processing off or on.
   const stageDetail = (stage: Stage) =>
-    stage.disabled
-      ? $t(hasWork(stage) ? 'setup_bar_stage_videos_detail' : 'setup_bar_stage_search_disabled')
-      : stage.heldForNight
-        ? tonight(stage)
+    stage.heldForNight
+      ? tonight(stage)
+      : stage.disabled
+        ? $t(hasWork(stage) ? 'setup_bar_stage_videos_detail' : 'setup_bar_stage_search_disabled')
         : stage.id === LibrarySetupStageId.Search && stage.status === LibrarySetupStageStatus.Waiting
           ? $t('setup_bar_stage_search_waiting')
           : $t(`setup_bar_stage_${stage.id}_detail`);
