@@ -18,6 +18,7 @@
     buildActivityList,
     formatActivityDuration,
     isProgressStage,
+    isShownAsCloudWork,
     isUnfinishedCloudWork,
     matchesActivityFilter,
     type ActivityFilter,
@@ -124,14 +125,25 @@
     );
     return () => clearInterval(timer);
   });
-  const items = $derived(
+  const allItems = $derived(
     buildActivityList({
       operations: activitySession.operations,
       uploads: $uploadAssetsStore,
       downloads: [...downloadManager.assets.entries()],
       bulk: librarySession.session.operations,
-    }).filter((item) => !isAdmin || !isUnfinishedCloudWork(item)),
+    }),
   );
+  const cloudWorkIds = $derived(new Set(cloudWork.map((row) => row.operationId)));
+  const items = $derived(allItems.filter((item) => !isShownAsCloudWork(item, cloudWorkIds)));
+  /** A cloud operation the status has not caught up with yet: ask now rather than at the next slow poll. */
+  const cloudWorkBehind = $derived(
+    isAdmin && allItems.some((item) => isUnfinishedCloudWork(item) && !isShownAsCloudWork(item, cloudWorkIds)),
+  );
+  $effect(() => {
+    if (cloudWorkBehind) {
+      void loadCloudWork();
+    }
+  });
   const counts = $derived(activityCounts(items));
   const visible = $derived(items.filter((item) => matchesActivityFilter(item, filter)));
   /* FL-162, prototype Activity.jsx: In progress, grouped by stage in the order jobs run, then Recent. */
@@ -405,6 +417,12 @@
         <Icon icon={mdiWifi} size="1.125rem" aria-hidden={true} />{$t('frameleaf_activity_reconnect')}
       </Button>
     </div>
+  {:else if isAdmin && runningJobsSession.unreachable}
+    <!-- Background work keeps its last numbers when a read fails; say they may be out of date. -->
+    <div class="fla-offline" role="status">
+      <Icon icon={mdiWifiOff} size="1.125rem" aria-hidden={true} />
+      <span>{$t('frameleaf_activity_background_stale')}</span>
+    </div>
   {/if}
 
   {#if activitySession.loading && items.length === 0}
@@ -414,7 +432,8 @@
       <Icon icon={filter === 'failed' ? mdiCheckCircleOutline : mdiProgressClock} size="2.25rem" aria-hidden={true} />
       <h2>{$t(`frameleaf_activity_empty_${filter}`)}</h2>
       {#if filter === 'all' || filter === 'running'}
-        <p>{$t('frameleaf_activity_empty_help')}</p>
+        <!-- Only administrators see the server's background work here. -->
+        <p>{$t(isAdmin ? 'frameleaf_activity_empty_help' : 'frameleaf_activity_empty_help_own')}</p>
         <!-- Nothing is running, so the way on is back to the photos, not into another workspace. -->
         <Button onclick={() => void goto(Route.photos())}>{$t('frameleaf_activity_back_to_library')}</Button>
       {:else}

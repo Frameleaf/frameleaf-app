@@ -171,12 +171,11 @@ export const workRows = (queues: readonly QueueResponseDto[]): WorkRow[] => {
 };
 
 /**
- * Items a kind of work still has to do: running, waiting, or held by a pause. Work the server has
- * booked for later (the next scheduled backup, a retry in a few minutes) is not counted; it is not
- * something the server is behind on.
+ * Items a kind of work still has to do: running, waiting, held by a pause, or due again in a few
+ * minutes (a retry, a short wait). Activity counts the same items, so the two pages agree.
  */
 export const workLeft = ({ queue }: WorkRow) =>
-  queue.statistics.active + queue.statistics.waiting + queue.statistics.paused;
+  queue.statistics.active + queue.statistics.waiting + queue.statistics.paused + queue.statistics.delayed;
 
 /** How one kind of work is doing, as "Now" says it. */
 export type WorkState = 'running' | 'waiting' | 'paused' | 'failed' | 'up-to-date';
@@ -219,10 +218,9 @@ export const summariseWork = (rows: readonly WorkRow[]): WorkSummary => {
     if (failed > 0) {
       summary.failed.push(row);
     }
-    if (row.queue.isPaused) {
-      if (row.definition.canPause) {
-        summary.paused.push(row);
-      }
+    // A queue only the server pauses (Housekeeping) still has its backlog to work through.
+    if (row.queue.isPaused && row.definition.canPause) {
+      summary.paused.push(row);
     } else if (active > 0) {
       summary.running.push(row);
     } else if (left > 0) {

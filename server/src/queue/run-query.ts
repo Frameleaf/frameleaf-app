@@ -466,6 +466,17 @@ export async function listRunItems(
   return rows;
 }
 
+/** Editor and video-conversion deliveries report their media operation's state (paused, cancelled, a lost
+ * lease still rendering) and one delivery per operation, as the queue page's counts do. */
+const reportedJobsForRun = (name: string) => {
+  const columns = sql`j.id, j.queue, j."createdAt", j."progressAt", j."startedAt", j."finishedAt", j."runId", j."parentId",
+    j."dependencyReason", j.attempt, j."retryBaseAttempt", j."latestPending"`;
+  return name === QueueName.Editor || name === QueueName.VideoConversion
+    ? sql`select ${columns}, r.state, r."availableAt", r."operationPaused"
+        from (${reportedQueueJobs(name)}) r join job j on j.id = r.id`
+    : sql`select ${columns}, j.state, j."availableAt", false "operationPaused" from job j where j.queue = ${name}`;
+};
+
 export async function observeQueueRun(db: Kysely<any>, name: string) {
   const {
     rows: [row],
@@ -481,14 +492,14 @@ export async function observeQueueRun(db: Kysely<any>, name: string) {
     blocked: number;
     retrying: number;
     noDispatchBacklog: boolean;
-  }>`with current_jobs as (
-      select j.*, q.paused, p.state "parentState" from job j join job_queue q on q.name = j.queue
+  }>`with reported as not materialized (${reportedJobsForRun(name)}), current_jobs as (
+      select j.*, q.paused or j."operationPaused" paused, p.state "parentState" from reported j join job_queue q on q.name = j.queue
       left join job_run r on r.id = j."runId" left join job p on p.id = j."parentId"
-      where j.queue = ${name} and (r."finishedAt" is null and (j."runId" is not null or j.state in ('pending','waiting','active')))
+      where r."finishedAt" is null and (j."runId" is not null or j.state in ('pending','waiting','active'))
     ), loose_done as (
       -- Jobs outside a run (upload thumbnails, metadata…) leave the live set when they finish: count the ones
       -- finished since the oldest still waiting was queued, or Activity's percentage stays at 0 (FL-588).
-      select count(*)::int n from job f where f.queue = ${name} and f."runId" is null
+      select count(*)::int n from reported f where f."runId" is null
         and f.state in ('completed','failed','cancelled','blocked') and f."latestPending" is null
         and f."finishedAt" >= (select min("createdAt") from current_jobs where "runId" is null)
     ) select count(*) filter (where state = 'active')::int active,

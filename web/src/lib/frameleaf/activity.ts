@@ -629,6 +629,15 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
 export const isUnfinishedCloudWork = (item: Pick<ActivityItem, 'cloudWork' | 'finished'>) =>
   !!item.cloudWork && !item.finished;
 
+/**
+ * Whether the background rows already show this unfinished cloud operation (`shown`: their operation ids).
+ * Until the cloud status has caught up with it, or when that status cannot be read, the row stays in the list.
+ */
+export const isShownAsCloudWork = (
+  item: Pick<ActivityItem, 'cloudWork' | 'finished' | 'operationId'>,
+  shown: ReadonlySet<string>,
+) => isUnfinishedCloudWork(item) && !!item.operationId && shown.has(item.operationId);
+
 /** Renders of a Studio project, which Activity can open in Studio (FL-104, `Activity.jsx` Open in Studio). */
 const STUDIO_RENDER_KINDS: ReadonlySet<MediaOperationKind> = new Set([
   MediaOperationKind.StudioExport,
@@ -968,6 +977,13 @@ export const activityCounts = (items: readonly ActivityItem[]): ActivityCounts =
  * The average is over items that actually have a figure: mixing an unknown into an average as a
  * zero makes the whole thing read as stalled.
  */
+/**
+ * Activity's In progress count, which the top-bar indicator shows too: the work that is running or
+ * paused, plus one per background work card.
+ */
+export const activityInProgressCount = (items: readonly ActivityItem[], backgroundCards: number) =>
+  items.filter((item) => matchesActivityFilter(item, 'running')).length + backgroundCards;
+
 export const activityIndicatorState = (items: readonly ActivityItem[]) => {
   const running = items.filter((item) => item.running);
   const measured = running.filter((item) => item.progress !== null);

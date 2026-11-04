@@ -11,10 +11,12 @@ import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { goto } from '$app/navigation';
+import en from '$i18n/en.json';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import ActivityView from '$lib/components/frameleaf/ActivityView.svelte';
 import { activitySession } from '$lib/frameleaf/activity-session.svelte';
 import { runningJobsSession } from '$lib/frameleaf/running-jobs-session.svelte';
+import { authManager } from '$lib/managers/auth-manager.svelte';
 import { downloadManager } from '$lib/managers/download-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { uploadAssetsStore } from '$lib/stores/upload';
@@ -479,6 +481,53 @@ describe('Frameleaf Activity page', () => {
     } finally {
       downloadManager.clearAll();
       uploadAssetsStore.reset();
+    }
+  });
+
+  /** Activity as an administrator sees it: the server's background and cloud work too. */
+  const asAdmin = () => {
+    const spies = [
+      vi.spyOn(authManager, 'authenticated', 'get').mockReturnValue(true),
+      vi.spyOn(authManager, 'user', 'get').mockReturnValue({ id: 'admin', isAdmin: true } as never),
+    ];
+    return () => {
+      for (const spy of spies) {
+        spy.mockRestore();
+      }
+    };
+  };
+
+  it('tells somebody who is not an administrator only about their own work when nothing runs', async () => {
+    await mount([]);
+
+    await vi.waitFor(() => expect(screen.getByText(en.frameleaf_activity_empty_help_own)).toBeInTheDocument());
+    expect(screen.queryByText(en.frameleaf_activity_empty_help)).not.toBeInTheDocument();
+  });
+
+  it('keeps a cloud backup in the list until the cloud status shows it, and asks for that status again', async () => {
+    const restore = asAdmin();
+    sdkMock.getCloudBackupStatus.mockRejectedValue(new Error('unavailable'));
+    try {
+      await mount([operation({ kind: MediaOperationKind.CloudBackup, label: 'Nightly cloud backup' })]);
+
+      expect(await screen.findByRole('article', { name: 'Nightly cloud backup' })).toBeInTheDocument();
+      await vi.waitFor(() => expect(sdkMock.getCloudBackupStatus.mock.calls.length).toBeGreaterThanOrEqual(2));
+      expect(screen.getByRole('article', { name: 'Nightly cloud backup' })).toBeInTheDocument();
+    } finally {
+      restore();
+    }
+  });
+
+  it('says background work may be out of date when it cannot be read', async () => {
+    const restore = asAdmin();
+    sdkMock.getRunningJobs.mockRejectedValue(new Error('unavailable'));
+    try {
+      await mount([]);
+
+      expect(await screen.findByText(en.frameleaf_activity_background_stale)).toBeInTheDocument();
+    } finally {
+      restore();
+      runningJobsSession.unreachable = false;
     }
   });
 });

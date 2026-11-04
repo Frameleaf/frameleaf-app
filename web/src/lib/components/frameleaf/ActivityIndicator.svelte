@@ -1,11 +1,15 @@
 <script lang="ts">
-  import { activityIndicatorState, buildActivityList } from '$lib/frameleaf/activity';
+  import { activityInProgressCount, activityIndicatorState, buildActivityList } from '$lib/frameleaf/activity';
   import { activitySession } from '$lib/frameleaf/activity-session.svelte';
+  import { buildBackgroundWorkCards } from '$lib/frameleaf/background-work';
+  import { librarySession } from '$lib/frameleaf/library-session.svelte';
+  import { runningJobsSession } from '$lib/frameleaf/running-jobs-session.svelte';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { downloadManager } from '$lib/managers/download-manager.svelte';
   import { Route } from '$lib/route';
   import { uploadAssetsStore } from '$lib/stores/upload';
   import { DURATION } from '$lib/frameleaf/tokens';
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
   /**
@@ -28,18 +32,30 @@
     [...downloadManager.assets.entries()].filter(([, download]) => download.status === 'preparing'),
   );
 
-  const indicator = $derived(
-    activityIndicatorState(
-      buildActivityList({
-        operations: activitySession.operations,
-        uploads: $uploadAssetsStore,
-        downloads: pendingDownloads,
-      }),
-    ),
+  const items = $derived(
+    buildActivityList({
+      operations: activitySession.operations,
+      uploads: $uploadAssetsStore,
+      downloads: pendingDownloads,
+      bulk: librarySession.session.operations,
+    }),
   );
+  /** The server sends its background work to administrators only. */
+  const isAdmin = $derived(authManager.authenticated && authManager.user.isAdmin);
+  /** The same number as Activity's In progress: paused work and background work count too. */
+  const indicator = $derived({
+    ...activityIndicatorState(items),
+    count: activityInProgressCount(items, isAdmin ? buildBackgroundWorkCards(runningJobsSession.summary).length : 0),
+  });
 
   // Watching keeps the count current; it polls only while work is in flight and stops with the bar.
   onMount(() => activitySession.watch());
+  $effect(() => {
+    if (isAdmin) {
+      // Only the role decides; what watching reads and writes must not re-run this effect.
+      return untrack(() => runningJobsSession.watch());
+    }
+  });
 
   /** How long the tick stays after the last job ends. */
   const DONE_MS = 1200;

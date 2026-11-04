@@ -16,6 +16,7 @@ import {
   activityCompletion,
   activityCounts,
   activityEtaSeconds,
+  activityInProgressCount,
   activityIndicatorState,
   activityStatusText,
   activitySettingsDetails,
@@ -25,6 +26,7 @@ import {
   fromDownload,
   fromMediaOperation,
   fromUpload,
+  isShownAsCloudWork,
   isUnfinishedCloudWork,
   matchesActivityFilter,
   mediaOperationEdit,
@@ -579,6 +581,12 @@ describe('counts and the indicator', () => {
   it('is silent when nothing is running', () => {
     expect(activityIndicatorState([])).toEqual({ count: 0, progress: null });
   });
+
+  it('counts what Activity’s In progress counts: paused work and background cards too', () => {
+    const paused = fromMediaOperation(operation({ status: MediaOperationStatus.Paused }));
+    expect(activityInProgressCount([...items, paused], 3)).toBe(2 + 1 + 3);
+    expect(activityInProgressCount([], 0)).toBe(0);
+  });
 });
 
 describe('pause and resume (FL-104)', () => {
@@ -901,6 +909,14 @@ describe('cloud backup and restore in Activity (FL-164)', () => {
     expect(isUnfinishedCloudWork(cloud(MediaOperationKind.CloudRestore, MediaOperationStatus.Paused))).toBe(true);
     expect(isUnfinishedCloudWork(cloud(MediaOperationKind.CloudRestore, MediaOperationStatus.Failed))).toBe(false);
     expect(isUnfinishedCloudWork(fromMediaOperation(operation()))).toBe(false);
+  });
+
+  it('leaves the person’s list only once the background rows show that operation', () => {
+    const running = cloud(MediaOperationKind.CloudBackup, MediaOperationStatus.Rendering);
+    expect(isShownAsCloudWork(running, new Set([running.operationId!]))).toBe(true);
+    // Status not read yet, or unavailable: the row stays where the person can see it.
+    expect(isShownAsCloudWork(running, new Set())).toBe(false);
+    expect(isShownAsCloudWork(running, new Set(['another-operation']))).toBe(false);
   });
 
   it('is not a Frameleaf Cloud job: it has no cost, and a Frameleaf Cloud job is never background work', () => {

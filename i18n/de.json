@@ -1160,6 +1160,8 @@
   "folders_feature_description": "Durchsuchen der Ordneransicht für Fotos und Videos im Dateisystem",
   "forgot_pin_code_question": "PIN-Code vergessen?",
   "forward": "Vorwärts",
+  "frameleaf_activity_background_stale": "Hintergrundaufgaben konnten nicht aktualisiert werden. Diese Zahlen sind möglicherweise nicht aktuell.",
+  "frameleaf_activity_empty_help_own": "Deine Exporte, Wiederherstellungen, Uploads und Downloads erscheinen hier, solange sie laufen.",
   "frameleaf_play_img_missing": "{count, plural, one {# Foto oder Video hat noch keine Vorschau} other {# Fotos und Videos haben noch keine Vorschau}}",
   "frameleaf_tools": "Werkzeuge",
   "free_up_space": "Speicherplatz freigeben",

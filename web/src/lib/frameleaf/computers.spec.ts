@@ -161,10 +161,17 @@ describe('background work', () => {
     expect(summary.paused).toHaveLength(1);
   });
 
-  it('does not call work the server has booked for later "waiting"', () => {
-    const rows = workRows([queue(QueueName.BackupDatabase, { delayed: 1 })]);
-    expect(workNow(rows)).toEqual([]);
-    expect(summariseWork(rows).left).toBe(0);
+  it('counts a retry due in a few minutes as work left, as Activity does', () => {
+    const rows = workRows([queue(QueueName.ThumbnailGeneration, { delayed: 2, waiting: 1 })]);
+    expect(workNow(rows).map((row) => workState(row))).toEqual(['waiting']);
+    expect(summariseWork(rows).left).toBe(3);
+    expect(summariseWork(rows).waiting).toHaveLength(1);
+  });
+
+  it('keeps the backlog of a queue only the server pauses among the work waiting', () => {
+    const summary = summariseWork(workRows([queue(QueueName.BackgroundTask, { waiting: 4 }, true)]));
+    expect(summary.waiting).toHaveLength(1);
+    expect(areaStatus(summary, [], 'ready')).toBe('working');
   });
 
   it('does not show Housekeeping as paused: the server never pauses it', () => {

@@ -4,13 +4,35 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { uploadAssetsStore } from '$lib/stores/upload';
 import ActivityIndicator from './ActivityIndicator.svelte';
 
-const state = vi.hoisted(() => ({ indicator: { count: 0, progress: null as number | null } }));
+const state = vi.hoisted(() => ({
+  indicator: { count: 0, progress: null as number | null },
+  isAdmin: false,
+  cards: 0,
+  watchRunningJobs: vi.fn(() => () => {}),
+}));
 vi.mock('$lib/frameleaf/activity', () => ({
   buildActivityList: () => [],
-  activityIndicatorState: () => state.indicator,
+  activityIndicatorState: () => ({ progress: state.indicator.progress }),
+  activityInProgressCount: (_items: unknown[], background: number) => state.indicator.count + background,
 }));
 vi.mock('$lib/frameleaf/activity-session.svelte', () => ({
   activitySession: { operations: [], watch: () => () => {} },
+}));
+vi.mock('$lib/frameleaf/background-work', () => ({
+  buildBackgroundWorkCards: () => Array.from({ length: state.cards }),
+}));
+vi.mock('$lib/frameleaf/running-jobs-session.svelte', () => ({
+  runningJobsSession: { summary: {}, watch: state.watchRunningJobs },
+}));
+vi.mock('$lib/managers/auth-manager.svelte', () => ({
+  authManager: {
+    get authenticated() {
+      return state.isAdmin;
+    },
+    get user() {
+      return { isAdmin: state.isAdmin };
+    },
+  },
 }));
 
 /** The indicator reads the upload store, so writing to it makes the component ask again. */
@@ -25,6 +47,9 @@ describe('ActivityIndicator', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     state.indicator = { count: 0, progress: null };
+    state.isAdmin = false;
+    state.cards = 0;
+    state.watchRunningJobs.mockClear();
   });
   afterEach(() => vi.useRealTimers());
 
@@ -44,6 +69,25 @@ describe('ActivityIndicator', () => {
     const ring = Number(arc.getAttribute('stroke-dasharray'));
     expect(Number(arc.getAttribute('stroke-dashoffset'))).toBeCloseTo(ring / 2, 3);
     expect(arc).not.toHaveClass('is-indeterminate');
+  });
+
+  it('counts an administrator’s background work, as Activity’s In progress does', async () => {
+    state.isAdmin = true;
+    state.cards = 2;
+    render(ActivityIndicator);
+    await report({ count: 1, progress: null });
+
+    expect(state.watchRunningJobs).toHaveBeenCalled();
+    expect(screen.getByRole('link', { name: 'frameleaf_activity_indicator' })).toHaveTextContent('3');
+  });
+
+  it('does not ask for background work for anyone else: the server sends them none', async () => {
+    state.cards = 2;
+    render(ActivityIndicator);
+    await report({ count: 1, progress: null });
+
+    expect(state.watchRunningJobs).not.toHaveBeenCalled();
+    expect(screen.getByRole('link', { name: 'frameleaf_activity_indicator' })).toHaveTextContent('1');
   });
 
   it('turns a quarter arc while the work reports no progress', async () => {
