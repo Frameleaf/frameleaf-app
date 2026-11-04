@@ -48,6 +48,7 @@ assert.match(input.nativeLibrary.containerId, /^[a-f0-9]{64}$/u);
 const sourceRoot = join(sourceDirectory, 'originals');
 const destinationRoot = join(directory, 'destination');
 await mkdir(destinationRoot, { mode: 0o700 });
+await mkdir(join(destinationRoot, 'owner/camera'), { recursive: true, mode: 0o700 });
 const sha256 = async (path) =>
   createHash('sha256')
     .update(await readFile(path))
