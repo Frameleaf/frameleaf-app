@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { command } from '../src/docker.js';
+import { Refusal } from '../src/contracts.js';
 
 const executable = process.execPath;
 const timeout = 5000;
@@ -89,5 +90,60 @@ test('dialogue cannot share input or file-transfer modes', async () => {
       }),
       { message: 'command_dialogue_invalid' },
     );
+  }
+});
+
+test('known source refusal keeps its code and status while discarding private details', async () => {
+  const privateValue = 'synthetic-private-authority-detail';
+  const lines: unknown[][] = [];
+  const previous = console.error;
+  console.error = (...args) => lines.push(args);
+  try {
+    await assert.rejects(
+      command('docker', ['-e', "process.stdout.write('auth?\\n');process.stdin.resume()"], {
+        executable,
+        timeout,
+        reply: async () => {
+          throw new Refusal('import_source_authority_refused', 403, privateValue);
+        },
+      }),
+      (error: unknown) => {
+        assert(error instanceof Refusal);
+        assert.equal(error.code, 'import_source_authority_refused');
+        assert.equal(error.status, 403);
+        assert.equal(error.detail, undefined);
+        return true;
+      },
+    );
+    assert(!JSON.stringify(lines).includes(privateValue));
+  } finally {
+    console.error = previous;
+  }
+});
+
+test('unknown refusal codes and invalid status values remain generic and private', async () => {
+  const privateValue = 'synthetic-private-authority-value';
+  const lines: unknown[][] = [];
+  const previous = console.error;
+  console.error = (...args) => lines.push(args);
+  try {
+    for (const failure of [
+      new Refusal(privateValue, 409, privateValue),
+      new Refusal('import_source_authority_refused', privateValue as never, privateValue),
+    ]) {
+      await assert.rejects(
+        command('docker', ['-e', "process.stdout.write('auth?\\n');process.stdin.resume()"], {
+          executable,
+          timeout,
+          reply: async () => {
+            throw failure;
+          },
+        }),
+        { message: 'command_reply_failed' },
+      );
+    }
+    assert(!JSON.stringify(lines).includes(privateValue));
+  } finally {
+    console.error = previous;
   }
 });
