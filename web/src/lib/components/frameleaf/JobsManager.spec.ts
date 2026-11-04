@@ -384,6 +384,13 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
         data: {},
         worker: { kind: QueueJobWorkerKind.Lan, name: 'Workshop GPU' },
       },
+      {
+        id: 'job-3',
+        name: JobName.AssetDetectFaces,
+        timestamp: Date.UTC(2026, 8, 23, 8),
+        data: { id: 'asset-gone' },
+        worker: { kind: QueueJobWorkerKind.Lan, name: 'Workshop GPU' },
+      },
     ]);
     render(JobsManager);
 
@@ -391,10 +398,12 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
     const table = screen.getByRole('table');
     expect(within(table).getByRole('columnheader', { name: 'Account' })).toBeInTheDocument();
     expect(within(table).getByRole('columnheader', { name: 'Worker' })).toBeInTheDocument();
-    const [, first, second] = within(table).getAllByRole('row');
+    const [, first, second, third] = within(table).getAllByRole('row');
     expect(within(first).getByText('Ada Lovelace')).toBeInTheDocument();
     expect(within(first).getByText('Frameleaf Cloud').closest('span')).toHaveAttribute('title', 'Studio cloud');
-    expect(within(second).getByText('No account')).toBeInTheDocument();
+    // A job that names no item covers the whole server; one whose item has no single owner has no account.
+    expect(within(second).getByText('Server')).toBeInTheDocument();
+    expect(within(third).getByText('No account')).toBeInTheDocument();
     expect(within(second).getByText('Local / LAN')).toBeInTheDocument();
 
     await fireEvent.click(within(first).getByRole('button', { name: /^Detect faces/ }));

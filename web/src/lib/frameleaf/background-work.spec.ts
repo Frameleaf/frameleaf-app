@@ -143,12 +143,36 @@ describe('buildBackgroundWorkCards (SHARING-P1)', () => {
       id: 'run:run-metadataExtraction',
       queueName: QueueName.MetadataExtraction,
       stage: 'paused',
+      statusKey: 'frameleaf_activity_stage_paused',
+      stuck: false,
       waiting: 20,
       running: 0,
       progress: null,
     });
     // The face detection queue speaks for its kind; the run of the same kind adds nothing.
     expect(cards[1]).toMatchObject({ queueName: QueueName.FaceDetection, waiting: 52 });
+  });
+
+  it.each([
+    ['blocked', 'frameleaf_job_runs_state_blocked', true],
+    ['delayed', 'frameleaf_job_runs_state_delayed', false],
+    ['retrying', 'frameleaf_job_runs_state_retrying', false],
+    ['unavailable', 'frameleaf_job_runs_state_unavailable', true],
+    ['waiting', 'frameleaf_activity_stage_queued', false],
+  ] as const)('says why %s work is not running rather than calling it queued', (state, statusKey, stuck) => {
+    const [card] = buildBackgroundWorkCards(
+      summary({ queues: [queue(QueueName.ThumbnailGeneration, { waiting: 40, total: 40, state })] }),
+    );
+    expect(card).toMatchObject({ stage: 'queued', statusKey, stuck });
+  });
+
+  it('reads running work as running whatever else waits behind it', () => {
+    const [card] = buildBackgroundWorkCards(
+      summary({
+        queues: [queue(QueueName.ThumbnailGeneration, { active: 3, waiting: 40, total: 43, state: 'running' })],
+      }),
+    );
+    expect(card).toMatchObject({ stage: 'running', statusKey: 'frameleaf_activity_stage_running', stuck: false });
   });
 
   it('shows nothing to somebody the server sends no queues or runs to', () => {

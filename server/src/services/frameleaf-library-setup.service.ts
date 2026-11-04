@@ -447,7 +447,11 @@ export class FrameleafLibrarySetupService {
     const {
       rows: [check],
     } = await sql<{ total: number; done: number; flagged: number }>`SELECT
-        coalesce(sum(corrupt."totalAssets"),0)::int AS total, coalesce(sum(corrupt."checkedAssets"),0)::int AS done,
+        -- The health runs count only once a scan ends; the operation carries the live count. A scan still
+        -- waiting its turn (one runs at a time) counts its owner's items, so the bar never looks nearly done.
+        coalesce(sum(greatest(op."totalUnits", corrupt."totalAssets", CASE WHEN op."totalUnits" IS NULL THEN
+          (SELECT count(*) FROM asset a WHERE a."ownerId"=op."ownerId" AND a."deletedAt" IS NULL) END)),0)::int AS total,
+        coalesce(sum(greatest(op."processedUnits", corrupt."checkedAssets")),0)::int AS done,
         (coalesce(sum(corrupt."foundAssets"),0) + coalesce(sum(missing."foundAssets"),0))::int AS flagged
       FROM media_operation op
       LEFT JOIN asset_health_run missing ON missing.id=(op.snapshot->>'missingRunId')::uuid
@@ -714,11 +718,13 @@ export class FrameleafLibrarySetupService {
                 OR EXISTS(SELECT 1 FROM job_run_item i WHERE i."runId"=${imported.run.id}::uuid AND i.state='active'
                   AND NOT EXISTS(SELECT 1 FROM job j WHERE j.id=i."jobId" AND j.state NOT IN ('pending','waiting','active')))) AS unfinished,
               (EXISTS(SELECT 1 FROM job_run_item i LEFT JOIN job j ON j.id=i."jobId"
-                WHERE i."runId"=${imported.run.id}::uuid AND
+                WHERE i."runId"=${imported.run.id}::uuid AND i.queue=ANY(${[...HALTING_QUEUES]}::text[]) AND
                   (i.state IN ('failed','needs_attention','cancelled','blocked') OR j.state IN ('failed','needs_attention','cancelled','blocked')))
                 OR EXISTS(SELECT 1 FROM job_selection WHERE "runId"=${imported.run.id}::uuid
                   AND state IN ('needs_attention','cancelled'))) AS failed`.execute(db);
             importedUnfinished = rows[0]?.unfinished ?? true;
+            // FL-1165: one item's thumbnail, metadata or other per-file step that failed is listed in Background work
+            // and Library Care, never a reason to halt; only the halting queues' items and a failed source stop setup.
             if (rows[0]?.failed) state.phase = 'needs-attention';
           }
         }

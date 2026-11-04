@@ -1,5 +1,7 @@
-import type { DurableJobRun, DurableQueueRun, DurableRunningJobs, QueueName } from '@frameleaf/sdk';
-import { isRunSettled, settledItems } from '$lib/frameleaf/durable-runs';
+import type { DurableJobRun, DurableJobState, DurableQueueRun, DurableRunningJobs, QueueName } from '@frameleaf/sdk';
+import type { Translations } from 'svelte-i18n';
+import { ACTIVITY_STAGE_KEYS } from '$lib/frameleaf/activity';
+import { isRunSettled, runStateKey, settledItems } from '$lib/frameleaf/durable-runs';
 import { JOB_QUEUES } from '$lib/frameleaf/job-queues';
 
 /**
@@ -22,6 +24,13 @@ export type BackgroundWorkCard = {
   id: string;
   queueName: QueueName;
   stage: BackgroundWorkStage;
+  /**
+   * What the card says. Work that is not running says why when the server knows (waiting for another
+   * step, scheduled, retrying, no worker) rather than reading as freshly queued.
+   */
+  statusKey: Translations;
+  /** Nothing will move until somebody or something else acts: a missing worker or a failed step. */
+  stuck: boolean;
   /** Items waiting their turn, including paused and scheduled ones. */
   waiting: number;
   /** Items being worked on now. */
@@ -57,6 +66,17 @@ export const tonightStart = (startsAt: string | null, now: Date = new Date()): '
   return day.getTime() === tomorrow.getTime() && at.getHours() < OVERNIGHT_CUTOFF_HOUR ? 'tonight' : 'day';
 };
 
+/** States that say more than "queued" about work nothing is running yet. */
+const WAITING_REASONS: ReadonlySet<DurableJobState> = new Set(['blocked', 'delayed', 'retrying', 'unavailable']);
+
+const statusOf = (stage: BackgroundWorkStage, state: DurableJobState | undefined) => {
+  const reason = stage === 'queued' && state && WAITING_REASONS.has(state) ? state : null;
+  return {
+    statusKey: reason ? runStateKey(reason) : ACTIVITY_STAGE_KEYS[stage],
+    stuck: reason === 'blocked' || reason === 'unavailable',
+  };
+};
+
 const percent = (done: number, total: number) =>
   total > 0 ? Math.min(100, Math.max(0, Math.floor((done / total) * 100))) : null;
 
@@ -75,6 +95,7 @@ const fromQueue = (queue: DurableQueueRun): BackgroundWorkCard | null => {
     id: `queue:${queue.name}`,
     queueName: queue.name,
     stage,
+    ...statusOf(stage, queue.unavailable ? 'unavailable' : queue.state),
     waiting,
     running,
     progress: stage === 'running' && !queue.unavailable ? percent(Math.min(queue.processed, total), total) : null,
@@ -97,6 +118,7 @@ const fromRun = (run: DurableJobRun): BackgroundWorkCard | null => {
     id: `run:${run.id}`,
     queueName: run.kind as QueueName,
     stage,
+    ...statusOf(stage, run.state),
     waiting,
     running,
     progress: stage === 'running' && run.enumerationDone ? percent(settledItems(run), run.total) : null,
@@ -145,6 +167,7 @@ export const buildBackgroundWorkCards = (summary: DurableRunningJobs | null | un
       byKind.set(card.queueName, {
         ...existing,
         stage,
+        ...(stage !== existing.stage && statusOf(stage, undefined)),
         waiting: existing.waiting + card.waiting,
         running: existing.running + card.running,
         progress: stage === 'running' && totals.enumerated ? percent(totals.settled, totals.total) : null,

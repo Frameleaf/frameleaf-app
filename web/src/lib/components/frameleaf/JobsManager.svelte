@@ -782,9 +782,17 @@
     };
   });
 
+  const SUBJECT_KEYS = ['id', 'assetId', 'personId', 'libraryId', 'ownerId', 'userId'];
   const jobTitle = (name: JobName) => $t(jobNameKey(name) as Translations);
   /** The template's `ownerName` / `destinationName` (`JobsManager.jsx` 37-40), from the server's job data. */
-  const accountName = (job: QueueJobResponseDto) => job.account?.name ?? $t('frameleaf_jobs_account_none');
+  /**
+   * A job with no account either covers the whole server (a "find items…" pass, a backup) or names an item
+   * no single account owns any more. The template calls the first "Server" (`jobs-data.mjs` JOB_OWNERS).
+   * The keys are the ones the server resolves an owner from (`queue.service.ts` `subjectIdsOf`).
+   */
+  const accountName = (job: QueueJobResponseDto) =>
+    job.account?.name ??
+    $t(SUBJECT_KEYS.some((key) => key in job.data) ? 'frameleaf_jobs_account_none' : 'frameleaf_jobs_account_server');
   const WORKER_LABEL: Record<QueueJobWorkerKind, Translations> = {
     [QueueJobWorkerKind.Server]: 'frameleaf_jobs_worker_server',
     [QueueJobWorkerKind.Local]: 'frameleaf_jobs_worker_local',

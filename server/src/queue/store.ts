@@ -1,4 +1,4 @@
-import { Kysely, type QueryExecutorProvider, Transaction, sql } from 'kysely';
+import { Kysely, RawBuilder, type QueryExecutorProvider, Transaction, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import type { DB } from 'src/schema/index.js';
 import { JobName, QueueName } from 'src/enum.js';
@@ -214,10 +214,7 @@ export class SqlQueueStore {
           // Runs must never count a deduplicated selection as silently absent.
           if (intent.runId && intent.itemKey) {
             if (!lockedManifestItems?.has(intent)) await this.insertRunItem(intent, db, existing.state);
-            await sql`update job_run_item set "jobId" = ${existing.id}::uuid
-              where "runId" = ${intent.runId}::uuid and "itemKey" = ${intent.itemKey} and stage = ${intent.name}`.execute(
-              db,
-            );
+            await this.linkRunItem(intent, sql`${existing.id}::uuid`, db);
             // This metadata marks only accepted immutable roots sharing a library executor.
             // It drives bounded header settlement, never grants whole-operation child entitlement.
             await sql`update job_selection source set "librarySharesExecution"=true,
@@ -247,9 +244,9 @@ export class SqlQueueStore {
         ${intent.itemKey ?? null}, ${intent.rootItemKey ?? null}, ${intent.parentId ?? null}::uuid)
         on conflict do nothing`.execute(db);
       if (intent.runId && intent.itemKey) {
-        await sql`update job_run_item set "jobId" = (select id from job where "runId" = ${intent.runId}::uuid
-          and "itemKey" = ${intent.itemKey} and name = ${intent.name})
-          where "runId" = ${intent.runId}::uuid and "itemKey" = ${intent.itemKey} and stage = ${intent.name}`.execute(
+        await this.linkRunItem(
+          intent,
+          sql`(select id from job where "runId" = ${intent.runId}::uuid and "itemKey" = ${intent.itemKey} and name = ${intent.name})`,
           db,
         );
         if (intent.memberships?.length) {
@@ -285,6 +282,23 @@ export class SqlQueueStore {
       and not (${libraryRunPending(sql<string>`r.id`)})`.execute(db);
     // settleRuns separately requires every retained descendant stage to be terminal, including
     // manifest items not yet admitted to job. Never infer completion from the live job table.
+  }
+
+  /**
+   * Point a run item at the job doing its work. An item that already ended (`insertRunItem` keeps the
+   * old row) comes back to life with a live job, and its run reopens: otherwise the run settles while
+   * that job still runs, and Activity loses it.
+   */
+  private async linkRunItem(intent: QueueIntent, jobId: RawBuilder<unknown>, db: Executor) {
+    const item = sql`i."runId" = ${intent.runId}::uuid and i."itemKey" = ${intent.itemKey} and i.stage = ${intent.name}`;
+    await sql`update job_run_item i set "jobId" = ${jobId} where ${item}`.execute(db);
+    const { rows } = await sql<{ runId: string }>`update job_run_item i set state = j.state from job j
+      where ${item} and j.id = i."jobId" and j.state in ('pending','waiting','active')
+        and i.state not in ('pending','waiting','active')
+      returning i."runId"`.execute(db);
+    if (rows.length > 0) {
+      await sql`update job_run set "finishedAt" = null where id = ${rows[0].runId}::uuid`.execute(db);
+    }
   }
 
   private async insertRunItem(intent: QueueIntent, db: Executor, state: QueueState = 'pending') {

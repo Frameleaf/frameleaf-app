@@ -37,6 +37,7 @@ const cases = [
     'needs_attention',
     'cancelled',
     'blocked',
+    'halting-failed',
     'terminal-alias',
     'empty',
     'queued-pause',
@@ -568,12 +569,25 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
               { dependencyReason: 'workload-disabled' },
             ]);
           } else {
-            await sql`UPDATE job_run_item SET state=${outcome} WHERE "runId"=${id}::uuid AND stage=${JobName.SmartSearch}`.execute(
-              db,
-            );
-            expect((await make().status()).phase).toBe('needs-attention');
-            expect(await make().progress()).toMatchObject({ phase: 'needs-attention', completedAt: null });
-            expect((await make().progress()).stages.find(({ id }) => id === 'search')?.status).not.toBe('done');
+            if (outcome === 'halting-failed') {
+              // A halting queue's item stops setup.
+              await sql`INSERT INTO job_queue(name) VALUES(${QueueName.MediaHealth}) ON CONFLICT DO NOTHING`.execute(
+                db,
+              );
+              await sql`INSERT INTO job_run_item("runId","itemKey",stage,queue,state,selection)
+                VALUES(${id}::uuid,${randomUUID()},${JobName.MediaHealthScanMissing},${QueueName.MediaHealth},'failed','{}'::jsonb)`.execute(
+                db,
+              );
+              expect((await make().status()).phase).toBe('needs-attention');
+              expect(await make().progress()).toMatchObject({ phase: 'needs-attention', completedAt: null });
+            } else {
+              await sql`UPDATE job_run_item SET state=${outcome} WHERE "runId"=${id}::uuid AND stage=${JobName.SmartSearch}`.execute(
+                db,
+              );
+              // FL-1165: one item's search step that ended badly is listed, never a reason to halt setup.
+              expect((await make().status()).phase).not.toBe('needs-attention');
+              expect((await make().progress()).stages.find(({ id }) => id === 'search')?.status).not.toBe('done');
+            }
           }
         }
       }
