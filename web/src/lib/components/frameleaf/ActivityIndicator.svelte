@@ -1,11 +1,18 @@
 <script lang="ts">
-  import { activityIndicatorState, buildActivityList } from '$lib/frameleaf/activity';
+  import {
+    activityInProgressCount,
+    activityIndicatorState,
+    buildActivityList,
+    isShownAsCloudWork,
+  } from '$lib/frameleaf/activity';
   import { activitySession } from '$lib/frameleaf/activity-session.svelte';
+  import { libraryBulkOperations } from '$lib/frameleaf/library-bulk-operations.svelte';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { downloadManager } from '$lib/managers/download-manager.svelte';
   import { Route } from '$lib/route';
   import { uploadAssetsStore } from '$lib/stores/upload';
   import { DURATION } from '$lib/frameleaf/tokens';
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
   /**
@@ -28,18 +35,64 @@
     [...downloadManager.assets.entries()].filter(([, download]) => download.status === 'preparing'),
   );
 
-  const indicator = $derived(
-    activityIndicatorState(
-      buildActivityList({
-        operations: activitySession.operations,
-        uploads: $uploadAssetsStore,
-        downloads: pendingDownloads,
-      }),
-    ),
+  const items = $derived(
+    buildActivityList({
+      operations: activitySession.operations,
+      uploads: $uploadAssetsStore,
+      downloads: pendingDownloads,
+      bulk: libraryBulkOperations.operations,
+    }),
   );
+  /** The server sends its background work to administrators only. */
+  const isAdmin = $derived(authManager.authenticated && authManager.user.isAdmin);
+  /** How long to wait before loading the administrator's part again after it failed to load. */
+  const ADMIN_RETRY_MS = 30_000;
+  /** Loaded for administrators only, so the bar costs nobody else anything. */
+  let admin = $state<typeof import('$lib/frameleaf/activity-indicator-admin') | null>(null);
+  /** The same number as Activity's In progress: paused work and background work count too. */
+  const indicator = $derived.by(() => {
+    // As Activity: an administrator's background cards and cloud rows, and a cloud operation the
+    // cloud rows already show counted once, as its row.
+    const background = isAdmin && admin ? admin.adminBackgroundWork() : [];
+    const shown = isAdmin && admin ? admin.adminCloudOperationIds() : new Set<string>();
+    const own = items.filter((item) => !isShownAsCloudWork(item, shown));
+    const { count: running, progress } = activityIndicatorState(own, background);
+    const count = activityInProgressCount(own, background.length);
+    return { count, running, progress };
+  });
 
   // Watching keeps the count current; it polls only while work is in flight and stops with the bar.
   onMount(() => activitySession.watch());
+  $effect(() => {
+    if (!isAdmin) {
+      return;
+    }
+    // Only the role decides; what loading and watching read and write must not re-run this effect.
+    let stop: (() => void) | undefined;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    let left = false;
+    const load = () =>
+      import('$lib/frameleaf/activity-indicator-admin')
+        .then((module) => {
+          if (!left) {
+            admin = module;
+            stop = untrack(() => module.watchAdminWork());
+          }
+        })
+        // A chunk that failed to load (offline, or replaced by an update) is tried again; until then
+        // the bar counts the admin's own work, as it does for everyone.
+        .catch(() => {
+          if (!left) {
+            retry = setTimeout(() => void load(), ADMIN_RETRY_MS);
+          }
+        });
+    void load();
+    return () => {
+      left = true;
+      clearTimeout(retry);
+      stop?.();
+    };
+  });
 
   /** How long the tick stays after the last job ends. */
   const DONE_MS = 1200;
@@ -66,11 +119,14 @@
   const label = $derived(
     done
       ? $t('frameleaf_activity_indicator_done')
-      : indicator.progress === null
-        ? $t('frameleaf_activity_indicator', { values: { count: indicator.count } })
-        : $t('frameleaf_activity_indicator_progress', {
-            values: { count: indicator.count, progress: indicator.progress },
-          }),
+      : indicator.running < indicator.count
+        ? // Some of the work is paused or waiting: "in progress", as Activity's section says.
+          $t('frameleaf_activity_indicator_in_progress', { values: { count: indicator.count } })
+        : indicator.progress === null
+          ? $t('frameleaf_activity_indicator', { values: { count: indicator.count } })
+          : $t('frameleaf_activity_indicator_progress', {
+              values: { count: indicator.count, progress: indicator.progress },
+            }),
   );
 </script>
 
@@ -86,10 +142,11 @@
   >
     <svg class="fl-activity-ring" viewBox="0 0 16 16" aria-hidden="true">
       <circle class="fl-activity-track" cx="8" cy="8" r="6" />
-      <!-- Determinate when the work reports progress; otherwise a turning quarter arc. -->
+      <!-- Determinate when the work reports progress; a turning quarter arc while something runs
+           without a figure; a still quarter arc when nothing counted is running. -->
       <circle
         class="fl-activity-arc"
-        class:is-indeterminate={!done && indicator.progress === null}
+        class:is-indeterminate={!done && indicator.progress === null && indicator.running > 0}
         cx="8"
         cy="8"
         r="6"

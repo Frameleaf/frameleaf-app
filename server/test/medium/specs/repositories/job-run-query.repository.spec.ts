@@ -5,6 +5,7 @@ import { libraryImportDerivedRunId } from 'src/library-import/derived-work.js';
 import fixture from 'src/library-import/fixtures/manager-plan-v1.json' with { type: 'json' };
 import { parseLibraryImportBinding } from 'src/library-import/state.js';
 import { RUN_OUTCOMES, listRunItems, listRuns, observeQueueRun } from 'src/queue/run-query.js';
+import { SqlQueueStore } from 'src/queue/store.js';
 import { getKyselyDB } from 'test/utils.js';
 
 let db: Kysely<any>;
@@ -334,4 +335,44 @@ it('counts live queue jobs of a run already marked finished', async () => {
   await job(id, waitingKey, 'Thumbnail');
   await sql`update job_run set "finishedAt" = now() where id = ${id}::uuid`.execute(db);
   expect(await observeQueueRun(db, 'test')).toMatchObject({ active: 1, waiting: 1 });
+});
+
+it('reads edit deliveries through their media operation, as the queue counts do', async () => {
+  const ownerId = randomUUID();
+  const groupId = randomUUID();
+  await sql`insert into cluster_group(id) values (${groupId}::uuid)`.execute(db);
+  await sql`insert into "user"(id, name, email, "clusterGroupId")
+    values (${ownerId}::uuid, 'edit owner', ${`${ownerId}@example.test`}, ${groupId}::uuid)`.execute(db);
+  await sql`insert into job_queue(name) values ('editor')`.execute(db);
+  const delivery = async (status: string, rawState: string, age = 1) => {
+    const operationId = randomUUID();
+    const assetId = randomUUID();
+    const name = 'AssetEditThumbnailGeneration';
+    await sql`insert into media_operation(id, "ownerId", kind, status, destination, label, snapshot, settings)
+      values (${operationId}::uuid, ${ownerId}::uuid, 'quick_edit', ${status}, 'local', 'Edit',
+        ${JSON.stringify({ executor: 'job_queue', job: { name, data: { id: assetId } } })}::text::jsonb, '{}')`.execute(
+      db,
+    );
+    const insert = async (state: string, minutes: number) => {
+      const token = state === 'active' ? randomUUID() : null;
+      await sql`insert into job(id, queue, name, data, "safeToRetry", sensitive, "deadlineMs", state, token, "createdAt", "finishedAt")
+        values (${randomUUID()}::uuid, 'editor', ${name}, ${JSON.stringify({ id: assetId, operationId })}::text::jsonb, true, false, 1000, ${state},
+          ${token}::uuid, now() - ${minutes} * interval '1 minute',
+          case when ${state} in ('completed','failed','cancelled') then now() end)`.execute(db);
+    };
+    await insert(rawState, age);
+    return insert;
+  };
+  // Paused: the delivery finished, but the operation waits to resume.
+  await delivery('paused', 'completed');
+  // A lost lease: the delivery went back to pending, the operation still renders. An older
+  // delivery of the same operation is superseded and must not count twice.
+  const rendering = await delivery('rendering', 'pending');
+  await rendering('pending', 3);
+  // Cancelled while still queued.
+  await delivery('cancelled', 'pending');
+
+  const counts = await new SqlQueueStore(db).counts('editor');
+  expect(counts).toMatchObject({ active: 1, paused: 1, waiting: 0 });
+  expect(await observeQueueRun(db, 'editor')).toMatchObject({ active: 1, waiting: 1, paused: 1 });
 });

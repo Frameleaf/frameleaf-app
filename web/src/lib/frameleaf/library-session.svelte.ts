@@ -14,6 +14,7 @@ import {
   type DiscoveryFilterSection,
   type DiscoveryQuery,
 } from '$lib/components/discovery/query';
+import { libraryBulkOperations } from '$lib/frameleaf/library-bulk-operations.svelte';
 import {
   createLibrarySession,
   fromStoredLibrarySession,
@@ -501,3 +502,4 @@ export class LibrarySessionStore {
 
 /** The process-wide library session. Views bind to this instance rather than creating their own. */
 export const librarySession = new LibrarySessionStore();
+libraryBulkOperations.source = librarySession;

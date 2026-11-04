@@ -18,6 +18,7 @@
     buildActivityList,
     formatActivityDuration,
     isProgressStage,
+    isShownAsCloudWork,
     isUnfinishedCloudWork,
     matchesActivityFilter,
     type ActivityFilter,
@@ -25,7 +26,7 @@
   } from '$lib/frameleaf/activity';
   import { activitySession } from '$lib/frameleaf/activity-session.svelte';
   import { buildBackgroundWorkCards } from '$lib/frameleaf/background-work';
-  import { cloudWorkRows } from '$lib/frameleaf/cloud-backup';
+  import { cloudWorkSession } from '$lib/frameleaf/cloud-work-session.svelte';
   import { cloudCostFacts } from '$lib/frameleaf/cloud-jobs';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { runningJobsSession } from '$lib/frameleaf/running-jobs-session.svelte';
@@ -38,13 +39,7 @@
   import { downloadUrl, getAssetMediaUrl } from '$lib/utils';
   import { getByteUnitString } from '$lib/utils/byte-units';
   import { handleError } from '$lib/utils/handle-error';
-  import {
-    AssetMediaSize,
-    getBaseUrl,
-    getCloudBackupStatus,
-    getStudioBundleOperation,
-    type CloudBackupStatusResponseDto,
-  } from '@frameleaf/sdk';
+  import { AssetMediaSize, getBaseUrl, getStudioBundleOperation } from '@frameleaf/sdk';
   import { Icon, Theme, themeManager } from '@frameleaf/ui';
   import {
     mdiAutoFix,
@@ -66,7 +61,7 @@
     mdiWifi,
     mdiWifiOff,
   } from '@mdi/js';
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { locale, t } from 'svelte-i18n';
 
   /**
@@ -96,42 +91,32 @@
   // read-only background work, not among their own jobs; finished, they list here. FL-162: that work is
   // the last group of the In progress section (prototype Activity.jsx), so the section counts it too.
   const isAdmin = $derived(authManager.authenticated && authManager.user.isAdmin);
-  /** How often the cloud backup status is read again while something runs, and while nothing does. */
-  const CLOUD_WORK_ACTIVE_POLL_MS = 5000;
-  const CLOUD_WORK_IDLE_POLL_MS = 30_000;
-  let cloudBackupStatus = $state<CloudBackupStatusResponseDto | null>(null);
-  const cloudWork = $derived(isAdmin ? cloudWorkRows(cloudBackupStatus) : []);
-  const loadCloudWork = async () => {
-    try {
-      cloudBackupStatus = await getCloudBackupStatus();
-    } catch {
-      // not set up, or unreachable: nothing to show
-      cloudBackupStatus = null;
-    }
-  };
+  /** The top-bar indicator reads the same cloud status, so both count the same runs. */
+  const cloudWork = $derived(isAdmin ? cloudWorkSession.rows : []);
   $effect(() => {
     if (isAdmin) {
-      void loadCloudWork();
+      return untrack(() => cloudWorkSession.watch());
     }
   });
-  $effect(() => {
-    if (!isAdmin) {
-      return;
-    }
-    const timer = setInterval(
-      () => void loadCloudWork(),
-      cloudWork.length > 0 ? CLOUD_WORK_ACTIVE_POLL_MS : CLOUD_WORK_IDLE_POLL_MS,
-    );
-    return () => clearInterval(timer);
-  });
-  const items = $derived(
+  const allItems = $derived(
     buildActivityList({
       operations: activitySession.operations,
       uploads: $uploadAssetsStore,
       downloads: [...downloadManager.assets.entries()],
       bulk: librarySession.session.operations,
-    }).filter((item) => !isAdmin || !isUnfinishedCloudWork(item)),
+    }),
   );
+  const cloudWorkIds = $derived(new Set(cloudWork.map((row) => row.operationId)));
+  const items = $derived(allItems.filter((item) => !isShownAsCloudWork(item, cloudWorkIds)));
+  /** A cloud operation the status has not caught up with yet: ask now rather than at the next slow poll. */
+  const cloudWorkBehind = $derived(
+    isAdmin && allItems.some((item) => isUnfinishedCloudWork(item) && !isShownAsCloudWork(item, cloudWorkIds)),
+  );
+  $effect(() => {
+    if (cloudWorkBehind) {
+      void cloudWorkSession.refresh();
+    }
+  });
   const counts = $derived(activityCounts(items));
   const visible = $derived(items.filter((item) => matchesActivityFilter(item, filter)));
   /* FL-162, prototype Activity.jsx: In progress, grouped by stage in the order jobs run, then Recent. */
@@ -409,6 +394,12 @@
         <Icon icon={mdiWifi} size="1.125rem" aria-hidden={true} />{$t('frameleaf_activity_reconnect')}
       </Button>
     </div>
+  {:else if isAdmin && (runningJobsSession.unreachable || cloudWorkSession.unreachable)}
+    <!-- Background work keeps its last numbers when a read fails; say they may be out of date. -->
+    <div class="fla-offline" role="status">
+      <Icon icon={mdiWifiOff} size="1.125rem" aria-hidden={true} />
+      <span>{$t('frameleaf_activity_background_stale')}</span>
+    </div>
   {/if}
 
   {#if activitySession.loading && items.length === 0}
@@ -418,7 +409,8 @@
       <Icon icon={filter === 'failed' ? mdiCheckCircleOutline : mdiProgressClock} size="2.25rem" aria-hidden={true} />
       <h2>{$t(`frameleaf_activity_empty_${filter}`)}</h2>
       {#if filter === 'all' || filter === 'running'}
-        <p>{$t('frameleaf_activity_empty_help')}</p>
+        <!-- Only administrators see the server's background work here. -->
+        <p>{$t(isAdmin ? 'frameleaf_activity_empty_help' : 'frameleaf_activity_empty_help_own')}</p>
         <!-- Nothing is running, so the way on is back to the photos, not into another workspace. -->
         <Button onclick={() => void goto(Route.photos())}>{$t('frameleaf_activity_back_to_library')}</Button>
       {:else}
@@ -641,7 +633,7 @@
         {/if}
       {/each}
       {#if backgroundCount > 0}
-        <BackgroundWorkRows cards={serverWork} cloudStatus={isAdmin ? cloudBackupStatus : null} />
+        <BackgroundWorkRows cards={serverWork} cloudStatus={isAdmin ? cloudWorkSession.status : null} />
       {/if}
     </section>
   {/if}
