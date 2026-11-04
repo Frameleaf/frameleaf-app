@@ -2482,6 +2482,7 @@
   "frameleaf_activity_icloud_syncing": "Syncing",
   "frameleaf_activity_indicator": "{count, plural, one {# job running} other {# jobs running}}. Open Activity.",
   "frameleaf_activity_indicator_done": "Work finished. Open Activity.",
+  "frameleaf_activity_indicator_in_progress": "{count, plural, one {# job in progress} other {# jobs in progress}}. Open Activity.",
   "frameleaf_activity_indicator_progress": "{count, plural, one {# job running} other {# jobs running}}, {progress}% done. Open Activity.",
   "frameleaf_activity_intro": "Activity shows your edits, exports and AI jobs, and your server’s background work (imports, thumbnails, faces, search, descriptions, backups and Frameleaf Cloud jobs), from waiting to done.",
   "frameleaf_activity_kind_buddy_backup": "Buddy backup",

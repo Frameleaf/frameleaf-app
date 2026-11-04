@@ -5,14 +5,17 @@ import { uploadAssetsStore } from '$lib/stores/upload';
 import ActivityIndicator from './ActivityIndicator.svelte';
 
 const state = vi.hoisted(() => ({
-  indicator: { count: 0, progress: null as number | null },
+  indicator: { count: 0, progress: null as number | null, running: undefined as number | undefined },
   isAdmin: false,
   cards: 0,
   watchRunningJobs: vi.fn(() => () => {}),
 }));
 vi.mock('$lib/frameleaf/activity', () => ({
   buildActivityList: () => [],
-  activityIndicatorState: () => ({ progress: state.indicator.progress }),
+  activityIndicatorState: () => ({
+    count: state.indicator.running ?? state.indicator.count,
+    progress: state.indicator.progress,
+  }),
   activityInProgressCount: (_items: unknown[], background: number) => state.indicator.count + background,
 }));
 vi.mock('$lib/frameleaf/activity-session.svelte', () => ({
@@ -36,8 +39,8 @@ vi.mock('$lib/managers/auth-manager.svelte', () => ({
 }));
 
 /** The indicator reads the upload store, so writing to it makes the component ask again. */
-const report = async (indicator: { count: number; progress: number | null }) => {
-  state.indicator = indicator;
+const report = async (indicator: { count: number; progress: number | null; running?: number }) => {
+  state.indicator = { running: undefined, ...indicator };
   uploadAssetsStore.reset();
   await tick();
 };
@@ -46,7 +49,7 @@ const report = async (indicator: { count: number; progress: number | null }) => 
 describe('ActivityIndicator', () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    state.indicator = { count: 0, progress: null };
+    state.indicator = { count: 0, progress: null, running: undefined };
     state.isAdmin = false;
     state.cards = 0;
     state.watchRunningJobs.mockClear();
@@ -74,11 +77,13 @@ describe('ActivityIndicator', () => {
   it('counts an administrator’s background work, as Activity’s In progress does', async () => {
     state.isAdmin = true;
     state.cards = 2;
-    render(ActivityIndicator);
+    const { container } = render(ActivityIndicator);
     await report({ count: 1, progress: null });
 
     expect(state.watchRunningJobs).toHaveBeenCalled();
-    expect(screen.getByRole('link', { name: 'frameleaf_activity_indicator' })).toHaveTextContent('3');
+    // One job runs; the two background cards make three in progress.
+    expect(screen.getByRole('link', { name: 'frameleaf_activity_indicator_in_progress' })).toHaveTextContent('3');
+    expect(container.querySelector('.fl-activity-arc')).toHaveClass('is-indeterminate');
   });
 
   it('does not ask for background work for anyone else: the server sends them none', async () => {
@@ -88,6 +93,14 @@ describe('ActivityIndicator', () => {
 
     expect(state.watchRunningJobs).not.toHaveBeenCalled();
     expect(screen.getByRole('link', { name: 'frameleaf_activity_indicator' })).toHaveTextContent('1');
+  });
+
+  it('says "in progress" and holds the arc still when nothing counted is running (paused work)', async () => {
+    const { container } = render(ActivityIndicator);
+    await report({ count: 1, progress: null, running: 0 });
+
+    expect(screen.getByRole('link', { name: 'frameleaf_activity_indicator_in_progress' })).toHaveTextContent('1');
+    expect(container.querySelector('.fl-activity-arc')).not.toHaveClass('is-indeterminate');
   });
 
   it('turns a quarter arc while the work reports no progress', async () => {

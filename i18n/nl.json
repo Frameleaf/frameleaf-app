@@ -1163,6 +1163,7 @@
   "forward": "Vooruit",
   "frameleaf_activity_background_stale": "Achtergrondtaken konden niet worden vernieuwd, dus deze aantallen zijn mogelijk niet actueel.",
   "frameleaf_activity_empty_help_own": "Je exports, herstelacties, uploads en downloads verschijnen hier zolang ze bezig zijn.",
+  "frameleaf_activity_indicator_in_progress": "{count, plural, one {# taak bezig} other {# taken bezig}}. Activiteit openen.",
   "frameleaf_play_img_missing": "{count, plural, one {# foto of video heeft nog geen voorbeeld} other {# foto’s en video’s hebben nog geen voorbeeld}}",
   "frameleaf_tools": "Gereedschap",
   "free_up_space": "Maak opslag vrij",

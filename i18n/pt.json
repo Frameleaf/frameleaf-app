@@ -1163,6 +1163,7 @@
   "forward": "Para a frente",
   "frameleaf_activity_background_stale": "Não foi possível atualizar o trabalho em segundo plano, por isso estes números podem estar desatualizados.",
   "frameleaf_activity_empty_help_own": "As suas exportações, restauros, carregamentos e transferências aparecem aqui enquanto decorrem.",
+  "frameleaf_activity_indicator_in_progress": "{count, plural, one {# tarefa em curso} other {# tarefas em curso}}. Abrir Atividade.",
   "frameleaf_play_img_missing": "{count, plural, one {# fotografia ou vídeo ainda não tem pré-visualização} other {# fotografias e vídeos ainda não têm pré-visualização}}",
   "frameleaf_tools": "Ferramentas",
   "free_up_space": "Libertar Espaço",

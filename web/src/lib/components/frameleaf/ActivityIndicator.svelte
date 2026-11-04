@@ -43,9 +43,13 @@
   /** The server sends its background work to administrators only. */
   const isAdmin = $derived(authManager.authenticated && authManager.user.isAdmin);
   /** The same number as Activity's In progress: paused work and background work count too. */
-  const indicator = $derived({
-    ...activityIndicatorState(items),
-    count: activityInProgressCount(items, isAdmin ? buildBackgroundWorkCards(runningJobsSession.summary).length : 0),
+  const indicator = $derived.by(() => {
+    const { count: running, progress } = activityIndicatorState(items);
+    const count = activityInProgressCount(
+      items,
+      isAdmin ? buildBackgroundWorkCards(runningJobsSession.summary).length : 0,
+    );
+    return { count, running, progress };
   });
 
   // Watching keeps the count current; it polls only while work is in flight and stops with the bar.
@@ -82,11 +86,14 @@
   const label = $derived(
     done
       ? $t('frameleaf_activity_indicator_done')
-      : indicator.progress === null
-        ? $t('frameleaf_activity_indicator', { values: { count: indicator.count } })
-        : $t('frameleaf_activity_indicator_progress', {
-            values: { count: indicator.count, progress: indicator.progress },
-          }),
+      : indicator.running < indicator.count
+        ? // Some of the work is paused or waiting: "in progress", as Activity's section says.
+          $t('frameleaf_activity_indicator_in_progress', { values: { count: indicator.count } })
+        : indicator.progress === null
+          ? $t('frameleaf_activity_indicator', { values: { count: indicator.count } })
+          : $t('frameleaf_activity_indicator_progress', {
+              values: { count: indicator.count, progress: indicator.progress },
+            }),
   );
 </script>
 
@@ -102,10 +109,11 @@
   >
     <svg class="fl-activity-ring" viewBox="0 0 16 16" aria-hidden="true">
       <circle class="fl-activity-track" cx="8" cy="8" r="6" />
-      <!-- Determinate when the work reports progress; otherwise a turning quarter arc. -->
+      <!-- Determinate when the work reports progress; a turning quarter arc while something runs
+           without a figure; a still quarter arc when nothing counted is running. -->
       <circle
         class="fl-activity-arc"
-        class:is-indeterminate={!done && indicator.progress === null}
+        class:is-indeterminate={!done && indicator.progress === null && indicator.running > 0}
         cx="8"
         cy="8"
         r="6"

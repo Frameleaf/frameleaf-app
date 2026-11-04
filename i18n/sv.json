@@ -1152,6 +1152,7 @@
   "forward": "Framåt",
   "frameleaf_activity_background_stale": "Bakgrundsarbetet kunde inte uppdateras, så siffrorna kan vara inaktuella.",
   "frameleaf_activity_empty_help_own": "Dina exporter, återställningar, uppladdningar och nedladdningar visas här medan de pågår.",
+  "frameleaf_activity_indicator_in_progress": "{count, plural, one {# jobb pågår} other {# jobb pågår}}. Öppna Aktivitet.",
   "frameleaf_play_img_missing": "{count, plural, one {# foto eller video har ingen förhandsvisning ännu} other {# foton och videor har ingen förhandsvisning ännu}}",
   "frameleaf_tools": "Verktyg",
   "free_up_space": "Frigör utrymme",

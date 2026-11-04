@@ -1163,6 +1163,7 @@
   "forward": "Fremover",
   "frameleaf_activity_background_stale": "Bakgrunnsarbeidet kunne ikke oppdateres, så tallene er kanskje ikke oppdaterte.",
   "frameleaf_activity_empty_help_own": "Eksportene, gjenopprettingene, opplastingene og nedlastingene dine vises her mens de pågår.",
+  "frameleaf_activity_indicator_in_progress": "{count, plural, one {# jobb pågår} other {# jobber pågår}}. Åpne Aktivitet.",
   "frameleaf_play_img_missing": "{count, plural, one {# bilde eller video har ingen forhåndsvisning ennå} other {# bilder og videoer har ingen forhåndsvisning ennå}}",
   "frameleaf_tools": "Verktøy",
   "free_up_space": "Rydd opp lagringsplass",
