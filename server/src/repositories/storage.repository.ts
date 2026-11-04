@@ -258,6 +258,16 @@ export class StorageRepository {
     return JSON.parse(file) as T;
   }
 
+  /** The `fs.access` error code for `filepath` and `mode`, or null when access is allowed. */
+  async accessError(filepath: string, mode: number): Promise<string | null> {
+    try {
+      await fs.access(filepath, mode);
+      return null;
+    } catch (error) {
+      return (error as NodeJS.ErrnoException).code ?? 'UNKNOWN';
+    }
+  }
+
   async checkFileExists(filepath: string, mode = constants.F_OK): Promise<boolean> {
     try {
       await fs.access(filepath, mode);

@@ -629,20 +629,24 @@ describe(LibraryScanService.name, () => {
       ]);
     });
 
-    it.each([true, false])(
-      'marks the library read-only only when a folder cannot be written (writable=%s)',
-      async (writable) => {
-        mocks.storage.checkFileExists.mockImplementation((_path: string, mode?: number) =>
-          Promise.resolve(writable || mode !== constants.W_OK),
-        );
+    it.each([
+      [null, false],
+      ['EROFS', true],
+      ['EACCES', true],
+      ['EPERM', true],
+      // the folder went away after the source check: no evidence it is read-only
+      ['ENOENT', false],
+      ['EIO', false],
+    ])('marks the library read-only only when writing is denied (%s)', async (code, readOnly) => {
+      mocks.storage.accessError.mockResolvedValue(code);
 
-        await sut.run(operationOf(), 'token');
+      await sut.run(operationOf(), 'token');
 
-        const marked = mocks.library.update.mock.calls.filter(([, patch]) => 'readOnly' in patch);
-        expect(marked).toEqual(writable ? [] : [[library.id, { readOnly: true }]]);
-        expect(operations.complete).toHaveBeenCalledTimes(1);
-      },
-    );
+      expect(mocks.storage.accessError).toHaveBeenCalledWith('/mnt/photos', constants.W_OK);
+      const marked = mocks.library.update.mock.calls.filter(([, patch]) => 'readOnly' in patch);
+      expect(marked).toEqual(readOnly ? [[library.id, { readOnly: true }]] : []);
+      expect(operations.complete).toHaveBeenCalledTimes(1);
+    });
 
     it('fails, changing nothing, when an import folder does not exist', async () => {
       mocks.storage.stat.mockImplementation(() => enoent());

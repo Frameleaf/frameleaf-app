@@ -94,6 +94,7 @@ class LibraryBatchStopped extends Error {
 }
 
 type LibraryRow = NonNullable<Awaited<ReturnType<LibraryRepository['get']>>>;
+const WRITE_DENIED = new Set(['EACCES', 'EPERM', 'EROFS']);
 
 /**
  * External library scans (FL-78).
@@ -480,13 +481,14 @@ export class LibraryScanService {
     await this.requireSources(roots, signal);
     signal.throwIfAborted();
 
-    // A folder this server cannot write (a `:ro` mount, as Immich libraries usually are) makes the library
+    // A folder this server is denied writing (a `:ro` mount, as Immich libraries usually are) makes the library
     // read-only, so edits keep their sidecars in Frameleaf's folder instead of failing beside the originals.
+    // Any other error (the folder went away since the check above) proves nothing; the scan meets it below.
     // ponytail: one way only; a later read-write remount keeps it read-only, which is always safe.
     if (
       !library.readOnly &&
-      (await Promise.all(roots.map((root) => this.storageRepository.checkFileExists(root, constants.W_OK)))).includes(
-        false,
+      (await Promise.all(roots.map((root) => this.storageRepository.accessError(root, constants.W_OK)))).some(
+        (code) => code !== null && WRITE_DENIED.has(code),
       )
     ) {
       await this.libraryRepository.update(library.id, { readOnly: true });
