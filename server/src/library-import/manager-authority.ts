@@ -33,6 +33,7 @@ export async function requestImportSourceAuthority(
       input.off('data', bounded);
       input.off('error', refused);
       input.off('end', refused);
+      input.off('close', refused);
       if (!writing && !writeFailed) output.off('error', outputFailed);
       reader.off('line', received);
       reader.off('close', refused);
@@ -65,6 +66,7 @@ export async function requestImportSourceAuthority(
     input.on('data', bounded);
     input.once('error', refused);
     input.once('end', refused);
+    input.once('close', refused);
     output.once('error', outputFailed);
     reader.once('close', refused);
     reader.once('error', refused);
