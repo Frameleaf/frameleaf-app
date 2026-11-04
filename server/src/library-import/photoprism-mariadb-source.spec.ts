@@ -124,6 +124,8 @@ describe.skipIf(!path)('native isolated PhotoPrism MariaDB restore', () => {
   });
   it('maps native manual label rows into tags without carrying generated or rejected classifications', async () => {
     await admin.query('DELETE FROM photos_albums; DELETE FROM albums');
+    await admin.query(`INSERT INTO auth_users(user_uid,user_name,display_name,user_role,auth_provider,can_login)
+      VALUES('u000000000000777','label-owner','Label Owner','admin','local',1)`);
     await admin.query(`INSERT INTO labels(id,label_name,label_priority) VALUES
       (900,'Native manual label',0),(901,'Native generated label',0),(902,'Native rejected label',0);
       INSERT INTO photos_labels(photo_id,label_id,label_src,uncertainty) VALUES

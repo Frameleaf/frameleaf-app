@@ -98,7 +98,8 @@ export function assemblePhotoprismManifest(records: Iterable<PhotoprismInventory
   if (archive.some((row) => ['markers', 'subjects'].includes(row.table))) loss('PHOTOPRISM_PEOPLE_ARCHIVED');
   if (archive.some((row) => ['labels', 'photos_labels'].includes(row.table))) loss('PHOTOPRISM_LABELS_ARCHIVED');
   const labels = new Map<string, z.infer<typeof labelSchema>>();
-  for (const row of archive.filter((row) => row.table === 'labels')) {
+  for (const row of archive) {
+    if (row.table !== 'labels') continue;
     const parsed = labelSchema.safeParse(row.value);
     if (!parsed.success || labels.has(String(parsed.data.id))) return refuse('PHOTOPRISM_LABEL_INVALID');
     labels.set(String(parsed.data.id), parsed.data);
@@ -107,7 +108,8 @@ export function assemblePhotoprismManifest(records: Iterable<PhotoprismInventory
   const labelPairs = new Set<string>(),
     unsupportedLabels = new Set<string>();
   const manualTags = new Map<string, Set<string>>();
-  for (const row of archive.filter((row) => row.table === 'photos_labels')) {
+  for (const row of archive) {
+    if (row.table !== 'photos_labels') continue;
     const parsed = labelLinkSchema.safeParse(row.value);
     if (!parsed.success) return refuse('PHOTOPRISM_LABEL_RELATIONSHIP_INVALID');
     const link = parsed.data,
