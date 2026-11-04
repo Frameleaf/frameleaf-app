@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
+import sharp from 'sharp';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
@@ -30,6 +31,19 @@ let phase = 'initialization';
 try {
   const hadImage = command(['image', 'inspect', image], { stdio: 'ignore' }).status === 0;
   writeFileSync(join(tmpdir(), 'application-image.json'), JSON.stringify({ createdImage: !hadImage }), { mode: 0o600 });
+  const seeds = [];
+  mkdirSync(join(originals, 'camera'), { mode: 0o700 });
+  for (const [name, color] of [
+    ['blue', '#2850c8'],
+    ['green', '#28b050'],
+  ]) {
+    const bytes = await sharp({ create: { width: 512, height: 512, channels: 3, background: color } })
+      .jpeg()
+      .toBuffer();
+    const path = 'camera/' + name + '.jpg';
+    writeFileSync(join(originals, path), bytes, { mode: 0o600 });
+    seeds.push({ name, path, sha256: createHash('sha256').update(bytes).digest('hex'), bytes: String(bytes.length) });
+  }
   const environment = join(directory, 'application.env');
   writeFileSync(
     environment,
@@ -123,6 +137,99 @@ try {
     !/^u[a-z0-9]{15}$/u.test(session.user?.UID ?? '')
   )
     throw new Error('Native local login identity changed');
+  phase = 'native media indexing';
+  run(['exec', container, 'photoprism', 'index']);
+  const request = async (path, method = 'GET', body) => {
+    const response = await fetch(origin + '/api/v1' + path, {
+      method,
+      headers: {
+        Authorization: 'Bearer ' + session.access_token,
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) throw new Error('Native fixture API refused ' + method);
+    return response.json();
+  };
+  const indexed = await request('/photos?count=100');
+  if (
+    !Array.isArray(indexed) ||
+    indexed.length !== seeds.length ||
+    typeof session.config?.downloadToken !== 'string' ||
+    !session.config.downloadToken
+  )
+    throw new Error('Native media inventory or scoped download authority changed');
+  const nativeLibrary = { photos: [], album: undefined };
+  for (const photo of indexed) {
+    if (!/^p[a-z0-9]{15}$/u.test(photo.UID)) throw new Error('Native photo identity changed');
+    const download = await fetch(
+      origin + '/api/v1/photos/' + photo.UID + '/dl?t=' + encodeURIComponent(session.config.downloadToken),
+      {
+        signal: AbortSignal.timeout(30_000),
+      },
+    );
+    if (!download.ok) throw new Error('Native original download refused');
+    const sha256 = createHash('sha256')
+      .update(Buffer.from(await download.arrayBuffer()))
+      .digest('hex');
+    const seed = seeds.find((item) => item.sha256 === sha256);
+    if (!seed || nativeLibrary.photos.some((item) => item.path === seed.path))
+      throw new Error('Native download did not return a distinct seeded original');
+    const favorite = seed.name === 'blue';
+    const caption = 'Native ' + seed.name + ' caption';
+    const edited = await request('/photos/' + photo.UID, 'PUT', {
+      Title: 'Native ' + seed.name + ' title',
+      TitleSrc: 'manual',
+      Caption: caption,
+      CaptionSrc: 'manual',
+      Private: true,
+      Favorite: favorite,
+      TakenAt: '2020-06-10T18:30:00Z',
+      TakenAtLocal: '2020-06-10T12:30:00Z',
+      TakenSrc: 'manual',
+      TimeZone: 'America/Edmonton',
+      Lat: 53.5461,
+      Lng: -113.4938,
+      PlaceSrc: 'manual',
+      Details: { Keywords: 'native, review', KeywordsSrc: 'manual' },
+    });
+    const observed = await request('/photos/' + photo.UID);
+    if (
+      edited.UID !== photo.UID ||
+      observed.UID !== photo.UID ||
+      observed.Caption !== caption ||
+      observed.Private !== true ||
+      observed.Favorite !== favorite ||
+      observed.TimeZone !== 'America/Edmonton'
+    )
+      throw new Error('Native manual photo readback changed');
+    nativeLibrary.photos.push({ ...seed, uid: photo.UID, caption, favorite });
+  }
+  const created = await request('/albums', 'POST', { Title: 'Native private album', Favorite: true });
+  if (!/^a[a-z0-9]{15}$/u.test(created.UID)) throw new Error('Native album identity changed');
+  await request('/albums/' + created.UID, 'PUT', {
+    Title: 'Native private album',
+    Description: 'Manually organized',
+    Private: true,
+    Favorite: true,
+  });
+  await request('/albums/' + created.UID + '/photos', 'POST', {
+    photos: nativeLibrary.photos.map((photo) => photo.uid),
+  });
+  const album = await request('/albums/' + created.UID);
+  if (
+    album.UID !== created.UID ||
+    album.Title !== 'Native private album' ||
+    album.Description !== 'Manually organized' ||
+    album.Private !== true
+  )
+    throw new Error('Native private album readback changed');
+  nativeLibrary.album = { uid: album.UID, name: album.Title, description: album.Description };
+  nativeLibrary.containerId = run(['inspect', '--format', '{{.Id}}', container]);
+  nativeLibrary.imageId = run(['inspect', '--format', '{{.Image}}', container]);
+  nativeLibrary.scope = session.scope;
+  nativeLibrary.authMode = session.config.authMode;
   const rejected = await login('wrong-' + password);
   await rejected.body?.cancel();
   if (rejected.status !== 401) throw new Error('Native source accepted the wrong password');
@@ -177,6 +284,7 @@ try {
         sourceUserId: session.user.UID,
         password,
         caseName: sourceCase.name,
+        nativeLibrary,
       }),
       { mode: 0o600 },
     );
