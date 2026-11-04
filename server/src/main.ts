@@ -2,8 +2,8 @@
 async function start() {
   const command = process.argv[2];
   if ((command === 'frameleaf-admin' || command === 'immich-admin') && process.argv[3] === 'prepare-library-import') {
-    const [, , , , option, path, ...rest] = process.argv;
-    if (option !== '--config' || !path || rest.length) throw new Error('Invalid preparation arguments');
+    const [option, path, ...rest] = process.argv.slice(4);
+    if (option !== '--config' || !path || rest.length > 0) throw new Error('Invalid preparation arguments');
     const { prepareLibraryImport } = await import('./library-import/prepare-command.js');
     console.log(JSON.stringify(await prepareLibraryImport(path)));
     return;
