@@ -99,10 +99,13 @@ describe.skipIf(!path)('native isolated PhotoPrism MariaDB restore', () => {
   });
   it('archives native account preferences alongside the same explicitly identified principal', async () => {
     await admin.query(
+      "INSERT INTO auth_users (user_uid,user_name,display_name,user_role,auth_provider,can_login) VALUES ('u000000000000777','settings-owner','Settings Owner','admin','local',1)",
+    );
+    await admin.query(
       "INSERT INTO auth_users_settings (user_uid,ui_language,ui_time_zone,download_originals,download_media_raw,download_media_sidecar,upload_path) VALUES ('u000000000000777','fr','Europe/Paris',1,-1,0,'family/uploads')",
     );
     const records = await collect();
-    const settings = records.filter((row) => row.type === 'archive' && row.table === ('user-settings' as never));
+    const settings = records.filter((row) => row.type === 'archive' && row.table === 'user-settings');
     expect(settings).toContainEqual({
       type: 'archive',
       table: 'user-settings',

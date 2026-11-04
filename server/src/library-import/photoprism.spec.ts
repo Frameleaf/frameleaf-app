@@ -89,7 +89,7 @@ describe('PhotoPrism pinned SQLite extraction', () => {
     );
     const source = openPhotoprismSnapshot(path, fixture.source.version);
     try {
-      expect([...source.rows('user-settings' as never)].flat()).toEqual([
+      expect([...source.rows('user-settings')].flat()).toEqual([
         expect.objectContaining({
           user_uid: 'u-fixture',
           ui_language: 'fr',
