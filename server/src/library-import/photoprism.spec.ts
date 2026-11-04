@@ -133,6 +133,15 @@ describe('PhotoPrism pinned SQLite extraction', () => {
       source.close();
     }
   });
+  it.each([1n, 9_007_199_254_740_993n])('retains numeric account identity %s separately from its UID', (id) => {
+    database.prepare('UPDATE auth_users SET id=?,auth_provider=? WHERE user_uid=?').run(id, '', 'u-fixture');
+    const source = openPhotoprismSnapshot(path, fixture.source.version);
+    try {
+      expect([...source.rows('users')].flat()[0]).toMatchObject({ id, user_uid: 'u-fixture', auth_provider: '' });
+    } finally {
+      source.close();
+    }
+  });
   it('bounds batches and includes negative row identities', () => {
     database.exec(
       "INSERT INTO photos (id,photo_uid) VALUES(-1,'negative'); WITH RECURSIVE seq(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM seq WHERE n<2100) INSERT INTO photos(photo_uid) SELECT 'p-'||n FROM seq",

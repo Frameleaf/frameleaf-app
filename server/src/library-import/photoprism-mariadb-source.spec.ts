@@ -99,6 +99,22 @@ describe.skipIf(!path)('native isolated PhotoPrism MariaDB restore', () => {
       /invite_token|verify_token|reset_token|passwords|auth_sessions/u,
     );
   });
+  it('retains the native numeric account ID without replacing its stable UID', async () => {
+    const uid = 'u000000000000777';
+    await admin.query(
+      "INSERT INTO auth_users(id,user_uid,user_name,user_role,auth_provider,can_login) VALUES(777,?,'identity-owner','admin','',1)",
+      [uid],
+    );
+    const records = await collect();
+    expect(
+      records.find((row) => row.type === 'archive' && row.table === 'users' && row.value.user_uid === uid),
+    ).toMatchObject({
+      value: { id: 777n, user_uid: uid, auth_provider: '' },
+    });
+    expect(records.find((row) => row.type === 'principal' && row.value.id === uid)).toMatchObject({
+      value: { id: uid },
+    });
+  });
   it('archives native account preferences alongside the same explicitly identified principal', async () => {
     await admin.query(
       "INSERT INTO auth_users (user_uid,user_name,display_name,user_role,auth_provider,can_login) VALUES ('u000000000000777','settings-owner','Settings Owner','admin','local',1)",
