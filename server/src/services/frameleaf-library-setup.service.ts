@@ -429,7 +429,8 @@ export class FrameleafLibrarySetupService {
     const disabled = run ? await this.disabledImportStages() : [];
     const { rows: stages } = run
       ? await sql<{ stage: string; total: number; done: number }>`SELECT i.stage, count(*)::int AS total,
-          count(*) FILTER (WHERE coalesce(j.state,i.state)='completed')::int AS done
+          -- Settled, not only completed: an item's failure is listed in Background work and never holds setup (FL-1165).
+          count(*) FILTER (WHERE coalesce(j.state,i.state) NOT IN ('pending','waiting','active'))::int AS done
           FROM job_run_item i LEFT JOIN job j ON j.id=i."jobId"
           WHERE i."runId"=${run.id}::uuid AND i.stage<>all(${disabled}::text[]) GROUP BY i.stage`.execute(this.db)
       : { rows: [] };

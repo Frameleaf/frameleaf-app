@@ -584,9 +584,15 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
               await sql`UPDATE job_run_item SET state=${outcome} WHERE "runId"=${id}::uuid AND stage=${JobName.SmartSearch}`.execute(
                 db,
               );
-              // FL-1165: one item's search step that ended badly is listed, never a reason to halt setup.
+              // FL-1165: one item's search step that ended badly is listed, never a reason to halt setup, and
+              // counts as settled so the setup bar finishes.
               expect((await make().status()).phase).not.toBe('needs-attention');
-              expect((await make().progress()).stages.find(({ id }) => id === 'search')?.status).not.toBe('done');
+              await sql`UPDATE system_metadata SET value=jsonb_set(value,'{quietSince}',${JSON.stringify(Date.now() - 11_000)}::text::jsonb)
+                WHERE key=${`frameleaf-manager-library-setup:${installation}`}`.execute(db);
+              expect((await make().status()).phase).toBe('complete');
+              const finished = await make().progress();
+              expect(finished.completedAt).toEqual(expect.any(String));
+              expect(finished.stages.find(({ id }) => id === 'search')?.status).toBe('done');
             }
           }
         }

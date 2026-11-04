@@ -145,6 +145,7 @@ describe('buildBackgroundWorkCards (SHARING-P1)', () => {
       stage: 'paused',
       statusKey: 'frameleaf_activity_stage_paused',
       stuck: false,
+      reason: null,
       waiting: 20,
       running: 0,
       progress: null,
@@ -164,6 +165,24 @@ describe('buildBackgroundWorkCards (SHARING-P1)', () => {
       summary({ queues: [queue(QueueName.ThumbnailGeneration, { waiting: 40, total: 40, state })] }),
     );
     expect(card).toMatchObject({ stage: 'queued', statusKey, stuck });
+  });
+
+  it('says a queue the server could not read is unavailable, even when its last counts were running', () => {
+    const [card] = buildBackgroundWorkCards(
+      summary({
+        queues: [queue(QueueName.ThumbnailGeneration, { active: 3, waiting: 40, total: 43, unavailable: true })],
+      }),
+    );
+    expect(card).toMatchObject({ stage: 'running', statusKey: 'frameleaf_job_runs_state_unavailable', stuck: true });
+  });
+
+  it.each([false, true])('keeps the more telling reason of two queued runs of one kind (reverse=%s)', (reverse) => {
+    const runs = [
+      run(QueueName.MetadataExtraction, { id: 'waiting', state: 'waiting', paused: 0, waiting: 5 }),
+      run(QueueName.MetadataExtraction, { id: 'blocked', state: 'blocked', paused: 0, blocked: 5 }),
+    ];
+    const [card] = buildBackgroundWorkCards(summary({ durableRuns: reverse ? [...runs].reverse() : runs }));
+    expect(card).toMatchObject({ stage: 'queued', statusKey: 'frameleaf_job_runs_state_blocked', stuck: true });
   });
 
   it('reads running work as running whatever else waits behind it', () => {

@@ -31,6 +31,8 @@ export type BackgroundWorkCard = {
   statusKey: Translations;
   /** Nothing will move until somebody or something else acts: a missing worker or a failed step. */
   stuck: boolean;
+  /** The server state the card says instead of its stage, if any; kept so two runs of one kind combine. */
+  reason: DurableJobState | null;
   /** Items waiting their turn, including paused and scheduled ones. */
   waiting: number;
   /** Items being worked on now. */
@@ -66,15 +68,28 @@ export const tonightStart = (startsAt: string | null, now: Date = new Date()): '
   return day.getTime() === tomorrow.getTime() && at.getHours() < OVERNIGHT_CUTOFF_HOUR ? 'tonight' : 'day';
 };
 
-/** States that say more than "queued" about work nothing is running yet. */
-const WAITING_REASONS: ReadonlySet<DurableJobState> = new Set(['blocked', 'delayed', 'retrying', 'unavailable']);
+/**
+ * States that say more than "queued" about work nothing is running yet, most telling first. A queue the server
+ * could not read is unavailable whatever its last counts said, running included: those counts may be stale.
+ */
+const WAITING_REASONS: readonly DurableJobState[] = ['unavailable', 'blocked', 'retrying', 'delayed'];
 
-const statusOf = (stage: BackgroundWorkStage, state: DurableJobState | undefined) => {
-  const reason = stage === 'queued' && state && WAITING_REASONS.has(state) ? state : null;
+const statusOf = (stage: BackgroundWorkStage, state: DurableJobState | null | undefined) => {
+  const reason =
+    state === 'unavailable' || (stage === 'queued' && state && WAITING_REASONS.includes(state)) ? state : null;
   return {
     statusKey: reason ? runStateKey(reason) : ACTIVITY_STAGE_KEYS[stage],
     stuck: reason === 'blocked' || reason === 'unavailable',
+    reason,
   };
+};
+
+/** The more telling of two cards' reasons, so the order the runs arrive in never hides a warning. */
+const strongerReason = (a: DurableJobState | null, b: DurableJobState | null) => {
+  const rank = (state: DurableJobState | null) => (state ? WAITING_REASONS.indexOf(state) : -1);
+  if (rank(a) === -1) return b;
+  if (rank(b) === -1) return a;
+  return rank(a) <= rank(b) ? a : b;
 };
 
 const percent = (done: number, total: number) =>
@@ -167,7 +182,7 @@ export const buildBackgroundWorkCards = (summary: DurableRunningJobs | null | un
       byKind.set(card.queueName, {
         ...existing,
         stage,
-        ...(stage !== existing.stage && statusOf(stage, undefined)),
+        ...statusOf(stage, strongerReason(existing.reason, card.reason)),
         waiting: existing.waiting + card.waiting,
         running: existing.running + card.running,
         progress: stage === 'running' && totals.enumerated ? percent(totals.settled, totals.total) : null,

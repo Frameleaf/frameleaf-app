@@ -51,6 +51,27 @@ describe('runs with live work', () => {
     expect(run.finishedAt).toBeNull();
   });
 
+  it('revives a finished item when its request joins a live job with the same deduplication key', async () => {
+    const runId = await store.createRun('relink-dedup', {});
+    const keyed = { ...intent(runId, 'Thumbnail'), options: { deduplication: { id: 'thumbnail:asset' } } };
+    await store.enqueue([keyed]);
+    // The item already ended and lost its link, but the keyed job is still waiting.
+    await sql`update job_run_item set state = 'completed', "jobId" = null where "runId" = ${runId}::uuid`.execute(db);
+    await sql`update job_run set "enumerationDone" = true, "finishedAt" = now() where id = ${runId}::uuid`.execute(db);
+
+    await store.enqueue([keyed]);
+
+    const {
+      rows: [item],
+    } = await sql<{ state: string; jobState: string }>`select i.state, j.state "jobState"
+      from job_run_item i join job j on j.id = i."jobId" where i."runId" = ${runId}::uuid`.execute(db);
+    expect(item).toEqual({ state: 'pending', jobState: 'pending' });
+    const {
+      rows: [run],
+    } = await sql<{ finishedAt: Date | null }>`select "finishedAt" from job_run where id = ${runId}::uuid`.execute(db);
+    expect(run.finishedAt).toBeNull();
+  });
+
   it('lists a run marked finished with live jobs ahead of finished runs', async () => {
     const busy = await store.createRun('busy', {});
     await store.enqueue([intent(busy, 'Thumbnail')]);
