@@ -1,9 +1,28 @@
 import { posix } from 'node:path';
+import { z } from 'zod';
 import mariadb from 'src/library-import/fixtures/photoprism/261029-mariadb114.json' with { type: 'json' };
 import sqlite from 'src/library-import/fixtures/photoprism/261029-sqlite.json' with { type: 'json' };
 import { type ImportManifest, importTimestampSchema, parseImportManifest } from 'src/library-import/manifest.js';
 import { type PhotoprismInventoryRecord, readPhotoprismInventory } from 'src/library-import/photoprism-inventory.js';
 import { type SourceArchiveRecord, encodeSourceArchiveRecord } from 'src/library-import/source-archive-codec.js';
+import { normalizeTagValue } from 'src/utils/tag.js';
+
+const labelSchema = z.object({
+  id: z.bigint().positive(),
+  label_name: z.string(),
+  label_priority: z.bigint(),
+  deleted_at: z
+    .string()
+    .transform((value) => value.replace(' ', 'T'))
+    .pipe(z.iso.datetime({ offset: true }))
+    .nullable(),
+});
+const labelLinkSchema = z.object({
+  photo_id: z.bigint().positive(),
+  label_id: z.bigint().positive(),
+  label_src: z.string(),
+  uncertainty: z.bigint(),
+});
 
 type SealedManifest = Extract<ImportManifest, { version: 3 }>;
 type Input = {
@@ -78,6 +97,44 @@ export function assemblePhotoprismManifest(records: Iterable<PhotoprismInventory
   if (archive.length > 0) loss('PHOTOPRISM_SOURCE_METADATA_ARCHIVED');
   if (archive.some((row) => ['markers', 'subjects'].includes(row.table))) loss('PHOTOPRISM_PEOPLE_ARCHIVED');
   if (archive.some((row) => ['labels', 'photos_labels'].includes(row.table))) loss('PHOTOPRISM_LABELS_ARCHIVED');
+  const labels = new Map<string, z.infer<typeof labelSchema>>();
+  for (const row of archive) {
+    if (row.table !== 'labels') continue;
+    const parsed = labelSchema.safeParse(row.value);
+    if (!parsed.success || labels.has(String(parsed.data.id))) return refuse('PHOTOPRISM_LABEL_INVALID');
+    labels.set(String(parsed.data.id), parsed.data);
+  }
+  const photoSources = new Set(photos.map((photo) => photo.sourceId));
+  const labelPairs = new Set<string>(),
+    unsupportedLabels = new Set<string>();
+  const manualTags = new Map<string, Set<string>>();
+  for (const row of archive) {
+    if (row.table !== 'photos_labels') continue;
+    const parsed = labelLinkSchema.safeParse(row.value);
+    if (!parsed.success) return refuse('PHOTOPRISM_LABEL_RELATIONSHIP_INVALID');
+    const link = parsed.data,
+      labelId = String(link.label_id),
+      photoId = String(link.photo_id);
+    const label = labels.get(labelId),
+      pair = `${photoId}:${labelId}`;
+    if (!label || !photoSources.has(photoId) || labelPairs.has(pair))
+      return refuse('PHOTOPRISM_LABEL_RELATIONSHIP_INVALID');
+    labelPairs.add(pair);
+    if (!['manual', 'batch'].includes(link.label_src)) continue;
+    if (link.uncertainty < 0n || link.uncertainty > 100n) return refuse('PHOTOPRISM_LABEL_REVIEW_REQUIRED');
+    const deleted = label.deleted_at !== null && !/^0001-01-01T00:00:00(?:\.0+)?(?:Z|\+00:00)$/u.test(label.deleted_at);
+    if (link.uncertainty === 100n || deleted || label.label_priority < 0n) continue;
+    const tag = label.label_name;
+    if (!tag.trim() || tag.includes('\0') || normalizeTagValue(tag) !== tag) {
+      if (!unsupportedLabels.has(labelId)) loss('PHOTOPRISM_LABEL_TAG_UNREPRESENTABLE', labelId);
+      unsupportedLabels.add(labelId);
+      continue;
+    }
+    const tags = manualTags.get(photoId) ?? new Set<string>();
+    tags.add(tag);
+    manualTags.set(photoId, tags);
+  }
+
   const manifestFiles: ImportManifest['files'] = files.map((file) => {
     const proof = observed.get(file.id);
     if (!proof || proof.path !== file.path || proof.bytes !== file.bytes || proof.role !== file.role)
@@ -105,6 +162,8 @@ export function assemblePhotoprismManifest(records: Iterable<PhotoprismInventory
     if (media.includes(undefined) || new Set(media).size !== 1)
       return refuse('PHOTOPRISM_MEDIA_RELATIONSHIP_REVIEW_REQUIRED');
     const { title, ...metadata } = photo.metadata;
+    const labels = manualTags.get(photo.sourceId);
+    if (metadata.tags || labels?.size) metadata.tags = [...new Set([...(metadata.tags ?? []), ...(labels ?? [])])];
     if (title) loss('PHOTOPRISM_TITLE_ARCHIVED', photo.id);
     const type = media[0]!;
     const names = originals.map((file) => {

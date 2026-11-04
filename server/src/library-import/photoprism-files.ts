@@ -22,6 +22,11 @@ export const classifyPhotoprismFile = (row: PhotoprismRow) => {
   if (!result.success) throw new Error('PhotoPrism source refused: PHOTOPRISM_FILE_INVALID');
   const file = result.data;
   const originalTree = file.file_root === '/';
+  const role: 'original' | 'sidecar' | undefined = originalTree
+    ? file.file_sidecar
+      ? 'sidecar'
+      : 'original'
+    : undefined;
   if (originalTree && file.file_missing) throw new Error('PhotoPrism source refused: PHOTOPRISM_ORIGINAL_MISSING');
   if (originalTree && file.file_watermark)
     throw new Error('PhotoPrism source refused: PHOTOPRISM_ORIGINAL_WATERMARKED');
@@ -33,7 +38,7 @@ export const classifyPhotoprismFile = (row: PhotoprismRow) => {
     path: file.file_name,
     bytes: file.file_size.toString(),
     primary: file.file_primary,
-    role: originalTree ? (file.file_sidecar ? 'sidecar' : 'original') : undefined,
+    role,
     archive: row,
   };
 };

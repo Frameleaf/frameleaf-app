@@ -4,8 +4,10 @@ import { once } from 'node:events';
 import { readFileSync } from 'node:fs';
 import { Socket, connect, createServer } from 'node:net';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import fileFixture from 'src/library-import/fixtures/photoprism/261029-files.json' with { type: 'json' };
 import fixture from 'src/library-import/fixtures/photoprism/261029-mariadb114.json' with { type: 'json' };
 import { verifyImportedPassword } from 'src/library-import/passwords.js';
+import { assemblePhotoprismManifest } from 'src/library-import/photoprism-manifest.js';
 import { readPhotoprismMariadbInventory } from 'src/library-import/photoprism-mariadb-source.js';
 
 const config = {
@@ -119,6 +121,57 @@ describe.skipIf(!path)('native isolated PhotoPrism MariaDB restore', () => {
         upload_path: 'family/uploads',
       }),
     });
+  });
+  it('maps native manual label rows into tags without carrying generated or rejected classifications', async () => {
+    await admin.query('DELETE FROM photos_albums; DELETE FROM albums');
+    await admin.query(`INSERT INTO auth_users(user_uid,user_name,display_name,user_role,auth_provider,can_login)
+      VALUES('u000000000000777','label-owner','Label Owner','admin','local',1)`);
+    await admin.query(`INSERT INTO labels(id,label_name,label_priority) VALUES
+      (900,'Native manual label',0),(901,'Native generated label',0),(902,'Native rejected label',0);
+      INSERT INTO photos_labels(photo_id,label_id,label_src,uncertainty) VALUES
+      (1,900,'manual',0),(1,901,'image',0),(1,902,'manual',100)`);
+    const records = await collect();
+    const photos = records.filter((row) => row.type === 'photo');
+    const owner = records.filter((row) => row.type === 'principal').find((row) => !row.value.system)!.value.id;
+    const proof = new Map(fileFixture.files.map((file) => [file.expected.path, file.expected]));
+    const files = records.flatMap((row) =>
+      row.type === 'file' && row.value.role
+        ? [
+            {
+              ...proof.get(row.value.path)!,
+              id: row.value.id,
+              role: row.value.role,
+              modifiedAt: '2020-06-10T18:31:00Z',
+            },
+          ]
+        : [],
+    );
+    const { manifest, archive } = assemblePhotoprismManifest(records, {
+      source: {
+        kind: 'photoprism',
+        version: source.version,
+        identity: source.database,
+        revision: 'native-label-snapshot',
+        schemaSha256: fixture.schemaSha256,
+      },
+      inventory: {
+        complete: true,
+        ownershipComplete: true,
+        privacyComplete: true,
+        writersStopped: true,
+        revisionBefore: 'native-label-snapshot',
+        revisionAfter: 'native-label-snapshot',
+      },
+      photoOwners: Object.fromEntries(photos.map((row) => [row.value.id, owner])),
+      albumOwners: {},
+      materializedAlbums: {},
+      files,
+    });
+    expect(manifest.assets[0].metadata.tags).toContain('Native manual label');
+    expect(manifest.assets[0].metadata.tags).not.toContain('Native generated label');
+    expect(manifest.assets[0].metadata.tags).not.toContain('Native rejected label');
+    expect(manifest.assets[1].metadata.tags).not.toContain('Native manual label');
+    expect(archive.filter((row) => row.table === 'photos_labels')).toHaveLength(3);
   });
   it('reads beyond one page without losing originals or changing Unicode path bytes', async () => {
     const values = Array.from({ length: 1001 }, (_, i) => [
