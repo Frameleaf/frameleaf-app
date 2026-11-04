@@ -97,6 +97,26 @@ describe.skipIf(!path)('native isolated PhotoPrism MariaDB restore', () => {
       /invite_token|verify_token|reset_token|passwords|auth_sessions/u,
     );
   });
+  it('archives native account preferences alongside the same explicitly identified principal', async () => {
+    await admin.query(
+      "INSERT INTO auth_users_settings (user_uid,ui_language,ui_time_zone,download_originals,download_media_raw,download_media_sidecar,upload_path) VALUES ('u000000000000777','fr','Europe/Paris',1,-1,0,'family/uploads')",
+    );
+    const records = await collect();
+    const settings = records.filter((row) => row.type === 'archive' && row.table === ('user-settings' as never));
+    expect(settings).toContainEqual({
+      type: 'archive',
+      table: 'user-settings',
+      value: expect.objectContaining({
+        user_uid: 'u000000000000777',
+        ui_language: 'fr',
+        ui_time_zone: 'Europe/Paris',
+        download_originals: 1n,
+        download_media_raw: -1n,
+        download_media_sidecar: 0n,
+        upload_path: 'family/uploads',
+      }),
+    });
+  });
   it('reads beyond one page without losing originals or changing Unicode path bytes', async () => {
     const values = Array.from({ length: 1001 }, (_, i) => [
       1,
