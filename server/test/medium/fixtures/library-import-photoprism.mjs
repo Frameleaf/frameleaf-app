@@ -2,8 +2,9 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { chmod, copyFile, mkdir, mkdtemp, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
 
 const execute = promisify(execFile);
@@ -204,6 +205,55 @@ const config = {
   stateDirectory,
   bootstrapAdmin: { userId: randomUUID(), path: join(directory, 'bootstrap-admin.json') },
 };
+// Exercise the claim fallback on a disposable derivative, leaving the native capture unchanged.
+const claimDirectory = await mkdtemp(join(directory, 'claim-fixture-'));
+const claimSnapshot = join(claimDirectory, 'snapshot.sqlite');
+await copyFile(captured.path, claimSnapshot);
+await chmod(claimSnapshot, 0o600);
+const claimDatabase = new DatabaseSync(claimSnapshot);
+try {
+  claimDatabase.exec('PRAGMA journal_mode=DELETE');
+  assert.equal(claimDatabase.prepare('DELETE FROM passwords WHERE uid=?').run(input.sourceUserId).changes, 1);
+} finally {
+  claimDatabase.close();
+}
+const claimSource = { ...source, revision: await sha256(claimSnapshot) };
+const claimOperationId = randomUUID();
+const claimPreparation = join(directory, 'prepare-claim.json');
+await writeFile(
+  claimPreparation,
+  JSON.stringify({
+    ...publication,
+    operationId: claimOperationId,
+    snapshotPath: claimSnapshot,
+    observed: { ...publication.observed, source: claimSource },
+  }),
+  { mode: 0o600 },
+);
+const claimReceipt = await prepareLibraryImport(claimPreparation, async (seal) => {
+  assert.deepEqual(seal, {
+    operationId: claimOperationId,
+    destinationId,
+    source: claimSource,
+    preparationSha256: await sha256(claimPreparation),
+  });
+  await authorize();
+});
+const claimBundle = await loadLibraryImportBundle(
+  {
+    ...config,
+    operationId: claimOperationId,
+    bundleDirectory: join(directory, claimReceipt.bundleName),
+  },
+  'photoprism',
+);
+assert.equal(claimBundle.owners.length, 1);
+assert.deepEqual(claimBundle.owners[0].intent.disposition, {
+  kind: 'claim',
+  reason: 'no-local-verifier',
+  claimPermitted: true,
+});
+assert.equal(claimBundle.owners[0].credential, undefined);
 const connection = connectImportDatabase(process.env.DB_URL, false);
 const database = new Kysely(getKyselyConfig({ connectionType: 'url', url: process.env.DB_URL }));
 let local;
