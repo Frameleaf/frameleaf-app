@@ -2,7 +2,7 @@ import { hash } from 'bcrypt';
 import { randomUUID } from 'node:crypto';
 import { chmod, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { loadLibraryImportBundle } from 'src/library-import/bundle-input.js';
 import { writeLibraryImportBundle } from 'src/library-import/bundle-output.js';
 import fixture from 'src/library-import/fixtures/manager-plan-v2.json' with { type: 'json' };
@@ -82,6 +82,7 @@ const load = (value: ReturnType<typeof input>, directory: string) =>
 it.each(sourceKinds)('round-trips the common private bundle contract for %s', async (kind) => {
   const value = input(kind);
   const result = await writeLibraryImportBundle(value);
+  expect(basename(result.bundleDirectory).startsWith(`bundle-${value.operationId}-`)).toBe(true);
   const bundle = await load(value, result.bundleDirectory);
   await bundle.assertUnchanged();
   expect(bundle.context.manifest).toEqual(value.manifest);
@@ -145,6 +146,7 @@ it.each([
 ])('refuses %s without replacing earlier captures or exposing raw failure text', async (failure) => {
   const value = input();
   let candidate: Parameters<typeof writeLibraryImportBundle>[0] = value;
+  let interruptedDirectory: string | undefined;
   switch (failure) {
     case 'missing owner': {
       candidate = { ...value, owners: value.owners.slice(1) };
@@ -164,6 +166,7 @@ it.each([
         records: (async function* () {
           yield records[0];
           await readFile(join(stagingRoot, 'previous.json'));
+          interruptedDirectory = (await readdir(stagingRoot)).find((name) => name !== 'previous.json');
           throw new Error('private-verifier-value');
         })(),
       };
@@ -182,6 +185,8 @@ it.each([
   const failureResult: unknown = await writeLibraryImportBundle(candidate).catch((error: unknown) => error);
   expect(failureResult).toMatchObject({ message: expect.stringMatching(/^Library import refused:/u) });
   expect(String(failureResult)).not.toContain('private-verifier-value');
+  if (failure === 'interrupted inventory')
+    expect(interruptedDirectory?.startsWith(`bundle-${value.operationId}-`)).toBe(true);
   expect((await readdir(stagingRoot)).sort()).toEqual(
     failure === 'symlink staging' ? ['alias', 'previous.json'] : ['previous.json'],
   );
