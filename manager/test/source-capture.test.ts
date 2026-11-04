@@ -174,6 +174,7 @@ for (const invalid of [
   'staging in source',
   'trailing slash source mount',
   'root source mount',
+  'symbolic source mount',
 ]) {
   test(`invalid capture paths make no container changes: ${invalid}`, async (t) => {
     const f = await setup(t);
@@ -195,8 +196,12 @@ for (const invalid of [
         f.source.fingerprint = sourceFingerprint([f.app]);
         break;
       case 'trailing slash source mount':
-      case 'root source mount': {
-        const source = invalid === 'root source mount' ? '/' : f.root + '/';
+      case 'root source mount':
+      case 'symbolic source mount': {
+        const alias = join(f.root, 'source-alias');
+        if (invalid === 'symbolic source mount') await symlink(f.root, alias);
+        const source =
+          invalid === 'root source mount' ? '/' : invalid === 'symbolic source mount' ? alias : f.root + '/';
         f.source.mounts.push({ type: 'bind', source, target: '/additional', readOnly: false });
         f.app.Mounts.push({ Type: 'bind', Source: source, Destination: '/additional', RW: true });
         f.source.fingerprint = sourceFingerprint([f.app]);

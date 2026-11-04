@@ -52,6 +52,9 @@ export async function captureFencedSqliteSource(fencing: Fencing, sourceInput: S
   try {
     if ((await realpath(databasePath)) !== databasePath || (await realpath(stagingRoot)) !== stagingRoot)
       throw new Refusal('source_snapshot_path_changed');
+    const resolvedSources = await Promise.all(allSources.map((path) => realpath(path)));
+    if (resolvedSources.some((root) => within(stagingRoot, root)))
+      throw new Refusal('source_snapshot_staging_in_source');
     const stage = await lstat(stagingRoot, { bigint: true });
     if (!stage.isDirectory() || stage.uid !== BigInt(process.geteuid?.() ?? -1) || (stage.mode & 0o077n) !== 0n)
       throw new Refusal('source_snapshot_private_staging_required');
