@@ -355,6 +355,44 @@ try {
     if (tests.status !== 0) throw new Error('Native account extraction failed');
     console.log('Native PhotoPrism account case passed: ' + sourceCase.name);
   }
+  phase = 'native source-to-destination import';
+  rmSync(storage, { recursive: true });
+  cpSync(baseline, storage, { recursive: true });
+  const importConfig = join(directory, 'test.json');
+  writeFileSync(
+    importConfig,
+    JSON.stringify({
+      databasePath: join(storage, 'index.db'),
+      stagingRoot: directory,
+      sourceUserId: session.user.UID,
+      password,
+      caseName: 'local-admin',
+      nativeLibrary,
+    }),
+    { mode: 0o600 },
+  );
+  const targetImage = `frameleaf-postgres:photoprism-${runId}`;
+  const hadTargetImage = command(['image', 'inspect', targetImage], { stdio: 'ignore' }).status === 0;
+  writeFileSync(join(tmpdir(), 'target-image.json'), JSON.stringify({ createdImage: !hadTargetImage }), {
+    mode: 0o600,
+  });
+  const acceptance = spawnSync(
+    'pnpm',
+    [
+      '--dir',
+      'server',
+      'exec',
+      'vitest',
+      'run',
+      '--config',
+      'test/vitest.config.medium.mjs',
+      'test/medium/specs/repositories/library-import-lifecycle.spec.ts',
+      '--testNamePattern=native-source',
+      '--maxWorkers=1',
+    ],
+    { cwd: root, stdio: 'inherit', env: { ...process.env, FRAMELEAF_PHOTOPRISM_APPLICATION_CONFIG: importConfig } },
+  );
+  if (acceptance.status !== 0) throw new Error('Native common import acceptance failed');
 } catch {
   failures.push(new Error(`Native PhotoPrism application qualification failed during ${phase}`));
 } finally {

@@ -12,12 +12,22 @@ const postgresImageContext = fileURLToPath(new URL('../../../docker/postgres', i
 
 const globalSetup = async () => {
   const templateName = 'frameleaf';
+  const nativeQualification = Boolean(process.env.FRAMELEAF_PHOTOPRISM_APPLICATION_CONFIG);
+  const runId = process.env.FRAMELEAF_PHOTOPRISM_RUN_ID;
+  if (nativeQualification && !/^\d+-\d+$/u.test(runId ?? '')) throw new Error('Invalid native qualification scope');
+  const imageName = nativeQualification ? `frameleaf-postgres:photoprism-${runId}` : 'frameleaf-postgres:medium';
   // The Dockerfile falls back to dpkg for its architecture, so the default builder is enough.
   const postgresImage = await GenericContainer.fromDockerfile(postgresImageContext)
     .withBuildArgs(
       process.env.FRAMELEAF_CI_POSTGRES_IMAGE ? { POSTGRES_IMAGE: process.env.FRAMELEAF_CI_POSTGRES_IMAGE } : {},
     )
-    .build('frameleaf-postgres:medium', { deleteOnExit: false });
+    .build(imageName, { deleteOnExit: false });
+  if (nativeQualification) {
+    postgresImage.withLabels({
+      'app.frameleaf.qualification-family': 'photoprism',
+      'app.frameleaf.qualification-run': runId!,
+    });
+  }
   const postgresContainer = await postgresImage
     .withExposedPorts(5432)
     .withEnvironment({
