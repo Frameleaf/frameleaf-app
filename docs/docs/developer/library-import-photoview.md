@@ -12,7 +12,7 @@ The unmodified application ran native GORM migrations and scanned exclusively ge
 
 The application was stopped with restart disabled before capturing its database and any WAL, followed by a native SQLite backup. Integrity and foreign-key checks passed. The schema contains 14 application tables, plus SQLite's sequence table; its original 39 schema objects fingerprint as `d6dd07880bb4ee9eee48052a42ed394dd3e33dab75f2f0476c21d9f556871952`. The product reader matched all 41 captured projected content records. Fixtures contain structural definitions and synthetic allowlisted records; the upstream AGPL license accompanies them.
 
-Fresh native installations can emit the same pinned foreign-key clauses in different orders. Admission permits only permutations of those exact known clauses with every other schema object, column, constraint and SQL fragment unchanged. Missing, duplicated, altered or additional constraints still fail. Each admitted snapshot retains its actual raw schema fingerprint in the reader and manifest binding; normalization never replaces that identity with the fixture hash.
+Fresh native installations can emit the same pinned foreign-key and uniqueness clauses in different orders, including swapping the two uniqueness constraints on media paths. Admission permits only permutations of those exact known clauses with every other schema object, column, constraint and SQL fragment unchanged. Missing, duplicated, altered or additional constraints still fail. Each admitted snapshot retains its actual raw schema fingerprint in the reader and manifest binding; normalization never replaces that identity with the fixture hash.
 
 ## Reader and preservation matrix
 

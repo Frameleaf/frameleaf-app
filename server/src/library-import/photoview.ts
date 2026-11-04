@@ -34,15 +34,15 @@ const qualifiedSchema = (database: DatabaseSync) => {
   const normalized = objects.map((object) => {
     const expected = fixture.objects.find((entry) => entry.type === object.type && entry.name === object.name);
     if (object.type !== 'table' || typeof object.sql !== 'string' || !expected?.sql) return object;
-    // Native migrations vary these known foreign-key clause orders; every clause and all other SQL must still match.
-    const foreignKeys = expected.sql
+    // Native migrations reorder these known foreign-key and unique clauses; all other SQL must still match.
+    const constraints = expected.sql
       .slice(0, -1)
       .split(',CONSTRAINT ')
-      .filter((clause) => clause.startsWith('`fk_'))
+      .filter((clause) => clause.startsWith('`fk_') || clause.startsWith('`uni_'))
       .map((clause) => ',CONSTRAINT ' + clause);
     let actualSql = object.sql,
       expectedSql = expected.sql;
-    for (const clause of foreignKeys) {
+    for (const clause of constraints) {
       if (!actualSql.includes(clause)) return object;
       actualSql = actualSql.replace(clause, '');
       expectedSql = expectedSql.replace(clause, '');
