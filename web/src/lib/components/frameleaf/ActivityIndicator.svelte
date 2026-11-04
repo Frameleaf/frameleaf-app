@@ -45,6 +45,8 @@
   );
   /** The server sends its background work to administrators only. */
   const isAdmin = $derived(authManager.authenticated && authManager.user.isAdmin);
+  /** How long to wait before loading the administrator's part again after it failed to load. */
+  const ADMIN_RETRY_MS = 30_000;
   /** Loaded for administrators only, so the bar costs nobody else anything. */
   let admin = $state<typeof import('$lib/frameleaf/activity-indicator-admin') | null>(null);
   /** The same number as Activity's In progress: paused work and background work count too. */
@@ -67,15 +69,27 @@
     }
     // Only the role decides; what loading and watching read and write must not re-run this effect.
     let stop: (() => void) | undefined;
+    let retry: ReturnType<typeof setTimeout> | undefined;
     let left = false;
-    void import('$lib/frameleaf/activity-indicator-admin').then((module) => {
-      if (!left) {
-        admin = module;
-        stop = untrack(() => module.watchAdminWork());
-      }
-    });
+    const load = () =>
+      import('$lib/frameleaf/activity-indicator-admin')
+        .then((module) => {
+          if (!left) {
+            admin = module;
+            stop = untrack(() => module.watchAdminWork());
+          }
+        })
+        // A chunk that failed to load (offline, or replaced by an update) is tried again; until then
+        // the bar counts the admin's own work, as it does for everyone.
+        .catch(() => {
+          if (!left) {
+            retry = setTimeout(() => void load(), ADMIN_RETRY_MS);
+          }
+        });
+    void load();
     return () => {
       left = true;
+      clearTimeout(retry);
       stop?.();
     };
   });
