@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { manifestFingerprint, parseImportManifest } from 'src/library-import/manifest.js';
+import { manifestFingerprint, parseImportManifest, storedVisibility } from 'src/library-import/manifest.js';
 
 const manifest = () => ({
   format: 'frameleaf-library-import',
@@ -31,6 +31,21 @@ const manifest = () => ({
 describe('library import manifest trust boundary', () => {
   it('accepts an explicit complete inventory without changing privacy', () => {
     expect(parseImportManifest(manifest()).assets[0].visibility).toBe('hidden');
+  });
+  it('keeps a Locked archived item archived, and refuses archived without Locked', () => {
+    const value = manifest();
+    Object.assign(value.assets[0], { visibility: 'locked', archived: true });
+    const [asset] = parseImportManifest(value).assets;
+    expect(storedVisibility(asset)).toBe('archive');
+    expect(storedVisibility({ visibility: 'locked' })).toBe('timeline');
+    expect(storedVisibility({ visibility: 'trash' })).toBe('timeline');
+    expect(manifestFingerprint(parseImportManifest(manifest()))).toBe(
+      manifestFingerprint(
+        parseImportManifest({ ...manifest(), assets: manifest().assets.map((a) => ({ ...a, archived: undefined })) }),
+      ),
+    );
+    Object.assign(value.assets[0], { visibility: 'archive' });
+    expect(() => parseImportManifest(value)).toThrow('ASSET_ARCHIVED_REQUIRES_LOCKED');
   });
   it('preserves an explicit cleared location for regeneration locks', () => {
     const value = manifest();

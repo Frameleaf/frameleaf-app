@@ -398,7 +398,7 @@ describe('PhotoPrism common manifest assembly', () => {
       fileIds: ['jpeg'],
       primaryFileId: 'jpeg',
       type: 'IMAGE',
-      visibility: 'hidden',
+      visibility: 'locked',
       originalFileNames: { jpeg: 'DSC123.jpg' },
       metadata: {
         description: metadata.expected.Caption,
@@ -488,12 +488,22 @@ describe('PhotoPrism common manifest assembly', () => {
     expect(result.manifest.files).toHaveLength(1);
   });
 
-  it.each(['archive', 'trash'] as const)('preserves source %s without reviving it', (state) => {
+  it.each([
+    ['archive', 0n, 'archive'],
+    ['trash', 1n, 'trash'],
+    // Owner 2026-11-04: an archived private photo stays private, so it imports Locked
+    ['archive', 1n, 'locked'],
+  ] as const)('preserves source %s (private=%s) without reviving it', (archived, isPrivate, state) => {
     const { rows, input, photo, details } = setup();
     const changed = [
       ...normalizePhotoprismInventoryRow(
         'photos',
-        { ...photo, deleted_at: '2026-11-01T00:00:00Z', photo_quality: state === 'trash' ? -1n : 5n },
+        {
+          ...photo,
+          photo_private: isPrivate,
+          deleted_at: '2026-11-01T00:00:00Z',
+          photo_quality: archived === 'trash' ? -1n : 5n,
+        },
         details,
       ),
     ];
@@ -505,6 +515,8 @@ describe('PhotoPrism common manifest assembly', () => {
       input,
     );
     expect(result.manifest.assets[0].visibility).toBe(state);
+    // Unlocking returns an archived private photo to the Archive
+    expect(result.manifest.assets[0].archived).toBe(state === 'locked' ? true : undefined);
     expect(result.manifest.assets[0].metadata.deletedAt).toBe(state === 'trash' ? '2026-11-01T00:00:00Z' : undefined);
   });
 

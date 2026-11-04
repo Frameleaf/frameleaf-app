@@ -179,13 +179,15 @@ export function assemblePhotoprismManifest(records: Iterable<PhotoprismInventory
       ...(localClock === undefined ? {} : { localDateTime: localClock }),
       fileModifiedAt: observed.get(primary[0].id)!.modifiedAt,
       originalFileNames: Object.fromEntries(names),
+      // Owner 2026-11-04: a private photo imports Locked, ahead of archived so it stays private.
       visibility: photo.state.removed
         ? 'trash'
-        : photo.state.archived
-          ? 'archive'
-          : photo.state.private
-            ? 'hidden'
+        : photo.state.private
+          ? 'locked'
+          : photo.state.archived
+            ? 'archive'
             : 'timeline',
+      ...(!photo.state.removed && photo.state.private && photo.state.archived ? { archived: true as const } : {}),
       metadata: { ...metadata, ...(photo.state.removed ? { deletedAt: photo.stateChangedAt } : {}) },
     };
   });

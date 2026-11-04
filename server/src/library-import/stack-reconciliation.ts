@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { ImportDatabase } from 'src/immich-import/types.js';
 import { bindDestinationImportPlan } from 'src/library-import/destination-plan.js';
-import { parseImportManifest } from 'src/library-import/manifest.js';
+import { parseImportManifest, storedVisibility } from 'src/library-import/manifest.js';
 import {
   LibraryImportBinding,
   LibraryImportJournal,
@@ -72,12 +72,12 @@ export async function reconcileImportedStacks(
             ownerId,
             primaryAssetId,
             assetIds,
-            visibility: primary.visibility === 'trash' ? 'timeline' : primary.visibility,
+            visibility: storedVisibility(primary),
             status: primary.visibility === 'trash' ? 'trashed' : 'active',
             ownerEligible: true,
             membersOwned: true,
             coherentState: true,
-            unlocked: true,
+            unlocked: primary.visibility !== 'locked',
           };
         })
         .sort((a, b) => a.id.localeCompare(b.id));
