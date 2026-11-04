@@ -9,6 +9,8 @@ import { Releases, type VerifiedRelease } from './releases.js';
 import { compareReleases, isNewerRelease } from './release-order.js';
 import { Backups, sourceBackups } from './backups.js';
 import { Fencing } from './fencing.js';
+import { rollbackCommonImport } from './common-import-lifecycle.js';
+import type { ImportSourceAuthoritySeal } from './import-source-authority.js';
 import type { AutostartFile } from './unraid-autostart.js';
 import { ApplicationConfig, checkServiceOverrides, releaseImages, renderCompose, ServiceOverrides, STUDIO_WORKER_TARGET, storagePath } from './compose.js';
 import { atomicJson, copyVerified, fileHash } from './files.js';
@@ -51,6 +53,18 @@ export const ReviewInput = z
     services: ServiceOverrides.optional(),
   })
   .strict();
+type CommonImportReview = {
+  fence: SourceFence;
+  destinationId: string;
+  bundleName?: string;
+  binding: ImportSourceAuthoritySeal['binding'];
+  media: { source: string; target: string; readOnly: boolean }[];
+};
+function assertCommonImportReview(operation: Operation, common?: CommonImportReview) {
+  const expected = operation.receipts['reviewed-common-import'];
+  if (common ? common.binding.operationId !== operation.id || digest(common) !== expected : expected !== undefined)
+    throw new Refusal('invalid_import_authority');
+}
 type Review = {
   id: string;
   expires: number;
@@ -59,6 +73,7 @@ type Review = {
   input: z.infer<typeof ReviewInput>;
   release: VerifiedRelease;
   source: Source | null;
+  common?: CommonImportReview;
   backup: Backup | null;
   platform: string;
 };
@@ -189,6 +204,7 @@ export class Operations {
     const server = (await this.docker.inventory()).find(
       (c) =>
         c.Config.Labels?.['app.frameleaf.manager'] === installation.id &&
+        !c.Config.Labels?.['app.frameleaf.manager.import'] &&
         c.Config.Labels?.['com.docker.compose.service'] === 'frameleaf-server',
     );
     if (!server?.State.Running) throw new Refusal('application_unavailable');
@@ -281,6 +297,7 @@ export class Operations {
     return (await this.docker.inventory()).some(
       (c) =>
         c.Config.Labels?.['app.frameleaf.manager'] === installation.id &&
+        !c.Config.Labels?.['app.frameleaf.manager.import'] &&
         c.Config.Labels?.['com.docker.compose.service'] === 'frameleaf-server' &&
         (c.State.Running || !(c.State.StartedAt ?? '').startsWith('0001-')),
     );
@@ -417,7 +434,11 @@ export class Operations {
     }
     const review = this.store.get<Review>(`review:${reviewId}`);
     if (!review || review.expires < Date.now()) throw new Refusal('review_expired');
-    const { operation, created } = this.store.start(review.input.kind, key, { reviewId });
+    if (review.common && (review.id !== reviewId || review.common.binding.operationId !== reviewId || review.source))
+      throw new Refusal('invalid_import_authority');
+    const { operation, created } = this.store.start(
+      review.input.kind, key, { reviewId }, review.common ? { id: reviewId, sha256: digest(review.common) } : undefined,
+    );
     if (created) this.launch(operation, () => this.install(operation, review));
     return operation;
   }
@@ -477,8 +498,10 @@ export class Operations {
         !(restoring && digest(installation) === digest((review as RestoreReview).current))
       )
         throw new Refusal('configuration_recovery_required');
-      if (!restoring && (review as Review).source && operation.completed.includes('fence-source'))
-        await this.fencing.verify((review as Review).source!, installation ?? undefined);
+      if (!restoring) assertCommonImportReview(operation, (review as Review).common);
+      const sourceFence = restoring ? null : ((review as Review).common?.fence ?? (review as Review).source);
+      if (sourceFence && operation.completed.includes('fence-source'))
+        await this.fencing.verify(sourceFence, installation ?? undefined);
       if (operation.step === 'restore-new-database' && !operation.completed.includes('restore-new-database')) {
         if (!installation || installation.mayHaveWrittenMedia) throw new Refusal('manual_media_recovery_required');
         // pg_restore may have committed before Manager died. Never replay it against that directory.
@@ -522,11 +545,15 @@ export class Operations {
     return receipt;
   }
   private async install(operation: Operation, review: Review): Promise<void> {
+    const common = review.common;
+    assertCommonImportReview(operation, common);
+    if (common && (operation.kind !== 'import' || review.source)) throw new Refusal('invalid_import_authority');
+    const sourceFence = common?.fence ?? review.source;
     await this.step(operation, 'preflight', async () => {
       if (this.installation()) throw new Refusal('installation_already_exists');
       await this.releases.eligible(review.input.tag);
-      if (review.source) await this.discovery.revalidate(review.source);
-      await this.checkPort(review.input.port, null, review.source, review.managerPort);
+      if (sourceFence) await this.discovery.revalidate(sourceFence);
+      await this.checkPort(review.input.port, null, sourceFence, review.managerPort);
       await this.databaseStorage.validate(
         review.input.databaseRoot,
         (review.source?.summary.databaseBytes ?? 1024 ** 3) * 3,
@@ -556,11 +583,11 @@ export class Operations {
           release: review.input.tag,
           port: review.input.port,
           ml: review.input.ml,
-          origin: review.source ? 'new_import' : 'new_library',
+          origin: sourceFence ? 'new_import' : 'new_library',
           mounts: review.source?.mounts ?? [
             { type: 'bind', source: review.input.mediaPath!, target: '/data', readOnly: false },
           ],
-          sourceId: review.source?.id ?? null,
+          sourceId: sourceFence?.id ?? null,
           mayHaveWrittenMedia: false,
           databaseRoot: review.input.databaseRoot,
           databasePath,
@@ -598,6 +625,10 @@ export class Operations {
         return true;
       });
     }
+    if (common) await this.step(operation, 'fence-source', async () => {
+      await this.fencing.stop(common.fence);
+      return true;
+    });
     await this.step(operation, 'start-database', async () => {
       await this.databaseStorage.verify(installation);
       await this.docker.compose(this.directory(), installation.project, 'up', ['database']);
@@ -738,8 +769,9 @@ export class Operations {
         (await this.fencing.retireSourceServices(source)).map((s) => ({ role: s.role, name: s.name })),
       );
     }
+    if (common) await this.runCommonImport(operation, common, installation);
     await this.step(operation, 'start-frameleaf', async () => {
-      if (source) await this.fencing.verify(source);
+      if (sourceFence) await this.fencing.verify(sourceFence);
       await this.fencing.assertMedia(installation.mounts, installation);
       await this.releases.eligible(review.input.tag);
       installation.mayHaveWrittenMedia = true;
@@ -748,7 +780,7 @@ export class Operations {
         await this.docker.compose(this.directory(), installation.project, 'up');
       } catch (error) {
         // A server that never started wrote no media, so this setup can still be cancelled.
-        if (!(await this.serverStarted(installation))) {
+        if (!common && !(await this.serverStarted(installation))) {
           installation.mayHaveWrittenMedia = false;
           this.store.set('installation', installation);
         }
@@ -757,6 +789,44 @@ export class Operations {
       return true;
     });
     await this.step(operation, 'prepare-library', async () => this.libraryStatus(true));
+  }
+  private async runCommonImport(operation: Operation, common: CommonImportReview, installation: Installation) {
+    const destination = installation.mounts.find((mount) => mount.target === '/data');
+    if (
+      operation.kind !== 'import' ||
+      common.binding.operationId !== operation.id ||
+      installation.origin !== 'new_import' ||
+      installation.sourceId !== common.fence.id ||
+      destination?.type !== 'bind' || destination.readOnly ||
+      !common.media.some((mount) => mount.target === '/data' && mount.source === destination.source && !mount.readOnly)
+    ) throw new Refusal('invalid_import_authority');
+    await this.step(operation, 'import-canonical-database', async () => {
+      await this.docker.completeReviewedImport(
+        this.directory(),
+        installation.project,
+        {
+          installation: installation.id,
+          destinationId: common.destinationId,
+          binding: common.binding,
+          verify: () => this.fencing.verify(common.fence, installation),
+        },
+        common.media,
+        async (preflight) => {
+          await this.step(operation, 'preflight-common-import', async () => {
+            await preflight();
+            return true;
+          });
+          operation.step = 'import-canonical-database';
+          this.store.save(operation);
+        },
+        async () => {
+          installation.mayHaveWrittenMedia = true;
+          this.store.set('installation', installation);
+        },
+        common.bundleName,
+      );
+      return true;
+    });
   }
   private async runImport(
     operation: Operation,
@@ -1549,6 +1619,31 @@ export class Operations {
       operation.receipts['cancelled'] = 'reconfigure_cancelled_previous_settings_running';
       return;
     }
+    const common = this.store.get<Review>(`review:${operation.input.reviewId}`)?.common;
+    assertCommonImportReview(operation, common);
+    if (common && operation.completed.includes('preflight-common-import')) {
+      if (!installation || installation.mayHaveWrittenMedia || installation.sourceId !== common.fence.id)
+        throw new Refusal('manual_media_recovery_required');
+      await this.step(operation, 'cancel-common-import', async () => {
+        await this.fencing.verify(common.fence, installation);
+        const { source } = common.binding;
+        await rollbackCommonImport(operation.id, source, (action) =>
+          this.docker.importCommand(this.directory(), installation.project, operation.id, action, {
+            source: source.kind,
+            destinationId: common.destinationId,
+            bundleName: common.bundleName,
+            media: common.media,
+            authority: {
+              installation: installation.id,
+              destinationId: common.destinationId,
+              binding: common.binding,
+              verify: () => this.fencing.verify(common.fence, installation),
+            },
+          }),
+        );
+        return true;
+      });
+    }
     if (installation) {
       await this.step(operation, 'cancel-stop-target', async () => {
         // Configuration may not have been published when setup failed. Reconcile exact owned
@@ -1576,7 +1671,8 @@ export class Operations {
         return true;
       });
       await this.step(operation, 'cancel-source', async () => {
-        if (installation.sourceId)
+        if (common) await this.fencing.recover(common.fence, installation);
+        else if (installation.sourceId)
           await this.fencing.recover(this.store.get<Source>(`source:${installation.sourceId}`)!, installation);
         return true;
       });

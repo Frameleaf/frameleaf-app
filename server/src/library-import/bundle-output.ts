@@ -13,7 +13,16 @@ import {
   encodeSourceArchiveRecord,
 } from 'src/library-import/source-archive-codec.js';
 import { parseSourceArchiveDescriptor } from 'src/library-import/source-archive.js';
-import { LibraryImportRefused, parseLibraryImportBinding } from 'src/library-import/state.js';
+import {
+  type LibraryImportBinding,
+  LibraryImportRefused,
+  parseLibraryImportBinding,
+} from 'src/library-import/state.js';
+
+type BundleOutput = {
+  bundleDirectory: string;
+  receipt: { bundleName: string; binding: LibraryImportBinding; destinationId: string };
+};
 
 /** Serialize qualified adapter output only; source fencing, ownership/privacy evidence and activation remain caller duties. */
 export async function writeLibraryImportBundle(input: {
@@ -24,9 +33,9 @@ export async function writeLibraryImportBundle(input: {
   plan: unknown;
   owners: unknown;
   records: AsyncIterable<unknown> | Iterable<unknown>;
-}): Promise<{ bundleDirectory: string }> {
+}): Promise<BundleOutput> {
   let root: FileHandle | undefined, directory: FileHandle | undefined, temporary: string | undefined;
-  let result: { bundleDirectory: string } | undefined;
+  let result: BundleOutput | undefined;
   let failure: LibraryImportRefused | undefined;
   try {
     if (!privateImportPathSchema.safeParse(input.stagingRoot).success)
@@ -115,7 +124,10 @@ export async function writeLibraryImportBundle(input: {
     } finally {
       await visible.close();
     }
-    result = { bundleDirectory };
+    result = {
+      bundleDirectory,
+      receipt: { bundleName: basename(bundleDirectory), binding, destinationId: plan.destinationId },
+    };
   } catch (error) {
     failure = error instanceof LibraryImportRefused ? error : new LibraryImportRefused('IMPORT_BUNDLE_WRITE_FAILED');
     if (temporary) {

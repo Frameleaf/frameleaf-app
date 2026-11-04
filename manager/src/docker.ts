@@ -6,6 +6,8 @@ import { access, open, readFile, rename, rm } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { Refusal, containerId, imageDigest, redact, type Database, type Mount } from './contracts.js';
 import { publishFile } from './files.js';
+import { completeCommonImport } from './common-import-lifecycle.js';
+import { COMMON_IMPORT_CONFIG, writeCommonImportCompose } from './common-import-runtime.js';
 import { DOCKERMAN_TEMPLATES, saveDockermanTemplates } from './dockerman.js';
 import { configureUnraidCompose } from './compose.js';
 import { importSourceKinds, type ImportPlan } from './import-plan.js';
@@ -490,6 +492,9 @@ export class Docker {
     action: 'status' | 'preflight' | 'run' | 'resume' | 'verify' | 'rollback' | 'abandon',
     common?: {
       source: ImportPlan['source']['kind'];
+      destinationId: string;
+      bundleName?: string;
+      media: { source: string; target: string; readOnly: boolean }[];
       activate?: boolean;
       authority?: ImportSourceAuthority;
     },
@@ -505,6 +510,8 @@ export class Docker {
       (common !== undefined &&
         (!common ||
           !importSourceKinds.includes(common.source) ||
+          !isAbsolute(directory) ||
+          !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u.test(common.destinationId) ||
           (common.activate !== undefined && typeof common.activate !== 'boolean') ||
           (common.activate === true && action !== 'verify')))
     )
@@ -512,7 +519,8 @@ export class Docker {
     const authority = common?.authority === undefined ? undefined : parseImportSourceAuthority(common.authority);
     if (common && action !== 'status' && !authority) throw new Refusal('import_source_authority_required');
     if (authority && (authority.installation !== project.slice('frameleaf-'.length) ||
-      authority.binding.operationId !== operationId || authority.binding.source.kind !== common?.source))
+      authority.binding.operationId !== operationId || authority.binding.source.kind !== common?.source ||
+      authority.destinationId !== common?.destinationId))
       throw new Refusal('import_source_authority_invalid');
     const name = `${project}-import-${operationId}`;
     const existing = (await this.inventory()).find((c) => c.Name === `/${name}`);
@@ -522,6 +530,9 @@ export class Docker {
       if (existing.State.Running) throw new Refusal('import_still_running_retry_when_stopped');
       await this.execute('docker', ['rm', existing.Id]);
     }
+    const compose = common
+      ? await writeCommonImportCompose(directory, project, operationId, common.destinationId, common.media, common.bundleName)
+      : 'import-compose.json';
     const output = await this.execute(
       'docker',
       [
@@ -529,7 +540,7 @@ export class Docker {
         '--project-name',
         project,
         '--file',
-        'import-compose.json',
+        compose,
         'run',
         '--name',
         name,
@@ -543,7 +554,7 @@ export class Docker {
         action,
         ...(common ? ['--source', common.source] : []),
         '--config',
-        common ? '/run/frameleaf/import-library.json' : '/run/frameleaf/import.json',
+        common ? COMMON_IMPORT_CONFIG : '/run/frameleaf/import.json',
         ...(common?.activate ? ['--activate'] : []),
       ],
       {
@@ -558,6 +569,37 @@ export class Docker {
       .findLast((line) => line.startsWith('{'));
     if (!line) throw new Refusal('invalid_import_response');
     return JSON.parse(line);
+  }
+  /** The operation owns the durable preflight receipt and supplies its live source-fence check. */
+  async completeReviewedImport(
+    directory: string,
+    project: string,
+    sourceAuthority: ImportSourceAuthority,
+    media: { source: string; target: string; readOnly: boolean }[],
+    preflight: (run: () => Promise<void>) => Promise<void>,
+    beforeActivation?: () => Promise<void>,
+    bundleName?: string,
+  ): Promise<void> {
+    const authority = parseImportSourceAuthority(sourceAuthority);
+    const { installation, destinationId, binding: { operationId, source } } = authority;
+    if (project !== `frameleaf-${installation}`) throw new Refusal('import_source_authority_invalid');
+    await authority.verify();
+    const launch = async (action: 'preflight' | 'status' | 'run' | 'resume' | 'verify', activate?: true) => {
+      if (activate) await beforeActivation?.();
+      return this.importCommand(directory, project, operationId, action, {
+        source: source.kind,
+        destinationId,
+        bundleName,
+        media,
+        activate,
+        authority,
+      });
+    };
+    await preflight(async () => {
+      await launch('preflight');
+    });
+    await completeCommonImport(operationId, source, launch);
+    await authority.verify();
   }
   async restoreCommand(directory: string, project: string, operationId: string): Promise<void> {
     if (!/^frameleaf-[a-f0-9]{12}$/.test(project) || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(operationId))

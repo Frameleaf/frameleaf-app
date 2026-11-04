@@ -267,7 +267,12 @@ try {
   const activated = await executeLibraryImportCommand({ ...options, action: 'verify', activate: true });
   assert.equal(activated.run.status, 'activated');
   const loaded = await loadLibraryImportBundle(config, 'photoprism');
-  assert.equal(activated.activation.runId, libraryImportDerivedRunId(loaded.context.binding));
+  assert.deepEqual(bundle.receipt, {
+    bundleName: basename(bundle.bundleDirectory),
+    binding: loaded.context.binding,
+    destinationId,
+  });
+  assert.equal(activated.activation.runId, libraryImportDerivedRunId(bundle.receipt.binding));
   await new DatabaseRepository(database, { setContext() {} }, {}).assertImportActivated();
   const [owner] = await connection.db.query(
     'SELECT password,"isAdmin","importClaimPending" FROM public."user" WHERE id=$1::uuid',
