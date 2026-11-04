@@ -8,7 +8,7 @@ import { Docker, command, mounts, type CommandOptions, type Container } from '..
 import { sourceFingerprint } from '../src/discovery.js';
 import { Operations } from '../src/operations.js';
 import { Store } from '../src/store.js';
-import type { Source } from '../src/contracts.js';
+import type { Source, SourceFence } from '../src/contracts.js';
 import { readable } from '../ui/src/presentation.js';
 
 function container(id: string, port?: number): Container {
@@ -100,6 +100,36 @@ test('an import may take over the port of the Immich installation it replaces, a
     await assert.rejects(operations.checkPort(2283), /port_in_use/);
     await operations.checkPort(2283, null, source);
     await assert.rejects(operations.checkPort(2290, null, source), /port_in_use/);
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true });
+  }
+});
+
+test('shared source port review needs no PostgreSQL fields and exempts only fenced writers', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-shared-import-port-'));
+  const store = new Store(directory);
+  const app = container('a', 2283),
+    database = container('b', 5432),
+    unrelated = container('d', 2290);
+  const docker = { inventory: async () => [app, database, unrelated] } as unknown as Docker;
+  const operations = new Operations(store, docker, {} as never, {} as never, [], {} as never);
+  const source: SourceFence = {
+    id: app.Id,
+    containers: [app.Id, database.Id],
+    workers: [app.Id],
+    mounts: [],
+    fingerprint: sourceFingerprint([app, database]),
+    platform: 'docker',
+    restart: { [app.Id]: app.HostConfig.RestartPolicy },
+  };
+  try {
+    await operations.checkPort(2283, null, source);
+    await assert.rejects(operations.checkPort(5432, null, source), /port_in_use/);
+    await assert.rejects(operations.checkPort(2290, null, source), /port_in_use/);
+    await assert.rejects(operations.checkPort(2283, null, source, 2283), /port_in_use/);
+    unrelated.HostConfig.PortBindings = app.HostConfig.PortBindings;
+    await assert.rejects(operations.checkPort(2283, null, source), /port_in_use/);
   } finally {
     store.close();
     await rm(directory, { recursive: true });

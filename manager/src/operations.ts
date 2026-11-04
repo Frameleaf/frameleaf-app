@@ -25,6 +25,7 @@ import {
   releaseTag,
   type Installation,
   type Source,
+  type SourceFence,
   type Operation,
   type Database,
   type Backup,
@@ -371,12 +372,13 @@ export class Operations {
     };
   }
   /**
-   * An import may reuse the port of the Immich it replaces: Immich is stopped with restart disabled
-   * before Frameleaf starts, and source recovery stops Frameleaf before restarting Immich.
+   * An import may reuse its reviewed writers' ports: source fencing stops them before Frameleaf starts.
+   * Legacy Immich cutover also retires its database; shared sources do not yet promise that retirement.
    */
-  async checkPort(port: number, installation?: Installation | null, source?: Source | null, managerPort?: number): Promise<void> {
+  async checkPort(port: number, installation?: Installation | null, source?: Source | SourceFence | null, managerPort?: number): Promise<void> {
     const containers = await this.docker.inventory();
-    const replaced = new Set(source ? [...source.workers, source.database.container] : []);
+    const replaced = new Set(source?.workers ?? []);
+    if (source && !('containers' in source)) replaced.add(source.database.container);
     // Manager's own published port (review L2): the port the request came in on, and whatever the host
     // publishes for this Manager container, so an unset MANAGER_ORIGIN cannot leave the guess at 2282.
     // Docker's bind at compose up remains the final authority for ports used by non-container host processes.
