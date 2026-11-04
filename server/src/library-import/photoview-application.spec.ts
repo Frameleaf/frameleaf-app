@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import fixture from 'src/library-import/fixtures/photoview/2.4.0-sqlite.json' with { type: 'json' };
 import { verifyImportedPassword } from 'src/library-import/passwords.js';
 import { normalizePhotoviewAccess } from 'src/library-import/photoview-access.js';
@@ -25,7 +26,21 @@ describe.skipIf(!path)('native Photoview application', () => {
     )
       throw new Error('Native Photoview test requires its own source storage');
     const snapshot = await captureSqliteSnapshot(config.databasePath, directory);
-    const source = openPhotoviewSnapshot(snapshot.path, fixture.source.version);
+    const source = (() => {
+      try {
+        return openPhotoviewSnapshot(snapshot.path, fixture.source.version);
+      } catch (error) {
+        const schema = new DatabaseSync(snapshot.path, { readOnly: true, allowExtension: false });
+        try {
+          expect(schema.prepare('SELECT type,name,tbl_name,sql FROM sqlite_schema ORDER BY type,name').all()).toEqual(
+            fixture.objects,
+          );
+        } finally {
+          schema.close();
+        }
+        throw error;
+      }
+    })();
     try {
       expect(source.schemaSha256).toBe(snapshot.schemaSha256);
       const users = [...source.rows('users')].flat();
