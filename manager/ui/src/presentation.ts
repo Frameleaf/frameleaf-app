@@ -171,10 +171,10 @@ const refusals: Record<string, string> = {
   database_path_not_mounted:
     'Manager can only use a database folder inside one of its mapped database folders. Add the folder to Manager’s “Database parent” mapping and database roots, or choose one listed in the field.',
   source_version_unreachable:
-    'Manager found this Immich server but could not ask it for its version. Check that it is running and healthy; Manager uses its IMMICH_PORT and IMMICH_HOST settings.',
+    'Manager found this photo server but could not ask it for its version. Check that it is running and healthy; Manager uses its IMMICH_PORT and IMMICH_HOST settings.',
   database_connection_ambiguous:
-    'Manager could not tell which container holds this Immich database. Its DB_HOSTNAME must name or address the database container.',
-  unsupported_database_connection: 'This Immich database connection is not supported yet: it needs a password.',
+    'Manager could not tell which container holds this database. Its DB_HOSTNAME must name or address the database container.',
+  unsupported_database_connection: 'This database connection is not supported yet: it needs a password.',
   manager_unexpected_response:
     'Manager sent an unexpected answer. It may be restarting, or a proxy in front of it may have failed. Wait a moment, then try again.',
   operation_failed:

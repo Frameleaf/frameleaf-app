@@ -58,3 +58,12 @@ test('setup names the detected graphics card and treats only GPUs as accelerated
   assert.equal(hasGpu('cpu'), false);
   assert.equal(hasGpu(undefined), false);
 });
+
+test('shared discovery refusals do not misidentify a source app', () => {
+  for (const code of ['source_version_unreachable', 'database_connection_ambiguous', 'unsupported_database_connection']) {
+    assert.doesNotMatch(readable(code), /\bImmich\b/u);
+    assert.notEqual(readable(code), code.replaceAll('_', ' '));
+  }
+  assert.match(readable('source_version_unreachable'), /IMMICH_PORT and IMMICH_HOST/u);
+  assert.match(readable('database_connection_ambiguous'), /DB_HOSTNAME/u);
+});
