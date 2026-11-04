@@ -427,10 +427,11 @@ it('keeps a Locked archived Live Photo stack in the Archive for when it is unloc
   await new CanonicalStackWriter(wrap(db), context).write('stack');
   expect((await sql`SELECT count(*)::int AS count FROM public.asset_lock`.execute(db)).rows).toEqual([{ count: 3 }]);
   expect(
-    (await sql`SELECT id::text,visibility FROM public.asset ORDER BY id`.execute(db)).rows.map(({ id, visibility }) => [
-      id,
-      visibility,
-    ]),
+    (
+      await sql<{ id: string; visibility: string }>`SELECT id::text,visibility FROM public.asset ORDER BY id`.execute(
+        db,
+      )
+    ).rows.map(({ id, visibility }) => [id, visibility]),
   ).toEqual(
     [
       [id, 'archive'],
