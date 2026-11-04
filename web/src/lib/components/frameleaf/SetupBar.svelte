@@ -87,6 +87,9 @@
       : id === LibrarySetupStageId.Search && status === LibrarySetupStageStatus.Waiting
         ? $t('setup_bar_stage_search_waiting')
         : $t(`setup_bar_stage_${id}_detail`);
+  // The stage status has no failed value (native clients decode it strictly); a halted setup means the check stopped.
+  const stopped = (stage: { id: LibrarySetupStageId; status: LibrarySetupStageStatus }) =>
+    attention && stage.id === LibrarySetupStageId.Check && stage.status !== LibrarySetupStageStatus.Done;
   const statusIcon = {
     [LibrarySetupStageStatus.Done]: mdiCheckCircle,
     [LibrarySetupStageStatus.Running]: mdiProgressClock,
@@ -308,11 +311,15 @@
                 !stage.disabled && share > 0 && share < 1 && stage.status !== LibrarySetupStageStatus.Done}
               <li
                 class:is-done={stage.status === LibrarySetupStageStatus.Done}
-                class:is-running={stage.status === LibrarySetupStageStatus.Running}
+                class:is-running={stage.status === LibrarySetupStageStatus.Running && !stopped(stage)}
                 class:is-waiting={stage.status === LibrarySetupStageStatus.Waiting}
               >
                 <Icon
-                  icon={stage.disabled ? mdiPauseCircleOutline : statusIcon[stage.status]}
+                  icon={stage.disabled
+                    ? mdiPauseCircleOutline
+                    : stopped(stage)
+                      ? mdiAlertCircleOutline
+                      : statusIcon[stage.status]}
                   size="18"
                   class="fl-setup-stage-icon"
                   aria-hidden={true}
@@ -321,11 +328,13 @@
                   <div class="fl-setup-stage-head">
                     <strong>{stageTitle(stage.id)}</strong>
                     <span
-                      >{partial
-                        ? `${Math.floor(share * 100)}%`
-                        : stage.disabled
-                          ? $t('setup_bar_status_disabled')
-                          : $t(`setup_bar_status_${stage.status}`)}</span
+                      >{stopped(stage)
+                        ? $t('setup_bar_status_stopped')
+                        : partial
+                          ? `${Math.floor(share * 100)}%`
+                          : stage.disabled
+                            ? $t('setup_bar_status_disabled')
+                            : $t(`setup_bar_status_${stage.status}`)}</span
                     >
                   </div>
                   <p>{stageDetail(stage.id, stage.status, stage.disabled)}</p>

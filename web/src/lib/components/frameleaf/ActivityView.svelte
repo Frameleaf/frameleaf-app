@@ -716,15 +716,16 @@
   }
   .fla-filters {
     display: inline-flex;
-    gap: 2px;
+    /* At 44px segments the prototype's 2px and 12px read cramped (spacing review). */
+    gap: var(--fl-space-1);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);
-    padding: 2px;
+    padding: var(--fl-space-1);
   }
   /* The prototype's 30px segments keep the 44px/48px floor from tokens.css. */
   .fla-filters button {
-    padding: 0 12px;
+    padding: 0 var(--fl-space-4);
     border-radius: var(--fl-radius-control);
     color: var(--fl-muted);
     font-size: var(--fl-font-small);

@@ -15,3 +15,32 @@ test('regeneration reports durable pending, blocked and error states without cla
   assert.equal(regenerationPresentation({ state: 'completed', ...counts }).label, 'Regeneration complete');
   assert.equal(regenerationPresentation({ state: 'unknown', ...counts }).label, 'Waiting for regeneration status');
 });
+
+test('regeneration does not show zero counts before the run is counted', () => {
+  // Waiting and already-started runs alike: none may read as "0 of 0", or as not yet started.
+  for (const state of ['pending_first_setup', 'waiting', 'unavailable', 'running']) {
+    const display = regenerationPresentation({
+      state,
+      completed: 0,
+      total: 0,
+      failed: 0,
+      blocked: 0,
+      needsAttention: 0,
+    });
+    assert.doesNotMatch(display.detail, /\b0\b/, state);
+    assert.match(display.detail, /in place/, state);
+    assert.doesNotMatch(display.detail, /once this starts/, state);
+  }
+});
+
+test('a finished run with nothing to do keeps its counts', () => {
+  const display = regenerationPresentation({
+    state: 'completed',
+    completed: 0,
+    total: 0,
+    failed: 0,
+    blocked: 0,
+    needsAttention: 0,
+  });
+  assert.match(display.detail, /0 of 0 items complete/);
+});

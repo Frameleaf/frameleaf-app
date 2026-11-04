@@ -1462,8 +1462,8 @@
   .segmented {
     display: inline-flex;
     flex-wrap: wrap;
-    gap: 2px;
-    padding: 2px;
+    gap: var(--fl-space-1);
+    padding: var(--fl-space-1);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-pill);
     background: var(--fl-canvas);
@@ -1471,7 +1471,7 @@
   }
   .segmented button {
     min-height: 28px;
-    padding: 0 0.75rem;
+    padding: 0 var(--fl-space-4);
     border: 0;
     border-radius: var(--fl-radius-pill);
     background: transparent;
