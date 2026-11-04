@@ -133,8 +133,9 @@ export class Security {
     if (url.host !== req.headers.host || !localHost(url.hostname)) throw new Refusal('invalid_host', 403);
     return url.origin;
   }
-  requireImportBootstrapTransport(): void {
-    if (!this.origin?.startsWith('https://')) throw new Refusal('import_bootstrap_secure_transport_required');
+  requireImportBootstrapTransport(request: Pick<Request, 'secure'>): void {
+    const secure = this.origin ? this.origin.startsWith('https://') : request.secure;
+    if (!secure) throw new Refusal('import_bootstrap_secure_transport_required');
   }
   claimed(): boolean {
     return !!this.store.get('administrator');

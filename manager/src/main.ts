@@ -271,12 +271,12 @@ class Api {
   @Post('review') review(@Body() input: unknown, @Req() request: Request) {
     return operations.review(ReviewInput.parse(input), managerPort(request));
   }
-  @Post('install') install(@Body() input: unknown) {
+  @Post('install') install(@Body() input: unknown, @Req() request: Request) {
     const value = z.object({
       reviewId: z.string().uuid(), key: RequestKey, bootstrap: CommonImportBootstrapCredentials.optional(),
       approvalToken: z.uuid().optional(),
     }).strict().parse(input);
-    if (value.bootstrap) security.requireImportBootstrapTransport();
+    if (value.bootstrap) security.requireImportBootstrapTransport(request);
     const { id } = operations.start(value.reviewId, value.key, value.bootstrap, value.approvalToken);
     return { id };
   }
@@ -299,9 +299,9 @@ class Api {
     await operations.recover(value.id);
     return { sourceStopped: true };
   }
-  @Post('resume') resume(@Body() input: unknown) {
+  @Post('resume') resume(@Body() input: unknown, @Req() request: Request) {
     const { id, bootstrap } = z.object({ id: z.string().uuid(), bootstrap: CommonImportBootstrapCredentials.optional() }).strict().parse(input);
-    if (bootstrap) security.requireImportBootstrapTransport();
+    if (bootstrap) security.requireImportBootstrapTransport(request);
     return { id: operations.resume(id, bootstrap).id };
   }
   @Post('review-update') reviewUpdate(@Body() input: unknown) {
