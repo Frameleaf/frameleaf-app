@@ -142,11 +142,14 @@
     }
   };
 
-  /** Only the newest answer is shown: a slow poll must not undo a later one, or a pause. */
-  const latest = async (request: Promise<LibrarySetupProgressDto>) => {
+  /**
+   * Only the newest answer is shown: a slow poll must not undo a later one, or a pause. A poll that lands after its page
+   * has gone is dropped; an action's answer is still shown, since the next page may have asked before it took effect.
+   */
+  const latest = async (request: Promise<LibrarySetupProgressDto>, action = false) => {
     const id = ++requested;
     const next = await request;
-    if (!disposed && id > applied) {
+    if ((action || !disposed) && id > applied) {
       applied = id;
       show(next);
     }
@@ -180,12 +183,12 @@
     }
   };
   const togglePause = () =>
-    act(() => latest(pauseLibrarySetup({ librarySetupPauseDto: { paused: !progress!.paused } })));
+    act(() => latest(pauseLibrarySetup({ librarySetupPauseDto: { paused: !progress!.paused } }), true));
   // A failed or cancelled file check stops setup; starting it again is the only way on (Library Care says why).
   const retry = () =>
     act(async () => {
       await beginLibrarySetup();
-      await latest(getLibrarySetupProgress());
+      await latest(getLibrarySetupProgress(), true);
     });
 
   const closeCelebration = () => {

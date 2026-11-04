@@ -216,6 +216,22 @@ describe('SetupBar', () => {
     expect(screen.queryByText('Setup is paused')).not.toBeInTheDocument();
   });
 
+  it('shows a pause that finishes after its page has gone', async () => {
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(progress());
+    let answerPause: (value: LibrarySetupProgressDto) => void = () => {};
+    sdkMock.pauseLibrarySetup.mockReturnValueOnce(new Promise((resolve) => (answerPause = resolve)));
+    const first = render(SetupBar);
+    await fireEvent.click((await screen.findAllByRole('button', { name: 'Pause' }))[0]);
+    first.unmount();
+
+    // The next page asked before the pause took effect.
+    render(SetupBar);
+    expect(await screen.findByText('Setting up your library')).toBeInTheDocument();
+
+    answerPause(progress({ paused: true }));
+    expect(await screen.findByText('Setup is paused')).toBeInTheDocument();
+  });
+
   it('formats progress using the chosen number locale', async () => {
     locale.set('de-DE');
     sdkMock.getLibrarySetupProgress.mockResolvedValue(progress());
