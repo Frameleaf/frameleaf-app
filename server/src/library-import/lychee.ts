@@ -36,7 +36,7 @@ class LycheeReadError extends Error {
 }
 
 /** Reads a privately captured snapshot; caller establishes source identity, fencing, complete privacy evidence and original bytes. */
-export const openLycheeSnapshot = (path: string, version: string) => {
+export const openLycheeSnapshot = (path: string, version: string, options: { bestEffort?: boolean } = {}) => {
   if (version !== fixture.source.version) throw new LycheeReadError('LYCHEE_VERSION_UNQUALIFIED');
   let database: DatabaseSync;
   try {
@@ -46,6 +46,11 @@ export const openLycheeSnapshot = (path: string, version: string) => {
   }
   try {
     database.exec('PRAGMA query_only=ON; PRAGMA trusted_schema=OFF; BEGIN');
+    // Best effort (owner decision FL-1149): an untested schema is read through the same projections.
+    if (options.bestEffort) {
+      if (database.prepare('PRAGMA foreign_key_check').get()) throw new LycheeReadError('LYCHEE_RELATIONSHIPS_INVALID');
+      return snapshotReader(database, version);
+    }
     if (sqliteSchemaFingerprint(database) !== fixture.schemaSha256)
       throw new LycheeReadError('LYCHEE_SCHEMA_UNQUALIFIED');
     assertSqliteTextSafe(database, 'SELECT migration,batch FROM migrations');
@@ -68,6 +73,10 @@ export const openLycheeSnapshot = (path: string, version: string) => {
     if (error instanceof LycheeReadError) throw error;
     throw new LycheeReadError('LYCHEE_SNAPSHOT_UNAVAILABLE');
   }
+  return snapshotReader(database, version);
+};
+
+const snapshotReader = (database: DatabaseSync, version: string) => {
   return {
     version,
     schemaSha256: fixture.schemaSha256,
