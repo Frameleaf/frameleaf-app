@@ -60,13 +60,13 @@ test.describe('Frameleaf Cloud linked-server tour', () => {
   }) => {
     mock.state = 'unlinked';
     await page.goto(accountPage);
-    await page.getByRole('button', { name: 'Link to Frameleaf' }).click();
+    await page.getByRole('button', { name: 'Link this server' }).click();
     await expect(page.getByText('BCDF-GHJK')).toBeVisible();
     await expect(tourDialog(page)).toHaveCount(0);
 
     mock.state = 'linked';
-    await expect(page.getByText('Linked to Frameleaf')).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByRole('button', { name: 'Get Frameleaf Cloud' }).first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Linked to owner@example.test' })).toBeVisible({ timeout: 10_000 });
+    // UI 22: the linked page no longer ends with a "Get Frameleaf Cloud" link (Plan has it)
     await expect(tourDialog(page)).toHaveCount(0);
   });
 
@@ -94,7 +94,7 @@ test.describe('Frameleaf Cloud linked-server tour', () => {
     await expect(page.getByText('Take the tour again any time')).toHaveCount(0);
 
     await page.reload();
-    await expect(page.getByRole('heading', { name: 'Your Frameleaf Cloud', exact: true })).toBeVisible({
+    await expect(page.getByRole('heading', { level: 1, name: 'Plan', exact: true })).toBeVisible({
       timeout: 30_000,
     });
     await expect(tourDialog(page)).toHaveCount(0);
@@ -103,13 +103,13 @@ test.describe('Frameleaf Cloud linked-server tour', () => {
   test('is not offered to an administrator who has seen it, or before the server is linked', async ({ page }) => {
     mock.tour = { seen: true, ending: 'setup' };
     await page.goto(accountPage);
-    await expect(page.getByText('Linked to Frameleaf')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('heading', { name: 'Linked to owner@example.test' })).toBeVisible({ timeout: 30_000 });
     await expect(tourDialog(page)).toHaveCount(0);
 
     mock.tour = { seen: false };
     mock.state = 'unlinked';
     await page.goto(planPage);
-    await expect(page.getByRole('heading', { name: 'Your Frameleaf Cloud', exact: true })).toBeVisible({
+    await expect(page.getByRole('heading', { level: 1, name: 'Plan', exact: true })).toBeVisible({
       timeout: 30_000,
     });
     await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -189,6 +189,8 @@ test.describe('Frameleaf Cloud linked-server tour', () => {
       .click();
     await expect(page).toHaveURL(/section=cloud-account/);
 
+    // UI 22: "Take the tour" sits under the linked page's Advanced
+    await page.locator('[data-section="cloud-account"] summary', { hasText: /^Advanced$/ }).click();
     await page.getByRole('button', { name: 'Take the tour' }).click();
     const dialog = await openedTour(page);
     await dialog.getByRole('button', { name: 'Step 5: Encrypted off-site backup' }).click();

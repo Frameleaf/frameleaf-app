@@ -945,7 +945,8 @@ export const compilePaletteQuery = (
     return result;
   }
   result.text = text;
-  if (mode !== 'originalFileName') {
+  // File name is the default field, except in Boards, where a query without a field reads as All text.
+  if (mode !== 'originalFileName' || result.filter.libraryScope === LibraryViewScope.Design) {
     result.textField = mode;
   }
   return result;

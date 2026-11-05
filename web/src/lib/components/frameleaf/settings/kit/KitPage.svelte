@@ -29,9 +29,10 @@
   }
   /*
    * The gap is the rhythm between the pieces: a piece's own outer margin would double it (Background
-   * work's view switch, Computers' list, a person's removal card), so a direct child has none.
+   * work's view switch, Computers' list, a person's removal card), so a direct child has none. A
+   * <dialog> placed in the page keeps the `margin: auto` that centres it in the viewport.
    */
-  .kit-page.kit-page > :global(*) {
+  .kit-page.kit-page > :global(:not(dialog)) {
     margin-block: 0;
   }
   /*

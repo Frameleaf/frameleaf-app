@@ -68,7 +68,7 @@ test.describe('Integrity', () => {
 
     await utils.setAuthCookies(context, admin.accessToken);
     await page.goto(untrackedReport);
-    await expect(page.getByRole('heading', { name: 'Stray files report' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Stray files report' })).toBeVisible();
     await page.getByLabel('Filter findings by path').fill(`${folder}/untracked`);
     await expect(row(page, `${folder}/untracked1.png`)).toBeVisible();
 

@@ -363,6 +363,11 @@
     margin-bottom: calc(-1 * var(--fl-space-3));
     background: var(--fl-panel);
   }
+  /* The hero is its own stacking context, so its open "…" menu would sit under the library toolbar
+     that follows (sticky, z-index 5); lift the hero above it only while the menu is open. */
+  .pd-hero:has(:global([role='menu'])) {
+    z-index: 6;
+  }
   .pd-backdrop {
     position: absolute;
     inset: -40px;

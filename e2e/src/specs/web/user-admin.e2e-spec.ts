@@ -15,6 +15,9 @@ const usersManager = '/user-settings?area=users&section=accounts';
 
 /** FL-516: one person is one page (About, Sign-in & security, What they've turned on); no tabs. */
 const roleOf = (page: Page) => page.getByRole('group', { name: 'Role' });
+/** Choosing a PIN for someone and signing out one device sit under Sign-in & security's Advanced. */
+const openSecurityAdvanced = (page: Page) =>
+  page.locator('.account-security').locator('summary', { hasText: 'Advanced' }).click();
 
 /** FL-516: Add a person makes up a temporary password and shows it once. */
 const addPerson = async (page: Page, name: string, email: string) => {
@@ -170,6 +173,7 @@ test.describe('User Administration', () => {
       // the person opens in place of the list, under their own name (prototype People.jsx)
       await expect(page.getByRole('heading', { name: 'PIN User', level: 1 })).toBeVisible();
 
+      await openSecurityAdvanced(page);
       await page.getByRole('button', { name: 'Set PIN', exact: true }).click();
       const setDialog = page.getByRole('dialog', { name: 'Set PIN' });
       await setDialog.getByLabel('New six-digit PIN', { exact: true }).fill('123456');
@@ -193,7 +197,10 @@ test.describe('User Administration', () => {
 
       await page.goto(`${usersManager}&user=${user.userId}`);
       await page.getByLabel('Space for Quota User').selectOption('50');
-      await page.getByText('Advanced', { exact: true }).click();
+      await page
+        .getByRole('region', { name: 'What they’ve turned on' })
+        .locator('summary', { hasText: 'Advanced' })
+        .click();
       await page.getByLabel('Folder name on disk', { exact: true }).fill('quota-user');
       await page.getByRole('button', { name: 'Save', exact: true }).click();
 
@@ -224,7 +231,7 @@ test.describe('User Administration', () => {
       });
 
       await page.goto(`${usersManager}&user=${user.userId}`);
-      await page.getByRole('button', { name: 'Remove this person', exact: true }).click();
+      await page.getByRole('button', { name: 'Remove…', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: 'Remove this person' });
       await expect(dialog.getByText(/Leaving User is signed out everywhere and can’t sign in again\./)).toBeVisible();
       const confirm = dialog.getByRole('button', { name: 'Remove this person', exact: true });
@@ -307,6 +314,7 @@ test.describe('User Administration', () => {
       await page.goto(`${usersManager}&user=${user.userId}`);
       await expect(page.getByText('No PIN set', { exact: true })).toBeVisible();
 
+      await openSecurityAdvanced(page);
       await page.getByRole('button', { name: 'Set PIN', exact: true }).click();
       const setDialog = page.getByRole('dialog', { name: 'Set PIN' });
       await setDialog.getByLabel('New six-digit PIN', { exact: true }).fill('246810');
@@ -316,9 +324,9 @@ test.describe('User Administration', () => {
       await expect(page.getByText('PIN is set', { exact: true })).toBeVisible();
       await expect.poll(() => pinState(admin.accessToken, user.userId)).toBe(true);
 
-      await page.getByRole('button', { name: 'Reset PIN', exact: true }).click();
-      const resetDialog = page.getByRole('dialog', { name: 'Reset PIN' });
-      await resetDialog.getByRole('button', { name: 'Reset PIN', exact: true }).click();
+      await page.getByRole('button', { name: 'Clear their PIN…', exact: true }).click();
+      const resetDialog = page.getByRole('dialog', { name: 'Clear their PIN' });
+      await resetDialog.getByRole('button', { name: 'Clear their PIN', exact: true }).click();
       await expect(resetDialog).toHaveCount(0);
       await expect(page.getByText('No PIN set', { exact: true })).toBeVisible();
       await expect.poll(() => pinState(admin.accessToken, user.userId)).toBe(false);
@@ -342,9 +350,9 @@ test.describe('User Administration', () => {
 
       await page.goto(`${usersManager}&user=${created.id}`);
       await expect(page.getByText('PIN is set', { exact: true })).toBeVisible();
-      await page.getByRole('button', { name: 'Reset PIN', exact: true }).click();
-      const dialog = page.getByRole('dialog', { name: 'Reset PIN' });
-      await dialog.getByRole('button', { name: 'Reset PIN', exact: true }).click();
+      await page.getByRole('button', { name: 'Clear their PIN…', exact: true }).click();
+      const dialog = page.getByRole('dialog', { name: 'Clear their PIN' });
+      await dialog.getByRole('button', { name: 'Clear their PIN', exact: true }).click();
       await expect(dialog).toHaveCount(0);
       await expect.poll(() => pinState(admin.accessToken, created.id)).toBe(false);
     });
@@ -391,6 +399,7 @@ test.describe('User Administration', () => {
       });
 
       await page.goto(`${usersManager}&user=${user.userId}`);
+      await openSecurityAdvanced(page);
       await page.locator('.account-security').getByRole('button', { name: 'Sign out', exact: true }).click();
       const confirm = page.getByRole('dialog', { name: 'Sign out device' });
       await confirm.getByRole('button', { name: 'Sign out', exact: true }).click();
@@ -413,7 +422,7 @@ test.describe('User Administration', () => {
       });
 
       await page.goto(`${usersManager}&user=${user.userId}`);
-      await page.getByRole('button', { name: 'Remove this person', exact: true }).click();
+      await page.getByRole('button', { name: 'Remove…', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: 'Remove this person' });
       await dialog.getByLabel('Skip recovery and permanently remove this account').check();
       await expect(

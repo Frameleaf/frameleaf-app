@@ -31,6 +31,7 @@
     LIBRARY_ITEM_SORTS,
     type LibraryItemSort,
   } from '$lib/frameleaf/library-item-search';
+  import { compilePaletteQuery, readPaletteState } from '$lib/frameleaf/search-palette';
   import {
     organizeLibraryItems,
     ownsLibrarySelection,
@@ -570,14 +571,22 @@
         // The menu then offers only "Any tag"; tags still show on each item's Details.
       });
   });
+  // The field shows and replaces the same text the search palette sets (for Boards it is kept as a
+  // text condition in the filter), so a search started there can be read and cleared here.
   const sendSearch = debounce((text: string) => {
-    if (text !== session.query.text) {
-      session.setQuery({ ...session.query, text });
+    const state = readPaletteState(session.query);
+    if (text === state.input) {
+      return;
+    }
+    // Through the palette's compiler, so the search keeps the field (or All text) it was made with.
+    const next = compilePaletteQuery(state.base, { text, filter: {} }, state.mode);
+    if (next) {
+      session.setQuery(next);
     }
   }, 300);
   onDestroy(() => sendSearch.cancel());
   $effect(() => {
-    const text = session.query.text;
+    const text = readPaletteState(session.query).input;
     untrack(() => {
       if (document.activeElement?.id !== searchId) {
         searchText = text;

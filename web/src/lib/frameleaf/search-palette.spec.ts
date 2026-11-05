@@ -389,6 +389,13 @@ describe('compiling the palette', () => {
     expect(readPaletteState(design).mode).toBe('all');
   });
 
+  it('keeps a Boards file-name search on the file name, where no field reads as All text', () => {
+    const design = { ...emptyDiscoveryQuery(), filter: { libraryScope: LibraryViewScope.Design } };
+    const query = compilePaletteQuery(design, parseSearchInput('IMG', catalog), 'originalFileName')!;
+    expect(query.textField).toBe('originalFileName');
+    expect(readPaletteState(query)).toMatchObject({ input: 'IMG', mode: 'originalFileName' });
+  });
+
   it('distributes "All text" into an existing or, within the branch limit', () => {
     const filter = withAllText({ or: [{ city: { eq: 'Banff' } }, { originalFileName: { like: 'x' } }] }, 'lake');
     expect(filter?.or).toHaveLength(7);

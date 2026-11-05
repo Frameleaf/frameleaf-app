@@ -52,7 +52,7 @@ test.describe('Free Pro workspace', () => {
     await card.focus();
     await card.press('Enter');
     await expect(page.getByRole('textbox', { name: 'Note', exact: true })).toHaveValue(note);
-    await page.getByRole('button', { name: 'Close', exact: true }).click();
+    await page.getByRole('button', { name: 'Close details', exact: true }).click();
     await expect(card).toBeFocused();
     await page.getByTestId('search-entry').click();
     const input = page.getByRole('combobox', { name: 'Search query' });
@@ -73,20 +73,15 @@ test.describe('Free Pro workspace', () => {
     await expect
       .poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth))
       .toBeLessThanOrEqual(1);
+    // UI 22: Boards keeps the query in its own search field (prototype toolbar), not a chip row
+    const search = page.getByRole('searchbox', { name: 'Search Boards', exact: true });
+    await expect(search).toHaveValue(note);
     await expect
       .poll(async () => {
-        const clear = await page.getByRole('button', { name: 'Clear all', exact: true }).boundingBox();
-        return clear ? clear.x + clear.width : Infinity;
+        const bounds = await search.boundingBox();
+        return bounds ? bounds.x + bounds.width : Infinity;
       })
       .toBeLessThanOrEqual(390);
-    const chip = page.getByTestId('frameleaf-filter-chips').locator('.search-chip');
-    await expect
-      .poll(async () => {
-        const label = await chip.locator('.open').boundingBox();
-        const bounds = await chip.boundingBox();
-        return !!label && !!bounds && label.x + label.width <= bounds.x + bounds.width;
-      })
-      .toBe(true);
     for (const name of ['Switch to dark theme', 'Switch to light theme']) {
       const toggle = page.getByRole('button', { name, exact: true });
       if (await toggle.isVisible()) {
@@ -154,10 +149,10 @@ test.describe('Free Pro workspace', () => {
     await page.goto(`/albums/${album.id}`);
     await expect(page.locator('.summary')).toContainText('1 item');
     await page.getByRole('button', { name: `Open saved link ${title}`, exact: true }).click();
-    await expect(page.getByRole('link', { name: 'Open website' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Open example.com' })).toBeVisible();
     await expect(page.getByRole('textbox', { name: 'Note', exact: true })).toHaveCount(0);
     await expect(page.getByText(secret, { exact: true })).toHaveCount(0);
-    await page.getByRole('button', { name: 'Close', exact: true }).click();
+    await page.getByRole('button', { name: 'Close details', exact: true }).click();
     await page.getByTestId('search-entry').click();
     const input = page.getByRole('combobox', { name: 'Search query' });
     await input.fill(secret);
