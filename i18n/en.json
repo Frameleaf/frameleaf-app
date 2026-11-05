@@ -10544,6 +10544,7 @@
   "frameleaf_map_legend": "Legend",
   "frameleaf_map_legend_counts": "{photos, plural, one {# photo} other {# photos}} · {videos, plural, one {# video} other {# videos}}",
   "frameleaf_map_list_empty": "Nothing in this part of the map. Zoom out or choose Show all items.",
+  "frameleaf_map_load_all": "Load every item at once",
   "frameleaf_map_load_failed_help": "Your photos are safe. Check your connection and try again.",
   "frameleaf_map_load_failed_title": "Couldn’t load your map",
   "frameleaf_map_located": "{count} located",

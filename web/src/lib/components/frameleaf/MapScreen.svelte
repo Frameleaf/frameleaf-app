@@ -24,28 +24,48 @@
   import { landmarkHref, landmarkKind } from '$lib/frameleaf/landmarks';
   import {
     applyClusterLabelLayout,
+    BUBBLE_FILTER,
     BUBBLE_NAME_LAYER,
+    bubbleCount,
+    CLUSTER_PROPERTIES,
     clusterRadius,
     MAP_CLUSTER_DISTANCE,
+    SINGLE_FILTER,
     updateBubbleNames,
   } from '$lib/frameleaf/map-clusters';
   import {
+    clusterPoint,
     markerCardLine,
     markerDetail,
     markerPlace,
+    markerPoint,
     markerRowLine,
-    markerTypeCounts,
+    openingOrder,
+    pointCounts,
+    type MapPoint,
   } from '$lib/frameleaf/map-markers';
-  import { isInMapArea, mapDateWindow, MAP_DATE_PRESETS, toMapArea, type MapArea } from '$lib/frameleaf/map-settings';
+  import {
+    isInMapArea,
+    mapAreaCovers,
+    mapAreasMeet,
+    mapDateWindow,
+    MAP_DATE_PRESETS,
+    toMapArea,
+    widenMapArea,
+    type MapArea,
+  } from '$lib/frameleaf/map-settings';
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
   import { mapSettings, type MapSettings, locale } from '$lib/stores/preferences.store';
   import { getAssetMediaUrl } from '$lib/utils';
   import {
     AssetMediaSize,
     getAlbumMapMarkers,
+    getMapClusters,
     getMapMarkers,
     getMapStatistics,
     getVisitedLandmarks,
+    type MapBoundsDto,
+    type MapClusterListResponseDto,
     type MapMarkerResponseDto,
     type MapStatisticsResponseDto,
     type SearchLandmarkResponseDto,
@@ -67,7 +87,7 @@
   } from '@mdi/js';
   import type { Feature, Point } from 'geojson';
   import { LngLatBounds, type GeoJSONSource, type Map } from 'maplibre-gl';
-  import { onDestroy, tick } from 'svelte';
+  import { onDestroy, tick, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
   import { MediaQuery } from 'svelte/reactivity';
   import { AttributionControl, GeoJSON, MapLibre, Marker, MarkerLayer } from 'svelte-maplibre';
@@ -77,10 +97,12 @@
    * tile source, with the prototype's chrome — the in-view chip, "Search this area", the tools
    * column (zoom, show all, list, settings), the legend, the settings sheet and the "In view" list.
    *
-   * Markers come from the existing endpoints with the settings sheet's filters: `GET /map/markers`
-   * for the whole library, or the album's own `GET /albums/{id}/map-markers` when the screen is
-   * scoped to an album (`/map?albumId=`, prototype `setMapScope("collection")`), where each switch
-   * only narrows the album's own items.
+   * Markers come with the settings sheet's filters from `GET /map/clusters` for the library (FL-1214):
+   * a library small enough to send whole comes whole, and a large one as the server's grouped cells and
+   * single items for the view, asked again when the view leaves what was sent or crosses a zoom level.
+   * "Load every item at once" in the sheet asks `GET /map/markers` for the whole library instead. An
+   * album (`/map?albumId=`, prototype `setMapScope("collection")`) comes whole from the album's own
+   * `GET /albums/{id}/map-markers`, where each switch only narrows the album's own items.
    */
   interface Props {
     /** Scope the screen to this album's located items. */
@@ -98,7 +120,8 @@
   const MIN_ZOOM = 1;
   const MAX_ZOOM = 18;
 
-  type SettingsSwitch = 'includeArchived' | 'withSharedAlbums' | 'withPartners' | 'onlyFavorites' | 'showAssetPanel';
+  type SettingsSwitch =
+    'includeArchived' | 'withSharedAlbums' | 'withPartners' | 'onlyFavorites' | 'showAssetPanel' | 'loadAllItems';
   const presetLabels = $derived({
     all: $t('frameleaf_map_preset_all'),
     '30d': $t('frameleaf_map_preset_30d'),
@@ -115,16 +138,40 @@
     ...(scoped ? [{ key: 'withPartners' as const, label: $t('frameleaf_map_include_partner') }] : []),
     { key: 'onlyFavorites', label: $t('frameleaf_map_only_favorites') },
     { key: 'showAssetPanel', label: $t('frameleaf_map_asset_panel') },
+    // FL-1214: the whole library in one download, grouped by the browser, as before large libraries
+    ...(scoped ? [] : [{ key: 'loadAllItems' as const, label: $t('frameleaf_map_load_all') }]),
   ]);
 
   let map = $state<Map>();
-  let loadedMarkers = $state<MapMarkerResponseDto[]>([]);
+  /** What the map groups: every located item, or (FL-1214) the server's cells and items for the view. */
+  let points = $state<MapPoint[]>([]);
+  /** `points` hold every located item under the filters, so moving the map asks for nothing. */
+  let complete = $state(true);
+  /** Located items under the filters, and the area they cover (for "show all"). */
+  let located = $state(0);
+  let locatedBounds = $state<MapBoundsDto | null>(null);
+  /** FL-1214: the zoom level and area `points` were (or are being) asked for, when not `complete`. */
+  let fetched: { zoom: number; area: MapArea } | undefined;
+  let query: Record<string, unknown> = {};
+  let viewAbort: AbortController | undefined;
   let loaded = $state(false);
   /** The located items could not be loaded: its own card with Try again, never "nothing here". */
   let loadFailed = $state(false);
   /** Bumped by Try again: asks for the same markers once more. */
   let attempt = $state(0);
+  /** The points in view: the legend and the counts add up their items. */
+  let inViewPoints = $state<MapPoint[]>([]);
+  const counts = $derived(pointCounts(inViewPoints));
+  const inViewCount = $derived(counts.items);
+  /**
+   * The "In view" rows loaded so far, newest first. When every point in view is an item they are those
+   * items; when some are grouped cells (FL-1214) the rows are asked for a page at a time.
+   */
   let inView = $state<MapMarkerResponseDto[]>([]);
+  let listArea: MapArea | undefined;
+  let listAbort: AbortController | undefined;
+  /** How many rows the server has sent for `listArea`; repeats are not shown, so it can pass `inView`. */
+  let listOffset = 0;
   /**
    * FL-139: the in-view list draws its rows a page at a time as it is scrolled, so a zoomed-out map of
    * a large library does not build a row for every item it shows. The count and the viewer's order
@@ -171,7 +218,6 @@
   let tilesFailed = $state(false);
   let offline = $state(typeof navigator !== 'undefined' && !navigator.onLine);
 
-  const markers = $derived(loadedMarkers);
   const listOpen = $derived($mapSettings.showAssetPanel);
   const styleUrl = $derived(
     themeManager.value === Theme.Dark
@@ -189,8 +235,9 @@
   /* ------------------------------------------------------------------ */
   // A string, so toggling the list or the sheet (same store) does not refetch the markers.
   const filterKey = $derived(
-    JSON.stringify(
-      albumId
+    JSON.stringify({
+      loadAll: !albumId && $mapSettings.loadAllItems,
+      query: albumId
         ? {
             id: albumId,
             // an album shows archived items and everyone else's items unless the sheet leaves them
@@ -207,21 +254,52 @@
             withSharedAlbums: $mapSettings.withSharedAlbums || undefined,
             ...mapDateWindow($mapSettings),
           },
-    ),
+    }),
   );
 
+  /** Every located item, as one answer that need not be asked again as the map moves. */
+  const whole = (markers: MapMarkerResponseDto[]): MapClusterListResponseDto => ({
+    complete: true,
+    total: markers.length,
+    bounds: null,
+    clusters: [],
+    markers,
+  });
+  const pointsOf = (result: MapClusterListResponseDto) => [
+    ...result.clusters.map((cluster) => clusterPoint(cluster)),
+    ...result.markers.map((marker) => markerPoint(marker)),
+  ];
+  /** The closest zoom level the first, whole-world answer is grouped for. */
+  const FIRST_ZOOM = 2;
+  /** The zoom level the server groups items for: the map's own, in whole levels. */
+  const cellZoom = () => Math.max(0, Math.floor(map?.getZoom() ?? zoom));
+
   $effect(() => {
-    const query: unknown = JSON.parse(filterKey);
+    const filters = JSON.parse(filterKey) as { loadAll: boolean; query: Record<string, unknown> };
     void attempt;
     abort?.abort();
+    viewAbort?.abort();
+    fetched = undefined;
+    query = filters.query;
     const controller = new AbortController();
     abort = controller;
+    const signal = controller.signal;
+    // The whole world, so grouped coarsely: a link to a street would otherwise ask for every item. The
+    // view is asked for at its own zoom once the map is there (`followView`).
+    const level = Math.min(FIRST_ZOOM, untrack(cellZoom));
     const request = albumId
-      ? getAlbumMapMarkers(query as Parameters<typeof getAlbumMapMarkers>[0], { signal: controller.signal })
-      : getMapMarkers(query as Parameters<typeof getMapMarkers>[0], { signal: controller.signal });
+      ? getAlbumMapMarkers(query as Parameters<typeof getAlbumMapMarkers>[0], { signal }).then(whole)
+      : filters.loadAll
+        ? getMapMarkers(query, { signal }).then(whole)
+        : // FL-1214: no area yet, so the whole library: whole if it is small, else grouped at this zoom
+          getMapClusters({ ...query, zoom: level }, { signal });
     request
       .then((result) => {
-        loadedMarkers = result;
+        complete = result.complete;
+        located = result.total;
+        locatedBounds = result.bounds;
+        fetched = result.complete ? undefined : { zoom: level, area: { west: -180, south: -90, east: 180, north: 90 } };
+        points = pointsOf(result);
         loaded = true;
         loadFailed = false;
       })
@@ -232,6 +310,83 @@
 
         loadFailed = true;
       });
+  });
+
+  /**
+   * FL-1214: a large library is sent a view at a time. Asks for the view (and as much again around it)
+   * once it leaves the area last sent, or the zoom crosses a whole level, which regroups the cells.
+   */
+  const followView = () => {
+    if (complete || !map || !fetched || loadFailed) {
+      return;
+    }
+    const level = cellZoom();
+    if (level === fetched.zoom && mapAreaCovers(fetched.area, toMapArea(map.getBounds()))) {
+      return;
+    }
+    const area = widenMapArea(map.getBounds());
+    // recorded as it is asked for, so the moves before the answer do not ask again; a failure asks
+    // for everything again through Try again
+    fetched = { zoom: level, area };
+    viewAbort?.abort();
+    const controller = new AbortController();
+    viewAbort = controller;
+    getMapClusters({ ...query, ...area, zoom: level }, { signal: controller.signal })
+      .then((result) => {
+        points = pointsOf(result);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          loadFailed = true;
+        }
+      });
+  };
+
+  /**
+   * The next page of "In view" rows when some of what is in view is grouped (FL-1214): the server reads
+   * them for the visible area, newest first, as the list is scrolled.
+   */
+  const loadListPage = () => {
+    const area = listArea;
+    if (!area || !listOpen || inView.length >= Math.min(listShown, inViewCount) || listAbort) {
+      return;
+    }
+    const controller = new AbortController();
+    listAbort = controller;
+    getMapMarkers({ ...query, ...area, skip: listOffset, take: LIST_PAGE }, { signal: controller.signal })
+      .then((rows) => {
+        // cleared before the rows land, so the effect they wake can ask for a page scrolled to meanwhile.
+        // Only new rows are added (items added since the last page shift the pages), and a page with
+        // none changes nothing, so it cannot ask again.
+        if (listAbort === controller) {
+          listAbort = undefined;
+        }
+        if (listArea !== area) {
+          return;
+        }
+        listOffset += rows.length;
+        const listed = new Set(inView.map(({ id }) => id));
+        const added = rows.filter(({ id }) => !listed.has(id));
+        if (added.length > 0) {
+          inView = [...inView, ...added];
+        } else if (rows.length > 0) {
+          // a page of repeats only: read on from where the server left off
+          loadListPage();
+        }
+      })
+      .catch(() => {
+        // the rows stay as they are; scrolling or moving the map asks again
+        if (listAbort === controller) {
+          listAbort = undefined;
+        }
+      });
+  };
+  $effect(() => {
+    void listShown;
+    void listOpen;
+    void inViewCount;
+    void inView;
+    untrack(loadListPage);
   });
   /* ------------------------------------------------------------------ */
   /* Landmark pins (FL-355)                                              */
@@ -247,7 +402,10 @@
       // an older server, or one without the place pack: a map without pins
       .catch(() => {});
   });
-  const pinLandmarks = $derived(scoped ? [] : landmarksWithItems(landmarks, markers));
+  // FL-1214: a grouped cell's centre can be a cell's width from its items
+  const pinLandmarks = $derived(
+    scoped ? [] : landmarksWithItems(landmarks, points, complete ? 0 : 360 / (2 ** (fetched?.zoom ?? 0) * 16)),
+  );
   let pins = $state<LandmarkPin<SearchLandmarkResponseDto>[]>([]);
 
   /** Which pins to draw for this view, and how: `layoutLandmarkPins` has the rules. */
@@ -262,7 +420,7 @@
     try {
       bubbles = instance.querySourceFeatures('geojson').map((feature) => ({
         ...instance.project((feature.geometry as Point).coordinates as [number, number]),
-        count: (feature.properties?.point_count as number) ?? 1,
+        count: bubbleCount(feature.properties),
       }));
     } catch {
       // no style yet: the pins are laid out again once the items are on the map
@@ -291,10 +449,18 @@
    * A hovered cluster shows one of its own items and where it is, rather than a blank tile over raw
    * coordinates. The cluster's first item is read from the map's own index when the pointer arrives.
    */
-  let clusterPreview = $state<{ cluster: number; id: string; place: string }>();
+  let clusterPreview = $state<{ cluster: number | string; id: string; place: string }>();
   $effect(() => {
     const cluster = hoveredCluster?.properties?.cluster_id as number | undefined;
-    if (cluster === undefined || !map) {
+    if (cluster === undefined) {
+      // FL-1214: a cell the server grouped is a bubble of its own and carries its preview item
+      const cell = hoveredCluster?.properties;
+      if (cell?.id) {
+        clusterPreview = { cluster: cell.id as string, id: cell.id as string, place: cell.place as string };
+      }
+      return;
+    }
+    if (!map) {
       return;
     }
     const source = map.getSource('geojson') as GeoJSONSource | undefined;
@@ -317,7 +483,11 @@
     };
   });
 
-  onDestroy(() => abort?.abort());
+  onDestroy(() => {
+    abort?.abort();
+    viewAbort?.abort();
+    listAbort?.abort();
+  });
 
   // The settings sheet's counts follow its date and favorite filters (not the switches they count for).
   const statisticsKey = $derived(
@@ -349,26 +519,37 @@
 
   const placeOf = markerPlace;
 
+  type PointProperties = {
+    id: string;
+    place: string;
+    name: string;
+    line: string;
+    video: boolean;
+    count: number;
+    videos: number;
+  };
   const features = $derived({
     type: 'FeatureCollection' as const,
-    features: markers.map(
-      (marker): Feature<Point, { id: string; place: string; name: string; line: string; video: boolean }> => {
-        const detail = markerDetail(marker);
-        return {
-          type: 'Feature',
-          geometry: { type: 'Point', coordinates: [marker.lon, marker.lat] },
-          properties: {
-            id: marker.id,
-            place: detail.place,
-            name: detail.name ?? '',
-            line: markerCardLine(detail),
-            video: detail.video,
-          },
-        };
-      },
-    ),
+    features: points.map((point): Feature<Point, PointProperties> => {
+      const detail = point.marker && markerDetail(point.marker);
+      return {
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [point.lon, point.lat] },
+        properties: {
+          id: point.id,
+          place: point.place,
+          name: detail?.name ?? '',
+          line: detail ? markerCardLine(detail) : '',
+          video: detail?.video ?? false,
+          count: point.count,
+          videos: point.videos,
+        },
+      };
+    }),
   });
-  const counts = $derived(markerTypeCounts(inView));
+  /** One bubble's identity: MapLibre's cluster, or (FL-1214) the server's cell by its preview item. */
+  const bubbleKey = (feature: Feature | undefined) =>
+    (feature?.properties?.cluster_id as number | undefined) ?? (feature?.properties?.id as string | undefined);
 
   const retryTiles = () => {
     tilesFailed = false;
@@ -379,9 +560,13 @@
   /* Viewport                                                            */
   /* ------------------------------------------------------------------ */
   const extent = () => {
+    if (locatedBounds) {
+      const { west, south, east, north } = locatedBounds;
+      return new LngLatBounds([west, south], [east, north]);
+    }
     const bounds = new LngLatBounds();
-    for (const marker of markers) {
-      bounds.extend([marker.lon, marker.lat]);
+    for (const point of points) {
+      bounds.extend([point.lon, point.lat]);
     }
     return bounds;
   };
@@ -391,14 +576,28 @@
       return;
     }
     const area = toMapArea(map.getBounds());
-    inView = markers.filter(({ lon, lat }) => isInMapArea(area, lon, lat));
+    inViewPoints = points.filter(({ lon, lat }) => isInMapArea(area, lon, lat));
     listShown = LIST_PAGE;
+    listAbort?.abort();
+    listAbort = undefined;
+    // FL-1214: with a grouped cell in view, or one reaching into it from outside, the rows are read
+    // from the server a page at a time. The counts take a cell by its centre, so at the edges of the
+    // view they are an estimate within one cell.
+    const items =
+      inViewPoints.every((point) => point.marker) &&
+      points.every(
+        (point) => !(point.extent && !isInMapArea(area, point.lon, point.lat) && mapAreasMeet(area, point.extent)),
+      );
+    listArea = items ? undefined : area;
+    listOffset = 0;
+    inView = items ? inViewPoints.map((point) => point.marker!) : [];
     zoom = map.getZoom();
     layoutPins();
+    followView();
   };
 
   const fitAll = (announce = true) => {
-    if (!map || markers.length === 0) {
+    if (!map || located === 0) {
       return;
     }
     // Clear of the floating overlays: the in-view chip and legend (top, bottom) and the tools, a column
@@ -428,10 +627,11 @@
     updateInView();
   });
 
-  // New markers (a settings change) re-count what is in view without moving the map.
+  // New markers (a settings change, or the next view of a large library) re-count what is in view
+  // without moving the map.
   $effect(() => {
-    void markers;
-    updateInView();
+    void points;
+    untrack(updateInView);
   });
 
   // Keeps the markers when the theme swaps the style (svelte-maplibre#146).
@@ -468,11 +668,20 @@
     if (!map) {
       return;
     }
-    const clusterId = feature.properties?.cluster_id as number;
-    const count = feature.properties?.point_count as number;
-    const source = map.getSource('geojson') as GeoJSONSource;
-    const expansion = await source.getClusterExpansionZoom(clusterId);
+    const clusterId = feature.properties?.cluster_id as number | undefined;
+    const count = bubbleCount(feature.properties);
     const [lng, lat] = (feature.geometry as Point).coordinates;
+    // FL-1214: a cell the server grouped splits up as the map zooms in and the view is asked for again;
+    // at the closest zoom its items are in the list instead
+    if (clusterId === undefined && map.getZoom() >= MAX_ZOOM) {
+      map.easeTo({ center: [lng, lat] });
+      patchSettings({ showAssetPanel: true });
+      return;
+    }
+    const expansion =
+      clusterId === undefined
+        ? map.getZoom() + 2
+        : await (map.getSource('geojson') as GeoJSONSource).getClusterExpansionZoom(clusterId);
     map.easeTo({ center: [lng, lat], zoom: Math.min(MAX_ZOOM, Math.max(expansion, map.getZoom() + 2)) });
     changed = true;
     status = $t('frameleaf_map_status_zoomed', { values: { count } });
@@ -489,7 +698,7 @@
       return;
     }
     changed = false;
-    status = $t('frameleaf_map_status_searching', { values: { count: inView.length } });
+    status = $t('frameleaf_map_status_searching', { values: { count: inViewCount } });
     onSearchArea?.(toMapArea(map.getBounds()));
   };
 
@@ -537,7 +746,7 @@
   <div
     class="stage"
     role="region"
-    aria-label={$t('frameleaf_map_region', { values: { title, count: inView.length } })}
+    aria-label={$t('frameleaf_map_region', { values: { title, count: inViewCount } })}
     aria-describedby="fl-map-help"
   >
     <MapLibre
@@ -594,15 +803,19 @@
       bind:map
     >
       <AttributionControl compact position="bottom-right" />
-      <GeoJSON data={features} id="geojson" cluster={{ radius: MAP_CLUSTER_DISTANCE, maxZoom: 17 }}>
+      <GeoJSON
+        data={features}
+        id="geojson"
+        cluster={{ radius: MAP_CLUSTER_DISTANCE, maxZoom: 17, properties: CLUSTER_PROPERTIES }}
+      >
         <MarkerLayer
-          applyToClusters
+          filter={BUBBLE_FILTER}
           asButton
           bind:hovered={hoveredCluster}
           onclick={(event) => void openCluster(event.feature)}
         >
           {#snippet children({ feature })}
-            {@const count = (feature.properties?.point_count as number) ?? 0}
+            {@const count = bubbleCount(feature.properties)}
             <span
               class="cluster"
               style:--fl-cluster-size="{clusterRadius(count) * 2}px"
@@ -610,9 +823,8 @@
               aria-label={$t('frameleaf_map_cluster_label', { values: { count } })}
             >
               {count.toLocaleString($locale)}
-              {#if hoveredCluster?.properties?.cluster_id === feature.properties?.cluster_id}
-                {@const preview =
-                  clusterPreview?.cluster === feature.properties?.cluster_id ? clusterPreview : undefined}
+              {#if bubbleKey(hoveredCluster) === bubbleKey(feature)}
+                {@const preview = clusterPreview?.cluster === bubbleKey(feature) ? clusterPreview : undefined}
                 <span class="card" aria-hidden="true">
                   {#if preview}
                     <img src={getAssetMediaUrl({ id: preview.id, size: AssetMediaSize.Thumbnail })} alt="" />
@@ -629,13 +841,13 @@
           {/snippet}
         </MarkerLayer>
         <MarkerLayer
-          applyToClusters={false}
+          filter={SINGLE_FILTER}
           asButton
           bind:hovered={hoveredSingle}
           onclick={(event) =>
             onOpenAsset(
               event.feature.properties?.id as string,
-              inView.map(({ id }) => id),
+              openingOrder(event.feature.properties?.id as string, inView, inViewPoints),
             )}
         >
           {#snippet children({ feature })}
@@ -706,8 +918,8 @@
       {#if loaded}
         <span class="chip">
           <Icon icon={mdiMapMarkerMultipleOutline} size="16" />
-          {$t('frameleaf_map_in_view', { values: { count: inView.length } })}
-          <small>· {$t('frameleaf_map_located', { values: { count: markers.length } })}</small>
+          {$t('frameleaf_map_in_view', { values: { count: inViewCount } })}
+          <small>· {$t('frameleaf_map_located', { values: { count: located } })}</small>
         </span>
       {:else if !loadFailed}
         <!-- No counts until there is an answer: "0 in view" would read as an empty map. -->
@@ -865,11 +1077,11 @@
         <dl class="counts">
           <div>
             <dt>{$t('frameleaf_map_count_located')}</dt>
-            <dd>{markers.length}</dd>
+            <dd>{located}</dd>
           </div>
           <div>
             <dt>{$t('frameleaf_map_count_in_view')}</dt>
-            <dd>{inView.length}</dd>
+            <dd>{inViewCount}</dd>
           </div>
           {#if statistics}
             <div>
@@ -888,12 +1100,12 @@
     <aside class="list" aria-label={$t('frameleaf_map_items_in_view')}>
       <header>
         <strong>{$t('frameleaf_map_count_in_view')}</strong>
-        <small>{$t('frameleaf_map_items', { values: { count: inView.length } })}</small>
+        <small>{$t('frameleaf_map_items', { values: { count: inViewCount } })}</small>
         <IconButton label={$t('frameleaf_map_hide_list')} onclick={() => patchSettings({ showAssetPanel: false })}>
           <Icon icon={mdiClose} size="18" />
         </IconButton>
       </header>
-      {#if inView.length > 0}
+      {#if inViewCount > 0}
         <ul>
           {#each listRows as marker (marker.id)}
             {@const detail = markerDetail(marker)}
@@ -927,7 +1139,7 @@
               </button>
             </li>
           {/each}
-          {#if listShown < inView.length}
+          {#if listShown < inViewCount}
             <li class="list-more" aria-hidden="true" bind:this={listEnd}></li>
           {/if}
         </ul>
@@ -939,7 +1151,7 @@
     </aside>
   {/if}
 
-  {#if loaded && !loadFailed && markers.length === 0}
+  {#if loaded && !loadFailed && located === 0}
     <div class="empty" role="status">
       <Icon icon={mdiMapMarkerOutline} size="30" />
       <!-- MapView.jsx has one empty state for both scopes: the settings sheet narrows an album too. -->

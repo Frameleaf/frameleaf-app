@@ -18,6 +18,50 @@ describe(MapController.name, () => {
     ctx.reset();
   });
 
+  describe('GET /map/clusters (FL-1214)', () => {
+    it('should require a zoom level', async () => {
+      const { status } = await request(ctx.getHttpServer()).get('/map/clusters');
+
+      expect(status).toBe(400);
+      expect(service.getMapClusters).not.toHaveBeenCalled();
+    });
+
+    it('should refuse an edge outside the world', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .get('/map/clusters')
+        .query({ zoom: 3, west: -200, south: 0, east: 10, north: 10 });
+
+      expect(status).toBe(400);
+      expect(service.getMapClusters).not.toHaveBeenCalled();
+    });
+
+    it('should read the area and zoom as numbers', async () => {
+      service.getMapClusters.mockResolvedValue({ complete: false, total: 0, bounds: null, clusters: [], markers: [] });
+      const { status } = await request(ctx.getHttpServer())
+        .get('/map/clusters')
+        .query({ zoom: 3, west: 170.5, south: -10, east: -170, north: 10, withSharedAlbums: true });
+
+      expect(status).toBe(200);
+      expect(service.getMapClusters).toHaveBeenCalledWith(undefined, {
+        zoom: 3,
+        west: 170.5,
+        south: -10,
+        east: -170,
+        north: 10,
+        withSharedAlbums: true,
+      });
+    });
+  });
+
+  describe('GET /map/markers paging (FL-1214)', () => {
+    it('should refuse a page larger than 1000', async () => {
+      const { status } = await request(ctx.getHttpServer()).get('/map/markers').query({ take: 1001 });
+
+      expect(status).toBe(400);
+      expect(service.getMapMarkers).not.toHaveBeenCalled();
+    });
+  });
+
   describe('GET /map/reverse-geocode', () => {
     it('should require a lat', async () => {
       const { status, body } = await request(ctx.getHttpServer()).get('/map/reverse-geocode').query({ lon: 123 });

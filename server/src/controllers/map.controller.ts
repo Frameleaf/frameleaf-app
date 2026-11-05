@@ -3,7 +3,10 @@ import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
+  MapClusterDto,
+  MapClusterListResponseDto,
   MapMarkerDto,
+  MapMarkerListDto,
   MapMarkerResponseDto,
   MapReverseGeocodeDto,
   MapReverseGeocodeResponseDto,
@@ -25,8 +28,20 @@ export class MapController {
     description: 'Retrieve a list of latitude and longitude coordinates for every asset with location data.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
-  getMapMarkers(@Auth() auth: AuthDto, @Query() options: MapMarkerDto): Promise<MapMarkerResponseDto[]> {
+  getMapMarkers(@Auth() auth: AuthDto, @Query() options: MapMarkerListDto): Promise<MapMarkerResponseDto[]> {
     return this.service.getMapMarkers(auth, options);
+  }
+
+  @Get('clusters')
+  @Authenticated({ permission: Permission.MapRead })
+  @Endpoint({
+    summary: 'Retrieve map clusters',
+    description:
+      'Retrieve the located items for one view of the map: items close together at the zoom level come as clusters with a count, the rest as markers. A library small enough to send whole comes as markers only, marked complete.',
+    history: new HistoryBuilder().added('v3.2.1'),
+  })
+  getMapClusters(@Auth() auth: AuthDto, @Query() options: MapClusterDto): Promise<MapClusterListResponseDto> {
+    return this.service.getMapClusters(auth, options);
   }
 
   @Get('statistics')

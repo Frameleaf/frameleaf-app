@@ -91,3 +91,71 @@ where
   )
 order by
   "asset"."fileCreatedAt" desc
+
+-- MapRepository.getMapClusters
+select
+  "cell".*,
+  "asset_exif"."city",
+  "asset_exif"."state",
+  "asset_exif"."country"
+from
+  (
+    select
+      any_value (asset.id) as "id",
+      avg(asset_exif.latitude) as "lat",
+      avg(asset_exif.longitude) as "lon",
+      count(*)::int as "count",
+      (
+        count(*) filter (
+          where
+            asset.type = 'VIDEO'
+        )
+      )::int as "videos",
+      min(asset_exif.longitude) as "west",
+      min(asset_exif.latitude) as "south",
+      max(asset_exif.longitude) as "east",
+      max(asset_exif.latitude) as "north"
+    from
+      "asset"
+      inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
+      and "asset_exif"."latitude" is not null
+      and "asset_exif"."longitude" is not null
+    where
+      "asset"."deletedAt" is null
+      and "asset"."libraryScope" in ($1, $2)
+      and (
+        "asset"."visibility" = 'timeline'
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
+      and (
+        "ownerId" in ($3)
+        or exists (
+          select
+          from
+            "album_asset"
+          where
+            "asset"."id" = "album_asset"."assetId"
+            and "album_asset"."albumId" in ($4)
+        )
+      )
+    group by
+      floor(
+        (
+          1 - ln(
+            tan(
+              radians(greatest(-85, least(85, asset_exif.latitude)))
+            ) + 1 / cos(
+              radians(greatest(-85, least(85, asset_exif.latitude)))
+            )
+          ) / pi()
+        ) / 2 * $5
+      ) * $6 + floor((asset_exif.longitude + 180) / 360 * $7)
+  ) as "cell"
+  left join "asset_exif" on "asset_exif"."assetId" = "cell"."id"

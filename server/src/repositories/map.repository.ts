@@ -15,7 +15,7 @@ import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { LANDMARK_MAX_RADIUS_M, citiesFile, reverseGeocodeMaxDistance } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AssetVisibility, LibraryScope, StorageFolder, SystemMetadataKey } from 'src/enum.js';
+import { AssetType, AssetVisibility, LibraryScope, StorageFolder, SystemMetadataKey } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { inferLandmarks } from 'src/repositories/landmark-inference.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -34,6 +34,55 @@ export interface MapMarkerSearchOptions extends HiddenContentQueryOptions {
   fileCreatedBefore?: Date;
   fileCreatedAfter?: Date;
 }
+
+/** An area of the map (FL-1214); `west > east` crosses the antimeridian. */
+export interface MapArea {
+  west: number;
+  south: number;
+  east: number;
+  north: number;
+}
+
+export interface MapMarkerPageOptions extends MapMarkerSearchOptions {
+  area?: MapArea;
+  skip?: number;
+  take?: number;
+}
+
+/**
+ * Items closer than this many screen pixels at the requested zoom share a cell (FL-1214). It is finer
+ * than the map's own grouping distance (46px), so the map still merges cells into the bubbles it draws.
+ */
+export const MAP_CELL_PX = 32;
+/** Under this many items in the area every item comes on its own, so the map can show each one. */
+export const MAP_SINGLES_LIMIT = 2000;
+
+const locatedAssets = (db: Kysely<MapDB>) =>
+  db
+    .selectFrom('asset')
+    .innerJoin('asset_exif', (builder) =>
+      builder
+        .onRef('asset.id', '=', 'asset_exif.assetId')
+        .on('asset_exif.latitude', 'is not', null)
+        .on('asset_exif.longitude', 'is not', null),
+    )
+    .where('asset.deletedAt', 'is', null);
+type LocatedAssets = ReturnType<typeof locatedAssets>;
+
+const withinArea = (qb: LocatedAssets, area?: MapArea) => {
+  if (!area) {
+    return qb;
+  }
+  const { west, south, east, north } = area;
+  return qb
+    .where('asset_exif.latitude', '>=', south)
+    .where('asset_exif.latitude', '<=', north)
+    .where((eb) =>
+      west <= east
+        ? eb.and([eb('asset_exif.longitude', '>=', west), eb('asset_exif.longitude', '<=', east)])
+        : eb.or([eb('asset_exif.longitude', '>=', west), eb('asset_exif.longitude', '<=', east)]),
+    );
+};
 
 /** How a landmark's brand icon is drawn: the colour of the circle around it, and whether it fills its frame. */
 type LandmarkIcon = { background: string; tile: boolean };
@@ -399,12 +448,17 @@ export class MapRepository {
     );
   }
 
-  @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID], [DummyValue.UUID]] })
-  getMapMarkers(authUserId: string, ownerIds: string[], albumIds: string[], options: MapMarkerSearchOptions = {}) {
+  /** The viewer's located library items under the map's filters (see `getMapMarkers`). */
+  private libraryLocated(
+    authUserId: string,
+    ownerIds: string[],
+    albumIds: string[],
+    options: MapMarkerSearchOptions = {},
+  ): LocatedAssets {
     const { isArchived, isFavorite, fileCreatedAfter, fileCreatedBefore } = options;
     // FL-195: the viewer's own marks and detections, when their session is unlocked
     const reveal = options.revealLockedOwnerId;
-    return this.mapMarkersQuery()
+    return locatedAssets(this.db)
       .where(libraryScopePredicate(LibraryScope.Personal))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .$if(isArchived === true, (qb) =>
@@ -438,8 +492,109 @@ export class MapRepository {
         }
 
         return eb.or(expression);
-      })
+      });
+  }
+
+  @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID], [DummyValue.UUID]] })
+  getMapMarkers(authUserId: string, ownerIds: string[], albumIds: string[], options: MapMarkerPageOptions = {}) {
+    const { area, skip, take } = options;
+    return (
+      this.mapMarkersQuery(withinArea(this.libraryLocated(authUserId, ownerIds, albumIds, options), area))
+        // FL-1214: a stable order, so the "In view" list can be read a page at a time
+        .$if(take !== undefined, (qb) =>
+          qb
+            .orderBy('asset.id', 'desc')
+            .limit(take!)
+            .offset(skip ?? 0),
+        )
+        .execute()
+    );
+  }
+
+  /**
+   * FL-1214: the items in `area` (the whole world without one), grouped into square cells of
+   * `MAP_CELL_PX` screen pixels at `zoom` (Web Mercator, 512px tiles). A cell of one item comes as a
+   * marker with its details; a larger cell as a cluster with its count, its video count, the centre of
+   * its items and one item to preview. With at most `allBelow` items in the area, every item comes as
+   * a marker. `total` and `bounds` cover the items in the area.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID], [DummyValue.UUID], 2, 2000] })
+  async getMapClusters(
+    authUserId: string,
+    ownerIds: string[],
+    albumIds: string[],
+    zoom: number,
+    allBelow: number,
+    options: MapMarkerPageOptions = {},
+  ) {
+    const located = () => withinArea(this.libraryLocated(authUserId, ownerIds, albumIds, options), options.area);
+    const cells = 2 ** zoom * (512 / MAP_CELL_PX);
+    // Mercator rows from the latitude clamped to the map's own ±85°. One key per cell, so Postgres
+    // estimates few groups and hashes them rather than sorting every item.
+    const latitude = sql<number>`greatest(-85, least(85, asset_exif.latitude))`;
+    const cell = sql<number>`floor((1 - ln(tan(radians(${latitude})) + 1 / cos(radians(${latitude}))) / pi()) / 2 * ${cells}) * ${cells} + floor((asset_exif.longitude + 180) / 360 * ${cells})`;
+    const grouped = await this.db
+      .selectFrom(
+        located()
+          .select([
+            sql<string>`any_value(asset.id)`.as('id'),
+            sql<number>`avg(asset_exif.latitude)`.as('lat'),
+            sql<number>`avg(asset_exif.longitude)`.as('lon'),
+            sql<number>`count(*)::int`.as('count'),
+            sql<number>`(count(*) filter (where asset.type = ${sql.lit(AssetType.Video)}))::int`.as('videos'),
+            sql<number>`min(asset_exif.longitude)`.as('west'),
+            sql<number>`min(asset_exif.latitude)`.as('south'),
+            sql<number>`max(asset_exif.longitude)`.as('east'),
+            sql<number>`max(asset_exif.latitude)`.as('north'),
+          ])
+          .groupBy(cell)
+          .as('cell'),
+      )
+      .leftJoin('asset_exif', 'asset_exif.assetId', 'cell.id')
+      .selectAll('cell')
+      .select(['asset_exif.city', 'asset_exif.state', 'asset_exif.country'])
       .execute();
+
+    let total = 0;
+    const bounds = { west: 180, south: 90, east: -180, north: -90 };
+    for (const { count, west, south, east, north } of grouped) {
+      total += count;
+      bounds.west = Math.min(bounds.west, west);
+      bounds.south = Math.min(bounds.south, south);
+      bounds.east = Math.max(bounds.east, east);
+      bounds.north = Math.max(bounds.north, north);
+    }
+    const summary = { total, bounds: total > 0 ? bounds : null };
+    if (total <= allBelow) {
+      return { ...summary, clusters: [], markers: total === 0 ? [] : await this.mapMarkersQuery(located()).execute() };
+    }
+    const singles = grouped.filter((cell) => cell.count === 1).map(({ id }) => id);
+    return {
+      ...summary,
+      clusters: grouped
+        .filter((cell) => cell.count > 1)
+        .map(({ id, lat, lon, count, videos, west, south, east, north, city, state, country }) => ({
+          id,
+          lat,
+          lon,
+          count,
+          videos,
+          // FL-1214: where the items are, so the map can tell a group that reaches into the view
+          west,
+          south,
+          east,
+          north,
+          city: city ?? null,
+          state: state ?? null,
+          country: country ?? null,
+        })),
+      markers:
+        singles.length === 0
+          ? []
+          : await this.mapMarkersQuery(
+              located().where('asset.id', '=', sql<string>`any(${singles}::uuid[])`),
+            ).execute(),
+    };
   }
 
   /**
@@ -498,16 +653,8 @@ export class MapRepository {
     };
   }
 
-  private mapMarkersQuery() {
-    return this.db
-      .selectFrom('asset')
-      .innerJoin('asset_exif', (builder) =>
-        builder
-          .onRef('asset.id', '=', 'asset_exif.assetId')
-          .on('asset_exif.latitude', 'is not', null)
-          .on('asset_exif.longitude', 'is not', null),
-      )
-      .where('asset.deletedAt', 'is', null)
+  private mapMarkersQuery(located: LocatedAssets = locatedAssets(this.db)) {
+    return located
       .orderBy('asset.fileCreatedAt', 'desc')
       .select([
         'id',

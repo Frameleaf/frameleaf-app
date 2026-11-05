@@ -23,14 +23,19 @@ export type PinPlace = Resortable & { name: string; icon?: object };
 
 /**
  * The landmarks with one of the map's own items within their reach, so pins follow the map's filters: a
- * map of last month shows no pin for a place last visited years ago.
+ * map of last month shows no pin for a place last visited years ago. FL-1214: `slack` (degrees) widens
+ * the reach for points that stand for a cell of items, whose centre can be that far from any of them.
  */
-export const landmarksWithItems = <T extends Resortable>(places: T[], markers: { lat: number; lon: number }[]): T[] =>
-  // ponytail: one pass over the markers per landmark, and a square for the landmark's reach. Index the
-  // markers by cell if a map of millions of items makes this slow.
+export const landmarksWithItems = <T extends Resortable>(
+  places: T[],
+  markers: { lat: number; lon: number }[],
+  slack = 0,
+): T[] =>
+  // ponytail: one pass over the markers per landmark, and a square for the landmark's reach. A large
+  // library sends the map grouped cells (FL-1214), so the markers here stay in the thousands.
   places.filter((place) => {
-    const latitudeReach = place.radiusM / 111_320;
-    const longitudeReach = latitudeReach / Math.max(0.01, Math.cos((place.latitude * Math.PI) / 180));
+    const latitudeReach = place.radiusM / 111_320 + slack;
+    const longitudeReach = place.radiusM / 111_320 / Math.max(0.01, Math.cos((place.latitude * Math.PI) / 180)) + slack;
     return markers.some(
       ({ lat, lon }) =>
         Math.abs(lat - place.latitude) <= latitudeReach && Math.abs(lon - place.longitude) <= longitudeReach,
