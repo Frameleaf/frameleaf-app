@@ -1,5 +1,6 @@
 import { AssetTypeEnum, type MapClusterResponseDto, type MapMarkerResponseDto } from '@frameleaf/sdk';
 import { captureDay } from '$lib/frameleaf/explore';
+import type { MapArea } from '$lib/frameleaf/map-settings';
 
 /**
  * What the Map screen says about one located item (FL-51, prototype `MapView.jsx` hover card and
@@ -52,6 +53,8 @@ export type MapPoint = {
   videos: number;
   place: string;
   marker?: MapMarkerResponseDto;
+  /** For a grouped cell, the area its items cover. */
+  extent?: MapArea;
 };
 
 export const markerPoint = (marker: MapMarkerResponseDto): MapPoint => ({
@@ -71,6 +74,7 @@ export const clusterPoint = (cluster: MapClusterResponseDto): MapPoint => ({
   count: cluster.count,
   videos: cluster.videos,
   place: markerPlace(cluster),
+  extent: { west: cluster.west, south: cluster.south, east: cluster.east, north: cluster.north },
 });
 
 /** The legend's photo and video counts for what is in view (`MapView.jsx:363-367`), and their sum. */

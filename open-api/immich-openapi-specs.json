@@ -30298,7 +30298,7 @@
             "name": "zoom",
             "required": true,
             "in": "query",
-            "description": "The map zoom level the items are grouped for",
+            "description": "The map zoom level the items are grouped for; without an area, at most 4",
             "schema": {
               "minimum": 0,
               "maximum": 24,
@@ -102901,7 +102901,7 @@
             "type": "boolean"
           },
           "zoom": {
-            "description": "The map zoom level the items are grouped for",
+            "description": "The map zoom level the items are grouped for; without an area, at most 4",
             "maximum": 24,
             "minimum": 0,
             "type": "integer"
@@ -102975,6 +102975,11 @@
             "nullable": true,
             "type": "string"
           },
+          "east": {
+            "description": "Easternmost longitude of the items",
+            "format": "double",
+            "type": "number"
+          },
           "id": {
             "description": "One of the items, for the bubble's preview",
             "format": "uuid",
@@ -102991,6 +102996,16 @@
             "format": "double",
             "type": "number"
           },
+          "north": {
+            "description": "Northernmost latitude of the items",
+            "format": "double",
+            "type": "number"
+          },
+          "south": {
+            "description": "Southernmost latitude of the items",
+            "format": "double",
+            "type": "number"
+          },
           "state": {
             "description": "State/Province of the preview item",
             "nullable": true,
@@ -103001,17 +103016,26 @@
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
+          },
+          "west": {
+            "description": "Westernmost longitude of the items",
+            "format": "double",
+            "type": "number"
           }
         },
         "required": [
           "city",
           "count",
           "country",
+          "east",
           "id",
           "lat",
           "lon",
+          "north",
+          "south",
           "state",
-          "videos"
+          "videos",
+          "west"
         ],
         "type": "object"
       },

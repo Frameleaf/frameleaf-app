@@ -573,12 +573,17 @@ export class MapRepository {
       ...summary,
       clusters: grouped
         .filter((cell) => cell.count > 1)
-        .map(({ id, lat, lon, count, videos, city, state, country }) => ({
+        .map(({ id, lat, lon, count, videos, west, south, east, north, city, state, country }) => ({
           id,
           lat,
           lon,
           count,
           videos,
+          // FL-1214: where the items are, so the map can tell a group that reaches into the view
+          west,
+          south,
+          east,
+          north,
           city: city ?? null,
           state: state ?? null,
           country: country ?? null,

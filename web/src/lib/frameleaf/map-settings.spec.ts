@@ -3,6 +3,7 @@ import {
   formatMapArea,
   isInMapArea,
   mapAreaCovers,
+  mapAreasMeet,
   mapDateWindow,
   parseMapArea,
   toMapArea,
@@ -118,5 +119,13 @@ describe('visible map area across the antimeridian', () => {
     expect(mapAreaCovers(sent, toMapArea(view(130, 150)))).toBe(false);
     expect(mapAreaCovers(sent, toMapArea(view(170, 190, -30, 0)))).toBe(false);
     expect(mapAreaCovers(sent, world)).toBe(false);
+  });
+
+  it('knows whether two areas share any ground, across the date line too (FL-1214)', () => {
+    const view = { west: 170, south: -10, east: -170, north: 10 };
+    expect(mapAreasMeet(view, { west: -175, south: 5, east: -160, north: 20 })).toBe(true);
+    expect(mapAreasMeet(view, { west: 160, south: -5, east: 172, north: 5 })).toBe(true);
+    expect(mapAreasMeet(view, { west: 0, south: -5, east: 10, north: 5 })).toBe(false);
+    expect(mapAreasMeet(view, { west: 175, south: 11, east: 178, north: 20 })).toBe(false);
   });
 });

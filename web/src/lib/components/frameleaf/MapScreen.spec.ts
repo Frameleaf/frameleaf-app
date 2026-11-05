@@ -351,6 +351,10 @@ describe('MapScreen (FL-193)', () => {
       city: 'Here',
       state: null,
       country: null,
+      west: 49,
+      south: 9,
+      east: 51,
+      north: 11,
     };
     const item = {
       id: 'a0000000-0000-4000-8000-000000000001',
@@ -464,6 +468,42 @@ describe('MapScreen (FL-193)', () => {
         ),
       );
       vi.unstubAllGlobals();
+    });
+
+    it('reads the rows from the server when a cell outside the view reaches into it', async () => {
+      mapSettings.update((settings) => ({ ...settings, showAssetPanel: true }));
+      // centred east of the view (40..60), its items reach back to 59
+      sdkMock.getMapClusters.mockResolvedValue({
+        complete: false,
+        total: 50_000,
+        bounds: null,
+        clusters: [{ ...cell, lon: 61, west: 59, east: 63 }],
+        markers: [item],
+      });
+      sdkMock.getMapMarkers.mockResolvedValue([item, { ...item, id: 'a0000000-0000-4000-8000-000000000002' }]);
+      render(MapScreen, { title: 'Map', onOpenAsset: vi.fn() });
+
+      await waitFor(() =>
+        expect(sdkMock.getMapMarkers).toHaveBeenCalledWith(
+          expect.objectContaining({ west: 40, east: 60, skip: 0, take: 120 }),
+          expect.anything(),
+        ),
+      );
+    });
+
+    it('reads on past a page of rows it already lists', async () => {
+      mapSettings.update((settings) => ({ ...settings, showAssetPanel: true }));
+      const row = (index: number) => ({ ...item, id: `a0000000-0000-4000-8000-${String(index).padStart(12, '0')}` });
+      // new items moved the second page back onto the first one's rows
+      sdkMock.getMapMarkers.mockImplementation(({ skip }) =>
+        Promise.resolve(skip === 0 || skip === 2 ? [row(1), row(2)] : skip === 4 ? [row(3)] : []),
+      );
+      render(MapScreen, { title: 'Map', onOpenAsset: vi.fn() });
+
+      await waitFor(() =>
+        expect(sdkMock.getMapMarkers).toHaveBeenCalledWith(expect.objectContaining({ skip: 4 }), expect.anything()),
+      );
+      expect(await screen.findAllByRole('button', { name: /Centre map on/ })).toHaveLength(3);
     });
 
     it('loads every item at once when the settings ask for it', async () => {

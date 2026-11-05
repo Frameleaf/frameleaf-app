@@ -60,6 +60,13 @@ export const toMapArea = (view: MapView): MapArea => {
 export const isInMapArea = ({ west, south, east, north }: MapArea, lon: number, lat: number) =>
   lat >= south && lat <= north && (west <= east ? lon >= west && lon <= east : lon >= west || lon <= east);
 
+const lonInArea = ({ west, east }: MapArea, lon: number) =>
+  west <= east ? lon >= west && lon <= east : lon >= west || lon <= east;
+
+/** Whether two areas share any ground, across the date line too (FL-1214). */
+export const mapAreasMeet = (a: MapArea, b: MapArea) =>
+  a.south <= b.north && b.south <= a.north && (lonInArea(a, b.west) || lonInArea(b, a.west));
+
 /** FL-1214: the visible map grown by `by` of its size on every side, so a small pan needs no new answer. */
 export const widenMapArea = (view: MapView, by = 0.5): MapArea => {
   const width = view.getEast() - view.getWest();

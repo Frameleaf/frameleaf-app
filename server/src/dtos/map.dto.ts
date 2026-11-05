@@ -124,6 +124,10 @@ const MapClusterResponseSchema = z
     city: z.string().nullable().describe('City of the preview item'),
     state: z.string().nullable().describe('State/Province of the preview item'),
     country: z.string().nullable().describe('Country of the preview item'),
+    west: z.number().meta({ format: 'double' }).describe('Westernmost longitude of the items'),
+    south: z.number().meta({ format: 'double' }).describe('Southernmost latitude of the items'),
+    east: z.number().meta({ format: 'double' }).describe('Easternmost longitude of the items'),
+    north: z.number().meta({ format: 'double' }).describe('Northernmost latitude of the items'),
   })
   .meta({ id: 'MapClusterResponseDto' });
 

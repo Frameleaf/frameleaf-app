@@ -9680,16 +9680,24 @@ export type MapClusterResponseDto = {
     count: number;
     /** Country of the preview item */
     country: string | null;
+    /** Easternmost longitude of the items */
+    east: number;
     /** One of the items, for the bubble's preview */
     id: string;
     /** Latitude of the items' centre */
     lat: number;
     /** Longitude of the items' centre */
     lon: number;
+    /** Northernmost latitude of the items */
+    north: number;
+    /** Southernmost latitude of the items */
+    south: number;
     /** State/Province of the preview item */
     state: string | null;
     /** How many of them are videos */
     videos: number;
+    /** Westernmost longitude of the items */
+    west: number;
 };
 export type MapClusterListResponseDto = {
     /** The area those items cover; null when there are none */
@@ -19475,7 +19483,7 @@ export type MapClusterDto = {
     west?: number;
     /** Include shared album assets */
     withSharedAlbums?: boolean;
-    /** The map zoom level the items are grouped for */
+    /** The map zoom level the items are grouped for; without an area, at most 4 */
     zoom: number;
 };
 export type MapMarkerDto = {

@@ -196,7 +196,16 @@ describe(MapService.name, () => {
       expect(result.total).toBe(4);
       expect(result.bounds).toEqual({ west: 2.35, south: -33.86, east: 151.2, north: 48.852 });
       expect(result.clusters).toEqual([
-        expect.objectContaining({ count: 3, videos: 1, country: 'C', lat: expect.closeTo(48.851, 3) }),
+        expect.objectContaining({
+          count: 3,
+          videos: 1,
+          country: 'C',
+          lat: expect.closeTo(48.851, 3),
+          west: 2.35,
+          south: 48.85,
+          east: 2.352,
+          north: 48.852,
+        }),
       ]);
       expect(assets.slice(0, 3).map(({ id }) => id)).toContain(result.clusters[0].id);
       expect(result.markers).toEqual([expect.objectContaining({ id: assets[3].id, city: 'city-3', country: 'C' })]);

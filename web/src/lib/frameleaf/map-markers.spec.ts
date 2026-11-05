@@ -67,8 +67,20 @@ describe('map markers (FL-51)', () => {
       city: null,
       state: 'Ontario',
       country: 'Canada',
+      west: 2,
+      south: 1,
+      east: 6,
+      north: 5,
     });
-    expect(cell).toEqual({ id: 'c', lat: 3, lon: 4, count: 40, videos: 5, place: 'Ontario, Canada' });
+    expect(cell).toEqual({
+      id: 'c',
+      lat: 3,
+      lon: 4,
+      count: 40,
+      videos: 5,
+      place: 'Ontario, Canada',
+      extent: { west: 2, south: 1, east: 6, north: 5 },
+    });
     expect(pointCounts([cell, markerPoint(marker({ type: AssetTypeEnum.Video }))])).toEqual({
       items: 41,
       photos: 35,

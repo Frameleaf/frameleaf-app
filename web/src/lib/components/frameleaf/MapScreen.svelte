@@ -46,6 +46,7 @@
   import {
     isInMapArea,
     mapAreaCovers,
+    mapAreasMeet,
     mapDateWindow,
     MAP_DATE_PRESETS,
     toMapArea,
@@ -168,6 +169,8 @@
   let inView = $state<MapMarkerResponseDto[]>([]);
   let listArea: MapArea | undefined;
   let listAbort: AbortController | undefined;
+  /** How many rows the server has sent for `listArea`; repeats are not shown, so it can pass `inView`. */
+  let listOffset = 0;
   /**
    * FL-139: the in-view list draws its rows a page at a time as it is scrolled, so a zoomed-out map of
    * a large library does not build a row for every item it shows. The count and the viewer's order
@@ -349,7 +352,7 @@
     }
     const controller = new AbortController();
     listAbort = controller;
-    getMapMarkers({ ...query, ...area, skip: inView.length, take: LIST_PAGE }, { signal: controller.signal })
+    getMapMarkers({ ...query, ...area, skip: listOffset, take: LIST_PAGE }, { signal: controller.signal })
       .then((rows) => {
         // cleared before the rows land, so the effect they wake can ask for a page scrolled to meanwhile.
         // Only new rows are added (items added since the last page shift the pages), and a page with
@@ -357,10 +360,17 @@
         if (listAbort === controller) {
           listAbort = undefined;
         }
+        if (listArea !== area) {
+          return;
+        }
+        listOffset += rows.length;
         const listed = new Set(inView.map(({ id }) => id));
         const added = rows.filter(({ id }) => !listed.has(id));
-        if (listArea === area && added.length > 0) {
+        if (added.length > 0) {
           inView = [...inView, ...added];
+        } else if (rows.length > 0) {
+          // a page of repeats only: read on from where the server left off
+          loadListPage();
         }
       })
       .catch(() => {
@@ -569,9 +579,16 @@
     listShown = LIST_PAGE;
     listAbort?.abort();
     listAbort = undefined;
-    // FL-1214: with a grouped cell in view, the rows are read from the server a page at a time
-    const items = inViewPoints.every((point) => point.marker);
+    // FL-1214: with a grouped cell in view, or one reaching into it from outside, the rows are read
+    // from the server a page at a time. The counts take a cell by its centre, so at the edges of the
+    // view they are an estimate within one cell.
+    const items =
+      inViewPoints.every((point) => point.marker) &&
+      points.every(
+        (point) => !(point.extent && !isInMapArea(area, point.lon, point.lat) && mapAreasMeet(area, point.extent)),
+      );
     listArea = items ? undefined : area;
+    listOffset = 0;
     inView = items ? inViewPoints.map((point) => point.marker!) : [];
     zoom = map.getZoom();
     layoutPins();
