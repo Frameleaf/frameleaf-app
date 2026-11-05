@@ -1,6 +1,8 @@
 import { CompiledQuery, Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
-import { pruneQueueHistory } from 'src/queue/retention.js';
+import { pruneQueueHistory, pruneRunLedger } from 'src/queue/retention.js';
+import { listRuns } from 'src/queue/run-query.js';
+import { summarizeRuns } from 'src/queue/run-summary.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { getKyselyConfig } from 'src/utils/database.js';
 import { canonicalDatabaseUrl } from 'test/fixtures/canonical-database.js';
@@ -235,6 +237,55 @@ describe('bounded PostgreSQL queue history', () => {
     },
     120_000,
   );
+
+  it('summarises finished runs and drops their old ledgers, keeping the counts (FL-1215)', async () => {
+    const ledger = async (kind: string, selection: Record<string, unknown>, finishedDaysAgo: number) => {
+      const runId = await store.createRun(kind, selection);
+      await sql`insert into job_run_item("runId", "itemKey", "rootItemKey", stage, queue, selection, state)
+        select ${runId}::uuid, n::text, n::text, stage, ${queue}, '{}'::jsonb,
+          case when n % 5 = 0 then 'failed' else 'completed' end
+        from generate_series(1, 30) n cross join (values ('thumbnail'), ('faces')) stages(stage)`.execute(db);
+      await sql`update job_run set "enumerationDone" = true,
+        "finishedAt" = now() - ${finishedDaysAgo} * interval '1 day' where id = ${runId}::uuid`.execute(db);
+      return runId;
+    };
+    const old = await ledger('ledger-old', {}, 40);
+    const recent = await ledger('ledger-recent', {}, 10);
+    const imported = await ledger('library-import-derived', {}, 40);
+    const pets = await ledger('ledger-pets', { petRunId: randomUUID() }, 40);
+    const withJob = await ledger('ledger-job', {}, 40);
+    await sql`insert into job(id, queue, name, data, state, "safeToRetry", "deadlineMs", "runId", "itemKey", "rootItemKey", "finishedAt")
+      values (gen_random_uuid(), ${queue}, 'thumbnail', '{}', 'failed', true, 600000, ${withJob}::uuid, '1', '1', now())`.execute(
+      db,
+    );
+    const ids = [old, recent, imported, pets, withJob];
+    const read = async () => {
+      const runs = await listRuns(db, 1000, 0);
+      return ids.map((id) => runs.find((run) => run.id === id));
+    };
+    const ledgerRows = async (runId: string) =>
+      (
+        await sql<{
+          count: number;
+        }>`select count(*)::int count from job_run_item where "runId" = ${runId}::uuid`.execute(db)
+      ).rows[0].count;
+
+    const before = await read();
+    expect(before[0]).toMatchObject({ state: 'completed_with_errors', total: 30, completed: 24, failed: 6 });
+    // Small pages: each run is added up over several statements.
+    while ((await summarizeRuns(db, 60_000, 7)) > 0);
+    expect(await read()).toEqual(before);
+    await pruneRunLedger(db, 60_000);
+
+    expect(await read()).toEqual(before);
+    expect(await ledgerRows(old)).toBe(0);
+    for (const kept of [recent, imported, pets, withJob]) expect(await ledgerRows(kept)).toBe(60);
+
+    // A reopened run is recounted from its ledger, never read from a stale summary.
+    await sql`update job_run_item set state = 'completed' where "runId" = ${recent}::uuid`.execute(db);
+    await sql`update job_run set "finishedAt" = now() where id = ${recent}::uuid`.execute(db);
+    expect((await read())[1]).toMatchObject({ state: 'completed', completed: 30, failed: 0 });
+  });
 
   it('installs vacuum settings on the frequently updated queue tables', async () => {
     const { rows } = await sql<{ relname: string; reloptions: string[] }>`select relname, reloptions from pg_class

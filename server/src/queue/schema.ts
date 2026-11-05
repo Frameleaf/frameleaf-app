@@ -15,7 +15,7 @@ export async function createQueueSchema(db: Kysely<any>) {
     create table job_run (
       id uuid primary key, kind text not null, selection jsonb not null,
       "enumerationDone" boolean not null default false,
-      "createdAt" timestamptz not null default now(), "finishedAt" timestamptz
+      "createdAt" timestamptz not null default now(), "finishedAt" timestamptz, summary jsonb
     );
     create table job_selection (
       id uuid primary key, "runId" uuid not null references job_run(id), "producerId" uuid,
@@ -85,6 +85,7 @@ export async function createQueueSchema(db: Kysely<any>) {
     create unique index job_dedup_live on job(queue, "dedupKey")
       where "dedupKey" is not null and state in ('pending','waiting','active');
     create unique index job_run_stage on job("runId", "itemKey", name) where "runId" is not null;
+    create index job_run_live on job("runId") where "runId" is not null and state in ('pending','waiting','active');
     create index job_claim on job(queue, "availableAt", "createdAt") where state in ('pending','waiting');
     create index job_cancel_pending on job(queue, "createdAt", id) where state in ('pending','waiting')
       and "cancelRequestedAt" is not null and "cancelReason" is distinct from 'deadline';

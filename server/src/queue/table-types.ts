@@ -20,6 +20,8 @@ export interface JobRunTable {
   enumerationDone: Generated<boolean>;
   createdAt: Generated<Timestamp>;
   finishedAt: Timestamp | null;
+  /** FL-1215: see `run-summary.ts`. */
+  summary: Record<string, unknown> | null;
 }
 export interface JobRunItemTable {
   runId: string;

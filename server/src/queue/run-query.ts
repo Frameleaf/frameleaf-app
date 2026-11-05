@@ -375,14 +375,57 @@ const parkedStages = (selection: RawBuilder<unknown>) => sql<string[]>`coalesce(
 const librarySourceAttention = sql<boolean>`exists (select 1 from job_selection_run m join job_selection s on s.id = m."selectionId"
   where m."runId" = r.id and s."sourceKind" = 'library-initial' and s.state = 'needs_attention')`;
 
-export async function listRuns(db: Kysely<any>, take: number, skip: number, runId?: string): Promise<RunRead[]> {
-  const { rows } = await sql<Aggregate>`with runs as (
-      select r.id, r.kind, r."createdAt", r."finishedAt",
+/**
+ * FL-1215: a run's counts once nothing can change them: it is marked finished, enumerated and has no live job, and
+ * its stored summary was taken at that same `finishedAt` (`run-summary.ts`). Anything that reopens the run clears
+ * `finishedAt`, and settling it again stamps a new one, so a reopened run is recounted from its ledger.
+ */
+const summaryValid = sql<boolean>`coalesce(r.summary->>'complete' = 'true'
+  and (r.summary->>'finishedAt')::timestamptz = r."finishedAt", false)`;
+
+const ZERO_COUNTS = JSON.stringify(Object.fromEntries(['total', ...RUN_OUTCOMES].map((k) => [k, 0])));
+
+/** One page of a run's ledger (FL-1215): its bookkeeping rows, or its roots after `after` up to `upto`. */
+export type RunPage = { runId: string; bookkeeping: boolean; after: string | null; upto: string | null };
+export type RunPageAggregate = Pick<
+  Aggregate,
+  | 'counts'
+  | 'stageTotals'
+  | 'unfinishedStages'
+  | 'readyStages'
+  | 'held'
+  | 'dependencyWaiting'
+  | 'dependencyUnavailable'
+  | 'dependencyReasons'
+  | 'dependencyFailed'
+  | 'lastStage'
+> & { lastProgressUs: string | null };
+
+const pageFilter = (page?: RunPage) => {
+  if (!page) return sql``;
+  if (page.bookkeeping) return sql`and i."rootItemKey" is null`;
+  return sql`and i."rootItemKey" is not null ${page.after === null ? sql`` : sql`and i."rootItemKey" > ${page.after}`}
+    ${page.upto === null ? sql`` : sql`and i."rootItemKey" <= ${page.upto}`}`;
+};
+
+/**
+ * The aggregates `listRuns` reads, for the runs on one page or, with `page`, one slice of one run's ledger. Slices
+ * split a run by root, so their sums are the whole run's: `run-summary.ts` adds them up a page at a time.
+ */
+const readRuns = (take: number, skip: number, runId?: string, page?: RunPage) => sql<
+  Aggregate & {
+    summarized: boolean;
+    lastProgressUs: string | null;
+  }
+>`with runs as (
+      select r.*, r.settled or r."librarySourceAttention" "sortsFinished",
+        ${page ? sql`false` : sql`r.settled and r."enumerationDone" and ${summaryValid}`} summarized
+      from (select r.id, r.kind, r."createdAt", r."finishedAt", r.summary,
         -- A run with live jobs sorts with the unfinished ones even if it was marked finished, so the
         -- first page (Activity reads only that) never drops busy work. A failed library scan lists
         -- with the finished runs (FL-588).
-        ((r."finishedAt" is not null and not exists (select 1 from job j
-          where j."runId" = r.id and j.state in ('pending','waiting','active'))) or ${librarySourceAttention}) "sortsFinished",
+        (r."finishedAt" is not null and not exists (select 1 from job j
+          where j."runId" = r.id and j.state in ('pending','waiting','active'))) settled,
         (r."enumerationDone" and not (${libraryRunPending(sql<string>`r.id`)})) "enumerationDone",
         ${librarySourceAttention} "librarySourceAttention",
         coalesce(r.kind in ('immich-import-derived','library-import-derived')
@@ -395,14 +438,17 @@ export async function listRuns(db: Kysely<any>, take: number, skip: number, runI
         coalesce(r.selection #> '{managerSetup,paused}' = 'true'::jsonb, false) "setupPaused",
         ${parkedStages(sql`r.selection`)} "parkedStages"
       from job_run r
-      ${runId === undefined ? sql`` : sql`where r.id = ${runId}::uuid`}
+      ${runId === undefined ? sql`` : sql`where r.id = ${runId}::uuid`}) r
       order by "sortsFinished", r."createdAt" desc, r.id desc limit ${take} offset ${skip}
     ), stages as (${stagesFor(
       // A parked stage's unstarted items leave the summary; its finished and failed ones stay in it.
-      sql<boolean>`i."runId" in (select id from runs) and not (i."jobId" is null and i.state = 'pending'
+      // A summarised run is never recounted (FL-1215). An array, so the ledger is read through its run index
+      // whatever the estimate of `runs`: a semi-join here can hash all ledgers first.
+      sql<boolean>`i."runId" = any(array(select id from runs where not summarized)) ${pageFilter(page)}
+        and not (i."jobId" is null and i.state = 'pending'
         and exists (select 1 from runs parked where parked.id = i."runId" and i.stage = any(parked."parkedStages")))`,
-      sql<string>`select id from runs`,
-      true,
+      sql<string>`select id from runs where not summarized`,
+      !page,
       sql<boolean>`exists (select 1 from runs manager where manager.id = i."runId" and manager."managerImport")`,
     )}), run_stages as (
       select s.* from stages s
@@ -415,37 +461,57 @@ export async function listRuns(db: Kysely<any>, take: number, skip: number, runI
         order by "runId", "rootItemKey" collate "C" offset 0) ordered_roots
       group by "runId", "rootItemKey")
       -- A collapsed row stands for that many roots of one stage each: a root's outcome is that stage's.
-      union all (select "runId", null, ${priorityOutcome(selectedPriority)} outcome, weight from run_stages where fast)
+      ${page ? sql`` : sql`union all (select "runId", null, ${priorityOutcome(selectedPriority)} outcome, weight from run_stages where fast)`}
     ), item_counts as (
       select s."runId", ${weightedCounts('s')} totals from selected s group by s."runId"
     ), stage_counts as (
-      select s."runId", ${weightedCounts('s')} totals,
-        coalesce(sum(s.weight) filter (where s.state in ('pending','waiting','active')), 0) unfinished,
+      select s."runId", ${page ? counts('s') : weightedCounts('s')} totals,
+        ${page ? sql`count(*) filter (where s.state in ('pending','waiting','active'))` : sql`coalesce(sum(s.weight) filter (where s.state in ('pending','waiting','active')), 0)`} unfinished,
         bool_or(s.state = 'blocked') "dependencyFailed",
         array_remove(array[${sql.join([...DEPENDENCY_REASONS].sort().map((reason) => sql`case when bool_or(s.state in ('pending','waiting') and s."dependencyReason"=${reason}) then ${reason}::text end`))}],null) "dependencyReasons",
         bool_or(s."dependencyReason" is not null and s.state in ('pending','waiting')) "dependencyUnavailable",
         bool_or(s.outcome = 'blocked' and s.state in ('pending','waiting')) "dependencyWaiting",
-        coalesce(sum(s.weight) filter (where s.outcome in ('waiting','retrying') and coalesce(s."availableAt", now()) <= now()
-          and not s.held), 0) ready,
-        coalesce(sum(s.weight) filter (where s.outcome = 'active'), 0) active,
+        ${
+          page
+            ? sql`count(*) filter (where s.outcome in ('waiting','retrying') and coalesce(s."availableAt", now()) <= now() and not s.held)`
+            : sql`coalesce(sum(s.weight) filter (where s.outcome in ('waiting','retrying') and coalesce(s."availableAt", now()) <= now()
+          and not s.held), 0)`
+        } ready,
+        ${page ? sql`count(*) filter (where s.outcome = 'active')` : sql`coalesce(sum(s.weight) filter (where s.outcome = 'active'), 0)`} active,
         -- Photos only: a server import's one identical-files item is not one.
         count(distinct s."rootItemKey") filter (where s.held and s.stage <> ${JobName.IdenticalFilesCheck}) held
       from run_stages s group by s."runId"
     ), latest as (
       select distinct on ("runId") "runId", stage, "meaningfulAt" from run_stages
       where "meaningfulAt" is not null order by "runId", "meaningfulAt" desc, stage
-    ) select r.*, coalesce(items.totals, ${JSON.stringify(Object.fromEntries(['total', ...RUN_OUTCOMES].map((k) => [k, 0])))}::text::jsonb) counts,
-      coalesce(stage.totals, ${JSON.stringify(Object.fromEntries(['total', ...RUN_OUTCOMES].map((k) => [k, 0])))}::text::jsonb) "stageTotals",
+    ) select r.*,
+      coalesce(case when r.summarized then r.summary->'counts' end, items.totals, ${ZERO_COUNTS}::text::jsonb) counts,
+      coalesce(case when r.summarized then r.summary->'stageTotals' end, stage.totals, ${ZERO_COUNTS}::text::jsonb) "stageTotals",
       coalesce(stage.unfinished, 0)::int "unfinishedStages", coalesce(stage."dependencyWaiting", false) "dependencyWaiting",
       coalesce(stage.ready, 0)::int "readyStages", coalesce(stage.held, 0)::int held,
       coalesce(stage."dependencyUnavailable", false) "dependencyUnavailable", stage."dependencyReasons",
-      coalesce(stage."dependencyFailed", false) "dependencyFailed",
-      latest."meaningfulAt" "lastProgressAt", latest.stage "lastStage", ${workerAvailable} "workerAvailable",
+      case when r.summarized then (r.summary->>'dependencyFailed')::boolean
+        else coalesce(stage."dependencyFailed", false) end "dependencyFailed",
+      case when r.summarized then timestamptz 'epoch' + (r.summary->>'lastProgressUs')::bigint * interval '1 microsecond'
+        else latest."meaningfulAt" end "lastProgressAt",
+      case when r.summarized then r.summary->>'lastStage' else latest.stage end "lastStage",
+      -- Exact, for adding up pages: a JavaScript Date keeps only milliseconds.
+      (extract(epoch from latest."meaningfulAt") * 1000000)::bigint::text "lastProgressUs",
+      ${workerAvailable} "workerAvailable",
       coalesce(stage.ready > 0 and stage.active = 0 and not ${managerImportHeld(sql<string>`r.id`)} and
         coalesce(latest."meaningfulAt", r."createdAt") < now() - interval '2 minutes', false) "noDispatchBacklog"
     from runs r left join item_counts items on items."runId" = r.id
     left join stage_counts stage on stage."runId" = r.id left join latest on latest."runId" = r.id
-    order by r."sortsFinished", r."createdAt" desc, r.id desc`.execute(db);
+    order by r."sortsFinished", r."createdAt" desc, r.id desc`;
+
+/** FL-1215: the aggregates of one slice of one run's ledger, which `run-summary.ts` adds up into its summary. */
+export async function readRunPage(db: Kysely<any>, page: RunPage): Promise<RunPageAggregate | undefined> {
+  const { rows } = await readRuns(1, 0, page.runId, page).execute(db);
+  return rows[0];
+}
+
+export async function listRuns(db: Kysely<any>, take: number, skip: number, runId?: string): Promise<RunRead[]> {
+  const { rows } = await readRuns(take, skip, runId).execute(db);
   return rows.map((raw) => {
     const row = raw;
     const state = runState(row);
@@ -513,16 +579,22 @@ export async function listRunItems(
 
 /** Editor and video-conversion deliveries report their media operation's state (paused, cancelled, a lost
  * lease still rendering) and one delivery per operation, as the queue page's counts do. */
+const operationQueue = (name: string) => name === QueueName.Editor || name === QueueName.VideoConversion;
+
 const reportedJobsForRun = (name: string) => {
   const columns = sql`j.id, j.queue, j."createdAt", j."progressAt", j."startedAt", j."finishedAt", j."runId", j."parentId",
     j."dependencyReason", j.attempt, j."retryBaseAttempt", j."latestPending"`;
-  return name === QueueName.Editor || name === QueueName.VideoConversion
+  return operationQueue(name)
     ? sql`select ${columns}, r.state, r."availableAt", r."operationPaused"
         from (${reportedQueueJobs(name)}) r join job j on j.id = r.id`
     : sql`select ${columns}, j.state, j."availableAt", false "operationPaused" from job j where j.queue = ${name}`;
 };
 
 export async function observeQueueRun(db: Kysely<any>, name: string) {
+  // Passed as values, not a subquery: the planner then reads each open run's own job count. A subquery is
+  // planned for an average run, which after a large scan means a pass over the queue's whole history.
+  const { rows: open } = await sql<{ id: string }>`select id from job_run where "finishedAt" is null`.execute(db);
+  const openRuns = open.map(({ id }) => id);
   const {
     rows: [row],
   } = await sql<{
@@ -537,16 +609,26 @@ export async function observeQueueRun(db: Kysely<any>, name: string) {
     blocked: number;
     retrying: number;
     noDispatchBacklog: boolean;
-  }>`with reported as not materialized (${reportedJobsForRun(name)}), current_jobs as (
+  }>`with reported as ${operationQueue(name) ? sql`materialized` : sql`not materialized`} (${reportedJobsForRun(name)}),
+    current_jobs as (
+      -- Two indexed reads instead of a pass over the queue's whole kept history (FL-1215): its live jobs, and
+      -- the finished jobs of runs still open.
       select j.*, q.paused or j."operationPaused" paused, p.state "parentState" from reported j join job_queue q on q.name = j.queue
-      left join job_run r on r.id = j."runId" left join job p on p.id = j."parentId"
-      where j.state in ('pending','waiting','active') or (j."runId" is not null and r."finishedAt" is null)
+      left join job p on p.id = j."parentId"
+      where j.state in ('pending','waiting','active')
+      union all
+      select j.*, q.paused or j."operationPaused" paused, p.state "parentState" from reported j join job_queue q on q.name = j.queue
+      left join job p on p.id = j."parentId"
+      where j.state not in ('pending','waiting','active') and j."runId" = any(${openRuns}::uuid[])
+    ), loose_start as (
+      select min("createdAt") at from current_jobs where "runId" is null
     ), loose_done as (
       -- Jobs outside a run (upload thumbnails, metadata…) leave the live set when they finish: count the ones
       -- finished since the oldest still waiting was queued, or Activity's percentage stays at 0 (FL-588).
-      select count(*)::int n from reported f where f."runId" is null
+      -- With none waiting there is nothing to count, so the kept history is not read at all.
+      select count(*)::int n from reported f where (select at from loose_start) is not null and f."runId" is null
         and f.state in ('completed','failed','cancelled','blocked') and f."latestPending" is null
-        and f."finishedAt" >= (select min("createdAt") from current_jobs where "runId" is null)
+        and f."finishedAt" >= (select at from loose_start)
     ) select count(*) filter (where state = 'active')::int active,
       count(*) filter (where state in ('pending','waiting'))::int waiting,
       (count(*) filter (where state in ('completed','failed','needs_attention','blocked','cancelled'))
