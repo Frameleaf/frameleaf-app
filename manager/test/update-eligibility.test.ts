@@ -590,3 +590,52 @@ test('a failed start whose server passed a health probe keeps the new database',
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+// Review: a successful probe can age out of Docker's five-entry health log before `up --wait` fails.
+test('a server seen healthy while starting is never rolled back after its probe ages out', async () => {
+  process.env.MANAGER_ML_ACCELERATION = 'cpu';
+  const directory = await mkdtemp(join(tmpdir(), 'manager-update-aged-probe-'));
+  const store = new Store(directory);
+  try {
+    const image = `fixture.invalid/server@sha256:${'a'.repeat(64)}`;
+    const current = { id: 'a'.repeat(12), project: 'frameleaf-test', release: 'frameleaf-v1.2.2', ml: false,
+      mounts: [], origin: 'new_library', port: 2283, sourceId: null, mayHaveWrittenMedia: true,
+      databaseRoot: directory, databasePath: join(directory, 'db') };
+    const release = { directory, nas: { tag: 'frameleaf-v1.2.3', images: { server: image, postgres: image, machineLearning: image } } };
+    await writeFile(join(directory, 'docker-compose.yml'), JSON.stringify({ services: {
+      database: {}, 'frameleaf-server': {}, 'frameleaf-machine-learning': {},
+    } }));
+    await mkdir(join(directory, 'stack'));
+    await writeFile(join(directory, 'stack', 'compose.json'), JSON.stringify({ services: { database: { image } } }));
+    store.set('installation', current);
+    store.set('database-password', 'fixture-only');
+    const { operation } = store.start('update', 'aged', { reviewId: 'r' });
+    operation.completed = ['download-images', 'stop-application', 'database-checkpoint'];
+    store.save(operation);
+    let log = [{ ExitCode: 0 }];
+    const composed: string[] = [];
+    const docker = {
+      compose: async (_d: string, _p: string, action: string) => {
+        composed.push(action);
+        await new Promise((pause) => setTimeout(pause, 50)); // the watcher sees the healthy probe
+        log = [1, 1, 1, 1, 1].map((ExitCode) => ({ ExitCode })); // ...which then ages out
+        throw new Error('container frameleaf-test-frameleaf-server-1 is unhealthy');
+      },
+      inventory: async () => [{ Id: 'c'.repeat(64), Config: { Image: image, Labels: {
+        'app.frameleaf.manager': current.id, 'com.docker.compose.service': 'frameleaf-server' } },
+        State: { Running: true, Health: { Status: log.some((p) => p.ExitCode === 0) ? 'healthy' : 'unhealthy', Log: log } } }],
+    };
+    const operations = new Operations(store, docker as never, { eligible: async () => {} } as never, {} as never, [],
+      { verify: async () => {} } as never);
+    operations.serverWatchMs = 5;
+    (operations as any).fencing = { assertMedia: async () => {} };
+    await assert.rejects((operations as any).applyUpdate(operation, { current, release }), /unhealthy/);
+    assert.equal(store.history()[0].receipts['server-served'], true, 'journaled while starting');
+    assert.equal(operation.receipts['release-start-state'], 'started');
+    assert.equal(operation.receipts['rollback-intent'], undefined);
+    assert.deepEqual(composed, ['up'], 'nothing was stopped or restored');
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});

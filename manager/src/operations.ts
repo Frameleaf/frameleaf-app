@@ -170,6 +170,8 @@ export class Operations {
   private fencing: Fencing;
   private retention: Retention;
   private executing = new Set<string>();
+  /** How often an update's start polls Docker for the new server's health. Docker keeps its last five probes. */
+  serverWatchMs = 5000;
   constructor(
     readonly store: Store,
     readonly docker: Docker,
@@ -1451,7 +1453,7 @@ export class Operations {
       // and the operation stays cancellable back to the previous release instead.
       if (operation.receipts['release-start-state'] !== 'starting') throw error;
       // Another service (machine learning) can fail `up --wait` after the server was healthy and took writes.
-      if (await this.serverMayHaveServed(review).catch(() => true)) {
+      if (operation.receipts['server-served'] || (await this.serverMayHaveServed(review).catch(() => true))) {
         operation.receipts['release-start-state'] = 'started';
         this.store.save(operation);
         throw error;
@@ -1503,17 +1505,34 @@ export class Operations {
         operation.receipts['release-start-state'] = 'starting';
         this.store.save(operation); // Persist intent before the target can write.
       }
-      await this.docker.compose(this.directory(), installation.project, 'up');
+      await this.watchServer(operation, review, () => this.docker.compose(this.directory(), installation.project, 'up'));
       operation.receipts['release-start-state'] = 'started';
       this.store.save(operation);
       return this.libraryStatus();
     });
   }
   /**
-   * Whether Docker shows the target's server passing a health probe. ponytail: Docker keeps only the last
-   * five probes, so a server that was healthy long before failing many probes reads as never served; the
-   * upgrade is a server-side "first request served" marker.
+   * Poll the new server while it starts and journal `server-served` the first time Docker shows it passing
+   * a health probe. Docker keeps only its last five probes, so the final log alone cannot prove the server
+   * never served. ponytail: polled every serverWatchMs, which must stay under five probe intervals; a
+   * server-side "first request served" marker is the upgrade if probes ever run faster than that.
    */
+  private async watchServer(operation: Operation, review: UpdateReview, start: () => Promise<void>): Promise<void> {
+    const check = async () => {
+      if (operation.receipts['server-served'] || !(await this.serverMayHaveServed(review).catch(() => false))) return;
+      operation.receipts['server-served'] = true;
+      this.store.save(operation);
+    };
+    const timer = setInterval(() => void check(), this.serverWatchMs);
+    timer.unref();
+    try {
+      await start();
+    } finally {
+      clearInterval(timer);
+      await check();
+    }
+  }
+  /** Whether Docker shows the target's server passing a health probe in its (bounded) health log. */
   private async serverMayHaveServed(review: UpdateReview): Promise<boolean> {
     const server = (await this.docker.inventory()).find(
       (c) =>
