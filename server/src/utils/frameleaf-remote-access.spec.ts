@@ -27,6 +27,7 @@ import {
   remoteEndpoints,
   remoteHostnameListSchema,
   remoteLabel,
+  remoteNameHosts,
   remotePublicUrl,
   renewalDue,
   retryDelayMs,
@@ -287,6 +288,38 @@ describe('frameleaf remote access (FL-165)', () => {
   });
 
   describe('public URL and candidates', () => {
+    it('publishes the frameleaf.net name while it routes, ahead of the relay name (FL-1197)', () => {
+      const names = enrollment();
+      expect(remotePublicUrl(names, settings(), 'taylor-home.frameleaf.net')).toBe('https://taylor-home.frameleaf.net');
+      const verified = settings({
+        publicUrl: 'custom',
+        customHostname: { host: 'photos.example.com', status: 'verified' },
+      });
+      expect(remotePublicUrl(names, verified, 'taylor-home.frameleaf.net')).toBe('https://photos.example.com');
+    });
+
+    it('lists the names a server answers for: the current one, and earlier ones for their 30 days (FL-1197)', () => {
+      const now = Date.parse('2026-11-04T12:00:00Z');
+      const state = {
+        instanceId: 'instance',
+        name: 'taylor-home',
+        address: 'Taylor-Home.frameleaf.net',
+        relayAddress: 'r.aaaaaaaaaaaaaaaa.frameleaf.net',
+        routed: true,
+        previous: [
+          { name: 'old', address: 'old.frameleaf.net', redirectUntil: '2026-11-20T00:00:00Z' },
+          { name: 'older', address: 'older.frameleaf.net', redirectUntil: '2026-11-01T00:00:00Z' },
+        ],
+        checkedAt: '2026-11-04T11:00:00Z',
+      };
+      expect(remoteNameHosts(state, 'instance', now)).toEqual({
+        current: 'taylor-home.frameleaf.net',
+        previous: ['old.frameleaf.net'],
+      });
+      expect(remoteNameHosts(state, 'another-link', now)).toEqual({ current: null, previous: [] });
+      expect(remoteNameHosts({ ...state, routed: false }, 'instance', now)).toEqual({ current: null, previous: [] });
+    });
+
     it('publishes the relay name, or the verified custom hostname when chosen', () => {
       const names = enrollment();
       expect(remotePublicUrl(null, settings())).toBeNull();

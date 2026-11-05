@@ -1423,6 +1423,23 @@ export type FrameleafRemoteConnection = {
 };
 
 /** FL-165: the last remote access self-check an administrator ran (`POST admin/cloud/remote/test`). */
+/**
+ * FL-1197: this server's chosen name on frameleaf.net (Frameleaf Cloud's `ServerNameState`), kept for the
+ * link it was read for. While `routed`, the name is the address links use; each previous name keeps
+ * routing, and the edge worker redirects it to the current one, until its `redirectUntil`.
+ */
+export type FrameleafRemoteName = {
+  instanceId: string;
+  name: string | null;
+  /** `taylor-home.frameleaf.net` */
+  address: string | null;
+  /** `r.<label>.frameleaf.net`; never changes */
+  relayAddress: string | null;
+  routed: boolean;
+  previous: Array<{ name: string; address: string; redirectUntil: string }>;
+  checkedAt: string;
+};
+
 export type FrameleafRemoteAccessTest = {
   at: string;
   ok: boolean;
@@ -1447,6 +1464,9 @@ export type FrameleafRemoteAccess = {
   certificateIssuance?: FrameleafEdgeIssuance;
   customCertificate?: (FrameleafEdgeCertificate & { host: string }) | null;
   customCertificateIssuance?: FrameleafEdgeIssuance & { host: string };
+  /** FL-1197: the certificate for the frameleaf.net name and the previous names still redirecting. */
+  nameCertificate?: (FrameleafEdgeCertificate & { hosts: string[] }) | null;
+  nameCertificateIssuance?: FrameleafEdgeIssuance & { hosts: string[] };
   /** The relay tunnel (FL-166): which relay, its round trip, since when, bytes and the last problem. */
   relay: {
     connected: boolean;
@@ -1529,6 +1549,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.FrameleafMlSuspension]: FrameleafMlSuspension;
   [SystemMetadataKey.FrameleafCloudBackup]: FrameleafCloudBackup;
   [SystemMetadataKey.FrameleafRemoteAccess]: FrameleafRemoteAccess;
+  [SystemMetadataKey.FrameleafRemoteName]: FrameleafRemoteName;
   [SystemMetadataKey.FrameleafRemoteAccessTest]: FrameleafRemoteAccessTest;
   [SystemMetadataKey.HardwareCheck]: HardwareCheck;
   [SystemMetadataKey.HelpIndex]: { index: HelpIndex; etag: string | null; fetchedAt: string };

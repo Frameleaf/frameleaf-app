@@ -21,6 +21,9 @@ import {
   RemoteAccessUpdateDto,
   RemoteAccessUsageResponseDto,
   RemoteHostnameUpdateDto,
+  RemoteNameCheckResponseDto,
+  RemoteNameStateResponseDto,
+  RemoteNameUpdateDto,
 } from 'src/dtos/frameleaf-remote-access.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
@@ -314,6 +317,46 @@ export class CloudAdminController {
   })
   testRemoteAccess(@Auth() auth: AuthDto): Promise<RemoteAccessStatusResponseDto> {
     return this.remoteAccessService.test(auth);
+  }
+
+  @Get('remote/name')
+  @Authenticated({ permission: Permission.AdminCloudRead, admin: true })
+  @Endpoint({
+    operationId: 'getRemoteName',
+    summary: "This server's name on frameleaf.net",
+    description:
+      'FL-1197: reads the name from Frameleaf Cloud: the address, the relay address that never changes, whether the name reaches this server now, and earlier names that still redirect.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getRemoteName(): Promise<RemoteNameStateResponseDto> {
+    return this.remoteAccessService.getName();
+  }
+
+  @Post('remote/name/check')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.AdminRemoteAccessUpdate, admin: true })
+  @Endpoint({
+    operationId: 'checkRemoteName',
+    summary: 'Check a name on frameleaf.net',
+    description:
+      'FL-1197: whether a name is available, taken, kept for Frameleaf or against the rules. Claims nothing.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  checkRemoteName(@Body() dto: RemoteNameUpdateDto): Promise<RemoteNameCheckResponseDto> {
+    return this.remoteAccessService.checkName(dto.name);
+  }
+
+  @Put('remote/name')
+  @Authenticated({ permission: Permission.AdminRemoteAccessUpdate, admin: true })
+  @Endpoint({
+    operationId: 'setRemoteName',
+    summary: "Change this server's name on frameleaf.net",
+    description:
+      'FL-1197: claims or changes the name. The old name keeps working for 30 days and the relay address never changes.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  setRemoteName(@Auth() auth: AuthDto, @Body() dto: RemoteNameUpdateDto): Promise<RemoteNameStateResponseDto> {
+    return this.remoteAccessService.setName(auth, dto.name);
   }
 
   @Put('remote/hostname')

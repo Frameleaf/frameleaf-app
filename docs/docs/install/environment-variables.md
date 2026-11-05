@@ -67,15 +67,14 @@ These environment variables are used by the `docker-compose.yml` file and do **N
 
 ## App releases
 
-| Variable                           | Description                                                                                                                  | Default | Containers | Workers |
-| :--------------------------------- | :--------------------------------------------------------------------------------------------------------------------------- | :-----: | :--------- | :------ |
-| `FRAMELEAF_ANDROID_RELEASE_URL`    | https folder holding this installation's signed Android APKs; `{version}` is replaced with the server version.<sup>\*1</sup> |         | server     | api     |
-| `FRAMELEAF_ANDROID_APP_ID`         | Android package id the APKs are signed as.                                                                                   |         | server     | api     |
-| `FRAMELEAF_ANDROID_SIGNING_SHA256` | SHA-256 fingerprint of the APK signing certificate, shown to people before they install.                                     |         | server     | api     |
-| `FRAMELEAF_IOS_APP_URL`            | https App Store or TestFlight page of the iOS app.                                                                           |         | server     | api     |
-| `FRAMELEAF_ANDROID_STORE_URL`      | https store listing of the Android app (Google Play, F-Droid or another store), offered next to the APKs.                    |         | server     | api     |
+Frameleaf's phone apps come from the App Store and Google Play. These override the listings the web app links to.
 
-\*1: The folder must contain `app-arm64-v8a-release.apk`, `app-armeabi-v7a-release.apk`, `app-x86_64-release.apk` and `app-release.apk` (universal). Android downloads are offered only when all three Android variables are set; a value that is set but invalid stops the server at startup. Without them the Mobile applications page says that no signed release is available.
+| Variable                      | Description                                        |   Default   | Containers | Workers |
+| :---------------------------- | :------------------------------------------------- | :---------: | :--------- | :------ |
+| `FRAMELEAF_IOS_APP_URL`       | https App Store or TestFlight page of the iOS app. |  App Store  | server     | api     |
+| `FRAMELEAF_ANDROID_STORE_URL` | https store listing of the Android app.            | Google Play | server     | api     |
+
+A value that is set but is not an https address stops the server at startup.
 
 ## Frameleaf Cloud
 

@@ -257,43 +257,17 @@ describe(ServerService.name, () => {
   });
 
   describe('app releases', () => {
-    const android = {
-      releaseUrl: 'https://releases.example.test/{version}',
-      appId: 'app.frameleaf.android',
-      signingSha256: `${'AB:'.repeat(31)}AB`,
-    };
-
-    it('reports both apps unavailable when no destination is configured', () => {
-      expect(sut.getAppReleases()).toEqual({ android: { available: false }, ios: { available: false } });
-    });
-
-    it('never links another product when no Android destination is configured', () => {
-      expect(() => sut.getApkLinks()).toThrow('No signed Android release is configured for this server');
-    });
-
-    it('offers the configured signed destinations', () => {
+    it('offers the two store listings, and never a direct download (FL-1200)', () => {
       mocks.config.getEnv.mockReturnValue(
-        mockEnvData({ appReleases: { android, iosUrl: 'https://apps.apple.com/app/id000' } }),
+        mockEnvData({
+          appReleases: { iosUrl: 'https://apps.apple.com/app/id000', androidStoreUrl: 'https://play.example/app' },
+        }),
       );
 
-      const releases = sut.getAppReleases();
-      expect(releases).toMatchObject({
-        android: { available: true, appId: android.appId, signingCertificateSha256: android.signingSha256 },
+      expect(sut.getAppReleases()).toEqual({
+        android: { available: true, storeUrl: 'https://play.example/app' },
         ios: { available: true, url: 'https://apps.apple.com/app/id000' },
       });
-      expect(releases.android.links?.universal).toMatch(
-        /^https:\/\/releases\.example\.test\/\d+\.\d+\.\d+\/app-release\.apk$/,
-      );
-      expect(sut.getApkLinks()).toEqual(releases.android.links);
-      expect(JSON.stringify(releases)).not.toContain('immich');
-    });
-
-    it('offers the Android store listing when one is configured (FL-135)', () => {
-      mocks.config.getEnv.mockReturnValue(
-        mockEnvData({ appReleases: { androidStoreUrl: 'https://f-droid.example/app' } }),
-      );
-
-      expect(sut.getAppReleases().android).toEqual({ available: false, storeUrl: 'https://f-droid.example/app' });
     });
   });
 

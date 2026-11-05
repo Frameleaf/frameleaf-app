@@ -19,6 +19,7 @@ import {
 import { ApiBody, ApiHeader, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { NextFunction, Request, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { StudioSiteDomainResponseDto } from 'src/dtos/frameleaf-remote-access.dto.js';
 import {
   PhotographyApprovalDto,
   PhotographyAssemblyDto,
@@ -104,6 +105,14 @@ export class PhotographyWorkflowController {
   site(@Auth() auth: AuthDto) {
     return this.siteService.site(auth);
   }
+  @Get('site/domain')
+  @ApiOperation({ operationId: 'photographySiteDomain' })
+  @Authenticated()
+  @ApiResponse({ status: 200, type: StudioSiteDomainResponseDto })
+  siteDomain(@Auth() auth: AuthDto) {
+    return this.siteService.siteDomain(auth);
+  }
+
   @Put('site')
   @ApiOperation({ operationId: 'photographySaveSite' })
   @Authenticated()

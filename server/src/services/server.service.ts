@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import type { FrameleafKeySigner } from 'src/utils/frameleaf-dpop.js';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -7,7 +7,6 @@ import { RemoteConnectionsResponseDto } from 'src/dtos/frameleaf-remote-access.d
 import {
   ImageCapabilitiesDto,
   ServerAboutResponseDto,
-  ServerApkLinksDto,
   ServerAppReleasesResponseDto,
   ServerConfigDto,
   ServerFeaturesDto,
@@ -23,7 +22,6 @@ import { StorageFolder, SystemMetadataKey } from 'src/enum.js';
 import { UserStatsQueryResponse } from 'src/repositories/user.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { DEFAULT_RAW_PROMPT_TEMPLATE } from 'src/services/prompt-assembler.service.js';
-import { apkLinks } from 'src/utils/app-releases.js';
 import { asHumanReadable } from 'src/utils/bytes.js';
 import { loadInstanceIdentity, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { localConnectionCandidates } from 'src/utils/frameleaf-lan-discovery.js';
@@ -165,34 +163,12 @@ export class ServerService extends BaseService {
     };
   }
 
-  /**
-   * The signed APKs of this server version, from the release destination the operator configured
-   * (FL-82). Without one there is nothing to download: installation is never sent to another
-   * product's releases.
-   */
-  getApkLinks(): ServerApkLinksDto {
-    const { android } = this.configRepository.getEnv().appReleases;
-    if (!android) {
-      throw new NotFoundException('No signed Android release is configured for this server');
-    }
-    return apkLinks(android.releaseUrl, serverVersion.toString());
-  }
-
-  /** What the app download and Obtainium setup pages can offer, and what is unavailable (FL-82). */
+  /** The phone apps' store listings, for the Mobile apps page and the app card (FL-82, FL-1195). */
   getAppReleases(): ServerAppReleasesResponseDto {
-    const { android, iosUrl, androidStoreUrl } = this.configRepository.getEnv().appReleases;
-    const store = androidStoreUrl ? { storeUrl: androidStoreUrl } : {};
+    const { iosUrl, androidStoreUrl } = this.configRepository.getEnv().appReleases;
     return {
-      android: android
-        ? {
-            available: true,
-            appId: android.appId,
-            signingCertificateSha256: android.signingSha256,
-            links: apkLinks(android.releaseUrl, serverVersion.toString()),
-            ...store,
-          }
-        : { available: false, ...store },
-      ios: iosUrl ? { available: true, url: iosUrl } : { available: false },
+      android: { available: true, storeUrl: androidStoreUrl },
+      ios: { available: true, url: iosUrl },
     };
   }
 

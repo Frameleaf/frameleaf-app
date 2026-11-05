@@ -2010,3 +2010,195 @@
   justify-content: flex-end;
   gap: 10px;
 }
+/* Publishing (approved design, 2026-11-04): Self-hosted or Cloud Pro, then the studio's publishing space. */
+.phw-publishing {
+  max-width: 1120px;
+}
+.phw-publish-paths {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-bottom: 24px;
+}
+.phw-publish-paths > button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 20px;
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-card);
+  background: var(--fl-panel);
+  color: var(--fl-text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.phw-publish-paths > button[aria-pressed='true'] {
+  border-color: var(--fl-accent);
+}
+.phw-publish-paths > button > svg:first-child {
+  grid-column: 1;
+  color: var(--fl-muted);
+}
+.phw-publish-paths strong {
+  grid-column: 1;
+  font-size: var(--fl-font-headline);
+  font-weight: 600;
+}
+.phw-publish-paths span {
+  grid-column: 1;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-callout);
+  line-height: 1.6;
+}
+.phw-publish-paths small {
+  grid-column: 1;
+  margin-top: 5px;
+  font-size: var(--fl-font-callout);
+}
+.phw-publish-paths > button > svg:last-child {
+  grid-column: 2;
+  grid-row: 1;
+  color: var(--fl-accent);
+}
+.phw-publish-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 270px;
+  gap: 24px;
+  align-items: start;
+}
+.phw-publishing-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 22px;
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-card);
+  background: var(--fl-panel);
+}
+.phw-publishing-form .phw-section-heading {
+  margin: 0;
+  align-items: start;
+}
+.phw-publishing-form h2 {
+  margin: 0;
+  font-size: var(--fl-font-headline);
+}
+.phw-publishing-form label {
+  display: grid;
+  gap: 6px;
+}
+.phw-publishing-form label small,
+.phw-small {
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+}
+.phw-publish-state {
+  padding: 4px 8px;
+  border: 1px solid var(--fl-border);
+  border-radius: 6px;
+  font-size: var(--fl-font-small);
+  white-space: nowrap;
+}
+.phw-publish-state.is-live {
+  border-color: var(--fl-accent);
+  color: var(--fl-accent);
+}
+.phw-pro-note {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-card);
+  background: linear-gradient(90deg, var(--fl-accent-soft), transparent 75%), var(--fl-raised);
+}
+.phw-pro-note > svg {
+  color: var(--fl-accent);
+}
+.phw-pro-note p {
+  margin: 0;
+  color: var(--fl-muted);
+  line-height: 1.5;
+}
+.phw-pro-note strong {
+  color: var(--fl-text);
+}
+.phw-pro-includes {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-inline-start: 18px;
+}
+.phw-server-address {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 12px;
+  font-size: var(--fl-font-callout);
+}
+.phw-server-address span {
+  color: var(--fl-muted);
+}
+.phw-server-address strong {
+  font-variant-numeric: tabular-nums;
+  word-break: break-all;
+}
+.phw-server-address a {
+  color: var(--fl-accent);
+}
+.phw-publish-parts {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 14px 0 0;
+  list-style: none;
+  border-top: 1px solid var(--fl-border);
+}
+.phw-publish-parts li {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+.phw-publish-parts span {
+  display: grid;
+  gap: 2px;
+}
+.phw-privacy {
+  padding: 8px 0;
+}
+.phw-privacy > svg {
+  margin-bottom: 10px;
+  color: var(--fl-accent);
+}
+.phw-privacy h2 {
+  margin: 0 0 8px;
+  font-size: var(--fl-font-headline);
+}
+.phw-privacy p,
+.phw-privacy li {
+  color: var(--fl-muted);
+  font-size: var(--fl-font-callout);
+  line-height: 1.5;
+}
+.phw-privacy ul,
+.phw-pro-includes {
+  display: grid;
+  gap: 8px;
+  padding-inline-start: 18px;
+  list-style: disc;
+}
+@media (max-width: 900px) {
+  .phw-publish-paths,
+  .phw-publish-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .phw-pro-note {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .phw-pro-note > :last-child {
+    grid-column: 1 / -1;
+  }
+}

@@ -214,6 +214,13 @@ describe('relay tunnel protocol', () => {
       expect(relayVisitorNameAllowed(name, enrollment, 'photos.example.com')).toBe(allowed);
     });
 
+    it('serves the frameleaf.net name and the previous names it was given, no others (FL-1197)', () => {
+      const names = ['taylor-home.frameleaf.net', 'old.frameleaf.net'];
+      expect(relayVisitorNameAllowed('taylor-home.frameleaf.net', enrollment, null, names)).toBe(true);
+      expect(relayVisitorNameAllowed('old.frameleaf.net.', enrollment, null, names)).toBe(true);
+      expect(relayVisitorNameAllowed('someone-else.frameleaf.net', enrollment, null, names)).toBe(false);
+    });
+
     it('serves no custom hostname unless one is verified', () => {
       expect(relayVisitorNameAllowed('photos.example.com', enrollment, null)).toBe(false);
     });

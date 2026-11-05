@@ -13,9 +13,40 @@ import { TEARDOWN_MS, classifyArrival, isLoopbackPeer } from 'src/utils/framelea
 export type EdgeContexts = {
   wildcard: { certificate: string; key: string };
   custom?: { host: string; certificate: string; key: string } | null;
+  /** FL-1197: the frameleaf.net name and the previous names that still redirect. */
+  name?: { hosts: string[]; certificate: string; key: string } | null;
 };
 
-type LoadedContexts = { wildcard: SecureContext; custom: { host: string; context: SecureContext } | null };
+type LoadedContexts = {
+  wildcard: SecureContext;
+  custom: { host: string; context: SecureContext } | null;
+  name: { hosts: string[]; context: SecureContext } | null;
+};
+
+/** The secure contexts for a set of certificates. */
+export const loadContexts = (contexts: EdgeContexts): LoadedContexts => ({
+  wildcard: tls.createSecureContext({ cert: contexts.wildcard.certificate, key: contexts.wildcard.key }),
+  custom: contexts.custom
+    ? {
+        host: contexts.custom.host,
+        context: tls.createSecureContext({ cert: contexts.custom.certificate, key: contexts.custom.key }),
+      }
+    : null,
+  name: contexts.name
+    ? {
+        hosts: contexts.name.hosts,
+        context: tls.createSecureContext({ cert: contexts.name.certificate, key: contexts.name.key }),
+      }
+    : null,
+});
+
+/** The context for a server name: the custom hostname's, the frameleaf.net name's, else the wildcard. */
+export const contextForName = (contexts: LoadedContexts, name: string): SecureContext =>
+  contexts.custom && name === contexts.custom.host
+    ? contexts.custom.context
+    : contexts.name?.hosts.includes(name)
+      ? contexts.name.context
+      : contexts.wildcard;
 type WildcardPem = { cert: string; key: string };
 
 /** The TLS handshake must finish within this long. */
@@ -72,15 +103,7 @@ export class EdgeDirectService {
     advertised: string[];
   }) {
     const { contexts } = input;
-    this.contexts = {
-      wildcard: tls.createSecureContext({ cert: contexts.wildcard.certificate, key: contexts.wildcard.key }),
-      custom: contexts.custom
-        ? {
-            host: contexts.custom.host,
-            context: tls.createSecureContext({ cert: contexts.custom.certificate, key: contexts.custom.key }),
-          }
-        : null,
-    };
+    this.contexts = loadContexts(contexts);
     this.wildcardPem = { cert: contexts.wildcard.certificate, key: contexts.wildcard.key };
     // A renewal while already listening: node:tls only reads the constructor's cert/key once, so the
     // default used for a ClientHello with no SNI needs updating in place too (SNICallback is always
@@ -173,7 +196,7 @@ export class EdgeDirectService {
       return;
     }
     const name = servername.toLowerCase().replace(/\.$/, '');
-    return contexts.custom && name === contexts.custom.host ? contexts.custom.context : contexts.wildcard;
+    return contextForName(contexts, name);
   }
 
   /** A peer at the listener's own bind address: this host (the self-check with a specific bind). */

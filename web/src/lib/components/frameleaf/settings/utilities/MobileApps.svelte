@@ -3,16 +3,13 @@
    * Utilities › Mobile apps, first screen (FL-539, after the prototype's `PhoneApps` in
    * `settings-v2/library/utilities.jsx`): whether a phone is backing up, the two stores, a code to
    * scan that fills in this server's address (the app still signs in with each person's own account),
-   * and "Your phones", each person seeing only their own. Installing the Android file without a store
-   * (FL-82, `ApplicationSetup`) is under Advanced.
+   * and "Your phones", each person seeing only their own. The apps come only from the stores (FL-1200).
    *
    * The code carries only this server's address (the public address when one is set, else the one
    * this page was opened at): never a password or a key.
    */
-  import ApplicationSetup from '$lib/components/frameleaf/ApplicationSetup.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import QrCode from '$lib/components/frameleaf/QrCode.svelte';
-  import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
   import Item from '$lib/components/frameleaf/settings/kit/Item.svelte';
   import ItemList from '$lib/components/frameleaf/settings/kit/ItemList.svelte';
@@ -160,9 +157,6 @@
         />
       {/if}
     </ItemList>
-    <Advanced summary={$t('frameleaf_mobile_no_store')}>
-      <ApplicationSetup />
-    </Advanced>
   </Section>
 </KitPage>
 

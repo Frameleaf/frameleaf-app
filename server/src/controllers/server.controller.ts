@@ -1,12 +1,11 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req } from '@nestjs/common';
-import { ApiNotFoundResponse, ApiTags } from '@nestjs/swagger';
+import { ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { RemoteConnectionsResponseDto } from 'src/dtos/frameleaf-remote-access.dto.js';
 import {
   ReleaseEventV1,
   ServerAboutResponseDto,
-  ServerApkLinksDto,
   ServerAppReleasesResponseDto,
   ServerConfigDto,
   ServerFeaturesDto,
@@ -48,19 +47,6 @@ export class ServerController {
   })
   getAboutInfo(): Promise<ServerAboutResponseDto> {
     return this.service.getAboutInfo();
-  }
-
-  @Get('apk-links')
-  @Authenticated({ permission: Permission.ServerApkLinks })
-  @ApiNotFoundResponse({ description: 'No signed Android release is configured for this server' })
-  @Endpoint({
-    summary: 'Get APK links',
-    description:
-      'Retrieve links to the signed APKs for the current server version, from the release destination configured for this server.',
-    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
-  })
-  getApkLinks(): ServerApkLinksDto {
-    return this.service.getApkLinks();
   }
 
   @Get('app-releases')

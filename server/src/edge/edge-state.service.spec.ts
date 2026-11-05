@@ -56,7 +56,7 @@ describe(EdgeStateService.name, () => {
   let identityDir: string;
   let certificates: EdgeCertificateRepository;
   let direct: { listening: boolean; configure: any; start: any; stop: any };
-  let proxy: { destroy: any; configureRecovery: any };
+  let proxy: { destroy: any; configureRecovery: any; configureNames: any };
   let relay: { configure: any; ensure: any; stop: any; status: any; state: Record<string, unknown> };
   let portMapping: { keep: any; release: any; result: Record<string, unknown> };
   let wanProbe: Record<string, unknown>;
@@ -154,7 +154,7 @@ describe(EdgeStateService.name, () => {
         return Promise.resolve();
       }),
     };
-    proxy = { destroy: vi.fn(), configureRecovery: vi.fn() };
+    proxy = { destroy: vi.fn(), configureRecovery: vi.fn(), configureNames: vi.fn() };
     relay = {
       state: { connected: false },
       configure: vi.fn(),

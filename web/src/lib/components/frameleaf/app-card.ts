@@ -15,8 +15,7 @@ import type { ServerAppReleasesResponseDto } from '@frameleaf/sdk';
 export type AppCardPlatform = 'ios' | 'android';
 
 /** What the sheet offers: the platform's store page, or (Android only) this server's own download page. */
-export type AppCardOffer =
-  { platform: AppCardPlatform; kind: 'store'; href: string } | { platform: 'android'; kind: 'downloads' };
+export type AppCardOffer = { platform: AppCardPlatform; kind: 'store'; href: string };
 
 export const APP_CARD_STORAGE_KEY = 'frameleaf:app-card:v1';
 export const APP_CARD_SNOOZE_MS = 30 * 24 * 60 * 60 * 1000;
@@ -77,8 +76,7 @@ const isHttps = (value: string | undefined): value is string => {
 
 /**
  * What the sheet offers on this platform, or null when the server names no release for it. iPhone
- * needs the App Store page; Android prefers its store page and otherwise points to this server's
- * own signed download.
+ * needs the App Store page and Android its store listing (FL-1200: the apps come only from the stores).
  */
 export const appCardOffer = (
   releases: ServerAppReleasesResponseDto | null | undefined,
@@ -92,10 +90,7 @@ export const appCardOffer = (
       ? { platform, kind: 'store', href: releases.ios.url }
       : null;
   }
-  if (isHttps(releases.android.storeUrl)) {
-    return { platform, kind: 'store', href: releases.android.storeUrl };
-  }
-  return releases.android.available ? { platform, kind: 'downloads' } : null;
+  return isHttps(releases.android.storeUrl) ? { platform, kind: 'store', href: releases.android.storeUrl } : null;
 };
 
 type ReadableStorage = Pick<Storage, 'getItem'>;

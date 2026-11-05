@@ -5,8 +5,11 @@ import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 
-/** The certificates the edge worker holds: the `*.<label>` wildcard, and one for the custom hostname. */
-export type EdgeCertificateKind = 'wildcard' | 'custom';
+/**
+ * The certificates the edge worker holds: the `*.<label>` wildcard, one for the custom hostname, and
+ * one for the frameleaf.net name and its previous names (FL-1197).
+ */
+export type EdgeCertificateKind = 'wildcard' | 'custom' | 'name';
 
 export type EdgeCertificatePair = { certificate: string; key: string };
 
@@ -108,7 +111,7 @@ export class EdgeCertificateRepository {
   }
 
   /** Remove certificates and their keys (remote access turned off, or the server unlinked). */
-  async remove(identityDir: string, kinds: EdgeCertificateKind[] = ['wildcard', 'custom']) {
+  async remove(identityDir: string, kinds: EdgeCertificateKind[] = ['wildcard', 'custom', 'name']) {
     const dir = this.directory(identityDir);
     for (const kind of kinds) {
       await rm(join(dir, keyFile(kind)), { force: true });

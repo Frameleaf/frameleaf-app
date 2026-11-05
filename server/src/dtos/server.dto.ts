@@ -148,35 +148,17 @@ const ServerAboutResponseSchema = z
   })
   .meta({ id: 'ServerAboutResponseDto' });
 
-const ServerApkLinksSchema = z
-  .object({
-    arm64v8a: z.string().describe('APK download link for ARM64 v8a architecture'),
-    armeabiv7a: z.string().describe('APK download link for ARM EABI v7a architecture'),
-    universal: z.string().describe('APK download link for universal architecture'),
-    x86_64: z.string().describe('APK download link for x86_64 architecture'),
-  })
-  .meta({ id: 'ServerApkLinksDto' });
-
 const ServerAppReleasesResponseSchema = z
   .object({
     android: z
       .object({
-        available: z.boolean().describe('Whether a signed Android release is configured for this server'),
-        appId: z.string().optional().describe('Android package id of the signed release'),
-        signingCertificateSha256: z
-          .string()
-          .optional()
-          .describe('SHA-256 fingerprint of the release signing certificate, as AA:BB:...'),
-        links: ServerApkLinksSchema.optional().describe('Signed APK downloads for this server version'),
-        storeUrl: z
-          .string()
-          .optional()
-          .describe('Store listing of the Android app, when the operator configured one (FL-135)'),
+        available: z.boolean().describe('Whether the Android app has a store listing'),
+        storeUrl: z.string().optional().describe('Store listing of the Android app (Google Play by default)'),
       })
       .describe('Android application'),
     ios: z
       .object({
-        available: z.boolean().describe('Whether an iOS release is configured for this server'),
+        available: z.boolean().describe('Whether the iOS app has a store listing'),
         url: z.string().optional().describe('App Store or TestFlight page'),
       })
       .describe('iOS application'),
@@ -388,7 +370,6 @@ export class ServerIdentityResponseDto extends createZodDto(ServerIdentityRespon
 export class ServerIdentityChallengeDto extends createZodDto(ServerIdentityChallengeSchema) {}
 export class ServerIdentityChallengeResponseDto extends createZodDto(ServerIdentityChallengeResponseSchema) {}
 export class ServerAboutResponseDto extends createZodDto(ServerAboutResponseSchema) {}
-export class ServerApkLinksDto extends createZodDto(ServerApkLinksSchema) {}
 export class ServerAppReleasesResponseDto extends createZodDto(ServerAppReleasesResponseSchema) {}
 export class ServerStorageResponseDto extends createZodDto(ServerStorageResponseSchema) {}
 

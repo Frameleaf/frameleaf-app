@@ -41,7 +41,8 @@ describe('Mobile apps, first screen (FL-539)', () => {
     expect(screen.getByRole('link', { name: 'Get it on Google Play' })).toBeInTheDocument();
     expect(screen.getByText('https://photos.example.test')).toBeInTheDocument();
     expect(screen.getByText('Taylor’s iPhone')).toBeInTheDocument();
-    expect(screen.getByText('Advanced: install without a store')).toBeInTheDocument();
+    // FL-1200: the apps come only from the stores
+    expect(screen.queryByText(/install without a store/i)).toBeNull();
   });
 
   it('says no phone is connected yet', async () => {

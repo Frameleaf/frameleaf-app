@@ -1247,6 +1247,12 @@ export type RemoteAccessStatusResponseDto = {
     enabled: boolean;
     /** https://r.<label>.<direct domain> once enrolled; without a plan, the direct address Frameleaf Cloud reached */
     frameleafAddress: string | null;
+    /** FL-1197: this server's chosen name on frameleaf.net, if any */
+    frameleafName: string | null;
+    /** FL-1197: the name as an address (taylor-home.frameleaf.net) while it routes */
+    frameleafNameAddress: string | null;
+    /** FL-1197: the name reaches this server now */
+    frameleafNameRouted: boolean;
     lastTestAt: string | null;
     lastTestChecks: RemoteAccessTestCheckDto[];
     lastTestOk: boolean | null;
@@ -1309,6 +1315,31 @@ export type CloudRemoteAccessUpdateDto = {
 export type RemoteHostnameUpdateDto = {
     /** A subdomain of a domain you own, such as photos.example.com */
     hostname: string;
+};
+export type RemoteNamePreviousDto = {
+    address: string;
+    name: string;
+    redirectUntil: string;
+};
+export type RemoteNameStateResponseDto = {
+    /** taylor-home.frameleaf.net */
+    address: string | null;
+    name: string | null;
+    previous: RemoteNamePreviousDto[];
+    /** r.<label>.frameleaf.net; never changes */
+    relayAddress: string | null;
+    routed: boolean;
+};
+export type RemoteNameUpdateDto = {
+    /** The name to check or claim, such as taylor-home */
+    name: string;
+};
+export type RemoteNameCheckResponseDto = {
+    address: string | null;
+    message: string | null;
+    name: string;
+    reason: Reason | null;
+    verdict: RemoteNameVerdict;
 };
 export type RemoteAccessUsageResponseDto = {
     /** Bytes through the relay this month, in and out, custom hostnames included */
@@ -12103,6 +12134,24 @@ export type PhotographySiteSaveDto = {
         trustedBy: string[];
     };
 };
+export type StudioSiteRecordDto = {
+    name: string;
+    "type": StudioSiteRecordType;
+    value: string;
+};
+export type StudioSiteDomainDto = {
+    checkedAt: string | null;
+    domain: string;
+    problem: Problem | null;
+    records: StudioSiteRecordDto[];
+    slug: string;
+    status: StudioSiteDomainStatus;
+} | null;
+export type StudioSiteDomainResponseDto = {
+    /** Why the domain can't be served or checked now, in plain words */
+    problem: string | null;
+    site: StudioSiteDomainDto;
+};
 export type PhotographyPublicSiteDto = {
     about: string;
     brand: {
@@ -15138,33 +15187,17 @@ export type ServerAboutResponseDto = {
     /** URL to version information */
     versionUrl: string;
 };
-export type ServerApkLinksDto = {
-    /** APK download link for ARM64 v8a architecture */
-    arm64v8a: string;
-    /** APK download link for ARM EABI v7a architecture */
-    armeabiv7a: string;
-    /** APK download link for universal architecture */
-    universal: string;
-    /** APK download link for x86_64 architecture */
-    x86_64: string;
-};
 export type ServerAppReleasesResponseDto = {
     /** Android application */
     android: {
-        /** Android package id of the signed release */
-        appId?: string;
-        /** Whether a signed Android release is configured for this server */
+        /** Whether the Android app has a store listing */
         available: boolean;
-        /** Signed APK downloads for this server version */
-        links?: ServerApkLinksDto;
-        /** SHA-256 fingerprint of the release signing certificate, as AA:BB:... */
-        signingCertificateSha256?: string;
-        /** Store listing of the Android app, when the operator configured one (FL-135) */
+        /** Store listing of the Android app (Google Play by default) */
         storeUrl?: string;
     };
     /** iOS application */
     ios: {
-        /** Whether an iOS release is configured for this server */
+        /** Whether the iOS app has a store listing */
         available: boolean;
         /** App Store or TestFlight page */
         url?: string;
@@ -21694,6 +21727,47 @@ export function checkRemoteHostname(opts?: Oazapfts.RequestOpts) {
         ...opts,
         method: "POST"
     }));
+}
+/**
+ * This server's name on frameleaf.net
+ */
+export function getRemoteName(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RemoteNameStateResponseDto;
+    }>("/admin/cloud/remote/name", {
+        ...opts
+    }));
+}
+/**
+ * Change this server's name on frameleaf.net
+ */
+export function setRemoteName({ remoteNameUpdateDto }: {
+    remoteNameUpdateDto: RemoteNameUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RemoteNameStateResponseDto;
+    }>("/admin/cloud/remote/name", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: remoteNameUpdateDto
+    })));
+}
+/**
+ * Check a name on frameleaf.net
+ */
+export function checkRemoteName({ remoteNameUpdateDto }: {
+    remoteNameUpdateDto: RemoteNameUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RemoteNameCheckResponseDto;
+    }>("/admin/cloud/remote/name/check", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: remoteNameUpdateDto
+    })));
 }
 /**
  * Test remote access
@@ -30285,6 +30359,14 @@ export function photographySaveSite({ photographySiteSaveDto }: {
         body: photographySiteSaveDto
     })));
 }
+export function photographySiteDomain(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioSiteDomainResponseDto;
+    }>("/photography/site/domain", {
+        ...opts
+    }));
+}
 export function photographyPublicLogo({ ownerId }: {
     ownerId: string;
 }, opts?: Oazapfts.RequestOpts) {
@@ -31851,19 +31933,6 @@ export function getAboutInfo(opts?: Oazapfts.RequestOpts) {
         status: 200;
         data: ServerAboutResponseDto;
     }>("/server/about", {
-        ...opts
-    }));
-}
-/**
- * Get APK links
- */
-export function getApkLinks(opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: ServerApkLinksDto;
-    } | {
-        status: 404;
-    }>("/server/apk-links", {
         ...opts
     }));
 }
@@ -36330,9 +36399,6 @@ export enum EnvironmentKeys {
     FrameleafWorkersInclude = "FRAMELEAF_WORKERS_INCLUDE",
     FrameleafWorkersExclude = "FRAMELEAF_WORKERS_EXCLUDE",
     FrameleafRecoveryRoots = "FRAMELEAF_RECOVERY_ROOTS",
-    FrameleafAndroidReleaseUrl = "FRAMELEAF_ANDROID_RELEASE_URL",
-    FrameleafAndroidAppId = "FRAMELEAF_ANDROID_APP_ID",
-    FrameleafAndroidSigningSha256 = "FRAMELEAF_ANDROID_SIGNING_SHA256",
     FrameleafIosAppUrl = "FRAMELEAF_IOS_APP_URL",
     FrameleafCloudUrl = "FRAMELEAF_CLOUD_URL",
     FrameleafPushUrl = "FRAMELEAF_PUSH_URL",
@@ -36667,6 +36733,21 @@ export enum RemoteAccessState {
     Ready = "ready",
     Error = "error",
     Unknown = "unknown"
+}
+export enum Reason {
+    TooShort = "too_short",
+    TooLong = "too_long",
+    Characters = "characters",
+    HyphenAtEdge = "hyphen_at_edge",
+    Reserved = "reserved",
+    Taken = "taken"
+}
+export enum RemoteNameVerdict {
+    Available = "available",
+    Current = "current",
+    Taken = "taken",
+    Reserved = "reserved",
+    Invalid = "invalid"
 }
 export enum CloudTourEnding {
     Finished = "finished",
@@ -39312,6 +39393,26 @@ export enum PhotographySiteTemplate {
     Cinematic = "cinematic",
     Noir = "noir",
     Commercial = "commercial"
+}
+export enum Problem {
+    CnameMissing = "cname_missing",
+    CnameMismatch = "cname_mismatch",
+    TxtMissing = "txt_missing",
+    TxtMismatch = "txt_mismatch",
+    ClaimedElsewhere = "claimed_elsewhere",
+    CertificatePending = "certificate_pending",
+    CertificateFailed = "certificate_failed",
+    SiteUnreachable = "site_unreachable"
+}
+export enum StudioSiteRecordType {
+    Cname = "CNAME",
+    Txt = "TXT"
+}
+export enum StudioSiteDomainStatus {
+    WaitingForDns = "waiting_for_dns",
+    CertificateIssued = "certificate_issued",
+    Active = "active",
+    NeedsPlan = "needs_plan"
 }
 export enum State6 {
     Imported = "imported",

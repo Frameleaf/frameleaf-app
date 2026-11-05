@@ -13,6 +13,7 @@
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import FrameleafName from '$lib/components/frameleaf/cloud/FrameleafName.svelte';
   import QrCode from '$lib/components/frameleaf/QrCode.svelte';
   import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
   import Choice from '$lib/components/frameleaf/settings/kit/Choice.svelte';
@@ -46,6 +47,7 @@
     checkRemoteHostname,
     getRemoteAccess,
     getRemoteAccessUsage,
+    getRemoteName,
     removeRemoteHostname,
     setRemoteHostname,
     testRemoteAccess,
@@ -53,6 +55,7 @@
     type RemoteAccessStatusResponseDto,
     type RemoteAccessUpdateDto,
     type RemoteAccessUsageResponseDto,
+    type RemoteNameStateResponseDto,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import { mdiContentCopy, mdiSpeedometerSlow, mdiWebCheck, mdiWebClock, mdiWebOff } from '@mdi/js';
@@ -96,7 +99,10 @@
   // a configuration file manages the settings: the field is read-only, as on every settings page
   const configFile = $derived(settingsDraft ? featureFlagsManager.value.configFile : false);
   const serverUrl = $derived(settingsDraft?.draft.server.externalDomain ?? remote?.publicUrl ?? '');
-  const frameleafUrl = $derived(remote?.frameleafAddress ?? '');
+  // FL-1197: the name on frameleaf.net is the Frameleaf address once it routes; the relay address stays behind it
+  const frameleafUrl = $derived(
+    remote?.frameleafNameAddress ? `https://${remote.frameleafNameAddress}` : (remote?.frameleafAddress ?? ''),
+  );
   const choseCustom = $derived(remote?.publicUrlChoice === RemoteAccessPublicUrl.Custom);
 
   const records = $derived(
@@ -277,6 +283,23 @@
       }
     })();
   });
+  // FL-1197: the name and the names that still lead here, asked for where the relay is available
+  let nameState = $state<RemoteNameStateResponseDto | null>(null);
+  $effect(() => {
+    if (!usageAvailable) {
+      nameState = null;
+      return;
+    }
+    void (async () => {
+      try {
+        nameState = await getRemoteName();
+      } catch {
+        nameState = null;
+      }
+    })();
+  });
+  const relayHost = $derived(remote?.frameleafAddress ? new URL(remote.frameleafAddress).host : '');
+
   const usageRatio = $derived(usage && usage.limitBytes > 0 ? Math.min(1, usage.bytes / usage.limitBytes) : 0);
   const throttleSpeed = (bps: number) =>
     `${Number((bps / 1_000_000).toFixed(1)).toLocaleString($locale ?? undefined)} Mbit/s`;
@@ -520,6 +543,23 @@
         </div>
       {/if}
     </Hero>
+
+    {#if usageAvailable && remote}
+      <Section title={$t('frameleaf_name_title')} description={$t('frameleaf_name_description')}>
+        <FrameleafName
+          name={nameState?.name ?? remote.frameleafName}
+          previous={nameState?.previous}
+          onSaved={(state, message) => {
+            nameState = state;
+            notice = message;
+            void load();
+          }}
+        />
+        {#if relayHost}
+          <p class="hint">{$t('frameleaf_name_relay_hint', { values: { address: relayHost } })}</p>
+        {/if}
+      </Section>
+    {/if}
 
     {#if !blocked}
       <Section title={$t('frameleaf_remote_title')}>

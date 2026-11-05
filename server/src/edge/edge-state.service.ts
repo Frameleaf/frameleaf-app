@@ -56,6 +56,7 @@ import {
   nextRenewalCheck,
   remoteEndpoints,
   remoteEntitlement,
+  remoteNameHosts,
   renewalDue,
   retryDelayMs,
   verifiedCustomHost,
@@ -490,6 +491,8 @@ export class EdgeStateService {
       certificateIssuance: previous?.certificateIssuance,
       customCertificate: previous?.customCertificate ?? null,
       customCertificateIssuance: previous?.customCertificateIssuance,
+      nameCertificate: previous?.nameCertificate ?? null,
+      nameCertificateIssuance: previous?.nameCertificateIssuance,
     };
 
     // enrolment: the label, names, relay assignment and CAA parameters
@@ -571,6 +574,38 @@ export class EdgeStateService {
       state.customCertificateIssuance = undefined;
     }
 
+    // FL-1197: the frameleaf.net name, and each previous name for its 30 days, through the relay only
+    const nameState = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafRemoteName);
+    const nameHosts = desired.noRelay
+      ? { current: null, previous: [] }
+      : remoteNameHosts(nameState, desired.link.instanceId, now);
+    const names = nameHosts.current ? [nameHosts.current, ...nameHosts.previous] : [];
+    this.proxy.configureNames(nameHosts.current, nameHosts.previous);
+    let named: { hosts: string[]; certificate: string; key: string } | null = null;
+    if (names.length > 0) {
+      const key = names.join(',');
+      const result = await this.keepCertificate({
+        kind: 'name',
+        names,
+        identityDir,
+        enrollment: state.names,
+        facts: state.nameCertificate?.hosts.join(',') === key ? state.nameCertificate : null,
+        issuance: state.nameCertificateIssuance?.hosts.join(',') === key ? state.nameCertificateIssuance : undefined,
+        cloud,
+        now,
+        onAccount: (accountUri) => {
+          state.acmeAccountUri = accountUri;
+        },
+      });
+      state.nameCertificate = result.facts ? { ...result.facts, hosts: names } : null;
+      state.nameCertificateIssuance = { ...result.issuance, hosts: names };
+      named = result.pair ? { hosts: names, ...result.pair } : null;
+    } else if (state.nameCertificate || state.nameCertificateIssuance) {
+      await this.certificates.remove(identityDir, ['name']);
+      state.nameCertificate = null;
+      state.nameCertificateIssuance = undefined;
+    }
+
     // the direct listener, with the certificates in hand
     const addresses = this.addresses();
     const trustedLanCidrs = this.configRepository.getEnv().frameleafCloud.trustedLanCidrs;
@@ -586,18 +621,23 @@ export class EdgeStateService {
         wildcard.facts?.serial,
         custom?.host,
         state.customCertificate?.serial,
+        named?.hosts,
+        state.nameCertificate?.serial,
         settings.mode,
         enrollment.label,
         enrollment.domain,
       ]);
       if (signature !== this.served) {
         this.direct.configure({
-          contexts: { wildcard: wildcard.pair, custom },
+          contexts: { wildcard: wildcard.pair, custom, ...(named && { name: named }) },
           enrollment,
           allowWan: settings.mode === 'relay-and-direct',
           advertised,
         });
-        this.relay.configure({ contexts: { wildcard: wildcard.pair, custom }, enrollment });
+        this.relay.configure({
+          contexts: { wildcard: wildcard.pair, custom, ...(named && { name: named }) },
+          enrollment,
+        });
         this.served = signature;
       }
       // the relay is the baseline path: it runs whatever the direct listener does, given a plan
@@ -609,6 +649,7 @@ export class EdgeStateService {
               linkKey: `${desired.link.instanceId}|${desired.link.linkedAt ?? ''}`,
               enrollment,
               cloud,
+              namesKey: named ? named.hosts.join(',') : '',
               ...(desired.buddyOnly && { buddyOnly: true }),
             },
             now,

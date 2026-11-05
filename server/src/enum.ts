@@ -396,6 +396,7 @@ export enum Permission {
   PluginDelete = 'plugin.delete',
 
   ServerAbout = 'server.about',
+  /** @deprecated FL-1200: the direct APK download is gone; kept so API keys that list it still load. */
   ServerApkLinks = 'server.apkLinks',
   ServerStorage = 'server.storage',
   ServerStatistics = 'server.statistics',
@@ -599,6 +600,8 @@ export enum SystemMetadataKey {
    * candidates. Written by the edge worker, read by the API.
    */
   FrameleafRemoteAccess = 'frameleaf-remote-access',
+  /** FL-1197: this server's chosen name on frameleaf.net, as Frameleaf Cloud last reported it. */
+  FrameleafRemoteName = 'frameleaf-remote-name',
   /** FL-165: the last remote access self-check an administrator ran (written by the API only). */
   FrameleafRemoteAccessTest = 'frameleaf-remote-access-test',
   /** FL-159: the last Hardware & GPU check of the server and ML containers. */

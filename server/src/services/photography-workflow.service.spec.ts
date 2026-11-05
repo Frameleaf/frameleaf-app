@@ -229,6 +229,7 @@ async function setup(brand?: unknown) {
     {} as never,
     {} as never,
     { setContext: vi.fn(), warn: vi.fn() } as never,
+    { reportStudioSite: vi.fn().mockResolvedValue({ site: null, problem: null }), studioSiteStatus: vi.fn() } as never,
   );
   const auth = { user: { id: ownerId, name: 'Studio' }, session: { hasElevatedPermission: true } } as AuthDto;
   const initial = await service.intake(auth, shootId, { expectedRevision: null });

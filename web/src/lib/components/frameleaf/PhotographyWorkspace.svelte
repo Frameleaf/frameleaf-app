@@ -44,6 +44,7 @@
     mdiImageMultipleOutline,
     mdiMagnify,
     mdiPaletteOutline,
+    mdiCloudUploadOutline,
     mdiPlus,
     mdiRestore,
     mdiShieldCheckOutline,
@@ -56,6 +57,7 @@
   } from '@mdi/js';
   import type { Translations } from 'svelte-i18n';
   import PhotographyBranding from '$lib/components/frameleaf/PhotographyBranding.svelte';
+  import PhotographyPublishing from '$lib/components/frameleaf/PhotographyPublishing.svelte';
   import PhotographyWorkflow from '$lib/components/frameleaf/PhotographyWorkflow.svelte';
   import PhotographyWatermarks from '$lib/components/frameleaf/PhotographyWatermarks.svelte';
   import PhotographyWebsite from '$lib/components/frameleaf/PhotographyWebsite.svelte';
@@ -98,7 +100,7 @@
 
   /** A shoot's tabs after Photographs; Photographs itself is the open shoot under `shoots`. */
   type ShootSection = Exclude<ShootTab, 'photos'>;
-  type Section = 'shoots' | 'branding' | 'watermarks' | 'website' | ShootSection;
+  type Section = 'shoots' | 'branding' | 'watermarks' | 'website' | 'publishing' | ShootSection;
   type PhotoFilter = 'all' | 'selected' | 'edited';
   type ShootFilter = 'all' | 'active' | 'Proofing' | 'Delivered';
   type NextAction = { label: string; icon: string; section: Section; rank: number };
@@ -268,9 +270,11 @@
         ? $t('frameleaf_photography_watermarks')
         : section === 'website'
           ? $t('frameleaf_photography_website')
-          : isShootSection(section)
-            ? $t(shootSectionKeys[section])
-            : (active?.name ?? $t('frameleaf_photography_shoots')),
+          : section === 'publishing'
+            ? $t('frameleaf_photography_publishing')
+            : isShootSection(section)
+              ? $t(shootSectionKeys[section])
+              : (active?.name ?? $t('frameleaf_photography_shoots')),
   );
   const subtitle = $derived(
     section === 'branding'
@@ -279,11 +283,13 @@
         ? $t('frameleaf_photography_watermarks_lead')
         : section === 'website'
           ? $t('frameleaf_photography_website_lead')
-          : isShootSection(section)
-            ? $t(sectionLeads[section])
-            : active
-              ? `${active.client} · ${$t(shootTypeKeys[active.type])} · ${dateLabel(active.date)}`
-              : $t('frameleaf_photography_shoots_lead'),
+          : section === 'publishing'
+            ? $t('frameleaf_photography_publishing_lead')
+            : isShootSection(section)
+              ? $t(sectionLeads[section])
+              : active
+                ? `${active.client} · ${$t(shootTypeKeys[active.type])} · ${dateLabel(active.date)}`
+                : $t('frameleaf_photography_shoots_lead'),
   );
   const summaryFor = (id: string) => workflowSummaries.find((row) => row.shootId === id);
   /** The shoot whose pages the rail lists: the open one, else the one opened last, else the newest. */
@@ -842,7 +848,7 @@
         {/each}
       {/if}
       <p class="phw-rail-heading">{$t('frameleaf_photography_studio_heading')}</p>
-      {#each [['website', $t('frameleaf_photography_website'), mdiWeb], ['watermarks', $t('frameleaf_photography_watermarks'), mdiBrushOutline], ['branding', $t('frameleaf_photography_branding'), mdiPaletteOutline]] as const as [id, label, icon] (id)}
+      {#each [['website', $t('frameleaf_photography_website'), mdiWeb], ['watermarks', $t('frameleaf_photography_watermarks'), mdiBrushOutline], ['branding', $t('frameleaf_photography_branding'), mdiPaletteOutline], ['publishing', $t('frameleaf_photography_publishing'), mdiCloudUploadOutline]] as const as [id, label, icon] (id)}
         <button
           type="button"
           aria-current={section === id ? 'page' : undefined}
@@ -917,6 +923,7 @@
           onDesignWatermark={() => (section = 'watermarks')}
         />
       {:else if section === 'watermarks'}<PhotographyWatermarks photoId={samplePhotoId} />
+      {:else if section === 'publishing'}<PhotographyPublishing />
       {:else if section === 'website'}<PhotographyWebsite
           shoots={workspace.shoots}
           {headerActions}

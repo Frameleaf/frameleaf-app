@@ -26,6 +26,7 @@ import {
 import { PhotographyWorkspaceRepository } from 'src/repositories/photography-workspace.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
+import { FrameleafRemoteAccessService } from 'src/services/frameleaf-remote-access.service.js';
 import { PhotographyWorkflowService } from 'src/services/photography-workflow.service.js';
 import { getConfig } from 'src/utils/config.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
@@ -67,6 +68,7 @@ export class PhotographySiteService {
     private configRepository: ConfigRepository,
     private metadata: SystemMetadataRepository,
     private logger: LoggingRepository,
+    private remoteAccess: FrameleafRemoteAccessService,
   ) {
     this.logger.setContext(PhotographySiteService.name);
   }
@@ -107,7 +109,44 @@ export class PhotographySiteService {
       throw error;
     }
     for (const item of saved.result) await this.removeFiles(item);
+    this.reportOwnDomain(current.site, site);
     return this.view(saved.revision, site, saved.record);
+  }
+
+  /**
+   * FL-705: Frameleaf Cloud serves a published website on its own domain through `sites.frameleaf.cloud`.
+   * It hears about the domain when the site is published with one, and that there is none when the site
+   * is turned off or the domain is cleared. In the background: the save never waits for Cloud.
+   */
+  private reportOwnDomain(before: PhotographySite | null | undefined, after: PhotographySite) {
+    const live = (site: PhotographySite | null | undefined) =>
+      site?.enabled && site.domain ? { domain: site.domain, slug: site.slug } : null;
+    const was = live(before);
+    const now = live(after);
+    if (JSON.stringify(was) === JSON.stringify(now)) {
+      return;
+    }
+    void this.remoteAccess
+      .reportStudioSite(now)
+      .then(({ problem }) => problem && this.logger.warn(`The studio website's own domain wasn't reported: ${problem}`))
+      .catch((error: unknown) => this.logger.warn(`The studio website's own domain wasn't reported: ${error}`));
+  }
+
+  /** FL-705 `GET photography/site/domain`: how Frameleaf Cloud sees this studio's own domain, and the DNS records. */
+  async siteDomain(auth: AuthDto) {
+    const ownerId = this.workflow.studioOwner(auth);
+    const { record } = await this.repository.studioRecord(ownerId);
+    const domain = record.site?.enabled ? record.site.domain : '';
+    if (!domain) {
+      return { site: null, problem: null };
+    }
+    let answer = await this.remoteAccess.studioSiteStatus();
+    if (!answer.site && !answer.problem) {
+      // Cloud never heard of it (published while remote access was off, or the report was lost): tell it now
+      answer = await this.remoteAccess.reportStudioSite({ domain, slug: record.site!.slug });
+    }
+    // one studio per server has its own domain; another studio's is not this one's to show
+    return answer.site && answer.site.domain !== domain ? { site: null, problem: null } : answer;
   }
 
   private view(revision: string | null, site: PhotographySite, record: StudioRecord) {

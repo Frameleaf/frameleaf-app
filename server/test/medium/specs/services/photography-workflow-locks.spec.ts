@@ -239,6 +239,7 @@ it('rechecks canonical source and logo locks for published metadata, pixels and 
     {} as never,
     {} as never,
     { setContext: vi.fn(), warn: vi.fn() } as never,
+    { reportStudioSite: vi.fn().mockResolvedValue({ site: null, problem: null }), studioSiteStatus: vi.fn() } as never,
   );
   await siteService.saveSite(auth, {
     expectedRevision: null,

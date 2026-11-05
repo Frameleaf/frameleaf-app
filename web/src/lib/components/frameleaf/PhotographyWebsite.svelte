@@ -1,6 +1,7 @@
 <script lang="ts">
   import Button from '$lib/components/frameleaf/Button.svelte';
   import { photographyErrorKey } from '$lib/components/frameleaf/PhotographyStatus.svelte';
+  import StudioDomainStatus from '$lib/components/frameleaf/StudioDomainStatus.svelte';
   import StudioSite from '$lib/components/frameleaf/StudioSite.svelte';
   import { loadBrand, logoThumbnailUrl, type Brand, type Shoot } from '$lib/frameleaf/photography/api';
   import { PhotographyError } from '$lib/frameleaf/photography/errors';
@@ -771,6 +772,9 @@
                     : $t('frameleaf_studio_site_domain_hint')}</small
               ></label
             >
+            {#if stored?.site.enabled && stored.site.domain && draft.domain === stored.site.domain}
+              <StudioDomainStatus domain={stored.site.domain} />
+            {/if}
             <h2>{$t('frameleaf_studio_site_search_sharing')}</h2>
             <label class="sse-field"
               ><span>{$t('frameleaf_studio_site_page_title')}</span><input
