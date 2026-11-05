@@ -59,6 +59,7 @@ test(
 
 test('native backup requires the installed program protection before execution', async () => {
   let effects = 0;
+  let protectedPath: string | undefined;
   const executable = await realpath(process.execPath);
   const execute = nativeBackupCommand(
     { executable, sha256: sha256(await readFile(executable)) },
@@ -67,11 +68,12 @@ test('native backup requires the installed program protection before execution',
       return '';
     },
     async (path) => {
-      assert.equal(path, executable);
+      protectedPath = path;
       throw new Error('protection refused');
     },
   );
   await assert.rejects(execute('restic', []), /native_backup_engine_changed/);
+  assert.equal(protectedPath, executable);
   assert.equal(effects, 0);
 });
 
