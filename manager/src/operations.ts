@@ -1528,20 +1528,22 @@ export class Operations {
         throw error;
       }
     };
-    const timer = setInterval(
-      () =>
-        void check().catch((error) =>
-          console.error(redact(`manager: could not journal the new server's health (${(error as Error)?.message ?? error})`)),
-        ),
-      this.serverWatchMs,
-    );
+    const logged = () =>
+      check().catch((error) =>
+        console.error(redact(`manager: could not journal the new server's health (${(error as Error)?.message ?? error})`)),
+      );
+    const timer = setInterval(() => void logged(), this.serverWatchMs);
     timer.unref();
     try {
       await start();
-    } finally {
+    } catch (error) {
+      // The start's own failure is what the caller reports; the caller re-checks Docker before any rollback.
       clearInterval(timer);
-      await check();
+      await logged();
+      throw error;
     }
+    clearInterval(timer);
+    await check();
   }
   /** Whether Docker shows the target's server passing a health probe in its (bounded) health log. */
   private async serverMayHaveServed(review: UpdateReview): Promise<boolean> {
