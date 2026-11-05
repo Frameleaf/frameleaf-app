@@ -387,7 +387,7 @@ it('waits for a fresh full integrity scan when the existing operation is increme
       value: { health: Record<string, string> };
     }>`SELECT value FROM system_metadata WHERE key=${key}`.execute(db);
     expect(state.rows[0].value.health).toEqual({ [user.id]: freshFull });
-    expect(mediaHealth.startMissingScan).toHaveBeenCalledWith({ user: { id: filesOnly.id } });
+    expect(mediaHealth.startMissingScan).toHaveBeenCalledWith({ user: { id: filesOnly.id } }, undefined, undefined);
     const owners = await sql<{
       value: { owners: string[] };
     }>`SELECT value FROM system_metadata WHERE key=${key}`.execute(db);
@@ -628,6 +628,68 @@ it('keeps a retried setup paused, and resuming it resumes the scans the earlier 
     expect(operations.resume).toHaveBeenCalledWith(scan, user.id, expect.anything());
     expect(operations.resume).toHaveBeenCalledWith(check, user.id, expect.anything());
     expect(await value()).toMatchObject({ paused: false });
+  } finally {
+    for (const [name, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    await db.destroy();
+  }
+});
+
+it('carries a retried file check on from where the stopped one got to', async () => {
+  const db = await getKyselyDB('fl_manager_retry_resume_check');
+  const { ctx } = newMediumService(SyncService, { database: db, real: [], mock: [LoggingRepository] });
+  const names = ['FRAMELEAF_MANAGER_INSTALLATION', 'FRAMELEAF_MANAGER_ORIGIN', 'FRAMELEAF_MANAGER_ML_ENABLED'];
+  const previous = Object.fromEntries(names.map((name) => [name, process.env[name]]));
+  const key = 'frameleaf-manager-library-setup:eeeeeeee3333';
+  const value = async () =>
+    (
+      await sql<{
+        value: { phase: string; health: Record<string, string>; resumeHealth?: Record<string, string> };
+      }>`SELECT value FROM system_metadata WHERE key=${key}`.execute(db)
+    ).rows[0].value;
+  try {
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
+    process.env.FRAMELEAF_MANAGER_INSTALLATION = 'eeeeeeee3333';
+    process.env.FRAMELEAF_MANAGER_ORIGIN = 'new_library';
+    delete process.env.FRAMELEAF_MANAGER_ML_ENABLED;
+    const [stopped, next] = [randomUUID(), randomUUID()];
+    const checkpoint = { cursor: asset.id, total: 10, checked: 6, missing: 1, corrupt: 0, restored: false };
+    await sql`INSERT INTO media_operation (id, "ownerId", kind, destination, label, snapshot, settings, status, result)
+      VALUES (${stopped}::uuid, ${user.id}::uuid, 'media_health', 'local', 'Full scan', '{"mode":"scan"}'::jsonb,
+        '{}'::jsonb, 'failed', ${JSON.stringify(checkpoint)}::text::jsonb)`.execute(db);
+    const mediaHealth = {
+      startMissingScan: vi.fn().mockImplementation(async () => {
+        await sql`INSERT INTO media_operation (id, "ownerId", kind, destination, label, snapshot, settings)
+          VALUES (${next}::uuid, ${user.id}::uuid, 'media_health', 'local', 'Full scan', '{"mode":"scan"}'::jsonb,
+          '{}'::jsonb)`.execute(db);
+        return { operationId: next };
+      }),
+    };
+    const service = new FrameleafLibrarySetupService(
+      db,
+      { getAll: vi.fn().mockResolvedValue([]) } as never,
+      {} as never,
+      { getJobCounts: vi.fn().mockResolvedValue({ active: 0, waiting: 0, delayed: 0, paused: 0, failed: 0 }) } as never,
+      { hasAdmin: vi.fn().mockResolvedValue(true), getAdmin: vi.fn().mockResolvedValue(user) } as never,
+      {} as never,
+      mediaHealth as never,
+      {} as never,
+      {} as never,
+    );
+    await service.begin();
+    await sql`UPDATE system_metadata SET value=value || ${JSON.stringify({
+      phase: 'needs-attention',
+      health: { [user.id]: stopped },
+    })}::text::jsonb WHERE key=${key}`.execute(db);
+    await service.begin(true);
+    expect(await value()).toMatchObject({ phase: 'rescanning', health: {}, resumeHealth: { [user.id]: stopped } });
+    await service.status(); // discovery ends
+    await service.status(); // the check starts again
+    expect(mediaHealth.startMissingScan).toHaveBeenCalledWith({ user: { id: user.id } }, undefined, checkpoint);
+    expect(await value()).toMatchObject({ health: { [user.id]: next }, resumeHealth: {} });
   } finally {
     for (const [name, value] of Object.entries(previous)) {
       if (value === undefined) delete process.env[name];

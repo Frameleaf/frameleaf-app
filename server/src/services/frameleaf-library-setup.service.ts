@@ -30,6 +30,7 @@ import { LibraryScanService } from 'src/services/library-scan.service.js';
 import { MediaHealthService } from 'src/services/media-health.service.js';
 import { SystemConfigService } from 'src/services/system-config.service.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
+import { parseScanResult } from 'src/utils/media-health-operation.js';
 import { OvernightState, quietHoursHolds } from 'src/utils/overnight.js';
 import { serverTimeZone } from 'src/utils/server-time-zone.js';
 import { fromAck } from 'src/utils/sync.js';
@@ -62,6 +63,13 @@ type SetupState = {
    * paused, one would hold the file check with nothing left to resume it.
    */
   heldScans?: string[];
+  /** File checks an earlier attempt left stopped, by owner: a retry carries each on from where it stopped. */
+  resumeHealth?: Record<string, string>;
+  /**
+   * The owner dismissed setup to let the server run: held work is released, the bar and the phone step go away,
+   * and nothing halts on setup's account. Background work and Library Care still list what needs a look.
+   */
+  dismissedAt?: string | null;
 };
 type PhoneState = { revision: string; tokenHash: string; finished: boolean };
 const SETUP_QUEUES = [
@@ -233,6 +241,10 @@ export class FrameleafLibrarySetupService {
               ]),
             ]
           : undefined,
+        // Kept until each owner's new check starts; a check never started keeps its predecessor's place.
+        resumeHealth: previous ? { ...previous.resumeHealth, ...previous.health } : undefined,
+        // Retrying a dismissed setup brings it back.
+        dismissedAt: retry ? null : (previous?.dismissedAt ?? null),
         importRunId: previous?.importRunId,
         importOperationId: previous?.importOperationId,
         checkReleasedAt: previous?.checkReleasedAt ?? null,
@@ -498,7 +510,7 @@ export class FrameleafLibrarySetupService {
     }
     if (identity.origin === 'new_library') return inactive;
     const state = await this.read<SetupState>(this.key());
-    if (!state || state.phase === 'awaiting-account') return inactive;
+    if (!state || state.phase === 'awaiting-account' || state.dismissedAt) return inactive;
     const imported = await this.importedRun();
     if (this.importedSetupRequired(state, imported) && !this.importedSetupMatches(state, imported))
       return { ...inactive, active: true, phase: 'needs-attention', paused: !!state.paused };
@@ -806,8 +818,13 @@ export class FrameleafLibrarySetupService {
             AND "createdAt" >= ${state.healthAfter}::timestamptz ORDER BY "createdAt" LIMIT 1`.execute(db);
             let operationId: string | null | undefined = existing.rows[0]?.id;
             try {
-              operationId ??= (await this.mediaHealth.startMissingScan({ user: { id: ownerId } } as AuthDto))
-                .operationId;
+              operationId ??= (
+                await this.mediaHealth.startMissingScan(
+                  { user: { id: ownerId } } as AuthDto,
+                  undefined,
+                  await this.resumePoint(state.resumeHealth?.[ownerId], db),
+                )
+              ).operationId;
             } catch (error) {
               // Another kind of scan (recent changes, chosen photos, a search for originals) is under way for this
               // account: wait for it, as for an incompatible scan below.
@@ -824,6 +841,7 @@ export class FrameleafLibrarySetupService {
               continue; // Wait for an incompatible active scan before admitting ours.
             }
             state.health[ownerId] = operationId;
+            delete state.resumeHealth?.[ownerId];
           }
         }
         const healthIds = Object.values(state.health);
@@ -923,6 +941,49 @@ export class FrameleafLibrarySetupService {
     });
   }
 
+  /**
+   * Where an owner's stopped full check got to, for a retry to carry on from. Only a check that stopped (failed or
+   * cancelled) part-way through: a finished one has nothing left, and a running one is adopted as it is.
+   *
+   * ponytail: the scan walks asset ids in order, so an original the retry's library rescan adds below the cursor is
+   * left to Library Care's nightly check of recent changes rather than this one.
+   */
+  private async resumePoint(operationId: string | undefined, db: Kysely<DB>) {
+    if (!operationId) return;
+    const { rows } = await sql<{ result: unknown }>`SELECT result FROM media_operation WHERE id=${operationId}::uuid
+      AND status IN ('failed','cancelled') AND ${fullScan('media_operation')}`.execute(db);
+    const result = rows[0] && parseScanResult(rows[0].result);
+    return result?.cursor && !result.restored ? result : undefined;
+  }
+
+  /**
+   * The owner would rather let the server run than follow setup (a stopped check, a phone they will not connect).
+   * Every held stage is released as if the file check had finished, a pause is lifted, and the setup bar and the
+   * phone's preparation step stop asking. Setup keeps tracking in the background; Retry brings it back.
+   */
+  async dismiss(): Promise<void> {
+    this.identity();
+    if ((await this.read<SetupState>(this.key()))?.paused) {
+      // A setup whose import no longer matches cannot resume through it (Library Care can); dismissing still ends it.
+      await this.setPaused(false).catch((error) => {
+        if (!(error instanceof BadRequestException)) throw error;
+      });
+    }
+    await this.locked(async (db) => {
+      const state = await this.read<SetupState>(this.key(), db);
+      if (!state || state.dismissedAt) return;
+      await lockQueueCatalogue(db);
+      const imported = await this.importedRun(db, true);
+      if (this.importedSetupMatches(state, imported) && imported?.run?.selection.managerSetup?.startedAt) {
+        await this.releaseStages(imported.run.id, true, db);
+      }
+      // A run not started yet releases every stage when it starts (startImportedRegeneration).
+      state.checkReleasedAt ??= new Date().toISOString();
+      state.dismissedAt = new Date().toISOString();
+      await this.write(this.key(), state, db);
+    });
+  }
+
   async status(auth?: AuthDto) {
     const identity = this.identity();
     const state = await this.advance();
@@ -937,14 +998,15 @@ export class FrameleafLibrarySetupService {
       ? !!phone && phone.revision === state.revision && phone.finished
       : operator?.rows[0]?.ready === true;
     // A non-admin never receives another user's counts, paths, profile, sync cursor or completion.
+    const dismissed = !!state.dismissedAt;
     return {
-      setupRequired: state.phase !== 'complete' || !phoneReady,
+      setupRequired: !dismissed && (state.phase !== 'complete' || !phoneReady),
       ...identity,
       phase: state.phase,
       revision: state.revision,
       rescanComplete: state.phase === 'complete',
       verificationPassed: state.phase === 'complete',
-      canFinish: state.phase === 'complete' && phoneReady,
+      canFinish: dismissed || (state.phase === 'complete' && phoneReady),
       regeneration: !auth || auth.user.isAdmin ? await this.regenerationStatus(state) : null,
       sync: {
         authenticated: !!auth?.session,

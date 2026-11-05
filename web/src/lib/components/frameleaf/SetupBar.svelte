@@ -28,6 +28,7 @@
   import { handleError } from '$lib/utils/handle-error';
   import {
     beginLibrarySetup,
+    dismissLibrarySetup,
     getLibrarySetupProgress,
     pauseLibrarySetup,
     Phase,
@@ -35,7 +36,7 @@
     LibrarySetupStageId,
     LibrarySetupStageStatus,
   } from '@frameleaf/sdk';
-  import { Icon } from '@frameleaf/ui';
+  import { Icon, modalManager } from '@frameleaf/ui';
   import {
     mdiAlertCircleOutline,
     mdiCheckCircle,
@@ -201,6 +202,22 @@
   const retry = () =>
     act(async () => {
       await beginLibrarySetup();
+      await latest(getLibrarySetupProgress());
+    });
+
+  // The owner would rather let the server run: held work starts, and this bar and the phone step stop asking.
+  const dismiss = () =>
+    act(async () => {
+      const confirmed = await modalManager.showDialog({
+        title: $t('setup_bar_dismiss_title'),
+        prompt: $t('setup_bar_dismiss_prompt'),
+        confirmText: $t('setup_bar_dismiss'),
+      });
+      if (!confirmed) {
+        return;
+      }
+      await dismissLibrarySetup();
+      open = false;
       await latest(getLibrarySetupProgress());
     });
 
@@ -420,6 +437,10 @@
             <Icon icon={mdiChevronRight} size="18" aria-hidden={true} />
           </a>
         </footer>
+        <!-- For an owner who would rather let the server run than follow setup. -->
+        <div class="fl-setup-bar-dismiss">
+          <button type="button" class="button" disabled={busy} onclick={dismiss}>{$t('setup_bar_dismiss')}</button>
+        </div>
       </section>
     {/if}
   </div>
@@ -595,6 +616,14 @@
     margin: 0;
     color: var(--fl-muted);
     font-size: 12px;
+  }
+  .fl-setup-bar-dismiss {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 12px;
+  }
+  .fl-setup-bar-dismiss .button {
+    color: var(--fl-muted);
   }
   /* Pause and Resume, or Retry, again where the details are (approved design, 2026-11-04). */
   .fl-setup-bar-panel .fl-setup-bar-panel-pause {

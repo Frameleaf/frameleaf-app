@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Post, Put, Res } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, HttpCode, HttpStatus, Post, Put, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Writable } from 'node:stream';
 import { finished } from 'node:stream/promises';
@@ -108,6 +108,18 @@ export class FrameleafLibrarySetupController {
     return this.setup.setPaused(dto.paused);
   }
 
+  @Delete('progress')
+  @Authenticated({ admin: true })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    operationId: 'dismissLibrarySetup',
+    summary: 'Stop following setup and let the server run: held work starts, the setup bar and phone step go away',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  dismiss(): Promise<void> {
+    return this.setup.dismiss();
+  }
+
   @Post('begin')
   @Authenticated({ admin: true })
   @Endpoint({ operationId: 'beginLibrarySetup', summary: 'Start the managed library rescan', history })
@@ -130,6 +142,15 @@ export class FrameleafLibrarySetupController {
   async managerBegin(@Headers(MANAGER_TOKEN_HEADER) token?: string): Promise<LibrarySetupStatusDto> {
     await this.setup.authorizeManager(token);
     await this.setup.begin(true);
+    return this.setup.status();
+  }
+
+  @Delete('manager')
+  @Authenticated({ public: true })
+  @Endpoint({ operationId: 'dismissManagerLibrarySetup', summary: 'Manager machine-authenticated dismissal', history })
+  async managerDismiss(@Headers(MANAGER_TOKEN_HEADER) token?: string): Promise<LibrarySetupStatusDto> {
+    await this.setup.authorizeManager(token);
+    await this.setup.dismiss();
     return this.setup.status();
   }
 

@@ -415,6 +415,18 @@ class Api {
     store.set('onboarding-finished', Date.now());
     return { complete: true };
   }
+  /** Finish onboarding without waiting for library preparation or a phone: the server just runs. */
+  @Post('skip-setup') async skipSetup(@Body() input: unknown) {
+    z.object({}).strict().parse(input);
+    try {
+      await operations.dismissLibrarySetup();
+    } catch (error) {
+      // A server from before setup could be dismissed: Manager still stops asking; the server carries on as it was.
+      if (!(error instanceof Refusal && error.code === 'server_refused_404')) throw error;
+    }
+    store.set('onboarding-finished', Date.now());
+    return { complete: true };
+  }
   @Post('retry-setup') async retrySetup(@Body() input: unknown) {
     z.object({}).strict().parse(input);
     return operations.libraryStatus(true);

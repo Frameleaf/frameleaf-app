@@ -464,6 +464,9 @@ try {
     await screenshot('downloads');
     await mainButton('Continue to library preparation').click();
     assert.equal(await mainButton('Finish setup').isDisabled(), true);
+    // An owner who would rather not wait can always skip; the server just runs.
+    assert.equal(await mainButton('Skip and let the server run').isEnabled(), true);
+    await screenshot('library-preparation');
     dashboard.librarySetup = { phase: 'complete', rescanComplete: true, verificationPassed: true, canFinish: true };
     await refresh();
     await mainButton('Finish setup').click();

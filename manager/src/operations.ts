@@ -205,7 +205,7 @@ export class Operations {
    * Call a machine-authenticated `/api/server/...` endpoint from inside the server container, with the
    * mounted Manager token. A refusal surfaces as `server_refused_<status>`; the token is never echoed.
    */
-  private async serverRequest(method: 'GET' | 'POST', path: string, body?: unknown): Promise<unknown> {
+  private async serverRequest(method: 'GET' | 'POST' | 'DELETE', path: string, body?: unknown): Promise<unknown> {
     const installation = this.installation();
     if (!installation) throw new Refusal('no_installation');
     const server = (await this.docker.inventory()).find(
@@ -1153,6 +1153,11 @@ export class Operations {
   async libraryStatus(begin = false): Promise<unknown> {
     if (!this.installation()) return null;
     return this.serverRequest(begin ? 'POST' : 'GET', 'library-setup/manager');
+  }
+  /** The owner would rather let the server run: setup releases its held work and stops asking. */
+  async dismissLibrarySetup(): Promise<unknown> {
+    if (!this.installation()) return null;
+    return this.serverRequest('DELETE', 'library-setup/manager');
   }
   async targetDatabase(): Promise<Database> {
     const installation = this.installation();

@@ -93,6 +93,7 @@ import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import {
   MediaHealthOperationSnapshot,
   MediaHealthRunState,
+  MediaHealthScanResult,
   mediaHealthActivityAction,
   mediaHealthOperationLabel,
   parseMediaHealthSnapshot,
@@ -790,8 +791,16 @@ export class MediaHealthService {
     };
   }
 
-  async startMissingScan(auth: AuthDto, dto?: MediaHealthScanDto): Promise<MediaHealthScanResponseDto> {
-    const { missingRunId, operationId } = await this.startDurableScan(auth, dto);
+  /**
+   * `resumeFrom`: where a stopped full scan got to (library setup's Retry). The new scan carries on from its cursor
+   * and counts instead of reading every original again.
+   */
+  async startMissingScan(
+    auth: AuthDto,
+    dto?: MediaHealthScanDto,
+    resumeFrom?: MediaHealthScanResult,
+  ): Promise<MediaHealthScanResponseDto> {
+    const { missingRunId, operationId } = await this.startDurableScan(auth, dto, resumeFrom);
     return { runId: missingRunId, operationId };
   }
 
@@ -1616,7 +1625,11 @@ export class MediaHealthService {
   /* ------------------------------------------------------------------ */
 
   /** A scan already under way answers with itself; a search under way has to finish first. */
-  private async startDurableScan(auth: AuthDto, { assetIds }: Partial<MediaHealthScanDto> = {}): Promise<DurableScan> {
+  private async startDurableScan(
+    auth: AuthDto,
+    { assetIds }: Partial<MediaHealthScanDto> = {},
+    resumeFrom?: MediaHealthScanResult,
+  ): Promise<DurableScan> {
     // FL-737: chosen photos are scanned only where this person may see them, as their findings are listed.
     const scoped = assetIds
       ? (
@@ -1631,13 +1644,18 @@ export class MediaHealthService {
       throw new BadRequestException('None of these photos can be scanned');
     }
     return this.mediaHealthRepository.withLibraryCareLock(auth.user.id, () =>
-      this.admitDurableScan(auth.user.id, { assetIds: scoped }),
+      this.admitDurableScan(auth.user.id, { assetIds: scoped, resumeFrom: scoped ? undefined : resumeFrom }),
     );
   }
 
   private async admitDurableScan(
     ownerId: string,
-    options: { changedSince?: string; scheduled?: boolean; assetIds?: string[] } = {},
+    options: {
+      changedSince?: string;
+      scheduled?: boolean;
+      assetIds?: string[];
+      resumeFrom?: MediaHealthScanResult;
+    } = {},
   ): Promise<DurableScan> {
     const active = await this.activeJob(ownerId);
     if (active) {
@@ -1675,7 +1693,9 @@ export class MediaHealthService {
       ...(options.assetIds && { assetIds: options.assetIds }),
     };
     try {
-      const operation = await this.createHealthOperation(ownerId, snapshot, null);
+      // Total is counted again at the first claim: the library may have grown since the stopped scan.
+      const resume = options.resumeFrom?.cursor ? { ...options.resumeFrom, total: null, restored: false } : null;
+      const operation = await this.createHealthOperation(ownerId, snapshot, null, resume);
       return { missingRunId: missingRun.id, corruptRunId: corruptRun.id, operationId: operation.id };
     } catch (error) {
       const failure = { status: 'failed' as const, error: getErrorMessage(error) };
@@ -1708,7 +1728,12 @@ export class MediaHealthService {
     }
   }
 
-  private createHealthOperation(ownerId: string, snapshot: MediaHealthOperationSnapshot, total: number | null) {
+  private createHealthOperation(
+    ownerId: string,
+    snapshot: MediaHealthOperationSnapshot,
+    total: number | null,
+    result: MediaHealthScanResult | null = null,
+  ) {
     return this.mediaOperationRepository.create({
       ownerId,
       kind: MediaOperationKind.MediaHealth,
@@ -1723,7 +1748,7 @@ export class MediaHealthService {
       snapshot: snapshot as unknown as Record<string, unknown>,
       settings: {},
       estimate: null,
-      result: null,
+      result: result as unknown as Record<string, unknown> | null,
       totalUnits: total === null ? null : String(total),
     });
   }
