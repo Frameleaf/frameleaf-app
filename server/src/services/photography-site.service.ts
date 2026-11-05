@@ -118,6 +118,9 @@ export class PhotographySiteService {
    * It hears about the domain when the site is published with one, and that there is none when the site
    * is turned off or the domain is cleared. In the background: the save never waits for Cloud.
    */
+  /** The latest domain report; each one waits for the one before (never rejects). */
+  private domainReports: Promise<unknown> = Promise.resolve();
+
   private reportOwnDomain(before: PhotographySite | null | undefined, after: PhotographySite) {
     const live = (site: PhotographySite | null | undefined) =>
       site?.enabled && site.domain ? { domain: site.domain, slug: site.slug } : null;
@@ -126,8 +129,9 @@ export class PhotographySiteService {
     if (JSON.stringify(was) === JSON.stringify(now)) {
       return;
     }
-    void this.remoteAccess
-      .reportStudioSite(now)
+    // one at a time, in save order, so an older report can't reach Cloud after a newer one
+    this.domainReports = this.domainReports
+      .then(() => this.remoteAccess.reportStudioSite(now))
       .then(({ problem }) => problem && this.logger.warn(`The studio website's own domain wasn't reported: ${problem}`))
       .catch((error: unknown) => this.logger.warn(`The studio website's own domain wasn't reported: ${error}`));
   }

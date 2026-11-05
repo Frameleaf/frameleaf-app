@@ -78,6 +78,25 @@ describe(PhotographySiteService.name, () => {
       );
     });
 
+    it('reports quick saves to Frameleaf Cloud one at a time, in save order', async () => {
+      const { sut, stored, remoteAccess } = setup('north-studio');
+      let release!: () => void;
+      remoteAccess.reportStudioSite.mockImplementationOnce(
+        () => new Promise((resolve) => (release = () => resolve({ site: null, problem: null }))),
+      );
+
+      for (const domain of ['old.cedarandlight.ca', 'photos.cedarandlight.ca']) {
+        await sut.saveSite({} as never, { expectedRevision: REVISION, site: { ...stored, enabled: true, domain } });
+      }
+      await vi.waitFor(() => expect(remoteAccess.reportStudioSite).toHaveBeenCalledOnce());
+      release();
+      await vi.waitFor(() => expect(remoteAccess.reportStudioSite).toHaveBeenCalledTimes(2));
+      expect(remoteAccess.reportStudioSite.mock.calls.map(([site]) => site?.domain)).toEqual([
+        'old.cedarandlight.ca',
+        'photos.cedarandlight.ca',
+      ]);
+    });
+
     it('says nothing to Frameleaf Cloud when the domain and publishing are unchanged', async () => {
       const { sut, stored, remoteAccess } = setup('north-studio');
 
