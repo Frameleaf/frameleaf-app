@@ -690,6 +690,24 @@ it('carries a retried file check on from where the stopped one got to', async ()
     await service.status(); // the check starts again
     expect(mediaHealth.startMissingScan).toHaveBeenCalledWith({ user: { id: user.id } }, undefined, checkpoint);
     expect(await value()).toMatchObject({ health: { [user.id]: next }, resumeHealth: {} });
+
+    // A photo added since a stopped check began, below its cursor, would be skipped: the whole check runs again.
+    const late = randomUUID();
+    const highest = { ...checkpoint, cursor: 'ffffffff-ffff-4fff-bfff-ffffffffffff' };
+    // Stopped before this attempt began, as a real retry's predecessor is.
+    await sql`INSERT INTO media_operation (id, "ownerId", kind, destination, label, snapshot, settings, status, result,
+        "createdAt")
+      VALUES (${late}::uuid, ${user.id}::uuid, 'media_health', 'local', 'Full scan', '{"mode":"scan"}'::jsonb,
+        '{}'::jsonb, 'failed', ${JSON.stringify(highest)}::text::jsonb, now() - interval '1 hour')`.execute(db);
+    await ctx.newAsset({ ownerId: user.id });
+    await sql`DELETE FROM media_operation WHERE id=${next}::uuid`.execute(db);
+    await sql`UPDATE system_metadata SET value=value || ${JSON.stringify({
+      health: {},
+      resumeHealth: { [user.id]: late },
+    })}::text::jsonb WHERE key=${key}`.execute(db);
+    mediaHealth.startMissingScan.mockClear();
+    await service.status();
+    expect(mediaHealth.startMissingScan).toHaveBeenCalledWith({ user: { id: user.id } }, undefined, undefined);
   } finally {
     for (const [name, value] of Object.entries(previous)) {
       if (value === undefined) delete process.env[name];

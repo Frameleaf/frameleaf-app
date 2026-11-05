@@ -590,6 +590,8 @@ export class FrameleafLibrarySetupService {
     if (finished && !state.completedAt) {
       await this.locked(async (db) => {
         const current = (await this.read<SetupState>(this.key(), db))!;
+        // Only the setup observed above: a retry or reopen since (a new startedAt) or a dismissal is not finished.
+        if (current.startedAt !== state.startedAt || current.phase !== 'complete' || current.dismissedAt) return;
         state.completedAt = current.completedAt ?? new Date().toISOString();
         await this.write(this.key(), { ...current, completedAt: state.completedAt }, db);
       });
@@ -652,52 +654,65 @@ export class FrameleafLibrarySetupService {
     await this.locked(async (db) => {
       const state = await this.read<SetupState>(this.key(), db);
       if (!state || !!state.paused === paused) return;
-      state.paused = paused;
-      await lockQueueCatalogue(db);
-      const imported = await this.importedRun(db, true);
-      if (this.importedSetupRequired(state, imported) && !this.importedSetupMatches(state, imported))
-        throw new BadRequestException('Imported setup identity mismatch');
-      if (this.importedSetupMatches(state, imported) && imported?.run) {
-        await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup,paused}',${JSON.stringify(paused)}::text::jsonb)
-          WHERE id=${imported.run.id}::uuid`.execute(db);
-      }
-      if (this.importedSetupMatches(state, imported) && imported?.run?.selection.managerSetup?.startedAt) {
-        if (paused) {
-          // Held items stay where they are: running jobs finish, and no new ones are admitted.
-          await sql`UPDATE job_selection SET state='enumerating' WHERE "runId"=${imported.run.id}::uuid
-            AND state='ready'`.execute(db);
-        } else {
-          await this.releaseStages(imported.run.id, released(state), db);
-        }
-      }
-      for (const [ownerId, operationId] of Object.entries(state.health)) {
-        changed.push(
-          await (paused
-            ? this.operations.requestPause(operationId, ownerId, [MediaOperationKind.MediaHealth], db)
-            : this.operations.resume(operationId, ownerId, db)),
-        );
-      }
-      const { rows: scans } = await sql<{ id: string; ownerId: string }>`SELECT id,"ownerId" FROM media_operation
-        WHERE id=ANY(${[...new Set(Object.values(state.scans))]}::uuid[]) AND kind=${MediaOperationKind.LibraryScan} FOR UPDATE`.execute(
-        db,
-      );
-      for (const scan of scans) {
-        changed.push(
-          await (paused
-            ? this.operations.requestPause(scan.id, scan.ownerId, [MediaOperationKind.LibraryScan], db)
-            : this.operations.resume(scan.id, scan.ownerId, db)),
-        );
-      }
-      if (!paused && state.heldScans?.length) {
-        const { rows: held } = await sql<{ id: string; ownerId: string }>`SELECT id,"ownerId" FROM media_operation
-          WHERE id=ANY(${state.heldScans}::uuid[]) FOR UPDATE`.execute(db);
-        for (const scan of held) changed.push(await this.operations.resume(scan.id, scan.ownerId, db));
-        state.heldScans = undefined;
-      }
+      await this.applyPause(state, paused, changed, db);
       await this.write(this.key(), state, db);
     });
     for (const row of changed) this.operations.notifyCancellation(row);
     return this.progress();
+  }
+
+  /**
+   * Pauses or resumes setup's held stages and scans; the caller holds the setup lock and writes `state`. Refused,
+   * changing nothing, when the import no longer matches this setup.
+   */
+  private async applyPause(
+    state: SetupState,
+    paused: boolean,
+    changed: (MediaOperation | undefined)[],
+    db: Kysely<DB>,
+  ) {
+    await lockQueueCatalogue(db);
+    const imported = await this.importedRun(db, true);
+    if (this.importedSetupRequired(state, imported) && !this.importedSetupMatches(state, imported))
+      throw new BadRequestException('Imported setup identity mismatch');
+    state.paused = paused;
+    if (this.importedSetupMatches(state, imported) && imported?.run) {
+      await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup,paused}',${JSON.stringify(paused)}::text::jsonb)
+        WHERE id=${imported.run.id}::uuid`.execute(db);
+    }
+    if (this.importedSetupMatches(state, imported) && imported?.run?.selection.managerSetup?.startedAt) {
+      if (paused) {
+        // Held items stay where they are: running jobs finish, and no new ones are admitted.
+        await sql`UPDATE job_selection SET state='enumerating' WHERE "runId"=${imported.run.id}::uuid
+          AND state='ready'`.execute(db);
+      } else {
+        await this.releaseStages(imported.run.id, released(state), db);
+      }
+    }
+    for (const [ownerId, operationId] of Object.entries(state.health)) {
+      changed.push(
+        await (paused
+          ? this.operations.requestPause(operationId, ownerId, [MediaOperationKind.MediaHealth], db)
+          : this.operations.resume(operationId, ownerId, db)),
+      );
+    }
+    const { rows: scans } = await sql<{ id: string; ownerId: string }>`SELECT id,"ownerId" FROM media_operation
+      WHERE id=ANY(${[...new Set(Object.values(state.scans))]}::uuid[]) AND kind=${MediaOperationKind.LibraryScan} FOR UPDATE`.execute(
+      db,
+    );
+    for (const scan of scans) {
+      changed.push(
+        await (paused
+          ? this.operations.requestPause(scan.id, scan.ownerId, [MediaOperationKind.LibraryScan], db)
+          : this.operations.resume(scan.id, scan.ownerId, db)),
+      );
+    }
+    if (!paused && state.heldScans?.length) {
+      const { rows: held } = await sql<{ id: string; ownerId: string }>`SELECT id,"ownerId" FROM media_operation
+        WHERE id=ANY(${state.heldScans}::uuid[]) FOR UPDATE`.execute(db);
+      for (const scan of held) changed.push(await this.operations.resume(scan.id, scan.ownerId, db));
+      state.heldScans = undefined;
+    }
   }
 
   @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
@@ -955,15 +970,23 @@ export class FrameleafLibrarySetupService {
    * Where an owner's stopped full check got to, for a retry to carry on from. Only a check that stopped (failed or
    * cancelled) part-way through: a finished one has nothing left, and a running one is adopted as it is.
    *
-   * ponytail: the scan walks asset ids in order, so an original the retry's library rescan adds below the cursor is
-   * left to Library Care's nightly check of recent changes rather than this one.
+   * The scan walks asset ids in order, so a photo added since the stopped check began with an id below its cursor would
+   * be skipped; then the whole check runs again instead.
    */
   private async resumePoint(operationId: string | undefined, db: Kysely<DB>) {
     if (!operationId) return;
-    const { rows } = await sql<{ result: unknown }>`SELECT result FROM media_operation WHERE id=${operationId}::uuid
-      AND status IN ('failed','cancelled') AND ${fullScan('media_operation')}`.execute(db);
+    const { rows } = await sql<{
+      result: unknown;
+      ownerId: string;
+      createdAt: Date;
+    }>`SELECT result,"ownerId","createdAt"
+      FROM media_operation WHERE id=${operationId}::uuid AND status IN ('failed','cancelled')
+      AND ${fullScan('media_operation')}`.execute(db);
     const result = rows[0] && parseScanResult(rows[0].result);
-    return result?.cursor && !result.restored ? result : undefined;
+    if (!result?.cursor || result.restored) return;
+    const { rows: below } = await sql`SELECT 1 FROM asset WHERE "ownerId"=${rows[0].ownerId}::uuid
+      AND "createdAt" >= ${rows[0].createdAt} AND id <= ${result.cursor}::uuid LIMIT 1`.execute(db);
+    return below.length === 0 ? result : undefined;
   }
 
   /**
@@ -973,15 +996,16 @@ export class FrameleafLibrarySetupService {
    */
   async dismiss(): Promise<void> {
     this.identity();
-    if ((await this.read<SetupState>(this.key()))?.paused) {
-      // A setup whose import no longer matches cannot resume through it (Library Care can); dismissing still ends it.
-      await this.setPaused(false).catch((error) => {
-        if (!(error instanceof BadRequestException)) throw error;
-      });
-    }
+    const changed: (MediaOperation | undefined)[] = [];
     await this.locked(async (db) => {
       const state = await this.read<SetupState>(this.key(), db);
       if (!state || state.dismissedAt) return;
+      if (state.paused) {
+        // A setup whose import no longer matches cannot resume through it (Library Care can); dismissing still ends it.
+        await this.applyPause(state, false, changed, db).catch((error) => {
+          if (!(error instanceof BadRequestException)) throw error;
+        });
+      }
       await lockQueueCatalogue(db);
       const imported = await this.importedRun(db, true);
       if (this.importedSetupMatches(state, imported) && imported?.run?.selection.managerSetup?.startedAt) {
@@ -992,6 +1016,7 @@ export class FrameleafLibrarySetupService {
       state.dismissedAt = new Date().toISOString();
       await this.write(this.key(), state, db);
     });
+    for (const row of changed) this.operations.notifyCancellation(row);
   }
 
   async status(auth?: AuthDto) {
