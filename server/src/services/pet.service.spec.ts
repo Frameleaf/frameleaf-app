@@ -805,6 +805,27 @@ describe(PetService.name, () => {
       expect(petRepository.replaceFeaturedAsset).toHaveBeenCalledWith(ownerId, petId, assetId, null);
     });
 
+    it('never moves a cover to a photo the owner rejected', async () => {
+      (petRepository.getObservations as AnyMock).mockResolvedValue([
+        observation({ id: 'rejected', assetId: 'rejected-asset', state: PetObservationState.Rejected }),
+        observation({ id: 'confirmed', assetId: 'other-asset' }),
+      ]);
+
+      await sut.removeObservation(authStub.user1, observationId);
+
+      expect(petRepository.replaceFeaturedAsset).toHaveBeenCalledWith(ownerId, petId, assetId, 'other-asset');
+    });
+
+    it('leaves the cover alone when the undone observation was a rejection', async () => {
+      (petRepository.getObservationById as AnyMock).mockResolvedValue(
+        observation({ state: PetObservationState.Rejected }),
+      );
+
+      await sut.removeObservation(authStub.user1, observationId);
+
+      expect(petRepository.replaceFeaturedAsset).not.toHaveBeenCalled();
+    });
+
     it('keeps the cover when the pet is still confirmed elsewhere in the same photo', async () => {
       (petRepository.getObservations as AnyMock).mockResolvedValue([observation({ id: 'second-region' })]);
 

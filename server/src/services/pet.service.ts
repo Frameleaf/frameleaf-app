@@ -246,7 +246,9 @@ export class PetService {
     await this.requireCurrentSource(auth, observation.assetId, dto.expectedChecksum);
 
     await this.petRepository.deleteObservation(auth.user.id, observationId);
-    await this.replaceUndoneCover(auth, observation.petId, observation.assetId);
+    if (observation.state === PetObservationState.Confirmed) {
+      await this.replaceUndoneCover(auth, observation.petId, observation.assetId);
+    }
     await this.eventRepository.emit('AssetChanged', { assetId: observation.assetId });
     await this.jobRepository.queue({ name: JobName.PetRecognition, data: { id: observation.assetId } });
   }
@@ -418,7 +420,10 @@ export class PetService {
    * photo moves; another photo picked meanwhile stays.
    */
   private async replaceUndoneCover(auth: AuthDto, petId: string, assetId: string) {
-    const remaining = await this.petRepository.getObservations(auth.user.id, petId);
+    // Only confirmed photos can be a cover: a rejection means the owner said the pet is not there.
+    const remaining = (await this.petRepository.getObservations(auth.user.id, petId)).filter(
+      ({ state }) => state === PetObservationState.Confirmed,
+    );
     if (remaining.some((observation) => observation.assetId === assetId)) {
       return;
     }
