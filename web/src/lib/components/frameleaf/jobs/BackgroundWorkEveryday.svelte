@@ -95,7 +95,9 @@
   const summary = $derived(summariseWork(rows.filter((row) => !unknown?.has(row.definition.name))));
   const unknownOf = (feature: WorkFeature) => rowsOf(feature).some((row) => unknown?.has(row.definition.name));
   const pausedRows = $derived(rows.filter((row) => row.queue.isPaused));
-  const allPaused = $derived(rows.length > 0 && pausedRows.length === rows.length);
+  // a task that can't be paused (the background task) never counts against "all paused"
+  const pausableRows = $derived(rows.filter((row) => row.definition.canPause));
+  const allPaused = $derived(pausableRows.length > 0 && pausableRows.every((row) => row.queue.isPaused));
 
   const hero = $derived.by(() => {
     if (allPaused) {
@@ -164,7 +166,8 @@
   const featureState = (feature: WorkFeature) => {
     const own = rowsOf(feature);
     const states = new Set(own.map((row) => workState(row)));
-    if (own.length > 0 && own.every((row) => row.queue.isPaused)) {
+    const pausable = own.filter((row) => row.definition.canPause);
+    if (pausable.length > 0 && pausable.every((row) => row.queue.isPaused)) {
       return 'paused';
     }
     for (const state of ['failed', 'running', 'waiting'] as const) {

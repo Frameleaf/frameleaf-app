@@ -7,6 +7,7 @@ import { test } from 'node:test';
 import { Operations } from '../src/operations.js';
 import { Retention } from '../src/retention.js';
 import { Store } from '../src/store.js';
+import { Refusal } from '../src/contracts.js';
 import type { Container, Docker } from '../src/docker.js';
 
 // Review M3: dumps, recovery records, restore reviews, move state and release bundles were never collected.
@@ -216,6 +217,93 @@ test('Manager prunes at start and after every operation settles, and the sweep n
       await new Promise((resolve) => setTimeout(resolve, 5));
     assert.equal(await exists(join(directory, 'checkpoints', stop.id, 'database.dump')), false);
     assert.equal(await exists(join(directory, 'checkpoints', stop.id, 'compose.json')), true);
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+// FL-1242: an import's working folder keeps a copy of the source database, the database URL and the destination
+// administrator's password; nothing collected it.
+async function importRuntime(stack: string, id: string) {
+  const root = join(stack, `import-runtime-${id}`);
+  await mkdir(join(root, 'config'), { recursive: true, mode: 0o700 });
+  await mkdir(join(root, 'snapshot'), { recursive: true, mode: 0o700 });
+  for (const name of ['bootstrap-admin.json', 'database-url', 'command.json'])
+    await writeFile(join(root, 'config', name), name, { mode: 0o600 });
+  await writeFile(join(root, 'snapshot', 'index.db'), 'source copy');
+  return root;
+}
+test('a settled import loses its working folder; a stopped one keeps what resume and cancel read, not its secrets', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-retention-import-runtime-'));
+  const store = new Store(directory);
+  try {
+    const stack = join(directory, 'stack');
+    const done = store.start('import', 'done', {}).operation;
+    done.state = 'complete';
+    store.save(done);
+    const cancelled = store.start('import', 'cancelled', {}).operation;
+    cancelled.state = 'complete';
+    cancelled.error = 'recovered_source_stopped';
+    store.save(cancelled);
+    const forgotten = randomUUID();
+    const settled = [
+      await importRuntime(stack, done.id),
+      await importRuntime(stack, forgotten),
+      // A cancelled import's stack is archived with its working folder inside.
+      await importRuntime(join(directory, `cancelled-stack-${cancelled.id}`), cancelled.id),
+    ];
+    await mkdir(join(stack, 'import-runtime-not-an-operation'), { recursive: true });
+    await writeFile(join(stack, 'compose.json'), '{}');
+    const open = store.start('import', 'open', {}).operation;
+    const root = await importRuntime(stack, open.id);
+    const retention = new Retention(store, directory, join(directory, 'releases'));
+
+    for (const state of ['running', 'awaiting-review', 'failed', 'interrupted'] as const) {
+      open.state = state;
+      store.save(open);
+      await importRuntime(stack, open.id);
+      await retention.sweep();
+      const stopped = state === 'failed' || state === 'interrupted';
+      for (const secret of ['bootstrap-admin.json', 'database-url'])
+        assert.equal(await exists(join(root, 'config', secret)), !stopped, `${secret} while ${state}`);
+      for (const kept of [join('config', 'command.json'), join('snapshot', 'index.db')])
+        assert.equal(await exists(join(root, kept)), true, `resume and cancel read ${kept} while ${state}`);
+    }
+    for (const path of settled) assert.equal(await exists(path), false, path);
+    assert.equal(await exists(join(directory, `cancelled-stack-${cancelled.id}`)), true, 'the archived stack stays');
+    assert.equal(await exists(join(stack, 'import-runtime-not-an-operation')), true);
+    assert.equal(await exists(join(stack, 'compose.json')), true);
+
+    open.state = 'complete';
+    store.save(open);
+    await retention.sweep();
+    assert.equal(await exists(root), false, 'gone once the import settles');
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('an import that stops removes the staged administrator password at once', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-import-bootstrap-'));
+  const store = new Store(directory);
+  try {
+    const operations = new Operations(store, {} as never, {} as never, {} as never, [], {} as never);
+    (operations as any).retention = { sweep: async () => [] }; // the run itself removes it, not the sweep
+    for (const outcome of ['complete', 'failed'] as const) {
+      const { operation } = store.start('import', outcome, {});
+      operation.completed.push('stage-bootstrap-admin');
+      await mkdir(operations.directory(), { recursive: true, mode: 0o700 });
+      const root = await importRuntime(operations.directory(), operation.id);
+      (operations as any).launch(operation, async () => {
+        if (outcome === 'failed') throw new Refusal('docker_operation_failed');
+      });
+      for (const deadline = Date.now() + 5000; (operations as any).executing.has(operation.id) && Date.now() < deadline; )
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      assert.equal(store.history()[0].state, outcome);
+      assert.equal(await exists(join(root, 'config', 'bootstrap-admin.json')), false, outcome);
+    }
   } finally {
     store.close();
     await rm(directory, { recursive: true, force: true });

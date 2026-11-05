@@ -243,6 +243,8 @@ export async function readLibrephotosManifest(snapshot: Snapshot, input: Input) 
       ),
       // Owner 2026-11-04: a hidden photo imports Locked.
       visibility: trashed ? 'trash' : photo.state.hidden ? 'locked' : photo.state.archived ? 'archive' : 'timeline',
+      // FL-1230: a hidden photo in Trash stays private: trashed and Locked
+      ...(trashed && photo.state.hidden ? { locked: true as const } : {}),
       metadata: {
         ...metadata,
         takenAt,

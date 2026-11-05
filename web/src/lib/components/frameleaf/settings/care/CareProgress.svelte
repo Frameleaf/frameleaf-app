@@ -398,9 +398,8 @@
 </script>
 
 <KitPage>
-  {#if said}
-    <Said message={said} onDismiss={() => (said = '')} />
-  {/if}
+  <!-- Always in the page, so a message that appears in the live region is announced. -->
+  <Said message={said} onDismiss={() => (said = '')} />
 
   <Hero
     tone={loaded ? hero.tone : 'quiet'}
@@ -478,6 +477,7 @@
       title={$t('frameleaf_care_prog_redo_title', { values: { name: words(redoing.id, 'name') } })}
       verb={$t('frameleaf_care_redo')}
       note={$t('frameleaf_care_prog_redo_note')}
+      photosOnly={redoing.queues[0] === QueueName.NsfwDetection}
       onStart={redoOne}
     />{/if}
 

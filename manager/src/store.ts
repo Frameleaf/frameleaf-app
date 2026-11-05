@@ -121,6 +121,11 @@ export class Store {
     if (saved.changes !== 1) throw new Refusal('operation_journal_changed');
     this.versions.set(operation, value);
   }
+  /** The operation holding the single-operation lock: every state but complete keeps it (see save). */
+  locked(): Operation | null {
+    const row = this.db.prepare('SELECT value FROM operations WHERE active=1').get() as { value: string } | undefined;
+    return row ? this.decode(row.value) : null;
+  }
   history(): Operation[] {
     return (
       this.db.prepare('SELECT value FROM operations ORDER BY rowid DESC LIMIT 100').all() as { value: string }[]

@@ -90,6 +90,8 @@ const legacyManifestSchema = z.strictObject({
       visibility: z.enum(['timeline', 'archive', 'hidden', 'locked', 'trash']),
       /** A Locked item that is also archived returns to the Archive when unlocked. */
       archived: z.literal(true).optional(),
+      /** FL-1230: a private item in the source's Trash imports both trashed and Locked. */
+      locked: z.literal(true).optional(),
       metadata,
     }),
   ),
@@ -159,6 +161,12 @@ export const storedVisibility = ({
       ? 'timeline'
       : visibility;
 
+/** Whether the item imports Locked (an `asset_lock` row): a source's private item, in its Trash or not. */
+export const importsLocked = ({
+  visibility,
+  locked,
+}: Pick<ImportManifest['assets'][number], 'visibility' | 'locked'>) => visibility === 'locked' || locked === true;
+
 /** This validates bundle structure; source adapters must independently establish inventory evidence. */
 export const parseImportManifest = (input: unknown): ImportManifest => {
   const value = manifestSchema.parse(input);
@@ -194,6 +202,7 @@ export const parseImportManifest = (input: unknown): ImportManifest => {
   for (const asset of value.assets) {
     if (!indexes.users.has(asset.ownerId)) fail('UNKNOWN_OWNER');
     if (asset.archived && asset.visibility !== 'locked') fail('ASSET_ARCHIVED_REQUIRES_LOCKED');
+    if (asset.locked && asset.visibility !== 'trash') fail('ASSET_LOCKED_REQUIRES_TRASH');
     if (new Set(asset.fileIds).size !== asset.fileIds.length) fail('DUPLICATE_FILE_REFERENCE');
     if (asset.fileIds.some((fileId) => !files.has(fileId))) fail('UNKNOWN_FILE');
     const originals = asset.fileIds.filter((fileId) => files.get(fileId)?.role === 'original');
@@ -256,7 +265,11 @@ export const parseImportManifest = (input: unknown): ImportManifest => {
         if (claimed.has(assetId)) fail('STACK_MEMBERSHIP_CONFLICT');
         claimed.add(assetId);
         const member = assets.get(assetId)!;
-        if (member.visibility !== primary.visibility || member.archived !== primary.archived)
+        if (
+          member.visibility !== primary.visibility ||
+          member.archived !== primary.archived ||
+          member.locked !== primary.locked
+        )
           fail('STACK_VISIBILITY_MISMATCH');
         if (access(assetId) !== expectedAccess) fail('STACK_ACCESS_MISMATCH');
       }

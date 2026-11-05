@@ -56,9 +56,9 @@
   import { Route } from '$lib/route';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { albumTreeDropdown, sidebarCollapsed } from '$lib/stores/preferences.store';
-  import { handleCreateAlbumEntry, handleUpdateAlbumInfo } from '$lib/services/album.service';
+  import { handleCreateAlbumEntry, handleUpdateAlbumInfo, isStaleDirectoryError } from '$lib/services/album.service';
   import { handleError } from '$lib/utils/handle-error';
-  import { dropZone, planKeyMove, planRailMove, type RailDrop, type RailUpdate } from '$lib/frameleaf/rail-moves';
+  import { dropZone, planKeyMove, planRailMove, type RailDrop, type RailMove } from '$lib/frameleaf/rail-moves';
   import { canEdit } from '$lib/frameleaf/album-directory';
   import {
     AlbumKind,
@@ -68,7 +68,7 @@
     LibraryScope,
     LibraryViewScope,
     getAlbumHierarchy,
-    updateAlbumInfo,
+    setAlbumOrder,
     type AlbumHierarchyNode,
     type AlbumResponseDto,
     searchLibraryItems,
@@ -264,22 +264,55 @@
   /*
    * Moving albums (approved design, 2026-11-04): drag an album above or below another to reorder it,
    * or onto an album or collection to put it inside; ⌥↑ ⌥↓ move it, ⌥→ puts it in the one above,
-   * ⌥← takes it out one level. Saved as the album's parent and position, then the rail reloads.
+   * ⌥← takes it out one level. Saved as the album's parent and position, and as the person's own order
+   * for the group it lands in (which the server shows first, FL-1240), then the rail reloads.
    */
   let dragId = $state<string | null>(null);
   let drop = $state<{ id: string; where: RailDrop } | null>(null);
-  const applyMove = async (albumId: string, updates: RailUpdate[] | null) => {
-    if (!updates) {
+  const applyMove = async (albumId: string, move: RailMove | null) => {
+    if (!move) {
       return;
     }
-    const name = albumRecords.find(({ id }) => id === albumId)?.albumName ?? '';
-    try {
-      for (const { id, sortOrder, parentId } of updates) {
-        await updateAlbumInfo({ id, updateAlbumDto: { sortOrder, ...(parentId !== undefined && { parentId }) } });
+    const scope = workspaceScope;
+    let album = albumRecords.find(({ id }) => id === albumId);
+    const name = album?.albumName ?? '';
+    // Through the album service, which reports a failure and announces each saved album (`AlbumUpdate`).
+    let saved = true;
+    for (const { id, sortOrder, parentId } of move.updates) {
+      const response = await handleUpdateAlbumInfo(id, {
+        ...(sortOrder !== undefined && { sortOrder }),
+        ...(parentId !== undefined && { parentId }),
+      });
+      if (!response) {
+        saved = false;
+        break;
       }
-      toastManager.primary($t('frameleaf_rail_moved', { values: { name } }));
-    } catch (error) {
-      handleError(error, $t('errors.unable_to_update_album_info'));
+      if (id === albumId) {
+        album = response;
+      }
+    }
+    if (saved) {
+      try {
+        await setAlbumOrder({
+          albumOrderDto: {
+            parentId: move.parentId,
+            albumIds: move.albumIds,
+            hierarchy: true,
+            ...(scope && { libraryScope: scope }),
+          },
+        });
+        toastManager.primary($t('frameleaf_rail_moved', { values: { name } }));
+        // The person's own order changes no album: announce the move so an open Albums page shows it too.
+        if (album) {
+          eventManager.emit('AlbumUpdate', album);
+        }
+      } catch (error) {
+        if (isStaleDirectoryError(error)) {
+          toastManager.warning($t('frameleaf_albums_stale'));
+        } else {
+          handleError(error, $t('frameleaf_albums_order_failed'));
+        }
+      }
     }
     await refreshAlbums();
     await tick();

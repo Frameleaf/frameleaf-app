@@ -166,9 +166,9 @@ export type AnalyticsInsightRows = {
 export type AnalyticsMagicRows = {
   /** Per local capture month, the photos' average thumbnail colour in ThumbHash's L, P and Q (each 0-63). */
   colour: Array<{ month: number; photos: number; l: number; p: number; q: number }>;
-  /** Photos with a place and an instant, by how high the sun stood there then. */
+  /** Photos with a place and an instant, by how high the sun stood there then; all zero unless the owner reads their own scope. */
   light: { goldenMorning: number; goldenEvening: number; blueHour: number; daylight: number; night: number };
-  /** Items per local capture month; `south` is null for items without a location. */
+  /** Items per local capture month; `south` is null for items without a location. Empty unless the owner reads their own scope. */
   months: Array<{ month: number; south: boolean | null; count: number }>;
   /** The owner's own tags on the most items; empty unless the owner reads their own scope. */
   topTags: Array<{ name: string; count: number }>;
@@ -183,7 +183,7 @@ export type AnalyticsMagicRows = {
   underTheHood: { searchVectors: number; faceVectors: number; previews: number; databaseRows: number };
   /** Each camera's highest recorded shutter count (FL-1196). */
   shutter: Array<{ make: string | null; model: string | null; count: number }>;
-  /** The nearest everyday subject to each photo's visual-search embedding, for a sample of the newest. */
+  /** The nearest everyday subject to each photo's visual-search embedding, for a sample of the newest; null unless the owner reads their own scope. */
   seen: { described: number; labels: Array<{ id: string; count: number }> } | null;
 };
 
@@ -616,7 +616,8 @@ export class AnalyticsRepository {
   /**
    * Library magic (approved design, 2026-11-04). The colour comes from each photo's ThumbHash (its average
    * colour sits in the first three bytes); the light from the sun's height at the photo's place and instant
-   * (a low-precision solar position, good to about a degree); tags and places only for the scope's owner.
+   * (a low-precision solar position, good to about a degree). Tags, places, the light, the months (seasons)
+   * and what the AI sees describe what the photos show and where: only for the scope's owner (FL-79, FL-1243).
    */
   private async readMagic(
     run: <T>(query: RawBuilder<unknown>) => Promise<T[]>,
@@ -625,7 +626,8 @@ export class AnalyticsRepository {
     const local = sql`(items."localDateTime" at time zone 'UTC')`;
     const located = sql`items.latitude is not null and items.longitude is not null`;
     const place = sql`nullif(concat_ws(', ', items.city, items.country), '')`;
-    const labels = options.seenLabels ?? [];
+    const own = !!options.ownerId;
+    const labels = own ? (options.seenLabels ?? []) : [];
     const [shutter, seen] = await Promise.all([
       run<{ make: string | null; model: string | null; count: number }>(sql`
         select items.make, items.model, max(items."shutterCount")::int as count
@@ -654,7 +656,8 @@ export class AnalyticsRepository {
           avg((items."thumbhashHeader" >> 12) & 63)::float as q
         from items where items.type = ${IMAGE} and items."thumbhashHeader" is not null
         group by 1 order by 1`),
-      run<{ goldenMorning: string; goldenEvening: string; blueHour: string; daylight: string; night: string }>(sql`
+      own
+        ? run<{ goldenMorning: string; goldenEvening: string; blueHour: string; daylight: string; night: string }>(sql`
         select
           count(*) filter (where sun.elevation >= 6) as daylight,
           count(*) filter (where sun.elevation >= -4 and sun.elevation < 6 and extract(hour from ${local}) < 12) as "goldenMorning",
@@ -678,10 +681,13 @@ export class AnalyticsRepository {
             + cos(radians(items.latitude)) * cos(s.dec) * cos(radians(s.gmst * 15 + items.longitude - s.ra))
           )))) as elevation
         ) sun
-        where items.type = ${IMAGE} and ${located} and items."fileCreatedAt" is not null`),
-      run<{ month: number; south: boolean | null; count: string }>(sql`
+        where items.type = ${IMAGE} and ${located} and items."fileCreatedAt" is not null`)
+        : Promise.resolve([]),
+      own
+        ? run<{ month: number; south: boolean | null; count: string }>(sql`
         select extract(month from ${local})::int as month, (items.latitude < 0) as south, count(*) as count
-        from items group by 1, 2`),
+        from items group by 1, 2`)
+        : Promise.resolve([]),
       run<{ searchVectors: string; faceVectors: string; previews: string; databaseRows: string }>(sql`
         select
           (select count(*) from smart_search s inner join items on items.id = s."assetId") as "searchVectors",

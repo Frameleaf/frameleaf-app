@@ -59,8 +59,8 @@ const MapClusterSchema = MapMarkerSchema.extend({
     .number()
     .int()
     .min(0)
-    .max(24)
-    .describe('The map zoom level the items are grouped for; without an area, at most 4'),
+    .max(22)
+    .describe('The map zoom level the items are grouped for (at most 22); without an area, at most 4'),
 }).meta({ id: 'MapClusterDto' });
 
 /**

@@ -426,8 +426,9 @@ export class QueueService extends BaseService {
       throw new BadRequestException('Locked content is reread for photos only');
     }
     await this.jobRepository.queue({ name: jobName, data: { id: assetId } } as JobItem);
-    const jobId = await this.jobRepository.findWaitingJob(name, jobName, assetId);
-    if (!jobId || !(await this.jobRepository.startNow(name, jobId))) {
+    // FL-1249: with the item's job already running, the queue folds this request into it: started
+    const job = await this.jobRepository.findOpenJob(name, jobName, assetId);
+    if (!job || (!job.active && !(await this.jobRepository.startNow(name, job.id)))) {
       throw new BadRequestException('This item’s job could not be started now');
     }
   }

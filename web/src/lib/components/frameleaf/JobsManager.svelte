@@ -281,10 +281,13 @@
         : sumJobCounts(queues.map((queue) => ({ ...queue, statistics: statsOf(queue) ?? NO_STATS }))),
   );
 
+  // Strings, so a stats tick (new row objects, same queues) doesn't refetch the counts below.
+  const rowNames = $derived(rows.map((row) => row.definition.name).join(','));
+  const selectedQueue = $derived(selected?.definition.name);
   // An account's counts: the open queue's, or every listed queue's; again after each command.
   $effect(() => {
     const account = owner;
-    const name = selected?.definition.name;
+    const name = selectedQueue;
     void jobsReload;
     if (account === 'all') {
       ownerStats = new Map();
@@ -295,7 +298,12 @@
     if (untrack(() => statsOwner) !== account) {
       ownerStats = new Map();
     }
-    const names = name ? [name] : untrack(() => rows.map((row) => row.definition.name));
+    // the listed queues' names, tracked as one string so stats ticks don't refetch
+    const names = name ? [name] : rowNames ? (rowNames.split(',') as QueueName[]) : [];
+    if (names.length === 0) {
+      // queues not loaded yet: counts stay unknown until they are, rather than reading 0
+      return;
+    }
     let cancelled = false;
     void Promise.all(
       names.map((queueName) =>
@@ -713,7 +721,12 @@
       command: action,
       names,
       title: $t(`frameleaf_bgwork_feature_review_${action}` as Translations, { values: { name } }),
-      detail: $t(`frameleaf_bgwork_feature_review_${action}_detail` as Translations),
+      // as on one task's own redo: resetting face results gets the faces warning
+      detail:
+        action === 'force' &&
+        rows.some(({ definition }) => names.includes(definition.name) && definition.force === 'reset')
+          ? $t('frameleaf_jobs_review_force_faces')
+          : $t(`frameleaf_bgwork_feature_review_${action}_detail` as Translations),
       affected: names.length,
       dangerous: action === 'force',
       error: names.length === 0 ? $t('frameleaf_bgwork_feature_review_nothing') : undefined,
@@ -1795,6 +1808,7 @@
       { values: { name: runLabelFor(selected.definition) } },
     )}${selected.queue.isPaused ? ` ${$t('frameleaf_jobs_run_one_paused')}` : ''}`}
     videosOnly={selected.definition.name === QueueName.VideoConversion}
+    photosOnly={selected.definition.name === QueueName.NsfwDetection}
     onStart={runOne}
   />
 {/if}

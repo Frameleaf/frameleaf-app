@@ -496,6 +496,7 @@ test('an update whose server never turns healthy restores the previous release a
     assert.equal(installation.release, 'frameleaf-v1.2.2', 'the previous release is the installation again');
     assert.equal(installation.databasePath, join(directory, 'db-$rollback'), 'the checkpoint went into an empty directory');
     assert.deepEqual(store.get('retained-database-directories'), [current.databasePath], 'the migrated directory is kept');
+    assert.deepEqual(store.get('rolled-back-releases'), ['frameleaf-v1.2.3'], 'automatic updates skip it from now on');
     const stack = JSON.parse(await readFile(join(directory, 'stack', 'compose.json'), 'utf8'));
     assert.equal(stack.services['frameleaf-server'].image, image('old-server'));
     assert.equal(stack.services.database.volumes[0].source, join(directory, 'db-$$rollback'));
@@ -671,6 +672,48 @@ test('a failed start reports its own error when the final health receipt cannot 
     assert.equal(operation.receipts['server-served'], undefined, 'an unjournaled receipt is not kept');
   } finally {
     t.mock.restoreAll();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+// FL-1254: a poll already running when the start fails journals `server-served` before the caller decides
+// between keeping the target and rolling back, never after the rollback intent.
+test('a health poll in flight when the start fails is awaited before the rollback decision', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-update-in-flight-'));
+  const store = new Store(directory);
+  try {
+    const image = `fixture.invalid/server@sha256:${'a'.repeat(64)}`;
+    const review = { current: { id: 'a'.repeat(12) }, release: { nas: { images: { server: image } } } };
+    const { operation } = store.start('update', 'in-flight', { reviewId: 'r' });
+    let polls = 0;
+    let pollStarted!: () => void;
+    let finishPoll!: () => void;
+    const started = new Promise<void>((resolve) => (pollStarted = resolve));
+    const finished = new Promise<void>((resolve) => (finishPoll = resolve));
+    const healthy = [{ Config: { Image: image, Labels: {
+      'app.frameleaf.manager': 'a'.repeat(12), 'com.docker.compose.service': 'frameleaf-server' } },
+      State: { Running: true, Health: { Status: 'healthy' } } }];
+    const operations = new Operations(store, { inventory: async () => {
+      if (++polls > 1) return []; // a later check no longer sees the server
+      pollStarted();
+      await finished;
+      return healthy;
+    } } as never, {} as never, {} as never, [], {} as never);
+    operations.serverWatchMs = 1;
+    await assert.rejects(
+      (operations as any).watchServer(operation, review, async () => {
+        while (!polls) await new Promise((tick) => setTimeout(tick, 2)); // the poll timer itself is unref'd
+        await started;
+        setTimeout(finishPoll, 30); // the poll answers after the start has failed
+        throw new Error('server unhealthy');
+      }),
+      /server unhealthy/,
+    );
+    assert.equal(operation.receipts['server-served'], true);
+    assert.equal(store.history()[0].receipts['server-served'], true, 'journaled before watchServer returned');
+    assert.equal(polls, 1, 'one poll at a time; the final check finds the journaled receipt');
+  } finally {
     store.close();
     await rm(directory, { recursive: true, force: true });
   }

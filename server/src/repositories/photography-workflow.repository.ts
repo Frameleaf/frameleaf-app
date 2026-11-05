@@ -422,11 +422,19 @@ export class PhotographyWorkflowRepository {
       .where('deletedAt', 'is', null)
       .executeTakeFirst();
   }
-  /** Galleries with a reminder switched on, a page at a time. */
+  /**
+   * Galleries with a reminder switched on, a page at a time. Only live ones (FL-1234), as `live()` checks: the
+   * album is not deleted and the studio still owns it and is active, so a removed gallery or a deactivated
+   * studio sends no more reminders.
+   */
   async remindable(cursor: string | null = null) {
-    const { rows } = await sql<WorkflowRow>`SELECT * FROM ${TABLE}
-      WHERE (value->'config'->'reminders'->>'selection' = 'true' OR value->'config'->'reminders'->>'paymentAndExpiry' = 'true')
-        AND (${cursor}::uuid IS NULL OR id > ${cursor}::uuid) ORDER BY id LIMIT 200`.execute(this.db);
+    const { rows } = await sql<WorkflowRow>`SELECT workflow.* FROM ${TABLE} workflow
+      JOIN public.album album ON album.id=workflow."albumId"
+      JOIN public.album_user membership ON membership."albumId"=album.id AND membership."userId"=workflow."ownerId" AND membership.role='owner'
+      JOIN public."user" studio ON studio.id=workflow."ownerId"
+      WHERE (workflow.value->'config'->'reminders'->>'selection' = 'true' OR workflow.value->'config'->'reminders'->>'paymentAndExpiry' = 'true')
+        AND album."deletedAt" IS NULL AND studio."deletedAt" IS NULL AND studio.status='active'
+        AND (${cursor}::uuid IS NULL OR workflow.id > ${cursor}::uuid) ORDER BY workflow.id LIMIT 200`.execute(this.db);
     return rows;
   }
   async unfinished(cursor: string | null = null) {

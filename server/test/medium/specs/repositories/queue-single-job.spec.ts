@@ -85,10 +85,15 @@ describe('PostgreSQL queue: one job at a time', () => {
     expect(await store.retryFailed(queue, ids.c)).toBe(0);
   });
 
-  it('finds the job still waiting to run on one item', async () => {
+  it('finds the job still waiting to run on one item, or the one already running on it', async () => {
     const ids = await jobIds();
-    expect(await store.findWaitingJob(queue, 'single-stage', 'b')).toBe(ids.b);
-    expect(await store.findWaitingJob(queue, 'single-stage', 'missing')).toBeUndefined();
-    expect(await store.findWaitingJob(queue, 'other-stage', 'b')).toBeUndefined();
+    expect(await store.findOpenJob(queue, 'single-stage', 'b')).toEqual({ id: ids.b, active: false });
+    expect(await store.findOpenJob(queue, 'single-stage', 'missing')).toBeUndefined();
+    expect(await store.findOpenJob(queue, 'other-stage', 'b')).toBeUndefined();
+    // FL-1249: running, it is still the item's job, so Run on one item counts it as started
+    expect(await store.startNow(queue, ids.b)).toBe(true);
+    const [claim] = await store.claim(queue, worker);
+    expect(claim.id).toBe(ids.b);
+    expect(await store.findOpenJob(queue, 'single-stage', 'b')).toEqual({ id: ids.b, active: true });
   });
 });

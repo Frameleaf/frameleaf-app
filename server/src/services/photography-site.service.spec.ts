@@ -1,9 +1,10 @@
 import { BadRequestException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
-import { PhotographySiteService } from 'src/services/photography-site.service.js';
+import { PhotographySiteService, STUDIO_DOMAIN_HELD } from 'src/services/photography-site.service.js';
 import { defaultPhotographySite } from 'src/utils/photography-site.js';
 
 const OWNER = '0195e2a0-0000-7000-8000-000000000001';
+const OTHER_STUDIO = '0195e2a0-0000-7000-8000-000000000002';
 const REVISION = '0195e2a0-0000-7000-8000-0000000000aa';
 
 const setup = (storedSlug: string) => {
@@ -11,8 +12,9 @@ const setup = (storedSlug: string) => {
   // what is stored; each read is a copy, as from the database
   let record: object = { site: stored, media: {} };
   const repository = {
-    studioRecord: vi.fn(() => Promise.resolve({ revision: 'r1', record: structuredClone(record) })),
+    studioRecord: vi.fn((_ownerId: string) => Promise.resolve({ revision: 'r1', record: structuredClone(record) })),
     siteOwnerBySlug: vi.fn().mockResolvedValue(OWNER),
+    studioOwner: vi.fn().mockResolvedValue({ email: 'studio@example.com', name: 'Studio' }),
     mutateStudio: vi.fn((_owner: string, _revision: string, change: (record: object) => unknown) => {
       const next = structuredClone(record);
       const result = change(next);
@@ -24,7 +26,7 @@ const setup = (storedSlug: string) => {
   const logger = { setContext: vi.fn(), warn: vi.fn(), log: vi.fn() };
   const remoteAccess = {
     reportStudioSite: vi.fn().mockResolvedValue({ site: null, problem: null }),
-    studioSiteStatus: vi.fn(),
+    studioSiteStatus: vi.fn().mockResolvedValue({ site: null, problem: null }),
   };
   const sut = new PhotographySiteService(
     repository as never,
@@ -39,7 +41,7 @@ const setup = (storedSlug: string) => {
     logger as never,
     remoteAccess as never,
   );
-  return { sut, repository, stored, remoteAccess };
+  return { sut, repository, stored, remoteAccess, logger };
 };
 
 describe(PhotographySiteService.name, () => {
@@ -124,6 +126,98 @@ describe(PhotographySiteService.name, () => {
         domain: 'photos.cedarandlight.ca',
         slug: 'north-studio',
       });
+    });
+  });
+
+  describe("another studio's own domain (FL-1233)", () => {
+    const other = { domain: 'a.example.com', slug: 'a-studio', status: 'active', problem: null, records: [] };
+    const publishedA = { enabled: true, domain: 'a.example.com' };
+    // Cloud serves studio A's site; this studio (B) is another account on the same server
+    const withStudioA = (studioA: { enabled: boolean; domain: string } = publishedA) => {
+      const context = setup('north-studio');
+      const { repository, remoteAccess } = context;
+      const original = repository.studioRecord.getMockImplementation()!;
+      repository.siteOwnerBySlug.mockImplementation((slug: string) =>
+        Promise.resolve(slug === 'a-studio' ? OTHER_STUDIO : OWNER),
+      );
+      repository.studioRecord.mockImplementation((ownerId: string) =>
+        ownerId === OTHER_STUDIO
+          ? Promise.resolve({
+              revision: 'a1',
+              record: { site: { ...defaultPhotographySite('A'), slug: 'a-studio', ...studioA }, media: {} },
+            })
+          : original(ownerId),
+      );
+      remoteAccess.studioSiteStatus.mockResolvedValue({ site: other, problem: null });
+      return context;
+    };
+
+    it("does not replace another studio's domain; the save still succeeds", async () => {
+      const { sut, stored, remoteAccess, logger } = withStudioA();
+
+      const saved = await sut.saveSite({} as never, {
+        expectedRevision: REVISION,
+        site: { ...stored, enabled: true, domain: 'b.example.com' },
+      });
+
+      expect(saved.site.domain).toBe('b.example.com');
+      await vi.waitFor(() => expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining(STUDIO_DOMAIN_HELD)));
+      expect(remoteAccess.reportStudioSite).not.toHaveBeenCalled();
+    });
+
+    it("does not take another studio's domain down when this studio clears its own", async () => {
+      const { sut, stored, remoteAccess, logger } = withStudioA();
+      const published = { ...stored, enabled: true, domain: 'b.example.com' };
+      await sut.saveSite({} as never, { expectedRevision: REVISION, site: published });
+      await sut.saveSite({} as never, { expectedRevision: REVISION, site: { ...published, domain: '' } });
+
+      await vi.waitFor(() => expect(remoteAccess.studioSiteStatus).toHaveBeenCalledTimes(2));
+      await vi.waitFor(() => expect(logger.warn).toHaveBeenCalledTimes(1));
+      expect(remoteAccess.reportStudioSite).not.toHaveBeenCalled();
+    });
+
+    it("explains on the domain status, without re-reporting, that another studio holds the server's domain", async () => {
+      const { sut, repository, stored, remoteAccess } = withStudioA();
+      const original = repository.studioRecord.getMockImplementation()!;
+      repository.studioRecord.mockImplementation((ownerId: string) =>
+        ownerId === OWNER
+          ? Promise.resolve({
+              revision: 'r1',
+              record: { site: { ...stored, enabled: true, domain: 'b.example.com' }, media: {} },
+            })
+          : original(ownerId),
+      );
+
+      await expect(sut.siteDomain({} as never)).resolves.toEqual({ site: null, problem: STUDIO_DOMAIN_HELD });
+      expect(remoteAccess.reportStudioSite).not.toHaveBeenCalled();
+    });
+
+    it('takes over a domain no studio publishes any more', async () => {
+      const { sut, stored, remoteAccess } = withStudioA({ enabled: false, domain: 'a.example.com' });
+
+      await sut.saveSite({} as never, {
+        expectedRevision: REVISION,
+        site: { ...stored, enabled: true, domain: 'b.example.com' },
+      });
+      await vi.waitFor(() =>
+        expect(remoteAccess.reportStudioSite).toHaveBeenCalledWith({ domain: 'b.example.com', slug: 'north-studio' }),
+      );
+    });
+
+    it('takes its own domain down when it is the one Cloud serves', async () => {
+      const { sut, stored, remoteAccess } = setup('north-studio');
+      await sut.saveSite({} as never, {
+        expectedRevision: REVISION,
+        site: { ...stored, enabled: true, domain: 'b.example.com' },
+      });
+      await vi.waitFor(() => expect(remoteAccess.reportStudioSite).toHaveBeenCalledOnce());
+      remoteAccess.studioSiteStatus.mockResolvedValue({
+        site: { domain: 'b.example.com', slug: 'north-studio', status: 'active', problem: null, records: [] },
+        problem: null,
+      });
+
+      await sut.saveSite({} as never, { expectedRevision: REVISION, site: { ...stored, enabled: false } });
+      await vi.waitFor(() => expect(remoteAccess.reportStudioSite).toHaveBeenLastCalledWith(null));
     });
   });
 });

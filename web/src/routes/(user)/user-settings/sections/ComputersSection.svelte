@@ -16,6 +16,7 @@
   import { page } from '$app/state';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
   import WhereWorkRuns from '$lib/components/frameleaf/computers/WhereWorkRuns.svelte';
+  import { WorkRunsDraft } from '$lib/components/frameleaf/computers/work-runs-draft.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import MlDestinationsPanel from '$lib/components/frameleaf/MlDestinationsPanel.svelte';
@@ -199,6 +200,12 @@
     }
     await tick();
   };
+  /**
+   * Who does what's unsaved choices, one for each view, kept here so switching views or opening a
+   * computer's details (which draw that part afresh) does not drop them (FL-1252).
+   */
+  const everydayDraft = new WorkRunsDraft();
+  const advancedDraft = new WorkRunsDraft();
   /** With only this server, Frameleaf Cloud is the other way to get heavy work done faster. */
   const offerCloud = $derived(atHome.length === 1 && computers.every((computer) => computer.place !== 'cloud'));
 
@@ -244,6 +251,12 @@
         ? aiDetails
         : studioDetails,
     );
+  /** Who does what's "Add a computer" opens the two ways here; its link to this page would not (FL-1245). */
+  const addComputer = async () => {
+    addOpen = true;
+    await tick();
+    addSection?.scrollIntoView({ block: 'start' });
+  };
   // "Add a computer" links from the other pages (`?add=`) land on the two ways to connect one.
   onMount(() => {
     if (page.url.searchParams.has('add')) {
@@ -366,7 +379,7 @@
         </Section>
       </div>
     {/if}
-    <WhereWorkRuns part="everyday" />
+    <WhereWorkRuns part="everyday" draft={everydayDraft} onAdd={() => void addComputer()} />
   {:else}
     <!-- Advanced (prototype `WorkV3.jsx` ComputersAdvanced): Each computer, Finer choices, Limits for each
          person, Connections, History, then what is set somewhere else. The operator managers (addresses,
@@ -450,7 +463,7 @@
         </Advanced>
       </div>
     </Section>
-    <WhereWorkRuns part="advanced">
+    <WhereWorkRuns part="advanced" draft={advancedDraft}>
       {#snippet between()}
         <RenderWorkersSection data={data.render} store={renderState} part="limits" />
       {/snippet}

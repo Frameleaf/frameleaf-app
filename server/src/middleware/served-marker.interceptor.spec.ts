@@ -5,10 +5,12 @@ import type { SystemMetadataRepository } from 'src/repositories/system-metadata.
 import { serverVersion } from 'src/constants.js';
 import { ServedMarkerInterceptor } from 'src/middleware/served-marker.interceptor.js';
 
-const context = (originalUrl: string, headers: Record<string, string> = {}) =>
+const signedIn = { user: { id: 'user-1' } };
+
+const context = (originalUrl: string, headers: Record<string, string> = {}, user: object | null = signedIn) =>
   ({
     getType: () => 'http',
-    switchToHttp: () => ({ getRequest: () => ({ originalUrl, path: originalUrl, headers }) }),
+    switchToHttp: () => ({ getRequest: () => ({ originalUrl, path: originalUrl, headers, user }) }),
   }) as unknown as ExecutionContext;
 
 describe(ServedMarkerInterceptor.name, () => {
@@ -33,6 +35,17 @@ describe(ServedMarkerInterceptor.name, () => {
       version: serverVersion.toString(),
       servedAt: expect.any(String),
     });
+  });
+
+  it("ignores the Manager's own polls and requests no one signed in to (FL-1232)", () => {
+    const { sut, set, next } = setup();
+    sut.intercept(context('/api/server/library-setup/manager', { 'x-frameleaf-manager': 'token' }, null), next);
+    sut.intercept(context('/api/server/library-setup/manager', { 'x-frameleaf-manager': 'token' }), next);
+    sut.intercept(context('/api/server/config', {}, null), next);
+    expect(set).not.toHaveBeenCalled();
+
+    sut.intercept(context('/api/assets'), next);
+    expect(set).toHaveBeenCalledTimes(1);
   });
 
   it('never fails the request when the write fails, and retries on the next one', async () => {

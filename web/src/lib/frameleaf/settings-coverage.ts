@@ -200,7 +200,7 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     pattern: 'frameleafCloud.cloudMl.startWith',
     kind: 'control',
     file: 'src/lib/components/frameleaf/computers/WhereWorkRuns.svelte',
-    evidence: 'cloudMl.startWith = suggest',
+    evidence: 'cloudMl.startWith = work.suggest',
   },
   {
     pattern: 'frameleafCloud.remoteAccess.allowOriginalsOverRelay',

@@ -1,4 +1,4 @@
-import { readdir, rm, stat } from 'node:fs/promises';
+import { lstat, readdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Operation } from './contracts.js';
 import type { Store } from './store.js';
@@ -7,6 +7,8 @@ import type { Store } from './store.js';
 export const RETAINED_RELEASE_BUNDLES = 3;
 /** Files of a checkpoint that exist only to be snapshotted: the plaintext dump and the recovery record. */
 export const CHECKPOINT_SNAPSHOT_FILES = ['database.dump', 'recovery.json'];
+/** Secrets in an import's working folder; each run of the import writes them again. */
+export const IMPORT_RUNTIME_SECRETS = ['bootstrap-admin.json', 'database-url'];
 const UUID = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
 type Reviewed = { expires?: number; release?: { directory?: string }; checkpoint?: string };
 
@@ -18,6 +20,10 @@ type Reviewed = { expires?: number; release?: { directory?: string }; checkpoint
  * a release bundle into `releases/<uuid>`. Nothing used to delete them, so a NAS filled with dumps until
  * ENOSPC. The sweep keeps what a journaled operation may still need (any operation that is not complete,
  * and any review that has not expired), then removes the rest; release bundles keep the N most recent.
+ * A common import's working folder `stack/import-runtime-<operation>` (also inside a cancelled stack's archive)
+ * holds a copy of the source database, the prepared bundle, the database URL and, while it runs, the
+ * destination administrator's password: a settled import loses the folder, and a stopped one keeps what a
+ * resume or a safe cancel reads but not those two secrets, which its next run writes again.
  * It runs after every operation settles and when Manager starts; it never throws.
  */
 export class Retention {
@@ -73,6 +79,13 @@ export class Retention {
       const imports = await this.entries(join(this.directory, 'imports'));
       const stateEntries = await this.entries(this.directory);
       const mediaMoves = await this.entries(join(this.directory, 'media-moves'));
+      const runtimes: { id: string; path: string }[] = [];
+      for (const stack of ['stack', ...stateEntries.filter((name) => name.startsWith('cancelled-stack-'))])
+        for (const name of await this.entries(join(this.directory, stack))) {
+          const id = name.replace(/^import-runtime-/, '');
+          if (name.startsWith('import-runtime-') && UUID.test(id))
+            runtimes.push({ id, path: join(this.directory, stack, name) });
+        }
       const operations = this.store.history();
       // Checkpoints of settled operations: restic holds the dump and recovery record; compose.json stays
       // (a library move reads the checkpoint's compose.json while the operation is open; it is small).
@@ -88,6 +101,19 @@ export class Retention {
         const id = name.replace(/\.dump$/, '');
         if (!name.endsWith('.dump') || !UUID.test(id) || !this.settled(operations, id)) continue;
         await this.remove(join(this.directory, 'imports', name), removed);
+      }
+      for (const runtime of runtimes) {
+        if (this.settled(operations, runtime.id)) {
+          await this.remove(runtime.path, removed);
+          continue;
+        }
+        for (const secret of IMPORT_RUNTIME_SECRETS) {
+          // Rechecked per file: a resume started since the journal was read stages these again.
+          const state = this.store.history().find((operation) => operation.id === runtime.id)?.state;
+          if (state !== 'failed' && state !== 'interrupted') break;
+          const file = join(runtime.path, 'config', secret);
+          if (await lstat(file).then(() => true, () => false)) await this.remove(file, removed);
+        }
       }
       // A restore review restores a whole snapshot into restore-<review>; spent or expired reviews lose it.
       const restores = this.reviews('restore');

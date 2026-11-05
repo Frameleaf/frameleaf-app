@@ -301,6 +301,17 @@ describe('LibrePhotos common manifest mapping', () => {
     expect(manifest.assets.find((photo) => photo.id === photoId('trash'))?.metadata.deletedAt).toBe(
       '2026-11-01T19:20:53.620027Z',
     );
+    expect(manifest.assets.find((photo) => photo.id === photoId('trash'))?.locked).toBeUndefined();
+  });
+
+  it('imports a hidden photo in Trash both trashed and Locked (FL-1230)', async () => {
+    database.prepare('UPDATE api_photo SET hidden=1 WHERE id=?').run(photoId('trash'));
+    const { manifest } = await read(snapshot(), input());
+    expect(manifest.assets.find((photo) => photo.id === photoId('trash'))).toMatchObject({
+      visibility: 'trash',
+      locked: true,
+      metadata: { deletedAt: '2026-11-01T19:20:53.620027Z' },
+    });
   });
 
   it('preserves safe stack membership and archives incompatible visibility without changing it', async () => {
