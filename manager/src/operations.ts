@@ -1450,6 +1450,12 @@ export class Operations {
       // Issue 863: a target that started but never turned healthy boot-loops. Before 'starting' nothing ran,
       // and the operation stays cancellable back to the previous release instead.
       if (operation.receipts['release-start-state'] !== 'starting') throw error;
+      // Another service (machine learning) can fail `up --wait` after the server was healthy and took writes.
+      if (await this.serverMayHaveServed(review).catch(() => true)) {
+        operation.receipts['release-start-state'] = 'started';
+        this.store.save(operation);
+        throw error;
+      }
       const reason = error instanceof Refusal ? error.code : ((error as Error)?.message ?? String(error));
       console.error(redact(`manager: ${review.release.nas.tag} did not start (${reason}); rolling back to ${review.current.release}`));
       operation.receipts['rollback-intent'] = error instanceof Refusal ? error.code : 'release_start_failed';
@@ -1502,6 +1508,23 @@ export class Operations {
       this.store.save(operation);
       return this.libraryStatus();
     });
+  }
+  /**
+   * Whether Docker shows the target's server passing a health probe. ponytail: Docker keeps only the last
+   * five probes, so a server that was healthy long before failing many probes reads as never served; the
+   * upgrade is a server-side "first request served" marker.
+   */
+  private async serverMayHaveServed(review: UpdateReview): Promise<boolean> {
+    const server = (await this.docker.inventory()).find(
+      (c) =>
+        c.Config.Labels?.['app.frameleaf.manager'] === review.current.id &&
+        c.Config.Labels?.['com.docker.compose.service'] === 'frameleaf-server',
+    );
+    // No container of the target's image means the target server never ran.
+    if (!server || server.Config.Image !== review.release.nas.images.server) return false;
+    const health = server.State.Health;
+    if (!health) return server.State.Running;
+    return health.Status === 'healthy' || !!health.Log?.some((probe) => probe.ExitCode === 0);
   }
   /**
    * Put the previous release back after its replacement started and failed. The target may have migrated
