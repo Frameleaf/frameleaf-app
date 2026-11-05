@@ -7,10 +7,15 @@ import { ServedMarkerInterceptor } from 'src/middleware/served-marker.intercepto
 
 const signedIn = { user: { id: 'user-1' } };
 
-const context = (originalUrl: string, headers: Record<string, string> = {}, user: object | null = signedIn) =>
+const context = (
+  originalUrl: string,
+  headers: Record<string, string> = {},
+  user: object | null = signedIn,
+  method = 'GET',
+) =>
   ({
     getType: () => 'http',
-    switchToHttp: () => ({ getRequest: () => ({ originalUrl, path: originalUrl, headers, user }) }),
+    switchToHttp: () => ({ getRequest: () => ({ originalUrl, path: originalUrl, headers, user, method }) }),
   }) as unknown as ExecutionContext;
 
 describe(ServedMarkerInterceptor.name, () => {
@@ -43,8 +48,18 @@ describe(ServedMarkerInterceptor.name, () => {
     sut.intercept(context('/api/server/config', {}, null), next);
     expect(set).not.toHaveBeenCalled();
 
+    // the Manager's own writes (begin, finish) are its machine routes too
+    sut.intercept(context('/api/server/library-setup/manager', { 'x-frameleaf-manager': 'token' }, null, 'POST'), next);
+    expect(set).not.toHaveBeenCalled();
+
     // the header proves nothing: a signed-in user's request counts whatever it carries
     sut.intercept(context('/api/assets', { 'x-frameleaf-manager': 'anything' }), next);
+    expect(set).toHaveBeenCalledTimes(1);
+  });
+
+  it("counts a guest's public write, such as gallery choices", () => {
+    const { sut, set, next } = setup();
+    sut.intercept(context('/api/photography/galleries/share-key/choices', {}, null, 'PUT'), next);
     expect(set).toHaveBeenCalledTimes(1);
   });
 
