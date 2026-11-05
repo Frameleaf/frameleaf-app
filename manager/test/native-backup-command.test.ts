@@ -57,6 +57,24 @@ test(
   },
 );
 
+test('native backup requires the installed program protection before execution', async () => {
+  let effects = 0;
+  const executable = await realpath(process.execPath);
+  const execute = nativeBackupCommand(
+    { executable, sha256: sha256(await readFile(executable)) },
+    async () => {
+      effects++;
+      return '';
+    },
+    async (path) => {
+      assert.equal(path, executable);
+      throw new Error('protection refused');
+    },
+  );
+  await assert.rejects(execute('restic', []), /native_backup_engine_changed/);
+  assert.equal(effects, 0);
+});
+
 test(
   'native backup does not execute a correctly hashed but user-writable engine',
   { skip: process.platform === 'win32' },
