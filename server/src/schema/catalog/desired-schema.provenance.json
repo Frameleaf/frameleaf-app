@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "146ee0eeb810c3d78ee7fcb2c1a92d4c5f4fc371",
+  "sourceCommit": "08eaae921421423ef094cd752f541f5f1e9ca1e4",
   "sourceHashes": {
     "src/enum.ts": "a0e0554cdb88b8e965ed7fbee4b45a1c7e1dc71b694009dd255b2922740d51c3",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
@@ -82,7 +82,7 @@
     "src/schema/tables/memory-asset.table.ts": "d290cffde479e426de022f987418fa9b9b209739a7b4ac419c65e7046e9be4b7",
     "src/schema/tables/memory-audit.table.ts": "a6d87f1dcc89b9439d00384438f567c6e36f730ebccac7cb5855ff3eac81a5f6",
     "src/schema/tables/memory-export.table.ts": "cecab6b74e04f7da31b59644663ae13b89b391f5afca571f46bb9e92da37ec13",
-    "src/schema/tables/memory.table.ts": "6c563388fd136727eec376f3df23e487f1eb6c543444affa68e90e5ed3b7711a",
+    "src/schema/tables/memory.table.ts": "27bcf3c6c84b7ee19e5947362b81a83f04cc5437c7739f2d5c61a1929734a7a8",
     "src/schema/tables/ml-destination.table.ts": "36c14a543a97321261843201448ec030aeb5d8672c21128f150ccc98f4af6bd9",
     "src/schema/tables/ml-processing-order.table.ts": "ab6aecef4d67f383f6764269ffca3fe4f61b87b648cb07882b973a4101ead9ba",
     "src/schema/tables/ml-workload-route-origin.table.ts": "f5f4b57506681ed8a8d150dfd9ca6df2a6261f83cd11a44645674c679973530f",
@@ -159,6 +159,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "b57bd944096b45f516bb29a336033410d24b145e89b708575786aa09e1a6bfbf",
-  "dumpSha256": "baa1fe4c9fa74e3479c5d1822e91b9ece15deb5a7007ddeb8be29d4acac63fcb",
+  "dumpSha256": "a3cb81dedef291b4e928073dab6831a06490964a3b249415cedfeaa53584cfcf",
   "rawMetadataSha256": "5aca47ce58c619b5fcc7fab05f22e09e257357bd8944aaa2932a7b7b7fc25fed"
 }
