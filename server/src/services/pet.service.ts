@@ -208,6 +208,7 @@ export class PetService {
       ...box,
     });
 
+    await this.useAsCoverIfMissing(auth, pet, dto.assetId);
     await this.lookForPetAgain(pet.id, dto.assetId);
     return mapPetObservation(observation);
   }
@@ -320,7 +321,7 @@ export class PetService {
     const petId = dto.petId ?? candidate.petId;
 
     // Reassignment targets a pet the caller names, so it gets its own owner check.
-    await this.findOrFail(auth, petId);
+    const pet = await this.findOrFail(auth, petId);
     await this.requireCurrentSource(auth, candidate.assetId, dto.expectedChecksum);
 
     const observation = await this.petRepository.upsertObservation({
@@ -337,6 +338,7 @@ export class PetService {
     });
 
     await this.petRepository.deleteCandidates(candidate.detectionId, [...new Set([candidate.petId, petId])]);
+    await this.useAsCoverIfMissing(auth, pet, candidate.assetId);
     await this.lookForPetAgain(petId, candidate.assetId);
 
     return mapPetObservation(observation);
@@ -391,6 +393,22 @@ export class PetService {
     if (!current || !Buffer.from(expected, 'base64').equals(Buffer.from(current))) {
       throw new ConflictException('This photo changed since it was opened. Reload it and try again.');
     }
+  }
+
+  /**
+   * A pet without a featured photo takes the first photo it is confirmed in, as a person takes a
+   * face, so the Pets page shows the pet rather than a placeholder. The owner's own choice is never
+   * replaced, and a Locked photo is never used (FL-53: the thumbnail shows whatever the session).
+   */
+  private async useAsCoverIfMissing(
+    auth: AuthDto,
+    pet: { id: string; featuredAssetId: string | null },
+    assetId: string,
+  ) {
+    if (pet.featuredAssetId || (await this.petRepository.isOwnLockedAsset(auth.user.id, assetId))) {
+      return;
+    }
+    await this.petRepository.update(auth.user.id, pet.id, { featuredAssetId: assetId });
   }
 
   /** A pet was confirmed in a photo: recognition looks again at the owner's photos most like it. */

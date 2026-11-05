@@ -26,6 +26,24 @@ const RUNNING_MEMORY_EXPORT_STATUSES = [
   MemoryExportStatus.Cancelling,
 ];
 
+/** How many queues one summary reads at once; the pool has 10 connections shared with every request. */
+const QUEUE_READ_BATCH = 4;
+
+const unavailableQueue = (name: QueueName): QueueRunDto => ({
+  name,
+  isPaused: false,
+  canPause: false,
+  unavailable: true,
+  state: 'unavailable',
+  active: 0,
+  waiting: 0,
+  processed: 0,
+  total: 0,
+  startedAt: null,
+  lastProgressAt: null,
+  noDispatchBacklog: false,
+});
+
 /** Queues whose pause the queue service refuses; the panel shows their control disabled. */
 const UNPAUSABLE_QUEUES: ReadonlySet<QueueName> = new Set([QueueName.BackgroundTask]);
 
@@ -44,6 +62,8 @@ const UNPAUSABLE_QUEUES: ReadonlySet<QueueName> = new Set([QueueName.BackgroundT
  */
 @Injectable()
 export class RunningJobService {
+  private queueRunsInFlight?: Promise<QueueRunDto[]>;
+
   constructor(
     private logger: LoggingRepository,
     private jobRepository: JobRepository,
@@ -84,69 +104,85 @@ export class RunningJobService {
    * Every queue with work in it, in the order the queues are declared.
    *
    * A failed queue read becomes an explicit unavailable row. Other work remains visible.
+   *
+   * The queues are read {@link QUEUE_READ_BATCH} at a time and the paused flags once for all of them, as the
+   * Jobs page does: reading every queue at once queued ~50 reads on the 10-connection pool per summary, and two
+   * panels polling together went past its waiter cap, so unrelated requests failed with 500.
    */
-  private async getQueueRuns(): Promise<QueueRunDto[]> {
-    const holds = await this.getQuietHoursHolds();
-    const runs = await Promise.all(
-      Object.values(QueueName).map(async (name): Promise<QueueRunDto | null> => {
-        try {
-          const [run, isPaused] = await Promise.all([
-            this.jobRepository.observeQueueRun(name),
-            this.jobRepository.isPaused(name),
-          ]);
-          if (run.active + run.waiting === 0) {
-            return null;
-          }
+  private getQueueRuns(): Promise<QueueRunDto[]> {
+    // The rows are server-wide and the same for every administrator: summaries polled at the same moment
+    // (several tabs or administrators) share one read instead of each queuing their own.
+    this.queueRunsInFlight ??= this.readQueueRuns().finally(() => {
+      this.queueRunsInFlight = undefined;
+    });
+    return this.queueRunsInFlight;
+  }
 
-          const held = isPaused && holds.has(name);
-          return {
-            name,
-            isPaused,
-            ...(held && { heldForNight: true, resumesAt: holds.get(name) ?? null }),
-            canPause: !UNPAUSABLE_QUEUES.has(name),
-            active: run.active,
-            waiting: run.waiting,
-            processed: run.processed,
-            total: run.processed + run.active + run.waiting,
-            startedAt: run.startedAt ? run.startedAt.toISOString() : null,
-            unavailable: false,
-            state: isPaused
-              ? 'paused'
-              : run.active > 0
-                ? 'running'
-                : run.blocked > 0 && run.blocked === run.waiting
-                  ? 'blocked'
-                  : run.delayed > 0 && run.delayed === run.waiting
-                    ? 'delayed'
-                    : run.workerAvailable
-                      ? run.retrying > 0
-                        ? 'retrying'
-                        : 'waiting'
-                      : 'unavailable',
-            noDispatchBacklog: run.noDispatchBacklog,
-            lastProgressAt: run.lastProgressAt?.toISOString() ?? null,
-          };
-        } catch {
-          this.logger.warn(`Unable to read the ${name} queue for the running-jobs summary`);
-          return {
-            name,
-            isPaused: false,
-            canPause: false,
-            unavailable: true,
-            state: 'unavailable',
-            active: 0,
-            waiting: 0,
-            processed: 0,
-            total: 0,
-            startedAt: null,
-            lastProgressAt: null,
-            noDispatchBacklog: false,
-          };
-        }
-      }),
-    );
+  private async readQueueRuns(): Promise<QueueRunDto[]> {
+    const holds = await this.getQuietHoursHolds();
+    const names = Object.values(QueueName);
+    let paused: Set<string> | undefined;
+    try {
+      paused = await this.jobRepository.getPausedQueues();
+    } catch {
+      this.logger.warn('Unable to read which queues are paused for the running-jobs summary');
+    }
+    const runs: (QueueRunDto | null)[] = [];
+    for (let offset = 0; offset < names.length; offset += QUEUE_READ_BATCH) {
+      const batch = names.slice(offset, offset + QUEUE_READ_BATCH);
+      runs.push(...(await Promise.all(batch.map((name) => this.getQueueRun(name, paused, holds)))));
+    }
 
     return runs.filter((run): run is QueueRunDto => run !== null);
+  }
+
+  private async getQueueRun(
+    name: QueueName,
+    paused: Set<string> | undefined,
+    holds: Map<QueueName, string | null>,
+  ): Promise<QueueRunDto | null> {
+    if (!paused) {
+      return unavailableQueue(name);
+    }
+    try {
+      const run = await this.jobRepository.observeQueueRun(name);
+      const isPaused = paused.has(name);
+      if (run.active + run.waiting === 0) {
+        return null;
+      }
+
+      const held = isPaused && holds.has(name);
+      return {
+        name,
+        isPaused,
+        ...(held && { heldForNight: true, resumesAt: holds.get(name) ?? null }),
+        canPause: !UNPAUSABLE_QUEUES.has(name),
+        active: run.active,
+        waiting: run.waiting,
+        processed: run.processed,
+        total: run.processed + run.active + run.waiting,
+        startedAt: run.startedAt ? run.startedAt.toISOString() : null,
+        unavailable: false,
+        state: isPaused
+          ? 'paused'
+          : run.active > 0
+            ? 'running'
+            : run.blocked > 0 && run.blocked === run.waiting
+              ? 'blocked'
+              : run.delayed > 0 && run.delayed === run.waiting
+                ? 'delayed'
+                : run.workerAvailable
+                  ? run.retrying > 0
+                    ? 'retrying'
+                    : 'waiting'
+                  : 'unavailable',
+        noDispatchBacklog: run.noDispatchBacklog,
+        lastProgressAt: run.lastProgressAt?.toISOString() ?? null,
+      };
+    } catch {
+      this.logger.warn(`Unable to read the ${name} queue for the running-jobs summary`);
+      return unavailableQueue(name);
+    }
   }
 
   /**

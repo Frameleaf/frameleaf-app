@@ -147,7 +147,21 @@ select
           AND "scoped"."libraryId" IS NULL
           AND "scoped"."ownerId" = "user"."id"
       ) AS "distinct_originals"
-  ) as "usagePhysical"
+  ) as "usagePhysical",
+  max("asset"."createdAt") filter (
+    where
+      (
+        "asset"."visibility" != $5
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
+  ) as "lastAddedAt"
 from
   "user"
   left join "asset" on "asset"."ownerId" = "user"."id"
@@ -164,7 +178,7 @@ from
   left join "asset_exif" on "asset_exif"."assetId" = "asset"."id"
 where
   "user"."deletedAt" is null
-  and "user"."status" = $5
+  and "user"."status" = $6
 group by
   "user"."id"
 order by

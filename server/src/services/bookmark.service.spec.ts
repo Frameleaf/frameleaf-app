@@ -71,6 +71,22 @@ describe(BookmarkService.name, () => {
     expect(result).not.toHaveProperty('source');
   });
 
+  it("returns the capture source in the owner's own read only", async () => {
+    const source = {
+      captureId: '0d4f7a8e-6f5b-4c3e-9a1d-2b3c4d5e6f70',
+      pageUrl: 'https://example.org/page',
+      title: 'Page',
+      capturedAt: '2026-11-05T10:00:00.000Z',
+      creator: 'Jamie',
+    };
+    bookmarks.getOwned.mockResolvedValue({ ...row, source } as never);
+    expect(await service.get(authStub.user1, row.id)).toEqual(expect.objectContaining({ source }));
+    bookmarks.getOwned.mockResolvedValue(row);
+    expect(await service.get(authStub.user1, row.id)).toEqual(expect.objectContaining({ source: null }));
+    bookmarks.getOwned.mockResolvedValue({ ...row, ownerId: authStub.admin.user.id, source } as never);
+    expect(await service.get(authStub.user1, row.id)).not.toHaveProperty('source');
+  });
+
   it('never grants preview media access from bookmark membership', async () => {
     await expect(
       service.create(authStub.user1, {

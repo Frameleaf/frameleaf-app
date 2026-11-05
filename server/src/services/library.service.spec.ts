@@ -401,6 +401,21 @@ describe(LibraryService.name, () => {
     });
   });
 
+  describe('getManagedUploads', () => {
+    it("returns each account's uploads with when the newest was added", async () => {
+      const lastAddedAt = new Date('2026-11-05T07:00:00.000Z');
+      mocks.library.getManagedUploadStatistics.mockResolvedValue([
+        { ownerId: 'owner-1', photos: 2, videos: 1, total: 3, usage: 30, usagePhysical: 30, lastAddedAt },
+        { ownerId: 'owner-2', photos: 0, videos: 0, total: 0, usage: 0, usagePhysical: 0, lastAddedAt: null },
+      ]);
+
+      await expect(sut.getManagedUploads()).resolves.toEqual([
+        expect.objectContaining({ ownerId: 'owner-1', total: 3, lastAddedAt }),
+        expect.objectContaining({ ownerId: 'owner-2', total: 0, lastAddedAt: null }),
+      ]);
+    });
+  });
+
   describe('browseFolders (FL-365)', () => {
     const dirent = (name: string, directory = true) => ({ name, isDirectory: () => directory }) as unknown as Dirent;
 
@@ -422,7 +437,7 @@ describe(LibraryService.name, () => {
         ],
         truncated: false,
         readable: true,
-        defaultExclusionPatterns: expect.arrayContaining(['**/@eaDir/**', '**/#recycle/**']),
+        defaultExclusionPatterns: expect.arrayContaining(['**/.DS_Store', '**/@eaDir/**', '**/#recycle/**']),
       });
     });
 

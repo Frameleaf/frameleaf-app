@@ -32,6 +32,7 @@ import { AlbumService } from 'src/services/album.service.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { SearchService } from 'src/services/search.service.js';
+import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import {
@@ -324,6 +325,13 @@ export class PhotographyWorkspaceService {
         }
         result.push({ ...shoot, albumId: null, unavailable: true, coverAssetId: null, assetCount: null });
       }
+    }
+    // Whether each cover has a thumbnail yet: a RAW the server cannot develop has none, and clients skip the request.
+    const covers = [...new Set(result.map(({ coverAssetId }) => coverAssetId).filter((id): id is string => !!id))];
+    const thumbhashes = await this.repository.coverThumbhashes(covers);
+    for (const shoot of result) {
+      const thumbhash = shoot.coverAssetId ? thumbhashes.get(shoot.coverAssetId) : undefined;
+      shoot.coverThumbhash = thumbhash ? hexOrBufferToBase64(thumbhash) : null;
     }
     return { revision, shoots: result };
   }

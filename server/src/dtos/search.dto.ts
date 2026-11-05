@@ -94,7 +94,24 @@ const BaseSearchWithResultsSchema = BaseSearchSchema.extend({
   size: z.int().min(1).max(1000).optional().describe('Number of results to return'),
 });
 
+/**
+ * Large-asset search takes its filters as query parameters (`@Query()`), where a boolean arrives as the
+ * string "true" or "false"; the body schemas' `z.boolean()` rejected it, so `withExif=true` was a 400.
+ * Each boolean filter is read from its string here and keeps its own description and history, so the
+ * OpenAPI document still says `boolean`.
+ */
+const queryBoolean = (field: z.ZodType) => stringToBool.optional().meta({ ...z.globalRegistry.get(field) });
+const baseResults = BaseSearchWithResultsSchema.shape;
+
 const LargeAssetSearchSchema = BaseSearchWithResultsSchema.extend({
+  suppressedOnly: queryBoolean(baseResults.suppressedOnly),
+  isEncoded: queryBoolean(baseResults.isEncoded),
+  isFavorite: queryBoolean(baseResults.isFavorite),
+  isMotion: queryBoolean(baseResults.isMotion),
+  isOffline: queryBoolean(baseResults.isOffline),
+  isNotInAlbum: queryBoolean(baseResults.isNotInAlbum),
+  withDeleted: queryBoolean(baseResults.withDeleted),
+  withExif: queryBoolean(baseResults.withExif),
   minFileSize: z.coerce.number().int().min(0).optional().describe('Minimum file size in bytes'),
   size: z.coerce.number().int().min(1).max(1000).optional().describe('Number of results to return'),
 }).meta({ id: 'LargeAssetSearchDto' });

@@ -3,7 +3,7 @@ import { type Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { PhotographyBrand, StoredShoot } from 'src/dtos/photography-workspace.dto.js';
 import type { UserMetadata } from 'src/types.js';
-import { AlbumUserRole, UserMetadataKey } from 'src/enum.js';
+import { AlbumUserRole, AssetVisibility, UserMetadataKey } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 
 @Injectable()
@@ -92,6 +92,21 @@ export class PhotographyWorkspaceRepository {
         .returning('updateId')
         .executeTakeFirst();
     });
+  }
+  /** Shoot covers' thumbhashes: an asset has one once its thumbnail is made. Locked and trashed assets are left out. */
+  async coverThumbhashes(assetIds: string[]) {
+    if (assetIds.length === 0) {
+      return new Map<string, Buffer>();
+    }
+    const rows = await this.db
+      .selectFrom('asset')
+      .select(['id', 'thumbhash'])
+      .where('id', 'in', assetIds)
+      .where('deletedAt', 'is', null)
+      .where('visibility', '!=', AssetVisibility.Locked)
+      .where('thumbhash', 'is not', null)
+      .execute();
+    return new Map(rows.map(({ id, thumbhash }) => [id, thumbhash!]));
   }
   async currentRevisions(userId: string, assetIds: string[]) {
     if (assetIds.length === 0) {

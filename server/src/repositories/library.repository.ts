@@ -232,6 +232,13 @@ export class LibraryRepository {
       )
       .select((eb) => eb.fn.coalesce(eb.fn.sum<number>('asset_exif.fileSizeInByte'), eb.lit(0)).as('usage'))
       .select(physicalUsage(sql`"scoped"."libraryId" IS NULL AND "scoped"."ownerId" = "user"."id"`).as('usagePhysical'))
+      // When the newest counted item was added, for "Last photo added …" (the prototype's uploads rows)
+      .select((eb) =>
+        eb.fn
+          .max('asset.createdAt')
+          .filterWhere((eb) => eb.and([eb('asset.visibility', '!=', AssetVisibility.Hidden), isNotLockedAsset(eb)]))
+          .as('lastAddedAt'),
+      )
       .where('user.deletedAt', 'is', null)
       .where('user.status', '=', UserStatus.Active)
       .groupBy('user.id')
@@ -245,6 +252,7 @@ export class LibraryRepository {
       total: Number(row.photos) + Number(row.videos),
       usage: Number(row.usage),
       usagePhysical: Number(row.usagePhysical),
+      lastAddedAt: row.lastAddedAt ? new Date(row.lastAddedAt) : null,
     }));
   }
 

@@ -29,7 +29,7 @@ export class BookmarkService {
     if (dto.isLocked) requireElevatedPermission(auth);
     if (dto.previewAssetId)
       await requireAccess(this.access, { auth, permission: Permission.AssetRead, ids: [dto.previewAssetId] });
-    return this.map(auth, await this.bookmarks.create(auth.user.id, dto));
+    return this.map(auth, await this.bookmarks.create(auth.user.id, dto), undefined, { source: true });
   }
 
   async preview(auth: AuthDto, dto: BookmarkPreviewRequestDto): Promise<BookmarkPreviewResponseDto> {
@@ -55,7 +55,7 @@ export class BookmarkService {
     this.requirePrivateSession(auth);
     const bookmark = await this.bookmarks.getOwned(auth, id);
     if (!bookmark) throw new NotFoundException('Bookmark not found');
-    return this.map(auth, bookmark);
+    return this.map(auth, bookmark, undefined, { source: true });
   }
 
   async update(auth: AuthDto, id: string, dto: BookmarkUpdateDto): Promise<BookmarkResponseDto> {
@@ -64,7 +64,7 @@ export class BookmarkService {
     if (dto.previewAssetId)
       await requireAccess(this.access, { auth, permission: Permission.AssetRead, ids: [dto.previewAssetId] });
     if (Object.keys(dto).length === 0) return this.get(auth, id);
-    return this.map(auth, await this.bookmarks.update(auth, id, dto));
+    return this.map(auth, await this.bookmarks.update(auth, id, dto), undefined, { source: true });
   }
 
   async trash(auth: AuthDto, id: string): Promise<void> {
@@ -112,7 +112,16 @@ export class BookmarkService {
     if (auth.sharedLink) throw new NotFoundException('Bookmark not found');
   }
 
-  private async map(auth: AuthDto, bookmark: Bookmark, readable?: Set<string>): Promise<BookmarkResponseDto> {
+  /**
+   * `source` (capture provenance) is private to the owner and only part of their own read of one
+   * bookmark; album, search and shared projections never carry it.
+   */
+  private async map(
+    auth: AuthDto,
+    bookmark: Bookmark,
+    readable?: Set<string>,
+    options: { source?: boolean } = {},
+  ): Promise<BookmarkResponseDto> {
     const { previewAssetId } = bookmark;
     const visible =
       readable ??
@@ -134,6 +143,9 @@ export class BookmarkService {
       createdAt: asDateTimeString(bookmark.createdAt),
       updatedAt: asDateTimeString(bookmark.updatedAt),
       deletedAt: bookmark.deletedAt ? asDateTimeString(bookmark.deletedAt) : null,
+      ...(options.source &&
+        !auth.sharedLink &&
+        bookmark.ownerId === auth.user.id && { source: bookmark.source ?? null }),
     };
   }
 }
