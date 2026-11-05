@@ -69,6 +69,7 @@ const originalBytes = sql<number>`COALESCE(asset_exif."fileSizeInByte", 0) + COA
   JOIN public.physical_file file ON file.id = original."physicalFileId"
   WHERE original."assetId" = asset.id
 ), 0)`;
+const joinedOriginalBytes = sql<number>`COALESCE(asset_exif."fileSizeInByte", 0) + COALESCE(original.bytes, 0)`;
 @Injectable()
 export class UserRepository {
   constructor(
@@ -807,61 +808,74 @@ export class UserRepository {
 
   @GenerateSql()
   getUserStats() {
-    return this.db
-      .selectFrom('user')
-      .leftJoin('asset', (join) => join.onRef('asset.ownerId', '=', 'user.id').on('asset.deletedAt', 'is', null))
-      .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
-      .select(['user.id as userId', 'user.name as userName', 'user.quotaSizeInBytes'])
-      .select((eb) => [
-        eb.fn
-          .countAll<number>()
-          .filterWhere((eb) =>
-            eb.and([
-              eb('asset.type', '=', sql.lit(AssetType.Image)),
-              eb('asset.visibility', '!=', sql.lit(AssetVisibility.Hidden)),
-              // an administrator's per-user counts never include Locked media (FL-34)
-              isNotLockedAsset(eb),
-            ]),
-          )
-          .as('photos'),
-        eb.fn
-          .countAll<number>()
-          .filterWhere((eb) =>
-            eb.and([
-              eb('asset.type', '=', sql.lit(AssetType.Video)),
-              eb('asset.visibility', '!=', sql.lit(AssetVisibility.Hidden)),
-              // an administrator's per-user counts never include Locked media (FL-34)
-              isNotLockedAsset(eb),
-            ]),
-          )
-          .as('videos'),
-        eb.fn
-          .coalesce(eb.fn.sum<number>(originalBytes).filterWhere('asset.libraryId', 'is', null), eb.lit(0))
-          .as('usage'),
-        eb.fn
-          .coalesce(
-            eb.fn
-              .sum<number>(originalBytes)
-              .filterWhere((eb) =>
-                eb.and([eb('asset.libraryId', 'is', null), eb('asset.type', '=', sql.lit(AssetType.Image))]),
-              ),
-            eb.lit(0),
-          )
-          .as('usagePhotos'),
-        eb.fn
-          .coalesce(
-            eb.fn
-              .sum<number>(originalBytes)
-              .filterWhere((eb) =>
-                eb.and([eb('asset.libraryId', 'is', null), eb('asset.type', '=', sql.lit(AssetType.Video))]),
-              ),
-            eb.lit(0),
-          )
-          .as('usageVideos'),
-      ])
-      .groupBy('user.id')
-      .orderBy('user.createdAt', 'asc')
-      .execute();
+    return (
+      this.db
+        .selectFrom('user')
+        .leftJoin('asset', (join) => join.onRef('asset.ownerId', '=', 'user.id').on('asset.deletedAt', 'is', null))
+        .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+        // FL-1213: attachment bytes summed once per asset in a join, not three correlated lookups per asset
+        .leftJoin(
+          (eb) =>
+            eb
+              .selectFrom('asset_original as original')
+              .innerJoin('physical_file as file', 'file.id', 'original.physicalFileId')
+              .select((eb) => ['original.assetId', eb.fn.sum<number>('file.sizeInBytes').as('bytes')])
+              .groupBy('original.assetId')
+              .as('original'),
+          (join) => join.onRef('original.assetId', '=', 'asset.id'),
+        )
+        .select(['user.id as userId', 'user.name as userName', 'user.quotaSizeInBytes'])
+        .select((eb) => [
+          eb.fn
+            .countAll<number>()
+            .filterWhere((eb) =>
+              eb.and([
+                eb('asset.type', '=', sql.lit(AssetType.Image)),
+                eb('asset.visibility', '!=', sql.lit(AssetVisibility.Hidden)),
+                // an administrator's per-user counts never include Locked media (FL-34)
+                isNotLockedAsset(eb),
+              ]),
+            )
+            .as('photos'),
+          eb.fn
+            .countAll<number>()
+            .filterWhere((eb) =>
+              eb.and([
+                eb('asset.type', '=', sql.lit(AssetType.Video)),
+                eb('asset.visibility', '!=', sql.lit(AssetVisibility.Hidden)),
+                // an administrator's per-user counts never include Locked media (FL-34)
+                isNotLockedAsset(eb),
+              ]),
+            )
+            .as('videos'),
+          eb.fn
+            .coalesce(eb.fn.sum<number>(joinedOriginalBytes).filterWhere('asset.libraryId', 'is', null), eb.lit(0))
+            .as('usage'),
+          eb.fn
+            .coalesce(
+              eb.fn
+                .sum<number>(joinedOriginalBytes)
+                .filterWhere((eb) =>
+                  eb.and([eb('asset.libraryId', 'is', null), eb('asset.type', '=', sql.lit(AssetType.Image))]),
+                ),
+              eb.lit(0),
+            )
+            .as('usagePhotos'),
+          eb.fn
+            .coalesce(
+              eb.fn
+                .sum<number>(joinedOriginalBytes)
+                .filterWhere((eb) =>
+                  eb.and([eb('asset.libraryId', 'is', null), eb('asset.type', '=', sql.lit(AssetType.Video))]),
+                ),
+              eb.lit(0),
+            )
+            .as('usageVideos'),
+        ])
+        .groupBy('user.id')
+        .orderBy('user.createdAt', 'asc')
+        .execute()
+    );
   }
   @GenerateSql()
   async getCount(): Promise<number> {
