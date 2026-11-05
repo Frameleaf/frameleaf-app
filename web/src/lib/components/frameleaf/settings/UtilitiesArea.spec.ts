@@ -63,11 +63,14 @@ describe('Utilities area', () => {
     render(UtilitiesArea);
 
     expect(await screen.findByRole('heading', { name: '2 tools have something for you' })).toBeInTheDocument();
-    const first = screen.getByRole('heading', { name: 'Needs a look' }).nextElementSibling as HTMLElement;
+    // The first group is the "Needs a look" card (a kit Section, named by its heading).
+    const first = screen.getByRole('region', { name: 'Needs a look' });
+    expect(first.previousElementSibling).toHaveAttribute('aria-label', 'Tools');
     expect(first).toHaveTextContent('Duplicate review');
     expect(first).toHaveTextContent('12 groups to look at');
     expect(first).toHaveTextContent('3 files missing');
-    expect(screen.getByRole('button', { name: /Fix locations/ })).toHaveTextContent('214 photos have no place');
+    const fixLocations = screen.getByRole('button', { name: /Fix locations/ }).closest('li') as HTMLElement;
+    expect(fixLocations).toHaveTextContent('214 photos have no place');
     expect(screen.queryByText(/Android direct updates/)).toBeNull();
   });
 
@@ -95,6 +98,13 @@ describe('Utilities area', () => {
     expect(screen.getByText('2 rules')).toBeInTheDocument();
     expect(screen.getByText('Not connected')).toBeInTheDocument();
     expect(screen.getAllByText('Checked last night').length).toBeGreaterThan(0);
+    // As the prototype: a checked tool with nothing waiting is green; a waiting one amber; a fact neutral.
+    const toneOf = (text: string) => screen.getByText(text).closest<HTMLElement>('[data-tone]')?.dataset.tone;
+    expect(toneOf('2 to pair')).toBe('warn');
+    expect(toneOf('12 groups to look at')).toBe('warn');
+    expect(toneOf('No damage found')).toBe('good');
+    expect(toneOf('Nothing missing')).toBe('good');
+    expect(toneOf('2 rules')).toBe('off');
   });
 
   it('says nothing needs a look when every tool is calm (FL-519)', async () => {
@@ -116,9 +126,10 @@ describe('Utilities area', () => {
   it('shows each tool’s icon in the directory (UT-12)', () => {
     render(UtilitiesArea);
     for (const name of [/Duplicate review/, /Large files/, /Mobile apps/]) {
+      const row = screen.getByRole('button', { name }).closest('li') as HTMLElement;
+      // The tool's icon comes first, before the title; the "Open ›" button carries the chevron.
+      expect(row.firstElementChild?.querySelector('svg')).not.toBeNull();
       expect(screen.getByRole('button', { name }).querySelector('svg')).not.toBeNull();
-      // The icon comes first, before the title, then the chevron.
-      expect(screen.getByRole('button', { name }).querySelectorAll('svg')).toHaveLength(2);
     }
   });
   it('keeps an admin on the single utilities host', async () => {

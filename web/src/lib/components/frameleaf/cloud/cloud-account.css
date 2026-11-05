@@ -492,3 +492,8 @@
   align-items: center;
   justify-content: flex-end;
 }
+
+/* Not linked, the page is the kit's (Hero, Section, ItemList) at the kit's width. */
+.frameleaf-cloud.is-kit {
+  max-width: none;
+}

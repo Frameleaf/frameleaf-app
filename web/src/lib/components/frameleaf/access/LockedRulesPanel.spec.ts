@@ -221,8 +221,9 @@ describe('LockedRulesPanel (FL-67)', () => {
 
     await renderPanel();
 
-    expect(await screen.findByText('frameleaf_locked_rules_unavailable_person')).toBeInTheDocument();
-    expect(screen.getByText('frameleaf_locked_rules_unavailable_tag')).toBeInTheDocument();
+    // named in the row's chips and in its list (the prototype's AlwaysLocked rows)
+    expect((await screen.findAllByText('frameleaf_locked_rules_unavailable_person')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('frameleaf_locked_rules_unavailable_tag').length).toBeGreaterThan(0);
 
     await fireEvent.click(screen.getByRole('checkbox', { name: 'Receipts' }));
     await fireEvent.click(saveButton());
@@ -345,9 +346,11 @@ describe('LockedRulesPanel (FL-67)', () => {
     expect(screen.queryByText('Receipts')).toBeNull();
   });
 
-  it('only a conflict disables Save, as in the template', async () => {
+  it('offers Save once something changed, as the prototype does', async () => {
     await renderPanel();
-    await screen.findByRole('checkbox', { name: 'Receipts' });
+    const receipts = await screen.findByRole('checkbox', { name: 'Receipts' });
+    expect(saveButton().hasAttribute('disabled')).toBe(true);
+    await fireEvent.click(receipts);
     expect(saveButton().hasAttribute('disabled')).toBe(false);
   });
 });

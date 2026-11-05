@@ -80,7 +80,7 @@ describe('CloudAccountSection (FL-154, FL-155)', () => {
     render(CloudAccountSection);
 
     expect(await screen.findByText('Frameleaf Cloud is turned off for this server')).toBeInTheDocument();
-    expect(screen.getByText('Not set up')).toBeInTheDocument();
+    expect(screen.getByText(/sets the Frameleaf Cloud address in its configuration/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Link to Frameleaf/ })).not.toBeInTheDocument();
   });
 
@@ -98,7 +98,7 @@ describe('CloudAccountSection (FL-154, FL-155)', () => {
     expect(await screen.findByText(title)).toBeInTheDocument();
     expect(screen.getAllByText(/Servers in your Frameleaf account|identity directory/).length).toBeGreaterThan(0);
     expect(screen.queryByText('Linking did not finish: raw cloud message')).toBeNull();
-    expect(screen.getByRole('button', { name: /Link to Frameleaf/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Link this server/ })).toBeInTheDocument();
   });
 
   describe('region-mismatch (FC-18)', () => {
@@ -141,24 +141,26 @@ describe('CloudAccountSection (FL-154, FL-155)', () => {
       sdkMock.getCloudStatus.mockResolvedValue(refusedRegion(false, { linkTokenConfigured: true }));
       render(CloudAccountSection);
 
-      expect(await screen.findByText(REGION_MESSAGE)).toBeInTheDocument();
+      expect(await screen.findByText((text) => text.includes(REGION_MESSAGE))).toBeInTheDocument();
       expect(screen.getByText(/The link token was not used up/)).toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /Link in/ })).toBeNull();
-      expect(screen.getByRole('button', { name: /Link to Frameleaf/ })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Link this server/ })).toBeInTheDocument();
     });
   });
 
-  it('leads the unlinked page with the mobile apps benefit and starts the device flow', async () => {
+  it('leads the unlinked page with the mobile apps and starts the device flow', async () => {
     sdkMock.getCloudStatus.mockResolvedValue(status());
     sdkMock.startCloudLink.mockResolvedValue(pending());
     render(CloudAccountSection);
 
-    const benefits = await screen.findByRole('list');
-    const [first] = within(benefits).getAllByRole('listitem');
-    expect(first).toHaveTextContent('Access your library from the Frameleaf mobile apps from anywhere');
-    expect(screen.getByText('Not linked')).toBeInTheDocument();
+    // The prototype's Account & link, not linked: what linking leads to, the apps first.
+    const leads = await screen.findByRole('region', { name: 'What linking leads to' });
+    const [first] = within(leads).getAllByRole('listitem');
+    expect(first).toHaveTextContent('This server appears in the Frameleaf apps by itself');
+    expect(first).toHaveTextContent('Free with an account');
+    expect(screen.getByText('This server isn’t linked to a Frameleaf account')).toBeInTheDocument();
 
-    await fireEvent.click(screen.getByRole('button', { name: /Link to Frameleaf/ }));
+    await fireEvent.click(screen.getByRole('button', { name: /Link this server/ }));
     await waitFor(() => expect(sdkMock.startCloudLink).toHaveBeenCalled());
     expect(await screen.findByText('BCDF-GHJK')).toBeInTheDocument();
     expect(screen.getByRole('img', { name: /Link this server/ })).toBeInTheDocument();
@@ -184,10 +186,10 @@ describe('CloudAccountSection (FL-154, FL-155)', () => {
 
     await fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
     await waitFor(() => expect(sdkMock.cancelCloudLink).toHaveBeenCalled());
-    expect(await screen.findByText('This server is not linked')).toBeInTheDocument();
+    expect(await screen.findByText('This server isn’t linked to a Frameleaf account')).toBeInTheDocument();
   });
 
-  it('shows the linked account, the apps card, the permission toggles and exactly what is sent', async () => {
+  it('shows the linked account, where the apps work, the permission toggles and exactly what is sent', async () => {
     sdkMock.getCloudStatus.mockResolvedValue(linked());
     sdkMock.updateCloudPermissions.mockResolvedValue({
       ...linked(),
@@ -195,8 +197,7 @@ describe('CloudAccountSection (FL-154, FL-155)', () => {
     });
     render(CloudAccountSection);
 
-    expect(await screen.findByText('Linked to Frameleaf')).toBeInTheDocument();
-    expect(screen.getByText('owner@example.test')).toBeInTheDocument();
+    expect(await screen.findByText('Linked to owner@example.test')).toBeInTheDocument();
     // FL-177 review (#32): a role changed in the Frameleaf account applies at the next sign-in
     expect(screen.getByText(/applies here at that person’s next Sign in with Frameleaf/)).toBeInTheDocument();
     expect(screen.getByText('At home only')).toBeInTheDocument();
@@ -245,19 +246,15 @@ describe('CloudAccountSection (FL-154, FL-155)', () => {
   it('offers no manage link when the server has no account-site page', async () => {
     sdkMock.getCloudStatus.mockResolvedValue({ ...linked(), manageUrl: null });
     render(CloudAccountSection);
-    await screen.findByText('Linked to Frameleaf');
+    await screen.findByText('Linked to owner@example.test');
     expect(screen.queryByRole('link', { name: /Manage on frameleaf\.cloud/ })).toBeNull();
   });
 
-  it('leads from the apps card to remote access setup while remote access is off', async () => {
+  it('leads from the apps notice to remote access setup while remote access is off', async () => {
     sdkMock.getCloudStatus.mockResolvedValue(linked());
     render(CloudAccountSection);
     const setup = await screen.findByRole('link', { name: 'Set up remote access' });
     expect(setup.getAttribute('href')).toContain('section=cloud-remote');
-    // the closing "Next:" line names it too
-    expect(screen.getByRole('link', { name: 'set up remote access' }).getAttribute('href')).toContain(
-      'section=cloud-remote',
-    );
   });
 
   it('says the apps are available anywhere once remote access is on', async () => {
@@ -295,6 +292,6 @@ describe('CloudAccountSection (FL-154, FL-155)', () => {
 
     expect(await screen.findByText('Frameleaf Cloud ended this link')).toBeInTheDocument();
     expect(screen.getByText(/no longer recognises this server/)).toBeInTheDocument();
-    expect(screen.getByText('Link ended')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Link again' })).toBeInTheDocument();
   });
 });

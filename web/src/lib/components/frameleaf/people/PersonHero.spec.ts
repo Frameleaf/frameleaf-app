@@ -50,11 +50,16 @@ describe('PersonHero (PD-1, PD-2, PD-7, PD-8)', () => {
     })) as never);
   });
 
-  it('keeps the toolbar to the prototype and offers Correction history in the … menu (FL-146 PD-9)', async () => {
+  it('keeps the everyday actions in the row and the rest, with Correction history, in the … menu (FL-146 PD-9)', async () => {
     render(PersonHero, props());
 
     const toolbar = screen.getByRole('toolbar', { name: /Ada/ });
-    expect(within(toolbar).queryByRole('button', { name: 'Correction history' })).toBeNull();
+    for (const name of ['Featured photo', 'Merge people', 'Hide', 'Favorite']) {
+      expect(within(toolbar).getByRole('button', { name })).toBeInTheDocument();
+    }
+    for (const name of ['Correction history', 'Set date of birth', 'Fix incorrect match', 'Recognition groups']) {
+      expect(within(toolbar).queryByRole('button', { name })).toBeNull();
+    }
 
     await fireEvent.click(within(toolbar).getByRole('button', { name: 'More actions for Ada' }));
     const item = await screen.findByRole('menuitem', { name: 'Correction history' });
@@ -62,7 +67,7 @@ describe('PersonHero (PD-1, PD-2, PD-7, PD-8)', () => {
     await waitFor(() => expect(screen.queryByRole('menuitem', { name: 'Correction history' })).toBeNull());
   });
 
-  it('keeps every action in the one row on a phone, with only Correction history in the … menu (DISCOVERY-P6)', async () => {
+  it('keeps the same row and … menu on a phone (DISCOVERY-P6)', async () => {
     vi.mocked(matchMedia).mockImplementation(((query: string) => ({
       matches: query.includes('max-width'),
       media: query,
@@ -74,11 +79,16 @@ describe('PersonHero (PD-1, PD-2, PD-7, PD-8)', () => {
     render(PersonHero, props());
 
     const toolbar = screen.getByRole('toolbar', { name: /Ada/ });
-    for (const name of ['Featured photo', 'Set date of birth', 'Hide', 'Recognition groups']) {
+    for (const name of ['Featured photo', 'Merge people', 'Hide', 'Favorite']) {
       expect(within(toolbar).getByRole('button', { name })).toBeInTheDocument();
     }
     await fireEvent.click(within(toolbar).getByRole('button', { name: 'More actions for Ada' }));
-    expect(await screen.findAllByRole('menuitem')).toHaveLength(1);
+    expect((await screen.findAllByRole('menuitem')).map((item) => item.textContent?.trim())).toEqual([
+      'Set date of birth',
+      'Fix incorrect match',
+      'Correction history',
+      'Recognition groups',
+    ]);
   });
 
   it('counts photos and videos as PersonDetail.jsx does', () => {
@@ -91,11 +101,15 @@ describe('PersonHero (PD-1, PD-2, PD-7, PD-8)', () => {
     expect(screen.getByText('1 photo')).toBeTruthy();
   });
 
-  it('says there are no photos yet and disables the photo actions', () => {
+  it('says there are no photos yet and disables the photo actions', async () => {
     render(PersonHero, props({ statistics: { assets: 0, photos: 0, videos: 0 } }));
     expect(screen.getByText('No photos yet')).toBeTruthy();
     expect((screen.getByRole('button', { name: 'Featured photo' }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole('button', { name: 'Fix incorrect match' }) as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.click(screen.getByRole('button', { name: 'More actions for Ada' }));
+    expect(await screen.findByRole('menuitem', { name: 'Fix incorrect match' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
     expect((screen.getByRole('button', { name: 'Select featured photo for Ada' }) as HTMLButtonElement).disabled).toBe(
       true,
     );
@@ -164,8 +178,9 @@ describe('PersonHero (PD-1, PD-2, PD-7, PD-8)', () => {
     const stop = eventManager.on({ PersonFacesChange: changes });
     render(PersonHero, view);
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Fix incorrect match' }));
-    await fireEvent.click(screen.getByRole('button', { name: 'Moved a face' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'More actions for Ada' }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Fix incorrect match' }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Moved a face' }));
 
     // announced once, by the hero, for this person and the person the face moved to
     expect(changes).toHaveBeenCalledExactlyOnceWith({ personIds: ['ada', 'grace'] });

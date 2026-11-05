@@ -253,6 +253,19 @@ export class PetRepository {
       .returningAll()
       .executeTakeFirst();
   }
+  /**
+   * Moves a pet's featured photo from `from` to `to` only while it is still `from` (null: none set),
+   * so a cover the owner picks in the meantime is never overwritten.
+   */
+  async replaceFeaturedAsset(ownerId: string, id: string, from: string | null, to: string | null): Promise<void> {
+    await this.db
+      .updateTable('pet')
+      .set({ featuredAssetId: to, updatedAt: new Date() })
+      .where('id', '=', id)
+      .where('ownerId', '=', ownerId)
+      .where('featuredAssetId', from === null ? 'is' : '=', from)
+      .execute();
+  }
   async delete(ownerId: string, id: string): Promise<void> {
     await this.db.deleteFrom('pet').where('id', '=', id).where('ownerId', '=', ownerId).execute();
   }

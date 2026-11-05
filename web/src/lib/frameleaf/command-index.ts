@@ -52,6 +52,7 @@ import {
   mdiCloudUploadOutline,
   mdiEarth,
   mdiShieldAccountOutline,
+  mdiCertificateOutline,
   mdiCreditCardOutline,
   mdiLinkVariant,
 } from '@mdi/js';
@@ -253,8 +254,8 @@ export const USER_SETTINGS_AREAS: readonly {
   },
   {
     key: 'password',
-    titleKey: 'frameleaf_access_password_title',
-    descriptionKey: 'frameleaf_access_password_group_description',
+    titleKey: 'frameleaf_how_title',
+    descriptionKey: 'frameleaf_how_description',
     icon: mdiFormTextboxPassword,
   },
   {
@@ -334,6 +335,12 @@ export const ADMIN_SETTINGS_AREAS: readonly {
     descriptionKey: 'frameleaf_cc_section_cloud_plan_description',
     icon: mdiCreditCardOutline,
   },
+  {
+    key: 'cloud-license',
+    titleKey: 'frameleaf_cc_section_cloud_license',
+    descriptionKey: 'frameleaf_cc_section_cloud_license_description',
+    icon: mdiCertificateOutline,
+  },
   // FL-161: Frameleaf Cloud → Remote access.
   {
     key: 'cloud-remote',
@@ -395,8 +402,8 @@ export const ADMIN_SETTINGS_AREAS: readonly {
   },
   {
     key: 'external-library',
-    titleKey: 'admin.library_settings',
-    descriptionKey: 'admin.library_settings_description',
+    titleKey: 'frameleaf_checks_label',
+    descriptionKey: 'frameleaf_checks_description',
     icon: mdiBookshelf,
   },
   {
@@ -652,7 +659,7 @@ export const buildCatalogueCommands = (
     title: album.name,
     subtitle: [albumKindLabel($t, album), countLabel($t, album.assetCount)].filter(Boolean).join(' · '),
     icon: album.kind === 'space' ? mdiAccountMultipleOutline : mdiImageAlbum,
-    href: album.kind === 'space' ? Route.viewSharedSpace({ id: album.id }) : Route.viewAlbum({ id: album.id }),
+    href: Route.viewAlbum({ id: album.id }),
   })),
   places: catalogue.places.map((place) => ({
     id: `${place.field}:${place.value}`,

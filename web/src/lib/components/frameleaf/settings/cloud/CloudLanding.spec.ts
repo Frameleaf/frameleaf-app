@@ -48,7 +48,11 @@ describe('Frameleaf Cloud landing (FL-367)', () => {
     expect(screen.getByRole('heading', { name: 'Linked to Frameleaf, and everything is working' })).toBeInTheDocument();
     expect(screen.getByText('Server licence')).toBeInTheDocument();
     expect(screen.getByText('Plan active')).toBeInTheDocument();
-    expect(screen.getByText('$9.99 a month or $99.90 a year')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Needs a $100 Server licence, then $9.99 a month per TB, or $92.91 a year (7% off with the licence)',
+      ),
+    ).toBeInTheDocument();
   });
 });
 

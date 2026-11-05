@@ -2,8 +2,8 @@ import { EventEmitter } from 'node:events';
 import { performance } from 'node:perf_hooks';
 import type { MessagePort } from 'node:worker_threads';
 import { QUEUE_EXECUTION_CAPACITY } from 'src/queue/admission.js';
-import { pruneQueueHistory } from 'src/queue/retention.js';
-import { QUEUE_TIMING, QueueClaim, QueueDispatch } from 'src/queue/types.js';
+import { pruneQueueHistoryPage } from 'src/queue/retention.js';
+import { QUEUE_BATCH, QUEUE_TIMING, QueueClaim, QueueDispatch } from 'src/queue/types.js';
 import { coordinate } from 'src/workers/queue-coordinator.js';
 
 const fixture = vi.hoisted(() => ({
@@ -36,7 +36,7 @@ vi.mock('src/queue/store.js', () => ({
   },
 }));
 vi.mock('src/queue/retention.js', () => ({
-  pruneQueueHistory: vi.fn().mockResolvedValue(undefined),
+  pruneQueueHistoryPage: vi.fn().mockResolvedValue(undefined),
   pruneRunLedger: vi.fn().mockResolvedValue(0),
 }));
 vi.mock('src/queue/run-summary.js', () => ({ summarizeRuns: vi.fn().mockResolvedValue(0) }));
@@ -306,13 +306,13 @@ describe('coordinator capacity admission', () => {
       vi.useFakeTimers();
       vi.spyOn(performance, 'now').mockImplementation(() => Date.now());
       await coordinate(coordinatorData);
-      const held = Promise.withResolvers<number>();
-      const task = stage === 'recovery' ? fixture.store.recoverExpired : vi.mocked(pruneQueueHistory);
+      const held = Promise.withResolvers<{ pruned: number; fullPage: boolean }>();
+      const task = stage === 'recovery' ? fixture.store.recoverExpired : vi.mocked(pruneQueueHistoryPage);
       task.mockImplementationOnce(() => held.promise);
       try {
         await vi.advanceTimersByTimeAsync(QUEUE_TIMING.sweep);
         const sweeps = fixture.store.recoverExpired.mock.calls.length;
-        const prunes = vi.mocked(pruneQueueHistory).mock.calls.length;
+        const prunes = vi.mocked(pruneQueueHistoryPage).mock.calls.length;
         fixture.store.claim.mockResolvedValueOnce([{ id: 'new-work', queue: 'deep', deadlineMs: 600_000 }]);
         fixture.wake!();
         await vi.advanceTimersByTimeAsync(QUEUE_TIMING.sweep * 2);
@@ -321,9 +321,9 @@ describe('coordinator capacity admission', () => {
           claim: { id: 'new-work', queue: 'deep', deadlineMs: 600_000 },
         });
         expect(fixture.store.recoverExpired).toHaveBeenCalledTimes(sweeps);
-        expect(pruneQueueHistory).toHaveBeenCalledTimes(prunes);
+        expect(pruneQueueHistoryPage).toHaveBeenCalledTimes(prunes);
       } finally {
-        held.resolve(0);
+        held.resolve({ pruned: 0, fullPage: false });
         await vi.advanceTimersByTimeAsync(0);
       }
     },
@@ -337,7 +337,7 @@ describe('coordinator capacity admission', () => {
     const started = coordinate(coordinatorData);
     await vi.advanceTimersByTimeAsync(QUEUE_TIMING.sweep * 2);
     expect(fixture.store.recoverExpired).not.toHaveBeenCalled();
-    expect(pruneQueueHistory).not.toHaveBeenCalled();
+    expect(pruneQueueHistoryPage).not.toHaveBeenCalled();
     initialized.resolve();
     await started;
     expect(fixture.store.recoverExpired).toHaveBeenCalledOnce();
@@ -350,10 +350,41 @@ describe('coordinator capacity admission', () => {
     await coordinate(coordinatorData);
     expect(fixture.port!.postMessage).toHaveBeenCalledWith({ type: 'unavailable' });
     expect(fixture.store.feedManifest).toHaveBeenCalledTimes(coordinatorData.queues.length);
-    expect(pruneQueueHistory).not.toHaveBeenCalled();
+    expect(pruneQueueHistoryPage).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(QUEUE_TIMING.sweep);
     expect(fixture.store.recoverExpired).toHaveBeenCalledTimes(2);
-    expect(pruneQueueHistory).toHaveBeenCalledOnce();
+    expect(pruneQueueHistoryPage).toHaveBeenCalledOnce();
+  });
+
+  it('keeps pruning while pages are full and still deleting, then stops at a short page', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(performance, 'now').mockImplementation(() => Date.now());
+    vi.mocked(pruneQueueHistoryPage)
+      .mockResolvedValueOnce({ pruned: QUEUE_BATCH, fullPage: true })
+      // a full page that had to keep some jobs (an open parent, an unfinished run) still goes on
+      .mockResolvedValueOnce({ pruned: 3, fullPage: true })
+      .mockResolvedValueOnce({ pruned: 12, fullPage: false });
+    await coordinate(coordinatorData);
+    expect(pruneQueueHistoryPage).toHaveBeenCalledTimes(3);
+  });
+
+  it('waits for the next sweep when a full page has nothing due yet', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(performance, 'now').mockImplementation(() => Date.now());
+    vi.mocked(pruneQueueHistoryPage).mockResolvedValue({ pruned: 0, fullPage: true });
+    await coordinate(coordinatorData);
+    expect(pruneQueueHistoryPage).toHaveBeenCalledOnce();
+  });
+
+  it('stops pruning full pages when the sweep budget runs out', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(performance, 'now').mockImplementation(() => Date.now());
+    vi.mocked(pruneQueueHistoryPage).mockImplementation(() => {
+      vi.setSystemTime(Date.now() + QUEUE_TIMING.pruneBudget);
+      return Promise.resolve({ pruned: QUEUE_BATCH, fullPage: true });
+    });
+    await coordinate(coordinatorData);
+    expect(pruneQueueHistoryPage).toHaveBeenCalledOnce();
   });
 
   it('does not start retention after shutdown during pending recovery', async () => {
@@ -366,7 +397,7 @@ describe('coordinator capacity admission', () => {
     recovery.resolve();
     await vi.advanceTimersByTimeAsync(QUEUE_TIMING.sweep * 2);
     expect(fixture.store.recoverExpired).toHaveBeenCalledOnce();
-    expect(pruneQueueHistory).not.toHaveBeenCalled();
+    expect(pruneQueueHistoryPage).not.toHaveBeenCalled();
   });
 
   it('keeps heartbeat requests serialized and still terminates after a real heartbeat outage', async () => {

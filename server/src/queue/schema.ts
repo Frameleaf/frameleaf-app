@@ -82,6 +82,8 @@ export async function createQueueSchema(db: Kysely<any>) {
     create index job_selection_enumerating on job_selection(queue) where state = 'enumerating';
     create index job_selection_live on job_selection(queue, id) where state in ('ready','enumerating');
     create index job_live_queue on job(queue, state, "createdAt", id) where state in ('pending','waiting','active');
+    -- FL-1213: queue status counts every state, kept history included; answered from the index alone
+    create index job_queue_state_idx on job(queue, state, "availableAt");
     create unique index job_dedup_live on job(queue, "dedupKey")
       where "dedupKey" is not null and state in ('pending','waiting','active');
     create unique index job_run_stage on job("runId", "itemKey", name) where "runId" is not null;

@@ -117,7 +117,9 @@ describe('TrashManager (FL-47)', () => {
 
     expect(await screen.findByText('lake.jpg')).toBeInTheDocument();
     expect(screen.getByText('camp.jpg')).toBeInTheDocument();
-    expect(screen.getByText(/2 matching items/)).toBeInTheDocument();
+    // the prototype's one "In your Trash" card, saying how many of how many are shown
+    expect(screen.getByRole('heading', { name: 'In your Trash' })).toBeInTheDocument();
+    expect(screen.getByText('2 of 2 items')).toBeInTheDocument();
     // FL-539: the prototype's Hero, and what emptying frees before the review
     expect(screen.getByRole('heading', { name: '2 photos and videos are in your Trash' })).toBeInTheDocument();
     expect(screen.getByText(/Each one is removed for good 30 days after you deleted it/)).toBeInTheDocument();
@@ -129,8 +131,8 @@ describe('TrashManager (FL-47)', () => {
     serve([item('old', { trashedAt: daysAgo(26) }), item('new', { trashedAt: daysAgo(1) })]);
     render(TrashManager);
 
-    expect(await screen.findByText('3 days left')).toHaveClass('soon');
-    expect(screen.getByText('28 days left')).not.toHaveClass('soon');
+    expect(await screen.findByText('3 days left')).toHaveAttribute('data-tone', 'warn');
+    expect(screen.getByText('28 days left')).toHaveAttribute('data-tone', 'good');
     expect(vi.mocked(getTrashItems)).toHaveBeenLastCalledWith(expect.objectContaining({ sort: 'soonest' }));
 
     await fireEvent.change(screen.getByLabelText('Show'), { target: { value: 'soon' } });
@@ -153,12 +155,15 @@ describe('TrashManager (FL-47)', () => {
     }
   });
 
-  it('shows the empty trash', async () => {
+  it('shows the empty trash once, with no controls that have nothing to act on', async () => {
     serve([]);
 
     render(TrashManager);
 
-    expect(await screen.findByText(en.frameleaf_trash_empty_title)).toBeInTheDocument();
+    expect(await screen.findByText(en.frameleaf_trash_hero_empty_title)).toBeInTheDocument();
+    expect(screen.queryByText(en.frameleaf_trash_empty_title)).toBeNull();
+    expect(screen.queryByRole('searchbox')).toBeNull();
+    expect(screen.queryByText(en.frameleaf_trash_manage_all)).toBeNull();
   });
 
   it('permanently deletes only the reviewed items, after the typed confirmation', async () => {
@@ -501,7 +506,7 @@ describe('TrashManager (FL-47)', () => {
       expect(getTrashItems).toHaveBeenCalledTimes(2);
 
       answer({ items: [item('lake')], total: 1, nextPage: null });
-      await waitFor(() => expect(screen.getByText(/1 matching item/)).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText(/^1 of \d+ items?$/)).toBeInTheDocument());
       expect(screen.queryByText('vault.jpg')).toBeNull();
     });
 

@@ -137,8 +137,8 @@
   <fieldset class="list">
     <legend class="sr-only">{label ?? $t('frameleaf_albums_move_to')}</legend>
     {#if allowTop && !searching}
+      <!-- "Top level" sits flush (prototype .pro-tree-row.top): it has no twisty column. -->
       <div class="line">
-        <span class="twisty" aria-hidden="true"></span>
         <label class="row" class:chosen={value === null}>
           <input type="radio" {name} checked={value === null} onchange={() => onChange(null)} />
           <span class="top-icon" aria-hidden="true"><Icon icon={mdiFolderHomeOutline} size="18" /></span>

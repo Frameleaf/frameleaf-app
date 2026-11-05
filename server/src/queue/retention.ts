@@ -7,11 +7,19 @@ const RETENTION_CURSOR = 'frameleaf-queue-retention-cursor';
 
 /** Retain run outcomes; bound payload/attempt cleanup independently of media execution. */
 export async function pruneQueueHistory(db: Kysely<any>): Promise<number> {
+  return (await pruneQueueHistoryPage(db)).pruned;
+}
+
+/**
+ * One retention page: how many jobs it deleted, and whether it read a full page of candidates (so more
+ * history may follow). A full page can delete fewer than a page when some jobs must still be kept.
+ */
+export async function pruneQueueHistoryPage(db: Kysely<any>): Promise<{ pruned: number; fullPage: boolean }> {
   return db.transaction().execute(async (tx) => {
     const {
       rows: [lock],
     } = await sql<{ acquired: boolean }>`select pg_try_advisory_xact_lock(-333, 1) acquired`.execute(tx);
-    if (!lock.acquired) return 0;
+    if (!lock.acquired) return { pruned: 0, fullPage: false };
     const {
       rows: [cursor],
     } = await sql<{
@@ -98,7 +106,7 @@ export async function pruneQueueHistory(db: Kysely<any>): Promise<number> {
       order by w."heartbeatAt" limit ${QUEUE_BATCH} for update skip locked
     )`.execute(tx);
     await pruneWorkerStopEvidence(tx);
-    return pruned;
+    return { pruned, fullPage: candidates.length === QUEUE_BATCH };
   });
 }
 

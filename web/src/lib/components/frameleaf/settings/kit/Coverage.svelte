@@ -37,11 +37,14 @@
 </dl>
 
 <style>
+  /* The prototype's strip has air above and below, so its dividers stop short of the card's edges. */
   .kit-coverage {
     display: grid;
     grid-auto-flow: column;
     grid-auto-columns: minmax(0, 1fr);
+    column-gap: var(--fl-space-2);
     margin: 0;
+    padding: var(--fl-space-5) 0;
     border-top: 1px solid var(--fl-border);
   }
   .kit-coverage > div {
@@ -78,6 +81,7 @@
   @container kit (max-width: 620px) {
     .kit-coverage {
       grid-auto-flow: row;
+      padding: 0;
     }
     .kit-coverage > div {
       grid-template-columns: auto minmax(0, 1fr);

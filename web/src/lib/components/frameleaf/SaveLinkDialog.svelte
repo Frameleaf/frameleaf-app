@@ -224,13 +224,13 @@
     </div>
     <label>
       <span>{$t('frameleaf_bookmark_note')}</span>
-      <textarea bind:value={note} rows="3"></textarea>
+      <textarea bind:value={note} rows="3" placeholder={$t('frameleaf_boards_save_link_note_placeholder')}></textarea>
     </label>
   </form>
   {#snippet actions()}
     <button type="button" class="button" disabled={busy} onclick={() => (open = false)}>{$t('cancel')}</button>
     <button type="button" class="button primary" disabled={busy || reading || !url.trim()} onclick={() => void save()}
-      >{$t('save')}</button
+      >{$t('frameleaf_boards_save_link_action')}</button
     >
   {/snippet}
 </Dialog>
@@ -254,9 +254,10 @@
     font-size: 0.75rem;
     font-weight: 600;
   }
+  /* 8px under the Web address field: the form's 12px gap less 4px. */
   .note,
   .error {
-    margin: calc(-1 * var(--fl-space-2)) 0 0;
+    margin: calc(-1 * var(--fl-space-1)) 0 0;
     font-size: var(--fl-font-small, 0.8125rem);
   }
   .note {

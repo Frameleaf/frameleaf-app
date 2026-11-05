@@ -85,7 +85,14 @@
           </dt>
           <dd class="min-w-0 flex-1 wrap-break-word">
             {#if row.id === 'path'}
-              <code class="block text-xs break-all">{row.value}</code>
+              <!-- Prototype: the path on one line, truncated in the middle so the file name stays; the
+                   whole path is its tooltip and the screen-reader text. -->
+              {@const cut = row.value.lastIndexOf('/') + 1}
+              <span class="fl-info-path" title={row.value}>
+                <span class="sr-only">{row.value}</span>
+                <span class="fl-info-path-dir" aria-hidden="true">{row.value.slice(0, cut)}</span>
+                <span class="fl-info-path-file" aria-hidden="true">{row.value.slice(cut)}</span>
+              </span>
               {#if isEnabled(ShowInFolder)}
                 <button
                   type="button"
@@ -98,7 +105,7 @@
               {/if}
             {:else if row.id === 'checksum'}
               <div class="flex items-start gap-2">
-                <code class="min-w-0 flex-1 text-xs break-all">{row.value}</code>
+                <span class="min-w-0 flex-1 text-xs break-all">{row.value}</span>
                 <button
                   type="button"
                   class="shrink-0 hover:text-primary"
@@ -139,3 +146,23 @@
     </dl>
   </section>
 {/if}
+
+<style>
+  .fl-info-path {
+    display: flex;
+    min-width: 0;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .fl-info-path-dir {
+    min-width: 1.5em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .fl-info-path-file {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+</style>

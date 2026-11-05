@@ -270,8 +270,24 @@ describe('the Command Center (FL-71)', () => {
       open('/user-settings?area=processing&section=hardware');
       render(SettingsHost, { sections: pages() });
 
-      expect(screen.getByRole('heading', { level: 1, name: 'Graphics card check' })).toBeInTheDocument();
+      const heading = screen.getByRole('heading', { level: 1, name: 'Graphics card check' }).parentElement!;
       expect(screen.queryByRole('link', { name: 'Computers & background work' })).toBeNull();
+      // It is opened from Computers and goes back there; the overline names the area, not a crumb.
+      expect(screen.getByRole('link', { name: 'Computers' })).toHaveAttribute(
+        'href',
+        '/user-settings?area=processing&section=computers',
+      );
+      expect(heading.querySelector('.cc-overline')).toHaveTextContent('Computers & background work');
+      expect(within(heading).queryByRole('button')).toBeNull();
+    });
+
+    it('keeps Graphics card check out of the rail and marks Computers there while it is open (SH6)', () => {
+      open('/user-settings?area=processing&section=hardware');
+      render(SettingsHost, { sections: pages() });
+
+      const rail = screen.getByRole('group', { name: /Computers & background work/ });
+      expect(within(rail).queryByRole('button', { name: 'Graphics card check' })).toBeNull();
+      expect(within(rail).getByRole('button', { name: 'Computers' })).toHaveAttribute('aria-current', 'page');
     });
 
     it.each(['workers', 'render-workers', 'routing'])('opens Computers for the old address of "%s"', (section) => {
@@ -456,11 +472,19 @@ describe('the Command Center (FL-71)', () => {
     expect(state.goto).toHaveBeenCalledWith('/user-settings?area=cloud&section=cloud-remote', expect.any(Object));
   });
 
-  it('keeps the Libraries manager and its settings together without a directory', () => {
+  it('opens the Libraries manager alone, and Folder checks as a page of its own with ‹ Libraries', () => {
+    open('/user-settings?area=libraries');
+    const landing = render(SettingsHost, { sections });
+    // The manager (the area panel) carries its own heading; Folder checks is not drawn under it.
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Watch library' })).toBeNull();
+    landing.unmount();
+
     open('/user-settings?area=libraries&isOpen=library-watch');
     render(SettingsHost, { sections });
     expect(screen.getByRole('button', { name: 'Watch library' })).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.queryByRole('heading', { level: 1 })).toBeNull();
+    expect(screen.getByRole('heading', { level: 1, name: 'External libraries' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Libraries' })).toHaveAttribute('href', '/user-settings?area=libraries');
   });
 
   describe('the Viewing scope (design review finding 65)', () => {
@@ -581,6 +605,13 @@ describe('the Command Center (FL-71)', () => {
       await userEvent.click(result);
       expect(state.goto).toHaveBeenCalledWith('/user-settings?area=backup&section=backup', expect.any(Object));
     });
+  });
+
+  it('lists no tools under Tools in the rail, as the prototype; the Tools page lists them', () => {
+    open('/user-settings?area=utilities&section=duplicates');
+    render(SettingsHost, { sections });
+    expect(screen.getByRole('button', { name: 'Tools' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.queryByRole('group', { name: /Tools/ })).toBeNull();
   });
 
   it('keeps a repair tool opened from Library care under Library care', () => {

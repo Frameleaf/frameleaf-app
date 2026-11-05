@@ -7,7 +7,9 @@ import {
   type LibraryScanResponseDto,
   type UserAdminResponseDto,
 } from '@frameleaf/sdk';
+import { readFileSync } from 'node:fs';
 import {
+  DEFAULT_EXCLUSION_PATTERNS,
   buildLibraryRows,
   canScanLibrary,
   checkFound,
@@ -236,5 +238,18 @@ describe('folders', () => {
     const current = { importPaths: ['/a', '/b'], exclusionPatterns: ['x'] };
     expect(foldersChanged(current, { importPaths: ['/b', '/a/'], exclusionPatterns: ['x'] })).toBe(false);
     expect(foldersChanged(current, { importPaths: ['/a'], exclusionPatterns: ['x'] })).toBe(true);
+  });
+});
+
+describe('the recommended skips (FL-365)', () => {
+  // One list: what the web's two recommended boxes add is what the server gives a folder added
+  // without a list. A folder added either way then reads "Recommended choices on".
+  it("are exactly the server's default exclusion patterns", () => {
+    const source = readFileSync('../server/src/utils/library-paths.ts', 'utf8');
+    const block = /DEFAULT_LIBRARY_EXCLUSION_PATTERNS[^=]*=\s*Object\.freeze\(\[([^\]]*)\]/.exec(source)?.[1];
+    expect(block).toBeDefined();
+    const server = [...(block ?? '').matchAll(/'([^']+)'/g)].map((match) => match[1]);
+    expect(server.length).toBeGreaterThan(0);
+    expect([...DEFAULT_EXCLUSION_PATTERNS].sort()).toEqual([...server].sort());
   });
 });

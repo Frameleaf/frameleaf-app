@@ -15,10 +15,10 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
   import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
+  import Coverage, { type CoverageRow } from '$lib/components/frameleaf/settings/kit/Coverage.svelte';
   import Facts from '$lib/components/frameleaf/settings/kit/Facts.svelte';
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
-  import Links from '$lib/components/frameleaf/settings/kit/Links.svelte';
   import Promises from '$lib/components/frameleaf/settings/kit/Promises.svelte';
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
@@ -36,11 +36,12 @@
   import { Icon } from '@frameleaf/ui';
   import {
     mdiAlertCircleOutline,
-    mdiBackupRestore,
     mdiCheckDecagramOutline,
     mdiChevronRight,
-    mdiHandBackRightOutline,
-    mdiLifebuoy,
+    mdiCloudSearchOutline,
+    mdiOpenInNew,
+    mdiPackageVariantClosed,
+    mdiRefresh,
     mdiShieldCheckOutline,
     mdiUpdate,
   } from '@mdi/js';
@@ -143,17 +144,43 @@
     }
   });
 
-  const facts = $derived([
-    { label: $t('frameleaf_server_updates_fact_installed'), value: version(installed) || $t('unknown') },
-    ...(newest
-      ? [
-          {
-            label: $t('frameleaf_server_updates_fact_newest'),
-            value: version(newest),
-            detail: when ? $t('frameleaf_server_updates_fact_checked', { values: { when } }) : undefined,
-          },
-        ]
-      : []),
+  const build = $derived(installedReleaseChannel($serverVersion));
+  const buildName = $derived(
+    build === ReleaseChannel.ReleaseCandidate
+      ? $t('frameleaf_server_updates_build_early')
+      : build === ReleaseChannel.Stable
+        ? $t('frameleaf_server_updates_build_stable')
+        : $t('unknown'),
+  );
+  const named = (name?: string | null) => $t('frameleaf_server_updates_named', { values: { version: version(name) } });
+
+  /** The two answers under the hero: what is installed, and the newest Frameleaf knows of. */
+  const coverage = $derived<CoverageRow[]>([
+    {
+      icon: mdiPackageVariantClosed,
+      name: $t('frameleaf_server_updates_fact_installed'),
+      detail: buildName,
+      tone: installed ? 'good' : 'off',
+      value: installed ? named(installed) : $t('unknown'),
+    },
+    newest
+      ? {
+          icon: mdiCloudSearchOutline,
+          name: $t('frameleaf_server_updates_fact_newest'),
+          detail: when ? $t('frameleaf_server_updates_fact_checked', { values: { when } }) : undefined,
+          tone: answer === 'available' ? 'warn' : 'good',
+          value: named(newest),
+          note: answer === 'available' ? undefined : $t('frameleaf_server_updates_you_have_it'),
+        }
+      : {
+          icon: mdiCloudSearchOutline,
+          name: $t('frameleaf_server_updates_fact_newest'),
+          detail:
+            answer === 'failed' ? $t('frameleaf_server_updates_failed') : $t('frameleaf_server_updates_never_checked'),
+          tone: 'off',
+          value: $t('frameleaf_server_updates_not_known'),
+          note: $t('frameleaf_server_updates_press_check'),
+        },
   ]);
 
   const look = $derived(check.enabled ? check.frequency : 'never');
@@ -172,8 +199,6 @@
         ? $t('frameleaf_server_updates_look_weekly_help')
         : $t('frameleaf_server_updates_look_daily_help'),
   );
-
-  const build = $derived(installedReleaseChannel($serverVersion));
 </script>
 
 <KitPage>
@@ -185,35 +210,43 @@
     label={$t('frameleaf_server_updates_label')}
   >
     {#snippet actions()}
-      <Button disabled={checking} onclick={checkNow}>
+      {#if answer === 'available' && newest}
+        <a class="fl-control button primary" href={releaseNotesUrl(newest)} target="_blank" rel="noopener noreferrer">
+          <Icon icon={mdiOpenInNew} size="16" aria-hidden />
+          {$t('frameleaf_server_updates_whats_new')}
+        </a>
+      {/if}
+      <Button variant={answer === 'available' ? 'default' : 'primary'} disabled={checking} onclick={checkNow}>
+        <Icon icon={mdiRefresh} size="16" aria-hidden />
         {checking ? $t('frameleaf_server_updates_checking') : $t('frameleaf_server_updates_check')}
       </Button>
     {/snippet}
+    <Coverage rows={coverage} />
   </Hero>
 
-  <Section title={$t('frameleaf_server_updates_versions')}>
-    <Facts rows={facts} />
-    {#if answer === 'available' && newest}
-      <Links
-        rows={[
-          {
-            icon: mdiUpdate,
-            title: $t('frameleaf_server_updates_notes'),
-            body: $t('frameleaf_server_updates_notes_body', { values: { newest: version(newest) } }),
-            href: releaseNotesUrl(newest),
-          },
-          {
-            icon: mdiBackupRestore,
-            title: $t('frameleaf_server_updates_before'),
-            body: $t('frameleaf_server_updates_before_body'),
-            href: backupPageUrl(),
-          },
-        ]}
-      />
-    {/if}
-  </Section>
+  {#if answer === 'available' && newest}
+    <Section title={named(newest)} description={$t('frameleaf_server_updates_new_description')}>
+      <Row
+        label={$t('frameleaf_server_updates_notes')}
+        help={$t('frameleaf_server_updates_notes_body', { values: { newest: version(newest) } })}
+      >
+        <a class="fl-control button" href={releaseNotesUrl(newest)} target="_blank" rel="noopener noreferrer">
+          <Icon icon={mdiOpenInNew} size="16" aria-hidden />
+          {$t('frameleaf_server_updates_whats_new')}
+        </a>
+      </Row>
+      <Row label={$t('frameleaf_server_updates_before')} help={$t('frameleaf_server_updates_before_help')}>
+        <a class="fl-control button" href={backupPageUrl()}
+          >{$t('frameleaf_server_updates_open_backup')}<Icon icon={mdiChevronRight} size="16" aria-hidden /></a
+        >
+      </Row>
+    </Section>
+  {/if}
 
-  <Section title={$t('frameleaf_server_updates_looking')}>
+  <Section
+    title={$t('frameleaf_server_updates_looking')}
+    description={$t('frameleaf_server_updates_looking_description')}
+  >
     <Row label={$t('frameleaf_server_updates_look')} help={lookHelp}>
       <SegmentedControl
         label={$t('frameleaf_server_updates_look')}
@@ -241,9 +274,15 @@
           detail: $t('frameleaf_server_updates_promise_source_detail'),
         },
         {
-          icon: mdiHandBackRightOutline,
-          text: $t('frameleaf_server_updates_promise_install'),
-          detail: $t('frameleaf_server_updates_promise_install_detail'),
+          icon: mdiPackageVariantClosed,
+          text:
+            build === ReleaseChannel.ReleaseCandidate
+              ? $t('frameleaf_server_updates_promise_build_is_early')
+              : $t('frameleaf_server_updates_promise_build_is_stable'),
+          detail:
+            check.channel === ReleaseChannel.ReleaseCandidate
+              ? $t('frameleaf_server_updates_promise_build_early')
+              : $t('frameleaf_server_updates_promise_build_detail'),
         },
       ]}
     />
@@ -260,40 +299,33 @@
           onChange={(value) => (settingsDraft.draft.newVersionCheck.channel = value as ReleaseChannel)}
         />
       </Row>
-      <Row label={$t('frameleaf_server_updates_build')}>
-        <span class="value">
-          {build === ReleaseChannel.ReleaseCandidate
-            ? $t('frameleaf_server_updates_build_early')
-            : build === ReleaseChannel.Stable
-              ? $t('frameleaf_server_updates_build_stable')
-              : $t('unknown')}
-        </span>
-      </Row>
+      <Facts
+        rows={[
+          {
+            label: $t('frameleaf_server_updates_fact_installed'),
+            value: version(installed) || $t('unknown'),
+            detail: buildName,
+          },
+        ]}
+      />
     </Advanced>
   </Section>
 
-  <Section title={$t('frameleaf_server_updates_help')}>
-    <Links
-      stacked
-      rows={[
-        {
-          icon: mdiLifebuoy,
-          title: $t('frameleaf_server_updates_problem'),
-          body: $t('frameleaf_server_updates_problem_body'),
-          href: commandCenterUrl('server', 'logging'),
-        },
-      ]}
-    />
+  <Section
+    title={$t('frameleaf_server_updates_problem')}
+    description={$t('frameleaf_server_updates_problem_description')}
+  >
+    {#snippet action()}
+      <a class="fl-control button" href={commandCenterUrl('server', 'logging')}
+        >{$t('frameleaf_server_updates_troubleshooting')}<Icon icon={mdiChevronRight} size="16" aria-hidden /></a
+      >
+    {/snippet}
   </Section>
 
   <SettingActions keys={['newVersionCheck']} {disabled} />
 </KitPage>
 
 <style>
-  .value {
-    font-size: var(--fl-font-callout);
-    font-weight: 600;
-  }
   a.button {
     display: inline-flex;
     align-items: center;

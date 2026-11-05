@@ -2,7 +2,18 @@
   import { afterNavigate, goto } from '$app/navigation';
   import { page } from '$app/state';
   import OnEvents from '$lib/components/OnEvents.svelte';
+  import Button from '$lib/components/frameleaf/Button.svelte';
+  import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
+  import FilterChip from '$lib/components/frameleaf/FilterChip.svelte';
+  import LibraryLayoutSwitch, {
+    LAYOUT_HINTS,
+    showLibraryLayout,
+  } from '$lib/components/frameleaf/LibraryLayoutSwitch.svelte';
+  import LibraryStatusBar from '$lib/components/frameleaf/LibraryStatusBar.svelte';
+  import LibraryWorkInspector from '$lib/components/frameleaf/LibraryWorkInspector.svelte';
+  import ResultsToolbar from '$lib/components/frameleaf/ResultsToolbar.svelte';
+  import ThumbnailSizeControl from '$lib/components/frameleaf/ThumbnailSizeControl.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import Spinner from '$lib/components/frameleaf/Spinner.svelte';
@@ -15,6 +26,7 @@
   import SearchAsk from '$lib/components/frameleaf/SearchAsk.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import {
+    activeFilterFields,
     DISCOVERY_QUERY_PARAMETER,
     discoveryUrl,
     emptyDiscoveryQuery,
@@ -31,6 +43,7 @@
   import type { SearchAskProblem } from '$lib/frameleaf/search-ask';
   import { forgetEntityNames, resolveEntityName, resolveEntityNames } from '$lib/frameleaf/filter-entity-names';
   import { LibrarySearchSession, type LibrarySearchQuery } from '$lib/frameleaf/library-search-session.svelte';
+  import type { LibrarySort } from '$lib/frameleaf/library-session';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import {
     discoveryContextChips,
@@ -47,23 +60,28 @@
   import { requestFilterPanel, SEARCH_SHORTCUT_EVENT } from '$lib/frameleaf/search-shortcuts';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
+  import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { Route } from '$lib/route';
   import { lang, locale } from '$lib/stores/preferences.store';
+  import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
   import { handlePromiseError } from '$lib/utils';
   import { navigateToAsset } from '$lib/utils/asset-utils';
   import { parseUtcDate } from '$lib/utils/date-time';
   import { handleError } from '$lib/utils/handle-error';
   import { isAlbumsRoute, isPeopleRoute } from '$lib/utils/navigation';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
+  import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
   import {
+    AssetOrder,
     type AssetResponseDto,
     isHttpError,
     ImageEnrichmentFilter,
+    SearchOrderField,
     type MetadataSearchDto,
     type SmartSearchDto,
   } from '@frameleaf/sdk';
   import { Icon, Theme as AppTheme, themeManager } from '@frameleaf/ui';
-  import { mdiContentSaveOutline, mdiImageSearchOutline, mdiMagnify, mdiPencilOutline, mdiTuneVariant } from '@mdi/js';
+  import { mdiContentSaveOutline, mdiFilterOffOutline, mdiMagnify } from '@mdi/js';
   import { onDestroy, onMount, tick, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -151,6 +169,7 @@
   /** The results could not be loaded: the page says so with a retry, never "No matches". */
   let loadFailed = $state(false);
   let saving = $state(false);
+  let moreActionsOpen = $state(false);
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
   /** What is loaded so far; "+" while there is more to load, since the search has no cheap total. */
   const hasMore = $derived(searchSession.nextPage !== null || searchSession.nextCursor !== null);
@@ -162,6 +181,22 @@
       void tick().then(openSearchPalette);
     }
   });
+
+  /**
+   * Sort (owner 2026-11-05, prototype `.results-toolbar`): a search is the Library narrowed by it, so
+   * it keeps the Library's Sort where the server can order the results. A metadata search orders by
+   * capture date or rating; a smart search is ranked by relevance, which no date order can describe,
+   * so it shows no Sort control rather than one that does nothing.
+   */
+  const SEARCH_ORDERS: Partial<Record<LibrarySort, { field: SearchOrderField; direction: AssetOrder }>> = {
+    'captured-desc': { field: SearchOrderField.FileCreatedAt, direction: AssetOrder.Desc },
+    'captured-asc': { field: SearchOrderField.FileCreatedAt, direction: AssetOrder.Asc },
+    rating: { field: SearchOrderField.Rating, direction: AssetOrder.Desc },
+  };
+  const SEARCH_SORTS = Object.keys(SEARCH_ORDERS) as LibrarySort[];
+  const searchSort = $derived<LibrarySort>(
+    SEARCH_SORTS.includes(librarySession.state.sort) ? librarySession.state.sort : 'captured-desc',
+  );
 
   // Endpoint and query identity share one request owner. Opening a result changes neither.
   /** ACCOUNT-P3: Search › "Include archived items", as the search palette applies it. */
@@ -179,8 +214,9 @@
       const smart = ('query' in request || 'queryAssetId' in request) && smartSearchEnabled;
       // A flat request (a Places card, an Explore link) keeps asking for the timeline whatever the
       // preference says: it cannot say "timeline or archive", and no visibility at all could bring
-      // back the hidden halves of live photos.
-      return { kind: smart ? 'smart' : 'metadata', terms: request };
+      // back the hidden halves of live photos. Only the structured shape carries an order.
+      const ordered = !smart && 'filter' in request ? { ...request, orderBy: SEARCH_ORDERS[searchSort] } : request;
+      return { kind: smart ? 'smart' : 'metadata', terms: ordered };
     }
     const query = askSearchQuery.trim();
     return query && canUseAskSearch ? { kind: 'ask', query } : null;
@@ -435,10 +471,71 @@
     handlePromiseError(loadNextPage());
   };
 
-  /** Clear all: back to the empty search page. */
+  /** Clear all, and "Clear search and filters": the search narrowed the Library, so back to all of it (App.jsx). */
   const clearSearch = () => {
     librarySession.clearSelection();
-    void goto(Route.search());
+    void goto(Route.photos());
+  };
+
+  /** How many things narrow the results, for the Filter badge (the Library counts the search text too). */
+  const chipCount = $derived(
+    filterChips.length +
+      (discoveryQuery
+        ? discoveryContextChips(discoveryQuery).length
+        : getObjectKeys(terms).filter((key) => key !== 'filter').length),
+  );
+
+  /** The search is ranked (smart search), so no date order applies to it. */
+  const ranked = $derived(activeSearch?.kind === 'smart');
+  /** The Library's layouts (LibraryView): List is Browse's and Work's rows, never the Timeline's. */
+  const listView = $derived(librarySession.layout !== 'timeline' && librarySession.state.view === 'list');
+  const changeView = (view: 'grid' | 'list') => {
+    if (view === 'list' && librarySession.layout === 'timeline') {
+      showLibraryLayout(librarySession, 'browse');
+    }
+    librarySession.patchView({ view });
+  };
+  /** LibraryView's information panel: Work opens it beside the results above 1000px. */
+  const canShowInfoPanel = $derived(!mediaQueryManager.maxMd);
+  let inspectorOpen = $state(untrack(() => librarySession.layout === 'work' && mediaQueryManager.wideInspector));
+  let inspectorLayout: string | undefined;
+  $effect(() => {
+    const layout = librarySession.layout;
+    if (inspectorLayout !== undefined && layout !== inspectorLayout) {
+      inspectorOpen = layout === 'work' && untrack(() => mediaQueryManager.wideInspector);
+    }
+    inspectorLayout = layout;
+  });
+  const showInfoPanel = $derived(canShowInfoPanel && inspectorOpen && hasSearchQuery && timelineAssets.length > 0);
+  /** The item the panel describes: the last selected, the one in focus, or the first result (prototype). */
+  const inspectedAsset = $derived.by(() => {
+    const id = librarySession.selection.at(-1) ?? librarySession.session.scrollAnchor;
+    return (id ? timelineAssets.find((asset) => asset.id === id) : undefined) ?? timelineAssets[0] ?? null;
+  });
+  /**
+   * Work with the panel beside the results (FL-1117): a click shows the item in the panel and a
+   * second click on it opens it; every other layout opens on one click.
+   */
+  let workClickedId: string | undefined;
+  const openResult = (asset: TimelineAsset) => {
+    if (librarySession.layout === 'work' && showInfoPanel && workClickedId !== asset.id) {
+      workClickedId = asset.id;
+      librarySession.setScrollAnchor(asset.id);
+      return;
+    }
+    void navigateToAsset(asset);
+  };
+  /** The Library's Filter badge: the search text and every condition, as the chips show them. */
+  const unappliedFields = $derived(['text', ...activeFilterFields(librarySession.query)]);
+
+  /** The Library's Slideshow (LibraryView `startSlideshow`): from the first result, in the viewer. */
+  const startSlideshow = async () => {
+    const first = timelineAssets[0];
+    if (!first) {
+      return;
+    }
+    await navigateToAsset(first);
+    slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
   };
 
   /** The same search without the album or shared space it was started in. */
@@ -660,45 +757,55 @@
 <UserPageLayout use={[followScroll]}>
   <div class="search-page">
     {#if hasSearchQuery}
-      <h1 class="fl-type-display search-title">{$t('frameleaf_search_results')}</h1>
       <!--
-    The results toolbar, in the Library's order: how many, what narrows them (each chip opens the
-    filters at its own section, Clear all removes them), then Filter and Save search.
-  -->
-      <div class="frameleaf search-toolbar" data-theme={appTheme}>
-        <p class="search-count" role="status">
-          {#if searchResultAssets.length > 0}
-            {$t('frameleaf_search_results_count', {
-              values: { count: searchResultAssets.length, more: hasMore ? 'yes' : 'no' },
-            })}
+        Owner 2026-11-05 (prototype App.jsx): a search is the Library narrowed by it, not a page of
+        its own. The Library's header, then the active-filter bar (the search and every condition as a
+        chip, Clear all at the end), then the results toolbar over the grid.
+      -->
+      <header class="search-head">
+        <h1 class="search-title">{$t('library')}</h1>
+      </header>
+      <!-- FL-707 P2/12 (LibraryView `.fl-library-layouts`): the layout tabs and what each is for. -->
+      <div class="frameleaf search-layouts" data-theme={appTheme}>
+        <p class="search-layout-hint">{$t(LAYOUT_HINTS[librarySession.layout])}</p>
+        <LibraryLayoutSwitch session={librarySession} />
+      </div>
+      <!-- Prototype `.active-filter-bar`; the Library's chips (FilterChip); an old-style link keeps the palette's SearchChip. -->
+      <section
+        id="search-chips"
+        class="frameleaf search-chips"
+        data-theme={appTheme}
+        aria-label={$t('frameleaf_search_active_filters')}
+      >
+        <div class="search-chip-list">
+          {#if discoveryQuery}
+            <!-- FL-48: the text, the similar-photo reference and the space are chips of their own; the
+                 search text leads, as in the Library. -->
+            {#each discoveryContextChips(discoveryQuery) as chip (chip.key)}
+              <!-- Prototype: the search text is its own words beside the magnifier ("lake"). -->
+              {@const label =
+                chip.key === 'text' && discoveryQuery.mode !== 'speech' && chip.value
+                  ? chip.value
+                  : chip.value
+                    ? `${$t(chip.labelKey)}: ${chip.value}`
+                    : $t(chip.labelKey)}
+              <FilterChip
+                {label}
+                icon={chip.key === 'text' ? mdiMagnify : undefined}
+                removeLabel={$t('frameleaf_search_remove_filter', { values: { filter: label } })}
+                onRemove={() => removeContext(chip.key)}
+              />
+            {/each}
           {/if}
-        </p>
-        <!-- SD-12: the results page's chips use the search palette's chip (SearchChip, search-palette.css .sp-token) -->
-        <section
-          id="search-chips"
-          class="frameleaf search-chips"
-          data-theme={appTheme}
-          aria-label={$t('frameleaf_search_active_filters')}
-        >
           {#each filterChips as chip (chip.field)}
-            <SearchChip
+            <FilterChip
               label={chip.label}
               removeLabel={$t('frameleaf_search_remove_filter', { values: { filter: chip.label } })}
               onRemove={() => removeFilterCondition(chip.field)}
               onOpen={discoveryQuery ? () => requestFilterPanel(filterSectionForField(chip.field)) : undefined}
             />
           {/each}
-          {#if discoveryQuery}
-            <!-- FL-48: the text, the similar-photo reference and the space are chips of their own. -->
-            {#each discoveryContextChips(discoveryQuery) as chip (chip.key)}
-              {@const label = chip.value ? `${$t(chip.labelKey)}: ${chip.value}` : $t(chip.labelKey)}
-              <SearchChip
-                {label}
-                removeLabel={$t('frameleaf_search_remove_filter', { values: { filter: label } })}
-                onRemove={() => removeContext(chip.key)}
-              />
-            {/each}
-          {:else}
+          {#if !discoveryQuery}
             {#each getObjectKeys(terms).filter((key) => key !== 'filter') as searchKey (searchKey)}
               {@const value = terms[searchKey]}
               {@const name = getHumanReadableSearchKey(searchKey as keyof SearchTerms)}
@@ -736,22 +843,46 @@
               </SearchChip>
             {/each}
           {/if}
-          <button type="button" class="search-clear" onclick={clearSearch}>{$t('clear_all')}</button>
-        </section>
-        <div class="search-actions">
-          <button type="button" class="button" onclick={() => requestFilterPanel('all')}>
-            <Icon icon={mdiTuneVariant} size="16" aria-hidden />
-            {$t('frameleaf_search_results_filter')}
-          </button>
+        </div>
+        <button type="button" class="search-clear" onclick={clearSearch}>{$t('clear_all')}</button>
+      </section>
+      <!-- Prototype `.results-toolbar`: the Library's own toolbar (LibraryView), over this search. -->
+      <div class="frameleaf search-toolbar" data-theme={appTheme}>
+        <ResultsToolbar
+          session={librarySession}
+          activeCount={chipCount}
+          {unappliedFields}
+          onOpenFilterPanel={(section) => requestFilterPanel(section)}
+          onSlideshow={discoveryQuery?.mode === 'speech' || timelineAssets.length === 0
+            ? undefined
+            : () => handlePromiseError(startSlideshow())}
+          inspectorOpen={canShowInfoPanel ? inspectorOpen : undefined}
+          onToggleInspector={() => (inspectorOpen = !inspectorOpen)}
+          sorts={ranked || discoveryQuery?.mode === 'speech' ? undefined : SEARCH_SORTS}
+          sort={searchSort}
+          onSortChange={(sort) => librarySession.patchView({ sort })}
+          view={listView ? 'list' : 'grid'}
+          onViewChange={changeView}
+          onMoreActions={() => (moreActionsOpen = true)}
+          count={hasMore || isLoading || loadFailed ? null : searchResultAssets.length}
+          leading={hasMore ? loadedCount : undefined}
+        >
           {#if discoveryQuery && discoveryQuery.mode !== 'speech'}
-            <button type="button" class="button" onclick={() => (saving = true)}>
+            <button type="button" class="search-tool" onclick={() => (saving = true)}>
               <Icon icon={mdiContentSaveOutline} size="16" aria-hidden />
-              {$t('frameleaf_search_save_search')}
+              <span class="search-tool-label">{$t('frameleaf_search_save_search')}</span>
             </button>
           {/if}
-        </div>
+        </ResultsToolbar>
       </div>
     {/if}
+
+    {#snippet loadedCount()}
+      <!-- More results are still to load: the count says so ("48+ items"). -->
+      <p class="search-count" role="status">
+        {$t('frameleaf_search_results_count', { values: { count: searchResultAssets.length, more: 'yes' } })}
+      </p>
+    {/snippet}
 
     <section id="search-content" class="search-content">
       {#if searchLocation.kind === 'rejected'}
@@ -795,14 +926,33 @@
           {/if}
         </div>
       {:else if hasSearchQuery && searchResultAssets.length > 0}
-        <ResultsView
-          assets={timelineAssets}
-          downloadFileName={searchDownloadFileName}
-          onEndReached={() => void loadNextPage()}
-          onRemoved={onAssetDelete}
-          onSelectAll={handleSelectAll}
-          onOpen={(asset) => void navigateToAsset(asset)}
-        />
+        <div class="search-body">
+          <div class="search-grid">
+            <ResultsView
+              assets={timelineAssets}
+              layout={listView ? 'list' : undefined}
+              downloadFileName={searchDownloadFileName}
+              onEndReached={() => void loadNextPage()}
+              onRemoved={onAssetDelete}
+              onSelectAll={handleSelectAll}
+              onOpen={openResult}
+            />
+          </div>
+          {#if showInfoPanel}
+            <aside
+              class="frameleaf search-panel"
+              data-theme={appTheme}
+              aria-label={$t('frameleaf_work_inspector_title')}
+            >
+              <LibraryWorkInspector
+                asset={inspectedAsset}
+                selectedCount={librarySession.selection.length}
+                onOpen={(asset) => void navigateToAsset(asset)}
+                onClose={() => (inspectorOpen = false)}
+              />
+            </aside>
+          {/if}
+        </div>
       {:else if hasSearchQuery && loadFailed}
         <div class="frameleaf search-state" data-theme={appTheme}>
           <InlineError
@@ -812,13 +962,15 @@
           />
         </div>
       {:else if hasSearchQuery && !isLoading}
+        <!-- The Library's filtered empty state (App.jsx "No matching media"), with the way out of the
+             album or space the search started in, or past its filters, when there is one. -->
         <div class="frameleaf search-state" data-theme={appTheme}>
           <EmptyState
-            icon={mdiImageSearchOutline}
-            title={$t('frameleaf_search_results_empty_title')}
-            message={$t('frameleaf_search_results_empty_body')}
-            action={{ label: $t('frameleaf_search_results_edit'), icon: mdiPencilOutline, onClick: openSearchPalette }}
-            secondaryAction={emptySecondary}
+            icon={mdiFilterOffOutline}
+            title={$t('frameleaf_library_empty_filtered_title')}
+            message={$t('frameleaf_library_empty_filtered_message')}
+            action={emptySecondary}
+            secondaryAction={{ label: $t('frameleaf_library_empty_filtered_clear'), onClick: clearSearch }}
           />
         </div>
       {:else if !hasSearchQuery && !showAskSearch && searchLocation.kind !== 'rejected'}
@@ -848,7 +1000,80 @@
       {/if}
     </section>
   </div>
+  {#if hasSearchQuery && discoveryQuery?.mode !== 'speech'}
+    <!-- The Library's status capsule (App.jsx footer): the count, the selection and Thumbnail size. -->
+    <div class="frameleaf search-status" data-theme={appTheme}>
+      <LibraryStatusBar
+        count={searchResultAssets.length}
+        selected={librarySession.selection.length}
+        saved
+        hidden={librarySession.selection.length > 0}
+      >
+        {#snippet controls()}
+          <ThumbnailSizeControl />
+        {/snippet}
+      </LibraryStatusBar>
+    </div>
+  {/if}
 </UserPageLayout>
+
+{#if moreActionsOpen}
+  <!-- LibraryView's "More library actions" sheet: on a phone the one-line toolbar leaves these here. -->
+  <div class="frameleaf search-dialogs" data-theme={appTheme}>
+    <Dialog bind:open={moreActionsOpen} title={$t('frameleaf_library_view_actions_title')} closeLabel={$t('close')}>
+      <div class="search-action-list">
+        <Button
+          disabled={timelineAssets.length === 0}
+          onclick={() => {
+            moreActionsOpen = false;
+            handleSelectAll();
+          }}
+        >
+          {$t('frameleaf_library_select_all_matching_count', { values: { count: timelineAssets.length } })}
+        </Button>
+        {#if discoveryQuery?.mode !== 'speech'}
+          <Button
+            disabled={timelineAssets.length === 0}
+            onclick={() => {
+              moreActionsOpen = false;
+              handlePromiseError(startSlideshow());
+            }}
+          >
+            {$t('slideshow')}
+          </Button>
+        {/if}
+        <Button
+          onclick={() => {
+            moreActionsOpen = false;
+            changeView(listView ? 'grid' : 'list');
+          }}
+        >
+          {$t(listView ? 'frameleaf_library_grid_view' : 'frameleaf_library_list_view')}
+        </Button>
+        {#if canShowInfoPanel}
+          <Button
+            onclick={() => {
+              moreActionsOpen = false;
+              inspectorOpen = !inspectorOpen;
+            }}
+          >
+            {$t(inspectorOpen ? 'frameleaf_work_inspector_hide' : 'frameleaf_work_inspector_show')}
+          </Button>
+        {/if}
+        {#if discoveryQuery && discoveryQuery.mode !== 'speech'}
+          <Button
+            onclick={() => {
+              moreActionsOpen = false;
+              saving = true;
+            }}
+          >
+            {$t('frameleaf_search_save_search')}
+          </Button>
+        {/if}
+      </div>
+    </Dialog>
+  </div>
+{/if}
 
 {#if discoveryQuery}
   <div class="frameleaf search-dialogs" data-theme={appTheme}>
@@ -865,76 +1090,200 @@
 
 <style>
   /*
-   * In the app frame (DISCOVERY-P5): with the page area's own 8px, the Library's 24px gutter (16px on
-   * a phone), the title above the toolbar, and the results 12px under the toolbar.
+   * The Library's frame (LibraryView `.fl-library-header`, `.fl-library-toolbar`): the page area's
+   * 8px plus 16px make the 24px gutter (8px plus 8px on a phone), and the header's hairline and the
+   * toolbar's band run edge to edge across the page area.
    */
   .search-page {
+    --search-bleed: calc(-1 * (var(--fl-page-inline, var(--fl-space-4)) + var(--fl-space-2)));
     display: flex;
     flex-direction: column;
-    gap: var(--fl-space-3);
-    padding: var(--fl-space-6) var(--fl-space-4) var(--fl-space-12);
+    padding: 0 var(--fl-page-inline, var(--fl-space-4)) var(--fl-space-12);
   }
+  .search-head,
+  .search-layouts,
+  .search-chips {
+    position: relative;
+  }
+  .search-head {
+    padding: calc(var(--fl-page-top) - var(--fl-space-2)) 0 var(--fl-space-3);
+  }
+  .search-head::after,
+  .search-layouts::after,
+  .search-chips::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    inset-inline: var(--search-bleed);
+    border-bottom: 1px solid var(--fl-border);
+    pointer-events: none;
+  }
+  /* The Library's title (`.fl-library-title`). */
   .search-title {
     margin: 0;
     color: var(--fl-text);
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
   }
-  /* One row, left-aligned like the Library's: count, chips with Clear all, then the actions. */
+  /* LibraryView `.fl-library-layouts`: the hint at the start, the layout tabs at the end. */
+  .search-layouts {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--fl-space-4);
+    padding-block: var(--fl-space-2);
+    background: transparent;
+  }
+  .search-layout-hint {
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    color: var(--fl-muted);
+    font-size: 13px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .search-layouts > :global(.fl-layouts) {
+    margin-inline-start: auto;
+  }
+  /* Prototype `.active-filter-bar`: the chips at the start, Clear all at the end. */
+  .search-chips {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--fl-space-3);
+    min-height: calc(var(--fl-control-height) + var(--fl-space-4));
+    padding-block: var(--fl-space-2);
+    background: transparent;
+  }
+  .search-chip-list {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--fl-space-2);
+    min-width: 0;
+  }
+  .search-clear {
+    flex-shrink: 0;
+    min-height: var(--fl-control-height);
+    padding: 0 var(--fl-space-3);
+    border: 0;
+    border-radius: var(--fl-radius-control);
+    background: transparent;
+    color: var(--fl-accent);
+    font-size: var(--fl-font-small);
+    white-space: nowrap;
+  }
+  .search-clear:hover {
+    background: var(--fl-raised);
+  }
+  /* Prototype `.results-toolbar` on the Library's frosted band, which stays while the grid scrolls. */
   .search-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 5;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--fl-space-2) var(--fl-space-3);
     background: transparent;
   }
+  .search-toolbar > :global(*) {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .search-toolbar::before {
+    content: '';
+    position: absolute;
+    inset-block: 0;
+    inset-inline: var(--search-bleed);
+    z-index: -1;
+    border-bottom: 1px solid var(--fl-material-edge);
+    background: var(--fl-material);
+    -webkit-backdrop-filter: var(--fl-material-blur);
+    backdrop-filter: var(--fl-material-blur);
+  }
   .search-count {
     margin: 0;
     color: var(--fl-muted);
-    font: var(--fl-type-callout);
+    font-size: var(--fl-font-small);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
-  .search-count:empty {
-    display: none;
-  }
-  .search-chips {
-    display: flex;
-    flex: 1;
-    flex-wrap: wrap;
+  /* ResultsToolbar `.fl-filter-button` / `.fl-tool`. */
+  .search-tool {
+    display: inline-flex;
     align-items: center;
     gap: var(--fl-space-2);
-    min-width: 0;
+    min-height: var(--fl-control-height);
+    padding: 0 var(--fl-space-3);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius);
     background: transparent;
-  }
-  .search-clear {
-    min-height: var(--fl-control-height-compact);
-    padding: 0 var(--fl-space-2);
-    border-radius: var(--fl-radius-control);
-    color: var(--fl-muted);
-    font: var(--fl-type-callout);
-  }
-  .search-clear:hover {
     color: var(--fl-text);
+    font-size: var(--fl-font-size, 14px);
+  }
+  .search-tool:hover:not(:disabled) {
     background: var(--fl-raised);
   }
-  .search-actions {
+  .search-tool:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  /* The grid starts under the band, at the photo gutter. */
+  .search-content {
+    padding-top: var(--fl-space-half);
+  }
+  /* LibraryView `.fl-library-body`: the results, and Work's information panel beside them. */
+  .search-body {
     display: flex;
+    align-items: flex-start;
+    gap: var(--fl-space-4);
+  }
+  .search-grid {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  /* LibraryView `.fl-library-panel`, kept in view while the results scroll. */
+  .search-panel {
+    position: sticky;
+    top: calc(var(--fl-control-height) + var(--fl-space-6));
+    flex: 0 0 320px;
+    max-height: calc(100vh - 12rem);
+    overflow-y: auto;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius);
+    background: var(--fl-panel);
+  }
+  .search-status {
+    background: transparent;
+  }
+  .search-action-list {
+    display: grid;
     gap: var(--fl-space-2);
-    margin-inline-start: auto;
   }
   @media (max-width: 767px) {
     .search-page {
-      padding: var(--fl-space-2) var(--fl-space-2) var(--fl-space-8);
+      padding-bottom: var(--fl-space-8);
     }
-    /* The size Tags, Places and People step down to on phones. */
-    .search-title {
-      font-size: var(--fl-font-title);
+    /* LibraryView: on a phone the tabs start at the gutter, without the hint. */
+    .search-layout-hint {
+      display: none;
+    }
+    .search-layouts > :global(.fl-layouts) {
+      margin-inline-start: 0;
+    }
+    /* The one-line phone toolbar (ResultsToolbar): Save search is in the "…" sheet, as Slideshow is. */
+    .search-tool {
+      display: none;
     }
   }
-  /* On a phone the count and the actions share the first row and the chips take their own below. */
-  @media (max-width: 640px) {
-    .search-chips {
-      order: 1;
-      flex-basis: 100%;
+  @media (pointer: coarse) {
+    .search-tool,
+    .search-clear {
+      min-height: var(--fl-control-height-touch);
     }
   }
   .search-state,
@@ -955,7 +1304,7 @@
   .search-skeleton {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
-    gap: var(--fl-space-1);
+    gap: var(--fl-space-half);
     background: transparent;
   }
 </style>

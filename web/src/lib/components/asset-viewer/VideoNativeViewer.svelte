@@ -794,7 +794,14 @@
         {/if}
 
         <div class="flex h-32 w-full flex-col justify-end bg-linear-to-b to-black/80 px-4">
-          <media-control-bar part="bottom" class="flex h-10 w-full gap-2">
+          <!-- Prototype `VideoControls`: the thin scrubber above the Play and time row.
+               FL-650: a file played directly scrubs as you drag; a realtime stream seeks on release -->
+          <frameleaf-time-range
+            live={!useHls || undefined}
+            use:onScrubApproach
+            class="h-6 w-full rounded-lg px-2 outline-none"
+          ></frameleaf-time-range>
+          <media-control-bar part="bottom" class="mb-2 flex h-10 w-full gap-2">
             <media-play-button class="shrink-0 rounded-full p-2 outline-none">
               <Icon slot="play" icon={mdiPlay} />
               <Icon slot="pause" icon={mdiPause} />
@@ -834,12 +841,6 @@
               <media-settings-menu-button class="shrink-0 rounded-full p-2 outline-none"></media-settings-menu-button>
             {/if}
           </media-control-bar>
-          <!-- FL-650: a file played directly scrubs as you drag; a realtime stream seeks on release -->
-          <frameleaf-time-range
-            live={!useHls || undefined}
-            use:onScrubApproach
-            class="h-8 w-full rounded-lg px-2 pb-3 outline-none"
-          ></frameleaf-time-range>
         </div>
       </media-controller>
 

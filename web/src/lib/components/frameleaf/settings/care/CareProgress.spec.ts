@@ -142,8 +142,10 @@ describe('Search and recognition progress (FL-366)', () => {
     newStore();
     render(CareProgress, { pollMs: 60_000 });
 
-    expect(await screen.findByText('1,000 of 4,000 read')).toBeInTheDocument();
-    expect(row('Visual search').getByText('1,000 of 4,000 read')).toBeInTheDocument();
+    // The measure column says how far it has got, with a bar; the status says what is left.
+    const meter = await screen.findByRole('meter', { name: 'Visual search: photos read' });
+    expect(meter).toHaveAttribute('aria-valuetext', '1,000 of 4,000');
+    expect(row('Visual search').getByText('3,000 to read')).toBeInTheDocument();
     expect(row('Visual search').getByText('about 3 hours left')).toBeInTheDocument();
   });
 

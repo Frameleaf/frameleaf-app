@@ -28,6 +28,41 @@ const MapMarkerSchema = z
   })
   .meta({ id: 'MapMarkerDto' });
 
+const areaEdge = (edge: string, schema: typeof latitudeSchema) =>
+  z.coerce.number().meta({ format: 'double' }).pipe(schema).optional().describe(edge);
+
+/**
+ * FL-1214: an area of the map. A west edge east of the east edge crosses the antimeridian. All four
+ * edges are needed; with any one missing the whole world is meant.
+ */
+const MapAreaSchema = z.object({
+  west: areaEdge('West edge of the area (longitude)', longitudeSchema),
+  south: areaEdge('South edge of the area (latitude)', latitudeSchema),
+  east: areaEdge('East edge of the area (longitude)', longitudeSchema),
+  north: areaEdge('North edge of the area (latitude)', latitudeSchema),
+});
+
+/**
+ * `GET /map/markers` with the optional area and paging the Map screen's "In view" list asks for
+ * (FL-1214). Without them it answers exactly as before: every located item, newest first.
+ */
+const MapMarkerListSchema = MapMarkerSchema.extend({
+  ...MapAreaSchema.shape,
+  skip: z.coerce.number().int().min(0).optional().describe('Skip this many markers (with take)'),
+  take: z.coerce.number().int().min(1).max(1000).optional().describe('At most this many markers, newest first'),
+}).meta({ id: 'MapMarkerListDto' });
+
+/** Asked without an area, the answer covers the whole library and can be `complete` (FL-1214). */
+const MapClusterSchema = MapMarkerSchema.extend({
+  ...MapAreaSchema.shape,
+  zoom: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(24)
+    .describe('The map zoom level the items are grouped for; without an area, at most 4'),
+}).meta({ id: 'MapClusterDto' });
+
 /**
  * The map settings sheet's filters for one album's markers (FL-51, prototype `MapView.jsx` in album
  * scope). Each only narrows what the album already shows its viewer: no filter reaches an asset outside
@@ -78,6 +113,49 @@ const MapMarkerResponseSchema = z
   })
   .meta({ id: 'MapMarkerResponseDto' });
 
+/** Several located items close together at this zoom, drawn as one bubble (FL-1214). */
+const MapClusterResponseSchema = z
+  .object({
+    id: z.uuidv4().describe("One of the items, for the bubble's preview"),
+    lat: z.number().meta({ format: 'double' }).describe("Latitude of the items' centre"),
+    lon: z.number().meta({ format: 'double' }).describe("Longitude of the items' centre"),
+    count: z.int().min(2).describe('How many items'),
+    videos: z.int().min(0).describe('How many of them are videos'),
+    city: z.string().nullable().describe('City of the preview item'),
+    state: z.string().nullable().describe('State/Province of the preview item'),
+    country: z.string().nullable().describe('Country of the preview item'),
+    west: z.number().meta({ format: 'double' }).describe('Westernmost longitude of the items'),
+    south: z.number().meta({ format: 'double' }).describe('Southernmost latitude of the items'),
+    east: z.number().meta({ format: 'double' }).describe('Easternmost longitude of the items'),
+    north: z.number().meta({ format: 'double' }).describe('Northernmost latitude of the items'),
+  })
+  .meta({ id: 'MapClusterResponseDto' });
+
+const MapBoundsSchema = z
+  .object({
+    west: z.number().meta({ format: 'double' }),
+    south: z.number().meta({ format: 'double' }),
+    east: z.number().meta({ format: 'double' }),
+    north: z.number().meta({ format: 'double' }),
+  })
+  .meta({ id: 'MapBoundsDto' });
+
+/**
+ * The located items for one view of the map (FL-1214), so a large library is never sent whole. Items
+ * close together at the requested zoom come as clusters; the rest come as markers. A library small
+ * enough to send whole comes as markers only, with `complete` set, and need not be asked again as the
+ * map moves.
+ */
+const MapClusterListResponseSchema = z
+  .object({
+    complete: z.boolean().describe('True when markers hold every located item under the filters, wherever the map is'),
+    total: z.int().min(0).describe('Located items in the area asked for (the whole world without one)'),
+    bounds: MapBoundsSchema.nullable().describe('The area those items cover; null when there are none'),
+    clusters: z.array(MapClusterResponseSchema).describe('Groups of items in the area'),
+    markers: z.array(MapMarkerResponseSchema).describe('Items in the area that are not in a group'),
+  })
+  .meta({ id: 'MapClusterListResponseDto' });
+
 /**
  * The map settings sheet's counts (FL-51, prototype `MapView.jsx` settings): what each switch would
  * add under the sheet's other filters, and how many of the viewer's own items have no location.
@@ -98,5 +176,8 @@ export class MapStatisticsResponseDto extends createZodDto(MapStatisticsResponse
 export class MapReverseGeocodeDto extends createZodDto(MapReverseGeocodeSchema) {}
 export class MapReverseGeocodeResponseDto extends createZodDto(MapReverseGeocodeResponseSchema) {}
 export class MapMarkerDto extends createZodDto(MapMarkerSchema) {}
+export class MapMarkerListDto extends createZodDto(MapMarkerListSchema) {}
+export class MapClusterDto extends createZodDto(MapClusterSchema) {}
+export class MapClusterListResponseDto extends createZodDto(MapClusterListResponseSchema) {}
 export class AlbumMapMarkerDto extends createZodDto(AlbumMapMarkerSchema) {}
 export class MapMarkerResponseDto extends createZodDto(MapMarkerResponseSchema) {}

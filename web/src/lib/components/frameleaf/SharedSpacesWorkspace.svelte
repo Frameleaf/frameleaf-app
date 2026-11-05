@@ -125,9 +125,9 @@
       if (!space) {
         return false;
       }
-      // A shared space is the workspace itself: open it straight away so its owner can
-      // invite people, the way opening a freshly created album does.
-      await goto(Route.viewSharedSpace({ id: space.id }));
+      // Open the new space straight away, in the library view like an album (owner, 2026-11-05),
+      // so its owner can add photos and invite people.
+      await goto(Route.viewAlbum({ id: space.id }));
       return true;
     } finally {
       busy = false;
@@ -180,11 +180,13 @@
   <!-- The Frameleaf Menu the Albums page uses for every album kind (AlbumDirectory.svelte), AL-45. -->
   <Menu label={$t('frameleaf_albums_actions_for', { values: { name: nameOf(space) } })} align="end">
     {#snippet trigger()}<Icon icon={mdiDotsHorizontal} size={ICON_SIZE.lg} aria-hidden={true} />{/snippet}
-    <MenuItem onSelect={() => goto(Route.viewSharedSpace({ id: space.id }))}>
+    <MenuItem onSelect={() => goto(Route.viewAlbum({ id: space.id }))}>
       <Icon icon={mdiFolderOpenOutline} size={ICON_SIZE.lg} aria-hidden={true} />{$t('open')}
     </MenuItem>
-    <MenuItem onSelect={() => goto(Route.viewAlbum({ id: space.id }))}>
-      <Icon icon={mdiImageMultipleOutline} size={ICON_SIZE.lg} aria-hidden={true} />{$t('frameleaf_spaces_open_photos')}
+    <MenuItem onSelect={() => goto(Route.viewSharedSpace({ id: space.id }))}>
+      <Icon icon={mdiImageMultipleOutline} size={ICON_SIZE.lg} aria-hidden={true} />{$t(
+        'frameleaf_spaces_open_details',
+      )}
     </MenuItem>
     {#if editor}
       <MenuItem onSelect={() => (editDialog = { open: true, space })}>
@@ -263,7 +265,7 @@
             in:listEnter={{ count: spaces.length }}
             out:listLeave={{ count: spaces.length }}
           >
-            <AlbumTile album={space} {currentUserId} href={Route.viewSharedSpace({ id: space.id })}>
+            <AlbumTile album={space} {currentUserId} href={Route.viewAlbum({ id: space.id })}>
               {#snippet actions()}{@render menu(space)}{/snippet}
             </AlbumTile>
           </div>

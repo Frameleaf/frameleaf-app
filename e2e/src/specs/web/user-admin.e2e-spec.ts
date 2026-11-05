@@ -50,7 +50,7 @@ test.describe('User Administration', () => {
     await page.goto(`/admin/users`);
     await page.waitForURL('**/user-settings?area=users&section=accounts');
     await expect(page).toHaveTitle(/Settings/);
-    await expect(page.locator('.resource-heading').getByText('Your server')).toBeVisible();
+    await expect(page.locator('.kit-page-heading').getByText('Your server')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Users', level: 1 })).toBeVisible();
     await expect(page.getByText('Everyone with an account, and how much space each has.')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Add a person', exact: true })).toBeVisible();
@@ -69,7 +69,8 @@ test.describe('User Administration', () => {
     const session = await login({ loginCredentialDto: { email: 'user@example.com', password } });
     expect(session.shouldChangePassword).toBe(true);
     await page.getByRole('button', { name: 'Back to Users' }).click();
-    await expect(page.getByRole('row', { name: /user@example\.com/ })).toBeVisible();
+    // the prototype's list: one row per person, "email · role"
+    await expect(page.getByText('user@example.com · Member', { exact: true })).toBeVisible();
   });
 
   test('promote to admin', async ({ context, page }) => {
@@ -166,7 +167,8 @@ test.describe('User Administration', () => {
       await page.goto(usersManager);
       const password = await addPerson(page, 'PIN User', 'pin-user@example.com');
       await page.getByRole('button', { name: 'Open their page' }).click();
-      await expect(page.getByRole('heading', { name: 'PIN User', level: 2 })).toBeVisible();
+      // the person opens in place of the list, under their own name (prototype People.jsx)
+      await expect(page.getByRole('heading', { name: 'PIN User', level: 1 })).toBeVisible();
 
       await page.getByRole('button', { name: 'Set PIN', exact: true }).click();
       const setDialog = page.getByRole('dialog', { name: 'Set PIN' });
@@ -241,12 +243,11 @@ test.describe('User Administration', () => {
         })
         .toEqual({ deleted: true, status: 'deleted' });
 
-      // the default list shows active accounts; the Deleted filter finds this one
+      // the list keeps an account being removed, after the others, marked Deleted, so it can be restored
       await page.goto(usersManager);
-      const table = page.getByRole('region', { name: 'Accounts' });
-      await expect(table.getByRole('link', { name: /leaving-user@example\.com/ })).toHaveCount(0);
-      await page.getByRole('combobox', { name: 'Filter accounts' }).selectOption('deleted');
-      await table.getByRole('link', { name: /leaving-user@example\.com/ }).click();
+      const list = page.getByRole('region', { name: 'Users' });
+      await expect(list.getByText('Deleted', { exact: true })).toBeVisible();
+      await list.getByRole('button', { name: 'Open Leaving User', exact: true }).click();
 
       await page.getByRole('button', { name: 'Restore account', exact: true }).click();
       const restore = page.getByRole('dialog', { name: 'Restore Leaving User' });

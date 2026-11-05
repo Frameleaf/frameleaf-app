@@ -63,15 +63,16 @@
   .heading > div:first-child {
     min-width: 0;
   }
+  /* backup-v2.css:211-222: a 15px title with its description a line under it, read as one unit. */
   h2 {
     margin: 0;
-    font-size: 16px;
+    font-size: 15px;
     font-weight: 600;
-    letter-spacing: var(--fl-tracking-headline);
+    letter-spacing: -0.1px;
   }
   p {
     max-width: 640px;
-    margin: var(--fl-space-2) 0 0;
+    margin: var(--fl-space-1) 0 0;
     color: var(--fl-muted);
     font-size: var(--fl-font-callout);
     line-height: 1.5;

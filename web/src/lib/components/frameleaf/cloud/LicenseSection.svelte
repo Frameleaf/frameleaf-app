@@ -238,7 +238,7 @@
       </Hero>
 
       <Section title={$t('frameleaf_lic_gives')} description={$t('frameleaf_lic_gives_description')}>
-        <ItemList>
+        <ItemList plain>
           <Item
             icon={mdiCloudOutline}
             name={$t('frameleaf_lic_gives_cloud')}
@@ -286,7 +286,7 @@
             off={!licensed}
           />
         </ItemList>
-        <p class="hint">{$t('frameleaf_lic_without')}</p>
+        <p class="hint closing">{$t('frameleaf_lic_without')}</p>
       </Section>
 
       <Section
@@ -461,6 +461,13 @@
     margin: var(--fl-space-3) 0 0;
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
+  }
+  /* The last line of a section keeps the section's bottom air. */
+  .hint.closing {
+    max-width: 720px;
+    margin: 0;
+    padding: var(--fl-space-4) 0 var(--fl-space-5);
+    border-top: 1px solid var(--fl-border);
   }
   .actions {
     display: flex;

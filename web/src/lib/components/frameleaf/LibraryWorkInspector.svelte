@@ -16,9 +16,11 @@
    * For a picture there it also shows its annotations (FL-652): drawn over the preview, an
    * Annotations section under the name, and "View large" opening the Boards viewer to annotate.
    */
+  import BrokenAsset from '$lib/components/assets/BrokenAsset.svelte';
   import AssetPalette from '$lib/components/frameleaf/AssetPalette.svelte';
   import AssetSources from '$lib/components/frameleaf/AssetSources.svelte';
   import BoardsRating from '$lib/components/frameleaf/BoardsRating.svelte';
+  import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import {
     acquireAnnotations,
     releaseAnnotations,
@@ -44,7 +46,8 @@
     type ColorFilter,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import { mdiArrowExpand, mdiClose, mdiMapMarker, mdiPlay } from '@mdi/js';
+  import { mdiArrowExpand, mdiClose, mdiDownload, mdiMapMarker, mdiPlay, mdiTrashCanOutline } from '@mdi/js';
+  import { downloadAssetFile } from '$lib/utils/asset-utils';
   import { t } from 'svelte-i18n';
 
   type Props = {
@@ -57,9 +60,13 @@
     onChooseColor?: (color: ColorFilter) => void;
     /** Shows the Boards details (the Boards workspace passes it; a Boards-only item gets them anyway). */
     boards?: boolean;
+    /** Boards' "Move to trash" at the foot of Details (prototype `.pro-inspector-actions`); the owner's only. */
+    onTrash?: (asset: TimelineAsset) => void;
   };
 
-  let { asset, selectedCount = 0, onOpen, onClose, onChooseColor, boards = false }: Props = $props();
+  let { asset, selectedCount = 0, onOpen, onClose, onChooseColor, boards = false, onTrash }: Props = $props();
+  /** The item whose preview could not be loaded; another item tries its own. */
+  let previewFailed = $state<string | null>(null);
 
   let tab = $state<'info' | 'people'>('info');
   const tabId = $props.id();
@@ -203,6 +210,31 @@
   };
 </script>
 
+{#snippet boardsActions(item: AssetResponseDto)}
+  <!-- Prototype `.pro-inspector-actions`: Download original, and the owner's Move to trash. -->
+  <div class="actions">
+    <button
+      type="button"
+      class="action"
+      onclick={() =>
+        void downloadAssetFile({
+          id: item.id,
+          filename: item.originalFileName,
+          edited: false,
+          size: item.exifInfo?.fileSizeInByte ?? undefined,
+        })}
+    >
+      <Icon icon={mdiDownload} size="18" aria-hidden />{$t('download_original')}
+    </button>
+    {#if isOwner && onTrash && asset}
+      {@const shown = asset}
+      <button type="button" class="action danger" onclick={() => onTrash(shown)}>
+        <Icon icon={mdiTrashCanOutline} size="18" aria-hidden />{$t('frameleaf_boards_move_to_trash')}
+      </button>
+    {/if}
+  </div>
+{/snippet}
+
 {#snippet boardsDetails(item: AssetResponseDto)}
   {#if annotations}
     {@const current = annotations}
@@ -216,11 +248,11 @@
     </section>
   {/if}
   <section class="part" class:first={!annotations}>
-    <AssetPalette assetId={item.id} canRetry={isOwner} onChoose={onChooseColor} />
+    <AssetPalette assetId={item.id} canRetry={isOwner} onChoose={onChooseColor} limit={5} />
   </section>
   {#if canRate}
     <section class="part" aria-labelledby={`${tabId}-rating`}>
-      <h3 id={`${tabId}-rating`}>{$t('rating')}</h3>
+      <h3 id={`${tabId}-rating`}>{$t('frameleaf_boards_rating')}</h3>
       <BoardsRating value={rating} disabled={ratingBusy} onChange={(next) => void rate(next)} />
     </section>
   {/if}
@@ -286,12 +318,27 @@
   {/if}
 {/snippet}
 
-<section class="inspector" aria-labelledby="fl-work-inspector-title" data-testid="frameleaf-work-inspector">
+<section
+  class="inspector"
+  class:is-boards={boardsMode}
+  aria-labelledby="fl-work-inspector-title"
+  data-testid="frameleaf-work-inspector"
+>
   <div class="heading">
-    <span id="fl-work-inspector-title">{$t('frameleaf_work_inspector_title')}</span>
-    <button type="button" class="icon" aria-label={$t('frameleaf_work_inspector_close')} onclick={onClose}>
-      <Icon icon={mdiClose} size="18" aria-hidden />
-    </button>
+    <!-- Boards' inspector is "Details" (prototype ProWorkspace.jsx `Inspector`); Work's is "Information". -->
+    <span id="fl-work-inspector-title"
+      >{boardsMode ? $t('frameleaf_boards_details') : $t('frameleaf_work_inspector_title')}</span
+    >
+    {#if boardsMode}
+      <!-- Prototype `.pro-inspector-head`: a bordered square icon button at the app's 44px control height. -->
+      <IconButton variant="default" label={$t('frameleaf_work_inspector_close')} onclick={onClose}>
+        <Icon icon={mdiClose} size="18" aria-hidden />
+      </IconButton>
+    {:else}
+      <button type="button" class="icon" aria-label={$t('frameleaf_work_inspector_close')} onclick={onClose}>
+        <Icon icon={mdiClose} size="18" aria-hidden />
+      </button>
+    {/if}
   </div>
 
   {#if asset}
@@ -331,9 +378,13 @@
         aria-label={$t('frameleaf_work_inspector_open')}
         onclick={() => onOpen(asset)}
       >
-        {#if detail}<img
+        {#if detail && previewFailed === asset.id}
+          <!-- No preview yet (a RAW file before its thumbnail exists): the grid's quiet placeholder. -->
+          <BrokenAsset class="preview-missing" hideMessage />
+        {:else if detail}<img
             src={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Thumbnail, cacheKey: asset.thumbhash })}
             alt=""
+            onerror={() => (previewFailed = asset.id)}
           />
           {#if asset.isVideo}
             <span class="play" aria-hidden="true"><Icon icon={mdiPlay} size="38" /></span>
@@ -359,6 +410,7 @@
           {@render boardsDetails(detail)}
         {/if}
       </div>
+      {#if detail}{@render boardsActions(detail)}{/if}
     {:else}
       <div class="tabbar" role="tablist" aria-label={$t('frameleaf_work_inspector_title')}>
         <button
@@ -536,6 +588,10 @@
     aspect-ratio: 1.38;
     object-fit: cover;
   }
+  .preview :global(.preview-missing) {
+    width: 100%;
+    aspect-ratio: 1.38;
+  }
   .preview.annotated {
     display: grid;
     place-items: center;
@@ -677,5 +733,77 @@
   button:focus-visible {
     outline: 2px solid var(--fl-accent);
     outline-offset: 2px;
+  }
+  /*
+   * Boards (prototype .pro-inspector): a headed panel with a hairline under "Details", a 24px inset,
+   * sections 24px apart with no rules between them, and uppercase eyebrow labels ("COLOURS").
+   */
+  .inspector.is-boards {
+    padding: 0 0 var(--fl-space-6);
+  }
+  /* Stays put while the body scrolls, as the prototype's fixed `.pro-inspector-head`. */
+  .is-boards .heading {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--fl-panel);
+    margin-bottom: var(--fl-space-4);
+    padding: var(--fl-space-3) var(--fl-space-3) var(--fl-space-3) var(--fl-space-6);
+    border-bottom: 1px solid var(--fl-border);
+    font-size: 15px;
+  }
+  .is-boards > :not(.heading) {
+    margin-inline: var(--fl-space-6);
+  }
+  .is-boards > .preview,
+  .is-boards > .preview.annotated {
+    width: auto;
+  }
+  .is-boards h2 {
+    margin: var(--fl-space-3) var(--fl-space-6) 0;
+    font-size: 15px;
+  }
+  .is-boards .boards .part {
+    margin-top: var(--fl-space-6);
+    padding-top: 0;
+    border-top: 0;
+  }
+  .is-boards .boards .part.first {
+    margin-top: var(--fl-space-6);
+  }
+  /* Pinned to the foot of the panel as it scrolls (prototype `.pro-inspector-actions`). */
+  .is-boards > .actions {
+    position: sticky;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--fl-space-2);
+    margin: var(--fl-space-6) 0 calc(-1 * var(--fl-space-6));
+    padding: var(--fl-space-3) var(--fl-space-6);
+    background: var(--fl-panel);
+    border-top: 1px solid var(--fl-border);
+  }
+  .action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--fl-space-2);
+    min-height: 44px;
+    padding: 0 var(--fl-space-3);
+    color: var(--fl-text);
+    background: var(--fl-raised);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control);
+  }
+  .action.danger {
+    color: var(--fl-danger);
+  }
+  .is-boards .boards :global(h3) {
+    margin: 0 0 var(--fl-space-2);
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
   }
 </style>

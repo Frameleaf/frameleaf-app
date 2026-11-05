@@ -11,7 +11,17 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { getByteUnitString } from '$lib/utils/byte-units';
-  import { mdiEmailOutline, mdiShieldLockOutline } from '@mdi/js';
+  import {
+    mdiAccountCircleOutline,
+    mdiChartBoxOutline,
+    mdiCloudCheckOutline,
+    mdiDownloadOutline,
+    mdiEmailOutline,
+    mdiHeartOutline,
+    mdiPuzzleOutline,
+    mdiShieldLockOutline,
+    mdiThemeLightDark,
+  } from '@mdi/js';
   import { locale, t } from 'svelte-i18n';
 
   let { sections }: { sections: SettingsHostSection[] } = $props();
@@ -45,11 +55,21 @@
       }
     }
   };
+  /** The prototype's icon for each row (preferences.jsx Landing); search and the rail keep the section's own. */
+  const ICONS: Record<string, string> = {
+    account: mdiAccountCircleOutline,
+    'app-settings': mdiThemeLightDark,
+    feature: mdiPuzzleOutline,
+    'download-settings': mdiDownloadOutline,
+    'frameleaf-account': mdiCloudCheckOutline,
+    'user-usage-info': mdiChartBoxOutline,
+    'user-purchase-settings': mdiHeartOutline,
+  };
   const rows = (account: boolean) =>
     sections
       .filter((section) => ACCOUNT.has(section.key) === account)
       .map((section): LinkRow => ({
-        icon: section.icon,
+        icon: ICONS[section.key] ?? section.icon,
         title: section.title,
         body: state(section),
         href: commandCenterUrl('preferences', section.key),

@@ -311,12 +311,73 @@
   align-items: center;
   text-align: center;
 }
+/* PhotographyClient.jsx `pc-gallery-cover`: the split cover sits inside the page's margins, the
+   photograph beside the introduction, instead of running to the window's edge. */
+.pc-cover[data-treatment='split'] {
+  grid-template-columns: 1.2fr 1fr;
+  align-items: center;
+  gap: 5vw;
+  min-height: 0;
+  padding: 40px 5vw 48px;
+}
+.pc-cover[data-treatment='split'] img {
+  height: 420px;
+  max-height: none;
+}
+.pc-cover[data-treatment='split'] .pc-cover-copy {
+  padding: 25px 0;
+}
+.pc-cover:not([data-treatment='full']) h1 {
+  color: var(--pc-accent, inherit);
+}
 .pc-main {
   /* Full width up to its cap: the page is a column, where auto margins alone would shrink it. */
   width: 100%;
   margin: 0 auto;
   max-width: 1500px;
-  padding: 70px 5vw;
+  padding: 0 5vw 70px;
+}
+/* The tabs row starts under a rule that closes the cover (prototype `pc-gallery-tools`). */
+.pc-main > .pc-toolbar {
+  padding-top: 20px;
+  border-top: 1px solid var(--pc-line);
+}
+.pc-cover[data-treatment='full'] + .pc-main > .pc-toolbar {
+  margin-top: 40px;
+}
+.pc-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fl-space-6);
+}
+.pc .pc-tabs button {
+  padding: 0 6px;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+  background: none;
+  font-size: var(--fl-font-callout);
+  opacity: 0.8;
+}
+.pc .pc-tabs button[aria-pressed='true'] {
+  border-bottom-color: currentColor;
+  background: none;
+  opacity: 1;
+}
+.pc-tabs small {
+  margin-inline-start: var(--fl-space-2);
+  font-size: var(--fl-font-micro);
+  opacity: 0.65;
+}
+/* The save status takes no room until there is something to say, so Send lines up with the edge. */
+.pc-toolbar .phs[data-state='idle'] {
+  width: 0;
+  margin-inline-end: -12px;
+}
+.pc .pc-toolbar-note {
+  margin: -24px 0 24px;
+  font-size: var(--fl-font-small);
+  opacity: 0.75;
 }
 .pc-toolbar,
 .pc-actions {
@@ -417,6 +478,17 @@
   min-height: 300px;
   max-height: 400px;
 }
+/* Proofing keeps the cover small so the contact sheet comes first (prototype `pc-family-proofing`). */
+.pc[data-template='proofing'] .pc-cover[data-treatment='split'] {
+  grid-template-columns: 160px 1fr;
+  gap: 25px;
+  min-height: 0;
+  max-height: none;
+  padding: 35px 5vw 30px;
+}
+.pc[data-template='proofing'] .pc-cover[data-treatment='split'] img {
+  height: 160px;
+}
 .pc[data-template='proofing'] .pc-cover h1 {
   font-size: 42px;
 }
@@ -427,8 +499,9 @@
 .pc[data-template='proofing'] .pc-image {
   aspect-ratio: 3/2;
 }
+/* Proofing's caption stays one row: the number on the left, compare and heart on the right (prototype). */
 .pc[data-template='proofing'] .pc-photo-caption {
-  display: block;
+  padding: 10px 0;
 }
 .pc[data-spacing='compact'] .pc-grid {
   gap: 16px;
@@ -468,6 +541,57 @@
 .pc-order {
   padding: 20px 0;
   border-bottom: 1px solid var(--pc-line);
+}
+/* PhotographyClient.jsx `pc-selection-tray`: what's chosen, what it adds, and the next step, kept at
+   the foot of the window while the client looks through the collection. */
+.pc-selection-tray {
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  padding: 16px 5vw;
+  border-top: 1px solid var(--pc-line);
+  background: var(--pc-bg);
+}
+.pc-selection-tray > span {
+  display: grid;
+  grid-template-columns: 25px 1fr;
+  gap: 4px 10px;
+  flex: 1;
+  min-width: 0;
+}
+.pc-selection-tray > span > svg {
+  grid-row: span 2;
+  align-self: center;
+  color: var(--pc-accent, inherit);
+}
+.pc-selection-tray strong {
+  font-weight: 600;
+}
+.pc-selection-tray small {
+  font-size: var(--fl-font-small);
+  opacity: 0.7;
+}
+.pc-tray-total {
+  display: grid;
+  gap: 4px;
+  text-align: end;
+}
+.pc-tray-total strong {
+  font-family: 'Studio Serif', Georgia, serif;
+  font-size: var(--fl-font-title);
+  font-weight: 400;
+}
+.pc .pc-tray-action {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 10px 16px;
+  border-radius: 3px;
+  background: var(--pc-accent, #496e53);
+  color: #fff;
 }
 /* PhotographyClient.jsx `pc-footer`: the studio on the left, a quiet note, then how to reach them. */
 .pc-footer {
@@ -633,8 +757,24 @@
   .pc-cover-copy {
     padding: 40px 24px;
   }
+  .pc-cover[data-treatment='split'] {
+    padding: 20px;
+  }
+  .pc-cover[data-treatment='split'] img {
+    height: 280px;
+  }
+  .pc-cover[data-treatment='split'] .pc-cover-copy {
+    padding: 24px 0 0;
+  }
+  .pc[data-template='proofing'] .pc-cover[data-treatment='split'] {
+    display: block;
+    padding: 20px;
+  }
+  .pc[data-template='proofing'] .pc-cover[data-treatment='split'] img {
+    height: 200px;
+  }
   .pc-main {
-    padding: 40px 20px;
+    padding: 0 20px 40px;
   }
   .pc-grid,
   .pc[data-template='wedding'] .pc-grid,
@@ -651,6 +791,46 @@
   .pc-orders {
     grid-template-columns: 1fr;
     gap: 30px;
+  }
+  /* Two short rows, so the tray never covers a third of the phone: what's chosen and its split on one
+     line, then the estimate beside the button. Long notes truncate rather than wrap. */
+  .pc-selection-tray {
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    padding: 12px var(--fl-space-4);
+  }
+  .pc-selection-tray > span {
+    flex: 1 1 100%;
+    grid-template-columns: 20px auto minmax(0, 1fr);
+    align-items: center;
+  }
+  .pc-selection-tray > span > svg {
+    grid-row: auto;
+  }
+  .pc-selection-tray small {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .pc-tray-total {
+    flex: 1;
+    min-width: 0;
+    gap: 2px;
+    text-align: start;
+  }
+  .pc-tray-total strong {
+    font-size: var(--fl-font-headline);
+  }
+  /* On a phone the tray carries the send, so the toolbar keeps only the tabs. */
+  .pc-toolbar .pc-primary {
+    display: none;
+  }
+  .pc-selection-tray > :is(button, a) {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+  .pc-tray-total + :is(button, a) {
+    flex: 0 0 auto;
   }
   .pc-comparison {
     grid-template-columns: 1fr;
@@ -673,8 +853,47 @@
   min-width: 44px;
   min-height: 44px;
 }
+.pc .pc-photo-caption .pc-heart {
+  padding: 0;
+  border: 0;
+  background: none;
+}
 .pc-heart[aria-pressed='true'] {
   color: var(--pc-accent);
+}
+/* Compare: an icon beside the heart (prototype caption), still a checkbox for the keyboard and readers. */
+.pc .pc-photo-caption label.pc-compare {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 3px;
+  cursor: pointer;
+  opacity: 0.75;
+}
+.pc-compare input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.pc .pc-photo-caption label.pc-compare:has(input:checked) {
+  color: var(--pc-accent);
+  background: color-mix(in srgb, var(--pc-accent) 12%, transparent);
+  opacity: 1;
+}
+.pc-compare:has(input:focus-visible) {
+  outline: 2px solid var(--pc-accent, #496e53);
+  outline-offset: var(--fl-focus-offset);
+}
+.pc .pc-photo-caption label.pc-compare:has(input:disabled) {
+  opacity: 0.35;
+  cursor: default;
+}
+.pc-photo-caption .pc-actions {
+  gap: var(--fl-space-1);
 }
 .pc-heart.is-fresh svg {
   animation: pc-heart-pop var(--fl-motion-slow) var(--fl-spring);

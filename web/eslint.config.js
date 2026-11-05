@@ -1,3 +1,7 @@
+// sort-imports-ignore -- lint-env.js must stay the first import. It turns on svelte-eslint-parser's TypeScript
+// program reuse, which the parser reads once while it loads (imports evaluate in order); sorted below the svelte
+// imports it is set too late and every .svelte file rebuilds the program (hours instead of minutes).
+import './lint-env.js';
 import js from '@eslint/js';
 import tslintPluginCompat from '@koddsson/eslint-plugin-tscompat';
 import prettier from 'eslint-config-prettier';
@@ -10,7 +14,6 @@ import parser from 'svelte-eslint-parser';
 import typescriptEslint from 'typescript-eslint';
 import fs from 'node:fs';
 import path from 'node:path';
-import './lint-env.js';
 
 const ROUTE_CONTINUE = "CallExpression[callee.object.name='Route'][callee.property.name='continue']";
 const NAVIGATION_PARAM_READ = [

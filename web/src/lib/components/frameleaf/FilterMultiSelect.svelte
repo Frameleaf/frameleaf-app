@@ -11,7 +11,7 @@
   } from '$lib/frameleaf/search-filters';
   import '$lib/frameleaf/tokens.css';
   import type { PersonResponseDto } from '@frameleaf/sdk';
-  import { t } from 'svelte-i18n';
+  import { t, locale as uiLanguage } from 'svelte-i18n';
 
   /**
    * The id-set filter section from the prototype's `FilterPanel.jsx` `MultiFilter` (FL-49).
@@ -72,6 +72,11 @@
   ]);
 
   const nameFor = (value: string) => options.find((option) => option.value === value)?.label ?? value;
+  /**
+   * The search field names the list in running text (prototype "Find people…"), so in English the
+   * heading's capital goes; languages that capitalise nouns keep the heading as it is.
+   */
+  const findLabel = $derived(($uiLanguage ?? 'en').startsWith('en') ? label.toLowerCase() : label);
 
   const toggle = (value: string) =>
     onChange(
@@ -130,8 +135,8 @@
   <input
     class="find"
     type="search"
-    aria-label={$t('frameleaf_search_find_in', { values: { label } })}
-    placeholder={$t('frameleaf_search_find_in', { values: { label } })}
+    aria-label={$t('frameleaf_search_find_in', { values: { label: findLabel } })}
+    placeholder={$t('frameleaf_search_find_in', { values: { label: findLabel } })}
     bind:value={term}
   />
 

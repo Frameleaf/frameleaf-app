@@ -15,6 +15,7 @@
     quiet = false,
     off = false,
     name,
+    tag,
     detail,
     tone = 'off',
     status,
@@ -27,6 +28,8 @@
     quiet?: boolean;
     off?: boolean;
     name: string;
+    /** A small tag after the name, such as "Supporter". */
+    tag?: Snippet;
     detail?: string;
     tone?: KitTone;
     status?: string;
@@ -45,7 +48,9 @@
     </span>
   {/if}
   <div class="name">
-    <strong>{name}</strong>
+    <strong
+      >{name}{#if tag}<span class="tag">{@render tag()}</span>{/if}</strong
+    >
     {#if detail}<span>{detail}</span>{/if}
   </div>
   <div class="status">
@@ -59,11 +64,23 @@
 <style>
   .kit-item {
     display: grid;
-    grid-template-columns: 44px minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr) minmax(104px, auto);
+    /* The columns of ItemList.svelte, for a row on its own. */
+    grid-template-columns: 44px minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr) minmax(128px, max-content);
     align-items: center;
     gap: var(--fl-space-4);
     padding: var(--fl-space-4) 0;
     border-top: 1px solid var(--fl-border);
+  }
+  /* Inside an ItemList the row takes the list's columns (ItemList.svelte). */
+  :global(.kit-items) > .kit-item {
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+  }
+  /* ItemList `noMeasure`, `wideName` and `plain` have no column for these. */
+  :global(.kit-items.no-measure) > .kit-item > .measure,
+  :global(.kit-items.wide-name) > .kit-item > .measure,
+  :global(.kit-items.plain) > .kit-item > :is(.measure, .action) {
+    display: none;
   }
   .tile {
     display: grid;
@@ -92,7 +109,12 @@
     font-size: var(--fl-font-size);
     font-weight: 600;
   }
-  .name span {
+  .tag {
+    display: inline-flex;
+    margin-inline-start: var(--fl-space-2);
+    vertical-align: 1px;
+  }
+  .name > span {
     display: block;
     margin-top: var(--fl-space-1);
     color: var(--fl-muted);
@@ -115,11 +137,19 @@
   .action {
     display: flex;
     justify-content: flex-end;
+    min-width: 0;
   }
   @container kit (max-width: 860px) {
     .kit-item {
       grid-template-columns: 44px minmax(0, 1fr) auto;
       row-gap: var(--fl-space-3);
+    }
+    /*
+     * On a narrow page each row sizes its own action column: one row's wider button would otherwise
+     * narrow the name in every row, including the rows whose actions have moved under the text.
+     */
+    :global(.kit-items) > .kit-item {
+      grid-template-columns: 44px minmax(0, 1fr) auto;
     }
     .status,
     .measure {
@@ -131,6 +161,23 @@
     .action {
       grid-row: 1;
       grid-column: 3;
+    }
+    /*
+     * Two actions (Check one… and Check now) beside the name leave it a word per line, so they go
+     * under the text, from the name's edge (backup-v2.css:1118-1128, settings-v2/kit.css:42-46).
+     */
+    .action:has(> :global(:nth-child(2)), > :global(div > :nth-child(2))) {
+      grid-row: auto;
+      grid-column: 2 / -1;
+      flex-wrap: wrap;
+      justify-content: flex-start;
+    }
+    .action:has(> :global(div > :nth-child(2))) > :global(div) {
+      flex-wrap: wrap;
+      justify-content: flex-start;
+    }
+    .action:empty {
+      display: none;
     }
   }
 </style>

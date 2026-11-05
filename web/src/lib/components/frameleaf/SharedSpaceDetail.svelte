@@ -513,19 +513,22 @@
 
     <div class="actions" role="toolbar" aria-label={$t('frameleaf_album_actions', { values: { kind: name } })}>
       {#if contributor}
-        <Menu label={$t('add_photos')} align="start">
-          {#snippet trigger()}
-            <span class="trigger-content"><Icon icon={mdiPlus} size="18" />{$t('add_photos')}</span>
-          {/snippet}
-          <MenuItem onSelect={() => void addFromLibrary()}>
-            <Icon icon={mdiImageMultipleOutline} size="18" />
-            {$t('frameleaf_album_select_from_library')}
-          </MenuItem>
-          <MenuItem onSelect={() => void upload()}>
-            <Icon icon={mdiUpload} size="18" />
-            {$t('frameleaf_album_upload_from_computer')}
-          </MenuItem>
-        </Menu>
+        <!-- The space's primary action, filled like the album header's Add photos (CollectionHeader.jsx). -->
+        <div class="primary-menu">
+          <Menu label={$t('add_photos')} align="start">
+            {#snippet trigger()}
+              <span class="trigger-content"><Icon icon={mdiPlus} size="18" />{$t('add_photos')}</span>
+            {/snippet}
+            <MenuItem onSelect={() => void addFromLibrary()}>
+              <Icon icon={mdiImageMultipleOutline} size="18" />
+              {$t('frameleaf_album_select_from_library')}
+            </MenuItem>
+            <MenuItem onSelect={() => void upload()}>
+              <Icon icon={mdiUpload} size="18" />
+              {$t('frameleaf_album_upload_from_computer')}
+            </MenuItem>
+          </Menu>
+        </div>
       {/if}
 
       <!-- A space's people are invitations and roles, managed on its Members panel. -->
@@ -784,11 +787,16 @@
 
 <style>
   .space {
+    --space-gap: var(--fl-space-6);
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: var(--space-gap);
     padding: 1rem;
     color: var(--fl-text);
+  }
+  /* The status line stays a live region, but while it says nothing it adds no second section gap. */
+  .space > :global(p[role='status']:empty) {
+    margin-block-start: calc(-1 * var(--space-gap));
   }
   .head {
     display: flex;
@@ -887,13 +895,19 @@
     gap: 0.5rem;
     flex-wrap: wrap;
   }
+  /* collections.css .ch-badge, as on the album header: filled, borderless, sentence case. */
   .badge-pill {
-    padding: 0.125rem 0.5rem;
+    display: inline-block;
+    line-height: 22px;
+    padding: 0 0.5rem;
     font-size: 0.75rem;
+    font-weight: 600;
     color: var(--fl-muted);
     background: var(--fl-raised);
-    border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-pill);
+  }
+  .badge-pill::first-letter {
+    text-transform: uppercase;
   }
   .badge-pill::first-letter {
     text-transform: uppercase;
@@ -958,6 +972,18 @@
       inset-block: min(0px, calc((100% - 48px) / 2));
     }
   }
+  .primary-menu {
+    display: contents;
+  }
+  .primary-menu :global(.menu-root > button) {
+    font-weight: 600;
+    color: var(--fl-accent-text);
+    background: var(--fl-accent);
+    border-color: var(--fl-accent);
+  }
+  .actions :global([role='menu']) {
+    width: max-content;
+  }
   .actions {
     display: flex;
     align-items: center;
@@ -1017,8 +1043,9 @@
   /* The collection header's large title, shrinking as the page scrolls (apple-style.css:219-244). */
   .title-row :global(h1) {
     margin: 0;
-    font-size: 30px;
-    font-weight: 700;
+    /* One page-title size on every page (tokens.css --fl-type-display: 28px / 600). */
+    font-size: var(--fl-font-display);
+    font-weight: 600;
     letter-spacing: -0.02em;
     transform-origin: left bottom;
   }
@@ -1072,14 +1099,20 @@
     gap: 1rem;
     min-width: 0;
   }
-  @media (max-width: 640px) {
+  /* With the page area's 8px, the 16px phone gutter, and 16px between sections. */
+  @media (max-width: 700px) {
     .space {
-      padding: 0.75rem;
+      --space-gap: var(--fl-space-4);
+      padding: var(--fl-space-2);
     }
   }
   /* collections.css:1800, as on the album header: phones drop the icon tile so the text uses the full width. */
   @media (max-width: 700px) {
     .icon-wrap {
+      display: none;
+    }
+    /* collections.css:1874: on phones More sits right after the other actions. */
+    .spacer {
       display: none;
     }
     /* D9: the phone title is the prototype's 19px (collections.css:1803). */

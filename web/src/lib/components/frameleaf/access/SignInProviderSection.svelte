@@ -5,6 +5,9 @@
    * administrator configured its address. Connecting goes through the provider and comes back to
    * this page, which then links the account (`linkOAuthAccount`); a failed link says so here.
    * Disconnecting asks first, and warns when password sign-in is off.
+   *
+   * Drawn as one row of "How you sign in" (the approved prototype's `MySignIn`, which folds the
+   * provider into the page's "Ways into your account" list); the page renders it inside its ItemList.
    */
   import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -18,7 +21,8 @@
   import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   import { onDestroy, onMount } from 'svelte';
   import { t } from 'svelte-i18n';
-  import './access.css';
+  import Item from '$lib/components/frameleaf/settings/kit/Item.svelte';
+  import { mdiAccountKeyOutline } from '@mdi/js';
 
   let alive = true;
   const isCurrentSession = authManager.captureSession();
@@ -110,44 +114,47 @@
   };
 </script>
 
-<section class="fl-access-section" aria-labelledby="fl-access-provider">
-  <div class="fl-access-head">
-    <div>
-      <h3 id="fl-access-provider">{$t('frameleaf_access_provider_title')}</h3>
-      <p>
-        {linking
-          ? $t('frameleaf_access_provider_connecting')
-          : linked
-            ? $t('frameleaf_access_provider_linked')
-            : $t('frameleaf_access_provider_not_linked')}
-      </p>
+<Item
+  icon={mdiAccountKeyOutline}
+  name={serverConfigManager.value.oauthButtonText || $t('frameleaf_access_provider_title')}
+  detail={$t('frameleaf_how_provider_detail')}
+  off={!linked}
+  tone={error ? 'warn' : linked ? 'good' : 'off'}
+  status={linking
+    ? $t('frameleaf_access_provider_connecting')
+    : linked
+      ? $t('frameleaf_how_provider_connected')
+      : $t('frameleaf_how_provider_not_connected')}
+  note={error || (linked ? undefined : $t('frameleaf_access_provider_not_linked'))}
+>
+  {#snippet action()}
+    <div class="actions">
+      {#if linked && managementLink}
+        <a class="manage" href={managementLink} target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">
+          {$t('frameleaf_access_provider_manage')}
+        </a>
+      {/if}
+      {#if linked}
+        <Button disabled={working || linking} onclick={disconnect}>{$t('frameleaf_how_disconnect')}</Button>
+      {:else}
+        <Button disabled={working || linking} onclick={connect}>{$t('frameleaf_access_provider_connect')}</Button>
+      {/if}
     </div>
-    {#if linked}
-      <Button disabled={working || linking} onclick={disconnect}>{$t('frameleaf_access_provider_disconnect')}</Button>
-    {:else}
-      <Button disabled={working || linking} onclick={connect}>{$t('frameleaf_access_provider_connect')}</Button>
-    {/if}
-  </div>
-  {#if error}
-    <p class="fl-access-error" role="alert">{error}</p>
-  {/if}
-  <div>
-    {#if managementLink}
-      <a class="manage" href={managementLink} target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">
-        {$t('frameleaf_access_provider_manage')}
-      </a>
-    {:else}
-      <Button disabled>{$t('frameleaf_access_provider_manage')}</Button>
-      <p class="fl-access-footnote">{$t('frameleaf_access_provider_manage_unset')}</p>
-    {/if}
-  </div>
-</section>
+  {/snippet}
+</Item>
 
 <style>
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--fl-space-2);
+  }
   .manage {
     display: inline-flex;
     align-items: center;
-    padding: 0.4375rem 0.6875rem;
+    min-height: var(--fl-control-height);
+    padding: 0 var(--fl-space-3);
     color: var(--fl-text);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);

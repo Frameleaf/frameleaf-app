@@ -76,6 +76,20 @@ describe('AccountSecurityPanel (FL-76)', () => {
     expect(toastManager.primary).toHaveBeenCalledWith(en.frameleaf_users_device_revoked);
   });
 
+  it('signs every other device out at once after one confirmation, and says how many there were', async () => {
+    const { modalManager } = await import('@frameleaf/ui');
+    const { deleteUserSessionAdmin } = await import('@frameleaf/sdk');
+    vi.mocked(modalManager.show).mockResolvedValue(true as never);
+
+    render(AccountSecurityPanel, { user, sessions: [session(), session({ id: 'session-2' })] });
+
+    expect(screen.getByText(/^Signed in on 2 devices\. Last active/)).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_users_devices_all }));
+    await waitFor(() => expect(deleteUserSessionAdmin).toHaveBeenCalledTimes(2));
+    expect(deleteUserSessionAdmin).toHaveBeenCalledWith({ id: 'target-id', sessionId: 'session-2' });
+    await waitFor(() => expect(screen.getByText(en.frameleaf_users_devices_none)).toBeInTheDocument());
+  });
+
   it('does nothing when the confirmation is declined', async () => {
     const { modalManager } = await import('@frameleaf/ui');
     const { deleteUserSessionAdmin } = await import('@frameleaf/sdk');
@@ -137,7 +151,7 @@ describe('AccountSecurityPanel (FL-76)', () => {
       expect(await screen.findByText(en.frameleaf_users_pin_not_set)).toBeInTheDocument();
       expect(getUserPinCodeStateAdmin).toHaveBeenCalledWith({ id: 'target-id' });
       expect(screen.getByRole('button', { name: en.frameleaf_users_pin_set })).toBeEnabled();
-      expect(screen.getByRole('button', { name: en.frameleaf_users_pin_reset })).toBeDisabled();
+      expect(screen.getByRole('button', { name: en.frameleaf_users_pin_clear_open })).toBeDisabled();
     });
 
     it('offers Change PIN and Reset PIN once a PIN is set, and rereads the state after either', async () => {
@@ -148,7 +162,7 @@ describe('AccountSecurityPanel (FL-76)', () => {
       render(AccountSecurityPanel, { user, sessions: [] });
 
       expect(await screen.findByText(en.frameleaf_users_pin_is_set)).toBeInTheDocument();
-      await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_users_pin_reset }));
+      await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_users_pin_clear_open }));
 
       expect(modalManager.show).toHaveBeenCalledWith(expect.anything(), { user, mode: 'clear', hasPin: true });
       await waitFor(() => expect(getUserPinCodeStateAdmin).toHaveBeenCalledTimes(2));
@@ -166,7 +180,7 @@ describe('AccountSecurityPanel (FL-76)', () => {
           'Morgan has encrypted their Locked files, so only they can reset their PIN, with their recovery key.',
         ),
       ).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: en.frameleaf_users_pin_reset })).toBeDisabled();
+      expect(screen.getByRole('button', { name: en.frameleaf_users_pin_clear_open })).toBeDisabled();
       expect(screen.getByRole('button', { name: en.frameleaf_users_pin_change })).toBeDisabled();
     });
 
@@ -177,7 +191,7 @@ describe('AccountSecurityPanel (FL-76)', () => {
 
       await waitFor(() => expect(getUserPinCodeStateAdmin).toHaveBeenCalled());
       expect(screen.getByRole('button', { name: en.frameleaf_users_pin_set })).toBeEnabled();
-      expect(screen.getByRole('button', { name: en.frameleaf_users_pin_reset })).toBeEnabled();
+      expect(screen.getByRole('button', { name: en.frameleaf_users_pin_clear_open })).toBeEnabled();
       expect(screen.queryByText(en.frameleaf_users_pin_is_set)).toBeNull();
       expect(screen.queryByText(en.frameleaf_users_pin_not_set)).toBeNull();
     });

@@ -124,9 +124,9 @@ export const currentChoice = (kind: Exclude<WorkKind, 'render'>, facts: RouteFac
 };
 
 /**
- * What can be picked for a row: each real place, asking each time, and nowhere. Empty when there is
- * nothing to choose (no place can do it, or the one place that can already does), so the row says
- * where it runs and why instead of offering a picker with one answer.
+ * What can be picked for a row: each real place, asking each time, and nowhere. Empty only when no
+ * place can do the work. A row with one place still offers it (approved design, 2026-11-04): the
+ * chooser stays, so this server versus Frameleaf Cloud is always a visible choice.
  */
 export const choicesFor = (kind: Exclude<WorkKind, 'render'>, facts: RouteFacts): RouteChoice[] => {
   const home = homePlaces(ROW_WORKLOAD[kind], facts).map(({ id }) => id);
@@ -135,10 +135,6 @@ export const choicesFor = (kind: Exclude<WorkKind, 'render'>, facts: RouteFacts)
   const index = !!cloudPlace(kind, facts) || indexOnCloud(kind, facts);
   const places = [...home, ...(cloud ? [...(home.length > 0 ? [ASK] : []), CLOUD] : []), ...(index ? [CLOUD] : [])];
   if (places.length === 0) {
-    return [];
-  }
-  const current = currentChoice(kind, facts);
-  if (places.length === 1 && (current === places[0] || current === FOLLOW)) {
     return [];
   }
   // FL-456: offered only by a server that keeps a processing order (it says whether a row follows it)

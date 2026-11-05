@@ -15,7 +15,6 @@
   import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import ImportCheck from '$lib/components/frameleaf/settings/care/ImportCheck.svelte';
-  import PhotoLocationScan from '$lib/components/frameleaf/settings/care/PhotoLocationScan.svelte';
   import { showsImportCheck } from '$lib/components/frameleaf/settings/care/import-check';
   import Coverage from '$lib/components/frameleaf/settings/kit/Coverage.svelte';
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
@@ -42,6 +41,7 @@
     getIdenticalFilesStatus,
     getIntegrityCheckRuns,
     getIntegrityOverview,
+    getLocationScanStatus,
     getQueue,
     getServerStatistics,
     getSummary,
@@ -51,6 +51,7 @@
     type IdenticalFilesStatusDto,
     type IntegrityCheckRunsResponseDto,
     type IntegrityOverviewResponseDto,
+    type LocationScanStatusResponseDto,
     type MediaHealthSummaryResponseDto,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
@@ -63,6 +64,7 @@
     mdiFileQuestionOutline,
     mdiFileSearchOutline,
     mdiImageSearchOutline,
+    mdiMapMarkerOutline,
     mdiPlayOutline,
     mdiShieldAlertOutline,
     mdiShieldCheckOutline,
@@ -345,6 +347,78 @@
   );
 
   const open = (key: string) => goto(commandCenterUrl('care', key));
+
+  // Identify photo locations (prototype `care/landing.jsx`): one "Place names" row here, with the scan
+  // on its own page. The row says where the last scan stands, as the prototype's `scanSummary` does.
+  let placeScan = $state<LocationScanStatusResponseDto | null>();
+  $effect(() => {
+    if (!authManager.authenticated || authManager.isSharedLink) {
+      return;
+    }
+    let current = true;
+    placeScan = undefined;
+    getLocationScanStatus()
+      .then((result) => current && (placeScan = result))
+      .catch(() => current && (placeScan = null));
+    return () => {
+      current = false;
+    };
+  });
+  const places = $derived.by((): { tone: KitTone; status?: string; note?: string } => {
+    if (placeScan === undefined) {
+      return { tone: 'off' };
+    }
+    if (placeScan === null) {
+      return {
+        tone: 'warn',
+        status: $t('frameleaf_carehome_places_failed'),
+        note: $t('frameleaf_carehome_places_failed_note'),
+      };
+    }
+    const scan = placeScan.scan;
+    if (!scan) {
+      return placeScan.available
+        ? { tone: 'off', status: $t('frameleaf_carehome_places_never') }
+        : {
+            tone: 'off',
+            status: $t('frameleaf_carehome_places_unavailable'),
+            note: $t('frameleaf_carehome_places_unavailable_note'),
+          };
+    }
+    const found = $t('frameleaf_carehome_places_found', { values: { count: scan.matched } });
+    switch (scan.status) {
+      case 'paused': {
+        return {
+          tone: 'warn',
+          status: $t('frameleaf_carehome_places_paused'),
+          note: $t('frameleaf_carehome_places_paused_note'),
+        };
+      }
+      case 'completed': {
+        return { tone: 'good', status: found };
+      }
+      case 'cancelled': {
+        return {
+          tone: 'off',
+          status: $t('frameleaf_carehome_places_cancelled'),
+          note: $t('frameleaf_carehome_places_cancelled_note', { values: { count: scan.matched } }),
+        };
+      }
+      case 'failed': {
+        return {
+          tone: 'warn',
+          status: $t('frameleaf_carehome_places_stopped'),
+          note: $t('frameleaf_carehome_places_stopped_note'),
+        };
+      }
+      default: {
+        return {
+          tone: 'good',
+          status: $t('frameleaf_carehome_places_running', { values: { done: scan.processed, total: scan.total } }),
+        };
+      }
+    }
+  });
   const openLabel = (name: Translations) => $t('frameleaf_carehome_open_named', { values: { name: $t(name) } });
 </script>
 
@@ -518,7 +592,24 @@
     </ItemList>
   </Section>
 
-  <PhotoLocationScan />
+  <Section title={$t('frameleaf_location_scan_title')} description={$t('frameleaf_location_scan_description')}>
+    <ItemList>
+      <Item
+        icon={mdiMapMarkerOutline}
+        name={$t('frameleaf_carehome_row_places')}
+        detail={$t(isAdmin ? 'frameleaf_carehome_row_places_detail_admin' : 'frameleaf_carehome_row_places_detail')}
+        tone={places.tone}
+        status={places.status}
+        note={places.note}
+      >
+        {#snippet action()}
+          <Button label={$t('frameleaf_carehome_places_open')} onclick={() => open('location-scan')}>
+            {$t('frameleaf_carehome_open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden />
+          </Button>
+        {/snippet}
+      </Item>
+    </ItemList>
+  </Section>
 
   {#if tools.length > 0}
     <Section title={$t('frameleaf_carehome_tools')} description={$t('frameleaf_carehome_tools_description')}>

@@ -52,7 +52,7 @@
     type MediaCopiesResponseDto,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import { mdiImageMultipleOutline, mdiStop, mdiSync } from '@mdi/js';
+  import { mdiChevronRight, mdiImageMultipleOutline, mdiStop, mdiSync } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t, type Translations } from 'svelte-i18n';
 
@@ -298,7 +298,7 @@
     </Row>
     <Row label={$t('frameleaf_play_img_overnight')} help={$t('frameleaf_play_img_overnight_help')}>
       <Button onclick={() => goto(commandCenterUrl('processing', 'nightly-tasks'))}>
-        {$t('frameleaf_play_overnight_link')}
+        {$t('frameleaf_play_overnight_link')}<Icon icon={mdiChevronRight} size="1em" aria-hidden />
       </Button>
     </Row>
 

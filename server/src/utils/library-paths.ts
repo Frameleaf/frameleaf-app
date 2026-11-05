@@ -48,13 +48,15 @@ const invalid = (importPath: string, reason: LibraryImportPathReason, message: s
 
 /** `/mnt/photos/` and `/mnt//photos` are the folder `/mnt/photos`; the root stays `/`. */
 /**
- * What a new folder skips unless it says otherwise: NAS thumbnails, macOS resource files, recycle
- * bins, snapshots and sync tools' own folders (FL-365: one list, offered by the web form as its
- * recommended "What to skip" boxes).
+ * What a new folder skips unless it says otherwise: macOS's own files, NAS thumbnails, recycle bins,
+ * snapshots and sync tools' own folders. FL-365: one list, the web's two recommended "What to skip"
+ * boxes together (`DEFAULT_EXCLUSION_PATTERNS` in web/src/lib/frameleaf/libraries.ts, whose spec
+ * fails if the two differ), so a folder added any way skips the same things.
  */
 export const DEFAULT_LIBRARY_EXCLUSION_PATTERNS: readonly string[] = Object.freeze([
-  '**/@eaDir/**',
+  '**/.DS_Store',
   '**/._*',
+  '**/@eaDir/**',
   '**/#recycle/**',
   '**/#snapshot/**',
   '**/.stversions/**',

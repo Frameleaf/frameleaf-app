@@ -372,8 +372,11 @@
         </a>
       {/if}
       <h1 id={headingId} tabindex="-1" bind:this={heading}>{isTop ? $t('folders') : label(folder)}</h1>
-      <p>{isTop ? $t('frameleaf_folders_subtitle') : summary.join(' · ')}</p>
-      {#if phone && showsDisk}
+      <!-- FoldersV2.jsx: the top has no path row; where it sits on disk stays in the subtitle's tooltip. -->
+      <p title={isTop && showsDisk ? folder.path : undefined}>
+        {isTop ? $t('frameleaf_folders_subtitle') : summary.join(' · ')}
+      </p>
+      {#if phone && showsDisk && !isTop}
         <p class="disk">
           {diskWords.at(0)}<span class="disk-path" title={folder.path}><bdi>{folder.path}</bdi></span>{diskWords.at(1)}
         </p>
@@ -434,8 +437,9 @@
     </div>
   </header>
 
-  <!-- Phones have no path row; the back button and the path on disk stand in for it there. -->
-  {#if !phone && hasFolders && (!isTop || showsDisk)}
+  <!-- Phones have no path row; the back button and the path on disk stand in for it there. As in
+       FoldersV2.jsx, the top of the browser has none either: its cards start under the header. -->
+  {#if !phone && hasFolders && !isTop}
     <div class="path-row">
       {#if !isTop}
         <FolderPath {trail} label={nameOf} href={hrefOf} title={diskTitle} onGo={(node) => void go(node)} />
@@ -565,7 +569,8 @@
 <style>
   /* The Albums page's shell (AlbumDirectory.svelte), which the mock is built from. */
   .folders {
-    padding: 18px 24px 64px;
+    /* The one page gutter: the page area's 8px + --fl-page-inline = 24px desktop, 16px phone. */
+    padding: 18px var(--fl-page-inline) 64px;
     color: var(--fl-text);
   }
   .folders > :global(*) {
@@ -585,8 +590,8 @@
   }
   .heading h1 {
     margin: 0;
-    font-size: 1.5rem;
-    font-weight: 700;
+    font: var(--fl-type-display);
+    letter-spacing: var(--fl-tracking-display);
     overflow-wrap: anywhere;
   }
   /* Focused by script when a folder opens, so reading starts at its name; it is not a control. */
@@ -596,7 +601,9 @@
   .heading p {
     margin: var(--fl-space-2) 0 0;
     color: var(--fl-muted);
-    font-size: 0.875rem;
+    /* One subtitle size under every discovery page title (the prototype's 13px). */
+    font-size: var(--fl-font-callout);
+    line-height: 1.6;
   }
   .tools {
     display: flex;
@@ -618,6 +625,9 @@
   .search input {
     flex: 1;
     min-width: 0;
+    /* With the field's 1px border, the row's one control height. */
+    min-height: calc(var(--fl-control-height) - 2px);
+    height: calc(var(--fl-control-height) - 2px);
     padding-inline: 0 0.75rem;
     border: 0;
     border-radius: var(--fl-radius-pill);
@@ -633,21 +643,28 @@
     outline: var(--fl-focus-ring);
     outline-offset: var(--fl-focus-offset);
   }
+  /* A two-way switch: the chosen view is the raised half. The switch is one control height (44px,
+     48 on touch) like the row beside it; each half is that tall too, its raised fill inset 3px by a
+     clear border so the prototype's segment spacing (3px around, 2px between) is kept. */
   .view {
     display: inline-flex;
     gap: 2px;
-    padding: 3px;
+    padding: 0 3px;
     border-radius: var(--fl-radius-pill);
     background: var(--fl-raised);
   }
   .view button {
     display: grid;
     place-items: center;
-    width: 36px;
+    width: 42px;
     min-width: 0;
-    min-height: 38px;
+    min-height: var(--fl-control-height);
     padding: 0;
+    border: 0;
+    border-block: 3px solid transparent;
     border-radius: var(--fl-radius-pill);
+    background: transparent;
+    background-clip: padding-box;
     color: var(--fl-muted);
   }
   .view button[aria-pressed='true'] {
@@ -814,12 +831,15 @@
     .names {
       min-height: 44px;
     }
+    .view button {
+      width: 44px;
+      min-height: var(--fl-control-height-touch);
+    }
   }
   /* Phones: a back button and the name instead of pills, search on its own row, then sort and Show in timeline. */
   @media (max-width: 700px) {
-    /* With the page's own 8px, the 16px phone gutter. */
-    .folders {
-      padding: 14px var(--fl-space-2) 64px;
+    .heading h1 {
+      font-size: var(--fl-font-title);
     }
     .head {
       flex-direction: column;

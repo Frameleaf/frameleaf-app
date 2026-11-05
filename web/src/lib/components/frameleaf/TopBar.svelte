@@ -457,9 +457,8 @@
   }
   /*
    * One row: brand and workspaces, search, actions (apple-style.css "top bar", changed so five
-   * sections fit). Below 1440px the search field sits in the row, midway between the sections and
-   * the buttons, and is what gives way first, down to its magnifier; only after that do the
-   * sections scroll sideways. Nothing in the bar can run under anything else.
+   * sections fit). The search field sits beside the buttons, as the prototype's does, and is what
+   * gives way first, down to its magnifier; only after that do the sections scroll sideways. Nothing in the bar can run under anything else.
    */
   .fl-topbar-grid {
     display: flex;
@@ -534,14 +533,15 @@
     background: var(--fl-accent);
   }
   /*
-   * Only the space the sections and the buttons leave, up to 30rem and centred in it. It never goes
-   * below its 44px magnifier; only then do the sections give way, by scrolling.
+   * Only the space the sections and the buttons leave, up to 30rem, pushed against the buttons
+   * (styles.css `.global-search`: pushed to the inline end). It never goes below its 44px magnifier;
+   * only then do the sections give way, by scrolling.
    */
   .fl-topbar-search {
     flex: 1 1 0;
     min-width: 2.75rem;
     max-width: 30rem;
-    margin-inline: auto;
+    margin-inline: auto 0;
     container-type: inline-size;
   }
   /* Squeezed to a magnifier, the entry drops the shortcut hint and hides its label visually only,
@@ -576,21 +576,6 @@
     right: 0.75rem;
     z-index: 40;
     padding-top: 0.5rem;
-  }
-  /*
-   * Wide enough for five sections either side of it: three tracks, the outer two sharing the spare
-   * width equally, so the search field sits in the true centre whenever both sides fit; when they
-   * do not, each side keeps the width of its content and the search field gives way, down to a
-   * usable floor.
-   */
-  @media (min-width: 90rem) {
-    .fl-topbar-grid {
-      display: grid;
-      grid-template-columns: minmax(max-content, 1fr) minmax(12rem, 30rem) minmax(max-content, 1fr);
-    }
-    .fl-topbar-search {
-      margin-inline: 0;
-    }
   }
   @media (max-width: 80rem) {
     .fl-topbar-grid {

@@ -1,3 +1,4 @@
+import { ServiceUnavailableException } from '@nestjs/common';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { parentPort } from 'node:worker_threads';
 import type { createPostgres } from '@frameleaf/sql-tools';
@@ -8,6 +9,11 @@ export const DATABASE_POOL_SIZE = 10;
 export const DATABASE_ACQUIRE_TIMEOUT_MS = 5000;
 export const DATABASE_MAX_WAITERS = 64;
 export const DATABASE_CLEANUP_TIMEOUT_MS = 2000;
+/**
+ * A full pool is a passing overload, not a server fault: answer 503 so clients and proxies retry,
+ * instead of a 500 that reads as a bug. Outside a request (jobs) it is still an ordinary Error.
+ */
+export const databaseBusy = (message: string) => new ServiceUnavailableException(message);
 const cleanupExecution = new AsyncLocalStorage<AbortSignal>();
 
 /** Only rollback and mandatory session-lock cleanup may outlive an aborted job. */
@@ -38,7 +44,7 @@ export const boundExecutionReservations = (client: Client, onUnusable: () => voi
     if (unusable) throw new Error('Database pool requires worker restart');
     const signal = cleanupExecution.getStore() ?? executionSignal();
     signal?.throwIfAborted();
-    if (pending >= DATABASE_MAX_WAITERS) throw new Error('Database acquisition capacity exhausted');
+    if (pending >= DATABASE_MAX_WAITERS) throw databaseBusy('Database acquisition capacity exhausted');
     pending++;
     return new Promise<Awaited<ReturnType<Client['reserve']>>>((resolve, reject) => {
       let settled = false;
@@ -47,7 +53,7 @@ export const boundExecutionReservations = (client: Client, onUnusable: () => voi
         settled = true;
         clearTimeout(timer);
         signal?.removeEventListener('abort', fail);
-        reject(signal?.reason ?? new Error('Database acquisition timed out'));
+        reject(signal?.reason ?? databaseBusy('Database acquisition timed out'));
       };
       const timer = setTimeout(fail, DATABASE_ACQUIRE_TIMEOUT_MS);
       timer.unref();

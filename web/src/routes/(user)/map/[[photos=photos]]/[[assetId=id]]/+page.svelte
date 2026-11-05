@@ -83,8 +83,9 @@
 </script>
 
 {#if featureFlagsManager.value.map}
-  <UserPageLayout>
-    <div class="flex size-full flex-col">
+  <!-- MapView.jsx: the map runs edge to edge under the top bar and beside the rail, no page inset. -->
+  <UserPageLayout fill>
+    <div class="flex min-h-0 flex-1 flex-col">
       <PlacesRestoringNotice layout="map" />
       <div class="min-h-0 flex-1 [&>.frameleaf]:size-full">
         <Theme theme={appTheme}>

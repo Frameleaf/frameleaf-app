@@ -19,6 +19,9 @@
   import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
+  import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
+  import Pill from '$lib/components/frameleaf/settings/kit/Pill.svelte';
+  import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
@@ -131,6 +134,24 @@
   const actionable = $derived(Math.max(0, available - (summary?.offline ?? 0)));
   const selectable = $derived(items.filter((row) => !row.isOffline));
   const filtered = $derived(appliedQuery.trim() !== '' || media !== 'all');
+  /** Nothing in the Trash at all: no search, selection or bulk controls with nothing to act on. */
+  const nothingHere = $derived(!loading && !loadFailed && !busy && items.length === 0 && available === 0 && !filtered);
+  /** "Everything in your Trash": what Restore all and Empty Trash cover, and what emptying frees. */
+  const everythingHelp = $derived(
+    [
+      $t('frameleaf_trash_manage_all_help', { values: { count: actionable } }),
+      actionable > 0 && summary
+        ? $t('frameleaf_trash_frees', { values: { size: formatBytes(summary.freesBytes) } })
+        : '',
+      $t('frameleaf_trash_retention_sizes'),
+      (summary?.pendingDeletion ?? 0) > 0
+        ? $t('frameleaf_trash_pending_deletion', { values: { count: summary?.pendingDeletion ?? 0 } })
+        : '',
+      sessionAccess.isElevated ? '' : $t('frameleaf_trash_manage_all_locked'),
+    ]
+      .filter(Boolean)
+      .join(' '),
+  );
   const chosen = $derived(selectable.filter((row) => selected.includes(row.id)));
   const everythingChosen = $derived(allSelected(selected, selectable) && nextPage === null);
   /**
@@ -145,7 +166,7 @@
   const canConfirm = $derived(
     !!review && !busy && (!typedConfirmation || matchesTyped(deleteConfirmationPhrase(review.count), confirmation)),
   );
-  let grid = $state<HTMLElement>();
+  let gridElement = $state<HTMLElement>();
   /** Above this many rows at once, they are simply removed: a move that large is noise. */
   const MOVING_ROWS_LIMIT = 24;
   /**
@@ -155,10 +176,10 @@
    */
   const removeRows = (ids: string[], apply: () => void) =>
     new Promise<void>((resolve) => {
-      const rows = [...(grid?.querySelectorAll<HTMLElement>('article[data-row-id]') ?? [])];
+      const rows = [...(gridElement?.querySelectorAll<HTMLElement>('article[data-row-id]') ?? [])];
       const leaving = rows.filter((row) => ids.includes(row.dataset.rowId ?? ''));
       const close = () => {
-        animateFlip(grid, apply, { selector: 'article[data-row-id]' });
+        animateFlip(gridElement, apply, { selector: 'article[data-row-id]' });
         resolve();
       };
       if (leaving.length === 0 || leaving.length > MOVING_ROWS_LIMIT || !canAnimate(leaving[0])) {
@@ -571,146 +592,169 @@
 </script>
 
 <section class="trash-manager" aria-label={$t('frameleaf_trash_label')}>
-  <!-- FL-539: the prototype's Hero (trash.jsx) in place of the three summary numbers -->
-  {#if summary && trashEnabled}
-    <Hero
-      label={$t('frameleaf_trash_hero_label')}
-      icon={available > 0 ? mdiDeleteRestore : mdiDeleteOutline}
-      title={available > 0
-        ? $t('frameleaf_trash_hero_title', { values: { count: available } })
-        : $t('frameleaf_trash_hero_empty_title')}
-      body={available > 0
-        ? `${$t('frameleaf_trash_hero_body', { values: { days } })}${
-            summary.nextGoesAt
-              ? ` ${$t('frameleaf_trash_hero_next', { values: { date: dayOf(summary.nextGoesAt) } })}`
-              : ''
-          } ${$t('frameleaf_trash_hero_size', { values: { size: formatBytes(summary.bytes) } })}`
-        : $t('frameleaf_trash_hero_empty_body', { values: { days } })}
-    >
-      {#snippet actions()}
-        {#if authManager.user.isAdmin}
-          <Button onclick={() => void goto(commandCenterUrl('storage', 'trash'))}>
-            {$t('frameleaf_trash_hero_change')}
-          </Button>
-        {/if}
-      {/snippet}
-    </Hero>
-  {/if}
-
-  {#if !trashEnabled && actionable > 0}
-    <!-- FL-519: with the Trash off, what is still here goes tonight; say so first, with the way out. -->
-    <div class="tm-off" role="status">
-      <div>
-        <strong>{$t('frameleaf_trash_off_title')}</strong>
-        <p>{$t('frameleaf_trash_off_body', { values: { count: actionable } })}</p>
-      </div>
-      <Button variant="primary" disabled={busy} onclick={() => void restore(null)}>
-        {$t('frameleaf_trash_restore_all', { values: { count: actionable } })}
-      </Button>
-    </div>
-  {/if}
-
-  <p class="tm-retention">
-    {trashEnabled
-      ? $t('frameleaf_trash_retention', { values: { count: days } })
-      : $t('frameleaf_trash_retention_disabled')}
-    {$t('frameleaf_trash_retention_sizes')}
-    {#if (summary?.pendingDeletion ?? 0) > 0}
-      {$t('frameleaf_trash_pending_deletion', { values: { count: summary?.pendingDeletion ?? 0 } })}
-    {/if}
-  </p>
-
-  <div class="tm-toolbar">
-    <label>
-      {$t('frameleaf_trash_find')}
-      <input
-        type="search"
-        bind:value={query}
-        oninput={onQueryInput}
-        placeholder={$t('frameleaf_trash_find_placeholder')}
-        maxlength="255"
+  <KitPage>
+    <!-- FL-539: the prototype's Hero (trash.jsx) in place of the three summary numbers -->
+    {#if summary && trashEnabled}
+      <Hero
+        label={$t('frameleaf_trash_hero_label')}
+        icon={available > 0 ? mdiDeleteRestore : mdiDeleteOutline}
+        title={available > 0
+          ? $t('frameleaf_trash_hero_title', { values: { count: available } })
+          : $t('frameleaf_trash_hero_empty_title')}
+        body={available > 0
+          ? `${$t('frameleaf_trash_hero_body', { values: { days } })}${
+              summary.nextGoesAt
+                ? ` ${$t('frameleaf_trash_hero_next', { values: { date: dayOf(summary.nextGoesAt) } })}`
+                : ''
+            } ${$t('frameleaf_trash_hero_size', { values: { size: formatBytes(summary.bytes) } })}`
+          : $t('frameleaf_trash_hero_empty_body', { values: { days } })}
+        actions={authManager.user.isAdmin ? changeKept : undefined}
       />
-    </label>
-    <label>
-      {$t('frameleaf_trash_media')}
-      <select bind:value={media} onchange={resetView}>
-        <option value="all">{$t('frameleaf_trash_media_all')}</option>
-        <option value="soon">{$t('frameleaf_trash_media_soon', { values: { count: TRASH_SOON_DAYS } })}</option>
-        <option value="image">{$t('frameleaf_trash_media_photos')}</option>
-        <option value="video">{$t('frameleaf_trash_media_videos')}</option>
-      </select>
-    </label>
-    <label>
-      {$t('frameleaf_trash_sort')}
-      <select bind:value={sort} onchange={resetView}>
-        <option value={TrashItemSort.Soonest}>{$t('frameleaf_trash_sort_soonest')}</option>
-        <option value={TrashItemSort.Recent}>{$t('frameleaf_trash_sort_recent')}</option>
-        <option value={TrashItemSort.Size}>{$t('frameleaf_trash_sort_size')}</option>
-        <option value={TrashItemSort.Name}>{$t('frameleaf_trash_sort_name')}</option>
-      </select>
-    </label>
-    <!-- FL-539: "Change how long items are kept" now sits on the Hero, as in the prototype -->
-  </div>
-
-  {#if error && !reviewOpen}
-    <p role="alert" class="tm-error">{error}</p>
-  {/if}
-  {#if loadFailed}
-    <InlineError
-      compact
-      message={$t('frameleaf_trash_error_load')}
-      retryLabel={$t('frameleaf_trash_try_again')}
-      retrying={loading}
-      onRetry={() => void refresh()}
-    />
-  {/if}
-  {#if notice}
-    <div class="tm-notice" role="status" in:dock={{ y: -8 }}>
-      <Icon icon={mdiCheckCircleOutline} size="1rem" aria-hidden={true} />
-      <span>{notice}</span>
-      {#if undoIds}
-        <Button disabled={busy} onclick={() => void undoRestore()}>{$t('undo')}</Button>
-      {/if}
-      <Button
-        variant="quiet"
-        label={$t('frameleaf_trash_dismiss')}
-        onclick={() => {
-          notice = '';
-          undoIds = null;
-        }}
+    {:else if summary && actionable > 0}
+      <!-- FL-519: with the Trash off, what is still here goes tonight; say so first, with the way out. -->
+      <Hero
+        tone="bad"
+        label={$t('frameleaf_trash_hero_label')}
+        icon={mdiDeleteOutline}
+        title={$t('frameleaf_trash_off_title')}
+        body={$t('frameleaf_trash_off_body', { values: { count: actionable } })}
       >
-        <Icon icon={mdiClose} size="1rem" aria-hidden={true} />
-      </Button>
-    </div>
-  {/if}
-
-  <div class="tm-actions">
-    <label>
-      <input
-        type="checkbox"
-        aria-label={$t('frameleaf_trash_select_all')}
-        checked={everythingChosen}
-        disabled={selectable.length === 0 || busy}
-        onchange={() => void toggleAll()}
+        {#snippet actions()}
+          <Button variant="primary" disabled={busy} onclick={() => void restore(null)}>
+            {$t('frameleaf_trash_restore_all', { values: { count: actionable } })}
+          </Button>
+          {#if authManager.user.isAdmin}{@render changeKept()}{/if}
+        {/snippet}
+      </Hero>
+    {:else if summary}
+      <Hero
+        tone="quiet"
+        label={$t('frameleaf_trash_hero_label')}
+        icon={mdiDeleteOutline}
+        title={$t('frameleaf_trash_hero_empty_title')}
+        body={$t('frameleaf_trash_retention_disabled')}
+        actions={authManager.user.isAdmin ? changeKept : undefined}
       />
-      {chosen.length > 0
-        ? $t('frameleaf_trash_selected', { values: { count: chosen.length } })
-        : $t('frameleaf_trash_matching', { values: { count: total } })}
-    </label>
-    <Button variant="primary" disabled={chosen.length === 0 || busy} onclick={() => void restoreChosen()}>
-      {$t('frameleaf_trash_restore_selected', { values: { count: chosen.length } })}
-    </Button>
-    <span class="tm-danger">
-      <Button disabled={chosen.length === 0 || busy} onclick={() => void prepare(TrashReviewAction.Delete)}>
-        {$t('frameleaf_trash_delete_selected', { values: { count: chosen.length } })}
-      </Button>
-    </span>
-    {#if selected.length > 0}
-      <Button onclick={() => (selected = [])}>{$t('frameleaf_trash_clear_selection')}</Button>
     {/if}
-  </div>
 
-  <div class="tm-grid" aria-busy={loading} bind:this={grid}>
+    {#if error && !reviewOpen}
+      <p role="alert" class="tm-error">{error}</p>
+    {/if}
+    {#if loadFailed}
+      <InlineError
+        compact
+        message={$t('frameleaf_trash_error_load')}
+        retryLabel={$t('frameleaf_trash_try_again')}
+        retrying={loading}
+        onRetry={() => void refresh()}
+      />
+    {/if}
+    {#if notice}
+      <div class="tm-notice" role="status" in:dock={{ y: -8 }}>
+        <Icon icon={mdiCheckCircleOutline} size="1rem" aria-hidden={true} />
+        <span>{notice}</span>
+        {#if undoIds}
+          <Button disabled={busy} onclick={() => void undoRestore()}>{$t('undo')}</Button>
+        {/if}
+        <Button
+          variant="quiet"
+          label={$t('frameleaf_trash_dismiss')}
+          onclick={() => {
+            notice = '';
+            undoIds = null;
+          }}
+        >
+          <Icon icon={mdiClose} size="1rem" aria-hidden={true} />
+        </Button>
+      </div>
+    {/if}
+
+    {#if !nothingHere}
+      <!-- The prototype's one "In your Trash" card: what to show, the items, and choosing several. -->
+      <Section title={$t('frameleaf_trash_in_your_trash')}>
+        <div class="tm-body">
+          <div class="tm-toolbar">
+            <input
+              type="search"
+              aria-label={$t('frameleaf_trash_find')}
+              bind:value={query}
+              oninput={onQueryInput}
+              placeholder={$t('frameleaf_trash_find_placeholder')}
+              maxlength="255"
+            />
+            <select aria-label={$t('frameleaf_trash_media')} bind:value={media} onchange={resetView}>
+              <option value="all">{$t('frameleaf_trash_media_all')}</option>
+              <option value="soon">{$t('frameleaf_trash_media_soon', { values: { count: TRASH_SOON_DAYS } })}</option>
+              <option value="image">{$t('frameleaf_trash_media_photos')}</option>
+              <option value="video">{$t('frameleaf_trash_media_videos')}</option>
+            </select>
+            <select aria-label={$t('frameleaf_trash_sort')} bind:value={sort} onchange={resetView}>
+              <option value={TrashItemSort.Soonest}>{$t('frameleaf_trash_sort_soonest')}</option>
+              <option value={TrashItemSort.Recent}>{$t('frameleaf_trash_sort_recent')}</option>
+              <option value={TrashItemSort.Size}>{$t('frameleaf_trash_sort_size')}</option>
+              <option value={TrashItemSort.Name}>{$t('frameleaf_trash_sort_name')}</option>
+            </select>
+            <span class="tm-count" aria-live="polite">
+              {$t('frameleaf_trash_of_items', { values: { count: total, total: available } })}
+            </span>
+          </div>
+
+          <div class="tm-actions">
+            <label>
+              <input
+                type="checkbox"
+                aria-label={$t('frameleaf_trash_select_all')}
+                checked={everythingChosen}
+                disabled={selectable.length === 0 || busy}
+                onchange={() => void toggleAll()}
+              />
+              {chosen.length > 0
+                ? $t('frameleaf_trash_selected', { values: { count: chosen.length } })
+                : $t('frameleaf_trash_choose_all')}
+            </label>
+            <Button variant="primary" disabled={chosen.length === 0 || busy} onclick={() => void restoreChosen()}>
+              {$t('frameleaf_trash_restore_selected', { values: { count: chosen.length } })}
+            </Button>
+            <span class="tm-danger">
+              <Button disabled={chosen.length === 0 || busy} onclick={() => void prepare(TrashReviewAction.Delete)}>
+                {$t('frameleaf_trash_delete_selected', { values: { count: chosen.length } })}
+              </Button>
+            </span>
+            {#if selected.length > 0}
+              <Button onclick={() => (selected = [])}>{$t('frameleaf_trash_clear_selection')}</Button>
+            {/if}
+          </div>
+
+          {@render grid()}
+        </div>
+      </Section>
+
+      <Section title={$t('frameleaf_trash_manage_all')} description={everythingHelp}>
+        <div class="tm-all">
+          <Button disabled={actionable === 0 || busy} onclick={() => void restore(null)}>
+            {$t('frameleaf_trash_restore_all', { values: { count: actionable } })}
+          </Button>
+          <span class="tm-danger">
+            <Button disabled={actionable === 0 || busy} onclick={() => void prepare(TrashReviewAction.Empty)}>
+              {$t('frameleaf_trash_empty', { values: { count: actionable } })}
+            </Button>
+          </span>
+        </div>
+      </Section>
+    {:else}
+      {@render grid()}
+    {/if}
+  </KitPage>
+</section>
+
+{#snippet changeKept()}
+  <Button onclick={() => void goto(commandCenterUrl('storage', 'trash'))}>
+    {$t('frameleaf_trash_hero_change')}
+  </Button>
+{/snippet}
+
+{#snippet grid()}
+  <div class="tm-grid" aria-busy={loading} bind:this={gridElement}>
     {#each items as row (row.id)}
       <article class:selected={selected.includes(row.id)} class:offline={row.isOffline} data-row-id={row.id}>
         <div class="tm-photo">
@@ -754,9 +798,9 @@
           {#if !row.isOffline}
             {@const left = leftOf(row)}
             {#if !trashEnabled}
-              <span class="tm-left soon">{$t('frameleaf_trash_goes_tonight')}</span>
+              <Pill tone="bad">{$t('frameleaf_trash_goes_tonight')}</Pill>
             {:else if left}
-              <span class="tm-left" class:soon={left.daysLeft <= TRASH_SOON_DAYS}>{leftText(left.daysLeft)}</span>
+              <Pill tone={left.daysLeft <= TRASH_SOON_DAYS ? 'warn' : 'good'}>{leftText(left.daysLeft)}</Pill>
               <small>{removedText(left.removedOn)}</small>
             {/if}
           {/if}
@@ -803,7 +847,7 @@
         message={$t('frameleaf_trash_no_matches_help')}
         action={filtered ? { label: $t('frameleaf_trash_clear_filters'), onClick: clearFilters } : undefined}
       />
-    {:else}
+    {:else if !summary}
       <EmptyState
         icon={mdiDeleteOutline}
         title={$t('frameleaf_trash_empty_title')}
@@ -811,30 +855,7 @@
       />
     {/if}
   {/if}
-
-  <div class="tm-all">
-    <div>
-      <strong>{$t('frameleaf_trash_manage_all')}</strong>
-      <p>
-        {$t('frameleaf_trash_manage_all_help', { values: { count: actionable } })}
-        {#if actionable > 0 && summary}
-          {$t('frameleaf_trash_frees', { values: { size: formatBytes(summary.freesBytes) } })}
-        {/if}
-        {#if !sessionAccess.isElevated}
-          {$t('frameleaf_trash_manage_all_locked')}
-        {/if}
-      </p>
-    </div>
-    <Button disabled={actionable === 0 || busy} onclick={() => void restore(null)}>
-      {$t('frameleaf_trash_restore_all', { values: { count: actionable } })}
-    </Button>
-    <span class="tm-danger">
-      <Button disabled={actionable === 0 || busy} onclick={() => void prepare(TrashReviewAction.Empty)}>
-        {$t('frameleaf_trash_empty', { values: { count: actionable } })}
-      </Button>
-    </span>
-  </div>
-</section>
+{/snippet}
 
 <Dialog title={inspect?.originalFileName ?? ''} closeLabel={$t('close')} bind:open={inspectOpen}>
   {#if inspect}
@@ -925,34 +946,6 @@
 </Dialog>
 
 <style>
-  .tm-off {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--fl-space-3);
-    align-items: center;
-    justify-content: space-between;
-    margin: 0 0 var(--fl-space-4);
-    padding: var(--fl-space-4);
-    border: 1px solid color-mix(in srgb, var(--fl-danger, #d70015) 35%, transparent);
-    border-radius: var(--fl-radius-md, 12px);
-    background: color-mix(in srgb, var(--fl-danger, #d70015) 7%, transparent);
-  }
-  .tm-off p {
-    margin: 0.25rem 0 0;
-    font-size: 0.8125rem;
-  }
-  .tm-left {
-    justify-self: start;
-    padding: 0.125rem 0.5rem;
-    border-radius: 999px;
-    font-size: 0.75rem;
-    font-weight: 550;
-    color: var(--fl-success, #248a3d);
-    background: color-mix(in srgb, currentColor 12%, transparent);
-  }
-  .tm-left.soon {
-    color: var(--fl-warning, #b25000);
-  }
   .trash-manager {
     min-width: 0;
     color: var(--fl-text);
@@ -962,33 +955,35 @@
     font-size: var(--fl-font-small);
     line-height: 1.6;
   }
-  .trash-manager .tm-retention {
-    max-width: 850px;
-    margin: 8px 0 22px;
-    font-size: var(--fl-font-micro);
+  /* The card's content: the toolbar under the heading's rule, then the items, with the card's air below. */
+  .tm-body {
+    padding-bottom: var(--fl-space-6);
   }
   .tm-toolbar {
     display: flex;
-    align-items: end;
-    gap: 12px;
-    padding-block: 16px;
-    border-block: 1px solid var(--fl-border);
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--fl-space-3);
+    padding-top: var(--fl-space-4);
+    border-top: 1px solid var(--fl-border);
   }
-  .tm-toolbar > label {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    min-width: 140px;
-    font-size: var(--fl-font-micro);
+  .tm-toolbar > input {
+    flex: 1 1 240px;
+  }
+  .tm-toolbar > select {
+    flex: 0 1 220px;
+  }
+  .tm-count {
+    margin-inline-start: auto;
     color: var(--fl-muted);
-  }
-  .tm-toolbar > label:first-child {
-    flex: 1;
+    font-size: var(--fl-font-small);
+    white-space: nowrap;
   }
   .trash-manager input:not([type='checkbox']),
   .trash-manager select {
     width: 100%;
-    padding: 10px var(--fl-space-3);
+    min-height: var(--fl-control-height);
+    padding: 0 var(--fl-space-3);
     font-size: var(--fl-font-small);
     color: var(--fl-text);
     background: var(--fl-panel);
@@ -1005,8 +1000,8 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 9px;
-    padding: 16px 0;
+    gap: var(--fl-space-2);
+    padding: var(--fl-space-3) 0 var(--fl-space-4);
   }
   .tm-actions > label {
     display: flex;
@@ -1164,28 +1159,15 @@
   }
   .tm-all {
     display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-top: 26px;
-    padding-top: 20px;
+    flex-wrap: wrap;
+    gap: var(--fl-space-2);
+    padding: var(--fl-space-4) 0 var(--fl-space-6);
     border-top: 1px solid var(--fl-border);
-  }
-  .tm-all > div {
-    flex: 1;
-  }
-  .tm-all strong {
-    font-size: 13px;
-    font-weight: 550;
-  }
-  .tm-all p {
-    margin: 7px 0;
-    font-size: var(--fl-font-micro);
   }
   .tm-notice {
     display: flex;
     align-items: center;
     gap: 10px;
-    margin-top: 16px;
     padding: 9px 12px;
     font-size: var(--fl-font-small);
     background: var(--fl-panel);
@@ -1241,28 +1223,22 @@
     gap: 8px;
   }
   @media (max-width: 700px) {
-    .tm-toolbar {
-      flex-wrap: wrap;
-    }
-    .tm-toolbar > label:first-child {
+    .tm-toolbar > input {
       flex-basis: 100%;
     }
-    .tm-toolbar > label {
-      flex: 1;
+    .tm-toolbar > select {
+      flex: 1 1 0;
       min-width: 0;
+    }
+    .tm-count {
+      flex-basis: 100%;
+      margin-inline-start: 0;
     }
     .tm-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 10px;
+      gap: var(--fl-space-3);
     }
     .tm-actions > label {
-      flex-basis: 100%;
-      margin-bottom: 5px;
-    }
-    .tm-all {
-      flex-wrap: wrap;
-    }
-    .tm-all > div {
       flex-basis: 100%;
     }
     .tm-detail {

@@ -8,6 +8,8 @@
    * budget cannot cover them, and nothing is ever sent to another destination instead.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
+  import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import { formatUsd } from '$lib/frameleaf/cloud-ml';
   import { handleError } from '$lib/utils/handle-error';
   import {
@@ -16,7 +18,7 @@
     type CloudMlDescriptionEstimateResponseDto,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import { mdiAlertCircleOutline, mdiTextBoxSearchOutline } from '@mdi/js';
+  import { mdiAlertCircleOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   let {
@@ -63,25 +65,21 @@
   };
 </script>
 
-<section class="fc-card fl-continuous-corners" aria-labelledby="fc-backfill-title">
-  <div class="fc-card-title">
-    <span class="fc-card-icon"><Icon icon={mdiTextBoxSearchOutline} size="20" aria-hidden={true} /></span>
-    <div>
-      <h2 id="fc-backfill-title">{$t('admin.frameleaf_cloud_ml_backfill_title')}</h2>
-      <p>{$t('admin.frameleaf_cloud_ml_backfill_description')}</p>
-    </div>
-  </div>
-
+<Section
+  id="describe-library"
+  title={$t('admin.frameleaf_cloud_ml_backfill_title')}
+  description={$t('admin.frameleaf_cloud_ml_backfill_description')}
+>
   {#if !available}
-    <p class="fc-muted">{$t('admin.frameleaf_cloud_ml_backfill_unavailable')}</p>
+    <Row label={$t('frameleaf_cp_backfill_estimate_row')} help={$t('admin.frameleaf_cloud_ml_backfill_unavailable')} />
   {:else}
-    <div class="fc-actions">
+    <Row label={$t('frameleaf_cp_backfill_estimate_row')} help={$t('frameleaf_cp_backfill_estimate_help')}>
       <Button disabled={busy} onclick={() => void estimateNow()}>
         {busy && !estimate
           ? $t('admin.frameleaf_cloud_ml_backfill_estimating')
           : $t('admin.frameleaf_cloud_ml_backfill_estimate')}
       </Button>
-    </div>
+    </Row>
 
     {#if queued}
       <p class="fc-ok" role="status">{queued}</p>
@@ -153,4 +151,12 @@
       </div>
     {/if}
   {/if}
-</section>
+</Section>
+
+<style>
+  /* Inside the kit Section: the estimate and the queued line keep the section's bottom air. */
+  .fc-estimate,
+  .fc-ok {
+    margin: 0 0 var(--fl-space-5);
+  }
+</style>

@@ -171,7 +171,8 @@
     display: flex;
     flex-direction: column;
     gap: 1rem;
-    margin: 1rem 0;
+    /* The page's own rhythm starts at the back link, as on every other settings page. */
+    margin: 0;
   }
   .fields {
     display: flex;

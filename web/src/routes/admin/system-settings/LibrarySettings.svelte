@@ -29,7 +29,14 @@
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import { getAllLibraries, MediaOperationStatus, scanLibrary, type LibraryResponseDto } from '@frameleaf/sdk';
-  import { mdiFolderAlertOutline, mdiFolderOutline, mdiFolderPlusOutline, mdiFolderSyncOutline } from '@mdi/js';
+  import { Icon } from '@frameleaf/ui';
+  import {
+    mdiFolderAlertOutline,
+    mdiFolderOutline,
+    mdiFolderPlusOutline,
+    mdiFolderSyncOutline,
+    mdiPlus,
+  } from '@mdi/js';
   import { DateTime } from 'luxon';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -147,14 +154,13 @@
     {#if folders.length === 0}
       <Hero
         label={$t('frameleaf_checks_label')}
-        tone="quiet"
         icon={mdiFolderPlusOutline}
         title={$t('frameleaf_checks_none_title')}
         body={$t('frameleaf_checks_none_body')}
       >
         {#snippet actions()}
           <Button variant="primary" onclick={() => goto(commandCenterUrl('libraries', undefined, { new: '1' }))}>
-            {$t('frameleaf_libraries_add')}
+            <Icon icon={mdiPlus} size="16" aria-hidden />{$t('frameleaf_libraries_add')}
           </Button>
         {/snippet}
       </Hero>
@@ -185,46 +191,50 @@
     {/if}
   {/if}
 
-  <Section title={$t('frameleaf_checks_keeping')}>
-    <Row
-      label={$t('frameleaf_checks_nightly')}
-      help={configToEdit.library.scan.enabled ? $t('frameleaf_checks_nightly_on') : $t('frameleaf_checks_nightly_off')}
-    >
-      <Switch
-        label={$t('frameleaf_checks_nightly')}
-        checked={configToEdit.library.scan.enabled}
-        held={disabled}
-        onChange={(value) => (configToEdit.library.scan.enabled = value)}
-      />
-    </Row>
-    {#if configToEdit.library.scan.enabled}
-      <Row label={$t('frameleaf_checks_overnight')} help={$t('frameleaf_checks_overnight_help')}>
-        <Button onclick={() => goto(commandCenterUrl('processing', 'nightly-tasks'))}>
-          {$t('frameleaf_libraries_checks_overnight_open')}
-        </Button>
-      </Row>
-    {/if}
-    <Row
-      label={$t('frameleaf_checks_watch')}
-      help={configToEdit.library.watch.enabled ? $t('frameleaf_checks_watch_on') : $t('frameleaf_checks_watch_off')}
-    >
-      <Switch
-        label={$t('frameleaf_checks_watch')}
-        checked={configToEdit.library.watch.enabled}
-        held={disabled}
-        onChange={(value) => (configToEdit.library.watch.enabled = value)}
-      />
-    </Row>
-    <Notice title={$t('frameleaf_checks_not_backup')}>
-      {$t('frameleaf_checks_not_backup_body')}
-      {#snippet action()}
-        <Button onclick={() => goto(commandCenterUrl('backups'))}>{$t('frameleaf_checks_open_backup')}</Button>
-      {/snippet}
-    </Notice>
-    <SettingActions keys={['library']} {disabled} />
-  </Section>
-
+  <!-- As in the prototype (folders.jsx FolderChecks), these settings show once a folder exists: with
+       none the answer above says they apply once you add one. They come back as soon as one is added. -->
   {#if folders && folders.length > 0}
+    <Section title={$t('frameleaf_checks_keeping')}>
+      <Row
+        label={$t('frameleaf_checks_nightly')}
+        help={configToEdit.library.scan.enabled
+          ? $t('frameleaf_checks_nightly_on')
+          : $t('frameleaf_checks_nightly_off')}
+      >
+        <Switch
+          label={$t('frameleaf_checks_nightly')}
+          checked={configToEdit.library.scan.enabled}
+          held={disabled}
+          onChange={(value) => (configToEdit.library.scan.enabled = value)}
+        />
+      </Row>
+      {#if configToEdit.library.scan.enabled}
+        <Row label={$t('frameleaf_checks_overnight')} help={$t('frameleaf_checks_overnight_help')}>
+          <Button onclick={() => goto(commandCenterUrl('processing', 'nightly-tasks'))}>
+            {$t('frameleaf_libraries_checks_overnight_open')}
+          </Button>
+        </Row>
+      {/if}
+      <Row
+        label={$t('frameleaf_checks_watch')}
+        help={configToEdit.library.watch.enabled ? $t('frameleaf_checks_watch_on') : $t('frameleaf_checks_watch_off')}
+      >
+        <Switch
+          label={$t('frameleaf_checks_watch')}
+          checked={configToEdit.library.watch.enabled}
+          held={disabled}
+          onChange={(value) => (configToEdit.library.watch.enabled = value)}
+        />
+      </Row>
+      <Notice title={$t('frameleaf_checks_not_backup')}>
+        {$t('frameleaf_checks_not_backup_body')}
+        {#snippet action()}
+          <Button onclick={() => goto(commandCenterUrl('backups'))}>{$t('frameleaf_checks_open_backup')}</Button>
+        {/snippet}
+      </Notice>
+      <SettingActions keys={['library']} {disabled} />
+    </Section>
+
     <Section title={$t('frameleaf_checks_skips_title')} description={$t('frameleaf_checks_skips_description')}>
       <ItemList>
         {#each folders as library (library.id)}

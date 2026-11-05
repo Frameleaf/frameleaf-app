@@ -1,4 +1,4 @@
-import { getAlbumInfo, getAlbumTree, LibraryViewScope } from '@frameleaf/sdk';
+import { AlbumKind, getAlbumInfo, getAlbumTree, getSharedSpaceMembers, LibraryViewScope } from '@frameleaf/sdk';
 import { authenticate } from '$lib/utils/auth';
 import type { PageLoad } from './$types';
 
@@ -17,9 +17,18 @@ export const load = (async ({ params, url, depends }) => {
     getAlbumTree({}),
     getAlbumTree({ libraryScope: LibraryViewScope.Design }),
   ]);
+  // A shared space's unanswered invitations are not album users, so the header asks for them to say
+  // "1 invited" instead of "Private · share it". Not being able to read them only loses that line.
+  const pendingInvites =
+    album.kind === AlbumKind.Space
+      ? await getSharedSpaceMembers({ id: album.id })
+          .then(({ members }) => members.filter((member) => member.pending).length)
+          .catch(() => 0)
+      : 0;
 
   return {
     album,
+    pendingInvites,
     workspaceTrees: [personalTree, designTree],
     meta: {
       title: album.albumName,

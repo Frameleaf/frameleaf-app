@@ -39,7 +39,7 @@
 </script>
 
 <KitPage>
-  <Section title={$t('frameleaf_server_maps_map')}>
+  <Section title={$t('frameleaf_server_maps_together')}>
     <Row
       label={$t('frameleaf_server_maps_show')}
       help={map.enabled ? $t('frameleaf_server_maps_show_on') : $t('frameleaf_server_maps_show_off')}
@@ -52,21 +52,41 @@
       />
     </Row>
     <Row
+      label={$t('frameleaf_server_maps_name')}
+      help={settingsDraft.draft.reverseGeocoding.enabled
+        ? $t('frameleaf_server_maps_name_on')
+        : $t('frameleaf_server_maps_name_off')}
+      link={geocodingDocs
+        ? { text: $t('frameleaf_server_maps_name_more'), href: geocodingDocs, external: true }
+        : undefined}
+    >
+      <Switch
+        label={$t('frameleaf_server_maps_name')}
+        checked={settingsDraft.draft.reverseGeocoding.enabled}
+        held={disabled}
+        onChange={(value) => (settingsDraft.draft.reverseGeocoding.enabled = value)}
+      />
+    </Row>
+    <Row
       label={$t('frameleaf_server_maps_look')}
       help={custom ? $t('frameleaf_server_maps_look_custom') : $t('frameleaf_server_maps_look_standard')}
     >
-      <SegmentedControl
-        label={$t('frameleaf_server_maps_look')}
-        options={[
-          { value: 'standard', label: $t('frameleaf_server_maps_standard') },
-          { value: 'custom', label: $t('frameleaf_server_maps_custom') },
-        ]}
-        value={custom ? 'custom' : 'standard'}
-        disabled={disabled || !map.enabled}
-        onChange={(value) => (value === 'custom' ? (chosenCustom = true) : useStandard())}
-      />
+      {#if map.enabled}
+        <SegmentedControl
+          label={$t('frameleaf_server_maps_look')}
+          options={[
+            { value: 'standard', label: $t('frameleaf_server_maps_standard') },
+            { value: 'custom', label: $t('frameleaf_server_maps_custom') },
+          ]}
+          value={custom ? 'custom' : 'standard'}
+          {disabled}
+          onChange={(value) => (value === 'custom' ? (chosenCustom = true) : useStandard())}
+        />
+      {:else}
+        <span class="value">{$t('frameleaf_server_maps_is_off')}</span>
+      {/if}
     </Row>
-    <Advanced open={custom}>
+    <Advanced summary={$t('frameleaf_server_maps_advanced')} open={custom}>
       <p class="hint">{$t('frameleaf_server_maps_style_about')}</p>
       <Row label={$t('frameleaf_server_maps_style_light')}>
         <Field
@@ -96,29 +116,14 @@
     </Advanced>
   </Section>
 
-  <Section title={$t('frameleaf_server_maps_places')}>
-    <Row
-      label={$t('frameleaf_server_maps_name')}
-      help={settingsDraft.draft.reverseGeocoding.enabled
-        ? $t('frameleaf_server_maps_name_on')
-        : $t('frameleaf_server_maps_name_off')}
-      link={geocodingDocs
-        ? { text: $t('frameleaf_server_maps_name_more'), href: geocodingDocs, external: true }
-        : undefined}
-    >
-      <Switch
-        label={$t('frameleaf_server_maps_name')}
-        checked={settingsDraft.draft.reverseGeocoding.enabled}
-        held={disabled}
-        onChange={(value) => (settingsDraft.draft.reverseGeocoding.enabled = value)}
-      />
-    </Row>
-  </Section>
-
   <SettingActions keys={['map', 'reverseGeocoding']} {disabled} />
 </KitPage>
 
 <style>
+  .value {
+    color: var(--fl-muted);
+    font-size: var(--fl-font-callout);
+  }
   .hint {
     max-width: 640px;
     margin: 0;

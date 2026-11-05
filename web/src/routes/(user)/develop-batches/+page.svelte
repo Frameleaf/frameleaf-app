@@ -14,13 +14,21 @@
 >
 
 <style>
+  /* The standard page gutter beside the rail, as RAW support and Activity; the column stays readable. */
   main {
     max-inline-size: 60rem;
-    margin-inline: auto;
-    padding: 2rem 1rem;
+    padding: var(--fl-space-5) var(--fl-space-6) var(--fl-space-6);
   }
+  /* The page title in the app's display style, as on RAW support and Library Care. */
   h1 {
-    font-size: 1.75rem;
-    margin-block-end: 1.5rem;
+    margin-block-end: var(--fl-space-6);
+    font: var(--fl-type-display);
+    letter-spacing: var(--fl-tracking-display);
+  }
+  @media (max-width: 700px) {
+    /* With the page's own 8px, the 16px phone gutter. */
+    main {
+      padding: var(--fl-space-4) var(--fl-space-2);
+    }
   }
 </style>

@@ -692,6 +692,7 @@ describe(ServerService.name, () => {
           usagePhotos: 1,
           usageVideos: 11_345,
           quotaSizeInBytes: 0,
+          lastActiveAt: new Date('2026-11-04T08:12:00.000Z'),
         },
         {
           userId: 'user2',
@@ -702,6 +703,7 @@ describe(ServerService.name, () => {
           usagePhotos: 100,
           usageVideos: 23_456,
           quotaSizeInBytes: 0,
+          lastActiveAt: null,
         },
         {
           userId: 'user3',
@@ -712,6 +714,7 @@ describe(ServerService.name, () => {
           usagePhotos: 900,
           usageVideos: 87_654,
           quotaSizeInBytes: 0,
+          lastActiveAt: null,
         },
       ]);
 
@@ -731,6 +734,8 @@ describe(ServerService.name, () => {
             userName: '1 User',
             userId: 'user1',
             videos: 11,
+            // when a signed-in device of the account was last used, for "Last active" on Users
+            lastActiveAt: new Date('2026-11-04T08:12:00.000Z'),
           },
           {
             photos: 10,
@@ -741,6 +746,7 @@ describe(ServerService.name, () => {
             userName: '2 User',
             userId: 'user2',
             videos: 20,
+            lastActiveAt: null,
           },
           {
             photos: 100,
@@ -751,6 +757,7 @@ describe(ServerService.name, () => {
             userName: '3 User',
             userId: 'user3',
             videos: 0,
+            lastActiveAt: null,
           },
         ],
       });

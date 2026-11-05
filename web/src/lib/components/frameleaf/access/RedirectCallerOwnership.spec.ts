@@ -48,7 +48,7 @@ it.each(['account', 'provider', 'setup'] as const)('does not redirect after clos
         : render(SetupFrameleafLink, { mode: 'sign-in', linked: false, onLinked: vi.fn() });
   const label =
     kind === 'account'
-      ? 'frameleaf_personal_link'
+      ? 'frameleaf_signin_label'
       : kind === 'provider'
         ? 'frameleaf_access_provider_connect'
         : 'frameleaf_setup_sign_in_frameleaf';
@@ -77,7 +77,7 @@ it.each(['account', 'provider'] as const)('does not redirect a %s result in anot
     render(SignInProviderSection);
   }
   const button = await screen.findByRole('button', {
-    name: kind === 'account' ? 'frameleaf_personal_link' : 'frameleaf_access_provider_connect',
+    name: kind === 'account' ? 'frameleaf_signin_label' : 'frameleaf_access_provider_connect',
   });
   await waitFor(() => expect(button).not.toBeDisabled());
   await fireEvent.click(button);
@@ -101,7 +101,7 @@ it.each([false, true])('does not act on a retired Frameleaf account confirmation
   });
   const view = render(FrameleafAccountSection);
   const button = await screen.findByRole('button', {
-    name: unlink ? 'frameleaf_personal_unlink' : 'frameleaf_personal_link',
+    name: unlink ? 'frameleaf_personal_unlink' : 'frameleaf_signin_label',
   });
   await waitFor(() => expect(button).not.toBeDisabled());
   await fireEvent.click(button);
@@ -124,7 +124,7 @@ it.each(['account', 'setup'] as const)('shows browser callback setup guidance in
     render(SetupFrameleafLink, { mode: 'sign-in', linked: false, onLinked: vi.fn() });
   }
   const button = await screen.findByRole('button', {
-    name: kind === 'account' ? 'frameleaf_personal_link' : 'frameleaf_setup_sign_in_frameleaf',
+    name: kind === 'account' ? 'frameleaf_signin_label' : 'frameleaf_setup_sign_in_frameleaf',
   });
   await waitFor(() => expect(button).not.toBeDisabled());
   await fireEvent.click(button);

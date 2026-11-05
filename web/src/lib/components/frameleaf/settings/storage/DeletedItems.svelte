@@ -47,7 +47,14 @@
     type TrashEveryoneResponseDto,
     type UserAdminResponseDto,
   } from '@frameleaf/sdk';
-  import { mdiAccountOutline, mdiDeleteRestore, mdiImageMultipleOutline, mdiTrashCanOutline } from '@mdi/js';
+  import { Icon } from '@frameleaf/ui';
+  import {
+    mdiAccountOutline,
+    mdiChevronRight,
+    mdiDeleteRestore,
+    mdiImageMultipleOutline,
+    mdiTrashCanOutline,
+  } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -289,7 +296,7 @@
       help={tidyOn ? $t('frameleaf_deleted_overnight_help') : $t('frameleaf_deleted_overnight_off_help')}
     >
       <Button onclick={() => goto(commandCenterUrl('processing', 'nightly-tasks'))}
-        >{$t('frameleaf_deleted_overnight_button')}</Button
+        >{$t('frameleaf_deleted_overnight_button')}<Icon icon={mdiChevronRight} size="1em" aria-hidden /></Button
       >
     </Row>
   </Section>

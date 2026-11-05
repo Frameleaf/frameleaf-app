@@ -192,15 +192,15 @@ describe('Frameleaf settings areas', () => {
     expect(SETTINGS_AREAS.find((item) => item.id === 'cloud')).toEqual({
       id: 'cloud',
       group: 'server',
-      sections: ['cloud-account', 'cloud-plan', 'cloud-remote', 'cloud-processing', 'cloud-backup'],
+      sections: ['cloud-account', 'cloud-plan', 'cloud-license', 'cloud-remote', 'cloud-processing', 'cloud-backup'],
       adminOnly: true,
     });
     expect(directoryGroup('cloud', 'cloud-processing')).toBe('cloud_services');
     expect(directoryGroup('cloud', 'cloud-backup')).toBe('cloud_services');
     expect(directoryGroup('cloud', 'cloud-account')).toBe('account_link');
     expect(directoryGroup('cloud', 'cloud-plan')).toBe('licensing');
-    // FL-544: Licence folded into Your Frameleaf Cloud; old links still land there
-    expect(serverSectionKey('cloud-license')).toBe('cloud-plan');
+    // Round 3: Licence is its own page again, as the prototype has it
+    expect(serverSectionKey('cloud-license')).toBe('cloud-license');
     expect(areaForSection('cloud-license')).toBe('cloud');
     expect(directoryGroup('cloud', 'cloud-remote')).toBe('remote');
     expect(areaForSection('cloud-remote')).toBe('cloud');
@@ -313,6 +313,7 @@ describe('Frameleaf settings areas', () => {
         'duplicates',
         'enrichment-care',
         'unused-files',
+        'location-scan',
       ]);
       expect(sectionsForArea([care[1]], 'care').map((s) => s.key)).toEqual(['repair']);
     });

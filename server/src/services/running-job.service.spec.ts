@@ -110,7 +110,7 @@ describe(RunningJobService.name, () => {
     } as unknown as MediaOperationRepository;
     mocks.memory.searchExports.mockResolvedValue([]);
     mocks.job.observeQueueRun.mockResolvedValue(idle);
-    mocks.job.isPaused.mockResolvedValue(false);
+    mocks.job.getPausedQueues.mockResolvedValue(new Set());
     // The real service over a mocked repository: the summary must read jobs exactly as Activity does.
     const operationService = new MediaOperationService(
       mocks.logger as never,
@@ -202,7 +202,7 @@ describe(RunningJobService.name, () => {
       expect(result.queues).toEqual([]);
       expect(result.canManageQueues).toBe(false);
       expect(mocks.job.observeQueueRun).not.toHaveBeenCalled();
-      expect(mocks.job.isPaused).not.toHaveBeenCalled();
+      expect(mocks.job.getPausedQueues).not.toHaveBeenCalled();
     });
 
     it('never reads them for an administrator’s API key that may not read queues', async () => {
@@ -249,7 +249,7 @@ describe(RunningJobService.name, () => {
       mocks.job.observeQueueRun.mockImplementation((name: QueueName) =>
         Promise.resolve(name === QueueName.SmartSearch ? { ...idle, waiting: 12, startedAt: new Date() } : idle),
       );
-      mocks.job.isPaused.mockImplementation((name: QueueName) => Promise.resolve(name === QueueName.SmartSearch));
+      mocks.job.getPausedQueues.mockResolvedValue(new Set([QueueName.SmartSearch]));
 
       const result = await sut.getRunning(authStub.admin);
 
@@ -277,7 +277,7 @@ describe(RunningJobService.name, () => {
             : idle,
         ),
       );
-      mocks.job.isPaused.mockImplementation((name: QueueName) => Promise.resolve(name === QueueName.VideoConversion));
+      mocks.job.getPausedQueues.mockResolvedValue(new Set([QueueName.VideoConversion]));
 
       const result = await sut.getRunning(authStub.admin);
       vi.useRealTimers();
@@ -302,6 +302,57 @@ describe(RunningJobService.name, () => {
       const result = await sut.getRunning(authStub.admin);
 
       expect(result.queues).toEqual([expect.objectContaining({ name: QueueName.BackgroundTask, canPause: false })]);
+    });
+
+    it('reads the queues a few at a time, so one summary cannot exhaust the database pool', async () => {
+      // The pool has 10 connections and refuses a 65th waiter (DATABASE_MAX_WAITERS). Reading every queue at
+      // once queued ~50 reads per summary, so two panels polling together made every other request fail with 500.
+      let inFlight = 0;
+      let peak = 0;
+      const read =
+        <T>(value: T) =>
+        async () => {
+          inFlight++;
+          peak = Math.max(peak, inFlight);
+          await new Promise((resolve) => setTimeout(resolve, 1));
+          inFlight--;
+          return value;
+        };
+      mocks.job.observeQueueRun.mockImplementation(read(idle));
+      mocks.job.isPaused.mockImplementation(read(false));
+      mocks.job.getPausedQueues.mockImplementation(read(new Set<string>()));
+
+      await sut.getRunning(authStub.admin);
+
+      expect(mocks.job.observeQueueRun).toHaveBeenCalledTimes(Object.values(QueueName).length);
+      expect(mocks.job.getPausedQueues).toHaveBeenCalledOnce();
+      expect(mocks.job.isPaused).not.toHaveBeenCalled();
+      expect(peak).toBeLessThanOrEqual(4);
+    });
+
+    it('shares one queue read between summaries asked for at the same moment', async () => {
+      const [first, second] = await Promise.all([sut.getRunning(authStub.admin), sut.getRunning(authStub.admin)]);
+
+      expect(first.queues).toEqual(second.queues);
+      expect(mocks.job.getPausedQueues).toHaveBeenCalledOnce();
+      expect(mocks.job.observeQueueRun).toHaveBeenCalledTimes(Object.values(QueueName).length);
+
+      await sut.getRunning(authStub.admin);
+
+      expect(mocks.job.getPausedQueues).toHaveBeenCalledTimes(2);
+    });
+
+    it('reports every queue unavailable when the paused flags cannot be read', async () => {
+      vi.mocked(operations.list).mockResolvedValue({ items: [operationStub()], total: 1 });
+      mocks.job.getPausedQueues.mockRejectedValue(new Error('private database diagnostic'));
+
+      const result = await sut.getRunning(authStub.admin);
+
+      expect(result.queues).toHaveLength(Object.values(QueueName).length);
+      expect(result.queues.every((queue) => queue.unavailable && !queue.canPause)).toBe(true);
+      expect(mocks.job.observeQueueRun).not.toHaveBeenCalled();
+      expect(result.operations).toHaveLength(1);
+      expect(JSON.stringify(result)).not.toContain('private database diagnostic');
     });
 
     it('reports an unavailable queue without losing the viewer’s other work', async () => {

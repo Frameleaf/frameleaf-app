@@ -35,6 +35,7 @@
   import { getWorkerInventory, type AdminConfigDto, type WorkerInventoryResponseDto } from '@frameleaf/sdk';
   import {
     mdiCommentTextOutline,
+    mdiChevronRight,
     mdiFaceRecognition,
     mdiImageSearchOutline,
     mdiLanDisconnect,
@@ -241,12 +242,12 @@
       help={silent ? $t('frameleaf_intel_where_silent') : $t('frameleaf_intel_where_help')}
     >
       <Button onclick={() => goto(commandCenterUrl('processing', 'computers'))}
-        >{$t('frameleaf_intel_where_open')}</Button
+        >{$t('frameleaf_intel_where_open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden /></Button
       >
     </Row>
     <Row label={$t('frameleaf_intel_overnight')} help={$t('frameleaf_intel_landing_overnight_help')}>
       <Button onclick={() => goto(commandCenterUrl('processing', 'nightly-tasks'))}>
-        {$t('frameleaf_intel_overnight_open')}
+        {$t('frameleaf_intel_overnight_open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden />
       </Button>
     </Row>
     <Advanced summary={$t('frameleaf_intel_helper_advanced')}>
@@ -358,7 +359,7 @@
               href={commandCenterUrl('intelligence', feature.key)}
               aria-label={$t('frameleaf_intel_open_named', { values: { name } })}
             >
-              {$t('frameleaf_intel_open')}
+              {$t('frameleaf_intel_open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden />
             </a>
           {/snippet}
         </Item>
@@ -378,6 +379,7 @@
   .open {
     display: inline-flex;
     align-items: center;
+    gap: var(--fl-space-1);
     min-height: var(--fl-control-height);
     padding: 0 var(--fl-space-3);
     color: var(--fl-text);

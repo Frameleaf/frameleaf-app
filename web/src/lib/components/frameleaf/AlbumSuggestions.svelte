@@ -872,6 +872,33 @@
     flex: 1;
     margin: 0;
   }
+  /*
+   * Desktop (magic-album.css @701px): the suggestion is one quiet line on the accent tint. The
+   * explanation trails the headline and truncates; the full sentence is in the review. The buttons
+   * keep the app's control height, so the line is padded 6px around them, not the prototype's 30px.
+   */
+  @media (min-width: 701px) {
+    .ma-notice {
+      gap: var(--fl-space-2);
+      padding: 6px 6px 6px 14px;
+      background: var(--fl-accent-soft);
+    }
+    .ma-notice > :global(svg) {
+      margin-inline-end: 2px;
+    }
+    .ma-notice p {
+      display: flex;
+      align-items: baseline;
+      gap: var(--fl-space-2);
+      min-width: 0;
+      white-space: nowrap;
+    }
+    .ma-notice p > span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  }
   @media (max-width: 700px) {
     .pl-notice {
       flex-wrap: wrap;

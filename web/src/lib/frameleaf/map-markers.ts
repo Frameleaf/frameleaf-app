@@ -1,5 +1,6 @@
-import { AssetTypeEnum, type MapMarkerResponseDto } from '@frameleaf/sdk';
+import { AssetTypeEnum, type MapClusterResponseDto, type MapMarkerResponseDto } from '@frameleaf/sdk';
 import { captureDay } from '$lib/frameleaf/explore';
+import type { MapArea } from '$lib/frameleaf/map-settings';
 
 /**
  * What the Map screen says about one located item (FL-51, prototype `MapView.jsx` hover card and
@@ -40,13 +41,59 @@ export const markerCardLine = (detail: MarkerDetail) => [detail.day, detail.plac
 export const markerRowLine = (detail: MarkerDetail, videoLabel: string) =>
   [detail.day, detail.city, detail.video ? videoLabel : null].filter(Boolean).join(' · ');
 
-/** The legend's photo and video counts for what is in view (`MapView.jsx:363-367`). */
-export const markerTypeCounts = (markers: Pick<MapMarkerResponseDto, 'type'>[]) => {
+/**
+ * One point the map groups into bubbles (FL-1214): a located item, or a cell of `count` items that
+ * the server grouped for the zoom it was asked about. Only an item carries its marker.
+ */
+export type MapPoint = {
+  id: string;
+  lat: number;
+  lon: number;
+  count: number;
+  videos: number;
+  place: string;
+  marker?: MapMarkerResponseDto;
+  /** For a grouped cell, the area its items cover. */
+  extent?: MapArea;
+};
+
+export const markerPoint = (marker: MapMarkerResponseDto): MapPoint => ({
+  id: marker.id,
+  lat: marker.lat,
+  lon: marker.lon,
+  count: 1,
+  videos: marker.type === AssetTypeEnum.Video ? 1 : 0,
+  place: markerPlace(marker),
+  marker,
+});
+
+export const clusterPoint = (cluster: MapClusterResponseDto): MapPoint => ({
+  id: cluster.id,
+  lat: cluster.lat,
+  lon: cluster.lon,
+  count: cluster.count,
+  videos: cluster.videos,
+  place: markerPlace(cluster),
+  extent: { west: cluster.west, south: cluster.south, east: cluster.east, north: cluster.north },
+});
+
+/**
+ * The items the viewer steps through when one is opened from the map (V-17): the "In view" rows, or,
+ * when they do not hold it yet (FL-1214: a grouped view reads its rows a page at a time, only while
+ * the list is open), the single items in view, newest first as the server sends them.
+ */
+export const openingOrder = (id: string, rows: Pick<MapMarkerResponseDto, 'id'>[], points: MapPoint[]) => {
+  const listed = rows.map((row) => row.id);
+  return listed.includes(id) ? listed : points.flatMap((point) => (point.marker ? [point.id] : []));
+};
+
+/** The legend's photo and video counts for what is in view (`MapView.jsx:363-367`), and their sum. */
+export const pointCounts = (points: Pick<MapPoint, 'count' | 'videos'>[]) => {
+  let items = 0;
   let videos = 0;
-  for (const marker of markers) {
-    if (marker.type === AssetTypeEnum.Video) {
-      videos++;
-    }
+  for (const point of points) {
+    items += point.count;
+    videos += point.videos;
   }
-  return { photos: markers.length - videos, videos };
+  return { items, photos: items - videos, videos };
 };

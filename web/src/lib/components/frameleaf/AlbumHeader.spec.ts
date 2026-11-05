@@ -94,6 +94,31 @@ describe('AlbumHeader', () => {
     expect(sdkMock.runWorkflow).not.toHaveBeenCalled();
   });
 
+  it('gives a shared space opened in the library view its own header: Add matching…, invitations, details', async () => {
+    renderHeader(albumAs(AlbumUserRole.Editor, { kind: AlbumKind.Space, albumName: 'Family' }));
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Add matching…' }));
+    expect(await screen.findByRole('dialog', { name: 'Add everything matching' })).toBeInTheDocument();
+    const more = await openMore();
+    await fireEvent.click(more.getByRole('menuitem', { name: 'People, places and members' }));
+    expect(goto).toHaveBeenCalledWith('/sharing/album-1');
+  });
+
+  it('says how many people a shared space has invited while nobody has joined', () => {
+    render(AlbumHeader, {
+      album: albumFactory.build({
+        id: 'space-1',
+        kind: AlbumKind.Space,
+        albumUsers: [{ user: me, role: AlbumUserRole.Owner }],
+      }),
+      pendingInvites: 1,
+      onAlbumChange: vi.fn(),
+      onRefresh: vi.fn(),
+    });
+    expect(screen.getByRole('button', { name: /1 invited/ })).toBeInTheDocument();
+    expect(screen.queryByText('Private · share it')).toBeNull();
+  });
+
   it('offers the owner every control: add, upload, edit, share, links, activity and delete', async () => {
     renderHeader(albumAs(AlbumUserRole.Owner));
 
@@ -540,8 +565,17 @@ describe('AlbumHeader in Boards', () => {
     expect(screen.queryByRole('button', { name: 'Slideshow' })).toBeNull();
     expect(screen.queryByText('Add a description')).toBeNull();
     const menu = await openMore();
-    expect(menu.getByRole('menuitem', { name: 'New collection' })).toBeInTheDocument();
-    expect(menu.getByRole('menuitem', { name: 'Slideshow' })).toBeInTheDocument();
+    // The prototype's collection menu (ProWorkspace.jsx "…"), worded for a collection; album extras stay out.
+    expect(menu.getAllByRole('menuitem').map((item) => item.textContent?.trim())).toEqual([
+      'New collection inside',
+      'Rename',
+      'Icon and colour…',
+      'Move collection…',
+      'Share…',
+      'Download…',
+      'Delete collection…',
+    ]);
+    expect(menu.queryByRole('menuitem', { name: 'Slideshow' })).toBeNull();
   });
 
   it('spells out what Delete does: items stay, albums inside move up, people lose access', async () => {

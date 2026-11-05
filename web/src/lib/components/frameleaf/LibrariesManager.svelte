@@ -1,10 +1,12 @@
 <script lang="ts">
   /**
-   * The Frameleaf admin Libraries area (FL-78), ported from the libraries view of the design
-   * template's `AccountsLibraries` (`design/frameleaf/template/src/AccountsLibraries.jsx`,
-   * `accounts-libraries.css`): the heading with "Scan N libraries" and "Add external library", one
-   * toolbar, a table of every owner's managed uploads and external libraries with their scan
-   * status and progress, and the selected library's detail below it.
+   * The Frameleaf admin Libraries area (FL-78), rebuilt to the approved prototype's `Libraries`
+   * (`settings-v2/library/folders.jsx`): the answer first (the folders are up to date, one is being
+   * looked through, one was skipped, or none is added yet) with "Add a folder of photos" and "Check
+   * now"; then "Folders on this server" and "Uploaded to Frameleaf" as kit lists (state, when last
+   * checked, items and size, Manage › / Details ›); then "Keeping folders up to date", which opens
+   * Folder checks (its own page). Manage or Details opens that library in place of the lists with
+   * "‹ Libraries"; Add a folder of photos is a page of its own (`new=1`).
    *
    * Rows come from the page's loader; nothing here is kept in the browser. While any scan is
    * moving the list is read again every couple of seconds, so progress, failures and the end of a
@@ -14,24 +16,31 @@
   import { goto } from '$app/navigation';
   import AddFolderPage from '$lib/components/frameleaf/AddFolderPage.svelte';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
-  import LibraryDetail from '$lib/components/frameleaf/LibraryDetail.svelte';
+  import LibraryPage from '$lib/components/frameleaf/LibraryPage.svelte';
   import LibraryFormDialog from '$lib/components/frameleaf/LibraryFormDialog.svelte';
   import LibraryRemoveDialog from '$lib/components/frameleaf/LibraryRemoveDialog.svelte';
-  import SettingsOverline from '$lib/components/frameleaf/settings/SettingsOverline.svelte';
+  import Button from '$lib/components/frameleaf/Button.svelte';
+  import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
+  import Item from '$lib/components/frameleaf/settings/kit/Item.svelte';
+  import ItemList from '$lib/components/frameleaf/settings/kit/ItemList.svelte';
+  import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
+  import Meter from '$lib/components/frameleaf/settings/kit/Meter.svelte';
+  import PageHeading from '$lib/components/frameleaf/settings/kit/PageHeading.svelte';
+  import type { KitTone } from '$lib/components/frameleaf/settings/kit/Pill.svelte';
+  import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
+  import Said from '$lib/components/frameleaf/settings/kit/Said.svelte';
+  import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
+  import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
+  import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import {
-    LIBRARY_QUERY_MAX_LENGTH,
     LIBRARY_SCAN_POLL_MS,
-    filterLibraryRows,
     isScanActive,
     isScanMoving,
     libraryKey,
     scanNeedsAttention,
     scanStatusKey,
     scannableLibraries,
-    sortLibraryRows,
-    type LibraryFilter,
     type LibraryRow,
-    type LibrarySort,
   } from '$lib/frameleaf/libraries';
   import { locale } from '$lib/stores/preferences.store';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
@@ -42,7 +51,18 @@
     type LibraryResponseDto,
     type UserAdminResponseDto,
   } from '@frameleaf/sdk';
-  import { getByteUnitString } from '@frameleaf/ui';
+  import { getByteUnitString, Icon } from '@frameleaf/ui';
+  import {
+    mdiChevronRight,
+    mdiFolderAlertOutline,
+    mdiFolderCheckOutline,
+    mdiFolderOutline,
+    mdiFolderPlusOutline,
+    mdiFolderSyncOutline,
+    mdiPlus,
+    mdiSync,
+  } from '@mdi/js';
+  import { DateTime } from 'luxon';
   import { t } from 'svelte-i18n';
 
   type Props = {
@@ -54,7 +74,7 @@
     selectedKey: string | null;
     /** Open the edit dialog for the selected library on arrival (the edit address). */
     editOnOpen?: boolean;
-    /** Open the add dialog on arrival (the add address). */
+    /** The add address (`new=1`): Add a folder of photos, a page of its own. */
     createOnOpen?: boolean;
     snapshotAt: Date;
     onSelect: (key: string | null) => void;
@@ -75,24 +95,20 @@
     refresh,
   }: Props = $props();
 
-  let query = $state('');
-  // Bound to <select>, so these stay plain strings and are narrowed where the rules are applied.
-  let filter = $state('active');
-  let sort = $state('name');
   let notice = $state('');
   let error = $state('');
   let busy = $state(false);
-  let modal = $state<{ type: 'create' } | { type: 'edit'; id: string } | { type: 'remove'; id: string } | null>(
-    createOnOpen ? { type: 'create' } : null,
-  );
+  let modal = $state<{ type: 'edit'; id: string } | { type: 'remove'; id: string } | null>(null);
 
   let editOnOpenHandled = false;
 
-  const visible = $derived(
-    sortLibraryRows(filterLibraryRows(rows, { query, filter: filter as LibraryFilter }), sort as LibrarySort),
-  );
+  const byName = (a: LibraryRow, b: LibraryRow) =>
+    Number(a.lifecycle !== 'active') - Number(b.lifecycle !== 'active') || a.name.localeCompare(b.name, $locale);
+  const folders = $derived(rows.filter((row) => row.kind === 'external').sort(byName));
+  const uploads = $derived(rows.filter((row) => row.kind === 'upload').sort(byName));
+  const liveFolders = $derived(folders.filter((row) => row.lifecycle === 'active'));
   const selected = $derived(rows.find((row) => row.key === selectedKey) ?? null);
-  const scannable = $derived(scannableLibraries(visible));
+  const scannable = $derived(scannableLibraries(rows));
   const moving = $derived(rows.some((row) => isScanMoving(row.scan)));
   const editing = $derived(libraries.find((library) => modal?.type === 'edit' && library.id === modal.id));
 
@@ -164,182 +180,412 @@
       $t('frameleaf_libraries_error_cancel'),
     );
 
-  const statusLabel = (row: LibraryRow) => {
-    if (row.lifecycle !== 'active') {
-      return $t('frameleaf_libraries_status_removing');
+  const bytes = (value: number) => getByteUnitString(value, $locale, 1);
+  const ago = (iso: string) => DateTime.fromISO(iso, { locale: $locale }).toRelative() ?? '';
+  /** A folder the way the prototype names it, by its last two folders: "Family NAS › Family photos". */
+  const pathWords = (path: string) => path.split('/').filter(Boolean).slice(-2).join(' › ') || path;
+  const ownerOf = (row: LibraryRow) => owners.find((user) => user.id === row.ownerId);
+
+  // ---- The answer at the top ----
+  /** Folders checks run every night unless the administrator turned that off (Folder checks). */
+  const settingsDraft = getSystemConfigDraft();
+  const nightly = $derived(settingsDraft?.baseline.library.scan.enabled ?? true);
+  const checkingRow = $derived(liveFolders.find((row) => isScanActive(row.scan)));
+  const skipped = $derived(liveFolders.find((row) => !!row.scan && scanNeedsAttention(row.scan)));
+  const lastChecked = $derived(
+    liveFolders
+      .map((row) => row.scan?.finishedAt)
+      .filter((at): at is string => !!at)
+      .sort()
+      .at(-1),
+  );
+  const found = $derived.by(() => {
+    const sum = { added: 0, removed: 0 };
+    for (const row of liveFolders) {
+      sum.added += row.scan?.added ?? 0;
+      sum.removed += row.scan?.offlined ?? 0;
     }
-    return row.scan
-      ? $t(`frameleaf_libraries_status_${scanStatusKey(row.scan)}`)
-      : $t('frameleaf_libraries_status_active');
+    return sum;
+  });
+  const next = $derived(nightly ? $t('frameleaf_checks_next_tonight') : $t('frameleaf_checks_next_none'));
+  const hero = $derived.by((): { tone: 'good' | 'warn' | 'quiet'; icon: string; title: string; body: string } => {
+    if (liveFolders.length === 0) {
+      return {
+        tone: 'good',
+        icon: mdiFolderPlusOutline,
+        title: $t('frameleaf_libraries_hero_new_title'),
+        body: $t('frameleaf_libraries_hero_new_body'),
+      };
+    }
+    if (checkingRow) {
+      return {
+        tone: 'good',
+        icon: mdiSync,
+        title: $t('frameleaf_libraries_hero_checking_title', { values: { name: checkingRow.name } }),
+        body: $t('frameleaf_libraries_hero_checking_body', { values: { owner: checkingRow.ownerName } }),
+      };
+    }
+    if (!lastChecked) {
+      return {
+        tone: 'quiet',
+        icon: mdiFolderSyncOutline,
+        title: $t('frameleaf_libraries_hero_unchecked_title', { values: { count: liveFolders.length } }),
+        body: next,
+      };
+    }
+    if (skipped) {
+      return {
+        tone: 'warn',
+        icon: mdiFolderAlertOutline,
+        title: $t('frameleaf_checks_skipped_title', { values: { name: skipped.name } }),
+        body: `${$t('frameleaf_libraries_hero_skipped_body')} ${next}`,
+      };
+    }
+    return {
+      tone: 'good',
+      icon: mdiFolderCheckOutline,
+      title: $t('frameleaf_libraries_hero_ok_title', { values: { count: liveFolders.length } }),
+      body: `${
+        lastChecked
+          ? $t('frameleaf_checks_last', {
+              values: { ago: ago(lastChecked), count: liveFolders.length, added: found.added, removed: found.removed },
+            })
+          : $t('frameleaf_checks_never')
+      } ${next}`,
+    };
+  });
+
+  // ---- One row ----
+  const folderState = (row: LibraryRow): { tone: KitTone; status: string; note?: string } => {
+    if (row.lifecycle !== 'active') {
+      return { tone: 'off', status: $t('frameleaf_libraries_status_removing') };
+    }
+    if (row.scan && isScanActive(row.scan)) {
+      return {
+        tone: 'good',
+        status: $t(`frameleaf_libraries_status_${scanStatusKey(row.scan)}`),
+        note: $t('frameleaf_libraries_checking_note', { values: { progress: Math.round(row.scan.progress) } }),
+      };
+    }
+    if (row.scan && scanNeedsAttention(row.scan)) {
+      return {
+        tone: 'warn',
+        status: $t('frameleaf_checks_recent_status_skipped'),
+        note: row.scan.finishedAt
+          ? $t('frameleaf_libraries_checked', { values: { ago: ago(row.scan.finishedAt) } })
+          : undefined,
+      };
+    }
+    const at = row.scan?.finishedAt ?? row.refreshedAt;
+    return at
+      ? {
+          tone: 'good',
+          status: $t('frameleaf_libraries_state_up_to_date'),
+          note: $t('frameleaf_libraries_checked', { values: { ago: ago(at) } }),
+        }
+      : { tone: 'off', status: $t('frameleaf_libraries_not_checked') };
+  };
+  const roleOf = (row: LibraryRow) => {
+    const user = ownerOf(row);
+    if (!user) {
+      return $t('frameleaf_libraries_owner_removed');
+    }
+    return user.isAdmin ? $t('frameleaf_users_role_admin') : $t('frameleaf_userpage_role_member');
   };
 
-  const statusWarning = (row: LibraryRow) => row.lifecycle !== 'active' || (!!row.scan && scanNeedsAttention(row.scan));
+  /** Opens one library in place of the lists, from its top. */
+  let pageElement: HTMLElement | undefined = $state();
+  $effect(() => {
+    if ((selected || createOnOpen) && pageElement) {
+      pageElement.scrollIntoView?.({ block: 'start' });
+    }
+  });
+  const openAdd = () => void goto(commandCenterUrl('libraries', undefined, { new: '1' }));
 </script>
 
-{#if modal?.type === 'create'}
+{#snippet amount(row: LibraryRow)}
+  <Meter
+    label={row.name}
+    value={$t('frameleaf_libraries_items', { values: { count: row.stats?.items ?? 0 } })}
+    max="· {bytes(row.stats?.logical ?? 0)}"
+  />
+{/snippet}
+
+{#snippet addFolder(primary: boolean)}
+  <Button variant={primary ? 'primary' : 'default'} onclick={openAdd}>
+    <Icon icon={mdiPlus} size="1.125rem" aria-hidden />
+    {$t('frameleaf_libraries_add')}
+  </Button>
+{/snippet}
+
+{#snippet heroActions()}
+  {#if liveFolders.length === 0}
+    {@render addFolder(true)}
+  {:else if checkingRow}
+    <Button disabled={busy} onclick={() => checkingRow && void cancelScan(checkingRow)}
+      >{$t('frameleaf_libraries_stop')}</Button
+    >
+  {:else if skipped}
+    <Button variant="primary" disabled={busy} onclick={() => skipped && void scanOne(skipped)}>
+      {$t('frameleaf_libraries_try_again')}
+    </Button>
+    {@render addFolder(false)}
+  {:else}
+    {@render addFolder(true)}
+    <Button disabled={scannable.length === 0 || busy} onclick={scanAll}>{$t('frameleaf_checks_now')}</Button>
+  {/if}
+{/snippet}
+
+{#if createOnOpen}
   <!-- FL-539: Add a folder of photos is a page of its own (prototype folders.jsx FolderForm) -->
-  <section class="fl-libraries" aria-label={$t('frameleaf_addfolder_title')}>
-    <header class="resource-heading">
-      <div>
-        <SettingsOverline>{$t('frameleaf_libraries_title')}</SettingsOverline>
-        <h1>{$t('frameleaf_addfolder_title')}</h1>
-        <p>{$t('frameleaf_addfolder_subtitle')}</p>
-      </div>
-    </header>
+  <section class="fl-libraries" aria-label={$t('frameleaf_addfolder_title')} bind:this={pageElement}>
+    <PageHeading
+      overline={$t('frameleaf_libraries_title')}
+      title={$t('frameleaf_addfolder_title')}
+      description={$t('frameleaf_addfolder_subtitle')}
+      back={{ href: commandCenterUrl('libraries'), label: $t('frameleaf_libraries_title') }}
+    />
     <AddFolderPage
       {owners}
       ownerId={selected?.ownerId}
       onAdded={(library, scanning) => {
-        modal = null;
         notice = scanning ? $t('frameleaf_addfolder_added_checking') : $t('frameleaf_libraries_notice_created');
         onSelect(libraryKey(library.id));
         void refresh();
       }}
-      onCancel={() => (modal = null)}
+      onCancel={() => onSelect(null)}
       onOpenChecks={() => void goto(commandCenterUrl('libraries', 'checking'))}
     />
   </section>
+{:else if selected}
+  <!-- Manage › / Details ›: the library as a page of its own, as the prototype opens a folder. -->
+  <div class="fl-libraries" bind:this={pageElement}>
+    <PageHeading
+      overline={$t('frameleaf_libraries_title')}
+      title={selected.name}
+      description={selected.kind === 'external'
+        ? $t('frameleaf_library_page_description_folder', { values: { name: selected.ownerName } })
+        : $t('frameleaf_library_page_description_uploads', { values: { name: selected.ownerName } })}
+      back={{ href: commandCenterUrl('libraries'), label: $t('frameleaf_libraries_title') }}
+    >
+      {#snippet actions()}
+        <Button onclick={onAnalytics}>{$t('frameleaf_libraries_view_analytics')}</Button>
+      {/snippet}
+    </PageHeading>
+    <div class="notes">
+      {#if error && !modal}
+        <p class="error" role="alert">{error}</p>
+      {/if}
+      <Said message={notice} onDismiss={() => (notice = '')} />
+    </div>
+    {#key selected.key}
+      <LibraryPage
+        row={selected}
+        {snapshotAt}
+        {busy}
+        onEdit={() => (modal = { type: 'edit', id: selected.id })}
+        onRemove={() => (modal = { type: 'remove', id: selected.id })}
+        onScan={() => scanOne(selected)}
+        onScanEveryFile={() =>
+          run(
+            () => scanLibraryEveryFile({ id: selected.id }),
+            $t('frameleaf_libraries_notice_every_file'),
+            $t('frameleaf_libraries_error_scan'),
+          )}
+        onCancelScan={() => cancelScan(selected)}
+      />
+    {/key}
+  </div>
 {:else}
   <section class="fl-libraries" aria-label={$t('frameleaf_libraries_title')}>
-    <header class="resource-heading">
-      <div>
-        <SettingsOverline>{$t('frameleaf_libraries_eyebrow')}</SettingsOverline>
-        <h1>{$t('frameleaf_libraries_title')}</h1>
-        <p>{$t('frameleaf_libraries_subtitle')}</p>
-      </div>
-      <div class="resource-actions">
-        <button type="button" class="resource-button" disabled={scannable.length === 0 || busy} onclick={scanAll}>
-          {$t('frameleaf_libraries_scan_all', { values: { count: scannable.length } })}
-        </button>
-        <button type="button" class="resource-button primary" onclick={() => (modal = { type: 'create' })}
-          >{$t('frameleaf_libraries_add')}</button
-        >
-      </div>
-    </header>
-
-    <div class="resource-toolbar">
-      <input
-        type="search"
-        aria-label={$t('frameleaf_libraries_search_label')}
-        placeholder={$t('frameleaf_libraries_search_placeholder')}
-        maxlength={LIBRARY_QUERY_MAX_LENGTH}
-        bind:value={query}
-      />
-      <select aria-label={$t('frameleaf_libraries_filter_label')} bind:value={filter}>
-        <option value="active">{$t('frameleaf_libraries_filter_active')}</option>
-        <option value="all">{$t('frameleaf_libraries_filter_all')}</option>
-        <option value="deleted">{$t('frameleaf_libraries_filter_deleted')}</option>
-        <option value="upload">{$t('frameleaf_libraries_filter_upload')}</option>
-        <option value="external">{$t('frameleaf_libraries_filter_external')}</option>
-      </select>
-      <select aria-label={$t('frameleaf_libraries_sort_label')} bind:value={sort}>
-        <option value="name">{$t('frameleaf_libraries_sort_name')}</option>
-        <option value="storage">{$t('frameleaf_libraries_sort_storage')}</option>
-        <option value="created">{$t('frameleaf_libraries_sort_created')}</option>
-      </select>
-      <span>{$t('frameleaf_libraries_count', { values: { count: visible.length } })}</span>
-    </div>
-
-    {#if !modal && error}
-      <p class="resource-error" role="alert">{error}</p>
-    {/if}
-    <p class="resource-live" role="status">{notice}</p>
-
-    <!-- the template makes the scrolling table reachable by keyboard -->
-    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-    <div class="resource-table-scroll" role="region" aria-label={$t('frameleaf_libraries_table_label')} tabindex="0">
-      <table class="resource-table">
-        <thead>
-          <tr>
-            <th scope="col">{$t('frameleaf_libraries_column_library')}</th>
-            <th scope="col">{$t('frameleaf_libraries_column_owner')}</th>
-            <th scope="col">{$t('frameleaf_libraries_column_items')}</th>
-            <th scope="col">{$t('frameleaf_libraries_column_logical')}</th>
-            <th scope="col">{$t('frameleaf_libraries_column_status')}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each visible as row (row.key)}
-            <tr data-selected={selectedKey === row.key}>
-              <th scope="row">
-                <button type="button" class="resource-row-name" onclick={() => onSelect(row.key)}>
-                  <span>
-                    <strong>{row.name}</strong>
-                    <small>
-                      {row.kind === 'upload'
-                        ? $t('frameleaf_libraries_row_uploads')
-                        : $t('frameleaf_libraries_row_folders', { values: { count: row.importPaths.length } })}
-                    </small>
-                  </span>
-                </button>
-              </th>
-              <td>{row.ownerName}</td>
-              <td>
-                {(row.stats?.items ?? 0).toLocaleString($locale)}
-                <small>{$t('frameleaf_libraries_row_videos', { values: { count: row.stats?.videos ?? 0 } })}</small>
-              </td>
-              <td>{getByteUnitString(row.stats?.logical ?? 0, $locale, 1)}</td>
-              <td>
-                <span class="resource-status" class:warning={statusWarning(row)}>{statusLabel(row)}</span>
-                {#if row.scan && isScanActive(row.scan)}
-                  <progress
-                    value={row.scan.progress}
-                    max={100}
-                    aria-label={$t('frameleaf_libraries_scan_progress_label', { values: { name: row.name } })}
-                  ></progress>
-                {/if}
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-      {#if visible.length === 0}
-        <p class="resource-empty">{$t('frameleaf_libraries_empty')}</p>
+    <PageHeading
+      overline={$t('frameleaf_libraries_eyebrow')}
+      title={$t('frameleaf_libraries_title')}
+      description={$t('frameleaf_libraries_subtitle')}
+    />
+    <KitPage>
+      <Said message={notice} onDismiss={() => (notice = '')} />
+      {#if error && !modal}
+        <p class="error" role="alert">{error}</p>
       {/if}
-    </div>
+      <Hero
+        label={$t('frameleaf_libraries_hero_label')}
+        tone={hero.tone}
+        icon={hero.icon}
+        title={hero.title}
+        body={hero.body}
+        actions={heroActions}
+      >
+        {#if checkingRow?.scan}
+          <div class="progress">
+            <Meter
+              label={$t('frameleaf_libraries_scan_progress_label', { values: { name: checkingRow.name } })}
+              value="{Math.round(checkingRow.scan.progress)}%"
+              fraction={checkingRow.scan.progress / 100}
+            />
+          </div>
+        {/if}
+      </Hero>
 
-    {#if selected}
-      {#key selected.key}
-        <LibraryDetail
-          row={selected}
-          {snapshotAt}
-          {busy}
-          onEdit={() => (modal = { type: 'edit', id: selected.id })}
-          onRemove={() => (modal = { type: 'remove', id: selected.id })}
-          onScan={() => scanOne(selected)}
-          onScanEveryFile={() =>
-            run(
-              () => scanLibraryEveryFile({ id: selected.id }),
-              $t('frameleaf_libraries_notice_every_file'),
-              $t('frameleaf_libraries_error_scan'),
-            )}
-          onCancelScan={() => cancelScan(selected)}
-          {onAnalytics}
-          onClose={() => onSelect(null)}
-        />
-      {/key}
-    {/if}
+      {#if folders.length > 0}
+        <Section
+          title={$t('frameleaf_libraries_folders_title')}
+          description={$t('frameleaf_libraries_folders_description')}
+        >
+          <ItemList>
+            {#each folders as row (row.key)}
+              {@const state = folderState(row)}
+              <Item
+                icon={mdiFolderOutline}
+                off={row.lifecycle !== 'active'}
+                name={row.name}
+                detail={$t('frameleaf_libraries_folder_detail', {
+                  values: { path: row.importPaths.map((path) => pathWords(path)).join(', '), owner: row.ownerName },
+                })}
+                tone={state.tone}
+                status={state.status}
+                note={state.note}
+              >
+                {#snippet measure()}{@render amount(row)}{/snippet}
+                {#snippet action()}
+                  <Button
+                    label={$t('frameleaf_libraries_manage_name', { values: { name: row.name } })}
+                    onclick={() => onSelect(row.key)}
+                    >{$t('frameleaf_libraries_manage')}<Icon icon={mdiChevronRight} size="1em" aria-hidden /></Button
+                  >
+                {/snippet}
+              </Item>
+            {/each}
+          </ItemList>
+        </Section>
+      {/if}
 
-    {#if modal?.type === 'edit' && editing}
-      <LibraryFormDialog
-        library={editing}
-        {owners}
-        onSaved={() => {
-          notice = $t('frameleaf_libraries_notice_updated');
-          void refresh();
-        }}
-        onClose={() => (modal = null)}
-      />
-    {:else if modal?.type === 'remove'}
-      <LibraryRemoveDialog
-        libraryId={modal.id}
-        onRemoved={() => {
-          notice = $t('frameleaf_libraries_notice_removed');
-          onSelect(null);
-          void refresh();
-        }}
-        onClose={() => (modal = null)}
-      />
-    {/if}
+      <Section
+        title={$t('frameleaf_libraries_kind_upload')}
+        description={$t('frameleaf_libraries_uploads_description')}
+      >
+        <ItemList>
+          {#each uploads as row (row.key)}
+            {@const user = ownerOf(row)}
+            <Item
+              off={row.lifecycle !== 'active'}
+              name={row.name}
+              detail={roleOf(row)}
+              tone={row.lifecycle === 'active' ? 'good' : 'off'}
+              status={row.lifecycle === 'active'
+                ? $t('frameleaf_libraries_state_ready')
+                : $t('frameleaf_libraries_status_removing')}
+              note={row.stats?.lastAddedAt
+                ? $t('frameleaf_libraries_last_added', { values: { when: ago(row.stats.lastAddedAt) } })
+                : undefined}
+            >
+              {#snippet measure()}{@render amount(row)}{/snippet}
+              {#snippet media()}
+                {#if user}
+                  <span class="avatar"><UserAvatar {user} noTitle /></span>
+                {:else}
+                  <span class="owner-gone" aria-hidden="true"><Icon icon={mdiFolderOutline} size="22" /></span>
+                {/if}
+              {/snippet}
+              {#snippet action()}
+                <Button
+                  label={$t('frameleaf_libraries_details_name', { values: { name: row.name } })}
+                  onclick={() => onSelect(row.key)}
+                  >{$t('frameleaf_libraries_details')}<Icon icon={mdiChevronRight} size="1em" aria-hidden /></Button
+                >
+              {/snippet}
+            </Item>
+          {/each}
+        </ItemList>
+        {#if uploads.length === 0}
+          <p class="hint">{$t('frameleaf_libraries_uploads_empty')}</p>
+        {/if}
+      </Section>
+
+      <Section title={$t('frameleaf_checks_keeping')}>
+        {#if liveFolders.length === 0}
+          <p class="hint">{$t('frameleaf_libraries_keeping_none')}</p>
+        {:else}
+          <Row
+            label={nightly ? $t('frameleaf_libraries_keeping_nightly') : $t('frameleaf_libraries_keeping_manual')}
+            help={nightly ? $t('frameleaf_libraries_keeping_nightly_help') : $t('frameleaf_checks_nightly_off')}
+          >
+            <Button onclick={() => void goto(commandCenterUrl('libraries', 'checking'))}>
+              {$t('frameleaf_checks_label')}<Icon icon={mdiChevronRight} size="1em" aria-hidden />
+            </Button>
+          </Row>
+        {/if}
+      </Section>
+    </KitPage>
   </section>
 {/if}
+
+{#if modal?.type === 'edit' && editing}
+  <LibraryFormDialog
+    library={editing}
+    {owners}
+    onSaved={() => {
+      notice = $t('frameleaf_libraries_notice_updated');
+      void refresh();
+    }}
+    onClose={() => (modal = null)}
+  />
+{:else if modal?.type === 'remove'}
+  <LibraryRemoveDialog
+    libraryId={modal.id}
+    onRemoved={() => {
+      notice = $t('frameleaf_libraries_notice_removed');
+      onSelect(null);
+      void refresh();
+    }}
+    onClose={() => (modal = null)}
+  />
+{/if}
+
+<style>
+  /* Opened from further down the list, a page is shown from its top with the page's own air above it. */
+  .fl-libraries {
+    display: block;
+    scroll-margin-top: var(--fl-space-8);
+  }
+  .avatar {
+    display: block;
+    width: 44px;
+    height: 44px;
+    overflow: hidden;
+    border-radius: 50%;
+  }
+  /* An account being removed has no face to show: the quiet folder tile in its place (kit Item). */
+  .owner-gone {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    color: var(--fl-muted);
+    background: var(--fl-raised);
+    border-radius: var(--fl-radius-card);
+  }
+  .progress {
+    padding: var(--fl-space-4) var(--fl-space-6);
+    border-top: 1px solid var(--fl-border);
+  }
+  .hint {
+    margin: 0;
+    padding: 0 0 var(--fl-space-5);
+    color: var(--fl-muted);
+    font-size: var(--fl-font-callout);
+    line-height: 1.5;
+  }
+  /* What just happened sits above the page's first card, 24px from it as the cards are apart. */
+  .notes:has(:global(.kit-said)),
+  .notes:has(.error) {
+    display: grid;
+    gap: var(--fl-space-3);
+    margin-bottom: var(--fl-space-6);
+  }
+  .error {
+    margin: 0;
+    color: var(--fl-danger);
+    font-size: var(--fl-font-callout);
+  }
+</style>

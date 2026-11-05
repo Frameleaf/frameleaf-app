@@ -394,11 +394,15 @@
             <!-- Link first, then a Server licence; setup stays visible until every gate is satisfied. -->
             {#if !linked || !serverLicensed}
               <p class="explain">{$t('frameleaf_gate_buddy')}. {$t('frameleaf_why_buddy')}</p>
+              <!-- One row, one primary: the step that unlocks setup leads, setup waits beside it. -->
               <div class="fc-actions">
                 <Button
                   variant="primary"
                   onclick={() => getCloudManager.open('buddy', { onDone: () => void beginSetup() })}
                   >{$t('frameleaf_get_cloud')}</Button
+                >
+                <Button disabled={busy || !status.enabled || !serverLicensed} onclick={beginSetup}
+                  >{$t('frameleaf_buddy_set_up_buddy_backup')}</Button
                 >
               </div>
             {:else}
@@ -408,10 +412,10 @@
                 )}
               </p>
               <p class="explain">{$t('frameleaf_buddy_direct_or_relay')}</p>
+              <Button variant="primary" disabled={busy || !status.enabled || !serverLicensed} onclick={beginSetup}
+                >{$t('frameleaf_buddy_set_up_buddy_backup')}</Button
+              >
             {/if}
-            <Button variant="primary" disabled={busy || !status.enabled || !serverLicensed} onclick={beginSetup}
-              >{$t('frameleaf_buddy_set_up_buddy_backup')}</Button
-            >
           {:else}
             <dl class="facts">
               <div>

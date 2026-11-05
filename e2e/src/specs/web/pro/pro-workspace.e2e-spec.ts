@@ -51,7 +51,7 @@ test.describe('Free Pro workspace', () => {
     const card = page.getByRole('button', { name: `Open saved link ${title}`, exact: true });
     await card.focus();
     await card.press('Enter');
-    await expect(page.getByRole('textbox', { name: 'Notes', exact: true })).toHaveValue(note);
+    await expect(page.getByRole('textbox', { name: 'Note', exact: true })).toHaveValue(note);
     await page.getByRole('button', { name: 'Close', exact: true }).click();
     await expect(card).toBeFocused();
     await page.getByTestId('search-entry').click();
@@ -155,7 +155,7 @@ test.describe('Free Pro workspace', () => {
     await expect(page.locator('.summary')).toContainText('1 item');
     await page.getByRole('button', { name: `Open saved link ${title}`, exact: true }).click();
     await expect(page.getByRole('link', { name: 'Open website' })).toBeVisible();
-    await expect(page.getByRole('textbox', { name: 'Notes', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('textbox', { name: 'Note', exact: true })).toHaveCount(0);
     await expect(page.getByText(secret, { exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: 'Close', exact: true }).click();
     await page.getByTestId('search-entry').click();

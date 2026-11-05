@@ -113,11 +113,11 @@ describe('Notifications › What needs your attention (FL-421)', () => {
     expect(within(list).getByText('Buddy Backup hasn’t finished a backup in 3 days.')).toBeInTheDocument();
     expect(within(list).getByText(/^Last finished today/)).toBeInTheDocument();
     expect(within(list).getByText('12 things failed in background work')).toBeInTheDocument();
-    expect(within(list).getByRole('link', { name: en.frameleaf_attention_open_backup })).toHaveAttribute(
+    expect(within(list).getByRole('link', { name: `Open ${en.frameleaf_attention_open_backup}` })).toHaveAttribute(
       'href',
       '/user-settings?area=backups&section=buddy',
     );
-    expect(within(list).getByRole('link', { name: en.frameleaf_attention_open_work })).toHaveAttribute(
+    expect(within(list).getByRole('link', { name: `Open ${en.frameleaf_attention_open_work}` })).toHaveAttribute(
       'href',
       '/user-settings?area=processing&section=queues',
     );

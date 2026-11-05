@@ -91,7 +91,7 @@ it('opens designer assets and notes for an ordinary account without a Pro entitl
   renderWithTooltips(LibraryItemsView, { title: 'Pro', query, onQueryChange: vi.fn() });
   const card = await screen.findByRole('button', { name: 'Open saved link Packaging reference' });
   await fireEvent.click(card);
-  expect(await screen.findByRole('textbox', { name: 'Notes' })).toHaveValue('Owner note');
+  expect(await screen.findByRole('textbox', { name: 'Note' })).toHaveValue('Owner note');
   expect(sdkMock.searchLibraryItems).toHaveBeenCalledWith(
     expect.objectContaining({
       libraryItemSearchDto: expect.objectContaining({
@@ -105,7 +105,7 @@ it('opens designer assets and notes for an ordinary account without a Pro entitl
 it('opens the saved link a deep link names, even before the grid reaches it', async () => {
   sdkMock.searchLibraryItems.mockResolvedValue({ count: 0, countCapped: false, items: [], nextCursor: null });
   renderWithTooltips(LibraryItemsView, { title: 'Boards', query, onQueryChange: vi.fn(), bookmark: 'book' });
-  expect(await screen.findByRole('textbox', { name: 'Notes' })).toHaveValue('Owner note');
+  expect(await screen.findByRole('textbox', { name: 'Note' })).toHaveValue('Owner note');
   expect(sdkMock.getBookmark).toHaveBeenCalledWith({ id: 'book' }, expect.anything());
 });
 
@@ -241,7 +241,7 @@ it('rates and trashes a selected link from the Boards selection bar', async () =
 });
 
 it('opens the Download dialog from the Boards selection bar and adds the library file with the links', async () => {
-  // the factory picks a random type; the checkbox label below names an image
+  // the factory picks a random type; keep it an image
   const file = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image });
   sdkMock.searchLibraryItems.mockResolvedValue({
     count: 2,
@@ -256,7 +256,8 @@ it('opens the Download dialog from the Boards selection bar and adds the library
   sdkMock.downloadArchive.mockResolvedValue(new Blob(['zip']));
   renderWithTooltips(LibraryItemsView, { title: 'Boards', query, onQueryChange: vi.fn() });
   await fireEvent.click(await screen.findByRole('checkbox', { name: 'Select Packaging reference' }));
-  await fireEvent.click(await screen.findByRole('checkbox', { name: /^Select Image taken on/ }));
+  // Boards' tile check names the file (prototype `Tile`: "Select <name>").
+  await fireEvent.click(await screen.findByRole('checkbox', { name: `Select ${file.originalFileName}` }));
   const bar = await screen.findByRole('toolbar', { name: '2 items selected' });
   await fireEvent.click(within(bar).getByRole('button', { name: 'Download' }));
 

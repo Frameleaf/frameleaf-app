@@ -35,11 +35,11 @@
    *    and downloads the finished archive. The run is the same one the Activity page (FL-104)
    *    lists, which is why the state lives on the server and not in this component.
    *
-   * FL-33 cleanup: the below-the-fold gallery and the selection bar are now the Frameleaf ones.
-   * `ResultsView` draws the memory's assets in the Frameleaf grid and mounts FL-32's selection
-   * bar over the same library session, so the bulk actions here are the ones offered everywhere
-   * instead of a hand-assembled list; hiding an asset from a memory stays the memory manager's own
-   * call, which is what the delete and archive entries reported into before.
+   * Layout (2026-11-05 rebuild to the prototype): one full-window player, the progress segments
+   * across the top, the title and tools under them, the item edge to edge, and the transport bar
+   * (previous/next memory and item, play/pause) with the item actions at the bottom. The earlier
+   * centred card with neighbouring memories and a below-the-fold grid is gone; "Show all items"
+   * is the way to see and jump between the memory's items.
    */
   import { goto } from '$app/navigation';
   import { gotoWithFocusAndScroll } from '$lib/utils/navigation';
@@ -67,20 +67,20 @@
     memoryStoryKind,
     moveMemoryItem,
   } from '$lib/frameleaf/memory-stories';
-  import { motionScrollBehavior, prefersReducedMotion } from '$lib/frameleaf/motion';
+  import { prefersReducedMotion } from '$lib/frameleaf/motion';
   import ResultsAssetViewer from '$lib/components/frameleaf/ResultsAssetViewer.svelte';
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
   import { namedArchiveName } from '$lib/frameleaf/archive-name';
+  import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import type { MakeMovieSource } from '$lib/frameleaf/studio/make-movie';
   import { videoSeek } from '$lib/frameleaf/video-seek.svelte';
-  import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { memoryManager } from '$lib/managers/memory-manager.svelte';
-  import type { TimelineAsset, Viewport } from '$lib/managers/timeline-manager/types';
+  import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
   import { Route } from '$lib/route';
   import { locale } from '$lib/stores/preferences.store';
   import { downloadBlob, getAssetMediaUrl, handlePromiseError, memoryHeadline } from '$lib/utils';
@@ -102,21 +102,19 @@
     type MemoryExportResponseDto,
     type PersonResponseDto,
   } from '@frameleaf/sdk';
-  import { Icon, themeManager, Theme as AppTheme } from '@frameleaf/ui';
+  import { Icon } from '@frameleaf/ui';
   import {
-    mdiChevronDown,
     mdiChevronLeft,
     mdiChevronRight,
     mdiCheck,
-    mdiChevronUp,
+    mdiCheckboxMultipleMarkedOutline,
     mdiClose,
+    mdiDotsHorizontal,
     mdiDownload,
     mdiExportVariant,
     mdiHeart,
     mdiHeartOutline,
     mdiImageAlbum,
-    mdiImageMinusOutline,
-    mdiImageSearch,
     mdiMenuLeft,
     mdiMenuRight,
     mdiMovieEditOutline,
@@ -127,10 +125,13 @@
     mdiPencilOutline,
     mdiPlay,
     mdiRepeat,
+    mdiPlaylistRemove,
     mdiSkipNext,
+    mdiSkipPrevious,
     mdiShareVariantOutline,
     mdiSortVariant,
     mdiStopCircleOutline,
+    mdiTimelineClockOutline,
     mdiViewGridOutline,
   } from '@mdi/js';
   import { DateTime } from 'luxon';
@@ -147,10 +148,6 @@
   /** how often the player asks the server for the export run's current state */
   const EXPORT_POLL_MS = 1500;
 
-  let memoryGallery: HTMLElement | undefined = $state();
-  let memoryWrapper: HTMLElement | undefined = $state();
-  let galleryInView = $state(false);
-  let galleryFirstLoad = $state(true);
   let playerInitialized = $state(false);
   let paused = $state(false);
   let shareOpen = $state(false);
@@ -189,13 +186,6 @@
   const currentAssetId = $derived(current?.asset.id);
   // where the asset sits in its memory, for the progress bar and counter
   const assetIndex = $derived(current ? current.memory.assets.findIndex(({ id }) => id === currentAssetId) : -1);
-  /** FL-45: the memory's own title, so its gallery download is not just another generic zip. Dated,
-   * since a person is likely to open the same memory again on a later day. */
-  const memoryDownloadFileName = $derived(
-    current
-      ? namedArchiveName(headline?.title ?? '', $t('frameleaf_archive_name_memory'), { withDate: true })
-      : undefined,
-  );
   // The Memories engine: the same move, crossfade and Reduce Motion rule as the viewer's Memories slideshow.
   const reducedMotion = $derived(prefersReducedMotion());
   const photoMs = $derived(memoryPhotoMs(authManager.preferences.memories.duration));
@@ -243,15 +233,16 @@
     currentAssetId ? await getAssetInfo({ ...authManager.params, id: currentAssetId }) : undefined,
   );
   let currentTimelineAssets = $derived(current?.memory.assets ?? []);
-  /** The memory's assets as the Frameleaf grid reads them. */
-  let galleryAssets = $derived(currentTimelineAssets.map((asset) => toTimelineAsset(asset)));
-
-  let viewerHeight = $state(0);
-
-  const viewport: Viewport = $state({ width: 0, height: 0 });
+  /** The memory's items as the Library grid reads them, for "Select" in the gallery. */
+  const galleryAssets = $derived(currentTimelineAssets.map((asset) => toTimelineAsset(asset)));
+  /** FL-45: a selection download is named after the memory, dated, as a memory is often reopened. */
+  const memoryDownloadFileName = $derived(
+    current
+      ? namedArchiveName(headline?.title ?? '', $t('frameleaf_archive_name_memory'), { withDate: true })
+      : undefined,
+  );
   let progressBarController: Tween<number> | undefined = $state(undefined);
   let videoPlayer: HTMLVideoElement | undefined = $state();
-  const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
 
   // The city and the people are on the full asset only; the lower third shows the memory's title
   // until it arrives. People are the owner's named, visible ones (MemoryPlayer.jsx:449-458).
@@ -327,13 +318,16 @@
   };
 
   const handleEscape = async () => {
+    if (librarySession.selection.length > 0) {
+      librarySession.clearSelection();
+      return;
+    }
     if (galleryOpen) {
       closeGallery();
       return;
     }
     await goto(memoryManager.memoriesHref);
   };
-  const handleSelectAll = () => librarySession.selectAll((current?.memory.assets ?? []).map((asset) => asset.id));
 
   const handleAction = async (callingContext: string, action: 'reset' | 'pause' | 'play') => {
     // on the end card, play starts the memory again (MemoryPlayer.jsx:193-200)
@@ -405,7 +399,11 @@
   };
 
   const toProgressPercentage = (index: number) => {
-    if (!progressBarController || assetIndex === -1) {
+    // MemoryPlayer.jsx:256-262: nothing is filled on the title card, everything on the end card.
+    if (endCardFor) {
+      return 100;
+    }
+    if (!progressBarController || assetIndex === -1 || titleCardFor) {
       return 0;
     }
     if (index < assetIndex) {
@@ -418,35 +416,6 @@
   };
 
   const handleHideAssets = (ids: string[]) => handlePromiseError(memoryManager.hideAssets(ids));
-
-  const handleGalleryScrollsIntoView = () => {
-    galleryInView = true;
-    handlePromiseError(handleAction('galleryInView', 'pause'));
-  };
-
-  const handleGalleryScrollsOutOfView = () => {
-    galleryInView = false;
-    if (!galleryFirstLoad && videoPlayer?.checkVisibility()) {
-      handlePromiseError(handleAction('galleryOutOfView', 'play'));
-    }
-    galleryFirstLoad = false;
-  };
-
-  const galleryObserver: Attachment<HTMLElement> = (element) => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry?.isIntersecting) {
-          handleGalleryScrollsIntoView();
-        } else {
-          handleGalleryScrollsOutOfView();
-        }
-      },
-      { rootMargin: '0px 0px -200px 0px' },
-    );
-
-    observer.observe(element);
-    return () => observer.disconnect();
-  };
 
   const initCurrent = () => {
     if (current) {
@@ -500,7 +469,7 @@
     titleCardFor = current.memory.id;
     videoPlayer?.pause();
     handlePromiseError(progressBarController?.set(0) ?? Promise.resolve());
-    if (!paused && !galleryInView && !assetViewerManager.isViewing) {
+    if (!paused && !assetViewerManager.isViewing) {
       runTitleCardTimer();
     }
   };
@@ -512,7 +481,7 @@
       return;
     }
     titleCardFor = undefined;
-    if (!paused && !galleryInView && !assetViewerManager.isViewing) {
+    if (!paused && !assetViewerManager.isViewing) {
       resetAndPlay();
     }
   }
@@ -827,6 +796,8 @@
 
   /** FL-561: "Make a movie" opens the sheet for this memory; playback holds while it is open. */
   let movieOpen = $state(false);
+  /** Phones: Export and Highlight video wait behind "More" so the bar is one row, as the prototype's. */
+  let moreOpen = $state(false);
   let movieSource = $state<MakeMovieSource | null>(null);
   const makeMovie = () => {
     if (!current) {
@@ -849,6 +820,16 @@
    * "Show all items" (MemoryPlayer.jsx:461-503, G): the memory's items over the stage. Playback holds
    * while it is open and carries on when it closes, unless an item was chosen, which plays from there.
    */
+  /**
+   * "Select" in the gallery: the memory's items in the Library's grid with its selection bar, so
+   * everything the Library does to a selection (add to an album, favorite, archive, download, share,
+   * …) works on a memory's items too. Removing items from the memory stays the memory's own action.
+   */
+  let selecting = $state(false);
+  const stopSelecting = () => {
+    selecting = false;
+    librarySession.clearSelection();
+  };
   let galleryOpen = $state(false);
   let resumeAfterGallery = false;
   const openGallery = () => {
@@ -859,11 +840,21 @@
   const closeGallery = (resume = resumeAfterGallery) => {
     galleryOpen = false;
     reordering = false;
+    stopSelecting();
     if (resume) {
       handlePromiseError(handleAction('galleryClose', 'play'));
     }
   };
   const toggleGallery = () => (galleryOpen ? closeGallery() : openGallery());
+  const toggleSelecting = () => {
+    if (selecting) {
+      stopSelecting();
+      return;
+    }
+    reordering = false;
+    selecting = true;
+  };
+  const handleSelectAll = () => librarySession.selectAll(currentTimelineAssets.map((asset) => asset.id));
   const chooseItem = async (assetId: string) => {
     closeGallery(false);
     paused = false;
@@ -1081,15 +1072,10 @@
       ]}
 />
 
-<section
-  id="memory-viewer"
-  data-sveltekit-noscroll
-  class="frameleaf fmp"
-  data-theme={appTheme}
-  bind:this={memoryWrapper}
-  bind:clientHeight={viewport.height}
-  bind:clientWidth={viewport.width}
->
+<!-- MemoryPlayer.jsx, discovery.css (.memory-player): a full-window dark player in both themes. The
+     progress segments run across the top, the title and tools sit under them, the item fills the
+     stage edge to edge, and the transport bar with the item actions closes it at the bottom. -->
+<section id="memory-viewer" data-sveltekit-noscroll class="frameleaf fmp" data-theme="dark">
   {#if current}
     <Status message={status} />
     {#if currentMemoryAsset && !titleCardFor && !endCardFor}
@@ -1104,8 +1090,26 @@
         })}
       </p>
     {/if}
-    <!-- MemoryPlayer.jsx:249-296: the title over its subtitle and count, the progress segments, and
-         the soundtrack, gallery and close tools. -->
+
+    <!-- MemoryPlayer.jsx:249-270 (.mp-progress): one segment per item, full width. -->
+    <div class="fmp-progress" role="group" aria-label={$t('frameleaf_memories_progress')}>
+      {#each current.memory.assets as asset, index (asset.id)}
+        <a
+          class="fmp-segment"
+          class:current={index === assetIndex}
+          href={current.getAssetHref(asset.id)}
+          aria-label={$t('frameleaf_memories_go_to_item', {
+            values: { index: index + 1, total: current.memory.assets.length },
+          })}
+          aria-current={index === assetIndex ? 'true' : undefined}
+        >
+          <span class="fmp-segment-fill" style:width={`${toProgressPercentage(index)}%`}></span>
+        </a>
+      {/each}
+    </div>
+
+    <!-- MemoryPlayer.jsx:271-296 (.mp-header): the title over its subtitle and count, then the
+         soundtrack, gallery and close tools. -->
     <header class="fmp-header">
       <div class="fmp-heading">
         <strong>{headline?.title}</strong>
@@ -1115,34 +1119,7 @@
         </small>
       </div>
 
-      <div class="fmp-progress" role="group" aria-label={$t('frameleaf_memories_progress')}>
-        <IconButton
-          label={endCardFor
-            ? $t('frameleaf_memories_play_again')
-            : paused
-              ? $t('frameleaf_memories_play')
-              : $t('frameleaf_memories_pause')}
-          onclick={togglePlay}
-        >
-          <Icon icon={endCardFor ? mdiRepeat : paused ? mdiPlay : mdiPause} size="20" />
-        </IconButton>
-
-        {#each current.memory.assets as asset, index (asset.id)}
-          <a
-            class="fmp-segment"
-            href={current.getAssetHref(asset.id)}
-            aria-label={$t('frameleaf_memories_go_to_item', {
-              values: { index: index + 1, total: current.memory.assets.length },
-            })}
-            aria-current={index === assetIndex ? 'true' : undefined}
-          >
-            <span class="fmp-segment-track"></span>
-            <span class="fmp-segment-fill" style:width={`${toProgressPercentage(index)}%`}></span>
-          </a>
-        {/each}
-      </div>
-
-      <div class="fmp-header-tools">
+      <div class="fmp-tools">
         <IconButton
           label={soundtrack ? $t('frameleaf_memories_mute_soundtrack') : $t('frameleaf_memories_play_soundtrack')}
           pressed={soundtrack}
@@ -1163,432 +1140,416 @@
       </div>
     </header>
 
-    {#if galleryInView}
-      <div class="fmp-scroll-up visible">
-        <IconButton
-          label={$t('frameleaf_memories_back_to_memory')}
-          onclick={() => memoryWrapper?.scrollIntoView({ behavior: motionScrollBehavior() })}
-        >
-          <Icon icon={mdiChevronUp} size="20" />
-        </IconButton>
-      </div>
-    {/if}
+    <!-- MemoryPlayer.jsx:298-505 (.mp-stage): a click on the stage itself plays or pauses. The route
+         marks it as the Hero end of a memory card (`data-fl-shared`) while arriving or leaving. -->
+    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions (Space is the keyboard path) -->
+    <div
+      class="fmp-stage"
+      data-fl-memory-stage={current.memory.id}
+      onclick={(event) => {
+        if (event.target === event.currentTarget || (event.target as HTMLElement).closest('.fmp-media')) {
+          togglePlay();
+        }
+      }}
+    >
+      {#key current.asset.id}
+        {#if current.asset.isVideo}
+          <div class="fmp-media">
+            <MemoryVideoViewer asset={current.asset} startAtMs={videoStartMs} bind:videoPlayer />
+          </div>
+        {:else}
+          <!-- memories.css:7-15: a dimmed, blurred copy of the photo fills the frame behind it. -->
+          <div
+            class="fmp-backdrop"
+            style:background-image={`url("${getAssetMediaUrl({ id: current.asset.id, size: AssetMediaSize.Preview })}")`}
+            aria-hidden="true"
+          ></div>
+          <div class="fmp-media">
+            <MemoryPhotoViewer
+              asset={current.asset}
+              onImageLoad={onPhotoSettled}
+              motionClass={slideClass}
+              motionStyle={slideStyle}
+            />
+          </div>
+        {/if}
+      {/key}
 
-    <!-- STAGE -->
-    <section class="fmp-stage-outer" bind:clientHeight={viewerHeight}>
-      <div class="fmp-stage-row">
-        <!-- PREVIOUS MEMORY -->
-        <div class="fmp-adjacent" class:has-target={!!current.previousMemory}>
-          {#if current.previousMemory}
-            <a class="fmp-adjacent-link" href={current.previousMemory.href}>
-              <img
-                src={getAssetMediaUrl({ id: current.previousMemory.assetId, size: AssetMediaSize.Preview })}
-                alt={$t('previous_memory')}
-                draggable="false"
-              />
-              <div class="fmp-adjacent-copy">
-                <p class="fmp-adjacent-overline">{$t('previous')}</p>
-                <p class="fmp-adjacent-title">{current.previousMemory.title}</p>
-              </div>
-            </a>
+      {#if titleCard && titleCardFor === current.memory.id}
+        <!-- MemoryPlayer.jsx:338-363, memories.css:44-75 -->
+        <section class="fmp-title-card" aria-label={titleCard.title}>
+          {#if titleCover}
+            <img
+              class="fmp-title-bg"
+              src={getAssetMediaUrl({ id: titleCover.id, size: AssetMediaSize.Preview })}
+              alt=""
+              draggable="false"
+            />
           {/if}
-        </div>
-
-        <!-- CURRENT MEMORY -->
-        <div class="fmp-main">
-          <!-- The route marks this as the Hero end of a memory card (`data-fl-shared`) while arriving or leaving. -->
-          <div class="fmp-main-inner" data-fl-memory-stage={current.memory.id}>
-            {#key current.asset.id}
-              {#if current.asset.isVideo}
-                <MemoryVideoViewer asset={current.asset} startAtMs={videoStartMs} bind:videoPlayer />
-              {:else}
-                <!-- memories.css:7-15: a dimmed, blurred copy of the photo fills the frame behind it. -->
-                <div
-                  class="fmp-backdrop"
-                  style:background-image={`url("${getAssetMediaUrl({ id: current.asset.id, size: AssetMediaSize.Preview })}")`}
-                  aria-hidden="true"
-                ></div>
-                <MemoryPhotoViewer
-                  asset={current.asset}
-                  onImageLoad={onPhotoSettled}
-                  motionClass={slideClass}
-                  motionStyle={slideStyle}
-                />
-              {/if}
-            {/key}
-
-            {#if titleCard && titleCardFor === current.memory.id}
-              <!-- MemoryPlayer.jsx:338-363, memories.css:44-75 -->
-              <section class="fmp-title-card" aria-label={titleCard.title}>
-                {#if titleCover}
-                  <img
-                    class="fmp-title-bg"
-                    src={getAssetMediaUrl({ id: titleCover.id, size: AssetMediaSize.Preview })}
-                    alt=""
-                    draggable="false"
-                  />
-                {/if}
-                <div class="fmp-title-copy">
-                  <span class="fmp-overline">{$t(titleCard.overlineKey)}</span>
-                  <h2>{titleCard.title}</h2>
-                  {#if titleCard.subtitle}
-                    <p>{titleCard.subtitle}</p>
-                  {/if}
-                  <p class="fmp-title-count">
-                    {$t('frameleaf_memories_item_count', { values: { count: titleCard.count } })}
-                  </p>
-                  <button type="button" class="fmp-play-large" onclick={playFromTitleCard} {@attach focusOnShow}>
-                    <Icon icon={mdiPlay} size="22" aria-hidden="true" />
-                    {$t('frameleaf_memories_play')}
-                  </button>
-                </div>
-              </section>
+          <div class="fmp-title-copy">
+            <span class="fmp-overline">{$t(titleCard.overlineKey)}</span>
+            <h2>{titleCard.title}</h2>
+            {#if titleCard.subtitle}
+              <p>{titleCard.subtitle}</p>
             {/if}
+            <p class="fmp-title-count">
+              {$t('frameleaf_memories_item_count', { values: { count: titleCard.count } })}
+            </p>
+            <button type="button" class="fmp-play-large" onclick={playFromTitleCard} {@attach focusOnShow}>
+              <Icon icon={mdiPlay} size="22" aria-hidden="true" />
+              {$t('frameleaf_memories_play')}
+            </button>
+          </div>
+        </section>
+      {/if}
 
-            {#if titleCard && endCardFor === current.memory.id}
-              <!-- MemoryPlayer.jsx:403-446, memories.css:44-75 -->
-              <section class="fmp-title-card fmp-end-card" aria-label={titleCard.title}>
-                {#if titleCover}
-                  <img
-                    class="fmp-title-bg"
-                    src={getAssetMediaUrl({ id: titleCover.id, size: AssetMediaSize.Preview })}
-                    alt=""
-                    draggable="false"
-                  />
-                {/if}
-                <div class="fmp-title-copy">
-                  <span class="fmp-overline">
-                    {titleCard.count > 0
-                      ? $t('frameleaf_memories_end_overline')
-                      : $t('frameleaf_memories_end_overline_empty')}
-                  </span>
-                  <h2>{titleCard.title}</h2>
-                  {#if titleCard.subtitle}
-                    <p>{titleCard.subtitle}</p>
-                  {/if}
-                  <div class="fmp-end-actions">
-                    <button
-                      type="button"
-                      class="fmp-play-large"
-                      onclick={playAgain}
-                      disabled={titleCard.count === 0}
-                      {@attach focusOnShow}
-                    >
-                      <Icon icon={mdiRepeat} size="20" aria-hidden="true" />
-                      {$t('frameleaf_memories_play_again')}
-                    </button>
-                    {#if landmark}
-                      <button
-                        type="button"
-                        class="fmp-secondary"
-                        disabled={albumSaved}
-                        onclick={() => handlePromiseError(saveAsAlbum())}
-                      >
-                        <Icon icon={albumSaved ? mdiCheck : mdiImageAlbum} size="20" aria-hidden="true" />
-                        {albumSaved ? $t('frameleaf_memories_saved_to_albums') : $t('frameleaf_memories_save_as_album')}
-                      </button>
-                    {/if}
-                    {#if current.nextMemory}
-                      {@const next = current.nextMemory}
-                      <button
-                        type="button"
-                        class="fmp-secondary"
-                        onclick={() => handlePromiseError(handleNavigate(next.href))}
-                      >
-                        <Icon icon={mdiSkipNext} size="20" aria-hidden="true" />
-                        {$t('frameleaf_memories_next_memory', { values: { title: next.title } })}
-                      </button>
-                    {/if}
-                    <button type="button" class="fmp-secondary" onclick={() => void goto(memoryManager.memoriesHref)}>
-                      {$t('frameleaf_memories_back_to_memories')}
-                    </button>
-                  </div>
-                </div>
-              </section>
+      {#if titleCard && endCardFor === current.memory.id}
+        <!-- MemoryPlayer.jsx:403-446, memories.css:44-75 -->
+        <section class="fmp-title-card fmp-end-card" aria-label={titleCard.title}>
+          {#if titleCover}
+            <img
+              class="fmp-title-bg"
+              src={getAssetMediaUrl({ id: titleCover.id, size: AssetMediaSize.Preview })}
+              alt=""
+              draggable="false"
+            />
+          {/if}
+          <div class="fmp-title-copy">
+            <span class="fmp-overline">
+              {titleCard.count > 0
+                ? $t('frameleaf_memories_end_overline')
+                : $t('frameleaf_memories_end_overline_empty')}
+            </span>
+            <h2>{titleCard.title}</h2>
+            {#if titleCard.subtitle}
+              <p>{titleCard.subtitle}</p>
             {/if}
-
-            <div class="fmp-overlay" class:hidden={galleryInView}>
-              <div class="fmp-overlay-top">
-                <!-- FL-83 (MPY-3): the heart favorites the item being shown; the memory's own
-                     saved flag is set from the index card. -->
-                <IconButton
-                  label={current.asset.isFavorite
-                    ? $t('frameleaf_memories_unfavorite_item')
-                    : $t('frameleaf_memories_favorite_item')}
-                  pressed={current.asset.isFavorite}
-                  onclick={() =>
-                    void memoryManager
-                      .toggleCurrentAssetFavorite()
-                      .catch((error) => handleError(error, $t('errors.something_went_wrong')))}
+            <div class="fmp-end-actions">
+              <button
+                type="button"
+                class="fmp-play-large"
+                onclick={playAgain}
+                disabled={titleCard.count === 0}
+                {@attach focusOnShow}
+              >
+                <Icon icon={mdiRepeat} size="20" aria-hidden="true" />
+                {$t('frameleaf_memories_play_again')}
+              </button>
+              {#if landmark}
+                <button
+                  type="button"
+                  class="fmp-secondary"
+                  disabled={albumSaved}
+                  onclick={() => handlePromiseError(saveAsAlbum())}
                 >
-                  <Icon icon={current.asset.isFavorite ? mdiHeart : mdiHeartOutline} size="20" />
-                </IconButton>
-                <IconButton label={$t('frameleaf_memories_share')} onclick={openShare}>
-                  <Icon icon={mdiShareVariantOutline} size="20" />
-                </IconButton>
-                <!-- A direct action rather than a dropdown: .fmp-main-inner clips overflow to
-                     contain the Ken Burns zoom, which would also clip an open popup menu
-                     positioned near this corner. Removal is undoable from its toast (FL-83
-                     MPY-1); removing the whole memory belongs to the index (MPY-2). -->
-                <IconButton
-                  label={$t('frameleaf_memories_remove_item')}
-                  onclick={() =>
-                    void memoryManager
-                      .removeCurrentAsset()
-                      .catch((error) => handleError(error, $t('errors.something_went_wrong')))}
-                >
-                  <Icon icon={mdiImageMinusOutline} size="20" />
-                </IconButton>
-              </div>
-
-              <div class="fmp-overlay-bottom">
-                {#await currentMemoryAssetFull then asset}
-                  {#if asset}
-                    <IconButton
-                      label={$t('view_in_timeline')}
-                      href={Route.photos({ at: asset.stack?.primaryAssetId ?? asset.id })}
-                    >
-                      <Icon icon={mdiImageSearch} size="20" />
-                    </IconButton>
-                  {/if}
-                {/await}
-                <IconButton label={$t('frameleaf_memories_open_item')} onclick={() => void openItem()}>
-                  <Icon icon={mdiOpenInApp} size="20" />
-                </IconButton>
-                {#if exportActive}
-                  <span
-                    class="fmp-export"
-                    role="status"
-                    aria-live="polite"
-                    aria-label={$t('frameleaf_memories_export_progress', {
-                      values: { done: exportRun?.processedAssets ?? 0, total: exportRun?.assetCount ?? 0 },
-                    })}
-                  >
-                    <span class="fmp-export-bar" aria-hidden="true">
-                      <span class="fmp-export-fill" style:width={`${exportPercent}%`}></span>
-                    </span>
-                    <span class="fmp-export-text">
-                      {exportRun?.status === MemoryExportStatus.Cancelling
-                        ? $t('frameleaf_memories_export_cancelling')
-                        : $t('frameleaf_memories_export_progress', {
-                            values: { done: exportRun?.processedAssets ?? 0, total: exportRun?.assetCount ?? 0 },
-                          })}
-                    </span>
-                  </span>
-                  <IconButton label={$t('frameleaf_memories_export_cancel')} onclick={() => void cancelExport()}>
-                    <Icon icon={mdiStopCircleOutline} size="20" />
-                  </IconButton>
-                {:else if exportRun?.isDownloadable}
-                  <IconButton label={$t('frameleaf_memories_export_download')} onclick={() => void saveExport()}>
-                    <Icon icon={mdiDownload} size="20" />
-                  </IconButton>
-                {:else}
-                  <IconButton label={$t('frameleaf_memories_export')} onclick={() => void startExport()}>
-                    <Icon icon={mdiExportVariant} size="20" />
-                  </IconButton>
-                {/if}
-                <!-- FL-194: a highlight video rendered directly from the memory, beside the Studio handoff. -->
-                <!-- the stable id, so a new slide does not restart the control's export lookup -->
-                <MemoryHighlightControl
-                  memoryId={currentMemoryId ?? current.memory.id}
-                  memoryTitle={titleCard?.title ?? ''}
-                  onStatus={(message) => (status = message)}
-                />
-                <button type="button" class="fmp-studio" onclick={makeMovie}>
-                  <Icon icon={mdiMovieEditOutline} size="18" aria-hidden="true" />
-                  {$t('frameleaf_movie_make')}
+                  <Icon icon={albumSaved ? mdiCheck : mdiImageAlbum} size="20" aria-hidden="true" />
+                  {albumSaved ? $t('frameleaf_memories_saved_to_albums') : $t('frameleaf_memories_save_as_album')}
                 </button>
-              </div>
-              {#if exportRun?.status === MemoryExportStatus.Failed}
-                <p class="fmp-export-error" role="alert">
-                  {exportRun.error ?? $t('frameleaf_memories_export_failed')}
-                </p>
               {/if}
+              {#if current.nextMemory}
+                {@const next = current.nextMemory}
+                <button
+                  type="button"
+                  class="fmp-secondary"
+                  onclick={() => handlePromiseError(handleNavigate(next.href))}
+                >
+                  <Icon icon={mdiSkipNext} size="20" aria-hidden="true" />
+                  {$t('frameleaf_memories_next_memory', { values: { title: next.title } })}
+                </button>
+              {/if}
+              <button type="button" class="fmp-secondary" onclick={() => void goto(memoryManager.memoriesHref)}>
+                {$t('frameleaf_memories_back_to_memories')}
+              </button>
             </div>
+          </div>
+        </section>
+      {/if}
 
-            {#if current.previousHref || (assetIndex === 0 && titleCardFor !== current.memory.id) || endCardFor === current.memory.id}
-              <div class="fmp-nav prev">
-                <IconButton label={$t('frameleaf_memories_previous_item')} onclick={goPrevious}>
-                  <Icon icon={mdiChevronLeft} size="28" />
-                </IconButton>
-              </div>
-            {/if}
-
-            {#if current.nextHref || titleCardFor === current.memory.id || (atLastItem && endCardFor !== current.memory.id)}
-              <div class="fmp-nav next">
-                <IconButton label={$t('frameleaf_memories_next_item')} onclick={goNext}>
-                  <Icon icon={mdiChevronRight} size="28" />
-                </IconButton>
-              </div>
-            {/if}
-
-            {#if titleCardFor !== current.memory.id && endCardFor !== current.memory.id && lowerThird}
-              <!-- MemoryPlayer.jsx:434-458, memories.css:77-104: the place over the day. -->
-              {#key current.asset.id}
-                <div class="fmp-lower-third">
-                  <strong>{lowerThird.place}</strong>
-                  <span>
-                    {lowerThird.day}{#if lowerThird.video && videoMuted}
-                      <span aria-hidden="true">&nbsp;·&nbsp;</span>{$t('frameleaf_memories_video_muted')}{/if}
-                  </span>
-                  {#if currentPeople.length > 0}
-                    {@const names = currentPeople.map((person) => person.name).join(', ')}
-                    <!-- MemoryPlayer.jsx:449-458: squircle faces with their names. -->
-                    <span class="fmp-people" aria-label={$t('frameleaf_memories_people', { values: { names } })}>
-                      {#each currentPeople as person (person.id)}
-                        <PersonAvatar {person} size={24} />
-                      {/each}
-                      <small aria-hidden="true">{names}</small>
-                    </span>
-                  {/if}
-                </div>
-              {/key}
-            {/if}
-
-            {#if galleryOpen}
-              <!-- MemoryPlayer.jsx:461-503, discovery.css (.mp-gallery): every item over the stage. The
-                   Rename, Reorder and Favorite tools are FL-62 curation, composed from the template's
-                   header tools; the move buttons follow its gallery tiles. -->
-              <section class="fmp-gallery" aria-label={$t('frameleaf_memories_gallery_label')}>
-                <header>
-                  <span class="fmp-gallery-heading">
-                    <strong
-                      >{$t('frameleaf_memories_item_count', {
-                        values: { count: current.memory.assets.length },
-                      })}</strong
-                    >
-                    <small>{$t('frameleaf_memories_gallery_hint')}</small>
-                  </span>
-                  <span class="fmp-gallery-tools">
-                    <IconButton
-                      label={current.memory.isSaved
-                        ? $t('frameleaf_memories_unfavorite_memory')
-                        : $t('frameleaf_memories_favorite_memory')}
-                      pressed={current.memory.isSaved}
-                      onclick={() => void toggleMemoryFavorite()}
-                    >
-                      <Icon icon={current.memory.isSaved ? mdiHeart : mdiHeartOutline} size="18" />
-                    </IconButton>
-                    <IconButton label={$t('frameleaf_memories_rename')} onclick={startRename}>
-                      <Icon icon={mdiPencilOutline} size="18" />
-                    </IconButton>
-                    <IconButton
-                      label={$t('frameleaf_memories_reorder')}
-                      pressed={reordering}
-                      onclick={() => (reordering = !reordering)}
-                    >
-                      <Icon icon={mdiSortVariant} size="18" />
-                    </IconButton>
-                  </span>
-                </header>
-                {#if current.memory.assets.length > 0}
-                  <div class="fmp-gallery-grid" bind:this={galleryGrid} {@attach focusCurrentItem}>
-                    {#each current.memory.assets as asset, index (asset.id)}
-                      <div class="fmp-gallery-cell">
-                        <button
-                          type="button"
-                          class="fmp-gallery-item"
-                          class:current={index === assetIndex}
-                          aria-label={$t('frameleaf_memories_gallery_item', {
-                            values: { index: index + 1, name: asset.originalFileName },
-                          })}
-                          aria-current={index === assetIndex ? 'true' : undefined}
-                          onclick={() => void chooseItem(asset.id)}
-                        >
-                          <img
-                            src={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Thumbnail })}
-                            alt=""
-                            loading="lazy"
-                            draggable="false"
-                          />
-                          <span class="fmp-gallery-index" aria-hidden="true">{index + 1}</span>
-                          {#if asset.type === AssetTypeEnum.Video}
-                            <span class="fmp-gallery-video" aria-hidden="true"><Icon icon={mdiPlay} size="12" /></span>
-                          {/if}
-                        </button>
-                        {#if reordering}
-                          <span class="fmp-gallery-move">
-                            <button
-                              type="button"
-                              data-move="earlier"
-                              data-asset-id={asset.id}
-                              aria-label={$t('frameleaf_memories_move_earlier', {
-                                values: { name: asset.originalFileName },
-                              })}
-                              disabled={index === 0}
-                              onclick={() => void moveItem(asset.id, -1)}
-                            >
-                              <Icon icon={mdiMenuLeft} size="18" aria-hidden="true" />
-                            </button>
-                            <button
-                              type="button"
-                              data-move="later"
-                              data-asset-id={asset.id}
-                              aria-label={$t('frameleaf_memories_move_later', {
-                                values: { name: asset.originalFileName },
-                              })}
-                              disabled={index === current.memory.assets.length - 1}
-                              onclick={() => void moveItem(asset.id, 1)}
-                            >
-                              <Icon icon={mdiMenuRight} size="18" aria-hidden="true" />
-                            </button>
-                          </span>
-                        {/if}
-                      </div>
-                    {/each}
-                  </div>
-                {:else}
-                  <p class="fmp-gallery-empty">{$t('frameleaf_memories_gallery_empty')}</p>
-                {/if}
-              </section>
+      {#if titleCardFor !== current.memory.id && endCardFor !== current.memory.id && lowerThird}
+        <!-- MemoryPlayer.jsx:434-458, memories.css:77-104: the place over the day. -->
+        {#key current.asset.id}
+          <div class="fmp-lower-third">
+            <strong>{lowerThird.place}</strong>
+            <span>
+              {lowerThird.day}{#if lowerThird.video && videoMuted}
+                <span aria-hidden="true">&nbsp;·&nbsp;</span>{$t('frameleaf_memories_video_muted')}{/if}
+            </span>
+            {#if currentPeople.length > 0}
+              {@const names = currentPeople.map((person) => person.name).join(', ')}
+              <!-- MemoryPlayer.jsx:449-458: squircle faces with their names. -->
+              <span class="fmp-people" aria-label={$t('frameleaf_memories_people', { values: { names } })}>
+                {#each currentPeople as person (person.id)}
+                  <PersonAvatar {person} size={24} />
+                {/each}
+                <small aria-hidden="true">{names}</small>
+              </span>
             {/if}
           </div>
-        </div>
+        {/key}
+      {/if}
 
-        <!-- NEXT MEMORY -->
-        <div class="fmp-adjacent" class:has-target={!!current.nextMemory}>
-          {#if current.nextMemory}
-            <a class="fmp-adjacent-link" href={current.nextMemory.href}>
-              <img
-                src={getAssetMediaUrl({ id: current.nextMemory.assetId, size: AssetMediaSize.Preview })}
-                alt={$t('next_memory')}
-                draggable="false"
+      {#if galleryOpen}
+        <!-- MemoryPlayer.jsx:461-503, discovery.css (.mp-gallery): every item over the stage. The
+             Rename, Reorder and Favorite tools are FL-62 curation, composed from the template's
+             header tools; the move buttons follow its gallery tiles. -->
+        <section class="fmp-gallery" aria-label={$t('frameleaf_memories_gallery_label')}>
+          <header>
+            <span class="fmp-gallery-heading">
+              <strong>{$t('frameleaf_memories_item_count', { values: { count: current.memory.assets.length } })}</strong
+              >
+              <small>{selecting ? $t('frameleaf_memories_select_items') : $t('frameleaf_memories_gallery_hint')}</small>
+            </span>
+            <span class="fmp-gallery-tools">
+              <IconButton label={$t('select')} pressed={selecting} onclick={toggleSelecting}>
+                <Icon icon={mdiCheckboxMultipleMarkedOutline} size="18" />
+              </IconButton>
+              <IconButton
+                label={current.memory.isSaved
+                  ? $t('frameleaf_memories_unfavorite_memory')
+                  : $t('frameleaf_memories_favorite_memory')}
+                pressed={current.memory.isSaved}
+                onclick={() => void toggleMemoryFavorite()}
+              >
+                <Icon icon={current.memory.isSaved ? mdiHeart : mdiHeartOutline} size="18" />
+              </IconButton>
+              <IconButton label={$t('frameleaf_memories_rename')} onclick={startRename}>
+                <Icon icon={mdiPencilOutline} size="18" />
+              </IconButton>
+              <IconButton
+                label={$t('frameleaf_memories_reorder')}
+                pressed={reordering}
+                disabled={selecting}
+                onclick={() => (reordering = !reordering)}
+              >
+                <Icon icon={mdiSortVariant} size="18" />
+              </IconButton>
+            </span>
+          </header>
+          {#if selecting && current.memory.assets.length > 0}
+            <div class="fmp-gallery-select">
+              <ResultsView
+                assets={galleryAssets}
+                selectionMode
+                downloadFileName={memoryDownloadFileName}
+                onSelectAll={handleSelectAll}
+                onRemoved={handleHideAssets}
+                onOpen={(asset) => void navigateToAsset(asset)}
               />
-              <div class="fmp-adjacent-copy">
-                <p class="fmp-adjacent-overline">{$t('up_next')}</p>
-                <p class="fmp-adjacent-title">{current.nextMemory.title}</p>
-              </div>
-            </a>
+            </div>
+          {:else if current.memory.assets.length > 0}
+            <div class="fmp-gallery-grid" bind:this={galleryGrid} {@attach focusCurrentItem}>
+              {#each current.memory.assets as asset, index (asset.id)}
+                <div class="fmp-gallery-cell">
+                  <button
+                    type="button"
+                    class="fmp-gallery-item"
+                    class:current={index === assetIndex}
+                    aria-label={$t('frameleaf_memories_gallery_item', {
+                      values: { index: index + 1, name: asset.originalFileName },
+                    })}
+                    aria-current={index === assetIndex ? 'true' : undefined}
+                    onclick={() => void chooseItem(asset.id)}
+                  >
+                    <img
+                      src={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Thumbnail })}
+                      alt=""
+                      loading="lazy"
+                      draggable="false"
+                    />
+                    <span class="fmp-gallery-index" aria-hidden="true">{index + 1}</span>
+                    {#if asset.type === AssetTypeEnum.Video}
+                      <span class="fmp-gallery-video" aria-hidden="true"><Icon icon={mdiPlay} size="12" /></span>
+                    {/if}
+                  </button>
+                  {#if reordering}
+                    <span class="fmp-gallery-move">
+                      <button
+                        type="button"
+                        data-move="earlier"
+                        data-asset-id={asset.id}
+                        aria-label={$t('frameleaf_memories_move_earlier', {
+                          values: { name: asset.originalFileName },
+                        })}
+                        disabled={index === 0}
+                        onclick={() => void moveItem(asset.id, -1)}
+                      >
+                        <Icon icon={mdiMenuLeft} size="18" aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        data-move="later"
+                        data-asset-id={asset.id}
+                        aria-label={$t('frameleaf_memories_move_later', {
+                          values: { name: asset.originalFileName },
+                        })}
+                        disabled={index === current.memory.assets.length - 1}
+                        onclick={() => void moveItem(asset.id, 1)}
+                      >
+                        <Icon icon={mdiMenuRight} size="18" aria-hidden="true" />
+                      </button>
+                    </span>
+                  {/if}
+                </div>
+              {/each}
+            </div>
+          {:else}
+            <p class="fmp-gallery-empty">{$t('frameleaf_memories_gallery_empty')}</p>
           {/if}
-        </div>
+        </section>
+      {/if}
+    </div>
+
+    <!-- MemoryPlayer.jsx:507-610 (.mp-controls): the transport in the middle, the item's actions at
+         the end. -->
+    <footer class="fmp-controls">
+      <div class="fmp-transport">
+        <IconButton
+          label={current.previousMemory
+            ? $t('frameleaf_memories_previous_memory', { values: { title: current.previousMemory.title } })
+            : $t('previous_memory')}
+          disabled={!current.previousMemory}
+          onclick={() => handlePromiseError(handleNavigate(current?.previousMemory?.href))}
+        >
+          <Icon icon={mdiSkipPrevious} size="20" />
+        </IconButton>
+        <IconButton
+          label={$t('frameleaf_memories_previous_item')}
+          disabled={titleCardFor === current.memory.id}
+          onclick={goPrevious}
+        >
+          <Icon icon={mdiChevronLeft} size="22" />
+        </IconButton>
+        <button
+          type="button"
+          class="fmp-play"
+          aria-label={endCardFor
+            ? $t('frameleaf_memories_play_again')
+            : paused
+              ? $t('frameleaf_memories_play')
+              : $t('frameleaf_memories_pause')}
+          onclick={togglePlay}
+        >
+          <Icon icon={endCardFor ? mdiRepeat : paused ? mdiPlay : mdiPause} size="26" aria-hidden="true" />
+        </button>
+        <IconButton
+          label={$t('frameleaf_memories_next_item')}
+          disabled={endCardFor === current.memory.id}
+          onclick={goNext}
+        >
+          <Icon icon={mdiChevronRight} size="22" />
+        </IconButton>
+        <IconButton
+          label={current.nextMemory
+            ? $t('frameleaf_memories_next_memory', { values: { title: current.nextMemory.title } })
+            : $t('next_memory')}
+          disabled={!current.nextMemory}
+          onclick={() => handlePromiseError(handleNavigate(current?.nextMemory?.href))}
+        >
+          <Icon icon={mdiSkipNext} size="20" />
+        </IconButton>
       </div>
-    </section>
+
+      <div class="fmp-actions">
+        <!-- FL-83 (MPY-3): the heart favorites the item being shown; the memory's own saved flag is
+             set from the index card and the gallery. -->
+        <IconButton
+          label={current.asset.isFavorite
+            ? $t('frameleaf_memories_unfavorite_item')
+            : $t('frameleaf_memories_favorite_item')}
+          pressed={current.asset.isFavorite}
+          onclick={() =>
+            void memoryManager
+              .toggleCurrentAssetFavorite()
+              .catch((error) => handleError(error, $t('errors.something_went_wrong')))}
+        >
+          <Icon icon={current.asset.isFavorite ? mdiHeart : mdiHeartOutline} size="20" />
+        </IconButton>
+        <!-- Removal is undoable from its toast (FL-83 MPY-1); removing the whole memory belongs to the
+             index (MPY-2). -->
+        <IconButton
+          label={$t('frameleaf_memories_remove_item')}
+          onclick={() =>
+            void memoryManager
+              .removeCurrentAsset()
+              .catch((error) => handleError(error, $t('errors.something_went_wrong')))}
+        >
+          <Icon icon={mdiPlaylistRemove} size="20" />
+        </IconButton>
+        <IconButton label={$t('frameleaf_memories_share')} onclick={openShare}>
+          <Icon icon={mdiShareVariantOutline} size="20" />
+        </IconButton>
+        {#await currentMemoryAssetFull then asset}
+          {#if asset}
+            <IconButton
+              label={$t('view_in_timeline')}
+              href={Route.photos({ at: asset.stack?.primaryAssetId ?? asset.id })}
+            >
+              <Icon icon={mdiTimelineClockOutline} size="20" />
+            </IconButton>
+          {/if}
+        {/await}
+        <IconButton label={$t('frameleaf_memories_open_item')} onclick={() => void openItem()}>
+          <Icon icon={mdiOpenInApp} size="20" />
+        </IconButton>
+        <span class="fmp-more">
+          <IconButton label={$t('more')} pressed={moreOpen} onclick={() => (moreOpen = !moreOpen)}>
+            <Icon icon={mdiDotsHorizontal} size="20" />
+          </IconButton>
+        </span>
+        <div class="fmp-extra" class:open={moreOpen || exportActive}>
+          {#if exportActive}
+            <span
+              class="fmp-export"
+              role="status"
+              aria-live="polite"
+              aria-label={$t('frameleaf_memories_export_progress', {
+                values: { done: exportRun?.processedAssets ?? 0, total: exportRun?.assetCount ?? 0 },
+              })}
+            >
+              <span class="fmp-export-bar" aria-hidden="true">
+                <span class="fmp-export-fill" style:width={`${exportPercent}%`}></span>
+              </span>
+              <span class="fmp-export-text">
+                {exportRun?.status === MemoryExportStatus.Cancelling
+                  ? $t('frameleaf_memories_export_cancelling')
+                  : $t('frameleaf_memories_export_progress', {
+                      values: { done: exportRun?.processedAssets ?? 0, total: exportRun?.assetCount ?? 0 },
+                    })}
+              </span>
+            </span>
+            <IconButton label={$t('frameleaf_memories_export_cancel')} onclick={() => void cancelExport()}>
+              <Icon icon={mdiStopCircleOutline} size="20" />
+            </IconButton>
+          {:else if exportRun?.isDownloadable}
+            <IconButton label={$t('frameleaf_memories_export_download')} onclick={() => void saveExport()}>
+              <Icon icon={mdiDownload} size="20" />
+            </IconButton>
+          {:else}
+            <IconButton label={$t('frameleaf_memories_export')} onclick={() => void startExport()}>
+              <Icon icon={mdiExportVariant} size="20" />
+            </IconButton>
+          {/if}
+          <!-- FL-194: a highlight video rendered directly from the memory, beside the Studio handoff.
+             The stable id, so a new slide does not restart the control's export lookup. -->
+          <MemoryHighlightControl
+            memoryId={currentMemoryId ?? current.memory.id}
+            memoryTitle={titleCard?.title ?? ''}
+            onStatus={(message) => (status = message)}
+          />
+        </div>
+        <button type="button" class="fmp-studio" onclick={makeMovie}>
+          <Icon icon={mdiMovieEditOutline} size="18" aria-hidden="true" />
+          <span class="fmp-studio-label">{$t('frameleaf_movie_make')}</span>
+        </button>
+      </div>
+      {#if exportRun?.status === MemoryExportStatus.Failed}
+        <p class="fmp-export-error" role="alert">
+          {exportRun.error ?? $t('frameleaf_memories_export_failed')}
+        </p>
+      {/if}
+    </footer>
   {/if}
 </section>
-
-{#if current}
-  <!-- GALLERY VIEWER -->
-  <section class="frameleaf fmp-gallery-section" data-theme={appTheme}>
-    <div class="fmp-scroll-down" class:visible={!galleryInView}>
-      <IconButton
-        label={$t('frameleaf_memories_select_items')}
-        onclick={() => memoryGallery?.scrollIntoView({ behavior: motionScrollBehavior() })}
-      >
-        <Icon icon={mdiChevronDown} size="20" />
-      </IconButton>
-    </div>
-
-    <div id="gallery-memory" {@attach galleryObserver} bind:this={memoryGallery}>
-      <ResultsView
-        assets={galleryAssets}
-        downloadFileName={memoryDownloadFileName}
-        onSelectAll={handleSelectAll}
-        onRemoved={handleHideAssets}
-        onOpen={(asset) => void navigateToAsset(asset)}
-      />
-    </div>
-  </section>
-{/if}
 
 <ResultsAssetViewer
   assets={current?.viewerAssets ?? []}
@@ -1626,20 +1587,94 @@
 {/if}
 
 <style>
+  /* discovery.css (.memory-player): the player fills the window and is a dark stage in both themes,
+     so the controls on it take the viewer palette. */
   .fmp {
-    display: block;
+    --fl-text: var(--fl-viewer-text);
+    --fl-muted: var(--fl-viewer-muted);
+    --fl-raised: var(--fl-viewer-raised);
+    --fl-border: var(--fl-viewer-border);
+    --fl-panel: var(--fl-viewer-panel);
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
     width: 100%;
+    height: 100dvh;
+    overflow: hidden;
     color: var(--fl-viewer-text);
     background: var(--fl-viewer-canvas);
   }
+  .fmp :global(:focus-visible) {
+    outline: 2px solid var(--fl-viewer-focus);
+    outline-offset: 2px;
+  }
+  .fmp :global(button:disabled) {
+    opacity: 0.4;
+    cursor: default;
+  }
+  /* .mp-tool: quiet tools on the stage; pressed is a raised fill, not the accent, and disabled only fades. */
+  .fmp :global(button.fl-control[aria-pressed='true']) {
+    color: var(--fl-viewer-text);
+    background: var(--fl-viewer-raised);
+    border-color: transparent;
+  }
+  .fmp :global(button.fl-control:disabled) {
+    color: var(--fl-viewer-text);
+    background: transparent;
+    border-color: transparent;
+    opacity: 0.4;
+  }
+  .fmp-progress {
+    grid-row: 1;
+  }
+  .fmp-header {
+    grid-row: 2;
+  }
+  .fmp-stage {
+    grid-row: 3;
+  }
+  .fmp-controls {
+    grid-row: 4;
+  }
+  /* .mp-progress, .mp-segment */
+  .fmp-progress {
+    display: flex;
+    gap: var(--fl-space-1);
+    padding: var(--fl-space-3) var(--fl-space-4) 0;
+  }
+  .fmp-segment {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    height: 14px;
+  }
+  .fmp-segment::before,
+  .fmp-segment-fill {
+    position: absolute;
+    inset-inline-start: 0;
+    top: 5px;
+    height: 4px;
+    border-radius: var(--fl-radius-xs);
+  }
+  .fmp-segment::before {
+    content: '';
+    inset-inline-end: 0;
+    background: rgb(255 255 255 / 20%);
+  }
+  .fmp-segment.current::before {
+    background: rgb(255 255 255 / 30%);
+  }
+  .fmp-segment-fill {
+    background: var(--fl-viewer-text);
+  }
+  /* .mp-header */
   .fmp-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
-    padding: 0.75rem 1rem;
+    gap: var(--fl-space-3);
+    padding: var(--fl-space-2) var(--fl-space-3) var(--fl-space-2) var(--fl-space-4);
   }
-  /* discovery.css (.mp-heading, .mp-header-tools) */
   .fmp-heading {
     display: flex;
     flex-direction: column;
@@ -1647,173 +1682,152 @@
     min-width: 0;
   }
   .fmp-heading strong {
+    overflow: hidden;
     font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .fmp-heading small {
+    overflow: hidden;
     color: var(--fl-viewer-muted);
     font-size: var(--fl-font-micro);
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
-  .fmp-header-tools {
+  .fmp-tools,
+  .fmp-transport,
+  .fmp-actions {
     display: flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: var(--fl-space-1);
   }
-  .fmp-header-tools :global(button[aria-pressed='true']) {
-    background: var(--fl-viewer-raised);
+  .fmp :global(.fl-control.quiet:hover:not(:disabled)) {
+    background: rgb(255 255 255 / 6%);
   }
-  .fmp-progress {
-    display: flex;
-    flex: 1;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 0.5rem;
-    max-width: 40rem;
-  }
-  .fmp-segment {
+  /* .mp-stage: the item fills the stage edge to edge. */
+  .fmp-stage {
     position: relative;
-    flex: 1;
-    min-width: 0.75rem;
-    height: 0.5rem;
-    padding-block: 0.25rem;
-  }
-  .fmp-segment-track {
-    position: absolute;
-    inset-inline-start: 0;
-    top: 50%;
-    width: 100%;
-    height: 2px;
-    background: var(--fl-viewer-border);
-  }
-  .fmp-segment-fill {
-    position: absolute;
-    inset-inline-start: 0;
-    top: 50%;
-    height: 2px;
-    background: var(--fl-viewer-text);
-  }
-  .fmp-scroll-up,
-  .fmp-scroll-down {
-    display: flex;
-    justify-content: center;
-    padding-block: 0.5rem;
-    opacity: 0;
-    transition: opacity var(--fl-motion) var(--fl-ease);
-  }
-  .fmp-scroll-up.visible,
-  .fmp-scroll-down.visible {
-    opacity: 1;
-  }
-  .fmp-stage-outer {
-    padding: 0.5rem 1rem 1.5rem;
-  }
-  .fmp-stage-row {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 1.5rem;
-    height: calc(100vh - 14rem);
-    min-height: 20rem;
-  }
-  .fmp-adjacent {
-    /* Always occupies layout space when it has a target, even with nothing to show yet
-       (opacity 0), so the stage does not reflow the moment an adjacent memory exists.
-       Hidden entirely below the desktop breakpoint, where there is no room for it. */
-    display: none;
-    width: 18vw;
-    height: 55%;
-    border-radius: 1rem;
-    opacity: 0.25;
-    transition: opacity var(--fl-motion) var(--fl-ease);
-  }
-  .fmp-adjacent:hover {
-    opacity: 0.7;
-  }
-  @media (min-width: 62rem) {
-    .fmp-adjacent {
-      display: block;
-    }
-    .fmp-adjacent:not(.has-target) {
-      visibility: hidden;
-    }
-  }
-  .fmp-adjacent-link {
-    position: relative;
-    display: block;
-    width: 100%;
-    height: 100%;
-    border-radius: 1rem;
+    display: grid;
+    grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+    min-height: 0;
     overflow: hidden;
+    background: var(--fl-viewer-canvas);
   }
-  .fmp-adjacent-link img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-  .fmp-adjacent-copy {
-    position: absolute;
-    inset-inline-start: 1rem;
-    inset-block-end: 1rem;
-    color: #fff;
-  }
-  .fmp-adjacent-overline {
-    margin: 0;
-    font-size: var(--fl-font-micro);
-    font-weight: 600;
-    text-transform: uppercase;
-    color: rgb(255 255 255 / 75%);
-  }
-  .fmp-adjacent-title {
-    margin: 0;
-    font-size: 1.125rem;
-  }
-  .fmp-main {
+  .fmp-media {
     position: relative;
-    display: flex;
-    place-content: center;
-    place-items: center;
-    width: 70vw;
+    grid-area: 1 / 1;
+    min-width: 0;
+    min-height: 0;
     height: 100%;
-    max-width: 64rem;
-    border-radius: 1rem;
-    background: #000;
-    box-shadow: var(--fl-shadow-2);
   }
-  .fmp-main-inner {
-    position: relative;
-    width: 100%;
-    height: 100%;
-    border-radius: 1rem;
-    background: #000;
-    overflow: hidden;
+  .fmp-media :global(img) {
+    border-radius: 0;
   }
-  .fmp-overlay {
-    position: absolute;
-    inset: 0;
+  /* .mp-controls */
+  .fmp-controls {
     display: flex;
-    flex-direction: column;
+    flex-wrap: wrap;
+    align-items: center;
     justify-content: space-between;
-    padding: 0.5rem;
-    transition: opacity var(--fl-motion) var(--fl-ease);
+    gap: var(--fl-space-3);
+    padding: var(--fl-space-2) var(--fl-space-4) var(--fl-space-3);
   }
-  .fmp-overlay.hidden {
-    opacity: 0;
-    pointer-events: none;
+  .fmp-transport {
+    gap: var(--fl-space-2);
+    margin-inline: auto;
   }
-  .fmp-overlay-top {
-    display: flex;
-    align-self: flex-end;
-    gap: 0.25rem;
+  .fmp-actions {
+    flex-wrap: wrap;
+    row-gap: var(--fl-space-2);
+  }
+  /* .mp-tool.primary */
+  .fmp-play {
+    display: inline-grid;
+    place-items: center;
+    width: 52px;
+    height: 52px;
+    padding: 0;
+    color: var(--fl-viewer-canvas);
+    background: var(--fl-viewer-text);
+    border: 0;
+    border-radius: 50%;
+  }
+  .fmp-play:hover {
+    background: #fff;
+  }
+  /* .mp-studio */
+  .fmp-studio {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--fl-space-2);
+    min-height: var(--fl-control-height);
+    padding: 0 var(--fl-space-3);
+    margin-inline-start: var(--fl-space-1);
+    color: var(--fl-viewer-text);
+    background: transparent;
+    border: 1px solid rgb(255 255 255 / 15%);
+    border-radius: var(--fl-radius-pill);
+    font-size: var(--fl-font-small);
+  }
+  .fmp-studio:hover {
+    background: rgb(255 255 255 / 6%);
+  }
+  /* Desktop: Export and Highlight video sit in the row; "More" is for phones. */
+  .fmp-extra,
+  .fmp-more {
+    display: contents;
+  }
+  .fmp-more {
+    display: none;
+  }
+  @media (max-width: 760px) {
+    .fmp-more {
+      display: contents;
+    }
+    .fmp-extra {
+      display: none;
+    }
+    /* Opened (or while an export runs): their own centred row under the bar. */
+    .fmp-extra.open {
+      display: flex;
+      flex-basis: 100%;
+      align-items: center;
+      justify-content: center;
+      gap: var(--fl-space-1);
+      order: 1;
+    }
+    .fmp-controls {
+      justify-content: center;
+      padding-inline: var(--fl-space-4);
+    }
+    .fmp-actions {
+      justify-content: center;
+      width: 100%;
+    }
+    /* The prototype's phone bar keeps Make a movie as a round icon button on the same row. */
+    .fmp-studio {
+      justify-content: center;
+      width: var(--fl-control-height-touch);
+      padding: 0;
+    }
+    .fmp-studio-label {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
   }
   /* Export progress. The bar is decorative — the accessible name on the wrapper carries the
      real numbers, and it is never animated beyond the width the server reported. */
   .fmp-export {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.25rem 0.625rem;
-    border-radius: 999px;
-    color: #fff;
-    background: rgb(0 0 0 / 45%);
+    gap: var(--fl-space-2);
+    padding: var(--fl-space-1) var(--fl-space-3);
+    border-radius: var(--fl-radius-pill);
+    background: var(--fl-viewer-raised);
     font-size: var(--fl-font-small);
     white-space: nowrap;
   }
@@ -1821,7 +1835,7 @@
     display: block;
     inline-size: 5rem;
     block-size: 0.25rem;
-    border-radius: 999px;
+    border-radius: var(--fl-radius-pill);
     background: rgb(255 255 255 / 30%);
     overflow: hidden;
   }
@@ -1837,65 +1851,11 @@
     }
   }
   .fmp-export-error {
-    margin: 0.5rem 0 0;
-    color: #fff;
-    background: rgb(0 0 0 / 55%);
-    border-radius: var(--fl-radius);
-    padding: 0.375rem 0.625rem;
+    flex-basis: 100%;
+    margin: 0;
+    color: var(--fl-viewer-text);
     font-size: var(--fl-font-small);
-  }
-
-  /* The overlay sits over an arbitrary photo or video frame, so every control gets its own
-     translucent scrim rather than relying on the surrounding image for contrast. */
-  .fmp-overlay-top :global(button),
-  .fmp-overlay-top :global(a),
-  .fmp-overlay-bottom :global(button:not(.fmp-studio)),
-  .fmp-overlay-bottom :global(a),
-  .fmp-nav :global(button) {
-    color: #fff;
-    background: rgb(0 0 0 / 35%);
-    border-color: transparent;
-  }
-  .fmp-overlay-top :global(button:hover),
-  .fmp-overlay-top :global(a:hover),
-  .fmp-overlay-bottom :global(button:hover:not(.fmp-studio)),
-  .fmp-overlay-bottom :global(a:hover),
-  .fmp-nav :global(button:hover) {
-    background: rgb(0 0 0 / 55%);
-  }
-  .fmp-overlay-top :global(button[aria-pressed='true']) {
-    color: var(--fl-accent);
-    background: rgb(0 0 0 / 55%);
-  }
-  .fmp-overlay-bottom {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 0.5rem;
-  }
-  .fmp-studio {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 0.875rem;
-    font-weight: 600;
-    color: var(--fl-accent-text);
-    background: var(--fl-accent);
-    border: 0;
-    border-radius: var(--fl-radius-pill);
-  }
-  .fmp-nav {
-    position: absolute;
-    /* above the title card, so Previous and Next stay reachable from it */
-    z-index: 4;
-    top: 50%;
-    translate: 0 -50%;
-  }
-  .fmp-nav.prev {
-    inset-inline-start: 1rem;
-  }
-  .fmp-nav.next {
-    inset-inline-end: 1rem;
+    text-align: end;
   }
   /* memories.css:7-15 */
   .fmp-backdrop {
@@ -1906,6 +1866,7 @@
     filter: blur(30px) brightness(0.5) saturate(1.15);
     transform: scale(1.08);
     animation: fmp-fade 900ms ease both;
+    pointer-events: none;
   }
   /* memories.css:44-75 */
   .fmp-title-card {
@@ -1914,7 +1875,7 @@
     z-index: 3;
     display: grid;
     place-content: center;
-    padding: 1.5rem;
+    padding: var(--fl-space-6);
     text-align: center;
     color: #fff;
     background: #000a;
@@ -1968,39 +1929,34 @@
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
-    gap: 8px;
+    gap: var(--fl-space-2);
   }
+  .fmp-play-large,
   .fmp-secondary {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    min-height: 44px;
+    gap: var(--fl-space-2);
+    min-height: var(--fl-control-height);
     padding: 0 22px;
-    margin-block-start: 0.75rem;
-    color: var(--fl-viewer-text);
-    background: #ffffff1f;
+    margin-block-start: 10px;
     border: 0;
     border-radius: var(--fl-radius-pill);
+  }
+  .fmp-play-large {
+    color: var(--fl-viewer-canvas);
+    background: var(--fl-viewer-text);
+    font-weight: 600;
+  }
+  .fmp-play-large:hover:not(:disabled) {
+    background: #fff;
+  }
+  .fmp-secondary {
+    color: var(--fl-viewer-text);
+    background: #ffffff1f;
     font-weight: 500;
   }
   .fmp-secondary:hover {
     background: #ffffff2e;
-  }
-  .fmp-play-large {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    margin-block-start: 0.75rem;
-    padding: 0.625rem 1.25rem;
-    color: var(--fl-viewer-canvas);
-    background: #fff;
-    border: 0;
-    border-radius: var(--fl-radius-pill);
-    font-weight: 600;
-  }
-  .fmp-play-large:disabled {
-    opacity: 0.5;
-    cursor: default;
   }
   /* memories.css:77-104, 124-133 */
   .fmp-lower-third {
@@ -2013,7 +1969,10 @@
     gap: 2px;
     max-width: min(70%, 560px);
     color: #fff;
-    text-shadow: 0 1px 12px #000a;
+    /* A tight shadow under the wide one keeps the day legible on a bright or busy photo. */
+    text-shadow:
+      0 1px 2px rgb(0 0 0 / 60%),
+      0 1px 12px #000a;
     pointer-events: none;
     animation: fmp-fade 1.2s 600ms ease both;
   }
@@ -2024,7 +1983,6 @@
   }
   .fmp-lower-third > span {
     font-size: 15px;
-    opacity: 0.85;
   }
   @media (max-width: 760px) {
     .fmp-lower-third {
@@ -2089,10 +2047,10 @@
   }
   .fmp-gallery-tools {
     display: flex;
-    gap: 0.25rem;
+    gap: var(--fl-space-1);
   }
-  .fmp-gallery-tools :global(button[aria-pressed='true']) {
-    background: var(--fl-viewer-raised);
+  .fmp-gallery-select {
+    min-height: 0;
   }
   .fmp-gallery-grid {
     display: grid;
@@ -2100,6 +2058,9 @@
     gap: 10px;
   }
   @media (max-width: 760px) {
+    .fmp-gallery {
+      padding: var(--fl-space-4);
+    }
     .fmp-gallery-grid {
       grid-template-columns: repeat(3, minmax(0, 1fr));
     }
@@ -2190,10 +2151,6 @@
     display: flex;
     justify-content: flex-end;
     gap: 0.5rem;
-  }
-  .fmp-gallery-section {
-    padding: 1rem;
-    background: var(--fl-viewer-canvas);
   }
 
   /* memories.css:16-42: the photo crossfades in and, when motion is allowed, pans and zooms

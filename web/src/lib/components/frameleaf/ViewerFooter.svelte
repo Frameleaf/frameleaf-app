@@ -96,10 +96,10 @@
       <Icon icon={playing ? mdiPause : mdiPlay} size="21" aria-hidden />
     </button>
     <!-- FL-707 item 14: one "N of M" counter, beside the file name at the top (ViewerTitle). -->
-    <!-- Phones reach the slideshow settings from the More menu; the footer keeps Play and the filmstrip. -->
+    <!-- Prototype phone footer: Play, the slideshow settings and the filmstrip, on every item. -->
     <button
       type="button"
-      class="fl-tool fl-wide-only"
+      class="fl-tool"
       aria-label={$t('frameleaf_viewer_slideshow_settings')}
       title={$t('frameleaf_viewer_slideshow_settings')}
       data-slideshow-settings
@@ -134,21 +134,26 @@
   <div class="fl-foot-group">
     {#if isVideoAsset(asset) && canPlayOriginal}
       <div class="fl-segment" role="group" aria-label={$t('frameleaf_viewer_video_source')}>
+        <!-- Short words on the switch so the phone footer keeps the settings gear (prototype); the
+             accessible names and tooltips keep the full meaning. -->
         <button
           type="button"
+          aria-label={$t('frameleaf_viewer_source_original')}
+          title={$t('frameleaf_viewer_source_original')}
           aria-pressed={isPlayingOriginalVideo || !hasPlaybackCopy}
           onclick={() => setPlayOriginalVideo(true)}
         >
-          {$t('frameleaf_viewer_source_original')}
+          {$t('frameleaf_viewer_source_original_short')}
         </button>
         <button
           type="button"
+          aria-label={$t('frameleaf_viewer_source_optimized')}
           aria-pressed={!isPlayingOriginalVideo && hasPlaybackCopy}
           disabled={!hasPlaybackCopy}
           title={hasPlaybackCopy ? $t('frameleaf_viewer_optimized_title') : $t('frameleaf_viewer_optimized_none')}
           onclick={() => setPlayOriginalVideo(false)}
         >
-          {$t('frameleaf_viewer_source_optimized')}
+          {$t('frameleaf_viewer_source_optimized_short')}
         </button>
       </div>
     {/if}
@@ -368,9 +373,11 @@
       height: var(--fl-control-height);
     }
 
-    /* One row that fits a 320px phone: Play and the filmstrip, then what the item needs. */
-    .fl-zoom,
-    .fl-wide-only {
+    /*
+     * Prototype phone footer: Play, the slideshow settings and the filmstrip, then what the item needs
+     * (the short Original / Optimized switch leaves room for all of them). Zoom is pinch and double-tap.
+     */
+    .fl-zoom {
       display: none;
     }
 

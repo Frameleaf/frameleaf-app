@@ -1,4 +1,5 @@
-import { MapService } from 'src/services/map.service.js';
+import { MAP_SINGLES_LIMIT } from 'src/repositories/map.repository.js';
+import { MAP_COMPLETE_LIMIT, MAP_WORLD_MAX_ZOOM, MapService } from 'src/services/map.service.js';
 import { AlbumFactory } from 'test/factories/album.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
@@ -79,6 +80,84 @@ describe(MapService.name, () => {
       expect(markers).toHaveLength(1);
       expect(markers[0]).toEqual(marker);
       expect(mocks.album.getAllIds).toHaveBeenCalledWith(auth.user.id);
+    });
+  });
+
+  describe('getMapClusters (FL-1214)', () => {
+    const bounds = { west: -10, south: -5, east: 10, north: 5 };
+
+    it('sends a small library whole, grouped no finer than the world limit, and marks it complete', async () => {
+      const auth = AuthFactory.create();
+      mocks.map.getMapClusters.mockResolvedValue({ total: 3, bounds, clusters: [], markers: [] });
+
+      await expect(sut.getMapClusters(auth, { zoom: 12 })).resolves.toEqual({
+        complete: true,
+        total: 3,
+        bounds,
+        clusters: [],
+        markers: [],
+      });
+      expect(mocks.map.getMapClusters).toHaveBeenCalledWith(
+        auth.user.id,
+        [auth.user.id],
+        [],
+        MAP_WORLD_MAX_ZOOM,
+        MAP_COMPLETE_LIMIT,
+        expect.objectContaining({ area: undefined }),
+      );
+    });
+
+    it('is not complete when the library is too large to send whole', async () => {
+      const auth = AuthFactory.create();
+      mocks.map.getMapClusters.mockResolvedValue({ total: MAP_COMPLETE_LIMIT + 1, bounds, clusters: [], markers: [] });
+
+      await expect(sut.getMapClusters(auth, { zoom: 2 })).resolves.toMatchObject({ complete: false });
+    });
+
+    it('groups an area at its own zoom level, and is never complete', async () => {
+      const auth = AuthFactory.create();
+      mocks.map.getMapClusters.mockResolvedValue({ total: 2, bounds, clusters: [], markers: [] });
+
+      const area = { west: 170, south: -5, east: -170, north: 5 };
+      await expect(sut.getMapClusters(auth, { zoom: 12, ...area })).resolves.toMatchObject({ complete: false });
+      expect(mocks.map.getMapClusters).toHaveBeenCalledWith(
+        auth.user.id,
+        [auth.user.id],
+        [],
+        12,
+        MAP_SINGLES_LIMIT,
+        expect.objectContaining({ area }),
+      );
+    });
+
+    it('treats an area missing an edge as the whole world', async () => {
+      const auth = AuthFactory.create();
+      mocks.map.getMapClusters.mockResolvedValue({ total: 0, bounds: null, clusters: [], markers: [] });
+
+      await sut.getMapClusters(auth, { zoom: 1, west: 1, south: 1, east: 2 });
+      expect(mocks.map.getMapClusters).toHaveBeenCalledWith(
+        auth.user.id,
+        [auth.user.id],
+        [],
+        1,
+        MAP_COMPLETE_LIMIT,
+        expect.objectContaining({ area: undefined }),
+      );
+    });
+  });
+
+  describe('getMapMarkers paging (FL-1214)', () => {
+    it('passes the area and page to the repository', async () => {
+      const auth = AuthFactory.create();
+      mocks.map.getMapMarkers.mockResolvedValue([]);
+
+      await sut.getMapMarkers(auth, { west: 1, south: 2, east: 3, north: 4, skip: 120, take: 120 });
+      expect(mocks.map.getMapMarkers).toHaveBeenCalledWith(
+        auth.user.id,
+        [auth.user.id],
+        [],
+        expect.objectContaining({ area: { west: 1, south: 2, east: 3, north: 4 }, skip: 120, take: 120 }),
+      );
     });
   });
 

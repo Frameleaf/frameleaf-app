@@ -14,6 +14,23 @@ import type { MessageFormatter } from 'svelte-i18n';
 /** Events fetched per page of the Activity tab. */
 export const HISTORY_PAGE_SIZE = 50;
 
+/** The actions that are about a library rather than the account itself. */
+const LIBRARY_ACTIONS: ReadonlySet<AdminAuditAction> = new Set([
+  AdminAuditAction.LibraryCreated,
+  AdminAuditAction.LibraryUpdated,
+  AdminAuditAction.LibraryScanQueued,
+  AdminAuditAction.LibraryScanCancelled,
+  AdminAuditAction.LibraryDeleted,
+]);
+
+/**
+ * Whether an entry is about one of the account's libraries. The action says so: `libraryId` alone
+ * does not, because it falls back to null once the library is removed (admin_audit_event), and a
+ * removed library's entries would then read as the account's own.
+ */
+export const isLibraryEvent = ({ action, libraryId }: Pick<UserAdminHistoryEventResponseDto, 'action' | 'libraryId'>) =>
+  libraryId !== null || LIBRARY_ACTIONS.has(action);
+
 /**
  * The sentence an Activity entry leads with, in the template's wording. `detail` carries the
  * specifics the server recorded (a quota in bytes, a storage label, a recovery period in days, a

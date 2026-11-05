@@ -267,7 +267,18 @@
 </script>
 
 {#if accountId}
-  <Section title={$t('frameleaf_location_scan_title')} description={$t('frameleaf_location_scan_description')}>
+  <!-- Its own page now (prototype `care/location-scan.jsx`): the page heading names it, so the card says
+       what to do here. -->
+  <Section
+    title={$t(
+      active
+        ? 'frameleaf_location_scan_section_running'
+        : scan
+          ? 'frameleaf_location_scan_section_more'
+          : 'frameleaf_location_scan_section_choose',
+    )}
+    description={active ? $t('frameleaf_location_scan_description') : $t('frameleaf_location_scan_section_free')}
+  >
     {#if scan}
       <div class="progress" role="status">
         <strong>{$t(statusKeys[scan.status])}</strong>
@@ -480,6 +491,10 @@
 {/if}
 
 <style>
+  /* Controls keep their own width (the segmented choice is not stretched across the card). */
+  .choices {
+    justify-items: start;
+  }
   .choices,
   .progress {
     display: grid;
@@ -508,7 +523,7 @@
   }
   .number-field {
     display: grid;
-    max-width: 20rem;
+    width: min(20rem, 100%);
   }
   .number-field .unit {
     display: flex;

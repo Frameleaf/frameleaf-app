@@ -59,43 +59,41 @@
     border: 1px solid transparent;
     border-radius: var(--fl-radius-control);
   }
+  /*
+   * The prototype's switch (command-center.css:671-698 `.cc-switch`): a 36×22 track, filled with the
+   * strong border colour when off (its 3:1 outline against the card), and an 18px white knob with a
+   * small shadow that slides 14px.
+   */
   .track {
     position: relative;
     display: block;
     flex-shrink: 0;
-    width: 2rem;
-    height: 1.125rem;
-    background: var(--fl-raised);
-    /* The off track is drawn by its edge alone, so the edge is the 3:1 outline. */
-    border: 1px solid var(--fl-border-strong);
+    width: 36px;
+    height: 22px;
+    background: var(--fl-border-strong);
     border-radius: var(--fl-radius-pill);
-    transition:
-      background-color var(--fl-motion) var(--fl-ease),
-      border-color var(--fl-motion) var(--fl-ease);
+    transition: background-color var(--fl-motion) var(--fl-ease);
   }
   .track::after {
     content: '';
     position: absolute;
-    inset-block-start: 0.125rem;
-    inset-inline-start: 0.125rem;
-    width: 0.6875rem;
-    height: 0.6875rem;
-    background: var(--fl-muted);
+    inset-block-start: 2px;
+    inset-inline-start: 2px;
+    width: 18px;
+    height: 18px;
+    background: white;
     border-radius: 50%;
-    transition:
-      inset-inline-start var(--fl-motion) var(--fl-snappy),
-      background-color var(--fl-motion) var(--fl-ease);
+    box-shadow: 0 1px 3px rgb(0 0 0 / 30%);
+    transition: inset-inline-start var(--fl-motion) var(--fl-snappy);
   }
   button[aria-checked='true'] {
     color: var(--fl-text);
   }
   button[aria-checked='true'] .track {
     background: var(--fl-accent);
-    border-color: var(--fl-accent);
   }
   button[aria-checked='true'] .track::after {
-    inset-inline-start: 1.0625rem;
-    background: var(--fl-accent-text);
+    inset-inline-start: 16px;
   }
   /*
    * A disabled switch keeps its on/off colours: the state still has to be legible, and the
@@ -103,5 +101,8 @@
    */
   button:disabled {
     color: var(--fl-muted);
+  }
+  button:disabled .track {
+    opacity: 0.55;
   }
 </style>

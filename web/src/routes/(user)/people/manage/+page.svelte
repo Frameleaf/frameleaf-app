@@ -409,8 +409,11 @@
   .pm-page {
     display: flex;
     flex-direction: column;
-    min-height: 100%;
-    padding: 32px 32px 0;
+    /* The page fills the scroll area (less the layout's own 8px above and below), so the sticky
+       Save bar rests on the window's bottom edge as in ManagePeople.jsx, not under the last row. */
+    min-height: calc(100dvh - var(--fl-topbar-height) - var(--fl-space-4));
+    /* With the layout's own 8px, people.css's 32px. */
+    padding: var(--fl-space-6) var(--fl-space-6) 0;
   }
   .pm-header {
     display: flex;
@@ -443,7 +446,8 @@
   }
   .pm-toolbar input {
     min-width: 0;
-    min-height: 34px;
+    /* As tall as the Hide all / Show all buttons beside it. */
+    min-height: var(--fl-control-height);
     padding: 8px 12px;
     color: var(--fl-text);
     background: var(--fl-raised);
@@ -474,8 +478,8 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    margin: auto -32px 0;
-    padding: 14px 32px;
+    margin: auto calc(-1 * var(--fl-space-6)) 0;
+    padding: 14px var(--fl-space-6);
     background: color-mix(in srgb, var(--fl-canvas), transparent 8%);
     backdrop-filter: blur(12px);
     border-top: 1px solid var(--fl-border);
@@ -489,8 +493,9 @@
     gap: 8px;
   }
   @media (max-width: 700px) {
+    /* With the layout's own 8px, the 16px phone gutter. */
     .pm-page {
-      padding: 22px 16px 0;
+      padding: var(--fl-space-6) var(--fl-space-2) 0;
     }
     .pm-header {
       gap: 18px;
@@ -518,8 +523,8 @@
     .pm-footer {
       flex-direction: column;
       align-items: stretch;
-      margin-inline: -16px;
-      padding: 12px 16px;
+      margin-inline: calc(-1 * var(--fl-space-2));
+      padding: var(--fl-space-3) var(--fl-space-2);
     }
     .pm-footer-actions :global(button) {
       flex: 1;

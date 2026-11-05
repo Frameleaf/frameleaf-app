@@ -16,9 +16,11 @@
     /** The accessible name, for example "Copy link for Summer". */
     label: string;
     onCopied?: () => void;
+    /** The button's look (IconButton's variants); quiet unless the row around it draws outlined buttons. */
+    variant?: 'default' | 'quiet';
   }
 
-  let { value, label, onCopied }: Props = $props();
+  let { value, label, onCopied, variant = 'quiet' }: Props = $props();
 
   /** How long the tick stays before the copy icon returns. */
   const COPIED_MS = 1500;
@@ -39,7 +41,7 @@
   onDestroy(() => clearTimeout(timer));
 </script>
 
-<IconButton {label} onclick={() => void copy()}>
+<IconButton {label} {variant} onclick={() => void copy()}>
   {#if copied}
     <span class="copied" data-testid="link-copied"><Icon icon={mdiCheck} size={ICON_SIZE.lg} /></span>
   {:else}

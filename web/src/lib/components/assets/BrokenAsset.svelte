@@ -15,19 +15,63 @@
   let { class: className, hideMessage = false, width = undefined, height = undefined }: Props = $props();
 </script>
 
+<!--
+  A quiet placeholder where an image cannot be shown (a RAW file without a preview yet, a file that
+  failed to load): the tile's own dark fill and a small muted icon, so one missing preview does not
+  shout over the photos around it. The words appear only where there is room to read them whole.
+-->
 <div
   data-broken-asset
-  class={cleanClass(
-    '@container flex flex-col overflow-hidden max-h-full max-w-full justify-center items-center bg-gray-100/40 dark:bg-gray-700/40 dark:text-gray-100 p-4',
-    className,
-  )}
+  class={cleanClass('fl-broken-asset @container', className)}
   style:width
   style:height
+  role="img"
+  aria-label={$t('error_loading_image')}
 >
-  <div class="hidden @min-[75px]:block">
-    <Icon icon={mdiImageBrokenVariant} size="7em" class="min-h-6 max-w-full min-w-6" />
-  </div>
+  <Icon icon={mdiImageBrokenVariant} size="28" class="fl-broken-asset-icon" aria-hidden />
   {#if !hideMessage}
-    <span class="text-center text-xs @min-[100px]:text-sm @min-[150px]:text-base">{$t('error_loading_image')}</span>
+    <span class="fl-broken-asset-text" aria-hidden="true">{$t('error_loading_image')}</span>
   {/if}
 </div>
+
+<style>
+  .fl-broken-asset {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--fl-space-2, 8px);
+    max-width: 100%;
+    max-height: 100%;
+    overflow: hidden;
+    padding: var(--fl-space-3, 12px);
+    background: var(--fl-raised, rgb(127 127 127 / 0.12));
+    color: var(--fl-muted, rgb(127 127 127));
+  }
+  .fl-broken-asset :global(.fl-broken-asset-icon) {
+    flex: none;
+    opacity: 0.7;
+  }
+  .fl-broken-asset-text {
+    display: none;
+    max-width: 100%;
+    overflow: hidden;
+    font-size: 12px;
+    line-height: 1.3;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* Only where the whole line fits: a narrow tile keeps the icon alone. */
+  @container (min-width: 160px) {
+    .fl-broken-asset-text {
+      display: block;
+    }
+  }
+  /* Too small even for the icon (a strip thumbnail): the fill alone. */
+  @container (max-width: 40px) {
+    .fl-broken-asset :global(.fl-broken-asset-icon) {
+      display: none;
+    }
+  }
+</style>

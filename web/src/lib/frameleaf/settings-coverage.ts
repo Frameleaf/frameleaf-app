@@ -187,8 +187,8 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
   {
     pattern: 'frameleafCloud.cloudMl.routing.*',
     kind: 'control',
-    file: 'src/lib/components/frameleaf/cloud/WorkloadRoutingTable.svelte',
-    evidence: 'cloudMl.routing[id]',
+    file: 'src/lib/components/frameleaf/computers/WhereWorkRuns.svelte',
+    evidence: 'cloudMl.routing[kind as keyof typeof cloudMl.routing] = mode',
   },
   {
     pattern: 'frameleafCloud.cloudMl.spenders',
@@ -199,8 +199,8 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
   {
     pattern: 'frameleafCloud.cloudMl.startWith',
     kind: 'control',
-    file: 'src/lib/components/frameleaf/cloud/WorkloadRoutingTable.svelte',
-    evidence: 'cloudMl.startWith',
+    file: 'src/lib/components/frameleaf/computers/WhereWorkRuns.svelte',
+    evidence: 'cloudMl.startWith = suggest',
   },
   {
     pattern: 'frameleafCloud.remoteAccess.allowOriginalsOverRelay',
@@ -1697,7 +1697,7 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
     pattern: 'privacy.suppression.scope',
     kind: 'control',
     file: 'src/lib/components/frameleaf/access/LockedRulesPanel.svelte',
-    evidence: 'bind:value={draft.scope}',
+    evidence: '(draft.scope = value as SuppressionScope)',
   },
   {
     pattern: 'privacy.suppression.tagIds',

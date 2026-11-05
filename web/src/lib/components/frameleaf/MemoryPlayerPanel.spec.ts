@@ -156,6 +156,22 @@ describe('MemoryPlayerPanel (FL-62)', () => {
     });
   });
 
+  it('selects the memory’s items in the Library grid from the gallery, with its selection bar', async () => {
+    render(MemoryPlayerPanel);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Show all items' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Select' }));
+
+    const gallery = screen.getByRole('region', { name: 'All items in this memory' });
+    expect(within(gallery).getByTestId('frameleaf-results')).toBeInTheDocument();
+    expect(within(gallery).getByText('Select items below')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reorder' })).toBeDisabled();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Select' }));
+    expect(within(gallery).queryByTestId('frameleaf-results')).toBeNull();
+    expect(within(gallery).getByRole('button', { name: 'Item 2: asset-2.jpg' })).toBeInTheDocument();
+  });
+
   it('opens the Make a movie sheet for the memory (FL-561)', async () => {
     render(MemoryPlayerPanel);
 

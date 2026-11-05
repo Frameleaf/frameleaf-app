@@ -21,6 +21,12 @@
    * - Pets are a production extension of the template (`privacy.suppression.petIds`, FL-58).
    *
    * The Locked ids are never written into the session-wide preferences store.
+   *
+   * Drawn as the approved prototype's `AlwaysLocked` (`settings-v2/cloud/Personal.jsx`): a hero with
+   * what is kept Locked (or "Unlock to see or change these"), "Whose photos, and which tags" (People,
+   * Pets and Tags, each showing what is chosen and opening its list with Change), and "Where they're
+   * hidden" with Save. The prototype's "Ask for my PIN before these can be changed" is not drawn: the
+   * server always asks, so there is nothing to turn off.
    */
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
@@ -62,9 +68,14 @@
     type TagResponseDto,
     type UserPreferencesResponseDto,
   } from '@frameleaf/sdk';
-  import { Icon } from '@frameleaf/ui';
-  import { mdiLockOutline } from '@mdi/js';
-  import { onDestroy, onMount } from 'svelte';
+  import Choice from '$lib/components/frameleaf/settings/kit/Choice.svelte';
+  import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
+  import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
+  import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
+  import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
+  import { mdiLockCheckOutline, mdiLockOutline } from '@mdi/js';
+  import { locale } from '$lib/stores/preferences.store';
+  import { onDestroy, onMount, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
   type Phase = 'loading' | 'unavailable' | 'no-pin' | 'locked' | 'ready';
@@ -470,6 +481,32 @@
     drop();
   });
 
+  const anyChosen = $derived(baseline.personIds.length + baseline.petIds.length + baseline.tagIds.length > 0);
+  const changed = $derived(JSON.stringify(draft) !== JSON.stringify(baseline));
+  /** "2 people, 1 pet and 1 tag", from the saved rules (the prototype's hero). */
+  const chosenWords = $derived(
+    new Intl.ListFormat($locale, { type: 'conjunction' }).format(
+      [
+        baseline.personIds.length > 0
+          ? $t('frameleaf_locked_rules_n_people', { values: { count: baseline.personIds.length } })
+          : '',
+        baseline.petIds.length > 0
+          ? $t('frameleaf_locked_rules_n_pets', { values: { count: baseline.petIds.length } })
+          : '',
+        baseline.tagIds.length > 0
+          ? $t('frameleaf_locked_rules_n_tags', { values: { count: baseline.tagIds.length } })
+          : '',
+      ].filter(Boolean),
+    ),
+  );
+  /** What the saved rules keep Locked, for the hero; the count follows the draft until it is saved. */
+  let savedCount = $state<{ photos: number; videos: number } | null>(null);
+  $effect(() => {
+    if (lockedCount && !changed) {
+      savedCount = lockedCount;
+    }
+  });
+
   // FL-541: what the draft would keep Locked, counted on the server as the rules are edited (only
   // the owner's own photos and videos; the rules need an unlocked session, so does the count).
   let lockedCount = $state<{ photos: number; videos: number } | null>(null);
@@ -499,262 +536,450 @@
   onUserPinCodeCreated={() => void load()}
 />
 
-{#if phase !== 'ready'}
-  <div class="lock">
-    <Icon icon={mdiLockOutline} size="1.75rem" aria-hidden={true} />
-    <h3>{$t('frameleaf_locked_rules_title')}</h3>
-    <p>{$t('frameleaf_locked_rules_locked_description')}</p>
-    {#if phase === 'loading'}
-      <Spinner size="lg" label={$t('loading')} />
+{#snippet unlockAction()}
+  <Button variant="primary" onclick={unlock}>{$t('frameleaf_locked_rules_unlock')}</Button>
+{/snippet}
+{#snippet pinAction()}
+  <Button variant="primary" onclick={openPinSettings}>{$t('frameleaf_locked_rules_pin_settings')}</Button>
+{/snippet}
+{#snippet retryAction()}
+  <Button onclick={() => void load()}>{$t('frameleaf_locked_rules_try_again')}</Button>
+{/snippet}
+{#snippet hideAction()}
+  <Button onclick={hideLocked}>{$t('frameleaf_locked_rules_hide')}</Button>
+{/snippet}
+{#snippet reloadAction()}
+  <Button onclick={() => void load()}>{$t('frameleaf_locked_rules_reload')}</Button>
+{/snippet}
+
+{#snippet chips(items: { key: string; name: string; image?: string }[])}
+  {#if items.length === 0}
+    <span class="none">{$t('frameleaf_locked_rules_none')}</span>
+  {:else}
+    <span class="chips">
+      {#each items as item (item.key)}
+        <span class="chip" class:is-plain={!item.image}>
+          {#if item.image}<img class="fl-squircle" src={item.image} alt="" loading="lazy" />{/if}
+          {item.name}
+        </span>
+      {/each}
+    </span>
+  {/if}
+{/snippet}
+
+{#snippet pick(label: string, help: string, chosen: { key: string; name: string; image?: string }[], body: Snippet)}
+  <details class="pick">
+    <summary>
+      <span class="copy">
+        <strong>{label}</strong>
+        <small>{help}</small>
+      </span>
+      <span class="chosen">
+        {@render chips(chosen)}
+        <span class="change" aria-hidden="true"
+          >{chosen.length === 0 ? $t('frameleaf_locked_rules_choose') : $t('frameleaf_locked_rules_change')}</span
+        >
+      </span>
+    </summary>
+    <div class="picker">{@render body()}</div>
+  </details>
+{/snippet}
+
+{#snippet peoplePicker()}
+  <label class="field">
+    <span>{$t('frameleaf_locked_rules_find_person')}</span>
+    <input type="search" autocomplete="off" bind:value={personQuery} oninput={onPersonQuery} />
+  </label>
+  <div class="options">
+    {#each draft.personIds as id (id)}
+      {@const person = people[id]}
+      <label class="option">
+        <input type="checkbox" checked onchange={() => toggle('personIds', id)} />
+        {#if person}
+          <img class="fl-squircle" src={getPeopleThumbnailUrl(person)} alt="" loading="lazy" />
+          <span>{personName(person)}</span>
+        {:else}
+          <span class="unavailable">
+            {$t('frameleaf_locked_rules_unavailable_person')}
+            <small>{$t('frameleaf_locked_rules_unavailable_help')}</small>
+          </span>
+        {/if}
+      </label>
+    {/each}
+    {#each personOptions as person (person.id)}
+      <label class="option">
+        <input type="checkbox" checked={false} onchange={() => togglePerson(person)} />
+        <img class="fl-squircle" src={getPeopleThumbnailUrl(person)} alt="" loading="lazy" />
+        <span>{personName(person)}</span>
+      </label>
+    {/each}
+  </div>
+  {#if searchingPeople}
+    <Spinner size="md" label={$t('loading')} />
+  {/if}
+  {#if draft.personIds.length === 0 && personOptions.length === 0 && !searchingPeople}
+    <p class="muted">{$t('frameleaf_locked_rules_people_empty')}</p>
+  {/if}
+{/snippet}
+
+{#snippet petsPicker()}
+  <div class="options">
+    {#each sortedPets as pet (pet.id)}
+      <label class="option">
+        <input type="checkbox" checked={draft.petIds.includes(pet.id)} onchange={() => toggle('petIds', pet.id)} />
+        <span>{isUnnamedPet(pet) ? $t('frameleaf_pets_unnamed') : pet.name}</span>
+      </label>
+    {/each}
+    {#each missingPetIds as id (id)}
+      <label class="option">
+        <input type="checkbox" checked onchange={() => toggle('petIds', id)} />
+        <span class="unavailable">
+          {$t('frameleaf_locked_rules_unavailable_pet')}
+          <small>{$t('frameleaf_locked_rules_unavailable_help')}</small>
+        </span>
+      </label>
+    {/each}
+  </div>
+  {#if pets.length === 0 && missingPetIds.length === 0}
+    <p class="muted">{$t('frameleaf_locked_rules_pets_empty')}</p>
+  {/if}
+{/snippet}
+
+{#snippet tagsPicker()}
+  <label class="field">
+    <span>{$t('frameleaf_locked_rules_find_tag')}</span>
+    <input type="search" autocomplete="off" maxlength={100} bind:value={tagQuery} />
+  </label>
+  <div class="options">
+    {#each tagEntries as entry (entry.id)}
+      <label class="option">
+        <input
+          type="checkbox"
+          checked={entry.selected || !!entry.lockedThrough}
+          disabled={!entry.selected && !!entry.lockedThrough}
+          onchange={() => toggle('tagIds', entry.id)}
+        />
+        {#if entry.available}
+          <span>
+            {entry.label}
+            {#if entry.lockedThrough}
+              <small>{$t('frameleaf_locked_rules_locked_through', { values: { tag: entry.lockedThrough } })}</small>
+            {/if}
+          </span>
+        {:else}
+          <span class="unavailable">
+            {$t('frameleaf_locked_rules_unavailable_tag')}
+            <small>{$t('frameleaf_locked_rules_unavailable_help')}</small>
+          </span>
+        {/if}
+      </label>
+    {/each}
+  </div>
+  {#if showCreateTag}
+    <div>
+      <Button disabled={creatingTag} onclick={createTag}>
+        {$t('frameleaf_locked_rules_create_tag', { values: { name: tagQuery.trim() } })}
+      </Button>
+    </div>
+  {/if}
+{/snippet}
+
+<KitPage>
+  {#if phase !== 'ready'}
+    {#if phase === 'no-pin'}
+      <Hero
+        tone="quiet"
+        icon={mdiLockOutline}
+        title={$t('frameleaf_locked_rules_hero_no_pin')}
+        body={$t('frameleaf_locked_rules_set_up_pin')}
+        label={$t('frameleaf_locked_rules_title')}
+        actions={pinAction}
+      />
     {:else if phase === 'unavailable'}
-      <p>{$t('frameleaf_locked_rules_session_unavailable')}</p>
-      <Button onclick={() => void load()}>{$t('frameleaf_locked_rules_try_again')}</Button>
-    {:else if phase === 'no-pin'}
-      <p>{$t('frameleaf_locked_rules_set_up_pin')}</p>
-      <Button onclick={openPinSettings}>{$t('frameleaf_locked_rules_pin_settings')}</Button>
+      <Hero
+        tone="warn"
+        icon={mdiLockOutline}
+        title={$t('frameleaf_locked_rules_hero_locked')}
+        body={$t('frameleaf_locked_rules_session_unavailable')}
+        label={$t('frameleaf_locked_rules_title')}
+        actions={retryAction}
+      />
     {:else}
-      <Button variant="primary" onclick={unlock}>{$t('frameleaf_locked_rules_unlock')}</Button>
+      <Hero
+        tone="quiet"
+        icon={mdiLockOutline}
+        title={$t('frameleaf_locked_rules_hero_locked')}
+        body={$t('frameleaf_locked_rules_locked_description')}
+        label={$t('frameleaf_locked_rules_title')}
+        actions={phase === 'locked' ? unlockAction : undefined}
+      >
+        {#if phase === 'loading'}
+          <div class="loading"><Spinner size="lg" label={$t('loading')} /></div>
+        {/if}
+      </Hero>
     {/if}
     {#if notice}
-      <p role="status">{notice}</p>
+      <Notice tone="info" title={notice} />
     {/if}
     {#if error}
-      <p class="error" role="alert">{error}</p>
+      <div role="alert"><Notice tone="warn" title={error} /></div>
     {/if}
-  </div>
-{:else}
-  <div class="rules">
-    <div class="section-action">
-      <p>{$t('frameleaf_locked_rules_revealed')}</p>
-      <Button onclick={hideLocked}>{$t('frameleaf_locked_rules_hide')}</Button>
-    </div>
+  {:else}
+    <Hero
+      tone={anyChosen ? 'good' : 'quiet'}
+      icon={anyChosen ? mdiLockCheckOutline : mdiLockOutline}
+      title={!anyChosen
+        ? $t('frameleaf_locked_rules_hero_none')
+        : savedCount && savedCount.photos + savedCount.videos > 0
+          ? savedCount.videos === 0
+            ? $t('frameleaf_locked_rules_hero_photos', { values: savedCount })
+            : savedCount.photos === 0
+              ? $t('frameleaf_locked_rules_hero_videos', { values: savedCount })
+              : $t('frameleaf_locked_rules_hero_count', { values: savedCount })
+          : $t('frameleaf_locked_rules_hero_some')}
+      body={anyChosen
+        ? $t('frameleaf_locked_rules_hero_because', { values: { chosen: chosenWords } })
+        : $t('frameleaf_locked_rules_hero_none_body')}
+      label={$t('frameleaf_locked_rules_title')}
+      actions={hideAction}
+    />
 
     {#if conflict}
-      <div class="notice" role="alert">
-        <span>{$t('frameleaf_locked_rules_conflict')}</span>
-        <Button onclick={() => void load()}>{$t('frameleaf_locked_rules_reload')}</Button>
+      <div role="alert">
+        <Notice tone="warn" title={$t('frameleaf_locked_rules_conflict')} action={reloadAction} />
       </div>
     {/if}
     {#if notice}
-      <p class="notice" role="status">{notice}</p>
+      <Notice tone="info" title={notice} />
     {/if}
     {#if error}
-      <p class="error" role="alert">{error}</p>
+      <div role="alert"><Notice tone="warn" title={error} /></div>
     {/if}
 
-    <label class="field">
-      <span>{$t('frameleaf_locked_rules_scope')}</span>
-      <select bind:value={draft.scope}>
-        <option value={SuppressionScope.Owned}>{$t('frameleaf_locked_rules_scope_owned')}</option>
-        <option value={SuppressionScope.Visible}>{$t('frameleaf_locked_rules_scope_visible')}</option>
-      </select>
-    </label>
+    <Section title={$t('frameleaf_locked_rules_whose')}>
+      {@render pick(
+        $t('frameleaf_locked_rules_people'),
+        $t('frameleaf_locked_rules_people_help'),
+        draft.personIds.map((id) => {
+          const person = people[id];
+          return {
+            key: id,
+            name: person ? personName(person) : $t('frameleaf_locked_rules_unavailable_person'),
+            image: person ? getPeopleThumbnailUrl(person) : undefined,
+          };
+        }),
+        peoplePicker,
+      )}
+      {@render pick(
+        $t('frameleaf_locked_rules_pets'),
+        $t('frameleaf_locked_rules_people_help'),
+        draft.petIds.map((id) => {
+          const pet = pets.find((item) => item.id === id);
+          return {
+            key: id,
+            name: pet
+              ? isUnnamedPet(pet)
+                ? $t('frameleaf_pets_unnamed')
+                : pet.name
+              : $t('frameleaf_locked_rules_unavailable_pet'),
+          };
+        }),
+        petsPicker,
+      )}
+      {@render pick(
+        $t('frameleaf_locked_rules_tags'),
+        $t('frameleaf_locked_rules_tags_help'),
+        tagEntries
+          .filter((entry) => entry.selected)
+          .map((entry) => ({
+            key: entry.id,
+            name: entry.available ? entry.label : $t('frameleaf_locked_rules_unavailable_tag'),
+          })),
+        tagsPicker,
+      )}
+    </Section>
 
-    <div class="grid">
-      <section aria-labelledby="locked-rules-people">
-        <h3 id="locked-rules-people">{$t('frameleaf_locked_rules_people')}</h3>
-        <label class="field">
-          <span>{$t('frameleaf_locked_rules_find_person')}</span>
-          <input type="search" autocomplete="off" bind:value={personQuery} oninput={onPersonQuery} />
-        </label>
-        {#each draft.personIds as id (id)}
-          {@const person = people[id]}
-          <label class="option">
-            <input type="checkbox" checked onchange={() => toggle('personIds', id)} />
-            {#if person}
-              <img class="fl-squircle" src={getPeopleThumbnailUrl(person)} alt="" loading="lazy" />
-              <span>{personName(person)}</span>
-            {:else}
-              <span class="unavailable">
-                {$t('frameleaf_locked_rules_unavailable_person')}
-                <small>{$t('frameleaf_locked_rules_unavailable_help')}</small>
-              </span>
-            {/if}
-          </label>
-        {/each}
-        {#if searchingPeople}
-          <Spinner size="md" label={$t('loading')} />
-        {/if}
-        {#each personOptions as person (person.id)}
-          <label class="option">
-            <input type="checkbox" checked={false} onchange={() => togglePerson(person)} />
-            <img class="fl-squircle" src={getPeopleThumbnailUrl(person)} alt="" loading="lazy" />
-            <span>{personName(person)}</span>
-          </label>
-        {/each}
-        {#if draft.personIds.length === 0 && personOptions.length === 0 && !searchingPeople}
-          <p class="muted">{$t('frameleaf_locked_rules_people_empty')}</p>
-        {/if}
-      </section>
-
-      <section aria-labelledby="locked-rules-tags">
-        <h3 id="locked-rules-tags">{$t('frameleaf_locked_rules_tags')}</h3>
-        <label class="field">
-          <span>{$t('frameleaf_locked_rules_find_tag')}</span>
-          <input type="search" autocomplete="off" maxlength={100} bind:value={tagQuery} />
-        </label>
-        {#each tagEntries as entry (entry.id)}
-          <label class="option">
-            <input
-              type="checkbox"
-              checked={entry.selected || !!entry.lockedThrough}
-              disabled={!entry.selected && !!entry.lockedThrough}
-              onchange={() => toggle('tagIds', entry.id)}
-            />
-            {#if entry.available}
-              <span>
-                {entry.label}
-                {#if entry.lockedThrough}
-                  <small>{$t('frameleaf_locked_rules_locked_through', { values: { tag: entry.lockedThrough } })}</small>
-                {/if}
-              </span>
-            {:else}
-              <span class="unavailable">
-                {$t('frameleaf_locked_rules_unavailable_tag')}
-                <small>{$t('frameleaf_locked_rules_unavailable_help')}</small>
-              </span>
-            {/if}
-          </label>
-        {/each}
-        {#if showCreateTag}
-          <Button disabled={creatingTag} onclick={createTag}>
-            {$t('frameleaf_locked_rules_create_tag', { values: { name: tagQuery.trim() } })}
-          </Button>
-        {/if}
-      </section>
-
-      <section aria-labelledby="locked-rules-pets">
-        <h3 id="locked-rules-pets">{$t('frameleaf_locked_rules_pets')}</h3>
-        {#each sortedPets as pet (pet.id)}
-          <label class="option">
-            <input type="checkbox" checked={draft.petIds.includes(pet.id)} onchange={() => toggle('petIds', pet.id)} />
-            <span>{isUnnamedPet(pet) ? $t('frameleaf_pets_unnamed') : pet.name}</span>
-          </label>
-        {/each}
-        {#each missingPetIds as id (id)}
-          <label class="option">
-            <input type="checkbox" checked onchange={() => toggle('petIds', id)} />
-            <span class="unavailable">
-              {$t('frameleaf_locked_rules_unavailable_pet')}
-              <small>{$t('frameleaf_locked_rules_unavailable_help')}</small>
-            </span>
-          </label>
-        {/each}
-        {#if pets.length === 0 && missingPetIds.length === 0}
-          <p class="muted">{$t('frameleaf_locked_rules_pets_empty')}</p>
-        {/if}
-      </section>
-    </div>
-
-    {#if lockedCount}
-      <p class="count" role="status">
-        {lockedCount.photos + lockedCount.videos === 0
-          ? $t('frameleaf_locked_rules_count_none')
-          : $t('frameleaf_locked_rules_count', { values: lockedCount })}
-      </p>
-    {/if}
-    <div class="section-action end">
-      <Button disabled={saving} onclick={() => void load()}>{$t('frameleaf_locked_rules_discard')}</Button>
-      <Button variant="primary" disabled={conflict || saving} onclick={save}>
-        {$t('frameleaf_locked_rules_save')}
-      </Button>
-    </div>
-  </div>
-{/if}
+    <Section title={$t('frameleaf_locked_rules_scope')}>
+      <Choice
+        label={$t('frameleaf_locked_rules_scope')}
+        value={draft.scope}
+        options={[
+          {
+            value: SuppressionScope.Owned,
+            label: $t('frameleaf_locked_rules_scope_owned'),
+            detail: $t('frameleaf_locked_rules_scope_owned_detail'),
+          },
+          {
+            value: SuppressionScope.Visible,
+            label: $t('frameleaf_locked_rules_scope_visible'),
+            detail: $t('frameleaf_locked_rules_scope_visible_detail'),
+          },
+        ]}
+        onChange={(value) => (draft.scope = value as SuppressionScope)}
+      />
+      {#if lockedCount}
+        <div class="count">
+          <Notice
+            title={lockedCount.photos + lockedCount.videos === 0
+              ? $t('frameleaf_locked_rules_count_none')
+              : lockedCount.videos === 0
+                ? $t('frameleaf_locked_rules_count_photos', { values: lockedCount })
+                : lockedCount.photos === 0
+                  ? $t('frameleaf_locked_rules_count_videos', { values: lockedCount })
+                  : $t('frameleaf_locked_rules_count', { values: lockedCount })}
+          >
+            {changed ? $t('frameleaf_locked_rules_count_draft') : $t('frameleaf_locked_rules_count_now')}
+          </Notice>
+        </div>
+      {/if}
+      <div class="actions">
+        <!-- As the prototype: nothing to save or undo until something changes. -->
+        <Button variant="primary" disabled={conflict || saving || !changed} onclick={save}>
+          {$t('frameleaf_locked_rules_save')}
+        </Button>
+        <Button disabled={saving || !changed} onclick={() => (draft = $state.snapshot(baseline))}
+          >{$t('frameleaf_locked_rules_discard')}</Button
+        >
+      </div>
+    </Section>
+  {/if}
+</KitPage>
 
 <style>
-  .lock {
+  .loading {
+    padding: 0 var(--fl-space-6) var(--fl-space-5);
+  }
+  .pick {
+    border-top: 1px solid var(--fl-border);
+  }
+  .pick > summary {
     display: grid;
-    justify-items: start;
-    gap: 0.5rem;
-    margin: 1rem 0;
-    padding: 1rem;
-    color: var(--fl-text);
-    background: var(--fl-raised);
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-card);
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--fl-space-6);
+    padding: var(--fl-space-4) 0;
+    cursor: pointer;
+    list-style: none;
   }
-  h3 {
-    margin: 0;
-    font-size: 1rem;
-    color: var(--fl-text);
+  .pick > summary::-webkit-details-marker {
+    display: none;
   }
-  p {
-    margin: 0;
-    color: var(--fl-text);
+  .pick > summary:focus-visible {
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
+    border-radius: var(--fl-radius-sm);
   }
-  .count {
+  .copy {
+    display: grid;
+    gap: var(--fl-space-2);
+    min-width: 0;
+  }
+  .copy strong {
+    font-size: var(--fl-font-callout);
     font-weight: 600;
   }
-  .rules {
-    display: grid;
-    gap: 1rem;
-    margin: 1rem 0;
+  .copy small {
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+    line-height: 1.5;
   }
-  .section-action {
+  .chosen {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-  }
-  .section-action.end {
     justify-content: flex-end;
+    gap: var(--fl-space-2);
+    min-width: 0;
   }
-  .notice {
+  .chips {
     display: flex;
     flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.625rem;
-    padding: 0.75rem;
-    font-size: var(--fl-font-small);
-    color: var(--fl-text);
-    background: var(--fl-raised);
-    border-inline-start: 2px solid var(--fl-accent);
+    justify-content: flex-end;
+    gap: var(--fl-space-2);
   }
-  .error {
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--fl-space-2);
+    min-height: 32px;
+    padding: 0 var(--fl-space-3) 0 var(--fl-space-1);
     font-size: var(--fl-font-small);
-    color: var(--fl-danger);
+    background: var(--fl-raised);
+    border: 1px solid var(--fl-border);
+    border-radius: 999px;
+  }
+  .chip.is-plain {
+    padding-inline-start: var(--fl-space-3);
+  }
+  .chip img {
+    width: 24px;
+    height: 24px;
+    object-fit: cover;
+    border-radius: 999px;
+  }
+  .none {
+    color: var(--fl-muted);
+    font-size: var(--fl-font-callout);
+  }
+  /* Drawn like the kit's buttons; the whole row opens the list, so it is not a button of its own. */
+  .change {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--fl-control-height);
+    padding: 0 var(--fl-space-3);
+    color: var(--fl-text);
+    font-size: var(--fl-font-callout);
+    background: var(--fl-raised);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control);
+  }
+  .pick > summary:hover .change {
+    border-color: var(--fl-border-strong, var(--fl-border));
+  }
+  .pick[open] .change {
+    background: var(--fl-panel);
+  }
+  .picker {
+    display: grid;
+    gap: var(--fl-space-3);
+    padding: 0 0 var(--fl-space-4);
+  }
+  .options {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+    gap: 0 var(--fl-space-4);
+    max-height: 22rem;
+    overflow-y: auto;
   }
   .muted {
+    margin: 0;
     font-size: var(--fl-font-small);
     color: var(--fl-muted);
   }
   .field {
     display: grid;
-    gap: 0.375rem;
+    gap: var(--fl-space-2);
     color: var(--fl-text);
+    font-size: var(--fl-font-small);
   }
   .field span {
-    font-weight: 550;
+    font-weight: 600;
   }
-  select,
   input[type='search'] {
     width: 100%;
     max-width: 28rem;
-    padding: 0.5rem 0.75rem;
+    min-height: var(--fl-control-height);
+    padding: 0 var(--fl-space-3);
     color: var(--fl-text);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);
     font: inherit;
   }
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
-    gap: 1rem;
-  }
-  .grid section {
-    display: grid;
-    align-content: start;
-    gap: 0.5rem;
-    min-width: 0;
-  }
   .option {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--fl-space-2);
     min-height: 2.75rem;
     color: var(--fl-text);
   }
@@ -774,5 +999,24 @@
   }
   .unavailable {
     color: var(--fl-muted);
+  }
+  .count {
+    margin-top: var(--fl-space-3);
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--fl-space-2);
+    padding: var(--fl-space-4) 0 var(--fl-space-5);
+  }
+  @container kit (max-width: 620px) {
+    .pick > summary {
+      grid-template-columns: 1fr;
+      gap: var(--fl-space-3);
+    }
+    .chosen,
+    .chips {
+      justify-content: flex-start;
+    }
   }
 </style>

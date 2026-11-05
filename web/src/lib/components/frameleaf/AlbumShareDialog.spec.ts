@@ -57,6 +57,37 @@ describe('AlbumShareDialog', () => {
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
   });
 
+  it('lists a shared space’s unanswered invitations, never offers them again, and withdraws one at once', async () => {
+    sdkMock.searchUsers.mockResolvedValue([jamie]);
+    sdkMock.getSharedSpaceMembers.mockResolvedValue({
+      members: [
+        { user: me, role: AlbumUserRole.Owner, pending: false },
+        { user: jamie, role: AlbumUserRole.Editor, pending: true },
+      ],
+    } as never);
+    sdkMock.removeSharedSpaceInvitation.mockResolvedValue(undefined as never);
+    const onChanged = vi.fn();
+    const space = albumFactory.build({
+      id: 'space-1',
+      albumName: 'Family Space',
+      kind: AlbumKind.Space,
+      albumUsers: [{ user: me, role: AlbumUserRole.Owner }],
+    });
+    render(AlbumShareDialog, { album: space, open: true, onChanged, onLeave: vi.fn() });
+
+    const access = within(screen.getByRole('region', { name: 'Who has access' }));
+    expect(await access.findByText('Invitation sent')).toBeInTheDocument();
+    expect(access.getByText('Jamie')).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /Jamie/ })).toBeNull();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Withdraw the invitation to Jamie' }));
+    await waitFor(() =>
+      expect(sdkMock.removeSharedSpaceInvitation).toHaveBeenCalledWith({ id: 'space-1', userId: 'jamie' }),
+    );
+    await waitFor(() => expect(access.queryByText('Invitation sent')).toBeNull());
+    expect(onChanged).toHaveBeenCalled();
+  });
+
   it('tags the members the server says are supporters (supporter option b)', () => {
     const album = albumFactory.build({
       id: 'album-1',

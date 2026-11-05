@@ -2381,6 +2381,10 @@
       padding-bottom: env(safe-area-inset-bottom);
       border-width: 1px 0 0;
       border-radius: var(--fl-radius-capsule) var(--fl-radius-capsule) 0 0;
+      /* An opaque sheet (prototype): the photo's colours never bleed through the details. */
+      background: var(--fl-viewer-panel);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
       transition: translate var(--fl-duration) var(--fl-spring);
     }
 

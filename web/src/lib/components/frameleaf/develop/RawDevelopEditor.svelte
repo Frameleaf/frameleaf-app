@@ -10,6 +10,7 @@
    * changed. The viewer opens it for a single photo (`NativeRawEditor`).
    */
   import { AssetMediaSize, getAssetInfo } from '@frameleaf/sdk';
+  import { cameraName } from '$lib/frameleaf/raw-support';
   import { Icon } from '@frameleaf/ui';
   import {
     mdiArrowLeft,
@@ -212,7 +213,7 @@
           const make = exif?.make?.trim() ?? '';
           const model = exif?.model?.trim() ?? '';
           info[current] = {
-            camera: model.toLowerCase().startsWith(make.toLowerCase()) ? model : `${make} ${model}`.trim(),
+            camera: cameraName({ make, model }),
             width: exif?.exifImageWidth ?? null,
             height: exif?.exifImageHeight ?? null,
           };

@@ -42,6 +42,8 @@ describe('raw-support', () => {
   it('names a camera once, even when the model repeats the maker', () => {
     expect(cameraName({ make: 'Canon', model: 'Canon EOS R5' })).toBe('Canon EOS R5');
     expect(cameraName({ make: 'NIKON CORPORATION', model: 'Z 8' })).toBe('NIKON CORPORATION Z 8');
+    expect(cameraName({ make: 'NIKON CORPORATION', model: 'NIKON D80' })).toBe('NIKON D80');
+    expect(cameraName({ make: 'RICOH IMAGING COMPANY, LTD.', model: 'RICOH GR III' })).toBe('RICOH GR III');
     expect(cameraName({ make: 'Sony', model: null })).toBe('Sony');
     expect(cameraName({ make: null, model: null })).toBe('');
   });

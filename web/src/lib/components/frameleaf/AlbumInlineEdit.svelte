@@ -56,6 +56,8 @@
     draft = value;
     editing = true;
   };
+  /** Opens the field from outside, e.g. a "Rename" menu command (Boards' collection menu). */
+  export const startEditing = () => start();
 
   const commit = async () => {
     if (cancelled || saving) {

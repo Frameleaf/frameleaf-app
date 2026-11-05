@@ -1,38 +1,41 @@
 <script lang="ts">
-  import { locale } from '$lib/stores/preferences.store';
   /**
-   * Settings → Frameleaf Cloud → Your Frameleaf Cloud (FL-544): one page in place of Plan, Licence,
-   * Support Frameleaf and Supporter (prototype `src/settings-v2/cloud/YourCloud.jsx`, branch
-   * aj/cloud-one-step). The status, what Frameleaf Cloud adds with one action per row, and the
-   * licence, key and file under Details. Buying happens through the Get Frameleaf Cloud sheet.
+   * Settings → Frameleaf Cloud → Your Frameleaf Cloud (FL-544; rebuilt on the kit after the approved
+   * prototype's Plan page, `settings-v2/cloud/Plan.jsx`). The plan's state first (with what it
+   * covers under the hero), then what the plan gives, or the two ways to pay and what a plan does not
+   * include, and a way to the Licence page (its own page again, as the prototype has it). Buying happens in the Get Frameleaf Cloud
+   * sheet and the Frameleaf store, never on this server.
+   *
+   * Pricing (owner decision 2026-11-05): a Server licence ($100 once) comes first, then Frameleaf
+   * Cloud is $9.99 a month for each TB; the licence's discount is what turns $99.90 a year into
+   * $92.91. Every figure is read from `license/products`.
    */
   import './cloud-account.css';
-  import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
-  import CloudBanner from '$lib/components/frameleaf/cloud/CloudBanner.svelte';
-  import CloudCard from '$lib/components/frameleaf/cloud/CloudCard.svelte';
-  import LicenseSection from '$lib/components/frameleaf/cloud/LicenseSection.svelte';
-  import { cloudPlanPrice, formatUsd } from '$lib/frameleaf/cloud';
-  import { FEATURES, gateButtonKey, haveFrom, missing, type CloudFeature } from '$lib/frameleaf/cloud-rules';
+  import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
+  import Coverage, { type CoverageRow } from '$lib/components/frameleaf/settings/kit/Coverage.svelte';
+  import Facts from '$lib/components/frameleaf/settings/kit/Facts.svelte';
+  import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
+  import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
+  import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
+  import Points from '$lib/components/frameleaf/settings/kit/Points.svelte';
+  import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
+  import Said from '$lib/components/frameleaf/settings/kit/Said.svelte';
+  import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
+  import { cloudPlanPrice, discountPercent, formatUsd } from '$lib/frameleaf/cloud';
+  import { haveFrom, type CloudFeature } from '$lib/frameleaf/cloud-rules';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
   import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
+  import { locale } from '$lib/stores/preferences.store';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import { getCloudMlStatus, getRemoteAccess, type CloudMlStatusResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import {
-    mdiCloudCheckOutline,
-    mdiCloudOutline,
-    mdiCreationOutline,
-    mdiCreditCardOutline,
-    mdiDeleteOutline,
-    mdiEarth,
-    mdiOpenInNew,
-    mdiRefresh,
-    mdiShieldCheckOutline,
-  } from '@mdi/js';
+  import { mdiChevronRight, mdiCloudOffOutline, mdiCloudOutline, mdiCreditCardOutline, mdiEarth } from '@mdi/js';
+  import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -59,22 +62,22 @@
   const lapsed = $derived(!!plan && (plan.state === 'expired' || plan.state === 'invalid'));
 
   const price = (id: string) => products?.products.find((product) => product.id === id)?.priceUsd ?? 0;
-  const bundle = $derived(
-    $t('frameleaf_gc_price_year', {
-      values: {
-        once: formatUsd(price('supporter-server')),
-        renew: formatUsd(cloudPlanPrice(price('cloud-annual'), products?.licensedDiscount ?? 0)),
-      },
-    }),
+  /** What the licence on this server takes off a plan; a server with none gets the Server licence's, as it buys one. */
+  const share = $derived(
+    have.licence === 'individual' ? (products?.individualDiscount ?? 0) : (products?.licensedDiscount ?? 0),
   );
-  const planWithLicence = $derived(
-    formatUsd(
-      cloudPlanPrice(
-        price('cloud-annual'),
-        have.licence === 'individual' ? (products?.individualDiscount ?? 0) : (products?.licensedDiscount ?? 0),
-      ),
-    ),
+  const prices = $derived({
+    licence: formatUsd(price('supporter-server')),
+    monthly: formatUsd(price('cloud-monthly')),
+    yearlyFull: formatUsd(price('cloud-annual')),
+    yearly: formatUsd(cloudPlanPrice(price('cloud-annual'), share)),
+    pct: discountPercent(share),
+    extra: formatUsd(products?.backup?.usdPerTbMonth ?? price('cloud-monthly')),
+  });
+  const licenceName = $derived(
+    have.licence === 'individual' ? $t('frameleaf_yc_licence_individual') : $t('frameleaf_yc_licence_server'),
   );
+
   // FL-1197: the plan's name on frameleaf.net, changed on Remote access
   let nameAddress = $state<string | null>(null);
   $effect(() => {
@@ -88,6 +91,8 @@
   });
   const formatDate = (value: string | null | undefined) =>
     value ? new Intl.DateTimeFormat($locale, { dateStyle: 'long' }).format(new Date(value)) : '—';
+  const formatWhen = (value: string | null | undefined) =>
+    value ? new Intl.DateTimeFormat($locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '—';
   const manageUrl = $derived(status?.manageUrl ?? products?.storeUrl ?? null);
 
   let removing = $state(false);
@@ -112,41 +117,108 @@
   const getCloud = (feature: CloudFeature | null = null, page?: string) =>
     getCloudManager.open(feature, page ? { onDone: () => void goto(page) } : {});
 
-  type Row = { id: CloudFeature; icon: string; on: boolean; page: string; note: string };
-  const rows = $derived<Row[]>([
+  const hero = $derived.by(() => {
+    if (overdue) {
+      return {
+        tone: 'warn' as const,
+        title: $t('frameleaf_plan_hero_renew'),
+        body: $t('frameleaf_plan_hero_renew_body', { values: { date: formatDate(plan?.graceUntil) } }),
+      };
+    }
+    if (have.plan) {
+      return {
+        tone: 'good' as const,
+        title: $t('frameleaf_plan_hero_active'),
+        body: $t('frameleaf_yc_hero_active_body', {
+          values: { account: status?.account?.label ?? '', date: formatDate(plan?.expiresAt) },
+        }),
+      };
+    }
+    const needs = have.licence === 'none' ? ` ${$t('frameleaf_yc_hero_needs_licence')}` : '';
+    return {
+      tone: 'quiet' as const,
+      title: $t('frameleaf_plan_hero_none'),
+      body: `${$t('frameleaf_plan_hero_none_body')}${needs}`,
+    };
+  });
+
+  const coverage = $derived<CoverageRow[]>([
     {
-      id: 'remote',
       icon: mdiEarth,
-      on: !!status?.remoteAccessEnabled,
-      page: commandCenterUrl('cloud', 'cloud-remote'),
-      note: '',
+      name: $t('frameleaf_plan_cover_remote'),
+      detail: $t('frameleaf_plan_cover_remote_detail'),
+      tone: overdue ? 'warn' : 'good',
+      value: overdue
+        ? $t('frameleaf_plan_cover_until', { values: { date: formatDate(plan?.graceUntil) } })
+        : $t('frameleaf_plan_cover_remote_everyone'),
+    },
+    have.licence === 'server'
+      ? {
+          icon: mdiCloudOutline,
+          name: $t('frameleaf_plan_cover_backup'),
+          detail: $t('frameleaf_plan_cover_backup_everyone_detail'),
+          tone: 'good',
+          value: $t('frameleaf_plan_cover_backup_everyone'),
+        }
+      : have.licence === 'individual'
+        ? {
+            icon: mdiCloudOutline,
+            name: $t('frameleaf_plan_cover_backup'),
+            detail: $t('frameleaf_plan_cover_backup_one_detail'),
+            tone: 'warn',
+            value: $t('frameleaf_plan_cover_backup_one', { values: { name: authManager.user.name } }),
+          }
+        : {
+            icon: mdiCloudOutline,
+            name: $t('frameleaf_plan_cover_backup'),
+            detail: $t('frameleaf_plan_cover_backup_waiting_detail'),
+            tone: 'off',
+            value: $t('frameleaf_plan_cover_backup_waiting'),
+          },
+  ]);
+
+  /** What either way of paying gives (the prototype's GIVES). */
+  const gives = $derived([
+    { text: $t('frameleaf_yc_give_remote') },
+    { text: $t('frameleaf_yc_give_storage') },
+    { text: $t('frameleaf_yc_give_buddy') },
+    { text: $t('frameleaf_plan_feature_servers') },
+  ]);
+  const ways = $derived([
+    {
+      id: 'monthly',
+      tag: $t('frameleaf_yc_way_monthly_tag'),
+      name: $t('frameleaf_yc_way_monthly'),
+      price: $t('frameleaf_yc_way_monthly_price', { values: { price: prices.monthly } }),
+      line: $t('frameleaf_yc_way_monthly_line'),
+      primary: false,
     },
     {
-      id: 'backup',
-      icon: mdiShieldCheckOutline,
-      // whether Cloud Backup is set up is the Backup page's to say; here it is ready once Frameleaf Cloud is
-      on: false,
-      page: commandCenterUrl('backups', 'cloud'),
-      note: '',
-    },
-    {
-      id: 'processing',
-      icon: mdiCreationOutline,
-      on: !!cloudMl?.enabled,
-      page: commandCenterUrl('cloud', 'cloud-processing'),
-      note: cloudMl?.wallet
-        ? $t('frameleaf_yc_credit_left', { values: { amount: formatUsd(cloudMl.wallet.availableUsd) } })
-        : '',
+      id: 'yearly',
+      tag: $t('frameleaf_yc_way_yearly_tag'),
+      name: $t('frameleaf_yc_way_yearly'),
+      price: $t('frameleaf_yc_way_yearly_price', { values: { price: prices.yearly } }),
+      line: $t('frameleaf_yc_way_yearly_line', {
+        values: { full: prices.yearlyFull, pct: prices.pct, licence: licenceName },
+      }),
+      primary: true,
     },
   ]);
+  const priceHint = $derived(
+    have.licence === 'none'
+      ? $t('frameleaf_yc_price_hint_new', {
+          values: { licence: prices.licence, monthly: prices.monthly, yearly: prices.yearly, pct: prices.pct },
+        })
+      : $t('frameleaf_yc_price_hint_licensed', { values: { licence: licenceName, pct: prices.pct } }),
+  );
 </script>
 
-<div class="frameleaf-cloud" data-section="cloud-plan">
+<KitPage>
   {#if failure}
-    <p class="fc-notice is-error" role="alert">{failure}</p>
+    <Notice tone="warn" title={$t('frameleaf_cloud_action_failed')}>{failure}</Notice>
   {/if}
   {#if notice}
-    <p class="fc-notice" role="status">{notice}</p>
+    <Said message={notice} onDismiss={() => (notice = '')} />
   {/if}
 
   {#if !status || !license || !products}
@@ -154,161 +226,193 @@
       <Skeleton variant="block" height="168px" />
     </div>
   {:else if !have.configured}
-    <CloudCard
-      icon={mdiCloudOutline}
+    <Hero
+      label={$t('frameleaf_plan_status_label')}
+      tone="quiet"
+      icon={mdiCloudOffOutline}
       title={$t('frameleaf_cloud_not_configured_title')}
-      status={$t('frameleaf_cloud_status_not_configured')}
+      body={$t('frameleaf_cloud_not_configured_description')}
     />
   {:else}
-    {#if !have.linked}
-      <CloudCard
-        icon={mdiCloudOutline}
-        title={$t('frameleaf_yc_new_title')}
-        description={$t('frameleaf_yc_new_body', { values: { price: bundle } })}
-        status={$t('frameleaf_cloud_status_not_linked')}
-      >
-        <div class="fc-actions">
-          <Button variant="primary" onclick={() => getCloud()}>{$t('frameleaf_get_cloud')}</Button>
-        </div>
-      </CloudCard>
-    {:else if have.plan}
-      <CloudCard
-        icon={mdiCloudCheckOutline}
-        title={overdue ? $t('frameleaf_yc_overdue_title') : $t('frameleaf_gc_done_title')}
-        description={overdue
-          ? $t('frameleaf_yc_overdue_body', { values: { date: formatDate(plan?.graceUntil) } })
-          : $t('frameleaf_yc_active_body', {
-              values: {
-                account: status.account?.label ?? '',
-                date: formatDate(plan?.expiresAt),
-                price: planWithLicence,
-              },
-            })}
-        status={overdue ? $t('frameleaf_license_state_grace') : $t('frameleaf_license_state_active')}
-        tone={overdue ? 'warning' : 'ok'}
-      >
-        <div class="fc-actions">
-          {#if manageUrl}
-            <a class="fc-button" class:is-primary={overdue} href={manageUrl} target="_blank" rel="noopener noreferrer">
-              <Icon icon={mdiOpenInNew} size="18" />
-              {overdue ? $t('frameleaf_yc_update_payment') : $t('frameleaf_yc_manage')}
-            </a>
-          {/if}
-          <Button
-            disabled={busy}
-            onclick={() => void act(() => cloudManager.refreshLicense(), $t('frameleaf_license_refreshed'))}
+    <Hero
+      label={$t('frameleaf_plan_status_label')}
+      tone={hero.tone}
+      icon={mdiCreditCardOutline}
+      title={hero.title}
+      body={hero.body}
+    >
+      {#snippet actions()}
+        {#if have.plan && manageUrl}
+          <a
+            class="fl-control button"
+            class:primary={overdue}
+            href={manageUrl}
+            target="_blank"
+            rel="noopener noreferrer"
           >
-            <Icon icon={mdiRefresh} size="18" />
-            {$t('frameleaf_yc_check_in')}
-          </Button>
-        </div>
-      </CloudCard>
-    {:else}
-      <CloudCard
-        icon={have.licence === 'none' ? mdiCloudOutline : mdiCreditCardOutline}
-        title={have.licence === 'none' ? $t('frameleaf_yc_linked_title') : $t('frameleaf_yc_licence_title')}
-        description={have.licence === 'none'
-          ? $t('frameleaf_yc_linked_body', { values: { account: status.account?.label ?? '', price: bundle } })
-          : $t('frameleaf_yc_licence_body', { values: { price: planWithLicence } })}
-        status={have.licence === 'none' ? $t('frameleaf_plan_status_none') : $t('frameleaf_yc_licence_status')}
-        tone={have.licence === 'none' ? 'muted' : 'warning'}
-      >
-        {#if lapsed}
-          <CloudBanner tone="danger" title={$t('frameleaf_license_expired_title')}
-            >{$t('frameleaf_license_expired_body')}</CloudBanner
-          >
+            {overdue ? $t('frameleaf_yc_update_payment') : $t('frameleaf_plan_manage')}
+          </a>
         {/if}
-        <div class="fc-actions">
-          <Button variant="primary" onclick={() => getCloud()}>{$t('frameleaf_get_cloud')}</Button>
-        </div>
-      </CloudCard>
+      {/snippet}
+      {#if have.plan}
+        <Coverage rows={coverage} />
+      {/if}
+    </Hero>
+
+    {#if lapsed}
+      <Notice tone="warn" title={$t('frameleaf_license_expired_title')}>{$t('frameleaf_license_expired_body')}</Notice>
     {/if}
 
-    <CloudCard
-      title={$t('frameleaf_yc_adds_title')}
-      description={have.plan ? $t('frameleaf_yc_adds_ready') : $t('frameleaf_yc_adds_body')}
-    >
-      <ul class="yc-rows">
-        {#each rows as row (row.id)}
-          {@const spec = FEATURES[row.id]}
-          {@const lacks = missing(row.id, have)}
-          <li class:is-off={lacks.length > 0 || !row.on}>
-            <span class="yc-icon"><Icon icon={row.icon} size="20" /></span>
-            <div class="yc-text">
-              <strong>{$t(spec.nameKey)}</strong>
-              <span>{$t(spec.whyKey)}</span>
-            </div>
-            <div class="yc-status">
-              {#if lacks.length > 0}
-                <span class="fc-status"
-                  >{lacks.includes('credit') && lacks.length === 1
-                    ? $t('frameleaf_yc_no_credit')
-                    : $t('frameleaf_yc_part_of')}</span
-                >
-              {:else if row.on}
-                <span class="fc-status is-ok">{$t('frameleaf_yc_on')}</span>
-                {#if row.note}<small>{row.note}</small>{/if}
-              {:else}
-                <span class="fc-status">{$t('frameleaf_yc_ready')}</span>
-              {/if}
-            </div>
-            <div class="yc-action">
-              {#if lacks.length > 0}
-                <Button
-                  variant={lacks.includes('credit') && lacks.length === 1 ? 'primary' : 'default'}
-                  onclick={() => getCloud(row.id, row.page)}
-                >
-                  {$t(gateButtonKey(lacks))}
-                </Button>
-              {:else}
-                {#if row.id === 'processing'}
-                  <Button onclick={() => getCloud('processing')}>{$t('frameleaf_yc_add_credit')}</Button>
-                {/if}
-                <a class="fc-button" href={row.page}>{row.on ? $t('frameleaf_yc_open') : $t(spec.onKey)}</a>
-              {/if}
-            </div>
-          </li>
-        {/each}
-      </ul>
-      {#if have.plan}
-        <p class="fc-note">
-          {nameAddress ? $t('frameleaf_yc_name', { values: { address: nameAddress } }) : $t('frameleaf_yc_name_none')}
-          <a href={commandCenterUrl('cloud', 'cloud-remote')}
-            >{nameAddress ? $t('frameleaf_name_change') : $t('frameleaf_yc_name_choose')}</a
-          >
+    {#if have.plan}
+      <Section title={$t('frameleaf_yc_gives')}>
+        <p class="said">
+          <strong>{$t('frameleaf_yc_gives_with_label')}</strong>
+          {$t('frameleaf_yc_gives_with')}
+          <strong>{$t('frameleaf_yc_gives_not_label')}</strong>
+          {$t('frameleaf_yc_gives_not')}
         </p>
-      {/if}
-      {#if have.linked && !have.plan}
-        <p class="fc-note">
-          {$t('frameleaf_yc_price_note', {
+        <Row
+          label={$t('frameleaf_yc_cost')}
+          help={$t('frameleaf_yc_cost_help', {
             values: {
-              bundle,
-              me: formatUsd(price('supporter-individual')),
-              monthly: formatUsd(cloudPlanPrice(price('cloud-monthly'), products.licensedDiscount)),
+              monthly: prices.monthly,
+              yearly: prices.yearly,
+              full: prices.yearlyFull,
+              pct: prices.pct,
+              licence: licenceName,
             },
           })}
-        </p>
-      {/if}
-    </CloudCard>
-
-    <details class="yc-details fl-continuous-corners">
-      <summary>{$t('frameleaf_yc_details')}</summary>
-      <p class="fc-muted">{$t('frameleaf_yc_details_body')}</p>
-      <LicenseSection />
-      <div class="fc-actions">
-        {#if have.plan}
-          <Button onclick={() => (removing = true)}>
-            <Icon icon={mdiDeleteOutline} size="18" />
-            {$t('frameleaf_yc_stop_here')}
-          </Button>
-        {/if}
-        <a class="fc-button" href={commandCenterUrl('cloud', 'cloud-account')}
-          >{$t('frameleaf_cc_section_cloud_account')}</a
+        />
+        <Row
+          label={$t('frameleaf_yc_name_label')}
+          help={nameAddress
+            ? $t('frameleaf_yc_name', { values: { address: nameAddress } })
+            : $t('frameleaf_yc_name_none')}
         >
+          <a class="fl-control button" href={commandCenterUrl('cloud', 'cloud-remote')}
+            >{nameAddress ? $t('frameleaf_name_change') : $t('frameleaf_yc_name_choose')}</a
+          >
+        </Row>
+        <Row
+          label={$t('frameleaf_yc_backup')}
+          help={have.licence === 'none' ? $t('frameleaf_yc_backup_needs_licence') : $t('frameleaf_yc_backup_help')}
+        >
+          {#if have.licence === 'none'}
+            <Button onclick={() => getCloud('backup', commandCenterUrl('backups', 'cloud'))}
+              >{$t('frameleaf_get_cloud')}</Button
+            >
+          {:else}
+            <a class="fl-control button" href={commandCenterUrl('backups', 'cloud')}>{$t('frameleaf_yc_open_backup')}</a
+            >
+          {/if}
+        </Row>
+        <Row label={$t('frameleaf_yc_buddy')} help={$t('frameleaf_yc_buddy_help')}>
+          <span class="value"
+            >{have.licence === 'server' ? $t('frameleaf_yc_buddy_ready') : $t('frameleaf_yc_buddy_needs')}</span
+          >
+        </Row>
+        <Row
+          label={$t('frameleaf_yc_more_storage')}
+          help={$t('frameleaf_yc_more_storage_help', { values: { price: prices.extra } })}
+        >
+          <span class="value">{$t('frameleaf_yc_more_storage_value')}</span>
+        </Row>
+        <Row label={$t('frameleaf_yc_stop')} help={$t('frameleaf_yc_stop_help')}>
+          <Button variant="danger" onclick={() => (removing = true)}>{$t('frameleaf_yc_stop_action')}</Button>
+        </Row>
+        <Advanced>
+          <Facts
+            rows={[
+              {
+                label: $t('frameleaf_yc_last_checked'),
+                value: formatWhen(license.refresh.refreshedAt ?? plan?.refreshedAt),
+              },
+              {
+                label: $t('frameleaf_yc_came_from'),
+                value: plan?.source === 'file' ? $t('frameleaf_plan_source_file') : $t('frameleaf_plan_source_account'),
+              },
+            ]}
+          />
+          <Row label={$t('frameleaf_yc_refresh')} help={$t('frameleaf_yc_refresh_help')}>
+            <Button
+              disabled={busy}
+              onclick={() => void act(() => cloudManager.refreshLicense(), $t('frameleaf_license_refreshed'))}
+              >{$t('frameleaf_yc_refresh_action')}</Button
+            >
+          </Row>
+        </Advanced>
+      </Section>
+    {:else}
+      <div class="ways">
+        {#each ways as way (way.id)}
+          <article class="way fl-continuous-corners" aria-labelledby="way-{way.id}">
+            <span class="way-icon" aria-hidden="true"><Icon icon={mdiCreditCardOutline} size="22" /></span>
+            <small>{way.tag}</small>
+            <h3 id="way-{way.id}">{way.name}</h3>
+            <p class="way-price">{way.price}</p>
+            <p>{way.line}</p>
+            <Points rows={gives} />
+            <Button variant={way.primary ? 'primary' : 'default'} disabled={!have.store} onclick={() => getCloud()}
+              >{$t('frameleaf_plan_checkout_title')}</Button
+            >
+          </article>
+        {/each}
+        <p class="hint">
+          {have.store ? $t('frameleaf_yc_pay_in_store') : $t('frameleaf_plan_store_unavailable')}
+          {priceHint}
+          {$t('frameleaf_yc_price_hint_storage', { values: { price: prices.extra } })}
+        </p>
       </div>
-    </details>
+
+      <Section title={$t('frameleaf_yc_not_included')}>
+        <Points
+          rows={[
+            { text: $t('frameleaf_yc_not_processing'), not: true },
+            { text: $t('frameleaf_yc_not_licence'), not: true },
+            { text: $t('frameleaf_yc_not_storage', { values: { price: prices.extra } }), not: true },
+          ]}
+        />
+        <Row
+          label={$t('frameleaf_yc_processing')}
+          help={cloudMl?.wallet
+            ? `${$t('frameleaf_yc_processing_help')} ${$t('frameleaf_yc_credit_left', { values: { amount: formatUsd(cloudMl.wallet.availableUsd) } })}`
+            : $t('frameleaf_yc_processing_help')}
+        >
+          <Button onclick={() => getCloud('processing')}>{$t('frameleaf_add_ai_credit')}</Button>
+          <a class="fl-control button" href={commandCenterUrl('cloud', 'cloud-processing')}
+            >{$t('frameleaf_yc_open')}<Icon icon={mdiChevronRight} size="16" aria-hidden /></a
+          >
+        </Row>
+      </Section>
+    {/if}
+
+    {#if have.plan}
+      <Section title={$t('frameleaf_yc_processing')} description={$t('frameleaf_yc_processing_help')}>
+        {#snippet action()}
+          <Button onclick={() => getCloud('processing')}>{$t('frameleaf_yc_add_credit')}</Button>
+          <a class="fl-control button" href={commandCenterUrl('cloud', 'cloud-processing')}
+            >{$t('frameleaf_yc_open')}<Icon icon={mdiChevronRight} size="16" aria-hidden /></a
+          >
+        {/snippet}
+      </Section>
+    {/if}
+
+    <Section
+      title={$t('frameleaf_cc_section_cloud_license')}
+      description={have.licence === 'server'
+        ? $t('frameleaf_yc_licence_has_server')
+        : have.licence === 'individual'
+          ? $t('frameleaf_yc_licence_has_individual')
+          : $t('frameleaf_yc_licence_has_none', { values: { price: prices.licence } })}
+    >
+      {#snippet action()}
+        <a class="fl-control button" href={commandCenterUrl('cloud', 'cloud-license')}
+          >{$t('frameleaf_cc_section_cloud_license')}<Icon icon={mdiChevronRight} size="16" aria-hidden /></a
+        >
+      {/snippet}
+    </Section>
   {/if}
-</div>
+</KitPage>
 
 <Dialog bind:open={removing} title={$t('frameleaf_plan_remove_title')} closeLabel={$t('close')}>
   <p>{$t('frameleaf_plan_remove_body')}</p>
@@ -329,86 +433,99 @@
 </Dialog>
 
 <style>
-  .yc-rows {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: grid;
-  }
-  .yc-rows > li {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1.4fr) minmax(0, 1fr) auto;
-    gap: 12px;
+  a.button {
+    display: inline-flex;
     align-items: center;
-    padding: 14px 0;
+    justify-content: center;
+    gap: var(--fl-space-1);
+    text-decoration: none;
+    white-space: nowrap;
   }
-  .yc-rows > li + li {
-    border-top: 1px solid var(--fl-border);
+  .said {
+    max-width: 720px;
+    margin: 0;
+    padding-bottom: var(--fl-space-5);
+    font-size: var(--fl-font-callout);
+    line-height: 1.5;
   }
-  .yc-icon {
-    display: grid;
-    place-items: center;
-    width: 36px;
-    height: 36px;
-    border-radius: var(--fl-radius-control);
-    background: var(--fl-raised);
-    color: var(--fl-accent);
-  }
-  .is-off .yc-icon {
-    color: var(--fl-muted);
-  }
-  .yc-text {
-    display: grid;
-    gap: 2px;
-    min-width: 0;
-  }
-  .yc-text strong {
-    font-size: var(--fl-font-size);
-  }
-  .yc-text span {
-    color: var(--fl-muted);
-    font-size: var(--fl-font-small);
-    line-height: 1.4;
-  }
-  .yc-status {
-    display: grid;
-    gap: 4px;
-    justify-items: start;
-    min-width: 0;
-  }
-  .yc-status small {
-    color: var(--fl-muted);
-    font-size: var(--fl-font-micro);
-  }
-  .yc-action {
-    display: flex;
-    gap: 8px;
-    justify-content: flex-end;
-    flex-wrap: wrap;
-  }
-  .yc-details {
-    margin-top: 16px;
-    padding: 14px 16px;
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-card);
-    background: var(--fl-panel);
-  }
-  .yc-details > summary {
-    cursor: pointer;
+  .said strong {
     font-weight: 600;
   }
-  .yc-details > p {
-    margin: 8px 0 0;
-    font-size: var(--fl-font-small);
+  .value {
+    color: var(--fl-muted);
+    font-size: var(--fl-font-callout);
+    text-align: end;
   }
-  @media (max-width: 640px) {
-    .yc-rows > li {
-      grid-template-columns: auto minmax(0, 1fr);
+  /* settings-v2 backup-v2.css `.bk2-choices` / `.bk2-choice`: the two ways to pay, side by side. */
+  .ways {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--fl-space-4);
+  }
+  .way {
+    display: grid;
+    gap: var(--fl-space-3);
+    align-content: start;
+    justify-items: start;
+    min-width: 0;
+    padding: var(--fl-space-6);
+    background: var(--fl-panel);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-card);
+  }
+  .way :global(.kit-points) {
+    padding-bottom: 0;
+  }
+  .way-icon {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    color: var(--fl-accent);
+    background: var(--fl-accent-soft);
+    border-radius: var(--fl-radius-control);
+  }
+  .way small {
+    margin-top: var(--fl-space-2);
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+    font-weight: 600;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+  }
+  .way h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .way p {
+    margin: 0;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-callout);
+    line-height: 1.5;
+  }
+  .way .way-price {
+    color: var(--fl-text);
+    font: var(--fl-type-title);
+    letter-spacing: var(--fl-tracking-title);
+  }
+  .hint {
+    grid-column: 1 / -1;
+    max-width: 820px;
+    margin: 0;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+    line-height: 1.5;
+  }
+  @container kit (max-width: 620px) {
+    .ways {
+      grid-template-columns: 1fr;
     }
-    .yc-status,
-    .yc-action {
-      grid-column: 2;
-      justify-content: flex-start;
+    .way {
+      padding: var(--fl-space-4);
+    }
+    .value {
+      text-align: start;
     }
   }
 </style>

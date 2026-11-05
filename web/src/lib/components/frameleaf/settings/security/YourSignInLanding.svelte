@@ -7,10 +7,15 @@
    * Advanced) and Locked photos (Locked PIN, Always Locked, and FL-721 Locked encryption). An administrator also sees where the
    * rules for everyone are set.
    */
+  import { goto } from '$app/navigation';
+  import Button from '$lib/components/frameleaf/Button.svelte';
   import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
-  import Links, { type LinkRow } from '$lib/components/frameleaf/settings/kit/Links.svelte';
+  import Item from '$lib/components/frameleaf/settings/kit/Item.svelte';
+  import ItemList from '$lib/components/frameleaf/settings/kit/ItemList.svelte';
+  import type { KitTone } from '$lib/components/frameleaf/settings/kit/Pill.svelte';
+  import TextLink from '$lib/components/frameleaf/settings/kit/TextLink.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import { idleDevices } from '$lib/components/frameleaf/settings/security/sign-in';
   import { commandCenterUrl, type SettingsHostSection } from '$lib/frameleaf/settings-areas';
@@ -19,15 +24,18 @@
   import {
     getApiKeys,
     getAuthStatus,
+    getFrameleafAccountLink,
     getLockedEncryption,
     getSessions,
     LockedEncryptionMode,
     type ApiKeyResponseDto,
     type AuthStatusResponseDto,
+    type FrameleafAccountLinkResponseDto,
     type LockedEncryptionStatusResponseDto,
     type SessionResponseDto,
   } from '@frameleaf/sdk';
-  import { mdiAlertCircleOutline, mdiShieldCheckOutline, mdiShieldLockOutline } from '@mdi/js';
+  import { Icon } from '@frameleaf/ui';
+  import { mdiAlertCircleOutline, mdiChevronRight, mdiShieldCheckOutline, mdiShieldLockOutline } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -36,6 +44,7 @@
   let auth = $state<AuthStatusResponseDto | null>(null);
   let sessions = $state<SessionResponseDto[] | null>(null);
   let keys = $state<ApiKeyResponseDto[] | null>(null);
+  let frameleaf = $state<FrameleafAccountLinkResponseDto | null>(null);
   let encryption = $state<LockedEncryptionStatusResponseDto | null>(null);
   onMount(() => {
     void (async () => {
@@ -53,6 +62,9 @@
       .catch(() => {});
     void getApiKeys()
       .then((value) => (keys = value))
+      .catch(() => {});
+    void getFrameleafAccountLink()
+      .then((value) => (frameleaf = value))
       .catch(() => {});
   });
 
@@ -86,11 +98,16 @@
   const rowState = (key: string, fallback: string) => {
     switch (key) {
       case 'password': {
-        return auth
-          ? $t(auth.password ? 'frameleaf_privacy_password_set' : 'frameleaf_privacy_password_none', {
+        // "How you sign in": the ways in, as the prototype's row says them.
+        if (!auth) {
+          return fallback;
+        }
+        const password = auth.password;
+        return frameleaf?.linked
+          ? $t(password ? 'frameleaf_privacy_ways_password_frameleaf' : 'frameleaf_privacy_ways_frameleaf')
+          : $t(password ? 'frameleaf_privacy_ways_password' : 'frameleaf_privacy_password_none', {
               values: { email: authManager.user.email },
-            })
-          : fallback;
+            });
       }
       case 'authorized-devices': {
         return sessions
@@ -133,50 +150,101 @@
       }
     }
   };
-  const row = (key: string): LinkRow[] => {
+  /** The dot beside a row's state: green when it is in order, amber when it needs a look. */
+  const rowTone = (key: string): KitTone => {
+    switch (key) {
+      case 'password': {
+        if (!auth) {
+          return 'off';
+        }
+        return auth.password || frameleaf?.linked ? 'good' : 'warn';
+      }
+      case 'authorized-devices': {
+        return sessions ? (idle.length > 0 ? 'warn' : 'good') : 'off';
+      }
+      case 'api-keys': {
+        return keys && keys.length > 0 ? 'good' : 'off';
+      }
+      case 'user-pin-code-settings': {
+        return auth?.pinCode ? 'good' : 'off';
+      }
+      case 'locked-encryption': {
+        return encryption && lockedEncryptionView(encryption) !== 'off' ? 'good' : 'off';
+      }
+      default: {
+        return 'good';
+      }
+    }
+  };
+  type Row = { icon: string; name: string; detail: string; status: string; tone: KitTone; href: string };
+  const row = (key: string): Row[] => {
     const section = sections.find((item) => item.key === key);
-    return section
-      ? [
-          {
-            icon: section.icon,
-            title: section.title,
-            body: rowState(key, section.subtitle),
-            href: commandCenterUrl('privacy', key),
-          },
-        ]
-      : [];
+    if (!section) {
+      return [];
+    }
+    const status = rowState(key, '');
+    return [
+      {
+        icon: section.icon,
+        name: section.title,
+        detail: section.subtitle,
+        status,
+        tone: status ? rowTone(key) : 'good',
+        href: commandCenterUrl('privacy', key),
+      },
+    ];
   };
 </script>
+
+{#snippet items(rows: Row[])}
+  <ItemList>
+    {#each rows as item (item.name)}
+      <Item
+        icon={item.icon}
+        off={item.tone === 'off'}
+        name={item.name}
+        detail={item.detail}
+        tone={item.tone}
+        status={item.status || undefined}
+      >
+        {#snippet action()}
+          <Button label={`${$t('frameleaf_security_who_open')}: ${item.name}`} onclick={() => goto(item.href)}
+            >{$t('frameleaf_security_who_open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden /></Button
+          >
+        {/snippet}
+      </Item>
+    {/each}
+  </ItemList>
+{/snippet}
 
 <KitPage>
   <Hero tone={hero.tone} icon={hero.icon} title={hero.title} body={hero.body} label={$t('frameleaf_privacy_status')} />
 
   <Section title={$t('frameleaf_privacy_signing_in')}>
-    <Links stacked rows={[...row('password'), ...row('oauth'), ...row('authorized-devices')]} />
+    <!-- The sign-in provider is a row of "How you sign in" (Personal.jsx MySignIn), not a page of its own. -->
+    {@render items([...row('password'), ...row('authorized-devices')])}
     <Advanced>
-      <Links stacked rows={row('api-keys')} />
+      {@render items(row('api-keys'))}
     </Advanced>
   </Section>
 
   <Section title={$t('frameleaf_privacy_locked')} description={$t('frameleaf_privacy_locked_description')}>
-    <Links
-      stacked
-      rows={[...row('user-pin-code-settings'), ...row('suppressed-content'), ...row('locked-encryption')]}
-    />
+    {@render items([...row('user-pin-code-settings'), ...row('suppressed-content'), ...row('locked-encryption')])}
+    {#if authManager.user.isAdmin}
+      <p class="hint">
+        {$t('frameleaf_privacy_everyone_hint')}
+        <TextLink href={commandCenterUrl('security')}>{$t('frameleaf_settings_area_security')}</TextLink>.
+      </p>
+    {/if}
   </Section>
-
-  {#if authManager.user.isAdmin}
-    <Section title={$t('frameleaf_privacy_everyone')}>
-      <Links
-        rows={[
-          {
-            icon: mdiShieldLockOutline,
-            title: $t('frameleaf_settings_area_security'),
-            body: $t('frameleaf_privacy_everyone_body'),
-            href: commandCenterUrl('security'),
-          },
-        ]}
-      />
-    </Section>
-  {/if}
 </KitPage>
+
+<style>
+  .hint {
+    margin: 0;
+    padding: 0 0 var(--fl-space-5);
+    color: var(--fl-muted);
+    font-size: var(--fl-font-callout);
+    line-height: 1.5;
+  }
+</style>

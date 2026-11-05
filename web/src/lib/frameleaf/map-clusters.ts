@@ -46,11 +46,37 @@ export const CLUSTER_OBSTACLE_IMAGE = 'fl-cluster-obstacle';
 /** The obstacle image is a transparent square of this many pixels, scaled per bubble. */
 export const CLUSTER_OBSTACLE_IMAGE_SIZE = 64;
 
-/** `clusterRadius` as a style expression over the clustered source's `point_count`. */
+/**
+ * FL-1214: a point may stand for several items (a cell the server grouped, with a `count`), so the
+ * clustered source sums them as `items`. A bubble's count is that sum, a point's own `count`, or,
+ * for a source of plain items, MapLibre's `point_count`.
+ */
+export const CLUSTER_PROPERTIES = {
+  items: ['+', ['get', 'count']],
+  videos: ['+', ['get', 'videos']],
+} satisfies Record<string, ExpressionSpecification>;
+
+const countExpression: ExpressionSpecification = [
+  'coalesce',
+  ['get', 'items'],
+  ['get', 'count'],
+  ['get', 'point_count'],
+  1,
+];
+
+/** How many items a feature of the clustered source stands for (see `countExpression`). */
+export const bubbleCount = (properties: Record<string, unknown> | null | undefined) =>
+  ((properties?.items ?? properties?.count ?? properties?.point_count ?? 1) as number) || 1;
+
+/** The features drawn as bubbles (groups of items) and as single items. */
+export const BUBBLE_FILTER: ExpressionSpecification = ['>', countExpression, 1];
+export const SINGLE_FILTER: ExpressionSpecification = ['<=', countExpression, 1];
+
+/** `clusterRadius` as a style expression over the clustered source's counts. */
 const radiusExpression: ExpressionSpecification = [
   'case',
-  ['has', 'point_count'],
-  ['+', BASE_RADIUS, ['*', PER_ITEM, ['min', ['get', 'point_count'], COUNT_CAP]]],
+  BUBBLE_FILTER,
+  ['+', BASE_RADIUS, ['*', PER_ITEM, ['min', countExpression, COUNT_CAP]]],
   SINGLE_RADIUS,
 ];
 
@@ -220,9 +246,10 @@ export const updateBubbleNames = (map: MapLibreMap, source: string, atRest = tru
       .querySourceFeatures(source)
       .filter((bubble) => bubble.geometry.type === 'Point')
       .map((bubble) => {
-        const { cluster_id: cluster, id, point_count: count = 1 } = bubble.properties;
+        const { cluster_id: cluster, id } = bubble.properties;
+        const count = bubbleCount(bubble.properties);
         const coordinates = (bubble.geometry as Point).coordinates as [number, number];
-        return [`${cluster ?? id}:${count}:${coordinates.join(',')}`, { coordinates, count: count as number }];
+        return [`${cluster ?? id}:${count}:${coordinates.join(',')}`, { coordinates, count }];
       }),
   );
   if (!atRest) {
