@@ -426,3 +426,82 @@ test(`an update that journaled its start, or applied its release, is not cancell
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+// Issue 863: a target that starts but never turns healthy is rolled back to the previous release and
+// the pre-update checkpoint, instead of being left as the installation to boot-loop.
+test('an update whose server never turns healthy restores the previous release and its database', async () => {
+  process.env.MANAGER_ML_ACCELERATION = 'cpu';
+  const directory = await mkdtemp(join(tmpdir(), 'manager-update-rollback-'));
+  const store = new Store(directory);
+  try {
+    const image = (name: string) => `fixture.invalid/${name}@sha256:${'a'.repeat(64)}`;
+    const current = { id: 'a'.repeat(12), project: 'frameleaf-test', release: 'frameleaf-v1.2.2', ml: false,
+      mounts: [], origin: 'new_library', port: 2283, sourceId: null, mayHaveWrittenMedia: true,
+      databaseRoot: directory, databasePath: join(directory, 'db-old') };
+    const release = { directory, nas: { tag: 'frameleaf-v1.2.3',
+      images: { server: image('new-server'), postgres: image('postgres'), machineLearning: image('ml') } } };
+    await writeFile(join(directory, 'docker-compose.yml'), JSON.stringify({ services: {
+      database: {}, 'frameleaf-server': {}, 'frameleaf-machine-learning': {},
+    } }));
+    const previousCompose = { services: {
+      database: { image: image('postgres'), volumes: [{ type: 'bind', source: current.databasePath, target: '/var/lib/postgresql' }] },
+      'frameleaf-server': { image: image('old-server') },
+    } };
+    await mkdir(join(directory, 'stack'));
+    await writeFile(join(directory, 'stack', 'compose.json'), JSON.stringify(previousCompose));
+    store.set('installation', current);
+    store.set('database-password', 'fixture-only');
+    const { operation } = store.start('update', 'rollback', { reviewId: 'r' });
+    const checkpoint = join(directory, 'checkpoints', operation.id);
+    await mkdir(checkpoint, { recursive: true });
+    await writeFile(join(checkpoint, 'database.dump'), 'pre-update dump');
+    await writeFile(join(checkpoint, 'compose.json'), JSON.stringify(previousCompose));
+    operation.completed = ['download-images', 'stop-application', 'database-checkpoint'];
+    operation.receipts['checkpoint-dump'] = { sha256: await (await import('../src/files.js')).fileHash(join(checkpoint, 'database.dump')) };
+    store.save(operation);
+
+    const composed: unknown[][] = [];
+    const restored: string[] = [];
+    let targetStarts = 0;
+    const docker = {
+      compose: async (_dir: string, project: string, action: string, services: string[] = []) => {
+        composed.push([action, ...services]);
+        const stack = JSON.parse(await readFile(join(directory, 'stack', 'compose.json'), 'utf8'));
+        if (action === 'up' && !services.length && stack.services['frameleaf-server'].image === image('new-server')) {
+          targetStarts++;
+          throw new Error('container frameleaf-test-frameleaf-server-1 is unhealthy');
+        }
+      },
+      inventory: async () => [{ Id: 'b'.repeat(64), Config: { Labels: {
+        'app.frameleaf.manager': current.id, 'com.docker.compose.service': 'database' } },
+        Mounts: [{ Type: 'bind', Source: store.get<any>('installation').databasePath, RW: true, Destination: '/var/lib/postgresql' }] }],
+      verifyDump: async () => {},
+      restore: async (_db: unknown, file: string) => { restored.push(file); },
+    };
+    const databaseStorage = { verify: async () => {}, allocate: async () => join(directory, 'db-rollback') };
+    const operations = new Operations(store, docker as never, { eligible: async () => {} } as never, {} as never, [],
+      databaseStorage as never);
+    (operations as any).fencing = { assertMedia: async () => {}, verify: async () => {} };
+
+    await (operations as any).applyUpdate(operation, { current, release, platform: 'linux/amd64' });
+
+    assert.equal(targetStarts, 1, 'the new release was started once');
+    assert.equal(operation.receipts['rollback-intent'], 'release_start_failed');
+    assert.equal(operation.receipts['cancelled'], 'update_failed_rolled_back');
+    assert.deepEqual(composed, [['up'], ['stop'], ['up', 'database'], ['up']]);
+    assert.deepEqual(restored, [join(checkpoint, 'database.dump')]);
+    const installation = store.get<any>('installation');
+    assert.equal(installation.release, 'frameleaf-v1.2.2', 'the previous release is the installation again');
+    assert.equal(installation.databasePath, join(directory, 'db-rollback'), 'the checkpoint went into an empty directory');
+    assert.deepEqual(store.get('retained-database-directories'), [current.databasePath], 'the migrated directory is kept');
+    const stack = JSON.parse(await readFile(join(directory, 'stack', 'compose.json'), 'utf8'));
+    assert.equal(stack.services['frameleaf-server'].image, image('old-server'));
+    assert.equal(stack.services.database.volumes[0].source, join(directory, 'db-rollback'));
+    // A resumed rollback never starts the failed release again.
+    await (operations as any).applyUpdate(operation, { current, release, platform: 'linux/amd64' });
+    assert.equal(targetStarts, 1);
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});

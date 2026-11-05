@@ -20,7 +20,7 @@ for (const service of ['immich-machine-learning', 'frameleaf-machine-learning'])
         step: (_operation: unknown, name: string, action: () => Promise<unknown>) =>
           name === 'stop-application' ? action() : Promise.resolve(),
       });
-      await operations.applyUpdate({}, { current: { project, ml: true } });
+      await operations.applyUpdate({ receipts: {} }, { current: { project, ml: true } });
       assert.deepEqual(calls, [[directory, project, 'stop', ['frameleaf-server', service]]]);
     } finally {
       await rm(directory, { recursive: true, force: true });
