@@ -151,7 +151,8 @@ select
   max("asset"."createdAt") filter (
     where
       (
-        "asset"."visibility" != $5
+        "asset"."type" in ($5, $6)
+        and "asset"."visibility" != $7
         and not exists (
           select
             1
@@ -178,7 +179,7 @@ from
   left join "asset_exif" on "asset_exif"."assetId" = "asset"."id"
 where
   "user"."deletedAt" is null
-  and "user"."status" = $6
+  and "user"."status" = $8
 group by
   "user"."id"
 order by

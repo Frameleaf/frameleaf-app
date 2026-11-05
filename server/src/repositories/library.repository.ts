@@ -236,7 +236,13 @@ export class LibraryRepository {
       .select((eb) =>
         eb.fn
           .max('asset.createdAt')
-          .filterWhere((eb) => eb.and([eb('asset.visibility', '!=', AssetVisibility.Hidden), isNotLockedAsset(eb)]))
+          .filterWhere((eb) =>
+            eb.and([
+              eb('asset.type', 'in', [AssetType.Image, AssetType.Video]),
+              eb('asset.visibility', '!=', AssetVisibility.Hidden),
+              isNotLockedAsset(eb),
+            ]),
+          )
           .as('lastAddedAt'),
       )
       .where('user.deletedAt', 'is', null)

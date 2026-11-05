@@ -246,6 +246,7 @@ export class PetService {
     await this.requireCurrentSource(auth, observation.assetId, dto.expectedChecksum);
 
     await this.petRepository.deleteObservation(auth.user.id, observationId);
+    await this.replaceUndoneCover(auth, observation.petId, observation.assetId);
     await this.eventRepository.emit('AssetChanged', { assetId: observation.assetId });
     await this.jobRepository.queue({ name: JobName.PetRecognition, data: { id: observation.assetId } });
   }
@@ -408,7 +409,20 @@ export class PetService {
     if (pet.featuredAssetId || (await this.petRepository.isOwnLockedAsset(auth.user.id, assetId))) {
       return;
     }
-    await this.petRepository.update(auth.user.id, pet.id, { featuredAssetId: assetId });
+    await this.petRepository.replaceFeaturedAsset(auth.user.id, pet.id, null, assetId);
+  }
+
+  /**
+   * Undoing the observation behind a pet's cover means the pet is no longer confirmed in that photo,
+   * so the cover moves to its newest other confirmed photo (or none). Only a cover that is still this
+   * photo moves; another photo picked meanwhile stays.
+   */
+  private async replaceUndoneCover(auth: AuthDto, petId: string, assetId: string) {
+    const remaining = await this.petRepository.getObservations(auth.user.id, petId);
+    if (remaining.some((observation) => observation.assetId === assetId)) {
+      return;
+    }
+    await this.petRepository.replaceFeaturedAsset(auth.user.id, petId, assetId, remaining[0]?.assetId ?? null);
   }
 
   /** A pet was confirmed in a photo: recognition looks again at the owner's photos most like it. */

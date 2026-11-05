@@ -3,8 +3,9 @@ import { type Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { PhotographyBrand, StoredShoot } from 'src/dtos/photography-workspace.dto.js';
 import type { UserMetadata } from 'src/types.js';
-import { AlbumUserRole, AssetVisibility, UserMetadataKey } from 'src/enum.js';
+import { AlbumUserRole, UserMetadataKey } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
+import { isNotLocked } from 'src/utils/locked.js';
 
 @Injectable()
 export class PhotographyWorkspaceRepository {
@@ -103,7 +104,7 @@ export class PhotographyWorkspaceRepository {
       .select(['id', 'thumbhash'])
       .where('id', 'in', assetIds)
       .where('deletedAt', 'is', null)
-      .where('visibility', '!=', AssetVisibility.Locked)
+      .where(isNotLocked('asset'))
       .where('thumbhash', 'is not', null)
       .execute();
     return new Map(rows.map(({ id, thumbhash }) => [id, thumbhash!]));

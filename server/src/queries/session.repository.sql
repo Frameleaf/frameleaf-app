@@ -104,6 +104,7 @@ set
   "pinExpiresAt" = $1
 where
   "userId" = $2
+  and "pinExpiresAt" is not null
 
 -- SessionRepository.requestSyncResetForUser
 update "session"
