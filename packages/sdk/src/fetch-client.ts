@@ -15391,6 +15391,8 @@ export type LibraryMoveResumeDto = {
 };
 export type LibrarySetupStatusDto = {
     canFinish: boolean;
+    /** The owner stopped setup to let the server run; held work was released. Retrying brings setup back */
+    dismissed: boolean;
     installation: string;
     origin: Origin;
     phase: Phase;
@@ -32121,6 +32123,23 @@ export function finishLibrarySetup({ finishLibrarySetupDto }: {
     })));
 }
 /**
+ * Manager machine-authenticated dismissal
+ */
+export function dismissManagerLibrarySetup({ xFrameleafManager }: {
+    xFrameleafManager: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LibrarySetupStatusDto;
+    }>("/server/library-setup/manager", {
+        ...opts,
+        method: "DELETE",
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-manager": xFrameleafManager
+        })
+    }));
+}
+/**
  * Manager machine-authenticated setup status
  */
 export function getManagerLibrarySetup({ xFrameleafManager }: {
@@ -32162,6 +32181,15 @@ export function getManagerAccess(opts?: Oazapfts.RequestOpts) {
         data: ManagerAccessDto;
     }>("/server/library-setup/manager-access", {
         ...opts
+    }));
+}
+/**
+ * Stop following setup and let the server run: held work starts, the setup bar and phone step go away
+ */
+export function dismissLibrarySetup(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/server/library-setup/progress", {
+        ...opts,
+        method: "DELETE"
     }));
 }
 /**

@@ -11,6 +11,11 @@ import en from '../../../../../i18n/en.json';
 const auth = vi.hoisted(() => ({ authenticated: true, user: { isAdmin: true } }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: auth }));
 vi.mock('$lib/utils/handle-error', () => ({ handleError: vi.fn() }));
+const dialog = vi.hoisted(() => ({ showDialog: vi.fn() }));
+vi.mock('@frameleaf/ui', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/ui')>()),
+  modalManager: dialog,
+}));
 
 const progress = (overrides: Partial<LibrarySetupProgressDto> = {}): LibrarySetupProgressDto => ({
   active: true,
@@ -57,6 +62,24 @@ describe('SetupBar', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: /Details/ }));
     expect(screen.getByText('Starts by itself when the file check is finished.')).toBeInTheDocument();
+  });
+
+  it('lets the owner stop a stopped setup and let the server run, after confirming', async () => {
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(progress({ phase: Phase.NeedsAttention }));
+    render(SetupBar);
+    expect(await screen.findByText('Setup needs attention')).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: /Details/ }));
+
+    dialog.showDialog.mockResolvedValueOnce(false);
+    await fireEvent.click(screen.getByRole('button', { name: 'Stop setup' }));
+    expect(dialog.showDialog).toHaveBeenCalledOnce();
+    expect(sdkMock.dismissLibrarySetup).not.toHaveBeenCalled();
+
+    dialog.showDialog.mockResolvedValueOnce(true);
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(progress({ active: false, phase: null, stages: [] }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Stop setup' }));
+    await vi.waitFor(() => expect(screen.queryByText('Setup needs attention')).not.toBeInTheDocument());
+    expect(sdkMock.dismissLibrarySetup).toHaveBeenCalledOnce();
   });
 
   it('shows intentionally disabled AI processing as off while keeping other setup visible', async () => {

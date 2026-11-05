@@ -46666,6 +46666,46 @@
       }
     },
     "/server/library-setup/manager": {
+      "delete": {
+        "operationId": "dismissManagerLibrarySetup",
+        "parameters": [
+          {
+            "name": "x-frameleaf-manager",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibrarySetupStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Manager machine-authenticated dismissal",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
       "get": {
         "operationId": "getManagerLibrarySetup",
         "parameters": [
@@ -46793,6 +46833,42 @@
       }
     },
     "/server/library-setup/progress": {
+      "delete": {
+        "operationId": "dismissLibrarySetup",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Stop following setup and let the server run: held work starts, the setup bar and phone step go away",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
       "get": {
         "operationId": "getLibrarySetupProgress",
         "parameters": [],
@@ -100347,6 +100423,10 @@
           "canFinish": {
             "type": "boolean"
           },
+          "dismissed": {
+            "description": "The owner stopped setup to let the server run; held work was released. Retrying brings setup back",
+            "type": "boolean"
+          },
           "installation": {
             "type": "string"
           },
@@ -100471,6 +100551,7 @@
         },
         "required": [
           "canFinish",
+          "dismissed",
           "installation",
           "origin",
           "phase",

@@ -709,6 +709,11 @@ test('a server refusal of the in-container Manager request names its HTTP status
     status = 200;
     assert.deepEqual(await operations.libraryStatus(), { phase: 'preparing' });
     assert.equal(sent[1].init.method, 'GET');
+    // Skipping setup asks the server to stop holding work for it, with the same machine credential.
+    await operations.dismissLibrarySetup();
+    assert.equal(sent[2].url, 'http://127.0.0.1:2283/api/server/library-setup/manager');
+    assert.equal(sent[2].init.method, 'DELETE');
+    assert.equal(sent[2].init.headers['x-frameleaf-manager'], token);
   } finally {
     store.close();
     await rm(directory, { recursive: true });

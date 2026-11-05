@@ -133,7 +133,10 @@ const setup = (ml: { enabled: boolean }) =>
     db,
     { getAll: vi.fn().mockResolvedValue([]) } as never,
     {} as never,
-    { getJobCounts: vi.fn().mockResolvedValue({ active: 0, waiting: 0, delayed: 0, paused: 0, failed: 0 }) } as never,
+    {
+      getJobCounts: vi.fn().mockResolvedValue({ active: 0, waiting: 0, delayed: 0, paused: 0, failed: 0 }),
+      retryImportedWork: vi.fn(),
+    } as never,
     { hasAdmin: vi.fn().mockResolvedValue(true), getAdmin: vi.fn().mockResolvedValue({ id: randomUUID() }) } as never,
     { getNow: vi.fn().mockResolvedValue({ nowId: randomUUID() }) } as never,
     {} as never,
@@ -344,4 +347,43 @@ it('counts nothing as held in a run that is not a Manager import', async () => {
     sql.lit('enumerating'),
   );
   expect(await summary(id)).toMatchObject({ held: 0, total: 1 });
+});
+
+it('lets the owner dismiss a stopped setup: held stages start, the bar and phone step go away, Retry brings it back', async () => {
+  const worker = randomUUID();
+  await store.initialize(QUEUES, worker);
+  const id = await importRun('immich-import-derived', [randomUUID()]);
+  // The file check stopped for an owner it never finished: every stage that waits for it is still held.
+  await sql`UPDATE system_metadata SET value=value || ${JSON.stringify({
+    phase: 'needs-attention',
+    owners: [randomUUID()],
+  })}::text::jsonb WHERE key=${setupKey}`.execute(db);
+  const service = setup({ enabled: true });
+  expect(await service.progress()).toMatchObject({ active: true, phase: 'needs-attention' });
+  expect(await service.status()).toMatchObject({ setupRequired: true, canFinish: false });
+
+  await service.dismiss();
+  expect(Object.values(await selections(id))).toEqual(Array.from({ length: 4 }, () => 'ready'));
+  expect(await service.progress()).toMatchObject({ active: false, stages: [] });
+  expect(await service.status()).toMatchObject({ setupRequired: false, canFinish: true, dismissed: true });
+  await service.dismiss(); // Again: nothing changes.
+  expect(await service.progress()).toMatchObject({ active: false });
+
+  await service.begin(true);
+  const back = await service.progress();
+  expect(back).toMatchObject({ active: true });
+  // Dismissing released the stages, not the file check: brought back, the check is not reported finished.
+  expect(back.stages.find(({ id }) => id === 'check')?.status).not.toBe('done');
+  expect(await service.status()).toMatchObject({ setupRequired: true, dismissed: false });
+
+  // A setup that finished while dismissed checks the library again when brought back.
+  await service.dismiss();
+  await sql`UPDATE system_metadata SET value=value || ${JSON.stringify({
+    phase: 'complete',
+    checkReleasedAt: new Date().toISOString(),
+    completedAt: new Date().toISOString(),
+  })}::text::jsonb WHERE key=${setupKey}`.execute(db);
+  expect(await service.progress()).toMatchObject({ active: false });
+  await service.begin(true);
+  expect(await service.progress()).toMatchObject({ active: true, phase: 'rescanning', completedAt: null });
 });

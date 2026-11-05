@@ -30,6 +30,7 @@ import { LibraryScanService } from 'src/services/library-scan.service.js';
 import { MediaHealthService } from 'src/services/media-health.service.js';
 import { SystemConfigService } from 'src/services/system-config.service.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
+import { parseScanResult } from 'src/utils/media-health-operation.js';
 import { OvernightState, quietHoursHolds } from 'src/utils/overnight.js';
 import { serverTimeZone } from 'src/utils/server-time-zone.js';
 import { fromAck } from 'src/utils/sync.js';
@@ -62,6 +63,13 @@ type SetupState = {
    * paused, one would hold the file check with nothing left to resume it.
    */
   heldScans?: string[];
+  /** File checks an earlier attempt left stopped, by owner: a retry carries each on from where it stopped. */
+  resumeHealth?: Record<string, string>;
+  /**
+   * The owner dismissed setup to let the server run: held work is released, the bar and the phone step go away,
+   * and nothing halts on setup's account. Background work and Library Care still list what needs a look.
+   */
+  dismissedAt?: string | null;
 };
 type PhoneState = { revision: string; tokenHash: string; finished: boolean };
 const SETUP_QUEUES = [
@@ -89,6 +97,8 @@ const SEARCH_STAGES: string[] = [JobName.SmartSearch, JobName.AssetDetectFaces, 
 /** The setup bar's early stage: what starts with the file check. */
 const THUMBNAIL_STAGES: string[] = [...EARLY_STAGES, JobName.PersonGenerateThumbnail];
 const phoneKey = (sessionId: string) => `:phone:${sessionId}`;
+/** Every held stage may run: the file check finished, or the owner dismissed setup to let the server run. */
+const released = (state: SetupState) => !!state.checkReleasedAt || !!state.dismissedAt;
 /** Library Care's full check of an account: every original, not only recent changes or chosen photos. */
 const fullScan = (table: string) =>
   sql`${sql.ref(`${table}.kind`)}='media_health' AND ${sql.ref(`${table}.snapshot`)}->>'mode'='scan'
@@ -172,7 +182,14 @@ export class FrameleafLibrarySetupService {
     const identity = this.identity();
     await this.locked(async (db) => {
       const previous = await this.read<SetupState>(this.key(), db);
-      if (previous && previous.phase !== 'awaiting-account' && !(retry && previous.phase === 'needs-attention')) {
+      // Retrying a stopped setup, or one the owner dismissed (in any phase, finished included), checks again.
+      const reopened = retry && !!previous?.dismissedAt;
+      if (
+        previous &&
+        previous.phase !== 'awaiting-account' &&
+        !(retry && previous.phase === 'needs-attention') &&
+        !reopened
+      ) {
         await this.startImportedRegeneration(previous, db);
         return;
       }
@@ -233,10 +250,15 @@ export class FrameleafLibrarySetupService {
               ]),
             ]
           : undefined,
+        // Kept until each owner's new check starts; a check never started keeps its predecessor's place.
+        resumeHealth: previous ? { ...previous.resumeHealth, ...previous.health } : undefined,
+        dismissedAt: retry ? null : (previous?.dismissedAt ?? null),
         importRunId: previous?.importRunId,
         importOperationId: previous?.importOperationId,
-        checkReleasedAt: previous?.checkReleasedAt ?? null,
-        completedAt: previous?.completedAt ?? null,
+        // Checking a reopened library again starts from no finished check and no completion; stages its dismissal
+        // released stay released unless the owner pauses.
+        checkReleasedAt: reopened ? null : (previous?.checkReleasedAt ?? null),
+        completedAt: reopened ? null : (previous?.completedAt ?? null),
         healthAfter: null,
         revision: null,
         quietSince: null,
@@ -362,7 +384,7 @@ export class FrameleafLibrarySetupService {
       WHERE id=${run.id}::uuid`.execute(db);
     // A setup paused before the run was prepared stays held; resuming releases these stages.
     if (!state.paused) {
-      await this.releaseStages(run.id, !!state.checkReleasedAt, db);
+      await this.releaseStages(run.id, released(state), db);
     }
   }
 
@@ -402,7 +424,7 @@ export class FrameleafLibrarySetupService {
    */
   private async reconcileParkedStages(state: SetupState, runId: string, marker: unknown, db: Kysely<DB>) {
     const parked = Array.isArray(marker) ? marker.filter((stage) => typeof stage === 'string') : [];
-    if (!state.checkReleasedAt || state.paused || parked.length === 0) return;
+    if (!released(state) || state.paused || parked.length === 0) return;
     const disabled: string[] = await this.disabledImportStages();
     if (parked.every((stage) => disabled.includes(stage))) {
       const { rows } = await sql`SELECT 1 FROM job_run WHERE id=${runId}::uuid AND "enumerationDone"
@@ -498,7 +520,7 @@ export class FrameleafLibrarySetupService {
     }
     if (identity.origin === 'new_library') return inactive;
     const state = await this.read<SetupState>(this.key());
-    if (!state || state.phase === 'awaiting-account') return inactive;
+    if (!state || state.phase === 'awaiting-account' || state.dismissedAt) return inactive;
     const imported = await this.importedRun();
     if (this.importedSetupRequired(state, imported) && !this.importedSetupMatches(state, imported))
       return { ...inactive, active: true, phase: 'needs-attention', paused: !!state.paused };
@@ -568,6 +590,8 @@ export class FrameleafLibrarySetupService {
     if (finished && !state.completedAt) {
       await this.locked(async (db) => {
         const current = (await this.read<SetupState>(this.key(), db))!;
+        // Only the setup observed above: a retry or reopen since (a new startedAt) or a dismissal is not finished.
+        if (current.startedAt !== state.startedAt || current.phase !== 'complete' || current.dismissedAt) return;
         state.completedAt = current.completedAt ?? new Date().toISOString();
         await this.write(this.key(), { ...current, completedAt: state.completedAt }, db);
       });
@@ -630,52 +654,65 @@ export class FrameleafLibrarySetupService {
     await this.locked(async (db) => {
       const state = await this.read<SetupState>(this.key(), db);
       if (!state || !!state.paused === paused) return;
-      state.paused = paused;
-      await lockQueueCatalogue(db);
-      const imported = await this.importedRun(db, true);
-      if (this.importedSetupRequired(state, imported) && !this.importedSetupMatches(state, imported))
-        throw new BadRequestException('Imported setup identity mismatch');
-      if (this.importedSetupMatches(state, imported) && imported?.run) {
-        await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup,paused}',${JSON.stringify(paused)}::text::jsonb)
-          WHERE id=${imported.run.id}::uuid`.execute(db);
-      }
-      if (this.importedSetupMatches(state, imported) && imported?.run?.selection.managerSetup?.startedAt) {
-        if (paused) {
-          // Held items stay where they are: running jobs finish, and no new ones are admitted.
-          await sql`UPDATE job_selection SET state='enumerating' WHERE "runId"=${imported.run.id}::uuid
-            AND state='ready'`.execute(db);
-        } else {
-          await this.releaseStages(imported.run.id, !!state.checkReleasedAt, db);
-        }
-      }
-      for (const [ownerId, operationId] of Object.entries(state.health)) {
-        changed.push(
-          await (paused
-            ? this.operations.requestPause(operationId, ownerId, [MediaOperationKind.MediaHealth], db)
-            : this.operations.resume(operationId, ownerId, db)),
-        );
-      }
-      const { rows: scans } = await sql<{ id: string; ownerId: string }>`SELECT id,"ownerId" FROM media_operation
-        WHERE id=ANY(${[...new Set(Object.values(state.scans))]}::uuid[]) AND kind=${MediaOperationKind.LibraryScan} FOR UPDATE`.execute(
-        db,
-      );
-      for (const scan of scans) {
-        changed.push(
-          await (paused
-            ? this.operations.requestPause(scan.id, scan.ownerId, [MediaOperationKind.LibraryScan], db)
-            : this.operations.resume(scan.id, scan.ownerId, db)),
-        );
-      }
-      if (!paused && state.heldScans?.length) {
-        const { rows: held } = await sql<{ id: string; ownerId: string }>`SELECT id,"ownerId" FROM media_operation
-          WHERE id=ANY(${state.heldScans}::uuid[]) FOR UPDATE`.execute(db);
-        for (const scan of held) changed.push(await this.operations.resume(scan.id, scan.ownerId, db));
-        state.heldScans = undefined;
-      }
+      await this.applyPause(state, paused, changed, db);
       await this.write(this.key(), state, db);
     });
     for (const row of changed) this.operations.notifyCancellation(row);
     return this.progress();
+  }
+
+  /**
+   * Pauses or resumes setup's held stages and scans; the caller holds the setup lock and writes `state`. Refused,
+   * changing nothing, when the import no longer matches this setup.
+   */
+  private async applyPause(
+    state: SetupState,
+    paused: boolean,
+    changed: (MediaOperation | undefined)[],
+    db: Kysely<DB>,
+  ) {
+    await lockQueueCatalogue(db);
+    const imported = await this.importedRun(db, true);
+    if (this.importedSetupRequired(state, imported) && !this.importedSetupMatches(state, imported))
+      throw new BadRequestException('Imported setup identity mismatch');
+    state.paused = paused;
+    if (this.importedSetupMatches(state, imported) && imported?.run) {
+      await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup,paused}',${JSON.stringify(paused)}::text::jsonb)
+        WHERE id=${imported.run.id}::uuid`.execute(db);
+    }
+    if (this.importedSetupMatches(state, imported) && imported?.run?.selection.managerSetup?.startedAt) {
+      if (paused) {
+        // Held items stay where they are: running jobs finish, and no new ones are admitted.
+        await sql`UPDATE job_selection SET state='enumerating' WHERE "runId"=${imported.run.id}::uuid
+          AND state='ready'`.execute(db);
+      } else {
+        await this.releaseStages(imported.run.id, released(state), db);
+      }
+    }
+    for (const [ownerId, operationId] of Object.entries(state.health)) {
+      changed.push(
+        await (paused
+          ? this.operations.requestPause(operationId, ownerId, [MediaOperationKind.MediaHealth], db)
+          : this.operations.resume(operationId, ownerId, db)),
+      );
+    }
+    const { rows: scans } = await sql<{ id: string; ownerId: string }>`SELECT id,"ownerId" FROM media_operation
+      WHERE id=ANY(${[...new Set(Object.values(state.scans))]}::uuid[]) AND kind=${MediaOperationKind.LibraryScan} FOR UPDATE`.execute(
+      db,
+    );
+    for (const scan of scans) {
+      changed.push(
+        await (paused
+          ? this.operations.requestPause(scan.id, scan.ownerId, [MediaOperationKind.LibraryScan], db)
+          : this.operations.resume(scan.id, scan.ownerId, db)),
+      );
+    }
+    if (!paused && state.heldScans?.length) {
+      const { rows: held } = await sql<{ id: string; ownerId: string }>`SELECT id,"ownerId" FROM media_operation
+        WHERE id=ANY(${state.heldScans}::uuid[]) FOR UPDATE`.execute(db);
+      for (const scan of held) changed.push(await this.operations.resume(scan.id, scan.ownerId, db));
+      state.heldScans = undefined;
+    }
   }
 
   @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
@@ -806,8 +843,13 @@ export class FrameleafLibrarySetupService {
             AND "createdAt" >= ${state.healthAfter}::timestamptz ORDER BY "createdAt" LIMIT 1`.execute(db);
             let operationId: string | null | undefined = existing.rows[0]?.id;
             try {
-              operationId ??= (await this.mediaHealth.startMissingScan({ user: { id: ownerId } } as AuthDto))
-                .operationId;
+              operationId ??= (
+                await this.mediaHealth.startMissingScan(
+                  { user: { id: ownerId } } as AuthDto,
+                  undefined,
+                  await this.resumePoint(state.resumeHealth?.[ownerId], db),
+                )
+              ).operationId;
             } catch (error) {
               // Another kind of scan (recent changes, chosen photos, a search for originals) is under way for this
               // account: wait for it, as for an incompatible scan below.
@@ -824,6 +866,7 @@ export class FrameleafLibrarySetupService {
               continue; // Wait for an incompatible active scan before admitting ours.
             }
             state.health[ownerId] = operationId;
+            delete state.resumeHealth?.[ownerId];
           }
         }
         const healthIds = Object.values(state.health);
@@ -923,6 +966,59 @@ export class FrameleafLibrarySetupService {
     });
   }
 
+  /**
+   * Where an owner's stopped full check got to, for a retry to carry on from. Only a check that stopped (failed or
+   * cancelled) part-way through: a finished one has nothing left, and a running one is adopted as it is.
+   *
+   * The scan walks asset ids in order, so a photo added since the stopped check began with an id below its cursor would
+   * be skipped; then the whole check runs again instead.
+   */
+  private async resumePoint(operationId: string | undefined, db: Kysely<DB>) {
+    if (!operationId) return;
+    const { rows } = await sql<{
+      result: unknown;
+      ownerId: string;
+      createdAt: Date;
+    }>`SELECT result,"ownerId","createdAt"
+      FROM media_operation WHERE id=${operationId}::uuid AND status IN ('failed','cancelled')
+      AND ${fullScan('media_operation')}`.execute(db);
+    const result = rows[0] && parseScanResult(rows[0].result);
+    if (!result?.cursor || result.restored) return;
+    const { rows: below } = await sql`SELECT 1 FROM asset WHERE "ownerId"=${rows[0].ownerId}::uuid
+      AND "createdAt" >= ${rows[0].createdAt} AND id <= ${result.cursor}::uuid LIMIT 1`.execute(db);
+    return below.length === 0 ? result : undefined;
+  }
+
+  /**
+   * The owner would rather let the server run than follow setup (a stopped check, a phone they will not connect).
+   * Every held stage is released as if the file check had finished, a pause is lifted, and the setup bar and the
+   * phone's preparation step stop asking. Setup keeps tracking in the background; Retry brings it back.
+   */
+  async dismiss(): Promise<void> {
+    this.identity();
+    const changed: (MediaOperation | undefined)[] = [];
+    await this.locked(async (db) => {
+      const state = await this.read<SetupState>(this.key(), db);
+      if (!state || state.dismissedAt) return;
+      if (state.paused) {
+        // A setup whose import no longer matches cannot resume through it (Library Care can); dismissing still ends it.
+        await this.applyPause(state, false, changed, db).catch((error) => {
+          if (!(error instanceof BadRequestException)) throw error;
+        });
+      }
+      await lockQueueCatalogue(db);
+      const imported = await this.importedRun(db, true);
+      if (this.importedSetupMatches(state, imported) && imported?.run?.selection.managerSetup?.startedAt) {
+        await this.releaseStages(imported.run.id, true, db);
+      }
+      // A run not started yet releases every stage when it starts (startImportedRegeneration). The file check itself is
+      // not marked finished: the bar would say so if setup were brought back.
+      state.dismissedAt = new Date().toISOString();
+      await this.write(this.key(), state, db);
+    });
+    for (const row of changed) this.operations.notifyCancellation(row);
+  }
+
   async status(auth?: AuthDto) {
     const identity = this.identity();
     const state = await this.advance();
@@ -937,14 +1033,16 @@ export class FrameleafLibrarySetupService {
       ? !!phone && phone.revision === state.revision && phone.finished
       : operator?.rows[0]?.ready === true;
     // A non-admin never receives another user's counts, paths, profile, sync cursor or completion.
+    const dismissed = !!state.dismissedAt;
     return {
-      setupRequired: state.phase !== 'complete' || !phoneReady,
+      setupRequired: !dismissed && (state.phase !== 'complete' || !phoneReady),
+      dismissed,
       ...identity,
       phase: state.phase,
       revision: state.revision,
       rescanComplete: state.phase === 'complete',
       verificationPassed: state.phase === 'complete',
-      canFinish: state.phase === 'complete' && phoneReady,
+      canFinish: dismissed || (state.phase === 'complete' && phoneReady),
       regeneration: !auth || auth.user.isAdmin ? await this.regenerationStatus(state) : null,
       sync: {
         authenticated: !!auth?.session,
