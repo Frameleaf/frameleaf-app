@@ -115,7 +115,8 @@
     }
   };
 
-  const usedGb = $derived(gbOfBytes(user.quotaUsageInBytes ?? 0) ?? 0);
+  // Unrounded, so a small library reads "45 MB" here as it does in the list, not "50 MB".
+  const usedGb = $derived((user.quotaUsageInBytes ?? 0) / 1e9);
   /** An older account's whole-GiB quota, kept as its own choice until it is changed. */
   const kept = $derived.by(() => {
     const label = user.quotaSizeInBytes ? gibWords(user.quotaSizeInBytes) : undefined;
@@ -235,16 +236,23 @@
   </Section>
 
   <Section title={$t('frameleaf_userpage_security')} description={$t('frameleaf_userpage_security_description')}>
-    <AccountSecurityPanel {user} {sessions} />
-    {#if !user.isAdmin && !user.deletedAt}
-      <DesktopMemberApproval userId={user.id} />
-    {/if}
+    <AccountSecurityPanel {user} {sessions}>
+      {#if !user.isAdmin && !user.deletedAt}
+        <DesktopMemberApproval userId={user.id} />
+      {/if}
+    </AccountSecurityPanel>
   </Section>
 
   <Section
     title={$t('frameleaf_userpage_turned_on')}
     description={$t('frameleaf_userpage_turned_on_description', { values: { name: user.name } })}
   >
+    {#snippet action()}
+      <!-- As the prototype: "Change for them…" belongs to the whole group, at the end of its heading. -->
+      {#if live && !changing && !confirming}
+        <Button onclick={() => (confirming = true)}>{$t('frameleaf_userpage_change_for_them')}</Button>
+      {/if}
+    {/snippet}
     {#if changing}
       <AccountPreferencesEditor
         {preferences}
@@ -276,15 +284,11 @@
             <Button onclick={() => (confirming = false)}>{$t('cancel')}</Button>
           {/snippet}
         </Notice>
-      {:else if live}
-        <div class="actions">
-          <Button onclick={() => (confirming = true)}>{$t('frameleaf_userpage_change_for_them')}</Button>
-        </div>
       {/if}
     {/if}
     <Advanced summary={$t('frameleaf_userpage_advanced')}>
       <Row label={$t('frameleaf_userpage_account_id')} help={$t('frameleaf_userpage_account_id_help')}>
-        <span class="id"><code>{user.id}</code></span>
+        <span class="id">{user.id}</span>
         <Button onclick={copyId}>{copied ? $t('frameleaf_userpage_copied') : $t('frameleaf_userpage_copy')}</Button>
       </Row>
       <Row label={$t('frameleaf_userpage_folder')} help={$t('frameleaf_userpage_folder_help')}>
@@ -309,7 +313,7 @@
     gap: var(--fl-space-2);
     margin-top: var(--fl-space-3);
   }
-  .id code {
+  .id {
     font-size: var(--fl-font-small);
     word-break: break-all;
   }

@@ -11,15 +11,14 @@
   import FrameleafAccountSection from '$lib/components/frameleaf/access/FrameleafAccountSection.svelte';
   import LockedRulesPanel from '$lib/components/frameleaf/access/LockedRulesPanel.svelte';
   import LockedEncryptionPage from '$lib/components/frameleaf/settings/security/locked-encryption/LockedEncryptionPage.svelte';
-  import PasswordSection from '$lib/components/frameleaf/access/PasswordSection.svelte';
+  import HowYouSignInPage from '$lib/components/frameleaf/access/HowYouSignInPage.svelte';
   import PinSection from '$lib/components/frameleaf/access/PinSection.svelte';
   import ProfileSection from '$lib/components/frameleaf/access/ProfileSection.svelte';
-  import SignInProviderSection from '$lib/components/frameleaf/access/SignInProviderSection.svelte';
   import SupporterSection from '$lib/components/frameleaf/access/SupporterSection.svelte';
   import TakeoutSettingsSection from '$lib/components/frameleaf/settings/TakeoutSettingsSection.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { getApiKeys, getSessions, type ApiKeyResponseDto, type SessionResponseDto } from '@frameleaf/sdk';
-  import BuddyRestoreSection from '$lib/components/frameleaf/cloud/BuddyRestoreSection.svelte';
+  import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
   import CloudBackupChoiceSection from '$lib/components/frameleaf/backup/CloudBackupChoiceSection.svelte';
   import PreservationPanel from '$lib/components/frameleaf/PreservationPanel.svelte';
   import AppSettings from './AppSettings.svelte';
@@ -74,23 +73,21 @@
 {:else if section === 'preservation'}
   <!-- FL-74: every account preserves and restores its own originals, not only administrators. -->
   <PreservationPanel />
-  <BuddyRestoreSection />
 {:else if section === 'cloud-backup-choice'}
   <!-- FL-362: what Cloud Backup keeps of this account's own library. -->
-  <CloudBackupChoiceSection />
+  <!-- In the kit's page frame, so the card keeps the width of the pages beside it. -->
+  <KitPage><CloudBackupChoiceSection /></KitPage>
 {:else if section === 'takeout'}
   <TakeoutSettingsSection showRoots={authManager.user.isAdmin} />
 {:else if section === 'feature'}
   <FeatureSettings />
 {:else if section === 'email-preferences'}
   <NotificationsSettings />
-{:else if section === 'oauth'}
-  <SignInProviderSection />
+{:else if section === 'password' || section === 'oauth'}
+  <!-- The prototype's "How you sign in": password, Frameleaf account and sign-in provider on one page. -->
+  <HowYouSignInPage onSessionsChanged={refreshSessions} />
 {:else if section === 'frameleaf-account'}
-  <!-- Not yet rebuilt on the kit (FL-368 follow-up): today's form, in the card the host no longer draws here. -->
-  <div class="card fl-continuous-corners"><FrameleafAccountSection /></div>
-{:else if section === 'password'}
-  <PasswordSection onSessionsChanged={refreshSessions} />
+  <FrameleafAccountSection view="page" />
 {:else if section === 'user-pin-code-settings'}
   <PinSection />
 {:else if section === 'suppressed-content'}
@@ -99,17 +96,7 @@
   <!-- FL-721: optional encryption of this person's own Locked files -->
   <LockedEncryptionPage />
 {:else if section === 'user-purchase-settings'}
-  <div class="card fl-continuous-corners"><SupporterSection /></div>
+  <SupporterSection />
 {:else if section === 'sharing'}
   <SharingSettings />
 {/if}
-
-<style>
-  .card {
-    max-width: 820px;
-    padding: var(--fl-space-1) var(--fl-space-5);
-    background: var(--fl-panel);
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-card);
-  }
-</style>

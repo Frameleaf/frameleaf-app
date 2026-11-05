@@ -15,7 +15,9 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
   import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
+  import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
+  import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
   import Points from '$lib/components/frameleaf/settings/kit/Points.svelte';
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
@@ -37,7 +39,7 @@
     LogLevel,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import { mdiDownload } from '@mdi/js';
+  import { mdiDownload, mdiLifebuoy } from '@mdi/js';
   import { t, type Translations } from 'svelte-i18n';
 
   const disabled = $derived(featureFlagsManager.value.configFile);
@@ -89,16 +91,41 @@
 </script>
 
 <KitPage>
-  <Section
-    title={$t('frameleaf_srvadv_trouble_report')}
-    description={$t('frameleaf_srvadv_trouble_report_description')}
+  <Hero
+    tone="good"
+    icon={mdiLifebuoy}
+    title={$t('frameleaf_srvadv_trouble_hero')}
+    body={$t('frameleaf_srvadv_trouble_hero_body')}
+    label={$t('frameleaf_srvadv_trouble_hero_label')}
   >
-    {#snippet action()}
+    {#snippet actions()}
       <Button variant="primary" disabled={downloading} onclick={downloadDiagnostics}>
         <Icon icon={mdiDownload} size="1em" aria-hidden={true} />
         {$t('frameleaf_srvadv_trouble_download')}
       </Button>
     {/snippet}
+  </Hero>
+
+  {#if logging.enabled && amount !== 'normal'}
+    <Notice
+      tone="warn"
+      title={amount === 'detailed'
+        ? $t('frameleaf_srvadv_trouble_detailed_on')
+        : $t('frameleaf_srvadv_trouble_exact_on', { values: { level: levelName(logging.level) } })}
+    >
+      {$t('frameleaf_srvadv_trouble_detailed_on_body')}
+      {#snippet action()}
+        <Button {disabled} onclick={() => (settingsDraft.draft.logging.level = LogLevel.Log)}
+          >{$t('frameleaf_srvadv_trouble_back_to_normal')}</Button
+        >
+      {/snippet}
+    </Notice>
+  {/if}
+
+  <Section
+    title={$t('frameleaf_srvadv_trouble_report_includes')}
+    description={$t('frameleaf_srvadv_trouble_report_includes_description')}
+  >
     <Points
       label={$t('frameleaf_srvadv_trouble_includes')}
       rows={[
@@ -127,41 +154,43 @@
         onChange={(value) => (settingsDraft.draft.logging.enabled = value)}
       />
     </Row>
-    <Row
-      label={$t('frameleaf_srvadv_trouble_amount')}
-      help={amount === 'detailed'
-        ? $t('frameleaf_srvadv_trouble_amount_detailed')
-        : amount === 'normal'
-          ? $t('frameleaf_srvadv_trouble_amount_normal')
-          : $t('frameleaf_srvadv_trouble_amount_exact', { values: { level: levelName(logging.level) } })}
-    >
-      <SegmentedControl
+    {#if logging.enabled}
+      <Row
         label={$t('frameleaf_srvadv_trouble_amount')}
-        options={[
-          { value: 'normal', label: $t('frameleaf_srvadv_trouble_normal') },
-          { value: 'detailed', label: $t('frameleaf_srvadv_trouble_detailed') },
-          ...(amount === 'exact' ? [{ value: 'exact', label: levelName(logging.level) }] : []),
-        ]}
-        value={amount}
-        disabled={disabled || !logging.enabled}
-        onChange={(value) => {
-          if (value !== 'exact') {
-            settingsDraft.draft.logging.level = value === 'normal' ? LogLevel.Log : LogLevel.Debug;
-          }
-        }}
-      />
-    </Row>
-    <Advanced>
-      <Row label={$t('frameleaf_srvadv_trouble_exact')} help={$t('frameleaf_srvadv_trouble_exact_help')}>
-        <Select
-          label={$t('frameleaf_srvadv_trouble_exact')}
-          value={logging.level}
-          options={LEVELS.map((level) => ({ value: level, label: levelName(level) }))}
+        help={amount === 'detailed'
+          ? $t('frameleaf_srvadv_trouble_amount_detailed')
+          : amount === 'normal'
+            ? $t('frameleaf_srvadv_trouble_amount_normal')
+            : $t('frameleaf_srvadv_trouble_amount_exact', { values: { level: levelName(logging.level) } })}
+      >
+        <SegmentedControl
+          label={$t('frameleaf_srvadv_trouble_amount')}
+          options={[
+            { value: 'normal', label: $t('frameleaf_srvadv_trouble_normal') },
+            { value: 'detailed', label: $t('frameleaf_srvadv_trouble_detailed') },
+            ...(amount === 'exact' ? [{ value: 'exact', label: levelName(logging.level) }] : []),
+          ]}
+          value={amount}
           disabled={disabled || !logging.enabled}
-          onChange={(value) => (settingsDraft.draft.logging.level = value as LogLevel)}
+          onChange={(value) => {
+            if (value !== 'exact') {
+              settingsDraft.draft.logging.level = value === 'normal' ? LogLevel.Log : LogLevel.Debug;
+            }
+          }}
         />
       </Row>
-    </Advanced>
+      <Advanced>
+        <Row label={$t('frameleaf_srvadv_trouble_exact')} help={$t('frameleaf_srvadv_trouble_exact_help')}>
+          <Select
+            label={$t('frameleaf_srvadv_trouble_exact')}
+            value={logging.level}
+            options={LEVELS.map((level) => ({ value: level, label: levelName(level) }))}
+            disabled={disabled || !logging.enabled}
+            onChange={(value) => (settingsDraft.draft.logging.level = value as LogLevel)}
+          />
+        </Row>
+      </Advanced>
+    {/if}
   </Section>
 
   <Section
@@ -170,7 +199,9 @@
   >
     <Row
       label={$t('frameleaf_srvadv_trouble_analytics_keep')}
-      help={$t('frameleaf_srvadv_trouble_analytics_keep_help')}
+      help={analytics.enabled
+        ? $t('frameleaf_srvadv_trouble_analytics_keep_on')
+        : $t('frameleaf_srvadv_trouble_analytics_keep_help')}
     >
       <Switch
         label={$t('frameleaf_srvadv_trouble_analytics_keep')}

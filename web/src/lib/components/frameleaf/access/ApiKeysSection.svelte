@@ -7,6 +7,10 @@
    *
    * FL-655: the access Save to Frameleaf added by signing in (`signedInFrom`) is listed with the other
    * keys as "Added by signing in", with Manage only: it has no value to copy or replace.
+   *
+   * Drawn as the approved prototype's `ApiKeys` (`settings-v2/cloud/ApiKeys.jsx`): a hero saying how
+   * many apps or devices can reach the library (or the never-used key that can do everything), then
+   * "Your keys" with New key, each row with Manage › for edit, replace and delete.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import ApiKeyDialog from '$lib/components/frameleaf/access/ApiKeyDialog.svelte';
@@ -15,10 +19,24 @@
   import { handleDeleteApiKey, handleRotateApiKey } from '$lib/services/api-key.service';
   import { locale } from '$lib/stores/preferences.store';
   import { getApiKeys, Permission, type ApiKeyResponseDto } from '@frameleaf/sdk';
-  import { modalManager } from '@frameleaf/ui';
+  import { Icon, modalManager } from '@frameleaf/ui';
   import { DateTime } from 'luxon';
   import { t, type Translations } from 'svelte-i18n';
-  import './access.css';
+  import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
+  import Item from '$lib/components/frameleaf/settings/kit/Item.svelte';
+  import ItemList from '$lib/components/frameleaf/settings/kit/ItemList.svelte';
+  import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
+  import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
+  import {
+    mdiAllInclusive,
+    mdiChevronRight,
+    mdiImageFrame,
+    mdiKeyOutline,
+    mdiPlus,
+    mdiPuzzleOutline,
+    mdiSwapHorizontal,
+    mdiTrayArrowUp,
+  } from '@mdi/js';
 
   let { keys = $bindable([]) }: { keys?: ApiKeyResponseDto[] } = $props();
 
@@ -43,7 +61,7 @@
   const permissionText = (key: ApiKeyResponseDto) => {
     const permissions = keyPermissions(key);
     if (permissions.includes(Permission.All)) {
-      return $t('frameleaf_access_key_full_access');
+      return $t('frameleaf_access_key_purpose_everything_row');
     }
     const purpose = keyPurpose(permissions);
     if (purpose !== 'custom') {
@@ -61,6 +79,51 @@
     await modalManager.show(ExtensionAccessDialog, { apiKey: key });
   };
 
+  /** Manage › (`ApiKeys.jsx`): edit the key, or replace or delete it from the same dialog. */
+  const open = async (key: ApiKeyResponseDto) => {
+    if (key.signedInFrom) {
+      await manage(key);
+      return;
+    }
+    const next = await modalManager.show(ApiKeyDialog, { apiKey: key });
+    if (next === 'replace') {
+      await rotate(key);
+    } else if (next === 'delete') {
+      await handleDeleteApiKey(key);
+    }
+  };
+
+  const create = () => modalManager.show(ApiKeyDialog, {});
+
+  const WEEK_MS = 7 * 86_400_000;
+  /**
+   * A key that can do everything and has never been used, made more than a week ago: the one thing
+   * the prototype's hero asks to look at.
+   */
+  const unused = $derived(
+    keys.find(
+      (key) =>
+        !key.lastUsedAt &&
+        !key.signedInFrom &&
+        keyPermissions(key).includes(Permission.All) &&
+        Date.now() - Date.parse(key.createdAt) > WEEK_MS,
+    ),
+  );
+
+  const PURPOSE_ICONS: Record<string, string> = {
+    view: mdiImageFrame,
+    upload: mdiTrayArrowUp,
+    'view-upload': mdiSwapHorizontal,
+    capture: mdiPuzzleOutline,
+    everything: mdiAllInclusive,
+  };
+  const keyIcon = (key: ApiKeyResponseDto) => {
+    const permissions = keyPermissions(key);
+    return permissions.includes(Permission.All)
+      ? mdiAllInclusive
+      : (PURPOSE_ICONS[keyPurpose(permissions)] ?? mdiKeyOutline);
+  };
+
   const rotate = async (key: ApiKeyResponseDto) => {
     const response = await handleRotateApiKey(key);
     if (response) {
@@ -75,47 +138,72 @@
   onApiKeyDelete={({ id }) => (keys = keys.filter((key) => key.id !== id))}
 />
 
-<section class="fl-access-section" aria-labelledby="fl-access-keys">
-  <div class="fl-access-head">
-    <div>
-      <h3 id="fl-access-keys">{$t('frameleaf_access_keys_title')}</h3>
-      <p>{$t('frameleaf_access_keys_description')}</p>
-    </div>
-    <Button variant="primary" onclick={() => modalManager.show(ApiKeyDialog, {})}>
-      {$t('frameleaf_access_key_create')}
-    </Button>
-  </div>
-  {#if keys.length > 0}
-    <ul class="fl-access-list">
-      {#each keys as key (key.id)}
-        <li class="fl-access-item">
-          <div>
-            <strong>{key.name}</strong>
-            <small>{permissionText(key)}</small>
-            {#if key.signedInFrom}
-              <small>{lastUsed(key)}</small>
-              <small>{$t('frameleaf_access_key_added_by_sign_in', { values: { date: made(key) } })}</small>
-            {:else}
-              <small>{lastUsed(key)} · {$t('frameleaf_access_key_made', { values: { date: made(key) } })}</small>
-            {/if}
-          </div>
-          <div class="fl-access-actions">
-            {#if key.signedInFrom}
-              <Button label={`${$t('frameleaf_access_key_manage')} ${key.name}`} onclick={() => manage(key)}>
-                {$t('frameleaf_access_key_manage')}
-              </Button>
-            {:else}
-              <Button onclick={() => modalManager.show(ApiKeyDialog, { apiKey: key })}>
-                {$t('frameleaf_access_key_edit_short')}
-              </Button>
-              <Button onclick={() => rotate(key)}>{$t('frameleaf_access_key_rotate')}</Button>
-              <Button onclick={() => handleDeleteApiKey(key)}>{$t('frameleaf_access_key_delete')}</Button>
-            {/if}
-          </div>
-        </li>
-      {/each}
-    </ul>
+{#snippet newKey(primary: boolean)}
+  <Button variant={primary ? 'primary' : 'default'} onclick={create}
+    ><Icon icon={mdiPlus} size="1.1em" aria-hidden />{$t('frameleaf_access_keys_new')}</Button
+  >
+{/snippet}
+{#snippet newKeyPrimary()}{@render newKey(true)}{/snippet}
+{#snippet newKeyQuiet()}{@render newKey(false)}{/snippet}
+{#snippet reviewUnused()}
+  <Button variant="primary" onclick={() => unused && open(unused)}>{$t('frameleaf_access_keys_review')}</Button>
+{/snippet}
+
+<KitPage>
+  {#if keys.length === 0}
+    <Hero
+      tone="quiet"
+      icon={mdiKeyOutline}
+      title={$t('frameleaf_access_keys_hero_empty')}
+      body={$t('frameleaf_access_keys_hero_empty_body')}
+      label={$t('frameleaf_access_keys_title')}
+      actions={newKeyPrimary}
+    />
+  {:else if unused}
+    <Hero
+      tone="warn"
+      icon={mdiKeyOutline}
+      title={$t('frameleaf_access_keys_hero_unused')}
+      body={$t('frameleaf_access_keys_hero_unused_body', { values: { name: unused.name, date: made(unused) } })}
+      label={$t('frameleaf_access_keys_title')}
+      actions={reviewUnused}
+    />
   {:else}
-    <p class="fl-access-empty">{$t('frameleaf_access_keys_empty')}</p>
+    <Hero
+      tone="good"
+      icon={mdiKeyOutline}
+      title={$t('frameleaf_access_keys_hero_count', { values: { count: keys.length } })}
+      body={$t('frameleaf_access_keys_hero_count_body')}
+      label={$t('frameleaf_access_keys_title')}
+    />
   {/if}
-</section>
+
+  {#if keys.length > 0}
+    <Section
+      title={$t('frameleaf_access_keys_yours')}
+      description={$t('frameleaf_access_keys_yours_description')}
+      action={newKeyQuiet}
+    >
+      <ItemList>
+        {#each keys as key (key.id)}
+          <Item
+            icon={keyIcon(key)}
+            name={key.name}
+            detail={permissionText(key)}
+            tone={key.lastUsedAt ? 'good' : 'warn'}
+            status={lastUsed(key)}
+            note={key.signedInFrom
+              ? $t('frameleaf_access_key_added_by_sign_in', { values: { date: made(key) } })
+              : $t('frameleaf_access_key_made_on', { values: { date: made(key) } })}
+          >
+            {#snippet action()}
+              <Button label={`${$t('frameleaf_access_key_manage')} ${key.name}`} onclick={() => open(key)}
+                >{$t('frameleaf_access_key_manage')}<Icon icon={mdiChevronRight} size="1em" aria-hidden /></Button
+              >
+            {/snippet}
+          </Item>
+        {/each}
+      </ItemList>
+    </Section>
+  {/if}
+</KitPage>

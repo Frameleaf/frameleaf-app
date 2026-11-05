@@ -244,7 +244,7 @@ describe('AlbumDirectory', () => {
     const shelf = screen.getByRole('region', { name: 'Shared spaces' });
     const tile = shelf.querySelector('article[aria-label="Family Space"]') as HTMLElement;
     expect(tile).toHaveAttribute('draggable', 'false');
-    expect(tile.querySelector('a[href="/sharing/space"]')).not.toBeNull();
+    expect(tile.querySelector('a[href="/albums/space"]')).not.toBeNull();
     expect(
       screen.getByRole('region', { name: 'Family' }).querySelector('article[aria-label="Family Space"]'),
     ).toBeNull();

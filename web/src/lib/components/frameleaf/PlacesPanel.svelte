@@ -268,8 +268,10 @@
               onclick={() => togglePlacesGroupCollapsing(country.id)}
             >
               <Icon icon={open ? mdiChevronDown : mdiChevronRight} size="18" />
-              <span>{country.name}</span>
-              <small>{$t('frameleaf_places_items', { values: { count: country.count } })}</small>
+              <span class="dv-group-name"
+                ><span>{country.name}</span>
+                <small>{$t('frameleaf_places_items', { values: { count: country.count } })}</small></span
+              >
             </button>
           </h2>
           <a class="dv-link" href={Route.search(country.query)}>
@@ -363,16 +365,17 @@
     max-width: 1400px;
     min-width: 0;
     margin: 0 auto;
-    padding: 26px 30px 36px;
+    /* The one page gutter: the page area's 8px + --fl-page-inline = 24px desktop, 16px phone. */
+    padding: 26px var(--fl-page-inline) 36px;
     box-sizing: border-box;
     color: var(--fl-text);
     font-size: var(--fl-font-size);
   }
   .discovery h1 {
     margin: 0;
-    font-size: 26px;
-    font-weight: 600;
-    letter-spacing: -0.035em;
+    /* One page-title size across the discovery pages (prototype People, Pets, Tags, Folders). */
+    font: var(--fl-type-display);
+    letter-spacing: var(--fl-tracking-display);
   }
   .discovery h2 {
     margin: 0;
@@ -445,8 +448,33 @@
     gap: 12px;
     margin-bottom: 14px;
   }
+  /* The heading takes the row's free space so the full country name shows; the name is cut short
+     only when it really can't fit beside its count and View all (a long name on a phone). */
   .dv-country .dv-section-heading h2 {
+    flex: 1 1 auto;
+    min-width: 0;
     font-size: 17px;
+  }
+  .dv-group-toggle {
+    width: max-content;
+    /* The button hangs 8px outside the heading (margin below), so it may use those 8px too. */
+    max-width: calc(100% + var(--fl-space-2));
+    min-width: 0;
+    text-align: start;
+  }
+  /* Name and count flow as one line of text, so a name too long for the row wraps with its count
+     after it instead of being cut short. */
+  .dv-group-name {
+    min-width: 0;
+  }
+  .dv-group-name small {
+    margin-inline-start: var(--fl-space-2);
+    white-space: nowrap;
+  }
+  .dv-group-toggle :global(svg),
+  .dv-section-heading .dv-link {
+    flex-shrink: 0;
+    white-space: nowrap;
   }
   .dv-group-toggle {
     display: inline-flex;
@@ -463,7 +491,7 @@
     font: inherit;
     cursor: pointer;
   }
-  .dv-group-toggle small {
+  .dv-group-name small {
     font-weight: 400;
   }
   .dv-group-toggle:hover {
@@ -657,12 +685,32 @@
     }
   }
   @media (max-width: 700px) {
-    /* With the page's own 8px, the 16px phone gutter. */
     .discovery {
-      padding: 20px var(--fl-space-2) 30px;
+      padding-bottom: 30px;
+    }
+    .discovery h1 {
+      font-size: var(--fl-font-title);
+    }
+    /* Places.jsx phone: the search field gives way to Group by country and Collapse all, so the
+       three stay on one row (the field shrinks to its magnifier). */
+    .dv-header-actions {
+      flex-wrap: nowrap;
+      width: 100%;
+    }
+    .dv-search {
+      flex: 1 1 0;
+      min-width: 44px;
+      min-height: var(--fl-control-height);
     }
     .dv-search input {
+      width: 100%;
       min-width: 0;
+    }
+    .dv-header-actions > :global(*) {
+      flex-shrink: 0;
+    }
+    .dv-header-actions > .dv-search {
+      flex-shrink: 1;
     }
   }
   /* FL-707 P1: one top padding above every library-side page heading (28px, 16px on phones);

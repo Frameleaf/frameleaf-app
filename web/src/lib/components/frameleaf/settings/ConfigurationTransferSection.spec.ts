@@ -30,16 +30,16 @@ describe('ConfigurationTransferSection (CC-46)', () => {
     expect(preview.closest('details')).not.toHaveAttribute('open');
     expect(preview.textContent).toContain('"enabled": true');
     expect(preview.textContent).not.toContain('secret-value');
-    expect(screen.getByRole('button', { name: 'Save to a file' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Load from a file' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Copy as text' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Save to a file/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Load from a file/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Copy as text instead' })).toBeInTheDocument();
   });
 
   it('lists a loaded file as changes in the words on their pages, saved only from the settings bar', () => {
     changes.push({ path: 'map.enabled', before: true, after: false });
     render(ConfigurationTransferSection);
 
-    expect(screen.getByText('1 setting is waiting to be saved')).toBeInTheDocument();
+    expect(screen.getByText('1 setting would change')).toBeInTheDocument();
     const list = screen.getByRole('list', { name: 'Settings that would change' });
     expect(list).toHaveTextContent('Show photos on a map');
     expect(list).toHaveTextContent('On');

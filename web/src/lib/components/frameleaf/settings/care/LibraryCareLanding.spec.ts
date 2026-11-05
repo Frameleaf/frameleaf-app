@@ -18,6 +18,7 @@ import {
 } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
+import { goto } from '$app/navigation';
 import LibraryCareLanding from '$lib/components/frameleaf/settings/care/LibraryCareLanding.svelte';
 import { unusedFilesAccess } from '$lib/frameleaf/unused-files.svelte';
 import en from '../../../../../../../i18n/en.json';
@@ -128,14 +129,18 @@ describe('Library care landing (FL-366)', () => {
     unusedFilesAccess.reset();
   });
 
-  it('offers the optional paid photo location estimate on the member’s Library care landing page', async () => {
+  it('offers the optional paid photo location scan as one Place names row on the member’s landing page', async () => {
     user.isAdmin = false;
     vi.mocked(getSummary).mockResolvedValue(summary());
     vi.mocked(getLocationScanStatus).mockResolvedValue({ enabled: true, available: true, scan: null });
     render(LibraryCareLanding);
 
+    // As the prototype: the row says where the scan stands, and the scan itself is its own page.
     expect(await screen.findByRole('heading', { name: 'Identify photo locations' })).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Estimate' })).toBeEnabled());
+    expect(await screen.findByText('Not run yet')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Estimate' })).not.toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Open Identify photo locations' }));
+    expect(goto).toHaveBeenCalledWith(expect.stringContaining('section=location-scan'));
   });
 
   it('says the library is healthy, with how many files were checked', async () => {

@@ -830,7 +830,7 @@
         </div>
         {#if !existing}
           <SetupLogoIntro onSettled={() => (introReady = true)}>
-            <h1 class="frs-tagline fl-type-hero" data-intro>{@render tagline($t('frameleaf_setup_tagline_new'))}</h1>
+            <h1 class="frs-tagline" data-intro>{@render tagline($t('frameleaf_setup_tagline_new'))}</h1>
             <button
               type="button"
               class="button primary frs-continue"
@@ -850,7 +850,7 @@
           </SetupLogoIntro>
         {:else}
           <SetupLogoIntro onSettled={() => (introReady = true)}>
-            <h1 class="frs-tagline fl-type-hero" data-intro>
+            <h1 class="frs-tagline" data-intro>
               {@render tagline($t('frameleaf_setup_tagline_existing'))}
             </h1>
             <div class="frs-safe" data-intro>

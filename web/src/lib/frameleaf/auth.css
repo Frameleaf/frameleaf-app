@@ -88,13 +88,9 @@
   font: var(--fl-type-display);
   text-wrap: balance;
 }
-/* Sign-in is one of the three places the hero step is for. */
+/* Sign-in's heading is the same display step as every other auth heading (prototype auth.css: 4xl). */
 .auth-screen .auth-heading.hero {
   gap: 10px;
-}
-.auth-screen .auth-heading.hero h1 {
-  font: var(--fl-type-hero);
-  letter-spacing: var(--fl-tracking-hero);
 }
 .auth-screen .auth-heading p {
   color: var(--fl-muted);

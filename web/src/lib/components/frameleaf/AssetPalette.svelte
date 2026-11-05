@@ -20,7 +20,14 @@
     assetId,
     canRetry = false,
     onChoose,
-  }: { assetId: string; canRetry?: boolean; onChoose?: (color: ColorFilter) => void } = $props();
+    limit,
+  }: {
+    assetId: string;
+    canRetry?: boolean;
+    onChoose?: (color: ColorFilter) => void;
+    /** Show at most this many colours, the strongest first (Boards' Details shows 5, as the prototype does). */
+    limit?: number;
+  } = $props();
   const headingId = $props.id();
   let palette = $state<AssetPaletteDto | null>(null);
   let loading = $state(true);
@@ -102,7 +109,7 @@
   {#if palette?.status === PaletteStatus.Ready}
     {#if palette.swatches.length === 0}<p role="status">{$t('frameleaf_palette_empty')}</p>{/if}
     <ul class="fl-palette-swatches">
-      {#each palette.swatches as swatch (swatch.hex)}
+      {#each limit ? palette.swatches.slice(0, limit) : palette.swatches as swatch (swatch.hex)}
         {@const label = $t('frameleaf_boards_colour_swatch', {
           values: { hex: swatch.hex.toUpperCase(), coverage: coverage(swatch.weight) },
         })}

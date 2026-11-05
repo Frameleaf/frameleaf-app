@@ -53,6 +53,12 @@
     onSave?: (dto: AlbumDetailsDraft) => Promise<boolean>;
     /** Offer the collection field while editing; moving an album is the owner's (server rule). */
     canMove?: boolean;
+    /**
+     * Boards' "New collection" (prototype `NewCollectionDialog`, ProWorkspace.jsx): name, colour,
+     * icon and "Inside" over every collection, with the note that collections are albums nested up
+     * to 32 levels. No description and no smart album switch.
+     */
+    boards?: boolean;
   }
 
   let {
@@ -66,6 +72,7 @@
     album,
     onSave,
     canMove = false,
+    boards = false,
   }: Props = $props();
 
   const editing = $derived(!!album && !!onSave);
@@ -75,7 +82,7 @@
   let rule = $state<RuleDraft>(emptyRule());
   let sources = $state<RuleSources>({ people: [], tags: [] });
   let sourcesLoaded = false;
-  const canBeSmart = $derived(!editing && kind === AlbumKind.Album && !!onCreateSmart);
+  const canBeSmart = $derived(!editing && !boards && kind === AlbumKind.Album && !!onCreateSmart);
   const smartOn = $derived(canBeSmart && smart);
 
   $effect(() => {
@@ -119,21 +126,35 @@
   });
 
   const title = $derived(
-    editing
-      ? formKind === AlbumKind.Collection
-        ? $t('frameleaf_albums_edit_collection')
-        : formKind === AlbumKind.Space
-          ? $t('frameleaf_albums_edit_space')
-          : $t('frameleaf_albums_edit_album')
-      : kind === AlbumKind.Collection
-        ? $t('frameleaf_albums_create_collection')
-        : kind === AlbumKind.Space
-          ? $t('frameleaf_albums_create_space')
-          : $t('frameleaf_albums_create_album'),
+    boards && !editing
+      ? $t('frameleaf_boards_new_collection')
+      : editing
+        ? formKind === AlbumKind.Collection
+          ? $t('frameleaf_albums_edit_collection')
+          : formKind === AlbumKind.Space
+            ? $t('frameleaf_albums_edit_space')
+            : $t('frameleaf_albums_edit_album')
+        : kind === AlbumKind.Collection
+          ? $t('frameleaf_albums_create_collection')
+          : kind === AlbumKind.Space
+            ? $t('frameleaf_albums_create_space')
+            : $t('frameleaf_albums_create_album'),
   );
   /** Collections the album may live in; never itself (CollectionHeader.jsx `parentOptions`). */
   const parents = $derived(collections.filter((collection) => collection.id !== album?.id));
-  const showParent = $derived(formKind !== AlbumKind.Space && parents.length > 0 && (!editing || canMove));
+  const showParent = $derived(formKind !== AlbumKind.Space && (boards || parents.length > 0) && (!editing || canMove));
+  /** The server nests albums up to 32 levels (prototype `NewCollectionDialog`: Create stops there). */
+  const MAX_DEPTH = 32;
+  const depthOf = (id: string | null) => {
+    let depth = 0;
+    const seen = new Set<string>();
+    for (let current = id; current && !seen.has(current); depth++) {
+      seen.add(current);
+      current = collections.find((candidate) => candidate.id === current)?.parentId ?? null;
+    }
+    return depth;
+  };
+  const tooDeep = $derived(boards && !editing && depthOf(parentId) >= MAX_DEPTH);
 
   const submit = async (event: SubmitEvent) => {
     event.preventDefault();
@@ -198,14 +219,25 @@
     {/if}
     <label class="field">
       <span>{$t('name')}</span>
-      <input type="text" bind:value={albumName} required maxlength="120" autocomplete="off" />
+      <!-- The prototype's dialog opens on the name, not on Close. -->
+      <input
+        type="text"
+        data-initial-focus
+        bind:value={albumName}
+        required
+        maxlength="120"
+        autocomplete="off"
+        placeholder={boards ? $t('frameleaf_boards_new_collection_placeholder') : undefined}
+      />
     </label>
-    <label class="field">
-      <span>{$t('description')}</span>
-      <textarea bind:value={description} rows="2" maxlength="2000"></textarea>
-    </label>
+    {#if !boards}
+      <label class="field">
+        <span>{$t('description')}</span>
+        <textarea bind:value={description} rows="2" maxlength="2000"></textarea>
+      </label>
+    {/if}
     {#if formKind !== AlbumKind.Space}
-      <AlbumColorChoice value={color} onChange={(next) => (color = next)} name="album-create-color" />
+      <AlbumColorChoice value={color} onChange={(next) => (color = next)} name="album-create-color" compact={boards} />
     {/if}
     <div class="field">
       <div class="icon-row">
@@ -236,7 +268,9 @@
     </div>
     {#if showParent}
       <div class="field">
-        <span class="field-label" aria-hidden="true">{$t('frameleaf_albums_in_collection')}</span>
+        <span class="field-label" aria-hidden="true"
+          >{boards ? $t('frameleaf_boards_inside') : $t('frameleaf_albums_in_collection')}</span
+        >
         <AlbumDestinationPicker
           albums={parents}
           value={parentId}
@@ -244,9 +278,12 @@
           allowTop
           topLabel={$t('frameleaf_albums_no_collection')}
           name="album-create-parent"
-          label={$t('frameleaf_albums_in_collection')}
+          label={boards ? $t('frameleaf_boards_inside') : $t('frameleaf_albums_in_collection')}
         />
       </div>
+    {/if}
+    {#if boards && !editing}
+      <p class="hint">{$t('frameleaf_boards_new_collection_note')}</p>
     {/if}
     {#if canBeSmart}
       <label class="switch">
@@ -269,7 +306,7 @@
     {/if}
     <div class="buttons">
       <button type="button" onclick={() => (open = false)} disabled={busy}>{$t('cancel')}</button>
-      <button type="submit" class="primary" disabled={busy}>{editing ? $t('save') : $t('create')}</button>
+      <button type="submit" class="primary" disabled={busy || tooDeep}>{editing ? $t('save') : $t('create')}</button>
     </div>
   </form>
 </Dialog>
@@ -364,10 +401,13 @@
     outline: 2px solid var(--fl-accent);
     outline-offset: 2px;
   }
+  /* The footer over a hairline, as every Dialog's actions footer (prototype dialog footers). */
   .buttons {
     display: flex;
     justify-content: flex-end;
-    gap: 0.5rem;
+    gap: var(--fl-space-2);
+    padding-top: var(--fl-space-4);
+    border-top: 1px solid var(--fl-border);
   }
   .buttons button {
     padding: 0 1rem;

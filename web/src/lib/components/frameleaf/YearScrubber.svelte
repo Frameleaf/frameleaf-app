@@ -76,6 +76,8 @@
   });
 
   const MIN_YEAR_LABEL_GAP = 18;
+  /** A label's line height and the space under it before the next label (12px type, 12px apart). */
+  const MIN_YEAR_LABEL_SPACING = 28;
 
   let track = $state<HTMLElement>();
   let hover = $state<{ fraction: number; month: Marked } | null>(null);
@@ -109,6 +111,24 @@
       last.assetCount += month.assetCount;
     }
     return result;
+  });
+
+  /**
+   * The years that get a label: each must have room of its own and sit a clear line below the last
+   * label drawn, so a run of short years (the List view's rows, a few photos a year) never stacks
+   * its labels on top of each other. The ticks stay for every year.
+   */
+  const labelledYears = $derived.by(() => {
+    const shown = new Set<number>();
+    let lastTop = -Infinity;
+    for (const year of years) {
+      const top = year.start * height;
+      if ((year.end - year.start) * height >= MIN_YEAR_LABEL_GAP && top - lastTop >= MIN_YEAR_LABEL_SPACING) {
+        shown.add(year.year);
+        lastTop = top;
+      }
+    }
+    return shown;
   });
 
   const maxCount = $derived(Math.max(1, ...months.map((month) => month.assetCount)));
@@ -262,7 +282,7 @@
   >
     {#each years as year (year.year)}
       <i class="fl-scrub-yeartick" style:top="{year.start * 100}%" aria-hidden="true"></i>
-      {#if (year.end - year.start) * height >= MIN_YEAR_LABEL_GAP}
+      {#if labelledYears.has(year.year)}
         <span class="fl-scrub-year" style:top="{year.start * 100}%" aria-hidden="true">{year.year}</span>
       {/if}
     {/each}

@@ -48,11 +48,11 @@ describe('FirstRunSetup (FL-176)', () => {
     const { container } = render(FirstRunSetup, { initial: createSetup('new'), authenticated: false });
     const root = container.querySelector<HTMLElement>('section.frs-root');
     expect(root?.dataset.theme).toBe('dark');
-    // the one hero line; the kit's own lockup fades in
+    // the welcome line under the kit's own icon and wordmark, which fade in (nothing redrawn)
     const hero = screen.getByRole('heading', { level: 1, name: 'Your photos, beautifully kept. On your own server.' });
-    expect(hero).toHaveClass('fl-type-hero');
+    expect(hero).toHaveClass('frs-tagline');
     expect(container.querySelector(':scope .frs-logo img.fl-logo-arrive')).toHaveAttribute('alt', 'Frameleaf');
-    expect(container.querySelector('.frs-logo-stroke, .frs-logo-glow')).toBeNull();
+    expect(container.querySelector('.frs-logo-stroke')).toBeNull();
     // Continue is live once the short arrival has settled
     await waitFor(() => expect(screen.getByRole('button', { name: /Continue setup/ })).not.toHaveAttribute('inert'));
     // Item 1: the one welcome also offers "Restore from a backup" (it had its own page before)

@@ -84,12 +84,31 @@ describe('FrameleafSignInSection (FL-158, FL-541)', () => {
     expect(
       await screen.findByRole('heading', { name: 'Sign in with Frameleaf isn’t available yet' }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Get Frameleaf Cloud' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Link this server' })).toBeInTheDocument();
     expect(screen.getByRole('switch', { name: 'Offer Sign in with Frameleaf at home' })).toBeDisabled();
     expect(screen.queryByText('Who has linked')).toBeNull();
     expect(sdkMock.getCloudSignInPeople).not.toHaveBeenCalled();
     // FL-177: the server's key is the only client credential; there is no secret to enter
     expect(screen.queryByText(/client secret/i)).toBeNull();
+  });
+
+  it('names each person’s role from the account list, as the prototype does', async () => {
+    sdkMock.getCloudStatus.mockResolvedValue(linked());
+    sdkMock.searchUsersAdmin.mockResolvedValue([
+      { id: 'u-sam', name: 'Sam', email: 'sam@example.com', isAdmin: true, avatarColor: 'blue', profileImagePath: '' },
+      {
+        id: 'u-emma',
+        name: 'Emma',
+        email: 'emma@example.com',
+        isAdmin: false,
+        avatarColor: 'green',
+        profileImagePath: '',
+      },
+    ] as never);
+    render(FrameleafSignInSection);
+
+    expect(await screen.findByText('Administrator')).toBeInTheDocument();
+    expect(screen.getByText('Member')).toBeInTheDocument();
   });
 
   it('lists who has and hasn’t linked by name, and reminds someone who hasn’t', async () => {

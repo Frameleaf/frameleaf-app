@@ -342,16 +342,7 @@
   <div class="phd-toolbar" class:phw-moved={!!headerActions}>
     {#if !headerActions}<p>{$t('frameleaf_photography_site_lead')}</p>{/if}
     <div class="phd-actions phw-site-actions" use:inHeader={headerActions}>
-      {#if draft}
-        <label class="sse-switch"
-          ><input type="checkbox" role="switch" bind:checked={draft.enabled} />{$t(
-            'frameleaf_photography_site_publish',
-          )}</label
-        >
-      {/if}
-      {#if stored?.site.enabled}<a class="fl-control" href={stored.url} target="_blank" rel="noopener"
-          >{$t('frameleaf_photography_site_open')} ↗</a
-        >{/if}
+      <!-- As in the prototype: whether it is saved, then the publish switch, then Save. -->
       {#if saveState}
         <span
           class="sse-save-state"
@@ -365,6 +356,16 @@
           />{saveState.text}</span
         >
       {/if}
+      {#if draft}
+        <label class="sse-switch"
+          ><input type="checkbox" role="switch" bind:checked={draft.enabled} />{$t(
+            'frameleaf_photography_site_publish',
+          )}</label
+        >
+      {/if}
+      {#if stored?.site.enabled}<a class="fl-control" href={stored.url} target="_blank" rel="noopener"
+          >{$t('frameleaf_photography_site_open')} ↗</a
+        >{/if}
       <Button variant="primary" disabled={busy || !draft || !dirty || !slugOk || !domainOk} onclick={save}
         >{$t('frameleaf_photography_site_save')}</Button
       >
@@ -400,7 +401,7 @@
         </div>
         <div class="sse-fullscreen" bind:this={stage}>
           <div class="sse-frame" class:is-phone={phone}>
-            <StudioSite site={preview} />
+            <StudioSite site={preview} emptyWork={$t('frameleaf_studio_site_preview_no_work')} />
           </div>
         </div>
       </section>

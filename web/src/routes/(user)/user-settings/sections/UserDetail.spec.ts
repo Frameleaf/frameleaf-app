@@ -19,7 +19,15 @@ vi.mock('$lib/components/frameleaf/settings/people/PersonPage.svelte', async () 
 }));
 
 const detail = (deletedAt: string | null = null) => ({
-  user: { id, name: 'Jamie', email: 'jamie@example.test', deletedAt, status: deletedAt ? 'deleted' : 'active' },
+  user: {
+    id,
+    name: 'Jamie',
+    email: 'jamie@example.test',
+    isAdmin: false,
+    createdAt: '2026-02-02T12:00:00.000Z',
+    deletedAt,
+    status: deletedAt ? 'deleted' : 'active',
+  },
   userPreferences: {},
   userStatistics: {},
   userSessions: [],
@@ -33,12 +41,12 @@ describe('account detail header (FL-71, AccountsLibraries.jsx)', () => {
     mocks.goto.mockReset().mockResolvedValue(undefined);
   });
 
-  it("carries the template's profile, View analytics and Close details (FL-516)", async () => {
+  it("opens as the prototype's person page: their name, email · role · joined, ‹ Users and View analytics", async () => {
     mocks.loadUserDetail.mockResolvedValue(detail());
     render(UserDetail, { id });
 
-    expect(await screen.findByRole('heading', { level: 2, name: 'Jamie' })).toBeInTheDocument();
-    expect(screen.getByText('jamie@example.test')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Jamie' })).toBeInTheDocument();
+    expect(screen.getByText(/^jamie@example\.test · Member · joined /)).toBeInTheDocument();
     // The account's password, PIN, removal and restore live on its page (PersonPage), not in a second action row.
     expect(screen.queryByRole('button', { name: /Reset password|Delete|Restore/ })).toBeNull();
 
@@ -46,14 +54,16 @@ describe('account detail header (FL-71, AccountsLibraries.jsx)', () => {
     expect(mocks.goto).toHaveBeenLastCalledWith(`/user-settings?area=analytics&scope=account%3A${id}`);
     // FL-516: About is edited in place, so there is no Edit account button.
     expect(screen.queryByRole('button', { name: 'Edit account' })).toBeNull();
-    await userEvent.click(screen.getByRole('button', { name: 'Close details' }));
-    expect(mocks.goto).toHaveBeenLastCalledWith('/user-settings?area=users&section=accounts');
+    expect(screen.getByRole('link', { name: 'Users' })).toHaveAttribute(
+      'href',
+      '/user-settings?area=users&section=accounts',
+    );
   });
 
   it('still shows a deleted account', async () => {
     mocks.loadUserDetail.mockResolvedValue(detail('2026-09-20T00:00:00.000Z'));
     render(UserDetail, { id });
 
-    expect(await screen.findByRole('heading', { level: 2, name: 'Jamie' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Jamie' })).toBeInTheDocument();
   });
 });

@@ -462,7 +462,8 @@
     min-width: 0;
     box-sizing: border-box;
     margin: 0 auto;
-    padding: 26px 30px 36px;
+    /* The one page gutter: the page area's 8px + --fl-page-inline = 24px desktop, 16px phone. */
+    padding: 26px var(--fl-page-inline) 36px;
     color: var(--fl-text);
   }
   .explore-library a,
@@ -478,9 +479,8 @@
   }
   .explore-library h1 {
     margin: 0;
-    font-size: 26px;
-    font-weight: 600;
-    letter-spacing: -0.035em;
+    font: var(--fl-type-display);
+    letter-spacing: var(--fl-tracking-display);
   }
   .el-header {
     margin-bottom: 28px;
@@ -1050,9 +1050,11 @@
     }
   }
   @media (max-width: 600px) {
-    /* With the page's own 8px, the 16px phone gutter. */
     .explore-library {
-      padding: 22px var(--fl-space-2) 30px;
+      padding-bottom: 30px;
+    }
+    .explore-library h1 {
+      font-size: var(--fl-font-title);
     }
     .el-people {
       gap: 13px;

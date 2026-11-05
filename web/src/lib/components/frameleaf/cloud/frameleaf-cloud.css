@@ -887,3 +887,19 @@
 .fc-start-with {
   max-width: 420px;
 }
+
+/* A number box on the control side of a kit Row (Cloud processing › Spending), the kit field's look. */
+.fc-kit-number {
+  width: 120px;
+  min-height: var(--fl-control-height);
+  padding: 0 var(--fl-space-3);
+  color: var(--fl-text);
+  font: inherit;
+  font-size: var(--fl-font-callout);
+  background: var(--fl-raised);
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-control);
+}
+.fc-kit-number:disabled {
+  opacity: 0.6;
+}

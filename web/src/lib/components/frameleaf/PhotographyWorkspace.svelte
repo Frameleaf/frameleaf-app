@@ -36,7 +36,8 @@
     mdiChevronRight,
     mdiClipboardCheckOutline,
     mdiClockOutline,
-    mdiCloseCircleOutline,
+    mdiClose,
+    mdiImport,
     mdiEmailOutline,
     mdiFolderDownloadOutline,
     mdiHeartOutline,
@@ -81,6 +82,7 @@
     logoThumbnailUrl,
     ratePhoto,
     saveWorkspace,
+    shootCover,
     shootStages,
     shootTypes,
     type Brand,
@@ -300,9 +302,7 @@
   );
   /** A photo of the photographer's own for the branding preview: the open shoot's cover, else any. */
   const samplePhotoId = $derived(
-    (active?.unavailable ? null : active?.coverAssetId) ??
-      workspace.shoots.find((shoot) => shoot.coverAssetId && !shoot.unavailable)?.coverAssetId ??
-      null,
+    (active ? shootCover(active) : null) ?? workspace.shoots.map((shoot) => shootCover(shoot)).find(Boolean) ?? null,
   );
 
   /**
@@ -922,7 +922,11 @@
           }}
           onDesignWatermark={() => (section = 'watermarks')}
         />
-      {:else if section === 'watermarks'}<PhotographyWatermarks photoId={samplePhotoId} />
+      {:else if section === 'watermarks'}<PhotographyWatermarks
+          photoId={samplePhotoId}
+          {headerActions}
+          onBranding={() => (section = 'branding')}
+        />
       {:else if section === 'publishing'}<PhotographyPublishing />
       {:else if section === 'website'}<PhotographyWebsite
           shoots={workspace.shoots}
@@ -992,8 +996,10 @@
                       ></button
                     >{/each}
                 </div>
-                {#if active.albumId}<a href={Route.viewAlbum({ id: active.albumId })}
-                    >{$t('frameleaf_photography_add_photos_in_album')}</a
+                {#if active.albumId}<a class="phw-add-photos" href={Route.viewAlbum({ id: active.albumId })}
+                    ><Icon icon={mdiImport} size="1.125rem" aria-hidden={true} />{$t(
+                      'frameleaf_photography_add_photos_in_album',
+                    )}</a
                   >{/if}
               </div>
               <div class="phw-selection-tools">
@@ -1097,7 +1103,7 @@
                           disabled={!photo.canRate}
                           onclick={() => rate([photo.id], photo.rating === -1 ? null : -1)}
                           ><Icon
-                            icon={photo.rating === -1 ? mdiRestore : mdiCloseCircleOutline}
+                            icon={photo.rating === -1 ? mdiRestore : mdiClose}
                             size="0.875rem"
                             aria-hidden={true}
                           /></button
@@ -1144,8 +1150,8 @@
             </section>
             <aside class="phw-inspector">
               <div class="phw-inspector-cover">
-                {#if inspecting || active.coverAssetId}<PhotographyThumb
-                    src={cover(inspecting?.id ?? active.coverAssetId!)}
+                {#if inspecting || shootCover(active)}<PhotographyThumb
+                    src={cover(inspecting?.id ?? shootCover(active)!)}
                     alt={inspecting?.fileName ?? active.name}
                     loading="eager"
                   />{/if}
@@ -1310,7 +1316,7 @@
               class="phw-shoot-card"
               onclick={() => openShoot(shoot.id)}
               ><div class="phw-shoot-image">
-                {#if shoot.coverAssetId}<PhotographyThumb src={cover(shoot.coverAssetId)} />{:else}<Icon
+                {#if shootCover(shoot)}<PhotographyThumb src={cover(shootCover(shoot)!)} />{:else}<Icon
                     icon={mdiCameraOutline}
                     size="3rem"
                     aria-hidden={true}

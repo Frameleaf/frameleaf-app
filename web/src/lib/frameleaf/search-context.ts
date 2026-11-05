@@ -51,13 +51,18 @@ export const searchContextFor = (url: URL): DiscoveryContext => {
   return { query, unsupported: [] };
 };
 
-/** Album membership remains required while the chosen workspace supplies its content scope. */
+/**
+ * Album membership remains required. A Boards album (or an explicit workspace in the address) also
+ * supplies its content scope; otherwise none is added: what the album holds is what it shows, as its
+ * timeline and its item count do, a Boards link or file added to it included. The server applies no
+ * scope to a search confined to an album.
+ */
 export const albumSearchContext = (url: URL, album: Pick<AlbumResponseDto, 'id' | 'libraryScope'>) => {
   const query = searchContextFor(url).query;
   const libraryScope =
-    query.filter.libraryScope ??
-    (album.libraryScope === LibraryScope.Design ? LibraryViewScope.Design : LibraryViewScope.Personal);
-  return { ...query, filter: { ...query.filter, libraryScope, albumIds: requireId(query.filter.albumIds, album.id) } };
+    query.filter.libraryScope ?? (album.libraryScope === LibraryScope.Design ? LibraryViewScope.Design : undefined);
+  const filter = { ...query.filter, albumIds: requireId(query.filter.albumIds, album.id) };
+  return { ...query, filter: libraryScope ? { ...filter, libraryScope } : filter };
 };
 
 /** Workspace context travels through existing album routes without copying their data. */

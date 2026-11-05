@@ -440,18 +440,22 @@
               <p class="sl-meta">{metaOf(link)}</p>
             </div>
             <div class="sl-actions">
+              <!-- sharing.css .sl-actions: every action an outlined button, Delete named like Edit. -->
               <SharedLinkCopyButton
+                variant="default"
                 value={asUrl(link)}
                 label={$t('frameleaf_sharing.copy_link_for', { values: { name: title } })}
                 onCopied={() => (status = $t('frameleaf_sharing.link_copied_for', { values: { name: title } }))}
               />
               <IconButton
+                variant="default"
                 label={$t('frameleaf_sharing.qr_code_for', { values: { name: title } })}
                 onclick={() => openQr(link)}
               >
                 <Icon icon={mdiQrcode} size="18" />
               </IconButton>
               <IconButton
+                variant="default"
                 label={$t('frameleaf_sharing.open_public_page_for', { values: { name: title } })}
                 onclick={() => openPublic(link)}
               >
@@ -463,9 +467,10 @@
                 {$t('edit')}
               </Button>
               <span class="sl-danger">
-                <IconButton label={$t('delete')} onclick={() => openDelete(link)}>
-                  <Icon icon={mdiDeleteOutline} size="18" />
-                </IconButton>
+                <Button onclick={() => openDelete(link)}>
+                  <Icon icon={mdiDeleteOutline} size="18" aria-hidden={true} />
+                  {$t('delete')}
+                </Button>
               </span>
             </div>
           </li>
@@ -551,7 +556,8 @@
   /* Ported from the design's sharing.css (Shared links screen, lines 4-300 and 1297-1330). */
   .sl-screen {
     color: var(--fl-text);
-    padding: 1.625rem 1.875rem 2.25rem;
+    /* The page area adds 8px: the 24px desktop gutter and the one heading top of library pages. */
+    padding: calc(var(--fl-page-top) - 8px) var(--fl-space-4) 2.25rem;
     max-width: 1400px;
     width: 100%;
     box-sizing: border-box;
@@ -565,11 +571,17 @@
     gap: 1.25rem;
     margin-bottom: 1.375rem;
   }
+  /* One page-title size on every page (tokens.css --fl-type-display: 28px / 600; 22px on phones). */
   h1 {
     margin: 0;
-    font-size: 1.625rem;
-    letter-spacing: -0.035em;
+    font-size: var(--fl-font-display);
+    letter-spacing: -0.02em;
     font-weight: 600;
+  }
+  @media (max-width: 767px) {
+    h1 {
+      font-size: var(--fl-font-title);
+    }
   }
   .sl-head p {
     color: var(--fl-muted);
@@ -779,7 +791,7 @@
     /* Fits one row on the narrowest card (300px); a longer translation of "Edit" wraps instead of clipping. */
     flex-wrap: wrap;
     align-items: center;
-    gap: var(--fl-space-2) 2px;
+    gap: var(--fl-space-2);
     padding: 10px 12px;
     border-top: 1px solid var(--fl-border);
   }
@@ -790,8 +802,6 @@
     display: inline-flex;
     /* Stays at the trailing edge when it wraps to a row of its own. */
     margin-inline-start: auto;
-    /* 8px clear of Edit; the three quiet icons before them stay a cluster so the row fits a 300px card. */
-    padding-inline-start: calc(var(--fl-space-2) - 2px);
   }
   .sl-danger :global(button) {
     color: var(--fl-danger);

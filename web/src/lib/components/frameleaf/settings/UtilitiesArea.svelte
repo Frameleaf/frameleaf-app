@@ -12,7 +12,12 @@
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import ICloudSyncPanel from '$lib/components/frameleaf/ICloudSyncPanel.svelte';
   import LibraryCareHealth from '$lib/components/frameleaf/LibraryCareHealth.svelte';
-  import SettingsDirectory, { type DirectoryRow } from '$lib/components/frameleaf/settings/SettingsDirectory.svelte';
+  import Button from '$lib/components/frameleaf/Button.svelte';
+  import type { DirectoryRow } from '$lib/components/frameleaf/settings/SettingsDirectory.svelte';
+  import Item from '$lib/components/frameleaf/settings/kit/Item.svelte';
+  import ItemList from '$lib/components/frameleaf/settings/kit/ItemList.svelte';
+  import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
+  import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import SettingsOverline from '$lib/components/frameleaf/settings/SettingsOverline.svelte';
   import UtilityHistory from '$lib/components/frameleaf/UtilityHistory.svelte';
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
@@ -197,11 +202,16 @@
       }
     }
   };
+  // As the prototype's Tools (settings-v2/library/utilities.jsx): a tool with something waiting is
+  // amber; a tool the overnight checks look at with nothing waiting is green ("No duplicates
+  // waiting", "All paired"); a plain fact ("2 photos have no place") stays neutral.
   const statusOf = (id: UtilityId) => {
     const state = states[id];
-    return state
-      ? { text: statusText(id, state), tone: state.waiting ? ('warn' as const) : ('off' as const) }
-      : extraStatus(id);
+    if (!state) {
+      return extraStatus(id);
+    }
+    const tone = state.waiting ? ('warn' as const) : CHECKED_OVERNIGHT.has(id) ? ('good' as const) : ('off' as const);
+    return { text: statusText(id, state), tone };
   };
 
   // The template lists Utilities as an ordinary area directory: grouped rows, each with its tool's
@@ -231,6 +241,7 @@
         .map((tool) => rowOf(tool, $t(`library_care_group_${group}`))),
     ),
   ]);
+  const groups = $derived([...new Set(rows.map((row) => row.group ?? ''))]);
 
   const select = (section?: UtilityId) => {
     onNavigate?.();
@@ -277,26 +288,54 @@
 {#if denied}
   <InlineError compact message={$t('frameleaf_utilities_admin_required')} />
 {:else if !selected || query.trim()}
-  {#if summary && !query.trim()}
-    {#if waiting.length > 0}
-      <Hero
-        tone="warn"
-        icon={mdiClipboardAlertOutline}
-        label={$t('frameleaf_tools')}
-        title={$t('frameleaf_utilities_waiting_title', { values: { count: waiting.length } })}
-        body={$t('frameleaf_utilities_waiting_body')}
-      />
-    {:else}
-      <Hero
-        icon={mdiClipboardCheckOutline}
-        label={$t('frameleaf_tools')}
-        title={$t('frameleaf_utilities_calm_title')}
-        body={$t('frameleaf_utilities_calm_body')}
-      />
+  <!-- The prototype's Tools (settings-v2 utilities): the answer, then one kit Section per group whose
+       rows are kit Items — the tool's icon, what it does, its state, and "Open ›". -->
+  <KitPage>
+    {#if summary && !query.trim()}
+      {#if waiting.length > 0}
+        <Hero
+          tone="warn"
+          icon={mdiClipboardAlertOutline}
+          label={$t('frameleaf_tools')}
+          title={$t('frameleaf_utilities_waiting_title', { values: { count: waiting.length } })}
+          body={$t('frameleaf_utilities_waiting_body')}
+        />
+      {:else}
+        <Hero
+          icon={mdiClipboardCheckOutline}
+          label={$t('frameleaf_tools')}
+          title={$t('frameleaf_utilities_calm_title')}
+          body={$t('frameleaf_utilities_calm_body')}
+        />
+      {/if}
     {/if}
-  {/if}
-  <SettingsDirectory {rows} areaTitle={$t('frameleaf_tools')} />
-  {#if matches.length === 0}<p role="status">{$t('frameleaf_settings_search_empty', { values: { query } })}</p>{/if}
+    {#each groups as group (group)}
+      <Section title={group}>
+        <ItemList wideName>
+          {#each rows.filter((row) => row.group === group) as row (row.id)}
+            <Item
+              icon={row.icon}
+              quiet={row.status?.tone !== 'warn'}
+              name={row.title}
+              detail={row.description}
+              tone={row.status?.tone}
+              status={row.status?.text}
+              note={row.note}
+            >
+              {#snippet action()}
+                <Button
+                  variant={row.status?.tone === 'warn' ? 'primary' : 'default'}
+                  label={$t('frameleaf_utilities_open_tool', { values: { name: row.title } })}
+                  onclick={row.onSelect}>{$t('open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden /></Button
+                >
+              {/snippet}
+            </Item>
+          {/each}
+        </ItemList>
+      </Section>
+    {/each}
+    {#if matches.length === 0}<p role="status">{$t('frameleaf_settings_search_empty', { values: { query } })}</p>{/if}
+  </KitPage>
 {:else if failed}
   <InlineError message={$t('frameleaf_utilities_load_error')} onRetry={() => retry++} />
 {:else if data}
@@ -354,19 +393,27 @@
 
 <style>
   .heading {
-    margin: 0 0 1.25rem;
+    margin: 0 0 22px;
   }
+  /* SettingsHost `.cc-page-heading`: the same title and description as every settings page. */
   .heading h1 {
     margin: 0;
-    font-size: 1.75rem;
-    font-weight: 550;
-    letter-spacing: -0.02em;
+    font-size: var(--fl-font-display);
+    font-weight: 600;
+    letter-spacing: -0.9px;
+    line-height: 1.3;
   }
   .heading > p:last-child {
-    margin: 0.5rem 0 0;
+    max-width: 72ch;
+    margin: 6px 0 0;
     color: var(--fl-muted);
-    font-size: 0.75rem;
-    line-height: 1.6;
+    font-size: var(--fl-font-callout);
+    line-height: 1.5;
+  }
+  @media (max-width: 1000px) {
+    .heading h1 {
+      font-size: 24px;
+    }
   }
   button:focus-visible {
     outline: var(--fl-focus-ring);

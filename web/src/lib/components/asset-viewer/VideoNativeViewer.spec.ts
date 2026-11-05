@@ -192,7 +192,7 @@ describe('VideoNativeViewer component', () => {
       fullscreen: false,
       onToggleFullscreen: () => {},
     });
-    await fireEvent.click(footer.getByText('frameleaf_viewer_source_original'));
+    await fireEvent.click(footer.getByRole('button', { name: 'frameleaf_viewer_source_original' }));
     await waitFor(() =>
       expect(viewer.container.querySelector('video')).toHaveAttribute(
         'src',

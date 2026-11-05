@@ -86,13 +86,9 @@
   const nearlyFull = $derived(fraction !== undefined && fraction >= 0.9);
 
   const title = $derived(
-    usage
-      ? usage.timeline.total === 0
-        ? $t('frameleaf_prefs_numbers_empty')
-        : $t('frameleaf_prefs_numbers_have', {
-            values: { photos: usage.timeline.images, videos: usage.timeline.videos },
-          })
-      : $t('loading'),
+    usage && usage.timeline.total > 0
+      ? $t('frameleaf_prefs_numbers_have', { values: { photos: usage.timeline.images, videos: usage.timeline.videos } })
+      : $t('frameleaf_prefs_numbers_empty'),
   );
   const body = $derived(
     limit > 0
@@ -104,6 +100,12 @@
 <KitPage>
   {#if failed}
     <InlineError message={$t('frameleaf_prefs_numbers_failed')} onRetry={load} />
+  {:else if !usage}
+    <!-- The headline waits for the counts rather than saying "Loading" as a title. -->
+    <div class="hero-loading" role="status" aria-busy="true">
+      <span class="sr-only">{$t('loading')}</span>
+      <Skeleton height={114} class="rounded-2xl" />
+    </div>
   {:else}
     <Hero
       tone={nearlyFull ? 'warn' : 'good'}

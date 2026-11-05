@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
   import { readDesktopMemberApproval, setDesktopMemberApproval } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -57,35 +58,40 @@
   }
 </script>
 
-<section aria-label={$t('frameleaf_desktop_approval_title')}>
-  <h3>{$t('frameleaf_desktop_approval_title')}</h3>
-  <p>{$t('frameleaf_desktop_approval_description')}</p>
-  {#if failure}<p role="alert">{$t(failure)}</p>{/if}
-  {#if enabled !== undefined}
-    <p>{$t(enabled ? 'frameleaf_desktop_approval_enabled' : 'frameleaf_desktop_approval_disabled')}</p>
-    <Button disabled={busy} onclick={change}
-      >{$t(enabled ? 'frameleaf_desktop_approval_remove' : 'frameleaf_desktop_approval_allow')}</Button
-    >
-  {:else if failure}
-    <Button onclick={() => reload++}>{$t('retry')}</Button>
-  {:else}
-    <p role="status">{$t('loading')}</p>
-  {/if}
-</section>
+<!-- A kit row of Sign-in & security: what it is and where it stands on the left, the one change on the right. -->
+<div class="desktop-approval" role="group" aria-label={$t('frameleaf_desktop_approval_title')}>
+  <Row
+    label={$t('frameleaf_desktop_approval_title')}
+    help={[
+      $t('frameleaf_desktop_approval_description'),
+      enabled === undefined
+        ? ''
+        : $t(enabled ? 'frameleaf_desktop_approval_enabled' : 'frameleaf_desktop_approval_disabled'),
+    ]
+      .filter(Boolean)
+      .join(' ')}
+  >
+    {#if enabled !== undefined}
+      <Button disabled={busy} onclick={change}
+        >{$t(enabled ? 'frameleaf_desktop_approval_remove' : 'frameleaf_desktop_approval_allow')}</Button
+      >
+    {:else if failure}
+      <Button onclick={() => reload++}>{$t('retry')}</Button>
+    {:else}
+      <span class="status" role="status">{$t('loading')}</span>
+    {/if}
+  </Row>
+  {#if failure}<p class="failure" role="alert">{$t(failure)}</p>{/if}
+</div>
 
 <style>
-  section {
-    margin-top: 1.25rem;
-    padding-top: 0.75rem;
-    border-top: 1px solid var(--fl-border);
-  }
-  h3 {
-    margin: 0 0 0.375rem;
-    font-size: var(--fl-font-small);
+  .status {
     color: var(--fl-muted);
+    font-size: var(--fl-font-small);
   }
-  p {
-    margin: 0.5rem 0;
+  .failure {
+    margin: 0 0 var(--fl-space-3);
+    color: var(--fl-danger);
     font-size: var(--fl-font-small);
   }
 </style>

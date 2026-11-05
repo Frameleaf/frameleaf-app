@@ -161,9 +161,100 @@ export const sortSessions = (sessions: SessionResponseDto[]) =>
     (a, b) => Number(b.current) - Number(a.current) || Date.parse(b.updatedAt) - Date.parse(a.updatedAt),
   );
 
-/** How a device is named in the list, from what the client reported. */
-export const sessionDeviceName = (session: SessionResponseDto, unknown: string) =>
-  [session.deviceOS, session.deviceType].filter((part) => part && part.trim()).join(' · ') || unknown;
+/** The kinds of device a sign-in is named after ("Safari on a Mac", "Frameleaf app on an iPhone"). */
+export type DeviceKind =
+  'iphone' | 'ipad' | 'android_phone' | 'android_tablet' | 'mac' | 'windows' | 'linux' | 'chromebook';
+
+/**
+ * What a signed-in device is, from what its client reported: the server keeps the browser's name
+ * (or, for an app, the device type or model) and the system's name. A browser is named with the
+ * computer it runs on, a phone or tablet without a browser is the Frameleaf app, and a client that
+ * said nothing is a script or tool.
+ */
+export const describeSession = (
+  session: Pick<SessionResponseDto, 'deviceOS' | 'deviceType'>,
+):
+  | { kind: 'browser'; browser: string; device?: DeviceKind; os: string }
+  | { kind: 'app'; device?: DeviceKind; os: string }
+  | { kind: 'other'; name: string; device?: DeviceKind; os: string }
+  | { kind: 'unknown' } => {
+  const os = session.deviceOS.trim();
+  const type = session.deviceType.trim();
+  if (!os && !type) {
+    return { kind: 'unknown' };
+  }
+  const lowerOs = os.toLowerCase();
+  const lowerType = type.toLowerCase();
+  const tablet = /ipad|tablet/.test(lowerType) || lowerOs === 'ipados';
+  let device: DeviceKind | undefined;
+  if (lowerOs === 'ios' || lowerOs === 'ipados') {
+    device = tablet ? 'ipad' : 'iphone';
+  } else if (lowerOs === 'android') {
+    device = tablet ? 'android_tablet' : 'android_phone';
+  } else if (/^mac ?os|^os x/.test(lowerOs)) {
+    device = 'mac';
+  } else if (lowerOs.startsWith('windows')) {
+    device = 'windows';
+  } else if (/^chrom(e|ium) ?os/.test(lowerOs)) {
+    device = 'chromebook';
+  } else if (/linux|ubuntu|debian|fedora|arch|mint|gentoo|centos|red ?hat|suse/.test(lowerOs)) {
+    device = 'linux';
+  }
+  const browser = BROWSERS.find(([pattern]) => pattern.test(type))?.[1];
+  if (browser) {
+    return { kind: 'browser', browser, device, os };
+  }
+  // No browser: the phone and tablet apps report the device type or model and the system.
+  if (device && MOBILE_DEVICES.has(device)) {
+    return { kind: 'app', device, os };
+  }
+  if (!type || ['mobile', 'tablet', 'desktop'].includes(lowerType)) {
+    return device ? { kind: 'app', device, os } : { kind: 'unknown' };
+  }
+  return { kind: 'other', name: type, device, os };
+};
+
+const MOBILE_DEVICES: ReadonlySet<DeviceKind> = new Set(['iphone', 'ipad', 'android_phone', 'android_tablet']);
+
+/** Browser names as the server records them, and how a person knows them. */
+const BROWSERS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/^(mobile )?safari/i, 'Safari'],
+  [/^edge/i, 'Edge'],
+  [/^(mobile )?firefox/i, 'Firefox'],
+  [/^opera/i, 'Opera'],
+  [/^brave/i, 'Brave'],
+  [/^vivaldi/i, 'Vivaldi'],
+  [/^samsung/i, 'Samsung Internet'],
+  [/^duckduckgo/i, 'DuckDuckGo'],
+  [/^arc$/i, 'Arc'],
+  [/^chromium/i, 'Chromium'],
+  [/^(mobile )?chrome/i, 'Chrome'],
+];
+
+type Translate = (key: string, options?: { values: Record<string, string> }) => string;
+
+/** How a device is named in the list: "Safari on a Mac", "Frameleaf app on an iPhone", "A script or tool". */
+export const sessionDeviceName = (
+  session: Pick<SessionResponseDto, 'deviceOS' | 'deviceType'>,
+  translate: Translate,
+) => {
+  const described = describeSession(session);
+  if (described.kind === 'unknown') {
+    return translate('frameleaf_access_device_unknown');
+  }
+  const on = described.device ? translate(`frameleaf_access_device_kind_${described.device}`) : described.os;
+  if (described.kind === 'browser') {
+    return on
+      ? translate('frameleaf_access_device_browser_on', { values: { browser: described.browser, device: on } })
+      : described.browser;
+  }
+  if (described.kind === 'app') {
+    return translate('frameleaf_access_device_app_on', { values: { device: on } });
+  }
+  return on
+    ? translate('frameleaf_access_device_browser_on', { values: { browser: described.name, device: on } })
+    : described.name;
+};
 
 /**
  * The provider account-management address, only when it is an http(s) URL. Anything else is

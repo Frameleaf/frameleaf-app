@@ -355,6 +355,8 @@
    */
   const MANAGER_SECTIONS = [
     'accounts',
+    // Libraries › Folder checks draws its own kit cards (LibrarySettings), under the Libraries manager.
+    'external-library',
     'contents',
     'queues',
     'computers',
@@ -369,6 +371,7 @@
     // FL-155..FL-158: the Frameleaf Cloud pages draw their own cards (frameleaf-cloud.css:3-7).
     'cloud-account',
     'cloud-plan',
+    'cloud-license',
     'cloud-remote',
     'cloud-backup',
     'frameleaf-signin',
@@ -383,9 +386,22 @@
     'cloud-backup-choice',
   ];
   /** Pages opened from another page of their area, and that page (`settings-v2/care/duplicates.jsx`). */
-  const PARENT_PAGES: Readonly<Record<string, string>> = { deduplication: 'duplicates' };
+  // Approved design (2026-11-04): Graphics card check is opened from Computers and goes back there.
+  const PARENT_PAGES: Readonly<Record<string, string>> = { deduplication: 'duplicates', hardware: 'computers' };
   /** File checks, whose pages open one check's list in place (`?report=<type>`). */
   const SECTION_REPORTS = new Set(['integrity-checks', 'integrity']);
+  /** One check's list names itself in the heading ("Missing files report"), not "File checks". */
+  const REPORT_NAMES: Readonly<Record<string, Translations>> = {
+    missing_file: 'frameleaf_care_fc_missing_name',
+    checksum_mismatch: 'frameleaf_care_fc_damaged_name',
+    untracked_file: 'frameleaf_care_fc_stray_name',
+  };
+  const reportName = $derived.by(() => {
+    const key = page.url.searchParams.get('report');
+    return selected && SECTION_REPORTS.has(selected.key) && key && Object.hasOwn(REPORT_NAMES, key)
+      ? $t('admin.frameleaf_maintenance_report_title', { values: { title: $t(REPORT_NAMES[key]) } })
+      : undefined;
+  });
   // A page named like its area does not repeat the name as a breadcrumb (CommandCenter.jsx:721-731):
   // the overline names the area's group instead. Backup is one screen under one heading, whichever
   // of its pages (or older addresses) is open; People & sharing is one page under its area's name.
@@ -397,42 +413,55 @@
   );
   // Pages opened from a landing page (FL-364) or a plain-words landing page (FL-361) go back with
   // "‹ Area" under the heading and name only the area in the overline, as `settings-v2/kit.jsx` Page does.
-  const backToArea = $derived(hasLandingPage(area) || (isPlainArea(area) && breadcrumb));
+  const backToArea = $derived(
+    // Libraries › Folder checks goes back to the Libraries page (prototype folders.jsx FolderChecks).
+    area === 'libraries' ||
+      hasLandingPage(area) ||
+      (isPlainArea(area) && breadcrumb) ||
+      (selected !== undefined && Object.hasOwn(PARENT_PAGES, selected.key)),
+  );
+  /**
+   * Computers & background work has no landing page: each of its pages names the area in the
+   * overline (settings-v2 `Page`), as a crumb back to the area would only reopen Background work.
+   */
+  const areaOverline = $derived(area === 'processing');
   /**
    * Where that "‹" goes (ADMIN-P9): back to the page it was opened from, as the prototype's `back`
    * does. A page opened from another page of its area goes back there (Merge older copies is opened
    * from Duplicates), one check's list (`?report=`) goes back to File checks, and every other page
    * goes back to its area's landing page. The overline names the same page as the link.
    */
+  const GROUP_OVERLINE_AREAS: ReadonlySet<SettingsAreaId> = new Set(['cloud', 'security', 'privacy']);
   const backTarget = $derived.by(() => {
     if (selected && SECTION_REPORTS.has(selected.key) && page.url.searchParams.has('report')) {
       return { href: commandCenterUrl(area, selected.key), label: selected.title, overline: areaCopy[area].title };
     }
     const parent = selected ? areaSections.find((section) => section.key === PARENT_PAGES[selected.key]) : undefined;
+    // The prototype's Frameleaf Cloud, Who can sign in and Your sign-in & privacy pages name their
+    // group ("Your server", "Personal") above the title; every other area names itself.
+    const overline = GROUP_OVERLINE_AREAS.has(area)
+      ? groupCopy[areaDefinition?.group ?? 'server']
+      : areaCopy[area].title;
     return parent
       ? { href: commandCenterUrl(area, parent.key), label: parent.title, overline: parent.title }
-      : { href: commandCenterUrl(area), label: areaCopy[area].title, overline: areaCopy[area].title };
+      : { href: commandCenterUrl(area), label: areaCopy[area].title, overline };
   });
-  // As in the template, the Users manager carries its own heading.
-  // Background work's first page takes the area's heading; one kind of work (`?queue=`) carries its own.
-  const ownHeading = $derived(
-    area === 'users' || (area === 'processing' && selected?.key === 'queues' && page.url.searchParams.has('queue')),
-  );
+  // As in the template, the Users manager carries its own heading. Background work keeps the area's
+  // heading on every view, one task's screen (`?queue=`) included: the task names itself under Advanced.
+  const ownHeading = $derived(area === 'users');
 
-  /** The navigation's pages under the current area: its sections, or the utility tools. */
+  /** The navigation's pages under the current area: its sections. */
   const utilityTools = $derived(utilityToolsFor(isAdmin));
   type NavPage = { key: string; title: string; area: SettingsAreaId; section?: string };
   const children = $derived.by((): NavPage[] => {
-    if (area === 'utilities') {
-      return utilityTools.map((tool) => ({ key: tool.id, title: $t(tool.titleKey), area, section: tool.id }));
-    }
-    // Backup's pages are side by side in the page itself, as in the prototype; an area with a landing
-    // page (FL-364) or a plain-words area (FL-368) lists its pages on its own landing page.
-    if (['libraries', 'trash', 'backups'].includes(area) || hasLandingPage(area) || isPlainArea(area)) {
+    // Backup's pages are side by side in the page itself, as in the prototype; Tools lists its tools
+    // on its own page, so the rail shows none under it (prototype); an area with a landing page
+    // (FL-364) or a plain-words area (FL-368) lists its pages on its own landing page.
+    if (['libraries', 'trash', 'backups', 'utilities'].includes(area) || hasLandingPage(area) || isPlainArea(area)) {
       return [];
     }
     return areaSections
-      .filter((section) => !NAV_HIDDEN_SECTIONS[area]?.includes(section.key) || section.key === selected?.key)
+      .filter((section) => !NAV_HIDDEN_SECTIONS[area]?.includes(section.key))
       .map((section) => ({ key: section.key, title: section.title, area, section: section.key }));
   });
   /** The area directory's rows: its sections. Library care lists its tools on its own landing page (FL-366). */
@@ -453,8 +482,13 @@
     }));
     return rows;
   });
+  // A page kept out of the rail (Graphics card check) marks the page it opens from (Computers).
   const activeChild = $derived(
-    area === 'utilities' ? utilityTool(page.url.searchParams.get('section'))?.id : careTool ? undefined : selected?.key,
+    careTool
+      ? undefined
+      : selected && NAV_HIDDEN_SECTIONS[area]?.includes(selected.key)
+        ? (PARENT_PAGES[selected.key] ?? selected.key)
+        : selected?.key,
   );
 
   let query = $state('');
@@ -930,23 +964,17 @@
               <AnalyticsArea />
             {:else if addressArea === 'utilities'}
               <UtilitiesArea />
-            {:else if area === 'libraries'}
-              <!-- The template hides the heading on the Libraries manager, which carries its own. -->
+            {:else if area === 'libraries' && !selected}
+              <!-- The Libraries manager carries its own heading; Folder checks is a page of its own
+                   (`section=checking`), opened from "Keeping folders up to date" (prototype folders.jsx). -->
               {@render areaPanel?.(area)}
-              {#each areaSections as section (section.key)}
-                <section class="cc-section fl-continuous-corners" id="setting-{section.key}">
-                  {#if section.component}
-                    <section.component />
-                  {:else}
-                    {@render sectionBody?.(section)}
-                  {/if}
-                </section>
-              {/each}
             {:else}
               {#if !ownHeading}
                 <header class="cc-page-heading">
                   <SettingsOverline>
-                    {#if titled && breadcrumb && backToArea}
+                    {#if titled && breadcrumb && areaOverline}
+                      {areaCopy[area].title}
+                    {:else if titled && breadcrumb && backToArea}
                       <!-- The way back is the link under the heading, as in the prototype. -->
                       {backTarget.overline}
                     {:else if titled && breadcrumb}
@@ -957,7 +985,7 @@
                       {groupCopy[areaDefinition?.group ?? 'library']}
                     {/if}
                   </SettingsOverline>
-                  <h1>{titled?.title ?? areaCopy[area].title}</h1>
+                  <h1>{reportName ?? titled?.title ?? areaCopy[area].title}</h1>
                   <p>
                     {titled ? (pageDescription ? $t(pageDescription) : titled.subtitle) : areaCopy[area].description}
                   </p>
@@ -1122,6 +1150,8 @@
   }
   .cc-nav-title button {
     display: inline-flex;
+    align-items: center;
+    justify-content: center;
     padding: 6px;
     background: none;
     border: 0;
@@ -1177,23 +1207,26 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    width: 100%;
+    /* command-center.css: an inset rounded row, 10px in from each side of the rail. */
+    width: calc(100% - 2 * var(--fl-space-2) - 2px);
     min-height: 34px;
-    padding: 8px 22px;
+    margin: 1px calc(var(--fl-space-2) + 2px);
+    padding: 8px 12px;
     line-height: 1.3;
     text-align: start;
     color: var(--fl-muted);
     background: none;
     border: 0;
+    border-radius: var(--fl-radius-control);
   }
   .area:hover {
     background: var(--fl-raised);
     color: var(--fl-text);
   }
   .area.selected {
-    background: color-mix(in srgb, var(--fl-accent) 10%, var(--fl-panel));
+    background: color-mix(in srgb, var(--fl-accent) 14%, var(--fl-panel));
     color: var(--fl-text);
-    box-shadow: inset 3px 0 var(--fl-accent);
+    font-weight: 500;
   }
   /* P3 (review-1030-shell.css): plain icons like the main rail, green when selected or hovered. */
   .tile {
@@ -1288,9 +1321,11 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 24px;
+    /* command-center.css:1609: 18px between the breadcrumb, the scope and the search. */
+    gap: 18px;
     min-height: 53px;
-    padding: 10px 28px;
+    /* The search is a 44px control, so the bar keeps the prototype's 56px with 6px above and below it. */
+    padding: 6px 28px;
     background: var(--fl-panel);
     border-bottom: 1px solid var(--fl-border);
     font-size: 12px;
@@ -1311,12 +1346,15 @@
     flex-direction: row;
     align-items: center;
     gap: 8px;
+    /* Beside the search at the end of the bar, not adrift in the middle (command-center.css:1589). */
+    margin-inline-start: auto;
     color: var(--fl-muted);
     white-space: nowrap;
   }
   .cc-account-scope select {
-    max-width: 190px;
-    padding: 5px;
+    min-width: 120px;
+    max-width: 210px;
+    padding: 0 var(--fl-space-2);
     color: var(--fl-text);
     background: var(--fl-canvas);
     border: 1px solid var(--fl-border);
@@ -1326,18 +1364,21 @@
     color: var(--fl-text);
   }
   .cc-scope-fixed {
-    margin: 0;
+    margin-block: 0;
   }
   /* The heading takes focus when the page changes so it is announced; it is not a control. */
   .cc-main :global(h1[tabindex='-1']:focus) {
     outline: none;
   }
+  /* One 44px control, as tall as the scope select beside it: the field is the label, not the input in it. */
   .cc-search {
     display: flex;
+    flex-shrink: 0;
     align-items: center;
     gap: 10px;
-    width: min(410px, 55%);
-    padding: 5px var(--fl-space-3);
+    width: min(340px, 35%);
+    min-height: 44px;
+    padding: 0 var(--fl-space-3);
     color: var(--fl-muted);
     background: var(--fl-canvas);
     border: 1px solid var(--fl-border);
@@ -1350,13 +1391,23 @@
   .cc-search input {
     width: 100%;
     min-width: 0;
+    min-height: 0;
     margin: 0;
-    padding: 3px 0;
+    padding: 0;
     color: var(--fl-text);
     background: none;
     border: 0;
     outline: 0;
     font-size: var(--fl-font-small);
+  }
+  @media (pointer: coarse) {
+    .cc-search {
+      min-height: 48px;
+    }
+    .cc-search input {
+      min-height: 0;
+      min-width: 0;
+    }
   }
   .cc-search kbd {
     font-size: 10px;
@@ -1382,17 +1433,27 @@
   .cc-page-heading {
     margin-bottom: 22px;
   }
+  /*
+   * command-center.css:202-213. The same rules are in kit/PageHeading.svelte, LibraryAnalytics.svelte
+   * and UtilitiesArea.svelte, which draw their own heading: change them together.
+   */
   .cc-page-heading h1 {
     margin: 0;
-    font-size: 28px;
-    font-weight: 550;
+    font-size: var(--fl-font-display);
+    font-weight: 600;
     letter-spacing: -0.9px;
+    line-height: 1.3;
   }
   .cc-page-heading > p:last-child {
-    margin: 8px 0 0;
+    max-width: 72ch;
+    margin: 6px 0 0;
     color: var(--fl-muted);
-    font-size: var(--fl-font-small);
+    font-size: var(--fl-font-callout);
     line-height: 1.5;
+  }
+  /* "‹ Area" sits 24px above the page's first card, the gap of the prototype's `.backup-v2` grid. */
+  .cc-back-to-area {
+    margin-bottom: var(--fl-space-6);
   }
   /*
    * apple-style.css:1014-1045: a settings page is one calm grouped list in a single column. The
@@ -1419,9 +1480,6 @@
     padding: 0;
     background: none;
     border: 0;
-  }
-  .cc-section + .cc-section {
-    margin-top: 16px;
   }
   /* The ported forms still carry the legacy inset; keep them flush inside the card. */
   .cc-section :global(.ms-4) {
@@ -1545,7 +1603,7 @@
       padding-inline: 23px;
     }
     .cc-collapsed .area {
-      padding-inline: 20px;
+      padding-inline: 10px;
     }
     .cc-collapsed .cc-nav-foot {
       padding-inline: 23px;
@@ -1558,18 +1616,26 @@
       margin: 0;
     }
   }
-  @media (max-width: 1000px) {
-    /* 16px between the breadcrumb and the scope line, so the two do not read as one sentence. */
-    .cc-context-bar {
-      flex-wrap: wrap;
-      gap: var(--fl-space-3) var(--fl-space-4);
+  /* command-center.css:1754-1764: a narrower bar drops the breadcrumb and keeps the scope and the search. */
+  @media (max-width: 1200px) {
+    .cc-context {
+      display: none;
+    }
+    .cc-account-scope {
+      margin-inline-start: 0;
     }
     .cc-search {
-      flex: 1;
-      min-width: 200px;
+      width: min(410px, 50%);
+      margin-inline-start: auto;
     }
+  }
+  @media (max-width: 1000px) {
     .cc-main {
       padding: var(--fl-space-6);
+    }
+    /* command-center.css:1229: a page title one step smaller beside the open rail and on a phone. */
+    .cc-page-heading h1 {
+      font-size: 24px;
     }
   }
   @media (max-width: 700px) {
@@ -1614,12 +1680,24 @@
     .area {
       min-height: 44px;
     }
+    /* command-center.css:1765-1781: the scope on its own line above a full-width search. */
     .cc-context-bar {
-      padding: 9px var(--fl-space-4);
+      flex-wrap: wrap;
+      gap: var(--fl-space-3);
+      padding: var(--fl-space-3) var(--fl-space-4);
+    }
+    .cc-account-scope {
+      justify-content: space-between;
+      width: 100%;
+    }
+    .cc-account-scope select {
+      width: 75%;
+      max-width: 260px;
     }
     .cc-search {
       flex-basis: 100%;
       width: 100%;
+      margin-inline-start: 0;
     }
     .cc-search kbd {
       display: none;

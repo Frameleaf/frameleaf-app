@@ -190,7 +190,7 @@ it('replaces a text request when its endpoint capability changes, without resett
   await old.promise;
   expect(screen.getAllByTestId('search-result')).toHaveLength(1);
   flushSync(() => setQuery({ city: 'Banff' }));
-  await screen.findByText('frameleaf_search_results_empty_title');
+  await screen.findByText('frameleaf_library_empty_filtered_title');
   const count = vi.mocked(searchAssets).mock.calls.length;
   flushSync(() => {
     flags.smartSearch = false;
@@ -210,12 +210,14 @@ it('draws the palette-style chips on the results page and removes one condition 
   expect(chips.querySelectorAll('.search-chip')).toHaveLength(3);
   const remove = [...chips.querySelectorAll(':scope .search-chip button:not(.open)')];
   expect(remove).toHaveLength(3);
-  // The chips sit in the Library's row: left-aligned with Clear all, beside Filter and Save search.
+  // The chips sit in the Library's row with Clear all, above the Library's own toolbar (Filter with
+  // its badge counting the text and both conditions, Save search).
   expect(within(chips as HTMLElement).getByRole('button', { name: 'clear_all' })).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'frameleaf_search_results_filter' })).toBeInTheDocument();
+  expect(screen.getByTestId('frameleaf-results-toolbar')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /^filter/ })).toHaveTextContent('3');
   expect(screen.getByRole('button', { name: 'frameleaf_search_save_search' })).toBeInTheDocument();
-  // Filter chips come first, in field order (city, isFavorite), then the text
-  await fireEvent.click(remove[0]);
+  // The search text leads, as in the Library; then the filter chips in field order (city, isFavorite)
+  await fireEvent.click(remove[1]);
   const url = new URL(navigation.goto.mock.calls.at(-1)![0] as string, 'http://localhost');
   const next = JSON.parse(url.searchParams.get('dq')!);
   expect(next.filter).toEqual({ isFavorite: { eq: true } });
@@ -233,12 +235,13 @@ it('offers ways forward when nothing matches, and a retry (not "no matches") whe
 
   const retry = await screen.findByRole('button', { name: 'Try again' });
   expect(screen.getByRole('alert')).toHaveTextContent('Couldn’t load these results');
-  expect(screen.queryByText('No matches')).toBeNull();
+  expect(screen.queryByText(en.frameleaf_library_empty_filtered_title)).toBeNull();
   expect(handleError).not.toHaveBeenCalled();
 
   await fireEvent.click(retry);
-  expect(await screen.findByText('No matches')).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Edit search' })).toBeInTheDocument();
+  // The Library's filtered empty state (owner 2026-11-05: a search is the Library narrowed by it).
+  expect(await screen.findByText(en.frameleaf_library_empty_filtered_title)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: en.frameleaf_library_empty_filtered_clear })).toBeInTheDocument();
   await fireEvent.click(screen.getByRole('button', { name: 'Remove filters' }));
   const url = new URL(navigation.goto.mock.calls.at(-1)![0] as string, 'http://localhost');
   expect(JSON.parse(url.searchParams.get('dq')!)).toMatchObject({ text: 'IMG', filter: {} });
@@ -301,13 +304,13 @@ describe('Include archived items', () => {
   );
 });
 
-it('shows results in the app frame with a title, not a bar of its own with a back arrow (DISCOVERY-P5)', async () => {
+it('shows results in the Library frame with its title, not a bar of its own with a back arrow (DISCOVERY-P5)', async () => {
   addMessages('dev', en);
   setQuery({ city: 'Banff' });
   vi.mocked(searchAssets).mockResolvedValue(result(['a']));
   render(SearchPage);
 
-  expect(await screen.findByRole('heading', { level: 1, name: en.frameleaf_search_results })).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { level: 1, name: en.library })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: en.back })).toBeNull();
   expect(document.querySelector('.search-bar')).toBeNull();
 });

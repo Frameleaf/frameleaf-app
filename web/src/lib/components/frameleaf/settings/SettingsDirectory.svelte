@@ -72,7 +72,10 @@
             {#if row.scope && usual && row.scope !== usual}
               <small class="cc-directory-scope">{scopeTag(row.scope)}</small>
             {/if}
-            <Icon icon={mdiChevronRight} size="1.125rem" aria-hidden />
+            <!-- The prototype's "Open ›" on each row (settings-v2 Item); the whole row is the button. -->
+            <span class="open" aria-hidden="true"
+              >{$t('open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden /></span
+            >
           </button>
         {/each}
       </div>
@@ -81,102 +84,141 @@
 </div>
 
 <style>
-  .cc-directory-status {
-    display: grid;
-    flex: none;
-    justify-items: end;
-    gap: 4px;
-    margin-inline-start: auto;
-    white-space: nowrap;
-  }
-  .cc-directory-status small {
-    color: var(--fl-muted);
-    font-size: var(--fl-font-small);
-  }
+  /*
+   * The approved settings kit (settings-v2 `Section` + `ItemList`): each group is a card with its
+   * heading inside, and every row lines up the same columns: icon tile, name, state, "Open ›".
+   */
   .cc-directory {
     display: grid;
-    gap: 26px;
-    max-width: 820px;
-    margin: 22px 0 32px;
+    gap: var(--fl-space-6);
+    max-width: 1120px;
+    margin: var(--fl-space-6) 0 var(--fl-space-8);
   }
-  h2 {
-    margin: 0 0 8px 14px;
-    color: var(--fl-muted);
-    font-size: 13px;
-    font-weight: 600;
-  }
-  .cc-directory-list {
-    display: grid;
-    overflow: hidden;
+  section {
+    min-width: 0;
+    padding: 0 var(--fl-space-6) var(--fl-space-2);
     background: var(--fl-panel);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-card);
   }
   @supports (corner-shape: squircle) {
-    .cc-directory-list {
+    section {
       border-radius: calc(var(--fl-radius-card) * 1.8);
     }
   }
+  h2 {
+    margin: 0;
+    padding: var(--fl-space-5) 0;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: var(--fl-tracking-headline);
+  }
+  .cc-directory-list {
+    display: grid;
+  }
+  section:not(:has(h2)) .cc-directory-list {
+    padding-top: var(--fl-space-2);
+  }
   button {
-    display: flex;
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1.2fr) minmax(0, 1fr) auto auto;
     align-items: center;
-    gap: 12px;
+    gap: var(--fl-space-4);
     min-height: 56px;
-    padding: 11px 14px;
+    padding: var(--fl-space-4) 0;
     text-align: start;
     color: var(--fl-text);
     background: none;
     border: 0;
+    border-top: 1px solid var(--fl-border);
     border-radius: 0;
     font: inherit;
     cursor: pointer;
   }
-  button + button {
-    box-shadow: inset 0 1px 0 var(--fl-border);
+  section:not(:has(h2)) button:first-child {
+    border-top: 0;
   }
-  button:hover {
-    background: var(--fl-raised);
+  button:hover .open {
+    border-color: var(--fl-accent);
   }
   button:focus-visible {
     outline: var(--fl-focus-ring);
-    outline-offset: var(--fl-focus-inset);
-  }
-  button > :global(svg) {
-    flex-shrink: 0;
-    color: var(--fl-muted);
+    outline-offset: var(--fl-focus-offset);
+    border-radius: var(--fl-radius-control);
   }
   .row-icon {
-    display: inline-flex;
-    flex-shrink: 0;
+    display: grid;
+    grid-column: 1;
+    place-items: center;
+    width: 44px;
+    height: 44px;
     color: var(--fl-muted);
+    background: var(--fl-raised);
+    border-radius: var(--fl-radius-card);
   }
   .copy {
-    flex: 1;
+    grid-column: 2;
     min-width: 0;
   }
   strong {
     display: block;
     font-size: 14px;
-    font-weight: 550;
+    font-weight: 600;
   }
   .copy > span {
     display: block;
-    margin-top: 2px;
+    margin-top: var(--fl-space-1);
     color: var(--fl-muted);
-    font-size: 12.5px;
+    font-size: var(--fl-font-small);
     line-height: 1.45;
   }
+  .cc-directory-status {
+    display: grid;
+    grid-column: 3;
+    justify-items: start;
+    gap: var(--fl-space-1);
+    min-width: 0;
+  }
+  .cc-directory-status small {
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+  }
   .cc-directory-scope {
-    flex-shrink: 0;
+    grid-column: 4;
     padding: 2px 8px;
     color: var(--fl-muted);
     background: var(--fl-raised);
     border-radius: var(--fl-radius-pill);
     font-size: 11px;
   }
-  @media (max-width: 700px) {
+  .open {
+    display: inline-flex;
+    grid-column: 5;
+    align-items: center;
+    gap: var(--fl-space-2);
+    min-height: var(--fl-control-height);
+    padding: 0 var(--fl-space-3);
+    background: var(--fl-raised);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control);
+    transition: border-color var(--fl-motion-fast) var(--fl-ease);
+  }
+  @media (max-width: 860px) {
+    section {
+      padding-inline: var(--fl-space-4);
+    }
     button {
-      min-height: 44px;
+      grid-template-columns: 44px minmax(0, 1fr) auto;
+      row-gap: var(--fl-space-2);
+    }
+    .cc-directory-status,
+    .cc-directory-scope {
+      grid-row: 2;
+      grid-column: 2 / -1;
+    }
+    .open {
+      grid-row: 1;
+      grid-column: 3;
     }
   }
 </style>

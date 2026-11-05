@@ -1034,8 +1034,16 @@ describe('LibraryView', () => {
     });
 
     it('draws no Sort where the page fixes its own order', async () => {
-      await setupLibrary({ options: { dateType: 'added' } });
+      await setupLibrary({ options: { order: 'asc' } });
       expect(screen.queryByRole('combobox', { name: 'frameleaf_library_sort' })).not.toBeInTheDocument();
+    });
+
+    // Recently added (prototype "Added — newest"): its own sort for the visit, never the Library's.
+    it('offers Recently added its own arrival sort without changing the Library’s', async () => {
+      await setupLibrary({ options: { dateType: 'added' } });
+      const sort = screen.getByRole('combobox', { name: 'frameleaf_library_sort' });
+      expect(sort).toHaveValue('imported-desc');
+      expect(librarySession.state.sort).toBe('captured-desc');
     });
 
     // Favorites, Archive and Recently added (prototype `.collection-header`): one row, not a bar above.

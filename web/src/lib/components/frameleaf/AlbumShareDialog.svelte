@@ -1,6 +1,7 @@
 <script lang="ts">
   import { rovingFocus } from '$lib/frameleaf/roving-focus';
   import AlbumConfirmDialog from '$lib/components/frameleaf/AlbumConfirmDialog.svelte';
+  import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import SharedLinkCopyButton from '$lib/components/frameleaf/SharedLinkCopyButton.svelte';
@@ -26,17 +27,21 @@
     AlbumKind,
     AlbumUserRole,
     getAllSharedLinks,
+    getSharedSpaceMembers,
     removeSharedLink,
+    removeSharedSpaceInvitation,
     searchUsers,
     SharedLinkType,
     type AlbumResponseDto,
     type SharedLinkResponseDto,
+    type SharedSpaceMemberResponseDto,
     type UserResponseDto,
   } from '@frameleaf/sdk';
   import { Icon, toastManager } from '@frameleaf/ui';
   import {
     mdiAccountPlusOutline,
     mdiCheck,
+    mdiClockOutline,
     mdiClose,
     mdiDeleteOutline,
     mdiLinkVariant,
@@ -75,6 +80,7 @@
 
   let candidates = $state<UserResponseDto[]>([]);
   let loading = $state(false);
+  let inviteInput = $state<HTMLInputElement>();
   let busy = $state(false);
   let invitees = $state<string[]>([]);
   let query = $state('');
@@ -86,7 +92,38 @@
     album.albumUsers.some(({ user, role }) => user.id === currentUserId && role === AlbumUserRole.Owner),
   );
   const members = $derived(album.albumUsers);
-  const memberIds = $derived(new Set(album.albumUsers.map(({ user }) => user.id)));
+  /**
+   * A shared space's unanswered invitations are not album users, so they come from the space's own
+   * members endpoint, as on its Members panel (`/sharing/{id}`): listed under the members, never
+   * offered again, and withdrawn at once (an offer, not a membership).
+   */
+  let invited = $state<SharedSpaceMemberResponseDto[]>([]);
+  const loadInvited = async () => {
+    if (album.kind !== AlbumKind.Space) {
+      invited = [];
+      return;
+    }
+    try {
+      invited = (await getSharedSpaceMembers({ id: album.id })).members.filter(({ pending }) => pending);
+    } catch {
+      invited = [];
+    }
+  };
+  const withdraw = async (member: SharedSpaceMemberResponseDto) => {
+    busy = true;
+    try {
+      await removeSharedSpaceInvitation({ id: album.id, userId: member.user.id });
+      invited = invited.filter(({ user }) => user.id !== member.user.id);
+      await onChanged();
+    } catch (error) {
+      handleError(error, $t('errors.something_went_wrong'));
+    } finally {
+      busy = false;
+    }
+  };
+  const memberIds = $derived(
+    new Set([...album.albumUsers.map(({ user }) => user.id), ...invited.map(({ user }) => user.id)]),
+  );
   const available = $derived(candidates.filter((user) => !memberIds.has(user.id)));
   const needle = $derived(query.trim().toLowerCase());
   /** The design's invite search (`ShareDialog`): by name or email, never offering a member. */
@@ -121,6 +158,14 @@
     } finally {
       loading = false;
     }
+    // The field arrives with the people list: it takes the focus the dialog gave its first control,
+    // as the prototype's dialog opens on "Invite someone".
+    await tick();
+    const active = document.activeElement;
+    const typing = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement;
+    if (open && inviteInput && !inviteInput.disabled && !typing) {
+      inviteInput.focus();
+    }
   };
 
   $effect(() => {
@@ -133,6 +178,7 @@
     inviteRole = AlbumUserRole.Editor;
     void loadCandidates();
     void loadLinks();
+    void loadInvited();
     if (section === 'links') {
       void tick().then(() => linksSection?.scrollIntoView({ block: 'nearest' }));
     }
@@ -157,6 +203,7 @@
       if (added) {
         invitees = [];
         query = '';
+        await loadInvited();
         await onChanged();
       }
     } finally {
@@ -273,6 +320,10 @@
   closeLabel={$t('close')}
   bind:open
 >
+  {#snippet actions()}
+    <!-- Prototype `CollectionShareDialog`: Done closes; every change above is already saved. -->
+    <Button variant="primary" onclick={() => (open = false)}>{$t('done')}</Button>
+  {/snippet}
   <div class="share">
     {#if isOwner}
       <section aria-label={$t('invite_people')}>
@@ -292,6 +343,7 @@
               <span>{$t('frameleaf_album_share_invite_label')}</span>
               <input
                 type="search"
+                bind:this={inviteInput}
                 bind:value={query}
                 data-initial-focus
                 placeholder={$t('frameleaf_album_share_invite_search')}
@@ -403,6 +455,31 @@
             {/if}
           </li>
         {/each}
+        {#each invited as member (member.user.id)}
+          <li class="invited">
+            <span class="avatar" aria-hidden="true"><UserAvatar user={member.user} size="md" /></span>
+            <span class="who">
+              <strong>{member.user.name}</strong>
+              <small>{member.user.email}</small>
+            </span>
+            <span class="role-static pending-tag">
+              <Icon icon={mdiClockOutline} size="14" aria-hidden />
+              {$t('frameleaf_spaces_member_pending')}
+            </span>
+            {#if isOwner}
+              <button
+                type="button"
+                class="remove icon"
+                disabled={busy}
+                aria-label={$t('frameleaf_spaces_withdraw_for', { values: { name: member.user.name } })}
+                title={$t('frameleaf_spaces_withdraw_for', { values: { name: member.user.name } })}
+                onclick={() => void withdraw(member)}
+              >
+                <Icon icon={mdiClose} size={ICON_SIZE.lg} />
+              </button>
+            {/if}
+          </li>
+        {/each}
       </ul>
     </section>
 
@@ -488,12 +565,12 @@
     gap: 1.25rem;
     width: min(32rem, 100%);
   }
+  /* collections.css .cl-subhead: a small sentence-case label, not a shouted eyebrow. */
   h3 {
-    margin: 0 0 0.5rem;
+    margin: 0 0 var(--fl-space-2);
     font-size: 0.75rem;
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.01em;
     color: var(--fl-muted);
   }
   .members {
@@ -539,6 +616,15 @@
   .role-static {
     color: var(--fl-muted);
     font-size: 0.875rem;
+  }
+  .pending-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--fl-space-1);
+    white-space: nowrap;
+  }
+  .invited .avatar {
+    opacity: 0.7;
   }
   .invite {
     display: flex;
@@ -647,20 +733,21 @@
     color: var(--fl-muted);
     font-size: 0.875rem;
   }
+  /* collections.css .cl-invite-row: Role labelled above a full-width select, Invite at its foot. */
   .invite-row {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
+    align-items: flex-end;
+    gap: var(--fl-space-2);
   }
   .invite-row label {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.875rem;
-  }
-  .invite-row select {
-    width: auto;
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: var(--fl-space-2);
+    min-width: 0;
+    color: var(--fl-muted);
+    font-size: 0.75rem;
+    font-weight: 600;
   }
   input,
   select {

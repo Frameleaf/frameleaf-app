@@ -82,8 +82,8 @@
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import {
-    mdiChevronDown,
-    mdiChevronUp,
+    mdiArrowDown,
+    mdiArrowUp,
     mdiCloudOutline,
     mdiDesktopTowerMonitor,
     mdiLanDisconnect,
@@ -91,7 +91,7 @@
     mdiServerOutline,
     mdiTransitConnectionVariant,
   } from '@mdi/js';
-  import { onMount } from 'svelte';
+  import { onMount, type Snippet } from 'svelte';
   import { t, type Translations } from 'svelte-i18n';
 
   type Routed = Exclude<WorkKind, 'render'>;
@@ -258,8 +258,11 @@
    */
   const columnOrder = (id: RouteChoice) =>
     id === FOLLOW ? 0 : isServer(id) ? 1 : id === CLOUD ? 3 : id === ASK ? 4 : id === NONE ? 5 : 2;
+  // Frameleaf Cloud is always a column, switched off until it is set up, so the choice is never hidden.
   const columns = $derived(
-    [...new Set(ROUTED.flatMap((kind) => choicesFor(kind, facts)))].sort((a, b) => columnOrder(a) - columnOrder(b)),
+    [...new Set([...ROUTED.flatMap((kind) => choicesFor(kind, facts)), CLOUD])].sort(
+      (a, b) => columnOrder(a) - columnOrder(b),
+    ),
   );
   const columnIcon = (id: RouteChoice) =>
     id === CLOUD
@@ -432,7 +435,27 @@
    * with its Save, Computers › Advanced the order to try and the related settings elsewhere. Without
    * one, the whole page as it was.
    */
-  let { part = 'all' }: { part?: 'all' | 'everyday' | 'advanced' } = $props();
+  let {
+    part = 'all',
+    between,
+    connections,
+  }: {
+    part?: 'all' | 'everyday' | 'advanced';
+    /** Advanced only: what the page draws between Finer choices and Connections (Limits for each person). */
+    between?: Snippet;
+    /** Advanced only: the page's own rows at the top of Connections, before the order to try. */
+    connections?: Snippet;
+  } = $props();
+
+  /** Finer choices (prototype `Routing.jsx` FinerChoices): the two follower rows, and the place suggested when asked. */
+  const showFollowers = $derived(
+    (followerChoices('pets', facts).length > 3 ||
+      followerChoices('creative', facts).length > 3 ||
+      follower('pets') !== SAME ||
+      follower('creative') !== SAME) &&
+      (Object.keys(FOLLOWERS) as Follower[]).some((id) => followerChoices(id, facts).length > 0),
+  );
+  const showAsk = $derived(!!(cloudOn && cloudMl && anyAsk));
 </script>
 
 {#snippet saveBar()}
@@ -553,7 +576,11 @@
                       aria-checked={current === option}
                       class:is-on={current === option}
                       disabled={!can || saving}
-                      title={can ? fullName(option) : $t('frameleaf_workruns_cannot_here')}
+                      title={can
+                        ? fullName(option)
+                        : option === CLOUD && !cloudOn
+                          ? $t('frameleaf_workruns_cloud_not_set_up')
+                          : $t('frameleaf_workruns_cannot_here')}
                       onclick={() => (picked = { ...picked, [kind]: option })}
                     >
                       {#if icon}<Icon {icon} size="15" aria-hidden />{/if}
@@ -617,54 +644,47 @@
       {/if}
     {/if}
 
-    {#if part !== 'everyday' && (followerChoices('pets', facts).length > 3 || followerChoices('creative', facts).length > 3 || follower('pets') !== SAME || follower('creative') !== SAME) && (Object.keys(FOLLOWERS) as Follower[]).some((id) => followerChoices(id, facts).length > 0)}
-      <Section title={$t('frameleaf_workruns_finer')} description={$t('frameleaf_workruns_finer_help')}>
-        {#each Object.keys(FOLLOWERS) as Follower[] as id (id)}
-          {@const options = followerChoices(id, facts)}
-          {#if options.length > 0}
-            <Row
-              label={$t(`frameleaf_workruns_finer_${id}` as Translations)}
-              help={$t(`frameleaf_workruns_finer_${id}_help` as Translations)}
-            >
-              <select
-                class="fl-control"
-                aria-label={$t('frameleaf_workruns_where', {
-                  values: { name: $t(`frameleaf_workruns_finer_${id}` as Translations) },
-                })}
-                value={follower(id)}
-                disabled={saving}
-                onchange={(event) => (pickedFollowers = { ...pickedFollowers, [id]: event.currentTarget.value })}
-              >
-                {#each options as option (option)}
-                  <option value={option}>{choiceLabel(option, workName(FOLLOWERS[id].follows))}</option>
-                {/each}
-              </select>
-            </Row>
-          {/if}
-        {/each}
-      </Section>
-    {/if}
-
-    {#if cloudOn && cloudMl && anyAsk && part !== 'everyday'}
-      <Section title={$t('frameleaf_workruns_ask_title')}>
-        <Row label={$t('frameleaf_workruns_ask_row')} help={$t('frameleaf_workruns_ask_help')}>
-          <select
-            class="fl-control"
-            aria-label={$t('frameleaf_workruns_ask_label')}
-            value={suggest ?? savedCloudMl?.startWith}
-            disabled={saving || locked}
-            onchange={(event) => (suggest = event.currentTarget.value as StartWith)}
+    {#snippet followerRows()}
+      {#each Object.keys(FOLLOWERS) as Follower[] as id (id)}
+        {@const options = followerChoices(id, facts)}
+        {#if options.length > 0}
+          <Row
+            label={$t(`frameleaf_workruns_finer_${id}` as Translations)}
+            help={$t(`frameleaf_workruns_finer_${id}_help` as Translations)}
           >
-            <option value={StartWith.Local}>{$t('frameleaf_workruns_ask_home')}</option>
-            <option value={StartWith.Cloud}>{$t('frameleaf_workruns_choice_cloud')}</option>
-          </select>
-        </Row>
-      </Section>
-    {/if}
-
-    {#if processing && part !== 'everyday'}
-      <!-- FL-456: no prototype screen yet; kept to the kit's rows, one per place, moved with up and down. -->
-      <Section title={$t('frameleaf_order_title')} description={$t('frameleaf_order_description')}>
+            <select
+              class="fl-control"
+              aria-label={$t('frameleaf_workruns_where', {
+                values: { name: $t(`frameleaf_workruns_finer_${id}` as Translations) },
+              })}
+              value={follower(id)}
+              disabled={saving}
+              onchange={(event) => (pickedFollowers = { ...pickedFollowers, [id]: event.currentTarget.value })}
+            >
+              {#each options as option (option)}
+                <option value={option}>{choiceLabel(option, workName(FOLLOWERS[id].follows))}</option>
+              {/each}
+            </select>
+          </Row>
+        {/if}
+      {/each}
+    {/snippet}
+    {#snippet askRow(label: string)}
+      <Row {label} help={$t('frameleaf_workruns_ask_help')}>
+        <select
+          class="fl-control"
+          aria-label={$t('frameleaf_workruns_ask_label')}
+          value={suggest ?? savedCloudMl?.startWith}
+          disabled={saving || locked}
+          onchange={(event) => (suggest = event.currentTarget.value as StartWith)}
+        >
+          <option value={StartWith.Local}>{$t('frameleaf_workruns_ask_home')}</option>
+          <option value={StartWith.Cloud}>{$t('frameleaf_workruns_choice_cloud')}</option>
+        </select>
+      </Row>
+    {/snippet}
+    {#snippet orderList()}
+      {#if processing}
         <ol class="order" aria-label={$t('frameleaf_order_title')}>
           {#each order as source, index (source)}
             {@const status = statusOf(processing.sources, source)}
@@ -678,13 +698,14 @@
                 <div class="runs">
                   <Pill tone={STATE_TONE[status.state]}>{$t(STATE_KEY[status.state])}</Pill>
                   <span class="moves">
+                    <!-- Arrows, not chevrons: these move a place up or down the list, they don't open anything. -->
                     <Button
                       variant="quiet"
                       disabled={saving || index === 0}
                       label={$t('frameleaf_order_up', { values: { name: sourceName(source) } })}
                       onclick={() => move(index, -1)}
                     >
-                      <Icon icon={mdiChevronUp} size="18" aria-hidden />
+                      <Icon icon={mdiArrowUp} size="18" aria-hidden />
                     </Button>
                     <Button
                       variant="quiet"
@@ -692,7 +713,7 @@
                       label={$t('frameleaf_order_down', { values: { name: sourceName(source) } })}
                       onclick={() => move(index, 1)}
                     >
-                      <Icon icon={mdiChevronDown} size="18" aria-hidden />
+                      <Icon icon={mdiArrowDown} size="18" aria-hidden />
                     </Button>
                   </span>
                 </div>
@@ -700,11 +721,43 @@
             </li>
           {/each}
         </ol>
-      </Section>
-    {/if}
+      {/if}
+    {/snippet}
 
-    {#if part === 'advanced'}
-      {@render saveBar()}
+    {#if part === 'all'}
+      {#if showFollowers}
+        <Section title={$t('frameleaf_workruns_finer')} description={$t('frameleaf_workruns_finer_help')}>
+          {@render followerRows()}
+        </Section>
+      {/if}
+      {#if showAsk}
+        <Section title={$t('frameleaf_workruns_ask_title')}>
+          {@render askRow($t('frameleaf_workruns_ask_row'))}
+        </Section>
+      {/if}
+      {#if processing}
+        <Section title={$t('frameleaf_order_title')} description={$t('frameleaf_order_description')}>
+          {@render orderList()}
+        </Section>
+      {/if}
+    {:else if part === 'advanced'}
+      <!-- Computers › Advanced (prototype `WorkV3.jsx` ComputersAdvanced): Finer choices, then the page's
+           Limits for each person, then Connections, where the order to try is where new work starts. -->
+      {#if showFollowers || showAsk}
+        <Section title={$t('frameleaf_workruns_finer')} description={$t('frameleaf_workruns_finer_help_open')}>
+          {#if showFollowers}{@render followerRows()}{/if}
+          {#if showAsk}{@render askRow($t('frameleaf_workruns_ask_title_row'))}{/if}
+        </Section>
+      {/if}
+      {@render between?.()}
+      <Section title={$t('frameleaf_computers_connections')} description={$t('frameleaf_computers_connections_help')}>
+        {@render connections?.()}
+        {#if processing}
+          <Row label={$t('frameleaf_order_title')} help={$t('frameleaf_order_description')} />
+          {@render orderList()}
+        {/if}
+        {@render saveBar()}
+      </Section>
     {/if}
 
     {#if part === 'all'}
@@ -852,7 +905,7 @@
   }
   .choices {
     display: grid;
-    grid-template-columns: repeat(var(--columns), minmax(96px, 124px));
+    grid-template-columns: repeat(var(--columns), minmax(96px, 148px));
     padding: 2px;
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);

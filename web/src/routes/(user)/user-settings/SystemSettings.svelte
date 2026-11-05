@@ -75,6 +75,7 @@
     mdiTextRecognition,
     mdiCloudSyncOutline,
     mdiCloudUploadOutline,
+    mdiCertificateOutline,
     mdiCreditCardOutline,
     mdiEarth,
     mdiExpansionCard,
@@ -234,8 +235,9 @@
     {
       admin: true,
       component: LibrarySettings,
-      title: $t('admin.library_settings'),
-      subtitle: $t('admin.library_settings_description'),
+      // FL-539: the prototype's Folder checks (folders.jsx), a page of its own under Libraries
+      title: $t('frameleaf_checks_label'),
+      subtitle: $t('frameleaf_checks_description'),
       key: 'external-library',
       icon: mdiBookshelf,
     },
@@ -448,6 +450,8 @@
         // FL-154..FL-156: Frameleaf Cloud → Account & link, Plan and Licence (settings-catalog.mjs:1713-1752).
         ['cloud-account', 'frameleaf_cc_section_cloud_account', mdiLinkVariant],
         ['cloud-plan', 'frameleaf_cc_section_cloud_plan', mdiCreditCardOutline],
+        // Round 3: the prototype's Licence page (settings-v2/cloud/Licence.jsx), its own page again.
+        ['cloud-license', 'frameleaf_cc_section_cloud_license', mdiCertificateOutline],
         // FL-161: Frameleaf Cloud → Remote access, who can connect and what the relay carries.
         ['cloud-remote', 'frameleaf_cc_section_cloud_remote', mdiEarth],
         // FL-160: Frameleaf Cloud → Cloud backup.

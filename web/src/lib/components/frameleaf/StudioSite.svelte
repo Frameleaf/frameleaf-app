@@ -12,11 +12,14 @@
   let {
     site,
     thumbnail = false,
+    emptyWork,
     onInquiry,
   }: {
     site: PublicSite;
     /** A small, inert render for the template picker. */
     thumbnail?: boolean;
+    /** The editor's preview only: what Selected work says while no photographs are chosen. Never on the public site. */
+    emptyWork?: string;
     /** Sends an inquiry; absent in the editor's preview, where nothing is sent. */
     onInquiry?: (inquiry: InquiryInput) => Promise<void>;
   } = $props();
@@ -198,6 +201,8 @@
           {@render image(photo, '(max-width: 640px) 100vw, 50vw')}
           <figcaption>{photo.alt}</figcaption>
         </figure>
+      {:else}
+        {#if emptyWork}<p class="ss-work-empty">{emptyWork}</p>{/if}
       {/each}
     </div>
   </section>

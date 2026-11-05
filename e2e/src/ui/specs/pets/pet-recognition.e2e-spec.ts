@@ -47,7 +47,7 @@ const run = (status: string, processedCount: number) => ({
 });
 
 const setup = async (context: BrowserContext, initial: Recognition) => {
-  const state = { recognition: initial, calls: [] as string[], searches: [] as unknown[] };
+  const state = { recognition: initial, calls: [] as string[], searches: [] as unknown[], buckets: [] as URL[] };
   await context.routeWebSocket('**/socket.io/**', () => {
     // This UI fixture has no authenticated socket session.
   });
@@ -92,6 +92,12 @@ const setup = async (context: BrowserContext, initial: Recognition) => {
         assets: { count: 0, facets: [], items: [], nextCursor: null, nextPage: null, total: 0 },
       },
     });
+  });
+  // The pet page is the Library view scoped to the pet (owner, 2026-11-05): its photos come from the timeline.
+  await context.route('**/api/timeline/bucket*', (route, request) => {
+    const url = new URL(request.url());
+    state.buckets.push(url);
+    return route.fulfill({ json: url.pathname.endsWith('/buckets') ? [] : {} });
   });
   await context.route('**/api/jobs/running', (route) =>
     route.fulfill({ json: { operations: [], memoryExports: [], queues: [], canManageQueues: false } }),
@@ -201,11 +207,8 @@ test.describe('pet recognition', () => {
     await page.goto(`/pets/${petId}`);
 
     await expect(page.getByRole('heading', { name: 'Miso' }).first()).toBeVisible();
-    await expect.poll(() => state.searches.length).toBeGreaterThan(0);
-    expect(state.searches[0]).toEqual(
-      expect.objectContaining({
-        filter: expect.objectContaining({ petIds: { any: [petId] }, trashedAt: { eq: null } }),
-      }),
-    );
+    await expect.poll(() => state.buckets.length).toBeGreaterThan(0);
+    expect(state.buckets[0].searchParams.get('petId')).toBe(petId);
+    expect(state.buckets[0].searchParams.get('visibility')).toBe('timeline');
   });
 });

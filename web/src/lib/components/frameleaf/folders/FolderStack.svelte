@@ -10,7 +10,7 @@
   import { getAssetMediaUrl } from '$lib/utils';
   import { AssetMediaSize } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import { mdiFolderOutline } from '@mdi/js';
+  import { mdiFolderOutline, mdiImageOutline } from '@mdi/js';
 
   let {
     ids,
@@ -39,11 +39,14 @@
   <span class="stack" class:mini data-prints={prints.length} aria-hidden="true">
     {#each prints as print (print.id)}
       <span class="print" data-layer={print.layer}>
+        <!-- Under the photo: shown only when its preview can't load (a RAW file without one yet). -->
+        <span class="missing"><Icon icon={mdiImageOutline} size={mini ? '14' : '24'} /></span>
         <img
           src={getAssetMediaUrl({ id: print.id, size: AssetMediaSize.Thumbnail })}
           alt=""
           loading="lazy"
           draggable="false"
+          onerror={(event) => ((event.currentTarget as HTMLImageElement).style.visibility = 'hidden')}
         />
       </span>
     {/each}
@@ -67,7 +70,15 @@
       0 0 0 2px var(--fl-stack-ring, var(--fl-canvas)),
       var(--fl-shadow-1);
   }
+  .missing {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    color: var(--fl-muted);
+  }
   .print img {
+    position: relative;
     display: block;
     width: 100%;
     height: 100%;

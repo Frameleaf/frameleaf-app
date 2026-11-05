@@ -194,7 +194,8 @@
 <section class="report" aria-labelledby="fl-integrity-report-title">
   <div class="report-head">
     <div>
-      <h2 id="fl-integrity-report-title">
+      <!-- The page heading names the report (SettingsHost); the card keeps it for its own label. -->
+      <h2 class="sr-only" id="fl-integrity-report-title">
         {$t('admin.frameleaf_maintenance_report_title', {
           values: { title: $t(CHECK_NAMES[type]) },
         })}
@@ -315,23 +316,25 @@
 </section>
 
 <style>
+  /* The plain-words pages' card and column (kit Section, KitPage's 1120px). */
   .report {
     background: var(--fl-panel);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-card);
-    padding: 20px;
+    padding: var(--fl-space-6);
     min-width: 0;
+    max-width: 1120px;
   }
   .report-head {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
     gap: 16px;
     flex-wrap: wrap;
-    margin-bottom: 14px;
+    margin-bottom: var(--fl-space-4);
   }
   h2 {
-    margin: 0 0 4px;
+    margin: 0 0 var(--fl-space-2);
     font-size: 16px;
     font-weight: 600;
   }
@@ -355,6 +358,10 @@
     align-items: center;
     gap: 6px;
     text-decoration: none;
+  }
+  /* Every control in the heading's row the same height: the link buttons too. */
+  .actions .button {
+    min-height: var(--fl-control-height);
   }
   .row-actions .button {
     padding: 5px 9px;
@@ -427,5 +434,10 @@
     clip-path: inset(50%);
     white-space: nowrap;
     border: 0;
+  }
+  @media (max-width: 620px) {
+    .report {
+      padding: var(--fl-space-4);
+    }
   }
 </style>

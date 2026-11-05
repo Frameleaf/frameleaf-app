@@ -371,7 +371,8 @@
     min-width: 0;
     align-items: center;
     gap: 0.625rem;
-    min-height: 40px;
+    /* The same height as Upload and the icon buttons beside it in the top bar. */
+    min-height: var(--fl-control-height);
     padding: 0.375rem 0.75rem;
     font-size: 0.875rem;
     color: var(--fl-muted);

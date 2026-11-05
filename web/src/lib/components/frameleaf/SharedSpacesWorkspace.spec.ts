@@ -130,7 +130,7 @@ describe('SharedSpacesWorkspace', () => {
       renderWithTooltips(SharedSpacesWorkspace, { spaces: [familySpace], partners: [], onRefresh: vi.fn() });
       const menu = await openMenu('Family Space');
       expect(menu.getByRole('menuitem', { name: 'Open' })).toBeInTheDocument();
-      expect(menu.getByRole('menuitem', { name: 'Open the photos' })).toBeInTheDocument();
+      expect(menu.getByRole('menuitem', { name: 'People, places and members' })).toBeInTheDocument();
       expect(menu.getByRole('menuitem', { name: 'Download' })).toBeInTheDocument();
       // The Frameleaf Menu (the one the Albums page uses), whose list sits in its own root.
       const root = screen.getByRole('menu', { name: 'Actions for Family Space' }).closest('.menu-root');

@@ -64,7 +64,7 @@ describe('PreservationPanel (FL-74)', () => {
       },
     ]);
     const { unmount } = render(PreservationPanel);
-    expect(await screen.findByText('2 of 3 saved links written · 1 skipped')).toBeInTheDocument();
+    expect(await screen.findByText(/2 of 3 saved links written · 1 skipped/)).toBeInTheDocument();
     unmount();
   });
 

@@ -85,7 +85,8 @@ describe('paid manual photo location scan', () => {
   it('shows the optional fixed price without automatically estimating or starting', async () => {
     render(PhotoLocationScan);
     await screen.findByRole('button', { name: 'Estimate' });
-    expect(screen.getByText(/Frameleaf Cloud looks them up from each photo’s map location/)).toBeInTheDocument();
+    // What it is and what it costs to look is said by the page heading; the card says an estimate is free.
+    expect(screen.getByText(/Getting an estimate is free/)).toBeInTheDocument();
     expect(screen.queryByText(/\$5 per 1,000/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Included with paid/)).not.toBeInTheDocument();
     expect(screen.getByRole('spinbutton', { name: 'Most to spend' })).toHaveValue(5);
@@ -298,7 +299,7 @@ describe('paid manual photo location scan', () => {
   it('has no environment or paid-plan gate and lets an unavailable account request estimate details', async () => {
     api.status.mockResolvedValue({ ...status(), enabled: false, available: false });
     render(PhotoLocationScan);
-    expect(await screen.findByRole('heading', { name: 'Identify photo locations' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Choose how much to check' })).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'Estimate' })).toBeEnabled();
     expect(screen.queryByText(/paid Frameleaf Cloud plan/)).not.toBeInTheDocument();
   });

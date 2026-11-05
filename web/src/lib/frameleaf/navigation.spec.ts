@@ -150,6 +150,15 @@ describe('Frameleaf rail destinations', () => {
     expect(isDestinationCurrent(Route.favorites(), library)).toBe(false);
   });
 
+  it('keeps the rail’s Library current on search results, which are the Library narrowed by a search', () => {
+    const destinations = buildRailSections(defaultRailCapabilities()).flatMap((section) => section.destinations);
+    const active = (url: string) =>
+      destinations.filter((item) => isDestinationCurrent(url, item)).map((item) => item.id);
+    expect(active('/search?dq=%7B%7D')).toEqual(['library']);
+    expect(active('/search/photos/asset-id?dq=%7B%7D')).toEqual(['library']);
+    expect(active('/searching')).toEqual([]);
+  });
+
   it('distinguishes utilities, workflows, Care and personal settings on their shared pathname', () => {
     const destinations = (['settings', 'libraryCare', 'workflows'] as const).map((id) => find(allCapabilities(), id)!);
     const active = (url: string) =>
@@ -409,6 +418,8 @@ describe('Frameleaf phone tab bar', () => {
   it('leaves every tab uncurrent on screens only the drawer reaches', () => {
     expect(currentTab(Route.people())).toBeNull();
     expect(currentTab(Route.explore())).toBeNull();
+    expect(currentTab(Route.pets())).toBeNull();
+    expect(currentTab('/pets/pet-id')).toBeNull();
     expect(currentTab(Route.map())).toBeNull();
     expect(currentTab(Route.places())).toBeNull();
     expect(currentTab(Route.activity())).toBeNull();

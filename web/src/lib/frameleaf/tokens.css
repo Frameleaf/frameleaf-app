@@ -348,15 +348,21 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
-/* FL-707 P1: the one top padding above every library-side page heading (16px on phones). */
+/*
+ * FL-707 P1: the one top padding above every library-side page heading (16px on phones), and the
+ * one side padding inside the page area's 8px: 8 + 16 = the 24px desktop gutter (every title at the
+ * rail edge + 24), 8 + 8 = the 16px phone gutter.
+ */
 .frameleaf,
 .fl-scope {
   --fl-page-top: 28px;
+  --fl-page-inline: var(--fl-space-4);
 }
 @media (max-width: 767px) {
   .frameleaf,
   .fl-scope {
     --fl-page-top: 16px;
+    --fl-page-inline: var(--fl-space-2);
   }
 }
 /*

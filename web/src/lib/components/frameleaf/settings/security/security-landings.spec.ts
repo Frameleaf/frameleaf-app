@@ -11,6 +11,7 @@ const sdk = vi.hoisted(() => ({
   getSessions: vi.fn(),
   getApiKeys: vi.fn(),
   getLockedEncryption: vi.fn(),
+  getFrameleafAccountLink: vi.fn(),
 }));
 const cloud = vi.hoisted(() => ({ status: null as unknown }));
 const user = vi.hoisted(() => ({ isAdmin: true, email: 'taylor@example.test', name: 'Taylor' }));
@@ -31,7 +32,7 @@ vi.mock('$lib/frameleaf/system-config-draft.svelte', () => ({
 
 const ICON = 'M0 0h1v1H0z';
 const sections = [
-  { key: 'password', title: 'Password', subtitle: 'Your email and password', icon: ICON },
+  { key: 'password', title: 'How you sign in', subtitle: 'Your email, password and linked accounts', icon: ICON },
   { key: 'authorized-devices', title: 'Signed-in devices', subtitle: 'Where you are signed in', icon: ICON },
   { key: 'api-keys', title: 'API keys', subtitle: 'For apps', icon: ICON },
   { key: 'user-pin-code-settings', title: 'Locked PIN', subtitle: 'Opens Locked photos', icon: ICON },
@@ -76,13 +77,15 @@ describe('Your sign-in & privacy (FL-367)', () => {
   beforeEach(() => {
     sdk.getAuthStatus.mockResolvedValue({ password: true, pinCode: true, isElevated: false });
     sdk.getApiKeys.mockResolvedValue([]);
+    sdk.getFrameleafAccountLink.mockResolvedValue({ available: true, linked: false });
   });
 
   it('says the account is protected', async () => {
     sdk.getSessions.mockResolvedValue([session('a', 0, true)]);
     render(YourSignInLanding, { sections });
     expect(await screen.findByRole('heading', { name: 'Your account is protected' })).toBeInTheDocument();
-    expect(await screen.findByText('taylor@example.test · password set')).toBeInTheDocument();
+    // "How you sign in" says the ways in (Personal.jsx), here a password and no Frameleaf account yet.
+    expect(await screen.findByText('Password only')).toBeInTheDocument();
     expect(screen.getByText('Who can sign in')).toBeInTheDocument();
   });
 

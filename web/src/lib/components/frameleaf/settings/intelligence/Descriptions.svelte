@@ -65,8 +65,8 @@
     type AdminConfigImageDescriptionPromptDto,
     type ImageDescriptionRequeueEstimateDto,
   } from '@frameleaf/sdk';
-  import { modalManager, toastManager } from '@frameleaf/ui';
-  import { mdiCommentTextOutline } from '@mdi/js';
+  import { Icon, modalManager, toastManager } from '@frameleaf/ui';
+  import { mdiChevronRight, mdiCommentTextOutline } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t, type Translations } from 'svelte-i18n';
   import {
@@ -445,7 +445,7 @@
     </Row>
     <Row label={$t('frameleaf_intel_overnight')} help={$t('frameleaf_intel_captions_overnight_help')}>
       <Button onclick={() => goto(commandCenterUrl('processing', 'nightly-tasks'))}>
-        {$t('frameleaf_intel_overnight_open')}
+        {$t('frameleaf_intel_overnight_open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden />
       </Button>
     </Row>
 

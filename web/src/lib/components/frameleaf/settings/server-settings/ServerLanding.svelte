@@ -19,7 +19,7 @@
   import { websocketStore } from '$lib/stores/websocket';
   import { semverToName } from '$lib/utils';
   import { getVersionCheck } from '@frameleaf/sdk';
-  import { mdiCheckDecagramOutline, mdiUpdate } from '@mdi/js';
+  import { mdiCheckDecagramOutline, mdiHomeEditOutline, mdiMapOutline, mdiUpdate } from '@mdi/js';
   import { DateTime } from 'luxon';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -103,11 +103,17 @@
     }
   };
   const advanced = ADVANCED_SECTIONS.server ?? [];
+  /** The prototype's icon for each row (server-updates.jsx Landing); search and the rail keep the section's own. */
+  const ICONS: Record<string, string> = {
+    'version-check': mdiUpdate,
+    server: mdiHomeEditOutline,
+    location: mdiMapOutline,
+  };
   const rows = (behind: boolean) =>
     sections
       .filter((section) => advanced.includes(section.key) === behind)
       .map((section): LinkRow => ({
-        icon: section.icon,
+        icon: ICONS[section.key] ?? section.icon,
         title: section.title,
         body: stateOf(section),
         href: commandCenterUrl('server', section.key),

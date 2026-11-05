@@ -167,8 +167,9 @@ test.describe('person page', () => {
 
     await page
       .getByRole('toolbar', { name: 'Actions for Ada' })
-      .getByRole('button', { name: 'Set date of birth' })
+      .getByRole('button', { name: 'More actions for Ada' })
       .click();
+    await page.getByRole('menuitem', { name: 'Set date of birth' }).click();
     const dialog = page.getByRole('dialog', { name: 'Date of birth' });
     const field = dialog.getByLabel('Date of birth for Ada');
     const save = dialog.getByRole('button', { name: 'Save', exact: true });

@@ -15,8 +15,8 @@
   /**
    * A year of days as the prototype draws it (settings-v2 `Heat`, server.css `.srv-heat`): one
    * column per week, square cells, the month names underneath. The grid fits its container: the
-   * cells shrink with the width (no sideways scrolling on a phone) and never grow past the
-   * prototype's 11px squares on a 3px gap.
+   * cells shrink with the width (no sideways scrolling on a phone) and grow with it up to the
+   * prototype's 980px year.
    */
   const startDate = $derived(DateTime.fromISO(data.from, { zone: 'utc' }));
   const padding = $derived(startDate.diff(startDate.startOf('week', { useLocaleWeeks: true })).as('days'));
@@ -124,8 +124,8 @@
     grid-template-columns: repeat(var(--weeks), minmax(0, 1fr));
     /* 3px between cells, less on a narrow card so the squares keep most of the width. */
     column-gap: min(3px, 0.5cqi);
-    /* Never wider than the prototype's 11px squares on a 3px gap. */
-    max-inline-size: calc(var(--weeks) * 14px - 3px);
+    /* The year fills the card up to the prototype's 980px (server.css `.srv-heat`). */
+    max-inline-size: 980px;
   }
   .heat {
     grid-template-rows: repeat(7, auto);

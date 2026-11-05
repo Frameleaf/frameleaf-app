@@ -83,26 +83,21 @@
   text-align: center;
   max-width: 980px;
 }
-/* The one hero line of first run; the display step on a phone. */
+/* The welcome line under the icon and wordmark (prototype `.frs-tagline`): one plain line at the title
+   size, regular weight; the icon and wordmark carry the brand. */
 .frs .frs-tagline {
-  font: var(--fl-type-hero);
-  letter-spacing: var(--fl-tracking-hero);
-}
-@media (max-width: 560px) {
-  .frs .frs-tagline {
-    font: var(--fl-type-display);
-    letter-spacing: var(--fl-tracking-display);
-  }
+  font: 400 var(--fl-font-title) / 1.35 var(--fl-family-ui);
+  letter-spacing: -0.3px;
 }
 .frs-tagline {
   color: var(--fl-text);
-  max-width: min(100%, 28ch);
+  max-width: min(100%, 44ch);
   margin: 0;
-}
-/* Each sentence of the line keeps to its own row, so it never breaks mid-phrase. */
-.frs-tagline > span {
-  display: block;
   text-wrap: balance;
+}
+/* Each sentence stays whole: the line only breaks between sentences on a narrow screen. */
+.frs-tagline > span {
+  display: inline-block;
 }
 .frs-continue {
   min-height: 44px;
@@ -1386,6 +1381,10 @@
   display: grid;
   gap: 8px;
 }
+/* Prototype: the "Recommended" kicker is in the accent. */
+.frs-link-copy .frs-eyebrow {
+  color: var(--fl-accent);
+}
 .frs-link-copy h2 {
   font-size: var(--fl-font-title);
 }
@@ -1639,15 +1638,17 @@
   overflow: hidden;
 }
 
-/* The FL-158 account section brings its own status line and button, so it sits under the copy. */
+/* Prototype: "Sign in with Frameleaf" at the card's right, beside the copy; a status line (server not
+   linked yet) wraps under the button inside that column. */
 .frs-link-card .frs-link-action {
-  grid-column: 2 / -1;
+  width: 260px;
   min-width: 0;
 }
 @media (max-width: 860px) {
   /* One column: the action stays in it. Kept in a second column it squeezed the copy under the mark. */
   .frs-link-card .frs-link-action {
     grid-column: 1;
+    width: auto;
   }
   .frs-link-art {
     width: 64px;

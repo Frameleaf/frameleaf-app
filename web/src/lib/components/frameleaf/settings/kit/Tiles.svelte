@@ -5,26 +5,30 @@
 <script lang="ts">
   /**
    * Tiles to pick one from, when each choice needs a line of explanation. Each tile is a button
-   * that says whether it is the chosen one, so Tab reaches every choice.
+   * that says whether it is the chosen one, so Tab reaches every choice. `list` draws them one under
+   * another with a radio mark, as the prototype's `Choices` (settings-v2/library/parts.jsx).
    */
   let {
     label,
     value,
     options,
     disabled = false,
+    list = false,
     onChange,
   }: {
     label: string;
     value: string | undefined;
     options: Tile[];
     disabled?: boolean;
+    list?: boolean;
     onChange: (id: string) => void;
   } = $props();
 </script>
 
-<div class="kit-tiles" role="group" aria-label={label}>
+<div class="kit-tiles" class:is-list={list} role="group" aria-label={label}>
   {#each options as option (option.id)}
     <button type="button" aria-pressed={value === option.id} {disabled} onclick={() => onChange(option.id)}>
+      {#if list}<i class="mark" aria-hidden="true"></i>{/if}
       <strong>{option.name}</strong>
       {#if option.hint}<span>{option.hint}</span>{/if}
     </button>
@@ -77,8 +81,40 @@
     font-size: var(--fl-font-small);
     line-height: 1.4;
   }
+  /* library.css `.lib-choices`: one choice per line, a radio mark before it. */
+  .kit-tiles.is-list {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--fl-space-3);
+  }
+  .is-list button {
+    grid-template-columns: 20px minmax(0, 1fr);
+    align-items: center;
+    column-gap: var(--fl-space-3);
+    min-height: 56px;
+    padding: 10px var(--fl-space-4);
+    border-radius: var(--fl-radius-control);
+  }
+  .is-list button[aria-pressed='true'] {
+    background: color-mix(in srgb, var(--fl-accent) 8%, var(--fl-raised));
+    box-shadow: none;
+  }
+  .is-list .mark {
+    grid-row: 1 / span 2;
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--fl-muted);
+    border-radius: 50%;
+  }
+  .is-list button[aria-pressed='true'] .mark {
+    border-color: var(--fl-accent);
+    background: radial-gradient(circle, var(--fl-accent) 0 4px, transparent 4.5px);
+  }
+  .is-list strong,
+  .is-list span {
+    grid-column: 2;
+  }
   @container kit (max-width: 620px) {
-    .kit-tiles {
+    .kit-tiles:not(.is-list) {
       grid-template-columns: 1fr 1fr;
     }
   }

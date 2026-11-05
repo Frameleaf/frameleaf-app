@@ -175,7 +175,7 @@
   onSelectAll={() => handlePromiseError(selectAll())}
   onClear={() => librarySession.clearSelection()}
 >
-  <div class="h-full">
+  <div class="pv-album h-full">
     <LibraryView
       enableRouting
       syncUrl={false}
@@ -215,8 +215,12 @@
 </PublicViewerShell>
 
 <style>
+  /* PublicViewer (sharing.css .pv-grid): the photos start 20px under the page header, not on its rule. */
+  .pv-album :global(.fl-library-header) {
+    padding-top: var(--fl-space-5);
+  }
   .pv-album-description {
-    margin: 1rem 0;
+    margin: 0 0 1rem;
     color: var(--fl-muted);
     white-space: pre-line;
   }

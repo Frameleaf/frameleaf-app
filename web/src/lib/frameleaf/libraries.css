@@ -46,10 +46,11 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-height: 34px;
+  /* App controls are one height (44px, 48 on touch); the label stays at its size. */
+  min-height: var(--fl-control-height);
   border: 1px solid var(--fl-border);
-  border-radius: 6px;
-  padding: 7px 12px;
+  border-radius: var(--fl-radius-control);
+  padding: 7px var(--fl-space-3);
   background: var(--fl-raised);
   color: var(--fl-text);
   font: inherit;
@@ -105,12 +106,12 @@
 .fl-libraries .resource-field input,
 .fl-libraries .resource-field select,
 .fl-libraries .resource-path-list input {
-  min-height: 36px;
+  min-height: var(--fl-control-height);
   background: var(--fl-canvas);
   border: 1px solid var(--fl-border);
-  border-radius: 5px;
+  border-radius: var(--fl-radius-control);
   color: var(--fl-text);
-  padding: 8px 10px;
+  padding: 8px var(--fl-space-3);
   font: inherit;
   font-size: 12px;
   min-width: 0;

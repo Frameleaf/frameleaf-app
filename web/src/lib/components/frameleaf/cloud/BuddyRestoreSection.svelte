@@ -2,7 +2,7 @@
   import { t } from 'svelte-i18n';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
-  import CloudCard from '$lib/components/frameleaf/cloud/CloudCard.svelte';
+  import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import { formatDateTime } from '$lib/frameleaf/cloud-ml';
   import { locale } from '$lib/stores/preferences.store';
   import { getByteUnitString } from '$lib/utils/byte-units';
@@ -139,23 +139,28 @@
   onDestroy(() => clearTimeout(timer));
 </script>
 
-<CloudCard
+<Section
   title={$t('frameleaf_buddy_restore_from_buddy_backup')}
   description={admin
     ? $t('frameleaf_buddy_recover_selected_photos_an_album_your_library_settings_or_the_entire_server')
     : $t('frameleaf_buddy_recover_your_own_photos_and_albums_from_a_dated_backup_unlock_your_pin_to_continue')}
 >
-  {#if failure}<p role="alert" class="error">{failure}</p>{/if}
-  <Button disabled={busy} onclick={launch}>{$t('frameleaf_buddy_choose_a_restore_point')}</Button>
-  {#if progress}<p role="status">
-      {progress.phase === 'ready-to-apply'
-        ? $t('frameleaf_buddy_verified_and_staged_apply_this_recovery_to_continue')
-        : $t('frameleaf_buddy_restore_state', { values: { state: progress.state } })}
-    </p>
-    <progress max="100" value={progress.progress ?? 0} aria-label={$t('frameleaf_buddy_restore_progress')}></progress>
-    {#if progress.error}<p role="alert" class="error">{progress.error}</p>{/if}
+  {#snippet action()}
+    <Button disabled={busy} onclick={launch}>{$t('frameleaf_buddy_choose_a_restore_point')}</Button>
+  {/snippet}
+  {#if failure}<p role="alert" class="error pad">{failure}</p>{/if}
+  {#if progress}
+    <div class="progress-row">
+      <p role="status">
+        {progress.phase === 'ready-to-apply'
+          ? $t('frameleaf_buddy_verified_and_staged_apply_this_recovery_to_continue')
+          : $t('frameleaf_buddy_restore_state', { values: { state: progress.state } })}
+      </p>
+      <progress max="100" value={progress.progress ?? 0} aria-label={$t('frameleaf_buddy_restore_progress')}></progress>
+      {#if progress.error}<p role="alert" class="error">{progress.error}</p>{/if}
+    </div>
   {/if}
-</CloudCard>
+</Section>
 
 <Dialog
   bind:open
@@ -291,6 +296,19 @@
 </Dialog>
 
 <style>
+  .progress-row {
+    display: grid;
+    gap: var(--fl-space-2);
+    padding: var(--fl-space-4) 0 var(--fl-space-5);
+    border-top: 1px solid var(--fl-border);
+  }
+  .progress-row p {
+    margin: 0;
+  }
+  .pad {
+    margin: 0;
+    padding-bottom: var(--fl-space-4);
+  }
   .restore {
     display: grid;
     gap: 1rem;

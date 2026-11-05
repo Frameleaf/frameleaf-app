@@ -25,7 +25,13 @@
   let {
     cards = [],
     cloudStatus = null,
-  }: { cards?: BackgroundWorkCard[]; cloudStatus?: CloudBackupStatusResponseDto | null } = $props();
+    showCount = true,
+  }: {
+    cards?: BackgroundWorkCard[];
+    cloudStatus?: CloudBackupStatusResponseDto | null;
+    /** False when this is In progress's only group, whose heading already carries the same count. */
+    showCount?: boolean;
+  } = $props();
 
   const cloudRows = $derived(cloudWorkRows(cloudStatus));
   const count = $derived(cards.length + cloudRows.length);
@@ -80,7 +86,8 @@
 {#if count > 0}
   <div class="fla-bg-group" role="group" aria-labelledby={headingId}>
     <h3 id={headingId} class="fla-bg-heading">
-      {$t('frameleaf_activity_background_work')} <span class="fla-bg-count">{count}</span>
+      {$t('frameleaf_activity_background_work')}
+      {#if showCount}<span class="fla-bg-count">{count}</span>{/if}
       <!-- UI review 2026-10-30 #18: one plain link to where background work is managed. -->
       <a class="fla-manage" href={commandCenterUrl('processing', 'queues')}
         >{$t('frameleaf_activity_background_manage')}<Icon icon={mdiChevronRight} size="14" aria-hidden /></a

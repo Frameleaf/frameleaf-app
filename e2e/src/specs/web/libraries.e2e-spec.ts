@@ -74,8 +74,11 @@ test.describe('Libraries (FL-78)', () => {
 
     // the page polls while the scan moves, and settles on the completed summary, without its zero parts
     await expect(message).toHaveText('1 added', { timeout: 60_000 });
-    const row = page.getByRole('region', { name: 'Library table' }).getByRole('row', { name: new RegExp(name) });
-    await expect(row.getByText('Completed', { exact: true })).toBeVisible();
+    // back on Libraries, the folder is listed under "Folders on this server" as up to date
+    await page.goto(librariesArea);
+    const folders = page.getByRole('region', { name: 'Folders on this server' });
+    await expect(folders.getByText(name, { exact: true })).toBeVisible();
+    await expect(folders.getByText('Up to date', { exact: true })).toBeVisible();
   });
 
   // FL-78: a scan of a folder that disappeared fails, names the folder, and still says so after a reload.

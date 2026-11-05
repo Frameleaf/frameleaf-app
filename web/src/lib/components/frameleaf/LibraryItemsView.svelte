@@ -7,6 +7,10 @@
   import type { DiscoveryQuery, DiscoveryFilterSection } from '$lib/components/discovery/query';
   import type { IdsFilter } from '@frameleaf/sdk';
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
+  import BoardsGrid from '$lib/components/frameleaf/BoardsGrid.svelte';
+  import { boardsView } from '$lib/frameleaf/boards-view.svelte';
+  import { boardsCollectionUi } from '$lib/frameleaf/boards-collection-ui.svelte';
+  import { THUMBNAIL_SIZE_MAX, THUMBNAIL_SIZE_MIN, THUMBNAIL_SIZE_STEP } from '$lib/frameleaf/library-grid';
   import ResultsToolbar from '$lib/components/frameleaf/ResultsToolbar.svelte';
   import LibraryLayoutSwitch from '$lib/components/frameleaf/LibraryLayoutSwitch.svelte';
   import LibraryFilterPanel from '$lib/components/frameleaf/LibraryFilterPanel.svelte';
@@ -57,19 +61,36 @@
   import { downloadArchive, ignoreCancelledDownload } from '$lib/utils/asset-utils';
   import { downloadBoardsItems, LIBRARY_FILE_LIMIT } from '$lib/frameleaf/boards-download';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
+  import { sidebarStore } from '$lib/stores/sidebar.svelte';
   import {
     mdiAspectRatio,
+    mdiCheckboxMultipleMarkedOutline,
     mdiChevronDown,
     mdiClose,
     mdiContentSaveOutline,
+    mdiFolderMultipleOutline,
+    mdiFolderPlusOutline,
+    mdiImageOutline,
     mdiImport,
+    mdiLinkVariant,
     mdiLinkVariantPlus,
+    mdiMagnify,
     mdiPaletteOutline,
     mdiPaletteSwatchOutline,
     mdiPlus,
     mdiPuzzleOutline,
+    mdiShapeOutline,
     mdiSort,
+    mdiStar,
+    mdiStarOffOutline,
+    mdiStarOutline,
+    mdiTagOffOutline,
+    mdiTagOutline,
+    mdiThumbDownOutline,
     mdiTrayArrowUp,
+    mdiVideoOutline,
+    mdiViewDashboardOutline,
+    mdiViewGridOutline,
   } from '@mdi/js';
   import type { BulkActionContext } from '$lib/frameleaf/bulk-actions';
   import type { BulkPayload } from '$lib/frameleaf/bulk-operations';
@@ -80,10 +101,14 @@
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import { Icon, Theme as AppTheme, themeManager, toastManager } from '@frameleaf/ui';
   import {
+    AssetTypeEnum,
+    getAllTags,
+    LibraryItemSearchKind,
     LibraryScope,
     LibraryViewScope,
     LibraryAssetItemKind,
     type ColorFilter as ColorCondition,
+    type TagResponseDto,
   } from '@frameleaf/sdk';
 
   let {
@@ -99,12 +124,13 @@
     kinds,
     onGetExtension,
     bookmark,
+    onKindsChange,
   }: {
     title: string;
     query: DiscoveryQuery;
     onQueryChange: (query: DiscoveryQuery) => void;
     /** The page's own heading; it gets the result count while something narrows the results. */
-    header?: Snippet<[number | null]>;
+    header?: Snippet<[number | null, Snippet | undefined]>;
     context?: string;
     workspace?: 'personal' | 'design';
     album?: import('@frameleaf/sdk').AlbumResponseDto;
@@ -120,7 +146,41 @@
     onGetExtension?: () => void;
     /** A saved link to open in the inspector when the view first loads (Boards' `?bookmark=<id>`). */
     bookmark?: string;
+    /**
+     * Boards' Type menu chose Links or left it (the page keeps `kinds` in its address). Without it the
+     * choice is kept here.
+     */
+    onKindsChange?: (
+      kinds: import('@frameleaf/sdk').LibraryItemSearchKind[] | undefined,
+      query: DiscoveryQuery,
+    ) => void;
   } = $props();
+  let viewElement = $state<HTMLElement>();
+  let mainElement = $state<HTMLElement>();
+  /**
+   * The floating selection bar centres over the items, between the rail and the side panel
+   * (`--fl-left` / `--fl-right`, as LibraryView publishes them), so it never runs under Details or
+   * the Information panel.
+   */
+  $effect(() => {
+    const host = viewElement;
+    const area = mainElement;
+    if (!host || !area || typeof ResizeObserver !== 'function') {
+      return;
+    }
+    const measure = () => {
+      const box = area.getBoundingClientRect();
+      host.style.setProperty('--fl-left', `${Math.max(0, Math.round(box.left))}px`);
+      host.style.setProperty('--fl-right', `${Math.max(0, Math.round(innerWidth - box.right))}px`);
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(area);
+    observer.observe(document.documentElement);
+    measure();
+    return () => observer.disconnect();
+  });
+  /** Boards (`/pro` and a Boards collection): the prototype's own toolbar, grid and Details. */
+  const isBoards = $derived(workspace === 'design');
   /** Boards opens its own save-link and extension dialogs unless the host passes its own. */
   let linkDialog = $state<{ url?: string } | null>(null);
   let extensionOpen = $state(false);
@@ -142,9 +202,23 @@
   /** The link a deep link opened. Its inspector loads it by id even before the grid reaches it. */
   let linkedBookmark = $state<string | null>(null);
   let sort = $state<LibraryItemSort>('added');
-  let popover = $state<'color' | 'shape' | null>(null);
+  let popover = $state<'color' | 'shape' | 'view' | null>(null);
   let colorTrigger: HTMLButtonElement | undefined = $state();
   let shapeTrigger: HTMLButtonElement | undefined = $state();
+  let viewTrigger: HTMLButtonElement | undefined = $state();
+  /** The picture or video open in Boards' Details: a click opens it there, not the full viewer. */
+  let activeAsset = $state<string | null>(null);
+  /** Boards' Type menu, where the page does not keep `kinds` itself; null is "every kind". */
+  let localKinds = $state<LibraryItemSearchKind[] | null | undefined>(undefined);
+  $effect(() => {
+    void kinds;
+    untrack(() => (localKinds = undefined));
+  });
+  const effectiveKinds = $derived(localKinds === undefined ? kinds : (localKinds ?? undefined));
+  /** The account's tags, for Boards' Tags menu. */
+  let tagChoices = $state<TagResponseDto[]>([]);
+  /** Boards' search field: what is typed, sent to the search a moment after typing stops. */
+  let searchText = $state('');
   let dialog = $state<'album' | 'tags' | 'save' | 'download' | null>(null);
   let lastExternal = '';
   let requestIdentity = '';
@@ -211,11 +285,16 @@
     return !choice || (choice.tolerance === 'broad' && !choice.mainOnly);
   });
   const selectedBookmark = $derived(
-    session.selection.length > 0
+    session.selection.length > 0 && !isBoards
       ? session.selection.find((id) => id.startsWith('bookmark:'))?.slice(9)
       : activeBookmark,
   );
-  const selectedAsset = $derived(timelineAssets.find((asset) => session.selection.includes(asset.id)) ?? null);
+  /** Boards' Details shows the item opened by a click; elsewhere, the selected one. */
+  const selectedAsset = $derived(
+    isBoards
+      ? (timelineAssets.find((asset) => asset.id === activeAsset) ?? null)
+      : (timelineAssets.find((asset) => session.selection.includes(asset.id)) ?? null),
+  );
   const orderedKeys = $derived(
     results.items.map((item) =>
       item.kind === LibraryAssetItemKind.Asset ? item.asset.id : `bookmark:${item.bookmark.id}`,
@@ -235,7 +314,7 @@
   );
   const request = $derived.by(() => {
     try {
-      return libraryItemSearchRequest(session.query, sort, kinds);
+      return libraryItemSearchRequest(session.query, sort, effectiveKinds);
     } catch {
       return null;
     }
@@ -248,6 +327,7 @@
     results.reset();
     session.clearSelection();
     activeBookmark = null;
+    activeAsset = null;
     refresh();
   };
   const unsubscribers = [
@@ -428,6 +508,129 @@
     );
     session.setQuery({ ...session.query, text: '', filter });
   };
+  /* ---- Boards' toolbar (prototype ProWorkspace.jsx `.pro-toolbar`) ---- */
+  type BoardsType = 'all' | 'image' | 'video' | 'link';
+  const BOARDS_TYPES: {
+    id: BoardsType;
+    labelKey:
+      'frameleaf_boards_all_items' | 'frameleaf_boards_images' | 'frameleaf_boards_videos' | 'frameleaf_boards_links';
+    icon: string;
+  }[] = [
+    { id: 'all', labelKey: 'frameleaf_boards_all_items', icon: mdiViewDashboardOutline },
+    { id: 'image', labelKey: 'frameleaf_boards_images', icon: mdiImageOutline },
+    { id: 'video', labelKey: 'frameleaf_boards_videos', icon: mdiVideoOutline },
+    { id: 'link', labelKey: 'frameleaf_boards_links', icon: mdiLinkVariant },
+  ];
+  const typeChoice = $derived.by((): BoardsType => {
+    if (effectiveKinds?.includes(LibraryItemSearchKind.Bookmark)) {
+      return 'link';
+    }
+    const type = (session.query.filter.type as { eq?: string } | undefined)?.eq;
+    return type === AssetTypeEnum.Image ? 'image' : type === AssetTypeEnum.Video ? 'video' : 'all';
+  });
+  const setType = (choice: BoardsType) => {
+    const next = withFilterCondition(
+      session.query,
+      'type',
+      choice === 'image' ? { eq: AssetTypeEnum.Image } : choice === 'video' ? { eq: AssetTypeEnum.Video } : undefined,
+    );
+    const nextKinds = choice === 'link' ? [LibraryItemSearchKind.Bookmark] : undefined;
+    if (onKindsChange) {
+      onKindsChange(nextKinds, next);
+      return;
+    }
+    localKinds = nextKinds ?? null;
+    session.setQuery(next);
+  };
+  /** At least this many stars, or -1 for Rejected. */
+  const ratingChoice = $derived.by(() => {
+    const rating = session.query.filter.rating as { gte?: number; eq?: number | null } | undefined;
+    return rating?.eq === -1 ? -1 : (rating?.gte ?? 0);
+  });
+  const setRating = (minimum: number) =>
+    setFilter('rating', minimum === -1 ? { eq: -1 } : minimum > 0 ? { gte: minimum } : undefined);
+  const tagChoice = $derived.by(() => {
+    const ids = session.query.filter.tagIds as IdsFilter | undefined;
+    const id = ids?.any?.length === 1 && !ids.all?.length && !ids.none?.length ? ids.any[0] : undefined;
+    return id ? (tagChoices.find((tag) => tag.id === id) ?? null) : null;
+  });
+  const setTag = (tag: TagResponseDto | null) => setFilter('tagIds', tag ? { any: [tag.id] } : undefined);
+  $effect(() => {
+    if (!isBoards || !mounted || !authManager.authenticated) {
+      return;
+    }
+    const current = authManager.captureSession();
+    void Promise.resolve(getAllTags())
+      .then((tags) => {
+        if (current() && Array.isArray(tags)) {
+          tagChoices = [...tags].sort((a, b) => a.value.localeCompare(b.value));
+        }
+      })
+      .catch(() => {
+        // The menu then offers only "Any tag"; tags still show on each item's Details.
+      });
+  });
+  const sendSearch = debounce((text: string) => {
+    if (text !== session.query.text) {
+      session.setQuery({ ...session.query, text });
+    }
+  }, 300);
+  onDestroy(() => sendSearch.cancel());
+  $effect(() => {
+    const text = session.query.text;
+    untrack(() => {
+      if (document.activeElement?.id !== searchId) {
+        searchText = text;
+      }
+    });
+  });
+  const searchId = $props.id();
+  /** Boards' Select starts a selection with the first item, as the prototype does. */
+  const startSelecting = () => {
+    const first = orderedKeys[0];
+    if (first) {
+      session.select(first);
+    }
+  };
+  /** Opens an item in Details (Boards: a click on a tile). */
+  const openInDetails = (key: string) => {
+    if (key.startsWith('bookmark:')) {
+      activeAsset = null;
+      activeBookmark = key.slice(9);
+    } else {
+      activeBookmark = null;
+      activeAsset = key;
+    }
+    inspectorOpen = true;
+  };
+  const closeDetails = () => {
+    const key = activeAsset ?? (activeBookmark ? `bookmark:${activeBookmark}` : undefined);
+    activeAsset = null;
+    activeBookmark = null;
+    if (key) {
+      document.querySelector<HTMLElement>(`[data-asset-id="${CSS.escape(key)}"] button`)?.focus();
+    }
+  };
+  /** Details' "Move to trash" (prototype `.pro-inspector-actions`): this one item, then Details closes. */
+  const trashOne = (asset: { id: string }) => {
+    const owner = authManager.user.id;
+    const current = authManager.captureSession();
+    activeAsset = null;
+    void trashLibraryItems(results.items, [asset.id], owner, current)
+      .then(() => {
+        toastManager.primary($t('frameleaf_boards_trashed', { values: { count: 1 } }));
+        reload();
+      })
+      .catch(() => {
+        organizationFailed = true;
+      });
+  };
+  const openLarge = (asset: { id: string }) => {
+    const full = assets.find((item) => item.id === asset.id);
+    if (full) {
+      void navigateToAsset(full);
+    }
+  };
   const upload = () =>
     void openFileUploadDialog({
       libraryScope: workspace === 'design' ? LibraryScope.Design : undefined,
@@ -530,65 +733,113 @@
 
 <svelte:window onpaste={onPaste} />
 
+{#snippet addMenu()}
+  <!-- Boards' Add menu (prototype screen 33): upload, save a link, a new collection, Eagle, the extension. -->
+  <!-- Prototype ProWorkspace.jsx: Add is the page's one primary action. -->
+  <div class="fl-items-add">
+    <Menu label={$t('add')} align="end">
+      {#snippet trigger()}<Icon icon={mdiPlus} size="18" aria-hidden={true} /><span aria-hidden="true">{$t('add')}</span
+        >{/snippet}
+      <MenuItem onSelect={upload}
+        ><Icon icon={mdiTrayArrowUp} size="18" aria-hidden={true} />{$t('frameleaf_boards_upload')}</MenuItem
+      >
+      {#if saveLink}<MenuItem onSelect={() => saveLink?.()}
+          ><Icon icon={mdiLinkVariantPlus} size="18" aria-hidden={true} />{$t('frameleaf_boards_save_link')}</MenuItem
+        >{/if}
+      <MenuItem onSelect={() => boardsCollectionUi.newCollection(album?.id ?? null)}
+        ><Icon icon={mdiFolderPlusOutline} size="18" aria-hidden={true} />{album
+          ? $t('frameleaf_boards_new_collection_inside')
+          : $t('frameleaf_boards_new_collection')}</MenuItem
+      >
+      <MenuItem onSelect={() => eagleImportUi.show()}
+        ><Icon icon={mdiImport} size="18" aria-hidden={true} />{$t('frameleaf_eagle_import_open')}</MenuItem
+      >
+      {#if getExtension}<MenuItem onSelect={getExtension}
+          ><Icon icon={mdiPuzzleOutline} size="18" aria-hidden={true} />{$t('frameleaf_boards_get_extension')}</MenuItem
+        >{/if}
+    </Menu>
+  </div>
+{/snippet}
+
 <section
+  bind:this={viewElement}
   class="frameleaf fl-items-view"
+  class:is-boards={isBoards}
   data-theme={themeManager.value === AppTheme.Dark ? 'dark' : 'light'}
   aria-label={title}
 >
-  <header class="fl-items-heading">
-    {#if header}{@render header(narrowed ? results.count : null)}{:else}<div>
-        <h1>{title}</h1>
-        <!-- Prototype screen 01: the count is the title's subtitle (FL-670). -->
-        <p class="fl-items-description" aria-live="polite" data-testid="frameleaf-items-count">
-          {results.count === null ? '' : $t('items_count', { values: { count: results.count } })}
-        </p>
-      </div>{/if}
-    <div class="fl-items-heading-actions">
-      {#if workspace === 'design'}
-        <!-- Boards' Add menu (prototype screen 33): upload, save a link, Import from Eagle, the extension. -->
-        <Menu label={$t('add')} align="end">
-          {#snippet trigger()}<Icon icon={mdiPlus} size="18" aria-hidden={true} /><span aria-hidden="true"
-              >{$t('add')}</span
-            >{/snippet}
-          <MenuItem onSelect={upload}
-            ><Icon icon={mdiTrayArrowUp} size="18" aria-hidden={true} />{$t('frameleaf_boards_upload')}</MenuItem
-          >
-          {#if saveLink}<MenuItem onSelect={() => saveLink?.()}
-              ><Icon icon={mdiLinkVariantPlus} size="18" aria-hidden={true} />{$t(
-                'frameleaf_boards_save_link',
-              )}</MenuItem
-            >{/if}
-          <MenuItem onSelect={() => eagleImportUi.show()}
-            ><Icon icon={mdiImport} size="18" aria-hidden={true} />{$t('frameleaf_eagle_import_open')}</MenuItem
-          >
-          {#if getExtension}<MenuItem onSelect={getExtension}
-              ><Icon icon={mdiPuzzleOutline} size="18" aria-hidden={true} />{$t(
-                'frameleaf_boards_get_extension',
-              )}</MenuItem
-            >{/if}
-        </Menu>
+  <div class="fl-items-main" bind:this={mainElement}>
+    <header class="fl-items-heading" class:has-header={!!header}>
+      {#if header}{@render header(narrowed ? results.count : null, isBoards ? addMenu : undefined)}{:else}<div>
+          {#if isBoards}
+            <!-- Phones: the rail is the "Collections and filters" sheet (prototype `.pro-browse`, screen 22). -->
+            <button
+              type="button"
+              class="fl-boards-browse"
+              aria-haspopup="dialog"
+              aria-expanded={sidebarStore.isOpen}
+              aria-controls="sidebar"
+              onclick={() => sidebarStore.toggle()}
+            >
+              <Icon icon={mdiFolderMultipleOutline} size="18" aria-hidden={true} />
+              {$t('frameleaf_boards_collections_and_filters')}
+              <Icon icon={mdiChevronDown} size="16" aria-hidden={true} />
+            </button>
+          {/if}
+          <h1>{title}</h1>
+          <!-- Prototype screen 01: the count is the title's subtitle (FL-670). -->
+          <p class="fl-items-description" aria-live="polite" data-testid="frameleaf-items-count">
+            {results.count === null ? '' : $t('items_count', { values: { count: results.count } })}
+          </p>
+        </div>{/if}
+      {#if !(isBoards && header)}
+        <div class="fl-items-heading-actions">
+          {#if isBoards}
+            {@render addMenu()}
+          {:else}
+            <LibraryLayoutSwitch {session} />
+          {/if}
+        </div>
       {/if}
-      <LibraryLayoutSwitch {session} />
-    </div>
-  </header>
-  {#if workspace === 'design'}<BoardsEaglePausedBanner />{/if}
-  <!--
+    </header>
+    {#if workspace === 'design'}<BoardsEaglePausedBanner />{/if}
+    <!--
     One row under the heading, in the page's gutter (prototype screens 01 and 02): the filters and sort,
     then Filter and the details toggle. The count is in the heading, or the collection header's summary.
   -->
-  <div class="fl-items-toolbar">
-    <ResultsToolbar
-      {session}
-      leading={controls}
-      onOpenFilterPanel={(section) => (filterSection = section)}
-      filterPanelOpen={filterSection !== null}
-      onCloseFilterPanel={() => (filterSection = null)}
-      {inspectorOpen}
-      onToggleInspector={() => (inspectorOpen = !inspectorOpen)}
-      unappliedFields={scopeFields}
-    />
-  </div>
-  {#snippet controls()}<div class="fl-items-controls" role="toolbar" aria-label={$t('frameleaf_boards_filters')}>
+    {#if isBoards}
+      {@render boardsToolbar()}
+    {:else}<div class="fl-items-toolbar">
+        <ResultsToolbar
+          {session}
+          leading={controls}
+          onOpenFilterPanel={(section) => (filterSection = section)}
+          filterPanelOpen={filterSection !== null}
+          onCloseFilterPanel={() => (filterSection = null)}
+          {inspectorOpen}
+          onToggleInspector={() => (inspectorOpen = !inspectorOpen)}
+          unappliedFields={scopeFields}
+        />
+      </div>{/if}
+    {#snippet controls()}<div class="fl-items-controls" role="toolbar" aria-label={$t('frameleaf_boards_filters')}>
+        {@render colorChip()}
+        {@render shapeChip()}
+        <Button
+          pressed={session.query.filter.hasAlbums?.eq === false}
+          onclick={() =>
+            setFilter('hasAlbums', session.query.filter.hasAlbums?.eq === false ? undefined : { eq: false })}
+          >{$t('frameleaf_pro_unfiled')}</Button
+        >
+        {#if narrowed}<Button variant="quiet" onclick={() => (dialog = 'save')}
+            ><Icon icon={mdiContentSaveOutline} size="16" aria-hidden />{$t('frameleaf_boards_save_smart')}</Button
+          >{/if}
+        <span class="fl-items-spacer"></span>
+        {@render sortControl()}
+        <Button onclick={() => refresh()}>{$t('refresh')}</Button>
+        {#if session.layout === 'work'}<WorkFileNamesToggle {preferences} />{/if}
+        {#if results.countCapped}<span role="status">{$t('frameleaf_pro_count_capped')}</span>{/if}
+      </div>{/snippet}
+    {#snippet colorChip()}
       <div class="fl-items-popover-host">
         <button
           type="button"
@@ -622,6 +873,8 @@
           </div>
         {/if}
       </div>
+    {/snippet}
+    {#snippet shapeChip()}
       <div class="fl-items-popover-host">
         <button
           type="button"
@@ -647,15 +900,194 @@
           </div>
         {/if}
       </div>
-      <Button
-        pressed={session.query.filter.hasAlbums?.eq === false}
-        onclick={() => setFilter('hasAlbums', session.query.filter.hasAlbums?.eq === false ? undefined : { eq: false })}
-        >{$t('frameleaf_pro_unfiled')}</Button
-      >
-      {#if narrowed}<Button variant="quiet" onclick={() => (dialog = 'save')}
-          ><Icon icon={mdiContentSaveOutline} size="16" aria-hidden />{$t('frameleaf_boards_save_smart')}</Button
-        >{/if}
-      <span class="fl-items-spacer"></span>
+    {/snippet}
+    {#snippet boardsToolbar()}
+      <!-- Prototype ProWorkspace.jsx `.pro-toolbar`: search, Colour, Type, Rating, Size and shape, Tags; then sort, view and Select. -->
+      <div class="fl-boards-toolbar" role="toolbar" aria-label={$t('frameleaf_boards_filters')}>
+        <label class="fl-boards-search" title={$t('frameleaf_boards_search_hint')}>
+          <Icon icon={mdiMagnify} size="16" aria-hidden />
+          <input
+            id={searchId}
+            type="search"
+            placeholder={$t('frameleaf_boards_search')}
+            aria-label={$t('frameleaf_boards_search')}
+            autocomplete="off"
+            bind:value={searchText}
+            oninput={() => sendSearch(searchText.trim())}
+            onkeydown={(event) => {
+              if (event.key === 'Enter') {
+                sendSearch(searchText.trim());
+                sendSearch.flush();
+              }
+            }}
+          />
+        </label>
+        {@render colorChip()}
+        <div class="fl-items-chip-menu" class:is-on={typeChoice !== 'all'}>
+          <Menu label={$t('type')}>
+            {#snippet trigger()}<Icon icon={mdiShapeOutline} size="16" aria-hidden={true} /><span
+                >{typeChoice === 'all'
+                  ? $t('type')
+                  : $t(BOARDS_TYPES.find(({ id }) => id === typeChoice)!.labelKey)}</span
+              >{/snippet}
+            {#each BOARDS_TYPES as type (type.id)}
+              <MenuItem checked={typeChoice === type.id} onSelect={() => setType(type.id)}
+                ><Icon icon={type.icon} size="18" aria-hidden={true} />{$t(type.labelKey)}</MenuItem
+              >
+            {/each}
+          </Menu>
+        </div>
+        <div class="fl-items-chip-menu" class:is-on={ratingChoice !== 0}>
+          <Menu label={$t('frameleaf_boards_rating')}>
+            {#snippet trigger()}<Icon icon={mdiStarOutline} size="16" aria-hidden={true} /><span
+                >{ratingChoice === -1
+                  ? $t('frameleaf_search_rating_rejected')
+                  : ratingChoice > 0
+                    ? $t('frameleaf_boards_rating_min_short', { values: { count: ratingChoice } })
+                    : $t('frameleaf_boards_rating')}</span
+              >{/snippet}
+            {#each [0, 3, 4, 5] as minimum (minimum)}
+              <MenuItem checked={ratingChoice === minimum} onSelect={() => setRating(minimum)}
+                ><Icon icon={minimum ? mdiStar : mdiStarOffOutline} size="18" aria-hidden={true} />{minimum
+                  ? $t('frameleaf_boards_rating_at_least', { values: { count: minimum } })
+                  : $t('frameleaf_boards_rating_any')}</MenuItem
+              >
+            {/each}
+            <MenuItem checked={ratingChoice === -1} onSelect={() => setRating(-1)}
+              ><Icon icon={mdiThumbDownOutline} size="18" aria-hidden={true} />{$t(
+                'frameleaf_search_rating_rejected',
+              )}</MenuItem
+            >
+          </Menu>
+        </div>
+        {@render shapeChip()}
+        <div class="fl-items-chip-menu" class:is-on={!!tagChoice}>
+          <Menu label={$t('tags')}>
+            {#snippet trigger()}<Icon icon={mdiTagOutline} size="16" aria-hidden={true} /><span
+                >{tagChoice ? tagChoice.value : $t('tags')}</span
+              >{/snippet}
+            <MenuItem checked={!tagChoice} onSelect={() => setTag(null)}
+              ><Icon icon={mdiTagOffOutline} size="18" aria-hidden={true} />{$t('frameleaf_boards_tags_any')}</MenuItem
+            >
+            {#each tagChoices as tag (tag.id)}
+              <MenuItem checked={tagChoice?.id === tag.id} onSelect={() => setTag(tag)}
+                ><Icon icon={mdiTagOutline} size="18" aria-hidden={true} />{tag.value}</MenuItem
+              >
+            {/each}
+          </Menu>
+        </div>
+        <div class="fl-boards-toolbar-end">
+          {@render sortControl()}
+          <div class="fl-items-popover-host">
+            <button
+              type="button"
+              class="fl-boards-icon-button"
+              bind:this={viewTrigger}
+              aria-label={$t('frameleaf_boards_view_options')}
+              title={$t('frameleaf_boards_view_options')}
+              aria-expanded={popover === 'view'}
+              aria-haspopup="dialog"
+              onclick={() => (popover = popover === 'view' ? null : 'view')}
+            >
+              <Icon
+                icon={boardsView.layout === 'grid' ? mdiViewGridOutline : mdiViewDashboardOutline}
+                size="18"
+                aria-hidden
+              />
+            </button>
+            {#if popover === 'view'}
+              <div
+                class="fl-items-popover fl-boards-view-pop"
+                role="dialog"
+                aria-label={$t('frameleaf_boards_view_options')}
+                use:dismissable
+              >
+                <fieldset class="fl-boards-segmented">
+                  <legend>{$t('frameleaf_boards_layout')}</legend>
+                  <button
+                    type="button"
+                    aria-pressed={boardsView.layout === 'board'}
+                    onclick={() => (boardsView.layout = 'board')}>{$t('frameleaf_boards_layout_board')}</button
+                  >
+                  <button
+                    type="button"
+                    aria-pressed={boardsView.layout === 'grid'}
+                    onclick={() => (boardsView.layout = 'grid')}>{$t('frameleaf_boards_layout_grid')}</button
+                  >
+                </fieldset>
+                <label class="fl-boards-field">
+                  <span>{$t('frameleaf_library_thumbnail_size')}</span>
+                  <input
+                    type="range"
+                    min={THUMBNAIL_SIZE_MIN}
+                    max={THUMBNAIL_SIZE_MAX}
+                    step={THUMBNAIL_SIZE_STEP}
+                    value={preferences.thumbnailSize}
+                    oninput={(event) => (preferences.thumbnailSize = Number(event.currentTarget.value))}
+                  />
+                </label>
+                <label class="fl-boards-check">
+                  <input
+                    type="checkbox"
+                    checked={preferences.showFileNames}
+                    onchange={(event) => (preferences.showFileNames = event.currentTarget.checked)}
+                  />
+                  {$t('frameleaf_library_show_file_names')}
+                </label>
+                <p class="fl-boards-note">{$t('frameleaf_boards_layout_hint')}</p>
+              </div>
+            {/if}
+          </div>
+          {#if session.selection.length === 0}
+            <Button onclick={startSelecting} disabled={orderedKeys.length === 0}
+              ><Icon icon={mdiCheckboxMultipleMarkedOutline} size="16" aria-hidden />{$t('select')}</Button
+            >
+          {/if}
+        </div>
+      </div>
+      {#if session.query.filter.color || tagChoice || ratingChoice !== 0 || narrowed}
+        <!-- Prototype `.pro-active`: what narrows the items, each with its ×, and "Save as smart collection". -->
+        <div class="fl-boards-active" aria-live="polite">
+          {#if session.query.filter.color && colorText}
+            <span class="fl-boards-pill">
+              <span class="fl-items-chip-swatch" style:background={session.query.filter.color.hex} aria-hidden="true"
+              ></span>
+              {$t(colorText.key, { values: colorText.values })}
+              <button
+                type="button"
+                aria-label={$t('frameleaf_boards_remove_colour_filter')}
+                onclick={() => applyColor(undefined)}><Icon icon={mdiClose} size="12" aria-hidden /></button
+              >
+            </span>
+          {/if}
+          {#if tagChoice}
+            <span class="fl-boards-pill">
+              #{tagChoice.value}
+              <button type="button" aria-label={$t('frameleaf_boards_remove_tag_filter')} onclick={() => setTag(null)}
+                ><Icon icon={mdiClose} size="12" aria-hidden /></button
+              >
+            </span>
+          {/if}
+          {#if ratingChoice !== 0}
+            <span class="fl-boards-pill">
+              {ratingChoice === -1
+                ? $t('frameleaf_search_rating_rejected')
+                : $t('frameleaf_boards_rating_min_short', { values: { count: ratingChoice } })}
+              <button
+                type="button"
+                aria-label={$t('frameleaf_boards_remove_rating_filter')}
+                onclick={() => setRating(0)}><Icon icon={mdiClose} size="12" aria-hidden /></button
+              >
+            </span>
+          {/if}
+          {#if narrowed}<Button variant="quiet" onclick={() => (dialog = 'save')}
+              ><Icon icon={mdiContentSaveOutline} size="16" aria-hidden />{$t('frameleaf_boards_save_smart')}</Button
+            >{/if}
+          {#if results.countCapped}<span role="status">{$t('frameleaf_pro_count_capped')}</span>{/if}
+        </div>
+      {/if}
+    {/snippet}
+    {#snippet sortControl()}
       <label class="fl-items-sort">
         <Icon icon={mdiSort} size="16" aria-hidden />
         <select
@@ -676,48 +1108,24 @@
           {#if session.query.filter.color}<option value="color">{$t('frameleaf_pro_color_order')}</option>{/if}
         </select>
       </label>
-      <Button onclick={() => refresh()}>{$t('refresh')}</Button>
-      {#if session.layout === 'work'}<WorkFileNamesToggle {preferences} />{/if}
-      {#if results.countCapped}<span role="status">{$t('frameleaf_pro_count_capped')}</span>{/if}
-    </div>{/snippet}
-  {#if organizationFailed}<InlineError
-      compact
-      message={$t('frameleaf_pro_organization_failed')}
-      onRetry={() => {
-        organizationFailed = false;
-        session.clearSelection();
-        reload();
-      }}
-    />{/if}
-  <div class="fl-items-panes">
-    <div class="fl-items-scroll">
-      {#if failed}<InlineError
-          message={$t(request ? 'frameleaf_pro_load_failed' : 'frameleaf_pro_filter_unavailable')}
-          onRetry={request ? load : undefined}
-        />{/if}
-      {#if results.loading && results.items.length === 0}<p role="status">{$t('loading')}</p>{/if}
-      <ResultsView
-        {bulkContext}
-        assets={timelineAssets}
-        items={results.items}
-        {preferences}
-        {session}
-        onEndReached={() => void load()}
-        onOpen={(asset) => {
-          const full = assets.find((item) => item.id === asset.id);
-          if (full) {
-            void navigateToAsset(full);
-          }
+    {/snippet}
+    {#if organizationFailed}<InlineError
+        compact
+        message={$t('frameleaf_pro_organization_failed')}
+        onRetry={() => {
+          organizationFailed = false;
+          session.clearSelection();
+          reload();
         }}
-        onOpenBookmark={(bookmark) => {
-          activeBookmark = bookmark.id;
-          inspectorOpen = true;
-        }}
-        noSelectionBar={boardsBar}
-        onSelectAll={() => session.selectAll(orderedKeys)}
-        onRemoved={reload}
-      >
-        {#snippet empty()}{#if !results.loading && !failed}
+      />{/if}
+    <div class="fl-items-panes">
+      <div class="fl-items-scroll">
+        {#if failed}<InlineError
+            message={$t(request ? 'frameleaf_pro_load_failed' : 'frameleaf_pro_filter_unavailable')}
+            onRetry={request ? load : undefined}
+          />{/if}
+        {#if results.loading && results.items.length === 0}<p role="status">{$t('loading')}</p>{/if}
+        {#snippet emptyState()}{#if !results.loading && !failed}
             {#if emptyKind === 'first'}
               <div class="fl-items-first" role="status">
                 <span class="fl-items-first-icon" aria-hidden="true"
@@ -778,100 +1186,138 @@
               />
             {/if}
           {/if}{/snippet}
-      </ResultsView>
-      {#if results.nextCursor}<Button disabled={results.loading} onclick={() => void load()}
-          >{$t('frameleaf_library_show_more')}</Button
-        >{/if}
+        {#if isBoards}
+          <BoardsGrid
+            items={results.items}
+            assets={timelineAssets}
+            {session}
+            layout={boardsView.layout}
+            tileSize={preferences.thumbnailSize}
+            showNames={preferences.showFileNames}
+            activeKey={inspectorOpen ? (activeAsset ?? (activeBookmark ? `bookmark:${activeBookmark}` : null)) : null}
+            onOpen={openInDetails}
+            onOpenLarge={openLarge}
+            onEndReached={() => void load()}
+            empty={emptyState}
+          />
+        {:else}<ResultsView
+            {bulkContext}
+            assets={timelineAssets}
+            items={results.items}
+            {preferences}
+            {session}
+            onEndReached={() => void load()}
+            onOpen={(asset) => {
+              const full = assets.find((item) => item.id === asset.id);
+              if (full) {
+                void navigateToAsset(full);
+              }
+            }}
+            onOpenBookmark={(bookmark) => {
+              activeBookmark = bookmark.id;
+              inspectorOpen = true;
+            }}
+            noSelectionBar={boardsBar}
+            onSelectAll={() => session.selectAll(orderedKeys)}
+            onRemoved={reload}
+            empty={emptyState}
+          />{/if}
+        {#if results.nextCursor}<Button disabled={results.loading} onclick={() => void load()}
+            >{$t('frameleaf_library_show_more')}</Button
+          >{/if}
+      </div>
     </div>
-    {#if filterSection}
-      <div class="fl-items-panel">
-        <LibraryFilterPanel
-          mediaCounts={false}
-          query={session.query}
-          countQuery={session.query}
-          section={filterSection}
-          count={results.count}
-          onChange={(next) => session.setQuery(next)}
-          onClose={() => (filterSection = null)}
-        />
-      </div>
-    {:else if inspectorOpen && selectedBookmark && (bookmarkRecord?.kind === 'bookmark' || selectedBookmark === linkedBookmark)}
-      <div class="fl-items-panel">
-        <BookmarkInspector
-          id={selectedBookmark}
-          bookmark={bookmarkRecord?.kind === 'bookmark' ? bookmarkRecord.bookmark : undefined}
-          onClose={closeBookmark}
-          onChange={reload}
-        />
-      </div>
-    {:else if inspectorOpen && selectedAsset}
-      <div class="fl-items-panel">
-        <LibraryWorkInspector
-          asset={selectedAsset}
-          boards={workspace === 'design'}
-          selectedCount={session.selection.length}
-          onOpen={(asset) => {
-            const full = assets.find((item) => item.id === asset.id);
-            if (full) {
-              void navigateToAsset(full);
-            }
-          }}
-          onClose={() => (inspectorOpen = false)}
-          onChooseColor={chooseColor}
-        />
+    {#if boardsBar}
+      <div
+        class="fl-items-selection"
+        role="toolbar"
+        aria-label={$t('frameleaf_pro_selection', { values: { count: session.selection.length } })}
+      >
+        <IconButton label={$t('frameleaf_boards_clear_selection')} onclick={() => session.clearSelection()}>
+          <Icon icon={mdiClose} size="18" aria-hidden />
+        </IconButton>
+        <strong aria-live="polite"
+          >{$t('frameleaf_pro_selection', { values: { count: session.selection.length } })}</strong
+        >
+        <span class="fl-items-spacer"></span>
+        <Button disabled={organizing || !canOrganize} onclick={() => (dialog = 'album')}
+          >{$t('frameleaf_boards_add_to_collection')}</Button
+        >
+        {#if bulkContext?.albumId}<Button
+            disabled={organizing}
+            onclick={() => void organize({ albumId: bulkContext!.albumId! }, 'remove')}
+            >{$t('frameleaf_boards_remove_from', { values: { name: collectionName } })}</Button
+          >{/if}
+        <Button disabled={organizing || !canOrganize} onclick={() => (dialog = 'tags')}
+          >{$t('frameleaf_boards_tag')}</Button
+        >
+        {#if ownsSelection && !organizing}
+          <Menu label={$t('frameleaf_boards_rate')} align="end">
+            {#each [5, 4, 3, 2, 1] as stars (stars)}
+              <MenuItem onSelect={() => void rate(stars)}
+                >{$t('frameleaf_boards_rate_stars', { values: { count: stars } })}</MenuItem
+              >
+            {/each}
+            <MenuItem onSelect={() => void rate(-1)}>{$t('frameleaf_search_rating_rejected')}</MenuItem>
+            <MenuItem onSelect={() => void rate(null)}>{$t('frameleaf_boards_rate_clear')}</MenuItem>
+          </Menu>
+          {#if workspace === 'design' && selectedAssetIds.length > 0}
+            <Menu label={$t('frameleaf_boards_scope_menu')} align="end">
+              <MenuItem onSelect={() => void setScope(LibraryScope.Both)}>{$t('frameleaf_boards_scope')}</MenuItem>
+              <MenuItem onSelect={() => void setScope(LibraryScope.Design)}
+                >{$t('frameleaf_boards_scope_boards_only')}</MenuItem
+              >
+            </Menu>
+          {/if}
+        {/if}
+        <Button disabled={organizing || selectedAssetIds.length === 0} onclick={download}>{$t('download')}</Button>
+        <Button variant="danger" disabled={organizing || !ownsSelection} onclick={() => void trash()}
+          >{$t('frameleaf_boards_move_to_trash')}</Button
+        >
       </div>
     {/if}
+    {#if !isBoards}<footer class="fl-items-footer"><ThumbnailSizeControl {preferences} /></footer>{/if}
   </div>
-  {#if boardsBar}
-    <div
-      class="fl-items-selection"
-      role="toolbar"
-      aria-label={$t('frameleaf_pro_selection', { values: { count: session.selection.length } })}
-    >
-      <IconButton label={$t('frameleaf_boards_clear_selection')} onclick={() => session.clearSelection()}>
-        <Icon icon={mdiClose} size="18" aria-hidden />
-      </IconButton>
-      <strong aria-live="polite"
-        >{$t('frameleaf_pro_selection', { values: { count: session.selection.length } })}</strong
-      >
-      <span class="fl-items-spacer"></span>
-      <Button disabled={organizing || !canOrganize} onclick={() => (dialog = 'album')}
-        >{$t('frameleaf_boards_add_to_collection')}</Button
-      >
-      {#if bulkContext?.albumId}<Button
-          disabled={organizing}
-          onclick={() => void organize({ albumId: bulkContext!.albumId! }, 'remove')}
-          >{$t('frameleaf_boards_remove_from', { values: { name: collectionName } })}</Button
-        >{/if}
-      <Button disabled={organizing || !canOrganize} onclick={() => (dialog = 'tags')}
-        >{$t('frameleaf_boards_tag')}</Button
-      >
-      {#if ownsSelection && !organizing}
-        <Menu label={$t('frameleaf_boards_rate')} align="end">
-          {#each [5, 4, 3, 2, 1] as stars (stars)}
-            <MenuItem onSelect={() => void rate(stars)}
-              >{$t('frameleaf_boards_rate_stars', { values: { count: stars } })}</MenuItem
-            >
-          {/each}
-          <MenuItem onSelect={() => void rate(-1)}>{$t('frameleaf_search_rating_rejected')}</MenuItem>
-          <MenuItem onSelect={() => void rate(null)}>{$t('frameleaf_boards_rate_clear')}</MenuItem>
-        </Menu>
-        {#if workspace === 'design' && selectedAssetIds.length > 0}
-          <Menu label={$t('frameleaf_boards_scope_menu')} align="end">
-            <MenuItem onSelect={() => void setScope(LibraryScope.Both)}>{$t('frameleaf_boards_scope')}</MenuItem>
-            <MenuItem onSelect={() => void setScope(LibraryScope.Design)}
-              >{$t('frameleaf_boards_scope_boards_only')}</MenuItem
-            >
-          </Menu>
-        {/if}
-      {/if}
-      <Button disabled={organizing || selectedAssetIds.length === 0} onclick={download}>{$t('download')}</Button>
-      <Button variant="danger" disabled={organizing || !ownsSelection} onclick={() => void trash()}
-        >{$t('frameleaf_boards_move_to_trash')}</Button
-      >
+  {#if filterSection}
+    <div class="fl-items-panel">
+      <LibraryFilterPanel
+        mediaCounts={false}
+        query={session.query}
+        countQuery={session.query}
+        section={filterSection}
+        count={results.count}
+        onChange={(next) => session.setQuery(next)}
+        onClose={() => (filterSection = null)}
+      />
+    </div>
+  {:else if inspectorOpen && selectedBookmark && (bookmarkRecord?.kind === 'bookmark' || selectedBookmark === linkedBookmark)}
+    <div class="fl-items-panel">
+      <BookmarkInspector
+        id={selectedBookmark}
+        bookmark={bookmarkRecord?.kind === 'bookmark' ? bookmarkRecord.bookmark : undefined}
+        onClose={isBoards ? closeDetails : closeBookmark}
+        onChooseColor={chooseColor}
+        onChange={reload}
+      />
+    </div>
+  {:else if inspectorOpen && selectedAsset}
+    <div class="fl-items-panel">
+      <LibraryWorkInspector
+        asset={selectedAsset}
+        boards={workspace === 'design'}
+        selectedCount={session.selection.length}
+        onOpen={(asset) => {
+          const full = assets.find((item) => item.id === asset.id);
+          if (full) {
+            void navigateToAsset(full);
+          }
+        }}
+        onClose={() => (isBoards ? closeDetails() : (inspectorOpen = false))}
+        onTrash={isBoards ? trashOne : undefined}
+        onChooseColor={chooseColor}
+      />
     </div>
   {/if}
-  <footer class="fl-items-footer"><ThumbnailSizeControl {preferences} /></footer>
 </section>
 {#if dialog === 'album'}<BulkAlbumDialog
     libraryScope={workspace === 'design' ? LibraryViewScope.Design : undefined}
@@ -956,9 +1402,19 @@
   {/await}{/if}
 
 <style>
-  /* The page scrolls as one, header and filters included (FL-670): no small scroll area for the grid. */
+  /*
+   * The page scrolls as one, header and filters included (FL-670): no small scroll area for the grid.
+   * Details and the filter panel are a column of their own beside it, the page's full height
+   * (prototype `.pro.with-inspector`), so they never scroll away with the items.
+   */
   .fl-items-view {
     height: 100%;
+    min-height: 0;
+    display: flex;
+  }
+  .fl-items-main {
+    flex: 1;
+    min-width: 0;
     min-height: 0;
     display: flex;
     flex-direction: column;
@@ -969,17 +1425,32 @@
     align-items: center;
     gap: var(--fl-space-2);
   }
+  /* Prototype `.pro-head` and `.pro-toolbar`: the page's 24px gutter on a desktop (16px on phones, below). */
   .fl-items-heading {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--fl-space-4);
-    padding: var(--fl-space-4);
+    padding: var(--fl-space-6) var(--fl-space-6) var(--fl-space-3);
+  }
+  .fl-items-add :global(.menu-root > button) {
+    font-weight: 600;
+    color: var(--fl-accent-text);
+    background: var(--fl-accent);
+    border-color: var(--fl-accent);
+  }
+  .fl-items-add :global(.menu-root > button:hover) {
+    background: var(--fl-accent-hover);
+    border-color: var(--fl-accent-hover);
   }
   h1 {
     margin: 0;
     font-size: 1.25rem;
     font-weight: 600;
+  }
+  /* Prototype `.pro-title-row h1`: Boards' page title, the same size as a collection's. */
+  .is-boards h1 {
+    font-size: var(--fl-font-title);
   }
   .fl-items-description {
     margin: var(--fl-space-1) 0 0;
@@ -987,7 +1458,7 @@
     font-size: var(--fl-font-small);
   }
   .fl-items-toolbar {
-    padding-inline: var(--fl-space-4);
+    padding-inline: var(--fl-space-6);
   }
   .fl-items-controls {
     display: flex;
@@ -1010,19 +1481,208 @@
   .fl-items-scroll {
     flex: 1;
     min-width: 0;
-    padding: var(--fl-space-4);
+    padding: var(--fl-space-4) var(--fl-space-6) var(--fl-space-6);
   }
-  /* Filters and details stay in view while the page scrolls under them. */
   .fl-items-panel {
-    position: sticky;
-    top: 0;
-    align-self: flex-start;
     flex: 0 0 20rem;
     width: 20rem;
     max-width: 100%;
-    max-height: calc(100dvh - var(--fl-topbar-height, 0px));
+    height: 100%;
     overflow: auto;
     border-inline-start: 1px solid var(--fl-border);
+  }
+  /* Prototype `.pro-inspector`: 340px on the panel colour. */
+  .is-boards .fl-items-panel {
+    flex-basis: 340px;
+    width: 340px;
+    background: var(--fl-panel);
+  }
+  /* Boards' collection header brings its own top inset; the page keeps the 24px gutter (prototype .pro-head). */
+  .is-boards .fl-items-heading.has-header {
+    display: block;
+  }
+  /* Prototype `.pro-toolbar`: one row between hairlines, 12px above and below, the page's 24px gutter. */
+  .fl-boards-browse {
+    display: none;
+  }
+  .fl-items-heading,
+  .fl-boards-toolbar,
+  .fl-boards-active {
+    flex-shrink: 0;
+  }
+  .fl-boards-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--fl-space-2);
+    padding: var(--fl-space-3) var(--fl-space-6);
+    border-block: 1px solid var(--fl-border);
+  }
+  .fl-boards-toolbar-end {
+    display: flex;
+    align-items: center;
+    gap: var(--fl-space-2);
+    margin-inline-start: auto;
+  }
+  .fl-boards-search {
+    display: flex;
+    align-items: center;
+    gap: var(--fl-space-2);
+    flex: 1 1 220px;
+    min-width: 180px;
+    max-width: 360px;
+    box-sizing: border-box;
+    height: 2.75rem;
+    padding: 0 var(--fl-space-3);
+    color: var(--fl-muted);
+    background: var(--fl-raised);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-pill);
+  }
+  .fl-boards-search:focus-within {
+    border-color: var(--fl-accent);
+  }
+  .fl-boards-search input {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    min-height: 0;
+    padding: 0;
+    color: var(--fl-text);
+    background: none;
+    border: 0;
+    font: inherit;
+  }
+  .fl-boards-search input:focus {
+    outline: none;
+  }
+  .fl-boards-search input::-webkit-search-cancel-button {
+    cursor: pointer;
+  }
+  /* The Type, Rating and Tags menus look like the Colour chip beside them. */
+  .fl-items-chip-menu :global(.menu-root > button) {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--fl-space-2);
+    min-height: 2.75rem;
+    padding: 0 var(--fl-space-3);
+    color: var(--fl-text);
+    background: var(--fl-raised);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-pill);
+  }
+  .fl-items-chip-menu.is-on :global(.menu-root > button) {
+    border-color: var(--fl-accent);
+    box-shadow: inset 0 0 0 1px var(--fl-accent);
+  }
+  .fl-boards-icon-button {
+    display: grid;
+    place-items: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    color: var(--fl-text);
+    background: var(--fl-raised);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control);
+  }
+  .fl-boards-icon-button:focus-visible {
+    outline: 2px solid var(--fl-accent);
+    outline-offset: 2px;
+  }
+  .fl-items-popover.fl-boards-view-pop {
+    inset-inline: auto 0;
+    width: min(18rem, calc(100vw - 2rem));
+    display: flex;
+    flex-direction: column;
+    gap: var(--fl-space-3);
+  }
+  .fl-boards-segmented {
+    display: flex;
+    flex-wrap: wrap;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .fl-boards-segmented legend,
+  .fl-boards-field span {
+    width: 100%;
+    margin-bottom: var(--fl-space-2);
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+  }
+  .fl-boards-segmented button {
+    flex: 1;
+    min-height: 2.25rem;
+    color: var(--fl-text);
+    background: var(--fl-raised);
+    border: 1px solid var(--fl-border);
+  }
+  .fl-boards-segmented button + button {
+    border-inline-start: 0;
+  }
+  .fl-boards-segmented button:first-of-type {
+    border-radius: var(--fl-radius-control) 0 0 var(--fl-radius-control);
+  }
+  .fl-boards-segmented button:last-of-type {
+    border-radius: 0 var(--fl-radius-control) var(--fl-radius-control) 0;
+  }
+  .fl-boards-segmented button[aria-pressed='true'] {
+    background: var(--fl-accent-soft);
+    border-color: var(--fl-accent);
+  }
+  .fl-boards-field {
+    display: flex;
+    flex-direction: column;
+  }
+  .fl-boards-field input {
+    accent-color: var(--fl-accent);
+  }
+  .fl-boards-check {
+    display: flex;
+    align-items: center;
+    gap: var(--fl-space-2);
+  }
+  .fl-boards-check input {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    accent-color: var(--fl-accent);
+  }
+  .fl-boards-note {
+    margin: 0;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+  }
+  /* Prototype `.pro-active`: the pills under the toolbar. */
+  .fl-boards-active {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--fl-space-2);
+    padding: var(--fl-space-3) var(--fl-space-6) 0;
+  }
+  .fl-boards-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: var(--fl-space-1) 6px var(--fl-space-1) 10px;
+    border-radius: var(--fl-radius-pill);
+    background: var(--fl-raised);
+    font-size: var(--fl-font-callout);
+  }
+  .fl-boards-pill button {
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    border-radius: 50%;
+    color: var(--fl-text);
+  }
+  .fl-boards-pill button:hover {
+    background: var(--fl-border);
   }
   .fl-items-spacer {
     flex: 1;
@@ -1046,8 +1706,7 @@
     border-color: var(--fl-accent);
     box-shadow: inset 0 0 0 1px var(--fl-accent);
   }
-  .fl-items-chip:focus-visible,
-  .fl-items-sort select:focus-visible {
+  .fl-items-chip:focus-visible {
     outline: 2px solid var(--fl-accent);
     outline-offset: 2px;
   }
@@ -1071,18 +1730,30 @@
     border-radius: var(--fl-radius);
     box-shadow: var(--fl-shadow-pop, 0 12px 32px rgb(0 0 0 / 0.18));
   }
+  /* Prototype `label.sort`: the sort icon sits inside the control's box, with the choice. */
   .fl-items-sort {
     display: inline-flex;
     align-items: center;
     gap: var(--fl-space-1);
+    box-sizing: border-box;
+    height: 2.75rem;
+    padding-inline-start: var(--fl-space-3);
     color: var(--fl-muted);
-  }
-  .fl-items-sort select {
-    min-height: 2.75rem;
-    padding: 0 var(--fl-space-2);
-    color: var(--fl-text);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control);
+  }
+  .fl-items-sort:has(select:focus-visible) {
+    outline: 2px solid var(--fl-accent);
+    outline-offset: 2px;
+  }
+  .fl-items-sort select {
+    align-self: stretch;
+    min-height: 0;
+    padding: 0 var(--fl-space-3) 0 var(--fl-space-1);
+    color: var(--fl-text);
+    background: transparent;
+    border: 0;
     border-radius: var(--fl-radius-control);
   }
   .fl-items-first {
@@ -1137,6 +1808,10 @@
     .fl-items-heading {
       align-items: start;
       flex-wrap: wrap;
+      padding: var(--fl-space-4) var(--fl-space-4) var(--fl-space-3);
+    }
+    .fl-items-scroll {
+      padding: var(--fl-space-4);
     }
     .fl-items-panes {
       position: relative;
@@ -1175,9 +1850,39 @@
     .fl-items-spacer {
       display: none;
     }
+    .fl-boards-browse {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--fl-space-2);
+      min-height: 44px;
+      margin-bottom: var(--fl-space-2);
+      padding: 0;
+      color: var(--fl-text);
+      font-weight: 600;
+    }
+    .fl-boards-toolbar {
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      padding-inline: var(--fl-space-4);
+      scrollbar-width: none;
+    }
+    .fl-boards-toolbar > *,
+    .fl-boards-toolbar-end > * {
+      flex: none;
+    }
+    .fl-boards-search {
+      flex: 0 0 180px;
+    }
+    .fl-boards-active {
+      padding-inline: var(--fl-space-4);
+    }
+    .fl-boards-toolbar :global(button),
+    .fl-items-chip-menu :global(.menu-root > button),
+    .fl-boards-search,
+    .fl-boards-icon-button,
     .fl-items-controls :global(button),
     .fl-items-chip,
-    .fl-items-sort select {
+    .fl-items-sort {
       height: 36px;
       min-height: 36px;
       white-space: nowrap;
@@ -1190,13 +1895,17 @@
       max-height: 70dvh;
       z-index: 40;
     }
-    /* Over the visible screen, wherever the page is scrolled. */
-    .fl-items-panel {
+    /* Over the visible screen, wherever the page is scrolled: full width (Boards' 340px included), stopping
+       above the tab bar so the last action is never hidden behind it. */
+    .fl-items-panel,
+    .is-boards .fl-items-panel {
       position: fixed;
-      inset: var(--fl-topbar-height-phone, var(--fl-topbar-height)) 0 0;
+      inset: var(--fl-topbar-height-phone, var(--fl-topbar-height)) 0 var(--fl-tabbar-space, 0px);
+      flex-basis: auto;
+      height: auto;
       max-height: none;
       width: 100%;
-      padding-block-end: var(--fl-tabbar-height, 0px);
+      border-inline-start: 0;
       background: var(--fl-panel);
       z-index: 30;
     }

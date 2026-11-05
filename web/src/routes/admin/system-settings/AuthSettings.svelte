@@ -1,10 +1,29 @@
 <script lang="ts">
-  import SettingGroup from '$lib/components/frameleaf/settings/SettingGroup.svelte';
-  import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
-  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
+  /**
+   * Who can sign in › Sign-in methods (the approved prototype's `settings-v2/cloud/SignInMethods.jsx`):
+   * a hero that says how many ways people can sign in, "Ways to sign in" with a switch for the
+   * password and for another sign-in provider (the Frameleaf account row opens Sign in with
+   * Frameleaf), the provider's three fields, check and accounts once it is on (everything else
+   * under Advanced), and the numbered "If nobody can sign in" steps. Every value is the shared
+   * settings draft, saved with the settings bar.
+   */
+  import { goto } from '$app/navigation';
   import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
-  import { SettingInputFieldType } from '$lib/constants';
-  import FormatMessage from '$lib/elements/FormatMessage.svelte';
+  import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
+  import Amount from '$lib/components/frameleaf/settings/kit/Amount.svelte';
+  import Field from '$lib/components/frameleaf/settings/kit/Field.svelte';
+  import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
+  import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
+  import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
+  import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
+  import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
+  import Select from '$lib/components/frameleaf/settings/kit/Select.svelte';
+  import Steps from '$lib/components/frameleaf/settings/kit/Steps.svelte';
+  import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
+  import TextLink from '$lib/components/frameleaf/settings/kit/TextLink.svelte';
+  import { cloudManager } from '$lib/managers/cloud-manager.svelte';
+  import { mdiAccountKeyOutline, mdiAlertCircleOutline, mdiChevronRight } from '@mdi/js';
+  import { onMount } from 'svelte';
   import { helpLinks } from '$lib/frameleaf/help-links.svelte';
   import { appCallback, FRAMELEAF_APP_CALLBACK } from '$lib/frameleaf/oauth-callbacks';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
@@ -21,13 +40,15 @@
   } from '@frameleaf/sdk';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import { confirmFrameleaf } from '$lib/frameleaf/confirm';
-  import { Link, Text, toastManager } from '@frameleaf/ui';
+  import { Icon, toastManager } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
-  import { reveal } from '$lib/frameleaf/motion';
   import { locale } from '$lib/stores/preferences.store';
-  import SettingSelect from '$lib/components/frameleaf/settings/SettingSelect.svelte';
+
+  onMount(() => cloudManager.listen());
 
   const disabled = $derived(featureFlagsManager.value.configFile);
+  /** Sign in with Frameleaf works once the server is linked (FL-158). */
+  const frameleafOn = $derived(cloudManager.status?.state === 'linked');
   const settingsDraft = requireSystemConfigDraft();
   const configToEdit = $derived(settingsDraft.draft);
   const config = $derived(settingsDraft.baseline);
@@ -106,8 +127,23 @@
   const ways = $derived(
     [
       configToEdit.passwordLogin.enabled ? $t('frameleaf_signin_way_password') : '',
-      configToEdit.oauth.enabled ? configToEdit.oauth.buttonText || $t('frameleaf_signin_way_provider') : '',
+      frameleafOn ? $t('frameleaf_signin_way_frameleaf') : '',
+      configToEdit.oauth.enabled ? $t('frameleaf_signin_way_provider') : '',
     ].filter(Boolean),
+  );
+  const either = (items: string[]) => new Intl.ListFormat($locale, { type: 'disjunction' }).format(items);
+
+  /** The addresses a provider asks for, from this server's own address. */
+  const origin = typeof location === 'undefined' ? '' : location.origin;
+
+  const checkHelp = $derived(
+    checking
+      ? $t('frameleaf_signin_checking')
+      : checked?.ok && checked.issuer
+        ? $t('frameleaf_signin_check_ok', { values: { provider: providerHost(checked.issuer) } })
+        : checked
+          ? $t('frameleaf_signin_check_failed', { values: { error: checked.error ?? '' } })
+          : $t('frameleaf_signin_check_help'),
   );
 
   // FL-135: this installation's documentation, or no link at all
@@ -119,374 +155,364 @@
   );
 </script>
 
-<!-- FL-367: the area's other pages are kit pages; this form keeps its card of its own. -->
-<div class="legacy-card fl-continuous-corners">
-  <div in:reveal>
-    <form autocomplete="off" onsubmit={(e) => e.preventDefault()}>
-      <p class="answer" role="status">
-        {ways.length > 0
-          ? $t('frameleaf_signin_answer', {
-              values: { ways: new Intl.ListFormat($locale, { type: 'disjunction' }).format(ways) },
-            })
-          : $t('frameleaf_signin_answer_none')}
-      </p>
-      <div class="flex flex-col">
-        <SettingGroup key="oauth" title={$t('admin.oauth_settings')} subtitle={$t('admin.oauth_settings_description')}>
-          <div class="flex flex-col gap-4">
-            {#if oauthDocs}
-              <Text size="small">
-                <FormatMessage key="admin.oauth_settings_more_details">
-                  {#snippet children({ message })}
-                    <Link href={oauthDocs}>{message}</Link>
-                  {/snippet}
-                </FormatMessage>
-              </Text>
-            {/if}
+{#snippet disconnectAll()}
+  <Button variant="danger" {disabled} onclick={handleUnlinkAllOAuthAccounts}>{$t('frameleaf_signin_disconnect')}</Button
+  >
+{/snippet}
 
-            <SettingToggle
-              {disabled}
-              title={$t('admin.oauth_enable_description')}
-              bind:checked={configToEdit.oauth.enabled}
-            />
+<form autocomplete="off" onsubmit={(e) => e.preventDefault()}>
+  <KitPage>
+    {#if ways.length > 0}
+      <Hero
+        tone="good"
+        icon={mdiAccountKeyOutline}
+        title={$t('frameleaf_signin_hero_ways', { values: { count: ways.length } })}
+        body={$t('frameleaf_signin_hero_ways_body', { values: { ways: either(ways) } })}
+        label={$t('frameleaf_cc_section_signin')}
+      />
+    {:else}
+      <Hero
+        tone="warn"
+        icon={mdiAlertCircleOutline}
+        title={$t('frameleaf_signin_hero_none')}
+        body={$t('frameleaf_signin_answer_none')}
+        label={$t('frameleaf_cc_section_signin')}
+      />
+    {/if}
 
-            {#if configToEdit.oauth.enabled}
-              <SettingField
-                inputType={SettingInputFieldType.TEXT}
-                label={$t('frameleaf_signin_issuer_url')}
-                description={$t('frameleaf_signin_issuer_url_description')}
-                bind:value={configToEdit.oauth.issuerUrl}
-                required={true}
-                disabled={disabled || !configToEdit.oauth.enabled}
-                isEdited={configToEdit.oauth.issuerUrl !== config.oauth.issuerUrl}
-              />
-
-              <SettingField
-                inputType={SettingInputFieldType.TEXT}
-                label={$t('frameleaf_signin_client_id_label')}
-                bind:value={configToEdit.oauth.clientId}
-                required={true}
-                disabled={disabled || !configToEdit.oauth.enabled}
-                isEdited={configToEdit.oauth.clientId !== config.oauth.clientId}
-              />
-
-              <!-- FL-67: the client secret is write-only and never part of this form's draft. -->
-              <CredentialRow
-                name={ConfigCredential.OauthClientSecret}
-                {disabled}
-                reason={disabled ? $t('frameleaf_credentials_config_file') : undefined}
-              />
-
-              <div class="check">
-                <Button
-                  disabled={checking || !configToEdit.oauth.issuerUrl || !configToEdit.oauth.clientId}
-                  onclick={check}>{$t('frameleaf_signin_check')}</Button
-                >
-                <p role="status">
-                  {#if checking}
-                    {$t('frameleaf_signin_checking')}
-                  {:else if checked?.ok && checked.issuer}
-                    {$t('frameleaf_signin_check_ok', { values: { provider: providerHost(checked.issuer) } })}
-                  {:else if checked}
-                    {$t('frameleaf_signin_check_failed', { values: { error: checked.error ?? '' } })}
-                  {/if}
-                </p>
-              </div>
-
-              <!-- FL-516: the space a new account starts with is one setting, "Space for new people" under Users. -->
-              <p class="new-space">
-                {$t('frameleaf_signin_new_space')}
-                <a href={commandCenterUrl('users')}>{$t('frameleaf_signin_new_space_link')}</a>
-              </p>
-
-              <SettingField
-                inputType={SettingInputFieldType.TEXT}
-                label={$t('admin.oauth_button_text')}
-                bind:value={configToEdit.oauth.buttonText}
-                required={false}
-                disabled={disabled || !configToEdit.oauth.enabled}
-                isEdited={configToEdit.oauth.buttonText !== config.oauth.buttonText}
-              />
-
-              <SettingToggle
-                title={$t('admin.oauth_auto_register')}
-                subtitle={$t('admin.oauth_auto_register_description')}
-                bind:checked={configToEdit.oauth.autoRegister}
-                disabled={disabled || !configToEdit.oauth.enabled}
-              />
-
-              <details class="expert">
-                <summary>{$t('frameleaf_signin_advanced')}</summary>
-                <div class="flex flex-col gap-4">
-                  {#if config.oauth.clientSecretConfigured}
-                    <SettingSelect
-                      label={$t('frameleaf_signin_proves')}
-                      bind:value={configToEdit.oauth.tokenEndpointAuthMethod}
-                      disabled={disabled || !configToEdit.oauth.enabled}
-                      isEdited={configToEdit.oauth.tokenEndpointAuthMethod !== config.oauth.tokenEndpointAuthMethod}
-                      options={[
-                        { value: OAuthTokenEndpointAuthMethod.ClientSecretPost, text: 'client_secret_post' },
-                        { value: OAuthTokenEndpointAuthMethod.ClientSecretBasic, text: 'client_secret_basic' },
-                      ]}
-                      name="tokenEndpointAuthMethod"
-                    />
-                  {/if}
-
-                  <SettingField
-                    inputType={SettingInputFieldType.TEXT}
-                    label={$t('frameleaf_signin_scope')}
-                    bind:value={configToEdit.oauth.scope}
-                    required={true}
-                    disabled={disabled || !configToEdit.oauth.enabled}
-                    isEdited={configToEdit.oauth.scope !== config.oauth.scope}
-                  />
-
-                  <SettingField
-                    inputType={SettingInputFieldType.TEXT}
-                    label={$t('frameleaf_signin_signing')}
-                    bind:value={configToEdit.oauth.signingAlgorithm}
-                    required={true}
-                    disabled={disabled || !configToEdit.oauth.enabled}
-                    isEdited={configToEdit.oauth.signingAlgorithm !== config.oauth.signingAlgorithm}
-                  />
-
-                  <SettingField
-                    inputType={SettingInputFieldType.TEXT}
-                    label={$t('frameleaf_signin_profile_signing')}
-                    bind:value={configToEdit.oauth.profileSigningAlgorithm}
-                    required={true}
-                    disabled={disabled || !configToEdit.oauth.enabled}
-                    isEdited={configToEdit.oauth.profileSigningAlgorithm !== config.oauth.profileSigningAlgorithm}
-                  />
-
-                  <SettingField
-                    inputType={SettingInputFieldType.TEXT}
-                    label={$t('frameleaf_signin_prompt')}
-                    description={$t('admin.oauth_prompt_description')}
-                    bind:value={configToEdit.oauth.prompt}
-                    required={false}
-                    disabled={disabled || !configToEdit.oauth.enabled}
-                    isEdited={configToEdit.oauth.prompt !== config.oauth.prompt}
-                  />
-
-                  <SettingField
-                    inputType={SettingInputFieldType.TEXT}
-                    label={$t('frameleaf_signin_end_session')}
-                    description={$t('admin.oauth_end_session_url_description')}
-                    bind:value={configToEdit.oauth.endSessionEndpoint}
-                    required={false}
-                    disabled={disabled || !configToEdit.oauth.enabled}
-                    isEdited={configToEdit.oauth.endSessionEndpoint !== config.oauth.endSessionEndpoint}
-                  />
-
-                  <SettingField
-                    inputType={SettingInputFieldType.NUMBER}
-                    label={$t('frameleaf_signin_timeout')}
-                    description={$t('frameleaf_signin_timeout_description')}
-                    required={true}
-                    bind:value={getTimeoutSeconds, setTimeoutSeconds}
-                    disabled={disabled || !configToEdit.oauth.enabled}
-                    isEdited={configToEdit.oauth.timeout !== config.oauth.timeout}
-                  />
-
-                  <SettingToggle
-                    title={$t('frameleaf_signin_insecure')}
-                    subtitle={$t('frameleaf_signin_insecure_description')}
-                    bind:checked={configToEdit.oauth.allowInsecureRequests}
-                    disabled={disabled || !configToEdit.oauth.enabled}
-                    isEdited={configToEdit.oauth.allowInsecureRequests !== config.oauth.allowInsecureRequests}
-                  />
-
-                  <SettingField
-                    inputType={SettingInputFieldType.TEXT}
-                    label={$t('admin.oauth_storage_label_claim')}
-                    description={$t('admin.oauth_storage_label_claim_description')}
-                    bind:value={configToEdit.oauth.storageLabelClaim}
-                    required={true}
-                    disabled={disabled || !configToEdit.oauth.enabled}
-                    isEdited={configToEdit.oauth.storageLabelClaim !== config.oauth.storageLabelClaim}
-                  />
-
-                  <SettingField
-                    inputType={SettingInputFieldType.TEXT}
-                    label={$t('admin.oauth_role_claim')}
-                    description={$t('admin.oauth_role_claim_description')}
-                    bind:value={configToEdit.oauth.roleClaim}
-                    required={true}
-                    disabled={disabled || !configToEdit.oauth.enabled}
-                    isEdited={configToEdit.oauth.roleClaim !== config.oauth.roleClaim}
-                  />
-
-                  <SettingField
-                    inputType={SettingInputFieldType.TEXT}
-                    label={$t('admin.oauth_storage_quota_claim')}
-                    description={$t('admin.oauth_storage_quota_claim_description')}
-                    bind:value={configToEdit.oauth.storageQuotaClaim}
-                    required={true}
-                    disabled={disabled || !configToEdit.oauth.enabled}
-                    isEdited={configToEdit.oauth.storageQuotaClaim !== config.oauth.storageQuotaClaim}
-                  />
-
-                  <SettingField
-                    inputType={SettingInputFieldType.TEXT}
-                    label={$t('admin.oauth_account_management_url')}
-                    description={$t('admin.oauth_account_management_url_description')}
-                    bind:value={configToEdit.oauth.accountManagementUrl}
-                    required={false}
-                    disabled={disabled || !configToEdit.oauth.enabled}
-                    isEdited={configToEdit.oauth.accountManagementUrl !== config.oauth.accountManagementUrl}
-                  />
-
-                  <SettingToggle
-                    title={$t('admin.oauth_auto_launch')}
-                    subtitle={$t('admin.oauth_auto_launch_description')}
-                    disabled={disabled || !configToEdit.oauth.enabled}
-                    bind:checked={configToEdit.oauth.autoLaunch}
-                  />
-
-                  <SettingToggle
-                    title={$t('admin.oauth_mobile_redirect_uri_override')}
-                    subtitle={$t('admin.oauth_mobile_redirect_uri_override_description', {
-                      values: { callback: FRAMELEAF_APP_CALLBACK },
-                    })}
-                    disabled={disabled || !configToEdit.oauth.enabled}
-                    onToggle={() => handleToggleOverride()}
-                    bind:checked={configToEdit.oauth.mobileOverrideEnabled}
-                  />
-
-                  {#if configToEdit.oauth.mobileOverrideEnabled}
-                    <SettingField
-                      inputType={SettingInputFieldType.TEXT}
-                      label={$t('admin.oauth_mobile_redirect_uri')}
-                      bind:value={configToEdit.oauth.mobileRedirectUri}
-                      required={true}
-                      disabled={disabled || !configToEdit.oauth.enabled}
-                      isEdited={configToEdit.oauth.mobileRedirectUri !== config.oauth.mobileRedirectUri}
-                    />
-                  {/if}
-                </div>
-              </details>
-
-              <!-- FL-131: the Frameleaf app's callback the identity provider must allow.
-                   Grouped-list pattern from the prototype's settings rows (SystemPanels.jsx). -->
-              <section class="app-callbacks" aria-labelledby="app-callbacks-title">
-                <h4 id="app-callbacks-title">{$t('frameleaf_oauth_app_callbacks_title')}</h4>
-                <p>{$t('frameleaf_oauth_app_callbacks_description')}</p>
-                <dl>
-                  <div>
-                    <dt>{$t('frameleaf_oauth_app_callbacks_frameleaf')}</dt>
-                    <dd>
-                      {#if callback}
-                        <code>{callback}</code>
-                      {:else}
-                        <span class="refused" role="alert">{$t('frameleaf_oauth_app_callbacks_frameleaf_refused')}</span
-                        >
-                      {/if}
-                    </dd>
-                  </div>
-                </dl>
-              </section>
-
-              <div class="flex items-center justify-between gap-2">
-                <Text size="small">{$t('frameleaf_signin_disconnect_description')}</Text>
-                <Button onclick={handleUnlinkAllOAuthAccounts}>{$t('frameleaf_signin_disconnect')}</Button>
-              </div>
-            {/if}
-          </div>
-        </SettingGroup>
-
-        <SettingGroup
-          key="password"
-          title={$t('admin.password_settings')}
-          subtitle={$t('admin.password_settings_description')}
+    <Section title={$t('frameleaf_signin_ways')}>
+      <Row label={$t('frameleaf_signin_password')} help={$t('frameleaf_signin_password_help')}>
+        <Switch
+          label={$t('frameleaf_signin_password_switch')}
+          checked={configToEdit.passwordLogin.enabled}
+          held={disabled}
+          onChange={(value) => (configToEdit.passwordLogin.enabled = value)}
+        />
+      </Row>
+      <Row
+        label={$t('frameleaf_personal_title')}
+        help={frameleafOn ? $t('frameleaf_signin_frameleaf_on_help') : $t('frameleaf_signin_frameleaf_off_help')}
+      >
+        <span class="value">{frameleafOn ? $t('frameleaf_kit_on') : $t('frameleaf_kit_off')}</span>
+        <Button
+          label={$t('frameleaf_signin_open_frameleaf')}
+          onclick={() => goto(commandCenterUrl('security', 'frameleaf-signin'))}
+          >{$t('frameleaf_signin_open_own_provider')}<Icon icon={mdiChevronRight} size="1em" aria-hidden /></Button
         >
-          <div class="flex flex-col gap-4">
-            <div class="flex flex-col">
-              <SettingToggle
-                title={$t('admin.password_enable_description')}
-                {disabled}
-                bind:checked={configToEdit.passwordLogin.enabled}
-              />
-            </div>
-          </div>
-        </SettingGroup>
+      </Row>
+      <Row label={$t('frameleaf_signin_provider')} help={$t('frameleaf_signin_provider_help')}>
+        <Switch
+          label={$t('frameleaf_signin_provider')}
+          checked={configToEdit.oauth.enabled}
+          held={disabled}
+          onChange={(value) => (configToEdit.oauth.enabled = value)}
+        />
+      </Row>
+      {#if !configToEdit.passwordLogin.enabled}
+        <Notice tone="warn" title={$t('frameleaf_signin_password_off_title')}
+          >{$t('frameleaf_signin_password_off_body')}</Notice
+        >
+      {/if}
+    </Section>
 
-        <SettingActions keys={['passwordLogin', 'oauth']} {disabled} />
-      </div>
-    </form>
-  </div>
-</div>
+    {#if configToEdit.oauth.enabled}
+      <Section title={$t('frameleaf_signin_connect')} description={$t('frameleaf_signin_connect_description')}>
+        <Row label={$t('frameleaf_signin_issuer_url')} help={$t('frameleaf_signin_issuer_url_description')}>
+          <Field
+            wide
+            type="url"
+            label={$t('frameleaf_signin_issuer_url')}
+            value={configToEdit.oauth.issuerUrl}
+            {disabled}
+            invalid={!configToEdit.oauth.issuerUrl}
+            onChange={(value) => (configToEdit.oauth.issuerUrl = value)}
+          />
+        </Row>
+        <Row label={$t('frameleaf_signin_client_id_label')} help={$t('frameleaf_signin_client_id_help')}>
+          <Field
+            wide
+            label={$t('frameleaf_signin_client_id_label')}
+            value={configToEdit.oauth.clientId}
+            {disabled}
+            invalid={!configToEdit.oauth.clientId}
+            onChange={(value) => (configToEdit.oauth.clientId = value)}
+          />
+        </Row>
+        <!-- FL-67: the client secret is write-only and never part of this form's draft. -->
+        <div class="credential">
+          <CredentialRow
+            name={ConfigCredential.OauthClientSecret}
+            {disabled}
+            reason={disabled ? $t('frameleaf_credentials_config_file') : undefined}
+          />
+        </div>
+        <Row label={$t('frameleaf_signin_check_label')} help={checkHelp}>
+          <Button disabled={checking || !configToEdit.oauth.issuerUrl || !configToEdit.oauth.clientId} onclick={check}
+            >{$t('frameleaf_signin_check')}</Button
+          >
+        </Row>
+        <Advanced summary={$t('frameleaf_signin_addresses')}>
+          <p class="hint">{$t('frameleaf_signin_addresses_help')}</p>
+          <Row label={$t('frameleaf_signin_address_web')}>
+            <span class="value address">{origin}/auth/login</span>
+          </Row>
+          <Row label={$t('frameleaf_signin_address_account')}>
+            <span class="value address">{origin}/user-settings</span>
+          </Row>
+          <!-- FL-131: the Frameleaf app's callback the identity provider must allow. -->
+          <Row label={$t('frameleaf_signin_address_app')} help={$t('frameleaf_oauth_app_callbacks_description')}>
+            {#if callback}
+              <span class="value address">{callback}</span>
+            {:else}
+              <span class="refused" role="alert">{$t('frameleaf_oauth_app_callbacks_frameleaf_refused')}</span>
+            {/if}
+          </Row>
+        </Advanced>
+      </Section>
+
+      <Section title={$t('frameleaf_signin_accounts')}>
+        <Row label={$t('admin.oauth_auto_register')} help={$t('frameleaf_signin_auto_register_help')}>
+          <Switch
+            label={$t('admin.oauth_auto_register')}
+            checked={configToEdit.oauth.autoRegister}
+            held={disabled}
+            onChange={(value) => (configToEdit.oauth.autoRegister = value)}
+          />
+        </Row>
+        <!-- FL-516: the space a new account starts with is one setting, "Space for new people" under Users. -->
+        <Row label={$t('frameleaf_signin_new_space_label')} help={$t('frameleaf_signin_space_help')}>
+          <Button onclick={() => goto(commandCenterUrl('users'))}>{$t('frameleaf_signin_open_users')}</Button>
+        </Row>
+        <Row label={$t('frameleaf_signin_button_words')} help={$t('frameleaf_signin_button_words_help')}>
+          <Field
+            wide
+            label={$t('frameleaf_signin_button_words')}
+            value={configToEdit.oauth.buttonText}
+            {disabled}
+            onChange={(value) => (configToEdit.oauth.buttonText = value)}
+          />
+        </Row>
+        <Advanced>
+          <p class="hint">
+            {$t('frameleaf_signin_oidc_hint')}
+            {#if oauthDocs}<TextLink href={oauthDocs} external>{$t('frameleaf_signin_oidc_docs')}</TextLink>{/if}
+          </p>
+          {#if config.oauth.clientSecretConfigured}
+            <Row label={$t('frameleaf_signin_proves')} help={$t('frameleaf_signin_proves_help')}>
+              <Select
+                label={$t('frameleaf_signin_proves')}
+                value={configToEdit.oauth.tokenEndpointAuthMethod}
+                {disabled}
+                options={[
+                  { value: OAuthTokenEndpointAuthMethod.ClientSecretPost, label: $t('frameleaf_signin_proves_body') },
+                  {
+                    value: OAuthTokenEndpointAuthMethod.ClientSecretBasic,
+                    label: $t('frameleaf_signin_proves_header'),
+                  },
+                ]}
+                onChange={(value) =>
+                  (configToEdit.oauth.tokenEndpointAuthMethod = value as OAuthTokenEndpointAuthMethod)}
+              />
+            </Row>
+          {/if}
+          <Row label={$t('frameleaf_signin_scope')} help={$t('frameleaf_signin_scope_help')}>
+            <Field
+              label={$t('frameleaf_signin_scope')}
+              value={configToEdit.oauth.scope}
+              {disabled}
+              onChange={(value) => (configToEdit.oauth.scope = value)}
+            />
+          </Row>
+          <Row label={$t('frameleaf_signin_signing')} help={$t('frameleaf_signin_signing_help')}>
+            <Field
+              label={$t('frameleaf_signin_signing')}
+              value={configToEdit.oauth.signingAlgorithm}
+              {disabled}
+              onChange={(value) => (configToEdit.oauth.signingAlgorithm = value)}
+            />
+          </Row>
+          <Row label={$t('frameleaf_signin_profile_signing')} help={$t('frameleaf_signin_profile_signing_help')}>
+            <Field
+              label={$t('frameleaf_signin_profile_signing')}
+              value={configToEdit.oauth.profileSigningAlgorithm}
+              {disabled}
+              onChange={(value) => (configToEdit.oauth.profileSigningAlgorithm = value)}
+            />
+          </Row>
+          <Row label={$t('frameleaf_signin_prompt')} help={$t('admin.oauth_prompt_description')}>
+            <Field
+              label={$t('frameleaf_signin_prompt')}
+              value={configToEdit.oauth.prompt}
+              {disabled}
+              onChange={(value) => (configToEdit.oauth.prompt = value)}
+            />
+          </Row>
+          <Row label={$t('frameleaf_signin_end_session')} help={$t('admin.oauth_end_session_url_description')}>
+            <Field
+              wide
+              type="url"
+              label={$t('frameleaf_signin_end_session')}
+              placeholder="https://"
+              value={configToEdit.oauth.endSessionEndpoint}
+              {disabled}
+              onChange={(value) => (configToEdit.oauth.endSessionEndpoint = value)}
+            />
+          </Row>
+          <Row label={$t('frameleaf_signin_wait')} help={$t('frameleaf_signin_timeout_description')}>
+            <Amount
+              label={$t('frameleaf_signin_wait')}
+              unit={$t('frameleaf_signin_seconds')}
+              min={1}
+              max={300}
+              value={getTimeoutSeconds()}
+              {disabled}
+              onChange={(value) => setTimeoutSeconds(value)}
+            />
+          </Row>
+          <Row label={$t('frameleaf_signin_insecure')} help={$t('frameleaf_signin_insecure_help')}>
+            <Switch
+              label={$t('frameleaf_signin_insecure')}
+              checked={configToEdit.oauth.allowInsecureRequests}
+              held={disabled}
+              onChange={(value) => (configToEdit.oauth.allowInsecureRequests = value)}
+            />
+          </Row>
+          <Row label={$t('frameleaf_signin_straight')} help={$t('frameleaf_signin_straight_help')}>
+            <Switch
+              label={$t('frameleaf_signin_straight')}
+              checked={configToEdit.oauth.autoLaunch}
+              held={disabled}
+              onChange={(value) => (configToEdit.oauth.autoLaunch = value)}
+            />
+          </Row>
+          <Row label={$t('frameleaf_signin_folder_claim')} help={$t('admin.oauth_storage_label_claim_description')}>
+            <Field
+              label={$t('frameleaf_signin_folder_claim')}
+              value={configToEdit.oauth.storageLabelClaim}
+              {disabled}
+              onChange={(value) => (configToEdit.oauth.storageLabelClaim = value)}
+            />
+          </Row>
+          <Row label={$t('frameleaf_signin_role_claim')} help={$t('admin.oauth_role_claim_description')}>
+            <Field
+              label={$t('frameleaf_signin_role_claim')}
+              value={configToEdit.oauth.roleClaim}
+              {disabled}
+              onChange={(value) => (configToEdit.oauth.roleClaim = value)}
+            />
+          </Row>
+          <Row label={$t('frameleaf_signin_quota_claim')} help={$t('admin.oauth_storage_quota_claim_description')}>
+            <Field
+              label={$t('frameleaf_signin_quota_claim')}
+              value={configToEdit.oauth.storageQuotaClaim}
+              {disabled}
+              onChange={(value) => (configToEdit.oauth.storageQuotaClaim = value)}
+            />
+          </Row>
+          <Row
+            label={$t('admin.oauth_account_management_url')}
+            help={$t('admin.oauth_account_management_url_description')}
+          >
+            <Field
+              wide
+              type="url"
+              label={$t('admin.oauth_account_management_url')}
+              placeholder="https://"
+              value={configToEdit.oauth.accountManagementUrl ?? ''}
+              {disabled}
+              onChange={(value) => (configToEdit.oauth.accountManagementUrl = value)}
+            />
+          </Row>
+          <Row
+            label={$t('frameleaf_signin_older_app')}
+            help={$t('admin.oauth_mobile_redirect_uri_override_description', {
+              values: { callback: FRAMELEAF_APP_CALLBACK },
+            })}
+          >
+            <Switch
+              label={$t('frameleaf_signin_older_app')}
+              checked={configToEdit.oauth.mobileOverrideEnabled}
+              held={disabled}
+              onChange={(value) => {
+                if (value) {
+                  handleToggleOverride();
+                }
+                configToEdit.oauth.mobileOverrideEnabled = value;
+              }}
+            />
+          </Row>
+          {#if configToEdit.oauth.mobileOverrideEnabled}
+            <Row label={$t('admin.oauth_mobile_redirect_uri')}>
+              <Field
+                wide
+                type="url"
+                label={$t('admin.oauth_mobile_redirect_uri')}
+                value={configToEdit.oauth.mobileRedirectUri}
+                {disabled}
+                invalid={!configToEdit.oauth.mobileRedirectUri}
+                onChange={(value) => (configToEdit.oauth.mobileRedirectUri = value)}
+              />
+            </Row>
+          {/if}
+          <Row label={$t('frameleaf_signin_changing')} help={$t('frameleaf_signin_disconnect_description')}>
+            {@render disconnectAll()}
+          </Row>
+        </Advanced>
+      </Section>
+    {/if}
+
+    <Section title={$t('frameleaf_signin_recover')} description={$t('frameleaf_signin_recover_description')}>
+      <Steps
+        stacked
+        label={$t('frameleaf_signin_recover')}
+        steps={[
+          { title: $t('frameleaf_signin_recover_step_1'), detail: $t('frameleaf_signin_recover_step_1_detail') },
+          { title: $t('frameleaf_signin_recover_step_2'), detail: $t('frameleaf_signin_recover_step_2_detail') },
+          { title: $t('frameleaf_signin_recover_step_3'), detail: $t('frameleaf_signin_recover_step_3_detail') },
+        ]}
+      />
+      <p class="hint">
+        {$t('frameleaf_signin_recover_one')}
+        <TextLink href={commandCenterUrl('users')}>{$t('frameleaf_signin_recover_one_link')}</TextLink>.
+      </p>
+      <Advanced summary={$t('frameleaf_signin_commands')}>
+        <Row label={$t('frameleaf_signin_recover_step_1')}>
+          <span class="value address">frameleaf-admin enable-password-login</span>
+        </Row>
+        <Row label={$t('frameleaf_signin_recover_step_2')}>
+          <span class="value address">frameleaf-admin reset-admin-password</span>
+        </Row>
+      </Advanced>
+    </Section>
+
+    <SettingActions keys={['passwordLogin', 'oauth']} {disabled} />
+  </KitPage>
+</form>
 
 <style>
-  .legacy-card {
-    padding: var(--fl-space-4) var(--fl-space-5);
-    background: var(--fl-panel);
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-card);
-  }
-  .answer {
-    margin: 0 0 var(--fl-space-4);
+  .value {
+    color: var(--fl-text);
     font-size: var(--fl-font-callout);
   }
-  .check {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--fl-space-3);
-  }
-  .check p {
-    margin: 0;
-    color: var(--fl-muted);
-    font-size: var(--fl-font-small);
-  }
-  .expert > summary {
-    padding: var(--fl-space-2) 0;
-    color: var(--fl-muted);
-    cursor: pointer;
-  }
-  .expert[open] > summary {
-    margin-bottom: var(--fl-space-3);
-  }
-  .app-callbacks {
-    display: grid;
-    gap: 0.5rem;
-    padding: 0.75rem 0.875rem;
-    border-radius: var(--fl-radius-card);
-    background: var(--fl-panel);
-    font-size: var(--fl-font-small);
-    color: var(--fl-muted);
-  }
-  .app-callbacks h4 {
-    margin: 0;
-    font-size: var(--fl-font-size);
-    font-weight: 600;
-    color: var(--fl-text);
-  }
-  .app-callbacks p,
-  .app-callbacks dl {
-    margin: 0;
-  }
-  .app-callbacks dl {
-    display: grid;
-    gap: 0.375rem;
-  }
-  .app-callbacks dl > div {
-    display: grid;
-    grid-template-columns: minmax(7rem, auto) 1fr;
-    gap: 0.75rem;
-    align-items: baseline;
-  }
-  .app-callbacks dt {
-    color: var(--fl-text);
-  }
-  .app-callbacks dd {
-    margin: 0;
-    min-width: 0;
+  .address {
+    max-width: 380px;
     overflow-wrap: anywhere;
+    user-select: all;
   }
-  .app-callbacks code {
-    color: var(--fl-text);
+  .hint {
+    margin: 0;
+    padding: var(--fl-space-3) 0;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+    line-height: 1.5;
+  }
+  .credential {
+    padding: var(--fl-space-2) 0;
+    border-top: 1px solid var(--fl-border);
   }
   .refused {
+    max-width: 380px;
     color: var(--fl-danger);
+    font-size: var(--fl-font-small);
   }
 </style>

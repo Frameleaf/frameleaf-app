@@ -404,12 +404,28 @@
   /** The scrubber is drawn: a flat order (filename, rating) has no dates to scrub through. */
   const showScrubber = $derived(timelineManager.months.length > 0 && !timelineManager.ordered);
   /**
+   * The rows' scrubber only where there is something to scrub through: photos that fit on one
+   * screen (a handful of results, a person with three photos) have no scrubber floating beside them.
+   * Hiding it widens the rows, which only makes them shorter, so the choice never flips back.
+   */
+  const rowsScroll = $derived(
+    timelineManager.viewportHeight === 0 || timelineManager.totalViewerHeight > timelineManager.viewportHeight + 1,
+  );
+  /**
+   * Years and Months are curated cards (September 24; template `TimelineLibrary.jsx` `curated`), not
+   * tile flows: the manager keeps its day layout underneath, ready for a card that opens Days.
+   */
+  const curated = $derived(showDayHeaders && (grouping === 'years' || grouping === 'months'));
+  /** The Years and Months cards, which draw their own scroller (and scrubber) in place of the rows. */
+  const curatedCards = $derived(curated && (grouping === 'years' || grouping === 'months'));
+  const showRowsScrubber = $derived(showScrubber && (curatedCards || rowsScroll));
+  /**
    * The column the rows leave at their end for the scrubber (LIB-P4). The header block above them
    * (page header, toolbar, grouping) spans it, as the template's does; the scrubber keeps below
    * that block while it is on screen. On touch and narrow screens the scrubber floats over the rows.
    */
   const scrubberSpace = $derived(
-    overlayScrubber || !showScrubber || !scrubberWidth ? 0 : scrubberWidth + SCRUBBER_LABEL_ROOM,
+    overlayScrubber || !showRowsScrubber || !scrubberWidth ? 0 : scrubberWidth + SCRUBBER_LABEL_ROOM,
   );
   /** The width the rows are laid out in: the scroll area less the gutters and the scrubber column. */
   const layoutWidth = $derived(Math.max(0, measuredWidth - 2 * gutter - scrubberSpace));
@@ -483,11 +499,6 @@
 
   let announcement = $state('');
 
-  /**
-   * Years and Months are curated cards (September 24; template `TimelineLibrary.jsx` `curated`), not
-   * tile flows: the manager keeps its day layout underneath, ready for a card that opens Days.
-   */
-  const curated = $derived(showDayHeaders && (grouping === 'years' || grouping === 'months'));
   const effectiveGrouping = $derived<TimelineGrouping>(showDayHeaders && !curated ? grouping : 'days');
   $effect(() => {
     timelineManager.grouping = effectiveGrouping;
@@ -1410,7 +1421,7 @@
   style:--fl-tl-scrubber-space="{scrubberSpace}px"
   bind:this={root}
 >
-  {#if curated && (grouping === 'years' || grouping === 'months')}
+  {#if curatedCards}
     <div
       class="fl-timeline-cards"
       bind:this={cardsHost}
@@ -1421,7 +1432,7 @@
       <TimelineCards
         bind:this={cards}
         {timelineManager}
-        {grouping}
+        grouping={grouping === 'years' ? 'years' : 'months'}
         {focusYear}
         onOpen={openCard}
         onCurrentPeriod={onCardPeriod}
@@ -1606,7 +1617,7 @@
       </div>
     </section>
 
-    {#if showScrubber}
+    {#if showRowsScrubber}
       <YearScrubber
         {timelineManager}
         height={timelineManager.viewportHeight}
@@ -1638,6 +1649,14 @@
     display: flex;
     height: 100%;
     min-height: 0;
+  }
+  /*
+   * A menu open in the scrolling header (an album's More, the toolbar's filter or View menu) is
+   * painted inside the scroller, whose `contain: strict` makes it one layer under the scrubber, so
+   * the scrubber steps aside until the menu closes rather than drawing its year over the menu.
+   */
+  .fl-timeline:has(:global(.fl-timeline-scroll :is([role='menu'], .fl-pop))) :global(.fl-scrubber) {
+    visibility: hidden;
   }
   .fl-timeline-scroll {
     flex: 1 1 auto;

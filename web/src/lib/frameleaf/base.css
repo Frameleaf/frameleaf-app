@@ -300,6 +300,22 @@
   }
 
   /*
+   * A link drawn as a button (`<a class="button">`: Open ›, Overnight schedule, See the failed task)
+   * is as tall as the `<button>`s beside it. tokens.css gives every `<button>` the 44px floor (48px
+   * on touch) but no `<a>`, which left these 35px in the same row. Zero specificity in this layer,
+   * so a surface that sizes its own `.button` keeps that size.
+   */
+  :where(.frameleaf a.button) {
+    min-height: var(--fl-control-height);
+  }
+
+  @media (pointer: coarse) {
+    :where(.frameleaf a.button) {
+      min-height: var(--fl-control-height-touch);
+    }
+  }
+
+  /*
    * Page content in `.fl-scope` inherits the document's 16px, not the 14px body step a
    * `.frameleaf` root sets, so a control there says its own size and matches the same control
    * in a dialog or the shell. Inside a nested `.frameleaf` root the size is already inherited,

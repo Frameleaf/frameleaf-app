@@ -14,7 +14,8 @@
   import './frameleaf-cloud.css';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
-  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
+  import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
+  import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
   import {
     canLowerCap,
     DEFAULT_WALLET_PACK,
@@ -31,7 +32,7 @@
   import { handleError } from '$lib/utils/handle-error';
   import { getCloudMlWallet, updateCloudMlWallet, type CloudMlWalletDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import { mdiCreditCardOutline, mdiOpenInNew, mdiPlus } from '@mdi/js';
+  import { mdiOpenInNew } from '@mdi/js';
   import { locale, t } from 'svelte-i18n';
 
   type Props = {
@@ -39,23 +40,22 @@
     /** The linked account can be changed and asked; false while not linked or not answering. */
     ready: boolean;
     onChanged?: (wallet: CloudMlWalletDto) => void;
+    /** The Add credit dialog; the page's hero opens it too. */
+    topUpOpen?: boolean;
   };
 
-  let { wallet, ready, onChanged }: Props = $props();
+  let { wallet, ready, onChanged, topUpOpen = $bindable(false) }: Props = $props();
 
   let saving = $state(false);
   // Follows the wallet as the cloud reports it, and holds what is typed until it is sent.
   let capInput = $derived(
     wallet?.dailyCapUsd === null || wallet?.dailyCapUsd === undefined ? '' : String(wallet.dailyCapUsd),
   );
-  let topUpOpen = $state(false);
+
   let pack = $state<string>(DEFAULT_WALLET_PACK);
   let custom = $state('');
 
   const available = $derived(walletAvailable(wallet));
-  const spentShare = $derived(
-    wallet && wallet.dailyCapUsd ? Math.min(1, wallet.spentTodayUsd / wallet.dailyCapUsd) : 0,
-  );
   const amount = $derived(
     pack === 'custom' ? Number(custom) : (walletPacks.find((entry) => entry.id === pack)?.amount ?? 0),
   );
@@ -102,135 +102,83 @@
   };
 </script>
 
-<section class="fc-card fl-continuous-corners" aria-labelledby="fc-wallet-title">
-  <div class="fc-card-title">
-    <span class="fc-card-icon"><Icon icon={mdiCreditCardOutline} size="20" aria-hidden={true} /></span>
-    <div>
-      <h2 id="fc-wallet-title">{$t('admin.frameleaf_cloud_ml_wallet_title')}</h2>
-      <p>{$t('admin.frameleaf_cloud_ml_wallet_description')}</p>
-    </div>
-    {#if wallet}
-      <span class="fc-status" class:is-warning={available < 5} class:is-ok={available >= 5}>
-        {$t('admin.frameleaf_cloud_ml_wallet_available_status', { values: { amount: formatUsd(available) } })}
-      </span>
-    {/if}
-  </div>
-  {#if wallet}
-    <div class="fc-wallet">
-      <div>
-        <span>{$t('admin.frameleaf_cloud_ml_wallet_balance')}</span>
-        <strong>{formatUsd(wallet.balanceUsd)}</strong>
-      </div>
-      <div>
-        <span>{$t('admin.frameleaf_cloud_ml_wallet_held')}</span>
-        <strong>{formatUsd(wallet.heldUsd)}</strong>
-      </div>
-      <div>
-        <span>{$t('admin.frameleaf_cloud_ml_wallet_available')}</span>
-        <strong>{formatUsd(available)}</strong>
-      </div>
-    </div>
-    <div class="fc-meter">
-      <div class="fc-meter-label">
-        <span>{$t('admin.frameleaf_cloud_ml_wallet_spent_today')}</span>
-        <strong>
-          {wallet.dailyCapUsd === null
-            ? formatUsd(wallet.spentTodayUsd)
-            : $t('admin.frameleaf_cloud_ml_wallet_spent_of_cap', {
-                values: { spent: formatUsd(wallet.spentTodayUsd), cap: formatUsd(wallet.dailyCapUsd) },
-              })}
-        </strong>
-      </div>
-      <div
-        class="fc-meter-track"
-        class:is-high={spentShare >= 0.8}
-        role="meter"
-        aria-label={$t('admin.frameleaf_cloud_ml_wallet_spent_today')}
-        aria-valuemin={0}
-        aria-valuemax={wallet.dailyCapUsd ?? 0}
-        aria-valuenow={wallet.spentTodayUsd}
-      >
-        <span style:width="{Math.round(spentShare * 100)}%"></span>
-      </div>
-    </div>
-    <label class="fc-stack">
-      {$t('admin.frameleaf_cloud_ml_wallet_daily_cap')}
-      <span class="fc-input-unit">
-        <input
-          type="number"
-          min="1"
-          max="1000"
-          step="1"
-          bind:value={capInput}
-          aria-label={$t('admin.frameleaf_cloud_ml_wallet_daily_cap')}
-          disabled={!ready || saving}
-          onchange={saveCap}
-        />
-        <span>USD</span>
-      </span>
-      <small>{$t('admin.frameleaf_cloud_ml_wallet_daily_cap_help')}</small>
-    </label>
-    <p class="fc-muted">
-      {#if wallet.settingsUrl}
-        <a class="fc-link" href={wallet.settingsUrl} target="_blank" rel="noopener noreferrer">
-          {$t('admin.frameleaf_cloud_ml_wallet_raise_cap')}
-          <Icon icon={mdiOpenInNew} size="14" aria-hidden={true} />
-        </a>
-      {:else}
-        {$t('admin.frameleaf_cloud_ml_wallet_raise_cap_account')}
-      {/if}
-    </p>
-    {#if increaseAsked}
-      <p class="fc-refusal" role="alert">{$t('admin.frameleaf_cloud_ml_wallet_step_up')}</p>
-    {/if}
-    <SettingToggle
-      title={$t('admin.frameleaf_cloud_ml_wallet_auto_top_up')}
-      subtitle={$t('admin.frameleaf_cloud_ml_wallet_auto_top_up_help')}
+<!-- Rows of the page's Spending section (the prototype's Processing › Spending). -->
+{#if wallet}
+  <Row
+    label={$t('frameleaf_cp_credit')}
+    help={`${$t('frameleaf_cp_wallet_credit_help', {
+      values: {
+        available: formatUsd(available),
+        held: formatUsd(wallet.heldUsd),
+        balance: formatUsd(wallet.balanceUsd),
+      },
+    })} ${$t('admin.frameleaf_cloud_ml_wallet_top_up_rules', {
+      values: { min: formatUsd(WALLET_MIN_TOP_UP_USD, 0), max: formatUsd(WALLET_MAX_TOP_UP_USD, 0) },
+    })} ${$t('admin.frameleaf_cloud_ml_wallet_fees')} ${$t('admin.frameleaf_cloud_ml_wallet_updated', {
+      values: { date: formatDateTime(wallet.updatedAt, $locale) },
+    })}`}
+  >
+    <Button
+      variant={available < 1 ? 'primary' : 'default'}
+      disabled={!ready || !wallet.topUpUrl}
+      onclick={() => {
+        pack = DEFAULT_WALLET_PACK;
+        custom = '';
+        topUpOpen = true;
+      }}
+    >
+      {$t('admin.frameleaf_cloud_ml_wallet_add_credit')}
+    </Button>
+  </Row>
+  <Row
+    label={$t('admin.frameleaf_cloud_ml_wallet_daily_cap')}
+    help={`${$t('admin.frameleaf_cloud_ml_wallet_daily_cap_help')} ${wallet.settingsUrl ? '' : $t('admin.frameleaf_cloud_ml_wallet_raise_cap_account')}`}
+    link={wallet.settingsUrl
+      ? { text: $t('admin.frameleaf_cloud_ml_wallet_raise_cap'), href: wallet.settingsUrl, external: true }
+      : undefined}
+  >
+    <span class="fc-input-unit">
+      <input
+        class="fc-kit-number"
+        type="number"
+        min="1"
+        max="1000"
+        step="1"
+        bind:value={capInput}
+        aria-label={$t('admin.frameleaf_cloud_ml_wallet_daily_cap')}
+        disabled={!ready || saving}
+        onchange={saveCap}
+      />
+      <span>USD</span>
+    </span>
+  </Row>
+  {#if increaseAsked}
+    <p class="fc-refusal" role="alert">{$t('admin.frameleaf_cloud_ml_wallet_step_up')}</p>
+  {/if}
+  <Row
+    label={$t('admin.frameleaf_cloud_ml_wallet_auto_top_up')}
+    help={wallet.autoTopUp || wallet.settingsUrl
+      ? $t('admin.frameleaf_cloud_ml_wallet_auto_top_up_help')
+      : `${$t('admin.frameleaf_cloud_ml_wallet_auto_top_up_help')} ${$t('admin.frameleaf_cloud_ml_wallet_auto_top_up_turn_on_account')}`}
+    link={!wallet.autoTopUp && wallet.settingsUrl
+      ? { text: $t('admin.frameleaf_cloud_ml_wallet_auto_top_up_turn_on'), href: wallet.settingsUrl, external: true }
+      : undefined}
+  >
+    <!-- Only turning it off happens here; turning it on is in the Frameleaf account. -->
+    <Switch
+      label={$t('admin.frameleaf_cloud_ml_wallet_auto_top_up')}
       checked={wallet.autoTopUp}
-      disabled={!ready || saving || !wallet.autoTopUp}
-      onToggle={(value) => {
-        // only turning it off happens here; turning it on is a link to the Frameleaf account
+      held={!ready || saving || !wallet.autoTopUp}
+      onChange={(value) => {
         if (!value) {
           void save({ autoTopUp: false });
         }
       }}
-    >
-      {#if !wallet.autoTopUp}
-        {#if wallet.settingsUrl}
-          <a class="fc-link" href={wallet.settingsUrl} target="_blank" rel="noopener noreferrer">
-            {$t('admin.frameleaf_cloud_ml_wallet_auto_top_up_turn_on')}
-            <Icon icon={mdiOpenInNew} size="14" aria-hidden={true} />
-          </a>
-        {:else}
-          <small>{$t('admin.frameleaf_cloud_ml_wallet_auto_top_up_turn_on_account')}</small>
-        {/if}
-      {/if}
-    </SettingToggle>
-    <div class="fc-actions">
-      <Button
-        variant="primary"
-        disabled={!ready || !wallet.topUpUrl}
-        onclick={() => {
-          pack = DEFAULT_WALLET_PACK;
-          custom = '';
-          topUpOpen = true;
-        }}
-      >
-        <Icon icon={mdiPlus} size="16" aria-hidden={true} />
-        {$t('admin.frameleaf_cloud_ml_wallet_add_credit')}
-      </Button>
-    </div>
-    <p class="fc-muted">
-      {$t('admin.frameleaf_cloud_ml_wallet_top_up_rules', {
-        values: { min: formatUsd(WALLET_MIN_TOP_UP_USD, 0), max: formatUsd(WALLET_MAX_TOP_UP_USD, 0) },
-      })}
-      {$t('admin.frameleaf_cloud_ml_wallet_fees')}
-      {$t('admin.frameleaf_cloud_ml_wallet_updated', { values: { date: formatDateTime(wallet.updatedAt, $locale) } })}
-    </p>
-  {:else}
-    <p class="fc-muted">{$t('admin.frameleaf_cloud_ml_wallet_unknown')}</p>
-  {/if}
-</section>
+    />
+  </Row>
+{:else}
+  <Row label={$t('frameleaf_cp_credit')} help={$t('admin.frameleaf_cloud_ml_wallet_unknown')} />
+{/if}
 
 <Dialog title={$t('admin.frameleaf_cloud_ml_top_up_title')} closeLabel={$t('close')} bind:open={topUpOpen}>
   <div class="frameleaf-cloud">

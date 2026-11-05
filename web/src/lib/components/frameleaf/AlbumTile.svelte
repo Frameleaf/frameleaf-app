@@ -62,11 +62,8 @@
   let failedCover = $state<string | null>(null);
 
   const name = $derived(album.albumName || $t('unnamed_album'));
-  // A shared space opens on its own page, whose panels include the photos; everything else on the album view.
-  const href = $derived(
-    hrefOverride ??
-      (album.kind === AlbumKind.Space ? Route.viewSharedSpace({ id: album.id }) : Route.viewAlbum({ id: album.id })),
-  );
+  // Every kind opens in the album (library) view, a shared space too (owner, 2026-11-05).
+  const href = $derived(hrefOverride ?? Route.viewAlbum({ id: album.id }));
   const cover = $derived(
     album.albumThumbnailAssetId
       ? getAssetMediaUrl({ id: album.albumThumbnailAssetId, size: AssetMediaSize.Thumbnail })
@@ -162,7 +159,7 @@
         <AlbumIcon name={album.icon ?? defaultIconFor(album.kind)} size={layout === 'grid' ? '30' : '20'} />
       </span>
     {/if}
-    <!-- Bottom leading corner: the top trailing corner belongs to the "…" button. -->
+    <!-- Top leading corner (collections.css .al-smart); the top trailing corner belongs to the "…" button. -->
     <span class="marks">
       {#if album.isSmart}
         <span class="mark" title={$t('frameleaf_albums_smart_mark')} aria-hidden="true">
@@ -276,7 +273,7 @@
   }
   .marks {
     position: absolute;
-    bottom: var(--fl-space-2);
+    top: var(--fl-space-2);
     inset-inline-start: var(--fl-space-2);
     display: inline-flex;
     gap: var(--fl-space-1);
@@ -342,10 +339,11 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  /* collections.css .al-card-menu: 8px in from the cover's corner, clear of its rounding. */
   .actions {
     position: absolute;
-    top: 0.25rem;
-    inset-inline-end: 0.25rem;
+    top: var(--fl-space-2);
+    inset-inline-end: var(--fl-space-2);
     opacity: 0;
     transition: opacity var(--fl-motion-fast) var(--fl-ease);
   }
@@ -377,6 +375,7 @@
     opacity: 1;
   }
   .tile.list .marks {
+    top: auto;
     bottom: 2px;
     inset-inline-start: 2px;
   }

@@ -35,7 +35,8 @@
   import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { queueManager } from '$lib/managers/queue-manager.svelte';
-  import { mdiShieldCheckOutline, mdiShieldLockOutline } from '@mdi/js';
+  import { Icon } from '@frameleaf/ui';
+  import { mdiChevronRight, mdiShieldCheckOutline, mdiShieldLockOutline } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t, type Translations } from 'svelte-i18n';
 
@@ -139,9 +140,9 @@
       {/if}
     {/if}
     <Row label={$t('frameleaf_intel_locked_what_hides')} help={$t('frameleaf_intel_locked_what_hides_help')}>
-      <Button onclick={() => goto(commandCenterUrl('privacy', 'suppressed-content'))}>
-        {$t('frameleaf_intel_locked_open_locked')}
-      </Button>
+      <Button onclick={() => goto(commandCenterUrl('privacy', 'suppressed-content'))}
+        >{$t('frameleaf_intel_locked_open_locked')}<Icon icon={mdiChevronRight} size="1em" aria-hidden /></Button
+      >
     </Row>
     <Notice icon={mdiShieldCheckOutline} title={$t('frameleaf_intel_locked_pledge')}>
       {$t('frameleaf_intel_locked_pledge_body')}

@@ -1,19 +1,28 @@
 <script lang="ts">
   /**
-   * Your preferences → Supporter (FL-157): the personal view of Support Frameleaf, built from the same
-   * components as the Buy screen (`BuyActivated`, `BuyKeyField`; AuthScreens.jsx:1880-1990).
+   * Your preferences → Supporter (FL-157), as the approved prototype draws it
+   * (`settings-v2/server/preferences.jsx` Supporter): the answer first (not a supporter yet, a
+   * supporter, or covered by this server's licence), then "Have a key?" or "Your licence", then, for
+   * an administrator, "A licence for the whole server".
    *
    * - A personal key (`FL-I…`) is activated for this account through `users/me/license`; the key
    *   travels only in that request body and is shown again only as its last four symbols.
-   * - The activated card carries "Hide the supporter badge" (on hides it) and "Remove key" in place.
+   * - "Your licence" carries "Show the supporter badge" and Remove… with a confirmation in place.
    * - A server key is an administrator's: it is refused here and activated under Frameleaf Cloud →
    *   Licence, so a personal key is never registered for the server and the reverse.
    */
-  import '$lib/frameleaf/auth.css';
-  import '$lib/components/frameleaf/buy/buy.css';
   import Button from '$lib/components/frameleaf/Button.svelte';
-  import BuyActivated from '$lib/components/frameleaf/buy/BuyActivated.svelte';
-  import BuyKeyField from '$lib/components/frameleaf/buy/BuyKeyField.svelte';
+  import Field from '$lib/components/frameleaf/settings/kit/Field.svelte';
+  import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
+  import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
+  import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
+  import Said from '$lib/components/frameleaf/settings/kit/Said.svelte';
+  import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
+  import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
+  import { goto } from '$app/navigation';
+  import { locale } from '$lib/stores/preferences.store';
+  import { Icon } from '@frameleaf/ui';
+  import { mdiChevronRight, mdiHeart, mdiHeartOutline, mdiOpenInNew } from '@mdi/js';
   import { productKeyMessageKey, validateProductKey } from '$lib/frameleaf/cloud';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -43,7 +52,38 @@
     };
     void load();
   });
-  const badgeHidden = $derived(!authManager.preferences.purchase.showSupportBadge);
+  const badgeShown = $derived(authManager.preferences.purchase.showSupportBadge);
+  const serverCovered = $derived(featureFlagsManager.value.supporter);
+  let confirmRemove = $state(false);
+  const activatedOn = $derived(
+    personal?.activatedAt
+      ? new Date(personal.activatedAt).toLocaleDateString($locale, { day: 'numeric', month: 'long', year: 'numeric' })
+      : '',
+  );
+  const hero = $derived(
+    personal
+      ? {
+          tone: 'good' as const,
+          icon: mdiHeart,
+          title: $t('frameleaf_prefs_supporter_hero_mine'),
+          body: activatedOn
+            ? `${$t('frameleaf_prefs_supporter_activated_on', { values: { date: activatedOn } })} ${$t('frameleaf_prefs_supporter_status_mine')}`
+            : $t('frameleaf_prefs_supporter_status_mine_plain'),
+        }
+      : serverCovered
+        ? {
+            tone: 'good' as const,
+            icon: mdiHeart,
+            title: $t('frameleaf_prefs_supporter_hero_server'),
+            body: $t('frameleaf_prefs_supporter_status_server'),
+          }
+        : {
+            tone: 'quiet' as const,
+            icon: mdiHeartOutline,
+            title: $t('frameleaf_prefs_supporter_hero_none'),
+            body: $t('frameleaf_prefs_supporter_status_none'),
+          },
+  );
 
   const reloadUser = async () => {
     const isCurrent = authManager.captureSession();
@@ -56,6 +96,7 @@
   };
 
   const activate = async (event: SubmitEvent) => {
+    confirmRemove = false;
     const isCurrent = authManager.captureSession();
     event.preventDefault();
     if (busy) {
@@ -116,106 +157,126 @@
     }
   };
 
-  const setBadgeHidden = async (hidden: boolean) => {
+  const setBadgeShown = async (shown: boolean) => {
     try {
-      await setSupportBadgeVisibility(!hidden);
+      await setSupportBadgeVisibility(shown);
     } catch (error) {
       keyError = getServerErrorMessage(error) ?? $t('frameleaf_cloud_action_failed');
     }
   };
 </script>
 
-<div class="buy-screen supporter-section">
-  <!-- D1: what a licence gives this person, from the owner's licence facts -->
-  <p class="auth-note supporter-status">
-    {personal
-      ? $t('frameleaf_prefs_supporter_status_mine')
-      : featureFlagsManager.value.supporter
-        ? $t('frameleaf_prefs_supporter_status_server')
-        : $t('frameleaf_prefs_supporter_status_none')}
-  </p>
-  {#if notice}
-    <p class="auth-success" role="status"><span>{notice}</span></p>
-  {/if}
+<KitPage>
+  <Said message={notice} onDismiss={() => (notice = '')} />
+  <Hero
+    tone={hero.tone}
+    icon={hero.icon}
+    title={hero.title}
+    body={hero.body}
+    label={$t('frameleaf_prefs_supporter_status_label')}
+    actions={!personal && !serverCovered && individualStoreUrl ? learnMore : undefined}
+  />
+
   {#if personal}
-    <BuyActivated
-      name={authManager.user.name}
-      kind="individual"
-      keyHint={personal.keyHint}
-      activatedAt={personal.activatedAt}
-      error={keyError}
-      {badgeHidden}
-      {busy}
-      onBadgeHidden={(hidden) => void setBadgeHidden(hidden)}
-      onRemove={() => void remove()}
-    />
+    <Section title={$t('frameleaf_prefs_supporter_yours')}>
+      <Row label={$t('frameleaf_prefs_supporter_badge')} help={$t('frameleaf_prefs_supporter_badge_help')}>
+        <Switch
+          label={$t('frameleaf_prefs_supporter_badge')}
+          checked={badgeShown}
+          onChange={(shown) => void setBadgeShown(shown)}
+        />
+      </Row>
+      <Row label={$t('frameleaf_prefs_supporter_key')} help={$t('frameleaf_prefs_supporter_key_kept')}>
+        <div class="inline">
+          {#if confirmRemove}
+            <span class="value">{$t('frameleaf_buy_remove_personal_prompt')}</span>
+            <Button onclick={() => (confirmRemove = false)}>{$t('frameleaf_buy_keep')}</Button>
+            <Button
+              variant="danger"
+              disabled={busy}
+              onclick={() => {
+                confirmRemove = false;
+                void remove();
+              }}>{$t('frameleaf_buy_remove_confirm')}</Button
+            >
+          {:else}
+            <span class="value">FL-I•••-••••-{personal.keyHint}</span>
+            <Button disabled={busy} onclick={() => (confirmRemove = true)}
+              >{$t('frameleaf_prefs_supporter_remove')}</Button
+            >
+          {/if}
+        </div>
+      </Row>
+      {#if keyError}
+        <p class="error" role="alert">{keyError}</p>
+      {/if}
+    </Section>
   {:else}
-    <section class="auth-card buy-key fl-continuous-corners" aria-labelledby="supporter-have-key">
-      <h3 id="supporter-have-key">{$t('frameleaf_buy_have_key')}</h3>
-      <p class="auth-note">{$t('frameleaf_buy_personal_key_help')}</p>
-      <form class="buy-key-row" onsubmit={(event) => void activate(event)} novalidate>
-        <BuyKeyField bind:value={key} error={keyError} />
-        <span class="buy-key-submit">
-          <Button variant="primary" type="submit" disabled={busy}>
+    <Section
+      title={$t('frameleaf_prefs_supporter_have_key')}
+      description={$t('frameleaf_prefs_supporter_have_key_help')}
+    >
+      <Row label={$t('frameleaf_prefs_supporter_key')} help={$t('frameleaf_prefs_supporter_key_checked')}>
+        <form class="inline" onsubmit={(event) => void activate(event)} novalidate>
+          <Field
+            label={$t('frameleaf_prefs_supporter_key')}
+            value={key}
+            placeholder="FL-I…"
+            invalid={!!keyError}
+            describedBy={keyError ? 'supporter-key-error' : undefined}
+            onChange={(value) => {
+              key = value;
+              keyError = '';
+            }}
+          />
+          <Button variant="primary" type="submit" disabled={busy || !key.trim()}>
             {busy ? $t('frameleaf_buy_activating') : $t('frameleaf_buy_activate')}
           </Button>
-        </span>
-      </form>
-    </section>
+        </form>
+      </Row>
+      {#if keyError}
+        <p id="supporter-key-error" class="error" role="alert">{keyError}</p>
+      {/if}
+    </Section>
   {/if}
-  <p class="auth-note">
-    {#if individualStoreUrl}
-      <a class="auth-link" href={individualStoreUrl} target="_blank" rel="noopener noreferrer"
-        >{$t('frameleaf_supporter_buy_individual')}</a
-      >
-    {/if}
-    {#if authManager.user.isAdmin}
-      {#if individualStoreUrl}·{/if}
-      <a class="auth-link" href={commandCenterUrl('cloud', 'cloud-plan')}>{$t('frameleaf_cc_section_cloud_plan')}</a>
-    {/if}
-  </p>
-</div>
+
+  {#if authManager.user.isAdmin}
+    <Section
+      title={$t('frameleaf_prefs_supporter_server_title')}
+      description={$t('frameleaf_prefs_supporter_server_help')}
+    >
+      {#snippet action()}
+        <Button onclick={() => void goto(commandCenterUrl('cloud', 'cloud-plan'))}>
+          {$t('frameleaf_buy_server_licence_link')}<Icon icon={mdiChevronRight} size="1em" aria-hidden />
+        </Button>
+      {/snippet}
+    </Section>
+  {/if}
+</KitPage>
+
+{#snippet learnMore()}
+  <Button onclick={() => individualStoreUrl && window.open(individualStoreUrl, '_blank', 'noopener,noreferrer')}>
+    <Icon icon={mdiOpenInNew} size="1.125rem" aria-hidden />
+    {$t('frameleaf_prefs_supporter_learn')}
+  </Button>
+{/snippet}
 
 <style>
-  /* Not a settings row: it brings the inset a row would have, so the card clears the section edge. */
-  .supporter-section {
-    gap: 14px;
-    padding-block: var(--fl-space-3);
-  }
-  /*
-   * auth.css lays these out only inside a sign-in screen. Without the same stacking here the key's
-   * label, field and hint ran together on one line, and the notes and links lost their quiet text.
-   */
-  .supporter-section :global(h3) {
-    margin: 0;
-    font-size: var(--fl-font-size);
-    font-weight: 600;
-  }
-  .supporter-section :global(.auth-field) {
-    display: grid;
+  .inline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
     gap: var(--fl-space-2);
-    font-size: var(--fl-font-small);
-    font-weight: 600;
   }
-  .supporter-section :global(.auth-field input) {
-    width: 100%;
-  }
-  .supporter-section :global(.auth-field-hint) {
-    font-size: var(--fl-font-micro);
-    font-weight: 400;
+  .value {
     color: var(--fl-muted);
+    font-size: var(--fl-font-callout);
   }
-  .supporter-section :global(.auth-note) {
+  .error {
     margin: 0;
-    font-size: var(--fl-font-small);
-    color: var(--fl-muted);
-  }
-  .supporter-section :global(.auth-link) {
-    color: var(--fl-muted);
-    text-decoration: underline;
-    text-underline-offset: 3px;
-  }
-  .supporter-section :global(.auth-link:hover) {
-    color: var(--fl-text);
+    padding: 0 0 var(--fl-space-4);
+    color: var(--fl-danger);
+    font-size: var(--fl-font-callout);
   }
 </style>

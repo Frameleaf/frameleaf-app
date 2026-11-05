@@ -81,7 +81,11 @@
   const repairing = $derived(repair?.status === 'running');
   const rows = $derived(summary ? formatRows(summary.formats) : []);
 
-  const thumbnail = (item: RawSupportItemDto) => getAssetMediaUrl({ id: item.assetId, size: AssetMediaSize.Thumbnail });
+  /** No preview source means the server has made no thumbnail either: the placeholder, without a failed request. */
+  const thumbnail = (item: RawSupportItemDto) =>
+    item.source === RawSupportSource.None
+      ? null
+      : getAssetMediaUrl({ id: item.assetId, size: AssetMediaSize.Thumbnail });
   const preview = (item: RawSupportItemDto, size = AssetMediaSize.Preview) =>
     item.source === RawSupportSource.None
       ? null

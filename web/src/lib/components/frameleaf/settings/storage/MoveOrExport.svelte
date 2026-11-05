@@ -75,9 +75,13 @@
 
 <KitPage>
   <Section title={$t('frameleaf_move_what_title')} description={$t('frameleaf_move_what_description')}>
-    <div class="pad">
-      <Tiles label={$t('frameleaf_move_what_title')} value={way} options={tiles} onChange={(id) => (way = id as Way)} />
-    </div>
+    <Tiles
+      list
+      label={$t('frameleaf_move_what_title')}
+      value={way}
+      options={tiles}
+      onChange={(id) => (way = id as Way)}
+    />
   </Section>
 
   {#if way === 'server' || way === 'drive'}
@@ -114,7 +118,7 @@
     {/if}
   {:else if way === 'copy'}
     <Section title={$t('frameleaf_move_way_copy')} description={$t('frameleaf_move_copy_description')}>
-      <Links rows={copyRows} stacked />
+      <Links rows={copyRows} />
     </Section>
   {/if}
 

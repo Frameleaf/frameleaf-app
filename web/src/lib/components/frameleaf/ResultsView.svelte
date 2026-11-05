@@ -22,7 +22,7 @@
   import type { LibrarySessionAction } from '$lib/frameleaf/library-session';
   import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
-  import type { CellGridOptions } from '$lib/frameleaf/library-grid';
+  import type { CellGridOptions, TileLayout } from '$lib/frameleaf/library-grid';
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
   import { AssetVisibility } from '@frameleaf/sdk';
   import type { Snippet } from 'svelte';
@@ -69,6 +69,8 @@
     tileOverlay?: Snippet<[TimelineAsset]>;
     /** A fixed square cell grid with a caption under each tile (`AssetGrid`; the Folders files). */
     cellOptions?: CellGridOptions;
+    /** The tile layout; by default the session's (Timeline, Browse or Work), as `AssetGrid` has it. */
+    layout?: TileLayout;
     caption?: Snippet<[TimelineAsset]>;
     offlineFor?: (asset: TimelineAsset) => boolean;
     /** Rendered above the grid. */
@@ -96,6 +98,7 @@
     onSelect,
     tileOverlay,
     cellOptions,
+    layout,
     caption,
     offlineFor,
     header,
@@ -223,6 +226,7 @@
     {onSelect}
     {tileOverlay}
     {cellOptions}
+    {layout}
     {caption}
     {offlineFor}
     {header}

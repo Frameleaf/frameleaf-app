@@ -183,120 +183,163 @@
       {/if}
     {/if}
 
-    <div
-      class="mt-2 grid {visiblePeople.length + unassignedFaces.length + shownHiddenFaces.length <= 6
-        ? 'grid-cols-3 gap-3'
-        : 'grid-cols-4 gap-2'}"
-    >
+    <!--
+      MediaViewer.jsx `.mv-people-list`: one pill per person, the squircle face (FL-37), the name
+      (and age), and the face's own "⋮" menu at its end. Hovering or focusing a pill outlines the face.
+    -->
+    <div class="fl-people-list">
       {#each visiblePeople as person (person.id)}
         {@const personFaces = faceManager.facesByPersonId.get(person.id) ?? []}
         {@const primaryFace = personFaces[0]}
         {@const isHighlighted = personFaces.some((f) => assetViewerManager.highlightedFaces.some((b) => b.id === f.id))}
-        <div class="relative">
-          <!--
-            FL-37: people photos in the information panel are squircles (apple-style.css:137-148).
-            The mask clips rings and outlines, so the face highlight is a squircle backing behind
-            the photo and the focus ring sits on the link.
-          -->
+        <div class="fl-person-chip" class:is-hidden={person.isHidden} data-highlighted={isHighlighted || undefined}>
           <a
-            class="group block rounded-xl outline-offset-2 outline-immich-primary focus-visible:outline-2 dark:outline-immich-dark-primary"
+            class="fl-person-link"
             href={Route.viewPerson(person, { previousRoute })}
+            title={person.formattedBirthDate ? `${person.name} · ${person.formattedBirthDate}` : person.name}
             onfocus={() => assetViewerManager.setHighlightedFaces(personFaces)}
             onblur={() => assetViewerManager.clearHighlightedFaces()}
             onpointerenter={() => assetViewerManager.setHighlightedFaces(personFaces)}
             onpointerleave={() => assetViewerManager.clearHighlightedFaces()}
           >
-            <span
-              class="fl-squircle relative block p-1 {isHighlighted
-                ? 'bg-immich-primary dark:bg-immich-dark-primary'
-                : ''}"
-              data-highlighted={isHighlighted || undefined}
-            >
-              <span class="block" class:grayscale-50={person.isHidden} class:opacity-50={person.isHidden}>
-                <PersonAvatar {person} size={160} fluid />
-              </span>
-              {#if person.isHidden}
-                <span class="absolute inset-s-1/2 top-1/2 translate-[-50%] transform">
-                  <Icon icon={mdiEyeOffOutline} size="2em" title={person.name} class="text-white" />
-                </span>
-              {/if}
+            <span class="fl-squircle fl-person-face" data-highlighted={isHighlighted || undefined}>
+              <PersonAvatar {person} size={32} />
             </span>
-            <p class="mt-1 truncate font-medium" title={person.name}>{person.name}</p>
+            <p class="fl-person-name">{person.name}</p>
             {#if person.birthDate && person.formattedAge}
-              <p class="font-light {visiblePeople.length > 6 ? 'text-xs' : ''}" title={person.formattedBirthDate!}>
-                {person.formattedAge}
-              </p>
+              <p class="fl-person-age">{person.formattedAge}</p>
+            {/if}
+            {#if person.isHidden}
+              <Icon icon={mdiEyeOffOutline} size="13" aria-label={$t('frameleaf_faces_hidden_label')} />
             {/if}
           </a>
           {#if isOwner && primaryFace}
-            <div class="absolute -inset-e-1 -top-1">
-              <PersonFaceActions {person} face={primaryFace} {previousRoute} {onFacesChanged} />
-            </div>
+            <PersonFaceActions {person} face={primaryFace} {previousRoute} {onFacesChanged} />
           {/if}
         </div>
       {/each}
       {#each unassignedFaces as face (face.id)}
         {@const isHighlighted = assetViewerManager.highlightedFaces.some((b) => b.id === face.id)}
         <div
-          class="relative"
+          class="fl-person-chip"
           data-testid="unassigned-face"
+          data-highlighted={isHighlighted || undefined}
           role="presentation"
           onpointerenter={() => assetViewerManager.setHighlightedFaces([face])}
           onpointerleave={() => assetViewerManager.clearHighlightedFaces()}
           onfocusin={() => assetViewerManager.setHighlightedFaces([face])}
           onfocusout={() => assetViewerManager.clearHighlightedFaces()}
         >
-          <div>
-            <span
-              class="fl-squircle block p-1 {isHighlighted ? 'bg-immich-primary dark:bg-immich-dark-primary' : ''}"
-              data-highlighted={isHighlighted || undefined}
-            >
-              <span
-                class="fl-squircle block aspect-square w-full bg-gray-200 bg-no-repeat dark:bg-gray-700"
-                style={faceCropStyle(face)}
-                aria-hidden="true"
-              ></span>
-            </span>
-            <p class="mt-1 truncate font-medium">{$t('unnamed_person')}</p>
-          </div>
-          <div class="absolute -inset-e-1 -top-1">
-            <PersonFaceActions person={null} {face} {previousRoute} {onFacesChanged} />
-          </div>
+          <span class="fl-person-link">
+            <span class="fl-squircle fl-person-face fl-person-crop" style={faceCropStyle(face)} aria-hidden="true"
+            ></span>
+            <p class="fl-person-name">{$t('unnamed_person')}</p>
+          </span>
+          <PersonFaceActions person={null} {face} {previousRoute} {onFacesChanged} />
         </div>
       {/each}
       {#each shownHiddenFaces as face (face.id)}
         {@const isHighlighted = assetViewerManager.highlightedFaces.some((b) => b.id === face.id)}
         {@const label = face.person?.name || $t('unnamed_person')}
         <div
-          class="relative"
+          class="fl-person-chip is-hidden"
           data-testid="hidden-face"
+          data-highlighted={isHighlighted || undefined}
           role="presentation"
           onpointerenter={() => assetViewerManager.setHighlightedFaces([face])}
           onpointerleave={() => assetViewerManager.clearHighlightedFaces()}
           onfocusin={() => assetViewerManager.setHighlightedFaces([face])}
           onfocusout={() => assetViewerManager.clearHighlightedFaces()}
         >
-          <div class="opacity-60">
-            <span
-              class="fl-squircle block p-1 {isHighlighted ? 'bg-immich-primary dark:bg-immich-dark-primary' : ''}"
-              data-highlighted={isHighlighted || undefined}
-            >
-              <span
-                class="fl-squircle block aspect-square w-full bg-gray-200 bg-no-repeat dark:bg-gray-700"
-                style={faceCropStyle(face)}
-                aria-hidden="true"
-              ></span>
-            </span>
-            <p class="mt-1 flex items-center gap-1 truncate font-medium" title={label}>
-              <span class="truncate">{label}</span>
-              <Icon icon={mdiEyeOffOutline} size="13" aria-label={$t('frameleaf_faces_hidden_label')} />
-            </p>
-          </div>
-          <div class="absolute -inset-e-1 -top-1">
-            <PersonFaceActions person={face.person} {face} {previousRoute} {onFacesChanged} />
-          </div>
+          <span class="fl-person-link" title={label}>
+            <span class="fl-squircle fl-person-face fl-person-crop" style={faceCropStyle(face)} aria-hidden="true"
+            ></span>
+            <p class="fl-person-name">{label}</p>
+            <Icon icon={mdiEyeOffOutline} size="13" aria-label={$t('frameleaf_faces_hidden_label')} />
+          </span>
+          <PersonFaceActions person={face.person} {face} {previousRoute} {onFacesChanged} />
         </div>
       {/each}
     </div>
   </section>
 {/if}
+
+<style>
+  /* .mv-people-list / .mv-chip-wrap / .mv-chip (media-viewer.css:1249-1330). */
+  .fl-people-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--fl-space-2);
+    margin-top: var(--fl-space-2);
+  }
+  .fl-person-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--fl-space-1);
+    min-width: 0;
+    max-width: 100%;
+    padding-inline-end: var(--fl-space-1);
+    border: 1px solid var(--fl-viewer-border);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--fl-viewer-text) 3%, transparent);
+    transition:
+      border-color var(--fl-motion-fast) var(--fl-ease),
+      background-color var(--fl-motion-fast) var(--fl-ease);
+  }
+  .fl-person-chip:hover,
+  .fl-person-chip:focus-within,
+  .fl-person-chip[data-highlighted] {
+    border-color: var(--fl-accent);
+    background: var(--fl-accent-soft);
+  }
+  /* .mv-chip-more: the "⋮" sits in the pill with no fill of its own until it is pointed at. */
+  .fl-person-chip :global(.fl-face-trigger .menu-root > button:not(:hover)) {
+    background: transparent;
+  }
+  .fl-person-chip.is-hidden {
+    opacity: 0.6;
+  }
+  .fl-person-link {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--fl-space-2);
+    min-width: 0;
+    min-height: 42px;
+    padding: 3px var(--fl-space-2) 3px var(--fl-space-1);
+    border-radius: 999px;
+    color: var(--fl-viewer-text);
+    font-size: var(--fl-font-small);
+    text-decoration: none;
+  }
+  .fl-person-link:focus-visible {
+    outline: 2px solid var(--fl-accent);
+    outline-offset: 2px;
+  }
+  .fl-person-face {
+    display: block;
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+  }
+  .fl-person-crop {
+    background-color: var(--fl-viewer-raised);
+    background-repeat: no-repeat;
+  }
+  .fl-person-name {
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .fl-person-age::before {
+    content: '· ';
+  }
+  .fl-person-age {
+    flex-shrink: 0;
+    margin: 0;
+    color: var(--fl-viewer-muted);
+    font-size: var(--fl-font-micro);
+  }
+</style>

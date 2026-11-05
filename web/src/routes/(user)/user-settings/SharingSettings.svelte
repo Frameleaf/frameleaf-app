@@ -57,6 +57,7 @@
     getMyUser,
     getPartners,
     getRecipientGroups,
+    isHttpError,
     leaveClusterGroup,
     PartnerDirection,
     removePartner,
@@ -122,6 +123,16 @@
   const partnerChoices = $derived(
     accounts.filter((user) => user.id !== me && partners.every((p) => !(p.user.id === user.id && p.sharedByMe))),
   );
+  /** A member on a server where people cannot find each other has nobody to choose. */
+  const blocked = $derived(!authManager.user.isAdmin && !serverConfigManager.value.publicUsers);
+  /** Why "Add a partner" can't be used, said under the section's heading instead of a silent grey button. */
+  const partnerAddReason = $derived(
+    blocked || accountsStatus !== 'loaded' || partnerChoices.length > 0
+      ? ''
+      : accounts.some((user) => user.id !== me)
+        ? $t('frameleaf_sharing_partner_add_none')
+        : $t('frameleaf_sharing_partner_add_alone'),
+  );
 
   type DialogState =
     | { kind: 'invite'; userId: string }
@@ -155,21 +166,47 @@
   // The account's sharing groups: a shortcut for picking people, managed in their own dialog.
   let groups = $state<RecipientGroupResponseDto[] | null>(null);
   let groupsOpen = $state(false);
+  let groupsFailed = $state(false);
+  let groupsRetrying = $state(false);
   let groupsRequest = 0;
+  /**
+   * The page asks for four things at once on arrival. When the server is briefly busy (seen in the
+   * audit as a burst of 500s across endpoints while its job queues could not be read), the one call
+   * that lands in that moment failed and left "Manage groups" dead behind a toast for the rest of the
+   * visit. A failure the server calls temporary (5xx, or no answer) is asked once more after a pause;
+   * if that fails too, the section says so with Try again instead of a toast.
+   */
+  const transient = (error: unknown) => !isHttpError(error) || error.status >= 500;
   const loadGroups = async () => {
     if (!isCurrentView()) {
       return;
     }
     const request = ++groupsRequest;
     const current = () => isCurrentView() && request === groupsRequest;
-    try {
-      const result = await getRecipientGroups();
-      if (current()) {
-        groups = result;
-      }
-    } catch (error) {
-      if (current()) {
-        handleError(error, $t('frameleaf_sharing_groups_error'));
+    groupsRetrying = true;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const result = await getRecipientGroups();
+        if (current()) {
+          groups = result;
+          groupsFailed = false;
+          groupsRetrying = false;
+        }
+        return;
+      } catch (error) {
+        if (!current()) {
+          return;
+        }
+        if (attempt === 0 && transient(error)) {
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+          if (!current()) {
+            return;
+          }
+          continue;
+        }
+        groupsFailed = true;
+        groupsRetrying = false;
+        return;
       }
     }
   };
@@ -178,8 +215,6 @@
   // saved with the settings bar); everyone else only meets its effect.
   const settingsDraft = getSystemConfigDraft();
   const findable = $derived(settingsDraft?.draft.server.publicUsers ?? serverConfigManager.value.publicUsers);
-  /** A member on a server where people cannot find each other has nobody to choose. */
-  const blocked = $derived(!authManager.user.isAdmin && !serverConfigManager.value.publicUsers);
 
   const listFormat = $derived(new Intl.ListFormat($locale ?? 'en', { style: 'long', type: 'conjunction' }));
   const list = (names: string[]) => listFormat.format(names);
@@ -210,6 +245,10 @@
         ? $t('frameleaf_sharing_hero_theirs_too', { values: { count: theirs.length, names: list(theirs) } })
         : '',
       mine.length === 0 && theirs.length > 0 ? $t('frameleaf_sharing_hero_not_mine') : '',
+      // The other way round: the people you share with don't share theirs (the body is never empty).
+      mine.length > 0 && theirs.length === 0
+        ? $t('frameleaf_sharing_hero_not_theirs', { values: { count: mine.length, names: list(mine) } })
+        : '',
       family.length > 0
         ? $t('frameleaf_sharing_hero_family', { values: { names: list(family.map((user) => user.name)) } })
         : '',
@@ -535,14 +574,19 @@
     description={$t('frameleaf_sharing_partners_description')}
   >
     {#snippet action()}
-      <Button
-        disabled={blocked || partnerChoices.length === 0}
-        onclick={() => openDialog({ kind: 'partner-add', userId: partnerChoices[0]?.id ?? '' })}
-      >
-        <Icon icon={mdiAccountPlusOutline} size="18" aria-hidden={true} />
-        {$t('frameleaf_sharing_partner_add')}
-      </Button>
+      <span class="held-action">
+        <Button
+          disabled={blocked || partnerChoices.length === 0}
+          onclick={() => openDialog({ kind: 'partner-add', userId: partnerChoices[0]?.id ?? '' })}
+        >
+          <Icon icon={mdiAccountPlusOutline} size="18" aria-hidden={true} />
+          {$t('frameleaf_sharing_partner_add')}
+        </Button>
+      </span>
     {/snippet}
+    {#if partnerAddReason}
+      <p class="hint">{partnerAddReason}</p>
+    {/if}
     {#if accountsStatus === 'error'}
       <div class="pad">
         <InlineError compact message={$t('frameleaf_people_sharing.accounts_error')} onRetry={loadAccounts} />
@@ -705,6 +749,16 @@
         {$t('frameleaf_sharing_groups_manage')}
       </Button>
     {/snippet}
+    {#if groupsFailed}
+      <div class="pad">
+        <InlineError
+          compact
+          message={$t('frameleaf_sharing_groups_error')}
+          onRetry={loadGroups}
+          retrying={groupsRetrying}
+        />
+      </div>
+    {/if}
     {#if groups && groups.length > 0}
       <ItemList>
         {#each groups as group (group.id)}
@@ -855,6 +909,13 @@
   }
   .pad {
     padding-bottom: var(--fl-space-4);
+  }
+  /* A section action that can't be used right now stays readable in both themes; the hint says why. */
+  .held-action :global(button:disabled) {
+    opacity: 1;
+    color: var(--fl-muted);
+    background: transparent;
+    border-color: var(--fl-border-strong);
   }
   /* How far the first copy into a partner's library has come (FL-326). */
   .progress {

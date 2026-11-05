@@ -143,9 +143,11 @@ it('uses the album workspace while preserving an explicit Pro context and requir
     libraryScope: LibraryViewScope.Design,
     albumIds: { any: [albumId] },
   });
-  expect(albumSearchContext(url, { id: albumId, libraryScope: LibraryScope.Both }).filter.libraryScope).toBe(
-    LibraryViewScope.Personal,
-  );
+  // A Library album shows everything in it, as its timeline and count do: no workspace scope is added.
+  expect(albumSearchContext(url, { id: albumId, libraryScope: LibraryScope.Both }).filter.libraryScope).toBeUndefined();
+  expect(albumSearchContext(url, { id: albumId, libraryScope: LibraryScope.Personal }).filter).toEqual({
+    albumIds: { any: [albumId] },
+  });
   const scoped = onPage(
     `/albums/${albumId}`,
     state({

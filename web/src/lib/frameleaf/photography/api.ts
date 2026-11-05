@@ -22,12 +22,20 @@ export type Shoot = {
   stage: (typeof shootStages)[number];
   unavailable: boolean;
   coverAssetId: string | null;
+  /**
+   * The cover's thumbhash once its thumbnail exists; null when the server has none (a RAW it cannot
+   * develop). Optional: a server from before this field leaves it out, and the cover is requested as before.
+   */
+  coverThumbhash?: string | null;
   assetCount: number | null;
   /** The shoot brief (approved design, 2026-11-04: Intake › Shoot brief). */
   notes?: string;
   deliveryTarget?: string | null;
 };
 export type Workspace = { revision: string | null; shoots: Shoot[] };
+/** The shoot's cover asset when it can be shown: no request is made for one the server says has no thumbnail. */
+export const shootCover = (shoot: Pick<Shoot, 'coverAssetId' | 'coverThumbhash' | 'unavailable'>) =>
+  shoot.coverAssetId && !shoot.unavailable && shoot.coverThumbhash !== null ? shoot.coverAssetId : null;
 export type Photo = {
   id: string;
   fileName: string;

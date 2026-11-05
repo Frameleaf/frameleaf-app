@@ -449,6 +449,19 @@
   display: block;
   user-select: none;
 }
+/* A preview the server could not draw shows a quiet note, never the browser's broken image. */
+.rde-frame > img.is-broken {
+  visibility: hidden;
+}
+.rde-frame-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-callout);
+}
 .rde-overlay {
   position: absolute;
   inset: 0;
@@ -603,10 +616,21 @@
   padding: 0;
   background: var(--fl-raised);
 }
+/* The thumbnail fills the frame; the number and file type sit on it (prototype filmstrip). */
+.rde-film-photo > .rde-thumb {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+.rde-film-photo > .rde-thumb > :where(img, .ph-thumb-missing) {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
 .rde-film-photo img {
   opacity: 0.76;
 }
-.rde-film-photo > span {
+.rde-film-photo > span:not(.rde-thumb) {
   position: absolute;
   left: 4px;
   bottom: 4px;

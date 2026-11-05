@@ -134,15 +134,24 @@
 </section>
 
 <style>
+  /* people.css `.pet-recognition`: a filled panel, 16px × 20px inside; the outline only in light. */
   .recognition {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
-    padding: 1rem;
-    margin-bottom: 1rem;
+    gap: var(--fl-space-2);
+    padding: var(--fl-space-4) var(--fl-space-5);
+    margin-bottom: var(--fl-space-4);
     background: var(--fl-panel);
-    border: 1px solid var(--fl-border);
+    border: 1px solid transparent;
     border-radius: var(--fl-radius-card);
+  }
+  :global([data-theme='light']) .recognition {
+    border-color: var(--fl-border);
+  }
+  @media (max-width: 700px) {
+    .recognition {
+      padding: var(--fl-space-4);
+    }
   }
   header {
     display: flex;
@@ -173,7 +182,7 @@
   /* The calm "is off" notice: a muted mark, the title in the text colour, the detail muted. */
   .notice {
     display: flex;
-    gap: var(--fl-space-2);
+    gap: var(--fl-space-3);
     align-items: flex-start;
     color: var(--fl-text);
   }
@@ -199,8 +208,9 @@
   .notice-copy a {
     color: var(--fl-accent);
   }
-  .notice-copy a:hover {
+  .notice-copy a {
     text-decoration: underline;
+    text-underline-offset: 2px;
   }
   .note {
     margin: 0;

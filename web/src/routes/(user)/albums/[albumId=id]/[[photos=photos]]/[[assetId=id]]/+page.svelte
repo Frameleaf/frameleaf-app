@@ -67,7 +67,7 @@
   } from '@frameleaf/sdk';
   import { CommandPaletteDefaultProvider, Theme as AppTheme, themeManager, toastManager } from '@frameleaf/ui';
   import { mdiArrowLeft } from '@mdi/js';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
 
@@ -156,7 +156,8 @@
     ),
   );
   // A shared space's photos are one of its panels, so leaving them goes back to the space's own page.
-  const backRoute = $derived(album.kind === AlbumKind.Space ? Route.viewSharedSpace({ id: album.id }) : Route.albums());
+  // A shared space opens here (owner, 2026-11-05), so Escape goes back to the list of spaces.
+  const backRoute = $derived(album.kind === AlbumKind.Space ? Route.sharing() : Route.albums());
   const showAlbumUsers = $derived(timelineManager?.showAssetOwners ?? false);
   const containsEditors = $derived(album.shared && album.albumUsers.some(({ role }) => role === AlbumUserRole.Editor));
   const isShared = $derived(album.albumUsers.length > 1);
@@ -649,6 +650,12 @@
 </script>
 
 <OnEvents
+  onAlbumCreate={(created) => {
+    // Boards' "New collection inside" (opened in place) adds a card for it here.
+    if (created.parentId === albumId) {
+      void refreshEverything();
+    }
+  }}
   onSharedLinkCreate={refreshAlbum}
   onSharedLinkDelete={refreshAlbum}
   {onAlbumDelete}
@@ -662,7 +669,7 @@
 />
 <CommandPaletteDefaultProvider name={$t('album')} actions={[Upload, Cast, Close]} />
 
-{#snippet header(filteredCount: number | null = null)}
+{#snippet header(filteredCount: number | null = null, addMenu: Snippet | undefined = undefined)}
   {#key albumId}
     {@const view = albumView}
     <AlbumHeader
@@ -681,6 +688,7 @@
       {assetCount}
       itemCount={assetCount + bookmarkCount}
       {filteredCount}
+      pendingInvites={data.pendingInvites}
       onAlbumChange={(next) => (album = next)}
       onRefresh={() => refreshEverything(view)}
       onAddPhotos={() => handlePromiseError(addPhotosFromLibrary())}
@@ -688,16 +696,24 @@
       onToggleActivity={() => (activityOpen = !activityOpen)}
       onToggleOwnerBadges={() => timelineManager?.toggleShowAssetOwners()}
       onDownload={boardsCollection ? () => (downloadOpen = true) : undefined}
+      {addMenu}
     />
-    {#if !isCollection && !isSpace && canChangeAlbum}
+    {#if mixedAlbum}{@render suggestions()}{/if}
+  {/key}
+{/snippet}
+
+{#snippet suggestions()}
+  {#if !isCollection && !isSpace && canChangeAlbum}
+    {#key albumId}
+      {@const view = albumView}
       <!-- FL-1092 / FL-1093: photos that look like they're from this album's trip. -->
       <AlbumSuggestions
         {albumId}
         albumName={album.albumName || $t('unnamed_album')}
         onChanged={() => refreshEverything(view)}
       />
-    {/if}
-  {/key}
+    {/key}
+  {/if}
 {/snippet}
 
 <!--
@@ -769,6 +785,11 @@
       <Theme theme={appTheme}>
         <section class="pt-2">{@render header()}</section>
       </Theme>
+
+      <!-- Under the header's hairline, as the prototype's notices sit (review-1030-shell.css). -->
+      {#snippet subheader()}
+        <div class="fl-album-suggestions">{@render suggestions()}</div>
+      {/snippet}
 
       {#snippet viewer()}
         <Portal target="body">
@@ -851,6 +872,14 @@
    * full-height side sheet over the right edge at every width above a phone, so opening it never
    * squeezes the grid or wraps the header's buttons; a sheet from the bottom on phones.
    */
+  /* The trip suggestion is the subheader's whole content: no extra margin, and no gap when it says nothing. */
+  .fl-album-suggestions :global(.pl-notice) {
+    margin: 0;
+  }
+  :global(.fl-library-subheader:has(> .fl-album-suggestions):not(:has(.pl-notice))) {
+    padding-top: 0;
+  }
+
   .fl-album-activity {
     position: fixed;
     inset-block: var(--fl-topbar-height) 0;

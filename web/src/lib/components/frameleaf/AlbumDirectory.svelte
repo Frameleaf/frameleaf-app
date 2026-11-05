@@ -149,8 +149,8 @@
       (!arrangement.searching && !arrangement.empty && (view.filter === 'all' || view.filter === 'shared')),
   );
   const isSpace = (album: AlbumResponseDto) => album.kind === AlbumKind.Space;
-  const openRoute = (album: AlbumResponseDto) =>
-    isSpace(album) ? Route.viewSharedSpace({ id: album.id }) : Route.viewAlbum({ id: album.id });
+  // Every kind opens in the library view; a shared space too (owner, 2026-11-05).
+  const openRoute = (album: AlbumResponseDto) => Route.viewAlbum({ id: album.id });
   const nameOf = (album: AlbumResponseDto | undefined) => album?.albumName || $t('unnamed_album');
 
   const filterLabels: Record<AlbumDirectoryFilter, () => string> = {
@@ -830,8 +830,9 @@
    * sections, 17px section titles and a 164px (132px compact) grid. The gaps between rows of
    * controls and between cards are the spacing tokens, never under the prototype's own.
    */
+  /* With the page area's 8px, the gutter every library page uses (24px desktop, 16px phone). */
   .albums {
-    padding: 18px 24px 64px;
+    padding: 18px var(--fl-page-inline, var(--fl-space-4)) 64px;
     color: var(--fl-text);
   }
   /* The line under the filters takes no room while it has nothing to say (it stays a live region). */
@@ -860,10 +861,16 @@
     gap: var(--fl-space-4) var(--fl-space-5);
     margin-bottom: var(--fl-space-3);
   }
+  /* One page-title size on every page (28px, 22px on phones). */
   .heading h1 {
     margin: 0;
-    font-size: 1.5rem;
-    font-weight: 700;
+    font: var(--fl-type-display);
+    letter-spacing: -0.02em;
+  }
+  @media (max-width: 767px) {
+    .heading h1 {
+      font-size: var(--fl-font-title);
+    }
   }
   .heading p {
     margin: var(--fl-space-2) 0 0;
@@ -904,8 +911,10 @@
     outline-offset: var(--fl-focus-offset);
   }
   /* The prototype's segmented pill (collections.css .al-view): raised track, the chosen view lifted. */
+  /* 44px overall like every control beside it (48 on touch): the track's 3px inset plus 38px segments. */
   .view {
     display: inline-flex;
+    box-sizing: border-box;
     gap: 2px;
     padding: 3px;
     border-radius: var(--fl-radius-pill);
@@ -915,11 +924,17 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    min-height: 38px;
     padding: 0 0.625rem;
     border: 0;
     border-radius: var(--fl-radius-pill);
     background: transparent;
     color: var(--fl-muted);
+  }
+  @media (pointer: coarse) {
+    .view button {
+      min-height: 42px;
+    }
   }
   .view button:hover {
     color: var(--fl-text);
@@ -1112,10 +1127,6 @@
     scale: 1.02;
   }
   @media (max-width: 700px) {
-    /* With the page's own 8px, the 16px phone gutter. */
-    .albums {
-      padding: 14px var(--fl-space-2) 64px;
-    }
     .head {
       flex-direction: column;
       align-items: flex-start;
@@ -1126,6 +1137,10 @@
     .search {
       min-width: 0;
       flex: 1 1 100%;
+    }
+    /* collections.css @700px: the New menu keeps to the right edge, under the search's end. */
+    .new-menu {
+      margin-inline-start: auto;
     }
     .filters {
       flex-wrap: nowrap;

@@ -84,3 +84,26 @@ it('uses the authorized shared search record and discards it on an access change
   eventManager.emit('AuthLogout');
   await waitFor(() => expect(screen.queryByRole('link')).toBeNull());
 });
+
+it("shows where an owned link was saved from, from the bookmark's own source", async () => {
+  sdkMock.getBookmark.mockResolvedValue({
+    ...bookmark,
+    createdAt: '2026-11-05T10:00:00.000Z',
+    source: {
+      captureId: '0d4f7a8e-6f5b-4c3e-9a1d-2b3c4d5e6f70',
+      pageUrl: 'https://fonts.example.org/pairings',
+      title: 'Serif pairings',
+      capturedAt: '2026-11-05T10:00:00.000Z',
+      creator: 'Jamie',
+    },
+  } as BookmarkResponseDto);
+  render(BookmarkInspector, { id: bookmark.id, onClose: vi.fn() });
+  expect(await screen.findByRole('link', { name: 'Serif pairings' })).toHaveAttribute(
+    'href',
+    'https://fonts.example.org/pairings',
+  );
+  expect(screen.getByText('Jamie')).toBeInTheDocument();
+  expect(screen.getByText('frameleaf_boards_source_via_extension')).toBeInTheDocument();
+  // the source is read from the bookmark itself, never as an asset
+  expect(sdkMock.getAssetSources).not.toHaveBeenCalled();
+});

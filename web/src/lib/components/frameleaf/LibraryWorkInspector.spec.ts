@@ -268,7 +268,7 @@ describe('LibraryWorkInspector', () => {
       await waitFor(() =>
         expect(screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)).toEqual([
           'frameleaf_boards_colours',
-          'rating',
+          'frameleaf_boards_rating',
           'tags',
           'frameleaf_boards_note',
           'frameleaf_boards_collections',

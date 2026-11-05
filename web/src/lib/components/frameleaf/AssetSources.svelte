@@ -24,6 +24,8 @@
     canRead = false,
     added,
     headingClass = '',
+    given,
+    fallbackVia,
   }: {
     assetId: string;
     canRead?: boolean;
@@ -31,6 +33,10 @@
     added?: string;
     /** Lets a host panel give the heading its own label style. */
     headingClass?: string;
+    /** Sources the host already has (a saved link's own `source`); nothing is read for `assetId`. */
+    given?: AssetSourceResponseDto[];
+    /** "Saved with" when no source says otherwise (a saved link: "Save a link", not "Upload"). */
+    fallbackVia?: { icon: string; label: string };
   } = $props();
   const headingId = $props.id();
   let sources = $state<AssetSourceResponseDto[]>([]);
@@ -43,6 +49,10 @@
     sources = [];
     failed = false;
     loading = false;
+    if (given) {
+      sources = canRead ? [...given].sort((a, b) => b.capturedAt.localeCompare(a.capturedAt)) : [];
+      return;
+    }
     if (!canRead) {
       return;
     }
@@ -85,7 +95,7 @@
       ? { icon: mdiPuzzleOutline, label: $t('frameleaf_boards_source_via_extension') }
       : sources.some((source) => source.importedFrom === 'eagle')
         ? { icon: mdiFolderZipOutline, label: $t('frameleaf_boards_source_via_eagle') }
-        : { icon: mdiTrayArrowUp, label: $t('frameleaf_boards_source_via_upload') },
+        : (fallbackVia ?? { icon: mdiTrayArrowUp, label: $t('frameleaf_boards_source_via_upload') }),
   );
 </script>
 

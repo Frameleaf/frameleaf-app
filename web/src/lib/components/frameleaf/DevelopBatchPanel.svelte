@@ -1,5 +1,7 @@
 <script lang="ts">
   import Button from './Button.svelte';
+  import { Icon } from '@frameleaf/ui';
+  import { mdiImageEditOutline } from '@mdi/js';
   import {
     cancelDevelopBatch,
     confirmDevelopBatchReturns,
@@ -285,144 +287,197 @@
   {#if !supported}
     <p>{$t('frameleaf_batch.old_server')}</p>
   {:else}
-    <div class="buttons">
-      {#if assetIds.length > 0}<Button variant="primary" disabled={busy || uploading} onclick={() => void create()}
-          >{$t('frameleaf_batch.create', { values: { count: assetIds.length } })}</Button
-        >{/if}
-      <Button disabled={busy || uploading} onclick={() => void perform(load)}>{$t('refresh')}</Button>
-    </div>
+    {#if assetIds.length === 0 && batches.length === 0 && !batch && !busy}
+      <!-- Opened on its own with nothing exported yet: say how a batch starts. -->
+      <div class="empty">
+        <Icon icon={mdiImageEditOutline} size="2rem" aria-hidden={true} />
+        <h2>{$t('frameleaf_batch.empty_title')}</h2>
+        <p>{$t('frameleaf_batch.empty_body')}</p>
+        <div class="buttons">
+          <a class="button" href="/photos">{$t('frameleaf_batch.empty_open_library')}</a>
+          <Button disabled={busy || uploading} onclick={() => void perform(load)}>{$t('refresh')}</Button>
+        </div>
+      </div>
+    {:else if assetIds.length > 0 || batches.length === 0}<div class="buttons">
+        {#if assetIds.length > 0}<Button variant="primary" disabled={busy || uploading} onclick={() => void create()}
+            >{$t('frameleaf_batch.create', { values: { count: assetIds.length } })}</Button
+          >{/if}
+        <!-- With batches to resume, Refresh sits at the end of their picker's row instead. -->
+        {#if batches.length === 0}<Button disabled={busy || uploading} onclick={() => void perform(load)}
+            >{$t('refresh')}</Button
+          >{/if}
+      </div>{/if}
     {#if batches.length > 0}
-      <label for="editing-batch">{$t('frameleaf_batch.resume')}</label>
-      <select
-        id="editing-batch"
-        value={batch?.id ?? ''}
-        disabled={busy || uploading}
-        onchange={(event) => {
-          const id = event.currentTarget.value;
-          if (id) {
-            void perform(() => selectBatch(id));
-          }
-        }}
-      >
-        <option value="">{$t('frameleaf_batch.choose')}</option>
-        {#each batches as entry (entry.id)}<option value={entry.id}
-            >{new Date(entry.createdAt).toLocaleString($locale)} · {entry.itemCount} · {$t(
-              `frameleaf_batch.${entry.status}` as Translations,
-            )}</option
-          >{/each}
-      </select>
+      <div class="field">
+        <label for="editing-batch">{$t('frameleaf_batch.resume')}</label>
+        <div class="select-row">
+          <select
+            id="editing-batch"
+            value={batch?.id ?? ''}
+            disabled={busy || uploading}
+            onchange={(event) => {
+              const id = event.currentTarget.value;
+              if (id) {
+                void perform(() => selectBatch(id));
+              }
+            }}
+          >
+            <option value="">{$t('frameleaf_batch.choose')}</option>
+            {#each batches as entry (entry.id)}<option value={entry.id}
+                >{new Date(entry.createdAt).toLocaleString($locale)} · {$t('frameleaf_batch.photo_count', {
+                  values: { count: entry.itemCount },
+                })} · {$t(`frameleaf_batch.${entry.status}` as Translations)}</option
+              >{/each}
+          </select>
+          <Button disabled={busy || uploading} onclick={() => void perform(load)}>{$t('refresh')}</Button>
+        </div>
+      </div>
       {#if nextCursor}<Button disabled={busy || uploading} onclick={() => void perform(loadMore)}
           >{$t('load_more')}</Button
         >{/if}
     {/if}
     {#if batch}
-      <p role="status">{$t('frameleaf_batch.prepared_count', { values: { prepared, total: batch.items.length } })}</p>
-      {#if prepared < batch.items.length && batch.status !== 'cancelled'}<p>{$t('frameleaf_batch.prepare_help')}</p>
-        <Button disabled={busy || uploading} onclick={() => void prepare()}>{$t('frameleaf_batch.prepare')}</Button
-        >{/if}
-      <p>{$t('frameleaf_batch.export_counts', { values: { included: prepared, skipped: excluded } })}</p>
-      {#if excluded > 0}<p>{$t('frameleaf_batch.exclusions_help')}</p>{/if}
-      <div class="buttons">
-        {#if prepared > 0 && pending === 0 && batch.status !== 'cancelled'}<a
-            class="download"
-            href={`${getBaseUrl()}/develop-batches/${batch.id}/download`}
-            download>{$t('frameleaf_batch.download')}</a
-          >{/if}
+      <!-- Step 1: the originals go out as a ZIP. -->
+      <div class="step">
+        <div class="step-head">
+          <h3>{$t('frameleaf_batch.step_export')}</h3>
+          <span class="pill" data-tone={batch.status}>{$t(`frameleaf_batch.${batch.status}` as Translations)}</span>
+        </div>
+        <p role="status">
+          {$t('frameleaf_batch.prepared_count', { values: { prepared, total: batch.items.length } })}
+        </p>
+        <progress max={batch.items.length || 1} value={prepared}></progress>
+        {#if prepared < batch.items.length && batch.status !== 'cancelled'}<p>
+            {$t('frameleaf_batch.prepare_help')}
+          </p>{/if}
+        <p>{$t('frameleaf_batch.export_counts', { values: { included: prepared, skipped: excluded } })}</p>
+        {#if excluded > 0}<p>{$t('frameleaf_batch.exclusions_help')}</p>{/if}
+        <div class="buttons">
+          {#if prepared < batch.items.length && batch.status !== 'cancelled'}<Button
+              variant={prepared > 0 && pending === 0 ? 'default' : 'primary'}
+              disabled={busy || uploading}
+              onclick={() => void prepare()}>{$t('frameleaf_batch.prepare')}</Button
+            >{/if}
+          {#if prepared > 0 && pending === 0 && batch.status !== 'cancelled'}<a
+              class="button"
+              href={`${getBaseUrl()}/develop-batches/${batch.id}/download`}
+              download>{$t('frameleaf_batch.download')}</a
+            >{/if}
+        </div>
+      </div>
+      {#if batch.status !== 'cancelled'}
+        <!-- Step 2: the edited files come back and are matched to their originals. -->
+        <div class="step">
+          <div class="step-head"><h3>{$t('frameleaf_batch.step_return')}</h3></div>
+          <p>{$t('frameleaf_batch.reselect')}</p>
+          <div class="buttons">
+            <label class="file-button" for="returned-files"
+              >{$t('frameleaf_batch.files')}<input
+                id="returned-files"
+                type="file"
+                multiple
+                disabled={busy || uploading}
+                onchange={(event) => void matchFiles([...(event.currentTarget.files ?? [])])}
+              /></label
+            >
+            <label class="file-button" for="returned-folder"
+              >{$t('frameleaf_batch.folder')}<input
+                id="returned-folder"
+                type="file"
+                multiple
+                webkitdirectory
+                disabled={busy || uploading}
+                onchange={(event) => void matchFiles([...(event.currentTarget.files ?? [])])}
+              /></label
+            >
+          </div>
+          {#if matches.length > 0}
+            <h4>{$t('frameleaf_batch.review')}</h4>
+            <p>{$t('frameleaf_batch.review_help')}</p>
+            <ul class="rows">
+              {#each matches as row (row.index)}
+                <li>
+                  <div class="row-head">
+                    <strong>{row.fileName}</strong><span class="pill" data-tone={row.status}
+                      >{$t(`frameleaf_batch.${row.status}` as Translations)}</span
+                    >
+                  </div>
+                  <label for={`batch-map-${row.index}`}
+                    >{$t('frameleaf_batch.map_file', { values: { file: row.fileName } })}</label
+                  >
+                  <select
+                    id={`batch-map-${row.index}`}
+                    value={row.status === 'skipped' ? 'skip' : (row.itemId ?? '')}
+                    disabled={busy || uploading}
+                    onchange={(event) => void mapFile(row.index, event.currentTarget.value)}
+                  >
+                    <option value="">{$t('frameleaf_batch.choose_photo')}</option><option value="skip"
+                      >{$t('frameleaf_batch.skip_file')}</option
+                    >
+                    {#each batch.items.filter((item) => item.available && item.preparationStatus === 'prepared') as item (item.id)}<option
+                        value={item.id}>{item.fileName} · {item.exportId?.slice(0, 8)}</option
+                      >{/each}
+                  </select>
+                  {#if localErrors[row.index]}<p role="alert">{localErrors[row.index]}</p>{/if}
+                </li>
+              {/each}
+            </ul>
+            <div class="buttons">
+              <Button variant="primary" disabled={!canImport || busy || uploading} onclick={() => void importFiles()}
+                >{$t('frameleaf_batch.confirm')}</Button
+              >
+              {#if failedFiles.length > 0}<Button
+                  disabled={!canImport || busy || uploading}
+                  onclick={() => void importFiles(true)}>{$t('frameleaf_batch.retry_failed')}</Button
+                >{/if}
+            </div>
+            <p role="status">
+              {$t('frameleaf_batch.progress', {
+                values: { completed, total: matches.filter((row) => row.status === 'matched').length },
+              })}
+              {currentFile}
+            </p>
+          {/if}
+        </div>
+      {/if}
+      <!-- Each photo: where it stands, and the versions its edits made. -->
+      <div class="step">
+        <div class="step-head"><h3>{$t('frameleaf_batch.server_status')}</h3></div>
+        <ul class="rows" aria-live="polite" aria-busy={uploading || busy}>
+          {#each batch.items as item (item.id)}
+            <li>
+              <div class="row-head">
+                <strong>{item.fileName ?? $t('frameleaf_batch.unavailable_item')}</strong>
+                {#if item.returns.length === 0}<span class="pill" data-tone={item.preparationStatus}
+                    >{$t(
+                      `frameleaf_batch.${item.preparationStatus === 'prepared' ? 'pending' : item.preparationStatus === 'pending' ? 'not_prepared' : item.preparationStatus}` as Translations,
+                    )}</span
+                  >{/if}
+              </div>
+              {#if item.errorCode}<p>{reason(item.errorCode)}</p>{/if}
+              {#each item.returns as returned (returned.id)}
+                <div class="return-state">
+                  <span
+                    >{returned.checksum.slice(0, 8)} · {$t(`frameleaf_batch.${returned.status}` as Translations)} · {returned.progress}%</span
+                  >
+                  {#if returned.errorCode}<p>{reason(returned.errorCode)}</p>{/if}
+                  {#if returned.status === 'failed' && returned.revisionId && batch.status !== 'cancelled'}<Button
+                      disabled={busy || uploading}
+                      onclick={() => void retryReturn(item.id, returned.confirmationId, returned.checksum)}
+                      >{$t('retry')}</Button
+                    >{/if}
+                </div>
+              {/each}
+            </li>
+          {/each}
+        </ul>
+      </div>
+      <div class="buttons footer">
         <a href={`/develop-batches?batch=${batch.id}`}>{$t('frameleaf_batch.resume_link')}</a>
-        {#if batch.status !== 'cancelled'}<Button disabled={busy} onclick={() => void cancel()}
+        {#if batch.status !== 'cancelled'}<Button variant="danger" disabled={busy} onclick={() => void cancel()}
             >{$t('frameleaf_batch.cancel')}</Button
           >{/if}
       </div>
-      {#if batch.status !== 'cancelled'}
-        <p>{$t('frameleaf_batch.reselect')}</p>
-        <label for="returned-files">{$t('frameleaf_batch.files')}</label>
-        <input
-          id="returned-files"
-          type="file"
-          multiple
-          disabled={busy || uploading}
-          onchange={(event) => void matchFiles([...(event.currentTarget.files ?? [])])}
-        />
-        <label for="returned-folder">{$t('frameleaf_batch.folder')}</label>
-        <input
-          id="returned-folder"
-          type="file"
-          multiple
-          webkitdirectory
-          disabled={busy || uploading}
-          onchange={(event) => void matchFiles([...(event.currentTarget.files ?? [])])}
-        />
-        {#if matches.length > 0}
-          <h3>{$t('frameleaf_batch.review')}</h3>
-          <p>{$t('frameleaf_batch.review_help')}</p>
-          <ul class="review">
-            {#each matches as row (row.index)}
-              <li>
-                <strong>{row.fileName}</strong><span>{$t(`frameleaf_batch.${row.status}` as Translations)}</span>
-                <label for={`batch-map-${row.index}`}
-                  >{$t('frameleaf_batch.map_file', { values: { file: row.fileName } })}</label
-                >
-                <select
-                  id={`batch-map-${row.index}`}
-                  value={row.status === 'skipped' ? 'skip' : (row.itemId ?? '')}
-                  disabled={busy || uploading}
-                  onchange={(event) => void mapFile(row.index, event.currentTarget.value)}
-                >
-                  <option value="">{$t('frameleaf_batch.choose_photo')}</option><option value="skip"
-                    >{$t('frameleaf_batch.skip_file')}</option
-                  >
-                  {#each batch.items.filter((item) => item.available && item.preparationStatus === 'prepared') as item (item.id)}<option
-                      value={item.id}>{item.fileName} · {item.exportId?.slice(0, 8)}</option
-                    >{/each}
-                </select>
-                {#if localErrors[row.index]}<p role="alert">{localErrors[row.index]}</p>{/if}
-              </li>
-            {/each}
-          </ul>
-          <div class="buttons">
-            <Button variant="primary" disabled={!canImport || busy || uploading} onclick={() => void importFiles()}
-              >{$t('frameleaf_batch.confirm')}</Button
-            >
-            {#if failedFiles.length > 0}<Button
-                disabled={!canImport || busy || uploading}
-                onclick={() => void importFiles(true)}>{$t('frameleaf_batch.retry_failed')}</Button
-              >{/if}
-          </div>
-          <p role="status">
-            {$t('frameleaf_batch.progress', {
-              values: { completed, total: matches.filter((row) => row.status === 'matched').length },
-            })}
-            {currentFile}
-          </p>
-        {/if}
-      {/if}
-      <h3>{$t('frameleaf_batch.server_status')}</h3>
-      <ul aria-live="polite" aria-busy={uploading || busy}>
-        {#each batch.items as item (item.id)}
-          <li>
-            <strong>{item.fileName ?? $t('frameleaf_batch.unavailable_item')}</strong>
-            {#if item.returns.length === 0}<span
-                >{$t(
-                  `frameleaf_batch.${item.preparationStatus === 'prepared' ? 'pending' : item.preparationStatus}` as Translations,
-                )}</span
-              >{/if}
-            {#if item.errorCode}<p>{reason(item.errorCode)}</p>{/if}
-            {#each item.returns as returned (returned.id)}
-              <div class="return-state">
-                <span
-                  >{returned.checksum.slice(0, 8)} · {$t(`frameleaf_batch.${returned.status}` as Translations)} · {returned.progress}%</span
-                >
-                {#if returned.errorCode}<p>{reason(returned.errorCode)}</p>{/if}
-                {#if returned.status === 'failed' && returned.revisionId && batch.status !== 'cancelled'}<Button
-                    disabled={busy || uploading}
-                    onclick={() => void retryReturn(item.id, returned.confirmationId, returned.checksum)}
-                    >{$t('retry')}</Button
-                  >{/if}
-              </div>
-            {/each}
-          </li>
-        {/each}
-      </ul>
     {/if}
   {/if}
 </section>
@@ -430,51 +485,220 @@
 <style>
   .batch-editor {
     display: grid;
-    gap: 1rem;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--fl-space-4);
     color: var(--fl-text);
+  }
+  /* A long batch name in the picker never pushes the page wider than the window. */
+  .field select {
+    inline-size: 100%;
+    text-overflow: ellipsis;
+  }
+  /* The batch picker and its Refresh, one row of equal-height controls 8px apart. */
+  .select-row {
+    display: flex;
+    align-items: stretch;
+    gap: var(--fl-space-2);
+  }
+  .select-row select {
+    flex: 1;
+    min-inline-size: 0;
+  }
+  @media (max-width: 700px) {
+    .step {
+      padding: var(--fl-space-4);
+    }
   }
   p {
     color: var(--fl-muted);
-    font-size: 0.875rem;
+    font-size: var(--fl-font-size);
+    line-height: 1.6;
     margin: 0;
   }
   .buttons {
     display: flex;
-    gap: 0.75rem;
+    gap: var(--fl-space-3);
     align-items: center;
     flex-wrap: wrap;
   }
+  /* A label sits 8px over its own control, not a section's gap away. */
+  .field {
+    display: grid;
+    gap: var(--fl-space-2);
+  }
+  .empty {
+    display: grid;
+    justify-items: center;
+    gap: var(--fl-space-3);
+    margin-block-start: var(--fl-space-2);
+    padding: var(--fl-space-10) var(--fl-space-6);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-card);
+    background: var(--fl-panel);
+    color: var(--fl-muted);
+    text-align: center;
+  }
+  .empty h2 {
+    margin: 0;
+    color: var(--fl-text);
+    font: var(--fl-type-headline);
+  }
+  .empty p {
+    max-inline-size: 32rem;
+  }
+  .empty .buttons {
+    align-items: stretch;
+    justify-content: center;
+    margin-block-start: var(--fl-space-2);
+  }
+  a.button {
+    display: inline-flex;
+    align-items: center;
+    min-block-size: var(--fl-control-height);
+    padding-inline: var(--fl-space-4);
+    border-radius: var(--fl-radius-control);
+    background: var(--fl-accent);
+    color: var(--fl-accent-text);
+    font-weight: 600;
+    text-decoration: none;
+  }
   select,
   input {
+    font-size: var(--fl-font-size);
     max-inline-size: 100%;
-    padding: 0.6rem;
+    padding: 10px var(--fl-space-3);
     background: var(--fl-raised);
     color: var(--fl-text);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);
+  }
+  /* Each step of the batch is a card: export, bring back, where each photo stands. */
+  .step {
+    display: grid;
+    gap: var(--fl-space-3);
+    padding: var(--fl-space-6);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-card);
+    background: var(--fl-panel);
+  }
+  .step-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--fl-space-3);
+  }
+  h3 {
+    margin: 0;
+    font: var(--fl-type-headline);
+  }
+  h4 {
+    margin: var(--fl-space-2) 0 0;
+    font-weight: 600;
+  }
+  .pill {
+    flex-shrink: 0;
+    padding: 2px var(--fl-space-2);
+    border-radius: var(--fl-radius-pill);
+    background: var(--fl-raised);
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+  }
+  .pill:is([data-tone='prepared'], [data-tone='matched'], [data-tone='completed'], [data-tone='confirmed']) {
+    background: color-mix(in srgb, var(--fl-accent) 16%, transparent);
+    color: var(--fl-accent);
+  }
+  .pill:is([data-tone='failed'], [data-tone='unmatched'], [data-tone='ambiguous']) {
+    background: color-mix(in srgb, var(--fl-danger) 14%, transparent);
+    color: var(--fl-danger);
+  }
+  progress {
+    inline-size: 100%;
+    block-size: 6px;
+    overflow: hidden;
+    border: 0;
+    border-radius: var(--fl-radius-pill);
+    background: var(--fl-raised);
+    appearance: none;
+  }
+  progress::-webkit-progress-bar {
+    background: var(--fl-raised);
+  }
+  progress::-webkit-progress-value {
+    background: var(--fl-accent);
+  }
+  progress::-moz-progress-bar {
+    background: var(--fl-accent);
+  }
+  .buttons:empty {
+    display: none;
+  }
+  /* The browser's file inputs, as buttons that say what they choose. */
+  .file-button {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    min-block-size: var(--fl-control-height);
+    padding-inline: var(--fl-space-4);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control);
+    background: var(--fl-raised);
+    font-size: var(--fl-font-size);
+    cursor: pointer;
+  }
+  .file-button:has(input:disabled) {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .file-button:has(input:focus-visible) {
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
+  }
+  .file-button input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: inherit;
+  }
+  .footer {
+    justify-content: space-between;
   }
   ul {
     list-style: none;
     padding: 0;
     margin: 0;
     display: grid;
-    gap: 0.75rem;
   }
-  li,
-  .return-state {
+  .rows li {
     display: grid;
-    gap: 0.4rem;
+    gap: var(--fl-space-2);
+    padding-block: var(--fl-space-3);
+    border-block-start: 1px solid var(--fl-border);
     overflow-wrap: anywhere;
   }
-  li {
-    border-block-end: 1px solid var(--fl-border);
-    padding-block-end: 0.75rem;
+  .rows li:first-child {
+    border-block-start: 0;
+    padding-block-start: 0;
   }
-  h3 {
-    font-size: 1rem;
-    margin: 0;
+  .row-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--fl-space-3);
   }
-  a {
+  .row-head strong {
+    font-weight: 500;
+  }
+  .rows label {
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+  }
+  .return-state {
+    display: grid;
+    gap: var(--fl-space-1);
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+  }
+  a:not(.button) {
     color: var(--fl-accent);
     text-decoration: underline;
     text-underline-offset: 3px;

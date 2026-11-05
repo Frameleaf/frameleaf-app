@@ -22,6 +22,8 @@
   import AccountPasswordResetDialog from '$lib/components/frameleaf/AccountPasswordResetDialog.svelte';
   import AccountPinDialog from '$lib/components/frameleaf/AccountPinDialog.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
+  import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
   import { canChangeSecrets } from '$lib/frameleaf/accounts';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -37,9 +39,19 @@
   import { modalManager, toastManager } from '@frameleaf/ui';
   import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   import { DateTime } from 'luxon';
+  import type { Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
-  let { user, sessions }: { user: UserAdminResponseDto; sessions: SessionResponseDto[] } = $props();
+  let {
+    user,
+    sessions,
+    children,
+  }: {
+    user: UserAdminResponseDto;
+    sessions: SessionResponseDto[];
+    /** More rows of the same section (the person page's desktop AI approval), before Advanced. */
+    children?: Snippet;
+  } = $props();
 
   const live = $derived(canChangeSecrets(user));
   // An administrator resets their own password in their account settings, not from here. The
@@ -107,6 +119,50 @@
   });
   const visibleSessions = $derived(sessions.filter((session) => !revokedIds.has(session.id)));
 
+  /** Every device but the one you are using now, which is only listed when this is your own account. */
+  const others = $derived(visibleSessions.filter((session) => !session.current));
+  const lastActive = $derived.by(() => {
+    let latest: (typeof visibleSessions)[number] | undefined;
+    for (const session of visibleSessions) {
+      if (!latest || session.updatedAt > latest.updatedAt) {
+        latest = session;
+      }
+    }
+    return latest;
+  });
+  const devicesHelp = $derived(
+    visibleSessions.length === 0
+      ? $t('frameleaf_users_devices_none')
+      : $t('frameleaf_users_devices_summary', {
+          values: { count: visibleSessions.length, date: lastActive ? lastSeen(lastActive) : '' },
+        }),
+  );
+  let signingOut = $state(false);
+  /** Prototype "Sign out everywhere": one confirmation, then each device through the same admin endpoint. */
+  const signOutEverywhere = async () => {
+    const confirmed = await confirmFrameleaf({
+      title: $t('frameleaf_users_devices_all_title', { values: { name: user.name } }),
+      prompt: $t('frameleaf_users_devices_all_confirm', { values: { name: user.name } }),
+      confirmText: $t('frameleaf_users_devices_all'),
+      danger: true,
+    });
+    if (!confirmed) {
+      return;
+    }
+    signingOut = true;
+    try {
+      for (const session of others) {
+        await deleteUserSessionAdmin({ id: user.id, sessionId: session.id });
+        revokedIds = new Set([...revokedIds, session.id]);
+      }
+      toastManager.primary($t('frameleaf_users_devices_all_done'));
+    } catch (error) {
+      handleError(error, $t('errors.unable_to_log_out_device'));
+    } finally {
+      signingOut = false;
+    }
+  };
+
   const revoke = async (session: SessionResponseDto) => {
     const confirmed = await confirmFrameleaf({
       title: $t('frameleaf_users_device_revoke_title'),
@@ -128,146 +184,85 @@
   };
 </script>
 
+<!-- The prototype's Sign-in & security rows (`settings-v2/cloud/People.jsx` Person): what each thing is on
+     the left, the one way to help on the right. Setting a PIN for them and each device on its own are
+     kept under Advanced. -->
 <div class="account-security" aria-label={$t('frameleaf_users_security_title')}>
-  <div class="row">
-    <div>
-      <strong>{$t('frameleaf_users_password_title')}</strong>
-      <small>
-        {user.shouldChangePassword
-          ? $t('frameleaf_users_password_change_required')
-          : $t('frameleaf_users_password_no_change_required')}
-      </small>
-    </div>
-    <span class="buttons">
-      {#if featureFlagsManager.value.email}
-        <Button disabled={!canResetPassword || sendingLink} onclick={sendLink}>
-          {$t('frameleaf_users_password_link')}
-        </Button>
-      {/if}
-      <Button disabled={!canResetPassword} onclick={() => modalManager.show(AccountPasswordResetDialog, { user })}>
-        {$t('frameleaf_users_password_reset')}
+  <Row
+    label={$t('frameleaf_users_provider_title')}
+    help={`${user.oauthId ? $t('frameleaf_users_provider_connected') : $t('frameleaf_users_provider_not_connected')} · ${$t('frameleaf_users_provider_owner_managed')}`}
+  />
+
+  <Row
+    label={$t('frameleaf_users_password_title')}
+    help={user.shouldChangePassword
+      ? $t('frameleaf_users_password_change_required')
+      : $t('frameleaf_users_password_no_change_required')}
+  >
+    {#if featureFlagsManager.value.email}
+      <Button disabled={!canResetPassword || sendingLink} onclick={sendLink}>
+        {$t('frameleaf_users_password_link')}
       </Button>
-    </span>
-  </div>
-
-  <div class="row">
-    <div>
-      <strong>{$t('frameleaf_users_pin_title')}</strong>
-      <small aria-live="polite">
-        {hasPin === undefined ? '' : hasPin ? $t('frameleaf_users_pin_is_set') : $t('frameleaf_users_pin_not_set')}
-      </small>
-      {#if user.lockedEncryption}
-        <!-- FL-721: their Locked files are encrypted with the PIN, so the server refuses to clear or change it -->
-        <small>{$t('frameleaf_users_pin_locked_encryption', { values: { name: user.name } })}</small>
-      {/if}
-    </div>
-    <Button disabled={!live || user.lockedEncryption} onclick={() => changePin('set')}>
-      {hasPin ? $t('frameleaf_users_pin_change') : $t('frameleaf_users_pin_set')}
+    {/if}
+    <Button disabled={!canResetPassword} onclick={() => modalManager.show(AccountPasswordResetDialog, { user })}>
+      {$t('frameleaf_users_password_reset')}
     </Button>
+  </Row>
+
+  <Row
+    label={$t('frameleaf_users_pin_title')}
+    help={[
+      hasPin === undefined ? '' : hasPin ? $t('frameleaf_users_pin_is_set') : $t('frameleaf_users_pin_not_set'),
+      // FL-721: their Locked files are encrypted with the PIN, so the server refuses to clear or change it
+      user.lockedEncryption ? $t('frameleaf_users_pin_locked_encryption', { values: { name: user.name } }) : '',
+    ]
+      .filter(Boolean)
+      .join(' ')}
+  >
     <Button disabled={!live || hasPin === false || user.lockedEncryption} onclick={() => changePin('clear')}>
-      {$t('frameleaf_users_pin_reset')}
+      {$t('frameleaf_users_pin_clear_open')}
     </Button>
-  </div>
+  </Row>
 
-  <!-- CC-31 (AccountsLibraries.jsx:1437-1445): whether a sign-in provider is connected; only the owner manages it. -->
-  <div class="row">
-    <div>
-      <strong>{$t('frameleaf_users_provider_title')}</strong>
-      <small>
-        {user.oauthId ? $t('frameleaf_users_provider_connected') : $t('frameleaf_users_provider_not_connected')} ·
-        {$t('frameleaf_users_provider_owner_managed')}
-      </small>
-    </div>
-  </div>
+  <Row label={$t('frameleaf_users_devices_title')} help={devicesHelp}>
+    {#if others.length > 0}
+      <Button disabled={signingOut} onclick={() => void signOutEverywhere()}>{$t('frameleaf_users_devices_all')}</Button
+      >
+    {/if}
+  </Row>
 
-  <h3>{$t('frameleaf_users_devices_title')}</h3>
-  <ul>
+  {@render children?.()}
+
+  <Advanced>
+    <Row
+      label={$t('frameleaf_users_pin_choose')}
+      help={$t('frameleaf_users_pin_choose_help', { values: { name: user.name } })}
+    >
+      <Button disabled={!live || user.lockedEncryption} onclick={() => changePin('set')}>
+        {hasPin ? $t('frameleaf_users_pin_change') : $t('frameleaf_users_pin_set')}
+      </Button>
+    </Row>
     {#each visibleSessions as session (session.id)}
-      <li>
-        <div>
-          <span>{session.deviceOS || $t('unknown')} · {session.deviceType || $t('unknown')}</span>
-          <small>{$t('frameleaf_users_device_last_seen', { values: { date: lastSeen(session) } })}</small>
-        </div>
+      <Row
+        label={`${session.deviceOS || $t('unknown')} · ${session.deviceType || $t('unknown')}`}
+        help={$t('frameleaf_users_device_last_seen', { values: { date: lastSeen(session) } })}
+      >
         {#if session.current}
           <span class="current">{$t('frameleaf_users_device_current')}</span>
         {:else}
           <Button onclick={() => revoke(session)}>{$t('frameleaf_users_device_revoke')}</Button>
         {/if}
-      </li>
-    {:else}
-      <li class="empty">{$t('frameleaf_users_devices_none')}</li>
+      </Row>
     {/each}
-  </ul>
+  </Advanced>
 </div>
 
 <style>
   .account-security {
     min-width: 0;
   }
-  h3 {
-    margin: 1.25rem 0 0.375rem;
+  .current {
+    color: var(--fl-muted);
     font-size: var(--fl-font-small);
-    color: var(--fl-muted);
-  }
-  .row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem 0;
-    border-top: 1px solid var(--fl-border);
-  }
-  .row > div {
-    display: grid;
-    flex: 1 1 14rem;
-    min-width: 0;
-  }
-  .row strong {
-    color: var(--fl-text);
-  }
-  .buttons {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--fl-space-2);
-  }
-  .row small {
-    font-size: var(--fl-font-small);
-    color: var(--fl-muted);
-  }
-  ul {
-    display: grid;
-    gap: 0.5rem;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-  li {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    padding: 0.5rem var(--fl-space-3);
-    color: var(--fl-text);
-    background: var(--fl-raised);
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-control);
-  }
-  li > div {
-    display: grid;
-    min-width: 0;
-  }
-  li small {
-    font-size: var(--fl-font-small);
-    color: var(--fl-muted);
-  }
-  li .current {
-    font-size: var(--fl-font-small);
-    color: var(--fl-muted);
-  }
-  li.empty {
-    color: var(--fl-muted);
-    background: transparent;
-    border-style: dashed;
   }
 </style>

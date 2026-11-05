@@ -26,9 +26,17 @@
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
-  import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
-  import { getCloudSignInPeople, remindCloudSignIn, type CloudSignInPeopleResponseDto } from '@frameleaf/sdk';
+  import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
+  import { spaceWords } from '$lib/components/frameleaf/settings/people/space';
+  import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
+  import {
+    getCloudSignInPeople,
+    remindCloudSignIn,
+    searchUsersAdmin,
+    type CloudSignInPeopleResponseDto,
+    type UserAdminResponseDto,
+  } from '@frameleaf/sdk';
   import { mdiAccountOutline, mdiCloudAlertOutline, mdiCloudCheckOutline, mdiCloudOutline } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -51,9 +59,28 @@
       peopleFailed = true;
     }
   };
+
+  /**
+   * Each person's face and role, as the prototype's "Who has linked" list shows them, from the
+   * administrator's own list of accounts (the sign-in list names people only). Without it the rows
+   * keep the plain icon and the email.
+   */
+  let accounts = $state<Map<string, UserAdminResponseDto>>(new Map());
+  const loadAccounts = async () => {
+    try {
+      accounts = new Map((await searchUsersAdmin({})).map((user) => [user.id, user]));
+    } catch {
+      // the rows say who they are without a face
+    }
+  };
+
+  /** "Space for new people", read from the saved settings when this page has them. */
+  const settingsDraft = getSystemConfigDraft();
+  const newSpace = $derived(settingsDraft?.baseline.user.newUserStorageQuota);
   $effect(() => {
     if (linked) {
       void loadPeople();
+      void loadAccounts();
     }
   });
 
@@ -103,7 +130,10 @@
         body={$t('frameleaf_signin_hero_off_body')}
       >
         {#snippet actions()}
-          <Button variant="primary" onclick={() => getCloudManager.open('signin')}>{$t('frameleaf_get_cloud')}</Button>
+          <!-- Linking is free (prototype FrameleafSignIn.jsx "Link this server"); a plan is only needed for remote access. -->
+          <Button variant="primary" onclick={() => goto(commandCenterUrl('cloud', 'cloud-account'))}
+            >{$t('frameleaf_signin_link_server')}</Button
+          >
         {/snippet}
       </Hero>
     {:else if people && missing.length > 0}
@@ -150,14 +180,23 @@
       <Section title={$t('frameleaf_signin_who')} description={$t('frameleaf_signin_who_description')}>
         <ItemList>
           {#each people.people as person (person.id)}
+            {@const account = accounts.get(person.id)}
+            {#snippet face()}
+              {#if account}<UserAvatar user={account} size="md" noTitle />{/if}
+            {/snippet}
             <Item
               icon={mdiAccountOutline}
+              media={account ? face : undefined}
               off={!person.linked}
               name={person.name}
-              detail={person.email}
+              detail={account
+                ? account.isAdmin
+                  ? $t('frameleaf_signin_role_admin')
+                  : $t('frameleaf_signin_role_member')
+                : person.email}
               tone={person.linked ? 'good' : 'warn'}
               status={person.linked ? $t('frameleaf_signin_linked') : $t('frameleaf_signin_not_yet')}
-              note={person.linked ? (person.frameleafEmail ?? undefined) : $t('frameleaf_signin_home_only')}
+              note={person.linked ? (person.frameleafEmail ?? person.email) : $t('frameleaf_signin_home_only')}
             >
               {#snippet action()}
                 {#if !person.linked && person.id === me}
@@ -194,6 +233,9 @@
         />
       </Row>
       <Row label={$t('frameleaf_signin_space')} help={$t('frameleaf_signin_space_help')}>
+        {#if newSpace !== undefined}
+          <span class="value">{newSpace === null ? $t('frameleaf_userpage_space_none') : spaceWords(newSpace)}</span>
+        {/if}
         <Button onclick={() => goto(commandCenterUrl('users'))}>{$t('frameleaf_signin_open_users')}</Button>
       </Row>
       <Advanced>
@@ -209,7 +251,7 @@
           </div>
         </Row>
         <Row label={$t('frameleaf_signin_server_id')} help={$t('frameleaf_signin_server_id_help')}>
-          <code>{status?.signInClientId ?? status?.instanceId ?? '—'}</code>
+          <span class="id">{status?.signInClientId ?? status?.instanceId ?? '—'}</span>
         </Row>
         {#if linked && provider}
           <Row label={$t('frameleaf_signin_through')} help={$t('frameleaf_signin_through_help')}>
@@ -236,13 +278,19 @@
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
   }
+  .value {
+    color: var(--fl-text);
+    font-size: var(--fl-font-callout);
+  }
   .inline {
     display: flex;
     gap: var(--fl-space-2);
     align-items: center;
   }
-  code {
+  .id {
+    max-width: 380px;
     font-size: var(--fl-font-small);
     overflow-wrap: anywhere;
+    user-select: all;
   }
 </style>

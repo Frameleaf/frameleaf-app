@@ -10,6 +10,7 @@
   import { Icon } from '@frameleaf/ui';
   import {
     mdiCameraOutline,
+    mdiImageOutline,
     mdiCameraPlusOutline,
     mdiCartOutline,
     mdiCheck,
@@ -31,7 +32,7 @@
   import PhotographyThumb from './PhotographyThumb.svelte';
   import PhotographyWatermarkEditor from './PhotographyWatermarkEditor.svelte';
   import { photographyErrorKey, photographyLabelKey, type PhotographyLabel } from './PhotographyStatus.svelte';
-  import { loadBrand, type Shoot, type Branding } from '$lib/frameleaf/photography/api';
+  import { loadBrand, shootCover, type Shoot, type Branding } from '$lib/frameleaf/photography/api';
   import {
     galleryPreviewSession,
     workflowRequest,
@@ -181,6 +182,25 @@
       eligible[0]?.assetId ??
       null,
   );
+  /** Presentation's template covers: the paper the client gallery uses (gallery.css `.pc`), the
+   *  cover and the next three photographs of this collection. */
+  const coverPaper = $derived.by(() => {
+    const palette = draft?.config.presentation.palette;
+    if (palette === 'ivory') {
+      return { background: '#f6f3ed', text: '#2d332d' };
+    }
+    if (palette === 'charcoal') {
+      return { background: '#171b19', text: '#e9e6df' };
+    }
+    return { background: brand?.brand.background ?? '#f6f3ed', text: brand?.brand.textColor ?? '#2d332d' };
+  });
+  const coverThumbs = $derived.by(() => {
+    const ids = eligible
+      .map((capture) => capture.assetId)
+      .filter((id): id is string => !!id && id !== coverAsset)
+      .slice(0, 3);
+    return [...ids, ...Array.from({ length: 3 - ids.length }, () => null)];
+  });
   const galleryExpired = $derived(!!draft?.config.expiresAt && Date.parse(draft.config.expiresAt) < Date.now());
   const galleryStage = $derived(
     galleryExpired
@@ -215,10 +235,20 @@
       return `${amount / 100} ${currency}`;
     }
   };
-  const photoUrl = (capture: Capture) =>
-    capture.eligible && capture.assetId
-      ? getAssetMediaUrl({ id: capture.assetId, size: AssetMediaSize.Thumbnail })
-      : '';
+  /**
+   * A photo's image address, or null when the shoot says the server has no preview for it yet
+   * (`processing` is only "ready" once the preview exists, and the thumbnail is made in the same
+   * job), so a RAW the server cannot develop shows the placeholder without a failed request.
+   */
+  const mediaUrl = (id: string | null | undefined, size: AssetMediaSize = AssetMediaSize.Thumbnail) => {
+    if (!id) {
+      return null;
+    }
+    const capture = draft?.captures.find((row) => row.assetId === id);
+    return capture && capture.processing !== 'ready' ? null : getAssetMediaUrl({ id, size });
+  };
+  const photoUrl = (capture: Capture) => (capture.eligible ? mediaUrl(capture.assetId) : null);
+  const galleryCoverUrl = $derived(mediaUrl(coverAsset, AssetMediaSize.Preview));
   const describe = (cause: unknown) => $t(photographyErrorKey(cause));
   /** A server code in words, or the code itself when this page does not know it. */
   const named = (kind: PhotographyLabel, code: string | null | undefined) => {
@@ -662,8 +692,8 @@
   <div class="phx-shoot-head">
     <div class="phx-project-context">
       <span class="phx-project-cover"
-        >{#if shoot.coverAssetId && !shoot.unavailable}<PhotographyThumb
-            src={getAssetMediaUrl({ id: shoot.coverAssetId, size: AssetMediaSize.Thumbnail })}
+        >{#if mediaUrl(shootCover(shoot))}<PhotographyThumb
+            src={mediaUrl(shootCover(shoot))}
             loading="eager"
           />{:else}<Icon icon={mdiCameraOutline} size="1.4rem" aria-hidden={true} />{/if}</span
       >
@@ -700,82 +730,85 @@
     </div>
   {:else}
     {#if panel === 'intake'}
-      <section class="phd-card">
-        <div class="phd-row">
-          <div>
-            <h3>{$t('frameleaf_photography_intake_title')}</h3>
-            <p>
-              {$t('frameleaf_photography_intake_body')}
-            </p>
+      <!-- The prototype's two columns: bring the shoot together, beside the shoot brief. -->
+      <div class="phx-two-column phx-intake-top">
+        <section class="phd-card">
+          <div class="phd-row">
+            <div>
+              <h3>{$t('frameleaf_photography_intake_title')}</h3>
+              <p>
+                {$t('frameleaf_photography_intake_body')}
+              </p>
+            </div>
+            <div class="phd-actions">
+              <Button disabled={busy || !shoot.albumId} onclick={() => intake()}
+                >{$t('frameleaf_photography_import_files')}</Button
+              ><Button disabled={busy || !shoot.albumId} onclick={() => intake(true)}
+                >{$t('frameleaf_photography_import_folder')}</Button
+              ><Button variant="primary" disabled={busy} onclick={() => mutate('/intake')}
+                >{$t('frameleaf_photography_scan_album')}</Button
+              >
+            </div>
           </div>
-          <div class="phd-actions">
-            <Button disabled={busy || !shoot.albumId} onclick={() => intake()}
-              >{$t('frameleaf_photography_import_files')}</Button
-            ><Button disabled={busy || !shoot.albumId} onclick={() => intake(true)}
-              >{$t('frameleaf_photography_import_folder')}</Button
-            ><Button variant="primary" disabled={busy} onclick={() => mutate('/intake')}
-              >{$t('frameleaf_photography_scan_album')}</Button
+          {#if shoot.albumId}<button
+              type="button"
+              class="phx-drop"
+              class:over={dropOver}
+              disabled={busy}
+              onclick={() => intake()}
+              ondragover={(event) => {
+                if (event.dataTransfer?.types.includes('Files')) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  dropOver = true;
+                }
+              }}
+              ondragleave={() => (dropOver = false)}
+              ondrop={dropFiles}
+              ><Icon icon={mdiCameraPlusOutline} size="1.8rem" aria-hidden={true} /><strong
+                >{$t('frameleaf_photography_drop_title')}</strong
+              ><span>{$t('frameleaf_photography_drop_body')}</span></button
+            >{/if}
+        </section>
+        {#if onSaveBrief}<section class="phd-card">
+            <span class="phx-eyebrow">{$t('frameleaf_photography_shoot_brief')}</span>
+            <label
+              >{$t('frameleaf_photography_client_notes')}<textarea
+                rows="3"
+                maxlength="5000"
+                placeholder={$t('frameleaf_photography_client_notes_placeholder')}
+                bind:value={briefNotes}></textarea></label
+            ><label>{$t('frameleaf_photography_delivery_target')}<input type="date" bind:value={briefTarget} /></label>
+            <div class="phx-import-stats">
+              <span
+                ><strong>{draft.captures.filter((capture) => capture.isRaw).length}</strong>{$t(
+                  'frameleaf_photography_stat_raw_sources',
+                )}</span
+              >
+              <span
+                ><strong>{draft.captures.filter((capture) => capture.assetIds.length > 1).length}</strong>{$t(
+                  'frameleaf_photography_stat_paired',
+                )}</span
+              >
+              <span
+                ><strong
+                  >{draft.captures.filter((capture) => !capture.eligible || capture.processing === 'failed')
+                    .length}</strong
+                >{$t('frameleaf_photography_stat_attention')}</span
+              >
+              <span
+                ><strong>{draft.captures.filter((capture) => capture.withheld).length}</strong>{$t(
+                  'frameleaf_photography_stat_withheld',
+                )}</span
+              >
+            </div>
+            <Button
+              disabled={busy || !briefChanged}
+              onclick={() => onSaveBrief({ notes: briefNotes, deliveryTarget: briefTarget || null })}
+              >{$t('frameleaf_photography_save_brief')}</Button
             >
-          </div>
-        </div>
-        {#if shoot.albumId}<button
-            type="button"
-            class="phx-drop"
-            class:over={dropOver}
-            disabled={busy}
-            onclick={() => intake()}
-            ondragover={(event) => {
-              if (event.dataTransfer?.types.includes('Files')) {
-                event.preventDefault();
-                event.stopPropagation();
-                dropOver = true;
-              }
-            }}
-            ondragleave={() => (dropOver = false)}
-            ondrop={dropFiles}
-            ><Icon icon={mdiCameraPlusOutline} size="1.8rem" aria-hidden={true} /><strong
-              >{$t('frameleaf_photography_drop_title')}</strong
-            ><span>{$t('frameleaf_photography_drop_body')}</span></button
-          >{/if}
-      </section>
-      {#if onSaveBrief}<section class="phd-card">
-          <span class="phx-eyebrow">{$t('frameleaf_photography_shoot_brief')}</span>
-          <label
-            >{$t('frameleaf_photography_client_notes')}<textarea
-              rows="3"
-              maxlength="5000"
-              placeholder={$t('frameleaf_photography_client_notes_placeholder')}
-              bind:value={briefNotes}></textarea></label
-          ><label>{$t('frameleaf_photography_delivery_target')}<input type="date" bind:value={briefTarget} /></label>
-          <div class="phx-import-stats">
-            <span
-              ><strong>{draft.captures.filter((capture) => capture.isRaw).length}</strong>{$t(
-                'frameleaf_photography_stat_raw_sources',
-              )}</span
-            >
-            <span
-              ><strong>{draft.captures.filter((capture) => capture.assetIds.length > 1).length}</strong>{$t(
-                'frameleaf_photography_stat_paired',
-              )}</span
-            >
-            <span
-              ><strong
-                >{draft.captures.filter((capture) => !capture.eligible || capture.processing === 'failed')
-                  .length}</strong
-              >{$t('frameleaf_photography_stat_attention')}</span
-            >
-            <span
-              ><strong>{draft.captures.filter((capture) => capture.withheld).length}</strong>{$t(
-                'frameleaf_photography_stat_withheld',
-              )}</span
-            >
-          </div>
-          <Button
-            disabled={busy || !briefChanged}
-            onclick={() => onSaveBrief({ notes: briefNotes, deliveryTarget: briefTarget || null })}
-            >{$t('frameleaf_photography_save_brief')}</Button
-          >
-        </section>{/if}
+          </section>{/if}
+      </div>
       <section class="phd-card">
         <div class="phd-row">
           <div>
@@ -1407,8 +1440,11 @@
         </details>
       </section>
     {:else if panel === 'presentation'}
+      <!-- PhotographyWorkflow.jsx templates: a starting point, then cover & pacing beside identity. -->
       <section class="phd-card">
+        <span class="phx-eyebrow">{$t('frameleaf_photography_presentation_eyebrow')}</span>
         <h3>{$t('frameleaf_photography_presentation_title')}</h3>
+        <p>{$t('frameleaf_photography_presentation_body')}</p>
         <div class="phd-templates">
           {#each [{ id: 'wedding', title: $t('frameleaf_photography_template_wedding'), detail: $t('frameleaf_photography_template_wedding_detail') }, { id: 'portrait', title: $t('frameleaf_photography_template_portrait'), detail: $t('frameleaf_photography_template_portrait_detail') }, { id: 'fine-art', title: $t('frameleaf_photography_template_fine_art'), detail: $t('frameleaf_photography_template_fine_art_detail') }, { id: 'proofing', title: $t('frameleaf_photography_template_proofing'), detail: $t('frameleaf_photography_template_proofing_detail') }] as template (template.id)}<button
               type="button"
@@ -1416,10 +1452,31 @@
               aria-pressed={draft.config.presentation.template === template.id}
               onclick={() =>
                 (draft!.config.presentation.template = template.id as Workflow['config']['presentation']['template'])}
-              ><strong>{template.title}</strong><span>{template.detail}</span></button
+              ><span
+                class="phd-template-cover {template.id}"
+                style:background={coverPaper.background}
+                style:color={coverPaper.text}
+                aria-hidden="true"
+                ><small>{brand?.brand.name ?? ''}</small><span class="phd-cover-photo"
+                  >{#if coverAsset}<PhotographyThumb src={mediaUrl(coverAsset)} />{/if}</span
+                ><span class="phd-cover-title">{template.id === 'wedding' ? shoot.name : template.title}</span><span
+                  class="phd-cover-thumbs"
+                  >{#each coverThumbs as id, index (index)}<span
+                      >{#if id}<PhotographyThumb src={mediaUrl(id)} />{/if}</span
+                    >{/each}</span
+                ></span
+              ><strong>{template.title}</strong><span>{template.detail}</span
+              >{#if draft.config.presentation.template === template.id}<small
+                  ><Icon icon={mdiCheck} size="0.875rem" aria-hidden={true} />{$t(
+                    'frameleaf_photography_presentation_current',
+                  )}</small
+                >{/if}</button
             >{/each}
         </div>
-        <div class="phd-fields">
+      </section>
+      <div class="phx-two-column phx-presentation">
+        <section class="phd-card">
+          <h3>{$t('frameleaf_photography_cover_pacing')}</h3>
           <label
             >{$t('frameleaf_photography_cover_photograph')}<select bind:value={draft.config.presentation.coverCaptureId}
               ><option value={null}>{$t('frameleaf_photography_cover_first')}</option
@@ -1427,13 +1484,24 @@
                   >{photoLabel(capture.number)} · {capture.fileName}</option
                 >{/each}</select
             ></label
-          ><label
-            >{$t('frameleaf_photography_cover_treatment')}<select bind:value={draft.config.presentation.coverTreatment}
-              ><option value="full">{$t('frameleaf_photography_block_full')}</option><option value="split"
-                >{$t('frameleaf_photography_cover_split')}</option
-              ><option value="quiet">{$t('frameleaf_photography_cover_quiet')}</option></select
-            ></label
-          ><label
+          >
+          <div class="phd-fields">
+            <label
+              >{$t('frameleaf_photography_cover_treatment')}<select
+                bind:value={draft.config.presentation.coverTreatment}
+                ><option value="full">{$t('frameleaf_photography_block_full')}</option><option value="split"
+                  >{$t('frameleaf_photography_cover_split')}</option
+                ><option value="quiet">{$t('frameleaf_photography_cover_quiet')}</option></select
+              ></label
+            ><label
+              >{$t('frameleaf_photography_spacing')}<select bind:value={draft.config.presentation.spacing}
+                ><option value="compact">{$t('frameleaf_photography_spacing_compact')}</option><option
+                  value="comfortable">{$t('frameleaf_photography_spacing_comfortable')}</option
+                ><option value="airy">{$t('frameleaf_photography_spacing_airy')}</option></select
+              ></label
+            >
+          </div>
+          <label
             >{$t('frameleaf_photography_cover_focal')}<input
               type="range"
               min="0"
@@ -1441,7 +1509,16 @@
               bind:value={draft.config.presentation.coverFocal}
             /></label
           ><label
-            >{$t('frameleaf_photography_typography')}<select bind:value={draft.config.presentation.font}
+            >{$t('frameleaf_photography_introduction')}<textarea
+              maxlength="2000"
+              rows="3"
+              bind:value={draft.config.presentation.introduction}></textarea></label
+          >
+        </section>
+        <section class="phd-card">
+          <h3>{$t('frameleaf_photography_identity_finishing')}</h3>
+          <label
+            >{$t('frameleaf_photography_gallery_typography')}<select bind:value={draft.config.presentation.font}
               ><option value="editorial">{$t('frameleaf_photography_font_editorial')}</option><option value="modern"
                 >{$t('frameleaf_photography_font_modern')}</option
               ><option value="script">{$t('frameleaf_photography_font_script')}</option></select
@@ -1452,31 +1529,20 @@
                 >{$t('frameleaf_photography_palette_ivory')}</option
               ><option value="charcoal">{$t('frameleaf_photography_palette_charcoal')}</option></select
             ></label
-          ><label
-            >{$t('frameleaf_photography_spacing')}<select bind:value={draft.config.presentation.spacing}
-              ><option value="compact">{$t('frameleaf_photography_spacing_compact')}</option><option value="comfortable"
-                >{$t('frameleaf_photography_spacing_comfortable')}</option
-              ><option value="airy">{$t('frameleaf_photography_spacing_airy')}</option></select
-            ></label
+          ><label class="phx-check-row"
+            ><span>{$t('frameleaf_photography_chapter_navigation')}</span><input
+              type="checkbox"
+              bind:checked={draft.config.presentation.showChapters}
+            /></label
+          ><label class="phx-check-row"
+            ><span
+              >{$t('frameleaf_photography_photo_numbers')}<small>{$t('frameleaf_photography_photo_numbers_hint')}</small
+              ></span
+            ><input type="checkbox" bind:checked={draft.config.presentation.showNumbers} /></label
           >
-        </div>
-        <label
-          >{$t('frameleaf_photography_introduction')}<textarea
-            maxlength="2000"
-            rows="4"
-            bind:value={draft.config.presentation.introduction}></textarea></label
-        >
-        <div class="phd-actions">
-          <label
-            ><input type="checkbox" bind:checked={draft.config.presentation.showChapters} />{$t(
-              'frameleaf_photography_chapter_navigation',
-            )}</label
-          ><label
-            ><input type="checkbox" bind:checked={draft.config.presentation.showNumbers} />{$t(
-              'frameleaf_photography_photo_numbers',
-            )}</label
-          >
-        </div>
+        </section>
+      </div>
+      <section class="phd-card">
         <h3>{$t('frameleaf_photography_story_blocks')}</h3>
         <p>
           {$t('frameleaf_photography_story_blocks_body')}
@@ -1597,6 +1663,7 @@
               ? $t('frameleaf_photography_orders_rounds', { values: { count: draft.rounds.length } })
               : $t('frameleaf_photography_orders_waiting')}
           </h3>
+          {#if draft.rounds.length === 0}<p>{$t('frameleaf_photography_orders_waiting_lead')}</p>{/if}
         </div>
         <p class="phd-order-total">
           <small>{$t('frameleaf_photography_order_total_so_far')}</small
@@ -1606,7 +1673,9 @@
         </p>
       </div>
       {#if draft.rounds.length === 0}<section class="phd-card phx-orders-empty">
-          <p>{$t('frameleaf_photography_orders_empty')}</p>
+          <Icon icon={mdiHeartOutline} size="2.6rem" aria-hidden={true} />
+          <h3>{$t('frameleaf_photography_orders_empty_title')}</h3>
+          <p>{$t('frameleaf_photography_orders_empty_body')}</p>
           <div class="phd-actions">
             <Button variant="primary" disabled={previewing} onclick={clientPreview}
               ><Icon icon={mdiEyeOutline} size="1.1rem" aria-hidden={true} />{$t(
@@ -1839,14 +1908,14 @@
       </div>
       <div class="phw-detail-layout phx-gallery">
         <div class="phw-gallery-main">
-          <figure class="phw-gallery-cover">
-            {#if coverAsset}<PhotographyThumb
-                src={getAssetMediaUrl({ id: coverAsset, size: AssetMediaSize.Preview })}
-                loading="eager"
-              />{/if}
-            <span class="phx-cover-mark" aria-hidden="true"
-              >{draft.config.proofWatermark.text || brand?.brand.name || ''}</span
-            >
+          <figure class="phw-gallery-cover" class:is-empty={!galleryCoverUrl}>
+            {#if galleryCoverUrl}<PhotographyThumb src={galleryCoverUrl} loading="eager" /><span
+                class="phx-cover-mark"
+                aria-hidden="true">{draft.config.proofWatermark.text || brand?.brand.name || ''}</span
+              >{:else}<!-- No cover preview yet: a quiet empty cover, never a broken image under the watermark. --><span
+                class="phw-gallery-cover-empty"
+                aria-hidden="true"><Icon icon={mdiImageOutline} size="2.5rem" /></span
+              >{/if}
             <figcaption class="phw-gallery-cover-text">
               <span>{brand?.brand.name ?? ''}</span>
               <h2>{draft.config.title || shoot.name}</h2>
@@ -1897,10 +1966,10 @@
           <ul class="phw-client-picks">
             {#each clientChoices.length > 0 ? clientChoices.slice(0, 6) : eligible.slice(0, 3) as capture (capture.id)}
               <li>
-                {#if capture.assetId}<PhotographyThumb
-                    src={getAssetMediaUrl({ id: capture.assetId, size: AssetMediaSize.Thumbnail })}
-                    alt={capture.fileName ?? photoLabel(capture.number)}
-                  />{/if}
+                <PhotographyThumb
+                  src={mediaUrl(capture.assetId)}
+                  alt={capture.fileName ?? photoLabel(capture.number)}
+                />
                 <span
                   ><Icon
                     icon={clientChoices.length > 0 ? mdiHeart : mdiHeartOutline}
