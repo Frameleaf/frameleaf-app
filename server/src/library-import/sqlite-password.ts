@@ -21,7 +21,9 @@ export const readSqlitePassword = async (
     const row = database.prepare(query).get(context.sourceUserId);
     if (!row) throw new Error('Source owner missing');
     if (row.password === null || row.password === '') return;
-    if (format === 'django-pbkdf2-sha256' && typeof row.password === 'string' && row.password.startsWith('!')) return;
+    const django = format === 'django-pbkdf2-sha256' || format === 'django-password';
+    // Django's set_unusable_password() marker selects the secure-claim fallback rather than refusing the import.
+    if (django && typeof row.password === 'string' && row.password.startsWith('!')) return;
     if (typeof row.password !== 'string') throw new Error('Source password encoding unsupported');
     return await ImportedPassword.fromSource(context, format, row.password);
   } catch {
