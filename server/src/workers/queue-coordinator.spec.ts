@@ -3,7 +3,7 @@ import { performance } from 'node:perf_hooks';
 import type { MessagePort } from 'node:worker_threads';
 import { QUEUE_EXECUTION_CAPACITY } from 'src/queue/admission.js';
 import { pruneQueueHistory } from 'src/queue/retention.js';
-import { QUEUE_TIMING, QueueClaim, QueueDispatch } from 'src/queue/types.js';
+import { QUEUE_BATCH, QUEUE_TIMING, QueueClaim, QueueDispatch } from 'src/queue/types.js';
 import { coordinate } from 'src/workers/queue-coordinator.js';
 
 const fixture = vi.hoisted(() => ({
@@ -349,6 +349,28 @@ describe('coordinator capacity admission', () => {
     expect(pruneQueueHistory).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(QUEUE_TIMING.sweep);
     expect(fixture.store.recoverExpired).toHaveBeenCalledTimes(2);
+    expect(pruneQueueHistory).toHaveBeenCalledOnce();
+  });
+
+  it('keeps pruning full pages of history within one sweep and stops at a short page', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(performance, 'now').mockImplementation(() => Date.now());
+    vi.mocked(pruneQueueHistory)
+      .mockResolvedValueOnce(QUEUE_BATCH)
+      .mockResolvedValueOnce(QUEUE_BATCH)
+      .mockResolvedValueOnce(12);
+    await coordinate(coordinatorData);
+    expect(pruneQueueHistory).toHaveBeenCalledTimes(3);
+  });
+
+  it('stops pruning full pages when the sweep budget runs out', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(performance, 'now').mockImplementation(() => Date.now());
+    vi.mocked(pruneQueueHistory).mockImplementation(() => {
+      vi.setSystemTime(Date.now() + QUEUE_TIMING.pruneBudget);
+      return Promise.resolve(QUEUE_BATCH);
+    });
+    await coordinate(coordinatorData);
     expect(pruneQueueHistory).toHaveBeenCalledOnce();
   });
 

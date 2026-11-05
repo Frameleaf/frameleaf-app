@@ -7,6 +7,8 @@ export const QUEUE_TIMING = {
   heartbeat: 15_000,
   lease: 60_000,
   sweep: 30_000,
+  /** how long one sweep keeps pruning full pages of finished jobs (FL-1213) */
+  pruneBudget: 5000,
   scan: 5000,
   ...readQueueDeadlineProfiles(),
   retryDelay: 30_000,

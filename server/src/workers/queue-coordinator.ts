@@ -9,7 +9,7 @@ import { coalescedTask } from 'src/queue/coalesced-task.js';
 import { queueNotifications } from 'src/queue/notifications.js';
 import { pruneQueueHistory } from 'src/queue/retention.js';
 import { SqlQueueStore } from 'src/queue/store.js';
-import { QUEUE_TIMING, QueueClaim, QueueWorkerMessage } from 'src/queue/types.js';
+import { QUEUE_BATCH, QUEUE_TIMING, QueueClaim, QueueWorkerMessage } from 'src/queue/types.js';
 import { QueueWatchdog, monitorQueueProgress } from 'src/queue/watchdog.js';
 
 type CoordinatorData = {
@@ -100,7 +100,10 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
     maintenance = (async () => {
       try {
         await maintenanceStore.recoverExpired();
-        if (!stopping) await pruneQueueHistory(maintenanceDb);
+        // FL-1213: one page per sweep cannot keep up after a big library scan (millions of jobs at 250
+        // per 30 seconds), so keep pruning full pages for a few seconds; the next sweep picks up the rest
+        const deadline = performance.now() + QUEUE_TIMING.pruneBudget;
+        while (!stopping && (await pruneQueueHistory(maintenanceDb)) === QUEUE_BATCH && performance.now() < deadline);
       } catch {
         if (!stopping) parentPort!.postMessage({ type: 'unavailable' });
       } finally {
