@@ -24,6 +24,7 @@ import { publicationDatabase } from 'src/queue/transaction.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { getFrameleafSchema } from 'src/schema/frameleaf-schema.js';
+import { adoptLegacyLedger } from 'src/schema/legacy-ledger.js';
 import { ExtensionVersion, VectorExtension } from 'src/types.js';
 import { vectorIndexQuery } from 'src/utils/database.js';
 import { withDatabaseCleanup } from 'src/utils/execution-database.js';
@@ -447,6 +448,7 @@ export class DatabaseRepository {
 
   async runMigrations(): Promise<void> {
     await this.assertFrameleafDatabase();
+    for (const name of await adoptLegacyLedger(this.db)) this.logger.log(`Frameleaf migration ${name}: Success`);
     const migrator = new Migrator({
       db: this.db,
       migrationTableName: 'frameleaf_migrations',
