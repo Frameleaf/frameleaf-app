@@ -200,6 +200,7 @@ export function nativeControllerAclSafe(
     /^[d-][rwxstST-]{9}[@ ]/.test(stdout)
   );
 }
+/** Use the bootstrap-pinned Desktop controller to verify the two supported Windows program paths. */
 function installedProgramProtection(bootstrap: NativeBootstrap) {
   if (process.platform !== 'win32') return protectNativeController;
   const { controller, candidate, manifestSha256 } = bootstrap.installation;
@@ -233,6 +234,7 @@ function installedProgramProtection(bootstrap: NativeBootstrap) {
   };
 }
 
+/** Verify executable protection and identity before the native Manager can become ready. */
 export async function createNativeService(
   store: Store,
   input: Readable,
@@ -288,6 +290,7 @@ export function validateNativeTls(
     throw new Refusal('native_tls_invalid');
   }
 }
+/** Recheck the installed controller before using it to dispatch a native operation. */
 async function verifyInstalledController(
   value: NativeBootstrap,
 ): Promise<void> {
@@ -298,6 +301,7 @@ async function verifyInstalledController(
     'native_controller_changed',
   );
 }
+/** Hash the opened regular file and reject changes to its identity during verification. */
 async function verifyExecutable(
   path: string,
   sha256: string,
@@ -343,6 +347,7 @@ async function verifyExecutable(
     await file.close();
   }
 }
+/** Require both installation protection and the pinned digest before using the backup engine. */
 async function verifyNativeBackupEngine(
   engine: NativeBootstrap['backupEngine'],
   protect: typeof protectNativeController,
@@ -358,6 +363,7 @@ async function verifyNativeBackupEngine(
     throw new Refusal('native_backup_engine_changed');
   }
 }
+/** Bind each backup invocation to the protected, digest-pinned restic executable. */
 export function nativeBackupCommand(
   engine: NativeBootstrap['backupEngine'],
   execute: typeof command = command,
