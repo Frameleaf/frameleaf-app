@@ -152,8 +152,8 @@ export class PhotographySiteService {
    * first reads what Cloud serves and replaces it only when Cloud serves nothing, this studio's own site, or
    * a site no studio still publishes; it takes the domain down only when it is this studio's. Cloud's slug
    * names the studio (each studio's address is its own), and that studio holds the domain while it is active
-   * and still publishes that domain; `previous` is this studio's live domain before the save, for a save that
-   * also changed the address.
+   * and still publishes that domain; `previous` is this studio's live domain before the save, which it may
+   * take down only while no studio holds it.
    */
   private reportStoredDomain(ownerId: string, previous: SiteDomain | null = null) {
     const report = this.domainReports.then(async () => {
@@ -170,8 +170,9 @@ export class PhotographySiteService {
       if (sameDomain(served, wanted)) {
         return current;
       }
-      const holder = sameDomain(served, previous) ? ownerId : await this.domainHolder(served);
-      if (holder === ownerId || (wanted && !holder)) {
+      // Always ask who holds it now: another studio may have taken this studio's old address meanwhile.
+      const holder = await this.domainHolder(served);
+      if (holder === ownerId || (!holder && (wanted || sameDomain(served, previous)))) {
         return this.remoteAccess.reportStudioSite(wanted);
       }
       // another studio's website (left alone), or one this studio has no domain to replace and no claim to take down
@@ -195,18 +196,19 @@ export class PhotographySiteService {
   async siteDomain(auth: AuthDto) {
     const ownerId = this.workflow.studioOwner(auth);
     const { record } = await this.repository.studioRecord(ownerId);
-    const domain = record.site?.enabled ? record.site.domain : '';
-    if (!domain) {
+    const mine = liveDomain(record.site);
+    if (!mine) {
       return { site: null, problem: null };
     }
     let answer = await this.remoteAccess.studioSiteStatus();
-    if (!answer.problem && answer.site?.domain !== domain) {
+    // The same domain under another studio's address is not this studio's site (FL-1233)
+    if (!answer.problem && !sameDomain(answer.site, mine)) {
       // Cloud never heard of it (published while remote access was off, or the report was lost), or serves
       // another domain: tell it now, unless another studio holds the server's one own domain (FL-1233)
       answer = await this.reportStoredDomain(ownerId);
     }
     // one studio per server has its own domain; another studio's is not this one's to show
-    return answer.site && answer.site.domain !== domain ? { site: null, problem: answer.problem } : answer;
+    return answer.site && !sameDomain(answer.site, mine) ? { site: null, problem: answer.problem } : answer;
   }
 
   private view(revision: string | null, site: PhotographySite, record: StudioRecord) {

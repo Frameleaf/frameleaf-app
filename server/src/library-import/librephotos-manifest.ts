@@ -10,6 +10,7 @@ import {
   type ImportManifest,
   importFileSchema,
   importTimestampSchema,
+  importsLocked,
   parseImportManifest,
 } from 'src/library-import/manifest.js';
 import { type SourceArchiveRecord, encodeSourceArchiveRecord } from 'src/library-import/source-archive-codec.js';
@@ -322,7 +323,10 @@ export async function readLibrephotosManifest(snapshot: Snapshot, input: Input) 
       assetIds.length < 2 ||
       assetIds.some(
         (id) =>
-          stackClaims.get(id)!.length > 1 || byAsset.get(id)!.visibility !== byAsset.get(primaryAssetId)!.visibility,
+          stackClaims.get(id)!.length > 1 ||
+          byAsset.get(id)!.visibility !== byAsset.get(primaryAssetId)!.visibility ||
+          // FL-1230: trashed members can differ in being Locked; the manifest refuses such a stack
+          importsLocked(byAsset.get(id)!) !== importsLocked(byAsset.get(primaryAssetId)!),
       )
     ) {
       loss('LIBREPHOTOS_STACK_ARCHIVED', id);

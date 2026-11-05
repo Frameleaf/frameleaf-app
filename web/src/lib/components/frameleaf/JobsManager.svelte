@@ -284,11 +284,14 @@
   // Strings, so a stats tick (new row objects, same queues) doesn't refetch the counts below.
   const rowNames = $derived(rows.map((row) => row.definition.name).join(','));
   const selectedQueue = $derived(selected?.definition.name);
+  // The open queue's counts as one string: the account's are read again when these change, not on every tick.
+  const selectedCounts = $derived(selected ? JSON.stringify(selected.queue.statistics) : '');
   // An account's counts: the open queue's, or every listed queue's; again after each command.
   $effect(() => {
     const account = owner;
     const name = selectedQueue;
     void jobsReload;
+    void selectedCounts;
     if (account === 'all') {
       ownerStats = new Map();
       failedStats = new Set();

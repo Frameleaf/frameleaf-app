@@ -194,9 +194,21 @@
   let said = $state('');
   let failed = $state('');
 
-  const choice = (kind: Routed) => work.picked[kind] ?? currentChoice(kind, facts);
-  const follower = (id: Follower) => work.followers[id] ?? followerChoice(id, facts);
-  const writes = $derived(routeWrites(work.picked, work.followers, facts));
+  // A kept pick for a computer that has since gone (the draft outlives the table, FL-1252) is dropped,
+  // so it is neither shown nor saved.
+  const picked = $derived(
+    Object.fromEntries(
+      Object.entries(work.picked).filter(([kind, id]) => choicesFor(kind as Routed, facts).includes(id)),
+    ) as typeof work.picked,
+  );
+  const followers = $derived(
+    Object.fromEntries(
+      Object.entries(work.followers).filter(([id, value]) => followerChoices(id as Follower, facts).includes(value)),
+    ) as typeof work.followers,
+  );
+  const choice = (kind: Routed) => picked[kind] ?? currentChoice(kind, facts);
+  const follower = (id: Follower) => followers[id] ?? followerChoice(id, facts);
+  const writes = $derived(routeWrites(picked, followers, facts));
   const suggestChanged = $derived(work.suggest !== undefined && work.suggest !== savedCloudMl?.startWith);
   const changedRows = $derived(ROUTED.filter((kind) => choice(kind) !== currentChoice(kind, facts)));
 

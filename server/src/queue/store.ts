@@ -1202,13 +1202,13 @@ export class SqlQueueStore {
   }
 
   /**
-   * The newest job of this name still waiting to run on one item or, with none waiting, the one
-   * already running on it (FL-1249: queueing again while it runs is deduplicated into that job).
+   * The job of this name already running on one item or, with none running, the newest one still
+   * waiting to run on it (FL-1249: Run on one item counts a running job as started).
    */
   async findOpenJob(queue: string, name: string, itemId: string): Promise<{ id: string; active: boolean } | undefined> {
     const { rows } = await sql<{ id: string; active: boolean }>`select id, state = 'active' as active from job
       where queue = ${queue} and name = ${name} and state in ('pending','waiting','active') and data->>'id' = ${itemId}
-      order by state = 'active', "createdAt" desc, id desc limit 1`.execute(this.db);
+      order by state = 'active' desc, "createdAt" desc, id desc limit 1`.execute(this.db);
     return rows[0];
   }
 

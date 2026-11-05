@@ -204,6 +204,15 @@ describe('Where work runs (FL-364)', () => {
     expect(screen.getByText('1 change not saved yet')).toBeInTheDocument();
   });
 
+  it('drops a kept pick for a computer that is no longer there', async () => {
+    const kept = new WorkRunsDraft();
+    kept.picked = { descriptions: 'gone-pc' } as WorkRunsDraft['picked'];
+    render(WhereWorkRuns, { part: 'everyday', draft: kept });
+
+    expect(checked(await choices('Descriptions & tags'))).toBe('This server');
+    expect(screen.queryByText('1 change not saved yet')).not.toBeInTheDocument();
+  });
+
   it('opens the page’s own Add a computer instead of following the link to it (FL-1245)', async () => {
     const onAdd = vi.fn();
     render(WhereWorkRuns, { part: 'everyday', onAdd });

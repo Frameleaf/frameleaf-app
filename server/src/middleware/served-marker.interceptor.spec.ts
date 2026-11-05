@@ -40,11 +40,11 @@ describe(ServedMarkerInterceptor.name, () => {
   it("ignores the Manager's own polls and requests no one signed in to (FL-1232)", () => {
     const { sut, set, next } = setup();
     sut.intercept(context('/api/server/library-setup/manager', { 'x-frameleaf-manager': 'token' }, null), next);
-    sut.intercept(context('/api/server/library-setup/manager', { 'x-frameleaf-manager': 'token' }), next);
     sut.intercept(context('/api/server/config', {}, null), next);
     expect(set).not.toHaveBeenCalled();
 
-    sut.intercept(context('/api/assets'), next);
+    // the header proves nothing: a signed-in user's request counts whatever it carries
+    sut.intercept(context('/api/assets', { 'x-frameleaf-manager': 'anything' }), next);
     expect(set).toHaveBeenCalledTimes(1);
   });
 

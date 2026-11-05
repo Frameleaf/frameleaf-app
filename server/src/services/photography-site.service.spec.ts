@@ -192,6 +192,23 @@ describe(PhotographySiteService.name, () => {
       expect(remoteAccess.reportStudioSite).not.toHaveBeenCalled();
     });
 
+    it("does not show another studio's site that uses the same domain under its own address", async () => {
+      const { sut, repository, stored, remoteAccess } = withStudioA({ enabled: true, domain: 'b.example.com' });
+      remoteAccess.studioSiteStatus.mockResolvedValue({ site: { ...other, domain: 'b.example.com' }, problem: null });
+      const original = repository.studioRecord.getMockImplementation()!;
+      repository.studioRecord.mockImplementation((ownerId: string) =>
+        ownerId === OWNER
+          ? Promise.resolve({
+              revision: 'r1',
+              record: { site: { ...stored, enabled: true, domain: 'b.example.com' }, media: {} },
+            })
+          : original(ownerId),
+      );
+
+      await expect(sut.siteDomain({} as never)).resolves.toEqual({ site: null, problem: STUDIO_DOMAIN_HELD });
+      expect(remoteAccess.reportStudioSite).not.toHaveBeenCalled();
+    });
+
     it('takes over a domain no studio publishes any more', async () => {
       const { sut, stored, remoteAccess } = withStudioA({ enabled: false, domain: 'a.example.com' });
 

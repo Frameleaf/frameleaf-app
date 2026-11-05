@@ -335,6 +335,23 @@ describe('LibrePhotos common manifest mapping', () => {
     ]);
   });
 
+  it('archives a stack whose trashed members differ in being Locked instead of refusing the import (FL-1230)', async () => {
+    const { trashed_at: trashedAt } = database
+      .prepare('SELECT trashed_at FROM api_photo WHERE id=?')
+      .get(photoId('trash')) as { trashed_at: string };
+    database
+      .prepare('UPDATE api_photo SET archived=0, in_trashcan=1, trashed_at=? WHERE id IN (?, ?)')
+      .run(trashedAt, photoId('alice'), photoId('archived'));
+    database.prepare('UPDATE api_photo SET hidden=1 WHERE id=?').run(photoId('archived'));
+    const { manifest } = await read(snapshot(), input());
+    expect(manifest).toHaveProperty('stacks', []);
+    expect(manifest.losses).toContainEqual({
+      code: 'LIBREPHOTOS_STACK_ARCHIVED',
+      entityId: content.rows.api_photostack[0].id,
+      acknowledged: false,
+    });
+  });
+
   it('maps the actual PostgreSQL text fixture through the qualified decoder and async pages', async () => {
     const decoder = createLibrephotosPostgresDecoder(
       pgSchema.structure,

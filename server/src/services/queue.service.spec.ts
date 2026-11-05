@@ -640,7 +640,7 @@ describe(QueueService.name, () => {
 
     it('runs a task on one item: queues its job for that item and starts it now', async () => {
       mocks.asset.getById.mockResolvedValue({ id: assetId, type: AssetType.Image } as never);
-      mocks.job.findOpenJob.mockResolvedValue({ id: jobId, active: false });
+      mocks.job.findOpenJob.mockResolvedValueOnce(undefined).mockResolvedValue({ id: jobId, active: false });
       mocks.job.startNow.mockResolvedValue(true);
       await sut.runOne(factory.auth(), QueueName.ThumbnailGeneration, { assetId });
       expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.AssetGenerateThumbnails, data: { id: assetId } });
@@ -656,6 +656,8 @@ describe(QueueService.name, () => {
       mocks.asset.getById.mockResolvedValue({ id: assetId, type: AssetType.Image } as never);
       mocks.job.findOpenJob.mockResolvedValue({ id: jobId, active: true });
       await expect(sut.runOne(factory.auth(), QueueName.ThumbnailGeneration, { assetId })).resolves.toBeUndefined();
+      // no second copy queued beside the running one
+      expect(mocks.job.queue).not.toHaveBeenCalled();
       expect(mocks.job.startNow).not.toHaveBeenCalled();
       mocks.job.findOpenJob.mockResolvedValue(undefined);
       await expect(sut.runOne(factory.auth(), QueueName.ThumbnailGeneration, { assetId })).rejects.toBeInstanceOf(
@@ -669,7 +671,7 @@ describe(QueueService.name, () => {
       [QueueName.ImageDescription, JobName.ImageDescription],
     ])("runs Library care's Redo one and Check one photo on %s (approved design, 2026-11-04)", async (queue, job) => {
       mocks.asset.getById.mockResolvedValue({ id: assetId, type: AssetType.Image } as never);
-      mocks.job.findOpenJob.mockResolvedValue({ id: 'job-1', active: false });
+      mocks.job.findOpenJob.mockResolvedValueOnce(undefined).mockResolvedValue({ id: 'job-1', active: false });
       mocks.job.startNow.mockResolvedValue(true);
       await sut.runOne(factory.auth(), queue, { assetId });
       expect(mocks.job.queue).toHaveBeenCalledWith({ name: job, data: { id: assetId } });

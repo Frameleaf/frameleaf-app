@@ -95,5 +95,8 @@ describe('PostgreSQL queue: one job at a time', () => {
     const [claim] = await store.claim(queue, worker);
     expect(claim.id).toBe(ids.b);
     expect(await store.findOpenJob(queue, 'single-stage', 'b')).toEqual({ id: ids.b, active: true });
+    // a later waiting copy does not hide the running one
+    await store.enqueue([intent('b')]);
+    expect(await store.findOpenJob(queue, 'single-stage', 'b')).toEqual({ id: ids.b, active: true });
   });
 });
