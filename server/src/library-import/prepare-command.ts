@@ -34,6 +34,7 @@ const requestSchema = z.strictObject({
     .regex(/^(mysql|postgres(ql)?):\/\//u)
     .optional(),
   originalsRoot: z.string().regex(/^\/import-media\/[a-z0-9][a-z0-9_-]*$/u),
+  sourceRootPath: privateImportPathSchema.optional(),
   approvedLossCodes: z.array(id).max(1000),
   owners: z
     .array(

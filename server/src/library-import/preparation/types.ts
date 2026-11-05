@@ -10,6 +10,8 @@ export type PreparationSourceInput = {
   databaseUrl?: string;
   /** Read-only mount of the source originals. File paths are relative to it. */
   originalsRoot: string;
+  /** The source app's own container path for the originals mount (e.g. `/photos`, `/data`), when it has one. */
+  sourceRootPath?: string;
 };
 
 /** Source login facts. Unknown facts must be reported as restrictive, never permissive. */
