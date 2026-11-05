@@ -40,6 +40,7 @@
     markerPlace,
     markerPoint,
     markerRowLine,
+    openingOrder,
     pointCounts,
     type MapPoint,
   } from '$lib/frameleaf/map-markers';
@@ -846,7 +847,7 @@
           onclick={(event) =>
             onOpenAsset(
               event.feature.properties?.id as string,
-              inView.map(({ id }) => id),
+              openingOrder(event.feature.properties?.id as string, inView, inViewPoints),
             )}
         >
           {#snippet children({ feature })}

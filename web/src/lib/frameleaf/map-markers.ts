@@ -77,6 +77,16 @@ export const clusterPoint = (cluster: MapClusterResponseDto): MapPoint => ({
   extent: { west: cluster.west, south: cluster.south, east: cluster.east, north: cluster.north },
 });
 
+/**
+ * The items the viewer steps through when one is opened from the map (V-17): the "In view" rows, or,
+ * when they do not hold it yet (FL-1214: a grouped view reads its rows a page at a time, only while
+ * the list is open), the single items in view, newest first as the server sends them.
+ */
+export const openingOrder = (id: string, rows: Pick<MapMarkerResponseDto, 'id'>[], points: MapPoint[]) => {
+  const listed = rows.map((row) => row.id);
+  return listed.includes(id) ? listed : points.flatMap((point) => (point.marker ? [point.id] : []));
+};
+
 /** The legend's photo and video counts for what is in view (`MapView.jsx:363-367`), and their sum. */
 export const pointCounts = (points: Pick<MapPoint, 'count' | 'videos'>[]) => {
   let items = 0;

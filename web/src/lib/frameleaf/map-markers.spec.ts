@@ -5,6 +5,7 @@ import {
   markerDetail,
   markerPoint,
   markerRowLine,
+  openingOrder,
   pointCounts,
 } from '$lib/frameleaf/map-markers';
 
@@ -86,5 +87,27 @@ describe('map markers (FL-51)', () => {
       photos: 35,
       videos: 6,
     });
+  });
+
+  it('steps through the In view rows, or the single items in view when the rows do not hold it (FL-1214)', () => {
+    const first = markerPoint(marker({ id: 'a' }));
+    const second = markerPoint(marker({ id: 'b' }));
+    const cell = clusterPoint({
+      id: 'c',
+      lat: 3,
+      lon: 4,
+      count: 40,
+      videos: 0,
+      city: null,
+      state: null,
+      country: null,
+      west: 3,
+      south: 3,
+      east: 4,
+      north: 4,
+    });
+    expect(openingOrder('b', [{ id: 'x' }, { id: 'b' }], [first, cell, second])).toEqual(['x', 'b']);
+    // the list is closed, or its first page has not come yet
+    expect(openingOrder('b', [], [first, cell, second])).toEqual(['a', 'b']);
   });
 });
