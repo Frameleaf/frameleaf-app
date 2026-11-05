@@ -200,6 +200,41 @@ export function nativeControllerAclSafe(
     /^[d-][rwxstST-]{9}[@ ]/.test(stdout)
   );
 }
+/** Use the bootstrap-pinned Desktop controller to verify the two supported Windows program paths. */
+function installedProgramProtection(bootstrap: NativeBootstrap) {
+  if (process.platform !== 'win32') return protectNativeController;
+  const { controller, candidate, manifestSha256 } = bootstrap.installation;
+  return async (executable: string): Promise<void> => {
+    const program =
+      executable === controller
+        ? 'controller'
+        : executable === join(candidate, 'payload', 'backup', 'restic.exe')
+          ? 'restic'
+          : null;
+    if (!program) throw new Refusal('native_controller_unprotected');
+    // Desktop verifies the installed controller before passing this private bootstrap.
+    await verifyExecutable(controller, bootstrap.controllerSha256, 'native_controller_changed');
+    try {
+      const { stdout, stderr } = await execute(
+        controller,
+        ['--verify-installed-program', manifestSha256, bootstrap.controllerSha256, program],
+        {
+          env: process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {},
+          windowsHide: true,
+          timeout: 3000,
+          maxBuffer: 1024,
+        },
+      );
+      const receipt = JSON.parse(stdout);
+      if (stderr || receipt.protocolVersion !== 1 || receipt.state !== 'protected')
+        throw new Refusal('native_controller_unprotected');
+    } catch {
+      throw new Refusal('native_controller_unprotected');
+    }
+  };
+}
+
+/** Verify executable protection and identity before the native Manager can become ready. */
 export async function createNativeService(
   store: Store,
   input: Readable,
@@ -207,15 +242,16 @@ export async function createNativeService(
   backupRepository = join(store.directory, 'backups', 'frameleaf-database'),
 ): Promise<NativeService> {
   const bootstrap = await readNativeBootstrap(input);
-  await protectNativeController(bootstrap.installation.controller);
-  await verifyNativeBackupEngine(bootstrap.backupEngine);
+  const protect = installedProgramProtection(bootstrap);
+  await protect(bootstrap.installation.controller);
+  await verifyNativeBackupEngine(bootstrap.backupEngine, protect);
   validateNativeTls(bootstrap.tls, origin);
   if (!path.safeParse(backupRepository).success)
     throw new Refusal('native_backup_destination_invalid');
   const backups = new Backups(
     backupRepository,
     async () => bootstrap.backupKey,
-    nativeBackupCommand(bootstrap.backupEngine),
+    nativeBackupCommand(bootstrap.backupEngine, command, protect),
   );
   return new NativeService(store, bootstrap, undefined, backups);
 }
@@ -254,22 +290,27 @@ export function validateNativeTls(
     throw new Refusal('native_tls_invalid');
   }
 }
+/** Recheck the installed controller before using it to dispatch a native operation. */
 async function verifyInstalledController(
   value: NativeBootstrap,
 ): Promise<void> {
-  await protectNativeController(value.installation.controller);
+  await installedProgramProtection(value)(value.installation.controller);
   await verifyExecutable(
     value.installation.controller,
     value.controllerSha256,
     'native_controller_changed',
   );
 }
+/** Hash the opened regular file and reject changes to its identity during verification. */
 async function verifyExecutable(
   path: string,
   sha256: string,
   code: string,
 ): Promise<void> {
-  if ((await realpath(path)) !== path) throw new Refusal(code);
+  // Windows exposes a different spelling for the same device path. The
+  // controller checks the actual installed path and rejects reparse points.
+  if (process.platform === 'win32' ? !(await lstat(path)).isFile() : (await realpath(path)) !== path)
+    throw new Refusal(code);
   const file = await open(
     path,
     constants.O_RDONLY |
@@ -306,11 +347,13 @@ async function verifyExecutable(
     await file.close();
   }
 }
+/** Require both installation protection and the pinned digest before using the backup engine. */
 async function verifyNativeBackupEngine(
   engine: NativeBootstrap['backupEngine'],
+  protect: typeof protectNativeController,
 ): Promise<void> {
   try {
-    await protectNativeController(engine.executable);
+    await protect(engine.executable);
     await verifyExecutable(
       engine.executable,
       engine.sha256,
@@ -320,15 +363,17 @@ async function verifyNativeBackupEngine(
     throw new Refusal('native_backup_engine_changed');
   }
 }
+/** Bind each backup invocation to the protected, digest-pinned restic executable. */
 export function nativeBackupCommand(
   engine: NativeBootstrap['backupEngine'],
   execute: typeof command = command,
+  protect: typeof protectNativeController = protectNativeController,
 ): typeof command {
   const binding = Object.freeze(BackupEngine.parse(engine));
   return async (binary, args, options = {}) => {
     if (binary !== 'restic' || options.executable !== undefined)
       throw new Refusal('native_backup_command_invalid');
-    await verifyNativeBackupEngine(binding);
+    await verifyNativeBackupEngine(binding, protect);
     return execute('restic', args, {
       ...options,
       executable: binding.executable,
@@ -424,7 +469,7 @@ export class NativeService {
     bootstrap = Bootstrap.parse(bootstrap);
     Object.freeze(bootstrap.installation);
     Object.freeze(bootstrap.backupEngine);
-    this.backupCommand = nativeBackupCommand(bootstrap.backupEngine);
+    this.backupCommand = nativeBackupCommand(bootstrap.backupEngine, command, installedProgramProtection(bootstrap));
     if (store.get('installation')) throw new Refusal('manager_runtime_changed');
     const {
       password,
