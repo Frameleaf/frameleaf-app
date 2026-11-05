@@ -7,9 +7,9 @@ import type { ConfigRepository } from 'src/repositories/config.repository.js';
 import { QUEUE_EXECUTION_CAPACITY } from 'src/queue/admission.js';
 import { coalescedTask } from 'src/queue/coalesced-task.js';
 import { queueNotifications } from 'src/queue/notifications.js';
-import { pruneQueueHistory } from 'src/queue/retention.js';
+import { pruneQueueHistoryPage } from 'src/queue/retention.js';
 import { SqlQueueStore } from 'src/queue/store.js';
-import { QUEUE_BATCH, QUEUE_TIMING, QueueClaim, QueueWorkerMessage } from 'src/queue/types.js';
+import { QUEUE_TIMING, QueueClaim, QueueWorkerMessage } from 'src/queue/types.js';
 import { QueueWatchdog, monitorQueueProgress } from 'src/queue/watchdog.js';
 
 type CoordinatorData = {
@@ -101,9 +101,13 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
       try {
         await maintenanceStore.recoverExpired();
         // FL-1213: one page per sweep cannot keep up after a big library scan (millions of jobs at 250
-        // per 30 seconds), so keep pruning full pages for a few seconds; the next sweep picks up the rest
+        // per 30 seconds), so keep going for a few seconds while pages are full and still deleting. A full
+        // page that deleted nothing (history not yet due) waits for the next sweep instead of spinning.
         const deadline = performance.now() + QUEUE_TIMING.pruneBudget;
-        while (!stopping && (await pruneQueueHistory(maintenanceDb)) === QUEUE_BATCH && performance.now() < deadline);
+        while (!stopping) {
+          const page = await pruneQueueHistoryPage(maintenanceDb);
+          if (!page?.fullPage || page.pruned === 0 || performance.now() >= deadline) break;
+        }
       } catch {
         if (!stopping) parentPort!.postMessage({ type: 'unavailable' });
       } finally {
