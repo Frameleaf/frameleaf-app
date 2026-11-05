@@ -370,15 +370,20 @@ it('lets the owner dismiss a stopped setup: held stages start, the bar and phone
   expect(await service.progress()).toMatchObject({ active: false });
 
   await service.begin(true);
-  expect(await service.progress()).toMatchObject({ active: true });
+  const back = await service.progress();
+  expect(back).toMatchObject({ active: true });
+  // Dismissing released the stages, not the file check: brought back, the check is not reported finished.
+  expect(back.stages.find(({ id }) => id === 'check')?.status).not.toBe('done');
   expect(await service.status()).toMatchObject({ setupRequired: true, dismissed: false });
 
-  // Dismissed while still working through the check, Retry brings it back as well.
+  // A setup that finished while dismissed checks the library again when brought back.
   await service.dismiss();
-  await sql`UPDATE system_metadata SET value=jsonb_set(value,'{phase}','"verifying"') WHERE key=${setupKey}`.execute(
-    db,
-  );
+  await sql`UPDATE system_metadata SET value=value || ${JSON.stringify({
+    phase: 'complete',
+    checkReleasedAt: new Date().toISOString(),
+    completedAt: new Date().toISOString(),
+  })}::text::jsonb WHERE key=${setupKey}`.execute(db);
   expect(await service.progress()).toMatchObject({ active: false });
   await service.begin(true);
-  expect(await service.progress()).toMatchObject({ active: true, phase: 'verifying' });
+  expect(await service.progress()).toMatchObject({ active: true, phase: 'rescanning', completedAt: null });
 });

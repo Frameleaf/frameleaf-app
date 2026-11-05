@@ -97,6 +97,8 @@ const SEARCH_STAGES: string[] = [JobName.SmartSearch, JobName.AssetDetectFaces, 
 /** The setup bar's early stage: what starts with the file check. */
 const THUMBNAIL_STAGES: string[] = [...EARLY_STAGES, JobName.PersonGenerateThumbnail];
 const phoneKey = (sessionId: string) => `:phone:${sessionId}`;
+/** Every held stage may run: the file check finished, or the owner dismissed setup to let the server run. */
+const released = (state: SetupState) => !!state.checkReleasedAt || !!state.dismissedAt;
 /** Library Care's full check of an account: every original, not only recent changes or chosen photos. */
 const fullScan = (table: string) =>
   sql`${sql.ref(`${table}.kind`)}='media_health' AND ${sql.ref(`${table}.snapshot`)}->>'mode'='scan'
@@ -180,12 +182,14 @@ export class FrameleafLibrarySetupService {
     const identity = this.identity();
     await this.locked(async (db) => {
       const previous = await this.read<SetupState>(this.key(), db);
-      if (previous && previous.phase !== 'awaiting-account' && !(retry && previous.phase === 'needs-attention')) {
-        // Retrying a dismissed setup brings it back, whatever phase it is in.
-        if (retry && previous.dismissedAt) {
-          previous.dismissedAt = null;
-          await this.write(this.key(), previous, db);
-        }
+      // Retrying a stopped setup, or one the owner dismissed (in any phase, finished included), checks again.
+      const reopened = retry && !!previous?.dismissedAt;
+      if (
+        previous &&
+        previous.phase !== 'awaiting-account' &&
+        !(retry && previous.phase === 'needs-attention') &&
+        !reopened
+      ) {
         await this.startImportedRegeneration(previous, db);
         return;
       }
@@ -248,12 +252,13 @@ export class FrameleafLibrarySetupService {
           : undefined,
         // Kept until each owner's new check starts; a check never started keeps its predecessor's place.
         resumeHealth: previous ? { ...previous.resumeHealth, ...previous.health } : undefined,
-        // Retrying a dismissed setup brings it back.
         dismissedAt: retry ? null : (previous?.dismissedAt ?? null),
         importRunId: previous?.importRunId,
         importOperationId: previous?.importOperationId,
-        checkReleasedAt: previous?.checkReleasedAt ?? null,
-        completedAt: previous?.completedAt ?? null,
+        // Checking a reopened library again starts from no finished check and no completion; stages its dismissal
+        // released stay released unless the owner pauses.
+        checkReleasedAt: reopened ? null : (previous?.checkReleasedAt ?? null),
+        completedAt: reopened ? null : (previous?.completedAt ?? null),
         healthAfter: null,
         revision: null,
         quietSince: null,
@@ -379,7 +384,7 @@ export class FrameleafLibrarySetupService {
       WHERE id=${run.id}::uuid`.execute(db);
     // A setup paused before the run was prepared stays held; resuming releases these stages.
     if (!state.paused) {
-      await this.releaseStages(run.id, !!state.checkReleasedAt, db);
+      await this.releaseStages(run.id, released(state), db);
     }
   }
 
@@ -419,7 +424,7 @@ export class FrameleafLibrarySetupService {
    */
   private async reconcileParkedStages(state: SetupState, runId: string, marker: unknown, db: Kysely<DB>) {
     const parked = Array.isArray(marker) ? marker.filter((stage) => typeof stage === 'string') : [];
-    if (!state.checkReleasedAt || state.paused || parked.length === 0) return;
+    if (!released(state) || state.paused || parked.length === 0) return;
     const disabled: string[] = await this.disabledImportStages();
     if (parked.every((stage) => disabled.includes(stage))) {
       const { rows } = await sql`SELECT 1 FROM job_run WHERE id=${runId}::uuid AND "enumerationDone"
@@ -662,7 +667,7 @@ export class FrameleafLibrarySetupService {
           await sql`UPDATE job_selection SET state='enumerating' WHERE "runId"=${imported.run.id}::uuid
             AND state='ready'`.execute(db);
         } else {
-          await this.releaseStages(imported.run.id, !!state.checkReleasedAt, db);
+          await this.releaseStages(imported.run.id, released(state), db);
         }
       }
       for (const [ownerId, operationId] of Object.entries(state.health)) {
@@ -982,8 +987,8 @@ export class FrameleafLibrarySetupService {
       if (this.importedSetupMatches(state, imported) && imported?.run?.selection.managerSetup?.startedAt) {
         await this.releaseStages(imported.run.id, true, db);
       }
-      // A run not started yet releases every stage when it starts (startImportedRegeneration).
-      state.checkReleasedAt ??= new Date().toISOString();
+      // A run not started yet releases every stage when it starts (startImportedRegeneration). The file check itself is
+      // not marked finished: the bar would say so if setup were brought back.
       state.dismissedAt = new Date().toISOString();
       await this.write(this.key(), state, db);
     });
