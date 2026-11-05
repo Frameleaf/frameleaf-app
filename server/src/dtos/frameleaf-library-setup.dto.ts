@@ -7,6 +7,9 @@ export class LibrarySetupStatusDto extends createZodDto(
     origin: z.enum(['new_import', 'new_library', 'restored_library']),
     phase: z.enum(['awaiting-account', 'rescanning', 'verifying', 'needs-attention', 'complete']),
     setupRequired: z.boolean(),
+    dismissed: z
+      .boolean()
+      .describe('The owner stopped setup to let the server run; held work was released. Retrying brings setup back'),
     revision: z.uuid().nullable(),
     rescanComplete: z.boolean(),
     verificationPassed: z.boolean(),

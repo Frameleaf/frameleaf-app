@@ -365,11 +365,20 @@ it('lets the owner dismiss a stopped setup: held stages start, the bar and phone
   await service.dismiss();
   expect(Object.values(await selections(id))).toEqual(Array.from({ length: 4 }, () => 'ready'));
   expect(await service.progress()).toMatchObject({ active: false, stages: [] });
-  expect(await service.status()).toMatchObject({ setupRequired: false, canFinish: true });
+  expect(await service.status()).toMatchObject({ setupRequired: false, canFinish: true, dismissed: true });
   await service.dismiss(); // Again: nothing changes.
   expect(await service.progress()).toMatchObject({ active: false });
 
   await service.begin(true);
   expect(await service.progress()).toMatchObject({ active: true });
-  expect(await service.status()).toMatchObject({ setupRequired: true });
+  expect(await service.status()).toMatchObject({ setupRequired: true, dismissed: false });
+
+  // Dismissed while still working through the check, Retry brings it back as well.
+  await service.dismiss();
+  await sql`UPDATE system_metadata SET value=jsonb_set(value,'{phase}','"verifying"') WHERE key=${setupKey}`.execute(
+    db,
+  );
+  expect(await service.progress()).toMatchObject({ active: false });
+  await service.begin(true);
+  expect(await service.progress()).toMatchObject({ active: true, phase: 'verifying' });
 });

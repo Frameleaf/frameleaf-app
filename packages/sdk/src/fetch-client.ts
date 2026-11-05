@@ -15391,6 +15391,8 @@ export type LibraryMoveResumeDto = {
 };
 export type LibrarySetupStatusDto = {
     canFinish: boolean;
+    /** The owner stopped setup to let the server run; held work was released. Retrying brings setup back */
+    dismissed: boolean;
     installation: string;
     origin: Origin;
     phase: Phase;

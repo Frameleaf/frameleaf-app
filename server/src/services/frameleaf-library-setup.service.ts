@@ -181,6 +181,11 @@ export class FrameleafLibrarySetupService {
     await this.locked(async (db) => {
       const previous = await this.read<SetupState>(this.key(), db);
       if (previous && previous.phase !== 'awaiting-account' && !(retry && previous.phase === 'needs-attention')) {
+        // Retrying a dismissed setup brings it back, whatever phase it is in.
+        if (retry && previous.dismissedAt) {
+          previous.dismissedAt = null;
+          await this.write(this.key(), previous, db);
+        }
         await this.startImportedRegeneration(previous, db);
         return;
       }
@@ -1001,6 +1006,7 @@ export class FrameleafLibrarySetupService {
     const dismissed = !!state.dismissedAt;
     return {
       setupRequired: !dismissed && (state.phase !== 'complete' || !phoneReady),
+      dismissed,
       ...identity,
       phase: state.phase,
       revision: state.revision,
