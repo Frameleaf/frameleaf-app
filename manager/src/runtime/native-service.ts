@@ -55,7 +55,13 @@ const Installation = z
   .refine((value) => value.databasePort !== value.apiPort);
 const BackupEngine = z
   .object({
-    executable: path,
+    // Desktop 0.1.1 joins the manifest role `backup/restic.exe` to a Windows path.
+    executable: z.preprocess(
+      (value) => process.platform === 'win32' && typeof value === 'string'
+        ? value.replace(/\\backup\/restic\.exe$/, '\\backup\\restic.exe')
+        : value,
+      path,
+    ),
     sha256: z.string().regex(/^[a-f0-9]{64}$/),
   })
   .strict();
