@@ -41,8 +41,16 @@ export class Releases {
     private root: string,
     private seed: string,
   ) {}
+  /** Every eligible release. GitHub pages by creation, not version, so a late patch can sit on any page. */
   async available(): Promise<{ tag: string; publishedAt: string; notes: string }[]> {
-    const releases = await github('releases?per_page=30');
+    const releases: any[] = [];
+    for (let page = 1; ; page++) {
+      const batch = await github(`releases?per_page=30&page=${page}`);
+      releases.push(...batch);
+      if (batch.length < 30) break;
+      // ponytail: 600-release ceiling keeps a misbehaving API from looping; raise it if releases ever get near it.
+      if (page === 20) throw new Refusal('invalid_release_response');
+    }
     return releases
       .filter(
         (r: any) =>

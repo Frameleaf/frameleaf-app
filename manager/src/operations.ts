@@ -1377,6 +1377,27 @@ export class Operations {
     return operation;
   }
   /**
+   * Automatic updates (on unless the administrator turned them off): the same review and database checkpoint as
+   * a manual update, one release step per check. Waits while anything is running, and stops after a failed update
+   * until the administrator deals with it.
+   */
+  async autoUpdate(): Promise<Operation | null> {
+    if (this.store.get<boolean>('auto-update') === false) return null;
+    const current = this.installation();
+    const history = this.store.history();
+    if (!current || history.some((o) => o.state === 'running' || o.state === 'awaiting-review')) return null;
+    const lastUpdate = history.find((o) => o.kind === 'update');
+    if (lastUpdate && lastUpdate.state !== 'complete') return null;
+    const [next] = (await this.releases.available())
+      .map(({ tag }) => tag)
+      .filter((tag) => isNewerRelease(tag, current.release)).sort(compareReleases);
+    if (!next) return null;
+    const { id } = await this.reviewUpdate(next);
+    // The administrator may have turned automatic updates off while the release was being reviewed.
+    if (this.store.get<boolean>('auto-update') === false) return null;
+    return this.update(id, randomUUID());
+  }
+  /**
    * Retry withdrawn targets with the next newer compatible release, retaining targets that may have started.
    * The administrator reviewed one release's notes: the retarget is the lowest newer release (never a jump
    * across several), and only while that review is still valid; afterwards a fresh review-update is required
