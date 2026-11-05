@@ -66,4 +66,9 @@ describe(DatabaseService.name, () => {
     await expect(sut.onBootstrap()).rejects.toThrow('Installed pgvector');
     expect(mocks.database.runMigrations).not.toHaveBeenCalled();
   });
+
+  it('vacuums and analyzes the database during the nightly cleanup', async () => {
+    await sut.onNightlyDatabaseCleanup();
+    expect(mocks.database.vacuum).toHaveBeenCalledWith({ analyze: true });
+  });
 });
