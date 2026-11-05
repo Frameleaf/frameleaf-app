@@ -41,6 +41,13 @@ export class PhotographyWorkspaceDto extends createZodDto(
       ShootSchema.extend({
         unavailable: z.boolean(),
         coverAssetId: z.uuidv4().nullable(),
+        coverThumbhash: z
+          .string()
+          .nullable()
+          .optional()
+          .describe(
+            "The cover's thumbhash (base64) once its thumbnail exists; null while the server has none, so clients can skip requesting it",
+          ),
         assetCount: z.int().nonnegative().nullable(),
       }),
     ),

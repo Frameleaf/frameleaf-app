@@ -104,6 +104,7 @@ set
   "pinExpiresAt" = $1
 where
   "userId" = $2
+  and "pinExpiresAt" > clock_timestamp()
 
 -- SessionRepository.requestSyncResetForUser
 update "session"

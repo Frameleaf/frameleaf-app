@@ -238,7 +238,15 @@ export class SessionRepository {
 
   @GenerateSql({ params: [DummyValue.UUID] })
   async lockAll(userId: string) {
-    await this.db.updateTable('session').set({ pinExpiresAt: null }).where('userId', '=', userId).execute();
+    // Only sessions elevated right now change (an expired pinExpiresAt is already locked): rewriting
+    // the others would move their updatedAt, which Users reads as the account's last activity, to
+    // every server start (SessionService.onBootstrap).
+    await this.db
+      .updateTable('session')
+      .set({ pinExpiresAt: null })
+      .where('userId', '=', userId)
+      .where('pinExpiresAt', '>', sql<Date>`clock_timestamp()`)
+      .execute();
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })

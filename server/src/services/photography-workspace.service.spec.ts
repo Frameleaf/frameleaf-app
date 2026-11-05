@@ -30,6 +30,7 @@ const setup = () => {
     get: vi.fn().mockResolvedValue({ value: { shoots: [shoot] }, updateId: revision }),
     save: vi.fn().mockResolvedValue({ updateId: nextRevision }),
     currentRevisions: vi.fn().mockResolvedValue(new Map()),
+    coverThumbhashes: vi.fn().mockResolvedValue(new Map()),
   };
   const albums = {
     get: vi.fn().mockResolvedValue({
@@ -80,7 +81,30 @@ describe(PhotographyWorkspaceService.name, () => {
       assetCount: 17,
     });
     expect((await sut.get(auth)).shoots).toEqual([
-      { ...shoot, albumId: null, unavailable: true, coverAssetId: null, assetCount: null },
+      { ...shoot, albumId: null, unavailable: true, coverAssetId: null, coverThumbhash: null, assetCount: null },
+    ]);
+  });
+
+  it("says whether each shoot's cover has a thumbnail, so clients skip requesting one that does not", async () => {
+    const { sut, auth, shoot, repository, albums } = setup();
+    const other: StoredShoot = { ...shoot, id: newUuid(), albumId: newUuid(), name: 'Wedding' };
+    repository.get.mockResolvedValue({ value: { shoots: [shoot, other] }, updateId: newUuid() });
+    const ready = newUuid();
+    const raw = newUuid();
+    albums.get.mockImplementation((_auth: unknown, albumId: string) =>
+      Promise.resolve({
+        albumUsers: [{ user: { id: auth.user.id } }],
+        kind: AlbumKind.Album,
+        albumThumbnailAssetId: albumId === shoot.albumId ? ready : raw,
+        assetCount: 3,
+      }),
+    );
+    repository.coverThumbhashes.mockResolvedValue(new Map([[ready, Buffer.from([1, 2, 3])]]));
+    const { shoots } = await sut.get(auth);
+    expect(repository.coverThumbhashes).toHaveBeenCalledWith([ready, raw]);
+    expect(shoots.map(({ coverAssetId, coverThumbhash }) => ({ coverAssetId, coverThumbhash }))).toEqual([
+      { coverAssetId: ready, coverThumbhash: 'AQID' },
+      { coverAssetId: raw, coverThumbhash: null },
     ]);
   });
 

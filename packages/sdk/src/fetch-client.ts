@@ -4729,6 +4729,16 @@ export type SanitizedAssetResponseDto = {
     /** Asset width */
     width: number | null;
 };
+export type CaptureSourceDto = {
+    captureId: string;
+    capturedAt: string;
+    creator?: string | null;
+    licenseUrl?: string | null;
+    mediaUrl?: string | null;
+    note?: string | null;
+    pageUrl: string;
+    title: string;
+};
 export type BookmarkResponseDto = {
     createdAt: string;
     deletedAt: string | null;
@@ -4740,6 +4750,8 @@ export type BookmarkResponseDto = {
     ownerId: string;
     previewAssetId: string | null;
     rating?: number | null;
+    /** Where the link was saved from; only in the owner's own read of the bookmark */
+    source?: (CaptureSourceDto) | null;
     title: string;
     updateId: string;
     updatedAt: string;
@@ -9489,6 +9501,8 @@ export type CreateLibraryDto = {
     readOnly?: boolean;
 };
 export type ManagedUploadsStatsResponseDto = {
+    /** When the newest of these photos and videos was added (Locked and hidden excluded); null when none */
+    lastAddedAt?: string | null;
     /** Account whose uploads these are */
     ownerId: string;
     /** Number of photos */
@@ -11849,6 +11863,8 @@ export type PhotographyWorkspaceDto = {
         assetCount: number | null;
         client: string;
         coverAssetId: string | null;
+        /** The cover's thumbhash (base64) once its thumbnail exists; null while the server has none, so clients can skip requesting it */
+        coverThumbhash?: string | null;
         date: string;
         deliveryTarget?: string | null;
         id: string;
@@ -15510,6 +15526,8 @@ export type FrameleafSetupLinkResponseDto = {
     instanceId: string;
 };
 export type UsageByUserDto = {
+    /** When one of the account’s signed-in devices was last used (sessions record use about once an hour); null when it has none */
+    lastActiveAt?: string | null;
     /** Number of photos */
     photos: number;
     /** User quota size in bytes (null if unlimited) */

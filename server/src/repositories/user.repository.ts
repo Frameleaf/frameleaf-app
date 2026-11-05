@@ -30,6 +30,8 @@ export interface UserStatsQueryResponse {
   usagePhotos: number;
   usageVideos: number;
   quotaSizeInBytes: number | null;
+  /** When one of the account's sessions was last used, or null when it has none. */
+  lastActiveAt: Date | null;
 }
 /** FL-71: the account that owns a queue job's subject (an asset, person, library or the account itself). */
 export interface JobSubjectOwner {
@@ -858,6 +860,12 @@ export class UserRepository {
             eb.lit(0),
           )
           .as('usageVideos'),
+        // When a signed-in device of the account was last used, for "Last active …" on Users
+        eb
+          .selectFrom('session')
+          .select((eb) => eb.fn.max('session.updatedAt').as('lastActiveAt'))
+          .whereRef('session.userId', '=', 'user.id')
+          .as('lastActiveAt'),
       ])
       .groupBy('user.id')
       .orderBy('user.createdAt', 'asc')

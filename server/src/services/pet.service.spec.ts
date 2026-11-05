@@ -123,6 +123,7 @@ describe(PetService.name, () => {
       getByIds: vi.fn().mockResolvedValue([]),
       create: vi.fn(),
       update: vi.fn(),
+      replaceFeaturedAsset: vi.fn(),
       delete: vi.fn(),
       isOwnedAsset: vi.fn().mockResolvedValue(true),
       isOwnLockedAsset: vi.fn().mockResolvedValue(false),
@@ -432,6 +433,29 @@ describe(PetService.name, () => {
       expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.PetRecognitionNearest, data: { petId, assetId } });
     });
 
+    it('makes the first confirmed photo the cover of a pet that has none', async () => {
+      await sut.addObservation(authStub.user1, petId, { assetId });
+
+      expect(petRepository.replaceFeaturedAsset).toHaveBeenCalledWith(ownerId, petId, null, assetId);
+    });
+
+    it('keeps a cover the owner already has', async () => {
+      (petRepository.getById as AnyMock).mockResolvedValue(pet({ featuredAssetId: 'chosen-asset' }));
+
+      await sut.addObservation(authStub.user1, petId, { assetId });
+
+      expect(petRepository.replaceFeaturedAsset).not.toHaveBeenCalled();
+    });
+
+    it('never makes a Locked photo the cover', async () => {
+      (petRepository.isOwnLockedAsset as AnyMock).mockResolvedValue(true);
+
+      await sut.addObservation(authStub.user1, petId, { assetId });
+
+      expect(petRepository.upsertObservation).toHaveBeenCalled();
+      expect(petRepository.replaceFeaturedAsset).not.toHaveBeenCalled();
+    });
+
     it('records a whole-photo observation when no region is drawn', async () => {
       await sut.addObservation(authStub.user1, petId, { assetId });
 
@@ -571,6 +595,12 @@ describe(PetService.name, () => {
       await sut.acceptCandidate(authStub.user1, candidateId, { petId: otherPetId });
 
       expect(petRepository.deleteCandidates).toHaveBeenCalledWith(detectionId, [petId, otherPetId]);
+    });
+
+    it('makes an accepted photo the cover of a pet that has none', async () => {
+      await sut.acceptCandidate(authStub.user1, candidateId, {});
+
+      expect(petRepository.replaceFeaturedAsset).toHaveBeenCalledWith(ownerId, petId, null, assetId);
     });
 
     it('looks for the pet again in the owner’s most similar photos', async () => {
@@ -759,6 +789,49 @@ describe(PetService.name, () => {
 
       expect(petRepository.deleteObservation).toHaveBeenCalledWith(ownerId, observationId);
       expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.PetRecognition, data: { id: assetId } });
+    });
+
+    it('moves a cover on the undone photo to the pet’s newest other confirmed photo', async () => {
+      (petRepository.getObservations as AnyMock).mockResolvedValue([observation({ assetId: 'other-asset' })]);
+
+      await sut.removeObservation(authStub.user1, observationId);
+
+      expect(petRepository.replaceFeaturedAsset).toHaveBeenCalledWith(ownerId, petId, assetId, 'other-asset');
+    });
+
+    it('clears a cover on the undone photo when the pet has no other confirmed photo', async () => {
+      await sut.removeObservation(authStub.user1, observationId);
+
+      expect(petRepository.replaceFeaturedAsset).toHaveBeenCalledWith(ownerId, petId, assetId, null);
+    });
+
+    it('never moves a cover to a photo the owner rejected', async () => {
+      (petRepository.getObservations as AnyMock).mockResolvedValue([
+        observation({ id: 'rejected', assetId: 'rejected-asset', state: PetObservationState.Rejected }),
+        observation({ id: 'confirmed', assetId: 'other-asset' }),
+      ]);
+
+      await sut.removeObservation(authStub.user1, observationId);
+
+      expect(petRepository.replaceFeaturedAsset).toHaveBeenCalledWith(ownerId, petId, assetId, 'other-asset');
+    });
+
+    it('leaves the cover alone when the undone observation was a rejection', async () => {
+      (petRepository.getObservationById as AnyMock).mockResolvedValue(
+        observation({ state: PetObservationState.Rejected }),
+      );
+
+      await sut.removeObservation(authStub.user1, observationId);
+
+      expect(petRepository.replaceFeaturedAsset).not.toHaveBeenCalled();
+    });
+
+    it('keeps the cover when the pet is still confirmed elsewhere in the same photo', async () => {
+      (petRepository.getObservations as AnyMock).mockResolvedValue([observation({ id: 'second-region' })]);
+
+      await sut.removeObservation(authStub.user1, observationId);
+
+      expect(petRepository.replaceFeaturedAsset).not.toHaveBeenCalled();
     });
 
     it('refuses an undo with 409 when the original changed since the photo was opened', async () => {
