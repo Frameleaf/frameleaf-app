@@ -80,4 +80,16 @@ describe('FrameleafName (FL-1197)', () => {
     await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'cedar-home' } });
     expect(await screen.findByText('That did not work. Try again.')).toBeInTheDocument();
   });
+
+  it('clears a failed check once the name checks out', async () => {
+    sdkMock.checkRemoteName.mockRejectedValueOnce(new Error('offline'));
+    render(FrameleafName, { name: null, onSaved: vi.fn() });
+    const input = screen.getByRole('textbox');
+    await fireEvent.input(input, { target: { value: 'cedar-home' } });
+    expect(await screen.findByText('That did not work. Try again.')).toBeInTheDocument();
+    await fireEvent.input(input, { target: { value: 'cedar-hom' } });
+    await fireEvent.input(input, { target: { value: 'cedar-home' } });
+    expect(await screen.findByRole('button', { name: 'Use cedar-home.frameleaf.net' })).toBeEnabled();
+    expect(screen.queryByText('That did not work. Try again.')).not.toBeInTheDocument();
+  });
 });

@@ -48,6 +48,8 @@
 
   $effect(() => {
     const typed = draft;
+    // a failure belongs to the check that failed; a new check starts clean
+    checkFailed = null;
     if (!open || !typed || same || nameRule(typed)) {
       return;
     }
@@ -57,6 +59,7 @@
         .then((result) => {
           if (typed === draft) {
             check = result;
+            checkFailed = null;
           }
         })
         .catch(() => {

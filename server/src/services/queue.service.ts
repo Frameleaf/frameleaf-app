@@ -422,6 +422,9 @@ export class QueueService extends BaseService {
     if (name === QueueName.VideoConversion && asset.type !== AssetType.Video) {
       throw new BadRequestException('Playback videos are made for videos only');
     }
+    if (name === QueueName.NsfwDetection && asset.type !== AssetType.Image) {
+      throw new BadRequestException('Locked content is reread for photos only');
+    }
     await this.jobRepository.queue({ name: jobName, data: { id: assetId } } as JobItem);
     const jobId = await this.jobRepository.findWaitingJob(name, jobName, assetId);
     if (!jobId || !(await this.jobRepository.startNow(name, jobId))) {

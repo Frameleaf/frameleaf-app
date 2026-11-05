@@ -1166,6 +1166,7 @@
     {#if view === 'everyday'}
       <BackgroundWorkEveryday
         rows={overviewRows}
+        unknown={owner === 'all' ? undefined : failedStats}
         pending={queuesPending || countsLoading}
         unavailable={queuesUnavailable}
         store={draft}

@@ -665,12 +665,17 @@ describe(QueueService.name, () => {
       expect(mocks.job.startNow).toHaveBeenCalledWith(queue, 'job-1');
     });
 
-    it('runs on one item only for the tasks that work one item at a time, and videos only for playback', async () => {
+    it('runs on one item only for the tasks that work one item at a time, videos only for playback and photos only for Locked content', async () => {
       await expect(sut.runOne(factory.auth(), QueueName.Library, { assetId })).rejects.toBeInstanceOf(
         BadRequestException,
       );
       mocks.asset.getById.mockResolvedValue({ id: assetId, type: AssetType.Image } as never);
       await expect(sut.runOne(factory.auth(), QueueName.VideoConversion, { assetId })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      // the Locked content reread is for one photo
+      mocks.asset.getById.mockResolvedValue({ id: assetId, type: AssetType.Video } as never);
+      await expect(sut.runOne(factory.auth(), QueueName.NsfwDetection, { assetId })).rejects.toBeInstanceOf(
         BadRequestException,
       );
       mocks.asset.getById.mockResolvedValue(undefined as never);

@@ -54,6 +54,7 @@
 
   let {
     rows,
+    unknown,
     pending = false,
     unavailable = false,
     store,
@@ -69,6 +70,8 @@
     onRetry,
   }: {
     rows: WorkRow[];
+    /** Kinds of work whose counts could not be read: never shown as up to date. */
+    unknown?: ReadonlySet<QueueName>;
     pending?: boolean;
     unavailable?: boolean;
     store?: SystemConfigDraftStore;
@@ -88,7 +91,9 @@
   const featureName = (feature: WorkFeature) => $t(`frameleaf_work_feature_${feature.id}` as Translations);
   const rowsOf = (feature: WorkFeature) => rows.filter((row) => feature.queues.includes(row.definition.name));
 
-  const summary = $derived(summariseWork(rows));
+  // as in Advanced, kinds whose counts could not be read are left out of the totals
+  const summary = $derived(summariseWork(rows.filter((row) => !unknown?.has(row.definition.name))));
+  const unknownOf = (feature: WorkFeature) => rowsOf(feature).some((row) => unknown?.has(row.definition.name));
   const pausedRows = $derived(rows.filter((row) => row.queue.isPaused));
   const allPaused = $derived(rows.length > 0 && pausedRows.length === rows.length);
 
@@ -291,10 +296,12 @@
           <span class="where is-fixed">{$t('frameleaf_computers_this_server')}</span>
         {/if}
         <div class="feature-state">
-          {#if own.length > 0}
+          {#if unknownOf(feature)}
+            <Pill tone="off">{$t('frameleaf_computers_cover_unknown')}</Pill>
+          {:else if own.length > 0}
             <Pill tone={TONES[state] ?? 'off'}>{stateWords(state)}</Pill>
           {/if}
-          {#if remaining > 0}
+          {#if remaining > 0 && !unknownOf(feature)}
             <small>{$t('frameleaf_bgwork_left', { values: { count: remaining } })}</small>
           {/if}
         </div>
