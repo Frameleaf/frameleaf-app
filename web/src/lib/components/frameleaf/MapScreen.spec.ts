@@ -423,6 +423,49 @@ describe('MapScreen (FL-193)', () => {
       );
     });
 
+    it('asks for the next page when the list was scrolled while a page was loading', async () => {
+      let reachEnd: ((entries: { isIntersecting: boolean }[]) => void) | undefined;
+      vi.stubGlobal(
+        'IntersectionObserver',
+        vi.fn(function (callback: typeof reachEnd) {
+          reachEnd = callback;
+          return { observe: vi.fn(), disconnect: vi.fn(), unobserve: vi.fn(), takeRecords: vi.fn() };
+        }),
+      );
+      mapSettings.update((settings) => ({ ...settings, showAssetPanel: true }));
+      sdkMock.getMapClusters.mockResolvedValue({
+        complete: false,
+        total: 50_000,
+        bounds: null,
+        clusters: [{ ...cell, count: 400 }],
+        markers: [],
+      });
+      const page = (skip: number) =>
+        Array.from({ length: 120 }, (_, index) => ({
+          ...item,
+          id: `a0000000-0000-4000-8000-${String(skip + index).padStart(12, '0')}`,
+        }));
+      let answer: (rows: ReturnType<typeof page>) => void = () => {};
+      sdkMock.getMapMarkers.mockImplementation(({ skip }) =>
+        skip === 0 ? new Promise((resolve) => (answer = resolve)) : Promise.resolve(page(skip ?? 0)),
+      );
+      render(MapScreen, { title: 'Map', onOpenAsset: vi.fn() });
+
+      await waitFor(() => expect(sdkMock.getMapMarkers).toHaveBeenCalledTimes(1));
+      // the end of the list comes into view before the first page has arrived
+      await waitFor(() => expect(reachEnd).toBeDefined());
+      reachEnd?.([{ isIntersecting: true }]);
+      answer(page(0));
+
+      await waitFor(() =>
+        expect(sdkMock.getMapMarkers).toHaveBeenLastCalledWith(
+          expect.objectContaining({ skip: 120, take: 120 }),
+          expect.anything(),
+        ),
+      );
+      vi.unstubAllGlobals();
+    });
+
     it('loads every item at once when the settings ask for it', async () => {
       mapSettings.update((settings) => ({ ...settings, loadAllItems: true }));
       sdkMock.getMapMarkers.mockResolvedValue([item]);

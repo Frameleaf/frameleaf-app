@@ -351,14 +351,20 @@
     listAbort = controller;
     getMapMarkers({ ...query, ...area, skip: inView.length, take: LIST_PAGE }, { signal: controller.signal })
       .then((rows) => {
-        if (listArea === area) {
-          inView = [...inView, ...rows];
+        // cleared before the rows land, so the effect they wake can ask for a page scrolled to meanwhile.
+        // Only new rows are added (items added since the last page shift the pages), and a page with
+        // none changes nothing, so it cannot ask again.
+        if (listAbort === controller) {
+          listAbort = undefined;
+        }
+        const listed = new Set(inView.map(({ id }) => id));
+        const added = rows.filter(({ id }) => !listed.has(id));
+        if (listArea === area && added.length > 0) {
+          inView = [...inView, ...added];
         }
       })
       .catch(() => {
         // the rows stay as they are; scrolling or moving the map asks again
-      })
-      .finally(() => {
         if (listAbort === controller) {
           listAbort = undefined;
         }
