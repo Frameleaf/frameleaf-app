@@ -64,11 +64,13 @@ describe(BookmarkService.name, () => {
   });
 
   it('never includes private capture provenance in an album bookmark projection', async () => {
-    bookmarks.getForAlbum.mockResolvedValue([
-      { ...row, source: { pageUrl: 'https://private.example.org', note: 'Private provenance' } } as never,
-    ]);
+    // owned by the reader, so only the album projection itself can leave the source out
+    const source = { pageUrl: 'https://private.example.org', note: 'Private provenance' };
+    bookmarks.getForAlbum.mockResolvedValue([{ ...row, ownerId: authStub.admin.user.id, source } as never]);
     const [result] = await service.getForAlbum(authStub.admin, 'album');
     expect(result).not.toHaveProperty('source');
+    const [shared] = await service.getForAlbum(authStub.adminSharedLink, 'album');
+    expect(shared).not.toHaveProperty('source');
   });
 
   it("returns the capture source in the owner's own read only", async () => {
