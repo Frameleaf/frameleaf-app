@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, readdir, stat } from 'node:fs/promises';
+import { mkdir, readdir } from 'node:fs/promises';
 import { join, posix, relative } from 'node:path';
 import { promisify } from 'node:util';
 import {
@@ -49,14 +49,38 @@ const tree = async (root, describe) => {
     .update(JSON.stringify(entries.toSorted(([a], [b]) => a.localeCompare(b))))
     .digest('hex');
 };
+// MariaDB owns its data directory, which an unprivileged runner cannot list; read the stopped server's file
+// identities through a read-only, network-less root container of the pinned engine image.
+const databaseFiles = async () => {
+  const { stdout } = await execute(
+    'docker',
+    [
+      'run',
+      '--rm',
+      '--network',
+      'none',
+      '--user',
+      '0:0',
+      '--entrypoint',
+      'find',
+      '--mount',
+      `type=bind,source=${input.databaseDirectory},target=/datadir,readonly`,
+      fixture.runtime.databaseImage,
+      '/datadir',
+      '-type',
+      'f',
+      '-printf',
+      '%P %i %s %T@ %C@\\n',
+    ],
+    { timeout: 60_000, maxBuffer: 16 * 1024 * 1024 },
+  );
+  return createHash('sha256').update(stdout.split('\n').filter(Boolean).toSorted().join('\n')).digest('hex');
+};
 // Stopped-writer fingerprint: the locked dump bytes, the stored originals' bytes and the stopped server's files.
 const fingerprint = async () => ({
   dump: await sha256(input.dumpPath),
   originals: await tree(join(input.sourceRoot, 'upload'), sha256),
-  database: await tree(input.databaseDirectory, async (path) => {
-    const info = await stat(path, { bigint: true });
-    return [info.ino, info.size, info.mtimeNs, info.ctimeNs].join(':');
-  }),
+  database: await databaseFiles(),
 });
 const authorize = stoppedContainerAuthority({
   family,

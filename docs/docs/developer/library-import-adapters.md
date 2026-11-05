@@ -48,15 +48,15 @@ This connection does not qualify an adapter, establish ownership/privacy evidenc
 
 Each Docker-runnable source has an end-to-end check that runs its pinned application, seeds synthetic photos through the application's own API or CLI (an album, captions, a favourite or rating where the application has one, and a local account), stops it with restart disabled, captures its database and imports the capture through the common command into a fresh destination. The check then compares every imported original's bytes, owner, caption, favourite/rating, capture time, album membership and the preserved account password with what the application reported.
 
-| Source      | Script                                       | Source database                 |
-| ----------- | -------------------------------------------- | ------------------------------- |
-| PhotoPrism  | `server/scripts/qualify-photoprism-application.mjs` | SQLite                   |
-| Photoview   | `server/scripts/qualify-photoview-application.mjs`  | SQLite                   |
-| Lychee      | `server/scripts/qualify-lychee-application.mjs`     | SQLite                   |
-| PiGallery2  | `server/scripts/qualify-pigallery2-application.mjs` | SQLite                   |
-| Nextcloud   | `server/scripts/qualify-nextcloud-application.mjs`  | SQLite (Photos + Memories) |
-| Piwigo      | `server/scripts/qualify-piwigo-application.mjs`     | MariaDB restore          |
-| LibrePhotos | `server/scripts/qualify-librephotos-application.mjs` | PostgreSQL              |
+| Source      | Script                                               | Source database            |
+| ----------- | ---------------------------------------------------- | -------------------------- |
+| PhotoPrism  | `server/scripts/qualify-photoprism-application.mjs`  | SQLite                     |
+| Photoview   | `server/scripts/qualify-photoview-application.mjs`   | SQLite                     |
+| Lychee      | `server/scripts/qualify-lychee-application.mjs`      | SQLite                     |
+| PiGallery2  | `server/scripts/qualify-pigallery2-application.mjs`  | SQLite                     |
+| Nextcloud   | `server/scripts/qualify-nextcloud-application.mjs`   | SQLite (Photos + Memories) |
+| Piwigo      | `server/scripts/qualify-piwigo-application.mjs`      | MariaDB restore            |
+| LibrePhotos | `server/scripts/qualify-librephotos-application.mjs` | PostgreSQL                 |
 
 Each script requires `FRAMELEAF_NATIVE_IMPORT_RUN_ID` (`<number>-<number>`; PhotoPrism and Photoview keep their own run-ID variables) and a dedicated `TMPDIR` named `frameleaf-<source>-<run id>`, and removes only the containers, volumes, networks and images it labelled or pulled. The import half runs `library-import-lifecycle.spec.ts` in `native-<source>` mode with `test/medium/fixtures/library-import-native-<source>.mjs`, which shares `library-import-native-common.mjs`. The import runner needs Linux; on macOS run the scripts from a Linux container that shares the Docker socket and keeps `TMPDIR` on a path the Docker host resolves identically. These checks cover the stated synthetic cases only. Ente Photos (whose uploads need its client-side encryption) and Synology Photos (DSM) are not covered.
 

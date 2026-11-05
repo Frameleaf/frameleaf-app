@@ -3,6 +3,7 @@ import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { reclaimQualificationDirectory } from './qualification-directory.mjs';
 
 export const qualificationImage = JSON.parse(
   readFileSync(new URL('../src/library-import/fixtures/lychee/7.12.0-sqlite.json', import.meta.url), 'utf8'),
@@ -40,6 +41,8 @@ export function cleanupQualification(runId, directory = tmpdir(), command = dock
       .filter(Boolean);
     if (containers.length > 0) command(['rm', '-f', '-v', ...containers]);
   });
+  // Containers are gone; their images remain, so app-owned files can still be handed back to the runner.
+  attempt(() => reclaimQualificationDirectory(directory, [qualificationImage]));
   for (const kind of ['volume', 'network'])
     attempt(() => {
       const owned = command([kind, 'ls', '-q', ...filters])

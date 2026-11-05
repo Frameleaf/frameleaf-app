@@ -3,6 +3,7 @@ import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { reclaimQualificationDirectory } from './qualification-directory.mjs';
 
 const fixture = JSON.parse(
   readFileSync(new URL('../src/library-import/fixtures/librephotos/1.5.1-postgres18.json', import.meta.url), 'utf8'),
@@ -46,6 +47,8 @@ export function cleanupQualification(runId, directory = tmpdir(), command = dock
     const containers = list(['ps', '-aq', ...filters]);
     if (containers.length > 0) command(['rm', '-f', '-v', ...containers]);
   });
+  // Containers are gone; their images remain, so app-owned files can still be handed back to the runner.
+  attempt(() => reclaimQualificationDirectory(directory, [appImage, databaseImage]));
   attempt(() => {
     const volumes = list(['volume', 'ls', '-q', ...filters]);
     if (volumes.length > 0) command(['volume', 'rm', ...volumes]);

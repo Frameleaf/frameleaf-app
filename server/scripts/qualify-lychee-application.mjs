@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
-import { chownSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -14,6 +14,7 @@ import {
   hasQualificationImage,
   qualificationImage as image,
 } from './cleanup-lychee-qualification.mjs';
+import { shareWithContainer } from './qualification-directory.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const runId = process.env.FRAMELEAF_NATIVE_IMPORT_RUN_ID;
@@ -23,14 +24,13 @@ const directory = mkdtempSync(path.join(tmpdir(), 'application-'));
 const database = path.join(directory, 'database'),
   uploads = path.join(directory, 'uploads');
 // The pinned image drops privileges to its www-data account (uid/gid 33) for the database and uploads disk.
-const lycheeAccount = 33;
 for (const path of [database, uploads]) {
-  mkdirSync(path, { mode: 0o700 });
-  chownSync(path, lycheeAccount, lycheeAccount);
+  mkdirSync(path);
+  shareWithContainer(path);
 }
 const databasePath = path.join(database, 'database.sqlite');
-writeFileSync(databasePath, '', { mode: 0o600 });
-chownSync(databasePath, lycheeAccount, lycheeAccount);
+writeFileSync(databasePath, '');
+shareWithContainer(databasePath, 0o666);
 const container = `frameleaf-lychee-app-${runId}`;
 const username = 'fixture_admin';
 const password = randomBytes(32).toString('hex');

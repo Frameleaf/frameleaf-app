@@ -26,7 +26,6 @@ assert.equal(input.container.name, `frameleaf-pigallery2-${runId}`);
 const { default: fixture } = await import('src/library-import/fixtures/pigallery2/3.5.2-sqlite.json', {
   with: { type: 'json' },
 });
-assert.equal(input.container.image, fixture.runtime.image.split('@', 2)[1]);
 const { captureSqliteSnapshot } = await import('src/library-import/sqlite.js');
 const { openPigallery2Snapshot, readPigallery2Manifest } = await import('src/library-import/pigallery2.js');
 const { resolvePigallery2File } = await import('src/library-import/pigallery2-files.js');

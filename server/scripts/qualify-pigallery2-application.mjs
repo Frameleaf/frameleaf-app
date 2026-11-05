@@ -121,7 +121,8 @@ try {
     image: run(['inspect', '--format', '{{.Image}}', name]),
     name,
   };
-  assert.equal(container.image, image.split('@', 2)[1]);
+  // .Image is the local image ID (the digest only under the containerd store); the reference is portable.
+  assert.equal(run(['inspect', '--format', '{{.Config.Image}}', name]), image);
   const port = Number(run(['port', name, '80']).match(/^127\.0\.0\.1:(\d+)$/mu)?.[1]);
   assert.ok(Number.isSafeInteger(port) && port > 0 && port <= 65_535);
   const origin = `http://127.0.0.1:${port}`;

@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
-import { chownSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join, relative } from 'node:path';
 import { setTimeout } from 'node:timers/promises';
@@ -17,6 +17,7 @@ import {
   databaseImage,
   hasImage,
 } from './cleanup-piwigo-qualification.mjs';
+import { shareWithContainer } from './qualification-directory.mjs';
 
 const fixture = JSON.parse(
   readFileSync(new URL('../src/library-import/fixtures/piwigo/16.4.0-mariadb.json', import.meta.url), 'utf8'),
@@ -31,7 +32,7 @@ const sourceRoot = join(directory, 'www'),
   databaseDirectory = join(directory, 'mariadb');
 for (const path of [sourceRoot, upload, databaseDirectory]) mkdirSync(path, { mode: 0o700 });
 // The pinned PHP base runs Apache as www-data (33); only the original-upload tree is shared with it.
-chownSync(upload, 33, 33);
+shareWithContainer(upload);
 const image = builtImage(runId);
 const names = {
   network: `frameleaf-piwigo-${runId}`,
