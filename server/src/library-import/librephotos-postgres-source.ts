@@ -130,7 +130,7 @@ export const openLibrephotosPostgresSnapshot = async (url: string, version: stri
         const encoded = rows[0].password;
         if (encoded === null || encoded === '' || (typeof encoded === 'string' && encoded.startsWith('!'))) return;
         if (typeof encoded !== 'string') throw new Error('Source password encoding unsupported');
-        const credential = await ImportedPassword.fromSource(context, 'django-pbkdf2-sha256', encoded);
+        const credential = await ImportedPassword.fromSource(context, 'django-password', encoded);
         if (closed) throw new LibrephotosSnapshotError('LIBREPHOTOS_POSTGRES_SNAPSHOT_CLOSED');
         return credential;
       } catch (error) {

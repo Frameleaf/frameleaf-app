@@ -189,10 +189,11 @@ export function readPigallery2Manifest(
     let offset = 0;
     if (row.metadataCreationdateoffset === null) loss('PIGALLERY2_CAPTURE_OFFSET_UNKNOWN', id);
     else {
-      if (typeof row.metadataCreationdateoffset !== 'string') return refuse('PIGALLERY2_CAPTURE_TIME_INVALID');
-      const match = /^([+-])(\d{2}):(\d{2})$/.exec(row.metadataCreationdateoffset);
-      if (!match || Number(match[2]) > 23 || Number(match[3]) > 59) return refuse('PIGALLERY2_CAPTURE_TIME_INVALID');
-      offset = (Number(match[2]) * 60 + Number(match[3])) * (match[1] === '-' ? -1 : 1);
+      // The pinned entity stores the offset as smallint minutes; its reader only accepts -12:00 to +14:00.
+      const minutes = row.metadataCreationdateoffset;
+      if (typeof minutes !== 'bigint' || minutes < -720n || minutes > 840n)
+        return refuse('PIGALLERY2_CAPTURE_TIME_INVALID');
+      offset = Number(minutes);
     }
     const local = new Date(Number(timestamp) + offset * 60_000);
     if (!Number.isFinite(local.getTime())) return refuse('PIGALLERY2_CAPTURE_TIME_INVALID');

@@ -47,7 +47,7 @@ jobs:
     name: Photoview SQLite native application
     if: github.repository == 'Frameleaf/frameleaf-app'
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 20
+    timeout-minutes: 35
     env:
       FRAMELEAF_PHOTOVIEW_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
     steps:
@@ -92,6 +92,53 @@ jobs:
         env:
           TMPDIR: ${{ runner.temp }}/frameleaf-photoview-${{ github.run_id }}-${{ github.run_attempt }}
         run: node server/scripts/cleanup-photoview-qualification.mjs
+  native-application-import:
+    name: ${{ matrix.source }} native application import
+    if: github.repository == 'Frameleaf/frameleaf-app'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        source: [lychee, pigallery2, nextcloud, piwigo, librephotos]
+    env:
+      FRAMELEAF_NATIVE_IMPORT_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Setup Mise
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8
+        with:
+          persist_github_token: false
+          install_args: --locked
+          version: 2026.10.8
+      - name: Configure public Docker Hub mirror
+        run: bash scripts/configure-dockerhub-mirror.sh
+      - name: Install locked Server dependencies
+        run: pnpm --filter 'frameleaf...' install --frozen-lockfile
+      - name: Build required SDKs
+        run: |
+          pnpm --filter @frameleaf/sdk build
+          pnpm --filter @frameleaf/plugin-sdk build
+      - name: Prepare import runtime
+        run: |
+          node studio/tools/prepare-server-subtitle-runtime.mjs
+          node server/scripts/prepare-import-transfer-runtime.mjs
+      - name: Import a seeded native installation into a fresh destination
+        env:
+          TMPDIR: ${{ runner.temp }}/frameleaf-${{ matrix.source }}-${{ github.run_id }}-${{ github.run_attempt }}
+          SOURCE: ${{ matrix.source }}
+        run: |
+          install -d -m700 "$TMPDIR"
+          node "server/scripts/qualify-$SOURCE-application.mjs"
+      - name: Remove disposable Docker fixture after cancellation
+        if: always()
+        env:
+          TMPDIR: ${{ runner.temp }}/frameleaf-${{ matrix.source }}-${{ github.run_id }}-${{ github.run_attempt }}
+          SOURCE: ${{ matrix.source }}
+        run: node "server/scripts/cleanup-$SOURCE-qualification.mjs"
   sqlite-source-text:
     name: SQLite source text admission
     if: github.repository == 'Frameleaf/frameleaf-app'

@@ -187,7 +187,8 @@ describe('PiGallery2 common manifest mapping', () => {
     });
   });
   it('applies the recorded offset to the source instant when retaining its local clock', () => {
-    database.prepare('UPDATE media_entity SET metadataCreationdateoffset=? WHERE id=6').run('-06:00');
+    // Native 3.5.2 writes smallint minutes (Utils.getOffsetMinutes), not the "+HH:MM" entity string.
+    database.prepare('UPDATE media_entity SET metadataCreationdateoffset=? WHERE id=6').run(-360);
     expect(read().manifest.assets.find((asset) => asset.id === '6')).toMatchObject({
       localDateTime: '2019-03-17T08:15:16.000',
       metadata: { takenAt: '2019-03-17T14:15:16.000Z' },
@@ -269,7 +270,7 @@ describe('PiGallery2 common manifest mapping', () => {
     missing.archivedFiles = missing.archivedFiles.filter((file) => !file.path.endsWith('.gpx'));
     expect(() => read(missing)).toThrow('PIGALLERY2_FILE_EVIDENCE_MISMATCH');
   });
-  it.each(['+25:00', 'invalid'])('refuses invalid capture offsets (%s)', (offset) => {
+  it.each([-721, 841, '-06:00', 'invalid', 1.5])('refuses invalid capture offsets (%s)', (offset) => {
     database.prepare('UPDATE media_entity SET metadataCreationdateoffset=? WHERE id=6').run(offset);
     expect(() => read()).toThrow('PIGALLERY2_CAPTURE_TIME_INVALID');
   });

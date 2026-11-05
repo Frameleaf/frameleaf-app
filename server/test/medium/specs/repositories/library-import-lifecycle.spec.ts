@@ -10,6 +10,9 @@ import { getKyselyDB } from 'test/utils.js';
 
 const execute = promisify(execFile);
 const server = fileURLToPath(new URL('../../../../', import.meta.url));
+// A parent qualification script names one disposable native application whose stopped capture is imported.
+const nativeSource = process.env.FRAMELEAF_NATIVE_IMPORT_SOURCE;
+if (nativeSource !== undefined && !/^[a-z0-9]+$/u.test(nativeSource)) throw new Error('Invalid native import source');
 
 describe.skipIf(process.platform !== 'linux')('common import lifecycle on native files and databases', () => {
   let build: string;
@@ -39,6 +42,12 @@ describe.skipIf(process.platform !== 'linux')('common import lifecycle on native
     await cp(join(server, 'src/schema/migrations/ORDER'), join(build, 'src/schema/migrations/ORDER'));
     await cp(join(server, 'test/medium/fixtures/library-import-lifecycle.mjs'), join(build, 'runner.mjs'));
     await cp(join(server, 'test/medium/fixtures/library-import-photoprism.mjs'), join(build, 'native-runner.mjs'));
+    await cp(join(server, 'test/medium/fixtures/library-import-native-common.mjs'), join(build, 'native-common.mjs'));
+    if (nativeSource)
+      await cp(
+        join(server, `test/medium/fixtures/library-import-native-${nativeSource}.mjs`),
+        join(build, `native-${nativeSource}.mjs`),
+      );
     const { version } = JSON.parse(await readFile(join(server, 'package.json'), 'utf8'));
     await writeFile(
       join(build, 'package.json'),
@@ -75,6 +84,7 @@ describe.skipIf(process.platform !== 'linux')('common import lifecycle on native
     'prepare-page',
     'prepare-abandon',
     ...(process.env.FRAMELEAF_PHOTOPRISM_APPLICATION_CONFIG ? ['native-source'] : []),
+    ...(nativeSource ? [`native-${nativeSource}`] : []),
   ];
   it.each(modes)(
     'executes %s with journalled files and retained metadata',
@@ -100,7 +110,14 @@ describe.skipIf(process.platform !== 'linux')('common import lifecycle on native
           [
             '--exec-locked',
             process.execPath,
-            join(build, mode === 'native-source' ? 'native-runner.mjs' : 'runner.mjs'),
+            join(
+              build,
+              mode === 'native-source'
+                ? 'native-runner.mjs'
+                : mode.startsWith('native-')
+                  ? `${mode}.mjs`
+                  : 'runner.mjs',
+            ),
           ],
           {
             detached: true,
@@ -150,11 +167,19 @@ describe.skipIf(process.platform !== 'linux')('common import lifecycle on native
           sourceQualified: false,
           productionCoordinator: true,
           commonCommand: true,
-          sidecars: mode === 'native-source' ? 0 : 1,
+          sidecars: mode.startsWith('native-') ? 0 : 1,
           phase: mode === 'rollback' || mode === 'prepare-abandon' ? 'abandoned' : 'activated',
         });
         if (mode.startsWith('prepare-')) expect(result.interruptedPreparationRecovered).toBe(true);
-        if (mode === 'native-source')
+        if (mode.startsWith('native-') && mode !== 'native-source')
+          expect(result).toMatchObject({
+            nativeSource: true,
+            managerRun: true,
+            writerBoundary: true,
+            sourceRetained: true,
+            metadataAndAlbumsVerified: true,
+          });
+        else if (mode === 'native-source')
           expect(result).toMatchObject({
             nativeSource: true,
             nativeScope: 'single-local-admin-copy',
