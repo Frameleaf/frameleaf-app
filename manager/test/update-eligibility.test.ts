@@ -651,6 +651,31 @@ test('a server seen healthy while starting is never rolled back after its probe 
   }
 });
 
+// Review: a failed journal write in the final health check must not replace the start's own error.
+test('a failed start reports its own error when the final health receipt cannot be journaled', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-update-final-check-'));
+  const store = new Store(directory);
+  try {
+    const image = `fixture.invalid/server@sha256:${'a'.repeat(64)}`;
+    const review = { current: { id: 'a'.repeat(12) }, release: { nas: { images: { server: image } } } };
+    const { operation } = store.start('update', 'final', { reviewId: 'r' });
+    const operations = new Operations(store, { inventory: async () => [{ Config: { Image: image, Labels: {
+      'app.frameleaf.manager': 'a'.repeat(12), 'com.docker.compose.service': 'frameleaf-server' } },
+      State: { Running: true, Health: { Status: 'healthy' } } }] } as never, {} as never, {} as never, [], {} as never);
+    operations.serverWatchMs = 60_000; // only the final check runs
+    t.mock.method(store, 'save', () => { throw new Error('disk full'); });
+    await assert.rejects(
+      (operations as any).watchServer(operation, review, async () => { throw new Error('server unhealthy'); }),
+      /server unhealthy/,
+    );
+    assert.equal(operation.receipts['server-served'], undefined, 'an unjournaled receipt is not kept');
+  } finally {
+    t.mock.restoreAll();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 // FL-1210: the server's `frameleaf-served` marker, not Docker's bounded health log, decides whether a failed
 // start may restore the pre-update checkpoint. Docker here says the opposite of the marker each time.
 for (const [marker, rollsBack] of [['after-start', false], ['before-start', true]] as const) {
