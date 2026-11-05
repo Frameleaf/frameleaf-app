@@ -12,8 +12,15 @@ export async function up(db: Kysely<any>): Promise<void> {
     WHERE "runId" IS NOT NULL AND state IN ('pending','waiting','active')`.execute(db);
 }
 
-/** Reads recount every run from its ledger again. */
+/**
+ * Reads recount every run from its ledger again. Refused once any run's ledger has been pruned: those counts live
+ * only in the summary. Holds the pruning lock, so a sweep cannot prune between the check and the drop.
+ */
 export async function down(db: Kysely<any>): Promise<void> {
+  await sql`SELECT pg_advisory_xact_lock(-333, 3)`.execute(db);
+  const { rows } = await sql`SELECT 1 FROM "job_run"
+    WHERE "summary" ? 'ledgerAfter' OR "summary"->>'ledgerPruned' = 'true' LIMIT 1`.execute(db);
+  if (rows.length > 0) throw new Error('Cannot revert JobRunSummary: some run ledgers were already pruned');
   await sql`DROP INDEX IF EXISTS "job_run_live"`.execute(db);
   await sql`ALTER TABLE "job_run" DROP COLUMN IF EXISTS "summary"`.execute(db);
 }
