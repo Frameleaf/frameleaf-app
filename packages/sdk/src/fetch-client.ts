@@ -19501,7 +19501,7 @@ export type MapClusterDto = {
     west?: number;
     /** Include shared album assets */
     withSharedAlbums?: boolean;
-    /** The map zoom level the items are grouped for (at most 22); without an area, at most 4 */
+    /** The map zoom level the items are grouped for; without an area, at most 4 */
     zoom: number;
 };
 export type MapMarkerDto = {

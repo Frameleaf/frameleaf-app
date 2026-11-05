@@ -30298,10 +30298,10 @@
             "name": "zoom",
             "required": true,
             "in": "query",
-            "description": "The map zoom level the items are grouped for (at most 22); without an area, at most 4",
+            "description": "The map zoom level the items are grouped for; without an area, at most 4",
             "schema": {
               "minimum": 0,
-              "maximum": 22,
+              "maximum": 24,
               "type": "integer"
             }
           }
@@ -102970,8 +102970,8 @@
             "type": "boolean"
           },
           "zoom": {
-            "description": "The map zoom level the items are grouped for (at most 22); without an area, at most 4",
-            "maximum": 22,
+            "description": "The map zoom level the items are grouped for; without an area, at most 4",
+            "maximum": 24,
             "minimum": 0,
             "type": "integer"
           }

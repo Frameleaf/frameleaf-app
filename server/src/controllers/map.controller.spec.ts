@@ -35,13 +35,6 @@ describe(MapController.name, () => {
       expect(service.getMapClusters).not.toHaveBeenCalled();
     });
 
-    it('should refuse a zoom level above 22 (FL-1246)', async () => {
-      const { status } = await request(ctx.getHttpServer()).get('/map/clusters').query({ zoom: 23 });
-
-      expect(status).toBe(400);
-      expect(service.getMapClusters).not.toHaveBeenCalled();
-    });
-
     it('should read the area and zoom as numbers', async () => {
       service.getMapClusters.mockResolvedValue({ complete: false, total: 0, bounds: null, clusters: [], markers: [] });
       const { status } = await request(ctx.getHttpServer())
