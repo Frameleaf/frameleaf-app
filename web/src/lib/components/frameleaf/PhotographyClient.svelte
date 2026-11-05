@@ -542,6 +542,12 @@
   }
   function favorite(id: string) {
     const adding = !choices.includes(id);
+    // The studio's limit (approved design, 2026-11-04): the server refuses more, so say so here first.
+    const limit = gallery?.pricing.selectionLimit;
+    if (adding && limit && choices.length >= limit) {
+      notice = $t('frameleaf_photography_client_limit_reached', { values: { count: limit } });
+      return;
+    }
     choices = adding ? [...choices, id] : choices.filter((value) => value !== id);
     justFavorited = adding ? id : '';
     changed();
@@ -1005,6 +1011,7 @@
             .join(' · ')}
         </p>
         <p>{gallery.presentation.introduction || $t('frameleaf_photography_client_intro_default')}</p>
+        {#if gallery.pricing.welcomeMessage}<p class="pc-welcome">{gallery.pricing.welcomeMessage}</p>{/if}
         {#if gallery.mode !== 'edited-delivery' && !finished}<p class="pc-package-line">
             {$t('frameleaf_photography_client_pricing', {
               values: {
@@ -1030,7 +1037,9 @@
           <p>
             {$t('frameleaf_photography_client_counts', {
               values: { photos: gallery.photos.length, favourites: choices.length },
-            })}{gallery.pricing.selectionDeadline
+            })}{gallery.pricing.selectionLimit
+              ? ` · ${$t('frameleaf_photography_client_choose_up_to', { values: { count: gallery.pricing.selectionLimit } })}`
+              : ''}{gallery.pricing.selectionDeadline
               ? ` · ${$t('frameleaf_photography_client_choose_by', { values: { date: new Date(gallery.pricing.selectionDeadline).toLocaleDateString($locale) } })}`
               : ''}
           </p>

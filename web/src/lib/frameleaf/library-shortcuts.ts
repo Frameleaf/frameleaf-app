@@ -340,6 +340,31 @@ export const libraryShortcuts: readonly LibraryShortcut[] = [
     group: 'albums',
     surfaces: TIMELINE,
   },
+  // The sidebar moves the focused album itself (approved design, 2026-11-04).
+  {
+    id: 'album-move',
+    handledElsewhere: true,
+    keys: ['Alt', '↑', '↓'],
+    label: 'frameleaf_shortcut_album_move',
+    group: 'albums',
+    surfaces: TIMELINE,
+  },
+  {
+    id: 'album-nest',
+    handledElsewhere: true,
+    keys: ['Alt', '→'],
+    label: 'frameleaf_shortcut_album_nest',
+    group: 'albums',
+    surfaces: TIMELINE,
+  },
+  {
+    id: 'album-unnest',
+    handledElsewhere: true,
+    keys: ['Alt', '←'],
+    label: 'frameleaf_shortcut_album_unnest',
+    group: 'albums',
+    surfaces: TIMELINE,
+  },
 ];
 
 const TYPING_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT']);

@@ -294,6 +294,102 @@ async function setup(brand?: unknown) {
 }
 
 describe('photography workflow integration boundaries', () => {
+  it('gives a new proof gallery a link that lasts 30 days from today (approved design, 2026-11-04)', async () => {
+    const s = await setup();
+    const expiresAt = Date.parse(s.row().value.config.expiresAt!);
+    expect(expiresAt - Date.now()).toBeGreaterThan(29.9 * 86_400_000);
+    expect(expiresAt - Date.now()).toBeLessThanOrEqual(30 * 86_400_000);
+  });
+  it("holds a client to the studio's selection limit and shows it, with the welcome, in the gallery", async () => {
+    const s = await setup();
+    s.row().value.config.maxSelections = 1;
+    s.row().value.config.welcomeMessage = 'Take your time.';
+    await s.published();
+    const { session } = await s.invitation();
+    const gallery = await s.service.gallery(s.shootId, session);
+    expect(gallery.pricing.selectionLimit).toBe(1);
+    expect(gallery.welcomeMessage).toBe('Take your time.');
+    // within the limit the choice saves; a second photograph goes over it
+    await s.service.choices(s.shootId, session, {
+      expectedRevision: s.row().revision,
+      captureIds: [s.captureId],
+      notes: [],
+    });
+    await expect(
+      s.service.choices(s.shootId, session, {
+        expectedRevision: s.row().revision,
+        captureIds: [s.captureId, randomUUID()],
+        notes: [],
+      }),
+    ).rejects.toThrow('Choose at most 1 photographs');
+  });
+  it('publishes only the photographs the studio kept when proofs are "selected captures only"', async () => {
+    const s = await setup();
+    s.row().value.config.proofCollection = 'selected';
+    // the only capture is unrated, so there is nothing to publish
+    await expect(
+      s.service.publish(s.auth, s.shootId, { expectedRevision: s.row().revision, scope: 'all-eligible' }),
+    ).rejects.toThrow('No eligible photographs');
+    s.row().value.captures[0].rating = 4;
+    await s.service.publish(s.auth, s.shootId, { expectedRevision: s.row().revision, scope: 'all-eligible' });
+    expect(s.row().value.publication?.total).toBe(1);
+  });
+  it('emails an invitation only when the server can send it, and keeps where it went', async () => {
+    const s = await setup();
+    vi.spyOn(configUtils, 'getConfig').mockResolvedValue({
+      server: { externalDomain: 'https://photos.example' },
+      notifications: { smtp: { enabled: true } },
+      templates: { email: { showBranding: true } },
+    } as never);
+    const result = await s.service.createRecipient(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      name: 'Jamie',
+      password: null,
+      email: 'jamie@example.com',
+      expiresAt: null,
+      canProof: true,
+      canDownload: false,
+      captureIds: null,
+    });
+    expect(result.workflow.recipients.at(-1)?.email).toBe('jamie@example.com');
+    const sent = await s.siteService.emailInvitation(s.auth, {
+      workflowId: s.shootId,
+      token: result.invitation.token,
+      email: 'jamie@example.com',
+      recipientName: 'Jamie',
+      galleryTitle: 'Portrait',
+      expiresAt: null,
+    });
+    expect(sent).toBe(true);
+    expect(s.email.renderEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          link: `https://photos.example/photography/gallery/${s.shootId}#invitation=${result.invitation.token}`,
+        }),
+      }),
+    );
+    expect(s.jobs.queue).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ to: 'jamie@example.com' }) }),
+    );
+    // without email set up, nothing is queued and the studio copies the link instead
+    vi.spyOn(configUtils, 'getConfig').mockResolvedValue({
+      server: { externalDomain: 'https://photos.example' },
+      notifications: { smtp: { enabled: false } },
+      templates: { email: { showBranding: true } },
+    } as never);
+    s.jobs.queue.mockClear();
+    expect(
+      await s.siteService.emailInvitation(s.auth, {
+        workflowId: s.shootId,
+        token: result.invitation.token,
+        email: 'jamie@example.com',
+        recipientName: 'Jamie',
+        galleryTitle: 'Portrait',
+        expiresAt: null,
+      }),
+    ).toBe(false);
+    expect(s.jobs.queue).not.toHaveBeenCalled();
+  });
   it("opens a new gallery with the prototype's split cover and keeps a saved gallery's own cover", async () => {
     const s = await setup();
     expect(s.row().value.config.presentation.coverTreatment).toBe('split');

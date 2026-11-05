@@ -652,8 +652,21 @@ describe(QueueService.name, () => {
       expect(mocks.job.startNow).toHaveBeenCalledWith(QueueName.ThumbnailGeneration, jobId);
     });
 
+    it.each([
+      [QueueName.SmartSearch, JobName.SmartSearch],
+      [QueueName.DuplicateDetection, JobName.AssetDetectDuplicates],
+      [QueueName.ImageDescription, JobName.ImageDescription],
+    ])("runs Library care's Redo one and Check one photo on %s (approved design, 2026-11-04)", async (queue, job) => {
+      mocks.asset.getById.mockResolvedValue({ id: assetId, type: AssetType.Image } as never);
+      mocks.job.findWaitingJob.mockResolvedValue('job-1');
+      mocks.job.startNow.mockResolvedValue(true);
+      await sut.runOne(factory.auth(), queue, { assetId });
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: job, data: { id: assetId } });
+      expect(mocks.job.startNow).toHaveBeenCalledWith(queue, 'job-1');
+    });
+
     it('runs on one item only for the tasks that work one item at a time, and videos only for playback', async () => {
-      await expect(sut.runOne(factory.auth(), QueueName.SmartSearch, { assetId })).rejects.toBeInstanceOf(
+      await expect(sut.runOne(factory.auth(), QueueName.Library, { assetId })).rejects.toBeInstanceOf(
         BadRequestException,
       );
       mocks.asset.getById.mockResolvedValue({ id: assetId, type: AssetType.Image } as never);

@@ -136,6 +136,7 @@
     [['an-people', 'an-places', 'an-people-places'], 'frameleaf_analytics_jump_people'],
     [['an-coverage'], 'frameleaf_analytics_jump_coverage'],
     [['an-records'], 'frameleaf_analytics_jump_records'],
+    [['an-magic'], 'frameleaf_analytics_jump_magic'],
     [['an-activity'], 'frameleaf_analytics_jump_activity'],
     [['an-albums'], 'frameleaf_analytics_jump_albums'],
     [['an-technical'], 'frameleaf_analytics_jump_technical'],

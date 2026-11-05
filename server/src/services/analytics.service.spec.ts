@@ -710,6 +710,36 @@ describe(AnalyticsService.name, () => {
       });
     });
 
+    it('reports Library magic: colour by month, light, seasons by hemisphere, tags and counts', async () => {
+      analyticsRepository.getInsights.mockResolvedValue(
+        insightRows({
+          magic: {
+            // ThumbHash L, P and Q at their middles: a mid grey
+            colour: [{ month: 7, photos: 5, l: 31.5, p: 31.5, q: 31.5 }],
+            light: { goldenMorning: 1, goldenEvening: 2, blueHour: 3, daylight: 4, night: 5 },
+            months: [
+              { month: 1, south: false, count: 4 },
+              { month: 1, south: true, count: 2 },
+              { month: 7, south: null, count: 3 },
+            ],
+            topTags: [{ name: 'Hiking', count: 9 }],
+            farAndWide: null,
+            underTheHood: { searchVectors: 10, faceVectors: 20, previews: 30, databaseRows: 40 },
+          },
+        }),
+      );
+      const { insights } = await read(user(), `account:${USER_ID}`);
+      expect(insights!.magic).toEqual({
+        colourByMonth: [{ month: 7, colour: '#808080', photos: 5 }],
+        light: { goldenMorning: 1, goldenEvening: 2, blueHour: 3, daylight: 4, night: 5 },
+        // January is winter in the north and summer in the south; unplaced July items follow the north
+        seasons: { spring: 0, summer: 2 + 3, autumn: 0, winter: 4 },
+        topTags: [{ name: 'Hiking', count: 9 }],
+        farAndWide: null,
+        underTheHood: { searchVectors: 10, faceVectors: 20, previews: 30, databaseRows: 40 },
+      });
+    });
+
     it("reads names, people and places only for the owner's own scope", async () => {
       await read(user(), `account:${USER_ID}`);
       await read(user(), `library:${USER_LIBRARY}`);

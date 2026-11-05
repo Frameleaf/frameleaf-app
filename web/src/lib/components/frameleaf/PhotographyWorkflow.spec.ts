@@ -11,6 +11,7 @@ import {
   defaultWatermark,
   type Workflow,
 } from '$lib/frameleaf/photography/workflow-api';
+import { fileUploadHandler } from '$lib/utils/file-uploader';
 import PhotographyWorkflow from './PhotographyWorkflow.svelte';
 
 vi.mock('$lib/frameleaf/photography/api', async (original) => ({
@@ -25,7 +26,10 @@ vi.mock('$lib/frameleaf/photography/workflow-api', async (original) => ({
   galleryPreviewSession: vi.fn(),
   watermarkPreview: vi.fn().mockResolvedValue(new Blob(['protected'], { type: 'image/jpeg' })),
 }));
-vi.mock('$lib/utils/file-uploader', () => ({ openFileUploadDialog: vi.fn() }));
+vi.mock('$lib/utils/file-uploader', () => ({ openFileUploadDialog: vi.fn(), fileUploadHandler: vi.fn() }));
+vi.mock('$lib/managers/server-config-manager.svelte', () => ({
+  serverConfigManager: { value: { externalDomain: '' } },
+}));
 beforeAll(() => addMessages('dev', en));
 const shoot = {
   id: 'shoot',
@@ -238,4 +242,101 @@ it('opens the published gallery as the client sees it from Client preview', asyn
   expect(galleryPreviewSession).toHaveBeenCalledWith('shoot');
   expect(tab.opener).toBeNull();
   open.mockRestore();
+});
+it('saves the welcome message, reminders, selection limit and proof collection with the workflow', async () => {
+  render(PhotographyWorkflow, { shoot, panel: 'workflow' });
+  await fireEvent.input(await screen.findByRole('textbox', { name: 'Welcome message' }), {
+    target: { value: 'Take your time.' },
+  });
+  await fireEvent.click(screen.getByRole('checkbox', { name: 'Selection reminder' }));
+  await fireEvent.change(screen.getByRole('spinbutton', { name: 'Maximum client selections' }), {
+    target: { value: '25' },
+  });
+  await fireEvent.change(screen.getByRole('combobox', { name: /Proof collection/ }), { target: { value: 'selected' } });
+  await fireEvent.click(screen.getByRole('button', { name: 'Save client workflow' }));
+  await waitFor(() =>
+    expect(workflowRequest).toHaveBeenCalledWith(
+      'shoot',
+      '/config',
+      'PUT',
+      expect.objectContaining({
+        config: expect.objectContaining({
+          welcomeMessage: 'Take your time.',
+          reminders: { selection: true, paymentAndExpiry: false },
+          maxSelections: 25,
+          proofCollection: 'selected',
+        }),
+      }),
+    ),
+  );
+});
+it('emails an invitation when an address is given and says so', async () => {
+  vi.mocked(workflowRequest).mockImplementation(async (_id, path) =>
+    path === '/recipients'
+      ? ({
+          workflow: structuredClone(workflow),
+          invitation: { recipientId: 'r', token: 'secret', emailed: true },
+        } as never)
+      : (structuredClone(workflow) as never),
+  );
+  render(PhotographyWorkflow, { shoot, panel: 'publishing' });
+  await fireEvent.input(await screen.findByRole('textbox', { name: 'Email (optional)' }), {
+    target: { value: 'jamie@example.com' },
+  });
+  await fireEvent.click(screen.getByRole('button', { name: 'Create invitation' }));
+  await waitFor(() =>
+    expect(workflowRequest).toHaveBeenCalledWith(
+      'shoot',
+      '/recipients',
+      'POST',
+      expect.objectContaining({ email: 'jamie@example.com' }),
+    ),
+  );
+  expect(await screen.findByText(/Invitation emailed to jamie@example.com/)).toBeInTheDocument();
+});
+it('saves the shoot brief through the workspace', async () => {
+  const onSaveBrief = vi.fn().mockResolvedValue(true);
+  render(PhotographyWorkflow, { shoot, panel: 'intake', onSaveBrief });
+  await fireEvent.input(await screen.findByRole('textbox', { name: 'Client notes' }), {
+    target: { value: 'Grandparents first.' },
+  });
+  await fireEvent.click(screen.getByRole('button', { name: 'Save brief' }));
+  expect(onSaveBrief).toHaveBeenCalledWith({ notes: 'Grandparents first.', deliveryTarget: null });
+});
+it('shows the running total by currency and, before any selection, leads to the client preview', async () => {
+  const ordered: Workflow = structuredClone(workflow);
+  const order = (id: string, total: number, status: string) => ({
+    id,
+    recipientId: 'r',
+    roundId: null,
+    captureIds: [],
+    status,
+    currency: 'CAD',
+    total,
+    terms: '',
+    paymentTiming: 'after-approval',
+    createdAt: '2026-11-01T00:00:00Z',
+    acceptedAt: null,
+    readyCount: 0,
+    editingBlocked: false,
+    items: [],
+    pricing: { includedCount: 0, additionalPrice: 0, collectionPrice: null, bundles: [], option: 'package' },
+  });
+  ordered.orders = [order('o1', 2500, 'quoted'), order('o2', 1000, 'cancelled')];
+  vi.mocked(workflowRequest).mockResolvedValue(ordered);
+  const onSection = vi.fn();
+  render(PhotographyWorkflow, { shoot, panel: 'orders', onSection });
+  expect(await screen.findByRole('heading', { name: 'Waiting for the first selection' })).toBeInTheDocument();
+  expect(screen.getByText('Order total so far').closest('p')).toHaveTextContent('25.00');
+  await fireEvent.click(screen.getByRole('button', { name: 'Configure the package' }));
+  expect(onSection).toHaveBeenCalledWith('workflow');
+});
+it('uploads photographs dropped on the intake zone into the shoot, then reads it again', async () => {
+  vi.mocked(fileUploadHandler).mockResolvedValue([]);
+  render(PhotographyWorkflow, { shoot, panel: 'intake' });
+  const zone = await screen.findByRole('button', { name: /Add photographs or a camera folder/ });
+  const file = new File(['x'], 'IMG_1.CR3');
+  await fireEvent.drop(zone, { dataTransfer: { files: [file], types: ['Files'] } });
+  await waitFor(() => expect(fileUploadHandler).toHaveBeenCalledWith({ files: [file], albumId: 'album' }));
+  await waitFor(() => expect(workflowRequest).toHaveBeenCalledWith('shoot', '/intake', 'POST', expect.anything()));
 });

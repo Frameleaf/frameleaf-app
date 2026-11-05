@@ -97,7 +97,7 @@
   font-size: var(--fl-font-small);
 }
 .phd-order-total strong {
-  font-size: var(--fl-font-title);
+  font-size: var(--fl-font-headline);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
@@ -377,6 +377,16 @@
   flex-shrink: 0;
   border: 1px solid var(--fl-border);
   border-radius: var(--fl-radius-control);
+}
+.phw-studio-brand .phw-brand-mark {
+  overflow: hidden;
+  font-weight: 600;
+  font-size: var(--fl-font-small);
+}
+.phw-studio-brand .phw-brand-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 .phw-studio-brand strong,
 .phw-studio-brand small {
@@ -1171,7 +1181,7 @@
   object-fit: contain;
 }
 .phw-brand-preview h2 {
-  font-size: var(--fl-font-title);
+  font-size: var(--fl-font-headline);
   font-weight: 400;
 }
 .phw-brand-preview p {
@@ -1723,4 +1733,125 @@
   .phx-project-text small {
     white-space: normal;
   }
+}
+/* Approved design (2026-11-04): the client's path through the chosen way of working. */
+.phx-flow-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px;
+  margin: 20px 0 0;
+  padding: 15px 12px;
+  list-style: none;
+  border-radius: var(--fl-radius-md);
+  background: var(--fl-canvas);
+  font-size: var(--fl-font-small);
+  color: var(--fl-muted);
+}
+.phx-flow-strip li {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+/* Intake › Shoot brief: what came in, at a glance. */
+.phx-import-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 14px 0;
+}
+.phx-import-stats span {
+  display: grid;
+  gap: 2px;
+  padding: 10px;
+  border-radius: var(--fl-radius-md);
+  background: var(--fl-canvas);
+  font-size: var(--fl-font-small);
+  color: var(--fl-muted);
+}
+.phx-import-stats strong {
+  font-size: var(--fl-font-headline);
+  font-variant-numeric: tabular-nums;
+  color: var(--fl-text);
+}
+@media (max-width: 700px) {
+  .phx-import-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+/* Watermarks › See it on the photograph. */
+.phw-see-tabs {
+  display: inline-flex;
+  gap: 2px;
+  margin: 12px 0;
+  padding: 3px;
+  border-radius: var(--fl-radius-md);
+  background: var(--fl-canvas);
+}
+.phw-see-tabs button {
+  padding: 6px 12px;
+  border: 0;
+  border-radius: calc(var(--fl-radius-md) - 2px);
+  background: transparent;
+  color: var(--fl-muted);
+  font: inherit;
+  font-size: var(--fl-font-callout);
+  cursor: pointer;
+}
+.phw-see-tabs button[aria-pressed='true'] {
+  background: var(--fl-raised);
+  color: var(--fl-text);
+  box-shadow: var(--fl-shadow-1);
+}
+.phw-see img {
+  display: block;
+  width: 100%;
+  max-height: 420px;
+  object-fit: contain;
+  border-radius: var(--fl-radius-md);
+}
+/* Orders & delivery: where things stand, with the running total on the right. */
+.phx-order-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.phx-order-header h3 {
+  margin: 4px 0 0;
+}
+.phx-order-header .phd-order-total strong {
+  font-size: var(--fl-font-title);
+  font-variant-numeric: tabular-nums;
+}
+.phx-orders-empty p {
+  max-width: 60ch;
+}
+/* Intake: drop photographs or a camera folder straight into the shoot. */
+.phx-drop {
+  display: grid;
+  justify-items: center;
+  width: 100%;
+  font: inherit;
+  background: none;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 26px 16px;
+  border: 1px dashed var(--fl-border);
+  border-radius: var(--fl-radius-card);
+  color: var(--fl-muted);
+  text-align: center;
+  cursor: pointer;
+}
+.phx-drop strong {
+  color: var(--fl-text);
+}
+.phx-drop:hover,
+.phx-drop:focus-visible,
+.phx-drop.over {
+  border-color: var(--fl-accent);
+  background: var(--fl-accent-soft);
 }

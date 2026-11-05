@@ -654,6 +654,11 @@ export enum SystemMetadataKey {
   IntegrityCheckHistory = 'integrity-check-history',
   /** FL-520: when an administrator last pressed Stop on the file checks; a check started before it stops. */
   IntegrityCheckStop = 'integrity-check-stop',
+  /**
+   * What routed work does when a computer at home isn't answering (approved design, 2026-11-04): wait for it, or
+   * stop; either way administrators are told, once per computer while it stays away.
+   */
+  MlUnavailableBehaviour = 'ml-unavailable-behaviour',
   /** FL-520: look-alike photos are to be compared again in the next overnight run (after a change of "How alike"). */
   DuplicateRecompare = 'duplicate-recompare',
   /**
@@ -2648,6 +2653,8 @@ export enum DatabaseLock {
    * uploads of the same new content never store it twice.
    */
   UniversalStorageChecksum = 980,
+  /** Approved design (2026-11-04): one server sends the day's client gallery reminders. */
+  PhotographyReminders = 981,
 }
 
 export enum MaintenanceAction {

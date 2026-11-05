@@ -1,4 +1,5 @@
 import {
+  IntegrityCheckOneResult,
   IntegrityCheckOutcome,
   IntegrityFindingKind,
   IntegrityReport,
@@ -376,5 +377,20 @@ describe('File checks (FL-366)', () => {
     expect(screen.queryByRole('combobox', { name: 'Damaged files check starts at' })).not.toBeInTheDocument();
     // no expression is ever shown
     expect(screen.queryByText(/\* \* \*/)).not.toBeInTheDocument();
+  });
+
+  it('checks one picked file at once and says what it found', async () => {
+    sdkMock.searchAssets.mockResolvedValue({
+      assets: { items: [{ id: 'a1', originalFileName: 'IMG_2291.HEIC', type: 'IMAGE' }] },
+    } as never);
+    sdkMock.checkIntegrityOne.mockResolvedValue({ result: IntegrityCheckOneResult.Mismatched });
+    newStore();
+    render(FileChecks, { pollMs: 60_000 });
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Check one file for Damaged files' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Damaged files: check one file' });
+    await fireEvent.click(await within(dialog).findByRole('radio', { name: /IMG_2291.HEIC/ }));
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Check IMG_2291.HEIC' }));
+    await vi.waitFor(() => expect(sdkMock.checkIntegrityOne).toHaveBeenCalledWith({ id: 'a1' }));
   });
 });

@@ -130,6 +130,35 @@ describe('LibraryRail', () => {
     expect(fetch).toHaveBeenCalledTimes(icon?.startsWith('mdi') ? 1 : 0);
   });
 
+  it('moves an album up with Alt and the up arrow, and saves its new place', async () => {
+    const me = authManager.user;
+    const owned = (id: string, sortOrder: number) =>
+      albumFactory.build({
+        id,
+        albumName: id,
+        kind: AlbumKind.Album,
+        parentId: null,
+        sortOrder,
+        albumUsers: [{ user: me, role: AlbumUserRole.Owner }],
+      } as never);
+    sdkMock.getAlbumHierarchy.mockResolvedValue({
+      roots: [
+        { album: owned('Hikes', 1024), children: [] },
+        { album: owned('Summer', 2048), children: [] },
+      ],
+    });
+    sdkMock.updateAlbumInfo.mockResolvedValue({} as never);
+    render(LibraryRail);
+    const summer = await screen.findByRole('link', { name: 'Summer' });
+    expect(summer).toHaveAttribute('draggable', 'true');
+    await fireEvent.keyDown(summer, { key: 'ArrowUp', altKey: true });
+    await waitFor(() =>
+      expect(sdkMock.updateAlbumInfo).toHaveBeenCalledWith({ id: 'Summer', updateAlbumDto: { sortOrder: 0 } }),
+    );
+    // The sidebar reads the tree again to show the new order.
+    await waitFor(() => expect(sdkMock.getAlbumHierarchy).toHaveBeenCalledTimes(2));
+  });
+
   it('expands each nested branch without hiding its own page link', async () => {
     sdkMock.getAlbumHierarchy.mockResolvedValue({
       roots: [

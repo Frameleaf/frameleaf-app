@@ -31,6 +31,7 @@
   import { page } from '$app/state';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import RunOneDialog from '$lib/components/frameleaf/RunOneDialog.svelte';
   import CloudBackgroundWork from '$lib/components/frameleaf/cloud/CloudBackgroundWork.svelte';
   import SettingsOverline from '$lib/components/frameleaf/settings/SettingsOverline.svelte';
   import BackgroundWorkEveryday, {
@@ -120,6 +121,7 @@
     triggerSmartAlbumReevaluate,
     type SmartAlbumBuiltInKind,
     type UserAdminResponseDto,
+    type AssetResponseDto,
   } from '@frameleaf/sdk';
   import { CommandPaletteDefaultProvider, Icon, type ActionItem } from '@frameleaf/ui';
   import {
@@ -812,6 +814,10 @@
     QueueName.FaceDetection,
     QueueName.Ocr,
     QueueName.VideoConversion,
+    QueueName.SmartSearch,
+    QueueName.DuplicateDetection,
+    QueueName.ImageDescription,
+    QueueName.NsfwDetection,
   ]);
   const oneJob = async (job: JobRow, action: 'start' | 'retry') => {
     if (!selected || !job.id) {
@@ -832,22 +838,14 @@
     }
   };
   let runOneOpen = $state(false);
-  let runOneText = $state('');
-  let runOneError = $state('');
-  /** A pasted link to the photo or video, or its ID. */
-  const runOneId = $derived(/[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}/i.exec(runOneText)?.[0]);
-  const runOne = async () => {
-    if (!selected || !runOneId) {
+  /** Runs the selected task on one picked photo or video; errors show in the dialog. */
+  const runOne = async (asset: AssetResponseDto) => {
+    if (!selected) {
       return;
     }
-    runOneError = '';
     try {
-      await runQueueOnOne({ name: selected.definition.name, queueRunOneDto: { assetId: runOneId } });
+      await runQueueOnOne({ name: selected.definition.name, queueRunOneDto: { assetId: asset.id } });
       notice = $t('frameleaf_jobs_ran_one', { values: { name: runLabelFor(selected.definition) } });
-      runOneOpen = false;
-      runOneText = '';
-    } catch (error_) {
-      runOneError = getServerErrorMessage(error_) ?? $t('errors.something_went_wrong');
     } finally {
       await queueManager.refresh();
       jobsReload++;
@@ -1549,29 +1547,14 @@
 </Dialog>
 
 {#if selected && RUN_ONE.has(selected.definition.name)}
-  <Dialog title={$t('frameleaf_jobs_run_one_title')} closeLabel={$t('close')} bind:open={runOneOpen}>
-    <form
-      class="jm-run-one"
-      onsubmit={(event) => {
-        event.preventDefault();
-        void runOne();
-      }}
-    >
-      <p>
-        {$t('frameleaf_jobs_run_one_body', { values: { name: runLabelFor(selected.definition) } })}
-        {#if selected.queue.isPaused}{$t('frameleaf_jobs_run_one_paused')}{/if}
-      </p>
-      <label>
-        <span>{$t('frameleaf_jobs_run_one_label')}</span>
-        <input bind:value={runOneText} placeholder={$t('frameleaf_jobs_run_one_placeholder')} autocomplete="off" />
-      </label>
-      {#if runOneError}<p class="jm-run-one-error" role="alert">{runOneError}</p>{/if}
-      <footer>
-        <Button onclick={() => (runOneOpen = false)}>{$t('cancel')}</Button>
-        <Button type="submit" variant="primary" disabled={!runOneId}>{$t('frameleaf_bgwork_start_now')}</Button>
-      </footer>
-    </form>
-  </Dialog>
+  <RunOneDialog
+    bind:open={runOneOpen}
+    title={$t('frameleaf_jobs_run_one_title')}
+    verb={$t('frameleaf_bgwork_start_now')}
+    note={`${$t('frameleaf_jobs_run_one_body', { values: { name: runLabelFor(selected.definition) } })}${selected.queue.isPaused ? ` ${$t('frameleaf_jobs_run_one_paused')}` : ''}`}
+    videosOnly={selected.definition.name === QueueName.VideoConversion}
+    onStart={runOne}
+  />
 {/if}
 
 <Dialog title={detail ? jobTitle(detail.name) : ''} closeLabel={$t('close')} bind:open={detailOpen}>
@@ -2243,32 +2226,5 @@
   .jm-detail-actions {
     display: flex;
     justify-content: flex-end;
-  }
-  .jm-run-one {
-    display: grid;
-    gap: var(--fl-space-3);
-  }
-  .jm-run-one p {
-    margin: 0;
-  }
-  .jm-run-one label {
-    display: grid;
-    gap: var(--fl-space-1);
-  }
-  .jm-run-one input {
-    padding: 0.5rem 0.75rem;
-    font: inherit;
-    color: var(--fl-text);
-    background: var(--fl-panel);
-    border: 1px solid var(--fl-border-strong);
-    border-radius: var(--fl-radius-control);
-  }
-  .jm-run-one-error {
-    color: var(--fl-danger);
-  }
-  .jm-run-one footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--fl-space-2);
   }
 </style>

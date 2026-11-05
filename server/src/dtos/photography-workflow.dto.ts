@@ -77,6 +77,23 @@ export const PhotographyConfigSchema = z.strictObject({
     .max(6)
     .refine((outputs) => new Set(outputs.map((output) => output.key)).size === outputs.length, 'Duplicate output key')
     .optional(),
+  // Client workflow's "Ready to share?" (approved design, 2026-11-04). Optional, so galleries saved before keep loading.
+  welcomeMessage: z.string().max(2000).optional().describe('Shown to the client at the top of the gallery'),
+  proofCollection: z
+    .enum(['eligible', 'selected'])
+    .optional()
+    .describe('Which captures a full proof publication includes: every eligible one, or those rated 4 or more'),
+  maxSelections: z
+    .int()
+    .min(1)
+    .max(10_000)
+    .nullable()
+    .optional()
+    .describe('The most photographs a client may choose; null or absent for no limit'),
+  reminders: z
+    .strictObject({ selection: z.boolean(), paymentAndExpiry: z.boolean() })
+    .optional()
+    .describe('Reminder emails the client should get'),
 });
 export type PhotographyConfig = z.infer<typeof PhotographyConfigSchema>;
 export const PhotographyChapterSchema = z.strictObject({
@@ -132,6 +149,7 @@ export class PhotographyRecipientCreateDto extends createZodDto(
     expectedRevision: Revision,
     name: z.string().trim().min(1).max(200),
     password: z.string().min(8).max(72).nullable(),
+    email: z.email().max(254).optional().describe('When given, the invitation is also emailed there'),
     ...RecipientRights,
   }),
 ) {}
@@ -390,6 +408,7 @@ export const PhotographyWorkflowViewSchema = z.object({
       choices: Ids,
       notes: z.array(NoteSchema),
       passwordProtected: z.boolean(),
+      email: z.string().optional().describe('Where the invitation was emailed'),
     }),
   ),
   rounds: z.array(RoundSchema),
@@ -403,7 +422,14 @@ export const PhotographyWorkflowViewSchema = z.object({
 });
 export class PhotographyWorkflowDto extends createZodDto(PhotographyWorkflowViewSchema) {}
 export class PhotographyInvitationDto extends createZodDto(
-  z.object({ workflow: PhotographyWorkflowViewSchema, invitation: z.object({ recipientId: Id, token: z.string() }) }),
+  z.object({
+    workflow: PhotographyWorkflowViewSchema,
+    invitation: z.object({
+      recipientId: Id,
+      token: z.string(),
+      emailed: z.boolean().optional().describe('True when the invitation was queued to the email given'),
+    }),
+  }),
 ) {}
 export class PhotographyGallerySessionResponseDto extends createZodDto(
   z.object({ session: z.string(), expiresAt: z.string(), recipientId: Id }),
@@ -468,7 +494,9 @@ export class PhotographyGalleryDto extends createZodDto(
       bundles: PhotographyConfigSchema.shape.bundles,
       terms: z.string(),
       selectionDeadline: Instant,
+      selectionLimit: z.int().nullable().describe('The most photographs this client may choose; null for no limit'),
     }),
+    welcomeMessage: z.string().describe("The studio's welcome for this gallery; empty for none"),
   }),
 ) {}
 export class PhotographyCheckoutDto extends createZodDto(z.object({ url: z.string() })) {}

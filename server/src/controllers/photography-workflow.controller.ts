@@ -287,8 +287,22 @@ export class PhotographyWorkflowController {
   @ApiOperation({ operationId: 'photographyInvite' })
   @Authenticated()
   @ApiResponse({ status: 201, type: PhotographyInvitationDto })
-  invite(@Auth() auth: AuthDto, @Param('id', uuid) id: string, @Body() dto: PhotographyRecipientCreateDto) {
-    return this.service.createRecipient(auth, id, dto);
+  async invite(@Auth() auth: AuthDto, @Param('id', uuid) id: string, @Body() dto: PhotographyRecipientCreateDto) {
+    const result = await this.service.createRecipient(auth, id, dto);
+    if (!dto.email) {
+      return result;
+    }
+    const recipient = result.workflow.recipients.find(({ id }) => id === result.invitation.recipientId);
+    const emailed = await this.siteService.emailInvitation(auth, {
+      workflowId: id,
+      token: result.invitation.token,
+      email: dto.email,
+      recipientName: dto.name,
+      galleryTitle: result.workflow.config.title,
+      welcomeMessage: result.workflow.config.welcomeMessage,
+      expiresAt: recipient?.expiresAt ?? result.workflow.config.expiresAt,
+    });
+    return { ...result, invitation: { ...result.invitation, emailed } };
   }
   @Patch('workflows/:id/recipients/:recipientId')
   @ApiOperation({ operationId: 'photographyRecipient' })

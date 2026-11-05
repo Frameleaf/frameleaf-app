@@ -92,6 +92,8 @@ type Recipient = {
   captureIds: string[] | null;
   choices: string[];
   notes: PhotographyChoicesDto['notes'];
+  /** Where the invitation was emailed, when it was. */
+  email?: string;
 };
 type Round = {
   id: string;
@@ -243,6 +245,9 @@ const expired = (at: string | null) => at !== null && Date.parse(at) <= Date.now
 /** Never a real recipient (those are random v4 UUIDs); still a UUID so the response contract keeps `format: uuid`. */
 const PREVIEW_RECIPIENT_ID = '00000000-0000-4000-8000-000000000000';
 const PREVIEW_SESSION_MS = 3_600_000;
+const PROOF_GALLERY_DAYS = 30;
+/** A capture the photographer kept: rated 4 or 5, as Clients' "Selected" filter counts it. */
+const photographerSelected = (capture: { rating: number | null }) => (capture.rating ?? 0) >= 4;
 const PREVIEW_SESSION_LIMIT = 20;
 
 @Injectable()
@@ -291,7 +296,8 @@ export class PhotographyWorkflowService {
         bundles: [],
         terms: '',
         selectionDeadline: null,
-        expiresAt: null,
+        // A new proof gallery's link lasts 30 days from today (approved design, 2026-11-04).
+        expiresAt: new Date(Date.now() + PROOF_GALLERY_DAYS * 86_400_000).toISOString(),
         turnaroundDays: 14,
         proofWatermark: structuredClone(
           selected(studio?.proofWatermarkPresetId) ?? {
@@ -941,6 +947,7 @@ export class PhotographyWorkflowService {
         captureIds: dto.captureIds,
         choices: [],
         notes: [],
+        ...(dto.email && { email: dto.email }),
       });
     });
     return { workflow, invitation: { recipientId, token } };
@@ -1265,7 +1272,9 @@ export class PhotographyWorkflowService {
         bundles: row.value.config.bundles,
         terms: row.value.config.terms,
         selectionDeadline: row.value.config.selectionDeadline,
+        selectionLimit: row.value.config.maxSelections ?? null,
       },
+      welcomeMessage: row.value.config.welcomeMessage ?? '',
     };
   }
   async gallery(id: string, token: string | undefined) {
@@ -1311,9 +1320,15 @@ export class PhotographyWorkflowService {
     )
       throw new ForbiddenException('Photo is unavailable');
   }
+  /** The studio's selection limit (Client workflow › Maximum client selections), when it sets one. */
+  private withinLimit(row: WorkflowRow, captureIds: string[]) {
+    const limit = row.value.config.maxSelections;
+    if (limit && captureIds.length > limit) throw new BadRequestException(`Choose at most ${limit} photographs`);
+  }
   async choices(id: string, token: string | undefined, input: PhotographyChoicesDto) {
     const dto = PhotographyChoicesDto.schema.parse(input);
     return this.guestMutation(id, token, dto.expectedRevision, async (_value, recipient, row) => {
+      this.withinLimit(row, dto.captureIds);
       await this.selection(
         row,
         recipient,
@@ -1337,6 +1352,7 @@ export class PhotographyWorkflowService {
     const dto = PhotographyWorkflowMutationDto.schema.parse(input);
     return this.guestMutation(id, token, dto.expectedRevision, async (value, recipient, row) => {
       if (recipient.choices.length === 0) throw new BadRequestException('Choose photographs first');
+      this.withinLimit(row, recipient.choices);
       if (value.rounds.length >= 2000) throw new ConflictException('Selection round limit reached');
       await this.selection(row, recipient, recipient.choices);
       value.rounds.push({
@@ -1634,8 +1650,10 @@ export class PhotographyWorkflowService {
         { id, ...owner, value, revision: '' },
         value.captures.map((c) => c.id),
       );
+      // A full proof publication holds every eligible capture, or only those the photographer kept.
+      const proofs = value.config.proofCollection === 'selected' ? photographerSelected : () => true;
       const captures = value.captures.filter(
-        (c) => eligible.has(c.id) && (dto.scope === 'all-eligible' || selected.has(c.id)),
+        (c) => eligible.has(c.id) && (dto.scope === 'all-eligible' ? proofs(c) : selected.has(c.id)),
       );
       const studio = (await this.workspace.get(owner.ownerId))?.value.brand;
       const brand = {

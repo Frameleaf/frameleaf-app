@@ -2496,6 +2496,9 @@ export type IntegrityFindingAssetsResponseDto = {
     /** Photos behind the findings, at most 10,000 */
     assetIds: string[];
 };
+export type IntegrityCheckOneResponseDto = {
+    result: IntegrityCheckOneResult;
+};
 export type IntegrityCheckHistoryEntryDto = {
     /** Files it looked at, when counted */
     checked: number | null;
@@ -4932,6 +4935,65 @@ export type AnalyticsNamedCountDto = {
     /** Null for the other and unknown rows */
     name: string | null;
 };
+export type AnalyticsMonthColourDto = {
+    /** Average colour of the photos, as #rrggbb */
+    colour: string;
+    month: number;
+    photos: number;
+};
+export type AnalyticsFarthestDto = {
+    km: number;
+    place: string | null;
+} | null;
+export type AnalyticsMagicPlaceDto = {
+    latitude: number;
+    /** City and country, when known */
+    place: string | null;
+};
+export type AnalyticsFarAndWideDto = {
+    farthest: AnalyticsFarthestDto;
+    northernmost: (AnalyticsMagicPlaceDto) | null;
+    southernmost: (AnalyticsMagicPlaceDto) | null;
+    /** Km between photos taken one after another, all added up */
+    travelledKm: number;
+} | null;
+export type AnalyticsLightDto = {
+    blueHour: number;
+    daylight: number;
+    goldenEvening: number;
+    goldenMorning: number;
+    night: number;
+};
+export type AnalyticsSeasonsDto = {
+    autumn: number;
+    spring: number;
+    summer: number;
+    winter: number;
+};
+export type AnalyticsTagCountDto = {
+    count: number;
+    name: string;
+};
+export type AnalyticsUnderTheHoodDto = {
+    /** Rows in the whole server's database, estimated */
+    databaseRows: number;
+    /** Face embeddings */
+    faceVectors: number;
+    /** Thumbnails, previews and other copies made from the originals */
+    previews: number;
+    /** Smart-search embeddings */
+    searchVectors: number;
+};
+export type AnalyticsMagicDto = {
+    /** Each calendar month's average photo colour, from the thumbnails; months without photos are left out */
+    colourByMonth: AnalyticsMonthColourDto[];
+    farAndWide: AnalyticsFarAndWideDto;
+    light: AnalyticsLightDto;
+    seasons: AnalyticsSeasonsDto;
+    /** Your tags on the most items, at most 8; empty unless the owner reads their own scope */
+    topTags: AnalyticsTagCountDto[];
+    underTheHood: AnalyticsUnderTheHoodDto;
+};
 export type AnalyticsOrientationDto = {
     count: number;
     key: AnalyticsOrientationDtoKey;
@@ -5015,6 +5077,8 @@ export type AnalyticsInsightsDto = {
     lenses: AnalyticsNamedCountDto[];
     /** Photos with a Live Photo motion part */
     livePhotos: number;
+    /** Library magic: colour, light, seasons, tags, places, counts */
+    magic?: AnalyticsMagicDto;
     /** Every bucket; adds up to summary.items. Panorama is 2:1 or wider */
     orientation: AnalyticsOrientationDto[];
     peopleAndPlaces: (AnalyticsPeopleAndPlacesDto) | null;
@@ -10363,12 +10427,14 @@ export type MlProcessingOrderResponseDto = {
     order: MlProcessingSource[];
     /** Whether each place can take work now */
     sources: MlProcessingSourceStatusDto[];
+    whenUnavailable: MlWhenUnavailable;
     /** Workloads with a list of their own */
     workloads: MlWorkloadProcessingOrderDto[];
 };
 export type MlProcessingOrderUpdateDto = {
     /** The places to try, first to last; each of this server, your computers and Frameleaf Cloud once */
     order: MlProcessingSource[];
+    whenUnavailable?: MlWhenUnavailable;
 };
 export type MlWorkloadProcessingOrderUpdateDto = {
     /** The workload's own list, first to last; empty keeps it off; null makes it follow the main order again */
@@ -11311,6 +11377,8 @@ export type PhotographyGalleryDto = {
         currency: string;
         includedCount: number;
         selectionDeadline: string | null;
+        /** The most photographs this client may choose; null for no limit */
+        selectionLimit: number | null;
         terms: string;
     };
     publication: {
@@ -11355,6 +11423,8 @@ export type PhotographyGalleryDto = {
         recipientId: string;
     }[];
     title: string;
+    /** The studio's welcome for this gallery; empty for none */
+    welcomeMessage: string;
 };
 export type PhotographyGuestApprovalDto = {
     approved: boolean;
@@ -11488,6 +11558,8 @@ export type PhotographyStudioPresetsDto = {
             } | null;
             expiresAt: string | null;
             includedCount: number;
+            /** The most photographs a client may choose; null or absent for no limit */
+            maxSelections?: number | null;
             mode: Mode2;
             paymentTiming: PaymentTiming;
             presentation: {
@@ -11510,6 +11582,8 @@ export type PhotographyStudioPresetsDto = {
                 spacing: Spacing;
                 template: Template;
             };
+            /** Which captures a full proof publication includes: every eligible one, or those rated 4 or more */
+            proofCollection?: ProofCollection;
             proofWatermark: {
                 alignment?: Alignment;
                 backing?: boolean;
@@ -11530,6 +11604,11 @@ export type PhotographyStudioPresetsDto = {
                 spacing?: number;
                 text: string;
                 "type"?: Type4;
+            };
+            /** Reminder emails the client should get */
+            reminders?: {
+                paymentAndExpiry: boolean;
+                selection: boolean;
             };
             selectionDeadline: string | null;
             terms: string;
@@ -11556,6 +11635,8 @@ export type PhotographyStudioPresetsDto = {
                 text: string;
                 "type"?: Type4;
             } | null;
+            /** Shown to the client at the top of the gallery */
+            welcomeMessage?: string;
         };
         id: string;
         name: string;
@@ -11621,6 +11702,8 @@ export type PhotographyPresetSaveDto = {
         } | null;
         expiresAt: string | null;
         includedCount: number;
+        /** The most photographs a client may choose; null or absent for no limit */
+        maxSelections?: number | null;
         mode: Mode2;
         paymentTiming: PaymentTiming;
         presentation: {
@@ -11643,6 +11726,8 @@ export type PhotographyPresetSaveDto = {
             spacing: Spacing;
             template: Template;
         };
+        /** Which captures a full proof publication includes: every eligible one, or those rated 4 or more */
+        proofCollection?: ProofCollection;
         proofWatermark: {
             alignment?: Alignment;
             backing?: boolean;
@@ -11663,6 +11748,11 @@ export type PhotographyPresetSaveDto = {
             spacing?: number;
             text: string;
             "type"?: Type6;
+        };
+        /** Reminder emails the client should get */
+        reminders?: {
+            paymentAndExpiry: boolean;
+            selection: boolean;
         };
         selectionDeadline: string | null;
         terms: string;
@@ -11689,6 +11779,8 @@ export type PhotographyPresetSaveDto = {
             text: string;
             "type"?: Type6;
         } | null;
+        /** Shown to the client at the top of the gallery */
+        welcomeMessage?: string;
     };
     expectedRevision: string | null;
     id: string | null;
@@ -11703,8 +11795,10 @@ export type PhotographyWorkspaceDto = {
         client: string;
         coverAssetId: string | null;
         date: string;
+        deliveryTarget?: string | null;
         id: string;
         name: string;
+        notes?: string;
         stage: Stage;
         "type": Type7;
         unavailable: boolean;
@@ -11717,8 +11811,10 @@ export type PhotographyWorkspaceSaveDto = {
         albumId: string | null;
         client: string;
         date: string;
+        deliveryTarget?: string | null;
         id: string;
         name: string;
+        notes?: string;
         stage: Stage;
         "type": Type7;
     }[];
@@ -12175,6 +12271,8 @@ export type PhotographyWorkflowDto = {
         } | null;
         expiresAt: string | null;
         includedCount: number;
+        /** The most photographs a client may choose; null or absent for no limit */
+        maxSelections?: number | null;
         mode: Mode2;
         paymentTiming: PaymentTiming;
         presentation: {
@@ -12197,6 +12295,8 @@ export type PhotographyWorkflowDto = {
             spacing: Spacing;
             template: Template;
         };
+        /** Which captures a full proof publication includes: every eligible one, or those rated 4 or more */
+        proofCollection?: ProofCollection;
         proofWatermark: {
             alignment?: Alignment;
             backing?: boolean;
@@ -12217,6 +12317,11 @@ export type PhotographyWorkflowDto = {
             spacing?: number;
             text: string;
             "type"?: Type10;
+        };
+        /** Reminder emails the client should get */
+        reminders?: {
+            paymentAndExpiry: boolean;
+            selection: boolean;
         };
         selectionDeadline: string | null;
         terms: string;
@@ -12243,6 +12348,8 @@ export type PhotographyWorkflowDto = {
             text: string;
             "type"?: Type10;
         } | null;
+        /** Shown to the client at the top of the gallery */
+        welcomeMessage?: string;
     };
     ordering: Ordering;
     orders: {
@@ -12362,6 +12469,8 @@ export type PhotographyWorkflowDto = {
             } | null;
             expiresAt: string | null;
             includedCount: number;
+            /** The most photographs a client may choose; null or absent for no limit */
+            maxSelections?: number | null;
             mode: Mode2;
             paymentTiming: PaymentTiming;
             presentation: {
@@ -12384,6 +12493,8 @@ export type PhotographyWorkflowDto = {
                 spacing: Spacing;
                 template: Template;
             };
+            /** Which captures a full proof publication includes: every eligible one, or those rated 4 or more */
+            proofCollection?: ProofCollection;
             proofWatermark: {
                 alignment?: Alignment;
                 backing?: boolean;
@@ -12404,6 +12515,11 @@ export type PhotographyWorkflowDto = {
                 spacing?: number;
                 text: string;
                 "type"?: Type12;
+            };
+            /** Reminder emails the client should get */
+            reminders?: {
+                paymentAndExpiry: boolean;
+                selection: boolean;
             };
             selectionDeadline: string | null;
             terms: string;
@@ -12430,6 +12546,8 @@ export type PhotographyWorkflowDto = {
                 text: string;
                 "type"?: Type12;
             } | null;
+            /** Shown to the client at the top of the gallery */
+            welcomeMessage?: string;
         };
         id: string;
         name: string;
@@ -12455,6 +12573,8 @@ export type PhotographyWorkflowDto = {
         canProof: boolean;
         captureIds: string[] | null;
         choices: string[];
+        /** Where the invitation was emailed */
+        email?: string;
         expiresAt: string | null;
         id: string;
         name: string;
@@ -12552,6 +12672,8 @@ export type PhotographyWorkflowDto = {
                 } | null;
                 expiresAt: string | null;
                 includedCount: number;
+                /** The most photographs a client may choose; null or absent for no limit */
+                maxSelections?: number | null;
                 mode: Mode2;
                 paymentTiming: PaymentTiming;
                 presentation: {
@@ -12574,6 +12696,8 @@ export type PhotographyWorkflowDto = {
                     spacing: Spacing;
                     template: Template;
                 };
+                /** Which captures a full proof publication includes: every eligible one, or those rated 4 or more */
+                proofCollection?: ProofCollection;
                 proofWatermark: {
                     alignment?: Alignment;
                     backing?: boolean;
@@ -12594,6 +12718,11 @@ export type PhotographyWorkflowDto = {
                     spacing?: number;
                     text: string;
                     "type"?: Type14;
+                };
+                /** Reminder emails the client should get */
+                reminders?: {
+                    paymentAndExpiry: boolean;
+                    selection: boolean;
                 };
                 selectionDeadline: string | null;
                 terms: string;
@@ -12620,6 +12749,8 @@ export type PhotographyWorkflowDto = {
                     text: string;
                     "type"?: Type14;
                 } | null;
+                /** Shown to the client at the top of the gallery */
+                welcomeMessage?: string;
             };
             id: string;
             name: string;
@@ -12713,6 +12844,8 @@ export type PhotographyWorkflowConfigDto = {
         } | null;
         expiresAt: string | null;
         includedCount: number;
+        /** The most photographs a client may choose; null or absent for no limit */
+        maxSelections?: number | null;
         mode: Mode2;
         paymentTiming: PaymentTiming;
         presentation: {
@@ -12735,6 +12868,8 @@ export type PhotographyWorkflowConfigDto = {
             spacing: Spacing;
             template: Template;
         };
+        /** Which captures a full proof publication includes: every eligible one, or those rated 4 or more */
+        proofCollection?: ProofCollection;
         proofWatermark: {
             alignment?: Alignment;
             backing?: boolean;
@@ -12755,6 +12890,11 @@ export type PhotographyWorkflowConfigDto = {
             spacing?: number;
             text: string;
             "type"?: Type16;
+        };
+        /** Reminder emails the client should get */
+        reminders?: {
+            paymentAndExpiry: boolean;
+            selection: boolean;
         };
         selectionDeadline: string | null;
         terms: string;
@@ -12781,6 +12921,8 @@ export type PhotographyWorkflowConfigDto = {
             text: string;
             "type"?: Type16;
         } | null;
+        /** Shown to the client at the top of the gallery */
+        welcomeMessage?: string;
     };
     expectedRevision: string | null;
 };
@@ -12845,6 +12987,8 @@ export type PhotographyRecipientCreateDto = {
     canDownload: boolean;
     canProof: boolean;
     captureIds: string[] | null;
+    /** When given, the invitation is also emailed there */
+    email?: string;
     expectedRevision: string | null;
     expiresAt: string | null;
     name: string;
@@ -12852,6 +12996,8 @@ export type PhotographyRecipientCreateDto = {
 };
 export type PhotographyInvitationDto = {
     invitation: {
+        /** True when the invitation was queued to the email given */
+        emailed?: boolean;
         recipientId: string;
         token: string;
     };
@@ -12958,6 +13104,8 @@ export type PhotographyInvitationDto = {
             } | null;
             expiresAt: string | null;
             includedCount: number;
+            /** The most photographs a client may choose; null or absent for no limit */
+            maxSelections?: number | null;
             mode: Mode2;
             paymentTiming: PaymentTiming;
             presentation: {
@@ -12980,6 +13128,8 @@ export type PhotographyInvitationDto = {
                 spacing: Spacing;
                 template: Template;
             };
+            /** Which captures a full proof publication includes: every eligible one, or those rated 4 or more */
+            proofCollection?: ProofCollection;
             proofWatermark: {
                 alignment?: Alignment;
                 backing?: boolean;
@@ -13000,6 +13150,11 @@ export type PhotographyInvitationDto = {
                 spacing?: number;
                 text: string;
                 "type"?: Type18;
+            };
+            /** Reminder emails the client should get */
+            reminders?: {
+                paymentAndExpiry: boolean;
+                selection: boolean;
             };
             selectionDeadline: string | null;
             terms: string;
@@ -13026,6 +13181,8 @@ export type PhotographyInvitationDto = {
                 text: string;
                 "type"?: Type18;
             } | null;
+            /** Shown to the client at the top of the gallery */
+            welcomeMessage?: string;
         };
         ordering: Ordering;
         orders: {
@@ -13145,6 +13302,8 @@ export type PhotographyInvitationDto = {
                 } | null;
                 expiresAt: string | null;
                 includedCount: number;
+                /** The most photographs a client may choose; null or absent for no limit */
+                maxSelections?: number | null;
                 mode: Mode2;
                 paymentTiming: PaymentTiming;
                 presentation: {
@@ -13167,6 +13326,8 @@ export type PhotographyInvitationDto = {
                     spacing: Spacing;
                     template: Template;
                 };
+                /** Which captures a full proof publication includes: every eligible one, or those rated 4 or more */
+                proofCollection?: ProofCollection;
                 proofWatermark: {
                     alignment?: Alignment;
                     backing?: boolean;
@@ -13187,6 +13348,11 @@ export type PhotographyInvitationDto = {
                     spacing?: number;
                     text: string;
                     "type"?: Type20;
+                };
+                /** Reminder emails the client should get */
+                reminders?: {
+                    paymentAndExpiry: boolean;
+                    selection: boolean;
                 };
                 selectionDeadline: string | null;
                 terms: string;
@@ -13213,6 +13379,8 @@ export type PhotographyInvitationDto = {
                     text: string;
                     "type"?: Type20;
                 } | null;
+                /** Shown to the client at the top of the gallery */
+                welcomeMessage?: string;
             };
             id: string;
             name: string;
@@ -13238,6 +13406,8 @@ export type PhotographyInvitationDto = {
             canProof: boolean;
             captureIds: string[] | null;
             choices: string[];
+            /** Where the invitation was emailed */
+            email?: string;
             expiresAt: string | null;
             id: string;
             name: string;
@@ -13335,6 +13505,8 @@ export type PhotographyInvitationDto = {
                     } | null;
                     expiresAt: string | null;
                     includedCount: number;
+                    /** The most photographs a client may choose; null or absent for no limit */
+                    maxSelections?: number | null;
                     mode: Mode2;
                     paymentTiming: PaymentTiming;
                     presentation: {
@@ -13357,6 +13529,8 @@ export type PhotographyInvitationDto = {
                         spacing: Spacing;
                         template: Template;
                     };
+                    /** Which captures a full proof publication includes: every eligible one, or those rated 4 or more */
+                    proofCollection?: ProofCollection;
                     proofWatermark: {
                         alignment?: Alignment;
                         backing?: boolean;
@@ -13377,6 +13551,11 @@ export type PhotographyInvitationDto = {
                         spacing?: number;
                         text: string;
                         "type"?: Type22;
+                    };
+                    /** Reminder emails the client should get */
+                    reminders?: {
+                        paymentAndExpiry: boolean;
+                        selection: boolean;
                     };
                     selectionDeadline: string | null;
                     terms: string;
@@ -13403,6 +13582,8 @@ export type PhotographyInvitationDto = {
                         text: string;
                         "type"?: Type22;
                     } | null;
+                    /** Shown to the client at the top of the gallery */
+                    welcomeMessage?: string;
                 };
                 id: string;
                 name: string;
@@ -22003,6 +22184,20 @@ export function getIntegrityFindingAssets({ kind }: {
         kind
     }))}`, {
         ...opts
+    }));
+}
+/**
+ * Check one original file now
+ */
+export function checkIntegrityOne({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: IntegrityCheckOneResponseDto;
+    }>(`/admin/integrity/assets/${encodeURIComponent(id)}/check`, {
+        ...opts,
+        method: "POST"
     }));
 }
 /**
@@ -36692,6 +36887,14 @@ export enum IntegrityFindingKind {
     Missing = "missing",
     Damaged = "damaged"
 }
+export enum IntegrityCheckOneResult {
+    Passed = "passed",
+    Mismatched = "mismatched",
+    Missing = "missing",
+    Unreadable = "unreadable",
+    Encrypted = "encrypted",
+    Unverifiable = "unverifiable"
+}
 export enum IntegrityCheckOutcome {
     Completed = "completed",
     Paused = "paused",
@@ -38640,6 +38843,10 @@ export enum MlProcessingSourceState {
     NeedsPermission = "needs-permission",
     NotSetUp = "not-set-up"
 }
+export enum MlWhenUnavailable {
+    Wait = "wait",
+    Stop = "stop"
+}
 export enum MlRouteOrigin {
     Default = "default",
     Pinned = "pinned",
@@ -38924,6 +39131,10 @@ export enum Font3 {
     Editorial = "editorial",
     Modern = "modern",
     Script = "script"
+}
+export enum ProofCollection {
+    Eligible = "eligible",
+    Selected = "selected"
 }
 export enum Font4 {
     Script = "script",

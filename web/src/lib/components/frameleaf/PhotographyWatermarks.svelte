@@ -12,7 +12,7 @@
   import PhotographyThumb from './PhotographyThumb.svelte';
   import PhotographyWatermarkEditor from './PhotographyWatermarkEditor.svelte';
   import { brandFonts, loadBrand, saveBrand, type Brand, type Branding } from '$lib/frameleaf/photography/api';
-  import { defaultWatermark } from '$lib/frameleaf/photography/workflow-api';
+  import { defaultWatermark, watermarkPreview, type Watermark } from '$lib/frameleaf/photography/workflow-api';
   import { getAssetMediaUrl } from '$lib/utils';
 
   /** `photoId`: one of the photographer's own photos, behind the branding mark's preview. */
@@ -107,11 +107,77 @@
     draft.brand.watermarkPresets = draft.brand.watermarkPresets!.filter((item) => item.id !== active);
     active = draft.brand.watermarkPresets[0]?.id ?? '';
   }
-  onMount(() => {
-    void reload();
+  /** "See it on the photograph": each use with the mark it gets today (approved design, 2026-11-04). */
+  type Use = 'proof' | 'web' | 'clean';
+  let use = $state<Use>('proof');
+  let seen = $state('');
+  let seeing = $state(false);
+  let seeGeneration = 0;
+  const seeDetail = {
+    proof: 'frameleaf_photography_see_proof_detail',
+    web: 'frameleaf_photography_see_web_detail',
+    clean: 'frameleaf_photography_see_clean_detail',
+  } as const;
+  function markFor(which: Use): Watermark | null {
+    if (!draft) {
+      return null;
+    }
+    const role = (
+      { proof: 'proofWatermarkPresetId', web: 'webWatermarkPresetId', clean: 'exportWatermarkPresetId' } as const
+    )[which];
+    const chosen = draft.brand.watermarkPresets?.find((item) => item.id === draft!.brand[role]);
+    if (chosen) {
+      return $state.snapshot(chosen.watermark);
+    }
+    if (which === 'clean') {
+      return null;
+    }
+    // Without a preset, proofs and web previews carry the branding mark.
+    const { name, logoInitials, watermarkColor, watermarkOpacity, watermarkPosition, watermarkSize } = draft.brand;
+    return {
+      ...defaultWatermark(logoInitials || name),
+      color: watermarkColor,
+      opacity: watermarkOpacity,
+      position: watermarkPosition,
+      size: watermarkSize,
+    };
+  }
+  async function see(which: Use) {
+    use = which;
+    const current = ++seeGeneration;
+    if (seen) {
+      URL.revokeObjectURL(seen);
+    }
+    seen = '';
+    const mark = markFor(which);
+    if (!mark) {
+      return;
+    }
+    seeing = true;
+    try {
+      const blob = await watermarkPreview(mark, 'landscape', 'light');
+      if (!disposed && current === seeGeneration) {
+        seen = URL.createObjectURL(blob);
+      }
+    } catch (error_) {
+      if (!disposed && current === seeGeneration) {
+        error = $t(photographyErrorKey(error_));
+      }
+    } finally {
+      if (current === seeGeneration) {
+        seeing = false;
+      }
+    }
+  }
+  onMount(async () => {
+    await reload();
+    void see('proof');
   });
   onDestroy(() => {
     disposed = true;
+    if (seen) {
+      URL.revokeObjectURL(seen);
+    }
   });
 </script>
 
@@ -156,6 +222,31 @@
         >{#key preset.id}<PhotographyWatermarkEditor bind:value={preset.watermark} disabled={busy} />{/key}{:else}<p>
           {$t('frameleaf_photography_create_preset_hint')}
         </p>{/if}
+    </section>
+    <section class="phd-card phw-see">
+      <div class="phd-row">
+        <div>
+          <h3>{$t('frameleaf_photography_see_on_photo')}</h3>
+          <p>{$t(seeDetail[use])}</p>
+        </div>
+        <Button disabled={seeing} onclick={() => see(use)}>{$t('frameleaf_photography_wm_refresh')}</Button>
+      </div>
+      <div class="phw-see-tabs" role="group" aria-label={$t('frameleaf_photography_see_on_photo')}>
+        {#each [['proof', 'frameleaf_photography_see_proof'], ['web', 'frameleaf_photography_see_web'], ['clean', 'frameleaf_photography_see_clean']] as const as [id, label] (id)}<button
+            type="button"
+            aria-pressed={use === id}
+            onclick={() => see(id)}>{$t(label)}</button
+          >{/each}
+      </div>
+      {#if seen}<img
+          src={seen}
+          alt={$t('frameleaf_photography_wm_preview_alt')}
+        />{:else if use === 'clean' && !markFor('clean')}<div class="phw-watermark-guide" class:has-photo={!!photoId}>
+          {#if photoId}<PhotographyThumb
+              src={getAssetMediaUrl({ id: photoId, size: AssetMediaSize.Preview })}
+              loading="eager"
+            />{:else}<span class="phw-guide-label">{$t('frameleaf_photography_see_clean_detail')}</span>{/if}
+        </div>{:else}<p role="status">{$t('frameleaf_photography_wm_preparing_preview')}</p>{/if}
     </section>
     <section class="phd-card">
       <h3>{$t('frameleaf_photography_defaults_title')}</h3>

@@ -5,6 +5,7 @@ import type { NextFunction, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
+  IntegrityCheckOneResponseDto,
   IntegrityCheckRunsResponseDto,
   IntegrityFindingAssetsDto,
   IntegrityFindingAssetsResponseDto,
@@ -20,7 +21,7 @@ import { Auth, Authenticated, FileResponse, OriginalTransfer } from 'src/middlew
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { IntegrityService } from 'src/services/integrity.service.js';
 import { sendFile } from 'src/utils/file.js';
-import { UUIDv7ParamDto } from 'src/validation.js';
+import { UUIDParamDto, UUIDv7ParamDto } from 'src/validation.js';
 
 @ApiTags(ApiTag.Maintenance)
 @Controller('admin/integrity')
@@ -62,6 +63,19 @@ export class IntegrityAdminController {
   @Authenticated({ permission: Permission.Maintenance, admin: true })
   getIntegrityOverview(): Promise<IntegrityOverviewResponseDto> {
     return this.service.getIntegrityOverview();
+  }
+
+  @Post('assets/:id/check')
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Check one original file now',
+    description:
+      "Read one photo's original and compare it with its checksum, now, as the overnight damage check would. A damaged file is listed in Library care; a file that passes leaves the list.",
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+  @Authenticated({ permission: Permission.Maintenance, admin: true })
+  checkIntegrityOne(@Param() { id }: UUIDParamDto): Promise<IntegrityCheckOneResponseDto> {
+    return this.service.checkOne(id);
   }
 
   @Post('stop')

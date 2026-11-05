@@ -3,6 +3,7 @@ import {
   CloudRouteMode,
   MediaOperationKind,
   MlDestinationKind,
+  MlWhenUnavailable,
   MlProcessingSource,
   MlProcessingSourceState,
   MlWorkload,
@@ -280,9 +281,19 @@ describe('Where work runs (FL-364)', () => {
     const order = [MlProcessingSource.Local, MlProcessingSource.Desktops, MlProcessingSource.Cloud];
 
     beforeEach(() => {
-      sdkMock.getMlProcessingOrder.mockResolvedValue({ order, workloads: [], sources });
+      sdkMock.getMlProcessingOrder.mockResolvedValue({
+        order,
+        workloads: [],
+        sources,
+        whenUnavailable: MlWhenUnavailable.Wait,
+      });
       sdkMock.setMlProcessingOrder.mockImplementation(({ mlProcessingOrderUpdateDto }) =>
-        Promise.resolve({ order: mlProcessingOrderUpdateDto.order, workloads: [], sources }),
+        Promise.resolve({
+          order: mlProcessingOrderUpdateDto.order,
+          workloads: [],
+          sources,
+          whenUnavailable: mlProcessingOrderUpdateDto.whenUnavailable ?? MlWhenUnavailable.Wait,
+        }),
       );
       sdkMock.getMlWorkloadRoutes.mockResolvedValue({
         routes: Object.entries(HOME).map(([workload, destinationId]) => ({
@@ -326,6 +337,31 @@ describe('Where work runs (FL-364)', () => {
         }),
       );
       expect(sdkMock.setMlWorkloadRoute).not.toHaveBeenCalled();
+    });
+
+    it('saves what happens while a computer at home is not answering', async () => {
+      sdkMock.listMlDestinations.mockResolvedValue([server, office] as never);
+      sdkMock.getMlProcessingOrder.mockResolvedValue({
+        order,
+        workloads: [],
+        sources,
+        whenUnavailable: MlWhenUnavailable.Wait,
+      });
+      sdkMock.getWorkerInventory.mockResolvedValue({
+        entries: [entry({}), entry({ id: 'office', name: 'Office PC', kind: 'lan' })],
+        machineLearningEnabled: true,
+      } as never);
+      render(WhereWorkRuns, { part: 'everyday' });
+
+      const group = await screen.findByRole('group', { name: 'When a computer at home isn’t answering' });
+      expect(screen.getByText(/Waits, and starts when the computer is back/)).toBeInTheDocument();
+      await fireEvent.click(within(group).getByRole('button', { name: 'Stop and tell me' }));
+      await fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+      await waitFor(() =>
+        expect(sdkMock.setMlProcessingOrder).toHaveBeenCalledWith({
+          mlProcessingOrderUpdateDto: { order, whenUnavailable: MlWhenUnavailable.Stop },
+        }),
+      );
     });
   });
 });

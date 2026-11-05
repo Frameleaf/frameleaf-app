@@ -16,6 +16,7 @@
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
   import Pill from '$lib/components/frameleaf/settings/kit/Pill.svelte';
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
+  import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import { OpenQueryParam } from '$lib/constants';
   import { isIndexWork } from '$lib/frameleaf/cloud-ml';
@@ -65,6 +66,7 @@
     listMlDestinations,
     MlDestinationKind,
     setMlProcessingOrder,
+    MlWhenUnavailable,
     setMlWorkloadProcessingOrder,
     setMlWorkloadRoute,
     StartWith,
@@ -174,12 +176,18 @@
   const move = (index: number, step: -1 | 1) => (pickedOrder = moveSource(order, index, step));
   const sourceName = (source: MlProcessingSource) => $t(SOURCE_NAME_KEY[source]);
 
-  const dirty = $derived(hasWrites(writes) || suggestChanged || orderChanged);
+  // Approved design (2026-11-04): what work set to run on a computer at home does while it isn't answering.
+  let pickedWhen = $state<MlWhenUnavailable>();
+  const whenUnavailable = $derived(pickedWhen ?? processing?.whenUnavailable ?? MlWhenUnavailable.Wait);
+  const whenChanged = $derived(!!processing && pickedWhen !== undefined && pickedWhen !== processing.whenUnavailable);
+
+  const dirty = $derived(hasWrites(writes) || suggestChanged || orderChanged || whenChanged);
 
   const undo = () => {
     picked = {};
     pickedFollowers = {};
     pickedOrder = undefined;
+    pickedWhen = undefined;
     suggest = undefined;
     failed = '';
   };
@@ -189,8 +197,13 @@
     said = '';
     failed = '';
     try {
-      if (orderChanged && pickedOrder) {
-        processing = await setMlProcessingOrder({ mlProcessingOrderUpdateDto: { order: pickedOrder } });
+      if ((orderChanged && pickedOrder) || whenChanged) {
+        processing = await setMlProcessingOrder({
+          mlProcessingOrderUpdateDto: {
+            order: pickedOrder ?? processing!.order,
+            ...(whenChanged && { whenUnavailable }),
+          },
+        });
       }
       for (const { workload, destinationId } of writes.routes) {
         ({ routes } = await setMlWorkloadRoute({ workload, mlWorkloadRouteUpdateDto: { destinationId } }));
@@ -579,6 +592,29 @@
 
         {@render saveBar()}
       </Section>
+      {#if processing && helpers.length > 0}
+        <Section title={$t('frameleaf_workruns_away_title')}>
+          <Row
+            label={$t('frameleaf_workruns_away_label')}
+            help={$t(
+              whenUnavailable === MlWhenUnavailable.Wait
+                ? 'frameleaf_workruns_away_wait_help'
+                : 'frameleaf_workruns_away_stop_help',
+            )}
+          >
+            <SegmentedControl
+              label={$t('frameleaf_workruns_away_title')}
+              options={[
+                { value: MlWhenUnavailable.Wait, label: $t('frameleaf_workruns_away_wait') },
+                { value: MlWhenUnavailable.Stop, label: $t('frameleaf_workruns_away_stop') },
+              ]}
+              value={whenUnavailable}
+              disabled={locked || saving}
+              onChange={(value) => (pickedWhen = value as MlWhenUnavailable)}
+            />
+          </Row>
+        </Section>
+      {/if}
     {/if}
 
     {#if part !== 'everyday' && (followerChoices('pets', facts).length > 3 || followerChoices('creative', facts).length > 3 || follower('pets') !== SAME || follower('creative') !== SAME) && (Object.keys(FOLLOWERS) as Follower[]).some((id) => followerChoices(id, facts).length > 0)}

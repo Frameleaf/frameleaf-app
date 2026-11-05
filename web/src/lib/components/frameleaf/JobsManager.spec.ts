@@ -60,6 +60,9 @@ vi.mock('@frameleaf/sdk', async (importOriginal) => ({
   getMlWorkloadRoutes: vi.fn().mockResolvedValue({ routes: [] }),
   startQueueJob: vi.fn(),
   runQueueOnOne: vi.fn(),
+  searchAssets: vi.fn().mockResolvedValue({
+    assets: { items: [{ id: '9a1d7c6e-2b0f-4c55-9b0e-6b8f2c1c1a02', originalFileName: 'IMG_7.jpg', type: 'IMAGE' }] },
+  }),
   searchUsersAdmin: vi.fn(),
   getQueueOwnerStatistics: vi.fn(),
   triggerImageDescriptionRequeue: vi.fn(),
@@ -740,18 +743,15 @@ describe('One job at a time (approved design, 2026-11-04)', () => {
     );
   });
 
-  it('runs a task on one item from a pasted link', async () => {
+  it('runs a task on one item picked from the library', async () => {
     at('&queue=thumbnail-generation');
     vi.mocked(runQueueOnOne).mockResolvedValue(undefined as never);
     render(JobsManager);
 
     await fireEvent.click(screen.getByRole('button', { name: 'Run on one item…' }));
     const dialog = await screen.findByRole('dialog', { name: 'Run on one item' });
-    const field = within(dialog).getByRole('textbox', { name: 'Link to the photo or video, or its ID' });
-    await fireEvent.input(field, {
-      target: { value: 'https://photos.example.test/photos/9a1d7c6e-2b0f-4c55-9b0e-6b8f2c1c1a02' },
-    });
-    await fireEvent.click(within(dialog).getByRole('button', { name: 'Start now' }));
+    await fireEvent.click(await within(dialog).findByRole('radio', { name: /IMG_7.jpg/ }));
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Start now IMG_7.jpg' }));
     await waitFor(() =>
       expect(runQueueOnOne).toHaveBeenCalledWith({
         name: QueueName.ThumbnailGeneration,

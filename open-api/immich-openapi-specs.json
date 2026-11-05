@@ -6420,6 +6420,64 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/integrity/assets/{id}/check": {
+      "post": {
+        "description": "Read one photo's original and compare it with its checksum, now, as the overnight damage check would. A damaged file is listed in Library care; a file that passes leaves the list.",
+        "operationId": "checkIntegrityOne",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrityCheckOneResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Check one original file now",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/integrity/overview": {
       "get": {
         "description": "One count per kind of problem across the file checks and the Library care scanner (a photo both report is counted once), the folders of originals that cannot be reached, the checks running now and the most recent checks.",
@@ -68579,6 +68637,64 @@
         ],
         "type": "object"
       },
+      "AnalyticsFarAndWideDto": {
+        "description": "Null unless the owner reads their own scope and some items have a place",
+        "nullable": true,
+        "properties": {
+          "farthest": {
+            "$ref": "#/components/schemas/AnalyticsFarthestDto"
+          },
+          "northernmost": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AnalyticsMagicPlaceDto"
+              }
+            ],
+            "nullable": true
+          },
+          "southernmost": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AnalyticsMagicPlaceDto"
+              }
+            ],
+            "nullable": true
+          },
+          "travelledKm": {
+            "description": "Km between photos taken one after another, all added up",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "farthest",
+          "northernmost",
+          "southernmost",
+          "travelledKm"
+        ],
+        "type": "object"
+      },
+      "AnalyticsFarthestDto": {
+        "description": "The photo taken farthest from where most are taken",
+        "nullable": true,
+        "properties": {
+          "km": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "place": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "km",
+          "place"
+        ],
+        "type": "object"
+      },
       "AnalyticsFocalLengthDto": {
         "description": "Items per recorded focal length (mm)",
         "properties": {
@@ -68778,6 +68894,10 @@
             "minimum": 0,
             "type": "integer"
           },
+          "magic": {
+            "$ref": "#/components/schemas/AnalyticsMagicDto",
+            "description": "Library magic: colour, light, seasons, tags, places, counts"
+          },
           "orientation": {
             "description": "Every bucket; adds up to summary.items. Panorama is 2:1 or wider",
             "items": {
@@ -68855,6 +68975,44 @@
         ],
         "type": "object"
       },
+      "AnalyticsLightDto": {
+        "description": "Photos with a place and a time, by how high the sun stood there then (golden hour: −4° to 6°)",
+        "properties": {
+          "blueHour": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "daylight": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "goldenEvening": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "goldenMorning": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "night": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "blueHour",
+          "daylight",
+          "goldenEvening",
+          "goldenMorning",
+          "night"
+        ],
+        "type": "object"
+      },
       "AnalyticsLongestVideoDto": {
         "properties": {
           "durationMs": {
@@ -68871,6 +69029,63 @@
         "required": [
           "durationMs",
           "name"
+        ],
+        "type": "object"
+      },
+      "AnalyticsMagicDto": {
+        "properties": {
+          "colourByMonth": {
+            "description": "Each calendar month's average photo colour, from the thumbnails; months without photos are left out",
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsMonthColourDto"
+            },
+            "type": "array"
+          },
+          "farAndWide": {
+            "$ref": "#/components/schemas/AnalyticsFarAndWideDto"
+          },
+          "light": {
+            "$ref": "#/components/schemas/AnalyticsLightDto"
+          },
+          "seasons": {
+            "$ref": "#/components/schemas/AnalyticsSeasonsDto"
+          },
+          "topTags": {
+            "description": "Your tags on the most items, at most 8; empty unless the owner reads their own scope",
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsTagCountDto"
+            },
+            "type": "array"
+          },
+          "underTheHood": {
+            "$ref": "#/components/schemas/AnalyticsUnderTheHoodDto"
+          }
+        },
+        "required": [
+          "colourByMonth",
+          "farAndWide",
+          "light",
+          "seasons",
+          "topTags",
+          "underTheHood"
+        ],
+        "type": "object"
+      },
+      "AnalyticsMagicPlaceDto": {
+        "properties": {
+          "latitude": {
+            "format": "double",
+            "type": "number"
+          },
+          "place": {
+            "description": "City and country, when known",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "latitude",
+          "place"
         ],
         "type": "object"
       },
@@ -68920,6 +69135,31 @@
           "checksum"
         ],
         "type": "string"
+      },
+      "AnalyticsMonthColourDto": {
+        "properties": {
+          "colour": {
+            "description": "Average colour of the photos, as #rrggbb",
+            "pattern": "^#[0-9a-f]{6}$",
+            "type": "string"
+          },
+          "month": {
+            "maximum": 12,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "photos": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "colour",
+          "month",
+          "photos"
+        ],
+        "type": "object"
       },
       "AnalyticsNamedCountDto": {
         "properties": {
@@ -69443,6 +69683,38 @@
         ],
         "type": "object"
       },
+      "AnalyticsSeasonsDto": {
+        "description": "Items by the season where they were taken; items without a place follow the library's hemisphere",
+        "properties": {
+          "autumn": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "spring": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "summer": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "winter": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "autumn",
+          "spring",
+          "summer",
+          "winter"
+        ],
+        "type": "object"
+      },
       "AnalyticsSeriesDefinitionDto": {
         "properties": {
           "available": {
@@ -69638,6 +69910,58 @@
           "uploadedLogicalBytes",
           "uploadedPhysicalBytes",
           "videos"
+        ],
+        "type": "object"
+      },
+      "AnalyticsTagCountDto": {
+        "properties": {
+          "count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "name"
+        ],
+        "type": "object"
+      },
+      "AnalyticsUnderTheHoodDto": {
+        "properties": {
+          "databaseRows": {
+            "description": "Rows in the whole server's database, estimated",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "faceVectors": {
+            "description": "Face embeddings",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "previews": {
+            "description": "Thumbnails, previews and other copies made from the originals",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "searchVectors": {
+            "description": "Smart-search embeddings",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "databaseRows",
+          "faceVectors",
+          "previews",
+          "searchVectors"
         ],
         "type": "object"
       },
@@ -96423,6 +96747,29 @@
         ],
         "type": "object"
       },
+      "IntegrityCheckOneResponseDto": {
+        "properties": {
+          "result": {
+            "$ref": "#/components/schemas/IntegrityCheckOneResult"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "type": "object"
+      },
+      "IntegrityCheckOneResult": {
+        "description": "passed: matches its checksum; mismatched: damaged; missing or unreadable: the file could not be read; encrypted: a Locked file, intact by its own seal; unverifiable: no checksum to compare",
+        "enum": [
+          "passed",
+          "mismatched",
+          "missing",
+          "unreadable",
+          "encrypted",
+          "unverifiable"
+        ],
+        "type": "string"
+      },
       "IntegrityCheckOutcome": {
         "description": "completed: it looked at everything; paused: the damage check reached its nightly limit and carries on next night; stopped: an administrator stopped it",
         "enum": [
@@ -106689,6 +107036,9 @@
             },
             "type": "array"
           },
+          "whenUnavailable": {
+            "$ref": "#/components/schemas/MlWhenUnavailable"
+          },
           "workloads": {
             "description": "Workloads with a list of their own",
             "items": {
@@ -106700,6 +107050,7 @@
         "required": [
           "order",
           "sources",
+          "whenUnavailable",
           "workloads"
         ],
         "type": "object"
@@ -106713,6 +107064,9 @@
             },
             "maxItems": 3,
             "type": "array"
+          },
+          "whenUnavailable": {
+            "$ref": "#/components/schemas/MlWhenUnavailable"
           }
         },
         "required": [
@@ -106872,6 +107226,14 @@
           "windowDays"
         ],
         "type": "object"
+      },
+      "MlWhenUnavailable": {
+        "description": "When a computer at home isn't answering: wait, and start when it is back; or stop, so its work can be sent elsewhere. Administrators are told either way.",
+        "enum": [
+          "wait",
+          "stop"
+        ],
+        "type": "string"
       },
       "MlWorkerAcceleration": {
         "description": "Acceleration a worker reported on its last check",
@@ -112468,6 +112830,13 @@
                 "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
                 "type": "string"
               },
+              "selectionLimit": {
+                "description": "The most photographs this client may choose; null for no limit",
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "nullable": true,
+                "type": "integer"
+              },
               "terms": {
                 "type": "string"
               }
@@ -112479,7 +112848,8 @@
               "collectionPrice",
               "bundles",
               "terms",
-              "selectionDeadline"
+              "selectionDeadline",
+              "selectionLimit"
             ],
             "type": "object"
           },
@@ -112713,6 +113083,10 @@
           },
           "title": {
             "type": "string"
+          },
+          "welcomeMessage": {
+            "description": "The studio's welcome for this gallery; empty for none",
+            "type": "string"
           }
         },
         "required": [
@@ -112734,7 +113108,8 @@
           "recipient",
           "revision",
           "rounds",
-          "title"
+          "title",
+          "welcomeMessage"
         ],
         "type": "object"
       },
@@ -112957,6 +113332,10 @@
         "properties": {
           "invitation": {
             "properties": {
+              "emailed": {
+                "description": "True when the invitation was queued to the email given",
+                "type": "boolean"
+              },
               "recipientId": {
                 "format": "uuid",
                 "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
@@ -113605,6 +113984,13 @@
                     "minimum": 0,
                     "type": "integer"
                   },
+                  "maxSelections": {
+                    "description": "The most photographs a client may choose; null or absent for no limit",
+                    "maximum": 10000,
+                    "minimum": 1,
+                    "nullable": true,
+                    "type": "integer"
+                  },
                   "mode": {
                     "enum": [
                       "edited-delivery",
@@ -113759,6 +114145,14 @@
                     ],
                     "type": "object"
                   },
+                  "proofCollection": {
+                    "description": "Which captures a full proof publication includes: every eligible one, or those rated 4 or more",
+                    "enum": [
+                      "eligible",
+                      "selected"
+                    ],
+                    "type": "string"
+                  },
                   "proofWatermark": {
                     "additionalProperties": false,
                     "properties": {
@@ -113898,6 +114292,23 @@
                     },
                     "required": [
                       "text"
+                    ],
+                    "type": "object"
+                  },
+                  "reminders": {
+                    "additionalProperties": false,
+                    "description": "Reminder emails the client should get",
+                    "properties": {
+                      "paymentAndExpiry": {
+                        "type": "boolean"
+                      },
+                      "selection": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "selection",
+                      "paymentAndExpiry"
                     ],
                     "type": "object"
                   },
@@ -114063,6 +114474,11 @@
                       "text"
                     ],
                     "type": "object"
+                  },
+                  "welcomeMessage": {
+                    "description": "Shown to the client at the top of the gallery",
+                    "maxLength": 2000,
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -114806,6 +115222,13 @@
                           "minimum": 0,
                           "type": "integer"
                         },
+                        "maxSelections": {
+                          "description": "The most photographs a client may choose; null or absent for no limit",
+                          "maximum": 10000,
+                          "minimum": 1,
+                          "nullable": true,
+                          "type": "integer"
+                        },
                         "mode": {
                           "enum": [
                             "edited-delivery",
@@ -114960,6 +115383,14 @@
                           ],
                           "type": "object"
                         },
+                        "proofCollection": {
+                          "description": "Which captures a full proof publication includes: every eligible one, or those rated 4 or more",
+                          "enum": [
+                            "eligible",
+                            "selected"
+                          ],
+                          "type": "string"
+                        },
                         "proofWatermark": {
                           "additionalProperties": false,
                           "properties": {
@@ -115099,6 +115530,23 @@
                           },
                           "required": [
                             "text"
+                          ],
+                          "type": "object"
+                        },
+                        "reminders": {
+                          "additionalProperties": false,
+                          "description": "Reminder emails the client should get",
+                          "properties": {
+                            "paymentAndExpiry": {
+                              "type": "boolean"
+                            },
+                            "selection": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "selection",
+                            "paymentAndExpiry"
                           ],
                           "type": "object"
                         },
@@ -115264,6 +115712,11 @@
                             "text"
                           ],
                           "type": "object"
+                        },
+                        "welcomeMessage": {
+                          "description": "Shown to the client at the top of the gallery",
+                          "maxLength": 2000,
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -115420,6 +115873,10 @@
                       },
                       "maxItems": 10000,
                       "type": "array"
+                    },
+                    "email": {
+                      "description": "Where the invitation was emailed",
+                      "type": "string"
                     },
                     "expiresAt": {
                       "format": "date-time",
@@ -116022,6 +116479,13 @@
                               "minimum": 0,
                               "type": "integer"
                             },
+                            "maxSelections": {
+                              "description": "The most photographs a client may choose; null or absent for no limit",
+                              "maximum": 10000,
+                              "minimum": 1,
+                              "nullable": true,
+                              "type": "integer"
+                            },
                             "mode": {
                               "enum": [
                                 "edited-delivery",
@@ -116176,6 +116640,14 @@
                               ],
                               "type": "object"
                             },
+                            "proofCollection": {
+                              "description": "Which captures a full proof publication includes: every eligible one, or those rated 4 or more",
+                              "enum": [
+                                "eligible",
+                                "selected"
+                              ],
+                              "type": "string"
+                            },
                             "proofWatermark": {
                               "additionalProperties": false,
                               "properties": {
@@ -116315,6 +116787,23 @@
                               },
                               "required": [
                                 "text"
+                              ],
+                              "type": "object"
+                            },
+                            "reminders": {
+                              "additionalProperties": false,
+                              "description": "Reminder emails the client should get",
+                              "properties": {
+                                "paymentAndExpiry": {
+                                  "type": "boolean"
+                                },
+                                "selection": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "selection",
+                                "paymentAndExpiry"
                               ],
                               "type": "object"
                             },
@@ -116480,6 +116969,11 @@
                                 "text"
                               ],
                               "type": "object"
+                            },
+                            "welcomeMessage": {
+                              "description": "Shown to the client at the top of the gallery",
+                              "maxLength": 2000,
+                              "type": "string"
                             }
                           },
                           "required": [
@@ -117399,6 +117893,13 @@
                 "minimum": 0,
                 "type": "integer"
               },
+              "maxSelections": {
+                "description": "The most photographs a client may choose; null or absent for no limit",
+                "maximum": 10000,
+                "minimum": 1,
+                "nullable": true,
+                "type": "integer"
+              },
               "mode": {
                 "enum": [
                   "edited-delivery",
@@ -117553,6 +118054,14 @@
                 ],
                 "type": "object"
               },
+              "proofCollection": {
+                "description": "Which captures a full proof publication includes: every eligible one, or those rated 4 or more",
+                "enum": [
+                  "eligible",
+                  "selected"
+                ],
+                "type": "string"
+              },
               "proofWatermark": {
                 "additionalProperties": false,
                 "properties": {
@@ -117692,6 +118201,23 @@
                 },
                 "required": [
                   "text"
+                ],
+                "type": "object"
+              },
+              "reminders": {
+                "additionalProperties": false,
+                "description": "Reminder emails the client should get",
+                "properties": {
+                  "paymentAndExpiry": {
+                    "type": "boolean"
+                  },
+                  "selection": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "selection",
+                  "paymentAndExpiry"
                 ],
                 "type": "object"
               },
@@ -117857,6 +118383,11 @@
                   "text"
                 ],
                 "type": "object"
+              },
+              "welcomeMessage": {
+                "description": "Shown to the client at the top of the gallery",
+                "maxLength": 2000,
+                "type": "string"
               }
             },
             "required": [
@@ -118278,6 +118809,13 @@
             "maxItems": 10000,
             "nullable": true,
             "type": "array"
+          },
+          "email": {
+            "description": "When given, the invitation is also emailed there",
+            "format": "email",
+            "maxLength": 254,
+            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$",
+            "type": "string"
           },
           "expectedRevision": {
             "format": "uuid",
@@ -119531,6 +120069,13 @@
                       "minimum": 0,
                       "type": "integer"
                     },
+                    "maxSelections": {
+                      "description": "The most photographs a client may choose; null or absent for no limit",
+                      "maximum": 10000,
+                      "minimum": 1,
+                      "nullable": true,
+                      "type": "integer"
+                    },
                     "mode": {
                       "enum": [
                         "edited-delivery",
@@ -119685,6 +120230,14 @@
                       ],
                       "type": "object"
                     },
+                    "proofCollection": {
+                      "description": "Which captures a full proof publication includes: every eligible one, or those rated 4 or more",
+                      "enum": [
+                        "eligible",
+                        "selected"
+                      ],
+                      "type": "string"
+                    },
                     "proofWatermark": {
                       "additionalProperties": false,
                       "properties": {
@@ -119824,6 +120377,23 @@
                       },
                       "required": [
                         "text"
+                      ],
+                      "type": "object"
+                    },
+                    "reminders": {
+                      "additionalProperties": false,
+                      "description": "Reminder emails the client should get",
+                      "properties": {
+                        "paymentAndExpiry": {
+                          "type": "boolean"
+                        },
+                        "selection": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "selection",
+                        "paymentAndExpiry"
                       ],
                       "type": "object"
                     },
@@ -119989,6 +120559,11 @@
                         "text"
                       ],
                       "type": "object"
+                    },
+                    "welcomeMessage": {
+                      "description": "Shown to the client at the top of the gallery",
+                      "maxLength": 2000,
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -120424,6 +120999,13 @@
                 "minimum": 0,
                 "type": "integer"
               },
+              "maxSelections": {
+                "description": "The most photographs a client may choose; null or absent for no limit",
+                "maximum": 10000,
+                "minimum": 1,
+                "nullable": true,
+                "type": "integer"
+              },
               "mode": {
                 "enum": [
                   "edited-delivery",
@@ -120578,6 +121160,14 @@
                 ],
                 "type": "object"
               },
+              "proofCollection": {
+                "description": "Which captures a full proof publication includes: every eligible one, or those rated 4 or more",
+                "enum": [
+                  "eligible",
+                  "selected"
+                ],
+                "type": "string"
+              },
               "proofWatermark": {
                 "additionalProperties": false,
                 "properties": {
@@ -120717,6 +121307,23 @@
                 },
                 "required": [
                   "text"
+                ],
+                "type": "object"
+              },
+              "reminders": {
+                "additionalProperties": false,
+                "description": "Reminder emails the client should get",
+                "properties": {
+                  "paymentAndExpiry": {
+                    "type": "boolean"
+                  },
+                  "selection": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "selection",
+                  "paymentAndExpiry"
                 ],
                 "type": "object"
               },
@@ -120882,6 +121489,11 @@
                   "text"
                 ],
                 "type": "object"
+              },
+              "welcomeMessage": {
+                "description": "Shown to the client at the top of the gallery",
+                "maxLength": 2000,
+                "type": "string"
               }
             },
             "required": [
@@ -121550,6 +122162,13 @@
                 "minimum": 0,
                 "type": "integer"
               },
+              "maxSelections": {
+                "description": "The most photographs a client may choose; null or absent for no limit",
+                "maximum": 10000,
+                "minimum": 1,
+                "nullable": true,
+                "type": "integer"
+              },
               "mode": {
                 "enum": [
                   "edited-delivery",
@@ -121704,6 +122323,14 @@
                 ],
                 "type": "object"
               },
+              "proofCollection": {
+                "description": "Which captures a full proof publication includes: every eligible one, or those rated 4 or more",
+                "enum": [
+                  "eligible",
+                  "selected"
+                ],
+                "type": "string"
+              },
               "proofWatermark": {
                 "additionalProperties": false,
                 "properties": {
@@ -121843,6 +122470,23 @@
                 },
                 "required": [
                   "text"
+                ],
+                "type": "object"
+              },
+              "reminders": {
+                "additionalProperties": false,
+                "description": "Reminder emails the client should get",
+                "properties": {
+                  "paymentAndExpiry": {
+                    "type": "boolean"
+                  },
+                  "selection": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "selection",
+                  "paymentAndExpiry"
                 ],
                 "type": "object"
               },
@@ -122008,6 +122652,11 @@
                   "text"
                 ],
                 "type": "object"
+              },
+              "welcomeMessage": {
+                "description": "Shown to the client at the top of the gallery",
+                "maxLength": 2000,
+                "type": "string"
               }
             },
             "required": [
@@ -122751,6 +123400,13 @@
                       "minimum": 0,
                       "type": "integer"
                     },
+                    "maxSelections": {
+                      "description": "The most photographs a client may choose; null or absent for no limit",
+                      "maximum": 10000,
+                      "minimum": 1,
+                      "nullable": true,
+                      "type": "integer"
+                    },
                     "mode": {
                       "enum": [
                         "edited-delivery",
@@ -122905,6 +123561,14 @@
                       ],
                       "type": "object"
                     },
+                    "proofCollection": {
+                      "description": "Which captures a full proof publication includes: every eligible one, or those rated 4 or more",
+                      "enum": [
+                        "eligible",
+                        "selected"
+                      ],
+                      "type": "string"
+                    },
                     "proofWatermark": {
                       "additionalProperties": false,
                       "properties": {
@@ -123044,6 +123708,23 @@
                       },
                       "required": [
                         "text"
+                      ],
+                      "type": "object"
+                    },
+                    "reminders": {
+                      "additionalProperties": false,
+                      "description": "Reminder emails the client should get",
+                      "properties": {
+                        "paymentAndExpiry": {
+                          "type": "boolean"
+                        },
+                        "selection": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "selection",
+                        "paymentAndExpiry"
                       ],
                       "type": "object"
                     },
@@ -123209,6 +123890,11 @@
                         "text"
                       ],
                       "type": "object"
+                    },
+                    "welcomeMessage": {
+                      "description": "Shown to the client at the top of the gallery",
+                      "maxLength": 2000,
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -123365,6 +124051,10 @@
                   },
                   "maxItems": 10000,
                   "type": "array"
+                },
+                "email": {
+                  "description": "Where the invitation was emailed",
+                  "type": "string"
                 },
                 "expiresAt": {
                   "format": "date-time",
@@ -123967,6 +124657,13 @@
                           "minimum": 0,
                           "type": "integer"
                         },
+                        "maxSelections": {
+                          "description": "The most photographs a client may choose; null or absent for no limit",
+                          "maximum": 10000,
+                          "minimum": 1,
+                          "nullable": true,
+                          "type": "integer"
+                        },
                         "mode": {
                           "enum": [
                             "edited-delivery",
@@ -124121,6 +124818,14 @@
                           ],
                           "type": "object"
                         },
+                        "proofCollection": {
+                          "description": "Which captures a full proof publication includes: every eligible one, or those rated 4 or more",
+                          "enum": [
+                            "eligible",
+                            "selected"
+                          ],
+                          "type": "string"
+                        },
                         "proofWatermark": {
                           "additionalProperties": false,
                           "properties": {
@@ -124260,6 +124965,23 @@
                           },
                           "required": [
                             "text"
+                          ],
+                          "type": "object"
+                        },
+                        "reminders": {
+                          "additionalProperties": false,
+                          "description": "Reminder emails the client should get",
+                          "properties": {
+                            "paymentAndExpiry": {
+                              "type": "boolean"
+                            },
+                            "selection": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "selection",
+                            "paymentAndExpiry"
                           ],
                           "type": "object"
                         },
@@ -124425,6 +125147,11 @@
                             "text"
                           ],
                           "type": "object"
+                        },
+                        "welcomeMessage": {
+                          "description": "Shown to the client at the top of the gallery",
+                          "maxLength": 2000,
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -124664,6 +125391,12 @@
                   "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
                   "type": "string"
                 },
+                "deliveryTarget": {
+                  "format": "date",
+                  "nullable": true,
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+                  "type": "string"
+                },
                 "id": {
                   "format": "uuid",
                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
@@ -124672,6 +125405,10 @@
                 "name": {
                   "maxLength": 200,
                   "minLength": 1,
+                  "type": "string"
+                },
+                "notes": {
+                  "maxLength": 5000,
                   "type": "string"
                 },
                 "stage": {
@@ -124753,6 +125490,12 @@
                   "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
                   "type": "string"
                 },
+                "deliveryTarget": {
+                  "format": "date",
+                  "nullable": true,
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+                  "type": "string"
+                },
                 "id": {
                   "format": "uuid",
                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
@@ -124761,6 +125504,10 @@
                 "name": {
                   "maxLength": 200,
                   "minLength": 1,
+                  "type": "string"
+                },
+                "notes": {
+                  "maxLength": 5000,
                   "type": "string"
                 },
                 "stage": {

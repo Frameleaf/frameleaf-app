@@ -127,6 +127,7 @@ import { PetService } from 'src/services/pet.service.js';
 import { PhotoLocationsService } from 'src/services/photo-locations.service.js';
 import { PhotoSourceService } from 'src/services/photo-source.service.js';
 import { PhotoToolsService } from 'src/services/photo-tools.service.js';
+import { PhotographyReminderService } from 'src/services/photography-reminder.service.js';
 import { PhotographySiteService } from 'src/services/photography-site.service.js';
 import { PhotographyWorkflowService } from 'src/services/photography-workflow.service.js';
 import { PhotographyWorkspaceService } from 'src/services/photography-workspace.service.js';
@@ -227,6 +228,7 @@ export const services = [
   PhotographyWorkspaceService,
   PhotographyWorkflowService,
   PhotographySiteService,
+  PhotographyReminderService,
   AssetUploadResourceService,
   AssetUploadDirectService,
   BackupDeviceService,

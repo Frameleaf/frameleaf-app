@@ -431,6 +431,59 @@ export class PhotographySiteService {
     }
   }
 
+  /**
+   * Emails a client their gallery invitation (approved design, 2026-11-04: Gallery › Invite client). False when
+   * this server cannot send it: email is off, or it has no public address for the link. The invitation itself
+   * is already saved, and the studio can still copy the link.
+   */
+  async emailInvitation(
+    auth: AuthDto,
+    invitation: {
+      workflowId: string;
+      token: string;
+      email: string;
+      recipientName: string;
+      galleryTitle: string;
+      welcomeMessage?: string;
+      expiresAt: string | null;
+    },
+  ): Promise<boolean> {
+    try {
+      const { server, notifications, templates } = await getConfig(
+        { configRepo: this.configRepository, metadataRepo: this.metadata, logger: this.logger },
+        { withCache: true },
+      );
+      const baseUrl = getExternalDomain(server);
+      if (!notifications.smtp.enabled || !baseUrl) {
+        return false;
+      }
+      const studioName = (await this.workspace.get(auth.user.id))?.value.brand?.name || auth.user.name;
+      const { html, text } = await this.email.renderEmail({
+        template: EmailTemplate.GALLERY_INVITE,
+        data: {
+          baseUrl,
+          showBranding: templates.email.showBranding,
+          studioName,
+          recipientName: invitation.recipientName,
+          galleryTitle: invitation.galleryTitle,
+          welcomeMessage: invitation.welcomeMessage,
+          link: `${baseUrl}/photography/gallery/${invitation.workflowId}#invitation=${invitation.token}`,
+          expiresAt: invitation.expiresAt
+            ? new Date(invitation.expiresAt).toLocaleDateString('en', { dateStyle: 'long' })
+            : undefined,
+        },
+      });
+      await this.jobs.queue({
+        name: JobName.SendMail,
+        data: { to: invitation.email, subject: `${studioName} shared ${invitation.galleryTitle} with you`, html, text },
+      });
+      return true;
+    } catch (error) {
+      this.logger.warn(`Gallery invitation email not queued: ${error}`);
+      return false;
+    }
+  }
+
   /** Page title, description and share image for `/studio/<slug>` (FL-701 item 16). */
   async metadataTags(idOrSlug: string, defaultDomain?: string): Promise<OpenGraphTags> {
     const { ownerId, site, record } = await this.resolve(idOrSlug);

@@ -73,12 +73,15 @@
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import {
+    loadBrand,
     loadPhotos,
     loadWorkspace,
+    logoThumbnailUrl,
     ratePhoto,
     saveWorkspace,
     shootStages,
     shootTypes,
+    type Brand,
     type Photo,
     type Shoot,
     type Workspace,
@@ -724,8 +727,32 @@
     }
   }
 
+  /** The studio's name and mark at the top of the rail (approved design, 2026-11-04); the account name until it loads. */
+  let studio = $state<Pick<Brand, 'name' | 'logoInitials' | 'logoAssetId'> | null>(null);
+  let studioLogoFailed = $state(false);
+  async function loadStudio() {
+    try {
+      const { brand } = await loadBrand();
+      if (!disposed) {
+        studio = brand;
+        studioLogoFailed = false;
+      }
+    } catch {
+      // The rail keeps the account name; Branding shows the error where it can be fixed.
+    }
+  }
+  let lastSection: string | null = null;
+  $effect(() => {
+    // After Branding, show what was saved there.
+    if (lastSection === 'branding' && section !== 'branding') {
+      void loadStudio();
+    }
+    lastSection = section;
+  });
+
   onMount(() => {
     void reload();
+    void loadStudio();
     return onLibraryAccessChange(() => {
       generation++;
       detailGeneration++;
@@ -771,8 +798,20 @@
       ><Icon icon={mdiArrowLeft} size="1rem" aria-hidden={true} />{$t('frameleaf_photography_back_to_library')}</a
     >
     <div class="phw-studio-brand">
-      <span class="phw-brand-mark"><Icon icon={mdiCameraIris} size="1.2rem" aria-hidden={true} /></span>
-      <div><strong>{authManager.user.name}</strong><small>{$t('frameleaf_photography_workspace')}</small></div>
+      <span class="phw-brand-mark"
+        >{#if studio?.logoAssetId && !studioLogoFailed}<img
+            src={logoThumbnailUrl(studio.logoAssetId)}
+            alt=""
+            onerror={() => (studioLogoFailed = true)}
+          />{:else if studio?.logoInitials}{studio.logoInitials}{:else}<Icon
+            icon={mdiCameraIris}
+            size="1.2rem"
+            aria-hidden={true}
+          />{/if}</span
+      >
+      <div>
+        <strong>{studio?.name || authManager.user.name}</strong><small>{$t('frameleaf_photography_workspace')}</small>
+      </div>
     </div>
     <nav aria-label={$t('frameleaf_photography_workspace')} bind:this={railNav}>
       <button
@@ -887,6 +926,9 @@
               panel={section === 'galleries' ? 'publishing' : section}
               onSection={openTab}
               onGalleries={() => (section = 'galleries')}
+              onWatermarks={() => (section = 'watermarks')}
+              onSaveBrief={(brief) =>
+                persist(workspace.shoots.map((shoot) => (shoot.id === active.id ? { ...shoot, ...brief } : shoot)))}
             />{/key}
         {:else if !loading}<div class="phw-empty">
             <h2>{$t('frameleaf_photography_choose_shoot')}</h2>

@@ -67,6 +67,58 @@ import {
 import { getConfig } from 'src/utils/config.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 
+/** ThumbHash's average colour (L, P and Q, each 0-63) as #rrggbb (thumbhash.js `thumbHashToAverageRGBA`). */
+const thumbhashColour = ({ l, p, q }: { l: number; p: number; q: number }) => {
+  const lum = l / 63;
+  const pp = p / 31.5 - 1;
+  const qq = q / 31.5 - 1;
+  const b = lum - (2 / 3) * pp;
+  const r = (3 * lum - b + qq) / 2;
+  const g = r - qq;
+  const hex = (value: number) =>
+    Math.round(Math.max(0, Math.min(1, value)) * 255)
+      .toString(16)
+      .padStart(2, '0');
+  return `#${hex(r)}${hex(g)}${hex(b)}`;
+};
+
+const SEASON_OF_MONTH = [
+  'winter',
+  'winter',
+  'spring',
+  'spring',
+  'spring',
+  'summer',
+  'summer',
+  'summer',
+  'autumn',
+  'autumn',
+  'autumn',
+  'winter',
+] as const;
+
+const mapMagic = (magic: NonNullable<AnalyticsInsightRows['magic']>): NonNullable<AnalyticsInsightsDto['magic']> => {
+  // Items without a place follow the hemisphere most located items were taken in.
+  const located = magic.months.filter((row) => row.south !== null);
+  const south = located.filter((row) => row.south).reduce((n, row) => n + row.count, 0);
+  const north = located.filter((row) => !row.south).reduce((n, row) => n + row.count, 0);
+  const seasons = { spring: 0, summer: 0, autumn: 0, winter: 0 };
+  for (const row of magic.months) {
+    const southern = row.south ?? south > north;
+    // the south's seasons run six months apart from the north's
+    const month = southern ? ((row.month + 5) % 12) + 1 : row.month;
+    seasons[SEASON_OF_MONTH[month - 1]] += row.count;
+  }
+  return {
+    colourByMonth: magic.colour.map((row) => ({ month: row.month, colour: thumbhashColour(row), photos: row.photos })),
+    light: magic.light,
+    seasons,
+    topTags: magic.topTags,
+    farAndWide: magic.farAndWide,
+    underTheHood: magic.underTheHood,
+  };
+};
+
 const mapInsights = (rows: AnalyticsInsightRows, items: number): AnalyticsInsightsDto => {
   const punch = new Map(rows.punchcard.map((cell) => [`${cell.weekday}:${cell.hour}`, cell.count]));
   const keyed = <T extends string>(values: readonly T[], list: Array<{ count: number }>, field: string) =>
@@ -115,6 +167,7 @@ const mapInsights = (rows: AnalyticsInsightRows, items: number): AnalyticsInsigh
       videoDurationMs,
       videoHours: Math.round(videoDurationMs / 360_000) / 10,
     },
+    ...(rows.magic && { magic: mapMagic(rows.magic) }),
   };
 };
 

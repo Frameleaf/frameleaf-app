@@ -18,6 +18,7 @@
   import AnalyticsPanel from '$lib/components/frameleaf/analytics/AnalyticsPanel.svelte';
   import AnalyticsRing from '$lib/components/frameleaf/analytics/AnalyticsRing.svelte';
   import AnalyticsStackBar from '$lib/components/frameleaf/analytics/AnalyticsStackBar.svelte';
+  import LibraryMagic from '$lib/components/frameleaf/analytics/LibraryMagic.svelte';
   import {
     analyticsFormats,
     calendarWeeks,
@@ -679,6 +680,8 @@
       {/if}
     </div>
   </AnalyticsPanel>
+
+  {#if insights.magic}<LibraryMagic {report} {insights} magic={insights.magic} />{/if}
 </div>
 
 <style>

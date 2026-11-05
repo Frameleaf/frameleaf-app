@@ -48,6 +48,11 @@ const RUN_ONE_JOBS: Partial<Record<QueueName, JobName>> = {
   [QueueName.FaceDetection]: JobName.AssetDetectFaces,
   [QueueName.Ocr]: JobName.Ocr,
   [QueueName.VideoConversion]: JobName.AssetEncodeVideo,
+  // Library care's "Redo one…" and "Check one photo…" (approved design, 2026-11-04).
+  [QueueName.SmartSearch]: JobName.SmartSearch,
+  [QueueName.DuplicateDetection]: JobName.AssetDetectDuplicates,
+  [QueueName.ImageDescription]: JobName.ImageDescription,
+  [QueueName.NsfwDetection]: JobName.NsfwDetection,
 };
 import {
   handlePromiseError,

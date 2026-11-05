@@ -10,12 +10,16 @@
   import { Icon } from '@frameleaf/ui';
   import {
     mdiCameraOutline,
+    mdiCameraPlusOutline,
     mdiCartOutline,
     mdiCheck,
     mdiEyeOutline,
     mdiHeartOutline,
     mdiImageCheckOutline,
     mdiShieldLockOutline,
+    mdiBrushOutline,
+    mdiChevronRight,
+    mdiStarOutline,
   } from '@mdi/js';
   import Button from './Button.svelte';
   import PhotographyShootTabs, { type ShootTab } from './PhotographyShootTabs.svelte';
@@ -33,7 +37,7 @@
     type OutputDefinition,
     type PresentationBlock,
   } from '$lib/frameleaf/photography/workflow-api';
-  import { openFileUploadDialog } from '$lib/utils/file-uploader';
+  import { fileUploadHandler, openFileUploadDialog } from '$lib/utils/file-uploader';
   import { getAssetMediaUrl } from '$lib/utils';
   import { Route } from '$lib/route';
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
@@ -44,6 +48,8 @@
     panel = 'intake',
     onSection,
     onGalleries,
+    onWatermarks,
+    onSaveBrief,
   }: {
     shoot: Shoot;
     /** `publishing` is the shoot's Gallery tab. */
@@ -52,7 +58,16 @@
     onSection?: (tab: ShootTab) => void;
     /** The shoot's Gallery, where invitations, passwords and expiry live. */
     onGalleries?: () => void;
+    /** Studio › Watermarks, where the marks are designed. */
+    onWatermarks?: () => void;
+    /** Saves the shoot brief with the shoot (it lives in the workspace, not the gallery). */
+    onSaveBrief?: (brief: { notes: string; deliveryTarget: string | null }) => Promise<boolean>;
   } = $props();
+  let briefNotes = $state(shoot.notes ?? '');
+  let briefTarget = $state(shoot.deliveryTarget ?? '');
+  const briefChanged = $derived(
+    briefNotes !== (shoot.notes ?? '') || (briefTarget || null) !== (shoot.deliveryTarget ?? null),
+  );
   /** The three ways of working a client gallery, as cards (PhotographyWorkflow.jsx WORKFLOW_MODES). */
   const journeys = [
     {
@@ -74,6 +89,25 @@
       detail: 'frameleaf_photography_mode_sell_detail',
     },
   ] as const;
+  /** The client's path through each way of working, under Protection & delivery. */
+  const flowSteps = {
+    'edited-delivery': [
+      'frameleaf_photography_flow_edit',
+      'frameleaf_photography_flow_approve',
+      'frameleaf_photography_flow_deliver',
+    ],
+    'select-before-editing': [
+      'frameleaf_photography_flow_proof',
+      'frameleaf_photography_flow_choose',
+      'frameleaf_photography_flow_edit_pay',
+      'frameleaf_photography_flow_deliver',
+    ],
+    'sell-by-photo': [
+      'frameleaf_photography_flow_proof',
+      'frameleaf_photography_flow_buy',
+      'frameleaf_photography_flow_deliver',
+    ],
+  } as const;
   let stored = $state<Workflow | null>(null);
   let draft = $state<Workflow | null>(null);
   let brand = $state<Branding | null>(null);
@@ -93,6 +127,7 @@
   let assemblyChapter = $state('__unchanged');
   let presetName = $state('');
   let recipientName = $state(shoot.client);
+  let recipientEmail = $state('');
   let recipientPassword = $state('');
   let recipientExpiry = $state('');
   let recipientDownload = $state(false);
@@ -128,6 +163,16 @@
           (filter === 'chosen' && stored?.rounds.some((round) => round.captureIds.includes(capture.id)))),
     ),
   );
+  /** Every order that still counts (not cancelled or refunded), added up for each currency. */
+  const orderTotals = $derived.by(() => {
+    const totals = new Map<string, number>();
+    for (const order of draft?.orders ?? []) {
+      if (order.status !== 'cancelled' && order.status !== 'refunded') {
+        totals.set(order.currency, (totals.get(order.currency) ?? 0) + order.total);
+      }
+    }
+    return [...totals];
+  });
   const money = (amount: number, currency = draft?.config.currency ?? 'USD') => {
     try {
       return new Intl.NumberFormat($locale, { style: 'currency', currency }).format(amount / 100);
@@ -317,7 +362,7 @@
     message = '';
     try {
       const result = await workflowRequest<
-        Workflow | { workflow: Workflow; invitation: { recipientId: string; token: string } }
+        Workflow | { workflow: Workflow; invitation: { recipientId: string; token: string; emailed?: boolean } }
       >(shoot.id, path, method, { expectedRevision: stored.revision, ...body });
       if (disposed || current !== requestGeneration) {
         return;
@@ -333,6 +378,13 @@
         url.hash = new URLSearchParams({ invitation: result.invitation.token }).toString();
         invitation = url.href;
         recipientPassword = '';
+        if (typeof body.email === 'string') {
+          message = result.invitation.emailed
+            ? $t('frameleaf_photography_invitation_emailed', { values: { email: body.email } })
+            : $t('frameleaf_photography_invitation_not_emailed');
+          recipientEmail = '';
+          return;
+        }
       }
       message = $t('frameleaf_photography_saved_short');
     } catch (error_) {
@@ -358,6 +410,32 @@
       }
       busy = false;
       await mutate('/intake');
+    } catch (error_) {
+      if (!disposed) {
+        error = describe(error_);
+        busy = false;
+      }
+    }
+  }
+  /** Photographs dropped on the intake zone go to the shoot's album, as Import files does. */
+  let dropOver = $state(false);
+  async function dropFiles(event: DragEvent) {
+    event.preventDefault();
+    // The page has its own drop-to-upload; this drop belongs to the shoot.
+    event.stopPropagation();
+    dropOver = false;
+    const files = [...(event.dataTransfer?.files ?? [])];
+    if (!shoot.albumId || busy || files.length === 0) {
+      return;
+    }
+    busy = true;
+    error = '';
+    try {
+      await fileUploadHandler({ files, albumId: shoot.albumId });
+      if (!disposed) {
+        busy = false;
+        await mutate('/intake');
+      }
     } catch (error_) {
       if (!disposed) {
         error = describe(error_);
@@ -605,14 +683,77 @@
             >
           </div>
         </div>
+        {#if shoot.albumId}<button
+            type="button"
+            class="phx-drop"
+            class:over={dropOver}
+            disabled={busy}
+            onclick={() => intake()}
+            ondragover={(event) => {
+              if (event.dataTransfer?.types.includes('Files')) {
+                event.preventDefault();
+                event.stopPropagation();
+                dropOver = true;
+              }
+            }}
+            ondragleave={() => (dropOver = false)}
+            ondrop={dropFiles}
+            ><Icon icon={mdiCameraPlusOutline} size="1.8rem" aria-hidden={true} /><strong
+              >{$t('frameleaf_photography_drop_title')}</strong
+            ><span>{$t('frameleaf_photography_drop_body')}</span></button
+          >{/if}
       </section>
+      {#if onSaveBrief}<section class="phd-card">
+          <span class="phx-eyebrow">{$t('frameleaf_photography_shoot_brief')}</span>
+          <label
+            >{$t('frameleaf_photography_client_notes')}<textarea
+              rows="3"
+              maxlength="5000"
+              placeholder={$t('frameleaf_photography_client_notes_placeholder')}
+              bind:value={briefNotes}></textarea></label
+          ><label>{$t('frameleaf_photography_delivery_target')}<input type="date" bind:value={briefTarget} /></label>
+          <div class="phx-import-stats">
+            <span
+              ><strong>{draft.captures.filter((capture) => capture.isRaw).length}</strong>{$t(
+                'frameleaf_photography_stat_raw_sources',
+              )}</span
+            >
+            <span
+              ><strong>{draft.captures.filter((capture) => capture.assetIds.length > 1).length}</strong>{$t(
+                'frameleaf_photography_stat_paired',
+              )}</span
+            >
+            <span
+              ><strong
+                >{draft.captures.filter((capture) => !capture.eligible || capture.processing === 'failed')
+                  .length}</strong
+              >{$t('frameleaf_photography_stat_attention')}</span
+            >
+            <span
+              ><strong>{draft.captures.filter((capture) => capture.withheld).length}</strong>{$t(
+                'frameleaf_photography_stat_withheld',
+              )}</span
+            >
+          </div>
+          <Button
+            disabled={busy || !briefChanged}
+            onclick={() => onSaveBrief({ notes: briefNotes, deliveryTarget: briefTarget || null })}
+            >{$t('frameleaf_photography_save_brief')}</Button
+          >
+        </section>{/if}
       <section class="phd-card">
         <div class="phd-row">
           <div>
             <h3>{$t('frameleaf_photography_chapters_title')}</h3>
             <p>{$t('frameleaf_photography_chapters_body')}</p>
           </div>
-          <Button disabled={busy} onclick={addChapter}>{$t('frameleaf_photography_add_chapter')}</Button>
+          <div class="phd-actions">
+            {#if onSection}<Button onclick={() => onSection('photos')}
+                ><Icon icon={mdiStarOutline} size="1.1rem" aria-hidden={true} />{$t(
+                  'frameleaf_photography_cull_rate',
+                )}</Button
+              >{/if}<Button disabled={busy} onclick={addChapter}>{$t('frameleaf_photography_add_chapter')}</Button>
+          </div>
         </div>
         {#each draft.chapters as chapter (chapter.id)}<div class="phd-chapter">
             <label>{$t('frameleaf_photography_chapter_name')}<input maxlength="100" bind:value={chapter.title} /></label
@@ -840,6 +981,16 @@
       <div class="phx-two-column">
         <section class="phd-card">
           <h3>{$t('frameleaf_photography_package_title')}</h3>
+          <label
+            >{$t('frameleaf_photography_proof_collection')}<select
+              value={draft.config.proofCollection ?? 'eligible'}
+              onchange={(event) =>
+                (draft!.config.proofCollection = event.currentTarget.value as 'eligible' | 'selected')}
+              ><option value="eligible">{$t('frameleaf_photography_proof_collection_eligible')}</option><option
+                value="selected">{$t('frameleaf_photography_proof_collection_selected')}</option
+              ></select
+            ><small>{$t('frameleaf_photography_proof_collection_hint')}</small></label
+          >
           <div class="phd-fields">
             <label
               >{$t('frameleaf_photography_collection_title')}<input
@@ -890,6 +1041,21 @@
                 max="365"
                 step="1"
                 bind:value={draft.config.turnaroundDays}
+              /></label
+            ><label
+              >{$t('frameleaf_photography_max_selections')}<input
+                type="number"
+                min="1"
+                max="10000"
+                step="1"
+                value={draft.config.maxSelections ?? ''}
+                placeholder={$t('frameleaf_photography_no_limit')}
+                onchange={(event) => {
+                  draft!.config.maxSelections =
+                    event.currentTarget.value === ''
+                      ? null
+                      : Math.max(1, Math.min(10_000, Math.round(event.currentTarget.valueAsNumber)));
+                }}
               /></label
             ><label
               >{$t('frameleaf_photography_selection_deadline')}<input
@@ -1002,6 +1168,16 @@
                 <PhotographyWatermarkEditor bind:value={draft.config.downloadWatermark} disabled={busy} />
               </details>{/if}
           </div>
+          {#if onWatermarks}<Button onclick={onWatermarks}
+              ><Icon icon={mdiBrushOutline} size="1.1rem" aria-hidden={true} />{$t(
+                'frameleaf_photography_design_watermark',
+              )}</Button
+            >{/if}
+          <ol class="phx-flow-strip" aria-label={$t('frameleaf_photography_flow_label')}>
+            {#each flowSteps[draft.config.mode] as step, index (step)}<li>
+                {#if index > 0}<Icon icon={mdiChevronRight} size="0.875rem" aria-hidden={true} />{/if}{$t(step)}
+              </li>{/each}
+          </ol>
         </section>
       </div>
       <section class="phd-card">
@@ -1099,14 +1275,63 @@
               </div>
             </div>{/each}
         </section>{/if}
-      <div class="phd-actions">
-        <Button variant="primary" disabled={busy} onclick={() => mutate('/config', 'PUT', { config: draft!.config })}
-          >{$t('frameleaf_photography_save_workflow')}</Button
-        >{#if onGalleries}<Button onclick={onGalleries}
+      <section class="phd-card">
+        <div class="phd-row">
+          <div>
+            <h3>{$t('frameleaf_photography_ready_to_share')}</h3>
+            <p>{$t('frameleaf_photography_ready_to_share_body')}</p>
+          </div>
+          <Button
+            variant="primary"
+            disabled={busy || eligible.length === 0}
+            onclick={async () => {
+              await mutate('/config', 'PUT', { config: draft!.config });
+              if (!error) {
+                await mutate('/publish', 'POST', { scope: 'all-eligible' });
+              }
+            }}>{$t('frameleaf_photography_prepare_proof_gallery')}</Button
+          >
+        </div>
+        <label
+          >{$t('frameleaf_photography_welcome_message')}<textarea
+            maxlength="2000"
+            rows="3"
+            placeholder={$t('frameleaf_photography_welcome_placeholder')}
+            value={draft.config.welcomeMessage ?? ''}
+            oninput={(event) => (draft!.config.welcomeMessage = event.currentTarget.value)}></textarea></label
+        >
+        <label
+          ><input
+            type="checkbox"
+            checked={draft.config.reminders?.selection ?? false}
+            onchange={(event) =>
+              (draft!.config.reminders = {
+                paymentAndExpiry: draft!.config.reminders?.paymentAndExpiry ?? false,
+                selection: event.currentTarget.checked,
+              })}
+          />{$t('frameleaf_photography_selection_reminder')}</label
+        ><label
+          ><input
+            type="checkbox"
+            checked={draft.config.reminders?.paymentAndExpiry ?? false}
+            onchange={(event) =>
+              (draft!.config.reminders = {
+                selection: draft!.config.reminders?.selection ?? false,
+                paymentAndExpiry: event.currentTarget.checked,
+              })}
+          />{$t('frameleaf_photography_payment_expiry_reminders')}</label
+        >
+        <p><small>{$t('frameleaf_photography_reminders_hint')}</small></p>
+        {#if onGalleries}<Button onclick={onGalleries}
             ><Icon icon={mdiShieldLockOutline} size="1.1rem" aria-hidden={true} />{$t(
               'frameleaf_photography_invitations_link',
             )}</Button
           >{/if}
+      </section>
+      <div class="phd-actions">
+        <Button variant="primary" disabled={busy} onclick={() => mutate('/config', 'PUT', { config: draft!.config })}
+          >{$t('frameleaf_photography_save_workflow')}</Button
+        >
       </div>
       <section class="phd-card">
         <h3>{$t('frameleaf_photography_presets_title')}</h3>
@@ -1328,6 +1553,35 @@
         >
       </section>
     {:else if panel === 'orders'}
+      <!-- PhotographyWorkflow.jsx orders header: where things stand, and the running total by currency. -->
+      <div class="phx-order-header">
+        <div>
+          <span class="phx-eyebrow">{$t('frameleaf_photography_orders_eyebrow')}</span>
+          <h3>
+            {draft.rounds.length > 0
+              ? $t('frameleaf_photography_orders_rounds', { values: { count: draft.rounds.length } })
+              : $t('frameleaf_photography_orders_waiting')}
+          </h3>
+        </div>
+        <p class="phd-order-total">
+          <small>{$t('frameleaf_photography_order_total_so_far')}</small
+          >{#each orderTotals as [currency, total] (currency)}<strong>{money(total, currency)}</strong>{:else}<strong
+              >{money(0)}</strong
+            >{/each}
+        </p>
+      </div>
+      {#if draft.rounds.length === 0}<section class="phd-card phx-orders-empty">
+          <p>{$t('frameleaf_photography_orders_empty')}</p>
+          <div class="phd-actions">
+            <Button variant="primary" disabled={previewing} onclick={clientPreview}
+              ><Icon icon={mdiEyeOutline} size="1.1rem" aria-hidden={true} />{$t(
+                'frameleaf_photography_open_client_preview',
+              )}</Button
+            >{#if onSection}<Button onclick={() => onSection('workflow')}
+                >{$t('frameleaf_photography_configure_package')}</Button
+              >{/if}
+          </div>
+        </section>{/if}
       {#if draft.config.downloadOutputs?.length}<section class="phd-card">
           <h3>{$t('frameleaf_photography_next_order_versions')}</h3>
           <p>
@@ -1583,6 +1837,14 @@
         <div class="phd-fields">
           <label>{$t('frameleaf_photography_recipient_name')}<input maxlength="100" bind:value={recipientName} /></label
           ><label
+            >{$t('frameleaf_photography_recipient_email')}<input
+              type="email"
+              autocomplete="off"
+              maxlength="254"
+              placeholder={$t('frameleaf_photography_recipient_email_placeholder')}
+              bind:value={recipientEmail}
+            /></label
+          ><label
             >{$t('frameleaf_photography_gallery_password_optional')}<input
               type="password"
               autocomplete="new-password"
@@ -1619,10 +1881,12 @@
           disabled={busy ||
             !recipientName.trim() ||
             (restrictInvitation && selected.length === 0) ||
-            (recipientPassword.length > 0 && recipientPassword.length < 8)}
+            (recipientPassword.length > 0 && recipientPassword.length < 8) ||
+            (recipientEmail.trim().length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail.trim()))}
           onclick={() =>
             mutate('/recipients', 'POST', {
               name: recipientName.trim(),
+              ...(recipientEmail.trim() && { email: recipientEmail.trim() }),
               password: recipientPassword || null,
               expiresAt: recipientExpiry ? new Date(`${recipientExpiry}T23:59:59`).toISOString() : null,
               canProof: true,
@@ -1637,7 +1901,9 @@
         <h3>{$t('frameleaf_photography_recipient_access')}</h3>
         {#each draft.recipients as row (row.id)}<div class="phd-order">
             <div class="phd-row">
-              <strong>{row.name}</strong><span
+              <strong
+                >{row.name}{#if row.email}<small> · {row.email}</small>{/if}</strong
+              ><span
                 >{row.revoked
                   ? $t('frameleaf_photography_access_revoked')
                   : $t('frameleaf_photography_shoots_active')}</span

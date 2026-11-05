@@ -23,6 +23,9 @@ export type Shoot = {
   unavailable: boolean;
   coverAssetId: string | null;
   assetCount: number | null;
+  /** The shoot brief (approved design, 2026-11-04: Intake › Shoot brief). */
+  notes?: string;
+  deliveryTarget?: string | null;
 };
 export type Workspace = { revision: string | null; shoots: Shoot[] };
 export type Photo = {
@@ -57,7 +60,7 @@ export const loadWorkspace = () => request<Workspace>('');
 export const saveWorkspace = (workspace: Workspace) =>
   request<Workspace>('', 'PUT', {
     expectedRevision: workspace.revision,
-    shoots: workspace.shoots.map(({ id, albumId, name, client, type, date, stage }) => ({
+    shoots: workspace.shoots.map(({ id, albumId, name, client, type, date, stage, notes, deliveryTarget }) => ({
       id,
       albumId,
       name,
@@ -65,6 +68,8 @@ export const saveWorkspace = (workspace: Workspace) =>
       type,
       date,
       stage,
+      ...(notes !== undefined && { notes }),
+      ...(deliveryTarget !== undefined && { deliveryTarget }),
     })),
   });
 export const loadPhotos = (id: string, cursor?: string | null) =>

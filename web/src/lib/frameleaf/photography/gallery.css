@@ -709,3 +709,8 @@
     animation: none;
   }
 }
+/* The studio's own welcome (approved design, 2026-11-04: Ready to share? › Welcome message). */
+.pc-welcome {
+  white-space: pre-wrap;
+  font-style: italic;
+}

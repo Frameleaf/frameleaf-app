@@ -526,6 +526,27 @@ export class IntegrityRepository {
       .orderBy('asset.createdAt', 'asc')
       .stream();
   }
+  /** One original's checksum and its damage report, as `streamAssetChecksums` reads them (Library care's "Check one…"). */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  getAssetChecksum(assetId: string) {
+    return this.db
+      .selectFrom('asset')
+      .where('asset.id', '=', assetId)
+      .where('asset.deletedAt', 'is', null)
+      .leftJoin('integrity_report', (join) =>
+        join
+          .onRef('integrity_report.assetId', '=', 'asset.id')
+          .on('integrity_report.type', '=', IntegrityReport.ChecksumFail),
+      )
+      .select([
+        'asset.originalPath',
+        'asset.checksum',
+        'asset.checksumAlgorithm',
+        'asset.id as assetId',
+        'integrity_report.id as reportId',
+      ])
+      .executeTakeFirst();
+  }
   @GenerateSql({ params: [DummyValue.STRING], stream: true })
   streamIntegrityReports(type: IntegrityReport) {
     return this.db

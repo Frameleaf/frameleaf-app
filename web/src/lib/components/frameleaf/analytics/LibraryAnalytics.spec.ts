@@ -415,4 +415,37 @@ describe('LibraryAnalytics', () => {
       expect(storage.getByText('40.0%')).toBeInTheDocument();
     });
   });
+
+  it('shows Library magic from what the server worked out, and links it from the bar', async () => {
+    const insights = analyticsInsightsFixture({
+      magic: {
+        colourByMonth: [
+          { month: 7, photos: 40, colour: '#4f8a3c' },
+          { month: 10, photos: 30, colour: '#e8913a' },
+        ],
+        light: { goldenMorning: 10, goldenEvening: 30, blueHour: 5, daylight: 50, night: 5 },
+        seasons: { spring: 10, summer: 60, autumn: 20, winter: 10 },
+        topTags: [{ name: 'Hiking', count: 12 }],
+        farAndWide: {
+          travelledKm: 80_150,
+          farthest: { km: 12_000, place: 'Sydney, Australia' },
+          northernmost: { latitude: 51.2, place: 'Banff, Canada' },
+          southernmost: { latitude: -33.9, place: 'Sydney, Australia' },
+        },
+        underTheHood: { searchVectors: 1000, faceVectors: 500, previews: 2000, databaseRows: 90_000 },
+      },
+    });
+    render(LibraryAnalytics, { report: analyticsReportFixture({ insights }) });
+    expect(screen.getByRole('heading', { name: 'Things only your server knows' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Green in July, orange in October' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '40% of your photos were taken in golden hour' })).toBeInTheDocument();
+    expect(screen.getByText(/You’re a sunset person: 75%/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Summer is your season' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: '80,150 km between your photos, 2× around the Earth' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '1.5K AI vectors make search and faces instant' })).toBeInTheDocument();
+    const bar = await screen.findByRole('navigation', { name: 'Sections of this page' });
+    expect(await within(bar).findByRole('link', { name: 'Magic' })).toHaveAttribute('href', '#an-magic');
+  });
 });

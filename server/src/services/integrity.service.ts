@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { basename } from 'node:path';
 import { Readable, Writable } from 'node:stream';
@@ -18,6 +18,7 @@ import { JOBS_LIBRARY_PAGINATION_SIZE } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
+  IntegrityCheckOneResponseDto,
   IntegrityCheckRunsResponseDto,
   IntegrityFindingAssetsDto,
   IntegrityFindingAssetsResponseDto,
@@ -761,7 +762,7 @@ export class IntegrityService extends BaseService {
     reportId: string | null,
   ) {
     if (!this.hashForAlgorithm(checksumAlgorithm)) {
-      return;
+      return 'unverifiable' as const;
     }
     // FL-721 (spec §8.3): a sealed Locked file holds ciphertext, so its plaintext checksum can't be
     // compared: "encrypted, not checked", never a checksum failure (its GCM tags prove it intact)
@@ -812,7 +813,7 @@ export class IntegrityService extends BaseService {
       result,
     });
     if (!current) {
-      return;
+      return result;
     }
     if (result === 'passed') {
       await this.forkSchemaRepository.recordAssetChecksums({
@@ -844,9 +845,29 @@ export class IntegrityService extends BaseService {
       if (reportId) {
         await this.integrityRepository.deleteById(reportId);
       }
-      return;
+      return result;
     }
     await this.integrityRepository.create({ path: originalPath, type: IntegrityReport.ChecksumFail, assetId });
+    return result;
+  }
+
+  /**
+   * Library care's "Check one…" (approved design, 2026-11-04): reads one original now, even while the
+   * night's check is running or stopped, and records what it found as the scan would.
+   */
+  async checkOne(assetId: string): Promise<IntegrityCheckOneResponseDto> {
+    const asset = await this.integrityRepository.getAssetChecksum(assetId);
+    if (!asset) {
+      throw new NotFoundException('Asset not found');
+    }
+    const result = await this.checkAssetChecksum(
+      asset.originalPath,
+      asset.checksum,
+      asset.checksumAlgorithm,
+      asset.assetId,
+      asset.reportId,
+    );
+    return { result };
   }
 
   @OnJob({ name: JobName.IntegrityChecksumFiles, queue: QueueName.IntegrityCheck })

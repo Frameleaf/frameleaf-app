@@ -57,12 +57,14 @@
   import { albumTreeDropdown, sidebarCollapsed } from '$lib/stores/preferences.store';
   import { handleUpdateAlbumInfo } from '$lib/services/album.service';
   import { handleError } from '$lib/utils/handle-error';
+  import { dropZone, planKeyMove, planRailMove, type RailDrop, type RailUpdate } from '$lib/frameleaf/rail-moves';
   import {
     AssetTypeEnum,
     LibraryItemSearchKind,
     LibraryScope,
     LibraryViewScope,
     getAlbumHierarchy,
+    updateAlbumInfo,
     type AlbumHierarchyNode,
     type AlbumResponseDto,
     searchLibraryItems,
@@ -71,7 +73,7 @@
     PartnerDirection,
     type PartnerResponseDto,
   } from '@frameleaf/sdk';
-  import { Icon, Theme as AppTheme, themeManager } from '@frameleaf/ui';
+  import { Icon, Theme as AppTheme, themeManager, toastManager } from '@frameleaf/ui';
   import {
     mdiAccountOutline,
     mdiChevronDoubleLeft,
@@ -255,6 +257,94 @@
       event.preventDefault();
     }
   };
+  /*
+   * Moving albums (approved design, 2026-11-04): drag an album above or below another to reorder it,
+   * or onto an album or collection to put it inside; ⌥↑ ⌥↓ move it, ⌥→ puts it in the one above,
+   * ⌥← takes it out one level. Saved as the album's parent and position, then the rail reloads.
+   */
+  let dragId = $state<string | null>(null);
+  let drop = $state<{ id: string; where: RailDrop } | null>(null);
+  const applyMove = async (albumId: string, updates: RailUpdate[] | null) => {
+    if (!updates) {
+      return;
+    }
+    const name = albumRecords.find(({ id }) => id === albumId)?.albumName ?? '';
+    try {
+      for (const { id, sortOrder, parentId } of updates) {
+        await updateAlbumInfo({ id, updateAlbumDto: { sortOrder, ...(parentId !== undefined && { parentId }) } });
+      }
+      toastManager.primary($t('frameleaf_rail_moved', { values: { name } }));
+    } catch (error) {
+      handleError(error, $t('errors.unable_to_update_album_info'));
+    }
+    await refreshAlbums();
+    await tick();
+    railElement?.querySelector<HTMLElement>(`a[data-album-id="${CSS.escape(albumId)}"]`)?.focus();
+  };
+  const where = (event: DragEvent, node: FrameleafAlbumNode) => {
+    const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    return dropZone(event.clientY - box.top, box.height, node.kind !== 'space');
+  };
+  const moveAttrs = (node: FrameleafAlbumNode) =>
+    iconOnly || node.kind === 'space'
+      ? {}
+      : {
+          draggable: true,
+          ondragstart: (event: DragEvent) => {
+            event.dataTransfer?.setData('text/plain', node.name);
+            if (event.dataTransfer) {
+              event.dataTransfer.effectAllowed = 'move';
+            }
+            dragId = node.id;
+          },
+          ondragend: () => {
+            dragId = null;
+            drop = null;
+          },
+          ondragover: (event: DragEvent) => {
+            if (!dragId) {
+              return;
+            }
+            const zone = where(event, node);
+            if (!planRailMove(albumRecords, dragId, node.id, zone, authManager.user.id)) {
+              drop = null;
+              return;
+            }
+            event.preventDefault();
+            if (event.dataTransfer) {
+              event.dataTransfer.dropEffect = 'move';
+            }
+            drop = { id: node.id, where: zone };
+          },
+          ondragleave: () => {
+            if (drop?.id === node.id) {
+              drop = null;
+            }
+          },
+          ondrop: (event: DragEvent) => {
+            if (!dragId) {
+              return;
+            }
+            event.preventDefault();
+            const moving = dragId;
+            const updates = planRailMove(albumRecords, moving, node.id, where(event, node), authManager.user.id);
+            dragId = null;
+            drop = null;
+            void applyMove(moving, updates);
+          },
+          onkeydown: (event: KeyboardEvent) => {
+            if (!event.altKey || !event.key.startsWith('Arrow')) {
+              return;
+            }
+            const updates = planKeyMove(albumRecords, node.id, event.key, authManager.user.id);
+            if (updates) {
+              event.preventDefault();
+              void applyMove(node.id, updates);
+            }
+          },
+        };
+  const dropClass = (id: string) => (drop?.id === id ? `fl-drop-${drop.where}` : '');
+
   const finishRename = async (node: FrameleafAlbumNode, value: string | null) => {
     renaming = null;
     const name = value?.trim();
@@ -717,6 +807,9 @@
       aria-label={iconOnly ? label : undefined}
       data-album-id={typeof icon === 'string' ? undefined : icon.id}
       data-sveltekit-preload-data="hover"
+      {...typeof icon === 'string' ? {} : moveAttrs(icon)}
+      class:fl-dragging={typeof icon !== 'string' && dragId === icon.id}
+      data-drop={typeof icon === 'string' ? undefined : dropClass(icon.id) || undefined}
     >
       {#if typeof icon === 'string'}
         <Icon {icon} size="1.25em" aria-hidden={true} class="fl-icon" />
@@ -767,6 +860,9 @@
             aria-current={isAlbumCurrent(node) ? 'page' : undefined}
             data-album-id={node.id}
             data-sveltekit-preload-data="hover"
+            {...moveAttrs(node)}
+            class:fl-dragging={dragId === node.id}
+            data-drop={dropClass(node.id) || undefined}
           >
             <AlbumMark icon={node.icon} color={node.color} size="1.25em" class="fl-icon" />
             <span class="fl-label" title={node.name}>{node.name}</span>
@@ -1078,6 +1174,7 @@
               {@render destinationLink(destination)}
 
               {#if destination.id === 'allAlbums' && !iconOnly}
+                {#if albumRoots.length > 0}<p class="sr-only">{$t('frameleaf_rail_move_hint')}</p>{/if}
                 {#each albumRoots as node (node.id)}
                   {@render albumBranch(node)}
                 {/each}
@@ -1132,6 +1229,21 @@
   {/await}{/if}
 
 <style>
+  /* Where a dragged album lands: a line above or below the row, or the row itself for "inside". */
+  :global(.fl-link[data-drop='fl-drop-before']) {
+    box-shadow: inset 0 2px 0 var(--fl-accent);
+  }
+  :global(.fl-link[data-drop='fl-drop-after']) {
+    box-shadow: inset 0 -2px 0 var(--fl-accent);
+  }
+  :global(.fl-link[data-drop='fl-drop-into']) {
+    background: var(--fl-accent-soft);
+    outline: 1px solid var(--fl-accent);
+    outline-offset: -1px;
+  }
+  :global(.fl-link.fl-dragging) {
+    opacity: 0.5;
+  }
   .nested-branch .nested-branch {
     margin-inline-start: 12px;
   }

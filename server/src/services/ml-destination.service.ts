@@ -34,6 +34,7 @@ import {
   MlWorkerRole,
   MlWorkload,
   RESTORATION_ML_WORKLOADS,
+  SystemMetadataKey,
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { CloudConnectionState, CloudMlGatewayDeps, resolveCloudGateway } from 'src/utils/frameleaf-cloud-gateway.js';
@@ -707,8 +708,10 @@ export class MlDestinationService extends BaseService {
       this.mlDestinationRepository.getDesktopCounts(),
       this.getConfig({ withCache: true }),
     ]);
+    const behaviour = await this.systemMetadataRepository.get(SystemMetadataKey.MlUnavailableBehaviour);
     return {
       order: order.order,
+      whenUnavailable: behaviour?.whenUnavailable ?? 'wait',
       workloads: Object.values(MlWorkload).flatMap((workload) => {
         const storedRoute = stored.find((route) => route.workload === workload);
         return followsMainOrder(order, workload, storedRoute)
@@ -722,6 +725,13 @@ export class MlDestinationService extends BaseService {
   /** FL-456: save the main processing order. Every workload without a list of its own follows it. */
   async setProcessingOrder(dto: MlProcessingOrderUpdateDto): Promise<MlProcessingOrderResponseDto> {
     await this.mlDestinationRepository.setProcessingOrder(ML_PROCESSING_ORDER_DEFAULT_SCOPE, dto.order);
+    if (dto.whenUnavailable) {
+      const stored = await this.systemMetadataRepository.get(SystemMetadataKey.MlUnavailableBehaviour);
+      await this.systemMetadataRepository.set(SystemMetadataKey.MlUnavailableBehaviour, {
+        ...stored,
+        whenUnavailable: dto.whenUnavailable,
+      });
+    }
     return this.getProcessingOrder();
   }
 

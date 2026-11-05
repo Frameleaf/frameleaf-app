@@ -48,11 +48,13 @@
     QueueCommand,
     QueueName,
     runQueueCommandLegacy,
+    runQueueOnOne,
     type LibraryProgressResponseDto,
     type MlCapabilitiesResponseDto,
     type QueueResponseDto,
   } from '@frameleaf/sdk';
-  import { Icon } from '@frameleaf/ui';
+  import { Icon, toastManager } from '@frameleaf/ui';
+  import RunOneDialog from '$lib/components/frameleaf/RunOneDialog.svelte';
   import {
     mdiAlertCircleOutline,
     mdiCameraOutline,
@@ -133,6 +135,22 @@
     },
   ];
   const words = (id: FeatureId, part: string) => $t(`frameleaf_care_prog_${id}_${part}` as Translations);
+
+  /** "Redo one…" (approved design, 2026-11-04): read one photo again now, with today's settings. */
+  let redoing = $state<Feature | null>(null);
+  let redoOpen = $state(false);
+  const redoOne = async (asset: { id: string; originalFileName: string }) => {
+    if (!redoing) {
+      return;
+    }
+    await runQueueOnOne({ name: redoing.queues[0], queueRunOneDto: { assetId: asset.id } });
+    toastManager.primary(
+      $t('frameleaf_care_prog_redo_started', {
+        values: { name: words(redoing.id, 'name'), file: asset.originalFileName },
+      }),
+    );
+    await load();
+  };
 
   // ---- the settings ----
   const settingsDraft = requireSystemConfigDraft();
@@ -415,17 +433,34 @@
           note={state.note}
         >
           {#snippet action()}
-            {#if row.feature.href}
-              {@const href = row.feature.href}
-              <Button label={$t('frameleaf_care_prog_open_named', { values: { name } })} onclick={() => goto(href)}>
-                {$t('frameleaf_care_prog_open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden />
-              </Button>
-            {/if}
+            <div class="row-buttons">
+              <Button
+                label={$t('frameleaf_care_prog_redo_named', { values: { name } })}
+                onclick={() => {
+                  redoing = row.feature;
+                  redoOpen = true;
+                }}>{$t('frameleaf_care_redo_one')}</Button
+              >
+              {#if row.feature.href}
+                {@const href = row.feature.href}
+                <Button label={$t('frameleaf_care_prog_open_named', { values: { name } })} onclick={() => goto(href)}>
+                  {$t('frameleaf_care_prog_open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden />
+                </Button>
+              {/if}
+            </div>
           {/snippet}
         </Item>
       {/each}
     </ItemList>
   </Section>
+
+  {#if redoing}<RunOneDialog
+      bind:open={redoOpen}
+      title={$t('frameleaf_care_prog_redo_title', { values: { name: words(redoing.id, 'name') } })}
+      verb={$t('frameleaf_care_redo')}
+      note={$t('frameleaf_care_prog_redo_note')}
+      onStart={redoOne}
+    />{/if}
 
   <Section title={$t('frameleaf_care_prog_when_title')}>
     <Row label={$t('frameleaf_care_overnight')} help={$t('frameleaf_care_prog_overnight_help')}>
@@ -461,3 +496,12 @@
     </Section>
   {/if}
 </KitPage>
+
+<style>
+  .row-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+</style>

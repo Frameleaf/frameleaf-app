@@ -74,6 +74,8 @@
   import { handleError } from '$lib/utils/handle-error';
   import { locale } from '$lib/stores/preferences.store';
   import {
+    checkIntegrityOne,
+    IntegrityCheckOneResult,
     getIntegrityCheckRuns,
     getIntegrityFindingAssets,
     getIntegrityOverview,
@@ -94,7 +96,8 @@
     type IntegrityReportResponseDto,
     type IntegrityReportSummaryResponseDto,
   } from '@frameleaf/sdk';
-  import { Icon } from '@frameleaf/ui';
+  import { Icon, toastManager } from '@frameleaf/ui';
+  import RunOneDialog from '$lib/components/frameleaf/RunOneDialog.svelte';
   import {
     mdiChevronRight,
     mdiClockOutline,
@@ -353,6 +356,28 @@
         running = true;
       }
     }
+  };
+
+  /** "Check one…" (approved design, 2026-11-04): one file's presence and checksum, at once. */
+  let checkingOne = $state<Check | null>(null);
+  let checkOneOpen = $state(false);
+  const ONE_RESULT: Record<IntegrityCheckOneResult, Translations> = {
+    [IntegrityCheckOneResult.Passed]: 'frameleaf_care_fc_one_passed',
+    [IntegrityCheckOneResult.Mismatched]: 'frameleaf_care_fc_one_mismatched',
+    [IntegrityCheckOneResult.Missing]: 'frameleaf_care_fc_one_missing',
+    [IntegrityCheckOneResult.Unreadable]: 'frameleaf_care_fc_one_unreadable',
+    [IntegrityCheckOneResult.Encrypted]: 'frameleaf_care_fc_one_encrypted',
+    [IntegrityCheckOneResult.Unverifiable]: 'frameleaf_care_fc_one_unverifiable',
+  };
+  const checkOne = async (asset: { id: string; originalFileName: string }) => {
+    const { result } = await checkIntegrityOne({ id: asset.id });
+    const message = $t(ONE_RESULT[result], { values: { name: asset.originalFileName } });
+    if (result === IntegrityCheckOneResult.Passed) {
+      toastManager.primary(message);
+    } else {
+      toastManager.warning(message);
+    }
+    await load();
   };
 
   /** FL-520: Stop. Findings so far stay; the damage check carries on next night. */
@@ -669,19 +694,36 @@
             {/snippet}
             {#snippet action()}
               {#if isOn(check.id)}
-                <Button
-                  label={$t('frameleaf_care_fc_check_named', { values: { name } })}
-                  disabled={running}
-                  onclick={() => checkNow(check)}
-                >
-                  {$t('frameleaf_care_fc_check_now')}
-                </Button>
+                <div class="row-buttons">
+                  {#if check.id !== 'stray'}<Button
+                      label={$t('frameleaf_care_fc_check_one_named', { values: { name } })}
+                      onclick={() => {
+                        checkingOne = check;
+                        checkOneOpen = true;
+                      }}>{$t('frameleaf_care_check_one')}</Button
+                    >{/if}
+                  <Button
+                    label={$t('frameleaf_care_fc_check_named', { values: { name } })}
+                    disabled={running}
+                    onclick={() => checkNow(check)}
+                  >
+                    {$t('frameleaf_care_fc_check_now')}
+                  </Button>
+                </div>
               {/if}
             {/snippet}
           </Item>
         {/each}
       </ItemList>
     </Section>
+
+    {#if checkingOne}<RunOneDialog
+        bind:open={checkOneOpen}
+        title={$t('frameleaf_care_fc_check_one_title', { values: { name: words(checkingOne.id, 'name') } })}
+        verb={$t('frameleaf_care_check')}
+        note={$t('frameleaf_care_fc_check_one_note')}
+        onStart={checkOne}
+      />{/if}
 
     <Section title={$t('frameleaf_care_fc_when_title')}>
       <Row label={$t('frameleaf_care_overnight')} help={$t('frameleaf_care_fc_overnight_help')}>
@@ -786,6 +828,12 @@
 {/snippet}
 
 <style>
+  .row-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+  }
   .steps {
     padding: 0 var(--fl-space-6) var(--fl-space-6);
   }

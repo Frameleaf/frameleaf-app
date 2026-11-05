@@ -1550,6 +1550,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.VideoCardState]: VideoCardState;
   [SystemMetadataKey.IntegrityCheckHistory]: { entries: IntegrityCheckHistoryEntry[] };
   [SystemMetadataKey.IntegrityCheckStop]: { requestedAt: string };
+  [SystemMetadataKey.MlUnavailableBehaviour]: { whenUnavailable: 'wait' | 'stop'; notified?: Record<string, string> };
   [SystemMetadataKey.DuplicateRecompare]: { requestedAt: string };
   [SystemMetadataKey.BackupRestoreVerification]: BackupRestoreVerification;
   [SystemMetadataKey.BackupSequence]: BackupSequenceState;

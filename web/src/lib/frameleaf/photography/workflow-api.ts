@@ -56,6 +56,11 @@ export type WorkflowConfig = {
   selectionDeadline: string | null;
   expiresAt: string | null;
   turnaroundDays: number;
+  /** Approved design (2026-11-04): what the client reads first, which photographs they see, and how many they may choose. */
+  welcomeMessage?: string;
+  proofCollection?: 'eligible' | 'selected';
+  maxSelections?: number | null;
+  reminders?: { selection: boolean; paymentAndExpiry: boolean };
   proofWatermark: Watermark;
   webWatermark: Watermark | null;
   downloadWatermark: Watermark | null;
@@ -180,6 +185,7 @@ export type Workflow = {
   recipients: {
     id: string;
     name: string;
+    email?: string;
     revoked: boolean;
     canProof: boolean;
     canDownload: boolean;
@@ -265,6 +271,8 @@ export type GuestGallery = {
     bundles: { count: number; price: number }[];
     terms: string;
     selectionDeadline: string | null;
+    selectionLimit?: number | null;
+    welcomeMessage?: string;
   };
   brand: PublicBrand;
 };

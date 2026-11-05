@@ -717,6 +717,15 @@ describe(MlDestinationService.name, () => {
       ]);
     });
 
+    it("keeps what to do when a computer at home isn't answering with the processing order", async () => {
+      mocks.systemMetadata.get.mockResolvedValue(null);
+      expect((await sut.getProcessingOrder()).whenUnavailable).toBe('wait');
+      await sut.setProcessingOrder({ order: [...DEFAULT_ML_PROCESSING_ORDER], whenUnavailable: 'stop' });
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.MlUnavailableBehaviour, {
+        whenUnavailable: 'stop',
+      });
+    });
+
     it('says which workloads follow the main processing order (FL-456)', async () => {
       mocks.mlDestination.getProcessingOrder.mockResolvedValue({
         order: [...DEFAULT_ML_PROCESSING_ORDER],
