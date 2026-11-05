@@ -41,7 +41,8 @@ export type MapArea = { west: number; south: number; east: number; north: number
 
 type MapView = { getWest(): number; getEast(): number; getSouth(): number; getNorth(): number };
 
-const wrapLongitude = (lon: number) => (lon > 180 ? lon - 360 : lon < -180 ? lon + 360 : lon);
+// a map panned across several world copies reads longitudes beyond ±540
+const wrapLongitude = (lon: number) => (lon >= -180 && lon <= 180 ? lon : ((((lon + 180) % 360) + 360) % 360) - 180);
 
 /**
  * The visible map as an area in -180..180. MapLibre does not wrap its bounds, so a view across the
@@ -58,6 +59,28 @@ export const toMapArea = (view: MapView): MapArea => {
 
 export const isInMapArea = ({ west, south, east, north }: MapArea, lon: number, lat: number) =>
   lat >= south && lat <= north && (west <= east ? lon >= west && lon <= east : lon >= west || lon <= east);
+
+/** FL-1214: the visible map grown by `by` of its size on every side, so a small pan needs no new answer. */
+export const widenMapArea = (view: MapView, by = 0.5): MapArea => {
+  const width = view.getEast() - view.getWest();
+  const height = view.getNorth() - view.getSouth();
+  return toMapArea({
+    getWest: () => view.getWest() - width * by,
+    getEast: () => view.getEast() + width * by,
+    getSouth: () => view.getSouth() - height * by,
+    getNorth: () => view.getNorth() + height * by,
+  });
+};
+
+/** Degrees of longitude an area spans, 360 for the whole world. */
+const lonSpan = ({ west, east }: MapArea) => (east - west >= 360 ? 360 : (east - west + 360) % 360);
+
+/** Whether `outer` holds all of `inner`, across the date line too. */
+export const mapAreaCovers = (outer: MapArea, inner: MapArea) =>
+  inner.south >= outer.south &&
+  inner.north <= outer.north &&
+  (lonSpan(outer) === 360 ||
+    (lonSpan(inner) < 360 && ((inner.west - outer.west + 360) % 360) + lonSpan(inner) <= lonSpan(outer)));
 
 const round = (value: number, direction: 'down' | 'up') =>
   Number(((direction === 'down' ? Math.floor : Math.ceil)(value * 1e5) / 1e5).toFixed(5));

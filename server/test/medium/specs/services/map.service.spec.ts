@@ -166,6 +166,85 @@ describe(MapService.name, () => {
     ]);
   });
 
+  describe('one view of a large library (FL-1214)', () => {
+    const located = async (ctx: ReturnType<typeof setup>['ctx'], ownerId: string, points: Array<[number, number]>) => {
+      const assets = [];
+      for (const [index, [latitude, longitude]] of points.entries()) {
+        const { asset } = await ctx.newAsset({
+          ownerId,
+          type: index === 0 ? AssetType.Video : AssetType.Image,
+          fileCreatedAt: new Date(Date.UTC(2024, 0, 1 + index)),
+        });
+        await ctx.newExif({ assetId: asset.id, latitude, longitude, city: `city-${index}`, state: null, country: 'C' });
+        assets.push(asset);
+      }
+      return assets;
+    };
+
+    it('groups close items into one cell and sends a lone item with its details', async () => {
+      const { ctx } = setup();
+      const { user } = await ctx.newUser();
+      const assets = await located(ctx, user.id, [
+        [48.85, 2.35],
+        [48.851, 2.351],
+        [48.852, 2.352],
+        [-33.86, 151.2],
+      ]);
+
+      const result = await ctx.get(MapRepository).getMapClusters(user.id, [user.id], [], 4, 0);
+
+      expect(result.total).toBe(4);
+      expect(result.bounds).toEqual({ west: 2.35, south: -33.86, east: 151.2, north: 48.852 });
+      expect(result.clusters).toEqual([
+        expect.objectContaining({ count: 3, videos: 1, country: 'C', lat: expect.closeTo(48.851, 3) }),
+      ]);
+      expect(assets.slice(0, 3).map(({ id }) => id)).toContain(result.clusters[0].id);
+      expect(result.markers).toEqual([expect.objectContaining({ id: assets[3].id, city: 'city-3', country: 'C' })]);
+    });
+
+    it('keeps to the area asked for, across the date line too', async () => {
+      const { ctx } = setup();
+      const { user } = await ctx.newUser();
+      const assets = await located(ctx, user.id, [
+        [10, 179.5],
+        [10, -179.5],
+        [10, 0],
+      ]);
+      const area = { west: 170, south: 0, east: -170, north: 20 };
+
+      const result = await ctx.get(MapRepository).getMapClusters(user.id, [user.id], [], 12, 2000, { area });
+
+      expect(result.total).toBe(2);
+      expect(result.clusters).toEqual([]);
+      expect(result.markers.map(({ id }) => id).toSorted()).toEqual([assets[0].id, assets[1].id].toSorted());
+    });
+
+    it('sends a small library whole, and the In view rows a page at a time, newest first', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const assets = await located(ctx, user.id, [
+        [1, 1],
+        [1.5, 1.5],
+        [2, 2],
+        [50, 50],
+      ]);
+
+      await expect(sut.getMapClusters(auth, { zoom: 2 })).resolves.toEqual(
+        expect.objectContaining({ complete: true, total: 4, clusters: [], markers: expect.any(Array) }),
+      );
+
+      const page = { west: 0, south: 0, east: 3, north: 3, take: 2 };
+      await expect(sut.getMapMarkers(auth, { ...page, skip: 0 })).resolves.toEqual([
+        expect.objectContaining({ id: assets[2].id }),
+        expect.objectContaining({ id: assets[1].id }),
+      ]);
+      await expect(sut.getMapMarkers(auth, { ...page, skip: 2 })).resolves.toEqual([
+        expect.objectContaining({ id: assets[0].id }),
+      ]);
+    });
+  });
+
   describe('revocation and hidden content (FL-51)', () => {
     it("never maps a partner's rows: what they share arrives as the viewer's own copies (FL-326)", async () => {
       const { sut, ctx } = setup();

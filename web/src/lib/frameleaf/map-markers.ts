@@ -1,4 +1,4 @@
-import { AssetTypeEnum, type MapMarkerResponseDto } from '@frameleaf/sdk';
+import { AssetTypeEnum, type MapClusterResponseDto, type MapMarkerResponseDto } from '@frameleaf/sdk';
 import { captureDay } from '$lib/frameleaf/explore';
 
 /**
@@ -40,13 +40,46 @@ export const markerCardLine = (detail: MarkerDetail) => [detail.day, detail.plac
 export const markerRowLine = (detail: MarkerDetail, videoLabel: string) =>
   [detail.day, detail.city, detail.video ? videoLabel : null].filter(Boolean).join(' · ');
 
-/** The legend's photo and video counts for what is in view (`MapView.jsx:363-367`). */
-export const markerTypeCounts = (markers: Pick<MapMarkerResponseDto, 'type'>[]) => {
+/**
+ * One point the map groups into bubbles (FL-1214): a located item, or a cell of `count` items that
+ * the server grouped for the zoom it was asked about. Only an item carries its marker.
+ */
+export type MapPoint = {
+  id: string;
+  lat: number;
+  lon: number;
+  count: number;
+  videos: number;
+  place: string;
+  marker?: MapMarkerResponseDto;
+};
+
+export const markerPoint = (marker: MapMarkerResponseDto): MapPoint => ({
+  id: marker.id,
+  lat: marker.lat,
+  lon: marker.lon,
+  count: 1,
+  videos: marker.type === AssetTypeEnum.Video ? 1 : 0,
+  place: markerPlace(marker),
+  marker,
+});
+
+export const clusterPoint = (cluster: MapClusterResponseDto): MapPoint => ({
+  id: cluster.id,
+  lat: cluster.lat,
+  lon: cluster.lon,
+  count: cluster.count,
+  videos: cluster.videos,
+  place: markerPlace(cluster),
+});
+
+/** The legend's photo and video counts for what is in view (`MapView.jsx:363-367`), and their sum. */
+export const pointCounts = (points: Pick<MapPoint, 'count' | 'videos'>[]) => {
+  let items = 0;
   let videos = 0;
-  for (const marker of markers) {
-    if (marker.type === AssetTypeEnum.Video) {
-      videos++;
-    }
+  for (const point of points) {
+    items += point.count;
+    videos += point.videos;
   }
-  return { photos: markers.length - videos, videos };
+  return { items, photos: items - videos, videos };
 };

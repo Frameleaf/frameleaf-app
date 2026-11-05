@@ -36,6 +36,8 @@ export interface MapSettings {
   withPartners: boolean;
   onlyFavorites: boolean;
   showAssetPanel: boolean;
+  /** FL-1214: load the whole library's markers in one download rather than a view at a time. */
+  loadAllItems: boolean;
 }
 
 const defaultMapSettings: MapSettings = {
@@ -47,6 +49,7 @@ const defaultMapSettings: MapSettings = {
   withPartners: true,
   onlyFavorites: false,
   showAssetPanel: false,
+  loadAllItems: false,
 };
 
 const persistedObject = <T>(key: string, defaults: T) =>

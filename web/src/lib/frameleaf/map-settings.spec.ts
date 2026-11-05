@@ -1,5 +1,13 @@
 import { DateTime } from 'luxon';
-import { formatMapArea, isInMapArea, mapDateWindow, parseMapArea, toMapArea } from '$lib/frameleaf/map-settings';
+import {
+  formatMapArea,
+  isInMapArea,
+  mapAreaCovers,
+  mapDateWindow,
+  parseMapArea,
+  toMapArea,
+  widenMapArea,
+} from '$lib/frameleaf/map-settings';
 
 describe('mapDateWindow', () => {
   const now = DateTime.fromISO('2026-09-23T15:00:00', { zone: 'utc' });
@@ -90,5 +98,25 @@ describe('visible map area across the antimeridian', () => {
     expect(isInMapArea(area, 0, 0)).toBe(false);
     expect(isInMapArea(area, -170, 20)).toBe(false);
     expect(isInMapArea(toMapArea(view(-10, 10)), 5, 5)).toBe(true);
+  });
+
+  it('widens a view on every side and wraps it (FL-1214)', () => {
+    expect(widenMapArea(view(-10, 10))).toEqual({ west: -20, south: -20, east: 20, north: 20 });
+    expect(widenMapArea(view(160, 200))).toEqual({ west: 140, south: -20, east: -140, north: 20 });
+    expect(widenMapArea(view(-100, 100, -60, 60))).toEqual({ west: -180, south: -90, east: 180, north: 90 });
+  });
+
+  it('reads longitudes from a map panned across several world copies', () => {
+    expect(toMapArea(view(710, 730))).toEqual({ west: -10, south: -10, east: 10, north: 10 });
+  });
+
+  it('knows whether an area sent earlier still holds the view (FL-1214)', () => {
+    const world = { west: -180, south: -90, east: 180, north: 90 };
+    const sent = widenMapArea(view(160, 200));
+    expect(mapAreaCovers(world, toMapArea(view(170, 190)))).toBe(true);
+    expect(mapAreaCovers(sent, toMapArea(view(170, 190)))).toBe(true);
+    expect(mapAreaCovers(sent, toMapArea(view(130, 150)))).toBe(false);
+    expect(mapAreaCovers(sent, toMapArea(view(170, 190, -30, 0)))).toBe(false);
+    expect(mapAreaCovers(sent, world)).toBe(false);
   });
 });

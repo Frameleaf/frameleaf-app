@@ -1,4 +1,4 @@
-import type { ServerConfigDto } from '@frameleaf/sdk';
+import { AssetTypeEnum, type ServerConfigDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
@@ -50,6 +50,12 @@ beforeEach(() => {
   resetMapLibreStub();
   addMessages('dev', en);
   sdkMock.getMapMarkers.mockResolvedValue([]);
+  // FL-1214: a library this small comes whole from /map/clusters, with what /map/markers would send
+  sdkMock.getMapClusters.mockImplementation(async ({ zoom, ...query }, options) => {
+    expect(zoom).toBeTypeOf('number');
+    const markers = await sdkMock.getMapMarkers(query, options);
+    return { complete: true, total: markers.length, bounds: null, clusters: [], markers };
+  });
   sdkMock.getMapStatistics.mockResolvedValue({ archived: 0, partner: 0, unlocated: 0 });
   sdkMock.getVisitedLandmarks.mockResolvedValue([]);
 });
@@ -333,5 +339,101 @@ describe('MapScreen (FL-193)', () => {
     listeners.move();
     await Promise.resolve();
     expect(getSource).toHaveBeenCalledTimes(2);
+  });
+
+  describe('a large library (FL-1214)', () => {
+    const cell = {
+      id: 'c0000000-0000-4000-8000-000000000001',
+      lat: 10,
+      lon: 50,
+      count: 40,
+      videos: 4,
+      city: 'Here',
+      state: null,
+      country: null,
+    };
+    const item = {
+      id: 'a0000000-0000-4000-8000-000000000001',
+      lat: 11,
+      lon: 51,
+      city: 'Here',
+      state: null,
+      country: null,
+      type: AssetTypeEnum.Video,
+    };
+    let zoom = 3;
+    beforeEach(() => {
+      zoom = 3;
+      sdkMock.getMapClusters.mockResolvedValue({
+        complete: false,
+        total: 50_000,
+        bounds: { west: -100, south: -50, east: 100, north: 50 },
+        clusters: [cell],
+        markers: [item],
+      });
+      setMapLibreStubMap({
+        getBounds: () => ({ getWest: () => 40, getEast: () => 60, getSouth: () => -10, getNorth: () => 30 }),
+        getZoom: () => zoom,
+        fitBounds: vi.fn(),
+        setStyle: vi.fn(),
+      });
+    });
+    afterEach(() => {
+      mapSettings.update((settings) => ({ ...settings, showAssetPanel: false, loadAllItems: false }));
+    });
+
+    it("counts the server's grouped cells, and asks again for a new zoom level", async () => {
+      render(MapScreen, { title: 'Map', onOpenAsset: vi.fn() });
+
+      await waitFor(() => expect(screen.getByText('41 items in view')).toBeInTheDocument());
+      expect(screen.getByText(/50000 located/)).toBeInTheDocument();
+      expect(screen.getByText('36 photos · 5 videos')).toBeInTheDocument();
+      // the first answer covers the whole library, grouped coarsely; then the view at the map's own
+      // zoom level, and as much again around it
+      expect(sdkMock.getMapClusters.mock.calls[0][0]).toEqual({ withSharedAlbums: true, zoom: 2 });
+      await waitFor(() => expect(sdkMock.getMapClusters).toHaveBeenCalledTimes(2));
+      expect(sdkMock.getMapClusters).toHaveBeenLastCalledWith(
+        { withSharedAlbums: true, zoom: 3, west: 30, east: 70, south: -30, north: 50 },
+        expect.anything(),
+      );
+      expect(sdkMock.getMapMarkers).not.toHaveBeenCalled();
+
+      // the same zoom level inside what was sent asks for nothing; a new level asks again
+      await waitFor(() => expect(screen.getByText('41 items in view')).toBeInTheDocument());
+      getMapLibreStubProps().onmoveend?.({});
+      expect(sdkMock.getMapClusters).toHaveBeenCalledTimes(2);
+      zoom = 5.4;
+      getMapLibreStubProps().onmoveend?.({});
+      await waitFor(() => expect(sdkMock.getMapClusters).toHaveBeenCalledTimes(3));
+      expect(sdkMock.getMapClusters).toHaveBeenLastCalledWith(
+        { withSharedAlbums: true, zoom: 5, west: 30, east: 70, south: -30, north: 50 },
+        expect.anything(),
+      );
+    });
+
+    it('reads the In view rows a page at a time when a cell is in view', async () => {
+      mapSettings.update((settings) => ({ ...settings, showAssetPanel: true }));
+      sdkMock.getMapMarkers.mockResolvedValue([{ ...item, originalFileName: 'tram.jpg' }]);
+      render(MapScreen, { title: 'Map', onOpenAsset: vi.fn() });
+
+      expect(await screen.findByText('tram.jpg')).toBeInTheDocument();
+      expect(sdkMock.getMapMarkers).toHaveBeenCalledWith(
+        { withSharedAlbums: true, west: 40, east: 60, south: -10, north: 30, skip: 0, take: 120 },
+        expect.anything(),
+      );
+    });
+
+    it('loads every item at once when the settings ask for it', async () => {
+      mapSettings.update((settings) => ({ ...settings, loadAllItems: true }));
+      sdkMock.getMapMarkers.mockResolvedValue([item]);
+      render(MapScreen, { title: 'Map', onOpenAsset: vi.fn() });
+
+      await waitFor(() => expect(screen.getByText('1 item in view')).toBeInTheDocument());
+      expect(sdkMock.getMapMarkers).toHaveBeenCalledWith({ withSharedAlbums: true }, expect.anything());
+      expect(sdkMock.getMapClusters).not.toHaveBeenCalled();
+
+      await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_map_settings }));
+      expect(screen.getByRole('switch', { name: en.frameleaf_map_load_all })).toHaveAttribute('aria-checked', 'true');
+    });
   });
 });

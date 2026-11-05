@@ -9667,6 +9667,42 @@ export type LivePhotoRelinkResultDto = {
 export type LivePhotoRelinkResponseDto = {
     results: LivePhotoRelinkResultDto[];
 };
+export type MapBoundsDto = {
+    east: number;
+    north: number;
+    south: number;
+    west: number;
+};
+export type MapClusterResponseDto = {
+    /** City of the preview item */
+    city: string | null;
+    /** How many items */
+    count: number;
+    /** Country of the preview item */
+    country: string | null;
+    /** One of the items, for the bubble's preview */
+    id: string;
+    /** Latitude of the items' centre */
+    lat: number;
+    /** Longitude of the items' centre */
+    lon: number;
+    /** State/Province of the preview item */
+    state: string | null;
+    /** How many of them are videos */
+    videos: number;
+};
+export type MapClusterListResponseDto = {
+    /** The area those items cover; null when there are none */
+    bounds: (MapBoundsDto) | null;
+    /** Groups of items in the area */
+    clusters: MapClusterResponseDto[];
+    /** True when markers hold every located item under the filters, wherever the map is */
+    complete: boolean;
+    /** Items in the area that are not in a group */
+    markers: MapMarkerResponseDto[];
+    /** Located items in the area asked for (the whole world without one) */
+    total: number;
+};
 export type MapReverseGeocodeResponseDto = {
     /** City name */
     city: string | null;
@@ -19420,6 +19456,28 @@ export type MachineLearningHardwareQueryDto = {
     /** Destination to probe. When omitted, the first enabled local destination is probed; a cloud destination is never chosen implicitly. */
     destinationId?: string;
 };
+export type MapClusterDto = {
+    /** East edge of the area (longitude) */
+    east?: number;
+    /** Filter assets created after this date */
+    fileCreatedAfter?: string;
+    /** Filter assets created before this date */
+    fileCreatedBefore?: string;
+    /** Filter by archived status */
+    isArchived?: boolean;
+    /** Filter by favorite status */
+    isFavorite?: boolean;
+    /** North edge of the area (latitude) */
+    north?: number;
+    /** South edge of the area (latitude) */
+    south?: number;
+    /** West edge of the area (longitude) */
+    west?: number;
+    /** Include shared album assets */
+    withSharedAlbums?: boolean;
+    /** The map zoom level the items are grouped for */
+    zoom: number;
+};
 export type MapMarkerDto = {
     /** Filter assets created after this date */
     fileCreatedAfter?: string;
@@ -19429,6 +19487,30 @@ export type MapMarkerDto = {
     isArchived?: boolean;
     /** Filter by favorite status */
     isFavorite?: boolean;
+    /** Include shared album assets */
+    withSharedAlbums?: boolean;
+};
+export type MapMarkerListDto = {
+    /** East edge of the area (longitude) */
+    east?: number;
+    /** Filter assets created after this date */
+    fileCreatedAfter?: string;
+    /** Filter assets created before this date */
+    fileCreatedBefore?: string;
+    /** Filter by archived status */
+    isArchived?: boolean;
+    /** Filter by favorite status */
+    isFavorite?: boolean;
+    /** North edge of the area (latitude) */
+    north?: number;
+    /** Skip this many markers (with take) */
+    skip?: number;
+    /** South edge of the area (latitude) */
+    south?: number;
+    /** At most this many markers, newest first */
+    take?: number;
+    /** West edge of the area (longitude) */
+    west?: number;
     /** Include shared album assets */
     withSharedAlbums?: boolean;
 };
@@ -28029,23 +28111,68 @@ export function relinkLivePhotos({ livePhotoRelinkDto }: {
     })));
 }
 /**
- * Retrieve map markers
+ * Retrieve map clusters
  */
-export function getMapMarkers({ fileCreatedAfter, fileCreatedBefore, isArchived, isFavorite, withSharedAlbums }: {
+export function getMapClusters({ east, fileCreatedAfter, fileCreatedBefore, isArchived, isFavorite, north, south, west, withSharedAlbums, zoom }: {
+    east?: number;
     fileCreatedAfter?: string;
     fileCreatedBefore?: string;
     isArchived?: boolean;
     isFavorite?: boolean;
+    north?: number;
+    south?: number;
+    west?: number;
+    withSharedAlbums?: boolean;
+    zoom: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MapClusterListResponseDto;
+    }>(`/map/clusters${QS.query(QS.explode({
+        east,
+        fileCreatedAfter,
+        fileCreatedBefore,
+        isArchived,
+        isFavorite,
+        north,
+        south,
+        west,
+        withSharedAlbums,
+        zoom
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Retrieve map markers
+ */
+export function getMapMarkers({ east, fileCreatedAfter, fileCreatedBefore, isArchived, isFavorite, north, skip, south, take, west, withSharedAlbums }: {
+    east?: number;
+    fileCreatedAfter?: string;
+    fileCreatedBefore?: string;
+    isArchived?: boolean;
+    isFavorite?: boolean;
+    north?: number;
+    skip?: number;
+    south?: number;
+    take?: number;
+    west?: number;
     withSharedAlbums?: boolean;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: MapMarkerResponseDto[];
     }>(`/map/markers${QS.query(QS.explode({
+        east,
         fileCreatedAfter,
         fileCreatedBefore,
         isArchived,
         isFavorite,
+        north,
+        skip,
+        south,
+        take,
+        west,
         withSharedAlbums
     }))}`, {
         ...opts

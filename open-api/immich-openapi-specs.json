@@ -30198,11 +30198,21 @@
         "x-immich-state": "Alpha"
       }
     },
-    "/map/markers": {
+    "/map/clusters": {
       "get": {
-        "description": "Retrieve a list of latitude and longitude coordinates for every asset with location data.",
-        "operationId": "getMapMarkers",
+        "description": "Retrieve the located items for one view of the map: items close together at the zoom level come as clusters with a count, the rest as markers. A library small enough to send whole comes as markers only, marked complete.",
+        "operationId": "getMapClusters",
         "parameters": [
+          {
+            "name": "east",
+            "required": false,
+            "in": "query",
+            "description": "East edge of the area (longitude)",
+            "schema": {
+              "format": "double",
+              "type": "number"
+            }
+          },
           {
             "name": "fileCreatedAfter",
             "required": false,
@@ -30243,6 +30253,202 @@
             "description": "Filter by favorite status",
             "schema": {
               "type": "boolean"
+            }
+          },
+          {
+            "name": "north",
+            "required": false,
+            "in": "query",
+            "description": "North edge of the area (latitude)",
+            "schema": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          {
+            "name": "south",
+            "required": false,
+            "in": "query",
+            "description": "South edge of the area (latitude)",
+            "schema": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          {
+            "name": "west",
+            "required": false,
+            "in": "query",
+            "description": "West edge of the area (longitude)",
+            "schema": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          {
+            "name": "withSharedAlbums",
+            "required": false,
+            "in": "query",
+            "description": "Include shared album assets",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "zoom",
+            "required": true,
+            "in": "query",
+            "description": "The map zoom level the items are grouped for",
+            "schema": {
+              "minimum": 0,
+              "maximum": 24,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapClusterListResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve map clusters",
+        "tags": [
+          "Map"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "map.read"
+      }
+    },
+    "/map/markers": {
+      "get": {
+        "description": "Retrieve a list of latitude and longitude coordinates for every asset with location data.",
+        "operationId": "getMapMarkers",
+        "parameters": [
+          {
+            "name": "east",
+            "required": false,
+            "in": "query",
+            "description": "East edge of the area (longitude)",
+            "schema": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          {
+            "name": "fileCreatedAfter",
+            "required": false,
+            "in": "query",
+            "description": "Filter assets created after this date",
+            "schema": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "example": "2024-01-01T00:00:00.000Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "fileCreatedBefore",
+            "required": false,
+            "in": "query",
+            "description": "Filter assets created before this date",
+            "schema": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "example": "2024-01-01T00:00:00.000Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "isArchived",
+            "required": false,
+            "in": "query",
+            "description": "Filter by archived status",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "isFavorite",
+            "required": false,
+            "in": "query",
+            "description": "Filter by favorite status",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "north",
+            "required": false,
+            "in": "query",
+            "description": "North edge of the area (latitude)",
+            "schema": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          {
+            "name": "skip",
+            "required": false,
+            "in": "query",
+            "description": "Skip this many markers (with take)",
+            "schema": {
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "south",
+            "required": false,
+            "in": "query",
+            "description": "South edge of the area (latitude)",
+            "schema": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "description": "At most this many markers, newest first",
+            "schema": {
+              "minimum": 1,
+              "maximum": 1000,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "west",
+            "required": false,
+            "in": "query",
+            "description": "West edge of the area (longitude)",
+            "schema": {
+              "format": "double",
+              "type": "number"
             }
           },
           {
@@ -102619,6 +102825,196 @@
         ],
         "type": "string"
       },
+      "MapBoundsDto": {
+        "properties": {
+          "east": {
+            "format": "double",
+            "type": "number"
+          },
+          "north": {
+            "format": "double",
+            "type": "number"
+          },
+          "south": {
+            "format": "double",
+            "type": "number"
+          },
+          "west": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "east",
+          "north",
+          "south",
+          "west"
+        ],
+        "type": "object"
+      },
+      "MapClusterDto": {
+        "properties": {
+          "east": {
+            "description": "East edge of the area (longitude)",
+            "format": "double",
+            "type": "number"
+          },
+          "fileCreatedAfter": {
+            "description": "Filter assets created after this date",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "fileCreatedBefore": {
+            "description": "Filter assets created before this date",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "isArchived": {
+            "description": "Filter by archived status",
+            "type": "boolean"
+          },
+          "isFavorite": {
+            "description": "Filter by favorite status",
+            "type": "boolean"
+          },
+          "north": {
+            "description": "North edge of the area (latitude)",
+            "format": "double",
+            "type": "number"
+          },
+          "south": {
+            "description": "South edge of the area (latitude)",
+            "format": "double",
+            "type": "number"
+          },
+          "west": {
+            "description": "West edge of the area (longitude)",
+            "format": "double",
+            "type": "number"
+          },
+          "withSharedAlbums": {
+            "description": "Include shared album assets",
+            "type": "boolean"
+          },
+          "zoom": {
+            "description": "The map zoom level the items are grouped for",
+            "maximum": 24,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "zoom"
+        ],
+        "type": "object"
+      },
+      "MapClusterListResponseDto": {
+        "properties": {
+          "bounds": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MapBoundsDto"
+              }
+            ],
+            "description": "The area those items cover; null when there are none",
+            "nullable": true
+          },
+          "clusters": {
+            "description": "Groups of items in the area",
+            "items": {
+              "$ref": "#/components/schemas/MapClusterResponseDto"
+            },
+            "type": "array"
+          },
+          "complete": {
+            "description": "True when markers hold every located item under the filters, wherever the map is",
+            "type": "boolean"
+          },
+          "markers": {
+            "description": "Items in the area that are not in a group",
+            "items": {
+              "$ref": "#/components/schemas/MapMarkerResponseDto"
+            },
+            "type": "array"
+          },
+          "total": {
+            "description": "Located items in the area asked for (the whole world without one)",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bounds",
+          "clusters",
+          "complete",
+          "markers",
+          "total"
+        ],
+        "type": "object"
+      },
+      "MapClusterResponseDto": {
+        "properties": {
+          "city": {
+            "description": "City of the preview item",
+            "nullable": true,
+            "type": "string"
+          },
+          "count": {
+            "description": "How many items",
+            "maximum": 9007199254740991,
+            "minimum": 2,
+            "type": "integer"
+          },
+          "country": {
+            "description": "Country of the preview item",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "One of the items, for the bubble's preview",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "lat": {
+            "description": "Latitude of the items' centre",
+            "format": "double",
+            "type": "number"
+          },
+          "lon": {
+            "description": "Longitude of the items' centre",
+            "format": "double",
+            "type": "number"
+          },
+          "state": {
+            "description": "State/Province of the preview item",
+            "nullable": true,
+            "type": "string"
+          },
+          "videos": {
+            "description": "How many of them are videos",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "city",
+          "count",
+          "country",
+          "id",
+          "lat",
+          "lon",
+          "state",
+          "videos"
+        ],
+        "type": "object"
+      },
       "MapMarkerDto": {
         "properties": {
           "fileCreatedAfter": {
@@ -102642,6 +103038,69 @@
           "isFavorite": {
             "description": "Filter by favorite status",
             "type": "boolean"
+          },
+          "withSharedAlbums": {
+            "description": "Include shared album assets",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "MapMarkerListDto": {
+        "properties": {
+          "east": {
+            "description": "East edge of the area (longitude)",
+            "format": "double",
+            "type": "number"
+          },
+          "fileCreatedAfter": {
+            "description": "Filter assets created after this date",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "fileCreatedBefore": {
+            "description": "Filter assets created before this date",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "isArchived": {
+            "description": "Filter by archived status",
+            "type": "boolean"
+          },
+          "isFavorite": {
+            "description": "Filter by favorite status",
+            "type": "boolean"
+          },
+          "north": {
+            "description": "North edge of the area (latitude)",
+            "format": "double",
+            "type": "number"
+          },
+          "skip": {
+            "description": "Skip this many markers (with take)",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "south": {
+            "description": "South edge of the area (latitude)",
+            "format": "double",
+            "type": "number"
+          },
+          "take": {
+            "description": "At most this many markers, newest first",
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "west": {
+            "description": "West edge of the area (longitude)",
+            "format": "double",
+            "type": "number"
           },
           "withSharedAlbums": {
             "description": "Include shared album assets",
