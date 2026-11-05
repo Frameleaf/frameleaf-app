@@ -7,6 +7,7 @@ export async function up(db: Kysely<any>): Promise<void> {
   );
 }
 
+/** Drops the index; the memories list still reads correctly, only slower. */
 export async function down(db: Kysely<any>): Promise<void> {
   await sql`DROP INDEX IF EXISTS "memory_owner_show_order_idx"`.execute(db);
 }
