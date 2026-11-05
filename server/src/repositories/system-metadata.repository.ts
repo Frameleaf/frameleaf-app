@@ -74,6 +74,18 @@ export class SystemMetadataRepository {
   }
 
   /**
+   * FL-1210: record that this release served a real API request, for Frameleaf Manager's update rollback.
+   * A plain key, not a SystemMetadataKey member: src/enum.ts is pinned by the schema catalog provenance.
+   */
+  async setServed(value: { version: string; servedAt: string }): Promise<void> {
+    await this.db
+      .insertInto('system_metadata')
+      .values({ key: 'frameleaf-served', value } as Upsert)
+      .onConflict((oc) => oc.columns(['key']).doUpdateSet({ value } as Upsert))
+      .execute();
+  }
+
+  /**
    * FL-81: start a full run of one integrity check, keeping its last completed run. A run that was
    * still in progress is replaced, so a later run never completes an earlier one.
    */
