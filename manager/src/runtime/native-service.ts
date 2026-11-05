@@ -206,6 +206,16 @@ export function nativeControllerAclSafe(
     /^[d-][rwxstST-]{9}[@ ]/.test(stdout)
   );
 }
+/** Accept the OS directory only from a complete native controller protection receipt. */
+export function nativeWindowsSystemRoot(value: unknown): string {
+  const receipt = z.object({
+    protocolVersion: z.literal(1),
+    state: z.literal('protected'),
+    systemRoot: path,
+  }).strict().safeParse(value);
+  if (!receipt.success) throw new Refusal('native_controller_unprotected');
+  return receipt.data.systemRoot;
+}
 /** Use the bootstrap-pinned Desktop controller to verify the two supported Windows program paths. */
 function installedProgramProtection(bootstrap: NativeBootstrap) {
   if (process.platform !== 'win32') return protectNativeController;
@@ -231,9 +241,9 @@ function installedProgramProtection(bootstrap: NativeBootstrap) {
           maxBuffer: 1024,
         },
       );
-      const receipt = JSON.parse(stdout);
-      if (stderr || receipt.protocolVersion !== 1 || receipt.state !== 'protected')
-        throw new Refusal('native_controller_unprotected');
+      if (stderr) throw new Refusal('native_controller_unprotected');
+      // Desktop 0.1.1 clears SystemRoot; Windows OpenSSL needs the OS directory for entropy.
+      process.env.SystemRoot = nativeWindowsSystemRoot(JSON.parse(stdout));
     } catch {
       throw new Refusal('native_controller_unprotected');
     }

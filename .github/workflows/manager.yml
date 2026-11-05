@@ -56,7 +56,7 @@ jobs:
           node-version: '26.11.1'
       - run: npm ci --ignore-scripts
       - name: Verify the inherited pipe and Desktop backup path
-        run: node --import tsx --test --test-name-pattern="native bootstrap accepts|native bootstrap input" test/native-service.test.ts test/native-bootstrap-stdio.test.ts
+        run: node --import tsx --test --test-name-pattern="native bootstrap accepts|native bootstrap input|native Windows OS environment" test/native-service.test.ts test/native-bootstrap-stdio.test.ts
   manager:
     env:
       FRAMELEAF_CI_NODE_IMAGE: mirror.gcr.io/library/node@sha256:8eb619e402eaede1748a3c8173bffab391592812e85136452f781741c7242ddf
