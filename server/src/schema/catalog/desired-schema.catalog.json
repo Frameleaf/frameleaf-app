@@ -7423,7 +7423,19 @@
           "synchronize": true
         }
       ],
-      "indexes": [],
+      "indexes": [
+        {
+          "name": "system_metadata_key_prefix_idx",
+          "definition": "CREATE INDEX system_metadata_key_prefix_idx ON public.system_metadata USING btree (key text_pattern_ops)",
+          "tableName": "system_metadata",
+          "columnNames": [
+            "key"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
       "triggers": [],
       "constraints": [
         {
@@ -35560,6 +35572,19 @@
           ],
           "using": "btree",
           "where": "(state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text]))",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_queue_state_idx",
+          "definition": "CREATE INDEX job_queue_state_idx ON public.job USING btree (queue, state, \"availableAt\")",
+          "tableName": "job",
+          "columnNames": [
+            "queue",
+            "state",
+            "availableAt"
+          ],
+          "using": "btree",
           "unique": false,
           "synchronize": true
         },
