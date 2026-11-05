@@ -273,7 +273,9 @@ test.describe('Personal access (FL-67)', () => {
     await expect(devices.getByRole('listitem')).toHaveCount(3);
 
     // this device signs out one other device; that token stops working, the others do not
+    // a device's own "Sign out <device>", not the section's "Sign out everywhere else…"
     await devices
+      .getByRole('listitem')
       .getByRole('button', { name: /^Sign out / })
       .first()
       .click();

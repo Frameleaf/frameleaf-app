@@ -72,6 +72,7 @@
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
   import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
+  import Said from '$lib/components/frameleaf/settings/kit/Said.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import { mdiLockCheckOutline, mdiLockOutline } from '@mdi/js';
   import { locale } from '$lib/stores/preferences.store';
@@ -718,9 +719,7 @@
         {/if}
       </Hero>
     {/if}
-    {#if notice}
-      <Notice tone="info" title={notice} />
-    {/if}
+    <Said message={notice} onDismiss={() => (notice = '')} />
     {#if error}
       <div role="alert"><Notice tone="warn" title={error} /></div>
     {/if}
@@ -749,9 +748,7 @@
         <Notice tone="warn" title={$t('frameleaf_locked_rules_conflict')} action={reloadAction} />
       </div>
     {/if}
-    {#if notice}
-      <Notice tone="info" title={notice} />
-    {/if}
+    <Said message={notice} onDismiss={() => (notice = '')} />
     {#if error}
       <div role="alert"><Notice tone="warn" title={error} /></div>
     {/if}

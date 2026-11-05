@@ -22,15 +22,14 @@ test.describe('Frameleaf Cloud account & link', () => {
 
   test('starts linking, shows the code and QR code, and picks up the approval', async ({ page }) => {
     await page.goto(accountPage);
-    await expect(page.getByText('Access your library from the Frameleaf mobile apps')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText('This server isn’t linked to a Frameleaf account')).toBeVisible({ timeout: 30_000 });
 
-    await page.getByRole('button', { name: 'Link to Frameleaf' }).click();
+    await page.getByRole('button', { name: 'Link this server' }).click();
     await expect(page.getByText('BCDF-GHJK')).toBeVisible();
     await expect(page.getByRole('img', { name: /Link this server/ })).toBeVisible();
 
     mock.state = 'linked';
-    await expect(page.getByText('Linked to Frameleaf')).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByRole('heading', { name: 'Linked to owner@example.test' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Linked to owner@example.test' })).toBeVisible({ timeout: 10_000 });
     expect(mock.requests.some(({ method, path }) => method === 'GET' && path === 'admin/cloud/link')).toBe(true);
   });
 
@@ -42,7 +41,7 @@ test.describe('Frameleaf Cloud account & link', () => {
     await expect(dialog.getByRole('button', { name: /Unlink server/ })).toBeDisabled();
     await dialog.getByRole('checkbox').check();
     await dialog.getByRole('button', { name: /Unlink server/ }).click();
-    await expect(page.getByText('This server is not linked')).toBeVisible();
+    await expect(page.getByText('This server isn’t linked to a Frameleaf account')).toBeVisible();
     expect(mock.requests).toContainEqual(expect.objectContaining({ method: 'DELETE', path: 'admin/cloud/link' }));
   });
 

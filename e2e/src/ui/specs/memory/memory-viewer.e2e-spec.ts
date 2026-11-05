@@ -25,9 +25,10 @@ const openLastItemPaused = async (page: Page, list: MemoryResponseDto[]) => {
   const memory = list.find(({ assets }) => assets.at(-1)!.type === AssetTypeEnum.Image)!;
   const lastAsset = memory.assets.at(-1)!;
   await memoryViewerUtils.openMemoryPageWithAsset(page, memory.id, lastAsset.id);
-  const progress = memoryViewerUtils.locator(page).getByRole('group', { name: 'Memory progress' });
-  await progress.getByRole('button', { name: 'Pause' }).click();
-  await expect(progress.getByRole('button', { name: 'Play' })).toBeVisible();
+  // UI 22: Play/Pause sits in the transport under the stage, not beside the progress segments.
+  const controls = memoryViewerUtils.locator(page).locator('.fmp-controls');
+  await controls.getByRole('button', { name: 'Pause', exact: true }).click();
+  await expect(controls.getByRole('button', { name: 'Play', exact: true })).toBeVisible();
   return { memory, lastAsset };
 };
 

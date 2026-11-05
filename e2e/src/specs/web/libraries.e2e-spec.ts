@@ -163,7 +163,7 @@ test.describe('Libraries (FL-78)', () => {
 
     await page.goto(viewLibrary(library.id));
     const detail = libraryDetail(page, name);
-    await detail.getByRole('button', { name: 'Remove 1 photo from Frameleaf', exact: true }).click();
+    await detail.getByRole('button', { name: 'Remove from Frameleaf…', exact: true }).click();
 
     // stage one: the review of what the removal takes with it
     const dialog = page.getByRole('dialog', { name: 'Remove library' });

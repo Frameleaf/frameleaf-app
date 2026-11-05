@@ -28,31 +28,30 @@ export const memoryViewerUtils = {
 };
 
 export const memoryGalleryUtils = {
+  /** The player's "Show all items" sheet over the stage (UI 22: replaced the gallery under the player). */
   locator(page: Page) {
-    return page.locator('#gallery-memory');
+    return page.getByRole('region', { name: 'All items in this memory' });
   },
 
   thumbnailWithAssetId(page: Page, assetId: string) {
-    // The gallery is the Frameleaf results grid: each tile names its item and opens it from its button.
-    return page.locator(`#gallery-memory [data-asset-id="${assetId}"]`).getByRole('button').first();
+    return this.locator(page)
+      .getByRole('button')
+      .filter({ has: page.locator(`img[src*="/api/assets/${assetId}/"]`) });
   },
 
-  async scrollToGallery(page: Page) {
-    const showGalleryButton = page.getByLabel('Select items below');
-    if (await showGalleryButton.isVisible()) {
-      await showGalleryButton.click();
+  async openGallery(page: Page) {
+    if (!(await this.locator(page).isVisible())) {
+      await page.getByRole('button', { name: 'Show all items' }).click();
     }
-    await expect(this.locator(page)).toBeInViewport();
+    await expect(this.locator(page)).toBeVisible();
   },
 
+  /** Picks the item in the gallery, then opens it in the asset viewer with the player's Open item. */
   async clickThumbnail(page: Page, assetId: string) {
-    await this.scrollToGallery(page);
+    await this.openGallery(page);
     await this.thumbnailWithAssetId(page, assetId).click();
-  },
-
-  async getAllThumbnails(page: Page) {
-    await this.scrollToGallery(page);
-    return page.locator('#gallery-memory [data-asset-id]');
+    await expect(this.locator(page)).toHaveCount(0);
+    await page.getByRole('button', { name: 'Open item', exact: true }).click();
   },
 };
 
