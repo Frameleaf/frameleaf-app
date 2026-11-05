@@ -33,7 +33,7 @@ export type Container = {
   Id: string;
   Name: string;
   Image: string;
-  State: { Running: boolean; StartedAt?: string; Health?: { Status: string } };
+  State: { Running: boolean; StartedAt?: string; Health?: { Status: string; Log?: { ExitCode: number }[] } };
   Config: {
     Image: string;
     Env: string[];

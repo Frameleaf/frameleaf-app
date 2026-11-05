@@ -150,7 +150,8 @@ type UpdateReview = { expires: number; current: Installation; release: VerifiedR
  * cancellable even when its selected release was withdrawn and cannot be retargeted (review: operations.ts).
  */
 const updateStarted = (operation: Pick<Operation, 'completed' | 'receipts'>): boolean =>
-  operation.completed.includes('apply-release') || operation.receipts['release-start-state'] === 'starting';
+  operation.completed.includes('apply-release') ||
+  ['starting', 'started'].includes(operation.receipts['release-start-state'] as string);
 type Cancellation = {
   kind: 'backup' | 'update' | 'source' | 'restore' | 'reconfigure';
   installation: Installation | null;
@@ -169,6 +170,8 @@ export class Operations {
   private fencing: Fencing;
   private retention: Retention;
   private executing = new Set<string>();
+  /** How often an update's start polls Docker for the new server's health. Docker keeps its last five probes. */
+  serverWatchMs = 5000;
   constructor(
     readonly store: Store,
     readonly docker: Docker,
@@ -1378,6 +1381,7 @@ export class Operations {
     // Older journals cannot prove a selected target never started.
     if (
       operation.completed.includes('apply-release') ||
+      operation.receipts['rollback-intent'] ||
       (this.installation()?.release === review.release.nas.tag && operation.receipts['release-start-state'] !== 'prepared')
     )
       return review;
@@ -1419,6 +1423,7 @@ export class Operations {
   }
   /** Persist startup intent so retry cannot reuse a checkpoint after a different target may have written. */
   private async applyUpdate(operation: Operation, review: UpdateReview): Promise<void> {
+    if (operation.receipts['rollback-intent']) return this.rollbackUpdate(operation, review);
     await this.step(operation, 'download-images', async () => {
       await this.releases.eligible(review.release.nas.tag);
       await this.releases.verify(review.release.directory, review.release.nas.tag);
@@ -1441,6 +1446,26 @@ export class Operations {
       await this.backups.initialize();
       return this.backups.snapshot(await this.checkpoint(operation), operation.id);
     });
+    try {
+      await this.applyRelease(operation, review);
+    } catch (error) {
+      // Issue 863: a target that started but never turned healthy boot-loops. Before 'starting' nothing ran,
+      // and the operation stays cancellable back to the previous release instead.
+      if (operation.receipts['release-start-state'] !== 'starting') throw error;
+      // Another service (machine learning) can fail `up --wait` after the server was healthy and took writes.
+      if (operation.receipts['server-served'] || (await this.serverMayHaveServed(review).catch(() => true))) {
+        operation.receipts['release-start-state'] = 'started';
+        this.store.save(operation);
+        throw error;
+      }
+      const reason = error instanceof Refusal ? error.code : ((error as Error)?.message ?? String(error));
+      console.error(redact(`manager: ${review.release.nas.tag} did not start (${reason}); rolling back to ${review.current.release}`));
+      operation.receipts['rollback-intent'] = error instanceof Refusal ? error.code : 'release_start_failed';
+      this.store.save(operation);
+      await this.rollbackUpdate(operation, review);
+    }
+  }
+  private async applyRelease(operation: Operation, review: UpdateReview): Promise<void> {
     await this.step(operation, 'apply-release', async () => {
       await this.databaseStorage.verify(review.current);
       await this.releases.eligible(review.release.nas.tag);
@@ -1475,11 +1500,109 @@ export class Operations {
         this.application(),
       );
       this.store.set('installation', installation);
-      operation.receipts['release-start-state'] = 'starting';
-      this.store.save(operation); // Persist intent before the target can write.
-      await this.docker.compose(this.directory(), installation.project, 'up');
+      // Once the target was healthy it may have accepted writes: a later failure never restores the checkpoint.
+      if (operation.receipts['release-start-state'] !== 'started') {
+        operation.receipts['release-start-state'] = 'starting';
+        this.store.save(operation); // Persist intent before the target can write.
+      }
+      await this.watchServer(operation, review, () => this.docker.compose(this.directory(), installation.project, 'up'));
+      operation.receipts['release-start-state'] = 'started';
+      this.store.save(operation);
       return this.libraryStatus();
     });
+  }
+  /**
+   * Poll the new server while it starts and journal `server-served` the first time Docker shows it passing
+   * a health probe. Docker keeps only its last five probes, so the final log alone cannot prove the server
+   * never served. ponytail: polled every serverWatchMs, which must stay under five probe intervals; a
+   * server-side "first request served" marker is the upgrade if probes ever run faster than that.
+   */
+  private async watchServer(operation: Operation, review: UpdateReview, start: () => Promise<void>): Promise<void> {
+    const check = async () => {
+      if (operation.receipts['server-served'] || !(await this.serverMayHaveServed(review).catch(() => false))) return;
+      operation.receipts['server-served'] = true;
+      try {
+        this.store.save(operation);
+      } catch (error) {
+        delete operation.receipts['server-served']; // Not journaled: the next poll retries.
+        throw error;
+      }
+    };
+    const logged = () =>
+      check().catch((error) =>
+        console.error(redact(`manager: could not journal the new server's health (${(error as Error)?.message ?? error})`)),
+      );
+    const timer = setInterval(() => void logged(), this.serverWatchMs);
+    timer.unref();
+    try {
+      await start();
+    } catch (error) {
+      // The start's own failure is what the caller reports; the caller re-checks Docker before any rollback.
+      clearInterval(timer);
+      await logged();
+      throw error;
+    }
+    clearInterval(timer);
+    await check();
+  }
+  /** Whether Docker shows the target's server passing a health probe in its (bounded) health log. */
+  private async serverMayHaveServed(review: UpdateReview): Promise<boolean> {
+    const server = (await this.docker.inventory()).find(
+      (c) =>
+        c.Config.Labels?.['app.frameleaf.manager'] === review.current.id &&
+        c.Config.Labels?.['com.docker.compose.service'] === 'frameleaf-server',
+    );
+    // No container of the target's image means the target server never ran.
+    if (!server || server.Config.Image !== review.release.nas.images.server) return false;
+    const health = server.State.Health;
+    if (!health) return server.State.Running;
+    return health.Status === 'healthy' || !!health.Log?.some((probe) => probe.ExitCode === 0);
+  }
+  /**
+   * Put the previous release back after its replacement started and failed. The target may have migrated
+   * the database, so its directory is retained and the pre-update checkpoint is restored into a new empty
+   * one; the stack is the previous release's compose.json from that checkpoint, pointed at the new directory.
+   */
+  private async rollbackUpdate(operation: Operation, review: UpdateReview): Promise<void> {
+    const previous = review.current;
+    const checkpoint = join(this.store.directory, 'checkpoints', operation.id);
+    await this.step(operation, 'rollback-stop-release', async () => {
+      await this.docker.compose(this.directory(), previous.project, 'stop');
+      return true;
+    });
+    const restored = await this.step(operation, 'rollback-restore-database', async () => {
+      const dump = join(checkpoint, 'database.dump');
+      const receipt = operation.receipts['checkpoint-dump'] as { sha256: string } | undefined;
+      if (!receipt || (await fileHash(dump)) !== receipt.sha256) throw new Refusal('checkpoint_dump_changed');
+      // A rerun of this step retains the half-restored directory of the attempt before it, too.
+      const retired = this.store.get<string[]>('retained-database-directories') ?? [];
+      const current = this.installation()?.databasePath ?? previous.databasePath;
+      this.store.set('retained-database-directories', [...new Set([...retired, current])]);
+      const databaseBytes = Math.max(1024 ** 3, (await stat(dump)).size * 4);
+      const installation: Installation = {
+        ...previous,
+        databasePath: await this.databaseStorage.allocate(previous.databaseRoot, previous.id, databaseBytes),
+      };
+      const compose = JSON.parse(await readFile(join(checkpoint, 'compose.json'), 'utf8'));
+      const data = compose.services.database.volumes.find((v: any) => v.target === '/var/lib/postgresql');
+      // renderCompose stores every string with `$` doubled for Compose interpolation.
+      const escaped = (path: string) => path.replaceAll('$', () => '$$');
+      if (data?.source !== escaped(previous.databasePath)) throw new Refusal('database_path_changed');
+      data.source = escaped(installation.databasePath);
+      await atomicJson(join(this.directory(), 'compose.json'), compose);
+      this.store.set('installation', installation);
+      await this.docker.compose(this.directory(), installation.project, 'up', ['database']);
+      const database = await this.targetDatabase();
+      await this.docker.verifyDump(database, dump);
+      await this.docker.restore(database, dump);
+      return installation;
+    });
+    await this.step(operation, 'rollback-start-previous', async () => {
+      await this.fencing.assertMedia(restored.mounts, restored);
+      await this.docker.compose(this.directory(), restored.project, 'up');
+      return true;
+    });
+    operation.receipts['cancelled'] = 'update_failed_rolled_back';
   }
   async reviewRestore(snapshot: string, databaseRoot: string, managerPort?: number) {
     const current = this.installation();

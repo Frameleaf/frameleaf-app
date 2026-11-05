@@ -54,6 +54,9 @@ export const stepNames: Record<string, string> = {
   'stop-application': 'Pause application writes',
   'database-checkpoint': 'Create a database recovery point',
   'apply-release': 'Apply and verify the update',
+  'rollback-stop-release': 'Stop the release that did not start',
+  'rollback-restore-database': 'Restore the database from before the update',
+  'rollback-start-previous': 'Start the previous release',
   'restore-new-database': 'Restore into the new empty database',
   'reconstruct-execution-state': 'Reconcile restored background work',
   'stop-previous-installation': 'Stop and retain the previous installation',
@@ -146,6 +149,8 @@ const refusals: Record<string, string> = {
     'That host folder is outside the folders Manager may mount. Map it into Manager at the same path and add it to MANAGER_MOUNT_ROOTS, or choose a folder inside the media or database roots.',
   claim_proxied_address_unverified:
     'This connection reached Manager through a proxy, so Manager cannot tell it came from your home network. Open Manager directly on its LAN address, or set MANAGER_TRUSTED_PROXIES for the proxy. The Manager container log has the details.',
+  update_failed_rolled_back:
+    'The new release did not start, so Manager put back the previous release and the library as it was before the update. Nothing was lost; try the update again later.',
   update_review_expired:
     'The reviewed release was withdrawn and this review has expired. Cancel this update, then review the newer release before installing it.',
   database_image_change_requires_restore:
