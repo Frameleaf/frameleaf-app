@@ -1,11 +1,12 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, HttpCode, HttpStatus, NotFoundException, Post, Req } from '@nestjs/common';
+import { ApiNotFoundResponse, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { RemoteConnectionsResponseDto } from 'src/dtos/frameleaf-remote-access.dto.js';
 import {
   ReleaseEventV1,
   ServerAboutResponseDto,
+  ServerApkLinksDto,
   ServerAppReleasesResponseDto,
   ServerConfigDto,
   ServerFeaturesDto,
@@ -47,6 +48,23 @@ export class ServerController {
   })
   getAboutInfo(): Promise<ServerAboutResponseDto> {
     return this.service.getAboutInfo();
+  }
+
+  @Get('apk-links')
+  @Authenticated({ permission: Permission.ServerApkLinks })
+  @ApiNotFoundResponse({ description: 'The Frameleaf apps come from the App Store and Google Play only' })
+  @Endpoint({
+    summary: 'Get APK links',
+    description:
+      'Deprecated (FL-1200): the Android app is distributed only through Google Play, so this always answers 404. Use app-releases for the store listings.',
+    history: new HistoryBuilder()
+      .added('v1')
+      .beta('v1')
+      .stable('v2')
+      .deprecated('v3.2.0', { replacementId: 'getAppReleases' }),
+  })
+  getApkLinks(): ServerApkLinksDto {
+    throw new NotFoundException('The Frameleaf apps come from the App Store and Google Play only');
   }
 
   @Get('app-releases')

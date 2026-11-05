@@ -15187,6 +15187,16 @@ export type ServerAboutResponseDto = {
     /** URL to version information */
     versionUrl: string;
 };
+export type ServerApkLinksDto = {
+    /** APK download link for ARM64 v8a architecture */
+    arm64v8a: string;
+    /** APK download link for ARM EABI v7a architecture */
+    armeabiv7a: string;
+    /** APK download link for universal architecture */
+    universal: string;
+    /** APK download link for x86_64 architecture */
+    x86_64: string;
+};
 export type ServerAppReleasesResponseDto = {
     /** Android application */
     android: {
@@ -31941,6 +31951,19 @@ export function getAboutInfo(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Get APK links
+ */
+export function getApkLinks(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ServerApkLinksDto;
+    } | {
+        status: 404;
+    }>("/server/apk-links", {
+        ...opts
+    }));
+}
+/**
  * Get app releases
  */
 export function getAppReleases(opts?: Oazapfts.RequestOpts) {
@@ -36403,6 +36426,9 @@ export enum EnvironmentKeys {
     FrameleafWorkersInclude = "FRAMELEAF_WORKERS_INCLUDE",
     FrameleafWorkersExclude = "FRAMELEAF_WORKERS_EXCLUDE",
     FrameleafRecoveryRoots = "FRAMELEAF_RECOVERY_ROOTS",
+    FrameleafAndroidReleaseUrl = "FRAMELEAF_ANDROID_RELEASE_URL",
+    FrameleafAndroidAppId = "FRAMELEAF_ANDROID_APP_ID",
+    FrameleafAndroidSigningSha256 = "FRAMELEAF_ANDROID_SIGNING_SHA256",
     FrameleafIosAppUrl = "FRAMELEAF_IOS_APP_URL",
     FrameleafCloudUrl = "FRAMELEAF_CLOUD_URL",
     FrameleafPushUrl = "FRAMELEAF_PUSH_URL",

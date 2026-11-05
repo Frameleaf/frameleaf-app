@@ -148,6 +148,16 @@ const ServerAboutResponseSchema = z
   })
   .meta({ id: 'ServerAboutResponseDto' });
 
+/** Deprecated (FL-1200): the shape `GET server/apk-links` once returned; the route now always answers 404. */
+const ServerApkLinksSchema = z
+  .object({
+    arm64v8a: z.string().describe('APK download link for ARM64 v8a architecture'),
+    armeabiv7a: z.string().describe('APK download link for ARM EABI v7a architecture'),
+    universal: z.string().describe('APK download link for universal architecture'),
+    x86_64: z.string().describe('APK download link for x86_64 architecture'),
+  })
+  .meta({ id: 'ServerApkLinksDto' });
+
 const ServerAppReleasesResponseSchema = z
   .object({
     android: z
@@ -370,6 +380,7 @@ export class ServerIdentityResponseDto extends createZodDto(ServerIdentityRespon
 export class ServerIdentityChallengeDto extends createZodDto(ServerIdentityChallengeSchema) {}
 export class ServerIdentityChallengeResponseDto extends createZodDto(ServerIdentityChallengeResponseSchema) {}
 export class ServerAboutResponseDto extends createZodDto(ServerAboutResponseSchema) {}
+export class ServerApkLinksDto extends createZodDto(ServerApkLinksSchema) {}
 export class ServerAppReleasesResponseDto extends createZodDto(ServerAppReleasesResponseSchema) {}
 export class ServerStorageResponseDto extends createZodDto(ServerStorageResponseSchema) {}
 

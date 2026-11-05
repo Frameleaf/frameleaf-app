@@ -46064,6 +46064,66 @@
         "x-immich-state": "Stable"
       }
     },
+    "/server/apk-links": {
+      "get": {
+        "deprecated": true,
+        "description": "Deprecated (FL-1200): the Android app is distributed only through Google Play, so this always answers 404. Use app-releases for the store listings.",
+        "operationId": "getApkLinks",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerApkLinksDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "description": "The Frameleaf apps come from the App Store and Google Play only"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get APK links",
+        "tags": [
+          "Server",
+          "Deprecated"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v1",
+            "state": "Added"
+          },
+          {
+            "version": "v1",
+            "state": "Beta"
+          },
+          {
+            "version": "v2",
+            "state": "Stable"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Deprecated",
+            "replacementId": "getAppReleases"
+          }
+        ],
+        "x-immich-permission": "server.apkLinks",
+        "x-immich-state": "Deprecated"
+      }
+    },
     "/server/app-releases": {
       "get": {
         "description": "Retrieve the signed release destinations of the mobile apps for this server, or that none is configured.",
@@ -79074,6 +79134,9 @@
                     "FRAMELEAF_WORKERS_INCLUDE",
                     "FRAMELEAF_WORKERS_EXCLUDE",
                     "FRAMELEAF_RECOVERY_ROOTS",
+                    "FRAMELEAF_ANDROID_RELEASE_URL",
+                    "FRAMELEAF_ANDROID_APP_ID",
+                    "FRAMELEAF_ANDROID_SIGNING_SHA256",
                     "FRAMELEAF_IOS_APP_URL",
                     "FRAMELEAF_CLOUD_URL",
                     "FRAMELEAF_PUSH_URL",
@@ -79104,7 +79167,7 @@
                   ],
                   "type": "string"
                 },
-                "maxItems": 58,
+                "maxItems": 61,
                 "type": "array"
               },
               "version": {
@@ -79554,6 +79617,9 @@
                         "FRAMELEAF_WORKERS_INCLUDE",
                         "FRAMELEAF_WORKERS_EXCLUDE",
                         "FRAMELEAF_RECOVERY_ROOTS",
+                        "FRAMELEAF_ANDROID_RELEASE_URL",
+                        "FRAMELEAF_ANDROID_APP_ID",
+                        "FRAMELEAF_ANDROID_SIGNING_SHA256",
                         "FRAMELEAF_IOS_APP_URL",
                         "FRAMELEAF_CLOUD_URL",
                         "FRAMELEAF_PUSH_URL",
@@ -79584,7 +79650,7 @@
                       ],
                       "type": "string"
                     },
-                    "maxItems": 58,
+                    "maxItems": 61,
                     "type": "array"
                   },
                   "version": {
@@ -136744,6 +136810,33 @@
           "licensed",
           "version",
           "versionUrl"
+        ],
+        "type": "object"
+      },
+      "ServerApkLinksDto": {
+        "properties": {
+          "arm64v8a": {
+            "description": "APK download link for ARM64 v8a architecture",
+            "type": "string"
+          },
+          "armeabiv7a": {
+            "description": "APK download link for ARM EABI v7a architecture",
+            "type": "string"
+          },
+          "universal": {
+            "description": "APK download link for universal architecture",
+            "type": "string"
+          },
+          "x86_64": {
+            "description": "APK download link for x86_64 architecture",
+            "type": "string"
+          }
+        },
+        "required": [
+          "arm64v8a",
+          "armeabiv7a",
+          "universal",
+          "x86_64"
         ],
         "type": "object"
       },
