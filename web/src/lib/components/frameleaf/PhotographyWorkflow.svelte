@@ -20,6 +20,11 @@
     mdiBrushOutline,
     mdiChevronRight,
     mdiStarOutline,
+    mdiAccountOutline,
+    mdiDownloadOutline,
+    mdiHeart,
+    mdiLockOutline,
+    mdiShieldCheckOutline,
   } from '@mdi/js';
   import Button from './Button.svelte';
   import PhotographyShootTabs, { type ShootTab } from './PhotographyShootTabs.svelte';
@@ -163,6 +168,36 @@
           (filter === 'chosen' && stored?.rounds.some((round) => round.captureIds.includes(capture.id)))),
     ),
   );
+  // ── Gallery page ──
+  const activeRecipients = $derived(draft?.recipients.filter((row) => !row.revoked) ?? []);
+  /** Every client's favourites so far, in capture order. */
+  const clientChoices = $derived.by(() => {
+    const chosen = new Set(activeRecipients.flatMap((row) => row.choices ?? []));
+    return draft?.captures.filter((capture) => chosen.has(capture.id)) ?? [];
+  });
+  const coverAsset = $derived(
+    draft?.captures.find((capture) => capture.id === draft?.config.presentation.coverCaptureId)?.assetId ??
+      shoot.coverAssetId ??
+      eligible[0]?.assetId ??
+      null,
+  );
+  const galleryExpired = $derived(!!draft?.config.expiresAt && Date.parse(draft.config.expiresAt) < Date.now());
+  const galleryStage = $derived(
+    galleryExpired
+      ? $t('frameleaf_photography_gallery_expired')
+      : !draft?.publication
+        ? $t('frameleaf_photography_draft')
+        : draft.rounds.length > 0
+          ? $t('frameleaf_photography_selection_sent')
+          : $t('frameleaf_photography_gallery_proofing'),
+  );
+  const gallerySettingsChanged = $derived(
+    !!draft &&
+      !!stored &&
+      ((draft.config.expiresAt ?? null) !== (stored.config.expiresAt ?? null) ||
+        (draft.config.maxSelections ?? null) !== (stored.config.maxSelections ?? null)),
+  );
+
   /** Every order that still counts (not cancelled or refunded), added up for each currency. */
   const orderTotals = $derived.by(() => {
     const totals = new Map<string, number>();
@@ -1796,157 +1831,293 @@
           </div>{:else}<p>{$t('frameleaf_photography_approve_none')}</p>{/each}
       </section>
     {:else if panel === 'publishing'}
-      <section class="phd-card">
-        <h3>{$t('frameleaf_photography_client_collection_title')}</h3>
-        <p>
-          {$t('frameleaf_photography_publish_body')}
-        </p>
-        <div class="phd-row">
-          <strong
-            >{draft.publication
-              ? named('publication', draft.publication.status)
-              : $t('frameleaf_photography_draft')}</strong
-          ><span
-            >{$t('frameleaf_photography_prepared_count', {
-              values: { done: draft.publication?.completed ?? 0, total: draft.publication?.total ?? 0 },
-            })}</span
-          >
-        </div>
-        {#if draft.publication?.error || draft.publication?.status === 'failed'}<p role="alert">
-            {$t('frameleaf_photography_publish_failed')}
-          </p>{/if}
-        <div class="phd-actions">
-          <Button
-            variant="primary"
-            disabled={busy}
-            onclick={() => mutate('/publish', 'POST', { scope: 'all-eligible' })}
-            >{$t('frameleaf_photography_publish_all')}</Button
-          ><Button
-            disabled={busy || draft.rounds.length === 0}
-            onclick={() => mutate('/publish', 'POST', { scope: 'selected' })}
-            >{$t('frameleaf_photography_publish_selected')}</Button
-          >{#if ['failed', 'queued', 'rendering'].includes(draft.publication?.status ?? '')}<Button
-              disabled={busy}
-              onclick={() => mutate('/retry')}>{$t('frameleaf_photography_publish_retry')}</Button
-            >{/if}
-        </div>
-      </section>
-      <section class="phd-card">
-        <h3>{$t('frameleaf_photography_invite_title')}</h3>
-        <p>{$t('frameleaf_photography_invite_body')}</p>
-        <div class="phd-fields">
-          <label>{$t('frameleaf_photography_recipient_name')}<input maxlength="100" bind:value={recipientName} /></label
-          ><label
-            >{$t('frameleaf_photography_recipient_email')}<input
-              type="email"
-              autocomplete="off"
-              maxlength="254"
-              placeholder={$t('frameleaf_photography_recipient_email_placeholder')}
-              bind:value={recipientEmail}
-            /></label
-          ><label
-            >{$t('frameleaf_photography_gallery_password_optional')}<input
-              type="password"
-              autocomplete="new-password"
-              minlength="8"
-              maxlength="72"
-              bind:value={recipientPassword}
-            /></label
-          ><label
-            >{$t('frameleaf_photography_invitation_expiry')}<input type="date" bind:value={recipientExpiry} /></label
-          >
-        </div>
-        <label
-          ><input type="checkbox" bind:checked={recipientDownload} />{$t(
-            'frameleaf_photography_allow_downloads_paid',
-          )}</label
-        ><label
-          ><input type="checkbox" bind:checked={restrictInvitation} />{$t(
-            'frameleaf_photography_restrict_captures',
-          )}</label
-        >{#if selected.length}<p>
-            {$t('frameleaf_photography_captures_in_invitation', { values: { count: selected.length } })}
-          </p>{/if}{#if restrictInvitation}<div class="phd-recipient-captures">
-            {#each eligible as capture (capture.id)}<label
-                ><input
-                  type="checkbox"
-                  checked={selected.includes(capture.id)}
-                  onchange={(event) =>
-                    (selected = event.currentTarget.checked
-                      ? [...selected, capture.id]
-                      : selected.filter((id) => id !== capture.id))}
-                />{photoLabel(capture.number)} · {capture.fileName}</label
-              >{/each}
-          </div>{/if}<Button
-          disabled={busy ||
-            !recipientName.trim() ||
-            (restrictInvitation && selected.length === 0) ||
-            (recipientPassword.length > 0 && recipientPassword.length < 8) ||
-            (recipientEmail.trim().length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail.trim()))}
-          onclick={() =>
-            mutate('/recipients', 'POST', {
-              name: recipientName.trim(),
-              ...(recipientEmail.trim() && { email: recipientEmail.trim() }),
-              password: recipientPassword || null,
-              expiresAt: recipientExpiry ? new Date(`${recipientExpiry}T23:59:59`).toISOString() : null,
-              canProof: true,
-              canDownload: recipientDownload,
-              captureIds: restrictInvitation ? selected : null,
-            })}>{$t('frameleaf_photography_create_invitation')}</Button
-        >{#if invitation}<label
-            >{$t('frameleaf_photography_invitation_once')}<input readonly value={invitation} /></label
-          ><Button onclick={copyInvitation}>{$t('frameleaf_photography_copy_invitation')}</Button>{/if}
-      </section>
-      <section class="phd-card">
-        <h3>{$t('frameleaf_photography_recipient_access')}</h3>
-        {#each draft.recipients as row (row.id)}<div class="phd-order">
+      <!-- PhotographyWorkspace.jsx Gallery (approved design, 2026-11-04): what the client sees on the
+           left, the gallery's settings on the right. -->
+      <div class="phw-gallery-tools">
+        <span>{$t('frameleaf_photography_proof_photo_count', { values: { count: eligible.length } })}</span>
+        <span class="phw-status" class:is-expired={galleryExpired}>{galleryStage}</span>
+      </div>
+      <div class="phw-detail-layout phx-gallery">
+        <div class="phw-gallery-main">
+          <figure class="phw-gallery-cover">
+            {#if coverAsset}<PhotographyThumb
+                src={getAssetMediaUrl({ id: coverAsset, size: AssetMediaSize.Preview })}
+                loading="eager"
+              />{/if}
+            <span class="phx-cover-mark" aria-hidden="true"
+              >{draft.config.proofWatermark.text || brand?.brand.name || ''}</span
+            >
+            <figcaption class="phw-gallery-cover-text">
+              <span>{brand?.brand.name ?? ''}</span>
+              <h2>{draft.config.title || shoot.name}</h2>
+              <p>{$t('frameleaf_photography_gallery_first_look')}</p>
+            </figcaption>
+          </figure>
+          <ul class="phw-gallery-summary">
+            <li>
+              <Icon icon={mdiLockOutline} size="1rem" aria-hidden={true} />{activeRecipients.some(
+                (row) => row.passwordProtected,
+              )
+                ? $t('frameleaf_photography_gallery_password_on')
+                : $t('frameleaf_photography_gallery_link_only')}
+            </li>
+            <li>
+              <Icon icon={mdiDownloadOutline} size="1rem" aria-hidden={true} />{activeRecipients.some(
+                (row) => row.canDownload,
+              )
+                ? $t('frameleaf_photography_downloads_on')
+                : $t('frameleaf_photography_downloads_off')}
+            </li>
+            <li>
+              <Icon icon={mdiShieldCheckOutline} size="1rem" aria-hidden={true} />{$t(
+                'frameleaf_photography_gallery_watermark_on',
+              )}
+            </li>
+          </ul>
+          <div class="phw-section-heading">
+            <div>
+              <h3>{$t('frameleaf_photography_client_selections')}</h3>
+              <p>
+                {draft.config.maxSelections
+                  ? $t('frameleaf_photography_selected_of', {
+                      values: { count: clientChoices.length, limit: draft.config.maxSelections },
+                    })
+                  : $t('frameleaf_photography_selected_count', { values: { count: clientChoices.length } })}{draft
+                  .rounds.length > 0
+                  ? ` · ${$t('frameleaf_photography_selection_sent')}`
+                  : ''}
+              </p>
+            </div>
+            <Button disabled={previewing || !stored} onclick={clientPreview}
+              ><Icon icon={mdiAccountOutline} size="1rem" aria-hidden={true} />{$t(
+                'frameleaf_photography_try_as_client',
+              )}</Button
+            >
+          </div>
+          <ul class="phw-client-picks">
+            {#each clientChoices.length > 0 ? clientChoices.slice(0, 6) : eligible.slice(0, 3) as capture (capture.id)}
+              <li>
+                {#if capture.assetId}<PhotographyThumb
+                    src={getAssetMediaUrl({ id: capture.assetId, size: AssetMediaSize.Thumbnail })}
+                    alt={capture.fileName ?? photoLabel(capture.number)}
+                  />{/if}
+                <span
+                  ><Icon
+                    icon={clientChoices.length > 0 ? mdiHeart : mdiHeartOutline}
+                    size="0.875rem"
+                    aria-hidden={true}
+                  />{capture.fileName ?? photoLabel(capture.number)}</span
+                >
+              </li>
+            {/each}
+          </ul>
+          <section class="phd-card">
+            <h3>{$t('frameleaf_photography_client_collection_title')}</h3>
+            <p>
+              {$t('frameleaf_photography_publish_body')}
+            </p>
             <div class="phd-row">
               <strong
-                >{row.name}{#if row.email}<small> · {row.email}</small>{/if}</strong
+                >{draft.publication
+                  ? named('publication', draft.publication.status)
+                  : $t('frameleaf_photography_draft')}</strong
               ><span
-                >{row.revoked
-                  ? $t('frameleaf_photography_access_revoked')
-                  : $t('frameleaf_photography_shoots_active')}</span
+                >{$t('frameleaf_photography_prepared_count', {
+                  values: { done: draft.publication?.completed ?? 0, total: draft.publication?.total ?? 0 },
+                })}</span
               >
             </div>
-            <p>
-              {row.canProof ? $t('frameleaf_photography_proofing_on') : $t('frameleaf_photography_proofing_off')} · {row.canDownload
-                ? $t('frameleaf_photography_downloads_on')
-                : $t('frameleaf_photography_downloads_off')}{row.expiresAt
-                ? ` · ${$t('frameleaf_photography_expires_on', { values: { date: new Date(row.expiresAt).toLocaleDateString($locale) } })}`
-                : ''}
-            </p>
+            {#if draft.publication?.error || draft.publication?.status === 'failed'}<p role="alert">
+                {$t('frameleaf_photography_publish_failed')}
+              </p>{/if}
             <div class="phd-actions">
               <Button
+                variant="primary"
                 disabled={busy}
-                onclick={() =>
-                  mutate(`/recipients/${row.id}`, 'PATCH', {
-                    revoked: !row.revoked,
-                    canProof: row.canProof,
-                    canDownload: row.canDownload,
-                    captureIds: row.captureIds,
-                    expiresAt: row.expiresAt,
-                  })}
-                >{row.revoked
-                  ? $t('frameleaf_photography_restore_access')
-                  : $t('frameleaf_photography_revoke_access')}</Button
+                onclick={() => mutate('/publish', 'POST', { scope: 'all-eligible' })}
+                >{$t('frameleaf_photography_publish_all')}</Button
               ><Button
-                disabled={busy}
-                onclick={() =>
-                  mutate(`/recipients/${row.id}`, 'PATCH', {
-                    revoked: row.revoked,
-                    canProof: row.canProof,
-                    canDownload: !row.canDownload,
-                    captureIds: row.captureIds,
-                    expiresAt: row.expiresAt,
-                  })}
-                >{row.canDownload
-                  ? $t('frameleaf_photography_disable_downloads')
-                  : $t('frameleaf_photography_allow_downloads')}</Button
+                disabled={busy || draft.rounds.length === 0}
+                onclick={() => mutate('/publish', 'POST', { scope: 'selected' })}
+                >{$t('frameleaf_photography_publish_selected')}</Button
+              >{#if ['failed', 'queued', 'rendering'].includes(draft.publication?.status ?? '')}<Button
+                  disabled={busy}
+                  onclick={() => mutate('/retry')}>{$t('frameleaf_photography_publish_retry')}</Button
+                >{/if}
+            </div>
+          </section>
+          <section class="phd-card">
+            <h3>{$t('frameleaf_photography_recipient_access')}</h3>
+            {#each draft.recipients as row (row.id)}<div class="phd-order">
+                <div class="phd-row">
+                  <strong
+                    >{row.name}{#if row.email}<small> · {row.email}</small>{/if}</strong
+                  ><span
+                    >{row.revoked
+                      ? $t('frameleaf_photography_access_revoked')
+                      : $t('frameleaf_photography_shoots_active')}</span
+                  >
+                </div>
+                <p>
+                  {row.canProof ? $t('frameleaf_photography_proofing_on') : $t('frameleaf_photography_proofing_off')} · {row.canDownload
+                    ? $t('frameleaf_photography_downloads_on')
+                    : $t('frameleaf_photography_downloads_off')}{row.expiresAt
+                    ? ` · ${$t('frameleaf_photography_expires_on', { values: { date: new Date(row.expiresAt).toLocaleDateString($locale) } })}`
+                    : ''}
+                </p>
+                <div class="phd-actions">
+                  <Button
+                    disabled={busy}
+                    onclick={() =>
+                      mutate(`/recipients/${row.id}`, 'PATCH', {
+                        revoked: !row.revoked,
+                        canProof: row.canProof,
+                        canDownload: row.canDownload,
+                        captureIds: row.captureIds,
+                        expiresAt: row.expiresAt,
+                      })}
+                    >{row.revoked
+                      ? $t('frameleaf_photography_restore_access')
+                      : $t('frameleaf_photography_revoke_access')}</Button
+                  ><Button
+                    disabled={busy}
+                    onclick={() =>
+                      mutate(`/recipients/${row.id}`, 'PATCH', {
+                        revoked: row.revoked,
+                        canProof: row.canProof,
+                        canDownload: !row.canDownload,
+                        captureIds: row.captureIds,
+                        expiresAt: row.expiresAt,
+                      })}
+                    >{row.canDownload
+                      ? $t('frameleaf_photography_disable_downloads')
+                      : $t('frameleaf_photography_allow_downloads')}</Button
+                  >
+                </div>
+              </div>{:else}<p>{$t('frameleaf_photography_no_recipients')}</p>{/each}
+          </section>
+        </div>
+        <aside class="phw-inspector" aria-labelledby="phx-gallery-settings">
+          <div class="phw-inspector-body">
+            <h2 id="phx-gallery-settings">{$t('frameleaf_photography_gallery_settings')}</h2>
+            <h3>{$t('frameleaf_photography_invite_title')}</h3>
+            <p>{$t('frameleaf_photography_invite_body')}</p>
+            <div class="phd-fields">
+              <label
+                >{$t('frameleaf_photography_recipient_name')}<input maxlength="100" bind:value={recipientName} /></label
+              ><label
+                >{$t('frameleaf_photography_recipient_email')}<input
+                  type="email"
+                  autocomplete="off"
+                  maxlength="254"
+                  placeholder={$t('frameleaf_photography_recipient_email_placeholder')}
+                  bind:value={recipientEmail}
+                /></label
+              ><label
+                >{$t('frameleaf_photography_gallery_password_optional')}<input
+                  type="password"
+                  autocomplete="new-password"
+                  minlength="8"
+                  maxlength="72"
+                  bind:value={recipientPassword}
+                /></label
+              ><label
+                >{$t('frameleaf_photography_invitation_expiry')}<input
+                  type="date"
+                  bind:value={recipientExpiry}
+                /></label
               >
             </div>
-          </div>{:else}<p>{$t('frameleaf_photography_no_recipients')}</p>{/each}
-      </section>
+            <label
+              ><input type="checkbox" bind:checked={recipientDownload} />{$t(
+                'frameleaf_photography_allow_downloads_paid',
+              )}</label
+            ><label
+              ><input type="checkbox" bind:checked={restrictInvitation} />{$t(
+                'frameleaf_photography_restrict_captures',
+              )}</label
+            >{#if selected.length}<p>
+                {$t('frameleaf_photography_captures_in_invitation', { values: { count: selected.length } })}
+              </p>{/if}{#if restrictInvitation}<div class="phd-recipient-captures">
+                {#each eligible as capture (capture.id)}<label
+                    ><input
+                      type="checkbox"
+                      checked={selected.includes(capture.id)}
+                      onchange={(event) =>
+                        (selected = event.currentTarget.checked
+                          ? [...selected, capture.id]
+                          : selected.filter((id) => id !== capture.id))}
+                    />{photoLabel(capture.number)} · {capture.fileName}</label
+                  >{/each}
+              </div>{/if}<Button
+              disabled={busy ||
+                !recipientName.trim() ||
+                (restrictInvitation && selected.length === 0) ||
+                (recipientPassword.length > 0 && recipientPassword.length < 8) ||
+                (recipientEmail.trim().length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail.trim()))}
+              onclick={() =>
+                mutate('/recipients', 'POST', {
+                  name: recipientName.trim(),
+                  ...(recipientEmail.trim() && { email: recipientEmail.trim() }),
+                  password: recipientPassword || null,
+                  expiresAt: recipientExpiry ? new Date(`${recipientExpiry}T23:59:59`).toISOString() : null,
+                  canProof: true,
+                  canDownload: recipientDownload,
+                  captureIds: restrictInvitation ? selected : null,
+                })}>{$t('frameleaf_photography_create_invitation')}</Button
+            >{#if invitation}<label
+                >{$t('frameleaf_photography_invitation_once')}<input readonly value={invitation} /></label
+              ><Button onclick={copyInvitation}>{$t('frameleaf_photography_copy_invitation')}</Button>{/if}
+
+            <h3>{$t('frameleaf_photography_gallery_wide')}</h3>
+            <label
+              >{$t('frameleaf_photography_gallery_expiry')}<input
+                type="date"
+                value={draft.config.expiresAt?.slice(0, 10) ?? ''}
+                onchange={(event) => {
+                  draft!.config.expiresAt = event.currentTarget.value
+                    ? new Date(`${event.currentTarget.value}T23:59:59`).toISOString()
+                    : null;
+                }}
+              /></label
+            ><label
+              >{$t('frameleaf_photography_selection_limit')}<input
+                type="number"
+                min="1"
+                max="10000"
+                step="1"
+                value={draft.config.maxSelections ?? ''}
+                placeholder={$t('frameleaf_photography_no_limit')}
+                onchange={(event) => {
+                  draft!.config.maxSelections =
+                    event.currentTarget.value === ''
+                      ? null
+                      : Math.max(1, Math.min(10_000, Math.round(event.currentTarget.valueAsNumber)));
+                }}
+              /></label
+            >
+            <Button
+              disabled={busy || !gallerySettingsChanged}
+              onclick={() => mutate('/config', 'PUT', { config: draft!.config })}
+              >{$t('frameleaf_photography_save_gallery_settings')}</Button
+            >
+            <Button disabled={previewing || !stored} onclick={clientPreview}
+              ><Icon icon={mdiEyeOutline} size="1rem" aria-hidden={true} />{$t(
+                'frameleaf_photography_open_client_preview',
+              )}</Button
+            >{#if onSection}<Button onclick={() => onSection('photos')}
+                ><Icon icon={mdiCameraOutline} size="1rem" aria-hidden={true} />{$t(
+                  'frameleaf_photography_edit_proof_selection',
+                )}</Button
+              >{/if}
+            <p class="phw-small">
+              {draft.config.proofCollection === 'selected'
+                ? $t('frameleaf_photography_gallery_scope_selected')
+                : $t('frameleaf_photography_gallery_scope_all')}
+            </p>
+          </div>
+        </aside>
+      </div>
     {/if}
   {/if}
 </div>

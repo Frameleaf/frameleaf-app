@@ -4945,6 +4945,11 @@ export type AnalyticsFarthestDto = {
     km: number;
     place: string | null;
 } | null;
+export type AnalyticsHighestDto = {
+    /** Metres above sea level */
+    metres: number;
+    place: string | null;
+} | null;
 export type AnalyticsMagicPlaceDto = {
     latitude: number;
     /** City and country, when known */
@@ -4952,6 +4957,7 @@ export type AnalyticsMagicPlaceDto = {
 };
 export type AnalyticsFarAndWideDto = {
     farthest: AnalyticsFarthestDto;
+    highest: AnalyticsHighestDto;
     northernmost: (AnalyticsMagicPlaceDto) | null;
     southernmost: (AnalyticsMagicPlaceDto) | null;
     /** Km between photos taken one after another, all added up */
@@ -4969,6 +4975,21 @@ export type AnalyticsSeasonsDto = {
     spring: number;
     summer: number;
     winter: number;
+};
+export type AnalyticsSeenCountDto = {
+    count: number;
+    id: AnalyticsSeenLabel;
+};
+export type AnalyticsSeenDto = {
+    /** Photos read, the newest first, up to 20,000 */
+    described: number;
+    /** Each photo counted once, under the everyday subject its visual search is nearest to */
+    labels: AnalyticsSeenCountDto[];
+} | null;
+export type AnalyticsShutterDto = {
+    camera: string;
+    /** Its highest recorded shutter count */
+    count: number;
 };
 export type AnalyticsTagCountDto = {
     count: number;
@@ -4990,6 +5011,9 @@ export type AnalyticsMagicDto = {
     farAndWide: AnalyticsFarAndWideDto;
     light: AnalyticsLightDto;
     seasons: AnalyticsSeasonsDto;
+    seen: AnalyticsSeenDto;
+    /** Cameras that record their shutter count, highest first, at most 6 */
+    shutter: AnalyticsShutterDto[];
     /** Your tags on the most items, at most 8; empty unless the owner reads their own scope */
     topTags: AnalyticsTagCountDto[];
     underTheHood: AnalyticsUnderTheHoodDto;
@@ -37448,6 +37472,40 @@ export enum AnalyticsNamedCountKind {
     Named = "named",
     Other = "other",
     Unknown = "unknown"
+}
+export enum AnalyticsSeenLabel {
+    People = "people",
+    Children = "children",
+    Dogs = "dogs",
+    Cats = "cats",
+    Birds = "birds",
+    Mountains = "mountains",
+    Lakes = "lakes",
+    Beaches = "beaches",
+    Ocean = "ocean",
+    Forests = "forests",
+    Snow = "snow",
+    Flowers = "flowers",
+    Gardens = "gardens",
+    Sunsets = "sunsets",
+    Sky = "sky",
+    Cities = "cities",
+    Buildings = "buildings",
+    Homes = "homes",
+    Food = "food",
+    Drinks = "drinks",
+    Cars = "cars",
+    Roads = "roads",
+    Boats = "boats",
+    Planes = "planes",
+    Parties = "parties",
+    Weddings = "weddings",
+    Concerts = "concerts",
+    Sports = "sports",
+    Hiking = "hiking",
+    Documents = "documents",
+    Art = "art",
+    Night = "night"
 }
 export enum AnalyticsOrientationDtoKey {
     Landscape = "landscape",

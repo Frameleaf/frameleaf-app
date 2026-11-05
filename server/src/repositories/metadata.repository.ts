@@ -7,6 +7,7 @@ import { extname, join, resolve } from 'node:path';
 import type { CameraIdentification } from 'src/utils/camera-identification.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { CAPTURE_NUMERIC_TAGS } from 'src/utils/capture-details.js';
 import { LOCATION_DELETE_ARGS, LOCATION_TAG_SELECTORS, SAMSUNG_TRAILER_DELETE_ARGS } from 'src/utils/location-tags.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
@@ -176,7 +177,13 @@ export class MetadataRepository {
     inferTimezoneFromDatestamps: true,
     inferTimezoneFromTimeStamp: true,
     useMWG: true,
-    numericTags: [...DefaultReadTaskOptions.numericTags, 'FocalLength', 'FileSize', 'Rotation'],
+    numericTags: [
+      ...DefaultReadTaskOptions.numericTags,
+      'FocalLength',
+      'FileSize',
+      'Rotation',
+      ...CAPTURE_NUMERIC_TAGS,
+    ],
     /* eslint unicorn/no-array-callback-reference: off, unicorn/no-array-method-this-argument: off */
     // eslint-disable-next-line import-x/no-named-as-default-member
     geoTz: (lat, lon) => geotz.find(lat, lon)[0],

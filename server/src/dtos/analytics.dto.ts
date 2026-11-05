@@ -10,6 +10,7 @@ import {
   AnalyticsStateSchema,
   AnalyticsUnitSchema,
 } from 'src/enum.js';
+import { SEEN_LABELS, type SeenLabelId } from 'src/services/seen-labels.service.js';
 
 const count = () => z.int().min(0);
 const bytes = () => z.int().min(0).describe('Bytes');
@@ -370,6 +371,11 @@ const AnalyticsMagicSchema = z
           .meta({ id: 'AnalyticsFarthestDto' }),
         northernmost: AnalyticsMagicPlaceSchema.nullable(),
         southernmost: AnalyticsMagicPlaceSchema.nullable(),
+        highest: z
+          .object({ metres: z.int().describe('Metres above sea level'), place: z.string().nullable() })
+          .nullable()
+          .describe('The photo taken highest up, from its recorded altitude')
+          .meta({ id: 'AnalyticsHighestDto' }),
       })
       .nullable()
       .describe('Null unless the owner reads their own scope and some items have a place')
@@ -382,6 +388,32 @@ const AnalyticsMagicSchema = z
         databaseRows: count().describe("Rows in the whole server's database, estimated"),
       })
       .meta({ id: 'AnalyticsUnderTheHoodDto' }),
+    shutter: z
+      .array(
+        z
+          .object({ camera: z.string(), count: count().describe('Its highest recorded shutter count') })
+          .meta({ id: 'AnalyticsShutterDto' }),
+      )
+      .describe('Cameras that record their shutter count, highest first, at most 6'),
+    seen: z
+      .object({
+        described: count().describe('Photos read, the newest first, up to 20,000'),
+        labels: z
+          .array(
+            z
+              .object({
+                id: z
+                  .enum(Object.keys(SEEN_LABELS) as [SeenLabelId, ...SeenLabelId[]])
+                  .meta({ id: 'AnalyticsSeenLabel' }),
+                count: count(),
+              })
+              .meta({ id: 'AnalyticsSeenCountDto' }),
+          )
+          .describe('Each photo counted once, under the everyday subject its visual search is nearest to'),
+      })
+      .nullable()
+      .describe('What the AI sees; null when visual search is off or unavailable')
+      .meta({ id: 'AnalyticsSeenDto' }),
   })
   .meta({ id: 'AnalyticsMagicDto' });
 

@@ -340,3 +340,38 @@ it('uploads photographs dropped on the intake zone into the shoot, then reads it
   await waitFor(() => expect(fileUploadHandler).toHaveBeenCalledWith({ files: [file], albumId: 'album' }));
   await waitFor(() => expect(workflowRequest).toHaveBeenCalledWith('shoot', '/intake', 'POST', expect.anything()));
 });
+it('lays the Gallery out as the client sees it, with the settings beside it', async () => {
+  const shared: Workflow = structuredClone(workflow);
+  shared.config.maxSelections = 3;
+  shared.recipients = [
+    {
+      id: 'r',
+      name: 'Jamie',
+      revoked: false,
+      passwordProtected: true,
+      choices: ['capture'],
+      canProof: true,
+      canDownload: false,
+      expiresAt: null,
+      captureIds: null,
+    },
+  ];
+  vi.mocked(workflowRequest).mockResolvedValue(shared);
+  render(PhotographyWorkflow, { shoot, panel: 'publishing' });
+  expect(await screen.findByText('Password protected')).toBeInTheDocument();
+  expect(screen.getByText(/1 of 3 selected/)).toBeInTheDocument();
+  const settings = screen.getByRole('complementary', { name: 'Gallery settings' });
+  expect(within(settings).getByRole('button', { name: 'Create invitation' })).toBeInTheDocument();
+  await fireEvent.change(within(settings).getByRole('spinbutton', { name: 'Selection limit' }), {
+    target: { value: '5' },
+  });
+  await fireEvent.click(within(settings).getByRole('button', { name: 'Save gallery settings' }));
+  await waitFor(() =>
+    expect(workflowRequest).toHaveBeenCalledWith(
+      'shoot',
+      '/config',
+      'PUT',
+      expect.objectContaining({ config: expect.objectContaining({ maxSelections: 5 }) }),
+    ),
+  );
+});

@@ -57,7 +57,26 @@
    * beside one inspector with Design, Sections, Work, Words and Address tabs; every change shows in
    * the preview at once and is kept when Save is pressed.
    */
-  let { shoots, onEditBrand }: { shoots: Shoot[]; onEditBrand?: () => void } = $props();
+  let {
+    shoots,
+    onEditBrand,
+    headerActions,
+  }: {
+    shoots: Shoot[];
+    onEditBrand?: () => void;
+    /** The workspace header's actions: Publish, Open, the save state and Save go there (approved design, 2026-11-04). */
+    headerActions?: HTMLElement;
+  } = $props();
+  /** Moves the action row into the page header while there is one; it stays in the page otherwise. */
+  const inHeader = (node: HTMLElement, target: HTMLElement | undefined) => {
+    const home = node.parentElement;
+    const place = (to: HTMLElement | undefined) => (to ?? home)?.append(node);
+    place(target);
+    return {
+      update: place,
+      destroy: () => node.remove(),
+    };
+  };
 
   const tabs = ['design', 'sections', 'work', 'words', 'address'] as const;
   let tab = $state<(typeof tabs)[number]>('design');
@@ -319,9 +338,9 @@
 
 <div class="phd" aria-busy={busy}>
   <!-- The page header names the page (approved design, 2026-11-04); this row publishes and saves it. -->
-  <div class="phd-toolbar">
-    <p>{$t('frameleaf_photography_site_lead')}</p>
-    <div class="phd-actions">
+  <div class="phd-toolbar" class:phw-moved={!!headerActions}>
+    {#if !headerActions}<p>{$t('frameleaf_photography_site_lead')}</p>{/if}
+    <div class="phd-actions phw-site-actions" use:inHeader={headerActions}>
       {#if draft}
         <label class="sse-switch"
           ><input type="checkbox" role="switch" bind:checked={draft.enabled} />{$t(

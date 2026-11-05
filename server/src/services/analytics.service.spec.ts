@@ -184,6 +184,7 @@ describe(AnalyticsService.name, () => {
       configRepository as never,
       systemMetadataRepository as never,
       checksumRepository as never,
+      { labels: vitest.fn().mockResolvedValue(undefined) } as never,
     );
   });
 
@@ -725,6 +726,11 @@ describe(AnalyticsService.name, () => {
             topTags: [{ name: 'Hiking', count: 9 }],
             farAndWide: null,
             underTheHood: { searchVectors: 10, faceVectors: 20, previews: 30, databaseRows: 40 },
+            shutter: [
+              { make: 'Canon', model: 'Canon EOS R6', count: 48_210 },
+              { make: 'FUJIFILM', model: 'X-T4', count: 1200 },
+            ],
+            seen: { described: 7, labels: [{ id: 'mountains', count: 7 }] },
           },
         }),
       );
@@ -737,6 +743,11 @@ describe(AnalyticsService.name, () => {
         topTags: [{ name: 'Hiking', count: 9 }],
         farAndWide: null,
         underTheHood: { searchVectors: 10, faceVectors: 20, previews: 30, databaseRows: 40 },
+        shutter: [
+          { camera: 'Canon EOS R6', count: 48_210 },
+          { camera: 'FUJIFILM X-T4', count: 1200 },
+        ],
+        seen: { described: 7, labels: [{ id: 'mountains', count: 7 }] },
       });
     });
 

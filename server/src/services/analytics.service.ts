@@ -37,6 +37,7 @@ import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { SeenLabelsService } from 'src/services/seen-labels.service.js';
 import {
   ANALYTICS_AUTO_RETRIES,
   ANALYTICS_DAY_RETENTION_DAYS,
@@ -116,6 +117,11 @@ const mapMagic = (magic: NonNullable<AnalyticsInsightRows['magic']>): NonNullabl
     topTags: magic.topTags,
     farAndWide: magic.farAndWide,
     underTheHood: magic.underTheHood,
+    shutter: magic.shutter.map((row) => ({
+      camera: cameraName(row.make, row.model) ?? row.make ?? '',
+      count: row.count,
+    })),
+    seen: magic.seen as NonNullable<AnalyticsInsightsDto['magic']>['seen'],
   };
 };
 
@@ -184,7 +190,8 @@ type ResolvedScope = { scope: AnalyticsScope; label: string; ownerId: string | n
  * Anybody else gets 403, and a library the reader does not own reads as forbidden whether or not it
  * exists, so the answer never says which ids are real.
  *
- * Nothing here talks to anything but this server's database and library volume.
+ * Nothing here talks to anything but this server's database and library volume, except that "What the AI
+ * sees" asks the computer that encodes search text for its labels once per model (`SeenLabelsService`).
  */
 @Injectable()
 export class AnalyticsService {
@@ -196,6 +203,7 @@ export class AnalyticsService {
     private configRepository: ConfigRepository,
     private systemMetadataRepository: SystemMetadataRepository,
     private forkSchemaRepository: AssetChecksumRepository,
+    private seenLabels: SeenLabelsService,
   ) {
     this.logger.setContext(AnalyticsService.name);
   }
@@ -296,12 +304,15 @@ export class AnalyticsService {
       this.analyticsRepository.getSamples(scopeKey, GROWTH_SERIES, parseIsoDay(window.from)),
       this.analyticsRepository.getLatestObservation(scopeKey),
       this.readHost(now),
-      this.analyticsRepository.getInsights(scope, {
-        ownerId: readsOwnScope ? ownerId : null,
-        suppressedPersonIds: auth.hiddenContent?.personIds ?? [],
-        suppressedPetIds: auth.hiddenContent?.petIds ?? [],
-        privacy: getHiddenContentQueryOptions(auth),
-      }),
+      this.seenLabels.labels().then((seenLabels) =>
+        this.analyticsRepository.getInsights(scope, {
+          ownerId: readsOwnScope ? ownerId : null,
+          suppressedPersonIds: auth.hiddenContent?.personIds ?? [],
+          suppressedPetIds: auth.hiddenContent?.petIds ?? [],
+          privacy: getHiddenContentQueryOptions(auth),
+          seenLabels,
+        }),
+      ),
       this.getRetention(),
     ]);
 

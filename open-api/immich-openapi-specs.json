@@ -68644,6 +68644,9 @@
           "farthest": {
             "$ref": "#/components/schemas/AnalyticsFarthestDto"
           },
+          "highest": {
+            "$ref": "#/components/schemas/AnalyticsHighestDto"
+          },
           "northernmost": {
             "allOf": [
               {
@@ -68669,6 +68672,7 @@
         },
         "required": [
           "farthest",
+          "highest",
           "northernmost",
           "southernmost",
           "travelledKm"
@@ -68758,6 +68762,27 @@
           "dolbyVisionVideos",
           "hdrVideos",
           "probedVideos"
+        ],
+        "type": "object"
+      },
+      "AnalyticsHighestDto": {
+        "description": "The photo taken highest up, from its recorded altitude",
+        "nullable": true,
+        "properties": {
+          "metres": {
+            "description": "Metres above sea level",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "place": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "metres",
+          "place"
         ],
         "type": "object"
       },
@@ -69050,6 +69075,16 @@
           "seasons": {
             "$ref": "#/components/schemas/AnalyticsSeasonsDto"
           },
+          "seen": {
+            "$ref": "#/components/schemas/AnalyticsSeenDto"
+          },
+          "shutter": {
+            "description": "Cameras that record their shutter count, highest first, at most 6",
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsShutterDto"
+            },
+            "type": "array"
+          },
           "topTags": {
             "description": "Your tags on the most items, at most 8; empty unless the owner reads their own scope",
             "items": {
@@ -69066,6 +69101,8 @@
           "farAndWide",
           "light",
           "seasons",
+          "seen",
+          "shutter",
           "topTags",
           "underTheHood"
         ],
@@ -69715,6 +69752,84 @@
         ],
         "type": "object"
       },
+      "AnalyticsSeenCountDto": {
+        "properties": {
+          "count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "id": {
+            "$ref": "#/components/schemas/AnalyticsSeenLabel"
+          }
+        },
+        "required": [
+          "count",
+          "id"
+        ],
+        "type": "object"
+      },
+      "AnalyticsSeenDto": {
+        "description": "What the AI sees; null when visual search is off or unavailable",
+        "nullable": true,
+        "properties": {
+          "described": {
+            "description": "Photos read, the newest first, up to 20,000",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "labels": {
+            "description": "Each photo counted once, under the everyday subject its visual search is nearest to",
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsSeenCountDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "described",
+          "labels"
+        ],
+        "type": "object"
+      },
+      "AnalyticsSeenLabel": {
+        "enum": [
+          "people",
+          "children",
+          "dogs",
+          "cats",
+          "birds",
+          "mountains",
+          "lakes",
+          "beaches",
+          "ocean",
+          "forests",
+          "snow",
+          "flowers",
+          "gardens",
+          "sunsets",
+          "sky",
+          "cities",
+          "buildings",
+          "homes",
+          "food",
+          "drinks",
+          "cars",
+          "roads",
+          "boats",
+          "planes",
+          "parties",
+          "weddings",
+          "concerts",
+          "sports",
+          "hiking",
+          "documents",
+          "art",
+          "night"
+        ],
+        "type": "string"
+      },
       "AnalyticsSeriesDefinitionDto": {
         "properties": {
           "available": {
@@ -69800,6 +69915,24 @@
           "processing"
         ],
         "type": "string"
+      },
+      "AnalyticsShutterDto": {
+        "properties": {
+          "camera": {
+            "type": "string"
+          },
+          "count": {
+            "description": "Its highest recorded shutter count",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "camera",
+          "count"
+        ],
+        "type": "object"
       },
       "AnalyticsState": {
         "description": "Analytics reading state",

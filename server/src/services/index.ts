@@ -144,6 +144,7 @@ import { RestorationWorkerService } from 'src/services/restoration-worker.servic
 import { RunningJobService } from 'src/services/running-job.service.js';
 import { SafetyService } from 'src/services/safety.service.js';
 import { SearchService } from 'src/services/search.service.js';
+import { SeenLabelsService } from 'src/services/seen-labels.service.js';
 import { ServerService } from 'src/services/server.service.js';
 import { SessionService } from 'src/services/session.service.js';
 import { SharedLinkService } from 'src/services/shared-link.service.js';
@@ -229,6 +230,7 @@ export const services = [
   PhotographyWorkflowService,
   PhotographySiteService,
   PhotographyReminderService,
+  SeenLabelsService,
   AssetUploadResourceService,
   AssetUploadDirectService,
   BackupDeviceService,

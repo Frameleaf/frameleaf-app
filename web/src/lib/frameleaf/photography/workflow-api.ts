@@ -187,6 +187,9 @@ export type Workflow = {
     name: string;
     email?: string;
     revoked: boolean;
+    passwordProtected?: boolean;
+    /** The client's favourites so far, before they send them. */
+    choices?: string[];
     canProof: boolean;
     canDownload: boolean;
     expiresAt: string | null;

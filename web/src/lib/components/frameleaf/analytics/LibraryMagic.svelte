@@ -15,6 +15,8 @@
   import {
     mdiAirplane,
     mdiArrowDownBold,
+    mdiCameraOutline,
+    mdiImageFilterHdr,
     mdiArrowUpBold,
     mdiDatabaseOutline,
     mdiFaceRecognition,
@@ -97,6 +99,16 @@
 
   // ── Under the hood ──
   const hood = $derived(magic.underTheHood);
+
+  // ── What the AI sees ──
+  const seen = $derived(magic.seen);
+  const seenName = (id: string) => $t(`frameleaf_magic_seen_${id}` as Translations);
+  const listFormat = $derived(new Intl.ListFormat($locale, { style: 'long', type: 'conjunction' }));
+
+  // ── Shutter count ──
+  /** A typical mechanical shutter rating, for scale: makers rate mid-range bodies at 150,000 to 300,000. */
+  const SHUTTER_RATING = 200_000;
+  const shutterTop = $derived(magic.shutter[0]);
 </script>
 
 <header class="an-band" id="an-magic">
@@ -185,6 +197,29 @@
   </AnalyticsPanel>
 {/if}
 
+{#if seen && seen.labels.length > 0}
+  {@const max = Math.max(1, ...seen.labels.map((row) => row.count))}
+  <AnalyticsPanel
+    id="seen"
+    kicker={$t('frameleaf_magic_seen_kicker')}
+    title={$t('frameleaf_magic_seen_title', {
+      values: {
+        names: listFormat.format(seen.labels.slice(0, 3).map((row) => seenName(row.id))),
+      },
+    })}
+    caption={$t('frameleaf_magic_seen_caption', { values: { count: f.number(seen.described) } })}
+    action={{ href: commandCenterUrl('intelligence', 'smart-search'), label: $t('frameleaf_magic_seen_link') }}
+  >
+    <ul class="an-cloud" aria-label={$t('frameleaf_magic_seen_kicker')}>
+      {#each seen.labels.slice(0, 16) as row (row.id)}
+        <li style:--w={(0.55 + (row.count / max) * 0.45).toFixed(2)}>
+          {seenName(row.id)}<small>{f.compact(row.count)}</small>
+        </li>
+      {/each}
+    </ul>
+  </AnalyticsPanel>
+{/if}
+
 {#if magic.topTags.length > 0}
   {@const max = Math.max(1, ...magic.topTags.map((row) => row.count))}
   <AnalyticsPanel
@@ -243,6 +278,12 @@
               $t('frameleaf_magic_far_unnamed')}</span
           ><strong>{f.number(Math.round(geo.southernmost.latitude * 10) / 10)}°</strong>
         </li>{/if}
+      {#if geo.highest}<li>
+          <Icon icon={mdiImageFilterHdr} size="18" aria-hidden /><span
+            ><small>{$t('frameleaf_magic_far_highest')}</small>{geo.highest.place ??
+              $t('frameleaf_magic_far_unnamed')}</span
+          ><strong>{$t('frameleaf_magic_metres', { values: { value: f.number(geo.highest.metres) } })}</strong>
+        </li>{/if}
     </ul>
   </AnalyticsPanel>
 {/if}
@@ -272,6 +313,31 @@
         <dd>{ahead.fullOn ? monthYear(ahead.fullOn) : $t('frameleaf_magic_ahead_not_at_pace')}</dd>
       </div>
     </dl>{/if}
+</AnalyticsPanel>
+
+<AnalyticsPanel
+  id="shutter"
+  kicker={$t('frameleaf_magic_shutter_kicker')}
+  title={shutterTop
+    ? $t('frameleaf_magic_shutter_title', {
+        values: { camera: shutterTop.camera, count: f.number(shutterTop.count) },
+      })
+    : $t('frameleaf_magic_shutter_none_title')}
+  caption={shutterTop
+    ? $t('frameleaf_magic_shutter_caption', { values: { rated: f.number(SHUTTER_RATING) } })
+    : $t('frameleaf_magic_shutter_none_caption')}
+>
+  {#if shutterTop}<ul class="an-shutters">
+      {#each magic.shutter as row (row.camera)}
+        {@const share = Math.min(100, Math.round((row.count / SHUTTER_RATING) * 100))}
+        <li>
+          <span class="name"><Icon icon={mdiCameraOutline} size="16" aria-hidden />{row.camera}</span>
+          <strong>{f.number(row.count)}</strong>
+          <span class="life" aria-hidden="true"><i style:width="{share}%"></i></span>
+          <small>{$t('frameleaf_magic_shutter_share', { values: { percent: share } })}</small>
+        </li>
+      {/each}
+    </ul>{/if}
 </AnalyticsPanel>
 
 <AnalyticsPanel
@@ -462,6 +528,42 @@
     color: var(--fl-muted);
     font-size: var(--fl-font-micro);
     font-weight: 400;
+  }
+  .an-shutters {
+    display: grid;
+    gap: 12px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .an-shutters li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 12px;
+    align-items: center;
+  }
+  .an-shutters .name {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .an-shutters strong {
+    font-variant-numeric: tabular-nums;
+  }
+  .an-shutters .life {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--fl-raised);
+  }
+  .an-shutters .life i {
+    display: block;
+    height: 100%;
+    border-radius: 3px;
+    background: var(--fl-accent);
+  }
+  .an-shutters small {
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
   }
   .an-extremes {
     display: grid;

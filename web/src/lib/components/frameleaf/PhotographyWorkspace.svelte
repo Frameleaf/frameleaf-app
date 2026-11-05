@@ -741,6 +741,7 @@
       // The rail keeps the account name; Branding shows the error where it can be fixed.
     }
   }
+  let headerActions = $state<HTMLElement>();
   let lastSection: string | null = null;
   $effect(() => {
     // After Branding, show what was saved there.
@@ -874,7 +875,7 @@
         <h1>{title}</h1>
         <p>{subtitle}</p>
       </div>
-      <div class="phw-header-actions">
+      <div class="phw-header-actions" bind:this={headerActions}>
         <span class="phw-save">
           <PhotographyStatus
             state={busy || ratingsSaving > 0 ? 'saving' : message ? 'saved' : 'idle'}
@@ -918,6 +919,7 @@
       {:else if section === 'watermarks'}<PhotographyWatermarks photoId={samplePhotoId} />
       {:else if section === 'website'}<PhotographyWebsite
           shoots={workspace.shoots}
+          {headerActions}
           onEditBrand={() => (section = 'branding')}
         />
       {:else if isShootSection(section)}

@@ -1,4 +1,4 @@
-import { AnalyticsCameraKind, AnalyticsScopeKind, AnalyticsState } from '@frameleaf/sdk';
+import { AnalyticsCameraKind, AnalyticsScopeKind, AnalyticsSeenLabel, AnalyticsState } from '@frameleaf/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import LibraryAnalytics from '$lib/components/frameleaf/analytics/LibraryAnalytics.svelte';
@@ -431,8 +431,18 @@ describe('LibraryAnalytics', () => {
           farthest: { km: 12_000, place: 'Sydney, Australia' },
           northernmost: { latitude: 51.2, place: 'Banff, Canada' },
           southernmost: { latitude: -33.9, place: 'Sydney, Australia' },
+          highest: { metres: 2350, place: 'Lake Louise, Canada' },
         },
         underTheHood: { searchVectors: 1000, faceVectors: 500, previews: 2000, databaseRows: 90_000 },
+        shutter: [{ camera: 'Canon EOS R6', count: 48_210 }],
+        seen: {
+          described: 120,
+          labels: [
+            { id: AnalyticsSeenLabel.Mountains, count: 60 },
+            { id: AnalyticsSeenLabel.Lakes, count: 40 },
+            { id: AnalyticsSeenLabel.People, count: 20 },
+          ],
+        },
       },
     });
     render(LibraryAnalytics, { report: analyticsReportFixture({ insights }) });
@@ -445,6 +455,10 @@ describe('LibraryAnalytics', () => {
       screen.getByRole('heading', { name: '80,150 km between your photos, 2× around the Earth' }),
     ).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '1.5K AI vectors make search and faces instant' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Mountains, Lakes, and People, most of all' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Your Canon EOS R6 has fired 48,210 times' })).toBeInTheDocument();
+    expect(screen.getByText('Lake Louise, Canada')).toBeInTheDocument();
+    expect(screen.getByText('2,350 m')).toBeInTheDocument();
     const bar = await screen.findByRole('navigation', { name: 'Sections of this page' });
     expect(await within(bar).findByRole('link', { name: 'Magic' })).toHaveAttribute('href', '#an-magic');
   });
