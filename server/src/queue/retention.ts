@@ -110,7 +110,9 @@ export async function pruneQueueHistoryPage(db: Kysely<any>): Promise<{ pruned: 
   });
 }
 
-const LEDGER_BATCH = 5000;
+// 5,000-row batches took up to 1.2 s on a 4M-row ledger before vacuum: this keeps a wide margin under the 5 s
+// statement timeout, which would otherwise retry the same batch every sweep.
+const LEDGER_BATCH = 2000;
 
 /**
  * FL-1215: a summarised run's item rows serve nothing once its own jobs are pruned (so nothing can retry or

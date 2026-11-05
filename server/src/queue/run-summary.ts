@@ -75,7 +75,7 @@ const nextRun = (db: Kysely<any>) =>
     from job_run r where r."finishedAt" is not null and r."enumerationDone"
       and (r.summary is null or (r.summary->>'finishedAt')::timestamptz is distinct from r."finishedAt" or r.summary ? 'cursor')
       and not exists (select 1 from job j where j."runId" = r.id and j.state in ('pending','waiting','active'))
-    order by r.summary ? 'cursor' desc, r."finishedAt" desc, r.id limit 1`.execute(db);
+    order by coalesce(r.summary ? 'cursor', false) desc, r."finishedAt" desc, r.id limit 1`.execute(db);
 
 /** Add one more page of the next finished run. False when there is nothing left to summarise. */
 async function summarizeStep(db: Kysely<any>, pageRows: number): Promise<boolean> {
@@ -141,10 +141,13 @@ async function summarizeStep(db: Kysely<any>, pageRows: number): Promise<boolean
   });
 }
 
-/** Summarise finished runs a page at a time for up to `budgetMs`. Returns the pages added. */
+/** Summarise finished runs a page at a time: at least one page, then more for up to `budgetMs`. Returns the pages added. */
 export async function summarizeRuns(db: Kysely<any>, budgetMs: number, pageRows = 2000): Promise<number> {
   const start = performance.now();
   let pages = 0;
-  while (performance.now() - start < budgetMs && (await summarizeStep(db, pageRows))) pages++;
+  do {
+    if (!(await summarizeStep(db, pageRows))) break;
+    pages++;
+  } while (performance.now() - start < budgetMs);
   return pages;
 }

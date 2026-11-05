@@ -287,6 +287,29 @@ describe('bounded PostgreSQL queue history', () => {
     expect((await read())[1]).toMatchObject({ state: 'completed', completed: 30, failed: 0 });
   });
 
+  it('finishes the summary already in progress before starting another run (FL-1215)', async () => {
+    const finished = async (daysAgo: number) => {
+      const runId = await store.createRun('summary-order', {});
+      await sql`insert into job_run_item("runId", "itemKey", "rootItemKey", stage, queue, selection, state)
+        select ${runId}::uuid, n::text, n::text, 'thumbnail', ${queue}, '{}'::jsonb, 'completed'
+        from generate_series(1, 20) n`.execute(db);
+      await sql`update job_run set "enumerationDone" = true, "finishedAt" = now() - ${daysAgo} * interval '1 day'
+        where id = ${runId}::uuid`.execute(db);
+      return runId;
+    };
+    const older = await finished(40);
+    const newer = await finished(1);
+    // The older run already has its bookkeeping page; the newer one has never been started.
+    await sql`update job_run set summary = jsonb_build_object('finishedAt', "finishedAt"::text,
+      'cursor', '{"bookkeepingDone": false, "after": null}'::jsonb) where id = ${older}::uuid`.execute(db);
+
+    expect(await summarizeRuns(db, 0, 5)).toBe(1);
+    const { rows } = await sql<{ id: string; summary: Record<string, unknown> | null }>`select id, summary from job_run
+      where id = any(${[older, newer]}::uuid[])`.execute(db);
+    expect(rows.find((row) => row.id === older)?.summary).toMatchObject({ cursor: { bookkeepingDone: true } });
+    expect(rows.find((row) => row.id === newer)?.summary).toBeNull();
+  });
+
   it('installs vacuum settings on the frequently updated queue tables', async () => {
     const { rows } = await sql<{ relname: string; reloptions: string[] }>`select relname, reloptions from pg_class
       where oid in ('public.job'::regclass, 'public.job_attempt'::regclass, 'public.job_worker'::regclass,
