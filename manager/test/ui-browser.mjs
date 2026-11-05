@@ -115,7 +115,9 @@ let backupAction = 'reuse',
   sources = [source],
   refused = [],
   failCredential = false,
-  commonReview = null;
+  commonReview = null,
+  photoAppSources = [],
+  photoAppInspection = null;
 const snapshot = { id: 'd'.repeat(64), time: '2026-10-07T02:00:00Z' };
 const containerSettings = {
   'frameleaf-server': { environment: { TZ: 'America/Toronto' }, mounts: [{ source: '/fixture/archive', target: '/old-archive', readOnly: true }], memory: '4g' },
@@ -129,6 +131,30 @@ await page.route('**/manager-api/**', async (route) => {
   if (path === 'status') value = { claimed: true };
   else if (path === 'dashboard') value = dashboard;
   else if (path === 'sources') value = { sources, refused };
+  else if (path === 'photo-app-sources') value = { sources: photoAppSources };
+  else if (path === 'photo-app-capture') {
+    const operation = {
+      id: '7c0a3f52-5b8e-4a59-9d3e-2f0c1d4e5a6b', kind: 'import', state: 'running', step: 'capture-common-source',
+      completed: [], error: null, createdAt: Date.now(), canCancel: false,
+    };
+    dashboard.operations = [operation];
+    value = { id: operation.id };
+  } else if (path === 'photo-app-inspect') value = photoAppInspection;
+  else if (path === 'photo-app-prepare')
+    value = {
+      id: body.operationId,
+      approvalToken: '0d9b8c1e-2f3a-4b5c-8d7e-6f5a4b3c2d1e',
+      downtime: 'Lychee stays stopped while your library is imported.',
+      recovery: 'Lychee’s own data is unchanged.',
+      commonImport: {
+        source: 'lychee', version: '5.0.0', requiresBootstrap: false, requiredMediaBytes: 3 * 1024 ** 2,
+        summary: { assets: 3, albums: 1, owners: 2 },
+      },
+    };
+  else if (path === 'photo-app-cancel') {
+    dashboard.operations = [];
+    value = { cancelled: true };
+  }
   else if (path === 'source-review')
     value = {
       source: sources.find((s) => s.id === body.sourceId),
@@ -677,6 +703,130 @@ try {
     assert.equal(approval.reviewId, commonReview.id);
     assert.equal(approval.approvalToken, commonReview.approvalToken);
     commonReview = null;
+  });
+  await check('another photo app: Beta picker, untested notice, losses and accounts gate the review, prepare reaches Start import', async () => {
+    dashboard.installation = null;
+    dashboard.operations = [];
+    commonReview = null;
+    sources = [source];
+    refused = [];
+    photoAppSources = [
+      { container: 'f'.repeat(64), kind: 'lychee', name: 'lychee', version: '5.0.0', database: 'sqlite', importable: true },
+      { container: '9'.repeat(64), kind: 'nextcloud', name: 'nextcloud', version: '30.0.1', database: 'mysql', importable: false, reason: 'database_unsupported' },
+    ];
+    photoAppInspection = {
+      format: 'frameleaf-library-import-inspection',
+      source: { kind: 'lychee', version: '5.0.0' },
+      tested: false,
+      testedVersion: '6.6.0',
+      summary: { owners: 2, assets: 3, albums: 1, files: 3, bytes: String(3 * 1024 ** 2) },
+      owners: [
+        { sourceId: '1', name: 'Ann', email: 'ann@example.test', assets: 2, restrictions: [] },
+        { sourceId: '2', name: 'Bo', email: null, assets: 1, restrictions: ['second-factor-required'] },
+      ],
+      losses: [{ code: 'LYCHEE_TITLE_ARCHIVED', count: 2 }, { code: 'SOURCE_VERSION_UNTESTED', count: 1 }],
+    };
+    await page.goto(origin);
+    // Offered beside the Immich-family import, for everyone, marked Beta.
+    await mainButton('Review import').waitFor();
+    const picker = page.locator('section.photo-apps');
+    await picker.getByRole('heading', { name: 'Import from another photo app' }).waitFor();
+    assert.equal(await picker.locator('.badge.warning').innerText(), 'Beta');
+    assert.match(await picker.innerText(), /Imports from other apps are new/u);
+    assert.match(await picker.innerText(), /Version 5\.0\.0 · SQLite/u);
+    const nextcloud = picker.locator('.radio-card', { hasText: 'Nextcloud' });
+    assert.equal(await nextcloud.getByRole('radio').isDisabled(), true);
+    assert.match(await nextcloud.innerText(), /Nextcloud on MySQL isn't supported yet\./u);
+    assert.ok(await nextcloud.evaluate((node) => node.classList.contains('unavailable')));
+    assert.equal(await picker.getByRole('radio').first().isChecked(), true);
+    assert.doesNotMatch(await picker.innerText(), /fence|snapshot|manifest/iu);
+    await screenshot('photo-app-picker');
+    // Choosing an app explains that it stops, then captures it with an idempotency key.
+    await mainButton('Import from Lychee').click();
+    await page.getByRole('heading', { name: 'Stop Lychee for the import?' }).waitFor();
+    await page.locator('dialog').getByRole('button', { name: 'Stop Lychee and continue', exact: true }).click();
+    await page.getByRole('heading', { name: 'Bringing your library to Frameleaf' }).waitFor();
+    const capture = requests.findLast((r) => r.path === 'photo-app-capture').body;
+    assert.equal(capture.container, 'f'.repeat(64));
+    assert.ok(capture.key);
+    await page.locator('ol.timeline').getByText('Stop the app and read its library', { exact: true }).waitFor();
+    Object.assign(dashboard.operations[0], { state: 'awaiting-review', step: null, completed: ['capture-common-source'], canCancel: true });
+    await refresh();
+    await mainButton('Review what comes across').click();
+    assert.equal(requests.findLast((r) => r.path === 'photo-app-inspect').body.operationId, dashboard.operations[0].id);
+    // Untested version: a clear notice, nothing else until the owner chooses to continue.
+    await page.getByRole('heading', { name: 'Review your Lychee library' }).waitFor();
+    await page.getByText(
+      "Lychee 5.0.0 hasn't been tested. Photos and albums should come across; anything that can’t will be listed. For best results, upgrade Lychee to 6.6.0 first.",
+      { exact: true },
+    ).waitFor();
+    assert.equal(await mainButton('Check and review import').count(), 0);
+    assert.equal(await mainButton('Cancel import').count(), 2);
+    await screenshot('photo-app-untested');
+    await mainButton('Continue anyway').click();
+    const reviewButton = mainButton('Check and review import');
+    await page.getByText('Photo titles won’t come across. Descriptions do.', { exact: true }).waitFor();
+    await page.getByText('2 affected', { exact: true }).waitFor();
+    assert.equal(await page.getByLabel('Email for Ann').inputValue(), 'ann@example.test');
+    await page.getByText('This account uses two-step sign-in in Lychee.', { exact: true }).waitFor();
+    await page.getByLabel(/^Media location/).selectOption('/fixture/media');
+    await page.getByRole('checkbox', { name: 'Docker or Unraid', exact: false }).check();
+    assert.equal(await reviewButton.isDisabled(), true);
+    await page.getByRole('checkbox', { name: 'I understand these details won’t come across to Frameleaf.' }).check();
+    await page.getByText('Enter an email address for this account.', { exact: true }).waitFor();
+    assert.equal(await reviewButton.isDisabled(), true);
+    await page.getByLabel('Email for Bo').fill('ANN@example.test');
+    await page.getByText('Each account needs its own email address.', { exact: true }).first().waitFor();
+    assert.equal(await reviewButton.isDisabled(), true);
+    await page.getByLabel('Email for Bo').fill('not-an-email');
+    await page.getByText('Enter a valid email address, like name@example.com.', { exact: true }).waitFor();
+    await page.getByLabel('Email for Bo').fill('bo@example.test');
+    assert.equal(await reviewButton.isDisabled(), true);
+    await page.getByRole('checkbox', { name: 'Import Bo’s account anyway' }).check();
+    assert.equal(await reviewButton.isEnabled(), true);
+    assert.doesNotMatch(await page.locator('main').innerText(), /fence|snapshot|manifest|loss code|LYCHEE_/iu);
+    await screenshot('photo-app-review');
+    // A cancel prompt can be dismissed without losing the review.
+    await page.locator('.wizard-footer').getByRole('button', { name: 'Cancel import', exact: true }).click();
+    await page.getByRole('heading', { name: 'Cancel this import?' }).waitFor();
+    await button('Keep import').click();
+    assert.equal(requests.filter((r) => r.path === 'photo-app-cancel').length, 0);
+    await reviewButton.click();
+    const prepare = requests.findLast((r) => r.path === 'photo-app-prepare').body;
+    assert.equal(prepare.operationId, dashboard.operations[0].id);
+    assert.deepEqual(prepare.owners, [
+      { sourceId: '1', email: 'ann@example.test' },
+      { sourceId: '2', email: 'bo@example.test', acknowledgeRestrictions: true },
+    ]);
+    assert.deepEqual(prepare.approvedLossCodes, ['LYCHEE_TITLE_ARCHIVED', 'SOURCE_VERSION_UNTESTED']);
+    assert.equal(prepare.review.mediaPath, '/fixture/media');
+    assert.equal(prepare.review.tag, 'frameleaf-v3.2.1-1');
+    assert.equal(prepare.review.port, 2283);
+    // The prepared review is the same card every common import uses.
+    await page.getByRole('heading', { name: 'Review library import', exact: true }).waitFor();
+    await page.locator('main .badge', { hasText: 'Lychee 5.0.0' }).waitFor();
+    assert.equal(await mainButton('Start import').isDisabled(), true);
+    await page.getByRole('checkbox', { name: 'I’ve reviewed the transfer and recovery information.' }).check();
+    await screenshot('photo-app-start');
+    await mainButton('Start import').click();
+    await mainButton('Resume safely').waitFor();
+    const approval = requests.findLast((r) => r.path === 'install').body;
+    assert.equal(approval.reviewId, prepare.operationId);
+    assert.equal(approval.approvalToken, '0d9b8c1e-2f3a-4b5c-8d7e-6f5a4b3c2d1e');
+  });
+  await check('cancelling a captured photo-app import restarts the app', async () => {
+    dashboard.operations = [{
+      id: '5e4d3c2b-1a09-4f8e-9d7c-6b5a4f3e2d1c', kind: 'import', state: 'awaiting-review', step: null,
+      completed: ['capture-common-source'], error: null, createdAt: Date.now(), canCancel: true,
+    }];
+    await page.goto(origin);
+    await mainButton('Review what comes across').waitFor();
+    await mainButton('Cancel import').click();
+    await page.locator('dialog').getByRole('button', { name: 'Cancel import', exact: true }).click();
+    await page.getByRole('heading', { name: 'Choose how to begin' }).waitFor();
+    assert.equal(requests.findLast((r) => r.path === 'photo-app-cancel').body.operationId, '5e4d3c2b-1a09-4f8e-9d7c-6b5a4f3e2d1c');
+    await page.getByText('is starting again.', { exact: false }).waitFor();
+    photoAppSources = [];
   });
   assert.deepEqual(errors, []);
   console.log('All Manager browser checks passed.');
