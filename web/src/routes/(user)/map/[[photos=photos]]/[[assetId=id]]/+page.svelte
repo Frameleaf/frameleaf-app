@@ -41,10 +41,42 @@
    */
   let neighbourIds = $state<string[]>([]);
   let neighbours = $state<{ nextAsset?: AssetResponseDto; previousAsset?: AssetResponseDto }>({});
+  /** FL-1216: reads the in-view items past `neighbourIds` when the map holds only some of them. */
+  let loadMore: (() => Promise<string[]>) | undefined;
+  let loadingMore = false;
 
-  const openAsset = (assetId: string, inView: string[] = []) => {
+  const openAsset = (assetId: string, inView: string[] = [], more?: () => Promise<string[]>) => {
     neighbourIds = inView.includes(assetId) ? inView : [];
+    loadMore = neighbourIds.length > 0 ? more : undefined;
+    loadingMore = false;
     handlePromiseError(assetViewerManager.setAssetId(assetId));
+  };
+
+  /** At the last item read so far, the next page is read, so next goes on past it. */
+  const readOn = () => {
+    const more = loadMore;
+    if (!more || loadingMore) {
+      return;
+    }
+    loadingMore = true;
+    more()
+      .then((ids) => {
+        if (loadMore !== more) {
+          return;
+        }
+        loadingMore = false;
+        if (ids.length === 0) {
+          loadMore = undefined;
+          return;
+        }
+        neighbourIds = [...neighbourIds, ...ids];
+      })
+      .catch(() => {
+        // the order stays as it is; stepping back onto the last item asks again
+        if (loadMore === more) {
+          loadingMore = false;
+        }
+      });
   };
 
   const loadAsset = (id?: string) =>
@@ -56,6 +88,9 @@
     neighbours = {};
     if (index === -1) {
       return;
+    }
+    if (index === neighbourIds.length - 1) {
+      readOn();
     }
     let cancelled = false;
     void Promise.all([loadAsset(neighbourIds[index + 1]), loadAsset(neighbourIds[index - 1])]).then(

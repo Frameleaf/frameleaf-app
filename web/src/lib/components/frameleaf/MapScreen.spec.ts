@@ -506,6 +506,63 @@ describe('MapScreen (FL-193)', () => {
       expect(await screen.findAllByRole('button', { name: /Centre map on/ })).toHaveLength(3);
     });
 
+    it('lets the viewer read the in-view items past the loaded rows (FL-1216)', async () => {
+      mapSettings.update((settings) => ({ ...settings, showAssetPanel: true }));
+      const row = (index: number) => ({
+        ...item,
+        id: `a0000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+        originalFileName: `row-${index}.jpg`,
+      });
+      const page = (skip: number) => Array.from({ length: 120 }, (_, index) => row(skip + index));
+      // a full first page, a second that repeats one row the list holds, then the last rows
+      sdkMock.getMapMarkers.mockImplementation(({ skip }) =>
+        Promise.resolve(skip === 0 ? page(0) : skip === 120 ? [row(119), ...page(120)].slice(0, 120) : [row(239)]),
+      );
+      const onOpenAsset = vi.fn();
+      render(MapScreen, { title: 'Map', onOpenAsset });
+
+      await fireEvent.click(await screen.findByText('row-3.jpg'));
+      const [id, order, more] = onOpenAsset.mock.calls[0] as [string, string[], () => Promise<string[]>];
+      expect(id).toBe(row(3).id);
+      expect(order).toHaveLength(120);
+      const listCalls = sdkMock.getMapMarkers.mock.calls.length;
+
+      expect(await more()).toEqual(
+        page(120)
+          .slice(0, 119)
+          .map(({ id }) => id),
+      );
+      expect(sdkMock.getMapMarkers).toHaveBeenLastCalledWith({
+        withSharedAlbums: true,
+        west: 40,
+        east: 60,
+        south: -10,
+        north: 30,
+        skip: 120,
+        take: 120,
+      });
+      expect(await more()).toEqual([row(239).id]);
+      // a short page was the last one
+      expect(await more()).toEqual([]);
+      expect(sdkMock.getMapMarkers).toHaveBeenCalledTimes(listCalls + 2);
+    });
+
+    it('passes nothing to read on when every item in view is listed', async () => {
+      sdkMock.getMapClusters.mockResolvedValue({
+        complete: false,
+        total: 50_000,
+        bounds: null,
+        clusters: [],
+        markers: [item],
+      });
+      const onOpenAsset = vi.fn();
+      mapSettings.update((settings) => ({ ...settings, showAssetPanel: true }));
+      render(MapScreen, { title: 'Map', onOpenAsset });
+
+      await fireEvent.click(await screen.findByRole('button', { name: /^(?!Centre).*Here/ }));
+      expect(onOpenAsset).toHaveBeenCalledWith(item.id, [item.id], undefined);
+    });
+
     it('loads every item at once when the settings ask for it', async () => {
       mapSettings.update((settings) => ({ ...settings, loadAllItems: true }));
       sdkMock.getMapMarkers.mockResolvedValue([item]);

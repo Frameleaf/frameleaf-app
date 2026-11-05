@@ -109,8 +109,12 @@
     albumId?: string;
     /** Accessible name of the map region. */
     title: string;
-    /** Opens an item; `inView` is the items in view, in the list's order, for the viewer's filmstrip (V-17). */
-    onOpenAsset: (assetId: string, inView: string[]) => void;
+    /**
+     * Opens an item; `inView` is the items in view, in the list's order, for the viewer's filmstrip (V-17).
+     * When some of what is in view is grouped (FL-1216), `more` reads the in-view items past `inView`, a
+     * page at a time, and answers with none once there are no more.
+     */
+    onOpenAsset: (assetId: string, inView: string[], more?: () => Promise<string[]>) => void;
     /** "Search this area": the prototype opens the Library over the visible bounds. */
     onSearchArea?: (area: MapArea) => void;
   }
@@ -381,6 +385,36 @@
         }
       });
   };
+  /**
+   * FL-1216: the in-view items past `order` for the viewer, read from the server `skip` rows on, so
+   * stepping past the last loaded row reads on. It reads for the view and filters it was opened from.
+   */
+  const moreInView = (area: MapArea, order: string[], skip: number) => {
+    const filters = query;
+    const known = new Set(order);
+    let done = false;
+    return async () => {
+      while (!done) {
+        const rows = await getMapMarkers({ ...filters, ...area, skip, take: LIST_PAGE });
+        skip += rows.length;
+        done = rows.length < LIST_PAGE;
+        const added = rows.map(({ id }) => id).filter((id) => !known.has(id));
+        for (const id of added) {
+          known.add(id);
+        }
+        if (added.length > 0) {
+          return added;
+        }
+      }
+      return [];
+    };
+  };
+  const openItem = (id: string, order: string[], skip: number) =>
+    onOpenAsset(id, order, listArea ? moreInView(listArea, order, skip) : undefined);
+  /** From the map: the list's rows go on from the rows read so far, the single items from the first. */
+  const openFromMap = (id: string) =>
+    openItem(id, openingOrder(id, inView, inViewPoints), inView.some((row) => row.id === id) ? listOffset : 0);
+
   $effect(() => {
     void listShown;
     void listOpen;
@@ -844,11 +878,7 @@
           filter={SINGLE_FILTER}
           asButton
           bind:hovered={hoveredSingle}
-          onclick={(event) =>
-            onOpenAsset(
-              event.feature.properties?.id as string,
-              openingOrder(event.feature.properties?.id as string, inView, inViewPoints),
-            )}
+          onclick={(event) => openFromMap(event.feature.properties?.id as string)}
         >
           {#snippet children({ feature })}
             {@const id = feature.properties?.id as string}
@@ -1117,9 +1147,10 @@
                 type="button"
                 class="row"
                 onclick={() =>
-                  onOpenAsset(
+                  openItem(
                     marker.id,
                     inView.map(({ id }) => id),
+                    listOffset,
                   )}
               >
                 <img src={getAssetMediaUrl({ id: marker.id, size: AssetMediaSize.Thumbnail })} alt="" loading="lazy" />
