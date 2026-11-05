@@ -9,17 +9,23 @@ class LibrephotosPostgresError extends Error {
   }
 }
 
-/** Catalog admission and scalar decoding only; the caller must hold a fenced, read-only source snapshot. */
+/**
+ * Catalog admission and scalar decoding only; the caller must hold a fenced, read-only source snapshot.
+ * `bestEffort` skips the version, engine and catalog pins and decodes with the qualified column types.
+ */
 export const createLibrephotosPostgresDecoder = (
-  schema: PostgresSourceSchema,
+  schema: PostgresSourceSchema | undefined,
   version: string,
   engineVersion: string,
+  { bestEffort = false }: { bestEffort?: boolean } = {},
 ) => {
-  if (version !== fixture.source.version) throw new LibrephotosPostgresError('LIBREPHOTOS_VERSION_UNQUALIFIED');
-  if (engineVersion !== fixture.source.database.version)
-    throw new LibrephotosPostgresError('LIBREPHOTOS_POSTGRES_ENGINE_UNQUALIFIED');
-  if (postgresSchemaFingerprint(schema) !== fixture.schemaSha256)
-    throw new LibrephotosPostgresError('LIBREPHOTOS_POSTGRES_SCHEMA_UNQUALIFIED');
+  if (!bestEffort) {
+    if (version !== fixture.source.version) throw new LibrephotosPostgresError('LIBREPHOTOS_VERSION_UNQUALIFIED');
+    if (engineVersion !== fixture.source.database.version)
+      throw new LibrephotosPostgresError('LIBREPHOTOS_POSTGRES_ENGINE_UNQUALIFIED');
+    if (!schema || postgresSchemaFingerprint(schema) !== fixture.schemaSha256)
+      throw new LibrephotosPostgresError('LIBREPHOTOS_POSTGRES_SCHEMA_UNQUALIFIED');
+  }
   const tables = Object.fromEntries(
     Object.entries(librephotosProjections).map(([table, projection]) => {
       const all = fixture.structure.columns.filter((column) => column.table_name === table);
