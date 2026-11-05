@@ -596,6 +596,9 @@ const partnerSearchable = (eb: ExpressionBuilder<DB, 'asset'>, viewerId: string)
 /** FL-137: an album shows someone else's item only while it is out of their trash (`checkAlbumAccess`). */
 const othersNotTrashed = (eb: ExpressionBuilder<DB, 'asset'>, viewerId: string) =>
   eb.or([eb('asset.ownerId', '=', asUuid(viewerId)), eb('asset.deletedAt', 'is', null)]);
+/** Whether a read asking for `visibility` can return `hidden` rows (see `visibilityIs`). */
+const mayMatchHidden = (visibility?: AssetVisibility | 'not-locked') =>
+  [undefined, 'not-locked', AssetVisibility.Hidden].includes(visibility);
 export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearchBuilderOptions) {
   options.withDeleted ||= !!(options.trashedAfter || options.trashedBefore || options.isOffline);
   return (
@@ -616,7 +619,9 @@ export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearc
       .$if(options.visibility === undefined || options.visibility === AssetVisibility.Locked, (qb) =>
         withLockedOwnerScope(qb, options.lockedOwnerId),
       )
-      .$if(!!options.hideLockedMotion, (qb) =>
+      // only a read that can return `hidden` rows can return a motion part: Timeline, Archive and Locked
+      // never do, and the needless test turns a million-item count into a slow ordered index scan
+      .$if(!!options.hideLockedMotion && mayMatchHidden(options.visibility), (qb) =>
         qb.where((eb) => eb.not(isMotionOfLockedStill(eb, options.lockedOwnerId))),
       )
       .$if(!!options.albumIds && options.albumIds.length > 0, (qb) => inAlbums(qb, options.albumIds!))

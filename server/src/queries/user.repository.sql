@@ -548,18 +548,7 @@ select
   ) as "videos",
   coalesce(
     sum(
-      COALESCE(asset_exif."fileSizeInByte", 0) + COALESCE(
-        (
-          SELECT
-            sum(file."sizeInBytes")
-          FROM
-            public.asset_original original
-            JOIN public.physical_file file ON file.id = original."physicalFileId"
-          WHERE
-            original."assetId" = asset.id
-        ),
-        0
-      )
+      COALESCE(asset_exif."fileSizeInByte", 0) + COALESCE(original.bytes, 0)
     ) filter (
       where
         "asset"."libraryId" is null
@@ -568,18 +557,7 @@ select
   ) as "usage",
   coalesce(
     sum(
-      COALESCE(asset_exif."fileSizeInByte", 0) + COALESCE(
-        (
-          SELECT
-            sum(file."sizeInBytes")
-          FROM
-            public.asset_original original
-            JOIN public.physical_file file ON file.id = original."physicalFileId"
-          WHERE
-            original."assetId" = asset.id
-        ),
-        0
-      )
+      COALESCE(asset_exif."fileSizeInByte", 0) + COALESCE(original.bytes, 0)
     ) filter (
       where
         (
@@ -591,18 +569,7 @@ select
   ) as "usagePhotos",
   coalesce(
     sum(
-      COALESCE(asset_exif."fileSizeInByte", 0) + COALESCE(
-        (
-          SELECT
-            sum(file."sizeInBytes")
-          FROM
-            public.asset_original original
-            JOIN public.physical_file file ON file.id = original."physicalFileId"
-          WHERE
-            original."assetId" = asset.id
-        ),
-        0
-      )
+      COALESCE(asset_exif."fileSizeInByte", 0) + COALESCE(original.bytes, 0)
     ) filter (
       where
         (
@@ -625,6 +592,18 @@ from
   left join "asset" on "asset"."ownerId" = "user"."id"
   and "asset"."deletedAt" is null
   left join "asset_exif" on "asset_exif"."assetId" = "asset"."id"
+  left join (
+    select
+      "original"."assetId",
+      sum("file"."sizeInBytes") as "bytes"
+    from
+      "asset_original" as "original"
+      inner join "physical_file" as "file" on "file"."id" = "original"."physicalFileId"
+      inner join "asset" as "uploaded" on "uploaded"."id" = "original"."assetId"
+      and "uploaded"."libraryId" is null
+    group by
+      "original"."assetId"
+  ) as "original" on "original"."assetId" = "asset"."id"
 group by
   "user"."id"
 order by

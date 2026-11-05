@@ -4,6 +4,7 @@ import {
   CreateDateColumn,
   DeleteDateColumn,
   ForeignKeyColumn,
+  Index,
   PrimaryGeneratedColumn,
   Table,
   UpdateDateColumn,
@@ -15,6 +16,12 @@ import { memory_delete_audit } from 'src/schema/functions.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 
 @Table('memory')
+// FL-1213: the memories list reads one owner's memories newest first; with this order it stops at a page
+@Index({
+  name: 'memory_owner_show_order_idx',
+  expression: '"ownerId", "showAt" DESC NULLS LAST, "memoryAt" DESC',
+  where: '"deletedAt" IS NULL',
+})
 @UpdatedAtTrigger('memory_updatedAt')
 @AfterDeleteTrigger({
   scope: 'statement',

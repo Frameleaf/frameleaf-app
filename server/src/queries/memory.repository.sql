@@ -141,6 +141,8 @@ where
               and nsfw_asset.is_nsfw = true
           )
         )
+      offset
+        $8
     )
   )
   and not exists (
@@ -323,6 +325,8 @@ where
               and nsfw_asset.is_nsfw = true
           )
         )
+      offset
+        $10
     )
   )
   and not exists (
@@ -588,6 +592,8 @@ where
               and nsfw_asset.is_nsfw = true
           )
         )
+      offset
+        $12
     )
   )
   and not exists (
@@ -864,6 +870,8 @@ where
               and nsfw_asset.is_nsfw = true
           )
         )
+      offset
+        $14
     )
   )
   and not exists (
@@ -1133,6 +1141,8 @@ where
               and nsfw_asset.is_nsfw = true
           )
         )
+      offset
+        $13
     )
   )
   and not exists (
@@ -1405,6 +1415,8 @@ where
               and nsfw_asset.is_nsfw = true
           )
         )
+      offset
+        $13
     )
   )
   and not exists (
@@ -1589,6 +1601,8 @@ where
               and nsfw_asset.is_nsfw = true
           )
         )
+      offset
+        $8
     )
   )
   and not exists (
@@ -1776,6 +1790,8 @@ where
               and nsfw_asset.is_nsfw = true
           )
         )
+      offset
+        $8
     )
   )
   and not exists (
