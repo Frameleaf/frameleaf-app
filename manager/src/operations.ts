@@ -1521,9 +1521,20 @@ export class Operations {
     const check = async () => {
       if (operation.receipts['server-served'] || !(await this.serverMayHaveServed(review).catch(() => false))) return;
       operation.receipts['server-served'] = true;
-      this.store.save(operation);
+      try {
+        this.store.save(operation);
+      } catch (error) {
+        delete operation.receipts['server-served']; // Not journaled: the next poll retries.
+        throw error;
+      }
     };
-    const timer = setInterval(() => void check(), this.serverWatchMs);
+    const timer = setInterval(
+      () =>
+        void check().catch((error) =>
+          console.error(redact(`manager: could not journal the new server's health (${(error as Error)?.message ?? error})`)),
+        ),
+      this.serverWatchMs,
+    );
     timer.unref();
     try {
       await start();

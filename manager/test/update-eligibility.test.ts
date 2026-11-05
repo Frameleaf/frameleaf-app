@@ -592,7 +592,7 @@ test('a failed start whose server passed a health probe keeps the new database',
 });
 
 // Review: a successful probe can age out of Docker's five-entry health log before `up --wait` fails.
-test('a server seen healthy while starting is never rolled back after its probe ages out', async () => {
+test('a server seen healthy while starting is never rolled back after its probe ages out', async (t) => {
   process.env.MANAGER_ML_ACCELERATION = 'cpu';
   const directory = await mkdtemp(join(tmpdir(), 'manager-update-aged-probe-'));
   const store = new Store(directory);
@@ -629,7 +629,18 @@ test('a server seen healthy while starting is never rolled back after its probe 
       { verify: async () => {} } as never);
     operations.serverWatchMs = 5;
     (operations as any).fencing = { assertMedia: async () => {} };
+    // The first journal write of the receipt fails: the poll logs it, forgets the receipt and retries.
+    const save = store.save.bind(store);
+    let failed = false;
+    t.mock.method(store, 'save', (saved: any) => {
+      if (saved.receipts['server-served'] && !failed) {
+        failed = true;
+        throw new Error('disk full');
+      }
+      save(saved);
+    });
     await assert.rejects((operations as any).applyUpdate(operation, { current, release }), /unhealthy/);
+    assert.ok(failed);
     assert.equal(store.history()[0].receipts['server-served'], true, 'journaled while starting');
     assert.equal(operation.receipts['release-start-state'], 'started');
     assert.equal(operation.receipts['rollback-intent'], undefined);
