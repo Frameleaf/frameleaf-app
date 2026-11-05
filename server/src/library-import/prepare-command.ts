@@ -3,7 +3,11 @@ import { z } from 'zod';
 import { importSourceSchema } from '#library-import-transfer/import-plan';
 import { privateImportPathSchema, readPrivateImportJSON } from 'src/library-import/command-input.js';
 import { requestImportPreparationAuthority } from 'src/library-import/manager-authority.js';
-import { inspectPreparationSource, preparePreparationSource } from 'src/library-import/preparation/prepare.js';
+import {
+  DESTINATION_ROOT,
+  inspectPreparationSource,
+  preparePreparationSource,
+} from 'src/library-import/preparation/prepare.js';
 import { type PreparationAdapter } from 'src/library-import/preparation/types.js';
 import { LibraryImportRefused } from 'src/library-import/state.js';
 
@@ -56,12 +60,17 @@ export const loadPreparationAdapter = async (kind: string): Promise<PreparationA
 };
 
 /** Private offline preparation. Only the Manager's live approval authorizes this exact request. */
-export async function prepareLibraryImport(configPath: string, authorize = requestImportPreparationAuthority) {
+export async function prepareLibraryImport(
+  configPath: string,
+  authorize = requestImportPreparationAuthority,
+  /** Container mount → path; the native qualification maps the fixed mounts to its own directories. */
+  mount = (path: string) => path,
+) {
   const { value, sha256 } = await readPrivateImportJSON(configPath, 512 * 1024 * 1024);
   const parsed = requestSchema.safeParse(value);
   const stagingRoot = dirname(configPath);
   if (!parsed.success) throw new LibraryImportRefused('IMPORT_PREPARATION_INPUT_INVALID');
-  const input = parsed.data;
+  const input = { ...parsed.data, originalsRoot: mount(parsed.data.originalsRoot) };
   const adapter = await loadPreparationAdapter(input.source.kind);
   const database = input.databaseUrl?.startsWith('mysql') ? 'mysql' : input.databaseUrl ? 'postgres' : 'sqlite';
   if (
@@ -87,6 +96,7 @@ export async function prepareLibraryImport(configPath: string, authorize = reque
   const result = await preparePreparationSource(adapter, {
     ...input,
     stagingRoot,
+    destinationRoot: mount(DESTINATION_ROOT),
     approvedLossCodes: new Set(input.approvedLossCodes),
     verifySource,
   });

@@ -133,6 +133,8 @@ export async function preparePreparationSource(
     operationId: string;
     destinationId: string;
     stagingRoot: string;
+    /** The destination media mount, `/data` inside the preparation container. */
+    destinationRoot: string;
     approvedLossCodes: ReadonlySet<string>;
     owners: PreparationOwnerChoice[];
     verifySource: () => Promise<void>;
@@ -204,7 +206,7 @@ export async function preparePreparationSource(
     const roots = [];
     for (const [id, path] of [
       ['source', input.originalsRoot],
-      ['destination', DESTINATION_ROOT],
+      ['destination', input.destinationRoot],
     ]) {
       const info = await stat(path, { bigint: true });
       roots.push({ id, path, device: String(info.dev), inode: String(info.ino) });
