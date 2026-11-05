@@ -31,7 +31,7 @@
     LIBRARY_ITEM_SORTS,
     type LibraryItemSort,
   } from '$lib/frameleaf/library-item-search';
-  import { readPaletteState } from '$lib/frameleaf/search-palette';
+  import { compilePaletteQuery, readPaletteState } from '$lib/frameleaf/search-palette';
   import {
     organizeLibraryItems,
     ownsLibrarySelection,
@@ -575,8 +575,13 @@
   // text condition in the filter), so a search started there can be read and cleared here.
   const sendSearch = debounce((text: string) => {
     const state = readPaletteState(session.query);
-    if (text !== state.input) {
-      session.setQuery({ ...state.base, text });
+    if (text === state.input) {
+      return;
+    }
+    // Through the palette's compiler, so the search keeps the field (or All text) it was made with.
+    const next = compilePaletteQuery(state.base, { text, filter: {} }, state.mode);
+    if (next) {
+      session.setQuery(next);
     }
   }, 300);
   onDestroy(() => sendSearch.cancel());

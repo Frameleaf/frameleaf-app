@@ -686,6 +686,8 @@
 {/snippet}
 
 <KitPage>
+  <!-- One live region for both phases, so a relock's message is announced as the page changes. -->
+  <Said message={notice} onDismiss={() => (notice = '')} />
   {#if phase !== 'ready'}
     {#if phase === 'no-pin'}
       <Hero
@@ -719,7 +721,6 @@
         {/if}
       </Hero>
     {/if}
-    <Said message={notice} onDismiss={() => (notice = '')} />
     {#if error}
       <div role="alert"><Notice tone="warn" title={error} /></div>
     {/if}
@@ -748,7 +749,6 @@
         <Notice tone="warn" title={$t('frameleaf_locked_rules_conflict')} action={reloadAction} />
       </div>
     {/if}
-    <Said message={notice} onDismiss={() => (notice = '')} />
     {#if error}
       <div role="alert"><Notice tone="warn" title={error} /></div>
     {/if}
