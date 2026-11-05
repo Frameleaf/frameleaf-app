@@ -119,8 +119,12 @@ export function* normalizePhotoprismInventoryRow(
 }
 
 /** Streams separate logical records and credential-free archive records; it does not establish ownership, byte integrity or permission equivalence. */
-export function* readPhotoprismInventory(path: string, version: string): Generator<PhotoprismInventoryRecord, void> {
-  const source = openPhotoprismSnapshot(path, version);
+export function* readPhotoprismInventory(
+  path: string,
+  version: string,
+  options: { bestEffort?: boolean } = {},
+): Generator<PhotoprismInventoryRecord, void> {
+  const source = openPhotoprismSnapshot(path, version, options);
   try {
     source.validateRelationships();
     for (const table of photoprismTables) {
