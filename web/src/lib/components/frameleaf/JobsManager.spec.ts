@@ -543,6 +543,44 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
     ).toEqual(['1', '2']);
   });
 
+  it("lets a slow read of an account's counts land while the open queue keeps changing (FL-1239)", async () => {
+    const reads: ((value: Awaited<ReturnType<typeof getQueueOwnerStatistics>>) => void)[] = [];
+    vi.mocked(getQueueOwnerStatistics).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          reads.push(resolve);
+        }),
+    );
+    const counts = (failed: number) => ({
+      active: 0,
+      completed: 0,
+      delayed: 0,
+      failed,
+      paused: 0,
+      waiting: 0,
+      truncated: false,
+    });
+    at('&queue=face-detection&tab=failed&scope=account:grace');
+    render(JobsManager);
+    await waitFor(() => expect(getQueueOwnerStatistics).toHaveBeenCalledTimes(1));
+
+    // two polls with new counts while the first read is still out: no new read yet
+    for (const waiting of [3, 4]) {
+      queues.list = [queue(QueueName.FaceDetection, { waiting })];
+      queues.changed();
+      await tick();
+    }
+    expect(getQueueOwnerStatistics).toHaveBeenCalledTimes(1);
+
+    // the first read lands and shows, then one more read follows for the changes meanwhile
+    reads[0](counts(2));
+    expect(await screen.findByRole('tab', { name: /Failed\s*2/ })).toBeInTheDocument();
+    await waitFor(() => expect(getQueueOwnerStatistics).toHaveBeenCalledTimes(2));
+    reads[1](counts(5));
+    expect(await screen.findByRole('tab', { name: /Failed\s*5/ })).toBeInTheDocument();
+    expect(getQueueOwnerStatistics).toHaveBeenCalledTimes(2);
+  });
+
   it("reads an account's counts once the queues load, rather than showing 0 (FL-1239)", async () => {
     vi.mocked(getQueueOwnerStatistics).mockResolvedValue({
       active: 0,

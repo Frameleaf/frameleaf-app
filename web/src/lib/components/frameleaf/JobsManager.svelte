@@ -286,6 +286,32 @@
   const selectedQueue = $derived(selected?.definition.name);
   // The open queue's counts as one string: the account's are read again when these change, not on every tick.
   const selectedCounts = $derived(selected ? JSON.stringify(selected.queue.statistics) : '');
+  // One account-counts read at a time per account and queue list: a change while one is out asks for one more
+  // read after it, so a slow read on a busy queue still lands instead of being dropped every poll. A different
+  // account or list (a new generation) drops the older answer. Plain variables: bookkeeping, not page state.
+  let statsGeneration = 0;
+  let statsRunning: string | undefined;
+  let statsAgain = false;
+  const readOwnerStats = async (account: string, names: QueueName[], key: string, generation: number) => {
+    statsRunning = key;
+    do {
+      statsAgain = false;
+      const entries = await Promise.all(
+        names.map((queueName) =>
+          getQueueOwnerStatistics({ name: queueName, ownerId: account })
+            .then((stats) => [queueName, stats] as const)
+            .catch(() => undefined),
+        ),
+      );
+      if (generation !== statsGeneration) {
+        return;
+      }
+      ownerStats = new Map(entries.filter((entry) => entry !== undefined));
+      failedStats = new Set(names.filter((_, index) => entries[index] === undefined));
+      statsOwner = account;
+    } while (statsAgain);
+    statsRunning = undefined;
+  };
   // An account's counts: the open queue's, or every listed queue's; again after each command.
   $effect(() => {
     const account = owner;
@@ -293,6 +319,8 @@
     void jobsReload;
     void selectedCounts;
     if (account === 'all') {
+      statsGeneration++;
+      statsRunning = undefined;
       ownerStats = new Map();
       failedStats = new Set();
       statsOwner = undefined;
@@ -307,25 +335,12 @@
       // queues not loaded yet: counts stay unknown until they are, rather than reading 0
       return;
     }
-    let cancelled = false;
-    void Promise.all(
-      names.map((queueName) =>
-        getQueueOwnerStatistics({ name: queueName, ownerId: account })
-          .then((stats) => [queueName, stats] as const)
-          .catch(() => undefined),
-      ),
-    ).then((entries) => {
-      if (cancelled) {
-        return;
-      }
-
-      ownerStats = new Map(entries.filter((entry) => entry !== undefined));
-      failedStats = new Set(names.filter((_, index) => entries[index] === undefined));
-      statsOwner = account;
-    });
-    return () => {
-      cancelled = true;
-    };
+    const key = `${account}|${names.join(',')}`;
+    if (statsRunning === key) {
+      statsAgain = true;
+      return;
+    }
+    void readOwnerStats(account, names, key, ++statsGeneration);
   });
   const metrics = $derived([
     { label: $t('frameleaf_jobs_metric_processing'), value: counts.active, icon: mdiPlay, warning: false },
