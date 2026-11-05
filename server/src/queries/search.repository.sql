@@ -5550,14 +5550,15 @@ with
       m.type::text as value,
       null::text as label,
       count(*) as count,
-      (
-        array_agg(
-          m.id
-          order by
-            m."fileCreatedAt" desc,
-            m.id desc
-        )
-      ) [1]::text as cover
+      right(
+        max(
+          to_char(
+            m."fileCreatedAt" at time zone 'UTC',
+            'YYYYMMDDHH24MISSUS'
+          ) || m.id::text collate "C"
+        ),
+        36
+      ) as cover
     from
       matched m
     group by
@@ -5571,14 +5572,15 @@ with
       )::text as value,
       null::text as label,
       count(*) as count,
-      (
-        array_agg(
-          m.id
-          order by
-            m."fileCreatedAt" desc,
-            m.id desc
-        )
-      ) [1]::text as cover
+      right(
+        max(
+          to_char(
+            m."fileCreatedAt" at time zone 'UTC',
+            'YYYYMMDDHH24MISSUS'
+          ) || m.id::text collate "C"
+        ),
+        36
+      ) as cover
     from
       matched m
     group by
@@ -5592,14 +5594,15 @@ with
       end as value,
       null::text as label,
       count(*) as count,
-      (
-        array_agg(
-          m.id
-          order by
-            m."fileCreatedAt" desc,
-            m.id desc
-        )
-      ) [1]::text as cover
+      right(
+        max(
+          to_char(
+            m."fileCreatedAt" at time zone 'UTC',
+            'YYYYMMDDHH24MISSUS'
+          ) || m.id::text collate "C"
+        ),
+        36
+      ) as cover
     from
       matched m
       left join asset_exif e on e."assetId" = m.id
@@ -5611,14 +5614,15 @@ with
       nullif(trim("e"."city"), '') as value,
       null::text as label,
       count(*) as count,
-      (
-        array_agg(
-          m.id
-          order by
-            m."fileCreatedAt" desc,
-            m.id desc
-        )
-      ) [1]::text as cover
+      right(
+        max(
+          to_char(
+            m."fileCreatedAt" at time zone 'UTC',
+            'YYYYMMDDHH24MISSUS'
+          ) || m.id::text collate "C"
+        ),
+        36
+      ) as cover
     from
       matched m
       inner join asset_exif e on e."assetId" = m.id
@@ -5633,14 +5637,15 @@ with
       nullif(trim("e"."country"), '') as value,
       null::text as label,
       count(*) as count,
-      (
-        array_agg(
-          m.id
-          order by
-            m."fileCreatedAt" desc,
-            m.id desc
-        )
-      ) [1]::text as cover
+      right(
+        max(
+          to_char(
+            m."fileCreatedAt" at time zone 'UTC',
+            'YYYYMMDDHH24MISSUS'
+          ) || m.id::text collate "C"
+        ),
+        36
+      ) as cover
     from
       matched m
       inner join asset_exif e on e."assetId" = m.id
@@ -5655,14 +5660,15 @@ with
       nullif(trim("e"."make"), '') as value,
       null::text as label,
       count(*) as count,
-      (
-        array_agg(
-          m.id
-          order by
-            m."fileCreatedAt" desc,
-            m.id desc
-        )
-      ) [1]::text as cover
+      right(
+        max(
+          to_char(
+            m."fileCreatedAt" at time zone 'UTC',
+            'YYYYMMDDHH24MISSUS'
+          ) || m.id::text collate "C"
+        ),
+        36
+      ) as cover
     from
       matched m
       inner join asset_exif e on e."assetId" = m.id
@@ -5677,14 +5683,15 @@ with
       nullif(trim("e"."model"), '') as value,
       null::text as label,
       count(*) as count,
-      (
-        array_agg(
-          m.id
-          order by
-            m."fileCreatedAt" desc,
-            m.id desc
-        )
-      ) [1]::text as cover
+      right(
+        max(
+          to_char(
+            m."fileCreatedAt" at time zone 'UTC',
+            'YYYYMMDDHH24MISSUS'
+          ) || m.id::text collate "C"
+        ),
+        36
+      ) as cover
     from
       matched m
       inner join asset_exif e on e."assetId" = m.id
@@ -5699,14 +5706,15 @@ with
       nullif(trim("e"."lensModel"), '') as value,
       null::text as label,
       count(*) as count,
-      (
-        array_agg(
-          m.id
-          order by
-            m."fileCreatedAt" desc,
-            m.id desc
-        )
-      ) [1]::text as cover
+      right(
+        max(
+          to_char(
+            m."fileCreatedAt" at time zone 'UTC',
+            'YYYYMMDDHH24MISSUS'
+          ) || m.id::text collate "C"
+        ),
+        36
+      ) as cover
     from
       matched m
       inner join asset_exif e on e."assetId" = m.id
@@ -5721,14 +5729,15 @@ with
       f."personGroupId"::text as value,
       max(nullif(p.name, '')) as label,
       count(distinct m.id) as count,
-      (
-        array_agg(
-          m.id
-          order by
-            m."fileCreatedAt" desc,
-            m.id desc
-        )
-      ) [1]::text as cover
+      right(
+        max(
+          to_char(
+            m."fileCreatedAt" at time zone 'UTC',
+            'YYYYMMDDHH24MISSUS'
+          ) || m.id::text collate "C"
+        ),
+        36
+      ) as cover
     from
       matched m
       inner join asset_face f on f."assetId" = m.id
@@ -5747,14 +5756,15 @@ with
       t.id::text as value,
       max(t.value) as label,
       count(distinct m.id) as count,
-      (
-        array_agg(
-          m.id
-          order by
-            m."fileCreatedAt" desc,
-            m.id desc
-        )
-      ) [1]::text as cover
+      right(
+        max(
+          to_char(
+            m."fileCreatedAt" at time zone 'UTC',
+            'YYYYMMDDHH24MISSUS'
+          ) || m.id::text collate "C"
+        ),
+        36
+      ) as cover
     from
       matched m
       inner join tag_asset ta on ta."assetId" = m.id
@@ -5779,14 +5789,15 @@ with
       pet.id::text as value,
       max(nullif(pet.name, '')) as label,
       count(distinct m.id) as count,
-      (
-        array_agg(
-          m.id
-          order by
-            m."fileCreatedAt" desc,
-            m.id desc
-        )
-      ) [1]::text as cover
+      right(
+        max(
+          to_char(
+            m."fileCreatedAt" at time zone 'UTC',
+            'YYYYMMDDHH24MISSUS'
+          ) || m.id::text collate "C"
+        ),
+        36
+      ) as cover
     from
       matched m
       inner join pet_observation po on po."assetId" = m.id
@@ -5884,14 +5895,15 @@ with
       m.type::text as value,
       null::text as label,
       count(*) as count,
-      (
-        array_agg(
-          m.id
-          order by
-            m."fileCreatedAt" desc,
-            m.id desc
-        )
-      ) [1]::text as cover
+      right(
+        max(
+          to_char(
+            m."fileCreatedAt" at time zone 'UTC',
+            'YYYYMMDDHH24MISSUS'
+          ) || m.id::text collate "C"
+        ),
+        36
+      ) as cover
     from
       matched m
     group by
@@ -5905,14 +5917,15 @@ with
       )::text as value,
       null::text as label,
       count(*) as count,
-      (
-        array_agg(
-          m.id
-          order by
-            m."fileCreatedAt" desc,
-            m.id desc
-        )
-      ) [1]::text as cover
+      right(
+        max(
+          to_char(
+            m."fileCreatedAt" at time zone 'UTC',
+            'YYYYMMDDHH24MISSUS'
+          ) || m.id::text collate "C"
+        ),
+        36
+      ) as cover
     from
       matched m
     group by
@@ -5926,14 +5939,15 @@ with
       end as value,
       null::text as label,
       count(*) as count,
-      (
-        array_agg(
-          m.id
-          order by
-            m."fileCreatedAt" desc,
-            m.id desc
-        )
-      ) [1]::text as cover
+      right(
+        max(
+          to_char(
+            m."fileCreatedAt" at time zone 'UTC',
+            'YYYYMMDDHH24MISSUS'
+          ) || m.id::text collate "C"
+        ),
+        36
+      ) as cover
     from
       matched m
       left join asset_exif e on e."assetId" = m.id
@@ -5945,14 +5959,15 @@ with
       nullif(trim("e"."city"), '') as value,
       null::text as label,
       count(*) as count,
-      (
-        array_agg(
-          m.id
-          order by
-            m."fileCreatedAt" desc,
-            m.id desc
-        )
-      ) [1]::text as cover
+      right(
+        max(
+          to_char(
+            m."fileCreatedAt" at time zone 'UTC',
+            'YYYYMMDDHH24MISSUS'
+          ) || m.id::text collate "C"
+        ),
+        36
+      ) as cover
     from
       matched m
       inner join asset_exif e on e."assetId" = m.id
@@ -5967,14 +5982,15 @@ with
       nullif(trim("e"."country"), '') as value,
       null::text as label,
       count(*) as count,
-      (
-        array_agg(
-          m.id
-          order by
-            m."fileCreatedAt" desc,
-            m.id desc
-        )
-      ) [1]::text as cover
+      right(
+        max(
+          to_char(
+            m."fileCreatedAt" at time zone 'UTC',
+            'YYYYMMDDHH24MISSUS'
+          ) || m.id::text collate "C"
+        ),
+        36
+      ) as cover
     from
       matched m
       inner join asset_exif e on e."assetId" = m.id
@@ -5989,14 +6005,15 @@ with
       nullif(trim("e"."make"), '') as value,
       null::text as label,
       count(*) as count,
-      (
-        array_agg(
-          m.id
-          order by
-            m."fileCreatedAt" desc,
-            m.id desc
-        )
-      ) [1]::text as cover
+      right(
+        max(
+          to_char(
+            m."fileCreatedAt" at time zone 'UTC',
+            'YYYYMMDDHH24MISSUS'
+          ) || m.id::text collate "C"
+        ),
+        36
+      ) as cover
     from
       matched m
       inner join asset_exif e on e."assetId" = m.id
@@ -6011,14 +6028,15 @@ with
       nullif(trim("e"."model"), '') as value,
       null::text as label,
       count(*) as count,
-      (
-        array_agg(
-          m.id
-          order by
-            m."fileCreatedAt" desc,
-            m.id desc
-        )
-      ) [1]::text as cover
+      right(
+        max(
+          to_char(
+            m."fileCreatedAt" at time zone 'UTC',
+            'YYYYMMDDHH24MISSUS'
+          ) || m.id::text collate "C"
+        ),
+        36
+      ) as cover
     from
       matched m
       inner join asset_exif e on e."assetId" = m.id
@@ -6033,14 +6051,15 @@ with
       nullif(trim("e"."lensModel"), '') as value,
       null::text as label,
       count(*) as count,
-      (
-        array_agg(
-          m.id
-          order by
-            m."fileCreatedAt" desc,
-            m.id desc
-        )
-      ) [1]::text as cover
+      right(
+        max(
+          to_char(
+            m."fileCreatedAt" at time zone 'UTC',
+            'YYYYMMDDHH24MISSUS'
+          ) || m.id::text collate "C"
+        ),
+        36
+      ) as cover
     from
       matched m
       inner join asset_exif e on e."assetId" = m.id
@@ -6055,14 +6074,15 @@ with
       f."personGroupId"::text as value,
       max(nullif(p.name, '')) as label,
       count(distinct m.id) as count,
-      (
-        array_agg(
-          m.id
-          order by
-            m."fileCreatedAt" desc,
-            m.id desc
-        )
-      ) [1]::text as cover
+      right(
+        max(
+          to_char(
+            m."fileCreatedAt" at time zone 'UTC',
+            'YYYYMMDDHH24MISSUS'
+          ) || m.id::text collate "C"
+        ),
+        36
+      ) as cover
     from
       matched m
       inner join asset_face f on f."assetId" = m.id
@@ -6081,14 +6101,15 @@ with
       t.id::text as value,
       max(t.value) as label,
       count(distinct m.id) as count,
-      (
-        array_agg(
-          m.id
-          order by
-            m."fileCreatedAt" desc,
-            m.id desc
-        )
-      ) [1]::text as cover
+      right(
+        max(
+          to_char(
+            m."fileCreatedAt" at time zone 'UTC',
+            'YYYYMMDDHH24MISSUS'
+          ) || m.id::text collate "C"
+        ),
+        36
+      ) as cover
     from
       matched m
       inner join tag_asset ta on ta."assetId" = m.id
@@ -6113,14 +6134,15 @@ with
       pet.id::text as value,
       max(nullif(pet.name, '')) as label,
       count(distinct m.id) as count,
-      (
-        array_agg(
-          m.id
-          order by
-            m."fileCreatedAt" desc,
-            m.id desc
-        )
-      ) [1]::text as cover
+      right(
+        max(
+          to_char(
+            m."fileCreatedAt" at time zone 'UTC',
+            'YYYYMMDDHH24MISSUS'
+          ) || m.id::text collate "C"
+        ),
+        36
+      ) as cover
     from
       matched m
       inner join pet_observation po on po."assetId" = m.id

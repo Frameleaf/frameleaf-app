@@ -1114,8 +1114,10 @@ export class SearchRepository {
     const wanted = new Set(options.facets);
     const viewer = asUuidLiteral(options.viewerId);
     // Explore's covers: the newest match per value, from the same matched set as the count
+    // (the max of a sortable "time + id" key: the same pick as ordering by both for years 1-9999, without
+    // sorting every row)
     const cover = options.covers
-      ? sql`(array_agg(m.id order by m."fileCreatedAt" desc, m.id desc))[1]::text`
+      ? sql`right(max(to_char(m."fileCreatedAt" at time zone 'UTC', 'YYYYMMDDHH24MISSUS') || m.id::text collate "C"), 36)`
       : sql`null::text`;
     const exifFacet = (field: SearchFacetField, column: string, where: RawBuilder<unknown> = sql`true`) =>
       sql`select ${field}::text as field, ${trimmed(column)} as value, null::text as label, count(*) as count,

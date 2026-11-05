@@ -107,7 +107,10 @@ const withoutPrivateOnlyMemories = (eb: ExpressionBuilder<DB, 'memory'>, options
         .$if(strict, (qb) =>
           qb.where(isTimelineVisible('asset', options.revealLockedOwnerId)).where('asset.deletedAt', 'is', null),
         )
-        .$call((qb) => withHiddenContentFilter(qb, options)),
+        .$call((qb) => withHiddenContentFilter(qb, options))
+        // Inside an OR, Postgres would hash this subquery over every memory item and asset in the
+        // library (most of a page's time at a million items); OFFSET 0 keeps it a per-memory lookup.
+        .offset(0),
     ),
   ]);
 };
