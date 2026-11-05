@@ -29,6 +29,16 @@ test('automatic updates: on by default, one release step at a time, off or after
     assert.equal(await operations.autoUpdate(), null, 'turned off during the review');
     store.set('auto-update', true);
 
+    (operations as any).reviewUpdate = async (tag: string) => (reviewed.push(tag), { id: tag });
+    const pending = store.start('import', 'pending', {}).operation;
+    for (const state of ['running', 'awaiting-review'] as const) {
+      pending.state = state;
+      store.save(pending);
+      assert.equal(await operations.autoUpdate(), null, `another operation is ${state}`);
+    }
+    pending.state = 'complete';
+    store.save(pending);
+
     const failed = store.start('update', 'failed', {}).operation;
     failed.state = 'failed';
     store.save(failed);
