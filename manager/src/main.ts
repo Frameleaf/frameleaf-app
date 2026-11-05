@@ -193,6 +193,7 @@ class Api {
       csrf: security.session(request).csrf,
       installation,
       operations: operations.history(),
+      autoUpdate: store.get<boolean>('auto-update') !== false,
       profile: store.get('profile'),
       administrator: { name: store.get<{ name: string }>('administrator')?.name },
       managerOrigin: security.requestOrigin(request),
@@ -321,6 +322,11 @@ class Api {
   @Post('update') update(@Body() input: unknown) {
     const { id, key } = z.object({ id: z.string().uuid(), key: RequestKey }).strict().parse(input);
     return { id: operations.update(id, key).id };
+  }
+  @Post('auto-update') autoUpdate(@Body() input: unknown) {
+    const { enabled } = z.object({ enabled: z.boolean() }).strict().parse(input);
+    store.set('auto-update', enabled);
+    return { enabled };
   }
   @Post('unlock-backups') async unlockBackups(@Body() input: unknown) {
     if (store.history().some((operation) => operation.state !== 'complete')) throw new Refusal('operation_in_progress');
@@ -539,6 +545,8 @@ async function main() {
     await new Promise<void>((done) => sharePortWithRedirect(app.getHttpServer()).listen(9443, '0.0.0.0', done));
   }
   if (native) process.stdout.write(JSON.stringify(native.ready(origin!)) + '\n');
+  // ponytail: fixed 6-hour check; add quiet-hours scheduling if owners ask for updates at a set time.
+  else setInterval(() => operations.autoUpdate().catch((error) => console.error(`manager: automatic update skipped: ${error?.code ?? error}`)), 6 * 3_600_000).unref();
 }
 main().catch(() => {
   process.stderr.write('Frameleaf Manager could not start; check its mounted configuration.\n');
