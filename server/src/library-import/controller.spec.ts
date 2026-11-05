@@ -1,8 +1,11 @@
 import { randomUUID } from 'node:crypto';
+import { type ImportDatabase } from 'src/immich-import/types.js';
 import { LibraryImportController } from 'src/library-import/controller.js';
+import { libraryImportDerivedRunId } from 'src/library-import/derived-work.js';
 import { destinationPlanFingerprint, parseDestinationImportPlan } from 'src/library-import/destination-plan.js';
 import fixture from 'src/library-import/fixtures/manager-plan-v1.json' with { type: 'json' };
 import { manifestFingerprint, parseImportManifest } from 'src/library-import/manifest.js';
+import { LibraryImportRefused } from 'src/library-import/state.js';
 
 const context = (change: Record<string, unknown> = {}) => {
   const plan = parseDestinationImportPlan(fixture.plan);
@@ -136,4 +139,26 @@ it('still refuses another binding before returning public progress', async () =>
 it('returns empty progress before the journal exists', async () => {
   db.query.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
   expect(await new LibraryImportController(db, context()).status()).toEqual({ run: null, mappings: [] });
+});
+
+it('checks the live source on an owned session before preparing fresh activation work', async () => {
+  const input = context();
+  const row = { binding: input.binding, status: 'verifying' };
+  const session: ImportDatabase = {
+    query: vi.fn().mockResolvedValue([{ ...row, acquired: true }]),
+    transaction: vi.fn(),
+  };
+  const database: ImportDatabase = {
+    query: vi.fn().mockResolvedValue([row]),
+    transaction: vi.fn(),
+    withSession: async (work) => work(session),
+  };
+  const dispatch = vi.fn().mockResolvedValue(libraryImportDerivedRunId(input.binding));
+  const source = vi.fn().mockRejectedValue(new LibraryImportRefused('SOURCE_REFUSED'));
+  await expect(
+    new LibraryImportController(database, input).activate({ dispatchImportedLibraryWork: dispatch } as never, source),
+  ).rejects.toThrow('SOURCE_REFUSED');
+  expect(source).toHaveBeenCalledWith(session);
+  expect(dispatch).not.toHaveBeenCalled();
+  expect(session.transaction).not.toHaveBeenCalled();
 });

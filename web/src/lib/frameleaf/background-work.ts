@@ -1,5 +1,5 @@
 import type { DurableJobRun, DurableJobState, DurableQueueRun, DurableRunningJobs, QueueName } from '@frameleaf/sdk';
-import type { Translations } from 'svelte-i18n';
+import type { MessageFormatter, Translations } from 'svelte-i18n';
 import { ACTIVITY_STAGE_KEYS } from '$lib/frameleaf/activity';
 import { isImportRunKind, isRunSettled, runStateKey, settledItems } from '$lib/frameleaf/durable-runs';
 import { JOB_QUEUES } from '$lib/frameleaf/job-queues';
@@ -66,6 +66,24 @@ export const tonightStart = (startsAt: string | null, now: Date = new Date()): '
     return 'tonight';
   }
   return day.getTime() === tomorrow.getTime() && at.getHours() < OVERNIGHT_CUTOFF_HOUR ? 'tonight' : 'day';
+};
+
+/**
+ * FL-711: work quiet hours saved for the overnight window starts again by itself, so it says when, never "Paused".
+ * Tonight's start reads as a time; a start further off names its day as well.
+ */
+export const tonightLabel = (startsAt: string | null, $t: MessageFormatter, locale: string | undefined): string => {
+  const when = tonightStart(startsAt);
+  if (when === 'unscheduled' || !startsAt) {
+    return $t('frameleaf_activity_bg_tonight_unscheduled');
+  }
+  const at = new Date(startsAt);
+  const time = new Intl.DateTimeFormat(locale, { hour: 'numeric', minute: '2-digit' }).format(at);
+  if (when === 'tonight') {
+    return $t('frameleaf_activity_bg_tonight', { values: { time } });
+  }
+  const day = new Intl.DateTimeFormat(locale, { weekday: 'long' }).format(at);
+  return $t('frameleaf_activity_bg_tonight_day', { values: { day, time } });
 };
 
 /**

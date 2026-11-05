@@ -15429,10 +15429,14 @@ export type LibrarySetupProgressDto = {
     people: number;
     phase: Phase | null;
     stages: {
-        /** Optional processing is turned off; retained work can resume when enabled */
+        /** AI processing is turned off; retained work can resume when enabled. Videos still count in the stage */
         disabled?: boolean;
         done: number;
+        /** Quiet hours saved this stage for the overnight window; it starts again by itself */
+        heldForNight?: boolean;
         id: LibrarySetupStageId;
+        /** When quiet hours start this stage again; null when the overnight schedule never starts */
+        resumesAt?: string | null;
         status: LibrarySetupStageStatus;
         total: number;
     }[];

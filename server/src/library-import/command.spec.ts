@@ -1,5 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { executeLibraryImportCommand } from 'src/library-import/command.js';
+import * as executionLock from 'src/library-import/execution-lock.js';
+
+afterEach(() => vi.restoreAllMocks());
 
 const setup = () => ({
   config: {
@@ -38,5 +41,55 @@ describe('common library command trust boundary', () => {
       'IMPORT_ACTIVATION_REQUIRES_VERIFY',
     );
     expect(input.db.query).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['rollback', 'prepared'],
+    ['abandon', 'prepared'],
+    ['rollback', 'abandoned'],
+    ['abandon', 'abandoned'],
+  ] as const)('requires live authority for %s of an untouched %s import', async (action, phase) => {
+    const input = setup();
+    const lock = { device: '1', inode: '2' };
+    vi.spyOn(executionLock, 'assertImportExecutionLock').mockResolvedValue(lock);
+    const binding = {
+      operationId: input.config.operationId,
+      manifestSha256: 'a'.repeat(64),
+      planSha256: 'b'.repeat(64),
+      source: {
+        kind: input.source,
+        version: 'synthetic',
+        identity: 'synthetic-source',
+        revision: 'frozen',
+        schemaSha256: 'c'.repeat(64),
+      },
+    };
+    const local = {
+      identity: { lock, database: { device: '1', inode: '3' } },
+      db: {
+        prepare: vi.fn().mockReturnValue({
+          get: () => ({
+            id: input.config.operationId,
+            value: JSON.stringify({ input: { binding, destinationId: input.config.destinationId } }),
+          }),
+        }),
+      },
+      inspect: vi
+        .fn()
+        .mockReturnValue({ phase, abandoned: phase === 'abandoned', writersMayHaveStarted: false, files: [] }),
+      bind: vi.fn(),
+      mark: vi.fn(),
+    };
+    input.db.query
+      .mockResolvedValueOnce([{ binding, status: phase === 'prepared' ? 'copying' : 'abandoned' }])
+      .mockResolvedValueOnce([]);
+    input.authorize.mockRejectedValue(new Error('synthetic source authority refused'));
+    await expect(executeLibraryImportCommand({ ...input, action, state: local as never })).rejects.toThrow(
+      'synthetic source authority refused',
+    );
+    expect(input.authorize).toHaveBeenCalledWith(action, { binding, destinationId: input.config.destinationId });
+    expect(input.db.transaction).not.toHaveBeenCalled();
+    expect(local.bind).not.toHaveBeenCalled();
+    expect(local.mark).not.toHaveBeenCalled();
   });
 });

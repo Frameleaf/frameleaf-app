@@ -20,7 +20,7 @@ Use the internal `importClaimPending` flag when credentials cannot be securely t
 
 Pending owners cannot sign in with a password, OAuth or Frameleaf, or authenticate through sessions, API keys or public links. An administrator uses the existing emailed, single-use password link to claim the account. This requires configured outgoing email and a public server address. Only the link hash is stored; changing the destination email invalidates the link. Redemption checks expiry after acquiring the account lock and activates the owner in the same transaction that removes stale sessions, API keys, identity links and public links. Imported sharing must be reconstructed separately after its permissions have been verified.
 
-Existing accounts default to their previous behavior. A database downgrade refuses to remove the flag while any owner remains unclaimed. These primitives do not yet connect the generic importer or Manager account mapping, and do not establish source or combined migration qualification.
+Existing accounts default to their previous behavior. A database downgrade refuses to remove the flag while any owner remains unclaimed. The common importer uses these account checks. Manager account mapping and full source/combined migration qualification remain under development.
 
 ## PHP account password formats
 
@@ -35,6 +35,14 @@ The synthetic interoperability fixture records the exact Lychee PHP 8.5.12 and N
 ### Piwigo account password formats
 
 The admitted Piwigo reader provides a protected callback for explicitly mapped account passwords, separate from its media batches. Default PHPass and legacy MD5 credentials preserve the ability to use the source password under the destination bcrypt policy; neither plaintext nor the original verifier is stored. Guest accounts have no portable credential. Custom authentication, source login hooks and MFA remain activation gates; a compatible digest alone never authorizes enabling an owner. See [Piwigo account passwords](./library-import-piwigo.md#protected-account-passwords) for resource limits, native test provenance and the stricter legacy comparison.
+
+## Internal common command
+
+`frameleaf-admin import-library <action> --source <family> --config <private-file>` dispatches all ten source kinds through the same common importer. Actions are `preflight`, `run`, `status`, `resume`, `verify`, `rollback` and `abandon`; only `verify --activate` permits activation. The execution lock is acquired before application bootstrap. Offline initialization prepares the database and job handlers without starting media workers. The existing `import-immich` command remains compatible.
+
+Mutating commands require Manager's matching installation and operation identity. When the importer requests source authority, Manager compares the installation, operation, destination, source identity/revision/schema, manifest checksum and file-plan checksum with its retained review, then runs the caller's live source-verification callback. A fresh challenge and matching reply travel over the existing command pipes; Server receives no Docker socket or new network endpoint. Missing, substituted, expired or disconnected authority fails closed. Status can inspect an existing journal without live Manager authority when no runner holds the execution lock. Errors retain migration records and do not imply that restarting the source is safe.
+
+This connection does not qualify an adapter, establish ownership/privacy evidence, add source discovery or finish Manager account/storage review. Callers must supply qualified source evidence and real source fencing; manifest declarations are insufficient. Source setup, deferred content baselines for fast adoption and combined acceptance remain under development. All new adapters remain internal, including when their source kind is accepted by the common command. Expanded release still requires all ten sources and private DSM acceptance.
 
 ## PhotoPrism SQLite reader
 

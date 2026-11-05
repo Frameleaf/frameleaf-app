@@ -116,7 +116,7 @@ export type OperationKind =
 export type Operation = {
   id: string;
   kind: OperationKind;
-  state: 'running' | 'interrupted' | 'failed' | 'complete';
+  state: 'running' | 'awaiting-review' | 'interrupted' | 'failed' | 'complete';
   step: string | null;
   completed: string[];
   error: string | null;

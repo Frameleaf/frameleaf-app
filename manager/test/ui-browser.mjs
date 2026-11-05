@@ -114,7 +114,8 @@ const dashboard = {
 let backupAction = 'reuse',
   sources = [source],
   refused = [],
-  failCredential = false;
+  failCredential = false,
+  commonReview = null;
 const snapshot = { id: 'd'.repeat(64), time: '2026-10-07T02:00:00Z' };
 const containerSettings = {
   'frameleaf-server': { environment: { TZ: 'America/Toronto' }, mounts: [{ source: '/fixture/archive', target: '/old-archive', readOnly: true }], memory: '4g' },
@@ -194,7 +195,7 @@ await page.route('**/manager-api/**', async (route) => {
     };
   else if (path === 'review') {
     await new Promise((done) => setTimeout(done, 300));
-    value = {
+    value = commonReview ?? {
       id: 'install-review',
       tag: body.tag,
       databaseStorage: { root: body.databaseRoot },
@@ -296,6 +297,15 @@ const screenshot = async (name) => {
   }
 };
 try {
+  await check('native first-run status directs setup to Desktop', async () => {
+    const statusRoute = '**/manager-api/status';
+    await page.route(statusRoute, (route) => route.fulfill({ json: { claimed: false, claimProofRequired: true } }));
+    await page.goto(origin);
+    await page.getByRole('heading', { name: 'Finish setup in Frameleaf Desktop' }).waitFor({ timeout: 5000 });
+    assert.equal(await button('Create administrator').count(), 0);
+    assert.equal(await page.getByLabel('Password').count(), 0);
+    await page.unroute(statusRoute);
+  });
   await page.goto(origin);
   await check('full installed navigation, real counts, service states and themes', async () => {
     await page.getByRole('heading', { name: 'Family library', exact: true }).waitFor();
@@ -624,6 +634,46 @@ try {
     await button('Local administrator menu').click();
     await page.locator('.account-menu').getByRole('button', { name: 'Sign out', exact: true }).click();
     await mainButton('Sign in').waitFor();
+  });
+  await check('a captured library can approve only its current review while awaiting approval', async () => {
+    dashboard.installation = null;
+    dashboard.operations = [];
+    sources = [source];
+    refused = [];
+    backupAction = 'reuse';
+    commonReview = {
+      id: '31e3b62f-d324-42fb-9010-6a4c8299e888',
+      approvalToken: '61257d33-1ab0-40ba-8bc9-73400fd14fa0',
+      downtime: 'The source stays stopped during import.',
+      recovery: 'Manager verifies the original files before starting Frameleaf.',
+      commonImport: {
+        source: 'photoprism', version: 'fixture', requiresBootstrap: false, requiredMediaBytes: 4096,
+        summary: { assets: 2, albums: 1, owners: 1, preservationDifferences: 1 },
+      },
+    };
+    await page.goto(origin);
+    await mainButton('Review import').click();
+    await mainButton('Review library & settings').click();
+    await page.getByRole('checkbox').check();
+    await mainButton('Review cutover').click();
+    await page.getByLabel('Library name', { exact: true }).fill('Captured library');
+    await page.getByRole('checkbox', { name: 'Docker or Unraid', exact: false }).check();
+    await mainButton('Check and review cutover').click();
+    await page.getByRole('heading', { name: 'Review library import', exact: true }).waitFor();
+    const capture = { id: commonReview.id, kind: 'import', state: 'awaiting-review', completed: [], canCancel: true };
+    dashboard.operations = [{ ...capture, id: 'another-capture' }];
+    await refresh();
+    await page.getByRole('checkbox', { name: 'I’ve reviewed the transfer and recovery information.' }).check();
+    assert.equal(await mainButton('Start import').isDisabled(), true);
+    dashboard.operations = [capture];
+    await refresh();
+    assert.equal(await mainButton('Start import').isEnabled(), true);
+    await mainButton('Start import').click();
+    await mainButton('Resume safely').waitFor();
+    const approval = requests.findLast((r) => r.path === 'install').body;
+    assert.equal(approval.reviewId, commonReview.id);
+    assert.equal(approval.approvalToken, commonReview.approvalToken);
+    commonReview = null;
   });
   assert.deepEqual(errors, []);
   console.log('All Manager browser checks passed.');

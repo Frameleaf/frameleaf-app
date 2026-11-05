@@ -277,6 +277,17 @@ export class LibraryImportController {
       const retained = await this.activation(this.db, manager);
       if (retained) return retained;
       if (!this.db.withSession) return refuse('IMPORT_SESSION_REQUIRED');
+      // Dispatch takes this lock on its own connection; finish the source-check session first.
+      const concurrentActivation = await this.db.withSession(async (session) => {
+        const [lock] = await session.query('SELECT pg_try_advisory_lock($1::bigint) AS acquired', [
+          LIBRARY_IMPORT_LOCK,
+        ]);
+        if (!lock?.acquired) return refuse('IMPORT_ALREADY_RUNNING');
+        const retained = await this.activation(session, manager);
+        if (!retained) await assertSourceUnchanged(session);
+        return retained;
+      });
+      if (concurrentActivation) return concurrentActivation;
       const runId = libraryImportDerivedRunId(this.context.binding);
       if ((await jobs.dispatchImportedLibraryWork(this.context, manager)) !== runId)
         return refuse('DERIVED_RUN_IDENTITY_MISMATCH');
@@ -287,7 +298,6 @@ export class LibraryImportController {
         if (!lock?.acquired) return refuse('IMPORT_ALREADY_RUNNING');
         const retained = await this.activation(session, manager);
         if (retained) return retained;
-        await assertSourceUnchanged(session);
         const report = await new LibraryImportController(session, this.context).verify();
         await assertSourceUnchanged(session);
         return session.transaction(async (tx) => {

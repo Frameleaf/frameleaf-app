@@ -68,3 +68,30 @@ test('shared discovery refusals do not misidentify a source app', () => {
   assert.match(readable('database_connection_ambiguous'), /DB_HOSTNAME/u);
   assert.match(readable('unsupported_database_connection'), /password and a port.*1 to 65535/u);
 });
+
+test('common import recovery shows its own credential and transfer steps', () => {
+  const operation = {
+    kind: 'import', state: 'failed', step: 'stage-bootstrap-admin', completed: ['preflight'],
+    error: 'import_bootstrap_credentials_required', commonImport: { requiresBootstrap: true },
+  };
+  const progress = operationProgress(operation);
+  assert.equal(progress.steps[1].id, 'stage-bootstrap-admin');
+  assert.equal(progress.steps[1].state, 'failed');
+  assert.ok(progress.steps.some((step) => step.id === 'preflight-common-import'));
+  assert.ok(!progress.steps.some((step) => step.id === 'copy-current-database' || step.id === 'database-backup'));
+  assert.ok(!operationProgress({ ...operation, step: null, commonImport: { requiresBootstrap: false } }).steps.some(
+    (step) => step.id === 'stage-bootstrap-admin',
+  ));
+});
+
+
+test('captured imports show a named snapshot step before preflight', () => {
+  const capture = {
+    kind: 'import', state: 'awaiting-review', step: null, completed: ['capture-common-source'], error: null,
+  };
+  assert.deepEqual(operationProgress(capture).steps, [
+    { id: 'capture-common-source', label: 'Capture the source snapshot', state: 'complete' },
+  ]);
+  const approved = operationProgress({ ...capture, commonImport: { requiresBootstrap: false } });
+  assert.deepEqual(approved.steps.slice(0, 2).map(({ id }) => id), ['capture-common-source', 'preflight']);
+});

@@ -163,6 +163,22 @@ describe('Photoview common manifest mapping', () => {
     });
     expect(manifest.losses.some((l) => l.code === 'PHOTOVIEW_VIEWER_PREFERENCES_ARCHIVED')).toBe(true);
   });
+
+  it('binds a known native foreign-key permutation to its actual snapshot fingerprint', () => {
+    const sql = fixture.objects.find((object) => object.type === 'table' && object.name === 'image_faces')!.sql!;
+    const [columns, ...constraints] = sql.slice(0, -1).split(',CONSTRAINT ');
+    database.exec('PRAGMA writable_schema=ON');
+    database
+      .prepare("UPDATE sqlite_schema SET sql=? WHERE name='image_faces'")
+      .run([columns, ...constraints.toReversed()].join(',CONSTRAINT ') + ')');
+    const source = photoview.openPhotoviewSnapshot(path, fixture.source.version);
+    opened.push(source);
+    expect(source.schemaSha256).not.toBe(fixture.schemaSha256);
+    const value = input();
+    value.source.schemaSha256 = source.schemaSha256;
+    const result = read(value);
+    expect(result.manifest.source.schemaSha256).toBe(source.schemaSha256);
+  });
   it('retains absent GPS as cleared coordinates and an empty caption rather than stale embedded metadata', () => {
     database.prepare('UPDATE media_exif SET description=? WHERE id=1').run('');
     expect(read().manifest.assets.find((a) => a.id === '1')?.metadata).toMatchObject({

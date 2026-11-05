@@ -94,6 +94,7 @@ const legacyPlanSchema = z.strictObject({
   ),
   files: z.array(legacyTransferSchema),
 });
+export const importSourceSchema = legacyPlanSchema.shape.source;
 const planSchema = z.discriminatedUnion('version', [
   legacyPlanSchema,
   legacyPlanSchema.extend({

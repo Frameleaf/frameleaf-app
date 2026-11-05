@@ -2,6 +2,7 @@ import { Reflector } from '@nestjs/core';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { ImportImmichCommand } from 'src/commands/import-immich.command.js';
+import { ImportLibraryCommand } from 'src/commands/import-library.command.js';
 import { commandsAndQuestions } from 'src/commands/index.js';
 
 // nest-commander stores @QuestionSet options under this key (`QuestionSetMeta`, not exported).
@@ -33,4 +34,8 @@ it('registers the question set of every question a command asks', () => {
 
   expect([...asked].filter((name) => !registered.has(name))).toEqual([]);
   expect(commandsAndQuestions.filter((provider) => provider === ImportImmichCommand)).toHaveLength(1);
+});
+
+it('registers the common library importer exactly once', () => {
+  expect(commandsAndQuestions.filter((provider) => provider === ImportLibraryCommand)).toHaveLength(1);
 });

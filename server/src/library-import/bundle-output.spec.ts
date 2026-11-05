@@ -84,6 +84,13 @@ it.each(sourceKinds)('round-trips the common private bundle contract for %s', as
   const result = await writeLibraryImportBundle(value);
   expect(basename(result.bundleDirectory).startsWith(`bundle-${value.operationId}-`)).toBe(true);
   const bundle = await load(value, result.bundleDirectory);
+  expect(result.receipt).toEqual({
+    bundleName: basename(result.bundleDirectory),
+    binding: bundle.context.binding,
+    destinationId: bundle.context.destinationId,
+    requiredMediaBytes: 0,
+    summary: { owners: value.manifest.users.length, assets: 0, files: 0, albums: 0, preservationDifferences: 0 },
+  });
   await bundle.assertUnchanged();
   expect(bundle.context.manifest).toEqual(value.manifest);
   expect(bundle.context.plan).toEqual(value.plan);

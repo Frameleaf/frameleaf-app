@@ -1,13 +1,33 @@
 import { spawn } from 'node:child_process';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
+import { createInterface } from 'node:readline';
 import { access, open, readFile, rename, rm } from 'node:fs/promises';
+import { z } from 'zod';
 import { isAbsolute, join, resolve } from 'node:path';
 import { Refusal, containerId, imageDigest, redact, type Database, type Mount } from './contracts.js';
 import { publishFile } from './files.js';
+import { completeCommonImport } from './common-import-lifecycle.js';
+import { COMMON_IMPORT_CONFIG, IMPORT_PREPARATION_TARGET, writeCommonImportCompose } from './common-import-runtime.js';
 import { DOCKERMAN_TEMPLATES, saveDockermanTemplates } from './dockerman.js';
 import { configureUnraidCompose } from './compose.js';
-import { importSourceKinds, type ImportPlan } from './import-plan.js';
+import { importHash, importSourceKinds, importSourceSchema, type ImportPlan } from './import-plan.js';
+import {
+  parseImportSourceAuthority,
+  replyImportPreparationAuthority,
+  replyImportSourceAuthority,
+  type ImportPreparationAuthority,
+  type ImportSourceAuthority,
+} from './import-source-authority.js';
+
+const count = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+const preparationReceipt = z.strictObject({
+  bundleName: z.string(),
+  binding: z.strictObject({ operationId: z.uuid(), source: importSourceSchema, manifestSha256: importHash, planSha256: importHash }),
+  destinationId: z.uuid(),
+  requiredMediaBytes: count,
+  summary: z.strictObject({ owners: count, assets: count, files: count, albums: count, preservationDifferences: count }),
+});
 
 export type Container = {
   Id: string;
@@ -33,6 +53,10 @@ export type CommandOptions = {
   /** Fixed packaged executable selected by a trusted adapter, never an HTTP request. */
   executable?: string;
   input?: string;
+  /** Offline importer challenges; stdin remains open until the child finishes.
+   * Known source-authority refusal codes/statuses are public; private details are discarded.
+   */
+  reply?: (line: string) => Promise<string | undefined>;
   inputFile?: string;
   /** The reader may stop once it has what it needs (pg_restore --list reads only the table of contents). */
   inputMayCloseEarly?: boolean;
@@ -51,6 +75,10 @@ export async function command(
     (!options.executable || options.executable.includes('\0') ||
       !isAbsolute(options.executable) || resolve(options.executable) !== options.executable))
     throw new Refusal('command_executable_invalid');
+  if (options.reply !== undefined &&
+    (typeof options.reply !== 'function' || options.input !== undefined ||
+      options.inputFile !== undefined || options.outputFile !== undefined))
+    throw new Refusal('command_dialogue_invalid');
   // An incomplete transfer is never a receipt; the operation lock makes its retry exclusive.
   if (options.outputFile) await rm(`${options.outputFile}.partial`, { force: true });
   const child = spawn(options.executable ?? binary, args, {
@@ -87,7 +115,39 @@ export async function command(
         child.kill('SIGKILL');
       } else result = Buffer.concat([result, chunk]);
     });
-  if (options.inputFile)
+  if (options.reply) {
+    const reply = options.reply;
+    const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
+    child.stdin.on('error', () => {});
+    transfers.push((async () => {
+      try {
+        for await (const line of lines) {
+          const response = await Promise.race([
+            Promise.resolve().then(() => reply(line)),
+            exited.then(() => { throw new Error('Child exited during source check'); }),
+          ]);
+          if (response !== undefined) {
+            if (typeof response !== 'string' || Buffer.byteLength(response) > 65536)
+              throw new Error('Invalid offline response');
+            await new Promise<void>((resolve, reject) =>
+              child.stdin.write(response, (error) => error ? reject(error) : resolve()));
+          }
+        }
+      } catch (error) {
+        // Relay only known public authority classifications, never private callback details.
+        if (error instanceof Refusal && [
+          'import_source_authority_required',
+          'import_source_authority_invalid',
+          'import_source_authority_refused',
+        ].includes(error.code) && Number.isInteger(error.status) && error.status >= 400 && error.status < 600)
+          throw new Refusal(error.code, error.status);
+        throw new Refusal('command_reply_failed');
+      } finally {
+        lines.close();
+        child.stdin.end();
+      }
+    })());
+  } else if (options.inputFile)
     transfers.push(
       pipeline(createReadStream(options.inputFile), child.stdin).catch((error: NodeJS.ErrnoException) => {
         // The exit code still decides success; only the reader hanging up early is tolerated.
@@ -436,13 +496,69 @@ export class Docker {
       .map((line) => line.trim())
       .filter((line) => targets.includes(line));
   }
+  /** Prepare an operation-private bundle with source and destination originals mounted read-only. */
+  async prepareImportBundle(
+    directory: string,
+    image: string,
+    authority: ImportPreparationAuthority,
+    media: { source: string; target: string }[],
+  ) {
+    const { operationId, destinationId, source, preparationSha256 } = authority;
+    if (
+      !imageDigest.safeParse(image).success || !z.uuid().safeParse(operationId).success ||
+      !z.uuid().safeParse(destinationId).success || !importHash.safeParse(preparationSha256).success ||
+      !importSourceSchema.safeParse(source).success || typeof authority.verify !== 'function'
+    ) throw new Refusal('invalid_import_authority');
+    const root = join(directory, `import-runtime-${operationId}`);
+    const safePath = (value: string) => value !== '/' && resolve(value) === value && !/[\x00-\x1f,]/u.test(value);
+    if (
+      !safePath(root) || new Set(media.map(({ target }) => target)).size !== media.length ||
+      media.some(({ source, target }) =>
+        !safePath(source) || !/^\/(?:data|import-media\/[a-z0-9][a-z0-9_-]*)$/u.test(target) ||
+        root === source || root.startsWith(source + '/') || source.startsWith(root + '/'),
+      )
+    ) throw new Refusal('import_runtime_media_invalid');
+    await authority.verify();
+    const output = await this.execute('docker', [
+      'run', '--rm', '--interactive', '--network', 'none', '--log-driver', 'none', '--pull', 'never',
+      '--name', `frameleaf-import-prepare-${operationId}`,
+      '--mount', `type=bind,src=${root},dst=${IMPORT_PREPARATION_TARGET}`,
+      ...media.flatMap(({ source, target }) => ['--mount', `type=bind,src=${source},dst=${target},readonly`]),
+      '--entrypoint', SERVER_ADMIN, image, 'prepare-library-import', '--config', `${IMPORT_PREPARATION_TARGET}/prepare.json`,
+    ], {
+      cwd: directory,
+      timeout: 86_400_000,
+      reply: (line) => replyImportPreparationAuthority(line, authority),
+    });
+    await authority.verify();
+    try {
+      const result = preparationReceipt.parse(JSON.parse(output.trim().split('\n').at(-1)!));
+      const prefix = `bundle-${operationId}-`;
+      if (
+        result.binding.operationId !== operationId || result.destinationId !== destinationId ||
+        JSON.stringify(result.binding.source) !== JSON.stringify(importSourceSchema.parse(source)) ||
+        !result.bundleName.startsWith(prefix) || !/^[a-zA-Z0-9]{6}$/u.test(result.bundleName.slice(prefix.length))
+      ) throw new Error('Preparation binding changed');
+      return result;
+    } catch {
+      throw new Refusal('invalid_import_response');
+    }
+  }
   /** Fixed offline command only; container identity survives a Manager restart. */
   async importCommand(
     directory: string,
     project: string,
     operationId: string,
     action: 'status' | 'preflight' | 'run' | 'resume' | 'verify' | 'rollback' | 'abandon',
-    common?: { source: ImportPlan['source']['kind']; activate?: boolean },
+    common?: {
+      source: ImportPlan['source']['kind'];
+      destinationId: string;
+      bundleName?: string;
+      bootstrapAdminId?: string;
+      media: { source: string; target: string; readOnly: boolean }[];
+      activate?: boolean;
+      authority?: ImportSourceAuthority;
+    },
   ): Promise<Record<string, any>> {
     if (
       !/^frameleaf-[a-f0-9]{12}$/.test(project) ||
@@ -455,10 +571,18 @@ export class Docker {
       (common !== undefined &&
         (!common ||
           !importSourceKinds.includes(common.source) ||
+          !isAbsolute(directory) ||
+          !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u.test(common.destinationId) ||
           (common.activate !== undefined && typeof common.activate !== 'boolean') ||
           (common.activate === true && action !== 'verify')))
     )
       throw new Refusal('invalid_import_command');
+    const authority = common?.authority === undefined ? undefined : parseImportSourceAuthority(common.authority);
+    if (common && action !== 'status' && !authority) throw new Refusal('import_source_authority_required');
+    if (authority && (authority.installation !== project.slice('frameleaf-'.length) ||
+      authority.binding.operationId !== operationId || authority.binding.source.kind !== common?.source ||
+      authority.destinationId !== common?.destinationId))
+      throw new Refusal('import_source_authority_invalid');
     const name = `${project}-import-${operationId}`;
     const existing = (await this.inventory()).find((c) => c.Name === `/${name}`);
     if (existing) {
@@ -467,6 +591,9 @@ export class Docker {
       if (existing.State.Running) throw new Refusal('import_still_running_retry_when_stopped');
       await this.execute('docker', ['rm', existing.Id]);
     }
+    const compose = common
+      ? await writeCommonImportCompose(directory, project, operationId, common.destinationId, common.media, common.bundleName, common.bootstrapAdminId)
+      : 'import-compose.json';
     const output = await this.execute(
       'docker',
       [
@@ -474,12 +601,13 @@ export class Docker {
         '--project-name',
         project,
         '--file',
-        'import-compose.json',
+        compose,
         'run',
         '--name',
         name,
         '--no-deps',
         '-T',
+        ...(common ? ['--interactive'] : []),
         '--entrypoint',
         SERVER_ADMIN,
         'frameleaf-server',
@@ -487,10 +615,14 @@ export class Docker {
         action,
         ...(common ? ['--source', common.source] : []),
         '--config',
-        common ? '/run/frameleaf/import-library.json' : '/run/frameleaf/import.json',
+        common ? COMMON_IMPORT_CONFIG : '/run/frameleaf/import.json',
         ...(common?.activate ? ['--activate'] : []),
       ],
-      { cwd: directory, timeout: 86_400_000 },
+      {
+        cwd: directory,
+        timeout: 86_400_000,
+        ...(common ? { reply: (line: string) => replyImportSourceAuthority(line, action, authority) } : {}),
+      },
     );
     const line = output
       .trim()
@@ -498,6 +630,37 @@ export class Docker {
       .findLast((line) => line.startsWith('{'));
     if (!line) throw new Refusal('invalid_import_response');
     return JSON.parse(line);
+  }
+  /** The operation owns the durable preflight receipt and supplies its live source-fence check. */
+  async completeReviewedImport(
+    directory: string,
+    project: string,
+    sourceAuthority: ImportSourceAuthority,
+    media: { source: string; target: string; readOnly: boolean }[],
+    preflight: (run: () => Promise<Record<string, any>>) => Promise<void>,
+    beforeActivation?: () => Promise<void>,
+    bundleName?: string,
+    bootstrapAdminId?: string,
+  ): Promise<void> {
+    const authority = parseImportSourceAuthority(sourceAuthority);
+    const { installation, destinationId, binding: { operationId, source } } = authority;
+    if (project !== `frameleaf-${installation}`) throw new Refusal('import_source_authority_invalid');
+    await authority.verify();
+    const launch = async (action: 'preflight' | 'status' | 'run' | 'resume' | 'verify', activate?: true) => {
+      if (activate) await beforeActivation?.();
+      return this.importCommand(directory, project, operationId, action, {
+        source: source.kind,
+        destinationId,
+        bundleName,
+        bootstrapAdminId,
+        media,
+        activate,
+        authority,
+      });
+    };
+    await preflight(() => launch('preflight'));
+    await completeCommonImport(operationId, source, launch);
+    await authority.verify();
   }
   async restoreCommand(directory: string, project: string, operationId: string): Promise<void> {
     if (!/^frameleaf-[a-f0-9]{12}$/.test(project) || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(operationId))

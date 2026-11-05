@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, readFile, stat } from 'node:fs/promises';
+import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -15,7 +15,7 @@ const { assertImportExecutionLock } = await import('src/library-import/execution
 await assertImportExecutionLock(stateDirectory);
 const { Kysely } = await import('kysely');
 const { connectImportDatabase } = await import('src/immich-import/database.js');
-const { writeLibraryImportBundle } = await import('src/library-import/bundle-output.js');
+const { prepareLibraryImport } = await import('src/library-import/prepare-command.js');
 const { loadLibraryImportBundle } = await import('src/library-import/bundle-input.js');
 const { executeLibraryImportCommand } = await import('src/library-import/command.js');
 const { libraryImportDerivedRunId } = await import('src/library-import/derived-work.js');
@@ -25,10 +25,8 @@ const { default: fixture } = await import('src/library-import/fixtures/photopris
 const { LocalLibraryImportState } = await import('src/library-import/local-transfer-state.js');
 const { verifyImportedPassword } = await import('src/library-import/passwords.js');
 const { readPhotoprismInventory } = await import('src/library-import/photoprism-inventory.js');
-const { assemblePhotoprismManifest } = await import('src/library-import/photoprism-manifest.js');
 const { openPhotoprismSnapshot } = await import('src/library-import/photoprism.js');
 const { captureSqliteSnapshot } = await import('src/library-import/sqlite.js');
-const { reviewImportFiles } = await import('src/library-import/transfer-runtime.js');
 const { JobName, QueueName } = await import('src/enum.js');
 const { DatabaseRepository } = await import('src/repositories/database.repository.js');
 const { JobRepository } = await import('src/repositories/job.repository.js');
@@ -142,7 +140,7 @@ for (const file of originals) {
     expectedSha256: expected.sha256,
   });
 }
-const assembled = assemblePhotoprismManifest(records, {
+const sourceEvidence = {
   source,
   inventory: {
     complete: true,
@@ -156,7 +154,7 @@ const assembled = assemblePhotoprismManifest(records, {
   albumOwners: Object.fromEntries(albums.map((album) => [album.id, input.sourceUserId])),
   files: observed,
   materializedAlbums: input.nativeLibrary.materializedAlbums,
-});
+};
 const reviewedLosses = new Set([
   'PHOTOPRISM_SOURCE_METADATA_ARCHIVED',
   'PHOTOPRISM_TITLE_ARCHIVED',
@@ -164,20 +162,7 @@ const reviewedLosses = new Set([
   'PHOTOPRISM_SHARING_RESTRICTED',
   'PHOTOPRISM_ALBUM_SNAPSHOT',
 ]);
-for (const loss of assembled.manifest.losses) {
-  assert(reviewedLosses.has(loss.code), 'Unreviewed native fixture preservation difference');
-  loss.acknowledged = true;
-}
-const plan = await reviewImportFiles({
-  version: 2,
-  source,
-  destinationId,
-  owners: [{ sourceId: input.sourceUserId, destinationId: ownerId }],
-  roots,
-  files: drafts,
-});
 const snapshot = openPhotoprismSnapshot(captured.path, fixture.source.version);
-let credential;
 try {
   const user = [...snapshot.rows('users')].flat().find((row) => row.user_uid === input.sourceUserId);
   assert.equal(user.id, 1n);
@@ -191,40 +176,51 @@ try {
   assert.equal(user.base_path, '');
   assert.equal(user.expires_at, null);
   assert.equal(user.deleted_at, null);
-  credential = await snapshot.password({ operationId, sourceUserId: input.sourceUserId, destinationUserId: ownerId });
-  assert(credential);
 } finally {
   snapshot.close();
 }
-const owners = [
+const ownerIntents = [
   {
-    intent: {
-      sourceUserId: input.sourceUserId,
-      email: 'native-owner@example.test',
-      login: {
-        revision,
-        snapshotSha256: revision,
-        accountEnabled: true,
-        passwordLoginEnabled: true,
-        secondFactorRequired: false,
-        externalIdentityRequired: false,
-        ownedLibraryAccess: 'full',
-        otherRestrictions: 'none',
-      },
-      disposition: { kind: 'preserve' },
+    sourceUserId: input.sourceUserId,
+    email: 'native-owner@example.test',
+    login: {
+      revision,
+      snapshotSha256: revision,
+      accountEnabled: true,
+      passwordLoginEnabled: true,
+      secondFactorRequired: false,
+      externalIdentityRequired: false,
+      ownedLibraryAccess: 'full',
+      otherRestrictions: 'none',
     },
-    credential,
+    disposition: { kind: 'preserve' },
   },
 ];
-const bundle = await writeLibraryImportBundle({
-  stagingRoot: directory,
+const publication = {
+  format: 'frameleaf-prepare-library-import',
+  version: 1,
+  adapter: 'photoprism-sqlite',
+  snapshotPath: captured.path,
+  observed: sourceEvidence,
+  approvedLossCodes: [...reviewedLosses],
   operationId,
   destinationId,
-  manifest: assembled.manifest,
-  plan,
-  owners,
-  records: assembled.archive,
-});
+  roots,
+  placements: drafts,
+  ownerMappings: [{ sourceId: input.sourceUserId, destinationId: ownerId }],
+  ownerIntents,
+};
+const preparationPath = join(directory, 'prepare.json');
+await writeFile(preparationPath, JSON.stringify({ ...publication, approvedLossCodes: [] }), { mode: 0o600 });
+const approvePreparation = async (seal) => {
+  assert.deepEqual(seal, { operationId, destinationId, source, preparationSha256: await sha256(preparationPath) });
+  await authorize();
+};
+await assert.rejects(prepareLibraryImport(preparationPath, approvePreparation), /IMPORT_LOSSES_NOT_ACKNOWLEDGED/);
+assert(!(await readdir(directory)).some((name) => name.startsWith(`bundle-${operationId}-`)));
+await writeFile(preparationPath, JSON.stringify(publication), { mode: 0o600 });
+const receipt = await prepareLibraryImport(preparationPath, approvePreparation);
+const bundle = { receipt, bundleDirectory: join(directory, receipt.bundleName) };
 const config = {
   format: 'frameleaf-library-import-command',
   version: 1,
@@ -232,14 +228,22 @@ const config = {
   destinationId,
   bundleDirectory: bundle.bundleDirectory,
   stateDirectory,
+  bootstrapAdmin: { userId: randomUUID(), path: join(directory, 'bootstrap-admin.json') },
 };
 const connection = connectImportDatabase(process.env.DB_URL, false);
 const database = new Kysely(getKyselyConfig({ connectionType: 'url', url: process.env.DB_URL }));
 let local;
 try {
-  await connection.db.query(
-    'WITH g AS (INSERT INTO public.cluster_group DEFAULT VALUES RETURNING id) INSERT INTO public."user"(email,"clusterGroupId","isAdmin") SELECT \'bootstrap@example.test\',id,true FROM g',
-  );
+  const administrator = {
+    operationId,
+    destinationId,
+    userId: config.bootstrapAdmin.userId,
+    email: 'bootstrap@example.test',
+    name: 'Fixture administrator',
+    password: randomUUID(),
+  };
+  const writeAdministrator = (value) => writeFile(config.bootstrapAdmin.path, JSON.stringify(value), { mode: 0o600 });
+  await writeAdministrator(administrator);
   local = await LocalLibraryImportState.open(stateDirectory, { create: true });
   const jobs = new JobRepository({}, {}, {}, { setContext() {} }, database);
   for (const [jobName, queueName] of [
@@ -260,14 +264,40 @@ try {
     manager: { installation: '110400000001', operationId },
     authorize,
   };
+  await writeAdministrator({ ...administrator, destinationId: randomUUID() });
+  await assert.rejects(
+    executeLibraryImportCommand({ ...options, action: 'preflight' }),
+    /IMPORT_BOOTSTRAP_ADMIN_BINDING_CHANGED/,
+  );
+  await writeAdministrator(administrator);
   assert.equal((await executeLibraryImportCommand({ ...options, action: 'preflight' })).assets, 2);
+  assert.equal((await executeLibraryImportCommand({ ...options, action: 'preflight' })).assets, 2);
+  await writeAdministrator({ ...administrator, password: randomUUID() });
+  await assert.rejects(
+    executeLibraryImportCommand({ ...options, action: 'preflight' }),
+    /IMPORT_BOOTSTRAP_ADMIN_CHANGED/,
+  );
+  await writeAdministrator(administrator);
   await executeLibraryImportCommand({ ...options, action: 'run' });
   const verified = await executeLibraryImportCommand({ ...options, action: 'verify' });
   assert.equal(verified.run.status, 'verifying');
   const activated = await executeLibraryImportCommand({ ...options, action: 'verify', activate: true });
   assert.equal(activated.run.status, 'activated');
   const loaded = await loadLibraryImportBundle(config, 'photoprism');
-  assert.equal(activated.activation.runId, libraryImportDerivedRunId(loaded.context.binding));
+  assert.deepEqual(bundle.receipt, {
+    bundleName: basename(bundle.bundleDirectory),
+    binding: loaded.context.binding,
+    destinationId,
+    requiredMediaBytes: input.nativeLibrary.photos.reduce((total, photo) => total + Number(photo.bytes), 0),
+    summary: {
+      owners: 1,
+      assets: 2,
+      files: 2,
+      albums: albums.length,
+      preservationDifferences: loaded.context.manifest.losses.length,
+    },
+  });
+  assert.equal(activated.activation.runId, libraryImportDerivedRunId(bundle.receipt.binding));
   await new DatabaseRepository(database, { setContext() {} }, {}).assertImportActivated();
   const [owner] = await connection.db.query(
     'SELECT password,"isAdmin","importClaimPending" FROM public."user" WHERE id=$1::uuid',

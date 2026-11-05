@@ -1,20 +1,22 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Operations } from '../src/operations.js';
+import { Operations, type CommonImportReview } from '../src/operations.js';
+import { identifyPhotoprismSqliteSource } from '../src/photoprism-source.js';
 import { Store } from '../src/store.js';
 import { Docker, SERVER_ADMIN, type Container } from '../src/docker.js';
-import type { Installation, Source, Operation } from '../src/contracts.js';
+import { digest, type Installation, type Source, type Operation } from '../src/contracts.js';
 import type { Releases } from '../src/releases.js';
 import type { Backups } from '../src/backups.js';
 import type { PostgresStorage } from '../src/postgres-storage.js';
 
 // Exercise real orchestration and file publication with Docker/role execution mocked.
 // These tests do not qualify a live Docker network, PostgreSQL grants, or source fencing.
-async function fixture() {
-  const root = await mkdtemp(join(tmpdir(), 'manager-import-authority-'));
+async function fixture(base = tmpdir()) {
+  const root = await mkdtemp(join(base, 'manager-import-authority-'));
   const directory = join(root, '$tenant');
   const store = new Store(directory);
   const installation = {
@@ -509,4 +511,407 @@ test('an in-place import stops before any grant or import when a media folder is
   } finally {
     await f.cleanup();
   }
+});
+
+test('common setup persists preflight and the writer boundary before activation', async (t) => {
+  const { store, operations, docker, installation, source, operation, root } = await fixture();
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const common = {
+    fence: { ...source, containers: [] },
+    destinationId: 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa',
+    requiredMediaBytes: 128,
+    summary: { owners: 1, assets: 1, files: 1, albums: 0, preservationDifferences: 0 },
+    binding: {
+      operationId: operation.id,
+      manifestSha256: 'a'.repeat(64),
+      planSha256: 'b'.repeat(64),
+      source: { kind: 'photoprism', version: 'fixture', identity: 'source', revision: 'frozen', schemaSha256: 'c'.repeat(64) },
+    },
+    media: [{ source: installation.mounts[0].source, target: '/data', readOnly: false }],
+  };
+  const calls: string[] = [];
+  const internal = operations as any;
+  internal.fencing.verify = async () => { calls.push('fence'); };
+  let reportedBytes = 64;
+  docker.completeReviewedImport = async (_directory, _project, authority, _media, preflight, beforeActivation) => {
+    assert.equal(authority.binding.operationId, operation.id);
+    await authority.verify();
+    await preflight(async () => {
+      calls.push('preflight');
+      return { summary: common.summary, requiredMediaBytes: reportedBytes };
+    });
+    assert(operation.completed.includes('preflight-common-import'));
+    await beforeActivation();
+    assert.equal(store.get<Installation>('installation')?.mayHaveWrittenMedia, true);
+    calls.push('activate');
+  };
+  await assert.rejects(
+    internal.runCommonImport(operation, { ...common, binding: { ...common.binding, operationId: 'different' } }, installation),
+    /invalid_import_authority/,
+  );
+  assert.deepEqual(calls, []);
+  await assert.rejects(internal.runCommonImport(operation, common, installation), /import_common_review_changed/);
+  assert.deepEqual(calls, ['fence', 'preflight']);
+  assert(!operation.completed.includes('preflight-common-import'));
+  calls.length = 0;
+  reportedBytes = common.requiredMediaBytes;
+  await internal.runCommonImport(operation, common, installation);
+  assert.deepEqual(calls, ['fence', 'preflight', 'activate']);
+  assert(operation.completed.includes('import-canonical-database'));
+});
+
+test('common cancellation restores the source only after rollback is durably reported', async (t) => {
+  for (const succeeds of [false, true]) {
+    const f = await fixture();
+    t.after(f.cleanup);
+    const source = { kind: 'photoprism', version: 'fixture' } as const;
+    f.operation.input.reviewId = 'common-review';
+    f.operation.completed.push('preflight-common-import');
+    f.operation.receipts['cancellation-intent'] = {
+      kind: 'source',
+      installation: f.installation,
+      archive: join(f.root, 'cancelled-stack'),
+    };
+    const common = {
+      fence: { ...f.source, containers: [] },
+      destinationId: 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa',
+      binding: { operationId: f.operation.id, source },
+      media: [],
+    };
+    f.operation.receipts['reviewed-common-import'] = digest(common);
+    f.store.set('review:common-review', { common });
+    const internal = f.internal as typeof f.internal & { fencing: { verify(): Promise<void> } };
+    internal.fencing.verify = async () => {};
+    internal.fencing.recover = async () => { f.events.push('recover-source'); };
+    let status = 'copying';
+    f.docker.importCommand = async (_directory, _project, _operation, action) => {
+      f.events.push(action);
+      if (action === 'rollback' && succeeds) status = 'abandoned';
+      return {
+        run: { operationId: f.operation.id, source, status },
+        execution: { phase: status, abandoned: status === 'abandoned', writersMayHaveStarted: false },
+      };
+    };
+    if (succeeds) {
+      await f.internal.cancelOperation(f.operation);
+      assert.deepEqual(f.events.slice(0, 3), ['status', 'rollback', 'status']);
+      assert.ok(f.events.indexOf('recover-source') > 2);
+    } else {
+      await assert.rejects(f.internal.cancelOperation(f.operation), /import_common_status_unexpected/);
+      assert.deepEqual(f.events, ['status', 'rollback', 'status']);
+    }
+  }
+});
+
+test('library setup requests ignore the common offline import container', async (t) => {
+  const f = await fixture();
+  t.after(f.cleanup);
+  const server = {
+    Id: 'server',
+    State: { Running: true },
+    Config: { Labels: {
+      'app.frameleaf.manager': f.installation.id,
+      'com.docker.compose.service': 'frameleaf-server',
+    } },
+  } as Container;
+  f.inventory.push({
+    ...server,
+    Id: 'offline',
+    State: { Running: false },
+    Config: { Labels: { ...server.Config.Labels, 'app.frameleaf.manager.import': f.operation.id } } as Container['Config'],
+  }, server);
+  f.docker.node = async (id) => {
+    assert.equal(id, server.Id);
+    return '{"value":{"status":"ready"}}';
+  };
+  assert.deepEqual(await f.operations.libraryStatus(), { status: 'ready' });
+});
+
+test('starts a common import with its reviewed operation ID and keeps request retries idempotent', async (t) => {
+  const f = await fixture();
+  t.after(f.cleanup);
+  f.operation.state = 'complete';
+  f.store.save(f.operation);
+  const internal = f.operations as unknown as { launch(operation: Operation): void };
+  const launched: string[] = [];
+  internal.launch = (operation) => { launched.push(operation.id); };
+  const reviewId = randomUUID();
+  const review = {
+    id: reviewId,
+    expires: Date.now() + 60_000,
+    input: { kind: 'import' },
+    source: null,
+    common: { binding: { operationId: randomUUID() } },
+  };
+  f.store.set(`review:${reviewId}`, review);
+  assert.throws(() => f.operations.start(reviewId, 'common-request'), /invalid_import_authority/);
+  assert.deepEqual(launched, []);
+  review.common.binding.operationId = reviewId;
+  f.store.set(`review:${reviewId}`, review);
+  const operation = f.operations.start(reviewId, 'common-request');
+  assert.equal(operation.id, reviewId);
+  assert.equal(operation.receipts['reviewed-common-import'], digest(review.common));
+  assert.equal(f.operations.start(reviewId, 'common-request').id, reviewId);
+  const install = f.operations as unknown as { install(operation: Operation, review: unknown): Promise<void> };
+  await assert.rejects(
+    install.install(operation, { ...review, common: { ...review.common, bundleName: 'changed' } }),
+    /invalid_import_authority/,
+  );
+  assert.throws(() => f.operations.start(reviewId, 'another-request'), /operation_in_progress/);
+  assert.deepEqual(launched, [reviewId]);
+});
+
+test('journals credential staging without retaining the administrator password in operation state', async (t) => {
+  const f = await fixture();
+  t.after(f.cleanup);
+  const root = join(f.operations.directory(), `import-runtime-${f.operation.id}`);
+  await mkdir(root, { mode: 0o700 });
+  await mkdir(join(root, 'bundle'), { mode: 0o700 });
+  const common = {
+    fence: { ...f.source, containers: [] },
+    destinationId: randomUUID(),
+    bootstrapAdminId: randomUUID(),
+    binding: { operationId: f.operation.id },
+  };
+  f.operation.receipts['reviewed-common-import'] = digest(common);
+  f.operation.completed.push('preflight');
+  const credentials = { email: 'fixture-admin@example.test', name: 'Fixture administrator', password: 'fixture-secret' };
+  const internal = f.operations as unknown as {
+    install(operation: Operation, review: unknown, credentials?: unknown): Promise<void>;
+  };
+  await assert.rejects(
+    internal.install(f.operation, { source: null, common, release: { directory: '/fixture' }, input: { tag: 'fixture' } }, credentials),
+    /releases.verify is not a function/,
+  );
+  assert(f.operation.completed.includes('stage-bootstrap-admin'));
+  assert(!JSON.stringify(f.store.history()).includes(credentials.password));
+  assert.deepEqual(JSON.parse(await readFile(join(root, 'config', 'bootstrap-admin.json'), 'utf8')), {
+    operationId: f.operation.id,
+    destinationId: common.destinationId,
+    userId: common.bootstrapAdminId,
+    ...credentials,
+  });
+});
+
+test('common review reports the source and space without exposing the private bundle binding', async (t) => {
+  const f = await fixture(await realpath(tmpdir()));
+  t.after(f.cleanup);
+  f.inventory.length = 0;
+  f.store.set('installation', null);
+  const mediaPath = join(f.root, 'destination');
+  await mkdir(mediaPath);
+  const internal = f.operations as unknown as {
+    roots: string[];
+    fencing: { verify(): Promise<void> };
+    databaseStorage: { validate(): Promise<{ root: string }> };
+  };
+  internal.roots = [f.root];
+  let fenceChecks = 0;
+  internal.fencing.verify = async () => { fenceChecks++; };
+  internal.databaseStorage.validate = async () => ({ root: f.root });
+  f.docker.compatibility = async () => ({ platform: 'linux/arm64' }) as Awaited<ReturnType<Docker['compatibility']>>;
+  const image = `ghcr.io/frameleaf/frameleaf-server@sha256:${'a'.repeat(64)}`;
+  f.operations.releases.acquire = async () => ({
+    nas: { platforms: ['linux/arm64'], images: { server: image } },
+  }) as Awaited<ReturnType<Releases['acquire']>>;
+  f.operation.state = 'complete';
+  f.store.save(f.operation);
+  const { operation } = f.store.start('import', 'capture-review', {
+    sourceId: f.source.id, commonCapture: f.source.id,
+  });
+  const common: CommonImportReview = {
+    fence: { ...f.source, workers: [], containers: [], mounts: [] },
+    destinationId: randomUUID(),
+    bundleName: 'private-fixture-bundle',
+    bootstrapAdminId: randomUUID(),
+    requiredMediaBytes: 42,
+    summary: { owners: 1, assets: 2, files: 2, albums: 1, preservationDifferences: 3 },
+    binding: {
+      operationId: operation.id,
+      manifestSha256: 'a'.repeat(64),
+      planSha256: 'b'.repeat(64),
+      source: { kind: 'photoprism', version: 'fixture', identity: 'private-source', revision: 'frozen', schemaSha256: 'c'.repeat(64) },
+    },
+    media: [{ source: mediaPath, target: '/data', readOnly: false }],
+  };
+  const input = {
+    kind: 'import', sourceId: f.source.id, mediaPath, databaseRoot: f.root,
+    tag: 'frameleaf-v1.0.0', port: 2283, ml: false, lifecycle: 'docker-only',
+  } as const;
+  const { fence, media, bootstrapAdminId, ...receipt } = common;
+  const request = {
+    operationId: common.binding.operationId,
+    destinationId: common.destinationId,
+    observed: { source: common.binding.source },
+    snapshotPath: '/run/frameleaf/import-preparation/capture/snapshot.sqlite',
+  };
+  const root = join(f.operations.directory(), `import-runtime-${request.operationId}`);
+  await mkdir(root, { mode: 0o700 });
+  operation.state = 'awaiting-review';
+  operation.receipts['capture-common-source'] = {
+    fence, source: common.binding.source, originalsPath: f.root, snapshotPath: join(root, 'capture/snapshot.sqlite'),
+  };
+  f.store.save(operation);
+  for (const changed of [
+    { operationId: randomUUID() },
+    { snapshotPath: '/run/frameleaf/import-preparation/substitute.sqlite' },
+    { observed: { source: { ...common.binding.source, revision: 'substitute' } } },
+  ]) {
+    await assert.rejects(
+      f.operations.prepareCommonReview(input, { fence, media, bootstrapAdminId, request: { ...request, ...changed } }),
+      /invalid_import_authority/,
+    );
+  }
+  f.docker.pull = async (candidate) => { assert.equal(candidate, image); };
+  f.docker.prepareImportBundle = async (directory, candidate, authority, reviewedMedia) => {
+    assert.equal(directory, f.operations.directory());
+    assert.equal(candidate, image);
+    assert.deepEqual(reviewedMedia, media);
+    const staged = await readFile(join(root, 'prepare.json'));
+    assert.deepEqual(JSON.parse(staged.toString('utf8')), request);
+    assert.equal(authority.preparationSha256, createHash('sha256').update(staged).digest('hex'));
+    await authority.verify();
+    return receipt as Awaited<ReturnType<Docker['prepareImportBundle']>>;
+  };
+  await assert.rejects(
+    f.operations.prepareCommonReview(input, {
+      fence, media: [...media, { source: f.root, target: '/import-media/foreign', readOnly: true }],
+      bootstrapAdminId, request,
+    }),
+    /import_runtime_media_invalid/,
+  );
+  assert.equal(fenceChecks, 0);
+  const prepared = { fence, media, bootstrapAdminId, request };
+  const prepareBundle = f.docker.prepareImportBundle;
+  const entered = Promise.withResolvers<void>();
+  const finish = Promise.withResolvers<void>();
+  f.docker.prepareImportBundle = async () => {
+    entered.resolve();
+    await finish.promise;
+    throw new Error('interrupted preparation');
+  };
+  const preparing = f.operations.prepareCommonReview(input, prepared);
+  await entered.promise;
+  await assert.rejects(f.operations.prepareCommonReview(input, prepared), /invalid_import_authority/);
+  await assert.rejects(f.operations.recover(operation.id), /operation_not_recoverable/);
+  finish.resolve();
+  await assert.rejects(preparing, /interrupted preparation/);
+  f.docker.prepareImportBundle = prepareBundle;
+  fenceChecks = 0;
+  const review = await f.operations.prepareCommonReview(input, prepared);
+  assert.equal(fenceChecks, 3);
+  assert.equal(review.id, common.binding.operationId);
+  assert.equal(review.backup, null);
+  assert.deepEqual(review.commonImport, {
+    source: 'photoprism', version: 'fixture', requiresBootstrap: true, requiredMediaBytes: 42, summary: common.summary,
+  });
+  const publicReview = JSON.stringify(review);
+  for (const value of [common.bundleName, common.destinationId, common.bootstrapAdminId, common.binding.source.identity]) {
+    assert(value && !publicReview.includes(value));
+  }
+  assert.deepEqual(f.store.get<{ common: CommonImportReview }>(`review:${review.id}`)?.common, common);
+  const lowSpaceId = randomUUID();
+  await assert.rejects(f.operations.review(input, undefined, {
+    ...common,
+    binding: { ...common.binding, operationId: lowSpaceId },
+    requiredMediaBytes: Number.MAX_SAFE_INTEGER,
+  }), /insufficient_disk_space/);
+  assert.equal(f.store.get(`review:${lowSpaceId}`), null);
+  await assert.rejects(f.operations.review(input, undefined, common), /invalid_import_authority/);
+  const repeated = await f.operations.prepareCommonReview(input, prepared);
+  assert.equal(repeated.id, review.id);
+  assert.ok(review.approvalToken && repeated.approvalToken);
+  assert.notEqual(repeated.approvalToken, review.approvalToken);
+  assert.throws(
+    () => f.operations.start(review.id, 'stale-review', undefined, review.approvalToken),
+    /invalid_import_authority/,
+  );
+});
+
+test('cancels a fenced capture before the destination is configured', async (t) => {
+  const f = await fixture();
+  t.after(f.cleanup);
+  f.store.set('installation', null);
+  const fence = { ...f.source, containers: [] };
+  f.operation.receipts['common-source-fence'] = fence;
+  f.operation.receipts['cancellation-intent'] = {
+    kind: 'source',
+    installation: null,
+    archive: join(f.root, 'cancelled-stack'),
+  };
+  let recovered = false;
+  const internal = f.operations as unknown as {
+    fencing: { recover(source: unknown, installation: unknown): Promise<void> };
+    cancelOperation(operation: Operation): Promise<void>;
+  };
+  internal.fencing.recover = async (source, installation) => {
+    assert.deepEqual(source, fence);
+    assert.equal(installation, null);
+    recovered = true;
+  };
+  await internal.cancelOperation(f.operation);
+  assert(recovered);
+  assert(f.operation.completed.includes('cancel-source'));
+});
+
+test('capture reserves the Manager operation until the reviewed import is approved or cancelled', async (t) => {
+  const f = await fixture();
+  t.after(f.cleanup);
+  f.operation.state = 'complete';
+  f.store.save(f.operation);
+  f.store.set('installation', null);
+  const id = 'a'.repeat(64);
+  const sourceFixture = JSON.parse(await readFile(new URL('../../server/src/library-import/fixtures/photoprism/261029-sqlite.json', import.meta.url), 'utf8'));
+  f.docker.inspect = async () => ({
+    Id: id,
+    Config: { Image: sourceFixture.source.runtimeImage, Env: ['PHOTOPRISM_DATABASE_DRIVER=sqlite', 'PHOTOPRISM_DATABASE_DSN=/photoprism/storage/index.db'] },
+    HostConfig: { RestartPolicy: { Name: 'no', MaximumRetryCount: 0 } },
+    Mounts: [
+      { Type: 'bind', Source: '/fixture/source-storage', Destination: '/photoprism/storage', RW: true },
+      { Type: 'bind', Source: '/fixture/source-originals', Destination: '/photoprism/originals', RW: true },
+    ],
+    NetworkSettings: { Networks: {} },
+  }) as Container;
+  const detected = identifyPhotoprismSqliteSource(await f.docker.inspect(id), 'docker')!;
+  const source = { kind: 'photoprism', identity: id, version: 'fixture', revision: 'fixture', schemaSha256: 'a'.repeat(64) };
+  const internal = f.operations as unknown as {
+    captureCommonSource(operation: Operation): Promise<void>;
+    install(operation: Operation): Promise<void>;
+  };
+  let calls = 0;
+  internal.captureCommonSource = async (operation) => {
+    calls++;
+    assert.equal(f.store.history().find(({ id }) => id === operation.id)?.state, 'running');
+    assert.throws(() => f.store.start('install', 'second-installation', {}), /operation_in_progress/);
+    operation.receipts['capture-common-source'] = { fence: detected.fence, source };
+  };
+  const operation = await f.operations.startCommonCapture(id, 'capture-request', 'docker');
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(f.store.history().find(({ id }) => id === operation.id)?.state, 'awaiting-review');
+  assert.equal((await f.operations.startCommonCapture(id, 'capture-request', 'docker')).id, operation.id);
+  assert.equal(calls, 1);
+  let installCalls = 0;
+  internal.install = async (approved) => {
+    assert.equal(approved.id, operation.id);
+    assert.equal(approved.state, 'running');
+    installCalls++;
+  };
+  const review = {
+    id: operation.id,
+    approvalToken: randomUUID(),
+    expires: Date.now() + 60_000,
+    input: { kind: 'import' },
+    source: null,
+    common: { fence: detected.fence, binding: { operationId: operation.id, source: { ...source, revision: 'substituted' } } },
+  };
+  f.store.set(`review:${operation.id}`, review);
+  assert.throws(() => f.operations.start(operation.id, 'approval-request', undefined, review.approvalToken), /invalid_import_authority/);
+  review.common.binding.source = source;
+  f.store.set(`review:${operation.id}`, review);
+  assert.throws(() => f.operations.start(operation.id, 'approval-request', undefined, randomUUID()), /invalid_import_authority/);
+  assert.equal(f.operations.start(operation.id, 'approval-request', undefined, review.approvalToken).id, operation.id);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(f.operations.start(operation.id, 'approval-request', undefined, review.approvalToken).id, operation.id);
+  assert.throws(() => f.operations.start(operation.id, 'other-approval'), /request_key_reused/);
+  assert.equal(installCalls, 1);
 });
