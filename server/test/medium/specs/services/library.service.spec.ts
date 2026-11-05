@@ -1352,6 +1352,26 @@ describe(LibraryService.name, () => {
       ).toMatchObject({ total: 1, usage: 567, usagePhysical: 567 });
     });
 
+    it('says when the newest counted upload was added, leaving Locked items out', async () => {
+      const { ctx } = setup();
+      const library = await ctx.createLibrary();
+      const repository = ctx.get(LibraryRepository);
+      const before = (await repository.getManagedUploadStatistics()).find((row) => row.ownerId === library.ownerId);
+      expect(before?.lastAddedAt).toBeNull();
+
+      const { asset: older } = await ctx.newAsset({ ownerId: library.ownerId, originalPath: '/test/older.jpg' });
+      const { asset: locked } = await ctx.newAsset({ ownerId: library.ownerId, originalPath: '/test/locked.jpg' });
+      await ctx.get(AssetRepository).lock([locked.id!], AssetLockReason.Marked, library.ownerId);
+      const visible = await defaultDatabase
+        .selectFrom('asset')
+        .select('createdAt')
+        .where('id', '=', older.id!)
+        .executeTakeFirstOrThrow();
+
+      const after = (await repository.getManagedUploadStatistics()).find((row) => row.ownerId === library.ownerId);
+      expect(after?.lastAddedAt).toEqual(new Date(visible.createdAt));
+    });
+
     it("counts an account's uploads and leaves its external library items out", async () => {
       const { sut, ctx } = setup();
       await createFile(join(importPath, 'asset1.png'));

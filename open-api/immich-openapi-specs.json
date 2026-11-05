@@ -78111,6 +78111,15 @@
             "nullable": true,
             "type": "integer"
           },
+          "source": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CaptureSourceDto"
+              }
+            ],
+            "description": "Where the link was saved from; only in the owner's own read of the bookmark",
+            "nullable": true
+          },
           "title": {
             "type": "string"
           },
@@ -80274,6 +80283,58 @@
           "captureId",
           "item",
           "status"
+        ],
+        "type": "object"
+      },
+      "CaptureSourceDto": {
+        "properties": {
+          "captureId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "capturedAt": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "creator": {
+            "maxLength": 2000,
+            "nullable": true,
+            "type": "string"
+          },
+          "licenseUrl": {
+            "format": "uri",
+            "maxLength": 8192,
+            "nullable": true,
+            "type": "string"
+          },
+          "mediaUrl": {
+            "format": "uri",
+            "maxLength": 8192,
+            "nullable": true,
+            "type": "string"
+          },
+          "note": {
+            "maxLength": 20000,
+            "nullable": true,
+            "type": "string"
+          },
+          "pageUrl": {
+            "format": "uri",
+            "maxLength": 8192,
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 2000,
+            "type": "string"
+          }
+        },
+        "required": [
+          "captureId",
+          "capturedAt",
+          "pageUrl",
+          "title"
         ],
         "type": "object"
       },
@@ -102532,6 +102593,14 @@
       },
       "ManagedUploadsStatsResponseDto": {
         "properties": {
+          "lastAddedAt": {
+            "description": "When the newest of these photos and videos was added (Locked and hidden excluded); null when none",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
           "ownerId": {
             "description": "Account whose uploads these are",
             "format": "uuid",
@@ -125807,6 +125876,11 @@
                   "format": "uuid",
                   "nullable": true,
                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                },
+                "coverThumbhash": {
+                  "description": "The cover's thumbhash (base64) once its thumbnail exists; null while the server has none, so clients can skip requesting it",
+                  "nullable": true,
                   "type": "string"
                 },
                 "date": {
@@ -153122,6 +153196,14 @@
       },
       "UsageByUserDto": {
         "properties": {
+          "lastActiveAt": {
+            "description": "When one of the account’s signed-in devices was last used (sessions record use about once an hour); null when it has none",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
           "photos": {
             "description": "Number of photos",
             "maximum": 9007199254740991,

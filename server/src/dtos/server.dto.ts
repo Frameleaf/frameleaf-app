@@ -224,6 +224,12 @@ const UsageByUserSchema = z
     usagePhotos: z.int().describe('Storage usage for photos in bytes'),
     usageVideos: z.int().describe('Storage usage for videos in bytes'),
     quotaSizeInBytes: z.int().nullable().describe('User quota size in bytes (null if unlimited)'),
+    lastActiveAt: isoDatetimeToDate
+      .nullable()
+      .describe(
+        'When one of the account’s signed-in devices was last used (sessions record use about once an hour); null when it has none',
+      )
+      .optional(),
   })
   .meta({ id: 'UsageByUserDto' });
 

@@ -18,7 +18,11 @@ describe('bounded execution database reservations', () => {
     const client = boundExecutionReservations({
       reserve: () => promise,
     } as unknown as ReturnType<typeof createPostgres>);
-    const refused = expect(client.reserve()).rejects.toThrow('Database acquisition timed out');
+    const refused = expect(client.reserve()).rejects.toMatchObject({
+      message: 'Database acquisition timed out',
+      // A busy pool answers 503 (retry), not a 500 that reads as a server bug.
+      status: 503,
+    });
     await vi.advanceTimersByTimeAsync(DATABASE_ACQUIRE_TIMEOUT_MS);
     await refused;
     grant({ release, unsafe });

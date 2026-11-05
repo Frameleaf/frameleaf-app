@@ -578,7 +578,15 @@ select
         )
     ),
     0
-  ) as "usageVideos"
+  ) as "usageVideos",
+  (
+    select
+      max("session"."updatedAt") as "lastActiveAt"
+    from
+      "session"
+    where
+      "session"."userId" = "user"."id"
+  ) as "lastActiveAt"
 from
   "user"
   left join "asset" on "asset"."ownerId" = "user"."id"

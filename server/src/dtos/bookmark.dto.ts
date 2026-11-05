@@ -39,6 +39,21 @@ export class BookmarkCreateDto extends createZodDto(
 ) {}
 export class BookmarkUpdateDto extends createZodDto(bookmarkFields.partial().meta({ id: 'BookmarkUpdateDto' })) {}
 
+export class CaptureSourceDto extends createZodDto(
+  z
+    .object({
+      captureId: z.uuidv4(),
+      pageUrl: referenceUrl,
+      mediaUrl: referenceUrl.nullable().optional(),
+      title: z.string().max(2000),
+      capturedAt: z.iso.datetime({ offset: true }),
+      note: z.string().max(20_000).nullable().optional(),
+      creator: z.string().max(2000).nullable().optional(),
+      licenseUrl: referenceUrl.nullable().optional(),
+    })
+    .meta({ id: 'CaptureSourceDto' }),
+) {}
+
 export const BookmarkResponseSchema = z
   .object({
     id: z.uuidv4(),
@@ -55,6 +70,10 @@ export const BookmarkResponseSchema = z
     updatedAt: z.string().meta({ format: 'date-time' }),
     deletedAt: z.string().nullable().meta({ format: 'date-time' }),
     updateId: z.string(),
+    source: CaptureSourceDto.schema
+      .nullable()
+      .optional()
+      .describe("Where the link was saved from; only in the owner's own read of the bookmark"),
   })
   .meta({ id: 'BookmarkResponseDto' });
 export class BookmarkResponseDto extends createZodDto(BookmarkResponseSchema) {}
@@ -76,21 +95,6 @@ export class BookmarkPreviewResponseDto extends createZodDto(
 
 export class BookmarkTagsDto extends createZodDto(
   z.object({ ids: z.array(z.uuidv4()).max(500) }).meta({ id: 'BookmarkTagsDto' }),
-) {}
-
-export class CaptureSourceDto extends createZodDto(
-  z
-    .object({
-      captureId: z.uuidv4(),
-      pageUrl: referenceUrl,
-      mediaUrl: referenceUrl.nullable().optional(),
-      title: z.string().max(2000),
-      capturedAt: z.iso.datetime({ offset: true }),
-      note: z.string().max(20_000).nullable().optional(),
-      creator: z.string().max(2000).nullable().optional(),
-      licenseUrl: referenceUrl.nullable().optional(),
-    })
-    .meta({ id: 'CaptureSourceDto' }),
 ) {}
 
 export class AssetSourceResponseDto extends createZodDto(

@@ -208,6 +208,7 @@ export class PetService {
       ...box,
     });
 
+    await this.useAsCoverIfMissing(auth, pet, dto.assetId);
     await this.lookForPetAgain(pet.id, dto.assetId);
     return mapPetObservation(observation);
   }
@@ -245,6 +246,9 @@ export class PetService {
     await this.requireCurrentSource(auth, observation.assetId, dto.expectedChecksum);
 
     await this.petRepository.deleteObservation(auth.user.id, observationId);
+    if (observation.state === PetObservationState.Confirmed) {
+      await this.replaceUndoneCover(auth, observation.petId, observation.assetId);
+    }
     await this.eventRepository.emit('AssetChanged', { assetId: observation.assetId });
     await this.jobRepository.queue({ name: JobName.PetRecognition, data: { id: observation.assetId } });
   }
@@ -320,7 +324,7 @@ export class PetService {
     const petId = dto.petId ?? candidate.petId;
 
     // Reassignment targets a pet the caller names, so it gets its own owner check.
-    await this.findOrFail(auth, petId);
+    const pet = await this.findOrFail(auth, petId);
     await this.requireCurrentSource(auth, candidate.assetId, dto.expectedChecksum);
 
     const observation = await this.petRepository.upsertObservation({
@@ -337,6 +341,7 @@ export class PetService {
     });
 
     await this.petRepository.deleteCandidates(candidate.detectionId, [...new Set([candidate.petId, petId])]);
+    await this.useAsCoverIfMissing(auth, pet, candidate.assetId);
     await this.lookForPetAgain(petId, candidate.assetId);
 
     return mapPetObservation(observation);
@@ -391,6 +396,38 @@ export class PetService {
     if (!current || !Buffer.from(expected, 'base64').equals(Buffer.from(current))) {
       throw new ConflictException('This photo changed since it was opened. Reload it and try again.');
     }
+  }
+
+  /**
+   * A pet without a featured photo takes the first photo it is confirmed in, as a person takes a
+   * face, so the Pets page shows the pet rather than a placeholder. The owner's own choice is never
+   * replaced, and a Locked photo is never used (FL-53: the thumbnail shows whatever the session).
+   */
+  private async useAsCoverIfMissing(
+    auth: AuthDto,
+    pet: { id: string; featuredAssetId: string | null },
+    assetId: string,
+  ) {
+    if (pet.featuredAssetId || (await this.petRepository.isOwnLockedAsset(auth.user.id, assetId))) {
+      return;
+    }
+    await this.petRepository.replaceFeaturedAsset(auth.user.id, pet.id, null, assetId);
+  }
+
+  /**
+   * Undoing the observation behind a pet's cover means the pet is no longer confirmed in that photo,
+   * so the cover moves to its newest other confirmed photo (or none). Only a cover that is still this
+   * photo moves; another photo picked meanwhile stays.
+   */
+  private async replaceUndoneCover(auth: AuthDto, petId: string, assetId: string) {
+    // Only confirmed photos can be a cover: a rejection means the owner said the pet is not there.
+    const remaining = (await this.petRepository.getObservations(auth.user.id, petId)).filter(
+      ({ state }) => state === PetObservationState.Confirmed,
+    );
+    if (remaining.some((observation) => observation.assetId === assetId)) {
+      return;
+    }
+    await this.petRepository.replaceFeaturedAsset(auth.user.id, petId, assetId, remaining[0]?.assetId ?? null);
   }
 
   /** A pet was confirmed in a photo: recognition looks again at the owner's photos most like it. */

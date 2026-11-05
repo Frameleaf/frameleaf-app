@@ -146,6 +146,10 @@ const ManagedUploadsStatsResponseSchema = z
     total: z.int().describe('Total number of assets'),
     usage: z.int().describe('Storage usage in bytes'),
     usagePhysical: z.int().describe('Storage usage in bytes, counting each distinct original file once'),
+    lastAddedAt: isoDatetimeToDate
+      .nullable()
+      .describe('When the newest of these photos and videos was added (Locked and hidden excluded); null when none')
+      .optional(),
   })
   .meta({ id: 'ManagedUploadsStatsResponseDto' });
 

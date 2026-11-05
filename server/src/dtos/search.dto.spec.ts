@@ -1,4 +1,5 @@
-import { MetadataSearchDto, SmartSearchDto, StatisticsSearchDto } from 'src/dtos/search.dto.js';
+import z from 'zod';
+import { LargeAssetSearchDto, MetadataSearchDto, SmartSearchDto, StatisticsSearchDto } from 'src/dtos/search.dto.js';
 import { AssetOrder, AssetType, ImageEnrichmentFilter, SearchOrderField } from 'src/enum.js';
 
 describe('search request shapes', () => {
@@ -37,6 +38,29 @@ describe('search request shapes', () => {
 
   it('rejects a pet id that is not a uuid', () => {
     expect(MetadataSearchDto.schema.safeParse({ filter: { petIds: { any: ['biscuit'] } } }).success).toBe(false);
+  });
+});
+
+describe('large-asset search query', () => {
+  it('reads its boolean filters from query strings (the Tools page sent withExif=true and got a 400)', () => {
+    expect(
+      LargeAssetSearchDto.schema.parse({ minFileSize: '0', size: '1', withExif: 'true', isFavorite: 'false' }),
+    ).toEqual({ minFileSize: 0, size: 1, withExif: true, isFavorite: false });
+  });
+
+  it('still rejects a boolean filter that is not "true" or "false"', () => {
+    expect(LargeAssetSearchDto.schema.safeParse({ withExif: 'yes' }).success).toBe(false);
+  });
+
+  it('keeps each boolean filter documented as a boolean, with its description and history', () => {
+    const field = (key: 'withExif' | 'isFavorite') =>
+      z.toJSONSchema(LargeAssetSearchDto.schema.shape[key], { io: 'input', unrepresentable: 'any' });
+    expect(field('withExif')).toMatchObject({ type: 'boolean', description: 'Include EXIF data in response' });
+    expect(field('isFavorite')).toMatchObject({
+      type: 'boolean',
+      description: 'Filter by favorite status',
+      deprecated: true,
+    });
   });
 });
 
