@@ -11,19 +11,28 @@ test('native bootstrap input survives EOF without violating Node pipe ownership'
   const text = await readFile(new URL('../src/main.ts', import.meta.url), 'utf8');
   const source = ts.createSourceFile('main.ts', text, ts.ScriptTarget.Latest, true);
   const inputs: ts.Expression[] = [];
+  const guards: ts.Block[] = [];
   function visit(node: ts.Node) {
     if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'createNativeService') {
       inputs.push(node.arguments[1]);
     }
+    if (ts.isBlock(node) && node.statements.some((statement) =>
+      ts.isVariableStatement(statement) && statement.declarationList.declarations.some(
+        (declaration) => declaration.name.getText(source) === 'bootstrapPipe',
+      ),
+    )) guards.push(node);
     ts.forEachChild(node, visit);
   }
   visit(source);
   assert.equal(inputs.length, 1);
+  assert.equal(guards.length, 1);
   const directory = await mkdtemp(join(tmpdir(), 'frameleaf-bootstrap-stdio-'));
   try {
     // Exercise the real caller stream through EOF and explicit destruction in a child process.
     const script = `
-      import {createReadStream, fstatSync} from 'node:fs';
+      import {fstatSync} from 'node:fs';
+      const Refusal = Error;
+      ${guards[0].getText(source)}
       const input = ${inputs[0].getText(source)};
       console.log('bootstrap-reading');
       for await (const chunk of input) {}

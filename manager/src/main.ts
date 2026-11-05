@@ -13,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import express, { type Request, type Response } from 'express';
-import { createReadStream, fstatSync } from 'node:fs';
+import { fstatSync } from 'node:fs';
 import { createNativeService } from './runtime/native-service.js';
 import { chmod, mkdir, readFile, realpath, rm, stat, statfs } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
@@ -51,7 +51,11 @@ const store = new Store(directory);
 if (runtime === 'docker' && store.get('native-installation')) throw new Refusal('manager_runtime_changed');
 if (runtime === 'native') {
   const bootstrapPipe = fstatSync(0);
-  if (!bootstrapPipe.isFIFO() && !bootstrapPipe.isSocket()) throw new Refusal('native_bootstrap_unavailable');
+  // Node disables isFIFO() on Windows even when libuv reports the pipe mode.
+  const privatePipe = process.platform === 'win32'
+    ? (bootstrapPipe.mode & 0xf000) === 0x1000
+    : bootstrapPipe.isFIFO() || bootstrapPipe.isSocket();
+  if (!privatePipe) throw new Refusal('native_bootstrap_unavailable');
 }
 const backupRoot = process.env.MANAGER_BACKUP_ROOT ?? (runtime === 'native' ? join(directory, 'backups') : undefined);
 if (!backupRoot || backupRoot !== resolve(backupRoot))
