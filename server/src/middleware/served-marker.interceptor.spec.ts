@@ -24,7 +24,6 @@ describe(ServedMarkerInterceptor.name, () => {
   it('records the release once, on the first real request', () => {
     const { sut, set, next } = setup();
     sut.intercept(context('/api/server/ping'), next);
-    sut.intercept(context('/api/server/version', { 'x-frameleaf-manager': 'token' }), next);
     expect(set).not.toHaveBeenCalled();
 
     sut.intercept(context('/api/assets?x=1'), next);

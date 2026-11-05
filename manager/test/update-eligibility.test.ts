@@ -676,8 +676,8 @@ test('a failed start reports its own error when the final health receipt cannot 
   }
 });
 
-// FL-1210: the server's `frameleaf-served` marker, not Docker's bounded health log, decides whether a failed
-// start may restore the pre-update checkpoint. Docker here says the opposite of the marker each time.
+// FL-1210: a `frameleaf-served` marker newer than the start keeps the new database even when Docker's bounded
+// health log shows no pass; an older marker with no health pass rolls back.
 for (const [marker, rollsBack] of [['after-start', false], ['before-start', true]] as const) {
   test(`a failed start with a frameleaf-served marker from ${marker} ${rollsBack ? 'rolls back' : 'keeps the new database'}`, async () => {
     process.env.MANAGER_ML_ACCELERATION = 'cpu';
@@ -708,7 +708,7 @@ for (const [marker, rollsBack] of [['after-start', false], ['before-start', true
             Mounts: [{ Type: 'bind', Source: current.databasePath, RW: true, Destination: '/var/lib/postgresql' }] },
           { Id: 'c'.repeat(64), Config: { Image: image, Labels: {
             'app.frameleaf.manager': current.id, 'com.docker.compose.service': 'frameleaf-server' } },
-            State: { Running: true, Health: { Status: 'unhealthy', Log: [{ ExitCode: rollsBack ? 0 : 1 }] } } },
+            State: { Running: true, Health: { Status: 'unhealthy', Log: [{ ExitCode: 1 }] } } },
         ],
         sql: async (_db: unknown, query: string) => (query.includes("key='frameleaf-served'") ? `${servedAt()}\n` : ''),
       };

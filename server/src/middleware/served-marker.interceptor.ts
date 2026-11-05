@@ -8,7 +8,7 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 /**
  * FL-1210: on this process's first real API request, records the release and time in `frameleaf-served`.
  * Frameleaf Manager reads it before rolling a failed update back: a release that served may hold uploads
- * the pre-update checkpoint lacks. The health ping and Manager's own calls are not real requests. The write
+ * the pre-update checkpoint lacks. The health ping is not a real request. The write
  * runs beside the request, never fails it, and happens once per process.
  */
 @Injectable()
@@ -26,7 +26,7 @@ export class ServedMarkerInterceptor implements NestInterceptor {
     if (!this.written && context.getType() === 'http') {
       const request = context.switchToHttp().getRequest<Request>();
       const path = request.originalUrl?.split('?', 1)[0] ?? request.path;
-      if (path !== '/api/server/ping' && !request.headers['x-frameleaf-manager']) {
+      if (path !== '/api/server/ping') {
         this.written = true;
         void this.metadata
           .setServed({
