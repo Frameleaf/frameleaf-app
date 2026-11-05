@@ -819,6 +819,10 @@ export class UserRepository {
             eb
               .selectFrom('asset_original as original')
               .innerJoin('physical_file as file', 'file.id', 'original.physicalFileId')
+              // only uploads count toward usage; an external library's attachments never do
+              .innerJoin('asset as uploaded', (join) =>
+                join.onRef('uploaded.id', '=', 'original.assetId').on('uploaded.libraryId', 'is', null),
+              )
               .select((eb) => ['original.assetId', eb.fn.sum<number>('file.sizeInBytes').as('bytes')])
               .groupBy('original.assetId')
               .as('original'),

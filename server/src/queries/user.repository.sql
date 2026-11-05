@@ -591,6 +591,8 @@ from
     from
       "asset_original" as "original"
       inner join "physical_file" as "file" on "file"."id" = "original"."physicalFileId"
+      inner join "asset" as "uploaded" on "uploaded"."id" = "original"."assetId"
+      and "uploaded"."libraryId" is null
     group by
       "original"."assetId"
   ) as "original" on "original"."assetId" = "asset"."id"
