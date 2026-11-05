@@ -1,6 +1,14 @@
 # Library import adapters
 
-The multi-source importer is under development. A schema reader passing its tests does not establish migration support. Keep new adapters internal until all ten source families pass the combined qualification, including private Synology DSM acceptance.
+The multi-source importer is in Beta. The Manager offers PhotoPrism, Photoview, PiGallery2, Lychee, Nextcloud, Piwigo and LibrePhotos imports to everyone with a Beta label (owner decision, FL-1149). Ente and Synology DSM are not offered. A schema reader passing its tests does not establish migration support for every version; see [Manager imports from other photo apps](#manager-imports-from-other-photo-apps).
+
+## Manager imports from other photo apps
+
+The Manager recognises a photo app by its image repository, not an exact image digest. It stops the app, then captures its database: a SQLite snapshot, or a dump of a MariaDB/MySQL/PostgreSQL database restored into a disposable container started from the source's own database image with no network. The offline preparation container shares only that restore container's network namespace and reaches it on `127.0.0.1`.
+
+`frameleaf-admin prepare-library-import` takes a version 2 request with `action: "inspect"` or `"prepare"`. Each source kind has one adapter in `server/src/library-import/preparation/<kind>.ts`. Inspect reads the frozen source and reports accounts, counts and every reported difference without writing anything. Prepare hashes the originals from the read-only mount, derives owner intents from the source's login facts and the administrator's chosen email addresses, and publishes the sealed bundle for the common command.
+
+Versions are not pinned. When the captured schema matches a qualified fixture the reader runs in its strict mode. Otherwise it runs best effort: version, schema and migration pins are skipped, integrity and relationship checks stay, and the import records `SOURCE_VERSION_UNTESTED`. The Manager suggests upgrading to the tested version first but lets the administrator continue. Photos, videos and albums must come across; other source data that cannot be represented is listed as a reported difference that the administrator approves. An account whose sign-in restrictions cannot be described is imported as restricted, never as an open account. A missing original refuses the import.
 
 ## Imported account authentication
 
@@ -30,7 +38,7 @@ The protected verifier supports qualified PHP bcrypt and Argon2i/Argon2id encodi
 
 The native asynchronous `@node-rs/argon2` binding performs memory-hard work outside the event loop. Existing `async-lock` serializes that work, permits eight waiting verifications and bounds waiting to ten seconds. Overload and malformed stored settings fail closed. Ordinary native passwords and the existing source formats keep their current paths.
 
-The synthetic interoperability fixture records the exact Lychee PHP 8.5.12 and Nextcloud PHP 8.5.10 image digests. Both generated version-19 Unicode/NUL vectors and independently verified version-16 vectors, including wrong-password refusal. Native cryptographic compatibility does not establish that a source account may sign in: LDAP, disabled accounts, multi-factor requirements and global authentication configuration still require separate controller qualification before activation. All new adapters remain internal until combined acceptance passes.
+The synthetic interoperability fixture records the exact Lychee PHP 8.5.12 and Nextcloud PHP 8.5.10 image digests. Both generated version-19 Unicode/NUL vectors and independently verified version-16 vectors, including wrong-password refusal. Native cryptographic compatibility does not establish that a source account may sign in: LDAP, disabled accounts, multi-factor requirements and global authentication configuration still require separate controller qualification before activation. These checks still apply to Manager Beta imports.
 
 ### Piwigo account password formats
 
@@ -42,7 +50,7 @@ The admitted Piwigo reader provides a protected callback for explicitly mapped a
 
 Mutating commands require Manager's matching installation and operation identity. When the importer requests source authority, Manager compares the installation, operation, destination, source identity/revision/schema, manifest checksum and file-plan checksum with its retained review, then runs the caller's live source-verification callback. A fresh challenge and matching reply travel over the existing command pipes; Server receives no Docker socket or new network endpoint. Missing, substituted, expired or disconnected authority fails closed. Status can inspect an existing journal without live Manager authority when no runner holds the execution lock. Errors retain migration records and do not imply that restarting the source is safe.
 
-This connection does not qualify an adapter, establish ownership/privacy evidence, add source discovery or finish Manager account/storage review. Callers must supply qualified source evidence and real source fencing; manifest declarations are insufficient. Source setup, deferred content baselines for fast adoption and combined acceptance remain under development. All new adapters remain internal, including when their source kind is accepted by the common command. Expanded release still requires all ten sources and private DSM acceptance.
+This connection does not qualify an adapter, establish ownership/privacy evidence, add source discovery or finish Manager account/storage review. Callers must supply qualified source evidence and real source fencing; manifest declarations are insufficient. Source setup, deferred content baselines for fast adoption and combined acceptance remain under development. The Manager drives this command for its Beta photo-app imports.
 
 ## Native application imports in Docker
 
