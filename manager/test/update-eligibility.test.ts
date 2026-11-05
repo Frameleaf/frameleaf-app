@@ -437,14 +437,15 @@ test('an update whose server never turns healthy restores the previous release a
     const image = (name: string) => `fixture.invalid/${name}@sha256:${'a'.repeat(64)}`;
     const current = { id: 'a'.repeat(12), project: 'frameleaf-test', release: 'frameleaf-v1.2.2', ml: false,
       mounts: [], origin: 'new_library', port: 2283, sourceId: null, mayHaveWrittenMedia: true,
-      databaseRoot: directory, databasePath: join(directory, 'db-old') };
+      databaseRoot: directory, databasePath: join(directory, 'db-$old') };
     const release = { directory, nas: { tag: 'frameleaf-v1.2.3',
       images: { server: image('new-server'), postgres: image('postgres'), machineLearning: image('ml') } } };
     await writeFile(join(directory, 'docker-compose.yml'), JSON.stringify({ services: {
       database: {}, 'frameleaf-server': {}, 'frameleaf-machine-learning': {},
     } }));
     const previousCompose = { services: {
-      database: { image: image('postgres'), volumes: [{ type: 'bind', source: current.databasePath, target: '/var/lib/postgresql' }] },
+      // renderCompose doubles `$` for Compose interpolation.
+      database: { image: image('postgres'), volumes: [{ type: 'bind', source: join(directory, 'db-$$old'), target: '/var/lib/postgresql' }] },
       'frameleaf-server': { image: image('old-server') },
     } };
     await mkdir(join(directory, 'stack'));
@@ -478,7 +479,7 @@ test('an update whose server never turns healthy restores the previous release a
       verifyDump: async () => {},
       restore: async (_db: unknown, file: string) => { restored.push(file); },
     };
-    const databaseStorage = { verify: async () => {}, allocate: async () => join(directory, 'db-rollback') };
+    const databaseStorage = { verify: async () => {}, allocate: async () => join(directory, 'db-$rollback') };
     const operations = new Operations(store, docker as never, { eligible: async () => {} } as never, {} as never, [],
       databaseStorage as never);
     (operations as any).fencing = { assertMedia: async () => {}, verify: async () => {} };
@@ -492,12 +493,14 @@ test('an update whose server never turns healthy restores the previous release a
     assert.deepEqual(restored, [join(checkpoint, 'database.dump')]);
     const installation = store.get<any>('installation');
     assert.equal(installation.release, 'frameleaf-v1.2.2', 'the previous release is the installation again');
-    assert.equal(installation.databasePath, join(directory, 'db-rollback'), 'the checkpoint went into an empty directory');
+    assert.equal(installation.databasePath, join(directory, 'db-$rollback'), 'the checkpoint went into an empty directory');
     assert.deepEqual(store.get('retained-database-directories'), [current.databasePath], 'the migrated directory is kept');
     const stack = JSON.parse(await readFile(join(directory, 'stack', 'compose.json'), 'utf8'));
     assert.equal(stack.services['frameleaf-server'].image, image('old-server'));
-    assert.equal(stack.services.database.volumes[0].source, join(directory, 'db-rollback'));
-    // A resumed rollback never starts the failed release again.
+    assert.equal(stack.services.database.volumes[0].source, join(directory, 'db-$$rollback'));
+    // A resumed rollback is not retargeted, even once the failed release is withdrawn, and never starts it again.
+    const review = { current, release, platform: 'linux/amd64', expires: Date.now() - 1 };
+    assert.equal(await (operations as any).retargetWithdrawnUpdate(operation, review), review);
     await (operations as any).applyUpdate(operation, { current, release, platform: 'linux/amd64' });
     assert.equal(targetStarts, 1);
   } finally {

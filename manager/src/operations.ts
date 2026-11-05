@@ -1378,6 +1378,7 @@ export class Operations {
     // Older journals cannot prove a selected target never started.
     if (
       operation.completed.includes('apply-release') ||
+      operation.receipts['rollback-intent'] ||
       (this.installation()?.release === review.release.nas.tag && operation.receipts['release-start-state'] !== 'prepared')
     )
       return review;
@@ -1523,8 +1524,10 @@ export class Operations {
       };
       const compose = JSON.parse(await readFile(join(checkpoint, 'compose.json'), 'utf8'));
       const data = compose.services.database.volumes.find((v: any) => v.target === '/var/lib/postgresql');
-      if (data?.source !== previous.databasePath) throw new Refusal('database_path_changed');
-      data.source = installation.databasePath;
+      // renderCompose stores every string with `$` doubled for Compose interpolation.
+      const escaped = (path: string) => path.replaceAll('$', () => '$$');
+      if (data?.source !== escaped(previous.databasePath)) throw new Refusal('database_path_changed');
+      data.source = escaped(installation.databasePath);
       await atomicJson(join(this.directory(), 'compose.json'), compose);
       this.store.set('installation', installation);
       await this.docker.compose(this.directory(), installation.project, 'up', ['database']);
