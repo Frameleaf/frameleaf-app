@@ -20,6 +20,7 @@ import { GlobalExceptionFilter } from 'src/middleware/global-exception.filter.js
 import { LibraryMoveFenceGuard } from 'src/middleware/library-move-fence.guard.js';
 import { LoggingInterceptor } from 'src/middleware/logging.interceptor.js';
 import { RateLimitFailureInterceptor, RateLimitGuard } from 'src/middleware/rate-limit.guard.js';
+import { ServedMarkerInterceptor } from 'src/middleware/served-marker.interceptor.js';
 import { AppRepository } from 'src/repositories/app.repository.js';
 import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.js';
 import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
@@ -66,6 +67,8 @@ const apiMiddleware = [
   { provide: APP_INTERCEPTOR, useClass: LibraryMoveFenceGuard },
   // FL-161: counts a failed password (401) against the email or shared link it was tried for
   { provide: APP_INTERCEPTOR, useClass: RateLimitFailureInterceptor },
+  // FL-1210: records that this release served a request, for Frameleaf Manager's update rollback
+  { provide: APP_INTERCEPTOR, useClass: ServedMarkerInterceptor },
 ];
 
 const configRepository = new ConfigRepository();

@@ -1452,8 +1452,12 @@ export class Operations {
       // Issue 863: a target that started but never turned healthy boot-loops. Before 'starting' nothing ran,
       // and the operation stays cancellable back to the previous release instead.
       if (operation.receipts['release-start-state'] !== 'starting') throw error;
-      // Another service (machine learning) can fail `up --wait` after the server was healthy and took writes.
-      if (operation.receipts['server-served'] || (await this.serverMayHaveServed(review).catch(() => true))) {
+      // Another service (machine learning) can fail `up --wait` after the server served and took writes.
+      // FL-1210: the server's own marker decides; Docker's health history is the fallback without one.
+      const served =
+        (await this.markerServed(operation)) ??
+        (!!operation.receipts['server-served'] || (await this.serverMayHaveServed(review).catch(() => true)));
+      if (served) {
         operation.receipts['release-start-state'] = 'started';
         this.store.save(operation);
         throw error;
@@ -1503,6 +1507,7 @@ export class Operations {
       // Once the target was healthy it may have accepted writes: a later failure never restores the checkpoint.
       if (operation.receipts['release-start-state'] !== 'started') {
         operation.receipts['release-start-state'] = 'starting';
+        operation.receipts['release-started-at'] ??= new Date().toISOString();
         this.store.save(operation); // Persist intent before the target can write.
       }
       await this.watchServer(operation, review, () => this.docker.compose(this.directory(), installation.project, 'up'));
@@ -1512,10 +1517,29 @@ export class Operations {
     });
   }
   /**
+   * FL-1210: whether the server's `frameleaf-served` marker (written on each boot's first real request)
+   * shows the target served since this update started it. A marker from before then proves the target
+   * writes markers and has not served. No marker, or none readable, is null: the target may predate it.
+   */
+  private async markerServed(operation: Operation): Promise<boolean | null> {
+    const since = Date.parse(String(operation.receipts['release-started-at']));
+    if (Number.isNaN(since)) return null;
+    const servedAt = await this.targetDatabase()
+      .then((database) =>
+        this.docker.sql(
+          database,
+          `SELECT coalesce((SELECT value->>'servedAt' FROM public.system_metadata WHERE key='frameleaf-served'), '');`,
+        ),
+      )
+      .then((value) => Date.parse(value.trim()))
+      .catch(() => Number.NaN);
+    return Number.isNaN(servedAt) ? null : servedAt >= since;
+  }
+  /**
    * Poll the new server while it starts and journal `server-served` the first time Docker shows it passing
-   * a health probe. Docker keeps only its last five probes, so the final log alone cannot prove the server
-   * never served. ponytail: polled every serverWatchMs, which must stay under five probe intervals; a
-   * server-side "first request served" marker is the upgrade if probes ever run faster than that.
+   * a health probe: the fallback when the target writes no `frameleaf-served` marker. Docker keeps only its
+   * last five probes, so the final log alone cannot prove the server never served. ponytail: polled every
+   * serverWatchMs, which must stay under five probe intervals.
    */
   private async watchServer(operation: Operation, review: UpdateReview, start: () => Promise<void>): Promise<void> {
     const check = async () => {

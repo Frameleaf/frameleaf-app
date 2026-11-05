@@ -650,3 +650,57 @@ test('a server seen healthy while starting is never rolled back after its probe 
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+// FL-1210: the server's `frameleaf-served` marker, not Docker's bounded health log, decides whether a failed
+// start may restore the pre-update checkpoint. Docker here says the opposite of the marker each time.
+for (const [marker, rollsBack] of [['after-start', false], ['before-start', true]] as const) {
+  test(`a failed start with a frameleaf-served marker from ${marker} ${rollsBack ? 'rolls back' : 'keeps the new database'}`, async () => {
+    process.env.MANAGER_ML_ACCELERATION = 'cpu';
+    const directory = await mkdtemp(join(tmpdir(), 'manager-update-marker-'));
+    const store = new Store(directory);
+    try {
+      const image = `fixture.invalid/server@sha256:${'a'.repeat(64)}`;
+      const current = { id: 'a'.repeat(12), project: 'frameleaf-test', release: 'frameleaf-v1.2.2', ml: false,
+        mounts: [], origin: 'new_library', port: 2283, sourceId: null, mayHaveWrittenMedia: true,
+        databaseRoot: directory, databasePath: join(directory, 'db') };
+      const release = { directory, nas: { tag: 'frameleaf-v1.2.3', images: { server: image, postgres: image, machineLearning: image } } };
+      await writeFile(join(directory, 'docker-compose.yml'), JSON.stringify({ services: {
+        database: {}, 'frameleaf-server': {}, 'frameleaf-machine-learning': {},
+      } }));
+      await mkdir(join(directory, 'stack'));
+      await writeFile(join(directory, 'stack', 'compose.json'), JSON.stringify({ services: { database: { image } } }));
+      store.set('installation', current);
+      store.set('database-password', 'fixture-only');
+      const { operation } = store.start('update', marker, { reviewId: 'r' });
+      operation.completed = ['download-images', 'stop-application', 'database-checkpoint'];
+      store.save(operation);
+      const servedAt = () => new Date(Date.parse(operation.receipts['release-started-at'] as string)
+        + (marker === 'after-start' ? 1000 : -1000)).toISOString();
+      const docker = {
+        compose: async () => { throw new Error('container frameleaf-test-frameleaf-server-1 is unhealthy'); },
+        inventory: async () => [
+          { Id: 'b'.repeat(64), Config: { Labels: { 'app.frameleaf.manager': current.id, 'com.docker.compose.service': 'database' } },
+            Mounts: [{ Type: 'bind', Source: current.databasePath, RW: true, Destination: '/var/lib/postgresql' }] },
+          { Id: 'c'.repeat(64), Config: { Image: image, Labels: {
+            'app.frameleaf.manager': current.id, 'com.docker.compose.service': 'frameleaf-server' } },
+            State: { Running: true, Health: { Status: 'unhealthy', Log: [{ ExitCode: rollsBack ? 0 : 1 }] } } },
+        ],
+        sql: async (_db: unknown, query: string) => (query.includes("key='frameleaf-served'") ? `${servedAt()}\n` : ''),
+      };
+      const operations = new Operations(store, docker as never, { eligible: async () => {} } as never, {} as never, [],
+        { verify: async () => {} } as never);
+      operations.serverWatchMs = 60_000;
+      (operations as any).fencing = { assertMedia: async () => {} };
+      let rolledBack = false;
+      (operations as any).rollbackUpdate = async () => { rolledBack = true; };
+      if (rollsBack) await (operations as any).applyUpdate(operation, { current, release });
+      else await assert.rejects((operations as any).applyUpdate(operation, { current, release }), /unhealthy/);
+      assert.equal(rolledBack, rollsBack);
+      assert.equal(operation.receipts['rollback-intent'], rollsBack ? 'release_start_failed' : undefined);
+      assert.equal(operation.receipts['release-start-state'], rollsBack ? 'starting' : 'started');
+    } finally {
+      store.close();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+}

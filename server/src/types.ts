@@ -1546,6 +1546,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.FrameleafLicense]: FrameleafLicenseStore;
   [SystemMetadataKey.FrameleafPricing]: FrameleafPricingState;
   [SystemMetadataKey.FrameleafBoot]: FrameleafBoot;
+  [SystemMetadataKey.FrameleafServed]: { version: string; servedAt: string };
   [SystemMetadataKey.FrameleafMlSuspension]: FrameleafMlSuspension;
   [SystemMetadataKey.FrameleafCloudBackup]: FrameleafCloudBackup;
   [SystemMetadataKey.FrameleafRemoteAccess]: FrameleafRemoteAccess;
