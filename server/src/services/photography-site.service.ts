@@ -53,6 +53,11 @@ const MAX_INQUIRIES = 500;
  * photos off the website; a photograph that is withheld, rejected, locked or deleted still does, checked
  * on every view.
  */
+
+/** The domain Cloud should serve for a site: only a published site with one. */
+const liveDomain = (site: PhotographySite | null | undefined) =>
+  site?.enabled && site.domain ? { domain: site.domain, slug: site.slug } : null;
+
 @Injectable()
 export class PhotographySiteService {
   /** Studios whose older websites are having their photo copies made (see `catchUp`). */
@@ -108,32 +113,39 @@ export class PhotographySiteService {
       for (const { copy } of created) await this.removeFiles(copy);
       throw error;
     }
+    this.reportOwnDomain(ownerId, current.site, site);
     for (const item of saved.result) await this.removeFiles(item);
-    this.reportOwnDomain(current.site, site);
     return this.view(saved.revision, site, saved.record);
   }
+
+  /** The latest domain report; each one waits for the one before (never rejects). */
+  private domainReports: Promise<unknown> = Promise.resolve();
 
   /**
    * FL-705: Frameleaf Cloud serves a published website on its own domain through `sites.frameleaf.cloud`.
    * It hears about the domain when the site is published with one, and that there is none when the site
    * is turned off or the domain is cleared. In the background: the save never waits for Cloud.
    */
-  /** The latest domain report; each one waits for the one before (never rejects). */
-  private domainReports: Promise<unknown> = Promise.resolve();
-
-  private reportOwnDomain(before: PhotographySite | null | undefined, after: PhotographySite) {
-    const live = (site: PhotographySite | null | undefined) =>
-      site?.enabled && site.domain ? { domain: site.domain, slug: site.slug } : null;
-    const was = live(before);
-    const now = live(after);
-    if (JSON.stringify(was) === JSON.stringify(now)) {
+  private reportOwnDomain(ownerId: string, before: PhotographySite | null | undefined, after: PhotographySite) {
+    if (JSON.stringify(liveDomain(before)) === JSON.stringify(liveDomain(after))) {
       return;
     }
-    // one at a time, in save order, so an older report can't reach Cloud after a newer one
-    this.domainReports = this.domainReports
-      .then(() => this.remoteAccess.reportStudioSite(now))
+    void this.reportStoredDomain(ownerId)
       .then(({ problem }) => problem && this.logger.warn(`The studio website's own domain wasn't reported: ${problem}`))
       .catch((error: unknown) => this.logger.warn(`The studio website's own domain wasn't reported: ${error}`));
+  }
+
+  /**
+   * Tells Cloud the domain as stored when the report goes out, one report at a time: a report that
+   * waited behind another can't send a domain a later save has replaced.
+   */
+  private reportStoredDomain(ownerId: string) {
+    const report = this.domainReports.then(async () => {
+      const { record } = await this.repository.studioRecord(ownerId);
+      return this.remoteAccess.reportStudioSite(liveDomain(record.site));
+    });
+    this.domainReports = report.catch(() => {});
+    return report;
   }
 
   /** FL-705 `GET photography/site/domain`: how Frameleaf Cloud sees this studio's own domain, and the DNS records. */
@@ -147,7 +159,7 @@ export class PhotographySiteService {
     let answer = await this.remoteAccess.studioSiteStatus();
     if (!answer.site && !answer.problem) {
       // Cloud never heard of it (published while remote access was off, or the report was lost): tell it now
-      answer = await this.remoteAccess.reportStudioSite({ domain, slug: record.site!.slug });
+      answer = await this.reportStoredDomain(ownerId);
     }
     // one studio per server has its own domain; another studio's is not this one's to show
     return answer.site && answer.site.domain !== domain ? { site: null, problem: null } : answer;

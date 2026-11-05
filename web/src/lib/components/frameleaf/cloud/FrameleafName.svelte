@@ -35,6 +35,8 @@
   let check = $state<RemoteNameCheckResponseDto | null>(null);
   /** The name whose check failed; editing the name clears it. */
   let checkFailed = $state<string | null>(null);
+  // plain, not state: only the latest check's answer counts, even for a name typed twice
+  let checkGeneration = 0;
   let saving = $state(false);
   let failure = $state('');
 
@@ -48,6 +50,7 @@
 
   $effect(() => {
     const typed = draft;
+    const generation = ++checkGeneration;
     // a failure belongs to the check that failed; a new check starts clean
     checkFailed = null;
     if (!open || !typed || same || nameRule(typed)) {
@@ -57,13 +60,13 @@
       // an answer for a name no longer typed is dropped, so a slow one can't replace the current one
       checkRemoteName({ remoteNameUpdateDto: { name: typed } })
         .then((result) => {
-          if (typed === draft) {
+          if (generation === checkGeneration) {
             check = result;
             checkFailed = null;
           }
         })
         .catch(() => {
-          if (typed === draft) {
+          if (generation === checkGeneration) {
             check = null;
             checkFailed = typed;
           }

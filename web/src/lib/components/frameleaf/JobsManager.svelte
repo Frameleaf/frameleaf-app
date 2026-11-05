@@ -845,9 +845,11 @@
     if (!selected) {
       return;
     }
+    // the page can move to another task while this one runs
+    const { definition } = selected;
     try {
-      await runQueueOnOne({ name: selected.definition.name, queueRunOneDto: { assetId: asset.id } });
-      notice = $t('frameleaf_jobs_ran_one', { values: { name: runLabelFor(selected.definition) } });
+      await runQueueOnOne({ name: definition.name, queueRunOneDto: { assetId: asset.id } });
+      notice = $t('frameleaf_jobs_ran_one', { values: { name: runLabelFor(definition) } });
     } finally {
       await queueManager.refresh();
       jobsReload++;

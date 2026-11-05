@@ -8,12 +8,16 @@ const REVISION = '0195e2a0-0000-7000-8000-0000000000aa';
 
 const setup = (storedSlug: string) => {
   const stored = { ...defaultPhotographySite('North Studio'), slug: storedSlug };
+  // what is stored; each read is a copy, as from the database
+  let record: object = { site: stored, media: {} };
   const repository = {
-    studioRecord: vi.fn().mockResolvedValue({ revision: 'r1', record: { site: stored, media: {} } }),
+    studioRecord: vi.fn(() => Promise.resolve({ revision: 'r1', record: structuredClone(record) })),
     siteOwnerBySlug: vi.fn().mockResolvedValue(OWNER),
     mutateStudio: vi.fn((_owner: string, _revision: string, change: (record: object) => unknown) => {
-      const record = { site: stored, media: {} };
-      return Promise.resolve({ revision: 'r2', record, result: change(record) });
+      const next = structuredClone(record);
+      const result = change(next);
+      record = next;
+      return Promise.resolve({ revision: 'r2', record: next, result });
     }),
   };
   const workflow = { studioOwner: vi.fn().mockReturnValue(OWNER) };
@@ -91,10 +95,11 @@ describe(PhotographySiteService.name, () => {
       await vi.waitFor(() => expect(remoteAccess.reportStudioSite).toHaveBeenCalledOnce());
       release();
       await vi.waitFor(() => expect(remoteAccess.reportStudioSite).toHaveBeenCalledTimes(2));
-      expect(remoteAccess.reportStudioSite.mock.calls.map(([site]) => site?.domain)).toEqual([
-        'old.cedarandlight.ca',
-        'photos.cedarandlight.ca',
-      ]);
+      // the report that waited sends what is stored now, so Cloud ends on the latest save
+      expect(remoteAccess.reportStudioSite.mock.calls.at(-1)?.[0]).toEqual({
+        domain: 'photos.cedarandlight.ca',
+        slug: 'north-studio',
+      });
     });
 
     it('says nothing to Frameleaf Cloud when the domain and publishing are unchanged', async () => {

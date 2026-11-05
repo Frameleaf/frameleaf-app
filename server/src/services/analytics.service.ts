@@ -221,9 +221,8 @@ export class AnalyticsService {
       timer = setTimeout(() => resolve(undefined), ms);
     });
     // a config lookup that fails must not take the whole report with it
-    const labels = this.seenLabels.labels().catch((error) => {
+    const labels = this.seenLabels.labels().catch((error: unknown): undefined => {
       this.logger.warn(`"What the AI sees" labels are unavailable: ${error}`);
-      return undefined;
     });
     return Promise.race([labels, late]).finally(() => clearTimeout(timer));
   }

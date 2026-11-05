@@ -122,6 +122,15 @@
         body: $t('frameleaf_bgwork_working_everyday_body'),
       };
     }
+    if (rows.some((row) => unknown?.has(row.definition.name))) {
+      // nothing known is left, but some counts couldn't be read: not "up to date"
+      return {
+        tone: 'warn' as const,
+        icon: mdiAlertCircleOutline,
+        title: $t('frameleaf_computers_cover_unknown'),
+        body: $t('frameleaf_computers_unread'),
+      };
+    }
     return {
       tone: 'good' as const,
       icon: mdiCheckCircleOutline,
