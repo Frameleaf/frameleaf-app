@@ -186,6 +186,21 @@ test('Manager lists only installable releases, newest first', async (t) => {
   );
 });
 
+test('Manager reads every release page: a late patch can sit past the first page', async (t) => {
+  const assets = MANAGER_ASSETS.map((name: string) => ({ name }));
+  const release = (n: number) => ({ tag_name: `frameleaf-v3.2.${n}`, published_at: `2026-10-01T00:00:${String(n % 60).padStart(2, '0')}Z`, draft: false, prerelease: false, body: '', assets });
+  const pages = [Array.from({ length: 30 }, (_, n) => release(n + 10)), [release(1)]];
+  const requested: string[] = [];
+  t.mock.method(globalThis, 'fetch', async (url: string) => {
+    requested.push(new URL(url).searchParams.get('page')!);
+    return new Response(JSON.stringify(pages[requested.length - 1]));
+  });
+  const listed = await new Releases('/nonexistent', 'seed').available();
+  assert.deepEqual(requested, ['1', '2']);
+  assert.equal(listed.length, 31);
+  assert.ok(listed.some((item) => item.tag === 'frameleaf-v3.2.1'));
+});
+
 test('a missing release is ineligible, while other GitHub failures retain their HTTP status', async (t) => {
   const releases = new Releases('/nonexistent', 'seed');
   for (const status of [404, 403, 429, 500]) {

@@ -1380,11 +1380,9 @@ export class Operations {
     if (!current || history.some((o) => o.state === 'running' || o.state === 'awaiting-review')) return null;
     const lastUpdate = history.find((o) => o.kind === 'update');
     if (lastUpdate && lastUpdate.state !== 'complete') return null;
-    const { releases, complete } = await this.releases.page();
-    const tags = releases.map(({ tag }) => tag);
-    // A full page may be cut short: unless it reaches back to the running release, the next step may be missing from it.
-    if (!complete && !tags.some((tag) => !isNewerRelease(tag, current.release))) return null;
-    const [next] = tags.filter((tag) => isNewerRelease(tag, current.release)).sort(compareReleases);
+    const [next] = (await this.releases.available())
+      .map(({ tag }) => tag)
+      .filter((tag) => isNewerRelease(tag, current.release)).sort(compareReleases);
     if (!next) return null;
     const { id } = await this.reviewUpdate(next);
     // The administrator may have turned automatic updates off while the release was being reviewed.

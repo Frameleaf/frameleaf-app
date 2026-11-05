@@ -41,13 +41,17 @@ export class Releases {
     private root: string,
     private seed: string,
   ) {}
+  /** Every eligible release. GitHub pages by creation, not version, so a late patch can sit on any page. */
   async available(): Promise<{ tag: string; publishedAt: string; notes: string }[]> {
-    return (await this.page()).releases;
-  }
-  /** Eligible releases from GitHub's first page; `complete` when that page holds every release. */
-  async page(): Promise<{ releases: { tag: string; publishedAt: string; notes: string }[]; complete: boolean }> {
-    const releases = await github('releases?per_page=30');
-    return { complete: releases.length < 30, releases: releases
+    const releases: any[] = [];
+    for (let page = 1; ; page++) {
+      const batch = await github(`releases?per_page=30&page=${page}`);
+      releases.push(...batch);
+      if (batch.length < 30) break;
+      // ponytail: 600-release ceiling keeps a misbehaving API from looping; raise it if releases ever get near it.
+      if (page === 20) throw new Refusal('invalid_release_response');
+    }
+    return releases
       .filter(
         (r: any) =>
           !r.draft &&
@@ -58,7 +62,7 @@ export class Releases {
       )
       // GitHub does not list releases in publication order.
       .sort((a: any, b: any) => String(b.published_at).localeCompare(String(a.published_at)))
-      .map((r: any) => ({ tag: r.tag_name, publishedAt: r.published_at, notes: String(r.body ?? '').slice(0, 32000) })) };
+      .map((r: any) => ({ tag: r.tag_name, publishedAt: r.published_at, notes: String(r.body ?? '').slice(0, 32000) }));
   }
   async eligible(tag: string): Promise<any> {
     releaseTag.parse(tag);
