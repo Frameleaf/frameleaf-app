@@ -271,6 +271,15 @@
         toastManager.primary($t('frameleaf_album_access_removed', { values: { name: space.albumName } }));
         void goto(Route.sharing());
       },
+      // Deleted elsewhere while it is open (the sidebar's menu, FL-1244): back to the shared spaces, as
+      // the album page goes back to Albums.
+      AlbumDelete: ({ id }) => {
+        if (id !== space.id) {
+          return;
+        }
+        assetViewerManager.showAssetViewer(false);
+        void goto(Route.sharing());
+      },
     }),
   );
 

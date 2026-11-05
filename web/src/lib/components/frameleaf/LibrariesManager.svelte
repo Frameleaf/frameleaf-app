@@ -336,6 +336,11 @@
   {/if}
 {/snippet}
 
+<!-- One live region for every view (the list, a library's page, Add a folder), so a message that lands as
+     the view changes is announced (FL-1248). -->
+<div class="said">
+  <Said message={notice} onDismiss={() => (notice = '')} />
+</div>
 {#if createOnOpen}
   <!-- FL-539: Add a folder of photos is a page of its own (prototype folders.jsx FolderForm) -->
   <section class="fl-libraries" aria-label={$t('frameleaf_addfolder_title')} bind:this={pageElement}>
@@ -376,7 +381,6 @@
       {#if error && !modal}
         <p class="error" role="alert">{error}</p>
       {/if}
-      <Said message={notice} onDismiss={() => (notice = '')} />
     </div>
     {#key selected.key}
       <LibraryPage
@@ -404,7 +408,6 @@
       description={$t('frameleaf_libraries_subtitle')}
     />
     <KitPage>
-      <Said message={notice} onDismiss={() => (notice = '')} />
       {#if error && !modal}
         <p class="error" role="alert">{error}</p>
       {/if}
@@ -576,8 +579,10 @@
     font-size: var(--fl-font-callout);
     line-height: 1.5;
   }
-  /* What just happened sits above the page's first card, 24px from it as the cards are apart. */
-  .notes:has(:global(.kit-said)),
+  /* What just happened sits above the page, 24px from it as the cards are apart. */
+  .said:has(:global(.kit-said)) {
+    margin-bottom: var(--fl-space-6);
+  }
   .notes:has(.error) {
     display: grid;
     gap: var(--fl-space-3);

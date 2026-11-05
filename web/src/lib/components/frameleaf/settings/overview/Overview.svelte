@@ -549,9 +549,8 @@
 </script>
 
 <KitPage>
-  {#if said}
-    <Said message={said} onDismiss={() => (said = '')} />
-  {/if}
+  <!-- Always in the page, so a message that appears in it is announced (FL-1248). -->
+  <Said message={said} onDismiss={() => (said = '')} />
 
   {#if failed}
     <InlineError message={$t('frameleaf_cc_section_load_failed')} onRetry={load} />

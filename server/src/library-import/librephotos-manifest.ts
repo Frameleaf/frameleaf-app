@@ -10,6 +10,7 @@ import {
   type ImportManifest,
   importFileSchema,
   importTimestampSchema,
+  importsLocked,
   parseImportManifest,
 } from 'src/library-import/manifest.js';
 import { type SourceArchiveRecord, encodeSourceArchiveRecord } from 'src/library-import/source-archive-codec.js';
@@ -243,6 +244,8 @@ export async function readLibrephotosManifest(snapshot: Snapshot, input: Input) 
       ),
       // Owner 2026-11-04: a hidden photo imports Locked.
       visibility: trashed ? 'trash' : photo.state.hidden ? 'locked' : photo.state.archived ? 'archive' : 'timeline',
+      // FL-1230: a hidden photo in Trash stays private: trashed and Locked
+      ...(trashed && photo.state.hidden ? { locked: true as const } : {}),
       metadata: {
         ...metadata,
         takenAt,
@@ -320,7 +323,10 @@ export async function readLibrephotosManifest(snapshot: Snapshot, input: Input) 
       assetIds.length < 2 ||
       assetIds.some(
         (id) =>
-          stackClaims.get(id)!.length > 1 || byAsset.get(id)!.visibility !== byAsset.get(primaryAssetId)!.visibility,
+          stackClaims.get(id)!.length > 1 ||
+          byAsset.get(id)!.visibility !== byAsset.get(primaryAssetId)!.visibility ||
+          // FL-1230: trashed members can differ in being Locked; the manifest refuses such a stack
+          importsLocked(byAsset.get(id)!) !== importsLocked(byAsset.get(primaryAssetId)!),
       )
     ) {
       loss('LIBREPHOTOS_STACK_ARCHIVED', id);

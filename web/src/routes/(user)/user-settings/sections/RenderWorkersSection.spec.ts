@@ -7,6 +7,8 @@ import type { RenderWorkersData } from './loaders';
 vi.mock('$lib/components/frameleaf/RenderWorkersPanel.svelte', () => ({ default: () => {} }));
 vi.mock('$lib/components/frameleaf/RenderLimitsPanel.svelte', () => ({ default: () => {} }));
 vi.mock('$lib/components/frameleaf/RenderWorkerAuditPanel.svelte', () => ({ default: () => {} }));
+const formDialog = vi.hoisted(() => vi.fn());
+vi.mock('$lib/components/frameleaf/RenderWorkerFormDialog.svelte', () => ({ default: formDialog }));
 vi.mock('$lib/utils/handle-error', async (original) => ({ ...(await original<object>()), handleError: vi.fn() }));
 vi.mock('@frameleaf/sdk', async (original) => ({ ...(await original<object>()), listRenderWorkers: vi.fn() }));
 
@@ -37,4 +39,14 @@ it('reports a failing worker poll once until it recovers', async () => {
 
   await vi.advanceTimersByTimeAsync(60_000);
   expect(handleError).toHaveBeenCalledTimes(2);
+});
+
+it('opens the connect form only for a request raised while it is shown, not one from before (FL-1250)', async () => {
+  vi.mocked(listRenderWorkers).mockResolvedValue([]);
+  const { rerender } = render(RenderWorkersSection, { data, part: 'helpers', enrolRequest: 1 });
+  await Promise.resolve();
+  expect(formDialog).not.toHaveBeenCalled();
+
+  await rerender({ enrolRequest: 2 });
+  expect(formDialog).toHaveBeenCalledTimes(1);
 });

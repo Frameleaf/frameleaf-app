@@ -156,6 +156,9 @@ from
             )
           ) / pi()
         ) / 2 * $5
-      ) * $6 + floor((asset_exif.longitude + 180) / 360 * $7)
+      ) * $6 + least(
+        $7,
+        floor((asset_exif.longitude + 180) / 360 * $8)
+      )
   ) as "cell"
   left join "asset_exif" on "asset_exif"."assetId" = "cell"."id"

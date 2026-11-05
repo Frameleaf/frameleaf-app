@@ -607,8 +607,8 @@ export class JobRepository {
   startNow(name: QueueName, jobId: string) {
     return this.store.startNow(name, jobId);
   }
-  findWaitingJob(queue: QueueName, name: JobName, itemId: string) {
-    return this.store.findWaitingJob(queue, name, itemId);
+  findOpenJob(queue: QueueName, name: JobName, itemId: string) {
+    return this.store.findOpenJob(queue, name, itemId);
   }
   /** FL-721: jobs deferred for a Locked key run now; their owner's key has just been loaded. */
   wakeLockedDeferrals(ids: string[]) {

@@ -63,15 +63,26 @@ export class RenderWorkersState {
     }
   };
 
+  /** The newest history request; an answer to an older one (a filter since changed) is dropped. */
+  #auditRequest = 0;
+
   refreshAudit = async (workerId: string | undefined = this.auditWorkerId) => {
     this.auditWorkerId = workerId;
     this.refreshing = true;
+    const request = ++this.#auditRequest;
     try {
-      this.audit = await searchRenderWorkerAudit({ take: 100, workerId });
+      const audit = await searchRenderWorkerAudit({ take: 100, workerId });
+      if (request === this.#auditRequest) {
+        this.audit = audit;
+      }
     } catch (error) {
-      handleError(error, this.failed());
+      if (request === this.#auditRequest) {
+        handleError(error, this.failed());
+      }
     } finally {
-      this.refreshing = false;
+      if (request === this.#auditRequest) {
+        this.refreshing = false;
+      }
     }
   };
 }

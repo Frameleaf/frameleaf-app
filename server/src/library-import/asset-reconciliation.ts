@@ -4,7 +4,7 @@ import { ImportDatabase } from 'src/immich-import/types.js';
 import { CanonicalAssetWriter } from 'src/library-import/asset-writer.js';
 import { parseDestinationImportPlan } from 'src/library-import/destination-plan.js';
 import { BundleVerificationError, verifyImportFiles } from 'src/library-import/files.js';
-import { parseImportManifest, storedVisibility } from 'src/library-import/manifest.js';
+import { importsLocked, parseImportManifest, storedVisibility } from 'src/library-import/manifest.js';
 import {
   LibraryImportBinding,
   LibraryImportJournal,
@@ -243,7 +243,7 @@ export async function reconcileImportedAssets(
       same(expectedSidecars, actualSidecars);
       // Owner 2026-11-04: exactly the source's private items are Locked, each Live Photo as a whole.
       const expectedLocks = expected
-        .filter(({ asset }) => asset.visibility === 'locked')
+        .filter(({ asset }) => importsLocked(asset))
         .flatMap(({ id, asset }) => [id, livePhotos.get(asset.id)].filter((lock) => lock !== undefined))
         .map(String)
         .sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)))

@@ -217,9 +217,8 @@
 </script>
 
 <KitPage>
-  {#if said}
-    <Said message={said} onDismiss={() => (said = '')} />
-  {/if}
+  <!-- Always in the page, so a message that appears in it is announced (FL-1248). -->
+  <Said message={said} onDismiss={() => (said = '')} />
 
   <Hero
     tone={heroTone}

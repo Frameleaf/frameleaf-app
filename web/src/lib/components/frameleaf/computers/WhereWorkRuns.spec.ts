@@ -17,6 +17,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import en from '../../../../../../i18n/en.json';
 import WhereWorkRuns from './WhereWorkRuns.svelte';
+import { WorkRunsDraft } from './work-runs-draft.svelte';
 
 const draft = vi.hoisted(() => ({
   store: undefined as unknown,
@@ -184,6 +185,43 @@ describe('Where work runs (FL-364)', () => {
     );
     expect(await screen.findByText(/^Saved\. New work follows these choices\./)).toBeInTheDocument();
     expect(checked(await choices('Descriptions & tags'))).toBe('Office PC');
+  });
+
+  it('keeps unsaved choices in the page’s draft when the table is drawn again (FL-1252)', async () => {
+    sdkMock.listMlDestinations.mockResolvedValue([server, office] as never);
+    sdkMock.getWorkerInventory.mockResolvedValue({
+      entries: [entry({}), entry({ id: 'office', name: 'Office PC', kind: 'lan', readiness: 'model-ready' })],
+      machineLearningEnabled: true,
+    } as never);
+    const kept = new WorkRunsDraft();
+    const first = render(WhereWorkRuns, { part: 'everyday', draft: kept });
+    await fireEvent.click(within(await choices('Descriptions & tags')).getByRole('radio', { name: 'Office PC' }));
+    expect(screen.getByText('1 change not saved yet')).toBeInTheDocument();
+    first.unmount();
+
+    render(WhereWorkRuns, { part: 'everyday', draft: kept });
+    expect(checked(await choices('Descriptions & tags'))).toBe('Office PC');
+    expect(screen.getByText('1 change not saved yet')).toBeInTheDocument();
+  });
+
+  it('drops a kept pick for a computer that is no longer there', async () => {
+    const kept = new WorkRunsDraft();
+    kept.picked = { descriptions: 'gone-pc' } as WorkRunsDraft['picked'];
+    render(WhereWorkRuns, { part: 'everyday', draft: kept });
+
+    expect(checked(await choices('Descriptions & tags'))).toBe('This server');
+    expect(screen.queryByText('1 change not saved yet')).not.toBeInTheDocument();
+  });
+
+  it('opens the page’s own Add a computer instead of following the link to it (FL-1245)', async () => {
+    const onAdd = vi.fn();
+    render(WhereWorkRuns, { part: 'everyday', onAdd });
+
+    await choices('Faces & identity');
+    const link = within(row('Enhance & upscale')).getByRole('link', { name: 'Add a computer' });
+    const followed = await fireEvent.click(link);
+    expect(onAdd).toHaveBeenCalledTimes(1);
+    expect(followed).toBe(false);
   });
 
   it('shows the cloud record as Ask me each time and saves a change to both records together', async () => {

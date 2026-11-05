@@ -285,6 +285,17 @@
     viewAbort?.abort();
     fetched = undefined;
     query = filters.query;
+    // FL-1247: the "In view" rows were read under the old filters. Dropped now, not once the new points
+    // arrive (seconds on a large library, or never if the request fails), so no old page is added to
+    // them and the viewer never pairs the new filters with an old offset.
+    untrack(() => {
+      listAbort?.abort();
+      listAbort = undefined;
+      listArea = undefined;
+      listOffset = 0;
+      listShown = LIST_PAGE;
+      inView = [];
+    });
     const controller = new AbortController();
     abort = controller;
     const signal = controller.signal;

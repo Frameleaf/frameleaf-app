@@ -228,6 +228,21 @@ describe(MapService.name, () => {
       expect(result.markers.map(({ id }) => id).toSorted()).toEqual([assets[0].id, assets[1].id].toSorted());
     });
 
+    it('keeps longitude 180 in its own row, apart from the next row’s first cell (FL-1246)', async () => {
+      const { ctx } = setup();
+      const { user } = await ctx.newUser();
+      // zoom 0 has 16 cells a side: (0, 180) is row 8's last column, (-30, -179.9) row 9's first
+      const assets = await located(ctx, user.id, [
+        [0, 180],
+        [-30, -179.9],
+      ]);
+
+      const result = await ctx.get(MapRepository).getMapClusters(user.id, [user.id], [], 0, 0);
+
+      expect(result.clusters).toEqual([]);
+      expect(result.markers.map(({ id }) => id).toSorted()).toEqual(assets.map(({ id }) => id).toSorted());
+    });
+
     it('sends a small library whole, and the In view rows a page at a time, newest first', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();

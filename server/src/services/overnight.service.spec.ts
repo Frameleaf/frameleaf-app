@@ -72,6 +72,7 @@ const setup = (
     },
     database: {
       tryLock: vi.fn().mockResolvedValue(true),
+      vacuum: vi.fn().mockResolvedValue(undefined),
       withLock: vi.fn((_lock: DatabaseLock, work: () => Promise<unknown>) => {
         const pending = lockTail.then(work);
         lockTail = pending.then(() => {}).catch(() => {});
@@ -242,11 +243,15 @@ describe(OvernightService.name, () => {
     await sut.move();
     expect(stored.state?.run?.step).toBe('cleanup');
     expect(mocks.job.queue).not.toHaveBeenCalledWith({ name: JobName.LibraryScanQueueAll });
+    // FL-1235: the database is optimized only after the tidy-up jobs have deleted their rows
+    expect(mocks.database.vacuum).not.toHaveBeenCalled();
 
     mocks.job.getJobCounts.mockImplementation(() => Promise.resolve(counts()));
     await sut.move();
     expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.LibraryScanQueueAll });
     expect(stored.state?.nights[0].results.cleanup).toBe('done');
+    expect(mocks.database.vacuum).toHaveBeenCalledOnce();
+    expect(mocks.database.vacuum).toHaveBeenCalledWith({ analyze: true });
   });
 
   it('leaves out a step that is not set up', async () => {

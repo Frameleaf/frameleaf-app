@@ -2,6 +2,7 @@ import '@testing-library/jest-dom/vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import en from '$i18n/en.json';
+import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { siteRequest } from '$lib/frameleaf/photography/workflow-api';
 import PhotographyPublishing from './PhotographyPublishing.svelte';
 
@@ -19,6 +20,7 @@ const stored = (patch = {}) =>
 
 beforeAll(() => addMessages('dev', en));
 beforeEach(() => {
+  sdkMock.photographySiteDomain.mockReturnValue(new Promise(() => {}));
   vi.mocked(siteRequest).mockReset();
   vi.mocked(siteRequest).mockImplementation((method = 'GET', body?: unknown) =>
     Promise.resolve(method === 'PUT' ? stored((body as { site: object }).site) : stored()),
@@ -51,4 +53,46 @@ it('shows Cloud Pro at US$29.99 a month and leads to the plan', async () => {
     'href',
     expect.stringContaining('cloud-plan'),
   );
+});
+
+it('stops publishing the stored site even with a half-typed or unconfirmed domain in the field', async () => {
+  vi.mocked(siteRequest).mockImplementation((method = 'GET', body?: unknown) =>
+    Promise.resolve(
+      method === 'PUT'
+        ? stored((body as { site: object }).site)
+        : stored({ enabled: true, domain: 'photos.cedarandlight.ca' }),
+    ),
+  );
+  render(PhotographyPublishing);
+  expect(await screen.findByText('Published')).toBeInTheDocument();
+  const field = screen.getByRole('textbox', { name: /Domain/ });
+
+  await fireEvent.input(field, { target: { value: 'photos.' } });
+  const stop = screen.getByRole('button', { name: 'Stop publishing' });
+  expect(stop).toBeEnabled();
+  await fireEvent.click(stop);
+  await waitFor(() =>
+    expect(siteRequest).toHaveBeenCalledWith('PUT', {
+      expectedRevision: 's1',
+      site: expect.objectContaining({ enabled: false, domain: 'photos.cedarandlight.ca' }),
+    }),
+  );
+  expect(await screen.findByText('Not published')).toBeInTheDocument();
+});
+
+it('stopping does not save a new domain typed but not confirmed', async () => {
+  vi.mocked(siteRequest).mockImplementation((method = 'GET', body?: unknown) =>
+    Promise.resolve(
+      method === 'PUT'
+        ? stored((body as { site: object }).site)
+        : stored({ enabled: true, domain: 'photos.cedarandlight.ca' }),
+    ),
+  );
+  render(PhotographyPublishing);
+  expect(await screen.findByText('Published')).toBeInTheDocument();
+  await fireEvent.input(screen.getByRole('textbox', { name: /Domain/ }), { target: { value: 'other.example.com' } });
+  await fireEvent.click(screen.getByRole('button', { name: 'Stop publishing' }));
+  await waitFor(() => expect(siteRequest).toHaveBeenCalledWith('PUT', expect.anything()));
+  const [, body] = vi.mocked(siteRequest).mock.calls.find(([method]) => method === 'PUT')!;
+  expect((body as { site: { domain: string } }).site.domain).toBe('photos.cedarandlight.ca');
 });

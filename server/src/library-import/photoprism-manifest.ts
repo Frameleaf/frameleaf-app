@@ -188,6 +188,8 @@ export function assemblePhotoprismManifest(records: Iterable<PhotoprismInventory
             ? 'archive'
             : 'timeline',
       ...(!photo.state.removed && photo.state.private && photo.state.archived ? { archived: true as const } : {}),
+      // FL-1230: a private photo in Trash stays private: trashed and Locked
+      ...(photo.state.removed && photo.state.private ? { locked: true as const } : {}),
       metadata: { ...metadata, ...(photo.state.removed ? { deletedAt: photo.stateChangedAt } : {}) },
     };
   });

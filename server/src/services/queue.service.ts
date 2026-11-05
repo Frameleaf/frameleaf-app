@@ -425,9 +425,15 @@ export class QueueService extends BaseService {
     if (name === QueueName.NsfwDetection && asset.type !== AssetType.Image) {
       throw new BadRequestException('Locked content is reread for photos only');
     }
-    await this.jobRepository.queue({ name: jobName, data: { id: assetId } } as JobItem);
-    const jobId = await this.jobRepository.findWaitingJob(name, jobName, assetId);
-    if (!jobId || !(await this.jobRepository.startNow(name, jobId))) {
+    // FL-1249: the item's job already running counts as started, and one already waiting is started now;
+    // queueing another while one runs would run the item twice at once (these jobs have no dedupe key).
+    // ponytail: check-then-queue, so two clicks at the same instant can still queue two; a dedupe key if that matters
+    let job = await this.jobRepository.findOpenJob(name, jobName, assetId);
+    if (!job) {
+      await this.jobRepository.queue({ name: jobName, data: { id: assetId } } as JobItem);
+      job = await this.jobRepository.findOpenJob(name, jobName, assetId);
+    }
+    if (!job || (!job.active && !(await this.jobRepository.startNow(name, job.id)))) {
       throw new BadRequestException('This item’s job could not be started now');
     }
   }

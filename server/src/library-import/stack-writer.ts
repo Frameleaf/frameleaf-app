@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { ImportDatabase } from 'src/immich-import/types.js';
 import { bindDestinationImportPlan } from 'src/library-import/destination-plan.js';
-import { ImportManifest, parseImportManifest, storedVisibility } from 'src/library-import/manifest.js';
+import { ImportManifest, importsLocked, parseImportManifest, storedVisibility } from 'src/library-import/manifest.js';
 import { LibraryImportBinding, LibraryImportJournal, LibraryImportRefused } from 'src/library-import/state.js';
 
 type Stack = Extract<ImportManifest, { version: 4 }>['stacks'][number];
@@ -57,7 +57,7 @@ export class CanonicalStackWriter {
             new Set(assets.map((asset) => asset.id)).size !== assets.length ||
             assets.some((asset) => {
               const source = this.assets.get(String(asset.source_id))!;
-              const locked = source.visibility === 'locked';
+              const locked = importsLocked(source);
               return (
                 asset.ownerId !== ownerId ||
                 asset.visibility !== storedVisibility(source) ||

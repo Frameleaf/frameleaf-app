@@ -528,11 +528,14 @@ export class MapRepository {
     options: MapMarkerPageOptions = {},
   ) {
     const located = () => withinArea(this.libraryLocated(authUserId, ownerIds, albumIds, options), options.area);
-    const cells = 2 ** zoom * (512 / MAP_CELL_PX);
+    // FL-1246: above zoom 22 the cell key would pass 2^53 and neighbouring cells would merge; the API still
+    // accepts up to 24 (lowering it would break clients), and cells at 22 are already far smaller than a bubble.
+    const cells = 2 ** Math.min(zoom, 22) * (512 / MAP_CELL_PX);
     // Mercator rows from the latitude clamped to the map's own ±85°. One key per cell, so Postgres
-    // estimates few groups and hashes them rather than sorting every item.
+    // estimates few groups and hashes them rather than sorting every item. Longitude 180 belongs to
+    // the last column, not to column 0 of the next row.
     const latitude = sql<number>`greatest(-85, least(85, asset_exif.latitude))`;
-    const cell = sql<number>`floor((1 - ln(tan(radians(${latitude})) + 1 / cos(radians(${latitude}))) / pi()) / 2 * ${cells}) * ${cells} + floor((asset_exif.longitude + 180) / 360 * ${cells})`;
+    const cell = sql<number>`floor((1 - ln(tan(radians(${latitude})) + 1 / cos(radians(${latitude}))) / pi()) / 2 * ${cells}) * ${cells} + least(${cells - 1}, floor((asset_exif.longitude + 180) / 360 * ${cells}))`;
     const grouped = await this.db
       .selectFrom(
         located()

@@ -345,6 +345,16 @@ describe('MlDestinationsPanel (FL-110)', () => {
     expect(within(dialog).queryByLabelText('Text in photos')).not.toBeInTheDocument();
   });
 
+  it('opens connect-by-address only for a request raised while it is shown, not one from before (FL-1250)', async () => {
+    const { rerender } = render(MlDestinationsPanel, { destinations: [destination(), cloud], routes, addRequest: 1 });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByRole('dialog', { name: 'Add destination' })).not.toBeInTheDocument();
+
+    await rerender({ addRequest: 2 });
+    expect(await screen.findByRole('dialog', { name: 'Add destination' })).toBeInTheDocument();
+  });
+
   it('closes restoration in the form once library work is ticked (FL-72)', async () => {
     render(MlDestinationsPanel, { destinations: [destination(), cloud], routes });
 
