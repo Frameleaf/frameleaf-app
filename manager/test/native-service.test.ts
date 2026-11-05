@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import {
+  mkdir,
   mkdtemp,
   rm,
   writeFile,
@@ -218,6 +219,21 @@ test('native bootstrap is bounded, complete, strict and keeps credentials out of
     const hanging = new Readable({ read() {} });
     await assert.rejects(readNativeBootstrap(hanging, 10));
     assert.equal(hanging.destroyed, true);
+  });
+});
+test('native bootstrap accepts the Desktop Windows restic path spelling', { skip: process.platform !== 'win32' }, async () => {
+  await fixture(async ({ bootstrap }) => {
+    const payload = join(bootstrap.installation.candidate, 'payload');
+    const executable = join(payload, 'backup', 'restic.exe');
+    await mkdir(join(payload, 'backup'), { recursive: true });
+    await writeFile(executable, 'synthetic backup engine');
+    const backupEngine = { ...bootstrap.backupEngine, executable: payload + '\\backup/restic.exe' };
+    const parsed = await read({ ...bootstrap, backupEngine });
+    assert.equal(parsed.backupEngine.executable, executable);
+    await assert.rejects(read({
+      ...bootstrap,
+      backupEngine: { ...backupEngine, executable: payload + '/backup/restic.exe' },
+    }), /native_bootstrap_invalid/);
   });
 });
 test('native bootstrap binds the engine bytes, physical path and installation fingerprint', async () => {
