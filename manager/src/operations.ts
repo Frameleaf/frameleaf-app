@@ -1380,12 +1380,14 @@ export class Operations {
     if (!current || history.some((o) => o.state === 'running' || o.state === 'awaiting-review')) return null;
     const lastUpdate = history.find((o) => o.kind === 'update');
     if (lastUpdate && lastUpdate.state !== 'complete') return null;
-    const [next] = (await this.releases.available())
-      .map(({ tag }) => tag)
-      .filter((tag) => isNewerRelease(tag, current.release))
-      .sort(compareReleases);
+    const tags = (await this.releases.available()).map(({ tag }) => tag);
+    // available() is one page: unless it reaches back to the running release, the next step may be missing from it.
+    if (!tags.some((tag) => !isNewerRelease(tag, current.release))) return null;
+    const [next] = tags.filter((tag) => isNewerRelease(tag, current.release)).sort(compareReleases);
     if (!next) return null;
     const { id } = await this.reviewUpdate(next);
+    // The administrator may have turned automatic updates off while the release was being reviewed.
+    if (this.store.get<boolean>('auto-update') === false) return null;
     return this.update(id, randomUUID());
   }
   /**

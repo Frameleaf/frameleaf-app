@@ -17,12 +17,19 @@ test('automatic updates: on by default, one release step at a time, off or after
     (operations as any).update = (id: string) => ({ id });
 
     assert.equal(await operations.autoUpdate(), null, 'no installation');
+    store.set('installation', { release: 'frameleaf-v1.0.0' });
+    assert.equal(await operations.autoUpdate(), null, 'list does not reach the running release');
+    assert.deepEqual(reviewed, []);
     store.set('installation', { release: 'frameleaf-v1.1.0' });
     assert.deepEqual(await operations.autoUpdate(), { id: 'frameleaf-v1.2.0' });
     assert.deepEqual(reviewed, ['frameleaf-v1.2.0']);
 
     store.set('auto-update', false);
     assert.equal(await operations.autoUpdate(), null, 'turned off');
+    store.set('auto-update', true);
+
+    (operations as any).reviewUpdate = async (tag: string) => (store.set('auto-update', false), { id: tag });
+    assert.equal(await operations.autoUpdate(), null, 'turned off during the review');
     store.set('auto-update', true);
 
     const failed = store.start('update', 'failed', {}).operation;
