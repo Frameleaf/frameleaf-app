@@ -2,7 +2,6 @@ import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nes
 import { Observable } from 'rxjs';
 import type { Request } from 'express';
 import { serverVersion } from 'src/constants.js';
-import { SystemMetadataKey } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 
@@ -30,7 +29,7 @@ export class ServedMarkerInterceptor implements NestInterceptor {
       if (path !== '/api/server/ping' && !request.headers['x-frameleaf-manager']) {
         this.written = true;
         void this.metadata
-          .set(SystemMetadataKey.FrameleafServed, {
+          .setServed({
             version: serverVersion.toString(),
             servedAt: new Date().toISOString(),
           })

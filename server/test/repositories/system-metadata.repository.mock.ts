@@ -10,6 +10,7 @@ export const newSystemMetadataRepositoryMock = (): Mocked<RepositoryInterface<Sy
     getEffectiveConfigEpoch: vitest.fn().mockResolvedValue(null),
     get: vitest.fn() as any,
     set: vitest.fn(),
+    setServed: vitest.fn(),
     startIntegrityRun: vitest.fn(),
     updateIntegrityRun: vitest.fn(),
     completeIntegrityRun: vitest.fn(),

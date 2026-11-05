@@ -3,7 +3,6 @@ import type { ExecutionContext } from '@nestjs/common';
 import type { LoggingRepository } from 'src/repositories/logging.repository.js';
 import type { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { serverVersion } from 'src/constants.js';
-import { SystemMetadataKey } from 'src/enum.js';
 import { ServedMarkerInterceptor } from 'src/middleware/served-marker.interceptor.js';
 
 const context = (originalUrl: string, headers: Record<string, string> = {}) =>
@@ -16,7 +15,7 @@ describe(ServedMarkerInterceptor.name, () => {
   const setup = (set = vi.fn().mockResolvedValue(undefined)) => {
     const logger = { setContext: vi.fn(), error: vi.fn() };
     const sut = new ServedMarkerInterceptor(
-      { set } as unknown as SystemMetadataRepository,
+      { setServed: set } as unknown as SystemMetadataRepository,
       logger as unknown as LoggingRepository,
     );
     return { sut, set, logger, next: { handle: () => of('ok') } };
@@ -31,7 +30,7 @@ describe(ServedMarkerInterceptor.name, () => {
     sut.intercept(context('/api/assets?x=1'), next);
     sut.intercept(context('/api/albums'), next);
     expect(set).toHaveBeenCalledTimes(1);
-    expect(set).toHaveBeenCalledWith(SystemMetadataKey.FrameleafServed, {
+    expect(set).toHaveBeenCalledWith({
       version: serverVersion.toString(),
       servedAt: expect.any(String),
     });

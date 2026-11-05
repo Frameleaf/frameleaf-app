@@ -585,11 +585,6 @@ export enum SystemMetadataKey {
    */
   FrameleafBoot = 'frameleaf-boot',
   /**
-   * FL-1210: the release that served the latest real API request first after a boot, and when.
-   * Frameleaf Manager reads it to tell whether a failed update may have taken uploads before rolling back.
-   */
-  FrameleafServed = 'frameleaf-served',
-  /**
    * FL-185: Frameleaf Cloud refused ML-audience tokens because it suspects a copy of this server
    * (`clone_suspected`). While it is set no ML token is requested; a check-in clears it.
    */
