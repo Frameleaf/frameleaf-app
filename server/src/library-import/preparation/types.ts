@@ -43,7 +43,9 @@ export type OpenedPreparationSource = {
   testedVersion: string;
   owners(): Promise<PreparationOwner[]>;
   files(): Promise<PreparationFile[]>;
-  manifest(files: ObservedFile[]): Promise<{ manifest: ImportManifest; archive: Iterable<unknown> | AsyncIterable<unknown> }>;
+  manifest(
+    files: ObservedFile[],
+  ): Promise<{ manifest: ImportManifest; archive: Iterable<unknown> | AsyncIterable<unknown> }>;
   close(): Promise<void> | void;
 };
 
@@ -69,4 +71,4 @@ export const unrestrictedLogin: SourceLogin = {
 
 /** Readers refuse unknown versions with `<SOURCE>_VERSION_UNQUALIFIED` / `_SCHEMA_UNQUALIFIED`. */
 export const isQualificationRefusal = (error: unknown) =>
-  error instanceof Error && /_(VERSION|SCHEMA|MIGRATIONS)_UNQUALIFIED\b/u.test(error.message);
+  error instanceof Error && /_(VERSION|SCHEMA|MIGRATIONS|APPLICATION_STATE)_UNQUALIFIED\b/u.test(error.message);

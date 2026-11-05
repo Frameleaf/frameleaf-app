@@ -157,7 +157,11 @@ export async function preparePreparationSource(
       if (reasons.length > 0 && !choice.acknowledgeRestrictions)
         throw new LibraryImportRefused('IMPORT_OWNER_RESTRICTIONS_NOT_ACKNOWLEDGED');
       const credential = sourceOwner
-        ? await sourceOwner.password({ operationId: input.operationId, sourceUserId: user.id, destinationUserId: choice.destinationId })
+        ? await sourceOwner.password({
+            operationId: input.operationId,
+            sourceUserId: user.id,
+            destinationUserId: choice.destinationId,
+          })
         : undefined;
       const disposition =
         reasons.length > 0

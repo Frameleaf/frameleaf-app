@@ -36,7 +36,7 @@ class NextcloudReadError extends Error {
 }
 
 /** Reads a frozen snapshot; storage resolution, source identity, global permissions and original bytes require separate evidence. */
-export const openNextcloudSnapshot = (path: string, version: string) => {
+export const openNextcloudSnapshot = (path: string, version: string, options: { bestEffort?: boolean } = {}) => {
   if (version !== fixture.source.version) throw new NextcloudReadError('NEXTCLOUD_VERSION_UNQUALIFIED');
   let database: DatabaseSync;
   try {
@@ -46,6 +46,12 @@ export const openNextcloudSnapshot = (path: string, version: string) => {
   }
   try {
     database.exec('PRAGMA query_only=ON; PRAGMA trusted_schema=OFF; BEGIN');
+    // Best effort (owner decision FL-1149): an untested schema or app state is read through the same projections.
+    if (options.bestEffort) {
+      if (database.prepare('PRAGMA foreign_key_check').get())
+        throw new NextcloudReadError('NEXTCLOUD_RELATIONSHIPS_INVALID');
+      return snapshotReader(database, version);
+    }
     if (sqliteSchemaFingerprint(database) !== fixture.schemaSha256)
       throw new NextcloudReadError('NEXTCLOUD_SCHEMA_UNQUALIFIED');
     assertSqliteTextSafe(
@@ -71,6 +77,10 @@ export const openNextcloudSnapshot = (path: string, version: string) => {
     if (error instanceof NextcloudReadError) throw error;
     throw new NextcloudReadError('NEXTCLOUD_SNAPSHOT_UNAVAILABLE');
   }
+  return snapshotReader(database, version);
+};
+
+const snapshotReader = (database: DatabaseSync, version: string) => {
   return {
     version,
     schemaSha256: fixture.schemaSha256,

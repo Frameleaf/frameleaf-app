@@ -17,44 +17,50 @@ const inventory = (revision: string) => ({
 export const adapter: PreparationAdapter = {
   kind: 'lychee',
   databases: ['sqlite'],
-  async open(input) {
+  open(input) {
     const { snapshot, tested } = openSnapshotBestEffort(
       (bestEffort) => openLycheeSnapshot(input.snapshotPath!, fixture.source.version, { bestEffort }),
       input.source.schemaSha256 === fixture.schemaSha256,
     );
     const rows = (table: Parameters<typeof snapshot.rows>[0]) => [...snapshot.rows(table)].flat();
-    return {
+    return Promise.resolve({
       tested,
       testedVersion: fixture.source.version,
-      async owners() {
-        return rows('users').map((user) => ({
-          sourceId: String(user.id),
-          name: String(user.display_name || user.username || user.id),
-          email: typeof user.email === 'string' && user.email ? user.email : null,
-          login: { ...unrestrictedLogin, externalIdentityRequired: user.is_ldap === 1n },
-          password: (context) => snapshot.password(context),
-        }));
-      },
-      async files() {
-        const variants = Map.groupBy(rows('size_variants'), (variant) => String(variant.photo_id));
-        return rows('photos').flatMap((photo) =>
-          resolveLycheeOriginals(photo, variants.get(String(photo.id)) ?? []).map((file) => ({
-            id: file.role === 'original' ? `variant:${file.variantId}` : `companion:${file.photoId}`,
-            path: file.path,
-            role: file.role,
+      owners() {
+        return Promise.resolve(
+          rows('users').map((user) => ({
+            sourceId: String(user.id),
+            name: String(user.display_name || user.username || user.id),
+            email: typeof user.email === 'string' && user.email ? user.email : null,
+            login: { ...unrestrictedLogin, externalIdentityRequired: user.is_ldap === 1n },
+            password: (context) => snapshot.password(context),
           })),
         );
       },
-      async manifest(files) {
-        return readLycheeManifest(snapshot, {
-          source: qualifiedSource(input.source, fixture),
-          inventory: inventory(input.source.revision),
-          files,
-          // ponytail: tag/person smart albums stay archived (reported loss) until the Manager can materialize them.
-          materializedAlbums: {},
-        });
+      files() {
+        const variants = Map.groupBy(rows('size_variants'), (variant) => String(variant.photo_id));
+        return Promise.resolve(
+          rows('photos').flatMap((photo) =>
+            resolveLycheeOriginals(photo, variants.get(String(photo.id)) ?? []).map((file) => ({
+              id: file.role === 'original' ? `variant:${file.variantId}` : `companion:${file.photoId}`,
+              path: file.path,
+              role: file.role,
+            })),
+          ),
+        );
+      },
+      manifest(files) {
+        return Promise.resolve(
+          readLycheeManifest(snapshot, {
+            source: qualifiedSource(input.source, fixture),
+            inventory: inventory(input.source.revision),
+            files,
+            // ponytail: tag/person smart albums stay archived (reported loss) until the Manager can materialize them.
+            materializedAlbums: {},
+          }),
+        );
       },
       close: () => snapshot.close(),
-    };
+    });
   },
 };
