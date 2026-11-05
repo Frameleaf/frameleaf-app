@@ -342,10 +342,18 @@ export const libraryShortcuts: readonly LibraryShortcut[] = [
   },
   // The sidebar moves the focused album itself (approved design, 2026-11-04).
   {
-    id: 'album-move',
+    id: 'album-move-up',
     handledElsewhere: true,
-    keys: ['Alt', '↑', '↓'],
-    label: 'frameleaf_shortcut_album_move',
+    keys: ['Alt', '↑'],
+    label: 'frameleaf_shortcut_album_move_up',
+    group: 'albums',
+    surfaces: TIMELINE,
+  },
+  {
+    id: 'album-move-down',
+    handledElsewhere: true,
+    keys: ['Alt', '↓'],
+    label: 'frameleaf_shortcut_album_move_down',
     group: 'albums',
     surfaces: TIMELINE,
   },

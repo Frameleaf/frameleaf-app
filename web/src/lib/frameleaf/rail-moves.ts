@@ -41,6 +41,10 @@ export function planRailMove(
   if (dragged.kind === AlbumKind.Space || target.kind === AlbumKind.Space || !isOwner(dragged, userId)) {
     return null;
   }
+  // A smart album takes no albums, as on the Albums page.
+  if (where === 'into' && target.isSmart) {
+    return null;
+  }
   // Never into itself or anything inside it.
   for (let at: AlbumResponseDto | undefined = target; at; at = at.parentId ? byId.get(at.parentId) : undefined) {
     if (at.id === dragged.id) {
@@ -71,14 +75,16 @@ export function planRailMove(
   const next = order[index + 1];
   const low = previous?.sortOrder ?? null;
   const high = next?.sortOrder ?? null;
-  if (!previous || low !== null) {
+  const between = low !== null && high !== null ? (low + high) / 2 : null;
+  // Repeated moves between the same two albums eventually leave no number between them.
+  const exhausted = low !== null && high !== null && between !== null && !(low < between && between < high);
+  if ((!previous || low !== null) && !exhausted) {
     // Nulls sort last, so before an unplaced album any number after `low` will do.
-    const sortOrder =
-      low !== null && high !== null ? (low + high) / 2 : low === null ? (high === null ? GAP : high - GAP) : low + GAP;
+    const sortOrder = between ?? (low === null ? (high === null ? GAP : high - GAP) : low + GAP);
     return [{ id: dragged.id, sortOrder, ...moved }];
   }
-  // The albums above it have no place yet: number them all, which only their owner may do.
-  const placed = order.slice(0, index + 1);
+  // The albums above it have no place yet, or no room is left: number them, which only their owner may do.
+  const placed = exhausted ? order : order.slice(0, index + 1);
   if (placed.some((album) => album.id !== dragged.id && !isOwner(album, userId))) {
     return null;
   }

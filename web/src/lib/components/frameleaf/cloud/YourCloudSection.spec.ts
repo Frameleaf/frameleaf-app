@@ -134,6 +134,7 @@ describe('YourCloudSection (FL-544: Plan, Licence and Support Frameleaf as one p
       enabled: false,
       wallet: { availableUsd: 0, topUpUrl: null },
     } as never);
+    sdkMock.getRemoteAccess.mockResolvedValue({ frameleafNameAddress: null } as never);
   });
 
   it('offers Frameleaf Cloud as one purchase to a server that is not linked, and opens the sheet', async () => {

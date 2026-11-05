@@ -412,15 +412,21 @@ describe(FrameleafRemoteAccessService.name, () => {
         frameleafNameRouted: false,
       });
       const certificate = edgeState().certificate!;
-      metadata.set(
-        SystemMetadataKey.FrameleafRemoteAccess,
-        edgeState({ nameCertificate: { ...certificate, hosts: ['cedar-and-light.frameleaf.net'] } }),
-      );
+      const edgeWithName = (connected: boolean) =>
+        edgeState({
+          relay: { connected },
+          nameCertificate: { ...certificate, hosts: ['cedar-and-light.frameleaf.net'] },
+        });
+      metadata.set(SystemMetadataKey.SystemConfig, { frameleafCloud: { remoteAccess: { enabled: true } } });
+      metadata.set(SystemMetadataKey.FrameleafRemoteAccess, edgeWithName(true));
       await expect(sut.getStatus()).resolves.toMatchObject({
         frameleafName: 'cedar-and-light',
         frameleafNameAddress: 'cedar-and-light.frameleaf.net',
         frameleafNameRouted: true,
       });
+      // the certificate alone doesn't make it reachable: the relay has to be connected
+      metadata.set(SystemMetadataKey.FrameleafRemoteAccess, edgeWithName(false));
+      await expect(sut.getStatus()).resolves.toMatchObject({ frameleafNameRouted: false, frameleafNameAddress: null });
     });
 
     it('checks a name as it is typed without claiming it', async () => {

@@ -53,6 +53,22 @@ describe('planRailMove', () => {
     expect(planRailMove([...records, theirs], 'theirs', 'hikes', 'before', ME)).toBeNull();
   });
 
+  it('refuses to nest an album into a smart album, by drop or with ⌥→, as the Albums page does', () => {
+    const smart = [album('favourites', null, 1024, { isSmart: true }), album('hikes', null, 2048)];
+    expect(planRailMove(smart, 'hikes', 'favourites', 'into', ME)).toBeNull();
+    expect(planKeyMove(smart, 'hikes', 'ArrowRight', ME)).toBeNull();
+    expect(planRailMove(smart, 'hikes', 'favourites', 'before', ME)).not.toBeNull();
+  });
+
+  it('numbers the siblings again when no number is left between two of them', () => {
+    const tight = [album('x', null, 1), album('y', null, 1 + 2 ** -52), album('z', null, 3)];
+    expect(planRailMove(tight, 'z', 'y', 'before', ME)).toEqual([
+      { id: 'x', sortOrder: 1024 },
+      { id: 'z', sortOrder: 2048 },
+      { id: 'y', sortOrder: 3072 },
+    ]);
+  });
+
   it('does nothing for a drop where the album already is', () => {
     expect(planRailMove(records, 'hikes', 'summer', 'before', ME)).toBeNull();
     expect(planKeyMove(records, 'trips', 'ArrowUp', ME)).toBeNull();

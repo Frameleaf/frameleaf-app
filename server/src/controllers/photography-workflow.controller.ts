@@ -59,6 +59,7 @@ import { ApiTag } from 'src/enum.js';
 import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
 import { RATE_LIMITS, RateLimited, RemoteMediaCeiling } from 'src/middleware/rate-limit.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { accessCloses } from 'src/services/photography-reminder.service.js';
 import { PhotographySiteService } from 'src/services/photography-site.service.js';
 import { PhotographyWorkflowService } from 'src/services/photography-workflow.service.js';
 import { asStreamableFile, sendFile } from 'src/utils/file.js';
@@ -309,7 +310,7 @@ export class PhotographyWorkflowController {
       recipientName: dto.name,
       galleryTitle: result.workflow.config.title,
       welcomeMessage: result.workflow.config.welcomeMessage,
-      expiresAt: recipient?.expiresAt ?? result.workflow.config.expiresAt,
+      expiresAt: accessCloses(recipient?.expiresAt ?? null, result.workflow.config.expiresAt),
     });
     return { ...result, invitation: { ...result.invitation, emailed } };
   }

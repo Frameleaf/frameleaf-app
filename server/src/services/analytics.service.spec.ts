@@ -278,6 +278,18 @@ describe(AnalyticsService.name, () => {
       expect(JSON.stringify(result)).not.toMatch(/other (libraries|host files)/i);
     });
 
+    it('does not wait on "What the AI sees" labels that are slow to encode', async () => {
+      vitest.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      Object.assign(sut, { seenLabels: { labels: () => new Promise(() => {}) } });
+      const report = sut.getReport(admin(), { scope: `account:${USER_ID}`, range: AnalyticsRange.Year });
+      await vitest.advanceTimersByTimeAsync(3000);
+      await expect(report).resolves.toMatchObject({ summary: { items: 100 } });
+      expect(analyticsRepository.getInsights).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ seenLabels: undefined }),
+      );
+    });
+
     it('omits processing for an account instead of filling it', async () => {
       const result = await sut.getReport(admin(), { scope: `account:${USER_ID}`, range: AnalyticsRange.Year });
       expect(analyticsRepository.getProcessingByDay).not.toHaveBeenCalled();

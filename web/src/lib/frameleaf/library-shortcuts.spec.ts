@@ -138,7 +138,13 @@ describe('help content', () => {
   it('lists Shift+F10 for the focused photo and, in its own group, for an album in the sidebar', () => {
     const groups = libraryShortcutGroups(translate, { surface: 'timeline', mac: true });
     expect(groups.actions.find((row) => row.id === 'photo-menu')?.key).toEqual(['⇧', 'F10']);
-    expect(groups.albums.map((row) => row.id)).toEqual(['album-menu', 'album-move', 'album-nest', 'album-unnest']);
+    expect(groups.albums.map((row) => row.id)).toEqual([
+      'album-menu',
+      'album-move-up',
+      'album-move-down',
+      'album-nest',
+      'album-unnest',
+    ]);
     // listed only: the tiles and the sidebar handle it, so the map never matches it
     expect(
       matchLibraryShortcut({ key: 'F10', shiftKey: true, metaKey: false, ctrlKey: false, altKey: false }),

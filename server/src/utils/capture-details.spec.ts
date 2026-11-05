@@ -54,6 +54,17 @@ describe(captureDetails.name, () => {
     expect(details.software).toBeNull();
   });
 
+  it('keeps blank numeric tags as missing measurements, not zero', () => {
+    const details = captureDetails({
+      GPSAltitude: '',
+      ShutterCount: [null],
+      FocusDistance: '  ',
+      GPSImgDirection: [''],
+    });
+    expect(details).toMatchObject({ altitude: null, shutterCount: null, focusDistance: null, imageDirection: null });
+    expect(captureDetails({ ShutterCount: ['1200'] }).shutterCount).toBe(1200);
+  });
+
   it('counts Fujifilm images as shutter actuations, and no other maker’s', () => {
     expect(captureDetails({ Make: 'FUJIFILM', ImageCount: 1200 }).shutterCount).toBe(1200);
     expect(captureDetails({ Make: 'Apple', ImageCount: 1200 }).shutterCount).toBeNull();

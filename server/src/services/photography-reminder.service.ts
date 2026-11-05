@@ -32,6 +32,14 @@ export type DueReminder = {
 
 const days = (from: number, to: number) => Math.floor((to - from) / DAY);
 
+/** When a client's access ends: the earlier of their own link's expiry and the gallery's, as access is checked. */
+export const accessCloses = (recipientExpiresAt: string | null, galleryExpiresAt: string | null) =>
+  !recipientExpiresAt || !galleryExpiresAt
+    ? (recipientExpiresAt ?? galleryExpiresAt)
+    : Date.parse(recipientExpiresAt) <= Date.parse(galleryExpiresAt)
+      ? recipientExpiresAt
+      : galleryExpiresAt;
+
 /**
  * The reminders a gallery's clients are due today: a selection reminder two days before the selection
  * deadline to anyone who has not sent a selection, a payment reminder three days after an unpaid order,
@@ -44,7 +52,7 @@ export function dueReminders(value: PhotographyWorkflow, now: Date): DueReminder
   const today = now.getTime();
   const due: DueReminder[] = [];
   for (const recipient of value.recipients) {
-    const closes = recipient.expiresAt ?? expiresAt;
+    const closes = accessCloses(recipient.expiresAt, expiresAt);
     if (!recipient.email || recipient.revoked || (closes && Date.parse(closes) <= today)) {
       continue;
     }

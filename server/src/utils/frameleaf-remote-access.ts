@@ -317,14 +317,17 @@ export const remoteEndpoints = (document: { api: string }) => {
 };
 
 /** FL-1197: this server's name on frameleaf.net (contract `remote/names.ts` `ServerNameState`). */
+// a name Frameleaf Cloud answers with becomes a certificate name and a redirect target, so it must be a host name
+const nameAddress = z
+  .string()
+  .max(253)
+  .refine((value) => isDnsName(value.toLowerCase()), 'not a DNS name');
 export const serverNameStateSchema = z.object({
   name: z.string().max(63).nullable(),
-  address: z.string().max(253).nullable(),
+  address: nameAddress.nullable(),
   relayAddress: z.string().max(253).nullable(),
   routed: z.boolean(),
-  previous: z
-    .array(z.object({ name: z.string().max(63), address: z.string().max(253), redirectUntil: z.string() }))
-    .max(10),
+  previous: z.array(z.object({ name: z.string().max(63), address: nameAddress, redirectUntil: z.string() })).max(10),
 });
 export type ServerNameState = z.infer<typeof serverNameStateSchema>;
 

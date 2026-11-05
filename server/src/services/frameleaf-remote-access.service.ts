@@ -135,7 +135,11 @@ export class FrameleafRemoteAccessService extends BaseService {
     const directAddress = (current && state?.direct.wan?.verified && state.direct.wan.uri) || null;
     const frameleafAddress = names ? (relayNeedsPlan ? directAddress : `https://${names.names.relay}`) : null;
     const nameState = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafRemoteName);
-    const nameHost = servedNameHost(remoteNameHosts(nameState, link?.instanceId, now).current, state, now);
+    // the name reaches this server only through a connected relay, as remoteAccessPublication publishes it
+    const nameHost =
+      settings.enabled && current && state?.relay.connected
+        ? servedNameHost(remoteNameHosts(nameState, link?.instanceId, now).current, state, now)
+        : null;
 
     return {
       unavailableReason,

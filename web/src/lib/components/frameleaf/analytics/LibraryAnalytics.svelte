@@ -79,6 +79,8 @@
 
   const f = $derived(analyticsFormats($locale, tr));
   const number = (value: number) => new Intl.NumberFormat($locale, { maximumFractionDigits: 2 }).format(value);
+  /** The value `number` shows, for choosing singular or plural wording. */
+  const shownCount = (value: number) => Math.round(value * 100) / 100;
   const day = (value: string) =>
     new Intl.DateTimeFormat($locale, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(
       new Date(`${value.slice(0, 10)}T00:00:00Z`),
@@ -414,7 +416,9 @@
     <section class="card fl-continuous-corners" id="an-activity">
       {@render cardHeading(
         arrivalsPerPeriod
-          ? $t('frameleaf_analytics_arrivals_answer', { values: { count: number(arrivalsPerPeriod), period } })
+          ? $t('frameleaf_analytics_arrivals_answer', {
+              values: { count: shownCount(arrivalsPerPeriod), shown: number(arrivalsPerPeriod), period },
+            })
           : $t('frameleaf_analytics_arrivals_none'),
         $t('frameleaf_analytics_arrivals_caption'),
         undefined,
@@ -438,7 +442,11 @@
         {@render cardHeading(
           report.processing.attempts
             ? $t('frameleaf_analytics_processing_answer', {
-                values: { count: number(perPeriod(report.processing.attempts)), period },
+                values: {
+                  count: shownCount(perPeriod(report.processing.attempts)),
+                  shown: number(perPeriod(report.processing.attempts)),
+                  period,
+                },
               })
             : $t('frameleaf_analytics_processing_none'),
           $t('frameleaf_analytics_processing_caption', {

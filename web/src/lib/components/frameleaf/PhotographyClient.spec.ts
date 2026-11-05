@@ -485,7 +485,7 @@ it('loads both comparison previews together and drops a reply for an earlier com
 it('shows the studio welcome and stops at the selection limit', async () => {
   const limited = structuredClone(view);
   limited.pricing.selectionLimit = 1;
-  limited.pricing.welcomeMessage = 'Take your time, Jamie.';
+  limited.welcomeMessage = 'Take your time, Jamie.';
   limited.photos.push({ ...limited.photos[0], id: 'second', number: 8 });
   vi.mocked(galleryRequest).mockResolvedValue(limited);
   render(PhotographyClient, { galleryId: 'shoot' });

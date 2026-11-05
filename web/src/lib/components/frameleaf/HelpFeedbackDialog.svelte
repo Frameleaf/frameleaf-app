@@ -108,7 +108,8 @@
           icon: mdiGithub,
           title: 'frameleaf_help_source',
           text: 'frameleaf_help_source_text',
-          href: info.thirdPartySourceUrl ?? info.repositoryUrl ?? FRAMELEAF_HELP.source,
+          // an empty address counts as none, so the Frameleaf repository stays offered
+          href: info.thirdPartySourceUrl || info.repositoryUrl || FRAMELEAF_HELP.source,
         },
       ] satisfies Row[]
     ).filter((row) => row.href),

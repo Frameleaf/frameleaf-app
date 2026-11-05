@@ -1,6 +1,6 @@
 import type { PhotographyWorkflow } from 'src/services/photography-workflow.service.js';
 import { JobName } from 'src/enum.js';
-import { PhotographyReminderService, dueReminders } from 'src/services/photography-reminder.service.js';
+import { PhotographyReminderService, accessCloses, dueReminders } from 'src/services/photography-reminder.service.js';
 import * as configUtils from 'src/utils/config.js';
 
 const now = new Date('2026-11-04T10:00:00Z');
@@ -56,6 +56,19 @@ describe('dueReminders', () => {
       },
     );
     expect(dueReminders(value, now).map(({ kind }) => kind)).toEqual(['payment', 'expiry']);
+  });
+
+  it('counts down to the gallery closing when it closes before the client’s own link', () => {
+    const value = workflow(
+      { selectionDeadline: null, expiresAt: '2026-11-07T23:59:59Z' },
+      { recipients: [recipient('jamie', { expiresAt: '2026-12-31T23:59:59Z' })] },
+    );
+    expect(dueReminders(value, now)).toEqual([
+      expect.objectContaining({ kind: 'expiry', date: '2026-11-07T23:59:59Z' }),
+    ]);
+    expect(accessCloses('2026-12-31T23:59:59Z', '2026-11-07T23:59:59Z')).toBe('2026-11-07T23:59:59Z');
+    expect(accessCloses('2026-11-01T00:00:00Z', null)).toBe('2026-11-01T00:00:00Z');
+    expect(accessCloses(null, null)).toBeNull();
   });
 
   it('sends nothing when the reminders are off', () => {

@@ -50,9 +50,18 @@
       return;
     }
     const timer = setTimeout(() => {
+      // an answer for a name no longer typed is dropped, so a slow one can't replace the current one
       checkRemoteName({ remoteNameUpdateDto: { name: typed } })
-        .then((result) => (check = result))
-        .catch(() => (check = null));
+        .then((result) => {
+          if (typed === draft) {
+            check = result;
+          }
+        })
+        .catch(() => {
+          if (typed === draft) {
+            check = null;
+          }
+        });
     }, CHECK_MS);
     return () => clearTimeout(timer);
   });

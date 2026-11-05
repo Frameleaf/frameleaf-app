@@ -597,13 +597,23 @@ export class BaseService {
     const whenUnavailable = stored?.whenUnavailable ?? 'wait';
     const destination = await this.mlDestinationRepository.getById(error.destinationId);
     const name = destination?.name ?? 'A computer at home';
-    const told = stored?.notified?.[error.destinationId];
-    if (!told || Date.now() - Date.parse(told) > COMPUTER_AWAY_NOTICE_MS) {
-      try {
+    const destinationId = error.destinationId;
+    try {
+      // Read, check and record under the settings lock, so jobs failing together tell administrators once and
+      // a "when a computer is away" change saved meanwhile (setProcessingOrder) is kept.
+      const tell = await this.databaseRepository.withLock(DatabaseLock.SystemConfigUpdate, async () => {
+        const current = await this.systemMetadataRepository.get(SystemMetadataKey.MlUnavailableBehaviour);
+        const told = current?.notified?.[destinationId];
+        if (told && Date.now() - Date.parse(told) <= COMPUTER_AWAY_NOTICE_MS) {
+          return false;
+        }
         await this.systemMetadataRepository.set(SystemMetadataKey.MlUnavailableBehaviour, {
-          whenUnavailable,
-          notified: { ...stored?.notified, [error.destinationId]: new Date().toISOString() },
+          whenUnavailable: current?.whenUnavailable ?? 'wait',
+          notified: { ...current?.notified, [destinationId]: new Date().toISOString() },
         });
+        return true;
+      });
+      if (tell) {
         const admins = (await this.userRepository.getList()).filter((user) => user.isAdmin && !user.deletedAt);
         for (const admin of admins) {
           await this.notificationRepository.create({
@@ -618,9 +628,9 @@ export class BaseService {
             data: JSON.stringify({ link: '/user-settings?area=processing&section=computers' }),
           });
         }
-      } catch (notifyError) {
-        this.logger.warn(`Could not tell administrators that ${name} isn't answering: ${notifyError}`);
       }
+    } catch (notifyError) {
+      this.logger.warn(`Could not tell administrators that ${name} isn't answering: ${notifyError}`);
     }
     if (whenUnavailable === 'stop') {
       const context = queueExecution.getStore();

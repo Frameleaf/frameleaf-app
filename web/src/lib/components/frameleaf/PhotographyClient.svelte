@@ -1011,7 +1011,7 @@
             .join(' · ')}
         </p>
         <p>{gallery.presentation.introduction || $t('frameleaf_photography_client_intro_default')}</p>
-        {#if gallery.pricing.welcomeMessage}<p class="pc-welcome">{gallery.pricing.welcomeMessage}</p>{/if}
+        {#if gallery.welcomeMessage}<p class="pc-welcome">{gallery.welcomeMessage}</p>{/if}
         {#if gallery.mode !== 'edited-delivery' && !finished}<p class="pc-package-line">
             {$t('frameleaf_photography_client_pricing', {
               values: {

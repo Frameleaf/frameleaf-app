@@ -32,6 +32,7 @@ import {
   renewalDue,
   retryDelayMs,
   servedNameHost,
+  serverNameStateSchema,
   validateCustomHostname,
   wildcardNames,
 } from 'src/utils/frameleaf-remote-access.js';
@@ -319,6 +320,26 @@ describe('frameleaf remote access (FL-165)', () => {
       });
       expect(remoteNameHosts(state, 'another-link', now)).toEqual({ current: null, previous: [] });
       expect(remoteNameHosts({ ...state, routed: false }, 'instance', now)).toEqual({ current: null, previous: [] });
+    });
+
+    it('refuses a name state from Cloud whose addresses are not host names (FL-1197)', () => {
+      const valid = {
+        name: 'taylor-home',
+        address: 'Taylor-Home.frameleaf.net',
+        relayAddress: null,
+        routed: true,
+        previous: [],
+      };
+      expect(serverNameStateSchema.safeParse(valid).success).toBe(true);
+      for (const address of ['.frameleaf.net', 'taylor-home.frameleaf.net/', 'https://taylor-home.frameleaf.net']) {
+        expect(serverNameStateSchema.safeParse({ ...valid, address }).success).toBe(false);
+        expect(
+          serverNameStateSchema.safeParse({
+            ...valid,
+            previous: [{ name: 'old', address, redirectUntil: '2026-12-01T00:00:00Z' }],
+          }).success,
+        ).toBe(false);
+      }
     });
 
     it('serves the name only while an unexpired certificate covers it (FL-1197)', () => {

@@ -737,6 +737,38 @@ describe(EdgeStateService.name, () => {
       expect(remoteState()).toMatchObject({ customCertificate: { host: 'photos.example.com', reported: true } });
     });
 
+    it('keeps serving the previous name while the new one waits on its certificate (FL-1197)', async () => {
+      setSettings({ enabled: true });
+      metadata.set(SystemMetadataKey.FrameleafRemoteName, {
+        instanceId: INSTANCE_ID,
+        name: 'new-home',
+        address: 'new-home.frameleaf.net',
+        relayAddress: null,
+        routed: true,
+        previous: [{ name: 'photos', address: 'photos.example.com', redirectUntil: '2026-10-28T00:00:00Z' }],
+        checkedAt: null,
+      });
+      // the previous name's certificate, still valid and on disk
+      await certificates.write(identityDir, 'name', custom);
+      vi.spyOn(certificates, 'issue').mockImplementation(async (_dir, request) => {
+        if (request.names[0] === 'new-home.frameleaf.net') {
+          throw new Error('rate limited');
+        }
+        await request.setChallenge('LoqXcYV8q5ONbJQxbmR7SCTNo3tiAXDfowyjxAjEuX0');
+        return { ...wildcard, accountUrl: 'https://acme-v02.api.letsencrypt.org/acme/acct/123456789' };
+      });
+      await sut.tick(now);
+
+      // no redirect to a name that can't be served yet, and the previous one is still served
+      expect(proxy.configureNames).toHaveBeenLastCalledWith(null, []);
+      expect(direct.configure).toHaveBeenCalledWith(
+        expect.objectContaining({
+          contexts: expect.objectContaining({ name: { hosts: ['photos.example.com'], ...custom } }),
+        }),
+      );
+      expect(remoteState()).toMatchObject({ nameCertificate: null });
+    });
+
     it('refuses an enrolment for another server', async () => {
       mocks.frameleafCloud.requestJson.mockImplementation((schema: any, request: any) =>
         request.url.endsWith('/v1/remote/enroll')

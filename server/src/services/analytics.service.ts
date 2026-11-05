@@ -193,6 +193,12 @@ type ResolvedScope = { scope: AnalyticsScope; label: string; ownerId: string | n
  * Nothing here talks to anything but this server's database and library volume, except that "What the AI
  * sees" asks the computer that encodes search text for its labels once per model (`SeenLabelsService`).
  */
+/**
+ * How long a report waits for "What the AI sees" labels. The first encoding on a server can take a while;
+ * it carries on and is cached, so a later report has the panel, and this one is never held up.
+ */
+const SEEN_LABELS_WAIT_MS = 3000;
+
 @Injectable()
 export class AnalyticsService {
   constructor(
@@ -206,6 +212,15 @@ export class AnalyticsService {
     private seenLabels: SeenLabelsService,
   ) {
     this.logger.setContext(AnalyticsService.name);
+  }
+
+  /** The labels if they are ready within `ms`, otherwise none for this report (see SEEN_LABELS_WAIT_MS). */
+  private seenLabelsWithin(ms: number) {
+    let timer: NodeJS.Timeout | undefined;
+    const late = new Promise<undefined>((resolve) => {
+      timer = setTimeout(() => resolve(undefined), ms);
+    });
+    return Promise.race([this.seenLabels.labels(), late]).finally(() => clearTimeout(timer));
   }
 
   /**
@@ -304,7 +319,7 @@ export class AnalyticsService {
       this.analyticsRepository.getSamples(scopeKey, GROWTH_SERIES, parseIsoDay(window.from)),
       this.analyticsRepository.getLatestObservation(scopeKey),
       this.readHost(now),
-      this.seenLabels.labels().then((seenLabels) =>
+      this.seenLabelsWithin(SEEN_LABELS_WAIT_MS).then((seenLabels) =>
         this.analyticsRepository.getInsights(scope, {
           ownerId: readsOwnScope ? ownerId : null,
           suppressedPersonIds: auth.hiddenContent?.personIds ?? [],

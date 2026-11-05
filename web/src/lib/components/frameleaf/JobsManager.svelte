@@ -642,7 +642,8 @@
   /** Everyday's feature menu: one review, then the command on each of the feature's tasks it applies to. */
   const requestFeature = (feature: WorkFeature, action: FeatureAction) => {
     const names = rows
-      .filter(({ definition, queue }) => {
+      .filter((row) => {
+        const { definition, queue } = row;
         if (!feature.queues.includes(definition.name)) {
           return false;
         }
@@ -653,11 +654,12 @@
           case 'resume': {
             return queue.isPaused;
           }
+          // a task that can't start now (its feature is off, or it is busy) is left out, as on its own row
           case 'run': {
-            return !!definition.run;
+            return !!definition.run && !blockedReason(row);
           }
           default: {
-            return !!definition.force;
+            return !!definition.force && !blockedReason(row);
           }
         }
       })
@@ -1163,8 +1165,8 @@
     </div>
     {#if view === 'everyday'}
       <BackgroundWorkEveryday
-        {rows}
-        pending={queuesPending}
+        rows={overviewRows}
+        pending={queuesPending || countsLoading}
         unavailable={queuesUnavailable}
         store={draft}
         locked={flags.configFile}

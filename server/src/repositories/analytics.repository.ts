@@ -194,7 +194,8 @@ const haversineKm = (
   lat2: RawBuilder<unknown>,
   lon2: RawBuilder<unknown>,
 ) =>
-  sql`(2 * 6371 * asin(sqrt(power(sin(radians(${lat2} - ${lat1}) / 2), 2) + cos(radians(${lat1})) * cos(radians(${lat2})) * power(sin(radians(${lon2} - ${lon1}) / 2), 2))))`;
+  // least(1, …): rounding near opposite points of the globe can push asin's argument just past 1
+  sql`(2 * 6371 * asin(least(1, sqrt(power(sin(radians(${lat2} - ${lat1}) / 2), 2) + cos(radians(${lat1})) * cos(radians(${lat2})) * power(sin(radians(${lon2} - ${lon1}) / 2), 2)))))`;
 
 /** Leaves out the assets (`a`) the reading session keeps hidden: Locked people and tags, sensitive content. */
 const visibleTo = (privacy?: HiddenContentQueryOptions): RawBuilder<boolean> => {

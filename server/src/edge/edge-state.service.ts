@@ -580,7 +580,6 @@ export class EdgeStateService {
       ? { current: null, previous: [] }
       : remoteNameHosts(nameState, desired.link.instanceId, now);
     const names = nameHosts.current ? [nameHosts.current, ...nameHosts.previous] : [];
-    this.proxy.configureNames(nameHosts.current, nameHosts.previous);
     let named: { hosts: string[]; certificate: string; key: string } | null = null;
     if (names.length > 0) {
       const key = names.join(',');
@@ -600,11 +599,16 @@ export class EdgeStateService {
       state.nameCertificate = result.facts ? { ...result.facts, hosts: names } : null;
       state.nameCertificateIssuance = { ...result.issuance, hosts: names };
       named = result.pair ? { hosts: names, ...result.pair } : null;
+      // a rename waiting on its certificate keeps serving the names the stored one still covers
+      named ??= await this.storedNameCertificate(identityDir, now);
     } else if (state.nameCertificate || state.nameCertificateIssuance) {
       await this.certificates.remove(identityDir, ['name']);
       state.nameCertificate = null;
       state.nameCertificateIssuance = undefined;
     }
+    // previous names lead to the current one only once it is served; until then they are served as they were
+    const servesCurrent = !!nameHosts.current && !!named?.hosts.includes(nameHosts.current);
+    this.proxy.configureNames(servesCurrent ? nameHosts.current : null, servesCurrent ? nameHosts.previous : []);
 
     // the direct listener, with the certificates in hand
     const addresses = this.addresses();
@@ -1053,6 +1057,22 @@ export class EdgeStateService {
    * Keep one certificate current: read it, and issue it when it is missing, does not cover the names,
    * or is due for renewal at the daily check, unless a failure's retry time has not come yet.
    */
+  /** The stored name certificate while it is valid and matches its key, for the names it covers. */
+  private async storedNameCertificate(identityDir: string, now: number) {
+    const pair = await this.certificates.read(identityDir, 'name');
+    if (!pair) {
+      return null;
+    }
+    try {
+      const facts = certificateFacts(pair.certificate);
+      return certificateMatchesKey(pair.certificate, pair.key) && Date.parse(facts.notAfter) > now
+        ? { hosts: facts.names.map((name) => name.toLowerCase()), ...pair }
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
   async keepCertificate(input: {
     kind: EdgeCertificateKind;
     names: string[];

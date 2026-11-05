@@ -275,8 +275,9 @@ export type GuestGallery = {
     terms: string;
     selectionDeadline: string | null;
     selectionLimit?: number | null;
-    welcomeMessage?: string;
   };
+  /** The studio's welcome for this gallery; empty for none. */
+  welcomeMessage?: string;
   brand: PublicBrand;
 };
 export type PublicBrand = {

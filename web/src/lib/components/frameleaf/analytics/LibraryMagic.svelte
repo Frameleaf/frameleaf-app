@@ -207,7 +207,9 @@
         names: listFormat.format(seen.labels.slice(0, 3).map((row) => seenName(row.id))),
       },
     })}
-    caption={$t('frameleaf_magic_seen_caption', { values: { count: f.number(seen.described) } })}
+    caption={$t('frameleaf_magic_seen_caption', {
+      values: { count: seen.described, shown: f.number(seen.described) },
+    })}
     action={{ href: commandCenterUrl('intelligence', 'smart-search'), label: $t('frameleaf_magic_seen_link') }}
   >
     <ul class="an-cloud" aria-label={$t('frameleaf_magic_seen_kicker')}>
@@ -293,7 +295,7 @@
   kicker={$t('frameleaf_magic_ahead_kicker')}
   title={ahead
     ? $t('frameleaf_magic_ahead_title', {
-        values: { count: f.number(ahead.milestone), date: monthYear(ahead.milestoneOn) },
+        values: { count: ahead.milestone, shown: f.number(ahead.milestone), date: monthYear(ahead.milestoneOn) },
       })
     : $t('frameleaf_magic_ahead_none_title')}
   caption={ahead ? $t('frameleaf_magic_ahead_caption') : $t('frameleaf_magic_ahead_none_caption')}
@@ -344,7 +346,12 @@
   id="hood"
   wide
   kicker={$t('frameleaf_magic_hood_kicker')}
-  title={$t('frameleaf_magic_hood_title', { values: { count: f.compact(hood.searchVectors + hood.faceVectors) } })}
+  title={$t('frameleaf_magic_hood_title', {
+    values: {
+      count: hood.searchVectors + hood.faceVectors,
+      shown: f.compact(hood.searchVectors + hood.faceVectors),
+    },
+  })}
   caption={$t('frameleaf_magic_hood_caption')}
   action={{ href: commandCenterUrl('processing'), label: $t('frameleaf_magic_hood_link') }}
 >

@@ -334,7 +334,7 @@ describe('photography workflow integration boundaries', () => {
     ).rejects.toThrow('No eligible photographs');
     // rated after intake: the photo's rating now is the one that counts
     s.row().value.captures[0].rating = null;
-    s.asset.rating = 4;
+    Object.assign(s.asset, { rating: 4 });
     await s.service.publish(s.auth, s.shootId, { expectedRevision: s.row().revision, scope: 'all-eligible' });
     expect(s.row().value.publication?.total).toBe(1);
   });

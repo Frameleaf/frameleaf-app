@@ -726,10 +726,14 @@ export class MlDestinationService extends BaseService {
   async setProcessingOrder(dto: MlProcessingOrderUpdateDto): Promise<MlProcessingOrderResponseDto> {
     await this.mlDestinationRepository.setProcessingOrder(ML_PROCESSING_ORDER_DEFAULT_SCOPE, dto.order);
     if (dto.whenUnavailable) {
-      const stored = await this.systemMetadataRepository.get(SystemMetadataKey.MlUnavailableBehaviour);
-      await this.systemMetadataRepository.set(SystemMetadataKey.MlUnavailableBehaviour, {
-        ...stored,
-        whenUnavailable: dto.whenUnavailable,
+      const whenUnavailable = dto.whenUnavailable;
+      // the same lock as the "computer isn't answering" notice, which writes this setting too
+      await this.databaseRepository.withLock(DatabaseLock.SystemConfigUpdate, async () => {
+        const stored = await this.systemMetadataRepository.get(SystemMetadataKey.MlUnavailableBehaviour);
+        await this.systemMetadataRepository.set(SystemMetadataKey.MlUnavailableBehaviour, {
+          ...stored,
+          whenUnavailable,
+        });
       });
     }
     return this.getProcessingOrder();

@@ -41,7 +41,9 @@ export type CaptureDetails = {
 type Tags = Record<string, unknown>;
 
 const number = (value: unknown, min: number, max: number) => {
-  const parsed = Array.isArray(value) ? Number(value[0]) : typeof value === 'string' ? Number(value) : value;
+  const first = Array.isArray(value) ? value[0] : value;
+  // a blank tag is a missing measurement, not zero (Number('') and Number(null) are both 0)
+  const parsed = typeof first === 'string' ? (first.trim() ? Number(first) : null) : first;
   return typeof parsed === 'number' && Number.isFinite(parsed) && parsed >= min && parsed <= max ? parsed : null;
 };
 
