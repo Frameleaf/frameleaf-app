@@ -39,6 +39,24 @@ concurrency:
   group: manager-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
+  native-windows-bootstrap:
+    name: Manager native bootstrap (Windows)
+    if: github.repository == 'Frameleaf/frameleaf-app' && github.event_name == 'pull_request'
+    runs-on: windows-2022
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: manager
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '26.11.1'
+      - run: npm ci --ignore-scripts
+      - name: Verify the inherited pipe and Desktop backup path
+        run: node --import tsx --test --test-name-pattern="native bootstrap accepts|native bootstrap input" test/native-service.test.ts test/native-bootstrap-stdio.test.ts
   manager:
     env:
       FRAMELEAF_CI_NODE_IMAGE: mirror.gcr.io/library/node@sha256:8eb619e402eaede1748a3c8173bffab391592812e85136452f781741c7242ddf
