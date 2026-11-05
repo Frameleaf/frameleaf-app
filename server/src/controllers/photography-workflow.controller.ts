@@ -19,6 +19,7 @@ import {
 import { ApiBody, ApiHeader, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { NextFunction, Request, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { StudioSiteDomainResponseDto } from 'src/dtos/frameleaf-remote-access.dto.js';
 import {
   PhotographyApprovalDto,
   PhotographyAssemblyDto,
@@ -58,6 +59,7 @@ import { ApiTag } from 'src/enum.js';
 import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
 import { RATE_LIMITS, RateLimited, RemoteMediaCeiling } from 'src/middleware/rate-limit.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { accessCloses } from 'src/services/photography-reminder.service.js';
 import { PhotographySiteService } from 'src/services/photography-site.service.js';
 import { PhotographyWorkflowService } from 'src/services/photography-workflow.service.js';
 import { asStreamableFile, sendFile } from 'src/utils/file.js';
@@ -104,6 +106,14 @@ export class PhotographyWorkflowController {
   site(@Auth() auth: AuthDto) {
     return this.siteService.site(auth);
   }
+  @Get('site/domain')
+  @ApiOperation({ operationId: 'photographySiteDomain' })
+  @Authenticated()
+  @ApiResponse({ status: 200, type: StudioSiteDomainResponseDto })
+  siteDomain(@Auth() auth: AuthDto) {
+    return this.siteService.siteDomain(auth);
+  }
+
   @Put('site')
   @ApiOperation({ operationId: 'photographySaveSite' })
   @Authenticated()
@@ -287,8 +297,22 @@ export class PhotographyWorkflowController {
   @ApiOperation({ operationId: 'photographyInvite' })
   @Authenticated()
   @ApiResponse({ status: 201, type: PhotographyInvitationDto })
-  invite(@Auth() auth: AuthDto, @Param('id', uuid) id: string, @Body() dto: PhotographyRecipientCreateDto) {
-    return this.service.createRecipient(auth, id, dto);
+  async invite(@Auth() auth: AuthDto, @Param('id', uuid) id: string, @Body() dto: PhotographyRecipientCreateDto) {
+    const result = await this.service.createRecipient(auth, id, dto);
+    if (!dto.email) {
+      return result;
+    }
+    const recipient = result.workflow.recipients.find(({ id }) => id === result.invitation.recipientId);
+    const emailed = await this.siteService.emailInvitation(auth, {
+      workflowId: id,
+      token: result.invitation.token,
+      email: dto.email,
+      recipientName: dto.name,
+      galleryTitle: result.workflow.config.title,
+      welcomeMessage: result.workflow.config.welcomeMessage,
+      expiresAt: accessCloses(recipient?.expiresAt ?? null, result.workflow.config.expiresAt),
+    });
+    return { ...result, invitation: { ...result.invitation, emailed } };
   }
   @Patch('workflows/:id/recipients/:recipientId')
   @ApiOperation({ operationId: 'photographyRecipient' })

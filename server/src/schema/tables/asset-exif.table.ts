@@ -141,6 +141,69 @@ export class AssetExifTable {
   @Column({ type: 'character varying', array: true, nullable: true })
   tags!: string[] | null;
 
+  // FL-1196 (2026-11-04): more of what cameras record, read by the metadata scan. Kept for the
+  // library's own use (analytics today); none of it is in API responses, as serial numbers identify a camera.
+  /** Metres above sea level; negative below it. */
+  @Column({ type: 'double precision', nullable: true })
+  altitude!: number | null;
+
+  /** The camera's shutter actuations when the photo was taken, where the maker records them. */
+  @Column({ type: 'integer', nullable: true })
+  shutterCount!: number | null;
+
+  @Column({ type: 'double precision', nullable: true })
+  focalLengthIn35mm!: number | null;
+
+  /** EV, e.g. -0.7. */
+  @Column({ type: 'double precision', nullable: true })
+  exposureCompensation!: number | null;
+
+  @Column({ type: 'character varying', nullable: true })
+  exposureProgram!: string | null;
+
+  @Column({ type: 'character varying', nullable: true })
+  meteringMode!: string | null;
+
+  @Column({ type: 'character varying', nullable: true })
+  flash!: string | null;
+
+  @Column({ type: 'character varying', nullable: true })
+  whiteBalance!: string | null;
+
+  @Column({ type: 'character varying', nullable: true })
+  sceneCaptureType!: string | null;
+
+  /** Metres to the point in focus. */
+  @Column({ type: 'double precision', nullable: true })
+  focusDistance!: number | null;
+
+  @Column({ type: 'character varying', nullable: true })
+  lensMake!: string | null;
+
+  @Column({ type: 'character varying', nullable: true })
+  lensSerialNumber!: string | null;
+
+  /** The camera body's serial number. */
+  @Column({ type: 'character varying', nullable: true })
+  serialNumber!: string | null;
+
+  @Column({ type: 'character varying', nullable: true })
+  software!: string | null;
+
+  @Column({ type: 'character varying', nullable: true })
+  artist!: string | null;
+
+  @Column({ type: 'character varying', nullable: true })
+  copyright!: string | null;
+
+  /** Compass direction the camera faced, degrees from north. */
+  @Column({ type: 'double precision', nullable: true })
+  imageDirection!: number | null;
+
+  /** km/h. */
+  @Column({ type: 'double precision', nullable: true })
+  gpsSpeed!: number | null;
+
   @UpdateDateColumn({ default: () => 'clock_timestamp()' })
   updatedAt!: Generated<Timestamp>;
 

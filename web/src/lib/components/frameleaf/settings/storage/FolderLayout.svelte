@@ -291,7 +291,8 @@
     margin-bottom: var(--fl-space-3);
     padding: 0 var(--fl-space-3);
     color: var(--fl-text);
-    font-family: var(--fl-font-mono, monospace);
+    font-family: inherit;
+    font-variant-numeric: tabular-nums;
     font-size: var(--fl-font-callout);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);
@@ -305,7 +306,8 @@
     font-size: var(--fl-font-small);
   }
   .terms dt {
-    font-family: var(--fl-font-mono, monospace);
+    font-family: inherit;
+    font-variant-numeric: tabular-nums;
   }
   .terms dd {
     margin: 0;

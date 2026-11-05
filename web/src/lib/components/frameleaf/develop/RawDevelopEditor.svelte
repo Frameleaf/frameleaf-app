@@ -748,7 +748,7 @@
               <span class="rde-thumb"
                 ><PhotographyThumb src={getAssetMediaUrl({ id: item.id, size: AssetMediaSize.Thumbnail })} /></span
               >
-              <span>{String(index + 1).padStart(2, '0')}</span>
+              <span>{String(index + 1).padStart(2, '0')}</span><b class="rde-film-ext">{extensionOf(item.fileName)}</b>
               {#if session.isEdited(item.id)}<i title={$t('frameleaf_develop_edited')}
                   ><Icon icon={mdiTune} size="13" aria-hidden={true} /></i
                 >{/if}
@@ -759,7 +759,7 @@
                 aria-label={$t('frameleaf_develop_select_photo', { values: { name: item.fileName } })}
                 checked={session.selected.includes(item.id)}
                 onchange={() => session.toggleSelected(item.id)}
-              /><span>{extensionOf(item.fileName)}</span></label
+              /></label
             >
             {#if rate}<DevelopStars
                 compact

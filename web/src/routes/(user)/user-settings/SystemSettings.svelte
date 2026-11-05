@@ -80,7 +80,6 @@
     mdiExpansionCard,
     mdiLinkVariant,
     mdiDesktopTowerMonitor,
-    mdiTransitConnectionVariant,
     mdiShieldAccountOutline,
     mdiTrayFull,
     mdiWrench,
@@ -443,7 +442,6 @@
         // FL-364: Computers & background work. Computers also answers the addresses of the pages it
         // replaced (Workers & endpoints, Render workers).
         ['computers', 'frameleaf_computers_page_computers', mdiDesktopTowerMonitor],
-        ['routing', 'frameleaf_computers_page_routing', mdiTransitConnectionVariant],
         ['queues', 'frameleaf_computers_page_queues', mdiTrayFull],
         ['hardware', 'frameleaf_computers_page_hardware', mdiExpansionCard],
         ['cloud-processing', 'frameleaf_cc_section_cloud_processing', mdiCloudSyncOutline],

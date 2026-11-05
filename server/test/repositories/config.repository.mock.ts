@@ -82,7 +82,7 @@ export const envData: EnvData = {
     },
   },
 
-  appReleases: {},
+  appReleases: { iosUrl: 'https://apps.apple.com/app/id000', androidStoreUrl: 'https://play.example/app' },
   studioWorker: { enabled: true, trustDir: '/run/frameleaf/studio-worker' },
   frameleafCloud: {
     url: null,

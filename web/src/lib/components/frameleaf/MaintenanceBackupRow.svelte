@@ -154,7 +154,8 @@
     color: var(--fl-muted);
   }
   .filename {
-    font-family: var(--fl-family-mono);
+    font-family: inherit;
+    font-variant-numeric: tabular-nums;
     word-break: break-all;
   }
   .mt-status {

@@ -482,3 +482,17 @@ it('loads both comparison previews together and drops a reply for an earlier com
   }
   await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalledTimes(2));
 });
+it('shows the studio welcome and stops at the selection limit', async () => {
+  const limited = structuredClone(view);
+  limited.pricing.selectionLimit = 1;
+  limited.welcomeMessage = 'Take your time, Jamie.';
+  limited.photos.push({ ...limited.photos[0], id: 'second', number: 8 });
+  vi.mocked(galleryRequest).mockResolvedValue(limited);
+  render(PhotographyClient, { galleryId: 'shoot' });
+  expect(await screen.findByText('Take your time, Jamie.')).toBeInTheDocument();
+  expect(screen.getByText(/Choose up to 1/)).toBeInTheDocument();
+  await fireEvent.click(screen.getByRole('button', { name: 'Add photo 7 to favourites' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Add photo 8 to favourites' }));
+  expect(await screen.findByText(/You can choose up to 1 photograph/)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Add photo 8 to favourites' })).toHaveAttribute('aria-pressed', 'false');
+});

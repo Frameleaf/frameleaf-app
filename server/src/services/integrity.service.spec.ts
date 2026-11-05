@@ -47,6 +47,40 @@ describe(IntegrityService.name, () => {
     });
   });
 
+  describe("checkOne (Library care's Check one…)", () => {
+    const contents = Buffer.from('the-file-bytes');
+    const asset = (checksum: Buffer) => ({
+      assetId: 'asset-1',
+      originalPath: '/data/library/asset-1.jpg',
+      checksum,
+      checksumAlgorithm: ChecksumAlgorithm.sha256File,
+      reportId: 'report-1',
+    });
+
+    it('reads one original now and clears its damage report when it matches', async () => {
+      mocks.integrityReport.getAssetChecksum.mockResolvedValue(asset(createHash('sha256').update(contents).digest()));
+      mocks.integrityReport.recordVerification.mockResolvedValue(true);
+      mocks.storage.createPlainReadStream.mockReturnValue(Readable.from([contents]) as never);
+      await expect(sut.checkOne('asset-1')).resolves.toEqual({ result: 'passed' });
+      expect(mocks.integrityReport.deleteById).toHaveBeenCalledWith('report-1');
+    });
+
+    it('lists a damaged original in Library care', async () => {
+      mocks.integrityReport.getAssetChecksum.mockResolvedValue(asset(Buffer.alloc(32, 7)));
+      mocks.integrityReport.recordVerification.mockResolvedValue(true);
+      mocks.storage.createPlainReadStream.mockReturnValue(Readable.from([contents]) as never);
+      await expect(sut.checkOne('asset-1')).resolves.toEqual({ result: 'mismatched' });
+      expect(mocks.integrityReport.create).toHaveBeenCalledWith(
+        expect.objectContaining({ assetId: 'asset-1', type: IntegrityReport.ChecksumFail }),
+      );
+    });
+
+    it('refuses a photo that is not in the library', async () => {
+      mocks.integrityReport.getAssetChecksum.mockResolvedValue(undefined);
+      await expect(sut.checkOne('missing')).rejects.toThrow('Asset not found');
+    });
+  });
+
   describe('handleChecksumFiles', () => {
     const contents = Buffer.from('the-file-bytes');
     const sha256 = createHash('sha256').update(contents).digest();

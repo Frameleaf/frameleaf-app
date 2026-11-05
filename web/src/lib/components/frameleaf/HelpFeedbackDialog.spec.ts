@@ -17,20 +17,54 @@ describe('HelpFeedbackDialog (S-3)', () => {
     });
   });
 
-  it('lists the configured help rows and third-party notices without naming the upstream project', () => {
+  it('lists Frameleaf’s help in the approved order, with Discord, and names no upstream project', () => {
+    render(HelpFeedbackDialog, {
+      onClose: vi.fn(),
+      info: { version: 'v3.2.0', versionUrl: '', licensed: false, nodejs: 'v24' },
+    });
+
+    const rows = screen.getAllByRole('link').filter((link) => link.classList.contains('help-link'));
+    expect(rows.map((link) => [link.querySelector('strong')?.textContent, link.getAttribute('href')])).toEqual([
+      ['Help Center', 'https://frameleaf.app/help/'],
+      ['Documentation', 'https://frameleaf.app/docs/start/introduction/'],
+      ['Get help on Discord', 'https://discord.gg/cN3U3mv4'],
+      ['Community chat', 'https://frameleaf.app/help/community'],
+      ['Report a problem', 'https://frameleaf.app/help/community/c/bug-reports'],
+      ['Feature requests', 'https://frameleaf.app/help/community/c/ideas-feedback'],
+      ['Source code', 'https://github.com/Frameleaf/frameleaf-app'],
+    ]);
+    // FL-190: the upstream attribution is on the About screen only; this dialog names neither the
+    // upstream project nor its sites, and its Discord is Frameleaf's own.
+    expect(screen.queryByText('Official Immich Resources')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /Built on/ })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Immich/)).not.toBeInTheDocument();
+    for (const link of screen.getAllByRole('link')) {
+      expect(link.getAttribute('href') ?? '').not.toMatch(/immich\.app|github\.com\/immich-app|discord\.immich/);
+    }
+    expect(screen.getByText('Third-party notices')).toBeInTheDocument();
+    expect(screen.getByText('Node.js')).toBeInTheDocument();
+  });
+
+  it('uses the addresses this installation is configured with in place of the defaults', () => {
     render(HelpFeedbackDialog, {
       onClose: vi.fn(),
       info: {
         version: 'v3.2.0',
         versionUrl: '',
         licensed: false,
-        nodejs: 'v24',
         thirdPartyDocumentationUrl: 'https://docs.example.test',
+        thirdPartySupportUrl: 'https://support.example.test',
         thirdPartyBugFeatureUrl: 'https://issues.example.test',
+        thirdPartySourceUrl: 'https://source.example.test',
       },
     });
 
-    expect(screen.queryByText('Official Immich Resources')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Documentation/ })).toHaveAttribute('href', 'https://docs.example.test');
+    expect(screen.getByRole('link', { name: /Community chat/ })).toHaveAttribute(
+      'href',
+      'https://support.example.test',
+    );
+    // One configured tracker takes problems and requests alike.
     expect(screen.getByRole('link', { name: /Report a problem/ })).toHaveAttribute(
       'href',
       'https://issues.example.test',
@@ -39,18 +73,13 @@ describe('HelpFeedbackDialog (S-3)', () => {
       'href',
       'https://issues.example.test',
     );
-    // Without a configured community address that row is left out.
-    expect(screen.queryByRole('link', { name: /Community chat/ })).not.toBeInTheDocument();
-    // FL-190: the upstream attribution is on the About screen only; this dialog names neither the
-    // upstream project nor its sites, and offers no other project's community.
-    expect(screen.queryByRole('heading', { name: /Built on/ })).not.toBeInTheDocument();
-    expect(screen.queryByText(/Immich/)).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /Discord/ })).not.toBeInTheDocument();
-    for (const link of screen.getAllByRole('link')) {
-      expect(link.getAttribute('href') ?? '').not.toMatch(/immich\.app|github\.com\/immich-app/);
-    }
-    expect(screen.getByText('Third-party notices')).toBeInTheDocument();
-    expect(screen.getByText('Node.js')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Source code/ })).toHaveAttribute('href', 'https://source.example.test');
+    // The Help Center and Discord are Frameleaf's own.
+    expect(screen.getByRole('link', { name: /Help Center/ })).toHaveAttribute('href', 'https://frameleaf.app/help/');
+    expect(screen.getByRole('link', { name: /Get help on Discord/ })).toHaveAttribute(
+      'href',
+      'https://discord.gg/cN3U3mv4',
+    );
   });
 
   it('acknowledges Freecut with its full licence, loaded from the shipped file (owner decisions 2026-09-25)', async () => {

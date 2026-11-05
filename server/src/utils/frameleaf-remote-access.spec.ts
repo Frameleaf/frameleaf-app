@@ -27,9 +27,12 @@ import {
   remoteEndpoints,
   remoteHostnameListSchema,
   remoteLabel,
+  remoteNameHosts,
   remotePublicUrl,
   renewalDue,
   retryDelayMs,
+  servedNameHost,
+  serverNameStateSchema,
   validateCustomHostname,
   wildcardNames,
 } from 'src/utils/frameleaf-remote-access.js';
@@ -287,6 +290,79 @@ describe('frameleaf remote access (FL-165)', () => {
   });
 
   describe('public URL and candidates', () => {
+    it('publishes the frameleaf.net name while it routes, ahead of the relay name (FL-1197)', () => {
+      const names = enrollment();
+      expect(remotePublicUrl(names, settings(), 'taylor-home.frameleaf.net')).toBe('https://taylor-home.frameleaf.net');
+      const verified = settings({
+        publicUrl: 'custom',
+        customHostname: { host: 'photos.example.com', status: 'verified' },
+      });
+      expect(remotePublicUrl(names, verified, 'taylor-home.frameleaf.net')).toBe('https://photos.example.com');
+    });
+
+    it('lists the names a server answers for: the current one, and earlier ones for their 30 days (FL-1197)', () => {
+      const now = Date.parse('2026-11-04T12:00:00Z');
+      const state = {
+        instanceId: 'instance',
+        name: 'taylor-home',
+        address: 'Taylor-Home.frameleaf.net',
+        relayAddress: 'r.aaaaaaaaaaaaaaaa.frameleaf.net',
+        routed: true,
+        previous: [
+          { name: 'old', address: 'old.frameleaf.net', redirectUntil: '2026-11-20T00:00:00Z' },
+          { name: 'older', address: 'older.frameleaf.net', redirectUntil: '2026-11-01T00:00:00Z' },
+        ],
+        checkedAt: '2026-11-04T11:00:00Z',
+      };
+      expect(remoteNameHosts(state, 'instance', now)).toEqual({
+        current: 'taylor-home.frameleaf.net',
+        previous: ['old.frameleaf.net'],
+      });
+      expect(remoteNameHosts(state, 'another-link', now)).toEqual({ current: null, previous: [] });
+      expect(remoteNameHosts({ ...state, routed: false }, 'instance', now)).toEqual({ current: null, previous: [] });
+    });
+
+    it('refuses a name state from Cloud whose addresses are not host names (FL-1197)', () => {
+      const valid = {
+        name: 'taylor-home',
+        address: 'Taylor-Home.frameleaf.net',
+        relayAddress: null,
+        routed: true,
+        previous: [],
+      };
+      expect(serverNameStateSchema.safeParse(valid).success).toBe(true);
+      for (const address of ['.frameleaf.net', 'taylor-home.frameleaf.net/', 'https://taylor-home.frameleaf.net']) {
+        expect(serverNameStateSchema.safeParse({ ...valid, address }).success).toBe(false);
+        expect(
+          serverNameStateSchema.safeParse({
+            ...valid,
+            previous: [{ name: 'old', address, redirectUntil: '2026-12-01T00:00:00Z' }],
+          }).success,
+        ).toBe(false);
+      }
+    });
+
+    it('serves the name only while an unexpired certificate covers it (FL-1197)', () => {
+      const now = Date.parse('2026-11-04T12:00:00Z');
+      const host = 'taylor-home.frameleaf.net';
+      const certificate = (hosts: string[], notAfter = '2027-01-01T00:00:00Z') => ({
+        nameCertificate: {
+          names: hosts,
+          hosts,
+          serial: '1',
+          issuer: 'R11',
+          notBefore: '2026-11-01T00:00:00Z',
+          notAfter,
+          reported: true,
+        },
+      });
+      expect(servedNameHost(host, certificate([host]), now)).toBe(host);
+      expect(servedNameHost(host, { nameCertificate: null }, now)).toBeNull();
+      expect(servedNameHost(host, certificate(['old.frameleaf.net']), now)).toBeNull();
+      expect(servedNameHost(host, certificate([host], '2026-11-01T00:00:00Z'), now)).toBeNull();
+      expect(servedNameHost(null, certificate([host]), now)).toBeNull();
+    });
+
     it('publishes the relay name, or the verified custom hostname when chosen', () => {
       const names = enrollment();
       expect(remotePublicUrl(null, settings())).toBeNull();

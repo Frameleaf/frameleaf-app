@@ -11,7 +11,16 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { UserAdmin } from 'src/database.js';
 import { AssetResponseDto, mapAsset } from 'src/dtos/asset-response.dto.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
-import { DatabaseLock, JobName, LibraryScope, MlWorkload } from 'src/enum.js';
+import {
+  DatabaseLock,
+  JobName,
+  LibraryScope,
+  MlProcessingSource,
+  MlWorkload,
+  NotificationLevel,
+  NotificationType,
+  SystemMetadataKey,
+} from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { JobDependencyUnavailable } from 'src/queue/dependency.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
@@ -112,6 +121,8 @@ import { isServerOwner, requireServerOwner } from 'src/utils/server-owner.js';
  * FL-456: an admission that says this place cannot take the job now (refused, gone, or the Frameleaf
  * Desktop helpers cannot take it yet), so the next place in the processing order may.
  */
+/** Tell administrators again about a computer that is still away after this long. */
+const COMPUTER_AWAY_NOTICE_MS = 12 * 3_600_000;
 const isPlaceUnavailable = (error: unknown) =>
   error instanceof MlDestinationRefusedError ||
   error instanceof MlDestinationNotFoundError ||
@@ -530,7 +541,11 @@ export class BaseService {
     if (available.length === 0) {
       const destinationId =
         candidates[0]?.destinationId ?? (await routedMlDestinationId(this.mlDestinationRepository, request.workload));
-      return this.selectMlDestination({ ...request, destinationId });
+      try {
+        return await this.selectMlDestination({ ...request, destinationId });
+      } catch (error) {
+        throw await this.computerAway(error, candidates[0]?.source);
+      }
     }
 
     // A refusal notes the wait it implies on the running job; only the one the job ends on may stay.
@@ -562,7 +577,69 @@ export class BaseService {
     if (context) {
       context.dependencyReason = first!.reason;
     }
-    throw first!.error;
+    throw await this.computerAway(first!.error, available[0]?.source);
+  }
+
+  /**
+   * No place could take routed work and the first one tried is a computer at home (approved design,
+   * 2026-11-04): administrators are told, once per computer while it stays away, and with "Stop" the job
+   * fails instead of waiting, so it can be retried elsewhere. Any other refusal comes back unchanged.
+   */
+  private async computerAway(error: unknown, source: MlProcessingSource | undefined) {
+    if (
+      source !== MlProcessingSource.Desktops ||
+      !(error instanceof MlDestinationRefusedError) ||
+      !error.destinationId
+    ) {
+      return error;
+    }
+    const stored = await this.systemMetadataRepository.get(SystemMetadataKey.MlUnavailableBehaviour);
+    const whenUnavailable = stored?.whenUnavailable ?? 'wait';
+    const destination = await this.mlDestinationRepository.getById(error.destinationId);
+    const name = destination?.name ?? 'A computer at home';
+    const destinationId = error.destinationId;
+    try {
+      // Read, check and record under the settings lock, so jobs failing together tell administrators once and
+      // a "when a computer is away" change saved meanwhile (setProcessingOrder) is kept.
+      const tell = await this.databaseRepository.withLock(DatabaseLock.SystemConfigUpdate, async () => {
+        const current = await this.systemMetadataRepository.get(SystemMetadataKey.MlUnavailableBehaviour);
+        const told = current?.notified?.[destinationId];
+        if (told && Date.now() - Date.parse(told) <= COMPUTER_AWAY_NOTICE_MS) {
+          return false;
+        }
+        await this.systemMetadataRepository.set(SystemMetadataKey.MlUnavailableBehaviour, {
+          whenUnavailable: current?.whenUnavailable ?? 'wait',
+          notified: { ...current?.notified, [destinationId]: new Date().toISOString() },
+        });
+        return true;
+      });
+      if (tell) {
+        const admins = (await this.userRepository.getList()).filter((user) => user.isAdmin && !user.deletedAt);
+        for (const admin of admins) {
+          await this.notificationRepository.create({
+            userId: admin.id,
+            type: NotificationType.Custom,
+            level: NotificationLevel.Warning,
+            title: `${name} isn’t answering`,
+            description:
+              whenUnavailable === 'stop'
+                ? 'Work sent to it has stopped. Choose another place for it in Computers, then retry it.'
+                : 'Work sent to it waits, and starts when it is back.',
+            data: JSON.stringify({ link: '/user-settings?area=processing&section=computers' }),
+          });
+        }
+      }
+    } catch (notifyError) {
+      this.logger.warn(`Could not tell administrators that ${name} isn't answering: ${notifyError}`);
+    }
+    if (whenUnavailable === 'stop') {
+      const context = queueExecution.getStore();
+      if (context) {
+        context.dependencyReason = undefined;
+      }
+      return new Error(`${name} isn’t answering; its work stops until it is sent elsewhere`);
+    }
+    return error;
   }
 
   /**

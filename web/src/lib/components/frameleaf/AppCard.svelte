@@ -11,7 +11,6 @@
    * the app. Every way of closing it (store button, Continue in the browser, the scrim, Escape,
    * dragging it down) keeps it away for 30 days.
    */
-  import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import {
     appCardOffer,
@@ -32,7 +31,6 @@
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import { Route } from '$lib/route';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { getTabbable } from '$lib/utils/focus-util';
   import { handleError } from '$lib/utils/handle-error';
@@ -176,11 +174,6 @@
     returnFocus?.focus?.({ preventScroll: true });
   };
 
-  const openDownloads = async () => {
-    close();
-    await goto(Route.downloadsUtility());
-  };
-
   const copyAddress = async () => {
     try {
       await navigator.clipboard.writeText(address);
@@ -319,26 +312,20 @@
 
       <p class="app-card-note">{$t('frameleaf_app_card.network_note')}</p>
 
-      {#if offer.kind === 'store'}
-        <a
-          class="app-card-badge"
-          class:is-android={offer.platform === 'android'}
-          href={offer.href}
-          target="_blank"
-          rel="noopener noreferrer"
-          onclick={close}
-        >
-          {#if offer.platform === 'ios'}
-            <img src="/badges/app-store-black.svg" alt={$t('frameleaf_app_card.app_store_badge')} />
-          {:else}
-            <img src="/badges/google-play.png" alt={$t('frameleaf_app_card.google_play_badge')} />
-          {/if}
-        </a>
-      {:else}
-        <button type="button" class="app-card-get" onclick={() => void openDownloads()}>
-          {$t('frameleaf_app_card.get_the_app')}
-        </button>
-      {/if}
+      <a
+        class="app-card-badge"
+        class:is-android={offer.platform === 'android'}
+        href={offer.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        onclick={close}
+      >
+        {#if offer.platform === 'ios'}
+          <img src="/badges/app-store-black.svg" alt={$t('frameleaf_app_card.app_store_badge')} />
+        {:else}
+          <img src="/badges/google-play.png" alt={$t('frameleaf_app_card.google_play_badge')} />
+        {/if}
+      </a>
 
       {#if !linkedToCloud}
         <div class="app-card-address">
@@ -497,16 +484,6 @@
   .app-card-badge.is-android img {
     height: 71.4px;
     margin: -11.7px;
-  }
-  .app-card-get {
-    min-height: 48px;
-    margin-top: var(--fl-space-6);
-    padding: 0 var(--fl-space-4);
-    border-radius: var(--fl-radius-card);
-    background: var(--fl-accent);
-    color: var(--fl-accent-text);
-    font-size: 16px;
-    font-weight: 600;
   }
   .app-card-address {
     display: flex;

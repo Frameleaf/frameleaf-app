@@ -43,6 +43,7 @@ import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getAssetFiles } from 'src/utils/asset.util.js';
 import { resolveCameraIdentification } from 'src/utils/camera-identification.js';
+import { captureDetails } from 'src/utils/capture-details.js';
 import { mergeTimeZone } from 'src/utils/date.js';
 import { rewriteThroughPlainCopy, withPlainCopy } from 'src/utils/locked-read.js';
 import { isLockedRow } from 'src/utils/locked.js';
@@ -462,6 +463,9 @@ export class MetadataService extends BaseService {
       autoStackId: this.getAutoStackId(exifTags),
 
       tags: tags.length > 0 ? tags : null,
+
+      // FL-1196: altitude, shutter count and the other details cameras record
+      ...captureDetails(exifTags as Record<string, unknown>),
     };
 
     const audioData =

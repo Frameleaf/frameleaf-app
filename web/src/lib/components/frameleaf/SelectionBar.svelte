@@ -13,6 +13,7 @@
   import {
     bulkActionById,
     bulkActions,
+    contextBulkActions,
     livePhotoPair,
     menuBulkActions,
     primaryBulkActions,
@@ -61,8 +62,6 @@
     mdiMovieEditOutline,
     mdiPackageVariantClosed,
     mdiPlaylistRemove,
-    mdiShieldLockOutline,
-    mdiShieldOutline,
     mdiTagPlusOutline,
     mdiTextBoxOutline,
   } from '@mdi/js';
@@ -104,8 +103,6 @@
     mdiMovieEditOutline,
     mdiPackageVariantClosed,
     mdiPlaylistRemove,
-    mdiShieldLockOutline,
-    mdiShieldOutline,
     mdiTagPlusOutline,
     mdiTextBoxOutline,
   };
@@ -245,6 +242,7 @@
   let byId = $derived(bulkActionById(actions));
   let primary = $derived(primaryBulkActions(actions, trash, locked));
   let menuGroups = $derived(menuBulkActions(actions, trash, locked));
+  let contextActions = $derived(contextBulkActions(actions, trash, locked));
   const icon = (name: string) => ICONS[name] ?? mdiDotsHorizontal;
 
   $effect(() => {
@@ -606,7 +604,8 @@
 <!--
   A tile's right-click menu: outside the bar, whose frosted capsule and slide-in would otherwise
   hold a fixed menu inside them. A quick list: the page's actions that apply now (no editors for a
-  multiple selection) and the bar's own buttons, without "Send a copy…"; everything else stays under More.
+  multiple selection), the bar's own buttons without "Send a copy…", then the edits, Lock, Archive,
+  Stack and the album's commands (contextBulkActions), Delete last; everything else stays under More.
 -->
 {#if menuAt && (menuOpen || menuLeaving)}
   {@const place = contextPlacement(menuAt)}
@@ -642,7 +641,7 @@
         {action.label}
       </button>
     {/each}
-    {#each primary.filter((action) => action.id !== 'send-copy') as action (action.id)}
+    {#each contextActions as action (action.id)}
       <button
         type="button"
         role="menuitem"

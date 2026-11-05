@@ -29,31 +29,31 @@
 .fl-media-viewer,
 .frameleaf[data-theme='dark'] {
   --fl-accent: #22c55e;
-  --fl-border: #303940;
+  --fl-border: #2c353b;
   /* The outline of a control whose edge is its only affordance: 3:1 on every surface. */
   --fl-border-strong: #687682;
   --fl-canvas: #101416;
-  --fl-muted: #a1adb8;
+  --fl-muted: #a2adb5;
   --fl-panel: #171d21;
-  --fl-raised: #222a30;
-  --fl-text: #e5e7eb;
-  --fl-accent-text: #072211;
+  --fl-raised: #21282d;
+  --fl-text: #e8ecee;
+  --fl-accent-text: #04140a;
   /* The prototype's primary hover (styles.css `.button.primary:hover`). */
   --fl-accent-hover: color-mix(in srgb, var(--fl-accent), white 10%);
   --fl-accent-pressed: color-mix(in srgb, var(--fl-accent), black 14%);
-  --fl-teal: #0ea5a0;
+  --fl-teal: #14a9a3;
   --fl-teal-text: #04201f;
-  --fl-blue: #5794f7;
+  --fl-blue: #4c8dff;
   --fl-blue-text: #061529;
   --fl-warning: #e4bd69;
   --fl-warning-text: #2b1f05;
-  --fl-danger: #f16966;
+  --fl-danger: #f0625d;
   --fl-danger-text: #2a0605;
   /* Reserved for AI-produced content: the sparkle on a solid indigo tile (tokens.json `ai`). */
   --fl-ai: #5e5ce6;
   --fl-ai-text: #ffffff;
   /* AI labels and links as text; the tile itself stays solid indigo. */
-  --fl-ai-ink: #a3a1ff;
+  --fl-ai-ink: #8f8af7;
   /*
    * Foregrounds on the frosted material. The material lets a photograph show through, so it can
    * be as bright as white or as dark as black behind the panel tint; only these tokens and
@@ -63,9 +63,9 @@
   --fl-on-material-muted: #d3dae0;
   --fl-on-material-accent: #8be9ab;
   /* Elevation: 1 raised controls and cards, 2 menus and toasts, 3 floating capsules, 4 sheets. */
-  --fl-shadow-1: 0 2px 8px rgb(0 0 0 / 27%);
-  --fl-shadow-2: 0 14px 44px rgb(0 0 0 / 47%);
-  --fl-shadow-3: 0 10px 40px rgb(0 0 0 / 40%);
+  --fl-shadow-1: 0 1px 2px rgb(0 0 0 / 30%), 0 2px 8px rgb(0 0 0 / 25%);
+  --fl-shadow-2: 0 4px 12px rgb(0 0 0 / 25%), 0 16px 44px rgb(0 0 0 / 45%);
+  --fl-shadow-3: 0 8px 24px rgb(0 0 0 / 30%), 0 32px 96px rgb(0 0 0 / 55%);
   --fl-shadow-4: 0 18px 80px rgb(0 0 0 / 47%);
   /*
    * The viewer chrome stays dark in both themes so a photograph is judged against a
@@ -85,13 +85,13 @@
 :root:not(.dark),
 .frameleaf[data-theme='light'] {
   --fl-accent: #157b40;
-  --fl-border: #d6dce0;
+  --fl-border: #d6dde1;
   --fl-border-strong: #64727d;
-  --fl-canvas: #f4f6f7;
-  --fl-muted: #53636d;
+  --fl-canvas: #f3f5f6;
+  --fl-muted: #4c5b65;
   --fl-panel: #ffffff;
   --fl-raised: #eef1f3;
-  --fl-text: #18252b;
+  --fl-text: #142026;
   --fl-accent-text: #ffffff;
   /*
    * Lightening the accent as the prototype does leaves white text at 4.42:1 in this theme,
@@ -99,9 +99,9 @@
    */
   --fl-accent-hover: color-mix(in srgb, var(--fl-accent), var(--fl-text) 12%);
   --fl-accent-pressed: color-mix(in srgb, var(--fl-accent), var(--fl-text) 24%);
-  --fl-teal: #0a7673;
+  --fl-teal: #097370;
   --fl-teal-text: #ffffff;
-  --fl-blue: #0b5fea;
+  --fl-blue: #2563eb;
   --fl-blue-text: #ffffff;
   --fl-warning: #886100;
   --fl-warning-text: #ffffff;
@@ -109,12 +109,12 @@
   --fl-danger-text: #ffffff;
   --fl-ai: #5e5ce6;
   --fl-ai-text: #ffffff;
-  --fl-ai-ink: #4b49cf;
+  --fl-ai-ink: #5b55d6;
   --fl-on-material-muted: #36434b;
   --fl-on-material-accent: #0b4f28;
-  --fl-shadow-1: 0 2px 8px rgb(0 0 0 / 13%);
-  --fl-shadow-2: 0 14px 44px rgb(0 0 0 / 20%);
-  --fl-shadow-3: 0 10px 40px rgb(0 0 0 / 18%);
+  --fl-shadow-1: 0 1px 2px rgb(15 29 36 / 6%), 0 2px 8px rgb(15 29 36 / 8%);
+  --fl-shadow-2: 0 4px 12px rgb(15 29 36 / 8%), 0 16px 44px rgb(15 29 36 / 16%);
+  --fl-shadow-3: 0 8px 24px rgb(15 29 36 / 10%), 0 32px 96px rgb(15 29 36 / 20%);
   --fl-shadow-4: 0 18px 80px rgb(0 0 0 / 24%);
   --fl-viewer-canvas: #08090b;
   --fl-viewer-panel: #17181a;
@@ -242,9 +242,12 @@
   --fl-safe-right: env(safe-area-inset-right, 0px);
   --fl-safe-bottom: env(safe-area-inset-bottom, 0px);
   --fl-safe-left: env(safe-area-inset-left, 0px);
-  /* SF Pro on Apple devices, bundled Inter elsewhere: SF Pro cannot be licensed for web delivery. */
+  /*
+   * SF Pro on Apple devices, bundled Inter elsewhere: SF Pro cannot be licensed for web delivery.
+   * One family only. No monospace anywhere (owner rule, 2026-11-03): codes, paths, keys and
+   * timecodes use this face, with `font-variant-numeric: tabular-nums` where digits line up.
+   */
   --fl-family-ui: -apple-system, BlinkMacSystemFont, system-ui, Inter, 'Segoe UI', sans-serif;
-  --fl-family-mono: ui-monospace, SFMono-Regular, monospace;
   /*
    * Type scale. Each step is a `font` shorthand (weight size/line-height family) with a matching
    * tracking token: `font: var(--fl-type-title); letter-spacing: var(--fl-tracking-title);`, or

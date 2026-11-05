@@ -167,6 +167,19 @@ describe(EdgeProxyService.name, () => {
         outgoing.end();
       });
 
+    it('sends a previous frameleaf.net name to the current one, path and query kept (FL-1197)', async () => {
+      sut.configureNames('taylor-home.frameleaf.net', ['old-name.frameleaf.net']);
+      const response = await request({ path: '/share/abc?key=1', headers: { host: 'old-name.frameleaf.net' } });
+      expect(response.status).toBe(308);
+      expect(response.headers.location).toBe('https://taylor-home.frameleaf.net/share/abc?key=1');
+
+      const current = await request({
+        path: '/api/server/ping',
+        headers: { host: 'taylor-home.frameleaf.net', 'x-frameleaf-via': 'lan' },
+      });
+      expect(current.status).toBe(200);
+    });
+
     it('proxies to the API with the via contract and HSTS', async () => {
       const response = await request({
         path: '/api/server/ping',

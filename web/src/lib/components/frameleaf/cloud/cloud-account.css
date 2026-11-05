@@ -352,7 +352,8 @@
   background: var(--fl-raised);
   border: 1px solid var(--fl-border);
   border-radius: var(--fl-radius-control);
-  font: 500 var(--fl-font-size) / 1.4 var(--fl-family-mono);
+  font: 500 var(--fl-font-size) / 1.4 var(--fl-family-ui);
+  font-variant-numeric: tabular-nums;
   letter-spacing: 0.04em;
 }
 .frameleaf-cloud .fc-input[aria-invalid='true'] {

@@ -1,6 +1,7 @@
 <script lang="ts">
   import Button from '$lib/components/frameleaf/Button.svelte';
   import { photographyErrorKey } from '$lib/components/frameleaf/PhotographyStatus.svelte';
+  import StudioDomainStatus from '$lib/components/frameleaf/StudioDomainStatus.svelte';
   import StudioSite from '$lib/components/frameleaf/StudioSite.svelte';
   import { loadBrand, logoThumbnailUrl, type Brand, type Shoot } from '$lib/frameleaf/photography/api';
   import { PhotographyError } from '$lib/frameleaf/photography/errors';
@@ -57,7 +58,26 @@
    * beside one inspector with Design, Sections, Work, Words and Address tabs; every change shows in
    * the preview at once and is kept when Save is pressed.
    */
-  let { shoots, onEditBrand }: { shoots: Shoot[]; onEditBrand?: () => void } = $props();
+  let {
+    shoots,
+    onEditBrand,
+    headerActions,
+  }: {
+    shoots: Shoot[];
+    onEditBrand?: () => void;
+    /** The workspace header's actions: Publish, Open, the save state and Save go there (approved design, 2026-11-04). */
+    headerActions?: HTMLElement;
+  } = $props();
+  /** Moves the action row into the page header while there is one; it stays in the page otherwise. */
+  const inHeader = (node: HTMLElement, target: HTMLElement | undefined) => {
+    const home = node.parentElement;
+    const place = (to: HTMLElement | undefined) => (to ?? home)?.append(node);
+    place(target);
+    return {
+      update: place,
+      destroy: () => node.remove(),
+    };
+  };
 
   const tabs = ['design', 'sections', 'work', 'words', 'address'] as const;
   let tab = $state<(typeof tabs)[number]>('design');
@@ -318,13 +338,10 @@
 </script>
 
 <div class="phd" aria-busy={busy}>
-  <div class="phd-toolbar">
-    <div>
-      <span class="phd-eyebrow">{$t('frameleaf_photography_site_eyebrow')}</span>
-      <h2>{$t('frameleaf_photography_studio_website')}</h2>
-      <p>{$t('frameleaf_photography_site_lead')}</p>
-    </div>
-    <div class="phd-actions">
+  <!-- The page header names the page (approved design, 2026-11-04); this row publishes and saves it. -->
+  <div class="phd-toolbar" class:phw-moved={!!headerActions}>
+    {#if !headerActions}<p>{$t('frameleaf_photography_site_lead')}</p>{/if}
+    <div class="phd-actions phw-site-actions" use:inHeader={headerActions}>
       {#if draft}
         <label class="sse-switch"
           ><input type="checkbox" role="switch" bind:checked={draft.enabled} />{$t(
@@ -755,6 +772,9 @@
                     : $t('frameleaf_studio_site_domain_hint')}</small
               ></label
             >
+            {#if stored?.site.enabled && stored.site.domain && draft.domain === stored.site.domain}
+              <StudioDomainStatus domain={stored.site.domain} />
+            {/if}
             <h2>{$t('frameleaf_studio_site_search_sharing')}</h2>
             <label class="sse-field"
               ><span>{$t('frameleaf_studio_site_page_title')}</span><input

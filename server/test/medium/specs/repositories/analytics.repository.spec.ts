@@ -1,4 +1,4 @@
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
   AlbumUserRole,
@@ -450,6 +450,94 @@ describe('AnalyticsRepository.getInsights (FL-79)', () => {
     );
     return { heic };
   };
+
+  it('reads Library magic: colour by month, the light, months by hemisphere, tags, places and counts', async () => {
+    const { db, ctx, sut } = await setup();
+    const { user } = await ctx.newUser();
+    // ThumbHash header: L 63, P 31, Q 31 (a near-white average) in the first three bytes
+    const thumbhash = Buffer.from([0xff, 0xf7, 0x01, 0, 0]);
+    const banff = await newItem(
+      ctx,
+      user.id,
+      {
+        originalFileName: 'noon.jpg',
+        localDateTime: new Date('2025-06-21T12:00:00Z'),
+        fileCreatedAt: new Date('2025-06-21T18:00:00Z'),
+        thumbhash,
+      },
+      {
+        city: 'Banff',
+        country: 'Canada',
+        latitude: 51.18,
+        longitude: -115.57,
+        model: 'Canon EOS R6',
+        altitude: 1383.4,
+        shutterCount: 48_210,
+      },
+    );
+    await newItem(
+      ctx,
+      user.id,
+      {
+        originalFileName: 'night.jpg',
+        localDateTime: new Date('2025-06-21T23:59:00Z'),
+        fileCreatedAt: new Date('2025-06-22T05:59:00Z'),
+      },
+      { city: 'Banff', country: 'Canada', latitude: 51.18, longitude: -115.57 },
+    );
+    await newItem(
+      ctx,
+      user.id,
+      {
+        originalFileName: 'sydney.jpg',
+        localDateTime: new Date('2025-01-10T15:00:00Z'),
+        fileCreatedAt: new Date('2025-01-10T04:00:00Z'),
+      },
+      { city: 'Sydney', country: 'Australia', latitude: -33.87, longitude: 151.21 },
+    );
+    const { tag } = await ctx.newTag({ userId: user.id, value: 'Hiking' });
+    await ctx.newTagAsset({ tagIds: [tag.id], assetIds: [banff.id] });
+
+    // FL-1196: one photo's visual search lies nearest "mountains"
+    const axis = (index: number) => `[${Array.from({ length: 768 }, (_, i) => (i === index ? 1 : 0)).join(',')}]`;
+    await sql`insert into smart_search ("assetId", embedding) values (${banff.id}, ${axis(0)}::vector)`.execute(db);
+
+    const insights = await sut.getInsights(account(user.id), {
+      ownerId: user.id,
+      suppressedPersonIds: [],
+      suppressedPetIds: [],
+      seenLabels: [
+        { id: 'beaches', embedding: axis(1) },
+        { id: 'mountains', embedding: axis(0) },
+      ],
+    });
+    const magic = insights.magic!;
+    expect(magic.shutter).toEqual([{ make: 'Canon', model: 'Canon EOS R6', count: 48_210 }]);
+    expect(magic.farAndWide!.highest).toEqual({ metres: 1383, place: 'Banff, Canada' });
+    expect(magic.seen).toEqual({ described: 1, labels: [{ id: 'mountains', count: 1 }] });
+    expect(magic.colour).toEqual([{ month: 6, photos: 1, l: 63, p: 31, q: 31 }]);
+    // midday in Banff at midsummer is daylight, a minute to midnight is night
+    expect(magic.light.daylight).toBeGreaterThanOrEqual(1);
+    expect(magic.light.night).toBeGreaterThanOrEqual(1);
+    expect(Object.values(magic.light).reduce((sum, count) => sum + count, 0)).toBe(3);
+    expect(magic.months).toEqual(
+      expect.arrayContaining([
+        { month: 6, south: false, count: 2 },
+        { month: 1, south: true, count: 1 },
+      ]),
+    );
+    expect(magic.topTags).toEqual([{ name: 'Hiking', count: 1 }]);
+    expect(magic.farAndWide!.northernmost).toEqual({ latitude: 51.18, place: 'Banff, Canada' });
+    expect(magic.farAndWide!.southernmost).toEqual({ latitude: -33.87, place: 'Sydney, Australia' });
+    expect(magic.farAndWide!.farthest?.place).toBe('Sydney, Australia');
+    expect(magic.farAndWide!.travelledKm).toBeGreaterThan(12_000);
+    expect(magic.underTheHood.databaseRows).toBeGreaterThanOrEqual(0);
+
+    // another reader gets neither tags nor places
+    const anonymous = await sut.getInsights(account(user.id), noNames);
+    expect(anonymous.magic!.topTags).toEqual([]);
+    expect(anonymous.magic!.farAndWide).toBeNull();
+  });
 
   it('partitions the same items as the summary and reads no names for another reader', async () => {
     const { db, ctx, sut } = await setup();

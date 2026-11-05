@@ -19,6 +19,10 @@ vi.mock('$lib/components/frameleaf/WorkerInventoryPanel.svelte', async () => ({
 vi.mock('./RenderWorkersSection.svelte', async () => ({
   default: (await import('../../../../test-data/components/MockText.svelte')).default,
 }));
+// Who does what has its own spec (WhereWorkRuns.spec.ts).
+vi.mock('$lib/components/frameleaf/computers/WhereWorkRuns.svelte', async () => ({
+  default: (await import('../../../../test-data/components/MockText.svelte')).default,
+}));
 
 const entry = (overrides: object) => ({
   id: 'srv',
@@ -38,8 +42,9 @@ const data = (entries: object[], machineLearningEnabled = true) =>
     render: { workers: [], limits: { instance: {}, users: [] }, audit: [], users: [] },
   }) as unknown as ComputersData;
 
+/** One of the approved computer cards (2026-11-04). */
 const computer = (name: string) =>
-  screen.getByText(name, { selector: '.kit-item strong' }).closest('li') as HTMLElement;
+  screen.getByText(name, { selector: '.computer-name strong' }).closest('li') as HTMLElement;
 
 describe('Computers (FL-364)', () => {
   beforeAll(() => {
@@ -55,12 +60,19 @@ describe('Computers (FL-364)', () => {
   it('says this server does all the work when nothing else helps, and offers to add a computer', async () => {
     render(ComputersSection, { data: data([entry({})]) });
 
-    expect(screen.getByRole('heading', { name: 'This server does all the work' })).toBeInTheDocument();
     expect(within(computer('This server')).getByText('Ready')).toBeInTheDocument();
     expect(within(computer('This server')).getByText('Built in')).toBeInTheDocument();
     expect(within(computer('This server')).getByText('2 kinds of work')).toBeInTheDocument();
-    expect(await screen.findByText('No computer yet')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Add a computer' })).toHaveAttribute('href', '#add-a-computer');
+    expect(within(computer('This server')).getByRole('link', { name: /Graphics card check/ })).toHaveAttribute(
+      'href',
+      expect.stringContaining('section=hardware'),
+    );
+    // With only this server, Frameleaf Cloud is the other way to go faster.
+    expect(within(computer('Frameleaf Cloud')).getByText('Not set up')).toBeInTheDocument();
+    const add = await screen.findByRole('button', { name: /^Add a computer/ });
+    expect(add).toHaveAttribute('aria-expanded', 'false');
+    await fireEvent.click(add);
+    expect(screen.getByRole('region', { name: 'Add a computer' })).toBeInTheDocument();
   });
 
   it('lists a helper once, however many records the server keeps for it, with one status', async () => {
@@ -85,16 +97,14 @@ describe('Computers (FL-364)', () => {
       ]),
     });
 
-    expect(screen.getByRole('heading', { name: '2 computers are ready' })).toBeInTheDocument();
-    expect(screen.getAllByText('Office PC', { selector: '.kit-item strong' })).toHaveLength(1);
+    expect(screen.getAllByText('Office PC', { selector: '.computer-name strong' })).toHaveLength(1);
     const office = within(computer('Office PC'));
     expect(office.getByText('At home · GeForce RTX 3060')).toBeInTheDocument();
     expect(office.getByText('Ready')).toBeInTheDocument();
     expect(office.getByText('3 kinds of work')).toBeInTheDocument();
-    expect(office.getByText('AI features and Studio and restoration')).toBeInTheDocument();
-    // Who does Studio exports is the same answer the other pages give.
-    const status = within(screen.getByRole('region', { name: 'Computers status' }));
-    expect(await status.findByText('Office PC')).toBeInTheDocument();
+    // What it helps with is in Advanced, beside its Manage.
+    await fireEvent.click(screen.getByRole('button', { name: 'Advanced' }));
+    expect(await screen.findByText(/AI features and Studio and restoration/)).toBeInTheDocument();
   });
 
   it('says plainly when a helper is not answering', () => {
@@ -105,7 +115,7 @@ describe('Computers (FL-364)', () => {
       ]),
     });
 
-    expect(screen.getByRole('heading', { name: 'Office PC isn’t answering' })).toBeInTheDocument();
+    expect(screen.getByText('Office PC isn’t answering')).toBeInTheDocument();
     const office = within(computer('Office PC'));
     expect(office.getByText('Not answering')).toBeInTheDocument();
     expect(office.getByText('Work set to run there waits until it’s back.')).toBeInTheDocument();
@@ -125,16 +135,36 @@ describe('Computers (FL-364)', () => {
   it('offers the two ways a computer can be connected today, and no code that cannot work', async () => {
     render(ComputersSection, { data: data([entry({})]) });
 
+    await fireEvent.click(screen.getByRole('button', { name: /^Add a computer/ }));
     const add = within(screen.getByRole('region', { name: 'Add a computer' }));
     expect(add.getByText(/Frameleaf helper for Mac and Windows is not available yet/)).toBeInTheDocument();
     expect(add.queryByRole('textbox')).not.toBeInTheDocument();
-    const details = screen.getByText('AI helpers: addresses, access tokens and limits').closest('details')!;
-    expect(details).not.toHaveAttribute('open');
+    // The managers are under Advanced (approved design, 2026-11-04); connecting opens the right one there.
+    expect(screen.queryByText('AI helpers: addresses, access tokens and limits')).not.toBeInTheDocument();
     await fireEvent.click(add.getByRole('button', { name: 'Connect by address' }));
-    expect(details).toHaveAttribute('open');
+    expect(await screen.findByRole('button', { name: 'Advanced', pressed: true })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'AI helpers: addresses, access tokens and limits' })).toBeInTheDocument();
 
-    const studio = screen.getByText(/^Studio helpers:/).closest('details')!;
-    await fireEvent.click(add.getByRole('button', { name: 'Get a connection code' }));
-    expect(studio).toHaveAttribute('open');
+    // Back on Everyday the two ways are still open.
+    await fireEvent.click(screen.getByRole('button', { name: 'Everyday' }));
+    await fireEvent.click(
+      within(screen.getByRole('region', { name: 'Add a computer' })).getByRole('button', {
+        name: 'Get a connection code',
+      }),
+    );
+    expect(await screen.findByRole('region', { name: /^Studio helpers:/ })).toBeInTheDocument();
+  });
+
+  it('keeps Everyday to the computers and who does what, and everything else under Advanced', async () => {
+    render(ComputersSection, { data: data([entry({})]) });
+
+    expect(screen.getByRole('button', { name: 'Everyday', pressed: true })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Add a computer/ })).toBeInTheDocument();
+    // With only this server, Frameleaf Cloud is offered as the other way to go faster.
+    expect(screen.getByText('Not set up')).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Advanced' }));
+    expect(screen.queryByRole('button', { name: /^Add a computer/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Each computer' })).toBeInTheDocument();
+    expect(screen.getByText(/^Studio helpers:/)).toBeInTheDocument();
   });
 });

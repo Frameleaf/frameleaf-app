@@ -67,23 +67,43 @@ describe('PhotographyWorkspace', () => {
     sdkMock.getAssetDevelop.mockResolvedValue({ revisions: [] } as never);
   });
 
-  it('calls it a shoot everywhere, with its sections as tabs under the open shoot', async () => {
+  it("calls it a shoot everywhere: the rail groups a shoot's pages under its name, then the Studio pages", async () => {
     render(PhotographyWorkspace);
     expect(await screen.findByRole('button', { name: 'New shoot' })).toBeInTheDocument();
     expect(screen.queryByText(/project/i)).toBeNull();
     const rail = screen.getByRole('navigation', { name: 'Clients' });
-    // the rail holds the studio-wide places only; a shoot's sections never join it
-    for (const name of ['Shoots', 'Galleries', 'Studio website', 'Watermarks', 'Branding']) {
+    const pages = ['Intake & assembly', 'Client workflow', 'Orders & delivery', 'Gallery', 'Presentation'];
+    // the shoot's pages join the rail once the shoots have loaded
+    await within(rail).findByRole('button', { name: 'Intake & assembly' });
+    for (const name of ['Shoots', ...pages, 'Website', 'Watermarks', 'Branding']) {
       expect(within(rail).getByRole('button', { name })).toBeInTheDocument();
     }
+    // before a shoot is opened, the rail names the newest one
+    expect(within(rail).getByTitle('Pages for Harbour portraits')).toHaveTextContent('Harbour portraits');
+    expect(within(rail).getByText('Studio')).toBeInTheDocument();
+
     await fireEvent.click(await card());
     const tabs = await screen.findByRole('navigation', { name: 'Shoot sections' });
-    for (const name of ['Photographs', 'Intake & assembly', 'Client workflow', 'Orders & delivery', 'Presentation']) {
+    for (const name of ['Photographs', ...pages]) {
       expect(within(tabs).getByRole('button', { name })).toBeInTheDocument();
     }
     expect(within(tabs).getByRole('button', { name: 'Photographs' })).toHaveAttribute('aria-current', 'page');
-    expect(within(rail).queryByRole('button', { name: 'Orders & delivery' })).toBeNull();
+    // a shoot's own page has no New shoot
+    expect(screen.queryByRole('button', { name: 'New shoot' })).toBeNull();
     expect(screen.queryByText(/project/i)).toBeNull();
+
+    await fireEvent.click(within(rail).getByRole('button', { name: 'Gallery' }));
+    expect(await screen.findByRole('heading', { level: 1, name: 'Gallery' })).toBeInTheDocument();
+    expect(within(rail).getByRole('button', { name: 'Gallery' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('combobox', { name: 'Current shoot' })).toHaveValue('shoot');
+  });
+
+  it('opens a shoot page from the rail for the shoot it names, without one open', async () => {
+    render(PhotographyWorkspace);
+    const rail = await screen.findByRole('navigation', { name: 'Clients' });
+    await fireEvent.click(await within(rail).findByRole('button', { name: 'Orders & delivery' }));
+    expect(await screen.findByRole('heading', { level: 1, name: 'Orders & delivery' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Current shoot' })).toHaveValue('shoot');
   });
 
   it('offers "Remove from the top bar" at the rail foot only when the page passes it', async () => {
@@ -122,7 +142,7 @@ describe('PhotographyWorkspace', () => {
 
   it('opens the shoot it is given, at its galleries for Proof', async () => {
     render(PhotographyWorkspace, { initialShoot: 'shoot', initialSection: 'galleries' });
-    expect(await screen.findByRole('heading', { level: 1, name: 'Galleries' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Gallery' })).toBeInTheDocument();
     expect(await screen.findByRole('combobox', { name: 'Current shoot' })).toHaveValue('shoot');
   });
 

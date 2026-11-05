@@ -109,6 +109,12 @@ const RemoteAccessStatusResponseSchema = z
       .describe(
         'https://r.<label>.<direct domain> once enrolled; without a plan, the direct address Frameleaf Cloud reached',
       ),
+    frameleafName: z.string().nullable().describe("FL-1197: this server's chosen name on frameleaf.net, if any"),
+    frameleafNameAddress: z
+      .string()
+      .nullable()
+      .describe('FL-1197: the name as an address (taylor-home.frameleaf.net) while it routes'),
+    frameleafNameRouted: z.boolean().describe('FL-1197: the name reaches this server now'),
     certificateName: z.string().nullable().describe('The wildcard name the certificate covers'),
     certificateExpiresAt: z.string().nullable(),
     certificateError: z.string().nullable().describe('The last issuance or renewal problem'),
@@ -171,6 +177,80 @@ const RemoteHostnameUpdateSchema = z
   })
   .meta({ id: 'RemoteHostnameUpdateDto' });
 
+// FL-1197: this server's name on frameleaf.net
+const RemoteNameStateSchema = z
+  .object({
+    name: z.string().nullable(),
+    address: z.string().nullable().describe('taylor-home.frameleaf.net'),
+    relayAddress: z.string().nullable().describe('r.<label>.frameleaf.net; never changes'),
+    routed: z.boolean(),
+    previous: z.array(
+      z
+        .object({ name: z.string(), address: z.string(), redirectUntil: z.string() })
+        .meta({ id: 'RemoteNamePreviousDto' }),
+    ),
+  })
+  .meta({ id: 'RemoteNameStateResponseDto' });
+
+const RemoteNameUpdateSchema = z
+  .object({ name: z.string().min(1).max(253).describe('The name to check or claim, such as taylor-home') })
+  .meta({ id: 'RemoteNameUpdateDto' });
+
+const remoteNameReasons = ['too_short', 'too_long', 'characters', 'hyphen_at_edge', 'reserved', 'taken'] as const;
+const RemoteNameCheckSchema = z
+  .object({
+    name: z.string(),
+    address: z.string().nullable(),
+    verdict: z.enum(['available', 'current', 'taken', 'reserved', 'invalid']).meta({ id: 'RemoteNameVerdict' }),
+    reason: z
+      .enum(remoteNameReasons)
+      .nullable()
+      .meta({ type: 'string', enum: [...remoteNameReasons], nullable: true, anyOf: undefined }),
+    message: z.string().nullable(),
+  })
+  .meta({ id: 'RemoteNameCheckResponseDto' });
+
+// FL-705: the studio website on the photographer's own domain
+const studioSiteProblems = [
+  'cname_missing',
+  'cname_mismatch',
+  'txt_missing',
+  'txt_mismatch',
+  'claimed_elsewhere',
+  'certificate_pending',
+  'certificate_failed',
+  'site_unreachable',
+] as const;
+const StudioSiteDomainSchema = z
+  .object({
+    site: z
+      .object({
+        domain: z.string(),
+        slug: z.string(),
+        status: z
+          .enum(['waiting_for_dns', 'certificate_issued', 'active', 'needs_plan'])
+          .meta({ id: 'StudioSiteDomainStatus' }),
+        problem: z
+          .enum(studioSiteProblems)
+          .nullable()
+          .meta({ type: 'string', enum: [...studioSiteProblems], nullable: true, anyOf: undefined }),
+        records: z.array(
+          z
+            .object({
+              name: z.string(),
+              type: z.enum(['CNAME', 'TXT']).meta({ id: 'StudioSiteRecordType' }),
+              value: z.string(),
+            })
+            .meta({ id: 'StudioSiteRecordDto' }),
+        ),
+        checkedAt: z.string().nullable(),
+      })
+      .nullable()
+      .meta({ id: 'StudioSiteDomainDto' }),
+    problem: z.string().nullable().describe("Why the domain can't be served or checked now, in plain words"),
+  })
+  .meta({ id: 'StudioSiteDomainResponseDto' });
+
 const RemoteAccessUsageResponseSchema = z
   .object({
     period: z.string().describe('The month, YYYY-MM (UTC)'),
@@ -189,3 +269,7 @@ export class RemoteAccessUsageResponseDto extends createZodDto(RemoteAccessUsage
 export class RemoteAccessStatusResponseDto extends createZodDto(RemoteAccessStatusResponseSchema) {}
 export class RemoteAccessUpdateDto extends createZodDto(RemoteAccessUpdateSchema) {}
 export class RemoteHostnameUpdateDto extends createZodDto(RemoteHostnameUpdateSchema) {}
+export class RemoteNameStateResponseDto extends createZodDto(RemoteNameStateSchema) {}
+export class RemoteNameUpdateDto extends createZodDto(RemoteNameUpdateSchema) {}
+export class RemoteNameCheckResponseDto extends createZodDto(RemoteNameCheckSchema) {}
+export class StudioSiteDomainResponseDto extends createZodDto(StudioSiteDomainSchema) {}

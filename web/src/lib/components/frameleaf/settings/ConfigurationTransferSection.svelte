@@ -129,7 +129,8 @@
     margin: 0;
     padding: var(--fl-space-4);
     overflow: auto;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: inherit;
+    font-variant-numeric: tabular-nums;
     font-size: var(--fl-font-small);
     line-height: 1.6;
     background: var(--fl-raised);

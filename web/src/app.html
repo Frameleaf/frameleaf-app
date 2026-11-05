@@ -36,7 +36,6 @@
     <link rel="icon" type="image/png" sizes="144x144" href="/favicon-144.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-icon-180.png" />
     <link rel="preload" as="font" type="font/ttf" href="%app.font%" crossorigin="anonymous" />
-    <link rel="preload" as="font" type="font/ttf" href="%app.monofont%" crossorigin="anonymous" />
 
     <!--
       The browser chrome colour: the dark canvas by default (template index.html:9), switched to the
@@ -78,7 +77,7 @@
         document.documentElement.classList.toggle('dark', dark);
         document.documentElement.classList.toggle('light', !dark);
         if (!dark) {
-          document.querySelector('meta[name="theme-color"]:not([media])')?.setAttribute('content', '#f4f6f7');
+          document.querySelector('meta[name="theme-color"]:not([media])')?.setAttribute('content', '#f3f5f6');
         }
       } catch {
         // noop
@@ -100,7 +99,7 @@
       }
 
       html.light {
-        background-color: #f4f6f7;
+        background-color: #f3f5f6;
       }
 
       body,

@@ -111,17 +111,12 @@ describe('AppCard', () => {
     expect(screen.getByRole('link', { name: t.google_play_badge })).toHaveAttribute('href', PLAY);
   });
 
-  it("offers this server's Downloads page when Android has only the server's own download", async () => {
+  it('never offers a direct Android download, only the store listing (FL-1200)', async () => {
     device(ANDROID, 412, 915);
-    sdkMock.getAppReleases.mockResolvedValue({
-      android: { available: true, appId: 'app.frameleaf.android' },
-      ios: { available: false },
-    } as never);
+    sdkMock.getAppReleases.mockResolvedValue({ android: { available: true }, ios: { available: false } } as never);
     await mount();
 
-    await fireEvent.click(screen.getByRole('button', { name: t.get_the_app }));
-    expect(state.goto).toHaveBeenCalledWith(expect.stringContaining('section=downloads'));
-    expect(localStorage.getItem(APP_CARD_STORAGE_KEY)).not.toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('stays closed when the server names no release (the default) or on a tablet', async () => {

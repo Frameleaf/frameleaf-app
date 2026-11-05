@@ -372,13 +372,15 @@ export const relayVisitorNameAllowed = (
   name: string | null | undefined,
   enrollment: Pick<FrameleafRemoteEnrollment, 'label' | 'domain'>,
   customHost: string | null,
+  /** FL-1197: the frameleaf.net name and the previous names that still redirect. */
+  nameHosts: string[] = [],
 ): boolean => {
   const value = (name ?? '').toLowerCase().replace(/\.$/, '');
   if (!value || value.length > 253) {
     return false;
   }
   const base = `${enrollment.label}.${enrollment.domain}`;
-  if (value === base || (customHost !== null && value === customHost)) {
+  if (value === base || (customHost !== null && value === customHost) || nameHosts.includes(value)) {
     return true;
   }
   if (!value.endsWith(`.${base}`)) {

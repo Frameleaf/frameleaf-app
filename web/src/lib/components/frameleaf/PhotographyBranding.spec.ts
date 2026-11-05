@@ -7,7 +7,8 @@ import { PhotographyError } from '$lib/frameleaf/photography/errors';
 import PhotographyBranding from './PhotographyBranding.svelte';
 
 const access = vi.hoisted(() => ({ changed: undefined as undefined | (() => void) }));
-vi.mock('$lib/frameleaf/photography/api', () => ({
+vi.mock('$lib/frameleaf/photography/api', async (original) => ({
+  brandFonts: (await original<typeof import('$lib/frameleaf/photography/api')>()).brandFonts,
   loadBrand: vi.fn(),
   saveBrand: vi.fn(),
   loadLogos: vi.fn(),
@@ -50,12 +51,12 @@ it('edits real loaded settings and reports success only after the server resolve
   render(PhotographyBranding, { onSaved });
   const name = await screen.findByRole('textbox', { name: 'Studio name' });
   await fireEvent.input(name, { target: { value: 'Renamed studio' } });
-  await fireEvent.click(screen.getByRole('button', { name: 'Subtle' }));
   await fireEvent.click(screen.getByRole('button', { name: 'Save branding' }));
   await waitFor(() =>
     expect(saveBrand).toHaveBeenCalledWith(
       'loaded',
-      expect.objectContaining({ name: 'Renamed studio', watermarkOpacity: 35, watermarkSize: 4 }),
+      // the watermark is designed in Watermarks: Branding sends it back as it was loaded
+      expect.objectContaining({ name: 'Renamed studio', watermarkOpacity: 45, watermarkSize: 6 }),
     ),
   );
   expect(vi.mocked(saveBrand).mock.calls[0][1]).not.toHaveProperty('logoAssetId');
@@ -89,11 +90,15 @@ it('clears private drafts immediately when library access changes', async () => 
   await waitFor(() => expect(screen.queryByRole('textbox', { name: 'Studio name' })).not.toBeInTheDocument());
   expect(screen.queryByText('North Studio')).not.toBeInTheDocument();
 });
-it("previews the watermark on one of the photographer's own photos when there is one", async () => {
-  const { container } = render(PhotographyBranding, { onSaved: vi.fn(), photoId: 'cover-photo' });
+it("shows the watermark small on one of the photographer's own photos, summed up, and leads to Watermarks", async () => {
+  const onDesignWatermark = vi.fn();
+  const { container } = render(PhotographyBranding, { onSaved: vi.fn(), photoId: 'cover-photo', onDesignWatermark });
   await screen.findByRole('textbox', { name: 'Studio name' });
   const guide = container.querySelector('.phw-watermark-guide');
   expect(guide?.querySelector('img')?.getAttribute('src')).toContain('cover-photo');
-  // the grey stand-in's label goes once a real photo is behind the mark
-  expect(screen.queryByText('Placement guide')).not.toBeInTheDocument();
+  expect(screen.getByText('“NS”, as a corner signature · 45% opacity')).toBeInTheDocument();
+  // the controls live in Watermarks now
+  expect(screen.queryByRole('button', { name: 'Subtle' })).toBeNull();
+  await fireEvent.click(screen.getByRole('button', { name: 'Design the watermark' }));
+  expect(onDesignWatermark).toHaveBeenCalledOnce();
 });

@@ -14,6 +14,9 @@ import {
   QueueName,
   getQueueOwnerStatistics,
   retryFailedQueueJobs,
+  retryQueueJob,
+  runQueueOnOne,
+  startQueueJob,
   runQueueCommandLegacy,
   searchUsersAdmin,
   SmartAlbumBuiltInKind,
@@ -25,6 +28,7 @@ import {
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { addMessages } from 'svelte-i18n';
+import { goto } from '$app/navigation';
 import JobsManager from '$lib/components/frameleaf/JobsManager.svelte';
 import { queueManager } from '$lib/managers/queue-manager.svelte';
 import en from '../../../../../i18n/en.json';
@@ -51,6 +55,14 @@ vi.mock('@frameleaf/sdk', async (importOriginal) => ({
   getQueue: vi.fn(),
   createJob: vi.fn(),
   retryFailedQueueJobs: vi.fn(),
+  retryQueueJob: vi.fn(),
+  listMlDestinations: vi.fn().mockResolvedValue([]),
+  getMlWorkloadRoutes: vi.fn().mockResolvedValue({ routes: [] }),
+  startQueueJob: vi.fn(),
+  runQueueOnOne: vi.fn(),
+  searchAssets: vi.fn().mockResolvedValue({
+    assets: { items: [{ id: '9a1d7c6e-2b0f-4c55-9b0e-6b8f2c1c1a02', originalFileName: 'IMG_7.jpg', type: 'IMAGE' }] },
+  }),
   searchUsersAdmin: vi.fn(),
   getQueueOwnerStatistics: vi.fn(),
   triggerImageDescriptionRequeue: vi.fn(),
@@ -126,7 +138,8 @@ beforeAll(() => {
 beforeEach(() => {
   vi.clearAllMocks();
   addMessages('dev', en);
-  at('');
+  // These cases are the page as it was, which is now Background work › Advanced (approved design, 2026-11-04).
+  at('&view=advanced');
   queues.list = [
     queue(QueueName.ThumbnailGeneration, { active: 2, waiting: 5, completed: 40 }),
     queue(QueueName.FaceDetection, { failed: 3, delayed: 1 }),
@@ -470,7 +483,7 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
 
   it("says nothing about the work, rather than 'nothing is running', while an account's counts load", async () => {
     vi.mocked(getQueueOwnerStatistics).mockReturnValue(new Promise(() => {}));
-    at('&scope=account:grace');
+    at('&view=advanced&scope=account:grace');
     render(JobsManager);
 
     expect(screen.queryByRole('region', { name: 'Background work status' })).not.toBeInTheDocument();
@@ -497,7 +510,7 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
         ? Promise.reject(new Error('down'))
         : Promise.resolve({ active: 1, completed: 0, delayed: 0, failed: 0, paused: 0, waiting: 2, truncated: false }),
     );
-    at('&scope=account:grace');
+    at('&view=advanced&scope=account:grace');
     render(JobsManager);
 
     expect(
@@ -626,5 +639,124 @@ describe('Enrichment tasks (FL-59, JobsManager.jsx EnrichmentJobDialog)', () => 
 
     expect(within(dialog).getByLabelText('Acceleration')).toHaveValue('auto');
     expect(within(dialog).getByRole('button', { name: 'Add preset to settings review' })).toBeDisabled();
+  });
+});
+
+describe('Background work › Everyday (approved design, 2026-11-04)', () => {
+  it('opens on Everyday: status with Pause all and Resume, pace, when heavy work runs and the eight features', () => {
+    at('');
+    render(JobsManager);
+
+    expect(screen.getByRole('button', { name: 'Everyday', pressed: true })).toBeInTheDocument();
+    const status = within(screen.getByRole('region', { name: 'Background work status' }));
+    expect(status.getByRole('heading', { name: '3 things failed' })).toBeInTheDocument();
+    expect(status.getByRole('button', { name: 'Pause everything' })).toBeInTheDocument();
+    expect(status.getByRole('button', { name: 'Resume' })).toBeInTheDocument();
+    expect(status.getByRole('link', { name: 'See the failed task' })).toHaveAttribute(
+      'href',
+      expect.stringContaining('queue=face-detection&tab=failed'),
+    );
+    expect(status.getByRole('link', { name: /Fix in Activity/ })).toHaveAttribute('href', '/activity');
+    for (const name of [
+      'Ready to browse',
+      'Faces & identity',
+      'Visual search',
+      'Text, documents & receipts',
+      'Descriptions & tags',
+      'Transcripts & captions',
+      'Studio export',
+      'Upkeep',
+    ]) {
+      expect(screen.getByRole('button', { name: `More for ${name}` })).toBeInTheDocument();
+    }
+    // Faces has a failed task; Text is paused.
+    expect(screen.getAllByText('Needs a look').length).toBeGreaterThan(0);
+  });
+
+  it('pauses one feature’s tasks after one review', async () => {
+    at('');
+    render(JobsManager);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'More for Ready to browse' }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Pause' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Pause Ready to browse' });
+    vi.mocked(updateQueue).mockResolvedValue(queue(QueueName.ThumbnailGeneration, {}, true));
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Pause Ready to browse' }));
+    await waitFor(() =>
+      expect(updateQueue).toHaveBeenCalledWith({
+        name: QueueName.ThumbnailGeneration,
+        queueUpdateDto: { isPaused: true },
+      }),
+    );
+    // Only that feature's tasks.
+    expect(updateQueue).not.toHaveBeenCalledWith(expect.objectContaining({ name: QueueName.FaceDetection }));
+  });
+
+  it('opens Advanced at one feature’s tasks from its menu', async () => {
+    at('');
+    render(JobsManager);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'More for Faces & identity' }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name: /See its .*tasks? in Advanced/ }));
+    await waitFor(() =>
+      expect(goto).toHaveBeenCalledWith(expect.stringContaining('view=advanced&feature=faces'), expect.anything()),
+    );
+  });
+});
+
+describe('One job at a time (approved design, 2026-11-04)', () => {
+  const failedJob = {
+    id: '6f1d7c6e-2b0f-4c55-9b0e-6b8f2c1c1a01',
+    name: JobName.AssetDetectFaces,
+    timestamp: Date.UTC(2026, 8, 23, 10),
+    data: { id: 'asset-1' },
+    failedReason: 'Machine learning is unreachable',
+    worker: { kind: QueueJobWorkerKind.Server, name: null },
+  };
+
+  it('retries one failed job from its row', async () => {
+    at('&queue=face-detection&tab=failed');
+    vi.mocked(getQueueJobs).mockResolvedValue([failedJob]);
+    vi.mocked(retryQueueJob).mockResolvedValue(undefined as never);
+    render(JobsManager);
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Retry' }));
+    await waitFor(() =>
+      expect(retryQueueJob).toHaveBeenCalledWith({ name: QueueName.FaceDetection, id: failedJob.id }),
+    );
+    expect(await screen.findByText('Detect faces is back in the queue.')).toBeInTheDocument();
+  });
+
+  it('starts one waiting job now', async () => {
+    at('&queue=thumbnail-generation&tab=waiting');
+    vi.mocked(getQueueJobs).mockResolvedValue([
+      { ...failedJob, name: JobName.AssetGenerateThumbnails, failedReason: undefined },
+    ]);
+    vi.mocked(startQueueJob).mockResolvedValue(undefined as never);
+    render(JobsManager);
+
+    // The Waiting tab lists waiting, delayed and paused jobs (the mock answers each with this one).
+    const [start] = await screen.findAllByRole('button', { name: 'Start now' });
+    await fireEvent.click(start);
+    await waitFor(() =>
+      expect(startQueueJob).toHaveBeenCalledWith({ name: QueueName.ThumbnailGeneration, id: failedJob.id }),
+    );
+  });
+
+  it('runs a task on one item picked from the library', async () => {
+    at('&queue=thumbnail-generation');
+    vi.mocked(runQueueOnOne).mockResolvedValue(undefined as never);
+    render(JobsManager);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Run on one item…' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Run on one item' });
+    await fireEvent.click(await within(dialog).findByRole('radio', { name: /IMG_7.jpg/ }));
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Start now IMG_7.jpg' }));
+    await waitFor(() =>
+      expect(runQueueOnOne).toHaveBeenCalledWith({
+        name: QueueName.ThumbnailGeneration,
+        queueRunOneDto: { assetId: '9a1d7c6e-2b0f-4c55-9b0e-6b8f2c1c1a02' },
+      }),
+    );
   });
 });

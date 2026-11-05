@@ -83,8 +83,11 @@
     type IdenticalFilesExtraCopiesDto,
     type IdenticalFilesStatusDto,
     type LibraryResponseDto,
+    QueueName,
+    runQueueOnOne,
   } from '@frameleaf/sdk';
-  import { Icon } from '@frameleaf/ui';
+  import { Icon, toastManager } from '@frameleaf/ui';
+  import RunOneDialog from '$lib/components/frameleaf/RunOneDialog.svelte';
   import {
     mdiCheckCircleOutline,
     mdiChevronRight,
@@ -92,6 +95,7 @@
     mdiFileAlertOutline,
     mdiFolderNetworkOutline,
     mdiImageMultipleOutline,
+    mdiPlay,
     mdiRefresh,
     mdiShieldCheckOutline,
     mdiStarOutline,
@@ -111,6 +115,12 @@
 
   /** Look-alikes are only found while both of today's switches are on. */
   const looking = $derived(dupes.enabled && review);
+  /** "Check one photo…" (approved design, 2026-11-04): look for one photo's look-alikes now. */
+  let checkOneOpen = $state(false);
+  const checkOne = async (asset: { id: string; originalFileName: string }) => {
+    await runQueueOnOne({ name: QueueName.DuplicateDetection, queueRunOneDto: { assetId: asset.id } });
+    toastManager.primary($t('frameleaf_dupes_check_one_started', { values: { file: asset.originalFileName } }));
+  };
   const alike = $derived(alikeChoiceOf(dupes.maxDistance));
   const distanceChanged = $derived(dupes.maxDistance !== saved.maxDistance);
 
@@ -482,6 +492,18 @@
   </Section>
 
   <Section title={$t('frameleaf_dupes_alike')} description={$t('frameleaf_dupes_alike_description')}>
+    {#snippet action()}
+      {#if looking && ml.enabled}<Button onclick={() => (checkOneOpen = true)}
+          ><Icon icon={mdiPlay} size="1em" aria-hidden />{$t('frameleaf_dupes_check_one')}</Button
+        >{/if}
+    {/snippet}
+    <RunOneDialog
+      bind:open={checkOneOpen}
+      title={$t('frameleaf_dupes_check_one_title')}
+      verb={$t('frameleaf_care_check')}
+      note={$t('frameleaf_dupes_check_one_note')}
+      onStart={checkOne}
+    />
     {#if !ml.enabled}
       <MasterOff />
     {:else if !ml.clip.enabled && looking}

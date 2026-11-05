@@ -319,7 +319,7 @@
         >
           {#snippet children({ feature })}
             <div
-              class="flex size-10 items-center justify-center rounded-full bg-immich-primary font-mono font-bold text-white opacity-90 shadow-lg transition-all duration-200 hover:bg-immich-dark-primary hover:text-immich-dark-bg"
+              class="flex size-10 items-center justify-center rounded-full bg-immich-primary font-bold text-white tabular-nums opacity-90 shadow-lg transition-all duration-200 hover:bg-immich-dark-primary hover:text-immich-dark-bg"
             >
               {feature.properties?.point_count?.toLocaleString($locale)}
             </div>

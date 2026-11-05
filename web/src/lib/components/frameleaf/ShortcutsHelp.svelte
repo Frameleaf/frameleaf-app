@@ -32,6 +32,7 @@
   const groups = $derived([
     { id: 'general', title: $t('general'), items: shortcuts.general },
     { id: 'actions', title: $t('actions'), items: shortcuts.actions },
+    { id: 'albums', title: $t('frameleaf_shortcuts_albums'), items: shortcuts.albums },
   ]);
 
   $effect(() => {
@@ -144,11 +145,8 @@
     box-shadow:
       inset 0 -1px 0 var(--fl-border),
       0 0 0 1px var(--fl-border);
-    font:
-      500 var(--fl-font-micro) / 1 ui-monospace,
-      'SF Mono',
-      Menlo,
-      monospace;
+    font: 500 var(--fl-font-micro) / 1 var(--fl-family-ui);
+    font-variant-numeric: tabular-nums;
   }
   .fl-shortcut-info {
     display: inline-grid;

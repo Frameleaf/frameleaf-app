@@ -408,10 +408,11 @@
              chevron here; the account menu and the rail carry it. -->
       </div>
 
-      <!-- The prototype's theme Button (App.jsx): a bordered `.button`, 36px square in the bar. -->
+      <!-- The prototype's theme Button (App.jsx): a bordered `.button`, 36px square in the bar. On a
+           desktop it lives in the account menu instead (approved design, 2026-11-04); phones keep it here. -->
       <button
         type="button"
-        class="fl-topbar-button"
+        class="fl-topbar-button fl-topbar-theme"
         onclick={() => themeManager.toggle()}
         title={themeLabel}
         aria-label={themeLabel}
@@ -708,6 +709,11 @@
    * the 16px phone gutter: menu, logo, then Upload, the bell, Locked, theme and account. Every box is
    * 36px and 8px from the next; Help moves into the menu (LibraryRail `fl-phone-sections`).
    */
+  @media (min-width: 701px) {
+    .fl-topbar-button.fl-topbar-theme {
+      display: none;
+    }
+  }
   @media (max-width: 700px) {
     .fl-topbar-grid {
       display: flex;

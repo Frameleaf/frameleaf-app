@@ -10,6 +10,7 @@ import {
   AnalyticsStateSchema,
   AnalyticsUnitSchema,
 } from 'src/enum.js';
+import { SEEN_LABELS, type SeenLabelId } from 'src/services/seen-labels.service.js';
 
 const count = () => z.int().min(0);
 const bytes = () => z.int().min(0).describe('Bytes');
@@ -320,6 +321,102 @@ const AnalyticsCoverageSchema = z
   .describe('Out of summary.items minus hiddenItems')
   .meta({ id: 'AnalyticsCoverageDto' });
 
+const AnalyticsMagicPlaceSchema = z
+  .object({
+    latitude: z.number().meta({ format: 'double' }),
+    place: z.string().nullable().describe('City and country, when known'),
+  })
+  .meta({ id: 'AnalyticsMagicPlaceDto' });
+
+const AnalyticsMagicSchema = z
+  .object({
+    colourByMonth: z
+      .array(
+        z
+          .object({
+            month: z.int().min(1).max(12),
+            colour: z
+              .string()
+              .regex(/^#[0-9a-f]{6}$/)
+              .describe('Average colour of the photos, as #rrggbb'),
+            photos: count(),
+          })
+          .meta({ id: 'AnalyticsMonthColourDto' }),
+      )
+      .describe("Each calendar month's average photo colour, from the thumbnails; months without photos are left out"),
+    light: z
+      .object({
+        goldenMorning: count(),
+        goldenEvening: count(),
+        blueHour: count(),
+        daylight: count(),
+        night: count(),
+      })
+      .describe('Photos with a place and a time, by how high the sun stood there then (golden hour: −4° to 6°)')
+      .meta({ id: 'AnalyticsLightDto' }),
+    seasons: z
+      .object({ spring: count(), summer: count(), autumn: count(), winter: count() })
+      .describe("Items by the season where they were taken; items without a place follow the library's hemisphere")
+      .meta({ id: 'AnalyticsSeasonsDto' }),
+    topTags: z
+      .array(z.object({ name: z.string(), count: count() }).meta({ id: 'AnalyticsTagCountDto' }))
+      .describe('Your tags on the most items, at most 8; empty unless the owner reads their own scope'),
+    farAndWide: z
+      .object({
+        travelledKm: count().describe('Km between photos taken one after another, all added up'),
+        farthest: z
+          .object({ km: count(), place: z.string().nullable() })
+          .nullable()
+          .describe('The photo taken farthest from where most are taken')
+          .meta({ id: 'AnalyticsFarthestDto' }),
+        northernmost: AnalyticsMagicPlaceSchema.nullable(),
+        southernmost: AnalyticsMagicPlaceSchema.nullable(),
+        highest: z
+          .object({ metres: z.int().describe('Metres above sea level'), place: z.string().nullable() })
+          .nullable()
+          .describe('The photo taken highest up, from its recorded altitude')
+          .meta({ id: 'AnalyticsHighestDto' }),
+      })
+      .nullable()
+      .describe('Null unless the owner reads their own scope and some items have a place')
+      .meta({ id: 'AnalyticsFarAndWideDto' }),
+    underTheHood: z
+      .object({
+        searchVectors: count().describe('Smart-search embeddings'),
+        faceVectors: count().describe('Face embeddings'),
+        previews: count().describe('Thumbnails, previews and other copies made from the originals'),
+        databaseRows: count().describe("Rows in the whole server's database, estimated"),
+      })
+      .meta({ id: 'AnalyticsUnderTheHoodDto' }),
+    shutter: z
+      .array(
+        z
+          .object({ camera: z.string(), count: count().describe('Its highest recorded shutter count') })
+          .meta({ id: 'AnalyticsShutterDto' }),
+      )
+      .describe('Cameras that record their shutter count, highest first, at most 6'),
+    seen: z
+      .object({
+        described: count().describe('Photos read, the newest first, up to 20,000'),
+        labels: z
+          .array(
+            z
+              .object({
+                id: z
+                  .enum(Object.keys(SEEN_LABELS) as [SeenLabelId, ...SeenLabelId[]])
+                  .meta({ id: 'AnalyticsSeenLabel' }),
+                count: count(),
+              })
+              .meta({ id: 'AnalyticsSeenCountDto' }),
+          )
+          .describe('Each photo counted once, under the everyday subject its visual search is nearest to'),
+      })
+      .nullable()
+      .describe('What the AI sees; null when visual search is off or unavailable')
+      .meta({ id: 'AnalyticsSeenDto' }),
+  })
+  .meta({ id: 'AnalyticsMagicDto' });
+
 const AnalyticsInsightsSchema = z
   .object({
     hiddenItems: count().describe(
@@ -347,6 +444,7 @@ const AnalyticsInsightsSchema = z
     coverage: AnalyticsCoverageSchema,
     peopleAndPlaces: AnalyticsPeopleAndPlacesSchema.nullable(),
     records: AnalyticsRecordsSchema,
+    magic: AnalyticsMagicSchema.optional().describe('Library magic: colour, light, seasons, tags, places, counts'),
   })
   .meta({ id: 'AnalyticsInsightsDto' });
 

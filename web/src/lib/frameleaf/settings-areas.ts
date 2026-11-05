@@ -119,14 +119,16 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
     personal: ['repair'],
     order: ['integrity-checks', 'repair', 'duplicates', 'enrichment-care', 'unused-files'],
   },
-  // Computers & background work (FL-364; before it "Compute & jobs", FL-71): a landing page that says
-  // how the computers and the background work are doing, then Computers, Where work runs, Background
-  // work and Graphics card check. The overnight settings are listed with them. The pages it replaced
-  // (Workers & endpoints, Render workers) open Computers; see `SECTION_ALIASES`.
+  // Computers & background work (FL-364; before it "Compute & jobs", FL-71). Approved design
+  // (2026-11-04): two pages, Background work and Computers, each with Everyday and Advanced; the area
+  // opens on Background work (`DIRECT_SECTION`). Where work runs is part of Computers, and the landing
+  // page is retired: what it said is on the two pages. Graphics card check and the overnight settings
+  // stay listed with them. The pages it replaced (Workers & endpoints, Render workers, Where work runs)
+  // open Computers; see `SERVER_ALIASES`.
   {
     id: 'processing',
     group: 'server',
-    sections: ['computers', 'routing', 'queues', 'hardware', 'nightly-tasks'],
+    sections: ['queues', 'computers', 'hardware', 'nightly-tasks'],
   },
   // FL-154 and FL-159 (handoff §3.1): the template's Frameleaf Cloud area (settings-catalog.mjs:125-131,
   // 1711-1799), after Compute & jobs in "Your server": Account & link, Plan, Licence, Remote access
@@ -242,15 +244,26 @@ export const DIRECT_SECTION: Partial<Record<SettingsAreaId, string>> = Object.fr
   trash: 'contents',
   // FL-368: People & sharing opens straight on its one page.
   sharing: 'sharing',
+  // Approved design (2026-11-04): Computers & background work opens on Background work.
+  processing: 'queues',
 });
 
 export const isScreenArea = (area: SettingsAreaId) => SCREEN_AREAS.includes(area);
 
 /**
+ * Pages an area keeps out of the settings navigation, reached from inside the area instead (approved
+ * design, 2026-11-04): Graphics card check opens from This server's card and from Set somewhere else.
+ * They still open by address and from settings search.
+ */
+export const NAV_HIDDEN_SECTIONS: Partial<Record<SettingsAreaId, readonly string[]>> = Object.freeze({
+  processing: ['hardware'],
+});
+
+/**
  * Areas that open on a page of their own (a status and where to go) instead of a directory, and
  * list their pages there rather than in the navigation: Computers & background work (FL-364).
  */
-export const LANDING_AREAS: readonly SettingsAreaId[] = Object.freeze(['processing']);
+export const LANDING_AREAS: readonly SettingsAreaId[] = Object.freeze([]);
 export const hasLandingPage = (area: SettingsAreaId) => LANDING_AREAS.includes(area);
 
 /**
@@ -445,6 +458,8 @@ const SERVER_ALIASES: Record<string, string> = {
   job: 'queues',
   workers: 'computers',
   'render-workers': 'computers',
+  // Approved design (2026-11-04): Where work runs is part of Computers.
+  routing: 'computers',
   // FL-366: the prototype's addresses, and the pages folded into another one. File checks is one
   // checker; Duplicates holds look-alike matching; the tuning pages are closed "Advanced" sections.
   health: 'integrity-checks',

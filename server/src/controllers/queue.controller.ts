@@ -4,6 +4,7 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   QueueDeleteDto,
+  QueueJobParamDto,
   QueueJobResponseDto,
   QueueJobSearchDto,
   QueueNameParamDto,
@@ -11,6 +12,7 @@ import {
   QueueOwnerStatisticsSearchDto,
   QueueResponseDto,
   QueueRetryFailedResponseDto,
+  QueueRunOneDto,
   QueueUpdateDto,
 } from 'src/dtos/queue.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
@@ -105,6 +107,48 @@ export class QueueController {
     @Param() { name }: QueueNameParamDto,
   ): Promise<QueueRetryFailedResponseDto> {
     return this.service.retryFailedJobs(auth, name);
+  }
+
+  // Approved design (2026-11-04): one job at a time, from the jobs manager's rows and details.
+  @Post(':name/jobs/run-one')
+  @Authenticated({ permission: Permission.QueueJobCreate, admin: true })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Run a task on one item',
+    description:
+      "Queues the task's job for one photo or video and starts it at once, even while the task is paused or busy. Only thumbnails, metadata, faces, text recognition and playback videos.",
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+  runQueueOnOne(
+    @Auth() auth: AuthDto,
+    @Param() { name }: QueueNameParamDto,
+    @Body() dto: QueueRunOneDto,
+  ): Promise<void> {
+    return this.service.runOne(auth, name, dto);
+  }
+
+  @Post(':name/jobs/:id/start')
+  @Authenticated({ permission: Permission.QueueJobCreate, admin: true })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Start a waiting job now',
+    description: 'Starts one waiting job at the next pass, even while its queue is paused or busy.',
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+  startQueueJob(@Auth() auth: AuthDto, @Param() { name, id }: QueueJobParamDto): Promise<void> {
+    return this.service.startJob(auth, name, id);
+  }
+
+  @Post(':name/jobs/:id/retry')
+  @Authenticated({ permission: Permission.QueueJobCreate, admin: true })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Retry a failed job',
+    description: 'Puts one failed job back in its queue with its saved data.',
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+  retryQueueJob(@Auth() auth: AuthDto, @Param() { name, id }: QueueJobParamDto): Promise<void> {
+    return this.service.retryJob(auth, name, id);
   }
 
   @Delete(':name/jobs')

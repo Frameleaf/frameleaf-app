@@ -12,7 +12,7 @@
   import { openAboutDialog, openSupportDialog } from '$lib/frameleaf/system-dialogs';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { getCloudMlStatus, getCloudStatus } from '@frameleaf/sdk';
-  import { Icon, modalManager } from '@frameleaf/ui';
+  import { Icon, modalManager, Theme, themeManager } from '@frameleaf/ui';
   import {
     mdiAccountCheckOutline,
     mdiAccountEditOutline,
@@ -26,6 +26,7 @@
     mdiLockOpenVariantOutline,
     mdiLockOutline,
     mdiLogoutVariant,
+    mdiMoonWaningCrescent,
     mdiShieldAccountOutline,
     mdiShieldLockOutline,
   } from '@mdi/js';
@@ -327,6 +328,19 @@
       <button type="button" role="menuitem" class="fl-item" onclick={() => void openAvatarEditor()}>
         <Icon icon={mdiAccountEditOutline} size="1.125em" aria-hidden={true} />
         <span>{$t('edit_avatar')}</span>
+      </button>
+
+      <!-- On a desktop the theme switch lives here, not in the top bar (approved design, 2026-11-04). -->
+      <button
+        type="button"
+        role="menuitemcheckbox"
+        class="fl-item"
+        aria-checked={themeManager.value === Theme.Dark}
+        onclick={() => themeManager.toggle()}
+      >
+        <Icon icon={mdiMoonWaningCrescent} size="1.125em" aria-hidden={true} />
+        <span>{$t('frameleaf_dark_appearance')}</span>
+        <span class="fl-switch" aria-hidden="true"></span>
       </button>
 
       <!-- FL-176: the one-time "Set up your account" page can be reopened from here. As in App.jsx,

@@ -1,12 +1,13 @@
 <script lang="ts">
   import { afterNavigate, beforeNavigate, onNavigate } from '$app/navigation';
-  import { page } from '$app/state';
+  import { navigating, page } from '$app/state';
   import { clearOAuthContinue } from '$lib/frameleaf/auth-session-preference';
   import { sessionAccess, trackSessionModals } from '$lib/frameleaf/session-access.svelte';
   import { requestSessionLock, watchSessionLockOwner } from '$lib/frameleaf/session-lock';
   import SessionLockShield from '$lib/components/frameleaf/SessionLockShield.svelte';
   import DownloadPanel from '$lib/components/frameleaf/DownloadPanel.svelte';
   import PanelDock from '$lib/components/frameleaf/PanelDock.svelte';
+  import SettingsSkeleton from '$lib/components/frameleaf/SettingsSkeleton.svelte';
   import UploadPanel from '$lib/components/frameleaf/UploadPanel.svelte';
   import ErrorLayout from './ErrorLayout.svelte';
   import CustomStyles from './CustomStyles.svelte';
@@ -178,6 +179,9 @@
   let { children }: Props = $props();
 
   let showNavigationLoadingBar = $state(false);
+  // Settings waits for its settings before it draws: its shape shows meanwhile (approved design, 2026-11-04).
+  const SETTINGS_ROUTE = '/(user)/user-settings';
+  const openingSettings = $derived(navigating.to?.route.id === SETTINGS_ROUTE && page.route.id !== SETTINGS_ROUTE);
 
   onMount(() => {
     const element = document.querySelector('#stencil');
@@ -309,6 +313,9 @@
 
       {#if showNavigationLoadingBar}
         <NavigationLoadingBar />
+      {/if}
+      {#if openingSettings}
+        <SettingsSkeleton />
       {/if}
 
       <!-- App.jsx PanelDock: uploads above downloads. -->

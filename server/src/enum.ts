@@ -396,6 +396,7 @@ export enum Permission {
   PluginDelete = 'plugin.delete',
 
   ServerAbout = 'server.about',
+  /** @deprecated FL-1200: the direct APK download is gone; kept so API keys that list it still load. */
   ServerApkLinks = 'server.apkLinks',
   ServerStorage = 'server.storage',
   ServerStatistics = 'server.statistics',
@@ -599,6 +600,8 @@ export enum SystemMetadataKey {
    * candidates. Written by the edge worker, read by the API.
    */
   FrameleafRemoteAccess = 'frameleaf-remote-access',
+  /** FL-1197: this server's chosen name on frameleaf.net, as Frameleaf Cloud last reported it. */
+  FrameleafRemoteName = 'frameleaf-remote-name',
   /** FL-165: the last remote access self-check an administrator ran (written by the API only). */
   FrameleafRemoteAccessTest = 'frameleaf-remote-access-test',
   /** FL-159: the last Hardware & GPU check of the server and ML containers. */
@@ -654,6 +657,11 @@ export enum SystemMetadataKey {
   IntegrityCheckHistory = 'integrity-check-history',
   /** FL-520: when an administrator last pressed Stop on the file checks; a check started before it stops. */
   IntegrityCheckStop = 'integrity-check-stop',
+  /**
+   * What routed work does when a computer at home isn't answering (approved design, 2026-11-04): wait for it, or
+   * stop; either way administrators are told, once per computer while it stays away.
+   */
+  MlUnavailableBehaviour = 'ml-unavailable-behaviour',
   /** FL-520: look-alike photos are to be compared again in the next overnight run (after a change of "How alike"). */
   DuplicateRecompare = 'duplicate-recompare',
   /**
@@ -2648,6 +2656,8 @@ export enum DatabaseLock {
    * uploads of the same new content never store it twice.
    */
   UniversalStorageChecksum = 980,
+  /** Approved design (2026-11-04): one server sends the day's client gallery reminders. */
+  PhotographyReminders = 981,
 }
 
 export enum MaintenanceAction {

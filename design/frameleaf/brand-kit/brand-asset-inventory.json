@@ -1,11 +1,11 @@
 {
   "approvedReferences": [
     {
-      "bytes": 10109,
+      "bytes": 10393,
       "id": "reference:design/frameleaf/tokens.json",
       "path": "design/frameleaf/tokens.json",
       "role": "approved-token-reference",
-      "sha256": "43a3d64395934e9ad44fc4bca1506b7b63bf68347222bbbeeb9d7576a646596c"
+      "sha256": "c3bb647d83cbd584e8fea4bc4d717f7dc9aeb6a6b61e2af7a4f88b6a206464c8"
     },
     {
       "bytes": 988033,
@@ -50,7 +50,7 @@
     "suppliedVectors": 7
   },
   "digests": {
-    "approvedReferenceLedgerSha256": "e017b57570e3362ca5f922127e64612cb00b29ee9cecbe705ddcffde51610040",
+    "approvedReferenceLedgerSha256": "287d55bdfe9bc91af8ff1db4eed4fdcee98a1fb809f3b4ea77f3004f88c14e63",
     "suppliedSourceLedgerSha256": "59f073d84b24756562e8047f7db74a098c049c3f2ed817d479d08e399d4aaced"
   },
   "expectedDuplicateContent": [],

@@ -26,6 +26,7 @@ import {
 import { PhotographyWorkspaceRepository } from 'src/repositories/photography-workspace.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
+import { FrameleafRemoteAccessService } from 'src/services/frameleaf-remote-access.service.js';
 import { PhotographyWorkflowService } from 'src/services/photography-workflow.service.js';
 import { getConfig } from 'src/utils/config.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
@@ -52,6 +53,11 @@ const MAX_INQUIRIES = 500;
  * photos off the website; a photograph that is withheld, rejected, locked or deleted still does, checked
  * on every view.
  */
+
+/** The domain Cloud should serve for a site: only a published site with one. */
+const liveDomain = (site: PhotographySite | null | undefined) =>
+  site?.enabled && site.domain ? { domain: site.domain, slug: site.slug } : null;
+
 @Injectable()
 export class PhotographySiteService {
   /** Studios whose older websites are having their photo copies made (see `catchUp`). */
@@ -67,6 +73,7 @@ export class PhotographySiteService {
     private configRepository: ConfigRepository,
     private metadata: SystemMetadataRepository,
     private logger: LoggingRepository,
+    private remoteAccess: FrameleafRemoteAccessService,
   ) {
     this.logger.setContext(PhotographySiteService.name);
   }
@@ -106,8 +113,56 @@ export class PhotographySiteService {
       for (const { copy } of created) await this.removeFiles(copy);
       throw error;
     }
+    this.reportOwnDomain(ownerId, current.site, site);
     for (const item of saved.result) await this.removeFiles(item);
     return this.view(saved.revision, site, saved.record);
+  }
+
+  /** The latest domain report; each one waits for the one before (never rejects). */
+  private domainReports: Promise<unknown> = Promise.resolve();
+
+  /**
+   * FL-705: Frameleaf Cloud serves a published website on its own domain through `sites.frameleaf.cloud`.
+   * It hears about the domain when the site is published with one, and that there is none when the site
+   * is turned off or the domain is cleared. In the background: the save never waits for Cloud.
+   */
+  private reportOwnDomain(ownerId: string, before: PhotographySite | null | undefined, after: PhotographySite) {
+    if (JSON.stringify(liveDomain(before)) === JSON.stringify(liveDomain(after))) {
+      return;
+    }
+    void this.reportStoredDomain(ownerId)
+      .then(({ problem }) => problem && this.logger.warn(`The studio website's own domain wasn't reported: ${problem}`))
+      .catch((error: unknown) => this.logger.warn(`The studio website's own domain wasn't reported: ${error}`));
+  }
+
+  /**
+   * Tells Cloud the domain as stored when the report goes out, one report at a time: a report that
+   * waited behind another can't send a domain a later save has replaced.
+   */
+  private reportStoredDomain(ownerId: string) {
+    const report = this.domainReports.then(async () => {
+      const { record } = await this.repository.studioRecord(ownerId);
+      return this.remoteAccess.reportStudioSite(liveDomain(record.site));
+    });
+    this.domainReports = report.catch(() => {});
+    return report;
+  }
+
+  /** FL-705 `GET photography/site/domain`: how Frameleaf Cloud sees this studio's own domain, and the DNS records. */
+  async siteDomain(auth: AuthDto) {
+    const ownerId = this.workflow.studioOwner(auth);
+    const { record } = await this.repository.studioRecord(ownerId);
+    const domain = record.site?.enabled ? record.site.domain : '';
+    if (!domain) {
+      return { site: null, problem: null };
+    }
+    let answer = await this.remoteAccess.studioSiteStatus();
+    if (!answer.site && !answer.problem) {
+      // Cloud never heard of it (published while remote access was off, or the report was lost): tell it now
+      answer = await this.reportStoredDomain(ownerId);
+    }
+    // one studio per server has its own domain; another studio's is not this one's to show
+    return answer.site && answer.site.domain !== domain ? { site: null, problem: null } : answer;
   }
 
   private view(revision: string | null, site: PhotographySite, record: StudioRecord) {
@@ -428,6 +483,59 @@ export class PhotographySiteService {
       await this.jobs.queue({ name: JobName.SendMail, data: { to: owner.email, subject: title, html, text } });
     } catch (error) {
       this.logger.warn(`Studio inquiry email not queued: ${error}`);
+    }
+  }
+
+  /**
+   * Emails a client their gallery invitation (approved design, 2026-11-04: Gallery › Invite client). False when
+   * this server cannot send it: email is off, or it has no public address for the link. The invitation itself
+   * is already saved, and the studio can still copy the link.
+   */
+  async emailInvitation(
+    auth: AuthDto,
+    invitation: {
+      workflowId: string;
+      token: string;
+      email: string;
+      recipientName: string;
+      galleryTitle: string;
+      welcomeMessage?: string;
+      expiresAt: string | null;
+    },
+  ): Promise<boolean> {
+    try {
+      const { server, notifications, templates } = await getConfig(
+        { configRepo: this.configRepository, metadataRepo: this.metadata, logger: this.logger },
+        { withCache: true },
+      );
+      const baseUrl = getExternalDomain(server);
+      if (!notifications.smtp.enabled || !baseUrl) {
+        return false;
+      }
+      const studioName = (await this.workspace.get(auth.user.id))?.value.brand?.name || auth.user.name;
+      const { html, text } = await this.email.renderEmail({
+        template: EmailTemplate.GALLERY_INVITE,
+        data: {
+          baseUrl,
+          showBranding: templates.email.showBranding,
+          studioName,
+          recipientName: invitation.recipientName,
+          galleryTitle: invitation.galleryTitle,
+          welcomeMessage: invitation.welcomeMessage,
+          link: `${baseUrl}/photography/gallery/${invitation.workflowId}#invitation=${invitation.token}`,
+          expiresAt: invitation.expiresAt
+            ? new Date(invitation.expiresAt).toLocaleDateString('en', { dateStyle: 'long' })
+            : undefined,
+        },
+      });
+      await this.jobs.queue({
+        name: JobName.SendMail,
+        data: { to: invitation.email, subject: `${studioName} shared ${invitation.galleryTitle} with you`, html, text },
+      });
+      return true;
+    } catch (error) {
+      this.logger.warn(`Gallery invitation email not queued: ${error}`);
+      return false;
     }
   }
 

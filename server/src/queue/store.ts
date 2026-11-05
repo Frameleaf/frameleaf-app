@@ -91,6 +91,12 @@ const itemFollowsJob = sql<boolean>`not exists (select 1 from job_selection s wh
  * All methods own short transactions. No connection escapes to a handler or an enumerator.
  * Bind serialized JSON as text before casting: postgres.js otherwise JSON-encodes it a second time.
  */
+/**
+ * The `availableAt` of a job started by hand (Start now, Run on one item). Nothing else is available
+ * from the epoch: queued work is available from when it was queued, or later when delayed.
+ */
+const STARTED_BY_HAND = sql`'epoch'::timestamptz`;
+
 export class SqlQueueStore {
   constructor(readonly db: Kysely<DB>) {}
 
@@ -450,8 +456,13 @@ export class SqlQueueStore {
       } = await sql<{ paused: boolean; concurrency: number }>`
         select paused, concurrency from job_queue where name = ${queue} for no key update skip locked
       `.execute(tx);
-      if (!config || config.paused) {
+      if (!config) {
         return [];
+      }
+      // Started by hand (Start now, Run on one item): claimed first, even while the task is paused or full.
+      const byHand = await this.claimWaiting(tx, queue, workerId, Math.min(QUEUE_BATCH, maxClaims), true);
+      if (config.paused || byHand.length >= maxClaims) {
+        return byHand;
       }
       const {
         rows: [counts],
@@ -474,30 +485,73 @@ export class SqlQueueStore {
           if (numAffectedRows === 0n) break;
         }
       }
-      const capacity = Math.min(QUEUE_BATCH, maxClaims, config.concurrency - counts.active);
+      // The ones started by hand already count as active.
+      const capacity = Math.min(
+        QUEUE_BATCH - byHand.length,
+        maxClaims - byHand.length,
+        config.concurrency - counts.active,
+      );
       if (capacity <= 0) {
-        return [];
+        return byHand;
       }
-      const { rows } = await sql<QueueClaim>`
+      return [...byHand, ...(await this.claimWaiting(tx, queue, workerId, capacity, false))];
+    });
+  }
+
+  /**
+   * Claims up to `limit` waiting jobs of one queue, oldest first; `byHand` takes only the ones started
+   * by hand (`startNow`). The page is made active, audited and synchronized together before any
+   * claim reaches an executor.
+   */
+  private async claimWaiting(
+    tx: Transaction<DB>,
+    queue: string,
+    workerId: string,
+    limit: number,
+    byHand: boolean,
+  ): Promise<QueueClaim[]> {
+    if (limit <= 0) {
+      return [];
+    }
+    const { rows } = await sql<QueueClaim>`
         update job set state = 'active', token = gen_random_uuid(), "workerId" = ${workerId}::uuid,
           attempt = attempt + 1, "startedAt" = now(), "progressAt" = now(), "progressUnits" = 0,
           "leaseExpiresAt" = now() + interval '60 seconds', "cancelRequestedAt" = null, "cancelReason" = null, "dependencyReason" = null
         where id in (
           select id from job j where queue = ${queue} and state = 'waiting' and "availableAt" <= now()
+            ${byHand ? sql`and "availableAt" = ${STARTED_BY_HAND}` : sql``}
             and ("cancelRequestedAt" is null or "cancelReason" = 'deadline')
             and not (${managerImportHeld(sql<string>`j."runId"`)})
-          order by "createdAt", id limit ${capacity} for update skip locked
+          order by "createdAt", id limit ${limit} for update skip locked
         ) returning id, queue, name, data, token, "workerId", attempt, "runId", "itemKey", "rootItemKey", "deadlineMs", "startedAt", "safeToRetry"
       `.execute(tx);
-      if (rows.length > 0) {
-        const jobIds = rows.map((claim) => claim.id);
-        // The bounded page is already active and locked in this transaction. Audit and
-        // synchronize the same identities together before returning any claim to an executor.
-        await sql`insert into job_attempt("jobId", attempt, token, "workerId")
+    if (rows.length > 0) {
+      const jobIds = rows.map((claim) => claim.id);
+      await sql`insert into job_attempt("jobId", attempt, token, "workerId")
           select id, attempt, token, "workerId" from job where id = any(${jobIds}::uuid[])`.execute(tx);
-        await this.syncItem(jobIds, tx);
+      await this.syncItem(jobIds, tx);
+    }
+    return rows;
+  }
+
+  /**
+   * Start now (approved design, 2026-11-04): one pending or waiting job goes straight to the front and
+   * is claimed at the next pass, even while its task is paused or running as many as it may. Its
+   * dependencies and holds still apply. False when the job is not waiting to run in this queue.
+   */
+  async startNow(queue: string, jobId: string): Promise<boolean> {
+    return this.db.transaction().execute(async (tx) => {
+      await lockQueues(tx, [queue]);
+      const { rows } = await sql<{ id: string }>`update job j set state = 'waiting', "availableAt" = ${STARTED_BY_HAND}
+        where id = ${jobId}::uuid and queue = ${queue} and state in ('pending','waiting')
+          and ("cancelRequestedAt" is null or "cancelReason" = 'deadline')
+          and not (${managerImportHeld(sql<string>`j."runId"`)})
+          and ("parentId" is null or exists (select 1 from job p where p.id = j."parentId" and p.state = 'completed'))
+        returning id`.execute(tx);
+      if (rows.length > 0) {
+        await sql`select pg_notify('frameleaf_jobs', '')`.execute(tx);
       }
-      return rows;
+      return rows.length > 0;
     });
   }
 
@@ -1131,7 +1185,17 @@ export class SqlQueueStore {
     );
   }
 
-  async retryFailed(queue: string) {
+  /** The newest job of this name still waiting to run on one item, if there is one. */
+  async findWaitingJob(queue: string, name: string, itemId: string): Promise<string | undefined> {
+    const { rows } = await sql<{ id: string }>`select id from job where queue = ${queue} and name = ${name}
+      and state in ('pending','waiting') and data->>'id' = ${itemId} order by "createdAt" desc, id desc limit 1`.execute(
+      this.db,
+    );
+    return rows[0]?.id;
+  }
+
+  /** Puts failed jobs back with their saved data: every one in the queue, or only `jobId`. */
+  async retryFailed(queue: string, jobId?: string) {
     let total = 0;
     for (;;) {
       const count = await this.db.transaction().execute(async (tx) => {
@@ -1140,7 +1204,8 @@ export class SqlQueueStore {
           "availableAt" = now(), "finishedAt" = null, error = null, "retryBaseAttempt" = attempt
           where id in (
             select id from (select id, "dedupKey", row_number() over (partition by coalesce("dedupKey", id::text) order by "createdAt", id) ordinal
-              from job where queue = ${queue} and state = 'failed' and "safeToRetry") candidates
+              from job where queue = ${queue} and state = 'failed' and "safeToRetry"
+                ${jobId ? sql`and id = ${jobId}::uuid` : sql``}) candidates
             where ordinal = 1 and (candidates."dedupKey" is null or not exists (
               select 1 from job d where d.queue = ${queue} and d."dedupKey" = candidates."dedupKey"
                 and d.state in ('pending','waiting','active'))) limit 1000

@@ -2,8 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { once } from 'node:events';
 import http2, { type IncomingHttpHeaders, type ServerHttp2Session, type ServerHttp2Stream } from 'node:http2';
 import { setTimeout as sleep } from 'node:timers/promises';
-import tls, { type SecureContext, type TLSSocket } from 'node:tls';
-import type { EdgeContexts } from 'src/edge/edge-direct.service.js';
+import tls, { type TLSSocket } from 'node:tls';
 import type { FrameleafRemoteAccess, FrameleafRemoteEnrollment } from 'src/types.js';
 import {
   type BuddyRecoveryScope,
@@ -11,6 +10,7 @@ import {
   buddyRecoveryRelayResponseSchema,
   buddyRelayPurposeProblem,
 } from 'src/edge/buddy-recovery.js';
+import { type EdgeContexts, contextForName, loadContexts } from 'src/edge/edge-direct.service.js';
 import { EdgeProxyService } from 'src/edge/edge-proxy.service.js';
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -63,9 +63,14 @@ export type EdgeRelayTarget = {
   /** Present only when the one tunnel for this label must serve recovery instead of paid remote access. */
   recovery?: BuddyRecoveryScope;
   buddyOnly?: boolean;
+  /**
+   * FL-1197: the frameleaf.net names served, joined. A change reconnects, so the relay token names them
+   * (Frameleaf Cloud's relay routes only the hosts in the token).
+   */
+  namesKey?: string;
 };
 
-type Contexts = { wildcard: SecureContext; custom: { host: string; context: SecureContext } | null };
+type Contexts = ReturnType<typeof loadContexts>;
 
 /** How one tunnel ended, after READY. */
 type TunnelEnd = { reason: string; goaway: string | null };
@@ -116,6 +121,7 @@ export class EdgeRelayService {
   private contexts: Contexts | null = null;
   private enrollment: Pick<FrameleafRemoteEnrollment, 'label' | 'domain'> | null = null;
   private customHost: string | null = null;
+  private nameHosts: string[] = [];
   private target: EdgeRelayTarget | null = null;
   private loop: Promise<void> | null = null;
   private abort: AbortController | null = null;
@@ -153,17 +159,10 @@ export class EdgeRelayService {
   /** The certificates visitors are served with, and the names that may be served. Applies to the next visitor. */
   configure(input: { contexts: EdgeContexts; enrollment: Pick<FrameleafRemoteEnrollment, 'label' | 'domain'> }) {
     const { contexts } = input;
-    this.contexts = {
-      wildcard: tls.createSecureContext({ cert: contexts.wildcard.certificate, key: contexts.wildcard.key }),
-      custom: contexts.custom
-        ? {
-            host: contexts.custom.host,
-            context: tls.createSecureContext({ cert: contexts.custom.certificate, key: contexts.custom.key }),
-          }
-        : null,
-    };
+    this.contexts = loadContexts(contexts);
     this.enrollment = input.enrollment;
     this.customHost = contexts.custom?.host ?? null;
+    this.nameHosts = contexts.name?.hosts ?? [];
   }
 
   /**
@@ -177,6 +176,7 @@ export class EdgeRelayService {
       (previous.instanceId !== target.instanceId ||
         previous.linkKey !== target.linkKey ||
         previous.buddyOnly !== target.buddyOnly ||
+        (previous.namesKey ?? '') !== (target.namesKey ?? '') ||
         JSON.stringify(previous.recovery) !== JSON.stringify(target.recovery))
     ) {
       await this.stop();
@@ -747,7 +747,7 @@ export class EdgeRelayService {
       !enrollment ||
       !contexts ||
       !clientIp ||
-      !relayVisitorNameAllowed(sni, enrollment, this.customHost) ||
+      !relayVisitorNameAllowed(sni, enrollment, this.customHost, this.nameHosts) ||
       (target.recovery && sni !== buddyRecoveryHost(target.enrollment))
     ) {
       stream.respond({ ':status': 403 }, { endStream: true });
@@ -763,11 +763,11 @@ export class EdgeRelayService {
       minVersion: 'TLSv1.2',
       SNICallback: (servername, callback) => {
         const name = servername.toLowerCase().replace(/\.$/, '');
-        if (name !== sni || !relayVisitorNameAllowed(name, enrollment, this.customHost)) {
+        if (name !== sni || !relayVisitorNameAllowed(name, enrollment, this.customHost, this.nameHosts)) {
           callback(new Error('not a name this server serves'), undefined);
           return;
         }
-        callback(null, contexts.custom && name === contexts.custom.host ? contexts.custom.context : contexts.wildcard);
+        callback(null, contextForName(contexts, name));
       },
     });
     const timer = setTimeout(() => socket.destroy(), VISITOR_HANDSHAKE_TIMEOUT_MS);

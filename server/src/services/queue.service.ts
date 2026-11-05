@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { QueueJobRow } from 'src/repositories/job.repository.js';
@@ -19,9 +19,11 @@ import {
   QueueOwnerStatisticsResponseDto,
   QueueResponseDto,
   QueueRetryFailedResponseDto,
+  QueueRunOneDto,
   QueueUpdateDto,
 } from 'src/dtos/queue.dto.js';
 import {
+  AssetType,
   BootstrapEventPriority,
   CronJob,
   DatabaseLock,
@@ -38,6 +40,20 @@ import {
   SystemMetadataKey,
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
+
+/** The tasks that can run on one photo or video, and the job each queues for it. */
+const RUN_ONE_JOBS: Partial<Record<QueueName, JobName>> = {
+  [QueueName.ThumbnailGeneration]: JobName.AssetGenerateThumbnails,
+  [QueueName.MetadataExtraction]: JobName.AssetExtractMetadata,
+  [QueueName.FaceDetection]: JobName.AssetDetectFaces,
+  [QueueName.Ocr]: JobName.Ocr,
+  [QueueName.VideoConversion]: JobName.AssetEncodeVideo,
+  // Library care's "Redo one…" and "Check one photo…" (approved design, 2026-11-04).
+  [QueueName.SmartSearch]: JobName.SmartSearch,
+  [QueueName.DuplicateDetection]: JobName.AssetDetectDuplicates,
+  [QueueName.ImageDescription]: JobName.ImageDescription,
+  [QueueName.NsfwDetection]: JobName.NsfwDetection,
+};
 import {
   handlePromiseError,
   isImageDescriptionEnabled,
@@ -373,6 +389,47 @@ export class QueueService extends BaseService {
    */
   async retryFailedJobs(auth: AuthDto, name: QueueName): Promise<QueueRetryFailedResponseDto> {
     return { count: await this.jobRepository.retryFailed(name) };
+  }
+
+  /** Retry one failed job with its saved data (approved design, 2026-11-04). */
+  async retryJob(auth: AuthDto, name: QueueName, id: string): Promise<void> {
+    if ((await this.jobRepository.retryFailed(name, id)) === 0) {
+      throw new BadRequestException('This job has not failed, or it cannot be run again');
+    }
+  }
+
+  /** Start one waiting job now, even while its task is paused or busy (approved design, 2026-11-04). */
+  async startJob(auth: AuthDto, name: QueueName, id: string): Promise<void> {
+    if (!(await this.jobRepository.startNow(name, id))) {
+      throw new BadRequestException('This job is not waiting to run');
+    }
+  }
+
+  /**
+   * Run on one item (approved design, 2026-11-04): the task's job for one photo or video, started at
+   * once, even while the task is paused or busy. Only the tasks that work on one item at a time,
+   * with the same jobs as the asset page's refresh actions.
+   */
+  async runOne(auth: AuthDto, name: QueueName, { assetId }: QueueRunOneDto): Promise<void> {
+    const jobName = RUN_ONE_JOBS[name];
+    if (!jobName) {
+      throw new BadRequestException('This task does not run on one item');
+    }
+    const asset = await this.assetRepository.getById(assetId);
+    if (!asset) {
+      throw new NotFoundException('Asset not found');
+    }
+    if (name === QueueName.VideoConversion && asset.type !== AssetType.Video) {
+      throw new BadRequestException('Playback videos are made for videos only');
+    }
+    if (name === QueueName.NsfwDetection && asset.type !== AssetType.Image) {
+      throw new BadRequestException('Locked content is reread for photos only');
+    }
+    await this.jobRepository.queue({ name: jobName, data: { id: assetId } } as JobItem);
+    const jobId = await this.jobRepository.findWaitingJob(name, jobName, assetId);
+    if (!jobId || !(await this.jobRepository.startNow(name, jobId))) {
+      throw new BadRequestException('This item’s job could not be started now');
+    }
   }
 
   async emptyQueue(auth: AuthDto, name: QueueName, dto: QueueDeleteDto) {

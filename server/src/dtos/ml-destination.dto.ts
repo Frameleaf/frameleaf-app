@@ -246,9 +246,17 @@ const MlWorkloadProcessingOrderSchema = z
   })
   .meta({ id: 'MlWorkloadProcessingOrderDto' });
 
+const MlWhenUnavailableSchema = z
+  .enum(['wait', 'stop'])
+  .describe(
+    "When a computer at home isn't answering: wait, and start when it is back; or stop, so its work can be sent elsewhere. Administrators are told either way.",
+  )
+  .meta({ id: 'MlWhenUnavailable' });
+
 const MlProcessingOrderResponseSchema = z
   .object({
     order: sourceList('The places processing tries, first to last, for every workload without a list of its own'),
+    whenUnavailable: MlWhenUnavailableSchema,
     workloads: z.array(MlWorkloadProcessingOrderSchema).describe('Workloads with a list of their own'),
     sources: z.array(MlProcessingSourceStatusSchema).describe('Whether each place can take work now'),
   })
@@ -259,6 +267,7 @@ const MlProcessingOrderUpdateSchema = z
     order: sourceList(
       'The places to try, first to last; each of this server, your computers and Frameleaf Cloud once',
     ).refine((sources) => sources.length === 3, 'Put all three places in order'),
+    whenUnavailable: MlWhenUnavailableSchema.optional(),
   })
   .meta({ id: 'MlProcessingOrderUpdateDto' });
 

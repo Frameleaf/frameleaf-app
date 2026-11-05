@@ -27,14 +27,14 @@
     Personal: 'frameleaf_photography_type_personal',
   };
 
-  /** The one name of each shoot section, used by the rail and by the section's own heading. */
+  /** The one name of each shoot section, used by the rail, the shoot's tabs and the section's own heading. */
   export const shootSectionKeys = {
     photos: 'frameleaf_photography_section_photos',
     intake: 'frameleaf_photography_section_intake',
     workflow: 'frameleaf_photography_section_workflow',
     orders: 'frameleaf_photography_section_orders',
     presentation: 'frameleaf_photography_section_presentation',
-    publishing: 'frameleaf_photography_section_publishing',
+    galleries: 'frameleaf_photography_section_gallery',
   } as const satisfies Record<string, Translations>;
 
   const orderStatusKeys: Record<string, Translations> = {

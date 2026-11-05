@@ -23,9 +23,7 @@
   import { page } from '$app/state';
   import AnalyticsArea from '$lib/components/frameleaf/analytics/AnalyticsArea.svelte';
   import BackupArea from '$lib/components/frameleaf/backup/BackupArea.svelte';
-  import ComputersLanding from '$lib/components/frameleaf/computers/ComputersLanding.svelte';
   import BackLink from '$lib/components/frameleaf/settings/kit/BackLink.svelte';
-  import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
   import CloudTourHost from '$lib/components/frameleaf/cloud/CloudTourHost.svelte';
   import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
   import LibraryCareLanding from '$lib/components/frameleaf/settings/care/LibraryCareLanding.svelte';
@@ -51,6 +49,7 @@
   import {
     backupPageFor,
     commandCenterUrl,
+    NAV_HIDDEN_SECTIONS,
     hasLandingPage,
     honoursScope,
     isBackupSection,
@@ -359,7 +358,6 @@
     'contents',
     'queues',
     'computers',
-    'routing',
     'cloud-processing',
     'hardware',
     // FL-365: the Storage & originals pages draw their own kit cards.
@@ -433,7 +431,9 @@
     if (['libraries', 'trash', 'backups'].includes(area) || hasLandingPage(area) || isPlainArea(area)) {
       return [];
     }
-    return areaSections.map((section) => ({ key: section.key, title: section.title, area, section: section.key }));
+    return areaSections
+      .filter((section) => !NAV_HIDDEN_SECTIONS[area]?.includes(section.key) || section.key === selected?.key)
+      .map((section) => ({ key: section.key, title: section.title, area, section: section.key }));
   });
   /** The area directory's rows: its sections. Library care lists its tools on its own landing page (FL-366). */
   const directoryRows = $derived.by((): DirectoryRow[] => {
@@ -993,8 +993,6 @@
                     void loadPreferenceHistory();
                   }}
                 />
-              {:else if hasLandingPage(area) && !selected}
-                <KitPage><ComputersLanding /></KitPage>
               {:else if selected}
                 <div class="cc-settings-content">
                   {#if backToArea && !ownHeading}

@@ -1,4 +1,4 @@
-import { AnalyticsCameraKind, AnalyticsScopeKind, AnalyticsState } from '@frameleaf/sdk';
+import { AnalyticsCameraKind, AnalyticsScopeKind, AnalyticsSeenLabel, AnalyticsState } from '@frameleaf/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import LibraryAnalytics from '$lib/components/frameleaf/analytics/LibraryAnalytics.svelte';
@@ -120,6 +120,20 @@ describe('LibraryAnalytics', () => {
     expect(screen.getByRole('img', { name: '1% of the volume used' })).toBeInTheDocument();
     expect(screen.queryByRole('img', { name: '60% of the volume used' })).not.toBeInTheDocument();
     expect(screen.getByText(/^Whole drive: /)).toBeInTheDocument();
+  });
+
+  it('answers each lower card in its title under a kicker, and links its sections from a bar', async () => {
+    const report = analyticsReportFixture();
+    render(LibraryAnalytics, { report });
+    const added = report.series.reduce((total, row) => total + row.photos + row.videos, 0);
+    const each = Math.round(added / report.series.length).toLocaleString('en');
+    expect(
+      screen.getByRole('heading', { level: 2, name: new RegExp(`About ${each} new photos and videos a`) }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: /^Dates for \d+%, places for \d+%$/ })).toBeInTheDocument();
+    const bar = await screen.findByRole('navigation', { name: 'Sections of this page' });
+    expect(await within(bar).findByRole('link', { name: 'Overview' })).toHaveAttribute('href', '#an-overview');
+    expect(within(bar).getByRole('link', { name: 'Activity' })).toHaveAttribute('href', '#an-activity');
   });
 
   it('pluralises photo and video counts', () => {
@@ -400,5 +414,52 @@ describe('LibraryAnalytics', () => {
       expect(storage.getByText('60.0%')).toBeInTheDocument();
       expect(storage.getByText('40.0%')).toBeInTheDocument();
     });
+  });
+
+  it('shows Library magic from what the server worked out, and links it from the bar', async () => {
+    const insights = analyticsInsightsFixture({
+      magic: {
+        colourByMonth: [
+          { month: 7, photos: 40, colour: '#4f8a3c' },
+          { month: 10, photos: 30, colour: '#e8913a' },
+        ],
+        light: { goldenMorning: 10, goldenEvening: 30, blueHour: 5, daylight: 50, night: 5 },
+        seasons: { spring: 10, summer: 60, autumn: 20, winter: 10 },
+        topTags: [{ name: 'Hiking', count: 12 }],
+        farAndWide: {
+          travelledKm: 80_150,
+          farthest: { km: 12_000, place: 'Sydney, Australia' },
+          northernmost: { latitude: 51.2, place: 'Banff, Canada' },
+          southernmost: { latitude: -33.9, place: 'Sydney, Australia' },
+          highest: { metres: 2350, place: 'Lake Louise, Canada' },
+        },
+        underTheHood: { searchVectors: 1000, faceVectors: 500, previews: 2000, databaseRows: 90_000 },
+        shutter: [{ camera: 'Canon EOS R6', count: 48_210 }],
+        seen: {
+          described: 120,
+          labels: [
+            { id: AnalyticsSeenLabel.Mountains, count: 60 },
+            { id: AnalyticsSeenLabel.Lakes, count: 40 },
+            { id: AnalyticsSeenLabel.People, count: 20 },
+          ],
+        },
+      },
+    });
+    render(LibraryAnalytics, { report: analyticsReportFixture({ insights }) });
+    expect(screen.getByRole('heading', { name: 'Things only your server knows' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Green in July, orange in October' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '40% of your photos were taken in golden hour' })).toBeInTheDocument();
+    expect(screen.getByText(/You’re a sunset person: 75%/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Summer is your season' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: '80,150 km between your photos, 2× around the Earth' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '1.5K AI vectors make search and faces instant' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Mountains, Lakes, and People, most of all' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Your Canon EOS R6 has fired 48,210 times' })).toBeInTheDocument();
+    expect(screen.getByText('Lake Louise, Canada')).toBeInTheDocument();
+    expect(screen.getByText('2,350 m')).toBeInTheDocument();
+    const bar = await screen.findByRole('navigation', { name: 'Sections of this page' });
+    expect(await within(bar).findByRole('link', { name: 'Magic' })).toHaveAttribute('href', '#an-magic');
   });
 });

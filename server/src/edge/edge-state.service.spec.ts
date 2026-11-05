@@ -56,7 +56,7 @@ describe(EdgeStateService.name, () => {
   let identityDir: string;
   let certificates: EdgeCertificateRepository;
   let direct: { listening: boolean; configure: any; start: any; stop: any };
-  let proxy: { destroy: any; configureRecovery: any };
+  let proxy: { destroy: any; configureRecovery: any; configureNames: any };
   let relay: { configure: any; ensure: any; stop: any; status: any; state: Record<string, unknown> };
   let portMapping: { keep: any; release: any; result: Record<string, unknown> };
   let wanProbe: Record<string, unknown>;
@@ -154,7 +154,7 @@ describe(EdgeStateService.name, () => {
         return Promise.resolve();
       }),
     };
-    proxy = { destroy: vi.fn(), configureRecovery: vi.fn() };
+    proxy = { destroy: vi.fn(), configureRecovery: vi.fn(), configureNames: vi.fn() };
     relay = {
       state: { connected: false },
       configure: vi.fn(),
@@ -735,6 +735,38 @@ describe(EdgeStateService.name, () => {
         expect.objectContaining({ contexts: { wildcard, custom: { host: 'photos.example.com', ...custom } } }),
       );
       expect(remoteState()).toMatchObject({ customCertificate: { host: 'photos.example.com', reported: true } });
+    });
+
+    it('keeps serving the previous name while the new one waits on its certificate (FL-1197)', async () => {
+      setSettings({ enabled: true });
+      metadata.set(SystemMetadataKey.FrameleafRemoteName, {
+        instanceId: INSTANCE_ID,
+        name: 'new-home',
+        address: 'new-home.frameleaf.net',
+        relayAddress: null,
+        routed: true,
+        previous: [{ name: 'photos', address: 'photos.example.com', redirectUntil: '2026-10-28T00:00:00Z' }],
+        checkedAt: null,
+      });
+      // the previous name's certificate, still valid and on disk
+      await certificates.write(identityDir, 'name', custom);
+      vi.spyOn(certificates, 'issue').mockImplementation(async (_dir, request) => {
+        if (request.names[0] === 'new-home.frameleaf.net') {
+          throw new Error('rate limited');
+        }
+        await request.setChallenge('LoqXcYV8q5ONbJQxbmR7SCTNo3tiAXDfowyjxAjEuX0');
+        return { ...wildcard, accountUrl: 'https://acme-v02.api.letsencrypt.org/acme/acct/123456789' };
+      });
+      await sut.tick(now);
+
+      // no redirect to a name that can't be served yet, and the previous one is still served
+      expect(proxy.configureNames).toHaveBeenLastCalledWith(null, []);
+      expect(direct.configure).toHaveBeenCalledWith(
+        expect.objectContaining({
+          contexts: expect.objectContaining({ name: { hosts: ['photos.example.com'], ...custom } }),
+        }),
+      );
+      expect(remoteState()).toMatchObject({ nameCertificate: null });
     });
 
     it('refuses an enrolment for another server', async () => {

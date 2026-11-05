@@ -1001,7 +1001,8 @@
     border-radius: var(--fl-radius-control);
     background: color-mix(in srgb, var(--fl-raised), var(--fl-canvas) 40%);
     color: var(--fl-muted);
-    font-family: var(--fl-family-mono);
+    font-family: inherit;
+    font-variant-numeric: tabular-nums;
     font-size: var(--fl-font-small);
   }
   .slf-slug input {

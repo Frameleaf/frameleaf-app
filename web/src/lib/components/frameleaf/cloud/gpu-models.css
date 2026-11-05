@@ -356,7 +356,8 @@
   border-radius: var(--fl-radius-control);
   background: var(--fl-canvas);
   border: 1px solid var(--fl-border);
-  font: var(--fl-font-small)/1.55 var(--fl-family-mono);
+  font: var(--fl-font-small)/1.55 var(--fl-family-ui);
+  font-variant-numeric: tabular-nums;
   overflow-x: auto;
   white-space: pre;
 }

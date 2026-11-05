@@ -9,6 +9,7 @@ import type {
   FrameleafRemoteAccess,
   FrameleafRemoteConnection,
   FrameleafRemoteEnrollment,
+  FrameleafRemoteName,
 } from 'src/types.js';
 import { SystemMetadataKey } from 'src/enum.js';
 import { CLOUD_GATES } from 'src/utils/frameleaf-cloud-gates.js';
@@ -308,7 +309,93 @@ export const remoteEndpoints = (document: { api: string }) => {
     relaySelect: `${api}/v1/remote/relays/select`,
     wanProbe: `${api}/v1/remote/wan-probe`,
     usage: `${api}/v1/remote/usage`,
+    // FL-1197 and FL-705 (contract `remote/names.ts`, `remote/sites.ts`)
+    name: `${api}/v1/remote/name`,
+    nameCheck: `${api}/v1/remote/name/check`,
+    site: `${api}/v1/remote/site`,
   };
+};
+
+/** FL-1197: this server's name on frameleaf.net (contract `remote/names.ts` `ServerNameState`). */
+// a name Frameleaf Cloud answers with becomes a certificate name and a redirect target, so it must be a host name
+const nameAddress = z
+  .string()
+  .max(253)
+  .refine((value) => isDnsName(value.toLowerCase()), 'not a DNS name');
+export const serverNameStateSchema = z.object({
+  name: z.string().max(63).nullable(),
+  address: nameAddress.nullable(),
+  relayAddress: z.string().max(253).nullable(),
+  routed: z.boolean(),
+  previous: z.array(z.object({ name: z.string().max(63), address: nameAddress, redirectUntil: z.string() })).max(10),
+});
+export type ServerNameState = z.infer<typeof serverNameStateSchema>;
+
+/** FL-1197: a candidate name, checked as it is typed (contract `ServerNameCheckResponse`); claims nothing. */
+export const serverNameCheckSchema = z.object({
+  name: z.string().max(253),
+  address: z.string().max(253).nullable(),
+  verdict: z.enum(['available', 'current', 'taken', 'reserved', 'invalid']),
+  reason: z.enum(['too_short', 'too_long', 'characters', 'hyphen_at_edge', 'reserved', 'taken']).nullable(),
+  message: z.string().max(500).nullable(),
+});
+export type ServerNameCheck = z.infer<typeof serverNameCheckSchema>;
+
+/** FL-705: the studio website on its own domain, served through `sites.frameleaf.cloud` (contract `remote/sites.ts`). */
+export const studioSiteSchema = z.object({
+  domain: z.string().max(253),
+  slug: z.string().max(64),
+  status: z.enum(['waiting_for_dns', 'certificate_issued', 'active', 'needs_plan']),
+  problem: z
+    .enum([
+      'cname_missing',
+      'cname_mismatch',
+      'txt_missing',
+      'txt_mismatch',
+      'claimed_elsewhere',
+      'certificate_pending',
+      'certificate_failed',
+      'site_unreachable',
+    ])
+    .nullable(),
+  records: z
+    .array(z.object({ name: z.string().max(253), type: z.enum(['CNAME', 'TXT']), value: z.string().max(512) }))
+    .max(10),
+  checkedAt: z.string().nullable(),
+});
+export type StudioSiteState = z.infer<typeof studioSiteSchema>;
+
+/**
+ * FL-1197: the routed name, only while this server holds an unexpired certificate covering it. Until then
+ * (a first claim or a rename waiting on its certificate, or issuance failing) the relay refuses the name,
+ * so links keep the address that works.
+ */
+export const servedNameHost = (
+  host: string | null,
+  state: Pick<FrameleafRemoteAccess, 'nameCertificate'> | null | undefined,
+  now = Date.now(),
+) => {
+  const certificate = state?.nameCertificate;
+  return host && certificate?.hosts.includes(host) && Date.parse(certificate.notAfter) > now ? host : null;
+};
+
+/**
+ * FL-1197: the frameleaf.net names this server answers for right now: the current name while it routes,
+ * and each previous one until its 30 days end. Empty for another link's state.
+ */
+export const remoteNameHosts = (
+  state: FrameleafRemoteName | null | undefined,
+  instanceId: string | null | undefined,
+  now = Date.now(),
+): { current: string | null; previous: string[] } => {
+  if (!state || !instanceId || state.instanceId !== instanceId || !state.routed) {
+    return { current: null, previous: [] };
+  }
+  const current = state.address?.toLowerCase() ?? null;
+  const previous = state.previous
+    .filter((item) => Date.parse(item.redirectUntil) > now && item.address.toLowerCase() !== current)
+    .map((item) => item.address.toLowerCase());
+  return { current, previous };
 };
 
 /** The direct domain in use: the enrolment's, else discovery's, else the documented default. */
@@ -553,13 +640,34 @@ export const verifiedCustomHost = (settings: Pick<RemoteSettings, 'customHostnam
 export const remotePublicUrl = (
   enrollment: Pick<FrameleafRemoteEnrollment, 'names'> | null | undefined,
   settings: Pick<RemoteSettings, 'publicUrl' | 'customHostname'>,
+  /** FL-1197: the server's name on frameleaf.net while it routes; it is the address, ahead of the relay name. */
+  nameHost: string | null = null,
 ): string | null => {
   if (!enrollment) {
     return null;
   }
   const custom = verifiedCustomHost(settings);
-  return settings.publicUrl === 'custom' && custom ? `https://${custom}` : `https://${enrollment.names.relay}`;
+  if (settings.publicUrl === 'custom' && custom) {
+    return `https://${custom}`;
+  }
+  return `https://${nameHost ?? enrollment.names.relay}`;
 };
+
+/** FL-1197: the frameleaf.net name as a remote connection, reached through the relay like the relay name. */
+export const nameConnection = (host: string): FrameleafRemoteConnection => ({
+  kind: 'relay',
+  uri: `https://${host}`,
+  protocol: 'https',
+  address: host,
+  port: 443,
+  local: false,
+  relay: true,
+  ipv6: false,
+  custom: false,
+  dnsRebindingProtection: false,
+  httpsRequired: true,
+  verified: true,
+});
 
 /** Whether an address is a public (global unicast) IPv6 address. */
 const isGlobalIpv6 = (address: string) => isIP(address) === 6 && /^[23][\da-f]{0,3}:/i.test(address);

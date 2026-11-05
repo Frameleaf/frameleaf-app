@@ -422,6 +422,13 @@ export class PhotographyWorkflowRepository {
       .where('deletedAt', 'is', null)
       .executeTakeFirst();
   }
+  /** Galleries with a reminder switched on, a page at a time. */
+  async remindable(cursor: string | null = null) {
+    const { rows } = await sql<WorkflowRow>`SELECT * FROM ${TABLE}
+      WHERE (value->'config'->'reminders'->>'selection' = 'true' OR value->'config'->'reminders'->>'paymentAndExpiry' = 'true')
+        AND (${cursor}::uuid IS NULL OR id > ${cursor}::uuid) ORDER BY id LIMIT 200`.execute(this.db);
+    return rows;
+  }
   async unfinished(cursor: string | null = null) {
     const { rows } = await sql<WorkflowRow>`SELECT * FROM ${TABLE}
       WHERE value->'publication'->>'status' IN ('queued','rendering') AND (${cursor}::uuid IS NULL OR id > ${cursor}::uuid) ORDER BY id LIMIT 200`.execute(

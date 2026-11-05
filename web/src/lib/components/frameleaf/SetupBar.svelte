@@ -47,6 +47,7 @@
     mdiPauseCircleOutline,
     mdiPlay,
     mdiProgressClock,
+    mdiRefresh,
   } from '@mdi/js';
   import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -98,6 +99,14 @@
   // The stage status has no failed value (native clients decode it strictly); a halted setup means the check stopped.
   const stopped = (stage: { id: LibrarySetupStageId; status: LibrarySetupStageStatus }) =>
     attention && stage.id === LibrarySetupStageId.Check && stage.status !== LibrarySetupStageStatus.Done;
+  /** What needs attention, in words: the file check that stopped, else setup as a whole. */
+  const attentionDetail = $derived(
+    progress?.stages.length === 0
+      ? 'setup_bar_identity_attention_detail'
+      : progress?.stages.some((stage) => stopped(stage))
+        ? 'setup_bar_check_stopped_detail'
+        : 'setup_bar_attention_detail',
+  );
   const statusIcon = {
     [LibrarySetupStageStatus.Done]: mdiCheckCircle,
     [LibrarySetupStageStatus.Running]: mdiProgressClock,
@@ -244,7 +253,7 @@
       </strong>
       <span class="fl-setup-bar-detail">
         {#if attention}
-          {$t(progress.stages.length > 0 ? 'setup_bar_attention_detail' : 'setup_bar_identity_attention_detail')}
+          {$t(attentionDetail)}
         {:else if current && current.total > 0}
           {$t('setup_bar_progress', {
             values: {
@@ -264,7 +273,7 @@
           · {timeLeft(secondsLeft)}
         {/if}
       </span>
-      {#if current}
+      {#if current && !attention}
         <span class="fl-setup-bar-percent">{percent}%</span>
       {/if}
     </p>
@@ -312,7 +321,7 @@
     {#if open}
       <section class="fl-setup-bar-panel" id="fl-setup-bar-panel" aria-label={$t('setup_bar_title')}>
         {#if attention}
-          <p>{$t(progress.stages.length > 0 ? 'setup_bar_attention_detail' : 'setup_bar_identity_attention_detail')}</p>
+          <p>{$t(attentionDetail)}</p>
         {/if}
         {#if progress.stages.length > 0}
           <ol>
@@ -336,6 +345,7 @@
                 class:is-done={stage.status === LibrarySetupStageStatus.Done}
                 class:is-running={stage.status === LibrarySetupStageStatus.Running && !stopped(stage)}
                 class:is-waiting={stage.status === LibrarySetupStageStatus.Waiting}
+                class:is-stopped={stopped(stage)}
               >
                 <Icon
                   icon={!hasWork(stage)
@@ -360,7 +370,17 @@
                             : $t(`setup_bar_status_${stage.status}`)}</span
                     >
                   </div>
-                  <p>{stageDetail(stage)}</p>
+                  <!-- Where the check stopped, and that Retry carries on from there (approved design, 2026-11-04). -->
+                  <p>
+                    {stopped(stage)
+                      ? $t('setup_bar_stage_check_stopped', {
+                          values: {
+                            done: stage.done.toLocaleString($locale),
+                            total: stage.total.toLocaleString($locale),
+                          },
+                        })
+                      : stageDetail(stage)}
+                  </p>
                   {#if stage.heldForNight && stage.disabled}
                     <!-- Only videos are saved for the night; AI processing stays off. -->
                     <p>{$t('setup_bar_stage_search_disabled')}</p>
@@ -376,8 +396,20 @@
           </ol>
         {/if}
         <footer>
-          <p>{progress.paused ? $t('setup_bar_footer_paused') : $t('setup_bar_footer')}</p>
-          {#if !attention}
+          <p>
+            {attention
+              ? $t('setup_bar_footer_stopped')
+              : progress.paused
+                ? $t('setup_bar_footer_paused')
+                : $t('setup_bar_footer')}
+          </p>
+          <!-- Retry, or Pause and Resume, again where the details are. -->
+          {#if attention && progress.stages.length > 0}
+            <button type="button" class="button fl-setup-bar-panel-pause" disabled={busy} onclick={retry}>
+              <Icon icon={mdiRefresh} size="18" aria-hidden={true} />
+              {$t('retry')}
+            </button>
+          {:else if !attention}
             <button type="button" class="button fl-setup-bar-panel-pause" disabled={busy} onclick={togglePause}>
               <Icon icon={progress.paused ? mdiPlay : mdiPause} size="18" aria-hidden={true} />
               {progress.paused ? $t('resume') : $t('pause')}
@@ -477,6 +509,9 @@
     background: var(--fl-accent);
     transition: width 240ms cubic-bezier(0.2, 0.7, 0.2, 1);
   }
+  .fl-setup-bar.is-attention .fl-setup-bar-progress span {
+    background: var(--fl-warning);
+  }
   .fl-setup-bar.is-paused .fl-setup-bar-progress span {
     background: var(--fl-muted);
   }
@@ -515,6 +550,11 @@
   .fl-setup-bar-panel :global(.fl-setup-stage-icon) {
     margin-top: 1px;
     color: var(--fl-muted);
+  }
+  /* The check that stopped: amber, like other things that need a look. */
+  .fl-setup-bar-panel li.is-stopped :global(.fl-setup-stage-icon),
+  .fl-setup-bar-panel li.is-stopped .fl-setup-stage-head span {
+    color: var(--fl-warning);
   }
   .fl-setup-bar-panel li.is-done :global(.fl-setup-stage-icon),
   .fl-setup-bar-panel li.is-running :global(.fl-setup-stage-icon) {
@@ -556,8 +596,9 @@
     color: var(--fl-muted);
     font-size: 12px;
   }
+  /* Pause and Resume, or Retry, again where the details are (approved design, 2026-11-04). */
   .fl-setup-bar-panel .fl-setup-bar-panel-pause {
-    display: none;
+    display: inline-flex;
   }
 
   /* Narrow windows: the stage moves into Details; the percent and a thin line along the bottom stay. */
@@ -593,9 +634,6 @@
     }
     .fl-setup-bar-panel footer p {
       flex-basis: 100%;
-    }
-    .fl-setup-bar-panel .fl-setup-bar-panel-pause {
-      display: inline-flex;
     }
   }
 </style>

@@ -1,4 +1,5 @@
 import { CloudLinkState } from '@frameleaf/sdk';
+import { themeManager } from '@frameleaf/ui';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -29,9 +30,19 @@ describe('AccountMenu', () => {
 
   it('draws the Locked item as a switch that follows the session', async () => {
     await open(true);
-    const locked = screen.getByRole('menuitemcheckbox');
+    const locked = screen.getByRole('menuitemcheckbox', { name: /frameleaf_locked_content/ });
     expect(locked).toHaveAttribute('aria-checked', 'true');
     expect(locked.querySelector('.fl-switch')).not.toBeNull();
+  });
+
+  it('carries the theme switch on a desktop, where the top bar no longer does (approved design, 2026-11-04)', async () => {
+    const toggle = vi.spyOn(themeManager, 'toggle').mockImplementation(() => {});
+    await open(false);
+    const dark = screen.getByRole('menuitemcheckbox', { name: /frameleaf_dark_appearance/ });
+    expect(dark.querySelector('.fl-switch')).not.toBeNull();
+    await fireEvent.click(dark);
+    expect(toggle).toHaveBeenCalledOnce();
+    toggle.mockRestore();
   });
 
   it('draws Sign out as the danger item', async () => {
@@ -44,7 +55,7 @@ describe('AccountMenu', () => {
     const trigger = screen.getAllByRole('button')[0];
     trigger.focus();
     await fireEvent.click(trigger);
-    expect(screen.getByRole('menuitemcheckbox')).toBeDisabled();
+    expect(screen.getByRole('menuitemcheckbox', { name: /frameleaf_locked_content/ })).toBeDisabled();
 
     const first = screen.getAllByRole('menuitem')[0];
     const last = screen.getByRole('menuitem', { name: 'sign_out' });

@@ -124,6 +124,8 @@ export type AnalyticsInsightOptions = {
   suppressedPetIds: string[];
   /** the reading session's hidden-content rules */
   privacy?: HiddenContentQueryOptions;
+  /** FL-1196: everyday subjects as CLIP text embeddings, for "What the AI sees"; absent when visual search is off */
+  seenLabels?: Array<{ id: string; embedding: string }>;
 };
 
 export type AnalyticsInsightRows = {
@@ -146,6 +148,8 @@ export type AnalyticsInsightRows = {
     longest: { durationMs: number; name: string } | null;
     videoDurationMs: number;
   };
+  /** Library magic (approved design, 2026-11-04): a band of answers for the curious. */
+  magic?: AnalyticsMagicRows;
   people: {
     faces: number;
     itemsWithFaces: number;
@@ -159,6 +163,40 @@ export type AnalyticsInsightRows = {
   } | null;
 };
 
+export type AnalyticsMagicRows = {
+  /** Per local capture month, the photos' average thumbnail colour in ThumbHash's L, P and Q (each 0-63). */
+  colour: Array<{ month: number; photos: number; l: number; p: number; q: number }>;
+  /** Photos with a place and an instant, by how high the sun stood there then. */
+  light: { goldenMorning: number; goldenEvening: number; blueHour: number; daylight: number; night: number };
+  /** Items per local capture month; `south` is null for items without a location. */
+  months: Array<{ month: number; south: boolean | null; count: number }>;
+  /** The owner's own tags on the most items; empty unless the owner reads their own scope. */
+  topTags: Array<{ name: string; count: number }>;
+  /** Where the photos were taken; null unless the owner reads their own scope, or nothing has a location. */
+  farAndWide: {
+    travelledKm: number;
+    farthest: { km: number; place: string | null } | null;
+    northernmost: { latitude: number; place: string | null } | null;
+    southernmost: { latitude: number; place: string | null } | null;
+    highest: { metres: number; place: string | null } | null;
+  } | null;
+  underTheHood: { searchVectors: number; faceVectors: number; previews: number; databaseRows: number };
+  /** Each camera's highest recorded shutter count (FL-1196). */
+  shutter: Array<{ make: string | null; model: string | null; count: number }>;
+  /** The nearest everyday subject to each photo's visual-search embedding, for a sample of the newest. */
+  seen: { described: number; labels: Array<{ id: string; count: number }> } | null;
+};
+
+/** Great-circle distance in km between two points in degrees, for SQL. */
+const haversineKm = (
+  lat1: RawBuilder<unknown>,
+  lon1: RawBuilder<unknown>,
+  lat2: RawBuilder<unknown>,
+  lon2: RawBuilder<unknown>,
+) =>
+  // least(1, …): rounding near opposite points of the globe can push asin's argument just past 1
+  sql`(2 * 6371 * asin(least(1, sqrt(power(sin(radians(${lat2} - ${lat1}) / 2), 2) + cos(radians(${lat1})) * cos(radians(${lat2})) * power(sin(radians(${lon2} - ${lon1}) / 2), 2)))))`;
+
 /** Leaves out the assets (`a`) the reading session keeps hidden: Locked people and tags, sensitive content. */
 const visibleTo = (privacy?: HiddenContentQueryOptions): RawBuilder<boolean> => {
   const hiddenContent = getHiddenContentFilter(privacy);
@@ -167,6 +205,8 @@ const visibleTo = (privacy?: HiddenContentQueryOptions): RawBuilder<boolean> => 
     : sql<boolean>`true`;
 };
 
+/** The newest photos read for "What the AI sees": enough to be telling, quick on a large library. */
+const SEEN_SAMPLE = 20_000;
 const IMAGE = sql.lit(AssetType.Image);
 const VIDEO = sql.lit(AssetType.Video);
 const HIDDEN = sql.lit(AssetVisibility.Hidden);
@@ -410,7 +450,12 @@ export class AnalyticsRepository {
         coalesce(a.width, case when e.orientation in ('5', '6', '7', '8') then e."exifImageHeight" else e."exifImageWidth" end) as width,
         coalesce(a.height, case when e.orientation in ('5', '6', '7', '8') then e."exifImageWidth" else e."exifImageHeight" end) as height,
         nullif(trim(e."lensModel"), '') as "lensModel", e."focalLength", nullif(trim(e.city), '') as city,
-        nullif(trim(e.country), '') as country, e.latitude, e.longitude, e."fileSizeInByte"
+        nullif(trim(e.country), '') as country, e.latitude, e.longitude, e."fileSizeInByte",
+        a."fileCreatedAt", nullif(trim(e.make), '') as make, nullif(trim(e.model), '') as model,
+        e.altitude, e."shutterCount",
+        case when length(a.thumbhash) >= 3
+          then get_byte(a.thumbhash, 0) | (get_byte(a.thumbhash, 1) << 8) | (get_byte(a.thumbhash, 2) << 16)
+        end as "thumbhashHeader"
       from asset a
       left join asset_exif e on e."assetId" = a.id
       where a.type in (${IMAGE}, ${VIDEO}) and a.visibility <> ${HIDDEN} and ${isNotLocked('a')} and ${scopeCondition(scope)}
@@ -528,6 +573,7 @@ export class AnalyticsRepository {
       ]);
 
     const people = options.ownerId ? await this.getOwnerPeopleAndPlaces(run, options) : null;
+    const magic = await this.readMagic(run, options);
     const record = (kind: string) => records.find((row) => row.kind === kind);
     const oldest = record('oldest');
     const largest = record('largest');
@@ -562,7 +608,168 @@ export class AnalyticsRepository {
         longest: longest ? { durationMs: num(longest.value), name: longest.name ?? '' } : null,
         videoDurationMs: num(counts[0]?.videoDurationMs),
       },
+      magic,
       people,
+    };
+  }
+
+  /**
+   * Library magic (approved design, 2026-11-04). The colour comes from each photo's ThumbHash (its average
+   * colour sits in the first three bytes); the light from the sun's height at the photo's place and instant
+   * (a low-precision solar position, good to about a degree); tags and places only for the scope's owner.
+   */
+  private async readMagic(
+    run: <T>(query: RawBuilder<unknown>) => Promise<T[]>,
+    options: AnalyticsInsightOptions,
+  ): Promise<AnalyticsMagicRows> {
+    const local = sql`(items."localDateTime" at time zone 'UTC')`;
+    const located = sql`items.latitude is not null and items.longitude is not null`;
+    const place = sql`nullif(concat_ws(', ', items.city, items.country), '')`;
+    const labels = options.seenLabels ?? [];
+    const [shutter, seen] = await Promise.all([
+      run<{ make: string | null; model: string | null; count: number }>(sql`
+        select items.make, items.model, max(items."shutterCount")::int as count
+        from items where items."shutterCount" is not null
+        group by 1, 2 order by 3 desc limit 6`),
+      labels.length === 0
+        ? Promise.resolve(null)
+        : run<{ id: string; count: string }>(sql`
+            select nearest.id, count(*) as count
+            from (
+              select s.embedding from smart_search s inner join items on items.id = s."assetId"
+              order by items."localDateTime" desc limit ${SEEN_SAMPLE}
+            ) sample
+            cross join lateral (
+              select labels.id
+              from (values ${sql.join(labels.map((label) => sql`(${label.id}, ${label.embedding}::vector)`))}) as labels(id, embedding)
+              order by sample.embedding <=> labels.embedding limit 1
+            ) nearest
+            group by 1 order by 2 desc, 1 asc`),
+    ]);
+    const [colour, light, months, underTheHood] = await Promise.all([
+      run<{ month: number; photos: string; l: number; p: number; q: number }>(sql`
+        select extract(month from ${local})::int as month, count(*) as photos,
+          avg(items."thumbhashHeader" & 63)::float as l,
+          avg((items."thumbhashHeader" >> 6) & 63)::float as p,
+          avg((items."thumbhashHeader" >> 12) & 63)::float as q
+        from items where items.type = ${IMAGE} and items."thumbhashHeader" is not null
+        group by 1 order by 1`),
+      run<{ goldenMorning: string; goldenEvening: string; blueHour: string; daylight: string; night: string }>(sql`
+        select
+          count(*) filter (where sun.elevation >= 6) as daylight,
+          count(*) filter (where sun.elevation >= -4 and sun.elevation < 6 and extract(hour from ${local}) < 12) as "goldenMorning",
+          count(*) filter (where sun.elevation >= -4 and sun.elevation < 6 and extract(hour from ${local}) >= 12) as "goldenEvening",
+          count(*) filter (where sun.elevation >= -6 and sun.elevation < -4) as "blueHour",
+          count(*) filter (where sun.elevation < -6) as night
+        from items
+        cross join lateral (select extract(epoch from items."fileCreatedAt") / 86400.0 - 10957.5 as d) t
+        cross join lateral (
+          select radians(357.529 + 0.98560028 * t.d) as g, 280.459 + 0.98564736 * t.d as q,
+            radians(23.439 - 0.00000036 * t.d) as e
+        ) m
+        cross join lateral (select radians(m.q + 1.915 * sin(m.g) + 0.020 * sin(2 * m.g)) as l) ec
+        cross join lateral (
+          select asin(sin(m.e) * sin(ec.l)) as dec, degrees(atan2(cos(m.e) * sin(ec.l), cos(ec.l))) as ra,
+            18.697374558 + 24.06570982441908 * t.d as gmst
+        ) s
+        cross join lateral (
+          select degrees(asin(least(1, greatest(-1,
+            sin(radians(items.latitude)) * sin(s.dec)
+            + cos(radians(items.latitude)) * cos(s.dec) * cos(radians(s.gmst * 15 + items.longitude - s.ra))
+          )))) as elevation
+        ) sun
+        where items.type = ${IMAGE} and ${located} and items."fileCreatedAt" is not null`),
+      run<{ month: number; south: boolean | null; count: string }>(sql`
+        select extract(month from ${local})::int as month, (items.latitude < 0) as south, count(*) as count
+        from items group by 1, 2`),
+      run<{ searchVectors: string; faceVectors: string; previews: string; databaseRows: string }>(sql`
+        select
+          (select count(*) from smart_search s inner join items on items.id = s."assetId") as "searchVectors",
+          (select count(*) from face_search fs inner join asset_face f on f.id = fs."faceId"
+            inner join items on items.id = f."assetId") as "faceVectors",
+          (select count(*) from asset_file af inner join items on items.id = af."assetId") as previews,
+          (select coalesce(sum(greatest(c.reltuples, 0)), 0)::bigint from pg_class c
+            where c.relkind = 'r' and c.relnamespace = 'public'::regnamespace) as "databaseRows"`),
+    ]);
+
+    let topTags: AnalyticsMagicRows['topTags'] = [];
+    let farAndWide: AnalyticsMagicRows['farAndWide'] = null;
+    if (options.ownerId) {
+      const [tags, home] = await Promise.all([
+        run<{ name: string; count: string }>(sql`
+          select t.value as name, count(distinct ta."assetId") as count
+          from tag_asset ta
+          inner join items on items.id = ta."assetId"
+          inner join tag t on t.id = ta."tagId" and t."userId" = ${options.ownerId}
+          group by 1 order by 2 desc, 1 asc limit 8`),
+        run<{ latitude: number; longitude: number }>(sql`
+          select round(items.latitude::numeric, 1)::float as latitude, round(items.longitude::numeric, 1)::float as longitude
+          from items where ${located} group by 1, 2 order by count(*) desc, 1, 2 limit 1`),
+      ]);
+      topTags = tags.map((row) => ({ name: row.name, count: num(row.count) }));
+      if (home[0]) {
+        const { latitude, longitude } = home[0];
+        const [travelled, extremes] = await Promise.all([
+          run<{ km: number | null }>(sql`
+            select sum(step.km)::float as km from (
+              select ${haversineKm(
+                sql`lag(items.latitude) over w`,
+                sql`lag(items.longitude) over w`,
+                sql`items.latitude`,
+                sql`items.longitude`,
+              )} as km
+              from items where ${located}
+              window w as (order by items."localDateTime", items.id)
+            ) step`),
+          run<{ kind: string; value: number; place: string | null }>(sql`
+            (select 'farthest' as kind, ${haversineKm(sql`${latitude}`, sql`${longitude}`, sql`items.latitude`, sql`items.longitude`)}::float as value, ${place} as place
+              from items where ${located} order by 2 desc limit 1)
+            union all
+            (select 'north', items.latitude::float, ${place} from items where ${located} order by items.latitude desc limit 1)
+            union all
+            (select 'south', items.latitude::float, ${place} from items where ${located} order by items.latitude asc limit 1)
+            union all
+            (select 'highest', items.altitude::float, ${place} from items where items.altitude is not null
+              order by items.altitude desc limit 1)`),
+        ]);
+        const extreme = (kind: string) => extremes.find((row) => row.kind === kind);
+        const farthest = extreme('farthest');
+        const north = extreme('north');
+        const south = extreme('south');
+        const highest = extreme('highest');
+        farAndWide = {
+          travelledKm: Math.round(travelled[0]?.km ?? 0),
+          farthest: farthest ? { km: Math.round(farthest.value), place: farthest.place } : null,
+          northernmost: north ? { latitude: north.value, place: north.place } : null,
+          southernmost: south ? { latitude: south.value, place: south.place } : null,
+          highest: highest ? { metres: Math.round(highest.value), place: highest.place } : null,
+        };
+      }
+    }
+
+    return {
+      colour: colour.map((row) => ({ month: row.month, photos: num(row.photos), l: row.l, p: row.p, q: row.q })),
+      light: {
+        goldenMorning: num(light[0]?.goldenMorning),
+        goldenEvening: num(light[0]?.goldenEvening),
+        blueHour: num(light[0]?.blueHour),
+        daylight: num(light[0]?.daylight),
+        night: num(light[0]?.night),
+      },
+      months: months.map((row) => ({ month: row.month, south: row.south, count: num(row.count) })),
+      topTags,
+      farAndWide,
+      underTheHood: {
+        searchVectors: num(underTheHood[0]?.searchVectors),
+        faceVectors: num(underTheHood[0]?.faceVectors),
+        previews: num(underTheHood[0]?.previews),
+        databaseRows: num(underTheHood[0]?.databaseRows),
+      },
+      shutter: shutter.map((row) => ({ make: row.make, model: row.model, count: num(row.count) })),
+      seen: seen && {
+        described: seen.reduce((sum, row) => sum + num(row.count), 0),
+        labels: seen.map((row) => ({ id: row.id, count: num(row.count) })),
+      },
     };
   }
 

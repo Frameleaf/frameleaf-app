@@ -184,6 +184,7 @@ describe(AnalyticsService.name, () => {
       configRepository as never,
       systemMetadataRepository as never,
       checksumRepository as never,
+      { labels: vitest.fn().mockResolvedValue(undefined) } as never,
     );
   });
 
@@ -275,6 +276,29 @@ describe(AnalyticsService.name, () => {
         breakdown: null,
       });
       expect(JSON.stringify(result)).not.toMatch(/other (libraries|host files)/i);
+    });
+
+    it('does not wait on "What the AI sees" labels that are slow to encode', async () => {
+      vitest.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      Object.assign(sut, { seenLabels: { labels: () => new Promise(() => {}) } });
+      const report = sut.getReport(admin(), { scope: `account:${USER_ID}`, range: AnalyticsRange.Year });
+      await vitest.advanceTimersByTimeAsync(3000);
+      await expect(report).resolves.toMatchObject({ summary: { items: 100 } });
+      expect(analyticsRepository.getInsights).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ seenLabels: undefined }),
+      );
+    });
+
+    it('still loads the report when "What the AI sees" labels fail', async () => {
+      Object.assign(sut, { seenLabels: { labels: () => Promise.reject(new Error('config unavailable')) } });
+      await expect(
+        sut.getReport(admin(), { scope: `account:${USER_ID}`, range: AnalyticsRange.Year }),
+      ).resolves.toMatchObject({ summary: { items: 100 } });
+      expect(analyticsRepository.getInsights).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ seenLabels: undefined }),
+      );
     });
 
     it('omits processing for an account instead of filling it', async () => {
@@ -707,6 +731,46 @@ describe(AnalyticsService.name, () => {
         longestVideo: { durationMs: 5_400_000, name: 'clip.mov' },
         videoDurationMs: 9_000_000,
         videoHours: 2.5,
+      });
+    });
+
+    it('reports Library magic: colour by month, light, seasons by hemisphere, tags and counts', async () => {
+      analyticsRepository.getInsights.mockResolvedValue(
+        insightRows({
+          magic: {
+            // ThumbHash L, P and Q at their middles: a mid grey
+            colour: [{ month: 7, photos: 5, l: 31.5, p: 31.5, q: 31.5 }],
+            light: { goldenMorning: 1, goldenEvening: 2, blueHour: 3, daylight: 4, night: 5 },
+            months: [
+              { month: 1, south: false, count: 4 },
+              { month: 1, south: true, count: 2 },
+              { month: 7, south: null, count: 3 },
+            ],
+            topTags: [{ name: 'Hiking', count: 9 }],
+            farAndWide: null,
+            underTheHood: { searchVectors: 10, faceVectors: 20, previews: 30, databaseRows: 40 },
+            shutter: [
+              { make: 'Canon', model: 'Canon EOS R6', count: 48_210 },
+              { make: 'FUJIFILM', model: 'X-T4', count: 1200 },
+            ],
+            seen: { described: 7, labels: [{ id: 'mountains', count: 7 }] },
+          },
+        }),
+      );
+      const { insights } = await read(user(), `account:${USER_ID}`);
+      expect(insights!.magic).toEqual({
+        colourByMonth: [{ month: 7, colour: '#808080', photos: 5 }],
+        light: { goldenMorning: 1, goldenEvening: 2, blueHour: 3, daylight: 4, night: 5 },
+        // January is winter in the north and summer in the south; unplaced July items follow the north
+        seasons: { spring: 0, summer: 2 + 3, autumn: 0, winter: 4 },
+        topTags: [{ name: 'Hiking', count: 9 }],
+        farAndWide: null,
+        underTheHood: { searchVectors: 10, faceVectors: 20, previews: 30, databaseRows: 40 },
+        shutter: [
+          { camera: 'Canon EOS R6', count: 48_210 },
+          { camera: 'FUJIFILM X-T4', count: 1200 },
+        ],
+        seen: { described: 7, labels: [{ id: 'mountains', count: 7 }] },
       });
     });
 

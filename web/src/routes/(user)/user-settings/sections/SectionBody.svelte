@@ -6,7 +6,6 @@
    */
   import CloudAccountSection from '$lib/components/frameleaf/cloud/CloudAccountSection.svelte';
   import CloudMlSection from '$lib/components/frameleaf/cloud/CloudMlSection.svelte';
-  import WhereWorkRuns from '$lib/components/frameleaf/computers/WhereWorkRuns.svelte';
   import FrameleafSignInSection from '$lib/components/frameleaf/cloud/FrameleafSignInSection.svelte';
   import HardwareSection from '$lib/components/frameleaf/cloud/HardwareSection.svelte';
   import YourCloudSection from '$lib/components/frameleaf/cloud/YourCloudSection.svelte';
@@ -39,8 +38,6 @@
         <ComputersSection {data} />
       {/snippet}
     </Loader>
-  {:else if section.key === 'routing'}
-    <WhereWorkRuns />
   {:else if section.key === 'queues'}
     <QueuesSection />
   {:else if section.key === 'cloud-processing'}

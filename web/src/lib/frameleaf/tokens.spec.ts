@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import tokens from '../../../../design/frameleaf/tokens.json';
 import brand from './brand-tokens.json';
 import {
@@ -685,11 +685,27 @@ describe('Frameleaf theme contract', () => {
   it('starts the font stack with SF Pro and falls back to bundled Inter', () => {
     const stack = base.get('--fl-family-ui');
     expect(stack?.replaceAll("'", '').replaceAll(', ', ',')).toBe(tokens.font.ui.replaceAll(', ', ','));
-    expect(base.get('--fl-family-mono')).toBe(brand.font.mono);
     // The scope sets its own face from the body step of the type scale.
     expect(css).toMatch(/\.fl-media-viewer,\s*\.frameleaf {[^}]*font: var\(--fl-type-body\);/);
     expect(stack?.indexOf('-apple-system')).toBe(0);
     expect(stack?.indexOf('Inter')).toBeGreaterThan(stack?.indexOf('system-ui') ?? Infinity);
+  });
+
+  it('uses no monospace face anywhere, not even for codes, paths or keys', () => {
+    // Owner rule (2026-11-03): one family, the UI font; digits that line up use tabular-nums.
+    expect(base.has('--fl-family-mono')).toBe(false);
+    expect(brand.font).not.toHaveProperty('mono');
+    expect(appCss).toContain('--font-mono: var(--fl-family-ui);');
+    const mono =
+      /monospace|SFMono|SF Mono|Menlo|Consolas|Courier|GoogleSansCode|--fl-(family|font)-mono|(?<![\w-])font-mono\b/;
+    const walk = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+        entry.isDirectory() ? walk(`${dir}/${entry.name}`) : [`${dir}/${entry.name}`],
+      );
+    const offenders = walk('src')
+      .filter((file) => /\.(svelte|css|ts|html)$/.test(file) && !file.endsWith('.spec.ts'))
+      .filter((file) => mono.test(readFileSync(file, 'utf8').replaceAll(/\/\*[\S\s]*?\*\//g, '')));
+    expect(offenders).toEqual([]);
   });
 
   it('exposes safe-area insets for edge-to-edge devices', () => {

@@ -599,8 +599,16 @@ export class JobRepository {
   retryImportedWork(runId: string, db: Kysely<DB>) {
     return this.store.retryImportedWork(runId, db);
   }
-  retryFailed(name: QueueName) {
-    return this.store.retryFailed(name);
+  /** Every failed job of the queue, or only `jobId`; returns how many went back. */
+  retryFailed(name: QueueName, jobId?: string) {
+    return this.store.retryFailed(name, jobId);
+  }
+  /** Start now: the job is claimed at the next pass, even while its queue is paused or full. */
+  startNow(name: QueueName, jobId: string) {
+    return this.store.startNow(name, jobId);
+  }
+  findWaitingJob(queue: QueueName, name: JobName, itemId: string) {
+    return this.store.findWaitingJob(queue, name, itemId);
   }
   /** FL-721: jobs deferred for a Locked key run now; their owner's key has just been loaded. */
   wakeLockedDeferrals(ids: string[]) {

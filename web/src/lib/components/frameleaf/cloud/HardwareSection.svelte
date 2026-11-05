@@ -598,7 +598,7 @@
 
     <Section title={$t('frameleaf_gpucheck_can')} description={$t('frameleaf_gpucheck_can_description')}>
       {#snippet action()}
-        <a class="button" href={commandCenterUrl('processing', 'routing')}>
+        <a class="button" href={commandCenterUrl('processing', 'computers')}>
           {$t('frameleaf_computers_page_routing')}
         </a>
       {/snippet}

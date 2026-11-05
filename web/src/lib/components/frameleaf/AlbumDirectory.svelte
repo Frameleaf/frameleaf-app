@@ -6,18 +6,12 @@
 <script lang="ts">
   import { afterNavigate, goto, replaceState } from '$app/navigation';
   import { page } from '$app/state';
-  import AlbumConfirmDialog from '$lib/components/frameleaf/AlbumConfirmDialog.svelte';
-  import AlbumCreateDialog from '$lib/components/frameleaf/AlbumCreateDialog.svelte';
-  import AlbumMoveDialog from '$lib/components/frameleaf/AlbumMoveDialog.svelte';
-  import AlbumShareDialog from '$lib/components/frameleaf/AlbumShareDialog.svelte';
+  import AlbumActions from '$lib/components/frameleaf/AlbumActions.svelte';
   import AlbumTile from '$lib/components/frameleaf/AlbumTile.svelte';
   import CollectionShelf from '$lib/components/frameleaf/CollectionShelf.svelte';
   import { listEnter, listFlip, listLeave } from '$lib/components/frameleaf/people/list-motion';
   import Menu from '$lib/components/frameleaf/Menu.svelte';
   import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
-  import SharedLinkForm from '$lib/components/frameleaf/SharedLinkForm.svelte';
-  import SmartAlbumReevaluateDialog from '$lib/components/frameleaf/SmartAlbumReevaluateDialog.svelte';
-  import SmartAlbumRuleDialog from '$lib/components/frameleaf/SmartAlbumRuleDialog.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
   import {
     albumDirectoryFilters,
@@ -30,13 +24,11 @@
     canTakeOut,
     isOwner,
     moveInOrder,
-    moveTargets,
     normalizeAlbumDirectoryView,
     orderGroupOf,
     placeBefore,
     type AlbumDirectoryFilter,
     type AlbumDirectorySort,
-    type AlbumDetailsDraft,
     type AlbumDirectoryViewMode,
   } from '$lib/frameleaf/album-directory';
   import { albumColorStyle } from '$lib/frameleaf/album-tree';
@@ -44,37 +36,14 @@
   import { ICON_SIZE } from '$lib/frameleaf/tokens';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
-  import SmartAlbumReevaluateModal from '$lib/modals/SmartAlbumReevaluateModal.svelte';
   import { Route } from '$lib/route';
-  import {
-    handleCreateAlbumEntry,
-    handleDeleteAlbum,
-    handleDownloadAlbum,
-    handleEditAlbumDetails,
-    handleLeaveAlbum,
-    handleMoveAlbumToCollection,
-    handleSetAlbumOrder,
-  } from '$lib/services/album.service';
+  import { handleDownloadAlbum, handleSetAlbumOrder } from '$lib/services/album.service';
   import { albumDirectoryView } from '$lib/stores/preferences.store';
-  import { loadRuleSources, type RuleSources } from '$lib/frameleaf/classification-sources';
-  import { searchContextFor } from '$lib/frameleaf/search-context';
   import { handleError } from '$lib/utils/handle-error';
   import { getAlbumDragData, isAlbumDrag } from '$lib/utils/album-drag';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
-  import {
-    AlbumKind,
-    LibraryScope,
-    LibraryViewScope,
-    SharedLinkType,
-    createClassificationRule,
-    getClassificationRule,
-    type AlbumResponseDto,
-    type AlbumTreeResponseDto,
-    type ClassificationRuleCreateDto,
-    type ClassificationRuleResponseDto,
-    type CreateAlbumDto,
-  } from '@frameleaf/sdk';
-  import { Icon, modalManager, toastManager } from '@frameleaf/ui';
+  import { AlbumKind, type AlbumResponseDto, type AlbumTreeResponseDto } from '@frameleaf/sdk';
+  import { Icon, toastManager } from '@frameleaf/ui';
   import {
     mdiAccountMultipleOutline,
     mdiAccountPlusOutline,
@@ -160,31 +129,14 @@
   let dragged = $state<AlbumResponseDto | undefined>();
   let overRoot = $state(false);
   let busy = $state(false);
-  let createDialog = $state<{ open: boolean; kind: AlbumKind; parentId: string | null; smart: boolean }>({
-    open: false,
-    kind: AlbumKind.Album,
-    parentId: null,
-    smart: false,
-  });
-  let moveDialog = $state<{ open: boolean; album?: AlbumResponseDto }>({ open: false });
-  let deleteDialog = $state<{ open: boolean; album?: AlbumResponseDto }>({ open: false });
-  let leaveDialog = $state<{ open: boolean; album?: AlbumResponseDto }>({ open: false });
-  let linkDialog = $state<{ open: boolean; album?: AlbumResponseDto }>({ open: false });
-  let editDialog = $state<{ open: boolean; album?: AlbumResponseDto }>({ open: false });
-  let shareDialog = $state<{ open: boolean; album?: AlbumResponseDto }>({ open: false });
-  let reevaluate = $state<{ open: boolean; rule?: ClassificationRuleResponseDto; sources: RuleSources }>({
-    open: false,
-    sources: { people: [], tags: [] },
-  });
+  /** The album commands and their dialogs, shared with the sidebar's right-click menu. */
+  let actions: AlbumActions | undefined = $state();
   const headingId = albumDirectoryHeadingId;
 
   const arrangement = $derived(
     arrangeAlbumDirectory(tree, { filter: view.filter, sort: view.sort, search, userId: currentUserId }),
   );
   const everything = $derived(directoryAlbums(tree));
-  const editableCollections = $derived(
-    everything.filter((album) => album.kind !== AlbumKind.Space && canEdit(album, currentUserId)),
-  );
   const find = (id: string) => everything.find((album) => album.id === id);
 
   /**
@@ -199,18 +151,7 @@
   const isSpace = (album: AlbumResponseDto) => album.kind === AlbumKind.Space;
   const openRoute = (album: AlbumResponseDto) =>
     isSpace(album) ? Route.viewSharedSpace({ id: album.id }) : Route.viewAlbum({ id: album.id });
-  /** Where "Move to…" may put an album: every album or collection the user can edit. */
-  const moveCandidates = $derived(
-    directoryAlbums(tree).filter((album) => album.kind !== AlbumKind.Space && canEdit(album, currentUserId)),
-  );
   const nameOf = (album: AlbumResponseDto | undefined) => album?.albumName || $t('unnamed_album');
-  const kindOf = (album: AlbumResponseDto) =>
-    album.kind === AlbumKind.Collection
-      ? $t('frameleaf_album_kind_collection')
-      : isSpace(album)
-        ? $t('frameleaf_album_kind_space')
-        : $t('frameleaf_album_kind_album');
-  const albumCountOf = (album: AlbumResponseDto) => everything.filter(({ parentId }) => parentId === album.id).length;
 
   const filterLabels: Record<AlbumDirectoryFilter, () => string> = {
     all: () => $t('all'),
@@ -278,9 +219,9 @@
   );
 
   /* ---- actions ---- */
-  const openCreate = (kind: AlbumKind, parentId: string | null = null, smart = false) => {
-    createDialog = { open: true, kind, parentId, smart };
-  };
+  const openCreate = (kind: AlbumKind, parentId: string | null = null, smart = false) =>
+    actions?.create(kind, parentId, smart);
+  const move = (album: AlbumResponseDto, parentId: string | null) => actions?.move(album, parentId);
 
   /**
    * The rail's "+" (LibraryRail.jsx `onSave`, `onNewSpace`) arrives as `?create=album|space`. The
@@ -317,99 +258,9 @@
     replaceState(url, page.state).catch((error) => handleError(error, $t('error')));
   });
 
-  /** A smart album and its rule are created together (FL-60); nothing is matched until it is applied. */
-  const createSmart = async (dto: ClassificationRuleCreateDto) => {
-    busy = true;
-    try {
-      const design = searchContextFor(new URL(page.url.href)).query.filter.libraryScope === LibraryViewScope.Design;
-      const rule = await createClassificationRule({
-        classificationRuleCreateDto: {
-          ...dto,
-          ...(design && { filter: { ...dto.filter, libraryScope: LibraryViewScope.Design } }),
-        },
-      });
-      announce($t('frameleaf_albums_created', { values: { name: rule.albumName } }));
-      await goto(Route.viewAlbum({ id: rule.albumId }));
-      return true;
-    } catch (error) {
-      handleError(error, $t('frameleaf_rules_create_failed'));
-      return false;
-    } finally {
-      busy = false;
-    }
-  };
-
-  /**
-   * Re-evaluate a rule-backed smart album in place; a built-in one runs the server check scoped to its
-   * own kind (AL-6), and only an album with no known kind falls back to every enabled kind.
-   */
-  const openReevaluate = async (album: AlbumResponseDto) => {
-    if (!album.smartRuleId) {
-      void modalManager.show(
-        SmartAlbumReevaluateModal,
-        album.smartKind ? { kind: album.smartKind, kindLabel: album.albumName } : {},
-      );
-      return;
-    }
-    try {
-      const [rule, sources] = await Promise.all([getClassificationRule({ id: album.smartRuleId }), loadRuleSources()]);
-      reevaluate = { open: true, rule, sources };
-    } catch (error) {
-      handleError(error, $t('frameleaf_rules_plan_failed'));
-    }
-  };
-
-  const create = async (dto: CreateAlbumDto) => {
-    busy = true;
-    try {
-      const design = searchContextFor(new URL(page.url.href)).query.filter.libraryScope === LibraryViewScope.Design;
-      const album = await handleCreateAlbumEntry({ ...dto, ...(design && { libraryScope: LibraryScope.Design }) });
-      if (!album) {
-        return false;
-      }
-      // Stay on the page and say what happened (Collections.jsx); the new album is in the refreshed tree.
-      announce($t('frameleaf_albums_created', { values: { name: nameOf(album) } }));
-      await refresh();
-      return true;
-    } finally {
-      busy = false;
-    }
-  };
-
-  const move = async (album: AlbumResponseDto, collectionId: string | null, undoable = true) => {
-    if (album.parentId === collectionId) {
-      return;
-    }
-    const previousParentId = album.parentId ?? null;
-    busy = true;
-    try {
-      const moved = await handleMoveAlbumToCollection(album, collectionId);
-      if (moved === 'stale') {
-        await reloadStale();
-        return;
-      }
-      if (!moved) {
-        return;
-      }
-      const destination = collectionId ? find(collectionId) : undefined;
-      announce(
-        destination
-          ? $t('frameleaf_albums_moved_into', { values: { name: nameOf(album), collection: nameOf(destination) } })
-          : $t('frameleaf_albums_moved_out', { values: { name: nameOf(album) } }),
-        // Undo moves it back from where it now is; the refreshed tree has the album's new parent.
-        undoable ? () => void move({ ...album, parentId: collectionId }, previousParentId, false) : undefined,
-      );
-      moveDialog = { open: false };
-      await refresh();
-    } finally {
-      busy = false;
-    }
-  };
-
   /** The server refused a change made from an outdated directory: show the latest and say so. */
   const reloadStale = async () => {
     status = $t('frameleaf_albums_stale');
-    moveDialog = { open: false };
     await refresh();
   };
 
@@ -469,80 +320,21 @@
       void saveOrder(album, group.parentId, ids, group.ids);
     }
   };
+  /**
+   * Outside custom order a plain album takes an album dropped on it, which goes inside it (albums nest
+   * in albums, approved design 2026-11-04): never itself, a smart album, or one already inside the dragged one.
+   */
+  const acceptsNest = (target: AlbumResponseDto) =>
+    !!dragged &&
+    !acceptsReorder(target) &&
+    target.kind === AlbumKind.Album &&
+    !target.isSmart &&
+    dragged.id !== target.id &&
+    canDropOnCollection(dragged, target, currentUserId) &&
+    albumAncestors(tree, target).every(({ id }) => id !== dragged?.id);
   /** In custom order everything can be dragged to arrange it; otherwise only an owner's album, to move it. */
   const canDrag = (album: AlbumResponseDto) =>
     reorderable || (album.kind !== AlbumKind.Space && isOwner(album, currentUserId));
-
-  /** Delete and Leave confirm in the Frameleaf dialog (AlbumConfirmDialog), as the album header does. */
-  const confirmDelete = async () => {
-    const album = deleteDialog.album;
-    if (!album) {
-      return;
-    }
-    const ok = await handleDeleteAlbum(album, { notify: false });
-    if (ok) {
-      announce(
-        album.kind === AlbumKind.Collection
-          ? $t('frameleaf_albums_deleted_collection', { values: { name: nameOf(album) } })
-          : $t('frameleaf_albums_deleted', { values: { name: nameOf(album) } }),
-      );
-    }
-    await refresh();
-  };
-
-  const confirmLeave = async () => {
-    const album = leaveDialog.album;
-    if (!album) {
-      return;
-    }
-    const left = await handleLeaveAlbum(album);
-    if (left) {
-      announce($t('frameleaf_albums_left', { values: { name: nameOf(album) } }));
-    }
-    await refresh();
-  };
-
-  let ruleEdit = $state<{
-    open: boolean;
-    album?: AlbumResponseDto;
-    rule?: ClassificationRuleResponseDto;
-    sources: RuleSources;
-  }>({ open: false, sources: { people: [], tags: [] } });
-
-  const edit = async (album: AlbumResponseDto) => {
-    // A smart album is edited with its rule, as the design's edit dialog does (FL-60).
-    if (album.smartRuleId) {
-      try {
-        const [rule, sources] = await Promise.all([
-          getClassificationRule({ id: album.smartRuleId }),
-          loadRuleSources(),
-        ]);
-        ruleEdit = { open: true, album, rule, sources };
-      } catch (error) {
-        handleError(error, $t('frameleaf_rules_save_failed'));
-      }
-      return;
-    }
-    editDialog = { open: true, album };
-  };
-
-  /** The Frameleaf edit dialog (`CollectionFormDialog`); the tree refreshes on `AlbumUpdate`. */
-  const saveDetails = async (draft: AlbumDetailsDraft) => {
-    const album = editDialog.album;
-    if (!album) {
-      return false;
-    }
-    const saved = await handleEditAlbumDetails(album, draft);
-    if (saved) {
-      announce($t('frameleaf_albums_saved', { values: { name: nameOf(saved) } }));
-    }
-    return !!saved;
-  };
-
-  /** Members and roles in the Frameleaf share dialog (`ShareDialog`), as the album header does. */
-  const share = (album: AlbumResponseDto) => {
-    shareDialog = { open: true, album };
-  };
 
   /* ---- drag an album onto a collection shelf; touch uses Move to… ---- */
   const startDrag = (album: AlbumResponseDto) => {
@@ -582,7 +374,43 @@
       await move(album, null);
     }
   };
+  /**
+   * A right-click on an album, a collection's shelf or a space opens that item's menu at the pointer
+   * (approved design, 2026-11-04); Shift+F10 or the menu key opens it under the focused item.
+   */
+  let contextMenu = $state<{ id: string; x: number; y: number } | null>(null);
+  let section: HTMLElement | undefined = $state();
+  const contextHolder = (target: EventTarget | null) => {
+    const holder =
+      target instanceof Element && !target.closest('[role="menu"]')
+        ? target.closest<HTMLElement>('[data-album-id]')
+        : null;
+    return holder && section?.contains(holder) ? holder : null;
+  };
+  const openContextMenu = (holder: HTMLElement, at?: { x: number; y: number }) => {
+    const focused = document.activeElement instanceof HTMLElement && holder.contains(document.activeElement);
+    const rect = (focused ? (document.activeElement as HTMLElement) : holder).getBoundingClientRect();
+    contextMenu = { id: holder.dataset.albumId as string, ...(at ?? { x: rect.left, y: rect.bottom }) };
+  };
+  const onContextMenu = (event: MouseEvent) => {
+    const holder = contextHolder(event.target);
+    if (!holder) {
+      return;
+    }
+    event.preventDefault();
+    // The menu key sends no pointer position.
+    openContextMenu(holder, event.clientX || event.clientY ? { x: event.clientX, y: event.clientY } : undefined);
+  };
+
   const onKeydown = (event: KeyboardEvent) => {
+    if (event.key === 'F10' && event.shiftKey) {
+      const holder = contextHolder(document.activeElement);
+      if (holder) {
+        event.preventDefault();
+        openContextMenu(holder);
+      }
+      return;
+    }
     if (!(event.key === 'Escape' && dragged)) {
       return;
     }
@@ -603,13 +431,24 @@
     Frameleaf Menu. "Move earlier" / "Move later" (FL-52 custom order) sit with "Move to…", the
     prototype's other organising command, and use the same icon-and-label item.
   -->
-  <Menu label={$t('frameleaf_albums_actions_for', { values: { name: nameOf(album) } })} align="end">
+  <Menu
+    label={$t('frameleaf_albums_actions_for', { values: { name: nameOf(album) } })}
+    align="end"
+    bind:at={
+      () => (contextMenu?.id === album.id ? contextMenu : null),
+      (point) => {
+        if (!point && contextMenu?.id === album.id) {
+          contextMenu = null;
+        }
+      }
+    }
+  >
     {#snippet trigger()}<Icon icon={mdiDotsHorizontal} size="18" aria-hidden={true} />{/snippet}
     <MenuItem onSelect={() => goto(openRoute(album))}>
       <Icon icon={mdiFolderOpenOutline} size="18" aria-hidden={true} />{$t('open')}
     </MenuItem>
     {#if editor}
-      <MenuItem onSelect={() => edit(album)}>
+      <MenuItem onSelect={() => void actions?.edit(album)}>
         <Icon icon={mdiPencilOutline} size="18" aria-hidden={true} />{$t('edit')}
       </MenuItem>
     {/if}
@@ -619,7 +458,7 @@
       </MenuItem>
     {/if}
     {#if owner && !isSpace(album)}
-      <MenuItem onSelect={() => (moveDialog = { open: true, album })}>
+      <MenuItem onSelect={() => actions?.openMove(album)}>
         <Icon icon={mdiFolderMoveOutline} size="18" aria-hidden={true} />{$t('frameleaf_albums_move_to')}
       </MenuItem>
     {/if}
@@ -639,7 +478,7 @@
       </MenuItem>
     {/if}
     {#if album.isSmart && (album.smartRuleId || authManager.user.isAdmin)}
-      <MenuItem onSelect={() => void openReevaluate(album)}>
+      <MenuItem onSelect={() => void actions?.openReevaluate(album)}>
         <Icon icon={mdiRefresh} size="18" aria-hidden={true} />{$t('frameleaf_albums_smart_reevaluate')}
       </MenuItem>
     {/if}
@@ -650,13 +489,13 @@
         <Icon icon={mdiAccountMultipleOutline} size="18" aria-hidden={true} />{$t('frameleaf_albums_members')}
       </MenuItem>
     {:else}
-      <MenuItem onSelect={() => share(album)}>
+      <MenuItem onSelect={() => actions?.share(album)}>
         <Icon icon={owner ? mdiAccountPlusOutline : mdiAccountMultipleOutline} size="18" aria-hidden={true} />
         {owner ? $t('share') : $t('frameleaf_albums_members')}
       </MenuItem>
     {/if}
     {#if owner}
-      <MenuItem onSelect={() => (linkDialog = { open: true, album })}>
+      <MenuItem onSelect={() => actions?.link(album)}>
         <Icon icon={mdiLinkVariant} size="18" aria-hidden={true} />{$t('frameleaf_albums_create_link')}
       </MenuItem>
     {/if}
@@ -665,11 +504,11 @@
     </MenuItem>
     <div class="menu-separator" role="separator"></div>
     {#if owner}
-      <MenuItem onSelect={() => (deleteDialog = { open: true, album })}>
+      <MenuItem onSelect={() => actions?.remove(album)}>
         <Icon icon={mdiDeleteOutline} size="18" aria-hidden={true} />{$t('delete')}
       </MenuItem>
     {:else}
-      <MenuItem onSelect={() => (leaveDialog = { open: true, album })}>
+      <MenuItem onSelect={() => actions?.leave(album)}>
         <Icon icon={mdiLogoutVariant} size="18" aria-hidden={true} />{$t('leave')}
       </MenuItem>
     {/if}
@@ -682,6 +521,7 @@
       {#each list as album (album.id)}
         <div
           class="cell"
+          data-album-id={album.id}
           class:tile-tinted={!!albumColorStyle(album.color)}
           style={albumColorStyle(album.color)}
           animate:listFlip={{ count: list.length }}
@@ -701,10 +541,12 @@
             draggable={canDrag(album)}
             dragging={dragged?.id === album.id}
             acceptsReorder={acceptsReorder(album)}
+            acceptsNest={acceptsNest(album)}
             moved={movedId === album.id}
             onDragStart={startDrag}
             onDragEnd={endDrag}
             onReorderDrop={(albumId) => dropBefore(albumId, album)}
+            onNestDrop={(albumId) => void dropOnCollection(albumId, album)}
           >
             {#snippet actions()}{@render menu(album)}{/snippet}
           </AlbumTile>
@@ -719,6 +561,7 @@
       {#each list as album (album.id)}
         <div
           role="listitem"
+          data-album-id={album.id}
           class:tile-tinted={!!albumColorStyle(album.color)}
           style={albumColorStyle(album.color)}
           animate:listFlip={{ count: list.length }}
@@ -739,10 +582,12 @@
             draggable={canDrag(album)}
             dragging={dragged?.id === album.id}
             acceptsReorder={acceptsReorder(album)}
+            acceptsNest={acceptsNest(album)}
             moved={movedId === album.id}
             onDragStart={startDrag}
             onDragEnd={endDrag}
             onReorderDrop={(albumId) => dropBefore(albumId, album)}
+            onNestDrop={(albumId) => void dropOnCollection(albumId, album)}
           >
             {#snippet actions()}{@render menu(album)}{/snippet}
           </AlbumTile>
@@ -755,9 +600,9 @@
   {/if}
 {/snippet}
 
-<svelte:document onkeydown={onKeydown} />
+<svelte:document onkeydown={onKeydown} oncontextmenu={onContextMenu} />
 
-<section class="albums" aria-labelledby={headingId}>
+<section class="albums" aria-labelledby={headingId} bind:this={section}>
   <header class="head">
     <div class="heading">
       <h1 id={headingId}>{$t('albums')}</h1>
@@ -847,6 +692,7 @@
     <!-- The shelf's icon wears the collection's colour (README point 22: "They also show in Albums"). -->
     <div
       class="shelf-tint"
+      data-album-id={shelf.collection.id}
       class:tinted={!!albumColorStyle(shelf.collection.color)}
       style={albumColorStyle(shelf.collection.color)}
     >
@@ -954,114 +800,13 @@
   </div>
 </section>
 
-<AlbumCreateDialog
-  bind:open={createDialog.open}
-  kind={createDialog.kind}
-  collections={editableCollections}
-  defaultParentId={createDialog.parentId}
-  smart={createDialog.smart}
-  onCreate={create}
-  onCreateSmart={createSmart}
+<AlbumActions
+  bind:this={actions}
+  {tree}
+  onRefresh={refresh}
+  onStale={() => (status = $t('frameleaf_albums_stale'))}
+  {announce}
 />
-
-{#if moveDialog.album}
-  <AlbumMoveDialog
-    bind:open={moveDialog.open}
-    album={moveDialog.album}
-    albums={moveCandidates}
-    {busy}
-    onMove={(collectionId) => moveDialog.album && void move(moveDialog.album, collectionId)}
-  />
-{/if}
-
-{#if deleteDialog.album}
-  {@const album = deleteDialog.album}
-  <AlbumConfirmDialog
-    title={$t('frameleaf_album_delete_title', { values: { name: nameOf(album) } })}
-    body={album.kind === AlbumKind.Collection
-      ? $t('frameleaf_album_delete_collection_body')
-      : isSpace(album)
-        ? $t('frameleaf_album_delete_space_body')
-        : $t('frameleaf_album_delete_body', { values: { kind: kindOf(album) } })}
-    keepNote={album.kind === AlbumKind.Collection
-      ? $t('frameleaf_album_delete_collection_keep', { values: { count: albumCountOf(album) } })
-      : $t('frameleaf_album_delete_keep', { values: { count: album.assetCount } })}
-    confirmLabel={$t('frameleaf_album_delete', { values: { kind: kindOf(album) } })}
-    bind:open={deleteDialog.open}
-    onConfirm={confirmDelete}
-  />
-{/if}
-
-{#if leaveDialog.album}
-  {@const album = leaveDialog.album}
-  <AlbumConfirmDialog
-    title={$t('frameleaf_album_leave_title', { values: { name: nameOf(album) } })}
-    body={$t('frameleaf_album_leave_body')}
-    confirmLabel={$t('frameleaf_album_leave', { values: { kind: kindOf(album) } })}
-    bind:open={leaveDialog.open}
-    onConfirm={confirmLeave}
-  />
-{/if}
-
-{#if editDialog.album}
-  <AlbumCreateDialog
-    bind:open={editDialog.open}
-    kind={editDialog.album.kind}
-    album={editDialog.album}
-    collections={editDialog.album
-      ? moveTargets(tree, editDialog.album, currentUserId).map(({ collection }) => collection)
-      : editableCollections}
-    canMove={editDialog.album.kind !== AlbumKind.Space && isOwner(editDialog.album, currentUserId)}
-    onCreate={create}
-    onSave={saveDetails}
-  />
-{/if}
-{#if shareDialog.album}
-  {@const album = find(shareDialog.album.id) ?? shareDialog.album}
-  <AlbumShareDialog
-    {album}
-    bind:open={shareDialog.open}
-    onChanged={refresh}
-    onLeave={() => (leaveDialog = { open: true, album })}
-  />
-{/if}
-{#if linkDialog.album}
-  <SharedLinkForm
-    bind:open={linkDialog.open}
-    target={{
-      type: SharedLinkType.Album,
-      albumId: linkDialog.album.id,
-      name: nameOf(linkDialog.album),
-      previewAssetIds: linkDialog.album.albumThumbnailAssetId ? [linkDialog.album.albumThumbnailAssetId] : [],
-      count: linkDialog.album.assetCount,
-    }}
-  />
-{/if}
-
-{#if ruleEdit.rule && ruleEdit.album}
-  <SmartAlbumRuleDialog
-    album={ruleEdit.album}
-    rule={ruleEdit.rule}
-    sources={ruleEdit.sources}
-    bind:open={ruleEdit.open}
-    onSaved={(_saved, message) => {
-      announce(message);
-      void refresh();
-    }}
-  />
-{/if}
-
-{#if reevaluate.rule}
-  <SmartAlbumReevaluateDialog
-    rule={reevaluate.rule}
-    sources={reevaluate.sources}
-    bind:open={reevaluate.open}
-    onApplied={(message) => {
-      announce(message);
-      void refresh();
-    }}
-  />
-{/if}
 
 <style>
   /*

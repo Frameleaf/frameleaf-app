@@ -1307,10 +1307,8 @@
     border-radius: 10px;
   }
   .hp-markdown :global(code) {
-    font:
-      12px ui-monospace,
-      SFMono-Regular,
-      monospace;
+    font: 12px var(--fl-family-ui);
+    font-variant-numeric: tabular-nums;
     padding: 1px 4px;
     border-radius: 4px;
     background: var(--sp-row);

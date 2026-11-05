@@ -129,6 +129,19 @@ export class IntegrityFindingAssetsResponseDto extends createZodDto(IntegrityFin
 export type IntegrityUnreachableFolder = z.infer<typeof IntegrityUnreachableFolderSchema>;
 
 export class IntegrityReportClearResponseDto extends createZodDto(IntegrityReportClearResponseSchema) {}
+
+/** Library care's "Check one…" (approved design, 2026-11-04): what reading one original found. */
+const IntegrityCheckOneResponseSchema = z
+  .object({
+    result: z
+      .enum(['passed', 'mismatched', 'missing', 'unreadable', 'encrypted', 'unverifiable'])
+      .describe(
+        'passed: matches its checksum; mismatched: damaged; missing or unreadable: the file could not be read; encrypted: a Locked file, intact by its own seal; unverifiable: no checksum to compare',
+      )
+      .meta({ id: 'IntegrityCheckOneResult' }),
+  })
+  .meta({ id: 'IntegrityCheckOneResponseDto' });
+export class IntegrityCheckOneResponseDto extends createZodDto(IntegrityCheckOneResponseSchema) {}
 export class IntegrityReportSummaryResponseDto extends createZodDto(IntegrityReportSummaryResponseSchema) {}
 export class IntegrityCheckRunsResponseDto extends createZodDto(IntegrityCheckRunsResponseSchema) {}
 export class IntegrityGetReportDto extends createZodDto(IntegrityGetReportSchema) {}

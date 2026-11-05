@@ -1,5 +1,5 @@
 import { LibrarySetupStageId, LibrarySetupStageStatus, Phase, type LibrarySetupProgressDto } from '@frameleaf/sdk';
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import SetupBar from '$lib/components/frameleaf/SetupBar.svelte';
@@ -327,12 +327,22 @@ describe('SetupBar', () => {
     expect(sdkMock.beginLibrarySetup).toHaveBeenCalled();
   });
 
-  it('marks the file check stopped, not in progress, when setup needs attention', async () => {
+  it('marks the file check stopped, not in progress, says where, and offers Retry in Details', async () => {
     sdkMock.getLibrarySetupProgress.mockResolvedValue(progress({ phase: Phase.NeedsAttention }));
     render(SetupBar);
+    expect(
+      await screen.findByText(
+        'A file check stopped before it finished. Retry it, or see Library care for what happened.',
+      ),
+    ).toBeInTheDocument();
     await fireEvent.click(await screen.findByRole('button', { name: /Details/ }));
     expect(screen.getByText('Stopped')).toBeInTheDocument();
     expect(screen.queryByText('In progress')).not.toBeInTheDocument();
+    const details = screen.getByRole('region', { name: 'Setting up your library' });
+    expect(details).toHaveTextContent(/Stopped at [\d,]+ of [\d,]+\. Retry carries on from there/);
+    expect(details).toHaveTextContent('Everything already checked is kept.');
+    await fireEvent.click(within(details).getByRole('button', { name: 'Retry' }));
+    expect(sdkMock.beginLibrarySetup).toHaveBeenCalled();
   });
 
   it('keeps Retry and a general warning when attention follows completed stages', async () => {

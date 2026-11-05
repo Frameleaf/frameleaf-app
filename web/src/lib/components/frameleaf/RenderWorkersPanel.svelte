@@ -289,7 +289,8 @@
     color: var(--fl-muted);
   }
   .mono {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: inherit;
+    font-variant-numeric: tabular-nums;
     overflow-wrap: anywhere;
   }
   .revoked th,

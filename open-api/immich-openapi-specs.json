@@ -4308,6 +4308,165 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/cloud/remote/name": {
+      "get": {
+        "description": "FL-1197: reads the name from Frameleaf Cloud: the address, the relay address that never changes, whether the name reaches this server now, and earlier names that still redirect.",
+        "operationId": "getRemoteName",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteNameStateResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "This server's name on frameleaf.net",
+        "tags": [
+          "Frameleaf Cloud (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloud.read",
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "FL-1197: claims or changes the name. The old name keeps working for 30 days and the relay address never changes.",
+        "operationId": "setRemoteName",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoteNameUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteNameStateResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Change this server's name on frameleaf.net",
+        "tags": [
+          "Frameleaf Cloud (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminRemoteAccess.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/remote/name/check": {
+      "post": {
+        "description": "FL-1197: whether a name is available, taken, kept for Frameleaf or against the rules. Claims nothing.",
+        "operationId": "checkRemoteName",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoteNameUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteNameCheckResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Check a name on frameleaf.net",
+        "tags": [
+          "Frameleaf Cloud (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminRemoteAccess.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/cloud/remote/test": {
       "post": {
         "description": "Checks the certificate, the HTTPS listener and a request through it to this server, and reports the relay and the router as last seen. The result is kept with the remote access status.",
@@ -6402,6 +6561,64 @@
           }
         ],
         "summary": "Get the photos behind missing or damaged findings",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/integrity/assets/{id}/check": {
+      "post": {
+        "description": "Read one photo's original and compare it with its checksum, now, as the overnight damage check would. A damaged file is listed in Library care; a file that passes leaves the list.",
+        "operationId": "checkIntegrityOne",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrityCheckOneResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Check one original file now",
         "tags": [
           "Maintenance (admin)"
         ],
@@ -39238,6 +39455,38 @@
         ]
       }
     },
+    "/photography/site/domain": {
+      "get": {
+        "operationId": "photographySiteDomain",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioSiteDomainResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
     "/photography/studios/{ownerId}/logo": {
       "get": {
         "operationId": "photographyPublicLogo",
@@ -42508,6 +42757,185 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/queues/{name}/jobs/run-one": {
+      "post": {
+        "description": "Queues the task's job for one photo or video and starts it at once, even while the task is paused or busy. Only thumbnails, metadata, faces, text recognition and playback videos.",
+        "operationId": "runQueueOnOne",
+        "parameters": [
+          {
+            "name": "name",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/QueueName"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QueueRunOneDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Run a task on one item",
+        "tags": [
+          "Queues"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "queueJob.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/queues/{name}/jobs/{id}/retry": {
+      "post": {
+        "description": "Puts one failed job back in its queue with its saved data.",
+        "operationId": "retryQueueJob",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Job ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/QueueName"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retry a failed job",
+        "tags": [
+          "Queues"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "queueJob.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/queues/{name}/jobs/{id}/start": {
+      "post": {
+        "description": "Starts one waiting job at the next pass, even while its queue is paused or busy.",
+        "operationId": "startQueueJob",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Job ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/QueueName"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Start a waiting job now",
+        "tags": [
+          "Queues"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "queueJob.create",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/queues/{name}/statistics": {
       "get": {
         "description": "Counts, per state, the jobs of the specified queue that work on one account's items. At most 1,000 jobs of each state are read; `truncated` marks lower bounds.",
@@ -45638,7 +46066,8 @@
     },
     "/server/apk-links": {
       "get": {
-        "description": "Retrieve links to the signed APKs for the current server version, from the release destination configured for this server.",
+        "deprecated": true,
+        "description": "Deprecated (FL-1200): the Android app is distributed only through Google Play, so this always answers 404. Use app-releases for the store listings.",
         "operationId": "getApkLinks",
         "parameters": [],
         "responses": {
@@ -45653,7 +46082,7 @@
             "description": ""
           },
           "404": {
-            "description": "No signed Android release is configured for this server"
+            "description": "The Frameleaf apps come from the App Store and Google Play only"
           }
         },
         "security": [
@@ -45669,7 +46098,8 @@
         ],
         "summary": "Get APK links",
         "tags": [
-          "Server"
+          "Server",
+          "Deprecated"
         ],
         "x-immich-history": [
           {
@@ -45683,10 +46113,15 @@
           {
             "version": "v2",
             "state": "Stable"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Deprecated",
+            "replacementId": "getAppReleases"
           }
         ],
         "x-immich-permission": "server.apkLinks",
-        "x-immich-state": "Stable"
+        "x-immich-state": "Deprecated"
       }
     },
     "/server/app-releases": {
@@ -68400,6 +68835,68 @@
         ],
         "type": "object"
       },
+      "AnalyticsFarAndWideDto": {
+        "description": "Null unless the owner reads their own scope and some items have a place",
+        "nullable": true,
+        "properties": {
+          "farthest": {
+            "$ref": "#/components/schemas/AnalyticsFarthestDto"
+          },
+          "highest": {
+            "$ref": "#/components/schemas/AnalyticsHighestDto"
+          },
+          "northernmost": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AnalyticsMagicPlaceDto"
+              }
+            ],
+            "nullable": true
+          },
+          "southernmost": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AnalyticsMagicPlaceDto"
+              }
+            ],
+            "nullable": true
+          },
+          "travelledKm": {
+            "description": "Km between photos taken one after another, all added up",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "farthest",
+          "highest",
+          "northernmost",
+          "southernmost",
+          "travelledKm"
+        ],
+        "type": "object"
+      },
+      "AnalyticsFarthestDto": {
+        "description": "The photo taken farthest from where most are taken",
+        "nullable": true,
+        "properties": {
+          "km": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "place": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "km",
+          "place"
+        ],
+        "type": "object"
+      },
       "AnalyticsFocalLengthDto": {
         "description": "Items per recorded focal length (mm)",
         "properties": {
@@ -68463,6 +68960,27 @@
           "dolbyVisionVideos",
           "hdrVideos",
           "probedVideos"
+        ],
+        "type": "object"
+      },
+      "AnalyticsHighestDto": {
+        "description": "The photo taken highest up, from its recorded altitude",
+        "nullable": true,
+        "properties": {
+          "metres": {
+            "description": "Metres above sea level",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "place": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "metres",
+          "place"
         ],
         "type": "object"
       },
@@ -68599,6 +69117,10 @@
             "minimum": 0,
             "type": "integer"
           },
+          "magic": {
+            "$ref": "#/components/schemas/AnalyticsMagicDto",
+            "description": "Library magic: colour, light, seasons, tags, places, counts"
+          },
           "orientation": {
             "description": "Every bucket; adds up to summary.items. Panorama is 2:1 or wider",
             "items": {
@@ -68676,6 +69198,44 @@
         ],
         "type": "object"
       },
+      "AnalyticsLightDto": {
+        "description": "Photos with a place and a time, by how high the sun stood there then (golden hour: −4° to 6°)",
+        "properties": {
+          "blueHour": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "daylight": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "goldenEvening": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "goldenMorning": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "night": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "blueHour",
+          "daylight",
+          "goldenEvening",
+          "goldenMorning",
+          "night"
+        ],
+        "type": "object"
+      },
       "AnalyticsLongestVideoDto": {
         "properties": {
           "durationMs": {
@@ -68692,6 +69252,75 @@
         "required": [
           "durationMs",
           "name"
+        ],
+        "type": "object"
+      },
+      "AnalyticsMagicDto": {
+        "properties": {
+          "colourByMonth": {
+            "description": "Each calendar month's average photo colour, from the thumbnails; months without photos are left out",
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsMonthColourDto"
+            },
+            "type": "array"
+          },
+          "farAndWide": {
+            "$ref": "#/components/schemas/AnalyticsFarAndWideDto"
+          },
+          "light": {
+            "$ref": "#/components/schemas/AnalyticsLightDto"
+          },
+          "seasons": {
+            "$ref": "#/components/schemas/AnalyticsSeasonsDto"
+          },
+          "seen": {
+            "$ref": "#/components/schemas/AnalyticsSeenDto"
+          },
+          "shutter": {
+            "description": "Cameras that record their shutter count, highest first, at most 6",
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsShutterDto"
+            },
+            "type": "array"
+          },
+          "topTags": {
+            "description": "Your tags on the most items, at most 8; empty unless the owner reads their own scope",
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsTagCountDto"
+            },
+            "type": "array"
+          },
+          "underTheHood": {
+            "$ref": "#/components/schemas/AnalyticsUnderTheHoodDto"
+          }
+        },
+        "required": [
+          "colourByMonth",
+          "farAndWide",
+          "light",
+          "seasons",
+          "seen",
+          "shutter",
+          "topTags",
+          "underTheHood"
+        ],
+        "type": "object"
+      },
+      "AnalyticsMagicPlaceDto": {
+        "properties": {
+          "latitude": {
+            "format": "double",
+            "type": "number"
+          },
+          "place": {
+            "description": "City and country, when known",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "latitude",
+          "place"
         ],
         "type": "object"
       },
@@ -68741,6 +69370,31 @@
           "checksum"
         ],
         "type": "string"
+      },
+      "AnalyticsMonthColourDto": {
+        "properties": {
+          "colour": {
+            "description": "Average colour of the photos, as #rrggbb",
+            "pattern": "^#[0-9a-f]{6}$",
+            "type": "string"
+          },
+          "month": {
+            "maximum": 12,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "photos": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "colour",
+          "month",
+          "photos"
+        ],
+        "type": "object"
       },
       "AnalyticsNamedCountDto": {
         "properties": {
@@ -69264,6 +69918,116 @@
         ],
         "type": "object"
       },
+      "AnalyticsSeasonsDto": {
+        "description": "Items by the season where they were taken; items without a place follow the library's hemisphere",
+        "properties": {
+          "autumn": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "spring": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "summer": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "winter": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "autumn",
+          "spring",
+          "summer",
+          "winter"
+        ],
+        "type": "object"
+      },
+      "AnalyticsSeenCountDto": {
+        "properties": {
+          "count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "id": {
+            "$ref": "#/components/schemas/AnalyticsSeenLabel"
+          }
+        },
+        "required": [
+          "count",
+          "id"
+        ],
+        "type": "object"
+      },
+      "AnalyticsSeenDto": {
+        "description": "What the AI sees; null when visual search is off or unavailable",
+        "nullable": true,
+        "properties": {
+          "described": {
+            "description": "Photos read, the newest first, up to 20,000",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "labels": {
+            "description": "Each photo counted once, under the everyday subject its visual search is nearest to",
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsSeenCountDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "described",
+          "labels"
+        ],
+        "type": "object"
+      },
+      "AnalyticsSeenLabel": {
+        "enum": [
+          "people",
+          "children",
+          "dogs",
+          "cats",
+          "birds",
+          "mountains",
+          "lakes",
+          "beaches",
+          "ocean",
+          "forests",
+          "snow",
+          "flowers",
+          "gardens",
+          "sunsets",
+          "sky",
+          "cities",
+          "buildings",
+          "homes",
+          "food",
+          "drinks",
+          "cars",
+          "roads",
+          "boats",
+          "planes",
+          "parties",
+          "weddings",
+          "concerts",
+          "sports",
+          "hiking",
+          "documents",
+          "art",
+          "night"
+        ],
+        "type": "string"
+      },
       "AnalyticsSeriesDefinitionDto": {
         "properties": {
           "available": {
@@ -69349,6 +70113,24 @@
           "processing"
         ],
         "type": "string"
+      },
+      "AnalyticsShutterDto": {
+        "properties": {
+          "camera": {
+            "type": "string"
+          },
+          "count": {
+            "description": "Its highest recorded shutter count",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "camera",
+          "count"
+        ],
+        "type": "object"
       },
       "AnalyticsState": {
         "description": "Analytics reading state",
@@ -69459,6 +70241,58 @@
           "uploadedLogicalBytes",
           "uploadedPhysicalBytes",
           "videos"
+        ],
+        "type": "object"
+      },
+      "AnalyticsTagCountDto": {
+        "properties": {
+          "count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "name"
+        ],
+        "type": "object"
+      },
+      "AnalyticsUnderTheHoodDto": {
+        "properties": {
+          "databaseRows": {
+            "description": "Rows in the whole server's database, estimated",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "faceVectors": {
+            "description": "Face embeddings",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "previews": {
+            "description": "Thumbnails, previews and other copies made from the originals",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "searchVectors": {
+            "description": "Smart-search embeddings",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "databaseRows",
+          "faceVectors",
+          "previews",
+          "searchVectors"
         ],
         "type": "object"
       },
@@ -96244,6 +97078,29 @@
         ],
         "type": "object"
       },
+      "IntegrityCheckOneResponseDto": {
+        "properties": {
+          "result": {
+            "$ref": "#/components/schemas/IntegrityCheckOneResult"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "type": "object"
+      },
+      "IntegrityCheckOneResult": {
+        "description": "passed: matches its checksum; mismatched: damaged; missing or unreadable: the file could not be read; encrypted: a Locked file, intact by its own seal; unverifiable: no checksum to compare",
+        "enum": [
+          "passed",
+          "mismatched",
+          "missing",
+          "unreadable",
+          "encrypted",
+          "unverifiable"
+        ],
+        "type": "string"
+      },
       "IntegrityCheckOutcome": {
         "description": "completed: it looked at everything; paused: the damage check reached its nightly limit and carries on next night; stopped: an administrator stopped it",
         "enum": [
@@ -106521,6 +107378,9 @@
             },
             "type": "array"
           },
+          "whenUnavailable": {
+            "$ref": "#/components/schemas/MlWhenUnavailable"
+          },
           "workloads": {
             "description": "Workloads with a list of their own",
             "items": {
@@ -106532,6 +107392,7 @@
         "required": [
           "order",
           "sources",
+          "whenUnavailable",
           "workloads"
         ],
         "type": "object"
@@ -106545,6 +107406,9 @@
             },
             "maxItems": 3,
             "type": "array"
+          },
+          "whenUnavailable": {
+            "$ref": "#/components/schemas/MlWhenUnavailable"
           }
         },
         "required": [
@@ -106704,6 +107568,14 @@
           "windowDays"
         ],
         "type": "object"
+      },
+      "MlWhenUnavailable": {
+        "description": "When a computer at home isn't answering: wait, and start when it is back; or stop, so its work can be sent elsewhere. Administrators are told either way.",
+        "enum": [
+          "wait",
+          "stop"
+        ],
+        "type": "string"
       },
       "MlWorkerAcceleration": {
         "description": "Acceleration a worker reported on its last check",
@@ -112300,6 +113172,13 @@
                 "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
                 "type": "string"
               },
+              "selectionLimit": {
+                "description": "The most photographs this client may choose; null for no limit",
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "nullable": true,
+                "type": "integer"
+              },
               "terms": {
                 "type": "string"
               }
@@ -112311,7 +113190,8 @@
               "collectionPrice",
               "bundles",
               "terms",
-              "selectionDeadline"
+              "selectionDeadline",
+              "selectionLimit"
             ],
             "type": "object"
           },
@@ -112545,6 +113425,10 @@
           },
           "title": {
             "type": "string"
+          },
+          "welcomeMessage": {
+            "description": "The studio's welcome for this gallery; empty for none",
+            "type": "string"
           }
         },
         "required": [
@@ -112566,7 +113450,8 @@
           "recipient",
           "revision",
           "rounds",
-          "title"
+          "title",
+          "welcomeMessage"
         ],
         "type": "object"
       },
@@ -112789,6 +113674,10 @@
         "properties": {
           "invitation": {
             "properties": {
+              "emailed": {
+                "description": "True when the invitation was queued to the email given",
+                "type": "boolean"
+              },
               "recipientId": {
                 "format": "uuid",
                 "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
@@ -113437,6 +114326,13 @@
                     "minimum": 0,
                     "type": "integer"
                   },
+                  "maxSelections": {
+                    "description": "The most photographs a client may choose; null or absent for no limit",
+                    "maximum": 10000,
+                    "minimum": 1,
+                    "nullable": true,
+                    "type": "integer"
+                  },
                   "mode": {
                     "enum": [
                       "edited-delivery",
@@ -113591,6 +114487,14 @@
                     ],
                     "type": "object"
                   },
+                  "proofCollection": {
+                    "description": "Which captures a full proof publication includes: every eligible one, or those rated 4 or more",
+                    "enum": [
+                      "eligible",
+                      "selected"
+                    ],
+                    "type": "string"
+                  },
                   "proofWatermark": {
                     "additionalProperties": false,
                     "properties": {
@@ -113730,6 +114634,23 @@
                     },
                     "required": [
                       "text"
+                    ],
+                    "type": "object"
+                  },
+                  "reminders": {
+                    "additionalProperties": false,
+                    "description": "Reminder emails the client should get",
+                    "properties": {
+                      "paymentAndExpiry": {
+                        "type": "boolean"
+                      },
+                      "selection": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "selection",
+                      "paymentAndExpiry"
                     ],
                     "type": "object"
                   },
@@ -113895,6 +114816,11 @@
                       "text"
                     ],
                     "type": "object"
+                  },
+                  "welcomeMessage": {
+                    "description": "Shown to the client at the top of the gallery",
+                    "maxLength": 2000,
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -114638,6 +115564,13 @@
                           "minimum": 0,
                           "type": "integer"
                         },
+                        "maxSelections": {
+                          "description": "The most photographs a client may choose; null or absent for no limit",
+                          "maximum": 10000,
+                          "minimum": 1,
+                          "nullable": true,
+                          "type": "integer"
+                        },
                         "mode": {
                           "enum": [
                             "edited-delivery",
@@ -114792,6 +115725,14 @@
                           ],
                           "type": "object"
                         },
+                        "proofCollection": {
+                          "description": "Which captures a full proof publication includes: every eligible one, or those rated 4 or more",
+                          "enum": [
+                            "eligible",
+                            "selected"
+                          ],
+                          "type": "string"
+                        },
                         "proofWatermark": {
                           "additionalProperties": false,
                           "properties": {
@@ -114931,6 +115872,23 @@
                           },
                           "required": [
                             "text"
+                          ],
+                          "type": "object"
+                        },
+                        "reminders": {
+                          "additionalProperties": false,
+                          "description": "Reminder emails the client should get",
+                          "properties": {
+                            "paymentAndExpiry": {
+                              "type": "boolean"
+                            },
+                            "selection": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "selection",
+                            "paymentAndExpiry"
                           ],
                           "type": "object"
                         },
@@ -115096,6 +116054,11 @@
                             "text"
                           ],
                           "type": "object"
+                        },
+                        "welcomeMessage": {
+                          "description": "Shown to the client at the top of the gallery",
+                          "maxLength": 2000,
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -115252,6 +116215,10 @@
                       },
                       "maxItems": 10000,
                       "type": "array"
+                    },
+                    "email": {
+                      "description": "Where the invitation was emailed",
+                      "type": "string"
                     },
                     "expiresAt": {
                       "format": "date-time",
@@ -115854,6 +116821,13 @@
                               "minimum": 0,
                               "type": "integer"
                             },
+                            "maxSelections": {
+                              "description": "The most photographs a client may choose; null or absent for no limit",
+                              "maximum": 10000,
+                              "minimum": 1,
+                              "nullable": true,
+                              "type": "integer"
+                            },
                             "mode": {
                               "enum": [
                                 "edited-delivery",
@@ -116008,6 +116982,14 @@
                               ],
                               "type": "object"
                             },
+                            "proofCollection": {
+                              "description": "Which captures a full proof publication includes: every eligible one, or those rated 4 or more",
+                              "enum": [
+                                "eligible",
+                                "selected"
+                              ],
+                              "type": "string"
+                            },
                             "proofWatermark": {
                               "additionalProperties": false,
                               "properties": {
@@ -116147,6 +117129,23 @@
                               },
                               "required": [
                                 "text"
+                              ],
+                              "type": "object"
+                            },
+                            "reminders": {
+                              "additionalProperties": false,
+                              "description": "Reminder emails the client should get",
+                              "properties": {
+                                "paymentAndExpiry": {
+                                  "type": "boolean"
+                                },
+                                "selection": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "selection",
+                                "paymentAndExpiry"
                               ],
                               "type": "object"
                             },
@@ -116312,6 +117311,11 @@
                                 "text"
                               ],
                               "type": "object"
+                            },
+                            "welcomeMessage": {
+                              "description": "Shown to the client at the top of the gallery",
+                              "maxLength": 2000,
+                              "type": "string"
                             }
                           },
                           "required": [
@@ -117231,6 +118235,13 @@
                 "minimum": 0,
                 "type": "integer"
               },
+              "maxSelections": {
+                "description": "The most photographs a client may choose; null or absent for no limit",
+                "maximum": 10000,
+                "minimum": 1,
+                "nullable": true,
+                "type": "integer"
+              },
               "mode": {
                 "enum": [
                   "edited-delivery",
@@ -117385,6 +118396,14 @@
                 ],
                 "type": "object"
               },
+              "proofCollection": {
+                "description": "Which captures a full proof publication includes: every eligible one, or those rated 4 or more",
+                "enum": [
+                  "eligible",
+                  "selected"
+                ],
+                "type": "string"
+              },
               "proofWatermark": {
                 "additionalProperties": false,
                 "properties": {
@@ -117524,6 +118543,23 @@
                 },
                 "required": [
                   "text"
+                ],
+                "type": "object"
+              },
+              "reminders": {
+                "additionalProperties": false,
+                "description": "Reminder emails the client should get",
+                "properties": {
+                  "paymentAndExpiry": {
+                    "type": "boolean"
+                  },
+                  "selection": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "selection",
+                  "paymentAndExpiry"
                 ],
                 "type": "object"
               },
@@ -117689,6 +118725,11 @@
                   "text"
                 ],
                 "type": "object"
+              },
+              "welcomeMessage": {
+                "description": "Shown to the client at the top of the gallery",
+                "maxLength": 2000,
+                "type": "string"
               }
             },
             "required": [
@@ -118110,6 +119151,13 @@
             "maxItems": 10000,
             "nullable": true,
             "type": "array"
+          },
+          "email": {
+            "description": "When given, the invitation is also emailed there",
+            "format": "email",
+            "maxLength": 254,
+            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$",
+            "type": "string"
           },
           "expectedRevision": {
             "format": "uuid",
@@ -119363,6 +120411,13 @@
                       "minimum": 0,
                       "type": "integer"
                     },
+                    "maxSelections": {
+                      "description": "The most photographs a client may choose; null or absent for no limit",
+                      "maximum": 10000,
+                      "minimum": 1,
+                      "nullable": true,
+                      "type": "integer"
+                    },
                     "mode": {
                       "enum": [
                         "edited-delivery",
@@ -119517,6 +120572,14 @@
                       ],
                       "type": "object"
                     },
+                    "proofCollection": {
+                      "description": "Which captures a full proof publication includes: every eligible one, or those rated 4 or more",
+                      "enum": [
+                        "eligible",
+                        "selected"
+                      ],
+                      "type": "string"
+                    },
                     "proofWatermark": {
                       "additionalProperties": false,
                       "properties": {
@@ -119656,6 +120719,23 @@
                       },
                       "required": [
                         "text"
+                      ],
+                      "type": "object"
+                    },
+                    "reminders": {
+                      "additionalProperties": false,
+                      "description": "Reminder emails the client should get",
+                      "properties": {
+                        "paymentAndExpiry": {
+                          "type": "boolean"
+                        },
+                        "selection": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "selection",
+                        "paymentAndExpiry"
                       ],
                       "type": "object"
                     },
@@ -119821,6 +120901,11 @@
                         "text"
                       ],
                       "type": "object"
+                    },
+                    "welcomeMessage": {
+                      "description": "Shown to the client at the top of the gallery",
+                      "maxLength": 2000,
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -120256,6 +121341,13 @@
                 "minimum": 0,
                 "type": "integer"
               },
+              "maxSelections": {
+                "description": "The most photographs a client may choose; null or absent for no limit",
+                "maximum": 10000,
+                "minimum": 1,
+                "nullable": true,
+                "type": "integer"
+              },
               "mode": {
                 "enum": [
                   "edited-delivery",
@@ -120410,6 +121502,14 @@
                 ],
                 "type": "object"
               },
+              "proofCollection": {
+                "description": "Which captures a full proof publication includes: every eligible one, or those rated 4 or more",
+                "enum": [
+                  "eligible",
+                  "selected"
+                ],
+                "type": "string"
+              },
               "proofWatermark": {
                 "additionalProperties": false,
                 "properties": {
@@ -120549,6 +121649,23 @@
                 },
                 "required": [
                   "text"
+                ],
+                "type": "object"
+              },
+              "reminders": {
+                "additionalProperties": false,
+                "description": "Reminder emails the client should get",
+                "properties": {
+                  "paymentAndExpiry": {
+                    "type": "boolean"
+                  },
+                  "selection": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "selection",
+                  "paymentAndExpiry"
                 ],
                 "type": "object"
               },
@@ -120714,6 +121831,11 @@
                   "text"
                 ],
                 "type": "object"
+              },
+              "welcomeMessage": {
+                "description": "Shown to the client at the top of the gallery",
+                "maxLength": 2000,
+                "type": "string"
               }
             },
             "required": [
@@ -121382,6 +122504,13 @@
                 "minimum": 0,
                 "type": "integer"
               },
+              "maxSelections": {
+                "description": "The most photographs a client may choose; null or absent for no limit",
+                "maximum": 10000,
+                "minimum": 1,
+                "nullable": true,
+                "type": "integer"
+              },
               "mode": {
                 "enum": [
                   "edited-delivery",
@@ -121536,6 +122665,14 @@
                 ],
                 "type": "object"
               },
+              "proofCollection": {
+                "description": "Which captures a full proof publication includes: every eligible one, or those rated 4 or more",
+                "enum": [
+                  "eligible",
+                  "selected"
+                ],
+                "type": "string"
+              },
               "proofWatermark": {
                 "additionalProperties": false,
                 "properties": {
@@ -121675,6 +122812,23 @@
                 },
                 "required": [
                   "text"
+                ],
+                "type": "object"
+              },
+              "reminders": {
+                "additionalProperties": false,
+                "description": "Reminder emails the client should get",
+                "properties": {
+                  "paymentAndExpiry": {
+                    "type": "boolean"
+                  },
+                  "selection": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "selection",
+                  "paymentAndExpiry"
                 ],
                 "type": "object"
               },
@@ -121840,6 +122994,11 @@
                   "text"
                 ],
                 "type": "object"
+              },
+              "welcomeMessage": {
+                "description": "Shown to the client at the top of the gallery",
+                "maxLength": 2000,
+                "type": "string"
               }
             },
             "required": [
@@ -122583,6 +123742,13 @@
                       "minimum": 0,
                       "type": "integer"
                     },
+                    "maxSelections": {
+                      "description": "The most photographs a client may choose; null or absent for no limit",
+                      "maximum": 10000,
+                      "minimum": 1,
+                      "nullable": true,
+                      "type": "integer"
+                    },
                     "mode": {
                       "enum": [
                         "edited-delivery",
@@ -122737,6 +123903,14 @@
                       ],
                       "type": "object"
                     },
+                    "proofCollection": {
+                      "description": "Which captures a full proof publication includes: every eligible one, or those rated 4 or more",
+                      "enum": [
+                        "eligible",
+                        "selected"
+                      ],
+                      "type": "string"
+                    },
                     "proofWatermark": {
                       "additionalProperties": false,
                       "properties": {
@@ -122876,6 +124050,23 @@
                       },
                       "required": [
                         "text"
+                      ],
+                      "type": "object"
+                    },
+                    "reminders": {
+                      "additionalProperties": false,
+                      "description": "Reminder emails the client should get",
+                      "properties": {
+                        "paymentAndExpiry": {
+                          "type": "boolean"
+                        },
+                        "selection": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "selection",
+                        "paymentAndExpiry"
                       ],
                       "type": "object"
                     },
@@ -123041,6 +124232,11 @@
                         "text"
                       ],
                       "type": "object"
+                    },
+                    "welcomeMessage": {
+                      "description": "Shown to the client at the top of the gallery",
+                      "maxLength": 2000,
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -123197,6 +124393,10 @@
                   },
                   "maxItems": 10000,
                   "type": "array"
+                },
+                "email": {
+                  "description": "Where the invitation was emailed",
+                  "type": "string"
                 },
                 "expiresAt": {
                   "format": "date-time",
@@ -123799,6 +124999,13 @@
                           "minimum": 0,
                           "type": "integer"
                         },
+                        "maxSelections": {
+                          "description": "The most photographs a client may choose; null or absent for no limit",
+                          "maximum": 10000,
+                          "minimum": 1,
+                          "nullable": true,
+                          "type": "integer"
+                        },
                         "mode": {
                           "enum": [
                             "edited-delivery",
@@ -123953,6 +125160,14 @@
                           ],
                           "type": "object"
                         },
+                        "proofCollection": {
+                          "description": "Which captures a full proof publication includes: every eligible one, or those rated 4 or more",
+                          "enum": [
+                            "eligible",
+                            "selected"
+                          ],
+                          "type": "string"
+                        },
                         "proofWatermark": {
                           "additionalProperties": false,
                           "properties": {
@@ -124092,6 +125307,23 @@
                           },
                           "required": [
                             "text"
+                          ],
+                          "type": "object"
+                        },
+                        "reminders": {
+                          "additionalProperties": false,
+                          "description": "Reminder emails the client should get",
+                          "properties": {
+                            "paymentAndExpiry": {
+                              "type": "boolean"
+                            },
+                            "selection": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "selection",
+                            "paymentAndExpiry"
                           ],
                           "type": "object"
                         },
@@ -124257,6 +125489,11 @@
                             "text"
                           ],
                           "type": "object"
+                        },
+                        "welcomeMessage": {
+                          "description": "Shown to the client at the top of the gallery",
+                          "maxLength": 2000,
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -124496,6 +125733,12 @@
                   "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
                   "type": "string"
                 },
+                "deliveryTarget": {
+                  "format": "date",
+                  "nullable": true,
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+                  "type": "string"
+                },
                 "id": {
                   "format": "uuid",
                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
@@ -124504,6 +125747,10 @@
                 "name": {
                   "maxLength": 200,
                   "minLength": 1,
+                  "type": "string"
+                },
+                "notes": {
+                  "maxLength": 5000,
                   "type": "string"
                 },
                 "stage": {
@@ -124585,6 +125832,12 @@
                   "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
                   "type": "string"
                 },
+                "deliveryTarget": {
+                  "format": "date",
+                  "nullable": true,
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+                  "type": "string"
+                },
                 "id": {
                   "format": "uuid",
                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
@@ -124593,6 +125846,10 @@
                 "name": {
                   "maxLength": 200,
                   "minLength": 1,
+                  "type": "string"
+                },
+                "notes": {
+                  "maxLength": 5000,
                   "type": "string"
                 },
                 "stage": {
@@ -127884,6 +129141,24 @@
         ],
         "type": "object"
       },
+      "QueueJobParamDto": {
+        "properties": {
+          "id": {
+            "description": "Job ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "name": {
+            "$ref": "#/components/schemas/QueueName"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
       "QueueJobResponseDto": {
         "properties": {
           "account": {
@@ -128251,6 +129526,20 @@
           "startedAt",
           "total",
           "waiting"
+        ],
+        "type": "object"
+      },
+      "QueueRunOneDto": {
+        "properties": {
+          "assetId": {
+            "description": "The photo or video to run this task on",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId"
         ],
         "type": "object"
       },
@@ -129930,6 +131219,20 @@
             "nullable": true,
             "type": "string"
           },
+          "frameleafName": {
+            "description": "FL-1197: this server's chosen name on frameleaf.net, if any",
+            "nullable": true,
+            "type": "string"
+          },
+          "frameleafNameAddress": {
+            "description": "FL-1197: the name as an address (taylor-home.frameleaf.net) while it routes",
+            "nullable": true,
+            "type": "string"
+          },
+          "frameleafNameRouted": {
+            "description": "FL-1197: the name reaches this server now",
+            "type": "boolean"
+          },
           "lastTestAt": {
             "nullable": true,
             "type": "string"
@@ -130067,6 +131370,9 @@
           "directPort",
           "enabled",
           "frameleafAddress",
+          "frameleafName",
+          "frameleafNameAddress",
+          "frameleafNameRouted",
           "lastTestAt",
           "lastTestChecks",
           "lastTestOk",
@@ -130365,6 +131671,122 @@
           "upnp",
           "nat-pmp",
           "manual"
+        ],
+        "type": "string"
+      },
+      "RemoteNameCheckResponseDto": {
+        "properties": {
+          "address": {
+            "nullable": true,
+            "type": "string"
+          },
+          "message": {
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "reason": {
+            "enum": [
+              "too_short",
+              "too_long",
+              "characters",
+              "hyphen_at_edge",
+              "reserved",
+              "taken"
+            ],
+            "nullable": true,
+            "type": "string"
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/RemoteNameVerdict"
+          }
+        },
+        "required": [
+          "address",
+          "message",
+          "name",
+          "reason",
+          "verdict"
+        ],
+        "type": "object"
+      },
+      "RemoteNamePreviousDto": {
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "redirectUntil": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "address",
+          "name",
+          "redirectUntil"
+        ],
+        "type": "object"
+      },
+      "RemoteNameStateResponseDto": {
+        "properties": {
+          "address": {
+            "description": "taylor-home.frameleaf.net",
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "nullable": true,
+            "type": "string"
+          },
+          "previous": {
+            "items": {
+              "$ref": "#/components/schemas/RemoteNamePreviousDto"
+            },
+            "type": "array"
+          },
+          "relayAddress": {
+            "description": "r.<label>.frameleaf.net; never changes",
+            "nullable": true,
+            "type": "string"
+          },
+          "routed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "address",
+          "name",
+          "previous",
+          "relayAddress",
+          "routed"
+        ],
+        "type": "object"
+      },
+      "RemoteNameUpdateDto": {
+        "properties": {
+          "name": {
+            "description": "The name to check or claim, such as taylor-home",
+            "maxLength": 253,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "RemoteNameVerdict": {
+        "enum": [
+          "available",
+          "current",
+          "taken",
+          "reserved",
+          "invalid"
         ],
         "type": "string"
       },
@@ -135423,24 +136845,12 @@
           "android": {
             "description": "Android application",
             "properties": {
-              "appId": {
-                "description": "Android package id of the signed release",
-                "type": "string"
-              },
               "available": {
-                "description": "Whether a signed Android release is configured for this server",
+                "description": "Whether the Android app has a store listing",
                 "type": "boolean"
               },
-              "links": {
-                "$ref": "#/components/schemas/ServerApkLinksDto",
-                "description": "Signed APK downloads for this server version"
-              },
-              "signingCertificateSha256": {
-                "description": "SHA-256 fingerprint of the release signing certificate, as AA:BB:...",
-                "type": "string"
-              },
               "storeUrl": {
-                "description": "Store listing of the Android app, when the operator configured one (FL-135)",
+                "description": "Store listing of the Android app (Google Play by default)",
                 "type": "string"
               }
             },
@@ -135453,7 +136863,7 @@
             "description": "iOS application",
             "properties": {
               "available": {
-                "description": "Whether an iOS release is configured for this server",
+                "description": "Whether the iOS app has a store listing",
                 "type": "boolean"
               },
               "url": {
@@ -144560,6 +145970,105 @@
           "width"
         ],
         "type": "object"
+      },
+      "StudioSiteDomainDto": {
+        "nullable": true,
+        "properties": {
+          "checkedAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "domain": {
+            "type": "string"
+          },
+          "problem": {
+            "enum": [
+              "cname_missing",
+              "cname_mismatch",
+              "txt_missing",
+              "txt_mismatch",
+              "claimed_elsewhere",
+              "certificate_pending",
+              "certificate_failed",
+              "site_unreachable"
+            ],
+            "nullable": true,
+            "type": "string"
+          },
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/StudioSiteRecordDto"
+            },
+            "type": "array"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StudioSiteDomainStatus"
+          }
+        },
+        "required": [
+          "checkedAt",
+          "domain",
+          "problem",
+          "records",
+          "slug",
+          "status"
+        ],
+        "type": "object"
+      },
+      "StudioSiteDomainResponseDto": {
+        "properties": {
+          "problem": {
+            "description": "Why the domain can't be served or checked now, in plain words",
+            "nullable": true,
+            "type": "string"
+          },
+          "site": {
+            "$ref": "#/components/schemas/StudioSiteDomainDto"
+          }
+        },
+        "required": [
+          "problem",
+          "site"
+        ],
+        "type": "object"
+      },
+      "StudioSiteDomainStatus": {
+        "enum": [
+          "waiting_for_dns",
+          "certificate_issued",
+          "active",
+          "needs_plan"
+        ],
+        "type": "string"
+      },
+      "StudioSiteRecordDto": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/StudioSiteRecordType"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "value"
+        ],
+        "type": "object"
+      },
+      "StudioSiteRecordType": {
+        "enum": [
+          "CNAME",
+          "TXT"
+        ],
+        "type": "string"
       },
       "StudioSourceFileDto": {
         "additionalProperties": false,

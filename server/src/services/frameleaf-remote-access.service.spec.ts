@@ -387,6 +387,61 @@ describe(FrameleafRemoteAccessService.name, () => {
     });
   });
 
+  describe('name on frameleaf.net (FL-1197)', () => {
+    const named = {
+      name: 'cedar-and-light',
+      address: 'cedar-and-light.frameleaf.net',
+      relayAddress: 'r.cedar-and-light.frameleaf.net',
+      routed: true,
+      previous: [],
+    };
+
+    it('claims the name at Frameleaf Cloud, keeps it for the edge worker and shows it as the address', async () => {
+      metadata.set(SystemMetadataKey.FrameleafRemoteAccess, edgeState());
+      mocks.frameleafCloud.requestJson.mockImplementation((schema: any, request: any) => {
+        calls.push({ method: request.method, url: request.url, body: request.body });
+        return Promise.resolve(schema.parse(named));
+      });
+      await expect(sut.setName(authStub.admin, 'cedar-and-light')).resolves.toEqual(named);
+      expect(calls).toEqual([{ method: 'PUT', url: `${API}/v1/remote/name`, body: { name: 'cedar-and-light' } }]);
+      expect(metadata.get(SystemMetadataKey.FrameleafRemoteName)).toMatchObject({ instanceId: INSTANCE_ID, ...named });
+      // until this server holds a certificate for the name, the relay refuses it, so links keep the relay address
+      await expect(sut.getStatus()).resolves.toMatchObject({
+        frameleafName: 'cedar-and-light',
+        frameleafNameAddress: null,
+        frameleafNameRouted: false,
+      });
+      const certificate = edgeState().certificate!;
+      const edgeWithName = (connected: boolean) =>
+        edgeState({
+          relay: { connected },
+          nameCertificate: { ...certificate, hosts: ['cedar-and-light.frameleaf.net'] },
+        });
+      metadata.set(SystemMetadataKey.SystemConfig, { frameleafCloud: { remoteAccess: { enabled: true } } });
+      metadata.set(SystemMetadataKey.FrameleafRemoteAccess, edgeWithName(true));
+      await expect(sut.getStatus()).resolves.toMatchObject({
+        frameleafName: 'cedar-and-light',
+        frameleafNameAddress: 'cedar-and-light.frameleaf.net',
+        frameleafNameRouted: true,
+      });
+      // the certificate alone doesn't make it reachable: the relay has to be connected
+      metadata.set(SystemMetadataKey.FrameleafRemoteAccess, edgeWithName(false));
+      await expect(sut.getStatus()).resolves.toMatchObject({ frameleafNameRouted: false, frameleafNameAddress: null });
+    });
+
+    it('checks a name as it is typed without claiming it', async () => {
+      mocks.frameleafCloud.requestJson.mockImplementation((schema: any, request: any) => {
+        calls.push({ method: request.method, url: request.url, body: request.body });
+        return Promise.resolve(
+          schema.parse({ name: 'ab', address: null, verdict: 'invalid', reason: 'too_short', message: 'Too short' }),
+        );
+      });
+      await expect(sut.checkName('ab')).resolves.toMatchObject({ verdict: 'invalid', reason: 'too_short' });
+      expect(calls).toEqual([{ method: 'POST', url: `${API}/v1/remote/name/check`, body: { name: 'ab' } }]);
+      expect(metadata.has(SystemMetadataKey.FrameleafRemoteName)).toBe(false);
+    });
+  });
+
   describe('relay use this month', () => {
     it('asks Frameleaf Cloud for this month’s relay use and the allowance with the instance token', async () => {
       const usage = await sut.getUsage(authStub.admin);

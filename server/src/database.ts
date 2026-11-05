@@ -1,5 +1,6 @@
 import { Selectable, ShallowDehydrateObject } from 'kysely';
 import type { UserMetadataItem } from 'src/types.js';
+import type { CaptureDetails } from 'src/utils/capture-details.js';
 import { MapAsset } from 'src/dtos/asset-response.dto.js';
 import {
   AlbumUserRole,
@@ -284,7 +285,11 @@ export type Session = {
   isPendingSyncReset: boolean;
 };
 
-export type Exif = Omit<Selectable<AssetExifTable>, 'updatedAt' | 'updateId' | 'lockedProperties'>;
+/** FL-1196's capture details stay out: only the library's own reports read them. */
+export type Exif = Omit<
+  Selectable<AssetExifTable>,
+  'updatedAt' | 'updateId' | 'lockedProperties' | keyof CaptureDetails
+>;
 
 export type Person = {
   createdAt: Date;

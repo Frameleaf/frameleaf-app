@@ -22,7 +22,7 @@
   "/(user)/people/manage": 586237,
   "/(user)/pets": 591146,
   "/(user)/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]": 671449,
-  "/(user)/photography": 634525,
+  "/(user)/photography": 681882,
   "/(user)/photography/develop": 622591,
   "/(user)/photos/[[assetId=id]]": 742688,
   "/(user)/places": 590133,

@@ -1247,6 +1247,12 @@ export type RemoteAccessStatusResponseDto = {
     enabled: boolean;
     /** https://r.<label>.<direct domain> once enrolled; without a plan, the direct address Frameleaf Cloud reached */
     frameleafAddress: string | null;
+    /** FL-1197: this server's chosen name on frameleaf.net, if any */
+    frameleafName: string | null;
+    /** FL-1197: the name as an address (taylor-home.frameleaf.net) while it routes */
+    frameleafNameAddress: string | null;
+    /** FL-1197: the name reaches this server now */
+    frameleafNameRouted: boolean;
     lastTestAt: string | null;
     lastTestChecks: RemoteAccessTestCheckDto[];
     lastTestOk: boolean | null;
@@ -1309,6 +1315,31 @@ export type CloudRemoteAccessUpdateDto = {
 export type RemoteHostnameUpdateDto = {
     /** A subdomain of a domain you own, such as photos.example.com */
     hostname: string;
+};
+export type RemoteNamePreviousDto = {
+    address: string;
+    name: string;
+    redirectUntil: string;
+};
+export type RemoteNameStateResponseDto = {
+    /** taylor-home.frameleaf.net */
+    address: string | null;
+    name: string | null;
+    previous: RemoteNamePreviousDto[];
+    /** r.<label>.frameleaf.net; never changes */
+    relayAddress: string | null;
+    routed: boolean;
+};
+export type RemoteNameUpdateDto = {
+    /** The name to check or claim, such as taylor-home */
+    name: string;
+};
+export type RemoteNameCheckResponseDto = {
+    address: string | null;
+    message: string | null;
+    name: string;
+    reason: Reason | null;
+    verdict: RemoteNameVerdict;
 };
 export type RemoteAccessUsageResponseDto = {
     /** Bytes through the relay this month, in and out, custom hostnames included */
@@ -2495,6 +2526,9 @@ export type IdenticalFilesExtraCopiesDto = {
 export type IntegrityFindingAssetsResponseDto = {
     /** Photos behind the findings, at most 10,000 */
     assetIds: string[];
+};
+export type IntegrityCheckOneResponseDto = {
+    result: IntegrityCheckOneResult;
 };
 export type IntegrityCheckHistoryEntryDto = {
     /** Files it looked at, when counted */
@@ -4932,6 +4966,89 @@ export type AnalyticsNamedCountDto = {
     /** Null for the other and unknown rows */
     name: string | null;
 };
+export type AnalyticsMonthColourDto = {
+    /** Average colour of the photos, as #rrggbb */
+    colour: string;
+    month: number;
+    photos: number;
+};
+export type AnalyticsFarthestDto = {
+    km: number;
+    place: string | null;
+} | null;
+export type AnalyticsHighestDto = {
+    /** Metres above sea level */
+    metres: number;
+    place: string | null;
+} | null;
+export type AnalyticsMagicPlaceDto = {
+    latitude: number;
+    /** City and country, when known */
+    place: string | null;
+};
+export type AnalyticsFarAndWideDto = {
+    farthest: AnalyticsFarthestDto;
+    highest: AnalyticsHighestDto;
+    northernmost: (AnalyticsMagicPlaceDto) | null;
+    southernmost: (AnalyticsMagicPlaceDto) | null;
+    /** Km between photos taken one after another, all added up */
+    travelledKm: number;
+} | null;
+export type AnalyticsLightDto = {
+    blueHour: number;
+    daylight: number;
+    goldenEvening: number;
+    goldenMorning: number;
+    night: number;
+};
+export type AnalyticsSeasonsDto = {
+    autumn: number;
+    spring: number;
+    summer: number;
+    winter: number;
+};
+export type AnalyticsSeenCountDto = {
+    count: number;
+    id: AnalyticsSeenLabel;
+};
+export type AnalyticsSeenDto = {
+    /** Photos read, the newest first, up to 20,000 */
+    described: number;
+    /** Each photo counted once, under the everyday subject its visual search is nearest to */
+    labels: AnalyticsSeenCountDto[];
+} | null;
+export type AnalyticsShutterDto = {
+    camera: string;
+    /** Its highest recorded shutter count */
+    count: number;
+};
+export type AnalyticsTagCountDto = {
+    count: number;
+    name: string;
+};
+export type AnalyticsUnderTheHoodDto = {
+    /** Rows in the whole server's database, estimated */
+    databaseRows: number;
+    /** Face embeddings */
+    faceVectors: number;
+    /** Thumbnails, previews and other copies made from the originals */
+    previews: number;
+    /** Smart-search embeddings */
+    searchVectors: number;
+};
+export type AnalyticsMagicDto = {
+    /** Each calendar month's average photo colour, from the thumbnails; months without photos are left out */
+    colourByMonth: AnalyticsMonthColourDto[];
+    farAndWide: AnalyticsFarAndWideDto;
+    light: AnalyticsLightDto;
+    seasons: AnalyticsSeasonsDto;
+    seen: AnalyticsSeenDto;
+    /** Cameras that record their shutter count, highest first, at most 6 */
+    shutter: AnalyticsShutterDto[];
+    /** Your tags on the most items, at most 8; empty unless the owner reads their own scope */
+    topTags: AnalyticsTagCountDto[];
+    underTheHood: AnalyticsUnderTheHoodDto;
+};
 export type AnalyticsOrientationDto = {
     count: number;
     key: AnalyticsOrientationDtoKey;
@@ -5015,6 +5132,8 @@ export type AnalyticsInsightsDto = {
     lenses: AnalyticsNamedCountDto[];
     /** Photos with a Live Photo motion part */
     livePhotos: number;
+    /** Library magic: colour, light, seasons, tags, places, counts */
+    magic?: AnalyticsMagicDto;
     /** Every bucket; adds up to summary.items. Panorama is 2:1 or wider */
     orientation: AnalyticsOrientationDto[];
     peopleAndPlaces: (AnalyticsPeopleAndPlacesDto) | null;
@@ -10363,12 +10482,14 @@ export type MlProcessingOrderResponseDto = {
     order: MlProcessingSource[];
     /** Whether each place can take work now */
     sources: MlProcessingSourceStatusDto[];
+    whenUnavailable: MlWhenUnavailable;
     /** Workloads with a list of their own */
     workloads: MlWorkloadProcessingOrderDto[];
 };
 export type MlProcessingOrderUpdateDto = {
     /** The places to try, first to last; each of this server, your computers and Frameleaf Cloud once */
     order: MlProcessingSource[];
+    whenUnavailable?: MlWhenUnavailable;
 };
 export type MlWorkloadProcessingOrderUpdateDto = {
     /** The workload's own list, first to last; empty keeps it off; null makes it follow the main order again */
@@ -11311,6 +11432,8 @@ export type PhotographyGalleryDto = {
         currency: string;
         includedCount: number;
         selectionDeadline: string | null;
+        /** The most photographs this client may choose; null for no limit */
+        selectionLimit: number | null;
         terms: string;
     };
     publication: {
@@ -11355,6 +11478,8 @@ export type PhotographyGalleryDto = {
         recipientId: string;
     }[];
     title: string;
+    /** The studio's welcome for this gallery; empty for none */
+    welcomeMessage: string;
 };
 export type PhotographyGuestApprovalDto = {
     approved: boolean;
@@ -11488,6 +11613,8 @@ export type PhotographyStudioPresetsDto = {
             } | null;
             expiresAt: string | null;
             includedCount: number;
+            /** The most photographs a client may choose; null or absent for no limit */
+            maxSelections?: number | null;
             mode: Mode2;
             paymentTiming: PaymentTiming;
             presentation: {
@@ -11510,6 +11637,8 @@ export type PhotographyStudioPresetsDto = {
                 spacing: Spacing;
                 template: Template;
             };
+            /** Which captures a full proof publication includes: every eligible one, or those rated 4 or more */
+            proofCollection?: ProofCollection;
             proofWatermark: {
                 alignment?: Alignment;
                 backing?: boolean;
@@ -11530,6 +11659,11 @@ export type PhotographyStudioPresetsDto = {
                 spacing?: number;
                 text: string;
                 "type"?: Type4;
+            };
+            /** Reminder emails the client should get */
+            reminders?: {
+                paymentAndExpiry: boolean;
+                selection: boolean;
             };
             selectionDeadline: string | null;
             terms: string;
@@ -11556,6 +11690,8 @@ export type PhotographyStudioPresetsDto = {
                 text: string;
                 "type"?: Type4;
             } | null;
+            /** Shown to the client at the top of the gallery */
+            welcomeMessage?: string;
         };
         id: string;
         name: string;
@@ -11621,6 +11757,8 @@ export type PhotographyPresetSaveDto = {
         } | null;
         expiresAt: string | null;
         includedCount: number;
+        /** The most photographs a client may choose; null or absent for no limit */
+        maxSelections?: number | null;
         mode: Mode2;
         paymentTiming: PaymentTiming;
         presentation: {
@@ -11643,6 +11781,8 @@ export type PhotographyPresetSaveDto = {
             spacing: Spacing;
             template: Template;
         };
+        /** Which captures a full proof publication includes: every eligible one, or those rated 4 or more */
+        proofCollection?: ProofCollection;
         proofWatermark: {
             alignment?: Alignment;
             backing?: boolean;
@@ -11663,6 +11803,11 @@ export type PhotographyPresetSaveDto = {
             spacing?: number;
             text: string;
             "type"?: Type6;
+        };
+        /** Reminder emails the client should get */
+        reminders?: {
+            paymentAndExpiry: boolean;
+            selection: boolean;
         };
         selectionDeadline: string | null;
         terms: string;
@@ -11689,6 +11834,8 @@ export type PhotographyPresetSaveDto = {
             text: string;
             "type"?: Type6;
         } | null;
+        /** Shown to the client at the top of the gallery */
+        welcomeMessage?: string;
     };
     expectedRevision: string | null;
     id: string | null;
@@ -11703,8 +11850,10 @@ export type PhotographyWorkspaceDto = {
         client: string;
         coverAssetId: string | null;
         date: string;
+        deliveryTarget?: string | null;
         id: string;
         name: string;
+        notes?: string;
         stage: Stage;
         "type": Type7;
         unavailable: boolean;
@@ -11717,8 +11866,10 @@ export type PhotographyWorkspaceSaveDto = {
         albumId: string | null;
         client: string;
         date: string;
+        deliveryTarget?: string | null;
         id: string;
         name: string;
+        notes?: string;
         stage: Stage;
         "type": Type7;
     }[];
@@ -11983,6 +12134,24 @@ export type PhotographySiteSaveDto = {
         trustedBy: string[];
     };
 };
+export type StudioSiteRecordDto = {
+    name: string;
+    "type": StudioSiteRecordType;
+    value: string;
+};
+export type StudioSiteDomainDto = {
+    checkedAt: string | null;
+    domain: string;
+    problem: Problem | null;
+    records: StudioSiteRecordDto[];
+    slug: string;
+    status: StudioSiteDomainStatus;
+} | null;
+export type StudioSiteDomainResponseDto = {
+    /** Why the domain can't be served or checked now, in plain words */
+    problem: string | null;
+    site: StudioSiteDomainDto;
+};
 export type PhotographyPublicSiteDto = {
     about: string;
     brand: {
@@ -12175,6 +12344,8 @@ export type PhotographyWorkflowDto = {
         } | null;
         expiresAt: string | null;
         includedCount: number;
+        /** The most photographs a client may choose; null or absent for no limit */
+        maxSelections?: number | null;
         mode: Mode2;
         paymentTiming: PaymentTiming;
         presentation: {
@@ -12197,6 +12368,8 @@ export type PhotographyWorkflowDto = {
             spacing: Spacing;
             template: Template;
         };
+        /** Which captures a full proof publication includes: every eligible one, or those rated 4 or more */
+        proofCollection?: ProofCollection;
         proofWatermark: {
             alignment?: Alignment;
             backing?: boolean;
@@ -12217,6 +12390,11 @@ export type PhotographyWorkflowDto = {
             spacing?: number;
             text: string;
             "type"?: Type10;
+        };
+        /** Reminder emails the client should get */
+        reminders?: {
+            paymentAndExpiry: boolean;
+            selection: boolean;
         };
         selectionDeadline: string | null;
         terms: string;
@@ -12243,6 +12421,8 @@ export type PhotographyWorkflowDto = {
             text: string;
             "type"?: Type10;
         } | null;
+        /** Shown to the client at the top of the gallery */
+        welcomeMessage?: string;
     };
     ordering: Ordering;
     orders: {
@@ -12362,6 +12542,8 @@ export type PhotographyWorkflowDto = {
             } | null;
             expiresAt: string | null;
             includedCount: number;
+            /** The most photographs a client may choose; null or absent for no limit */
+            maxSelections?: number | null;
             mode: Mode2;
             paymentTiming: PaymentTiming;
             presentation: {
@@ -12384,6 +12566,8 @@ export type PhotographyWorkflowDto = {
                 spacing: Spacing;
                 template: Template;
             };
+            /** Which captures a full proof publication includes: every eligible one, or those rated 4 or more */
+            proofCollection?: ProofCollection;
             proofWatermark: {
                 alignment?: Alignment;
                 backing?: boolean;
@@ -12404,6 +12588,11 @@ export type PhotographyWorkflowDto = {
                 spacing?: number;
                 text: string;
                 "type"?: Type12;
+            };
+            /** Reminder emails the client should get */
+            reminders?: {
+                paymentAndExpiry: boolean;
+                selection: boolean;
             };
             selectionDeadline: string | null;
             terms: string;
@@ -12430,6 +12619,8 @@ export type PhotographyWorkflowDto = {
                 text: string;
                 "type"?: Type12;
             } | null;
+            /** Shown to the client at the top of the gallery */
+            welcomeMessage?: string;
         };
         id: string;
         name: string;
@@ -12455,6 +12646,8 @@ export type PhotographyWorkflowDto = {
         canProof: boolean;
         captureIds: string[] | null;
         choices: string[];
+        /** Where the invitation was emailed */
+        email?: string;
         expiresAt: string | null;
         id: string;
         name: string;
@@ -12552,6 +12745,8 @@ export type PhotographyWorkflowDto = {
                 } | null;
                 expiresAt: string | null;
                 includedCount: number;
+                /** The most photographs a client may choose; null or absent for no limit */
+                maxSelections?: number | null;
                 mode: Mode2;
                 paymentTiming: PaymentTiming;
                 presentation: {
@@ -12574,6 +12769,8 @@ export type PhotographyWorkflowDto = {
                     spacing: Spacing;
                     template: Template;
                 };
+                /** Which captures a full proof publication includes: every eligible one, or those rated 4 or more */
+                proofCollection?: ProofCollection;
                 proofWatermark: {
                     alignment?: Alignment;
                     backing?: boolean;
@@ -12594,6 +12791,11 @@ export type PhotographyWorkflowDto = {
                     spacing?: number;
                     text: string;
                     "type"?: Type14;
+                };
+                /** Reminder emails the client should get */
+                reminders?: {
+                    paymentAndExpiry: boolean;
+                    selection: boolean;
                 };
                 selectionDeadline: string | null;
                 terms: string;
@@ -12620,6 +12822,8 @@ export type PhotographyWorkflowDto = {
                     text: string;
                     "type"?: Type14;
                 } | null;
+                /** Shown to the client at the top of the gallery */
+                welcomeMessage?: string;
             };
             id: string;
             name: string;
@@ -12713,6 +12917,8 @@ export type PhotographyWorkflowConfigDto = {
         } | null;
         expiresAt: string | null;
         includedCount: number;
+        /** The most photographs a client may choose; null or absent for no limit */
+        maxSelections?: number | null;
         mode: Mode2;
         paymentTiming: PaymentTiming;
         presentation: {
@@ -12735,6 +12941,8 @@ export type PhotographyWorkflowConfigDto = {
             spacing: Spacing;
             template: Template;
         };
+        /** Which captures a full proof publication includes: every eligible one, or those rated 4 or more */
+        proofCollection?: ProofCollection;
         proofWatermark: {
             alignment?: Alignment;
             backing?: boolean;
@@ -12755,6 +12963,11 @@ export type PhotographyWorkflowConfigDto = {
             spacing?: number;
             text: string;
             "type"?: Type16;
+        };
+        /** Reminder emails the client should get */
+        reminders?: {
+            paymentAndExpiry: boolean;
+            selection: boolean;
         };
         selectionDeadline: string | null;
         terms: string;
@@ -12781,6 +12994,8 @@ export type PhotographyWorkflowConfigDto = {
             text: string;
             "type"?: Type16;
         } | null;
+        /** Shown to the client at the top of the gallery */
+        welcomeMessage?: string;
     };
     expectedRevision: string | null;
 };
@@ -12845,6 +13060,8 @@ export type PhotographyRecipientCreateDto = {
     canDownload: boolean;
     canProof: boolean;
     captureIds: string[] | null;
+    /** When given, the invitation is also emailed there */
+    email?: string;
     expectedRevision: string | null;
     expiresAt: string | null;
     name: string;
@@ -12852,6 +13069,8 @@ export type PhotographyRecipientCreateDto = {
 };
 export type PhotographyInvitationDto = {
     invitation: {
+        /** True when the invitation was queued to the email given */
+        emailed?: boolean;
         recipientId: string;
         token: string;
     };
@@ -12958,6 +13177,8 @@ export type PhotographyInvitationDto = {
             } | null;
             expiresAt: string | null;
             includedCount: number;
+            /** The most photographs a client may choose; null or absent for no limit */
+            maxSelections?: number | null;
             mode: Mode2;
             paymentTiming: PaymentTiming;
             presentation: {
@@ -12980,6 +13201,8 @@ export type PhotographyInvitationDto = {
                 spacing: Spacing;
                 template: Template;
             };
+            /** Which captures a full proof publication includes: every eligible one, or those rated 4 or more */
+            proofCollection?: ProofCollection;
             proofWatermark: {
                 alignment?: Alignment;
                 backing?: boolean;
@@ -13000,6 +13223,11 @@ export type PhotographyInvitationDto = {
                 spacing?: number;
                 text: string;
                 "type"?: Type18;
+            };
+            /** Reminder emails the client should get */
+            reminders?: {
+                paymentAndExpiry: boolean;
+                selection: boolean;
             };
             selectionDeadline: string | null;
             terms: string;
@@ -13026,6 +13254,8 @@ export type PhotographyInvitationDto = {
                 text: string;
                 "type"?: Type18;
             } | null;
+            /** Shown to the client at the top of the gallery */
+            welcomeMessage?: string;
         };
         ordering: Ordering;
         orders: {
@@ -13145,6 +13375,8 @@ export type PhotographyInvitationDto = {
                 } | null;
                 expiresAt: string | null;
                 includedCount: number;
+                /** The most photographs a client may choose; null or absent for no limit */
+                maxSelections?: number | null;
                 mode: Mode2;
                 paymentTiming: PaymentTiming;
                 presentation: {
@@ -13167,6 +13399,8 @@ export type PhotographyInvitationDto = {
                     spacing: Spacing;
                     template: Template;
                 };
+                /** Which captures a full proof publication includes: every eligible one, or those rated 4 or more */
+                proofCollection?: ProofCollection;
                 proofWatermark: {
                     alignment?: Alignment;
                     backing?: boolean;
@@ -13187,6 +13421,11 @@ export type PhotographyInvitationDto = {
                     spacing?: number;
                     text: string;
                     "type"?: Type20;
+                };
+                /** Reminder emails the client should get */
+                reminders?: {
+                    paymentAndExpiry: boolean;
+                    selection: boolean;
                 };
                 selectionDeadline: string | null;
                 terms: string;
@@ -13213,6 +13452,8 @@ export type PhotographyInvitationDto = {
                     text: string;
                     "type"?: Type20;
                 } | null;
+                /** Shown to the client at the top of the gallery */
+                welcomeMessage?: string;
             };
             id: string;
             name: string;
@@ -13238,6 +13479,8 @@ export type PhotographyInvitationDto = {
             canProof: boolean;
             captureIds: string[] | null;
             choices: string[];
+            /** Where the invitation was emailed */
+            email?: string;
             expiresAt: string | null;
             id: string;
             name: string;
@@ -13335,6 +13578,8 @@ export type PhotographyInvitationDto = {
                     } | null;
                     expiresAt: string | null;
                     includedCount: number;
+                    /** The most photographs a client may choose; null or absent for no limit */
+                    maxSelections?: number | null;
                     mode: Mode2;
                     paymentTiming: PaymentTiming;
                     presentation: {
@@ -13357,6 +13602,8 @@ export type PhotographyInvitationDto = {
                         spacing: Spacing;
                         template: Template;
                     };
+                    /** Which captures a full proof publication includes: every eligible one, or those rated 4 or more */
+                    proofCollection?: ProofCollection;
                     proofWatermark: {
                         alignment?: Alignment;
                         backing?: boolean;
@@ -13377,6 +13624,11 @@ export type PhotographyInvitationDto = {
                         spacing?: number;
                         text: string;
                         "type"?: Type22;
+                    };
+                    /** Reminder emails the client should get */
+                    reminders?: {
+                        paymentAndExpiry: boolean;
+                        selection: boolean;
                     };
                     selectionDeadline: string | null;
                     terms: string;
@@ -13403,6 +13655,8 @@ export type PhotographyInvitationDto = {
                         text: string;
                         "type"?: Type22;
                     } | null;
+                    /** Shown to the client at the top of the gallery */
+                    welcomeMessage?: string;
                 };
                 id: string;
                 name: string;
@@ -13913,6 +14167,10 @@ export type QueueJobResponseDto = {
 export type QueueRetryFailedResponseDto = {
     /** How many failed jobs were put back in the queue */
     count: number;
+};
+export type QueueRunOneDto = {
+    /** The photo or video to run this task on */
+    assetId: string;
 };
 export type QueueOwnerStatisticsResponseDto = {
     /** Number of active jobs */
@@ -14942,20 +15200,14 @@ export type ServerApkLinksDto = {
 export type ServerAppReleasesResponseDto = {
     /** Android application */
     android: {
-        /** Android package id of the signed release */
-        appId?: string;
-        /** Whether a signed Android release is configured for this server */
+        /** Whether the Android app has a store listing */
         available: boolean;
-        /** Signed APK downloads for this server version */
-        links?: ServerApkLinksDto;
-        /** SHA-256 fingerprint of the release signing certificate, as AA:BB:... */
-        signingCertificateSha256?: string;
-        /** Store listing of the Android app, when the operator configured one (FL-135) */
+        /** Store listing of the Android app (Google Play by default) */
         storeUrl?: string;
     };
     /** iOS application */
     ios: {
-        /** Whether an iOS release is configured for this server */
+        /** Whether the iOS app has a store listing */
         available: boolean;
         /** App Store or TestFlight page */
         url?: string;
@@ -19338,6 +19590,11 @@ export type PreservationRestoreItemsQueryDto = {
 export type PushKnownEventsDto = {
     events: PushEventType[];
 };
+export type QueueJobParamDto = {
+    /** Job ID */
+    id: string;
+    name: QueueName;
+};
 export type QueueJobSearchDto = {
     /** Only jobs whose item belongs to this account (FL-71 account filter) */
     ownerId?: string;
@@ -21486,6 +21743,47 @@ export function checkRemoteHostname(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * This server's name on frameleaf.net
+ */
+export function getRemoteName(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RemoteNameStateResponseDto;
+    }>("/admin/cloud/remote/name", {
+        ...opts
+    }));
+}
+/**
+ * Change this server's name on frameleaf.net
+ */
+export function setRemoteName({ remoteNameUpdateDto }: {
+    remoteNameUpdateDto: RemoteNameUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RemoteNameStateResponseDto;
+    }>("/admin/cloud/remote/name", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: remoteNameUpdateDto
+    })));
+}
+/**
+ * Check a name on frameleaf.net
+ */
+export function checkRemoteName({ remoteNameUpdateDto }: {
+    remoteNameUpdateDto: RemoteNameUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RemoteNameCheckResponseDto;
+    }>("/admin/cloud/remote/name/check", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: remoteNameUpdateDto
+    })));
+}
+/**
  * Test remote access
  */
 export function testRemoteAccess(opts?: Oazapfts.RequestOpts) {
@@ -21998,6 +22296,20 @@ export function getIntegrityFindingAssets({ kind }: {
         kind
     }))}`, {
         ...opts
+    }));
+}
+/**
+ * Check one original file now
+ */
+export function checkIntegrityOne({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: IntegrityCheckOneResponseDto;
+    }>(`/admin/integrity/assets/${encodeURIComponent(id)}/check`, {
+        ...opts,
+        method: "POST"
     }));
 }
 /**
@@ -30061,6 +30373,14 @@ export function photographySaveSite({ photographySiteSaveDto }: {
         body: photographySiteSaveDto
     })));
 }
+export function photographySiteDomain(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioSiteDomainResponseDto;
+    }>("/photography/site/domain", {
+        ...opts
+    }));
+}
 export function photographyPublicLogo({ ownerId }: {
     ownerId: string;
 }, opts?: Oazapfts.RequestOpts) {
@@ -30893,6 +31213,43 @@ export function retryFailedQueueJobs({ name }: {
         status: 200;
         data: QueueRetryFailedResponseDto;
     }>(`/queues/${encodeURIComponent(name)}/jobs/retry-failed`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Run a task on one item
+ */
+export function runQueueOnOne({ name, queueRunOneDto }: {
+    name: QueueName;
+    queueRunOneDto: QueueRunOneDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/queues/${encodeURIComponent(name)}/jobs/run-one`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: queueRunOneDto
+    })));
+}
+/**
+ * Retry a failed job
+ */
+export function retryQueueJob({ id, name }: {
+    id: string;
+    name: QueueName;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/queues/${encodeURIComponent(name)}/jobs/${encodeURIComponent(id)}/retry`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Start a waiting job now
+ */
+export function startQueueJob({ id, name }: {
+    id: string;
+    name: QueueName;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/queues/${encodeURIComponent(name)}/jobs/${encodeURIComponent(id)}/start`, {
         ...opts,
         method: "POST"
     }));
@@ -36407,6 +36764,21 @@ export enum RemoteAccessState {
     Error = "error",
     Unknown = "unknown"
 }
+export enum Reason {
+    TooShort = "too_short",
+    TooLong = "too_long",
+    Characters = "characters",
+    HyphenAtEdge = "hyphen_at_edge",
+    Reserved = "reserved",
+    Taken = "taken"
+}
+export enum RemoteNameVerdict {
+    Available = "available",
+    Current = "current",
+    Taken = "taken",
+    Reserved = "reserved",
+    Invalid = "invalid"
+}
 export enum CloudTourEnding {
     Finished = "finished",
     Skipped = "skipped",
@@ -36649,6 +37021,14 @@ export enum IdenticalFilesChangeKind {
 export enum IntegrityFindingKind {
     Missing = "missing",
     Damaged = "damaged"
+}
+export enum IntegrityCheckOneResult {
+    Passed = "passed",
+    Mismatched = "mismatched",
+    Missing = "missing",
+    Unreadable = "unreadable",
+    Encrypted = "encrypted",
+    Unverifiable = "unverifiable"
 }
 export enum IntegrityCheckOutcome {
     Completed = "completed",
@@ -37203,6 +37583,40 @@ export enum AnalyticsNamedCountKind {
     Named = "named",
     Other = "other",
     Unknown = "unknown"
+}
+export enum AnalyticsSeenLabel {
+    People = "people",
+    Children = "children",
+    Dogs = "dogs",
+    Cats = "cats",
+    Birds = "birds",
+    Mountains = "mountains",
+    Lakes = "lakes",
+    Beaches = "beaches",
+    Ocean = "ocean",
+    Forests = "forests",
+    Snow = "snow",
+    Flowers = "flowers",
+    Gardens = "gardens",
+    Sunsets = "sunsets",
+    Sky = "sky",
+    Cities = "cities",
+    Buildings = "buildings",
+    Homes = "homes",
+    Food = "food",
+    Drinks = "drinks",
+    Cars = "cars",
+    Roads = "roads",
+    Boats = "boats",
+    Planes = "planes",
+    Parties = "parties",
+    Weddings = "weddings",
+    Concerts = "concerts",
+    Sports = "sports",
+    Hiking = "hiking",
+    Documents = "documents",
+    Art = "art",
+    Night = "night"
 }
 export enum AnalyticsOrientationDtoKey {
     Landscape = "landscape",
@@ -38598,6 +39012,10 @@ export enum MlProcessingSourceState {
     NeedsPermission = "needs-permission",
     NotSetUp = "not-set-up"
 }
+export enum MlWhenUnavailable {
+    Wait = "wait",
+    Stop = "stop"
+}
 export enum MlRouteOrigin {
     Default = "default",
     Pinned = "pinned",
@@ -38883,6 +39301,10 @@ export enum Font3 {
     Modern = "modern",
     Script = "script"
 }
+export enum ProofCollection {
+    Eligible = "eligible",
+    Selected = "selected"
+}
 export enum Font4 {
     Script = "script",
     Serif = "serif",
@@ -39001,6 +39423,26 @@ export enum PhotographySiteTemplate {
     Cinematic = "cinematic",
     Noir = "noir",
     Commercial = "commercial"
+}
+export enum Problem {
+    CnameMissing = "cname_missing",
+    CnameMismatch = "cname_mismatch",
+    TxtMissing = "txt_missing",
+    TxtMismatch = "txt_mismatch",
+    ClaimedElsewhere = "claimed_elsewhere",
+    CertificatePending = "certificate_pending",
+    CertificateFailed = "certificate_failed",
+    SiteUnreachable = "site_unreachable"
+}
+export enum StudioSiteRecordType {
+    Cname = "CNAME",
+    Txt = "TXT"
+}
+export enum StudioSiteDomainStatus {
+    WaitingForDns = "waiting_for_dns",
+    CertificateIssued = "certificate_issued",
+    Active = "active",
+    NeedsPlan = "needs_plan"
 }
 export enum State6 {
     Imported = "imported",

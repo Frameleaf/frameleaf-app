@@ -211,7 +211,7 @@ describe('actions started from the library keys and tiles (FL-33, T-5)', () => {
   });
 });
 
-it('opens the quick actions, not the whole More menu, at the pointer for a tile’s right-click', async () => {
+it('opens the approved right-click list at the pointer: the bar’s actions, the edits, Lock and Archive, Delete last', async () => {
   addMessages('dev', en);
   const onAction = vi.fn();
   const { component } = render(SelectionBar, {
@@ -240,10 +240,23 @@ it('opens the quick actions, not the whole More menu, at the pointer for a tile�
     en.frameleaf_bulk_add_to_album,
     en.frameleaf_bulk_create_shared_link,
     en.frameleaf_bulk_download,
+    en.frameleaf_bulk_tag,
+    en.frameleaf_bulk_change_date,
+    en.frameleaf_bulk_change_location,
+    en.frameleaf_bulk_change_description,
+    en.frameleaf_bulk_mark_sensitive,
+    en.frameleaf_bulk_archive,
     en.frameleaf_bulk_delete,
   ]);
   await fireEvent.click(within(menu).getByRole('menuitem', { name: en.frameleaf_bulk_download }));
   expect(onAction).toHaveBeenCalledWith('download');
+  component.openContextMenu(40, 40);
+  await fireEvent.click(
+    within(await screen.findByTestId('selection-context-menu')).getByRole('menuitem', {
+      name: en.frameleaf_bulk_mark_sensitive,
+    }),
+  );
+  expect(onAction).toHaveBeenCalledWith('mark-sensitive');
 });
 
 it('leaves the editors out of the right-click menu for a multiple selection', async () => {
@@ -278,6 +291,13 @@ it('leaves the editors out of the right-click menu for a multiple selection', as
     en.frameleaf_bulk_add_to_album,
     en.frameleaf_bulk_create_shared_link,
     en.frameleaf_bulk_download,
+    en.frameleaf_bulk_tag,
+    en.frameleaf_bulk_change_date,
+    en.frameleaf_bulk_change_location,
+    en.frameleaf_bulk_change_description,
+    en.frameleaf_bulk_mark_sensitive,
+    en.frameleaf_bulk_archive,
+    en.frameleaf_bulk_stack,
     en.frameleaf_bulk_delete,
   ]);
 });

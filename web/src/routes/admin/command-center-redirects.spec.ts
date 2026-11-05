@@ -65,7 +65,8 @@ describe('old addresses of Command Center sections', () => {
     [
       '/admin/processing-destinations',
       () => destinations({ url: at('/admin/processing-destinations') } as never),
-      '/user-settings?area=processing&section=routing',
+      // Where work runs is part of Computers (approved design, 2026-11-04).
+      '/user-settings?area=processing&section=computers',
     ],
     [
       '/admin/queues',

@@ -16,6 +16,9 @@ import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
 import {
   RELAY_NEEDS_PLAN,
   type RemoteHostname,
+  type ServerNameCheck,
+  type ServerNameState,
+  type StudioSiteState,
   customHostnameRecords,
   directDomainOf,
   edgeStateCurrent,
@@ -29,8 +32,13 @@ import {
   remoteHostnameListSchema,
   remoteHostnameSchema,
   remoteLabel,
+  remoteNameHosts,
   remotePublicUrl,
   remoteUsageSchema,
+  servedNameHost,
+  serverNameCheckSchema,
+  serverNameStateSchema,
+  studioSiteSchema,
   validateCustomHostname,
   verifiedCustomHost,
 } from 'src/utils/frameleaf-remote-access.js';
@@ -126,6 +134,12 @@ export class FrameleafRemoteAccessService extends BaseService {
       !unavailableReason && (!remoteEntitlement(licenses, now).relay || (current && !!state?.relay.needsPlan));
     const directAddress = (current && state?.direct.wan?.verified && state.direct.wan.uri) || null;
     const frameleafAddress = names ? (relayNeedsPlan ? directAddress : `https://${names.names.relay}`) : null;
+    const nameState = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafRemoteName);
+    // the name reaches this server only through a connected relay, as remoteAccessPublication publishes it
+    const nameHost =
+      settings.enabled && current && state?.relay.connected
+        ? servedNameHost(remoteNameHosts(nameState, link?.instanceId, now).current, state, now)
+        : null;
 
     return {
       unavailableReason,
@@ -136,7 +150,16 @@ export class FrameleafRemoteAccessService extends BaseService {
       publicUrlChoice: settings.publicUrl,
       status,
       reason: status === 'unknown' ? 'Remote access is starting. This can take a minute.' : (state?.reason ?? null),
-      publicUrl: settings.enabled && names ? (relayNeedsPlan ? directAddress : remotePublicUrl(names, settings)) : null,
+      publicUrl:
+        settings.enabled && names
+          ? relayNeedsPlan
+            ? directAddress
+            : remotePublicUrl(names, settings, nameHost)
+          : null,
+      // FL-1197: the frameleaf.net name, as last read from Frameleaf Cloud
+      frameleafName: nameState?.instanceId === link?.instanceId ? (nameState?.name ?? null) : null,
+      frameleafNameAddress: nameHost,
+      frameleafNameRouted: !!nameHost,
       frameleafAddress,
       certificateName: state?.certificate?.names[0] ?? null,
       certificateExpiresAt: state?.certificate?.notAfter ?? null,
@@ -561,6 +584,127 @@ export class FrameleafRemoteAccessService extends BaseService {
     }
     const { cloudUrl, link } = await readCloudLink(this.linkDeps);
     return { cloudUrl: cloudUrl!, link: link as FrameleafCloudLink & { instanceId: string } };
+  }
+
+  /**
+   * FL-1197 `GET admin/cloud/remote/name`: this server's name on frameleaf.net, read from Frameleaf Cloud and
+   * kept for the edge worker (certificate, relay names, redirects of previous names) and for links.
+   */
+  async getName(): Promise<ServerNameState> {
+    const { cloudUrl, link } = await this.requireRelay();
+    const answer = await this.cloudCall(async () => {
+      const { document, token } = await this.session(cloudUrl, link);
+      return this.frameleafCloudRepository.requestJson(serverNameStateSchema, {
+        url: remoteEndpoints(document).name,
+        dpop: token,
+      });
+    });
+    await this.keepName(link.instanceId, answer);
+    return answer;
+  }
+
+  /** FL-1197 `POST admin/cloud/remote/name/check`: whether a name can be had, as it is typed. Claims nothing. */
+  async checkName(name: string): Promise<ServerNameCheck> {
+    const { cloudUrl, link } = await this.requireRelay();
+    return this.cloudCall(async () => {
+      const { document, token } = await this.session(cloudUrl, link);
+      return this.frameleafCloudRepository.requestJson(serverNameCheckSchema, {
+        method: 'POST',
+        url: remoteEndpoints(document).nameCheck,
+        dpop: token,
+        body: { name },
+      });
+    });
+  }
+
+  /**
+   * FL-1197 `PUT admin/cloud/remote/name`: claim a name, or rename. The old name keeps working for 30 days;
+   * the edge worker orders the certificate and reconnects the relay with the new names on its next pass.
+   */
+  async setName(auth: AuthDto, name: string): Promise<ServerNameState> {
+    return this.databaseRepository.withLock(DatabaseLock.FrameleafHeartbeat, async () => {
+      const { cloudUrl, link } = await this.requireRelay();
+      const answer = await this.cloudCall(async () => {
+        const { document, token } = await this.session(cloudUrl, link);
+        return this.frameleafCloudRepository.requestJson(serverNameStateSchema, {
+          method: 'PUT',
+          url: remoteEndpoints(document).name,
+          dpop: token,
+          body: { name },
+        });
+      });
+      await this.keepName(link.instanceId, answer);
+      this.logger.log(`frameleaf.net name ${answer.name} set by ${auth.user.id}`);
+      return answer;
+    });
+  }
+
+  private keepName(instanceId: string, answer: ServerNameState) {
+    return this.systemMetadataRepository.set(SystemMetadataKey.FrameleafRemoteName, {
+      instanceId,
+      ...answer,
+      checkedAt: new Date().toISOString(),
+    });
+  }
+
+  /**
+   * FL-705: tell Frameleaf Cloud which studio website to serve on the photographer's own domain (on save
+   * with a domain), or that there is none (turned off, or the domain cleared). Returns the site's status,
+   * or null when it can't be reported (not linked, remote access off, or Cloud unavailable) and why.
+   */
+  async reportStudioSite(
+    site: { domain: string; slug: string } | null,
+  ): Promise<{ site: StudioSiteState | null; problem: string | null }> {
+    const reason = await relayUnavailable(this.linkDeps);
+    if (reason) {
+      return { site: null, problem: reason };
+    }
+    const { cloudUrl, link } = await this.requireRelay();
+    try {
+      const { document, token } = await this.session(cloudUrl, link);
+      if (!site) {
+        await this.frameleafCloudRepository.requestJson(z.unknown(), {
+          method: 'DELETE',
+          url: remoteEndpoints(document).site,
+          dpop: token,
+        });
+        return { site: null, problem: null };
+      }
+      const answer = await this.frameleafCloudRepository.requestJson(studioSiteSchema, {
+        method: 'PUT',
+        url: remoteEndpoints(document).site,
+        dpop: token,
+        body: site,
+      });
+      return { site: answer, problem: null };
+    } catch (error) {
+      if (error instanceof FrameleafCloudError) {
+        return { site: null, problem: error.message };
+      }
+      throw error;
+    }
+  }
+
+  /** FL-705: the studio website's own-domain status at Frameleaf Cloud, for Website's Address tab and Publishing. */
+  async studioSiteStatus(): Promise<{ site: StudioSiteState | null; problem: string | null }> {
+    const reason = await relayUnavailable(this.linkDeps);
+    if (reason) {
+      return { site: null, problem: reason };
+    }
+    const { cloudUrl, link } = await this.requireRelay();
+    try {
+      const { document, token } = await this.session(cloudUrl, link);
+      const site = await this.frameleafCloudRepository.requestJson(studioSiteSchema, {
+        url: remoteEndpoints(document).site,
+        dpop: token,
+      });
+      return { site, problem: null };
+    } catch (error) {
+      if (error instanceof FrameleafCloudError) {
+        return { site: null, problem: error.status === 404 ? null : error.message };
+      }
+      throw error;
+    }
   }
 
   /** Discovery and a DPoP-bound instance token for the cloud API, minted with this server's key. */

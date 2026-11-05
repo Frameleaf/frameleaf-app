@@ -109,19 +109,14 @@ describe('app card offer', () => {
     });
   });
 
-  it('prefers the Android store page, and otherwise offers this server’s own download page', () => {
+  it('offers the Android store page, and nothing without one (FL-1200)', () => {
     const store = 'https://play.google.com/store/apps/details?id=app.frameleaf.android';
     expect(appCardOffer(releases({ android: { available: true, storeUrl: store } }), 'android')).toEqual({
       platform: 'android',
       kind: 'store',
       href: store,
     });
-    expect(appCardOffer(releases({ android: { available: true, appId: 'app.frameleaf.android' } }), 'android')).toEqual(
-      {
-        platform: 'android',
-        kind: 'downloads',
-      },
-    );
+    expect(appCardOffer(releases({ android: { available: true } }), 'android')).toBeNull();
   });
 
   it('ignores a store address that is not https', () => {

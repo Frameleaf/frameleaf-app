@@ -621,7 +621,8 @@
   .link-text strong {
     overflow: hidden;
     color: var(--fl-text);
-    font-family: var(--fl-family-mono);
+    font-family: inherit;
+    font-variant-numeric: tabular-nums;
     font-size: var(--fl-font-callout);
     font-weight: 500;
     text-overflow: ellipsis;

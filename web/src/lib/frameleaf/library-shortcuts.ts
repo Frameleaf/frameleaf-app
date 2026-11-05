@@ -15,14 +15,19 @@ import type { Translations } from 'svelte-i18n';
  * except where `shift` is `'any'`.
  */
 export type LibrarySurface = 'timeline' | 'viewer';
-export type LibraryShortcutGroup = 'general' | 'actions';
+export type LibraryShortcutGroup = 'general' | 'actions' | 'albums';
 
 export type LibraryShortcut = {
   id: string;
-  /** The `KeyboardEvent.key` values that trigger this entry. Omitted for pointer-only entries. */
+  /**
+   * The `KeyboardEvent.key` values that trigger this entry. Omitted for pointer-only entries and for
+   * keys a surface handles itself, which the help lists but this map never matches.
+   */
   key?: string | readonly string[];
   /** Pointer gesture documented in the help but never matched from a keyboard event. */
   mouse?: boolean;
+  /** A key the photo tiles or the sidebar handle themselves: listed in the help, never matched here. */
+  handledElsewhere?: boolean;
   mod?: boolean;
   alt?: boolean;
   shift?: boolean | 'any';
@@ -317,6 +322,57 @@ export const libraryShortcuts: readonly LibraryShortcut[] = [
     // In the timeline Delete moves the focused item or the selection to the trash; Shift adds nothing.
     timeline: { info: null },
   },
+  // Listed for the help only (no `key`): the photo tiles and the sidebar handle Shift+F10 themselves,
+  // opening the same menu as a right-click (approved design, 2026-11-04).
+  {
+    id: 'photo-menu',
+    handledElsewhere: true,
+    keys: ['⇧', 'F10'],
+    label: 'frameleaf_shortcut_photo_menu',
+    group: 'actions',
+    surfaces: TIMELINE,
+  },
+  {
+    id: 'album-menu',
+    handledElsewhere: true,
+    keys: ['⇧', 'F10'],
+    label: 'frameleaf_shortcut_album_menu',
+    group: 'albums',
+    surfaces: TIMELINE,
+  },
+  // The sidebar moves the focused album itself (approved design, 2026-11-04).
+  {
+    id: 'album-move-up',
+    handledElsewhere: true,
+    keys: ['Alt', '↑'],
+    label: 'frameleaf_shortcut_album_move_up',
+    group: 'albums',
+    surfaces: TIMELINE,
+  },
+  {
+    id: 'album-move-down',
+    handledElsewhere: true,
+    keys: ['Alt', '↓'],
+    label: 'frameleaf_shortcut_album_move_down',
+    group: 'albums',
+    surfaces: TIMELINE,
+  },
+  {
+    id: 'album-nest',
+    handledElsewhere: true,
+    keys: ['Alt', '→'],
+    label: 'frameleaf_shortcut_album_nest',
+    group: 'albums',
+    surfaces: TIMELINE,
+  },
+  {
+    id: 'album-unnest',
+    handledElsewhere: true,
+    keys: ['Alt', '←'],
+    label: 'frameleaf_shortcut_album_unnest',
+    group: 'albums',
+    surfaces: TIMELINE,
+  },
 ];
 
 const TYPING_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
@@ -394,9 +450,9 @@ export const matchLibraryShortcut = (
 export const isMacPlatform = (nav: { platform?: string; userAgent?: string } | null | undefined = navigator) =>
   /Mac|iPhone|iPad|iPod/i.test(`${nav?.platform ?? ''} ${nav?.userAgent ?? ''}`);
 
-/** Display keys for an entry, substituting the platform modifier. */
+/** Display keys for an entry, substituting the platform's names for Mod and Alt (⌘ and ⌥ on a Mac). */
 export const formatShortcutKeys = (entry: LibraryShortcut, { mac = isMacPlatform() }: { mac?: boolean } = {}) =>
-  entry.keys.map((key) => (key === 'Mod' ? (mac ? '⌘' : 'Ctrl') : key));
+  entry.keys.map((key) => (key === 'Mod' ? (mac ? '⌘' : 'Ctrl') : key === 'Alt' ? (mac ? '⌥' : 'Alt') : key));
 
 export type ShortcutHelpEntry = {
   id: string;
@@ -406,7 +462,7 @@ export type ShortcutHelpEntry = {
   /** The keys are read "← or →", not as a chord. */
   alternatives?: true;
 };
-export type ShortcutHelpGroups = { general: ShortcutHelpEntry[]; actions: ShortcutHelpEntry[] };
+export type ShortcutHelpGroups = Record<LibraryShortcutGroup, ShortcutHelpEntry[]>;
 
 /**
  * The help content, grouped as the shortcuts sheet lists it (prototype `shortcutGroups`).
@@ -420,7 +476,7 @@ export const libraryShortcutGroups = (
     table = libraryShortcuts,
   }: { surface?: LibrarySurface; mac?: boolean; table?: readonly LibraryShortcut[] } = {},
 ): ShortcutHelpGroups => {
-  const groups: ShortcutHelpGroups = { general: [], actions: [] };
+  const groups: ShortcutHelpGroups = { general: [], actions: [], albums: [] };
   for (const entry of table) {
     if (entry.helpHidden || (surface && !entry.surfaces.includes(surface))) {
       continue;

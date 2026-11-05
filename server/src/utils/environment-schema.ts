@@ -111,10 +111,14 @@ export const EnvSchema = z
     FRAMELEAF_WORKERS_EXCLUDE: z.string().optional(),
     /** Library Care recovery locations (FL-69): `Label=/path;Label=/path`, read only, never linked in place. */
     FRAMELEAF_RECOVERY_ROOTS: z.string().optional(),
-    /** Signed app release destinations (FL-82); see `src/utils/app-releases.ts`. */
+    /**
+     * Deprecated (FL-1200): the direct APK download is gone and these are ignored. They stay accepted so
+     * configurations that still set them, including Buddy Backup boot captures from older servers, keep working.
+     */
     FRAMELEAF_ANDROID_RELEASE_URL: z.string().optional(),
     FRAMELEAF_ANDROID_APP_ID: z.string().optional(),
     FRAMELEAF_ANDROID_SIGNING_SHA256: z.string().optional(),
+    /** The phone apps' store listings (FL-82, FL-1195); see `src/utils/app-releases.ts`. */
     FRAMELEAF_IOS_APP_URL: z.string().optional(),
     /**
      * The Frameleaf Cloud base address. There is exactly one Frameleaf Cloud, so this defaults to it

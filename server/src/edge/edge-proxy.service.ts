@@ -153,6 +153,32 @@ export class EdgeProxyService {
   }
 
   /** A learned block, unlink, expiry or rebind also closes already-open recovery connections. */
+  /** FL-1197: the frameleaf.net name, and the previous names that redirect to it for their 30 days. */
+  private currentName: string | null = null;
+  private previousNames: string[] = [];
+
+  configureNames(current: string | null, previous: string[]) {
+    this.currentName = current;
+    this.previousNames = current ? previous : [];
+  }
+
+  /**
+   * FL-1197: a request on a previous frameleaf.net name goes to the same path on the current one (308, so a
+   * form's method and body are kept). True when it answered.
+   */
+  private redirectPreviousName(request: IncomingMessage, response: ServerResponse): boolean {
+    const host = (request.headers.host ?? '').toLowerCase().replace(/:\d+$/, '').replace(/\.$/, '');
+    if (!this.currentName || !this.previousNames.includes(host)) {
+      return false;
+    }
+    response.writeHead(308, {
+      location: `https://${this.currentName}${request.url ?? '/'}`,
+      'cache-control': 'no-store',
+    });
+    response.end();
+    return true;
+  }
+
   configureRecovery(access: BuddyRecoveryAccess | null, buddyOnly = false) {
     if (JSON.stringify(access) !== JSON.stringify(this.recovery) || buddyOnly !== this.buddyOnly) {
       for (const socket of this.sockets) {
@@ -241,6 +267,9 @@ export class EdgeProxyService {
   }
 
   private onRequest(request: IncomingMessage, response: ServerResponse) {
+    if (this.redirectPreviousName(request, response)) {
+      return;
+    }
     const arrival = this.arrivalOf(request.socket);
     const { host, port, secret } = this.upstream();
     if (!arrival || !secret) {

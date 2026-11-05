@@ -5,6 +5,7 @@ import React, { createElement } from 'react';
 import type { EmailImageAttachment } from 'src/types.js';
 import { AlbumInviteEmail } from 'src/emails/album-invite.email.js';
 import { AlbumUpdateEmail } from 'src/emails/album-update.email.js';
+import { GalleryInviteEmail } from 'src/emails/gallery-invite.email.js';
 import { ItemShareEmail } from 'src/emails/item-share.email.js';
 import { PasswordLinkEmail } from 'src/emails/password-link.email.js';
 import { SignInReminderEmail } from 'src/emails/sign-in-reminder.email.js';
@@ -81,6 +82,7 @@ export enum EmailTemplate {
 
   // CLIENTS
   STUDIO_INQUIRY = 'studio-inquiry',
+  GALLERY_INVITE = 'gallery-invite',
 }
 
 interface BaseEmailProps {
@@ -139,6 +141,19 @@ export interface SignInReminderEmailProps extends BaseEmailProps {
   displayName: string;
   senderName: string;
   link: string;
+}
+
+/** A studio invites its client to a proof gallery. `link` carries the client's own invitation. */
+export interface GalleryInviteEmailProps extends BaseEmailProps {
+  /** A reminder about a gallery already shared, rather than the invitation; it carries no link. */
+  reminder?: 'selection' | 'payment' | 'expiry';
+  studioName: string;
+  recipientName: string;
+  galleryTitle: string;
+  welcomeMessage?: string;
+  link: string;
+  /** Already formatted for reading, or absent when the link does not expire. */
+  expiresAt?: string;
 }
 
 /** FL-702: someone sent the studio website's inquiry form, or asked for their gallery link. */
@@ -200,6 +215,11 @@ export type EmailRenderRequest =
   | {
       template: EmailTemplate.STUDIO_INQUIRY;
       data: StudioInquiryEmailProps;
+      customTemplate?: string;
+    }
+  | {
+      template: EmailTemplate.GALLERY_INVITE;
+      data: GalleryInviteEmailProps;
       customTemplate?: string;
     };
 
@@ -368,6 +388,10 @@ export class EmailRepository {
 
       case EmailTemplate.STUDIO_INQUIRY: {
         return createElement(StudioInquiryEmail, data);
+      }
+
+      case EmailTemplate.GALLERY_INVITE: {
+        return createElement(GalleryInviteEmail, data);
       }
     }
   }

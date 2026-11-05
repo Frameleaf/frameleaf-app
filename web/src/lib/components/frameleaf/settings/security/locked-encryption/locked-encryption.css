@@ -272,7 +272,8 @@
 .le-command code {
   padding: var(--fl-space-2) var(--fl-space-3);
   color: var(--fl-text);
-  font-family: var(--fl-family-mono);
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
   font-size: var(--fl-font-small);
   line-height: 1.5;
   overflow-wrap: anywhere;

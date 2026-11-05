@@ -662,7 +662,8 @@
 }
 .frs-radio small {
   color: var(--fl-muted);
-  font-family: var(--fl-family-mono);
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
   font-size: var(--fl-font-micro);
   overflow-wrap: anywhere;
 }
@@ -843,7 +844,8 @@
   min-height: 44px;
   padding-inline-start: 40px;
   border-radius: var(--fl-radius-control);
-  font-family: var(--fl-family-mono);
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
   font-size: var(--fl-font-size);
 }
 .frs-check {
@@ -871,7 +873,8 @@
 .frs-path {
   display: flex;
   flex-wrap: wrap;
-  font-family: var(--fl-family-mono);
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
   font-size: var(--fl-font-callout);
 }
 .frs-path span {
@@ -1750,7 +1753,8 @@
   color: var(--fl-muted);
 }
 .frs-location-path code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
   font-size: 15px;
   overflow-wrap: anywhere;
 }

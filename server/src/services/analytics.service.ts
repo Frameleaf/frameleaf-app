@@ -37,6 +37,7 @@ import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { SeenLabelsService } from 'src/services/seen-labels.service.js';
 import {
   ANALYTICS_AUTO_RETRIES,
   ANALYTICS_DAY_RETENTION_DAYS,
@@ -66,6 +67,63 @@ import {
 } from 'src/utils/analytics.js';
 import { getConfig } from 'src/utils/config.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+
+/** ThumbHash's average colour (L, P and Q, each 0-63) as #rrggbb (thumbhash.js `thumbHashToAverageRGBA`). */
+const thumbhashColour = ({ l, p, q }: { l: number; p: number; q: number }) => {
+  const lum = l / 63;
+  const pp = p / 31.5 - 1;
+  const qq = q / 31.5 - 1;
+  const b = lum - (2 / 3) * pp;
+  const r = (3 * lum - b + qq) / 2;
+  const g = r - qq;
+  const hex = (value: number) =>
+    Math.round(Math.max(0, Math.min(1, value)) * 255)
+      .toString(16)
+      .padStart(2, '0');
+  return `#${hex(r)}${hex(g)}${hex(b)}`;
+};
+
+const SEASON_OF_MONTH = [
+  'winter',
+  'winter',
+  'spring',
+  'spring',
+  'spring',
+  'summer',
+  'summer',
+  'summer',
+  'autumn',
+  'autumn',
+  'autumn',
+  'winter',
+] as const;
+
+const mapMagic = (magic: NonNullable<AnalyticsInsightRows['magic']>): NonNullable<AnalyticsInsightsDto['magic']> => {
+  // Items without a place follow the hemisphere most located items were taken in.
+  const located = magic.months.filter((row) => row.south !== null);
+  const south = located.filter((row) => row.south).reduce((n, row) => n + row.count, 0);
+  const north = located.filter((row) => !row.south).reduce((n, row) => n + row.count, 0);
+  const seasons = { spring: 0, summer: 0, autumn: 0, winter: 0 };
+  for (const row of magic.months) {
+    const southern = row.south ?? south > north;
+    // the south's seasons run six months apart from the north's
+    const month = southern ? ((row.month + 5) % 12) + 1 : row.month;
+    seasons[SEASON_OF_MONTH[month - 1]] += row.count;
+  }
+  return {
+    colourByMonth: magic.colour.map((row) => ({ month: row.month, colour: thumbhashColour(row), photos: row.photos })),
+    light: magic.light,
+    seasons,
+    topTags: magic.topTags,
+    farAndWide: magic.farAndWide,
+    underTheHood: magic.underTheHood,
+    shutter: magic.shutter.map((row) => ({
+      camera: cameraName(row.make, row.model) ?? row.make ?? '',
+      count: row.count,
+    })),
+    seen: magic.seen as NonNullable<AnalyticsInsightsDto['magic']>['seen'],
+  };
+};
 
 const mapInsights = (rows: AnalyticsInsightRows, items: number): AnalyticsInsightsDto => {
   const punch = new Map(rows.punchcard.map((cell) => [`${cell.weekday}:${cell.hour}`, cell.count]));
@@ -115,6 +173,7 @@ const mapInsights = (rows: AnalyticsInsightRows, items: number): AnalyticsInsigh
       videoDurationMs,
       videoHours: Math.round(videoDurationMs / 360_000) / 10,
     },
+    ...(rows.magic && { magic: mapMagic(rows.magic) }),
   };
 };
 
@@ -131,8 +190,15 @@ type ResolvedScope = { scope: AnalyticsScope; label: string; ownerId: string | n
  * Anybody else gets 403, and a library the reader does not own reads as forbidden whether or not it
  * exists, so the answer never says which ids are real.
  *
- * Nothing here talks to anything but this server's database and library volume.
+ * Nothing here talks to anything but this server's database and library volume, except that "What the AI
+ * sees" asks the computer that encodes search text for its labels once per model (`SeenLabelsService`).
  */
+/**
+ * How long a report waits for "What the AI sees" labels. The first encoding on a server can take a while;
+ * it carries on and is cached, so a later report has the panel, and this one is never held up.
+ */
+const SEEN_LABELS_WAIT_MS = 3000;
+
 @Injectable()
 export class AnalyticsService {
   constructor(
@@ -143,8 +209,22 @@ export class AnalyticsService {
     private configRepository: ConfigRepository,
     private systemMetadataRepository: SystemMetadataRepository,
     private forkSchemaRepository: AssetChecksumRepository,
+    private seenLabels: SeenLabelsService,
   ) {
     this.logger.setContext(AnalyticsService.name);
+  }
+
+  /** The labels if they are ready within `ms`, otherwise none for this report (see SEEN_LABELS_WAIT_MS). */
+  private seenLabelsWithin(ms: number) {
+    let timer: NodeJS.Timeout | undefined;
+    const late = new Promise<undefined>((resolve) => {
+      timer = setTimeout(() => resolve(undefined), ms);
+    });
+    // a config lookup that fails must not take the whole report with it
+    const labels = this.seenLabels.labels().catch((error: unknown): undefined => {
+      this.logger.warn(`"What the AI sees" labels are unavailable: ${error}`);
+    });
+    return Promise.race([labels, late]).finally(() => clearTimeout(timer));
   }
 
   /**
@@ -243,12 +323,15 @@ export class AnalyticsService {
       this.analyticsRepository.getSamples(scopeKey, GROWTH_SERIES, parseIsoDay(window.from)),
       this.analyticsRepository.getLatestObservation(scopeKey),
       this.readHost(now),
-      this.analyticsRepository.getInsights(scope, {
-        ownerId: readsOwnScope ? ownerId : null,
-        suppressedPersonIds: auth.hiddenContent?.personIds ?? [],
-        suppressedPetIds: auth.hiddenContent?.petIds ?? [],
-        privacy: getHiddenContentQueryOptions(auth),
-      }),
+      this.seenLabelsWithin(SEEN_LABELS_WAIT_MS).then((seenLabels) =>
+        this.analyticsRepository.getInsights(scope, {
+          ownerId: readsOwnScope ? ownerId : null,
+          suppressedPersonIds: auth.hiddenContent?.personIds ?? [],
+          suppressedPetIds: auth.hiddenContent?.petIds ?? [],
+          privacy: getHiddenContentQueryOptions(auth),
+          seenLabels,
+        }),
+      ),
       this.getRetention(),
     ]);
 

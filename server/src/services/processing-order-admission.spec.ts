@@ -98,6 +98,52 @@ describe('admission follows the processing order (FL-456)', () => {
     expect(mocks.job.pinDestination).not.toHaveBeenCalled();
   });
 
+  describe("when a computer at home isn't answering (approved design, 2026-11-04)", () => {
+    const awayFirst = () => {
+      mocks.mlDestination.resolveRoute.mockResolvedValue([candidate(study.id, MlProcessingSource.Desktops)]);
+      down.add(study.id);
+      mocks.user.getList.mockResolvedValue([{ id: 'admin', isAdmin: true, deletedAt: null }] as never);
+    };
+
+    it('waits by default, and tells administrators once', async () => {
+      awayFirst();
+      mocks.systemMetadata.get.mockResolvedValue(null);
+      const error = await run(() => sut.select({ workload: MlWorkload.Enrichment })).catch((error: unknown) => error);
+      expect(error).toBeInstanceOf(MlDestinationRefusedError);
+      expect(context.dependencyReason).toBe('destination-unavailable');
+      expect(mocks.notification.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'admin', title: `${study.name} isn’t answering` }),
+      );
+
+      // already told in the last hours: no second notice
+      mocks.notification.create.mockClear();
+      mocks.systemMetadata.get.mockResolvedValue({
+        whenUnavailable: 'wait',
+        notified: { [study.id]: new Date().toISOString() },
+      });
+      await run(() => sut.select({ workload: MlWorkload.Enrichment })).catch(() => {});
+      expect(mocks.notification.create).not.toHaveBeenCalled();
+    });
+
+    it('with Stop, fails the job instead of leaving it waiting', async () => {
+      awayFirst();
+      mocks.systemMetadata.get.mockResolvedValue({ whenUnavailable: 'stop' });
+      const error = await run(() => sut.select({ workload: MlWorkload.Enrichment })).catch((error: unknown) => error);
+      expect(error).not.toBeInstanceOf(MlDestinationRefusedError);
+      expect((error as Error).message).toContain('isn’t answering');
+      expect(context.dependencyReason).toBeUndefined();
+    });
+
+    it('leaves this server and Frameleaf Cloud waiting as before', async () => {
+      down.add(local.id);
+      down.add(study.id);
+      mocks.systemMetadata.get.mockResolvedValue({ whenUnavailable: 'stop' });
+      const error = await run(() => sut.select({ workload: MlWorkload.Enrichment })).catch((error: unknown) => error);
+      expect(error).toBeInstanceOf(MlDestinationRefusedError);
+      expect(mocks.notification.create).not.toHaveBeenCalled();
+    });
+  });
+
   it('keeps a job on the place it already ran on', async () => {
     mocks.job.pinnedDestination.mockResolvedValue(study.id);
     const selection = await run(() => sut.select({ workload: MlWorkload.Enrichment }));

@@ -149,6 +149,21 @@ where
 order by
   "asset"."createdAt" asc
 
+-- IntegrityRepository.getAssetChecksum
+select
+  "asset"."originalPath",
+  "asset"."checksum",
+  "asset"."checksumAlgorithm",
+  "asset"."id" as "assetId",
+  "integrity_report"."id" as "reportId"
+from
+  "asset"
+  left join "integrity_report" on "integrity_report"."assetId" = "asset"."id"
+  and "integrity_report"."type" = $1
+where
+  "asset"."id" = $2
+  and "asset"."deletedAt" is null
+
 -- IntegrityRepository.streamIntegrityReports
 select
   "id",

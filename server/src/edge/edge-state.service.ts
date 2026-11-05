@@ -56,6 +56,7 @@ import {
   nextRenewalCheck,
   remoteEndpoints,
   remoteEntitlement,
+  remoteNameHosts,
   renewalDue,
   retryDelayMs,
   verifiedCustomHost,
@@ -490,6 +491,8 @@ export class EdgeStateService {
       certificateIssuance: previous?.certificateIssuance,
       customCertificate: previous?.customCertificate ?? null,
       customCertificateIssuance: previous?.customCertificateIssuance,
+      nameCertificate: previous?.nameCertificate ?? null,
+      nameCertificateIssuance: previous?.nameCertificateIssuance,
     };
 
     // enrolment: the label, names, relay assignment and CAA parameters
@@ -571,6 +574,42 @@ export class EdgeStateService {
       state.customCertificateIssuance = undefined;
     }
 
+    // FL-1197: the frameleaf.net name, and each previous name for its 30 days, through the relay only
+    const nameState = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafRemoteName);
+    const nameHosts = desired.noRelay
+      ? { current: null, previous: [] }
+      : remoteNameHosts(nameState, desired.link.instanceId, now);
+    const names = nameHosts.current ? [nameHosts.current, ...nameHosts.previous] : [];
+    let named: { hosts: string[]; certificate: string; key: string } | null = null;
+    if (names.length > 0) {
+      const key = names.join(',');
+      const result = await this.keepCertificate({
+        kind: 'name',
+        names,
+        identityDir,
+        enrollment: state.names,
+        facts: state.nameCertificate?.hosts.join(',') === key ? state.nameCertificate : null,
+        issuance: state.nameCertificateIssuance?.hosts.join(',') === key ? state.nameCertificateIssuance : undefined,
+        cloud,
+        now,
+        onAccount: (accountUri) => {
+          state.acmeAccountUri = accountUri;
+        },
+      });
+      state.nameCertificate = result.facts ? { ...result.facts, hosts: names } : null;
+      state.nameCertificateIssuance = { ...result.issuance, hosts: names };
+      named = result.pair ? { hosts: names, ...result.pair } : null;
+      // a rename waiting on its certificate keeps serving the names the stored one still covers
+      named ??= await this.storedNameCertificate(identityDir, now);
+    } else if (state.nameCertificate || state.nameCertificateIssuance) {
+      await this.certificates.remove(identityDir, ['name']);
+      state.nameCertificate = null;
+      state.nameCertificateIssuance = undefined;
+    }
+    // previous names lead to the current one only once it is served; until then they are served as they were
+    const servesCurrent = !!nameHosts.current && !!named?.hosts.includes(nameHosts.current);
+    this.proxy.configureNames(servesCurrent ? nameHosts.current : null, servesCurrent ? nameHosts.previous : []);
+
     // the direct listener, with the certificates in hand
     const addresses = this.addresses();
     const trustedLanCidrs = this.configRepository.getEnv().frameleafCloud.trustedLanCidrs;
@@ -586,18 +625,23 @@ export class EdgeStateService {
         wildcard.facts?.serial,
         custom?.host,
         state.customCertificate?.serial,
+        named?.hosts,
+        state.nameCertificate?.serial,
         settings.mode,
         enrollment.label,
         enrollment.domain,
       ]);
       if (signature !== this.served) {
         this.direct.configure({
-          contexts: { wildcard: wildcard.pair, custom },
+          contexts: { wildcard: wildcard.pair, custom, ...(named && { name: named }) },
           enrollment,
           allowWan: settings.mode === 'relay-and-direct',
           advertised,
         });
-        this.relay.configure({ contexts: { wildcard: wildcard.pair, custom }, enrollment });
+        this.relay.configure({
+          contexts: { wildcard: wildcard.pair, custom, ...(named && { name: named }) },
+          enrollment,
+        });
         this.served = signature;
       }
       // the relay is the baseline path: it runs whatever the direct listener does, given a plan
@@ -609,6 +653,7 @@ export class EdgeStateService {
               linkKey: `${desired.link.instanceId}|${desired.link.linkedAt ?? ''}`,
               enrollment,
               cloud,
+              namesKey: named ? named.hosts.join(',') : '',
               ...(desired.buddyOnly && { buddyOnly: true }),
             },
             now,
@@ -1012,6 +1057,22 @@ export class EdgeStateService {
    * Keep one certificate current: read it, and issue it when it is missing, does not cover the names,
    * or is due for renewal at the daily check, unless a failure's retry time has not come yet.
    */
+  /** The stored name certificate while it is valid and matches its key, for the names it covers. */
+  private async storedNameCertificate(identityDir: string, now: number) {
+    const pair = await this.certificates.read(identityDir, 'name');
+    if (!pair) {
+      return null;
+    }
+    try {
+      const facts = certificateFacts(pair.certificate);
+      return certificateMatchesKey(pair.certificate, pair.key) && Date.parse(facts.notAfter) > now
+        ? { hosts: facts.names.map((name) => name.toLowerCase()), ...pair }
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
   async keepCertificate(input: {
     kind: EdgeCertificateKind;
     names: string[];
@@ -1173,10 +1234,15 @@ export class EdgeStateService {
     facts: FrameleafEdgeCertificate | null,
     issuance: FrameleafEdgeIssuance,
   ) {
-    const which = kind === 'wildcard' ? 'this server’s Frameleaf address' : 'your custom domain';
+    const which = {
+      wildcard: 'this server’s Frameleaf address',
+      custom: 'your custom domain',
+      name: 'this server’s name on frameleaf.net',
+    }[kind];
+    // the notice template for each kind of certificate
+    const template = ({ wildcard: 'address', custom: 'domain', name: 'name' } as const)[kind];
     const expires = facts ? ` The current certificate works until ${facts.notAfter.slice(0, 10)}.` : '';
     const args = { error: String(issuance.lastError), nextAttemptAt: String(issuance.nextAttemptAt) };
-    const wildcard = kind === 'wildcard';
     try {
       await this.notifyAdmins({
         title: 'Remote access certificate could not be renewed',
@@ -1186,10 +1252,10 @@ export class EdgeStateService {
         systemTemplate: facts
           ? {
               version: 1,
-              key: wildcard ? 'edge-certificate-address-expiring' : 'edge-certificate-domain-expiring',
+              key: `edge-certificate-${template}-expiring` as const,
               args: { ...args, until: facts.notAfter.slice(0, 10) },
             }
-          : { version: 1, key: wildcard ? 'edge-certificate-address' : 'edge-certificate-domain', args },
+          : { version: 1, key: `edge-certificate-${template}` as const, args },
         dedupeKey: `${CERTIFICATE_NOTICE_KEY}:${kind}`,
       });
     } catch (error) {

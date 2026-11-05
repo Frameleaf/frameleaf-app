@@ -240,7 +240,8 @@
       label={$t('frameleaf_intel_where')}
       help={silent ? $t('frameleaf_intel_where_silent') : $t('frameleaf_intel_where_help')}
     >
-      <Button onclick={() => goto(commandCenterUrl('processing', 'routing'))}>{$t('frameleaf_intel_where_open')}</Button
+      <Button onclick={() => goto(commandCenterUrl('processing', 'computers'))}
+        >{$t('frameleaf_intel_where_open')}</Button
       >
     </Row>
     <Row label={$t('frameleaf_intel_overnight')} help={$t('frameleaf_intel_landing_overnight_help')}>

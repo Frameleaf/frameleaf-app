@@ -317,7 +317,8 @@
     opacity: 0;
   }
   code {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: inherit;
+    font-variant-numeric: tabular-nums;
     font-size: var(--fl-font-small);
     overflow-wrap: anywhere;
   }
