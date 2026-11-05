@@ -277,10 +277,6 @@
       {oneFullStop($t('frameleaf_analytics_as_of', { values: { date: dateTime(report.generatedAt) } }))}
       {#if notice === 'unknown'}
         {$t('frameleaf_analytics_history_unknown')}
-        <!-- FL-363: the count that starts the charts, here instead of under another name in Jobs. -->
-        <button type="button" class="text-button count-now" disabled={counting} onclick={countNow}
-          >{$t('frameleaf_analytics_count_now')}</button
-        >
         {#if counted}<span role="status">{counted}</span>{/if}
       {:else if notice === 'stale' && report.history.lastObservedAt}
         {$t('frameleaf_analytics_history_stale', { values: { date: dateTime(report.history.lastObservedAt) } })}
@@ -288,6 +284,13 @@
         {$t('frameleaf_analytics_history_gaps')}
       {/if}
     </p>
+    {#if notice === 'unknown'}
+      <!-- FL-363: the count that starts the charts, here instead of under another name in Jobs. Its own
+           button at the end of the notice, as the prototype's banner (`overnight.css .ov-an-banner`). -->
+      <button type="button" class="export count-now" disabled={counting} onclick={countNow}
+        >{$t('frameleaf_analytics_count_now')}</button
+      >
+    {/if}
   </div>
 
   <div class="controls">
@@ -703,11 +706,23 @@
   .page-heading {
     margin-bottom: 22px;
   }
+  /* SettingsHost `.cc-page-heading`: the same title and description as every settings page. */
   .page-heading h1 {
     margin: 0;
-    font-size: 28px;
-    font-weight: 550;
+    font-size: var(--fl-font-display);
+    font-weight: 600;
     letter-spacing: -0.9px;
+    line-height: 1.3;
+  }
+  .page-heading > div > p:last-child {
+    max-width: 72ch;
+    font-size: var(--fl-font-callout);
+    line-height: 1.5;
+  }
+  @media (max-width: 1000px) {
+    .page-heading h1 {
+      font-size: 24px;
+    }
   }
   .page-heading p,
   .card-heading p {
@@ -743,8 +758,8 @@
     color: var(--fl-muted);
     font-size: 11px;
   }
-  .notice[data-state='stale'],
-  .notice[data-state='unknown'] {
+  /* No history yet is a normal first day, so its notice stays neutral; only out-of-date history warns. */
+  .notice[data-state='stale'] {
     border-color: var(--fl-warning);
   }
   .badge {
@@ -1091,6 +1106,16 @@
       flex-direction: column;
       gap: 12px;
     }
+    /* The badge sits above the sentence so the sentence keeps the card's width. */
+    .notice {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: var(--fl-space-2);
+    }
+    /* Under the sentence, at its start (the base rule below would push it to the end). */
+    .notice .count-now {
+      margin-inline-start: 0;
+    }
     .controls label {
       flex: 1;
       min-width: 135px;
@@ -1111,8 +1136,12 @@
       gap: 8px;
     }
   }
+  .notice p {
+    flex: 1;
+    min-width: 0;
+  }
   .count-now {
-    margin-inline-start: var(--fl-space-2);
+    margin-inline-start: auto;
   }
   .backup-note {
     display: flex;

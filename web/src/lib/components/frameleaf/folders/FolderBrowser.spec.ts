@@ -184,7 +184,7 @@ describe('FolderBrowser', () => {
       expect(screen.getByRole('heading', { level: 2, name: /^Folders\s+2 folders$/ })).toBeInTheDocument();
     });
 
-    it('starts where the tree first branches, with the place on disk beside Copy path', () => {
+    it('starts where the tree first branches, with the place on disk in the subtitle tooltip', () => {
       const deep = buildFolderTree([
         { path: '/usr/src/app/upload/library/2026', count: 2, size: 10 },
         { path: '/usr/src/app/upload/library/2025', count: 1, size: 5 },
@@ -194,9 +194,13 @@ describe('FolderBrowser', () => {
       expect(cardNames()).toEqual(['2025', '2026']);
       // nothing above the top is offered as a place to go
       expect(screen.queryByRole('navigation', { name: 'Folder path' })).toBeNull();
-      expect(diskPath()).toHaveTextContent('/usr/src/app/upload/library');
-      expect(diskPath()!.parentElement).toHaveTextContent('On disk: /usr/src/app/upload/library');
-      expect(screen.getByRole('button', { name: 'Copy path' })).toHaveAttribute('title', '/usr/src/app/upload/library');
+      // FoldersV2.jsx: no path row at the top; the place on disk is the subtitle's tooltip
+      expect(diskPath()).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Copy path' })).toBeNull();
+      expect(screen.getByText('Your originals, the way they are stored on disk.')).toHaveAttribute(
+        'title',
+        '/usr/src/app/upload/library',
+      );
     });
 
     it('says "No folders yet" for an empty library, with nothing to search and Show in timeline disabled', () => {

@@ -107,9 +107,12 @@ describe('what a row offers', () => {
     expect(choicesFor('descriptions', two)).toEqual(['srv', 'office', NONE]);
   });
 
-  it('has nothing to choose when no place can do the work, or the only place already does', () => {
+  it('has nothing to choose only when no place can do the work', () => {
     expect(choicesFor('upscale', facts())).toEqual([]);
-    expect(choicesFor('faces', facts())).toEqual([]);
+  });
+
+  it('still offers the one place that already does the work, so the chooser stays', () => {
+    expect(choicesFor('faces', facts())).toEqual(['srv', NONE]);
   });
 
   it('lets a row that is off be turned on when one place can do it', () => {
@@ -145,7 +148,7 @@ describe('search and faces run in one place (FL-455)', () => {
 
   it('does not offer Frameleaf Cloud before its consent is recorded', () => {
     const unconsented = { ...indexCloud, consent: { ...indexCloud.consent, acknowledgedAt: null } };
-    expect(choicesFor('search', offered({ destinations: [server, unconsented] }))).toEqual([]);
+    expect(choicesFor('search', offered({ destinations: [server, unconsented] }))).toEqual(['srv', NONE]);
   });
 
   it('reads Frameleaf Cloud from the destination route, as Workload destinations shows it', () => {

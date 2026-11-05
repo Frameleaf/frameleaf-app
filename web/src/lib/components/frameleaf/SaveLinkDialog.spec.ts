@@ -26,7 +26,7 @@ describe('SaveLinkDialog', () => {
 
     expect(await screen.findByRole('img', { name: 'frameleaf_boards_save_link_picture' })).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'frameleaf_bookmark_title' })).toHaveValue('Spring moodboard');
-    const save = screen.getByRole('button', { name: 'save' });
+    const save = screen.getByRole('button', { name: 'frameleaf_boards_save_link_action' });
     await waitFor(() => expect(save).toBeEnabled());
     await fireEvent.click(save);
 
@@ -44,7 +44,7 @@ describe('SaveLinkDialog', () => {
     const onSaved = vi.fn();
     render(SaveLinkDialog, { open: true, url: 'https://example.com/board?x=1', albumId: 'c1', onSaved });
 
-    const save = screen.getByRole('button', { name: 'save' });
+    const save = screen.getByRole('button', { name: 'frameleaf_boards_save_link_action' });
     await waitFor(() => expect(save).toBeEnabled());
     await fireEvent.click(save);
 
@@ -92,7 +92,7 @@ describe('SaveLinkDialog', () => {
 
   it('refuses an address that is not a web page', async () => {
     render(SaveLinkDialog, { open: true, url: 'javascript:alert(1)', onSaved: vi.fn() });
-    const save = screen.getByRole('button', { name: 'save' });
+    const save = screen.getByRole('button', { name: 'frameleaf_boards_save_link_action' });
     await waitFor(() => expect(save).toBeEnabled());
     await fireEvent.click(save);
     expect(await screen.findByRole('alert')).toHaveTextContent('frameleaf_boards_save_link_invalid');

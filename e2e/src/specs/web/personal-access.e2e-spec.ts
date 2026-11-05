@@ -41,7 +41,11 @@ const openLockedRules = async (context: BrowserContext, page: Page, accessToken:
   await utils.setAuthCookies(context, accessToken);
   await page.goto(lockedRulesUrl);
   await expect(page.getByRole('button', { name: 'Save Locked rules' })).toBeVisible();
+  await openTags(page);
 };
+
+/** Always Locked lists each kind behind its row ("Tags … Change"), as the prototype does. */
+const openTags = (page: Page) => page.locator('summary').filter({ hasText: 'Tags' }).click();
 
 test.describe('Personal access (FL-67)', () => {
   let admin: LoginResponseDto;
@@ -91,7 +95,7 @@ test.describe('Personal access (FL-67)', () => {
     await expect(
       page.getByRole('status').filter({ hasText: 'Unlock again before saving Locked rules.' }),
     ).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Unlock Locked settings' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Unlock with PIN' })).toBeVisible();
     await expect(page.getByRole('checkbox', { name: 'Relock draft' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Save Locked rules' })).toHaveCount(0);
 
@@ -111,6 +115,7 @@ test.describe('Personal access (FL-67)', () => {
     const other = await context.newPage();
     await other.goto(lockedRulesUrl);
     await expect(other.getByRole('button', { name: 'Save Locked rules' })).toBeVisible();
+    await openTags(other);
 
     await other.getByRole('checkbox', { name: 'Tab two' }).check();
 
@@ -222,8 +227,10 @@ test.describe('Personal access (FL-67)', () => {
     await utils.setAuthCookies(context, user.accessToken);
     await page.goto(apiKeysUrl);
 
+    // Manage › opens the key, with Replace key… inside (the prototype's ApiKeys.jsx).
     const row = page.getByRole('listitem').filter({ hasText: 'e2e' });
-    await row.getByRole('button', { name: 'Replace key…' }).click();
+    await row.getByRole('button', { name: /^Manage/ }).click();
+    await page.getByRole('dialog', { name: 'e2e' }).getByRole('button', { name: 'Replace key…' }).click();
 
     const confirm = page.getByRole('dialog', { name: 'Replace the key e2e' });
     await expect(confirm).toContainText('The old key stops working at once');
@@ -260,12 +267,16 @@ test.describe('Personal access (FL-67)', () => {
     await utils.setAuthCookies(context, user.accessToken);
     await page.goto(devicesUrl);
 
-    const devices = page.getByRole('region', { name: 'Signed-in devices' });
+    // The devices are listed under "Used lately" (the prototype's Devices page).
+    const devices = page.getByRole('region', { name: 'Used lately' });
     await expect(devices.getByText('This device', { exact: true })).toBeVisible();
     await expect(devices.getByRole('listitem')).toHaveCount(3);
 
     // this device signs out one other device; that token stops working, the others do not
-    await devices.getByRole('button', { name: 'Sign out', exact: true }).first().click();
+    await devices
+      .getByRole('button', { name: /^Sign out / })
+      .first()
+      .click();
     await page.getByRole('dialog').getByRole('button', { name: 'Sign out', exact: true }).click();
     await expect(devices.getByRole('listitem')).toHaveCount(2);
     const statuses = await Promise.all(

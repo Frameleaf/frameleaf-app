@@ -30,7 +30,7 @@ describe('FrameleafAccountSection (FL-158)', () => {
     });
     render(FrameleafAccountSection);
     expect(await screen.findByText(/has not linked this server to Frameleaf yet/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Link Frameleaf account' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Sign in with Frameleaf' })).toBeDisabled();
   });
 
   it('leaves for Frameleaf to link, returning to /link', async () => {
@@ -46,7 +46,7 @@ describe('FrameleafAccountSection (FL-158)', () => {
     sdkMock.startFrameleafSignIn.mockResolvedValue({ url: 'https://id.frameleaf.cloud.test/auth?state=s1' });
     render(FrameleafAccountSection);
 
-    await fireEvent.click(await screen.findByRole('button', { name: 'Link Frameleaf account' }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Sign in with Frameleaf' }));
     await waitFor(() => expect(assign).toHaveBeenCalledWith('https://id.frameleaf.cloud.test/auth?state=s1'));
     expect(sdkMock.startFrameleafSignIn).toHaveBeenCalledWith({
       oAuthConfigDto: { redirectUri: 'https://photos.example.test/link' },
@@ -75,7 +75,7 @@ describe('FrameleafAccountSection (FL-158)', () => {
     expect(await screen.findByText(/Linked to me@example.test since/)).toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: 'Unlink' }));
     await waitFor(() => expect(sdkMock.unlinkFrameleafAccount).toHaveBeenCalled());
-    expect(await screen.findByText(/Link your Frameleaf account to sign in/)).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Sign in with Frameleaf' })).toBeEnabled();
   });
 
   it('keeps the link when the confirmation is cancelled', async () => {

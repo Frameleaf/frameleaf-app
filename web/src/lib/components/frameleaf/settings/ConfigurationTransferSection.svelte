@@ -10,10 +10,9 @@
    * each setting that would change in the words on its own page, and nothing is saved until the
    * settings bar's review is confirmed.
    */
-  import Button from '$lib/components/frameleaf/Button.svelte';
   import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
-  import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
+  import Links from '$lib/components/frameleaf/settings/kit/Links.svelte';
   import Points from '$lib/components/frameleaf/settings/kit/Points.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import { describeChange } from '$lib/frameleaf/setting-words';
@@ -22,7 +21,7 @@
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { getSystemConfigActions } from '$lib/services/system-config.service';
   import { Icon } from '@frameleaf/ui';
-  import { mdiArrowRight, mdiDownload, mdiUpload } from '@mdi/js';
+  import { mdiArrowRight, mdiFileDownloadOutline, mdiFileUploadOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   const settingsDraft = getSystemConfigDraft();
@@ -42,20 +41,62 @@
 </script>
 
 {#if actions}
+  {@const canLoad = actions.Upload.$if?.() ?? true}
   <KitPage>
     {#if waiting.length > 0}
-      <Notice title={$t('frameleaf_srvadv_copy_waiting', { values: { count: waiting.length } })}>
-        {$t('frameleaf_srvadv_copy_waiting_body')}
-      </Notice>
+      <!-- A loaded file: what would change, saved only from the settings bar (the app's rule). -->
+      <Section
+        title={$t('frameleaf_srvadv_copy_would_change', { values: { count: waiting.length } })}
+        description={$t('frameleaf_srvadv_copy_waiting_body')}
+      >
+        <ul class="changes" aria-label={$t('frameleaf_srvadv_copy_changes')}>
+          {#each waiting as change (change.path)}
+            <li>
+              <strong>{change.label}</strong>
+              <span>
+                {change.before}
+                <Icon icon={mdiArrowRight} size="14" aria-label={$t('frameleaf_words_history_to')} />
+                <b>{change.after}</b>
+              </span>
+            </li>
+          {/each}
+        </ul>
+      </Section>
     {/if}
 
-    <Section title={$t('frameleaf_srvadv_copy_save')} description={$t('frameleaf_srvadv_copy_save_description')}>
-      {#snippet action()}
-        <Button onclick={() => actions.Download.onAction(actions.Download)}>
-          <Icon icon={mdiDownload} size="1rem" aria-hidden={true} />
-          {$t('frameleaf_srvadv_copy_save_action')}
-        </Button>
-      {/snippet}
+    <Section title={$t('frameleaf_srvadv_copy_save_or_load')}>
+      <Links
+        rows={[
+          {
+            icon: mdiFileDownloadOutline,
+            title: $t('frameleaf_srvadv_copy_save'),
+            body: $t('frameleaf_srvadv_copy_save_description'),
+            onSelect: () => actions.Download.onAction(actions.Download),
+          },
+          ...(canLoad
+            ? [
+                {
+                  icon: mdiFileUploadOutline,
+                  title: $t('frameleaf_srvadv_copy_load'),
+                  body: $t('frameleaf_srvadv_copy_load_body'),
+                  onSelect: () => actions.Upload.onAction(actions.Upload),
+                },
+              ]
+            : []),
+        ]}
+      />
+      <p class="aside">
+        {$t('frameleaf_srvadv_copy_moving')}
+        <button type="button" class="link" onclick={() => actions.CopyToClipboard.onAction(actions.CopyToClipboard)}>
+          {$t('frameleaf_srvadv_copy_text_instead')}
+        </button>
+      </p>
+    </Section>
+
+    <Section
+      title={$t('frameleaf_srvadv_copy_included')}
+      description={$t('frameleaf_srvadv_copy_included_description')}
+    >
       <Points
         label={$t('frameleaf_srvadv_copy_included')}
         rows={[
@@ -64,48 +105,20 @@
           { text: $t('frameleaf_srvadv_copy_out_secrets'), not: true },
         ]}
       />
-      <p class="aside">
-        <button type="button" class="link" onclick={() => actions.CopyToClipboard.onAction(actions.CopyToClipboard)}>
-          {$t('frameleaf_srvadv_copy_text')}
-        </button>
-      </p>
       <Advanced summary={$t('frameleaf_srvadv_copy_show')}>
+        <p class="aside muted">{$t('frameleaf_srvadv_copy_show_hint')}</p>
         <pre>{exported}</pre>
       </Advanced>
     </Section>
-
-    {#if actions.Upload.$if?.() ?? true}
-      <Section title={$t('frameleaf_srvadv_copy_load')} description={$t('frameleaf_srvadv_copy_load_description')}>
-        {#snippet action()}
-          <Button onclick={() => actions.Upload.onAction(actions.Upload)}>
-            <Icon icon={mdiUpload} size="1rem" aria-hidden={true} />
-            {$t('frameleaf_srvadv_copy_load_action')}
-          </Button>
-        {/snippet}
-        {#if waiting.length > 0}
-          <ul class="changes" aria-label={$t('frameleaf_srvadv_copy_changes')}>
-            {#each waiting as change (change.path)}
-              <li>
-                <strong>{change.label}</strong>
-                <span>
-                  {change.before}
-                  <Icon icon={mdiArrowRight} size="14" aria-label={$t('frameleaf_words_history_to')} />
-                  <b>{change.after}</b>
-                </span>
-              </li>
-            {/each}
-          </ul>
-        {/if}
-      </Section>
-    {/if}
   </KitPage>
 {/if}
 
 <style>
   .aside {
     margin: 0;
-    padding-bottom: var(--fl-space-4);
-    font-size: var(--fl-font-callout);
+    padding: 0 0 var(--fl-space-5);
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
   }
   .link {
     padding: 0;
@@ -126,7 +139,7 @@
   }
   pre {
     max-height: 420px;
-    margin: 0;
+    margin: 0 0 var(--fl-space-5);
     padding: var(--fl-space-4);
     overflow: auto;
     font-family: inherit;

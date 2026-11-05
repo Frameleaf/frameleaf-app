@@ -137,52 +137,49 @@ describe('YourCloudSection (FL-544: Plan, Licence and Support Frameleaf as one p
     sdkMock.getRemoteAccess.mockResolvedValue({ frameleafNameAddress: null } as never);
   });
 
-  it('offers Frameleaf Cloud as one purchase to a server that is not linked, and opens the sheet', async () => {
+  it('says the price plainly to a server with nothing bought: licence once, then the plan', async () => {
     sdkMock.getCloudStatus.mockResolvedValue(status({ state: CloudLinkState.Unlinked, account: null }));
     render(YourCloudSection);
 
-    expect(await screen.findByText('This server isn’t linked to Frameleaf yet')).toBeInTheDocument();
-    expect(screen.getByText(/\$100 once, then \$92\.91 a year/)).toBeInTheDocument();
-    await fireEvent.click(screen.getAllByRole('button', { name: 'Get Frameleaf Cloud' })[0]);
+    expect(await screen.findByText('No plan on this server')).toBeInTheDocument();
+    expect(screen.getByText('$9.99 a month')).toBeInTheDocument();
+    expect(screen.getByText('$92.91 a year')).toBeInTheDocument();
+    expect(screen.getByText(/First comes a Server licence: \$100, once/)).toBeInTheDocument();
+    const store = screen.getAllByRole('button', { name: 'Continue to the Frameleaf store' });
+    expect(store).toHaveLength(2);
+    await fireEvent.click(store[1]);
     expect(getCloudManager.request).toEqual({ feature: null, onDone: undefined, topUpUrl: null });
   });
 
-  it('tells a linked server with nothing bought what Frameleaf Cloud adds, one button per row', async () => {
-    render(YourCloudSection);
-
-    expect(await screen.findByText('No Frameleaf Cloud on this server yet')).toBeInTheDocument();
-    const rows = screen.getAllByRole('button', { name: 'Get Frameleaf Cloud' });
-    // the hero, the three rows, and the licence card under Details
-    expect(rows).toHaveLength(5);
-    await fireEvent.click(rows[1]);
-    expect(getCloudManager.request?.feature).toBe('remote');
-  });
-
-  it('shows a licence-only server what the plan still adds', async () => {
+  it('shows a licence-only server what is left to pay, and keeps AI credit reachable', async () => {
     sdkMock.getLicenseStatus.mockResolvedValue(
       license({ state: LicenseState.Active, key: slot('server'), licensed: true }),
     );
     render(YourCloudSection);
 
-    expect(await screen.findByText('Lifetime licence, without the Frameleaf Cloud plan')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Add AI credit' })).toBeInTheDocument();
+    expect(await screen.findByText(/Your Server licence is already on this server/)).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Add AI credit' }));
+    expect(getCloudManager.request?.feature).toBe('processing');
   });
 
-  it('shows Frameleaf Cloud on the server with Add AI credit on the processing row', async () => {
+  it('shows the active plan with what it covers, what it costs and Add credit', async () => {
     sdkMock.getLicenseStatus.mockResolvedValue(
       license({ state: LicenseState.Active, key: slot('server'), plan: slot('plan'), licensed: true }),
     );
     render(YourCloudSection);
 
-    expect(await screen.findByText('Frameleaf Cloud is on this server')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Manage in your Frameleaf account/ })).toHaveAttribute(
+    expect(await screen.findByText('Frameleaf Cloud plan is active')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Manage subscription' })).toHaveAttribute(
       'href',
       'https://frameleaf.cloud.test/servers/018f',
     );
-    expect(screen.getAllByText('On')).toHaveLength(1);
-    await fireEvent.click(screen.getByRole('button', { name: 'Add AI credit' }));
+    expect(screen.getByText('1 TB, for everyone')).toBeInTheDocument();
+    expect(
+      screen.getByText(/\$9\.99 a month for each TB of Cloud Backup storage, or \$92\.91 a year/),
+    ).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Add credit' }));
     expect(getCloudManager.request?.feature).toBe('processing');
-    expect(screen.queryByRole('button', { name: 'Get Frameleaf Cloud' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Continue to the Frameleaf store' })).toBeNull();
   });
 
   it('says the plan’s name on frameleaf.net and leads to Remote access to change it (FL-1197)', async () => {
@@ -214,14 +211,16 @@ describe('YourCloudSection (FL-544: Plan, Licence and Support Frameleaf as one p
     expect(screen.getByRole('link', { name: /Update payment/ })).toBeInTheDocument();
   });
 
-  it('keeps the licence key, file and removal under Details', async () => {
+  it('leads to the Licence page and keeps the plan’s removal on the page', async () => {
     sdkMock.getLicenseStatus.mockResolvedValue(
       license({ state: LicenseState.Active, key: slot('server'), plan: slot('plan'), licensed: true }),
     );
     render(YourCloudSection);
 
-    const details = await screen.findByText('Licence, key and file');
-    expect(details.closest('details')).not.toHaveAttribute('open');
-    expect(screen.getByRole('button', { name: /Stop using Frameleaf Cloud on this server/ })).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: 'Licence' })).toHaveAttribute(
+      'href',
+      expect.stringContaining('section=cloud-license'),
+    );
+    expect(screen.getByRole('button', { name: 'Stop using it here…' })).toBeInTheDocument();
   });
 });

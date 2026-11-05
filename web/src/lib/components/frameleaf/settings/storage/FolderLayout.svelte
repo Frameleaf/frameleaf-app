@@ -196,7 +196,7 @@
     </Row>
     {#if sorted}
       <div class="choices">
-        <Tiles label={$t('frameleaf_layout_label')} value={layout} options={tiles} {disabled} onChange={choose} />
+        <Tiles list label={$t('frameleaf_layout_label')} value={layout} options={tiles} {disabled} onChange={choose} />
       </div>
       <div class="example" role="status">
         <p>{$t('frameleaf_layout_example')}</p>
@@ -262,7 +262,6 @@
 </KitPage>
 
 <style>
-  .choices,
   .pad {
     padding-bottom: var(--fl-space-4);
   }

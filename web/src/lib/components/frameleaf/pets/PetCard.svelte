@@ -234,13 +234,16 @@
     top: 0.25rem;
     inset-inline-end: 0.25rem;
   }
+  /* Pets.jsx gives each pet People's `.pl-menu` (people.css): a raised square at the card's corner.
+     The app keeps its 44px control floor, as PersonCard does. */
   .menu-anchor :global(.menu-root > button) {
-    min-width: 32px;
-    padding: 0.25rem;
-    color: var(--fl-viewer-text);
-    background: var(--fl-scrim);
-    border: 0;
-    border-radius: 50%;
+    min-width: var(--fl-control-height);
+    min-height: var(--fl-control-height);
+    padding: 0 var(--fl-space-2);
+    color: var(--fl-text);
+    background: var(--fl-raised);
+    border-color: transparent;
+    border-radius: var(--fl-radius-control);
   }
   .meta {
     width: 100%;

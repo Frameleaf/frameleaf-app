@@ -73,7 +73,7 @@
     type ICloudInventoryResponseDto,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import { mdiCheckCircleOutline, mdiClose, mdiCloudOutline } from '@mdi/js';
+  import { mdiCheckCircleOutline, mdiChevronRight, mdiClose, mdiCloudOutline } from '@mdi/js';
   import { onDestroy, onMount, untrack } from 'svelte';
   import { t, type Translations } from 'svelte-i18n';
 
@@ -740,7 +740,7 @@
         {#if draft.automatic}
           <Row label={$t('frameleaf_icloud_overnight')} help={$t('frameleaf_icloud_overnight_help')}>
             <Button onclick={() => goto(commandCenterUrl('processing', 'nightly-tasks'))}>
-              {$t('frameleaf_icloud_overnight_open')}
+              {$t('frameleaf_icloud_overnight_open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden />
             </Button>
           </Row>
         {/if}

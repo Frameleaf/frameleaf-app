@@ -8,12 +8,12 @@
    */
   import './frameleaf-cloud.css';
   import Button from '$lib/components/frameleaf/Button.svelte';
-  import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
+  import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { handleError } from '$lib/utils/handle-error';
   import { searchUsersAdmin, type UserAdminResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import { mdiAccountCashOutline, mdiClose, mdiPlus } from '@mdi/js';
+  import { mdiClose } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -21,7 +21,6 @@
 
   let { disabled = false }: Props = $props();
 
-  const id = $props.id();
   const settingsDraft = getSystemConfigDraft();
   const cloudMl = $derived(settingsDraft?.draft.frameleafCloud?.cloudMl);
   const baseline = $derived(settingsDraft?.baseline.frameleafCloud?.cloudMl);
@@ -80,98 +79,52 @@
   };
 </script>
 
+<!-- Rows of the page's Spending section: who else may spend, each with a monthly limit. -->
 {#if cloudMl}
-  <section class="fc-card fl-continuous-corners" aria-labelledby="{id}-title">
-    <div class="fc-card-title">
-      <span class="fc-card-icon"><Icon icon={mdiAccountCashOutline} size="20" aria-hidden={true} /></span>
-      <div>
-        <h2 id="{id}-title">{$t('admin.frameleaf_cloud_ml_spenders_title')}</h2>
-        <p>{$t('admin.frameleaf_cloud_ml_spenders_description')}</p>
-      </div>
-    </div>
-
-    {#if spenders.length === 0}
-      <p class="fc-muted">{$t('admin.frameleaf_cloud_ml_spenders_empty')}</p>
-    {:else}
-      <div class="fc-table-wrap">
-        <table class="fc-table">
-          <thead>
-            <tr>
-              <th scope="col">{$t('admin.frameleaf_cloud_ml_spenders_person')}</th>
-              <th scope="col">{$t('admin.frameleaf_cloud_ml_spenders_cap')}</th>
-              <th scope="col"><span class="sr-only">{$t('admin.frameleaf_cloud_ml_spenders_remove_column')}</span></th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each spenders as spender (spender.userId)}
-              <tr>
-                <td>{nameOf(spender.userId)}</td>
-                <td>
-                  <span class="fc-input-unit">
-                    <input
-                      type="number"
-                      min="0"
-                      max="100000"
-                      step="0.01"
-                      value={spender.monthlyCapUsd ?? ''}
-                      placeholder={$t('admin.frameleaf_cloud_ml_spenders_no_cap')}
-                      aria-label={$t('admin.frameleaf_cloud_ml_spenders_cap_for', {
-                        values: { name: nameOf(spender.userId) },
-                      })}
-                      {disabled}
-                      onchange={(event) => setCap(spender.userId, event.currentTarget)}
-                    />
-                    <span>USD</span>
-                  </span>
-                </td>
-                <td>
-                  <Button
-                    {disabled}
-                    label={$t('admin.frameleaf_cloud_ml_spenders_remove', {
-                      values: { name: nameOf(spender.userId) },
-                    })}
-                    onclick={() => remove(spender.userId)}
-                  >
-                    <Icon icon={mdiClose} size="1.125rem" aria-hidden={true} />
-                  </Button>
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
-    {/if}
-
-    <div class="fc-spender-add">
-      <label class="fc-stack">
-        {$t('admin.frameleaf_cloud_ml_spenders_add_label')}
-        <select bind:value={chosen} disabled={disabled || candidates.length === 0}>
-          <option value="">{$t('admin.frameleaf_cloud_ml_spenders_choose')}</option>
-          {#each candidates as user (user.id)}
-            <option value={user.id}>{user.name} · {user.email}</option>
-          {/each}
-        </select>
-      </label>
-      <Button disabled={disabled || !chosen} onclick={add}>
-        <Icon icon={mdiPlus} size="1.125rem" aria-hidden={true} />{$t('admin.frameleaf_cloud_ml_spenders_add')}
+  {#each spenders as spender (spender.userId)}
+    <Row
+      label={$t('frameleaf_cp_spender_limit', { values: { name: nameOf(spender.userId) } })}
+      help={$t('frameleaf_cp_spender_help')}
+    >
+      <span class="fc-input-unit">
+        <input
+          class="fc-kit-number"
+          type="number"
+          min="0"
+          max="100000"
+          step="0.01"
+          value={spender.monthlyCapUsd ?? ''}
+          placeholder={$t('admin.frameleaf_cloud_ml_spenders_no_cap')}
+          aria-label={$t('admin.frameleaf_cloud_ml_spenders_cap_for', { values: { name: nameOf(spender.userId) } })}
+          {disabled}
+          onchange={(event) => setCap(spender.userId, event.currentTarget)}
+        />
+        <span>{$t('frameleaf_cp_usd_month')}</span>
+      </span>
+      <Button
+        {disabled}
+        label={$t('admin.frameleaf_cloud_ml_spenders_remove', { values: { name: nameOf(spender.userId) } })}
+        onclick={() => remove(spender.userId)}
+      >
+        <Icon icon={mdiClose} size="1.125rem" aria-hidden={true} />
       </Button>
-    </div>
-    <p class="fc-muted">
-      {$t('admin.frameleaf_cloud_ml_spenders_note')}
-      {#if edited}
-        {$t('admin.frameleaf_cloud_ml_spenders_unsaved')}
-      {/if}
-    </p>
-    <SettingActions keys={['frameleafCloud.cloudMl.spenders']} {disabled} />
-  </section>
+    </Row>
+  {/each}
+  <Row
+    label={$t('admin.frameleaf_cloud_ml_spenders_add_label')}
+    help={`${spenders.length === 0 ? $t('admin.frameleaf_cloud_ml_spenders_empty') : ''} ${$t('admin.frameleaf_cloud_ml_spenders_note')}${edited ? ` ${$t('admin.frameleaf_cloud_ml_spenders_unsaved')}` : ''}`.trim()}
+  >
+    <select
+      class="fl-control"
+      aria-label={$t('admin.frameleaf_cloud_ml_spenders_add_label')}
+      bind:value={chosen}
+      disabled={disabled || candidates.length === 0}
+    >
+      <option value="">{$t('admin.frameleaf_cloud_ml_spenders_choose')}</option>
+      {#each candidates as user (user.id)}
+        <option value={user.id}>{user.name} · {user.email}</option>
+      {/each}
+    </select>
+    <Button disabled={disabled || !chosen} onclick={add}>{$t('admin.frameleaf_cloud_ml_spenders_add')}</Button>
+  </Row>
 {/if}
-
-<style>
-  .fc-spender-add {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-end;
-    gap: 12px;
-    margin-top: 12px;
-  }
-</style>

@@ -572,6 +572,9 @@
   .pl-summary {
     margin: var(--fl-space-2) 0 0;
     color: var(--fl-muted);
+    /* One subtitle size under every discovery page title (the prototype's 13px). */
+    font-size: var(--fl-font-callout);
+    line-height: 1.6;
   }
   .pl-toolbar {
     display: flex;
@@ -609,8 +612,8 @@
     display: flex;
     flex-direction: column;
     gap: var(--fl-space-3);
-    /* With the layout's own 8px, the page's gutter: the toolbar and faces start under the title. */
-    padding: 0 var(--fl-space-4) 2.5rem;
+    /* The one page gutter: the page area's 8px + --fl-page-inline = 24px desktop, 16px phone. */
+    padding: 0 var(--fl-page-inline) 2.5rem;
   }
   .pl-status {
     margin: 0;
@@ -621,11 +624,6 @@
     padding: 3rem 1rem;
     color: var(--fl-muted);
     text-align: center;
-  }
-  @media (max-width: 767px) {
-    .pl-page {
-      padding-inline: var(--fl-space-2);
-    }
   }
   @media (max-width: 700px) {
     /* people.css:1011-1016: the controls take the row under the title, the search field its own line. */

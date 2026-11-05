@@ -27,12 +27,19 @@
   import CloudMlSpendersCard from '$lib/components/frameleaf/cloud/CloudMlSpendersCard.svelte';
   import CloudMlWalletCard from '$lib/components/frameleaf/cloud/CloudMlWalletCard.svelte';
   import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
-  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import Coverage from '$lib/components/frameleaf/settings/kit/Coverage.svelte';
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
+  import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
+  import Facts, { type Fact } from '$lib/components/frameleaf/settings/kit/Facts.svelte';
+  import HistoryList from '$lib/components/frameleaf/settings/kit/HistoryList.svelte';
+  import HistoryRow from '$lib/components/frameleaf/settings/kit/HistoryRow.svelte';
+  import Pill from '$lib/components/frameleaf/settings/kit/Pill.svelte';
+  import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
+  import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
+  import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
+  import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
   import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
   import WorkloadModelPickers from '$lib/components/frameleaf/cloud/WorkloadModelPickers.svelte';
-  import WorkloadRoutingTable from '$lib/components/frameleaf/cloud/WorkloadRoutingTable.svelte';
   import {
     cloudAdmission,
     cloudConsentNeeded,
@@ -43,6 +50,7 @@
     formatUsd,
     ROUTED_WORKLOADS,
     walletAvailable,
+    workloadNameKey,
     workloadRoute,
   } from '$lib/frameleaf/cloud-ml';
   import {
@@ -57,6 +65,7 @@
   } from '$lib/frameleaf/gpu-model-catalog';
   import { choicesByGroup, loadCloudModelData, type CloudModelData } from '$lib/frameleaf/cloud-models';
   import { localModelsFor } from '$lib/frameleaf/local-models';
+  import { motionScrollBehavior } from '$lib/frameleaf/motion';
   import { mlWorkloadLabelKey } from '$lib/frameleaf/ml-destinations';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -79,14 +88,9 @@
   import {
     mdiAlertCircleOutline,
     mdiCalendarTodayOutline,
-    mdiCheckCircleOutline,
-    mdiCloudSyncOutline,
+    mdiChevronRight,
     mdiCreationOutline,
-    mdiExpansionCard,
-    mdiHistory,
-    mdiImagePlusOutline,
     mdiLinkVariant,
-    mdiTuneVariant,
     mdiWalletOutline,
   } from '@mdi/js';
   import { onMount } from 'svelte';
@@ -100,6 +104,7 @@
   let loadError = $state(false);
   let notice = $state('');
   let consentOpen = $state(false);
+  let topUpOpen = $state(false);
 
   const settingsDraft = getSystemConfigDraft();
   const cloudMl = $derived(settingsDraft?.draft.frameleafCloud?.cloudMl);
@@ -246,7 +251,31 @@
             },
           })
         : '';
-    return `${daily}${auto} ${$t('frameleaf_cp_limits_never_automatic')}`;
+    return wallet.autoTopUp ? `${daily}${auto}` : `${daily}${auto} ${$t('frameleaf_cp_limits_never_automatic')}`;
+  });
+
+  /** "What may use the cloud": the routes chosen on Computers & background work, said back. */
+  const mayUse = $derived.by((): Fact[] => {
+    const names = (ids: readonly string[]) => ids.map((id) => $t(workloadNameKey(id as never))).join(', ');
+    const inCloud = ROUTED_WORKLOADS.filter((id) => workloadRoute(cloudMl?.routing, id) !== 'local');
+    const atHome = ROUTED_WORKLOADS.filter((id) => workloadRoute(cloudMl?.routing, id) === 'local');
+    return [
+      {
+        label: $t('frameleaf_cp_may_use_cloud'),
+        value: $t('frameleaf_cp_kinds', { values: { count: inCloud.length } }),
+        detail: inCloud.length > 0 ? names(inCloud) : undefined,
+      },
+      {
+        label: $t('frameleaf_cp_may_use_home'),
+        value: $t('frameleaf_cp_kinds', { values: { count: atHome.length } }),
+        detail: atHome.length > 0 ? names(atHome) : undefined,
+      },
+      {
+        label: $t('frameleaf_cp_may_use_always'),
+        value: $t('frameleaf_cp_kinds', { values: { count: 3 } }),
+        detail: $t('frameleaf_cp_may_use_always_detail'),
+      },
+    ];
   });
 
   const fees = startFeeRange();
@@ -279,385 +308,378 @@
     );
 </script>
 
-<div class="frameleaf-cloud">
-  <Hero
-    label={$t('frameleaf_cp_status')}
-    tone={hero.tone}
-    icon={mdiCreationOutline}
-    title={hero.title}
-    body={hero.body}
-  >
-    {#snippet actions()}
-      {#if status && !linked}
-        <Button variant="primary" onclick={() => goto(commandCenterUrl('cloud', 'cloud-account'))}
-          >{$t('frameleaf_cp_link_server')}</Button
-        >
-      {:else if linked && !enabled && cloudMl && !configDisabled}
-        <Button variant="primary" onclick={() => setEnabled(true)}>{$t('frameleaf_cp_turn_on')}</Button>
-      {/if}
-    {/snippet}
-    {#if linked && enabled && wallet}
-      <Coverage
-        rows={[
-          {
-            icon: mdiWalletOutline,
-            name: $t('frameleaf_cp_credit'),
-            detail: $t('frameleaf_cp_credit_held', { values: { amount: formatUsd(wallet.heldUsd) } }),
-            tone: lowCredit ? 'warn' : 'good',
-            value: $t('frameleaf_cp_to_spend', { values: { amount: formatUsd(available) } }),
-          },
-          {
-            icon: mdiCalendarTodayOutline,
-            name: $t('frameleaf_cp_spent_today'),
-            detail:
-              wallet.dailyCapUsd === null
-                ? $t('frameleaf_cp_no_daily_limit')
-                : $t('frameleaf_cp_daily_limit', { values: { amount: formatUsd(wallet.dailyCapUsd) } }),
-            tone: 'good',
-            value: formatUsd(wallet.spentTodayUsd),
-          },
-        ]}
-      />
-    {/if}
-  </Hero>
-
-  {#if notice}
-    <p class="fc-banner" role="status">{notice}</p>
-  {/if}
-
-  {#if status && !linked}
-    <div class="fc-banner" role="status">
-      <Icon icon={mdiLinkVariant} size="18" aria-hidden={true} />
-      <div>
-        <strong>{$t('frameleaf_gate_processing')}</strong>
-        <p>
-          {$t(
-            status.connection === CloudMlConnection.NotConfigured
-              ? 'admin.frameleaf_cloud_ml_connection_not_configured_help'
-              : 'frameleaf_why_processing',
-          )}
-        </p>
-      </div>
-      <Button variant="primary" onclick={() => getCloudManager.open('processing', { onDone: () => setEnabled(true) })}
-        >{$t('frameleaf_get_cloud')}</Button
-      >
-    </div>
-  {/if}
-
-  <section class="fc-card fl-continuous-corners" aria-labelledby="fc-destination-title">
-    <div class="fc-card-title">
-      <span class="fc-card-icon"><Icon icon={mdiCloudSyncOutline} size="20" aria-hidden={true} /></span>
-      <div>
-        <h2 id="fc-destination-title">{$t('admin.frameleaf_cloud_ml_title')}</h2>
-        <p>{$t('admin.frameleaf_cloud_ml_description')}</p>
-      </div>
-      <span
-        class="fc-status"
-        class:is-ok={headerStatus.tone === 'ok'}
-        class:is-warning={headerStatus.tone === 'warning'}>{$t(headerStatus.key as Translations)}</span
-      >
-    </div>
-    {#if loadError && !status}
-      <p class="fc-refusal" role="alert">
-        <Icon icon={mdiAlertCircleOutline} size="16" aria-hidden={true} />
-        {$t('admin.frameleaf_cloud_ml_error_load')}
-      </p>
-    {/if}
-    {#if linked && enabled && status?.consent && !consentCurrent}
-      <div class="fc-banner is-warning" role="status">
-        <Icon icon={mdiAlertCircleOutline} size="18" aria-hidden={true} />
-        <div>
-          <strong>{$t('admin.frameleaf_cloud_ml_terms_changed')}</strong>
-          <p>
-            {$t('admin.frameleaf_cloud_ml_terms_changed_body', { values: { version: status.consent.requiredVersion } })}
-          </p>
-        </div>
-        <Button onclick={() => (consentOpen = true)}>{$t('admin.frameleaf_cloud_ml_review_terms')}</Button>
-      </div>
-    {/if}
-    {#if cloudMl}
-      <SettingToggle
-        title={$t('admin.frameleaf_cloud_ml_setting_enabled')}
-        subtitle={$t('admin.frameleaf_cloud_ml_setting_enabled_description')}
-        checked={cloudMl.enabled}
-        disabled={configDisabled || !linked}
-        isEdited={cloudMl.enabled !== baseline?.enabled}
-        onToggle={setEnabled}
-        policy={linked ? undefined : $t('admin.frameleaf_cloud_ml_link_first')}
-      />
-    {/if}
-    <Notice title={$t('frameleaf_cp_leaves')}>{$t('frameleaf_cp_leaves_body')}</Notice>
-    <dl class="fc-facts">
-      <dt>{$t('admin.frameleaf_cloud_ml_fact_terms')}</dt>
-      <dd>
-        {status?.consent?.acceptedVersion
-          ? $t('admin.frameleaf_cloud_ml_fact_terms_accepted', { values: { version: status.consent.acceptedVersion } })
-          : $t('admin.frameleaf_cloud_ml_fact_terms_none')}
-      </dd>
-      <dt>{$t('admin.frameleaf_cloud_ml_fact_names')}</dt>
-      <dd>
-        {status?.consent?.features.identityNames
-          ? $t('admin.frameleaf_cloud_ml_fact_names_sent')
-          : $t('admin.frameleaf_cloud_ml_fact_names_never')}
-      </dd>
-      <dt>{$t('admin.frameleaf_cloud_ml_fact_medical')}</dt>
-      <dd>
-        {status?.consent?.features.medicalSignals
-          ? $t('admin.frameleaf_cloud_ml_fact_medical_allowed')
-          : $t('admin.frameleaf_cloud_ml_fact_medical_never')}
-      </dd>
-      <dt>{$t('admin.frameleaf_cloud_ml_smart_search_label')}</dt>
-      <dd>
-        {status?.consent?.features.smartSearch
-          ? $t('admin.frameleaf_cloud_ml_smart_search_sent')
-          : $t('admin.frameleaf_cloud_ml_smart_search_stays_home')}
-      </dd>
-      <dt>{$t('admin.frameleaf_cloud_ml_faces_label')}</dt>
-      <dd>
-        {status?.consent?.features.faceRecognition
-          ? $t('admin.frameleaf_cloud_ml_faces_sent')
-          : $t('admin.frameleaf_cloud_ml_faces_stay_home')}
-      </dd>
-    </dl>
-    {#if refusal && linked}
-      <p class="fc-refusal" role="status">
-        <Icon icon={mdiAlertCircleOutline} size="16" aria-hidden={true} />
-        {$t('admin.frameleaf_cloud_ml_cannot_start', {
-          values: { reason: $t(refusal.key, { values: refusal.values }) },
-        })}
-      </p>
-      {#if lacks.length > 0}
-        <div class="fc-actions">
-          <Button onclick={() => getCloudManager.open('processing', { onDone: () => setEnabled(true) })}
-            >{$t(gateButtonKey(lacks))}</Button
+<KitPage>
+  <div class="frameleaf-cloud is-wide">
+    <Hero
+      label={$t('frameleaf_cp_status')}
+      tone={hero.tone}
+      icon={mdiCreationOutline}
+      title={hero.title}
+      body={hero.body}
+    >
+      {#snippet actions()}
+        {#if status && !linked}
+          <Button variant="primary" onclick={() => goto(commandCenterUrl('cloud', 'cloud-account'))}
+            >{$t('frameleaf_cp_link_server')}</Button
           >
-        </div>
+        {:else if linked && !enabled && cloudMl && !configDisabled}
+          <Button variant="primary" onclick={() => setEnabled(true)}>{$t('frameleaf_cp_turn_on')}</Button>
+        {:else if linked && enabled && wallet}
+          <Button
+            variant={lowCredit ? 'primary' : 'default'}
+            disabled={!ready || !wallet.topUpUrl}
+            onclick={() => (topUpOpen = true)}>{$t('admin.frameleaf_cloud_ml_wallet_add_credit')}</Button
+          >
+          {#if backfillAvailable}
+            <Button
+              onclick={() =>
+                document
+                  .getElementById('describe-library')
+                  ?.scrollIntoView({ behavior: motionScrollBehavior(), block: 'start' })}
+              >{$t('frameleaf_cp_describe_library')}</Button
+            >
+          {/if}
+        {/if}
+      {/snippet}
+      {#if linked && enabled && wallet}
+        <Coverage
+          rows={[
+            {
+              icon: mdiWalletOutline,
+              name: $t('frameleaf_cp_credit'),
+              detail: $t('frameleaf_cp_credit_held', { values: { amount: formatUsd(wallet.heldUsd) } }),
+              tone: lowCredit ? 'warn' : 'good',
+              value: $t('frameleaf_cp_to_spend', { values: { amount: formatUsd(available) } }),
+            },
+            {
+              icon: mdiCalendarTodayOutline,
+              name: $t('frameleaf_cp_spent_today'),
+              detail:
+                wallet.dailyCapUsd === null
+                  ? $t('frameleaf_cp_no_daily_limit')
+                  : $t('frameleaf_cp_daily_limit', { values: { amount: formatUsd(wallet.dailyCapUsd) } }),
+              tone: 'good',
+              value: formatUsd(wallet.spentTodayUsd),
+            },
+          ]}
+        />
       {/if}
+    </Hero>
+
+    {#if notice}
+      <p class="fc-banner" role="status">{notice}</p>
     {/if}
-    {#if linked && consentCurrent && status?.consent}
-      <div class="fc-actions">
-        <Button onclick={() => (consentOpen = true)}>{$t('admin.frameleaf_cloud_ml_review_terms_features')}</Button>
-      </div>
+
+    <!-- Unlinked, the hero's "Link this server" is the one way on: it says no plan is needed, so a second
+         card offering "Get Frameleaf Cloud" (the plan) would contradict it. Only a server that cannot
+         reach Frameleaf Cloud at all is told why. -->
+    {#if status && !linked && status.connection === CloudMlConnection.NotConfigured}
+      <Notice icon={mdiLinkVariant} title={$t('frameleaf_gate_processing')}>
+        {$t('admin.frameleaf_cloud_ml_connection_not_configured_help')}
+      </Notice>
     {/if}
-  </section>
 
-  <WorkloadRoutingTable showModels={false} />
-
-  <CloudMlWalletCard
-    wallet={status?.wallet ?? null}
-    {ready}
-    onChanged={(wallet) => {
-      if (status) {
-        status = { ...status, wallet };
-      }
-    }}
-  />
-
-  <section class="fc-card fl-continuous-corners" aria-labelledby="fc-models-title">
-    <div class="fc-card-title">
-      <span class="fc-card-icon"><Icon icon={mdiTuneVariant} size="20" aria-hidden={true} /></span>
-      <div>
-        <h2 id="fc-models-title">{$t('admin.frameleaf_cloud_ml_models_title')}</h2>
-        <p>{$t('admin.frameleaf_cloud_ml_models_description')}</p>
-      </div>
-    </div>
-    <div class="fc-billing">
-      <p>
-        <strong>{$t('admin.frameleaf_cloud_ml_billing_title')}</strong>
-        {$t('admin.frameleaf_cloud_ml_billing_body', {
-          values: { min: formatUsd(fees.min), max: formatUsd(fees.max) },
-        })}
-      </p>
-      <details class="fc-disclosure fc-rates">
-        <summary
-          ><Icon icon={mdiExpansionCard} size="16" aria-hidden={true} /> {$t('admin.frameleaf_cloud_ml_rates')}</summary
+    <Section
+      title={$t('frameleaf_cc_section_cloud_processing')}
+      description={$t('admin.frameleaf_cloud_ml_description')}
+    >
+      {#snippet action()}
+        <span
+          class="fc-status"
+          class:is-ok={headerStatus.tone === 'ok'}
+          class:is-warning={headerStatus.tone === 'warning'}>{$t(headerStatus.key as Translations)}</span
         >
-        <dl class="fc-facts">
-          {#each gpuClasses as gpu (gpu.id)}
-            <dt>{$t(gpuClassLabelKey(gpu.id))}</dt>
-            <dd>
-              {$t('admin.frameleaf_cloud_ml_rate_per_minute', {
-                values: { rate: formatRatePerMinute(gpu.customerUsdPerSec) },
-              })}
-            </dd>
-          {/each}
-        </dl>
-      </details>
-    </div>
-    {#if cloudMl}
-      {#each ROUTED_WORKLOADS as workload (workload)}
-        {#if models.catalog || models.catalogFailed || localModelsFor(workload).length > 0}
-          <div class="fc-model-row">
-            <WorkloadModelPickers
-              row={workload}
-              route={workloadRoute(cloudMl.routing, workload)}
-              {hardware}
-              catalog={models.catalog}
-              catalogFailed={models.catalogFailed}
-              choices={models.choices}
-              modelForLegend={false}
-              onSaved={(choices, message) => {
-                models = { ...models, choices: choicesByGroup(choices) };
-                notice = message;
-              }}
-            />
+      {/snippet}
+      {#if loadError && !status}
+        <p class="fc-refusal" role="alert">
+          <Icon icon={mdiAlertCircleOutline} size="16" aria-hidden={true} />
+          {$t('admin.frameleaf_cloud_ml_error_load')}
+        </p>
+      {/if}
+      {#if linked && enabled && status?.consent && !consentCurrent}
+        <Notice tone="warn" title={$t('admin.frameleaf_cloud_ml_terms_changed')}>
+          {$t('admin.frameleaf_cloud_ml_terms_changed_body', { values: { version: status.consent.requiredVersion } })}
+          {#snippet action()}
+            <Button onclick={() => (consentOpen = true)}>{$t('admin.frameleaf_cloud_ml_review_terms')}</Button>
+          {/snippet}
+        </Notice>
+      {/if}
+      {#if cloudMl}
+        <Row
+          label={$t('admin.frameleaf_cloud_ml_setting_enabled')}
+          help={linked
+            ? $t('admin.frameleaf_cloud_ml_setting_enabled_description')
+            : `${$t('admin.frameleaf_cloud_ml_setting_enabled_description')} ${$t('admin.frameleaf_cloud_ml_link_first')}`}
+        >
+          <Switch
+            label={$t('admin.frameleaf_cloud_ml_setting_enabled')}
+            checked={cloudMl.enabled}
+            held={configDisabled || !linked}
+            onChange={setEnabled}
+          />
+        </Row>
+      {/if}
+      <div class="leaves">
+        <Notice title={$t('frameleaf_cp_leaves')}>{$t('frameleaf_cp_leaves_body')}</Notice>
+      </div>
+      {#if refusal && linked && enabled}
+        <p class="fc-refusal cannot-start" role="status">
+          <Icon icon={mdiAlertCircleOutline} size="16" aria-hidden={true} />
+          {$t('admin.frameleaf_cloud_ml_cannot_start', {
+            values: { reason: $t(refusal.key, { values: refusal.values }) },
+          })}
+        </p>
+        {#if lacks.length > 0}
+          <div class="fc-actions">
+            <Button onclick={() => getCloudManager.open('processing', { onDone: () => setEnabled(true) })}
+              >{$t(gateButtonKey(lacks))}</Button
+            >
           </div>
         {/if}
-      {/each}
-    {/if}
-    <div class="fc-estimate">
-      <h3>{$t('admin.frameleaf_cloud_ml_estimate_title')}</h3>
-      <div class="fc-estimate-row">
-        <label>
-          {$t('admin.frameleaf_cloud_ml_estimate_model')}
-          <select bind:value={trialModel}>
+      {/if}
+      <Advanced summary={$t('frameleaf_cp_what_is_sent')}>
+        <dl class="fc-facts">
+          <dt>{$t('admin.frameleaf_cloud_ml_fact_terms')}</dt>
+          <dd>
+            {status?.consent?.acceptedVersion
+              ? $t('admin.frameleaf_cloud_ml_fact_terms_accepted', {
+                  values: { version: status.consent.acceptedVersion },
+                })
+              : $t('admin.frameleaf_cloud_ml_fact_terms_none')}
+          </dd>
+          <dt>{$t('admin.frameleaf_cloud_ml_fact_names')}</dt>
+          <dd>
+            {status?.consent?.features.identityNames
+              ? $t('admin.frameleaf_cloud_ml_fact_names_sent')
+              : $t('admin.frameleaf_cloud_ml_fact_names_never')}
+          </dd>
+          <dt>{$t('admin.frameleaf_cloud_ml_fact_medical')}</dt>
+          <dd>
+            {status?.consent?.features.medicalSignals
+              ? $t('admin.frameleaf_cloud_ml_fact_medical_allowed')
+              : $t('admin.frameleaf_cloud_ml_fact_medical_never')}
+          </dd>
+          <dt>{$t('admin.frameleaf_cloud_ml_smart_search_label')}</dt>
+          <dd>
+            {status?.consent?.features.smartSearch
+              ? $t('admin.frameleaf_cloud_ml_smart_search_sent')
+              : $t('admin.frameleaf_cloud_ml_smart_search_stays_home')}
+          </dd>
+          <dt>{$t('admin.frameleaf_cloud_ml_faces_label')}</dt>
+          <dd>
+            {status?.consent?.features.faceRecognition
+              ? $t('admin.frameleaf_cloud_ml_faces_sent')
+              : $t('admin.frameleaf_cloud_ml_faces_stay_home')}
+          </dd>
+        </dl>
+        {#if linked && consentCurrent && status?.consent}
+          <div class="fc-actions">
+            <Button onclick={() => (consentOpen = true)}>{$t('admin.frameleaf_cloud_ml_review_terms_features')}</Button>
+          </div>
+        {/if}
+      </Advanced>
+    </Section>
+
+    {#if linked && enabled}
+      <Section title={$t('frameleaf_cp_may_use')} description={$t('frameleaf_cp_may_use_description')}>
+        {#snippet action()}
+          <a class="fl-control button" href={commandCenterUrl('processing', 'computers')}
+            >{$t('frameleaf_cp_change_where')}<Icon icon={mdiChevronRight} size="16" aria-hidden /></a
+          >
+        {/snippet}
+        <Facts rows={mayUse} />
+      </Section>
+
+      <Section title={$t('frameleaf_cp_quality')} description={$t('frameleaf_cp_quality_description')}>
+        {#if cloudMl}
+          {#each ROUTED_WORKLOADS as workload (workload)}
+            {#if workloadRoute(cloudMl.routing, workload) !== 'local' && (models.catalog || models.catalogFailed || localModelsFor(workload).length > 0)}
+              <div class="model-row">
+                <WorkloadModelPickers
+                  row={workload}
+                  route={workloadRoute(cloudMl.routing, workload)}
+                  {hardware}
+                  catalog={models.catalog}
+                  catalogFailed={models.catalogFailed}
+                  choices={models.choices}
+                  modelForLegend={false}
+                  onSaved={(choices, message) => {
+                    models = { ...models, choices: choicesByGroup(choices) };
+                    notice = message;
+                  }}
+                />
+              </div>
+            {/if}
+          {/each}
+        {/if}
+        <Row
+          label={$t('frameleaf_cp_estimate')}
+          help={estimate
+            ? `${$t('admin.frameleaf_cloud_ml_estimate_range', {
+                values: { p50: formatUsd(estimate.p50), p90: formatUsd(estimate.p90), hold: formatUsd(estimate.hold) },
+              })} ${$t('admin.frameleaf_cloud_ml_estimate_per_unit', {
+                values: { price: formatUsd(estimate.perUnit.p50), unit: unit(estimate.item.workload, 1) },
+              })} ${
+                trialRefusal
+                  ? $t('admin.frameleaf_cloud_ml_estimate_refused', {
+                      values: { reason: $t(trialRefusal.key, { values: trialRefusal.values }) },
+                    })
+                  : $t('admin.frameleaf_cloud_ml_estimate_could_start')
+              }`
+            : $t('admin.frameleaf_cloud_ml_estimate_enter')}
+        >
+          <select
+            class="fl-control estimate-model"
+            aria-label={$t('admin.frameleaf_cloud_ml_estimate_model')}
+            bind:value={trialModel}
+          >
             {#each estimateModels as model (model.id)}
               <option value={model.id}>{model.name}{model.params ? ` · ${model.params}` : ''}</option>
             {/each}
           </select>
-        </label>
-        <label>
-          {$t('admin.frameleaf_cloud_ml_estimate_quantity')}
-          <input type="number" min="1" max="100000" bind:value={trialQuantity} />
-          {#if trialItem}<small>{unit(trialItem.workload, Number(trialQuantity) || 0)}</small>{/if}
-        </label>
-      </div>
-      {#if estimate}
-        <p>
-          {$t('admin.frameleaf_cloud_ml_estimate_range', {
-            values: { p50: formatUsd(estimate.p50), p90: formatUsd(estimate.p90), hold: formatUsd(estimate.hold) },
-          })}
-        </p>
-        <p class="fc-muted">
-          {billingSentence(estimate)}
-          {$t('admin.frameleaf_cloud_ml_estimate_per_unit', {
-            values: { price: formatUsd(estimate.perUnit.p50), unit: unit(estimate.item.workload, 1) },
-          })}
-        </p>
-        <p class={trialRefusal ? 'fc-refusal' : 'fc-ok'} role="status">
-          <Icon icon={trialRefusal ? mdiAlertCircleOutline : mdiCheckCircleOutline} size="16" aria-hidden={true} />
-          {trialRefusal
-            ? $t('admin.frameleaf_cloud_ml_estimate_refused', {
-                values: { reason: $t(trialRefusal.key, { values: trialRefusal.values }) },
-              })
-            : $t('admin.frameleaf_cloud_ml_estimate_could_start')}
-        </p>
-      {:else}
-        <p class="fc-muted">{$t('admin.frameleaf_cloud_ml_estimate_enter')}</p>
-      {/if}
-    </div>
-  </section>
-
-  {#if cloudMl}
-    <section class="fc-card fl-continuous-corners" aria-labelledby="fc-auto-title">
-      <div class="fc-card-title">
-        <span class="fc-card-icon"><Icon icon={mdiImagePlusOutline} size="20" aria-hidden={true} /></span>
-        <div>
-          <h2 id="fc-auto-title">{$t('admin.frameleaf_cloud_ml_auto_title')}</h2>
-          <p>{$t('admin.frameleaf_cloud_ml_auto_description')}</p>
-        </div>
-      </div>
-      <SettingToggle
-        title={$t('admin.frameleaf_cloud_ml_setting_auto_describe')}
-        subtitle={$t('admin.frameleaf_cloud_ml_setting_auto_describe_description')}
-        bind:checked={cloudMl.autoDescribe.enabled}
-        disabled={configDisabled || !cloudMl.enabled || !consentCurrent}
-        isEdited={cloudMl.autoDescribe.enabled !== baseline?.autoDescribe.enabled}
-        policy={cloudMl.enabled && consentCurrent ? undefined : $t('admin.frameleaf_cloud_ml_auto_needs_on')}
-      />
-      <label class="fc-stack">
-        {$t('admin.frameleaf_cloud_ml_setting_daily_budget')}
-        <span class="fc-input-unit">
-          <input
-            type="number"
-            min="0.5"
-            max="100"
-            step="0.5"
-            bind:value={cloudMl.autoDescribe.dailyBudgetUsd}
-            aria-label={$t('admin.frameleaf_cloud_ml_setting_daily_budget')}
-            disabled={configDisabled || !cloudMl.autoDescribe.enabled}
+          <span class="fc-input-unit">
+            <input
+              class="fc-kit-number"
+              type="number"
+              min="1"
+              max="100000"
+              aria-label={$t('admin.frameleaf_cloud_ml_estimate_quantity')}
+              bind:value={trialQuantity}
+            />
+            {#if trialItem}<span>{unit(trialItem.workload, Number(trialQuantity) || 0)}</span>{/if}
+          </span>
+        </Row>
+        <Advanced summary={$t('frameleaf_cp_models_prices')}>
+          <p class="hint">
+            {$t('admin.frameleaf_cloud_ml_billing_body', {
+              values: { min: formatUsd(fees.min), max: formatUsd(fees.max) },
+            })}
+            {#if estimate}{billingSentence(estimate)}{/if}
+          </p>
+          <p class="hint">{$t('admin.frameleaf_cloud_ml_models_description')}</p>
+          <Facts
+            rows={gpuClasses.map((gpu) => ({
+              label: $t(gpuClassLabelKey(gpu.id)),
+              value: $t('admin.frameleaf_cloud_ml_rate_per_minute', {
+                values: { rate: formatRatePerMinute(gpu.customerUsdPerSec) },
+              }),
+            }))}
           />
-          <span>USD</span>
-        </span>
-        <small>{$t('admin.frameleaf_cloud_ml_setting_daily_budget_description')}</small>
-      </label>
-      <SettingActions keys={['frameleafCloud.cloudMl']} disabled={configDisabled} />
-    </section>
-  {/if}
+        </Advanced>
+      </Section>
+    {/if}
 
-  <CloudMlSpendersCard disabled={configDisabled} />
+    {#if linked}
+      <Section title={$t('frameleaf_cp_spending')} description={$t('frameleaf_cp_spending_description')}>
+        <CloudMlWalletCard
+          wallet={status?.wallet ?? null}
+          {ready}
+          bind:topUpOpen
+          onChanged={(wallet) => {
+            if (status) {
+              status = { ...status, wallet };
+            }
+          }}
+        />
+        {#if cloudMl}
+          <Row
+            label={$t('admin.frameleaf_cloud_ml_setting_auto_describe')}
+            help={cloudMl.enabled && consentCurrent
+              ? $t('admin.frameleaf_cloud_ml_setting_auto_describe_description')
+              : `${$t('admin.frameleaf_cloud_ml_setting_auto_describe_description')} ${$t('admin.frameleaf_cloud_ml_auto_needs_on')}`}
+          >
+            <Switch
+              label={$t('admin.frameleaf_cloud_ml_setting_auto_describe')}
+              checked={cloudMl.autoDescribe.enabled}
+              held={configDisabled || !cloudMl.enabled || !consentCurrent}
+              onChange={(value) => {
+                if (cloudMl) {
+                  cloudMl.autoDescribe.enabled = value;
+                }
+              }}
+            />
+          </Row>
+          {#if cloudMl.autoDescribe.enabled}
+            <Row
+              label={$t('admin.frameleaf_cloud_ml_setting_daily_budget')}
+              help={$t('admin.frameleaf_cloud_ml_setting_daily_budget_description')}
+            >
+              <span class="fc-input-unit">
+                <input
+                  class="fc-kit-number"
+                  type="number"
+                  min="0.5"
+                  max="100"
+                  step="0.5"
+                  bind:value={cloudMl.autoDescribe.dailyBudgetUsd}
+                  aria-label={$t('admin.frameleaf_cloud_ml_setting_daily_budget')}
+                  disabled={configDisabled || !cloudMl.autoDescribe.enabled}
+                />
+                <span>{$t('frameleaf_cp_usd_day')}</span>
+              </span>
+            </Row>
+          {/if}
+        {/if}
+        <CloudMlSpendersCard disabled={configDisabled} />
+        {#if enabled && limitsSaidBack}
+          <div class="said">
+            <Notice title={$t('frameleaf_cp_limits')}>{limitsSaidBack}</Notice>
+          </div>
+        {/if}
+      </Section>
+    {/if}
 
-  {#if linked && enabled && limitsSaidBack}
-    <Notice title={$t('frameleaf_cp_limits')}>{limitsSaidBack}</Notice>
-  {/if}
+    {#if linked && enabled}
+      <CloudDescriptionBackfill available={backfillAvailable} />
+    {/if}
 
-  <CloudDescriptionBackfill available={backfillAvailable} />
-
-  <section class="fc-card fl-continuous-corners" aria-labelledby="fc-jobs-title">
-    <div class="fc-card-title">
-      <span class="fc-card-icon"><Icon icon={mdiHistory} size="20" aria-hidden={true} /></span>
-      <div>
-        <h2 id="fc-jobs-title">{$t('admin.frameleaf_cloud_ml_jobs_title')}</h2>
-        <p>{$t('admin.frameleaf_cloud_ml_jobs_description')}</p>
-      </div>
-    </div>
-    {#if settlements.length === 0}
-      <p class="fc-muted">{$t('admin.frameleaf_cloud_ml_jobs_empty')}</p>
-    {:else}
-      <div class="fc-table-wrap">
-        <table class="fc-table">
-          <thead>
-            <tr>
-              <th scope="col">{$t('admin.frameleaf_cloud_ml_jobs_job')}</th>
-              <th scope="col">{$t('admin.frameleaf_cloud_ml_jobs_model')}</th>
-              <th scope="col">{$t('admin.frameleaf_cloud_ml_jobs_status')}</th>
-              <th scope="col">{$t('admin.frameleaf_cloud_ml_jobs_estimate')}</th>
-              <th scope="col">{$t('admin.frameleaf_cloud_ml_jobs_cost')}</th>
-            </tr>
-          </thead>
-          <tbody>
+    {#if linked}
+      <Section title={$t('frameleaf_cp_recent')} description={$t('admin.frameleaf_cloud_ml_jobs_description')}>
+        {#snippet action()}
+          <a class="fl-control button" href={Route.queues()}
+            >{$t('admin.frameleaf_cloud_ml_open_jobs')}<Icon icon={mdiChevronRight} size="16" aria-hidden /></a
+          >
+        {/snippet}
+        {#if settlements.length === 0}
+          <p class="empty">{$t('admin.frameleaf_cloud_ml_jobs_empty')}</p>
+        {:else}
+          <HistoryList>
             {#each settlements as job (job.cloudJobId)}
-              <tr>
-                <th scope="row">
-                  {$t(mlWorkloadLabelKey(job.workload))}
-                  <small>{formatDateTime(job.finishedAt, $locale)}</small>
-                </th>
-                <td>{positionById(job.modelSku)?.name ?? job.modelSku ?? '—'}</td>
-                <td>
-                  <span class="fc-status" class:is-ok={job.succeeded} class:is-warning={!job.succeeded}>
-                    {job.succeeded
-                      ? $t('admin.frameleaf_cloud_ml_jobs_completed')
-                      : $t('admin.frameleaf_cloud_ml_jobs_failed')}
-                  </span>
-                </td>
-                <td>{formatUsd(job.estimateUsd)}</td>
-                <td>
-                  {formatUsd(job.costUsd)}
-                  {#if job.gpuSeconds !== null}
-                    <small class="fc-muted">
-                      {$t(
+              <HistoryRow
+                when={formatDateTime(job.finishedAt, $locale)}
+                datetime={job.finishedAt}
+                what={$t(mlWorkloadLabelKey(job.workload))}
+                detail={[
+                  positionById(job.modelSku)?.name ?? job.modelSku,
+                  $t('frameleaf_cp_recent_estimate', { values: { amount: formatUsd(job.estimateUsd) } }),
+                  job.gpuSeconds === null
+                    ? ''
+                    : $t(
                         (job.workers ?? 1) > 1
                           ? 'admin.frameleaf_cloud_ml_jobs_gpu_time_workers'
                           : 'admin.frameleaf_cloud_ml_jobs_gpu_time',
                         { values: { time: formatDuration(job.gpuSeconds, $locale), workers: job.workers ?? 1 } },
-                      )}
-                    </small>
-                  {/if}
-                </td>
-              </tr>
+                      ),
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              >
+                <Pill tone={job.succeeded ? 'good' : 'warn'}
+                  >{job.succeeded ? formatUsd(job.costUsd) : $t('admin.frameleaf_cloud_ml_jobs_failed')}</Pill
+                >
+              </HistoryRow>
             {/each}
-          </tbody>
-        </table>
-      </div>
+          </HistoryList>
+        {/if}
+      </Section>
     {/if}
-    <div class="fc-actions">
-      <a class="fc-link" href={Route.queues()}>{$t('admin.frameleaf_cloud_ml_open_jobs')}</a>
-      <a class="fc-link" href={commandCenterUrl('processing', 'workers')}
-        >{$t('admin.frameleaf_cloud_ml_home_computers')}</a
-      >
-    </div>
-  </section>
-</div>
+
+    {#if linked}
+      <!-- Nothing here can change until the server is linked, so there is nothing to reset before then. -->
+      <SettingActions keys={['frameleafCloud.cloudMl']} disabled={configDisabled} />
+    {/if}
+  </div>
+</KitPage>
 
 {#if status?.consent}
   <CloudMlConsentDialog
@@ -677,3 +699,53 @@
     }}
   />
 {/if}
+
+<style>
+  /* In the kit's column: the cards below keep the page's width, as the plain-words pages do. */
+  .frameleaf-cloud.is-wide {
+    max-width: none;
+    gap: var(--fl-space-6);
+  }
+  .leaves {
+    padding-bottom: var(--fl-space-4);
+  }
+  .frameleaf-cloud :global(.kit-advanced .fc-facts) {
+    margin-bottom: var(--fl-space-4);
+  }
+  a.button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--fl-space-1);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .model-row {
+    padding: var(--fl-space-4) 0;
+    border-top: 1px solid var(--fl-border);
+  }
+  .estimate-model {
+    max-width: 280px;
+  }
+  .hint {
+    max-width: 720px;
+    margin: 0 0 var(--fl-space-4);
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+    line-height: 1.5;
+  }
+  .cannot-start {
+    margin: 0;
+    padding-bottom: var(--fl-space-4);
+  }
+  .said {
+    padding: var(--fl-space-2) 0 var(--fl-space-5);
+  }
+  .empty {
+    margin: 0;
+    padding: var(--fl-space-4) 0 var(--fl-space-5);
+    border-top: 1px solid var(--fl-border);
+    color: var(--fl-muted);
+    font-size: var(--fl-font-callout);
+  }
+</style>

@@ -7,18 +7,29 @@
    *
    * FL-367: two groups, "Used lately" and "Not used for a while" (30 days), so a lost phone is not
    * buried in a long list; the second group can be signed out at once. Each row says since when.
+   *
+   * Drawn as the approved prototype's `Devices` (`settings-v2/cloud/Personal.jsx`): a hero that says
+   * how many devices are signed in (or that some have not been used for a while, with "Sign those
+   * out"), the devices as rows, "Sign out everywhere else…" on the list, and API keys linked below.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import { idleDevices } from '$lib/components/frameleaf/settings/security/sign-in';
-  import { otherSessions, sessionDeviceName, sortSessions } from '$lib/frameleaf/personal-access';
+  import { describeSession, otherSessions, sessionDeviceName, sortSessions } from '$lib/frameleaf/personal-access';
   import { locale } from '$lib/stores/preferences.store';
   import { handleError } from '$lib/utils/handle-error';
   import { deleteAllSessions, deleteSession, getSessions, type SessionResponseDto } from '@frameleaf/sdk';
   import { toastManager } from '@frameleaf/ui';
   import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   import { DateTime } from 'luxon';
-  import { t } from 'svelte-i18n';
-  import './access.css';
+  import { t, type Translations } from 'svelte-i18n';
+  import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
+  import Item from '$lib/components/frameleaf/settings/kit/Item.svelte';
+  import ItemList from '$lib/components/frameleaf/settings/kit/ItemList.svelte';
+  import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
+  import Links from '$lib/components/frameleaf/settings/kit/Links.svelte';
+  import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
+  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
+  import { mdiCellphone, mdiDevices, mdiKeyOutline, mdiLaptop, mdiRobotOutline, mdiTablet } from '@mdi/js';
 
   let { sessions = $bindable([]) }: { sessions?: SessionResponseDto[] } = $props();
 
@@ -36,6 +47,25 @@
   const lastActive = (session: SessionResponseDto) =>
     DateTime.fromISO(session.updatedAt, { locale: $locale }).toLocaleString(DateTime.DATETIME_MED);
 
+  /** "Safari on a Mac", "Frameleaf app on an iPhone", "A script or tool" (prototype Devices). */
+  const deviceName = (session: SessionResponseDto) =>
+    sessionDeviceName(session, (key, options) => $t(key as Translations, options));
+
+  /** A picture of the kind of device, from what its app reported. */
+  const deviceIcon = (session: SessionResponseDto) => {
+    const described = describeSession(session);
+    if (described.kind === 'unknown') {
+      return mdiRobotOutline;
+    }
+    if (described.device === 'ipad' || described.device === 'android_tablet') {
+      return mdiTablet;
+    }
+    if (described.device === 'iphone' || described.device === 'android_phone') {
+      return mdiCellphone;
+    }
+    return mdiLaptop;
+  };
+
   const refresh = async () => {
     try {
       sessions = await getSessions();
@@ -48,7 +78,7 @@
     const confirmed = await confirmFrameleaf({
       title: $t('frameleaf_access_device_sign_out'),
       prompt: $t('frameleaf_access_device_sign_out_prompt', {
-        values: { device: sessionDeviceName(session, $t('frameleaf_access_device_unknown')) },
+        values: { device: deviceName(session) },
       }),
       confirmText: $t('frameleaf_access_device_sign_out'),
       danger: true,
@@ -118,69 +148,105 @@
   };
 </script>
 
-<section class="fl-access-section" aria-labelledby="fl-access-devices">
-  <div class="fl-access-head">
-    <div>
-      <h3 id="fl-access-devices">{$t('frameleaf_access_devices_title')}</h3>
-      <p>{$t('frameleaf_access_devices_description')}</p>
-    </div>
-    <Button disabled={working || others.length === 0} onclick={signOutOthers}>
-      {$t('frameleaf_access_devices_sign_out_others')}
-    </Button>
-  </div>
-  {#if sorted.length > 0}
-    {#if idle.length > 0}
-      <div class="fl-access-notice idle">
-        <p>{$t('frameleaf_access_devices_idle_notice', { values: { count: idle.length } })}</p>
-        <Button disabled={working} onclick={signOutIdle}>{$t('frameleaf_access_devices_sign_out_idle')}</Button>
-      </div>
-    {/if}
-    {#snippet list(items: SessionResponseDto[])}
-      <ul class="fl-access-list">
-        {#each items as session (session.id)}
-          <li class="fl-access-item">
-            <div>
-              <strong>{sessionDeviceName(session, $t('frameleaf_access_device_unknown'))}</strong>
-              <small>{$t('frameleaf_access_device_last_active', { values: { date: lastActive(session) } })}</small>
-              <small>{$t('frameleaf_access_device_since', { values: { date: since(session) } })}</small>
-            </div>
-            {#if session.current}
-              <span class="fl-access-status">{$t('frameleaf_access_device_current')}</span>
-            {:else}
-              <Button disabled={working} onclick={() => signOut(session)}>
-                {$t('frameleaf_access_device_sign_out')}
-              </Button>
-            {/if}
-          </li>
-        {/each}
-      </ul>
-    {/snippet}
-    <h4 class="group">{$t('frameleaf_access_devices_recent')}</h4>
-    {@render list(recent)}
-    {#if idleSorted.length > 0}
-      <h4 class="group">{$t('frameleaf_access_devices_idle')}</h4>
-      {@render list(idleSorted)}
-    {/if}
-  {:else}
-    <p class="fl-access-empty">{$t('frameleaf_access_devices_empty')}</p>
+{#snippet rows(items: SessionResponseDto[], quiet: boolean)}
+  <ItemList>
+    {#each items as session (session.id)}
+      {@const name = deviceName(session)}
+      <Item
+        icon={deviceIcon(session)}
+        {quiet}
+        {name}
+        detail={$t('frameleaf_access_device_since', { values: { date: since(session) } })}
+        tone={quiet && !session.current ? 'warn' : 'good'}
+        status={session.current
+          ? $t('frameleaf_access_device_current')
+          : quiet
+            ? $t('frameleaf_access_devices_idle')
+            : $t('frameleaf_access_devices_recent')}
+        note={session.current
+          ? $t('frameleaf_access_device_active_now')
+          : $t('frameleaf_access_device_last_active', { values: { date: lastActive(session) } })}
+      >
+        {#snippet action()}
+          {#if !session.current}
+            <Button
+              label={$t('frameleaf_access_device_sign_out_named', { values: { device: name } })}
+              disabled={working}
+              onclick={() => signOut(session)}>{$t('frameleaf_access_device_sign_out')}</Button
+            >
+          {/if}
+        {/snippet}
+      </Item>
+    {/each}
+  </ItemList>
+{/snippet}
+
+{#snippet signOutIdleAction()}
+  <Button variant="primary" disabled={working} onclick={signOutIdle}
+    >{$t('frameleaf_access_devices_sign_out_those')}</Button
+  >
+{/snippet}
+
+{#snippet everywhereElse()}
+  <Button disabled={working} onclick={signOutOthers}>{$t('frameleaf_access_devices_sign_out_everywhere')}</Button>
+{/snippet}
+
+<KitPage>
+  {#if idle.length > 0}
+    <Hero
+      tone="warn"
+      icon={mdiDevices}
+      title={$t('frameleaf_access_devices_hero_idle', { values: { count: idle.length } })}
+      body={$t('frameleaf_access_devices_hero_idle_body')}
+      label={$t('frameleaf_access_devices_title')}
+      actions={signOutIdleAction}
+    />
+  {:else if sorted.length > 0}
+    <Hero
+      tone="good"
+      icon={mdiDevices}
+      title={sorted.length === 1
+        ? $t('frameleaf_access_devices_hero_one')
+        : $t('frameleaf_access_devices_hero_many', { values: { count: sorted.length } })}
+      body={sorted.length === 1
+        ? $t('frameleaf_access_devices_hero_one_body')
+        : $t('frameleaf_access_devices_hero_many_body')}
+      label={$t('frameleaf_access_devices_title')}
+    />
   {/if}
-</section>
+
+  <Section title={$t('frameleaf_access_devices_recent')} action={others.length > 0 ? everywhereElse : undefined}>
+    {#if recent.length > 0}
+      {@render rows(recent, false)}
+    {:else}
+      <p class="empty">{$t('frameleaf_access_devices_empty')}</p>
+    {/if}
+  </Section>
+
+  {#if idleSorted.length > 0}
+    <Section title={$t('frameleaf_access_devices_idle')} description={$t('frameleaf_access_devices_idle_description')}>
+      {@render rows(idleSorted, true)}
+    </Section>
+  {/if}
+
+  <Section title={$t('frameleaf_access_devices_own')}>
+    <Links
+      rows={[
+        {
+          icon: mdiKeyOutline,
+          title: $t('frameleaf_access_keys_title'),
+          body: $t('frameleaf_access_devices_keys_body'),
+          href: commandCenterUrl('privacy', 'api-keys'),
+        },
+      ]}
+    />
+  </Section>
+</KitPage>
 
 <style>
-  .group {
-    margin: var(--fl-space-4) 0 var(--fl-space-2);
-    color: var(--fl-muted);
-    font-size: var(--fl-font-small);
-    font-weight: 600;
-  }
-  .idle {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--fl-space-3);
-  }
-  .idle p {
+  .empty {
     margin: 0;
+    padding-bottom: var(--fl-space-5);
+    color: var(--fl-muted);
   }
 </style>

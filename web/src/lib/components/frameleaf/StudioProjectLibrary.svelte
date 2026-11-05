@@ -556,7 +556,6 @@
       $t('frameleaf_studio_library_changed', {
         values: { date: studioRelativeTime(project.updatedAt, $locale ?? undefined) },
       }),
-      project.revision > 0 ? null : $t('frameleaf_studio_library_unsaved'),
       project.access === StudioProjectAccess.Reviewer ? $t('frameleaf_studio_read_only') : null,
       project.importedFromBundle ? $t('frameleaf_studio_library_imported') : null,
     ]
@@ -612,13 +611,16 @@
       onChange={(next) => setShelf(next as StudioLibraryShelf)}
     />
     <div class="filters">
-      <input
-        class="search"
-        type="search"
-        placeholder={$t('frameleaf_studio_library_search')}
-        aria-label={$t('frameleaf_studio_library_search')}
-        bind:value={query}
-      />
+      <!-- Prototype StudioProjects.jsx `.sp-search`: the field carries its magnifier. -->
+      <label class="search">
+        <Icon icon={mdiMagnify} size={ICON_SIZE.md} aria-hidden />
+        <input
+          type="search"
+          placeholder={$t('frameleaf_studio_library_search')}
+          aria-label={$t('frameleaf_studio_library_search')}
+          bind:value={query}
+        />
+      </label>
       <SegmentedControl
         label={$t('frameleaf_studio_library_sort')}
         options={STUDIO_LIBRARY_SORTS.map((option) => ({ value: option.id, label: $t(option.labelKey) }))}
@@ -925,10 +927,9 @@
   .fl-studio-library {
     display: grid;
     align-content: start;
-    gap: var(--fl-space-4);
-    padding: var(--fl-space-6) var(--fl-space-4);
-    max-width: 72rem;
-    margin-inline: auto;
+    /* Prototype `.sp`: the full width, 32px in from the edges, sections 24px apart. */
+    gap: var(--fl-space-6);
+    padding: var(--fl-space-8) var(--fl-space-8) var(--fl-space-12);
     color: var(--fl-text);
     font-size: var(--fl-font-size);
   }
@@ -936,7 +937,8 @@
   .toolbar {
     display: flex;
     flex-wrap: wrap;
-    align-items: flex-end;
+    /* Prototype `.sp-head`: the actions line up with the title, not the count under it. */
+    align-items: flex-start;
     justify-content: space-between;
     gap: var(--fl-space-3);
   }
@@ -1032,7 +1034,8 @@
   @media (max-width: 700px) {
     /* With the page's own 8px, the 16px phone gutter. */
     .fl-studio-library {
-      padding-inline: var(--fl-space-2);
+      gap: var(--fl-space-4);
+      padding: var(--fl-space-2) var(--fl-space-2) var(--fl-space-12);
     }
     /* #18: the search spans the row; stacked control rows sit 12px apart (the toolbar's gap). */
     .filters {
@@ -1056,8 +1059,27 @@
   }
   /* A definite width: a percentage here made the row measure itself narrow and wrap early. */
   .search {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--fl-space-2);
     width: 16rem;
     max-width: 100%;
+    color: var(--fl-muted);
+  }
+  .search:focus-within {
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
+  }
+  .search input {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    padding: 0;
+    color: var(--fl-text);
+    background: none;
+    border: 0;
+    outline: none;
+    font: inherit;
   }
   .rename {
     position: relative;
@@ -1067,7 +1089,7 @@
   .grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
-    gap: var(--fl-space-4);
+    gap: var(--fl-space-6) var(--fl-space-4);
     margin: 0;
     padding: 0;
     list-style: none;
@@ -1076,17 +1098,13 @@
   .grid.stale {
     opacity: 0.5;
   }
+  /* Prototype `.sp-card`: a poster with its name and facts under it, no card around them. */
   .card {
     position: relative;
     display: grid;
     grid-template-rows: auto 1fr;
-    background: var(--fl-panel);
-    border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-card);
-    box-shadow: var(--fl-shadow-1);
-    transition:
-      box-shadow var(--fl-motion) var(--fl-ease),
-      transform var(--fl-duration) var(--fl-spring);
+    transition: transform var(--fl-duration) var(--fl-spring);
   }
   /* Not a `.card`: a placeholder is the shape of one, with nothing to open or act on. */
   .placeholder {
@@ -1095,7 +1113,7 @@
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-card);
   }
-  .card.openable:hover {
+  .card.openable:hover .poster {
     box-shadow: var(--fl-shadow-2);
   }
   .card:has(.open:active) {
@@ -1113,7 +1131,8 @@
     overflow: hidden;
     background: var(--fl-raised);
     color: var(--fl-muted);
-    border-radius: calc(var(--fl-radius-card) - 1px) calc(var(--fl-radius-card) - 1px) 0 0;
+    border-radius: var(--fl-radius-control);
+    transition: box-shadow var(--fl-motion) var(--fl-ease);
   }
   .poster img {
     width: 100%;
@@ -1129,7 +1148,7 @@
     align-items: flex-start;
     gap: var(--fl-space-2);
     min-width: 0;
-    padding: var(--fl-space-3) var(--fl-space-2) var(--fl-space-3) var(--fl-space-3);
+    padding: var(--fl-space-2) 0 0;
   }
   .text {
     flex: 1 1 auto;

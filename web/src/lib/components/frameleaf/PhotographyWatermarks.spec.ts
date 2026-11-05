@@ -12,7 +12,7 @@ vi.mock('$lib/frameleaf/photography/api', async (original) => ({
 }));
 beforeAll(() => addMessages('dev', en));
 
-it('names what each default does instead of showing blank choices before any preset exists', async () => {
+it('opens on the designer and names what each default does before any preset is saved', async () => {
   vi.mocked(loadBrand).mockResolvedValue({
     revision: 'loaded',
     logoUnavailable: false,
@@ -22,7 +22,9 @@ it('names what each default does instead of showing blank choices before any pre
   render(PhotographyWatermarks);
   const exports = await screen.findByRole('combobox', { name: 'Final exports' });
   expect(exports).toHaveDisplayValue('No watermark');
-  expect(exports).toBeDisabled();
+  // No preset yet: the designer shows a starter proof mark straight away; nothing is saved until Save.
+  expect(screen.getByRole('textbox', { name: 'Preset name' })).toHaveValue('Repeated proof');
+  expect(saveBrand).not.toHaveBeenCalled();
   for (const name of ['Edited web previews', 'Selection proofs']) {
     expect(screen.getByRole('combobox', { name })).toHaveDisplayValue('Your branding mark');
   }
@@ -42,7 +44,8 @@ it('designs the branding mark here, the one place for the watermark, and saves i
   vi.mocked(saveBrand).mockResolvedValue({ revision: 'saved', logoUnavailable: false, brand });
   render(PhotographyWatermarks);
   await fireEvent.click(await screen.findByRole('button', { name: 'Subtle' }));
-  expect(screen.getByRole('combobox', { name: 'Position' })).toHaveDisplayValue('Bottom right');
+  // The branding mark's own Position, after the starter preset's designer.
+  expect(screen.getAllByRole('combobox', { name: 'Position' }).at(-1)).toHaveDisplayValue('Bottom right');
   await fireEvent.click(screen.getByRole('button', { name: 'Save watermark presets' }));
   await waitFor(() =>
     expect(saveBrand).toHaveBeenCalledWith(

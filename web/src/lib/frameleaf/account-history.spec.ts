@@ -2,7 +2,12 @@ import { AdminAuditAction } from '@frameleaf/sdk';
 import { addMessages, t } from 'svelte-i18n';
 import { get } from 'svelte/store';
 import en from '$i18n/en.json';
-import { describeAdminEvent, formatHistoryDate, managedUploadCount } from '$lib/frameleaf/account-history';
+import {
+  describeAdminEvent,
+  formatHistoryDate,
+  isLibraryEvent,
+  managedUploadCount,
+} from '$lib/frameleaf/account-history';
 
 /** FL-76: the account detail's Activity sentences and managed uploads count. */
 
@@ -100,4 +105,15 @@ it('says when the account set up a new server (FL-292)', () => {
     en.frameleaf_account_history_server_claimed_app,
   );
   expect(describe_(AdminAuditAction.AccountCreated)).toBe(en.frameleaf_account_history_account_created);
+});
+
+describe('isLibraryEvent', () => {
+  it("knows a library's entries by their action, also once the library is gone", () => {
+    // a removed library's entries keep their action but lose libraryId (it falls back to null)
+    expect(isLibraryEvent({ action: AdminAuditAction.LibraryDeleted, libraryId: null })).toBe(true);
+    expect(isLibraryEvent({ action: AdminAuditAction.LibraryCreated, libraryId: null })).toBe(true);
+    expect(isLibraryEvent({ action: AdminAuditAction.LibraryScanQueued, libraryId: 'lib-1' })).toBe(true);
+    expect(isLibraryEvent({ action: AdminAuditAction.QuotaChanged, libraryId: null })).toBe(false);
+    expect(isLibraryEvent({ action: AdminAuditAction.AccountUpdated, libraryId: null })).toBe(false);
+  });
 });

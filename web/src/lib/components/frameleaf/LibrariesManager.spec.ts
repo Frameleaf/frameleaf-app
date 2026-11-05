@@ -1,10 +1,13 @@
 import { LibraryScanPhase, MediaOperationStatus, UserStatus, type LibraryScanResponseDto } from '@frameleaf/sdk';
-import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import LibrariesManager from '$lib/components/frameleaf/LibrariesManager.svelte';
 import { buildLibraryRows, LIBRARY_SCAN_POLL_MS } from '$lib/frameleaf/libraries';
 import en from '../../../../../i18n/en.json';
+
+const navigation = vi.hoisted(() => ({ goto: vi.fn() }));
+vi.mock('$app/navigation', () => navigation);
 
 const owner = {
   id: 'owner-1',
@@ -52,7 +55,10 @@ const libraryOf = (scan: LibraryScanResponseDto | null) => ({
   scan,
 });
 
-const setup = (scan: LibraryScanResponseDto | null, props: { selectedKey?: string | null } = {}) => {
+const setup = (
+  scan: LibraryScanResponseDto | null,
+  props: { selectedKey?: string | null; createOnOpen?: boolean } = {},
+) => {
   const library = libraryOf(scan);
   const rows = buildLibraryRows({
     libraries: [library],
@@ -67,7 +73,8 @@ const setup = (scan: LibraryScanResponseDto | null, props: { selectedKey?: strin
     rows,
     owners: [owner],
     libraries: [library],
-    selectedKey: props.selectedKey ?? 'library:lib-1',
+    selectedKey: props.selectedKey === undefined ? 'library:lib-1' : props.selectedKey,
+    createOnOpen: props.createOnOpen ?? false,
     snapshotAt: new Date('2026-09-23T10:00:00Z'),
     onSelect,
     onAnalytics: vi.fn(),
@@ -79,6 +86,8 @@ const setup = (scan: LibraryScanResponseDto | null, props: { selectedKey?: strin
 beforeEach(() => {
   vi.clearAllMocks();
   addMessages('dev', en);
+  // the library page lists its recent changes
+  sdkMock.getUserHistoryAdmin.mockResolvedValue({ events: [] } as never);
 });
 
 afterEach(() => {
@@ -94,8 +103,8 @@ describe('LibrariesManager (FL-78)', () => {
     });
     const first = setup(failed);
 
-    const table = screen.getByRole('region', { name: en.frameleaf_libraries_table_label });
-    expect(within(table).getByText(en.frameleaf_libraries_status_failed)).toBeInTheDocument();
+    // Manage › opens the library in place of the lists, under its own name
+    expect(screen.getByRole('heading', { level: 1, name: 'Family photo archive' })).toBeInTheDocument();
     const message = screen.getByTestId('library-scan-message');
     expect(message.textContent).toContain('no items were marked missing');
     expect(message.textContent).toContain('/mnt/photos: Path does not exist (ENOENT)');
@@ -112,12 +121,12 @@ describe('LibrariesManager (FL-78)', () => {
     vi.useFakeTimers();
     const { refresh } = setup(scanOf({}));
 
-    expect(screen.getByRole('progressbar', { name: en.frameleaf_libraries_scan_progress })).toBeInTheDocument();
+    expect(screen.getByRole('meter', { name: en.frameleaf_libraries_scan_progress })).toBeInTheDocument();
     await vi.advanceTimersByTimeAsync(LIBRARY_SCAN_POLL_MS * 2 + 10);
     expect(refresh).toHaveBeenCalledTimes(2);
 
     sdkMock.cancelLibraryScan.mockResolvedValue(undefined as never);
-    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_libraries_scan_cancel }));
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_libraries_stop }));
     expect(sdkMock.cancelLibraryScan).toHaveBeenCalledWith({ id: 'lib-1' });
   });
 
@@ -141,11 +150,114 @@ describe('LibrariesManager (FL-78)', () => {
     expect(refresh).not.toHaveBeenCalled();
   });
 
-  it('starts every scannable library from the header', async () => {
+  it('opens a library as a page of its own: its state, the folder, whose library, what it skips, removing it', async () => {
+    setup(scanOf({ status: MediaOperationStatus.Completed, finishedAt: '2026-09-23T10:05:00.000Z' }));
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Family photo archive' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: en.frameleaf_library_page_title_ok })).toBeInTheDocument();
+    for (const title of [
+      en.frameleaf_library_page_holds,
+      en.frameleaf_library_page_folder,
+      en.frameleaf_library_page_whose,
+      en.frameleaf_library_page_skip,
+      en.frameleaf_library_page_history,
+      en.frameleaf_library_page_remove_title,
+    ]) {
+      expect(screen.getByRole('heading', { name: title })).toBeInTheDocument();
+    }
+    // the folder in words, with its whole path under it; no tabs and no monospace path boxes
+    expect(screen.getByText('mnt › photos')).toBeInTheDocument();
+    expect(screen.getByText('/mnt/photos')).toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: en.frameleaf_libraries_tabs_label })).toBeNull();
+    expect(await screen.findByText(en.frameleaf_libraries_activity_empty)).toBeInTheDocument();
+
+    // "Change…" opens the edit form, "Remove from Frameleaf…" the removal review
+    await fireEvent.click(screen.getAllByRole('button', { name: en.frameleaf_library_page_change })[0]);
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+  });
+
+  it("lists the folders and each person's uploads as the prototype does, with Manage ›", async () => {
+    const { onSelect } = setup(
+      scanOf({ status: MediaOperationStatus.Failed, finishedAt: '2026-09-23T10:05:00.000Z' }),
+      { selectedKey: null },
+    );
+
+    expect(screen.getByRole('heading', { name: en.frameleaf_libraries_folders_title })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'The last check skipped Family photo archive' })).toBeInTheDocument();
+    expect(screen.getByText('Skipped')).toBeInTheDocument();
+    expect(screen.getByText('mnt › photos · in Taylor’s library')).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Manage Family photo archive' }));
+    expect(onSelect).toHaveBeenCalledWith('library:lib-1');
+  });
+
+  it("says when someone's newest upload was added, and opens their uploads as a page", async () => {
+    const rows = buildLibraryRows({
+      libraries: [],
+      users: [owner],
+      uploads: [
+        {
+          ownerId: 'owner-1',
+          photos: 2,
+          videos: 1,
+          total: 3,
+          usage: 300,
+          usagePhysical: 300,
+          lastAddedAt: new Date().toISOString(),
+        },
+      ],
+      statistics: {},
+      uploadsName: (name) => `${name}’s uploads`,
+    });
+    const props = {
+      rows,
+      owners: [owner],
+      libraries: [],
+      snapshotAt: new Date(),
+      onSelect: vi.fn(),
+      onAnalytics: vi.fn(),
+      refresh: vi.fn().mockResolvedValue(undefined),
+    };
+    const list = render(LibrariesManager, { ...props, selectedKey: null });
+    expect(screen.getByText(/^Last photo added /)).toBeInTheDocument();
+    list.unmount();
+
+    // recent changes are the account's own: a removed library's entries (libraryId gone) stay out
+    sdkMock.getUserHistoryAdmin.mockResolvedValue({
+      events: [
+        {
+          id: 'e1',
+          action: 'library-deleted',
+          subject: 'Old NAS folder',
+          detail: '12',
+          libraryId: null,
+          createdAt: '2026-11-05T07:00:00.000Z',
+        },
+        {
+          id: 'e2',
+          action: 'quota-changed',
+          subject: 'Taylor',
+          detail: null,
+          libraryId: null,
+          createdAt: '2026-11-04T07:00:00.000Z',
+        },
+      ],
+    } as never);
+    render(LibrariesManager, { ...props, selectedKey: 'uploads:owner-1' });
+    expect(await screen.findByText('Taylor', { selector: '.kit-history-row *' })).toBeInTheDocument();
+    expect(screen.queryByText('Old NAS folder')).toBeNull();
+    expect(screen.getByRole('heading', { name: '3 photos and videos' })).toBeInTheDocument();
+    expect(
+      screen.getByText(/Added by Taylor from a phone, the web or an import\. Last photo added /),
+    ).toBeInTheDocument();
+    // uploads belong to their account: nothing to remove here
+    expect(screen.queryByRole('heading', { name: en.frameleaf_library_page_remove_title })).toBeNull();
+  });
+
+  it('starts every scannable library from the answer at the top', async () => {
     sdkMock.scanLibrary.mockResolvedValue(undefined as never);
     setup(null, { selectedKey: null });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Check 1 folder now' }));
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_checks_now }));
 
     expect(sdkMock.scanLibrary).toHaveBeenCalledWith({ id: 'lib-1' });
   });
@@ -160,9 +272,12 @@ describe('LibrariesManager (FL-78)', () => {
   });
 
   it('opens Add a folder of photos as a page of its own, in four steps (FL-539)', async () => {
-    setup(null, { selectedKey: null });
-
+    const first = setup(null, { selectedKey: null });
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_libraries_add }));
+    expect(navigation.goto).toHaveBeenCalledWith('/user-settings?area=libraries&new=1');
+    first.unmount();
+
+    setup(null, { selectedKey: null, createOnOpen: true });
 
     expect(screen.getByRole('heading', { name: en.frameleaf_addfolder_title, level: 1 })).toBeInTheDocument();
     for (const step of [en.frameleaf_addfolder_step1, en.frameleaf_addfolder_step2, en.frameleaf_addfolder_step3]) {

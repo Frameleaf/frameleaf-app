@@ -35,9 +35,10 @@ export const LIBRARY_PATH_MAX_LENGTH = 1024;
 export const LIBRARY_PATHS_MAX = 128;
 export const LIBRARY_QUERY_MAX_LENGTH = 200;
 /**
- * What a new library skips: macOS and NAS clutter that is never a photo. The server keeps the NAS
- * entries as its own default (`LibraryService.create`) but applies it only to a request that sends
- * no list, and this form always sends one, so the list has to be complete here.
+ * What a new library skips: macOS and NAS clutter that is never a photo; the two recommended "What
+ * to skip" boxes together. It is the server's own default (`DEFAULT_LIBRARY_EXCLUSION_PATTERNS` in
+ * server/src/utils/library-paths.ts, applied to a folder added without a list), and the spec fails
+ * if the two lists differ. The form always sends a list, so it has to be complete here too.
  */
 export const DEFAULT_EXCLUSION_PATTERNS: readonly string[] = [
   '**/.DS_Store',
@@ -57,7 +58,15 @@ export type LibraryKind = 'upload' | 'external';
 /** `removing` is a library whose removal was confirmed and whose items are still going. */
 export type LibraryLifecycle = 'active' | 'removing';
 
-export type LibraryStats = { items: number; photos: number; videos: number; logical: number; physical: number };
+export type LibraryStats = {
+  items: number;
+  photos: number;
+  videos: number;
+  logical: number;
+  physical: number;
+  /** Uploads only: when the newest counted photo or video was added (servers before 2026-11 leave it out). */
+  lastAddedAt?: string | null;
+};
 
 /** One row of the Libraries table: an account's managed uploads, or an external library. */
 export type LibraryRow = {
@@ -91,6 +100,13 @@ const toStats = (stats: Pick<LibraryStatsResponseDto, 'photos' | 'videos' | 'usa
   logical: stats.usage,
   physical: stats.usagePhysical,
 });
+
+/**
+ * When an account's newest upload was added. `lastAddedAt` is new on the server (2026-11): typed here
+ * until the SDK is regenerated, and left out for a server that does not send it.
+ */
+const lastAddedOf = (upload: ManagedUploadsStatsResponseDto & { lastAddedAt?: string | null }) =>
+  upload.lastAddedAt === undefined ? {} : { lastAddedAt: upload.lastAddedAt };
 
 /**
  * Every row the page can show: one managed-uploads row per active account, as the template's
@@ -131,7 +147,7 @@ export const buildLibraryRows = ({
         refreshedAt: null,
         lifecycle: 'active',
         scan: null,
-        stats: toStats(upload),
+        stats: { ...toStats(upload), ...lastAddedOf(upload) },
       },
     ];
   });
@@ -215,12 +231,14 @@ const ACTIVE_SCAN_STATUSES: ReadonlySet<MediaOperationStatus> = new Set([
 ]);
 
 /** A scan that is waiting, running, paused or stopping: one the server will refuse to start again. */
-export const isScanActive = (scan: LibraryScanResponseDto | null | undefined): scan is LibraryScanResponseDto =>
+// A plain boolean, not a type guard: a scan that isn't active is still a scan (failed, finished),
+// and a guard would narrow it away to `never` in the false branch.
+export const isScanActive = (scan: LibraryScanResponseDto | null | undefined): boolean =>
   !!scan && ACTIVE_SCAN_STATUSES.has(scan.status);
 
 /** A scan whose numbers are still moving, which is what the page polls for. */
 export const isScanMoving = (scan: LibraryScanResponseDto | null | undefined) =>
-  isScanActive(scan) && scan.status !== MediaOperationStatus.Paused;
+  !!scan && isScanActive(scan) && scan.status !== MediaOperationStatus.Paused;
 
 /** External, not being removed, with folders, an active owner and no scan already going. */
 export const canScanLibrary = (row: LibraryRow) =>

@@ -137,7 +137,9 @@ export const cameraName = (item: Pick<RawSupportItemDto, 'make' | 'model'>) => {
   if (!model) {
     return make;
   }
-  return make && !model.toLowerCase().startsWith(make.toLowerCase()) ? `${make} ${model}` : model;
+  // A model that already names the maker ("NIKON D80" from "NIKON CORPORATION") stands alone.
+  const brand = make.split(/[\s,]+/)[0].toLowerCase();
+  return make && !model.toLowerCase().startsWith(brand) ? `${make} ${model}` : model;
 };
 
 export type RawRepair = {

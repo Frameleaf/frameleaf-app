@@ -122,9 +122,37 @@ describe('personal access (FL-67)', () => {
       expect(otherSessions([current, recent, old]).map(({ id }) => id)).toEqual(['recent', 'old']);
     });
 
-    it('names a device from what it reported', () => {
-      expect(sessionDeviceName(recent, 'Unknown device')).toBe('macOS · Safari');
-      expect(sessionDeviceName(session({ deviceOS: '', deviceType: '' }), 'Unknown device')).toBe('Unknown device');
+    it('names a device in plain words from what it reported (prototype Devices)', () => {
+      const words: Record<string, string> = {
+        frameleaf_access_device_unknown: 'A script or tool',
+        frameleaf_access_device_browser_on: '{browser} on {device}',
+        frameleaf_access_device_app_on: 'Frameleaf app on {device}',
+        frameleaf_access_device_kind_iphone: 'an iPhone',
+        frameleaf_access_device_kind_ipad: 'an iPad',
+        frameleaf_access_device_kind_android_phone: 'an Android phone',
+        frameleaf_access_device_kind_mac: 'a Mac',
+        frameleaf_access_device_kind_windows: 'a Windows PC',
+      };
+      const translate = (key: string, options?: { values: Record<string, string> }) => {
+        let text = words[key] ?? key;
+        for (const [name, value] of Object.entries(options?.values ?? {})) {
+          text = text.replaceAll(`{${name}}`, () => value);
+        }
+        return text;
+      };
+      const name = (deviceOS: string, deviceType: string) =>
+        sessionDeviceName(session({ deviceOS, deviceType }), translate);
+
+      expect(sessionDeviceName(recent, translate)).toBe('Safari on a Mac');
+      expect(name('macOS', 'Chrome Headless')).toBe('Chrome on a Mac');
+      expect(name('iOS', 'Mobile Safari')).toBe('Safari on an iPhone');
+      expect(name('Windows', 'Edge')).toBe('Edge on a Windows PC');
+      expect(name('iOS', 'mobile')).toBe('Frameleaf app on an iPhone');
+      expect(name('iOS', 'tablet')).toBe('Frameleaf app on an iPad');
+      expect(name('Android', 'Pixel 8')).toBe('Frameleaf app on an Android phone');
+      expect(name('', '')).toBe('A script or tool');
+      expect(name('', 'mobile')).toBe('A script or tool');
+      expect(name('FreeBSD', 'Firefox')).toBe('Firefox on FreeBSD');
     });
   });
 

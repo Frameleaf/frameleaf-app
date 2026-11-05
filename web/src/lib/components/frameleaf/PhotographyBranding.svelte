@@ -21,7 +21,8 @@
     type Branding,
     type LogoPage,
   } from '$lib/frameleaf/photography/api';
-  import { watermarkPreview, type Watermark } from '$lib/frameleaf/photography/workflow-api';
+  import { type Watermark } from '$lib/frameleaf/photography/workflow-api';
+  import { watermarkOverlay } from '$lib/frameleaf/photography/watermark-overlay';
   import { AssetMediaSize } from '@frameleaf/sdk';
   import PhotographyThumb from '$lib/components/frameleaf/PhotographyThumb.svelte';
   import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
@@ -76,7 +77,8 @@
       return '';
     }
     const mark = proofPreset?.watermark;
-    const text = mark ? mark.text || draft.name : initials(draft) || draft.name;
+    // The branding mark draws the logo initials the studio typed, else its name (as Watermarks shows it).
+    const text = mark ? mark.text || draft.name : draft.logoInitials || draft.name;
     return $t('frameleaf_photography_wm_summary', {
       values: {
         mark:
@@ -95,7 +97,7 @@
       },
     });
   });
-  /** A preset is drawn by the server, as Watermarks draws it; the branding mark is drawn here. */
+  /** A preset is drawn by the server and laid over the photo, as Watermarks draws it; the branding mark is drawn here. */
   let presetPreview = $state('');
   $effect(() => {
     const mark = proofPreset?.watermark;
@@ -104,11 +106,13 @@
     }
     let live = true;
     let url = '';
-    watermarkPreview($state.snapshot(mark), 'landscape', 'dark')
-      .then((blob) => {
+    watermarkOverlay($state.snapshot(mark), 'landscape')
+      .then((made) => {
         if (live) {
-          url = URL.createObjectURL(blob);
+          url = made;
           presetPreview = url;
+        } else {
+          URL.revokeObjectURL(made);
         }
       })
       .catch(() => {});
@@ -278,17 +282,21 @@
           class:has-photo={!!photoId || !!presetPreview}
           aria-label={$t('frameleaf_photography_placement_guide_label')}
         >
-          {#if presetPreview}<img src={presetPreview} alt="" />{:else}{#if photoId}<PhotographyThumb
-                src={getAssetMediaUrl({ id: photoId, size: AssetMediaSize.Preview })}
-                loading="eager"
-              />{/if}{#if !proofPreset}<span
-                class="phw-guide-mark"
-                data-position={draft.watermarkPosition}
-                style:color={draft.watermarkColor}
-                style:opacity={draft.watermarkOpacity / 100}
-                style:font-size={`${draft.watermarkSize * 2}px`}
-                style:font-family={brandFonts[draft.font]}>{draft.logoInitials || draft.name}</span
-              >{/if}{/if}
+          {#if photoId}<PhotographyThumb
+              src={getAssetMediaUrl({ id: photoId, size: AssetMediaSize.Preview })}
+              loading="eager"
+            />{/if}{#if proofPreset}{#if presetPreview}<img
+                class="phw-guide-overlay"
+                src={presetPreview}
+                alt=""
+              />{/if}{:else}<span
+              class="phw-guide-mark"
+              data-position={draft.watermarkPosition}
+              style:color={draft.watermarkColor}
+              style:opacity={draft.watermarkOpacity / 100}
+              style:font-size={`${draft.watermarkSize * 2}px`}
+              style:font-family={brandFonts[draft.font]}>{draft.logoInitials || draft.name}</span
+            >{/if}
         </div>
         <div>
           <h2>{$t('frameleaf_photography_your_watermark')}</h2>

@@ -52,7 +52,7 @@
 
 {#if showVideo}
   <div class="bg-pink-9000 size-full" transition:motionFade={{ duration: assetViewerFadeDuration }}>
-    <media-controller id="memory-video" nohotkeys class="size-full rounded-2xl object-contain transition-all">
+    <media-controller id="memory-video" nohotkeys class="size-full object-contain transition-all">
       <video
         bind:this={videoPlayer}
         slot="media"

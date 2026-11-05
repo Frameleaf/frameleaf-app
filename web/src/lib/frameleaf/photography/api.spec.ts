@@ -1,4 +1,4 @@
-import { loadPhotos, loadWorkspace, ratePhoto, saveWorkspace, type Workspace } from './api';
+import { loadPhotos, loadWorkspace, ratePhoto, saveWorkspace, shootCover, type Workspace } from './api';
 
 const transport = vi.hoisted(() => ({ fetch: vi.fn() }));
 vi.mock('@frameleaf/sdk', () => ({
@@ -95,4 +95,15 @@ it('uses private branding routes and preserves the distinction between omitted a
   await loadLogos('a+/b=');
   expect(transport.fetch.mock.calls[3][0]).toBe('/custom-api/photography/shoots/branding/logos?cursor=a%2B%2Fb%3D');
   expect(logoThumbnailUrl('logo')).toBe('/custom-api/photography/shoots/branding/logos/logo/thumbnail');
+});
+
+it('requests a shoot cover only when the server has a thumbnail for it, or does not say', () => {
+  const shoot = { coverAssetId: 'cover', unavailable: false };
+  expect(shootCover({ ...shoot, coverThumbhash: 'AQID' })).toBe('cover');
+  // A server from before `coverThumbhash` leaves it out: the cover is requested as before.
+  expect(shootCover(shoot)).toBe('cover');
+  // The server says there is no thumbnail yet (a RAW it cannot develop): no request.
+  expect(shootCover({ ...shoot, coverThumbhash: null })).toBeNull();
+  expect(shootCover({ ...shoot, unavailable: true, coverThumbhash: 'AQID' })).toBeNull();
+  expect(shootCover({ coverAssetId: null, unavailable: false, coverThumbhash: null })).toBeNull();
 });

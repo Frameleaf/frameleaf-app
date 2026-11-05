@@ -257,15 +257,15 @@
   </Section>
 
   <Section title={$t('frameleaf_storage_kept_title')}>
-    <Links rows={keptRows} stacked />
+    <Links rows={keptRows} />
   </Section>
 
   <Section title={$t('frameleaf_storage_deleted_title')}>
-    <Links rows={deletedRows} stacked />
+    <Links rows={deletedRows} />
   </Section>
 
   <Section title={$t('frameleaf_storage_identical_title')} description={$t('frameleaf_storage_identical_description')}>
-    <Links rows={identicalRows} stacked />
+    <Links rows={identicalRows} />
   </Section>
 </KitPage>
 
@@ -275,6 +275,10 @@
     gap: var(--fl-space-4);
     padding: var(--fl-space-4) var(--fl-space-6) var(--fl-space-6);
     border-top: 1px solid var(--fl-border);
+  }
+  /* The card's own bottom padding is the space under the facts; theirs would double it. */
+  .extra :global(.kit-facts) {
+    padding-bottom: 0;
   }
   @container kit (max-width: 620px) {
     .extra {

@@ -207,7 +207,7 @@
   <div class="pd-backdrop" style:background-image="url({getPeopleThumbnailUrl(person)})" aria-hidden="true"></div>
   <div class="pd-hero-content">
     <div class="pd-back">
-      <IconButton label={$t('frameleaf_people_back')} onclick={onBack}>
+      <IconButton variant="default" label={$t('frameleaf_people_back')} onclick={onBack}>
         <Icon icon={mdiArrowLeft} size="20" aria-hidden="true" />
       </IconButton>
     </div>
@@ -283,10 +283,6 @@
           <Icon icon={mdiCallMerge} size={ICON_SIZE.lg} aria-hidden="true" />
           {$t('merge_people')}
         </Button>
-        <Button onclick={() => (birthdayOpen = true)}>
-          <Icon icon={mdiCakeVariantOutline} size={ICON_SIZE.lg} aria-hidden="true" />
-          {person.birthDate ? $t('date_of_birth') : $t('set_date_of_birth')}
-        </Button>
         <Button onclick={() => void toggleHidden()}>
           <Icon icon={person.isHidden ? mdiEyeOutline : mdiEyeOffOutline} size={ICON_SIZE.lg} aria-hidden="true" />
           {person.isHidden ? $t('frameleaf_people_unhide') : $t('frameleaf_people_hide')}
@@ -297,22 +293,28 @@
           </span>
           {person.isFavorite ? $t('unfavorite') : $t('favorite')}
         </Button>
-        <Button disabled={assetCount === 0} pressed={fixOpen} onclick={() => (fixOpen = true)}>
-          <Icon icon={mdiFaceRecognition} size={ICON_SIZE.lg} aria-hidden="true" />
-          {$t('fix_incorrect_match')}
-        </Button>
-        <Button onclick={onOpenRecognitionGroups}>
-          <Icon icon={mdiAccountGroupOutline} size={ICON_SIZE.lg} aria-hidden="true" />
-          {$t('frameleaf_people_recognition_groups')}
-        </Button>
       </div>
+      <!-- The everyday actions stay in the row; the rest wait in "…" so the row never runs to eight
+           buttons (date of birth is also the "Add date of birth" fact above). -->
       <Menu label={$t('frameleaf_people_more_actions_for', { values: { name } })} align="end">
         {#snippet trigger()}
           <Icon icon={mdiDotsHorizontal} size={ICON_SIZE.lg} aria-hidden="true" />
         {/snippet}
+        <MenuItem onSelect={() => (birthdayOpen = true)}>
+          <Icon icon={mdiCakeVariantOutline} size={ICON_SIZE.lg} aria-hidden="true" />
+          {person.birthDate ? $t('date_of_birth') : $t('set_date_of_birth')}
+        </MenuItem>
+        <MenuItem disabled={assetCount === 0} onSelect={() => (fixOpen = true)}>
+          <Icon icon={mdiFaceRecognition} size={ICON_SIZE.lg} aria-hidden="true" />
+          {$t('fix_incorrect_match')}
+        </MenuItem>
         <MenuItem onSelect={() => (historyOpen = true)}>
           <Icon icon={mdiHistory} size={ICON_SIZE.lg} aria-hidden="true" />
           {$t('frameleaf_people_correction_history')}
+        </MenuItem>
+        <MenuItem onSelect={onOpenRecognitionGroups}>
+          <Icon icon={mdiAccountGroupOutline} size={ICON_SIZE.lg} aria-hidden="true" />
+          {$t('frameleaf_people_recognition_groups')}
         </MenuItem>
       </Menu>
     </div>
@@ -355,9 +357,11 @@
     isolation: isolate;
     /* Edge to edge, as the prototype's hero in `.media-scroll`: out through the library's page gutter. */
     margin-inline: calc(-1 * var(--fl-library-gutter-start, 0px)) calc(-1 * var(--fl-library-gutter-end, 0px));
-    margin-bottom: 1rem;
+    /* PersonDetail.jsx: the Timeline / Browse / Work row sits right under the hero. Take back the
+       library header's 12px so the toolbar's own top hairline is the hero's bottom edge, instead of
+       a hairline, an empty 28px band and a second hairline. */
+    margin-bottom: calc(-1 * var(--fl-space-3));
     background: var(--fl-panel);
-    border-bottom: 1px solid var(--fl-border);
   }
   .pd-backdrop {
     position: absolute;
@@ -394,7 +398,9 @@
     grid-template-columns: auto auto 1fr;
     align-items: center;
     gap: 16px 22px;
-    padding: 22px 32px 20px;
+    /* The hero runs edge to edge; its content keeps to the one page gutter (8px page area +
+       --fl-page-inline = 24px desktop, 16px phone), in line with the toolbar and grid below. */
+    padding: 22px calc(var(--fl-space-2) + var(--fl-page-inline)) 20px;
   }
   .pd-back {
     grid-area: back;
@@ -555,7 +561,7 @@
   }
   @media (max-width: 1000px) {
     .pd-hero-content {
-      padding: 20px 22px 18px;
+      padding-block: 20px 18px;
     }
   }
   @media (max-width: 700px) {
@@ -566,7 +572,7 @@
       grid-template-areas: 'back back' 'avatar identity' 'actions actions';
       grid-template-columns: auto 1fr;
       gap: 12px 14px;
-      padding: 14px 16px;
+      padding-block: 14px;
     }
     .pd-avatar :global(.avatar) {
       width: 96px !important;

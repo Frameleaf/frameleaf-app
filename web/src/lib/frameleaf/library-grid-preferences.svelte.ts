@@ -59,7 +59,8 @@ export class LibraryGridPreferences {
     const suffix = workspace === 'design' ? ':design' : '';
     this.#sizeKey = THUMBNAIL_SIZE_STORAGE_KEY + suffix;
     this.#namesKey = WORK_FILE_NAMES_STORAGE_KEY + suffix;
-    this.#defaultNames = workspace === 'design';
+    // Boards' grid starts without names, as the prototype's View menu does ("Show file names" off).
+    this.#defaultNames = false;
     this.reload();
   }
 

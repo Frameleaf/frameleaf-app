@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/sve
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
+import { boardsCollectionUi } from '$lib/frameleaf/boards-collection-ui.svelte';
 import { helpPanel } from '$lib/frameleaf/help-panel.svelte';
 import { resetIconCatalogueCache } from '$lib/frameleaf/icon-catalogue';
 import { RAIL_CLOSED_SECTIONS_KEY } from '$lib/frameleaf/navigation';
@@ -123,7 +124,8 @@ describe('LibraryRail', () => {
     ]) {
       const link = await screen.findByRole('link', { name });
       await waitFor(() => expect(link.querySelector('path')).toHaveAttribute('d', expected));
-      expect(link).toHaveAttribute('href', id === 'space' ? Route.viewSharedSpace({ id }) : Route.viewAlbum({ id }));
+      // Every node, a shared space too, opens in the album (library) view.
+      expect(link).toHaveAttribute('href', Route.viewAlbum({ id }));
       expect(link.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
     }
     expect(screen.getByRole('link', { name: 'Child' })).toHaveAttribute('aria-current', 'page');
@@ -480,8 +482,10 @@ describe('LibraryRail in Boards', () => {
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
     await fireEvent.click(toggle);
     await waitFor(() => expect(screen.queryByRole('link', { name: /^Moodboard/ })).toBeNull());
-    const create = screen.getByRole('link', { name: 'New collection' });
-    expect(new URL(create.getAttribute('href')!, 'http://localhost').searchParams.has('fl')).toBe(true);
+    // "+" opens New collection over Boards (prototype `NewCollectionDialog`); you stay where you are.
+    await fireEvent.click(screen.getByRole('button', { name: 'New collection' }));
+    expect(boardsCollectionUi.request).toEqual({ parentId: null });
+    boardsCollectionUi.close();
   });
 
   it('lists smart collections saved in Boards, and leaves out searches saved in the Library', async () => {

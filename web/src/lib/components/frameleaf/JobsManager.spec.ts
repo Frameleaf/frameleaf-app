@@ -161,53 +161,63 @@ beforeEach(() => {
 });
 
 describe('Job manager (FL-71, JobsManager.jsx)', () => {
-  it('opens on one sentence, then only the work that is running, waiting, paused or failed (FL-364)', () => {
+  it('lists every task with its feature, status, counts and how many run at once (approved design, 2026-11-04)', () => {
     render(JobsManager);
 
-    // The page's heading is the settings host's; the first thing here is the answer.
-    const status = within(screen.getByRole('region', { name: 'Background work status' }));
-    expect(status.getByRole('heading', { name: '3 things failed' })).toBeInTheDocument();
-    expect(status.getByText('Finding faces: 3 failed. Your original files are untouched.')).toBeInTheDocument();
-    expect(status.getByRole('link', { name: 'Review what failed in Finding faces' })).toHaveAttribute(
-      'href',
-      expect.stringContaining('queue=face-detection&tab=failed'),
-    );
-    expect(status.getByRole('button', { name: 'Resume' })).toBeInTheDocument();
-
-    const now = within(screen.getByRole('region', { name: 'Now' }));
-    const listed = now.getAllByRole('listitem').slice(0, 4);
-    expect(listed.map((item) => item.querySelector('strong')?.textContent)).toEqual([
-      'Making thumbnails',
-      'Finding faces',
-      'Housekeeping',
-      'Reading text in photos',
-    ]);
-    expect(within(listed[0]).getByText('Running')).toBeInTheDocument();
-    expect(within(listed[0]).getByText('7 left')).toBeInTheDocument();
-    expect(within(listed[1]).getByText('3 failed')).toBeInTheDocument();
-    expect(within(listed[3]).getByText('Paused')).toBeInTheDocument();
-    // The old table's columns and the three header buttons are gone.
-    expect(screen.queryByRole('table')).not.toBeInTheDocument();
-    for (const label of ['Concurrency', 'Enrichment tasks', 'Create job']) {
-      expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument();
+    // The page's heading is the settings host's; Advanced names itself under the Everyday | Advanced switch.
+    expect(screen.getByRole('button', { name: 'Advanced', pressed: true })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Every task' })).toBeInTheDocument();
+    for (const label of ['Resume 1 paused', 'Pause everything', 'Enrichment tasks', 'Create job']) {
+      expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
     }
+    // Concurrency edits the settings draft, so it shows only once the settings have loaded.
+    expect(screen.queryByRole('button', { name: /^Concurrency/ })).not.toBeInTheDocument();
+    const failed = screen.getByText('Failed', { selector: '.jm-metric span' }).nextElementSibling;
+    expect(failed).toHaveTextContent('3');
+
+    const table = screen.getByRole('table');
+    for (const column of ['Work', 'Status', 'Active', 'Waiting', 'Failed', 'At once']) {
+      expect(within(table).getByRole('columnheader', { name: column })).toBeInTheDocument();
+    }
+    const [, ...rows] = within(table).getAllByRole('row');
+    expect(rows.map((row) => row.querySelector('[aria-label^="Open "]')?.getAttribute('aria-label'))).toEqual([
+      'Open Making thumbnails',
+      'Open Finding faces',
+      'Open Housekeeping',
+      'Open Reading text in photos',
+    ]);
+    // Each task names the feature it belongs to, as everywhere else.
+    expect(within(rows[0]).getByText('Ready to browse')).toBeInTheDocument();
+    expect(within(rows[1]).getByText('Faces & identity')).toBeInTheDocument();
+    expect(within(rows[3]).getByText('Text, documents & receipts · feature off')).toBeInTheDocument();
+    expect(within(rows[0]).getByText('Processing')).toBeInTheDocument();
+    expect(within(rows[3]).getByText('Paused')).toBeInTheDocument();
+    expect(within(rows[1]).getByRole('button', { name: '3' })).toBeEnabled();
+    expect(within(rows[0]).getByRole('button', { name: 'Pause Making thumbnails' })).toBeEnabled();
+    expect(within(rows[2]).getByRole('button', { name: 'Pause Housekeeping' })).toBeDisabled();
+    expect(within(rows[3]).getByRole('button', { name: 'Resume Reading text in photos' })).toBeEnabled();
+    expect(screen.getByText('4 of 4 tasks')).toBeInTheDocument();
   });
 
-  it('keeps every kind of work behind "Show all", in plain names and groups', () => {
-    render(JobsManager);
+  it("shows one feature's tasks, filters by status, and opens a task on its failed jobs", async () => {
+    at('&view=advanced&feature=faces');
+    const { unmount } = render(JobsManager);
 
-    const all = screen.getByText('Show all 4 kinds of work').closest('details')!;
-    expect(all).not.toHaveAttribute('open');
-    for (const group of ['Photos and videos', 'AI features', 'Behind the scenes']) {
-      expect(within(all).getByRole('heading', { name: group })).toBeInTheDocument();
-    }
-    expect(within(all).getByRole('link', { name: 'Manage Reading text in photos' })).toHaveAttribute(
-      'href',
-      expect.stringContaining('queue=ocr'),
+    expect(screen.getByRole('combobox', { name: 'Feature' })).toHaveValue('faces');
+    expect(screen.getByRole('button', { name: 'Open Finding faces' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Open Making thumbnails' })).not.toBeInTheDocument();
+    expect(screen.getByText('1 of 4 tasks')).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: '3' }));
+    await waitFor(() =>
+      expect(goto).toHaveBeenCalledWith(expect.stringContaining('queue=face-detection&tab=failed'), expect.anything()),
     );
-    expect(
-      within(all).getByText('Shows work for everyone on this server. Pausing affects everyone.'),
-    ).toBeInTheDocument();
+    unmount();
+
+    at('&view=advanced');
+    render(JobsManager);
+    await fireEvent.change(screen.getByRole('combobox', { name: 'Status' }), { target: { value: 'paused' } });
+    expect(screen.getByRole('button', { name: 'Open Reading text in photos' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Open Finding faces' })).not.toBeInTheDocument();
   });
 
   it('pauses everything after its review, leaving out what the server never pauses', async () => {
@@ -232,7 +242,10 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
     at('&queue=thumbnail-generation');
     render(JobsManager);
 
-    expect(screen.getByRole('button', { name: 'All background work' })).toBeInTheDocument();
+    // One task's screen sits under Advanced, named with its feature, with the way back to every task.
+    expect(screen.getByText('Advanced · part of Ready to browse')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'All tasks' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Advanced', pressed: true })).toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
     const review = screen.getByRole('dialog', { name: 'Pause queue' });
     expect(within(review).getByText(/Stop taking new work/)).toBeInTheDocument();
@@ -262,7 +275,7 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
     ]);
     render(JobsManager);
 
-    expect(screen.getByRole('heading', { level: 1, name: 'Finding faces' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Finding faces' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /Failed\s*3/ })).toHaveAttribute('aria-selected', 'true');
     const job = await screen.findByRole('button', {
       name: /^Detect faces\s*asset-1\s*Machine learning is unreachable$/,
@@ -344,7 +357,7 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
   it('creates a maintenance job from the template dialog through the review, and records it in the history', async () => {
     render(JobsManager);
 
-    await fireEvent.click(screen.getByRole('button', { name: 'More tasks' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Create job' }));
     const dialog = screen.getByRole('dialog', { name: 'Create a maintenance job' });
     await fireEvent.input(within(dialog).getByRole('searchbox', { name: 'Search maintenance jobs' }), {
       target: { value: 'deleted accounts' },
@@ -516,14 +529,16 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
     expect(
       await screen.findByText('Some counts for Grace Hopper could not be loaded. They show as unknown.'),
     ).toBeInTheDocument();
-    // What could be read is shown; the kind that could not is never called up to date.
-    const now = within(screen.getByRole('region', { name: 'Now' }));
-    expect(now.getByText('Counts are for Grace Hopper.', { exact: false })).toBeInTheDocument();
-    const faces = now.getByRole('link', { name: 'Manage Finding faces' }).closest('li')!;
-    expect(within(faces).getByText('Couldn’t be read')).toBeInTheDocument();
-    expect(within(faces).queryByText('Up to date')).not.toBeInTheDocument();
-    const thumbnails = now.getAllByRole('link', { name: 'Manage Making thumbnails' }).at(-1)!.closest('li')!;
-    expect(within(thumbnails).getByText('Running · 3 left')).toBeInTheDocument();
+    // What could be read is shown; the task that could not shows a dash, never 0.
+    const faces = screen.getByRole('button', { name: 'Open Finding faces' }).closest('tr')!;
+    expect(within(faces).getAllByText('—').length).toBeGreaterThan(0);
+    const thumbnails = screen.getByRole('button', { name: 'Open Making thumbnails' }).closest('tr')!;
+    expect(
+      within(thumbnails)
+        .getAllByRole('cell')
+        .map((cell) => cell.textContent?.trim())
+        .slice(1, 3),
+    ).toEqual(['1', '2']);
   });
 });
 
@@ -549,7 +564,7 @@ describe('Job manager on returning to the window', () => {
 describe('Enrichment tasks (FL-59, JobsManager.jsx EnrichmentJobDialog)', () => {
   const openTasks = async () => {
     render(JobsManager);
-    await fireEvent.click(screen.getByRole('button', { name: /^Redo descriptions/ }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Enrichment tasks' }));
     return screen.getByRole('dialog', { name: 'Enrichment tasks' });
   };
 
@@ -741,6 +756,16 @@ describe('One job at a time (approved design, 2026-11-04)', () => {
     await waitFor(() =>
       expect(startQueueJob).toHaveBeenCalledWith({ name: QueueName.ThumbnailGeneration, id: failedJob.id }),
     );
+  });
+
+  it('shows Run on one item disabled, with the reason, for a task the server cannot run on one item yet', () => {
+    queues.list = [queue(QueueName.Sidecar)];
+    at('&queue=sidecar');
+    render(JobsManager);
+
+    const button = screen.getByRole('button', { name: 'Run on one item…' });
+    expect(button).toBeDisabled();
+    expect(button.closest('span')).toHaveAttribute('title', 'This task can’t run on one item yet.');
   });
 
   it('runs a task on one item picked from the library', async () => {

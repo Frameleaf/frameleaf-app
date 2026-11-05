@@ -30,7 +30,7 @@
     type AssetResponseDto,
   } from '@frameleaf/sdk';
   import { Icon, Link, LoadingSpinner, Text } from '@frameleaf/ui';
-  import { mdiAccountArrowLeftOutline, mdiAccountOutline } from '@mdi/js';
+  import { mdiAccountArrowLeftOutline, mdiAccountOutline, mdiChevronRight, mdiImageAlbum } from '@mdi/js';
   import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
   import OnEvents from '../OnEvents.svelte';
@@ -241,34 +241,31 @@
 
   {#await albums then albums}
     {#if albums.length > 0}
-      <section class="dark:text-immich-dark-fg">
+      <section>
         <div class="fl-info-heading-row">
           <h3 class="fl-info-heading">{$t('appears_in')}</h3>
         </div>
-        {#each albums as album (album.id)}
-          <a href={Route.viewAlbum(album)}>
-            <div class="flex items-center gap-4 pt-2 hover:cursor-pointer">
-              <div>
+        <!-- MediaViewer.jsx `.mv-albums`: a 40px cover, the name over its count, and a chevron. -->
+        <div class="fl-info-albums">
+          {#each albums as album (album.id)}
+            <a href={Route.viewAlbum(album)}>
+              {#if album.albumThumbnailAssetId}
                 <img
-                  alt={album.albumName}
-                  class="size-12.5 rounded-sm object-cover"
-                  src={album.albumThumbnailAssetId &&
-                    getAssetMediaUrl({ id: album.albumThumbnailAssetId, size: AssetMediaSize.Preview })}
+                  alt=""
+                  src={getAssetMediaUrl({ id: album.albumThumbnailAssetId, size: AssetMediaSize.Preview })}
                   draggable="false"
                 />
-              </div>
-
-              <div class="my-auto">
-                <p class="dark:text-immich-dark-primary">{album.albumName}</p>
-                <div class="flex flex-col gap-0 text-sm">
-                  <div>
-                    <AlbumListItemDetails {album} />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </a>
-        {/each}
+              {:else}
+                <Icon icon={mdiImageAlbum} size="20" aria-hidden />
+              {/if}
+              <span>
+                <strong>{album.albumName}</strong>
+                <small><AlbumListItemDetails {album} /></small>
+              </span>
+              <Icon icon={mdiChevronRight} size="18" aria-hidden />
+            </a>
+          {/each}
+        </div>
       </section>
     {/if}
   {/await}
@@ -335,6 +332,55 @@
     letter-spacing: 0.05em;
     line-height: 1.3;
     text-transform: uppercase;
+  }
+
+  /* .mv-albums (media-viewer.css:1723-1769): one row per album, the hover fill reaching past the text. */
+  .fl-info-albums {
+    display: grid;
+    gap: var(--fl-space-1);
+  }
+  .fl-info-albums a {
+    display: flex;
+    align-items: center;
+    gap: var(--fl-space-3);
+    width: calc(100% + 16px);
+    min-height: 52px;
+    margin: 0 calc(-1 * var(--fl-space-2));
+    padding: 6px var(--fl-space-2);
+    border-radius: var(--fl-radius-control);
+    color: var(--fl-viewer-text);
+    text-decoration: none;
+  }
+  .fl-info-albums a:hover {
+    background: var(--fl-viewer-raised);
+  }
+  .fl-info-albums img {
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    border-radius: var(--fl-radius-control);
+    object-fit: cover;
+  }
+  .fl-info-albums a > :global(svg) {
+    flex-shrink: 0;
+    color: var(--fl-viewer-muted);
+  }
+  .fl-info-albums span {
+    display: grid;
+    flex: 1;
+    gap: 2px;
+    min-width: 0;
+  }
+  .fl-info-albums strong {
+    overflow: hidden;
+    font-size: var(--fl-font-size);
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .fl-info-albums small {
+    color: var(--fl-viewer-muted);
+    font-size: var(--fl-font-micro);
   }
 
   /* .mv-owner (media-viewer.css:1690-1699). */

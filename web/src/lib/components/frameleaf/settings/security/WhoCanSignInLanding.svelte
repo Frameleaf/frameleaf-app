@@ -6,18 +6,24 @@
    * methods, Sign in with Frameleaf and the rule for signing in away from home, each with its state,
    * and who has an account. A person's own password, PIN and devices are on "Your sign-in & privacy".
    */
+  import { goto } from '$app/navigation';
+  import Button from '$lib/components/frameleaf/Button.svelte';
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
-  import Links, { type LinkRow } from '$lib/components/frameleaf/settings/kit/Links.svelte';
+  import Item from '$lib/components/frameleaf/settings/kit/Item.svelte';
+  import ItemList from '$lib/components/frameleaf/settings/kit/ItemList.svelte';
+  import type { KitTone } from '$lib/components/frameleaf/settings/kit/Pill.svelte';
+  import TextLink from '$lib/components/frameleaf/settings/kit/TextLink.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import { signInMethodsState } from '$lib/components/frameleaf/settings/security/sign-in';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
   import { searchUsersAdmin } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import {
-    mdiAccountLockOutline,
     mdiAccountMultipleOutline,
+    mdiChevronRight,
     mdiEarth,
     mdiHomeOutline,
     mdiKeyOutline,
@@ -63,38 +69,79 @@
             body: $t('frameleaf_security_who_everyone_body'),
           }
       : {
-          tone: 'quiet' as const,
+          tone: 'warn' as const,
           icon: mdiHomeOutline,
           title: $t('frameleaf_security_who_home_only'),
           body: $t('frameleaf_security_who_home_only_body'),
         },
   );
 
-  const rows = $derived<LinkRow[]>([
+  type Row = { icon: string; name: string; detail: string; status: string; tone: KitTone; href: string };
+  const rows = $derived<Row[]>([
     {
       icon: mdiKeyOutline,
-      title: $t('frameleaf_security_who_methods'),
-      body: $t(`frameleaf_security_methods_${methods}`),
+      name: $t('frameleaf_security_who_methods'),
+      detail: $t('frameleaf_security_who_methods_detail'),
+      status: $t(`frameleaf_security_methods_${methods}`),
+      tone: methods === 'none' ? 'bad' : 'good',
       href: commandCenterUrl('security', 'authentication'),
     },
     {
       icon: mdiShieldAccountOutline,
-      title: $t('frameleaf_security_who_frameleaf'),
-      body: linked
+      name: $t('frameleaf_security_who_frameleaf'),
+      detail: $t('frameleaf_security_who_frameleaf_detail'),
+      status: linked
         ? people === null
           ? $t('frameleaf_security_who_frameleaf_linked', { values: { count: linkedPeople } })
           : $t('frameleaf_security_who_frameleaf_of', { values: { count: linkedPeople, people } })
         : $t('frameleaf_security_who_frameleaf_not_linked'),
+      tone: linked ? (people !== null && linkedPeople < people ? 'warn' : 'good') : 'off',
       href: commandCenterUrl('security', 'frameleaf-signin'),
     },
     {
       icon: mdiEarth,
-      title: $t('frameleaf_security_who_away'),
-      body: linked ? $t('frameleaf_security_who_away_frameleaf') : $t('frameleaf_security_who_away_off'),
+      name: $t('frameleaf_security_who_away'),
+      detail: $t('frameleaf_security_who_away_detail'),
+      status: linked ? $t('frameleaf_security_who_away_frameleaf') : $t('frameleaf_security_who_away_off'),
+      tone: linked ? 'good' : 'off',
       href: commandCenterUrl('cloud', 'cloud-remote'),
     },
   ]);
+  const peopleRow = $derived<Row>({
+    icon: mdiAccountMultipleOutline,
+    name: $t('frameleaf_security_who_people'),
+    detail: $t('frameleaf_security_who_people_detail'),
+    status:
+      people === null
+        ? $t('frameleaf_security_who_people_body')
+        : $t('frameleaf_security_who_people_count', { values: { count: people } }),
+    tone: people === null ? 'off' : 'good',
+    href: commandCenterUrl('users'),
+  });
 </script>
+
+{#snippet linkServer()}
+  <Button variant="primary" onclick={() => goto(commandCenterUrl('cloud', 'cloud-account'))}
+    >{$t('frameleaf_cloud_landing_link_server')}</Button
+  >
+{/snippet}
+
+{#snippet item(row: Row)}
+  <Item
+    icon={row.icon}
+    off={row.tone === 'off'}
+    name={row.name}
+    detail={row.detail}
+    tone={row.tone}
+    status={row.status}
+  >
+    {#snippet action()}
+      <Button label={`${$t('frameleaf_security_who_open')}: ${row.name}`} onclick={() => goto(row.href)}
+        >{$t('frameleaf_security_who_open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden /></Button
+      >
+    {/snippet}
+  </Item>
+{/snippet}
 
 <KitPage>
   <Hero
@@ -103,31 +150,34 @@
     title={hero.title}
     body={hero.body}
     label={$t('frameleaf_security_who_status')}
+    actions={linked ? undefined : linkServer}
   />
 
   <Section title={$t('frameleaf_security_who_ways')} description={$t('frameleaf_security_who_ways_description')}>
-    <Links stacked {rows} />
+    <ItemList>
+      {#each rows as row (row.name)}
+        {@render item(row)}
+      {/each}
+    </ItemList>
   </Section>
 
   <Section title={$t('frameleaf_security_who_accounts')}>
-    <Links
-      rows={[
-        {
-          icon: mdiAccountMultipleOutline,
-          title: $t('frameleaf_security_who_people'),
-          body:
-            people === null
-              ? $t('frameleaf_security_who_people_body')
-              : $t('frameleaf_security_who_people_count', { values: { count: people } }),
-          href: commandCenterUrl('users'),
-        },
-        {
-          icon: mdiAccountLockOutline,
-          title: $t('frameleaf_settings_area_privacy'),
-          body: $t('frameleaf_security_who_yours_elsewhere'),
-          href: commandCenterUrl('privacy'),
-        },
-      ]}
-    />
+    <ItemList>
+      {@render item(peopleRow)}
+    </ItemList>
+    <p class="hint">
+      {$t('frameleaf_security_who_yours_elsewhere')}
+      <TextLink href={commandCenterUrl('privacy')}>{$t('frameleaf_settings_area_privacy')}</TextLink>
+    </p>
   </Section>
 </KitPage>
+
+<style>
+  .hint {
+    margin: 0;
+    padding: 0 0 var(--fl-space-5);
+    color: var(--fl-muted);
+    font-size: var(--fl-font-callout);
+    line-height: 1.5;
+  }
+</style>

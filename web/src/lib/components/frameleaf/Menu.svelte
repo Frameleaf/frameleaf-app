@@ -331,6 +331,8 @@
     top: calc(100% + var(--fl-space-2));
     inset-inline-start: 0;
     z-index: var(--fl-z-popover);
+    /* Sized by its items, not by the (often narrow) trigger it hangs from, so labels don't wrap. */
+    width: max-content;
     min-width: 11.25rem;
     max-width: min(20rem, calc(100vw - 2rem));
     padding: 0.375rem;

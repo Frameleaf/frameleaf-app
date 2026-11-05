@@ -190,11 +190,11 @@
   {/if}
 
   <Section title={$t('frameleaf_import_in_title')} description={$t('frameleaf_import_in_description')}>
-    <Links rows={inRows} stacked />
+    <Links rows={inRows} />
   </Section>
 
   <Section title={$t('frameleaf_import_out_title')}>
-    <Links rows={outRows} stacked />
+    <Links rows={outRows} />
     <div class="pad">
       <Notice title={$t('frameleaf_import_backups_title')}>
         {#snippet action()}

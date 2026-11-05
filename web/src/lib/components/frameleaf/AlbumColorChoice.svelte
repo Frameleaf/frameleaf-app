@@ -14,21 +14,26 @@
     onChange: (value: AlbumColor | null) => void;
     /** Distinguishes the group when two forms are on one page. */
     name?: string;
+    /**
+     * Dots only, on one row (Boards' New collection, prototype `ColourChoice`): each colour's name is
+     * its tooltip and accessible name instead of a caption.
+     */
+    compact?: boolean;
   }
 
-  let { value, onChange, name = 'album-color' }: Props = $props();
+  let { value, onChange, name = 'album-color', compact = false }: Props = $props();
 </script>
 
-<fieldset class="color-choice">
+<fieldset class="color-choice" class:compact>
   <legend>{$t('frameleaf_album_color_label')}</legend>
   <div class="options">
-    <label class="option">
+    <label class="option" title={compact ? $t('frameleaf_album_color_none') : undefined}>
       <input type="radio" {name} checked={value === null} onchange={() => onChange(null)} />
       <span class="swatch none" aria-hidden="true"><Icon icon={mdiCancel} size="16" /></span>
       <span class="name">{$t('frameleaf_album_color_none')}</span>
     </label>
     {#each ALBUM_COLORS as color (color.id)}
-      <label class="option">
+      <label class="option" title={compact ? $t(color.labelKey) : undefined}>
         <input type="radio" {name} checked={value === color.id} onchange={() => onChange(color.id)} />
         <span class="swatch" style="--swatch-light: {color.light}; --swatch-dark: {color.dark};" aria-hidden="true">
           {#if value === color.id}<Icon icon={mdiCheck} size="14" />{/if}
@@ -45,6 +50,7 @@
     padding: 0;
     border: 0;
     min-width: 0;
+    container-type: inline-size;
   }
   legend {
     margin-block-end: var(--fl-space-2);
@@ -53,10 +59,19 @@
     font-size: 0.75rem;
     font-weight: 600;
   }
+  /*
+   * The nine choices as an even grid: one row where they fit at their 44px (a dialog on a desktop),
+   * otherwise five and four, so no colour is ever left alone on a row of its own.
+   */
   .options {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(44px, 1fr));
     gap: var(--fl-space-2);
+  }
+  @container (min-width: 460px) {
+    .options {
+      grid-template-columns: repeat(9, minmax(44px, 1fr));
+    }
   }
   .option {
     position: relative;
@@ -98,10 +113,12 @@
     color: var(--fl-muted);
     box-shadow: inset 0 0 0 1px var(--fl-border);
   }
+  /* A caption a little wider than its cell ("No colour") stays on one line, centred under its dot. */
   .name {
     color: var(--fl-muted);
     font-size: 0.6875rem;
     line-height: 1.2;
+    white-space: nowrap;
   }
   .option:has(input:checked) .swatch {
     outline: 2px solid var(--fl-text);
@@ -117,5 +134,26 @@
   }
   .option:hover {
     background: var(--fl-raised);
+  }
+  .compact .options {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: var(--fl-space-1);
+  }
+  .compact .option {
+    min-width: 36px;
+    min-height: 36px;
+    justify-content: center;
+    padding: 0;
+    border-radius: 50%;
+  }
+  /* Still read out with the radio; only hidden from sight. */
+  .compact .name {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 </style>

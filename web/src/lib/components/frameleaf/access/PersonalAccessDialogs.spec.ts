@@ -195,7 +195,7 @@ describe('SupporterSection (FL-157)', () => {
     sdkMock.getMyUser.mockResolvedValue(user({ kind: 'individual', keyHint: '8EL6', activatedAt: new Date() }));
     render(SupporterSection);
 
-    await typeInto(screen.getByPlaceholderText('FL-XXXX-XXXX-XXXX'), 'FL-IC8Q-BT2Q-8EL6');
+    await typeInto(screen.getByPlaceholderText('FL-I…'), 'FL-IC8Q-BT2Q-8EL6');
     await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_buy_activate' }));
 
     await waitFor(() =>
@@ -207,26 +207,27 @@ describe('SupporterSection (FL-157)', () => {
   it('refuses a server key and an upstream key before sending anything', async () => {
     render(SupporterSection);
 
-    await typeInto(screen.getByPlaceholderText('FL-XXXX-XXXX-XXXX'), 'FL-S8NL-49G8-J583');
+    await typeInto(screen.getByPlaceholderText('FL-I…'), 'FL-S8NL-49G8-J583');
     await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_buy_activate' }));
     expect(await screen.findByText('frameleaf_buy_server_key_elsewhere')).toBeInTheDocument();
 
-    await typeInto(screen.getByPlaceholderText('FL-XXXX-XXXX-XXXX'), 'IMCL-AAAA-BBBB-CCCC');
+    await typeInto(screen.getByPlaceholderText('FL-I…'), 'IMCL-AAAA-BBBB-CCCC');
     await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_buy_activate' }));
     expect(await screen.findByText('frameleaf_license_key_error_upstream')).toBeInTheDocument();
     expect(sdkMock.setUserLicense).not.toHaveBeenCalled();
   });
 
   it('shows the activated key with the badge switch, and hides the badge with the right sense', async () => {
+    // "Show the supporter badge" (prototype preferences.jsx Supporter): on shows it, off hides it.
     vi.spyOn(authManager, 'user', 'get').mockReturnValue(
       user({ kind: 'individual', keyHint: '8EL6', activatedAt: '2026-09-25T00:00:00.000Z' }),
     );
     sdkMock.updateMyPreferences.mockResolvedValue(preferences);
     render(SupporterSection);
 
-    expect(screen.queryByPlaceholderText('FL-XXXX-XXXX-XXXX')).toBeNull();
-    const toggle = screen.getByRole('switch', { name: 'frameleaf_buy_hide_badge' });
-    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    expect(screen.queryByPlaceholderText('FL-I…')).toBeNull();
+    const toggle = screen.getByRole('switch', { name: 'frameleaf_prefs_supporter_badge' });
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
     await fireEvent.click(toggle);
     await waitFor(() =>
       expect(sdkMock.updateMyPreferences).toHaveBeenCalledWith({

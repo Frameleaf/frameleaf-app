@@ -1,5 +1,5 @@
 import { MediaOperationKind, MlWorkerReadiness, WorkerInventorySource } from '@frameleaf/sdk';
-import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
@@ -144,6 +144,12 @@ describe('Computers (FL-364)', () => {
     await fireEvent.click(add.getByRole('button', { name: 'Connect by address' }));
     expect(await screen.findByRole('button', { name: 'Advanced', pressed: true })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'AI helpers: addresses, access tokens and limits' })).toBeInTheDocument();
+    // …inside Each computer's technical details, which open for it.
+    await waitFor(() =>
+      expect(
+        screen.getByText('Addresses, connection codes and what each computer reported').closest('details'),
+      ).toHaveProperty('open', true),
+    );
 
     // Back on Everyday the two ways are still open.
     await fireEvent.click(screen.getByRole('button', { name: 'Everyday' }));
@@ -152,7 +158,9 @@ describe('Computers (FL-364)', () => {
         name: 'Get a connection code',
       }),
     );
-    expect(await screen.findByRole('region', { name: /^Studio helpers:/ })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('region', { name: 'Studio helpers and their connection codes' }),
+    ).toBeInTheDocument();
   });
 
   it('keeps Everyday to the computers and who does what, and everything else under Advanced', async () => {
@@ -165,6 +173,10 @@ describe('Computers (FL-364)', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Advanced' }));
     expect(screen.queryByRole('button', { name: /^Add a computer/ })).not.toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Each computer' })).toBeInTheDocument();
-    expect(screen.getByText(/^Studio helpers:/)).toBeInTheDocument();
+    // Advanced is the prototype's sections; the operator managers stay closed under Each computer.
+    expect(screen.getByText('Studio helpers and their connection codes')).toBeInTheDocument();
+    expect(
+      screen.getByText('Addresses, connection codes and what each computer reported').closest('details'),
+    ).toHaveProperty('open', false);
   });
 });

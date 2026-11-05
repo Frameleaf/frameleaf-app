@@ -34,9 +34,10 @@ describe('Save to Frameleaf access in API keys (FL-655)', () => {
     expect(
       screen.getByRole('button', { name: 'frameleaf_access_key_manage Save to Frameleaf · Chrome' }),
     ).toBeVisible();
-    // a key made by hand keeps Edit, Replace and Delete
-    expect(key.querySelectorAll('button')).toHaveLength(3);
-    expect(key).toHaveTextContent('frameleaf_access_key_made');
+    // a key made by hand opens Manage too, where it is edited, replaced or deleted (ApiKeys.jsx)
+    expect(key.querySelectorAll('button')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'frameleaf_access_key_manage Living-room frame' })).toBeVisible();
+    expect(key).toHaveTextContent('frameleaf_access_key_made_on');
   });
 
   it('has no key to copy or replace, and Remove access asks first', async () => {

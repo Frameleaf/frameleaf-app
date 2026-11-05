@@ -14,6 +14,7 @@
   } from '$lib/components/discovery/query';
   import { fromSavedSearch } from '$lib/frameleaf/search-palette';
   import { eagleImportUi, eaglePercent } from '$lib/frameleaf/eagle/eagle-import-status.svelte';
+  import { boardsCollectionUi } from '$lib/frameleaf/boards-collection-ui.svelte';
   import { savedSearchesStore } from '$lib/stores/saved-searches.svelte';
   import { menuButtonId } from '$lib/components/shared-components/navigation-bar/NavigationBar.svelte';
   import { sidebarStore } from '$lib/stores/sidebar.svelte';
@@ -55,11 +56,14 @@
   import { Route } from '$lib/route';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { albumTreeDropdown, sidebarCollapsed } from '$lib/stores/preferences.store';
-  import { handleUpdateAlbumInfo } from '$lib/services/album.service';
+  import { handleCreateAlbumEntry, handleUpdateAlbumInfo } from '$lib/services/album.service';
   import { handleError } from '$lib/utils/handle-error';
   import { dropZone, planKeyMove, planRailMove, type RailDrop, type RailUpdate } from '$lib/frameleaf/rail-moves';
+  import { canEdit } from '$lib/frameleaf/album-directory';
   import {
+    AlbumKind,
     AssetTypeEnum,
+    type CreateAlbumDto,
     LibraryItemSearchKind,
     LibraryScope,
     LibraryViewScope,
@@ -575,7 +579,7 @@
     });
 
   const isAlbumCurrent = (node: FrameleafAlbumNode) => pathname.startsWith(Route.viewAlbum({ id: node.id }));
-  // A shared space has its own page and is still browsed through the album view, so either is "here".
+  // A shared space opens in the album (library) view; its people, places and members page counts as "here" too.
   const isSpaceCurrent = (node: FrameleafAlbumNode) =>
     isAlbumCurrent(node) || pathname.startsWith(Route.viewSharedSpace({ id: node.id }));
   const isCollectionCurrent = (collection: FrameleafAlbumNode): boolean =>
@@ -753,6 +757,25 @@
   });
 
   let extensionOpen = $state(false);
+
+  /**
+   * Boards' "New collection" opens over the page you are on (prototype `NewCollectionDialog`), from
+   * the "+" here, Boards' Add menu or a collection's "…" menu, and creates in Boards; you stay put.
+   */
+  const boardsCollections = $derived(
+    albumRecords.filter(
+      (album) => album.kind !== AlbumKind.Space && authManager.authenticated && canEdit(album, authManager.user.id),
+    ),
+  );
+  const createBoardsCollection = async (dto: CreateAlbumDto) => {
+    const album = await handleCreateAlbumEntry({ ...dto, kind: AlbumKind.Album, libraryScope: LibraryScope.Design });
+    if (!album) {
+      return false;
+    }
+    toastManager.primary($t('frameleaf_albums_created', { values: { name: album.albumName } }));
+    await refreshAlbums();
+    return true;
+  };
   /** An Eagle import carrying on with its dialog hidden (prototype `EagleStatus`). */
   const eagleRunning = $derived(
     eagleImportUi.run && (eagleImportUi.run.state === 'running' || eagleImportUi.run.state === 'stopping')
@@ -881,12 +904,21 @@
   {/if}
 {/snippet}
 
+{#snippet albumIcons(node: FrameleafAlbumNode)}
+  {@render albumLink(node)}
+  {#if node.children.length > 0 && isCollectionOpen(node.id)}
+    {#each node.children as album (album.id)}
+      {@render albumIcons(album)}
+    {/each}
+  {/if}
+{/snippet}
+
 {#snippet albumLink(node: FrameleafAlbumNode)}
   {@render railLink(node.name, node, scopedHref(Route.viewAlbum({ id: node.id })), isAlbumCurrent(node), true)}
 {/snippet}
 
 {#snippet spaceLink(node: FrameleafAlbumNode)}
-  {@render railLink(node.name, node, Route.viewSharedSpace({ id: node.id }), isSpaceCurrent(node), true)}
+  {@render railLink(node.name, node, Route.viewAlbum({ id: node.id }), isSpaceCurrent(node), true)}
 {/snippet}
 
 {#snippet boardsList()}
@@ -923,18 +955,18 @@
   {:else}
     <div class="fl-heading">
       <h2>{$t('frameleaf_boards_collections')}</h2>
-      <a
+      <button
+        type="button"
         class="fl-action"
-        href={scopedHref(Route.newAlbum({ kind: 'album' }))}
         title={$t('frameleaf_boards_new_collection')}
         aria-label={$t('frameleaf_boards_new_collection')}
-        data-sveltekit-preload-data="hover"
+        onclick={() => boardsCollectionUi.newCollection(null)}
       >
         <Icon icon={mdiPlus} size="1em" aria-hidden={true} />
-      </a>
+      </button>
     </div>
   {/if}
-  <div class="fl-section" role="group" aria-label={$t('frameleaf_boards_collections')}>
+  <div class="fl-section fl-boards-tree" role="group" aria-label={$t('frameleaf_boards_collections')}>
     {#if iconOnly}
       {#each albumRoots as node (node.id)}
         {@render railLink(
@@ -993,6 +1025,7 @@
     class="frameleaf fl-rail-header"
     class:fl-icon-only={collapsed && iconOnly}
     class:is-collapsing={collapsing}
+    class:is-boards={boards}
     data-theme={appTheme}
   >
     {#if !iconOnly && boards}
@@ -1013,6 +1046,16 @@
       onclick={toggle}
     >
       <Icon icon={collapsed ? mdiChevronDoubleRight : mdiChevronDoubleLeft} size="18" aria-hidden={true} />
+    </button>
+    <!-- The ☰ drawer (prototype phone menu): the same header, and « closes the drawer. -->
+    <button
+      type="button"
+      class="fl-rail-toggle fl-drawer-close"
+      aria-label={$t('close')}
+      title={$t('close')}
+      onclick={() => sidebarStore.reset()}
+    >
+      <Icon icon={mdiChevronDoubleLeft} size="18" aria-hidden={true} />
     </button>
   </div>
 {/snippet}
@@ -1085,13 +1128,14 @@
       <button
         type="button"
         class="fl-link"
-        title={iconOnly ? $t('frameleaf_boards_get_extension') : undefined}
-        aria-label={iconOnly ? $t('frameleaf_boards_get_extension') : undefined}
+        title={$t('frameleaf_boards_get_extension')}
+        aria-label={$t('frameleaf_boards_get_extension')}
         aria-haspopup="dialog"
         onclick={() => (extensionOpen = true)}
       >
         <Icon icon={mdiPuzzleOutline} size="1.25em" aria-hidden={true} class="fl-icon" />
-        {#if !iconOnly}<span class="fl-label">{$t('frameleaf_boards_get_extension')}</span>{/if}
+        <!-- The 228px rail fits the short label; the full one stays the accessible name. -->
+        {#if !iconOnly}<span class="fl-label">{$t('frameleaf_boards_get_extension_short')}</span>{/if}
       </button>
     {/if}
     {#each footerDestinations as destination (destination.id)}
@@ -1178,6 +1222,11 @@
                 {#each albumRoots as node (node.id)}
                   {@render albumBranch(node)}
                 {/each}
+              {:else if destination.id === 'allAlbums'}
+                <!-- LibraryRail.jsx: the collapsed rail keeps each shown album as an icon (named on hover). -->
+                {#each albumRoots as node (node.id)}
+                  {@render albumIcons(node)}
+                {/each}
               {/if}
               {#if destination.id === 'allAlbums'}
                 <!-- LibraryRail.jsx: saved searches follow the album tree, before Shared links. -->
@@ -1186,11 +1235,9 @@
             {/each}
 
             {#if section.id === 'spaces'}
-              {#if !iconOnly}
-                {#each tree.spaces as space (space.id)}
-                  {@render spaceLink(space)}
-                {/each}
-              {/if}
+              {#each tree.spaces as space (space.id)}
+                {@render spaceLink(space)}
+              {/each}
               <!-- LibraryRail.jsx: each partner's library follows the spaces ("Jamie's library"). -->
               {#each partners as partner (partner.id)}
                 {@render railLink(
@@ -1223,6 +1270,23 @@
 {#if extensionOpen}{#await import('$lib/components/frameleaf/BoardsExtensionDialog.svelte') then { default: BoardsExtensionDialog }}
     <BoardsExtensionDialog bind:open={extensionOpen} />
   {/await}{/if}
+{#if boardsCollectionUi.request}{#await import('$lib/components/frameleaf/AlbumCreateDialog.svelte') then { default: AlbumCreateDialog }}
+    <AlbumCreateDialog
+      boards
+      kind={AlbumKind.Album}
+      collections={boardsCollections}
+      defaultParentId={boardsCollectionUi.request?.parentId ?? null}
+      bind:open={
+        () => !!boardsCollectionUi.request,
+        (open) => {
+          if (!open) {
+            boardsCollectionUi.close();
+          }
+        }
+      }
+      onCreate={createBoardsCollection}
+    />
+  {/await}{/if}
 <!-- Import from Eagle (FL-653), opened from the rail or Boards' Add menu; loaded only when used. -->
 {#if eagleImportUi.open}{#await import('$lib/components/frameleaf/eagle/BoardsEagleImportDialog.svelte') then { default: BoardsEagleImportDialog }}
     <BoardsEagleImportDialog />
@@ -1246,6 +1310,19 @@
   }
   .nested-branch .nested-branch {
     margin-inline-start: 12px;
+  }
+  /*
+   * Boards' tree (prototype .pro-tree: 16px a level, the twisty's column kept on every row): a
+   * collection with nothing inside lines its icon up with one that has a twisty.
+   */
+  .fl-boards-tree .fl-nested {
+    padding-inline-start: 48px;
+  }
+  .fl-boards-tree .nested-branch > .fl-nested {
+    padding-inline-start: 64px;
+  }
+  .fl-boards-tree .nested-branch .nested-branch {
+    margin-inline-start: 16px;
   }
   /* S-28: the rail follows styles.css:291-357 and 1674-1729 (flat full-width rows, 34px, 22px
      inset, 11px uppercase headings over a hairline, the accent tint with an inset bar). */
@@ -1323,7 +1400,7 @@
     margin: 0;
   }
   .fl-rail-header {
-    display: none;
+    display: flex;
     flex-shrink: 0;
     align-items: center;
     justify-content: space-between;
@@ -1367,10 +1444,23 @@
     overflow: hidden;
     white-space: nowrap;
   }
-  /* Narrower screens open and close the drawer from the top bar's menu button. */
-  @media (min-width: 850px) {
-    .fl-rail-header {
-      display: flex;
+  /*
+   * Narrower screens open the drawer from the top bar's menu button; its header keeps the "Library"
+   * label, and « closes the drawer rather than narrowing a rail that is not there.
+   */
+  .fl-rail-header .fl-rail-toggle.fl-drawer-close {
+    display: none;
+  }
+  @media (max-width: 849px) {
+    .fl-rail-header .fl-rail-toggle:not(.fl-drawer-close) {
+      display: none;
+    }
+    .fl-rail-header .fl-rail-toggle.fl-drawer-close {
+      display: inline-grid;
+    }
+    /* Boards' drawer is its "Collections and filters" sheet, which has a heading and Close of its own. */
+    .fl-rail-header.is-boards {
+      display: none;
     }
   }
   .fl-rail-toggle {
@@ -1644,17 +1734,15 @@
     color: var(--fl-text);
     font-weight: 600;
   }
+  /* Prototype .pro-free: a soft accent pill in sentence case. */
   .fl-free {
-    padding: 1px 7px;
-    border: 1px solid color-mix(in srgb, var(--fl-accent), transparent 55%);
-    border-radius: 999px;
-    color: var(--fl-text);
-    background: color-mix(in srgb, var(--fl-accent), transparent 85%);
+    padding: 2px 8px;
+    border-radius: var(--fl-radius-pill);
+    color: var(--fl-accent);
+    background: var(--fl-accent-soft);
     /* UI review 2026-10-30 P5: at least 12px. */
     font-size: 12px;
     font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
   }
   .fl-empty {
     margin: 0;
@@ -1665,6 +1753,66 @@
   .fl-rail-footer button.fl-link {
     font: inherit;
     cursor: pointer;
+  }
+  /*
+   * Boards (prototype .pro-rail-link / .pro-tree-name): every row is a rounded pill inside a 12px rail
+   * inset (icons stay on the 22px line), and the chosen row is accent-soft with an accent icon and no
+   * bar. Keyed on the document flag Boards sets, so the library rail keeps its flat rows.
+   */
+  :global(html[data-fl-boards-rail]) .fl-link,
+  :global(html[data-fl-boards-rail]) .fl-branch {
+    width: calc(100% - 24px);
+    margin-inline: 12px;
+    padding-inline: 10px;
+    border-radius: var(--fl-radius-control);
+  }
+  :global(html[data-fl-boards-rail]) .fl-link {
+    gap: 10px;
+  }
+  /*
+   * A collection with children: the twisty, then its name as the pill (prototype .pro-tree-row). The
+   * twisty is 20px, not 24, so a name such as "Brand refresh 2027" still fits the 228px rail.
+   */
+  :global(html[data-fl-boards-rail]) .fl-branch {
+    gap: 0;
+    padding-inline: 0;
+  }
+  :global(html[data-fl-boards-rail]) .fl-branch .fl-twisty {
+    min-width: 20px;
+  }
+  :global(html[data-fl-boards-rail]) .fl-branch .fl-link {
+    width: auto;
+    flex: 1;
+    min-width: 0;
+    margin-inline: 0;
+    padding-inline: 4px 10px;
+    border-radius: var(--fl-radius-control);
+  }
+  :global(html[data-fl-boards-rail]) .fl-branch.fl-current {
+    background: none;
+  }
+  :global(html[data-fl-boards-rail]) .fl-branch.fl-current .fl-link {
+    background: var(--fl-accent-soft);
+  }
+  /* A collection without children lines its icon up with one that has a twisty (20px + 4px). */
+  :global(html[data-fl-boards-rail]) .fl-boards-tree .fl-nested {
+    padding-inline-start: 24px;
+  }
+  :global(html[data-fl-boards-rail]) .fl-boards-tree .nested-branch > .fl-nested {
+    padding-inline-start: 40px;
+  }
+  :global(html[data-fl-boards-rail]) .fl-icon-only .fl-link {
+    width: calc(100% - 16px);
+    margin-inline: 8px;
+    padding-inline: 0;
+  }
+  :global(html[data-fl-boards-rail]) .fl-current,
+  :global(html[data-fl-boards-rail]) .fl-current:hover {
+    background: var(--fl-accent-soft);
+    box-shadow: none;
+  }
+  :global(html[data-fl-boards-rail]) .fl-current :global(.fl-icon) {
+    color: var(--fl-accent);
   }
   .fl-boards-sheet-head {
     display: none;

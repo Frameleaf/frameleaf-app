@@ -13,6 +13,7 @@
   import { Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
+  import { openFileUploadDialog } from '$lib/utils/file-uploader';
   import { personalSections } from './personal-sections';
   import SystemSettings from './SystemSettings.svelte';
   import SectionBody from './sections/SectionBody.svelte';
@@ -33,7 +34,8 @@
   <SectionBody {section} />
 {/snippet}
 
-<NavigationBar noBorder />
+<!-- Upload stays in the top bar on settings pages too, as in the prototype's admin screen. -->
+<NavigationBar noBorder onUploadClick={() => void openFileUploadDialog()} />
 <Theme theme={appTheme}>
   <div class="command-page">
     {#if data.system}

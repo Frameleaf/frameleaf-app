@@ -63,6 +63,8 @@
   let pointerId: number | null = null;
 
   const shown = $derived(src ?? placeholder);
+  /** The address that failed to load: no broken-image icon and alt text, a quiet note instead. */
+  let broken = $state<string | null>(null);
   const active = $derived(
     mode === 'masks' ? (masks.find((mask) => mask.id === tools.maskId) ?? masks.at(-1)) : undefined,
   );
@@ -216,7 +218,16 @@
 <div class="rde-stage" bind:clientWidth={stageWidth} bind:clientHeight={stageHeight}>
   <div class="rde-stage-inner">
     <div class="rde-frame" style:width={`${frameWidth}px`} style:height={`${frameHeight}px`}>
-      <img src={shown} {alt} draggable="false" onload={loaded} />
+      <img
+        src={shown}
+        {alt}
+        draggable="false"
+        onload={loaded}
+        onerror={() => (broken = shown)}
+        class:is-broken={broken === shown}
+      />{#if broken === shown && !busy}<p class="rde-frame-empty" role="status">
+          {$t('frameleaf_photography_preview_unavailable')}
+        </p>{/if}
       <svg
         class="rde-overlay"
         class:enabled={interactive}

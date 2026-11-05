@@ -24,6 +24,7 @@
   import Item from '$lib/components/frameleaf/settings/kit/Item.svelte';
   import ItemList from '$lib/components/frameleaf/settings/kit/ItemList.svelte';
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
+  import Meter from '$lib/components/frameleaf/settings/kit/Meter.svelte';
   import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
   import type { KitTone } from '$lib/components/frameleaf/settings/kit/Pill.svelte';
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
@@ -341,6 +342,8 @@
     };
   });
 
+  /** The server counted how far this feature has got, so the row can say "N of M" with a bar. */
+  const hasCount = (row: Progress) => row.done !== undefined && row.total !== undefined && row.total > 0;
   const rowState = (row: Progress): { tone: KitTone; status: string; note?: string } => {
     if (row.off) {
       return { tone: 'off', status: $t('frameleaf_care_prog_off'), note: $t('frameleaf_care_prog_off_note') };
@@ -364,10 +367,8 @@
       };
     }
     if (row.left > 0) {
-      const read =
-        row.done !== undefined && row.total !== undefined && row.total > 0
-          ? $t('frameleaf_care_prog_read_of', { values: { done: row.done, total: row.total } })
-          : $t('frameleaf_care_prog_left', { values: { count: row.left } });
+      // With the measure column saying "N of M", the status says what is left (prototype `fixes.jsx`).
+      const read = $t('frameleaf_care_prog_left', { values: { count: row.left } });
       const pace = row.active > 0 ? $t('frameleaf_care_prog_reading_now') : $t('frameleaf_care_prog_waiting_turn');
       return {
         tone: 'off',
@@ -385,7 +386,12 @@
       };
     }
     if (row.total !== undefined && row.total > 0) {
-      return { tone: 'good', status: $t('frameleaf_care_prog_all_read', { values: { count: row.total } }) };
+      return {
+        tone: 'good',
+        status: hasCount(row)
+          ? $t('frameleaf_care_prog_all_read_short')
+          : $t('frameleaf_care_prog_all_read', { values: { count: row.total } }),
+      };
     }
     return { tone: 'good', status: $t('frameleaf_care_prog_none') };
   };
@@ -432,6 +438,16 @@
           status={state.status}
           note={state.note}
         >
+          {#snippet measure()}
+            {#if !row.off && hasCount(row) && row.done !== undefined && row.total !== undefined}
+              <Meter
+                label={$t('frameleaf_care_prog_measure_label', { values: { name } })}
+                value={$t('frameleaf_care_prog_measure_done', { values: { count: row.done } })}
+                max={$t('frameleaf_care_prog_measure_of', { values: { count: row.total } })}
+                fraction={row.done / row.total}
+              />
+            {/if}
+          {/snippet}
           {#snippet action()}
             <div class="row-buttons">
               <Button
@@ -441,12 +457,15 @@
                   redoOpen = true;
                 }}>{$t('frameleaf_care_redo_one')}</Button
               >
-              {#if row.feature.href}
-                {@const href = row.feature.href}
-                <Button label={$t('frameleaf_care_prog_open_named', { values: { name } })} onclick={() => goto(href)}>
-                  {$t('frameleaf_care_prog_open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden />
-                </Button>
-              {/if}
+              <!-- Open keeps its column on every row, so "Redo one…" lines up down the list. -->
+              <span class="open-slot">
+                {#if row.feature.href}
+                  {@const href = row.feature.href}
+                  <Button label={$t('frameleaf_care_prog_open_named', { values: { name } })} onclick={() => goto(href)}>
+                    {$t('frameleaf_care_prog_open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden />
+                  </Button>
+                {/if}
+              </span>
             </div>
           {/snippet}
         </Item>
@@ -498,10 +517,17 @@
 </KitPage>
 
 <style>
+  .open-slot {
+    display: grid;
+  }
+  .open-slot:empty {
+    visibility: hidden;
+  }
+  /* "Redo one…" starts at the same place on every row, with Open after it when the row has a page. */
   .row-buttons {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 8px;
+    display: grid;
+    grid-template-columns: max-content 5.5rem;
+    justify-content: end;
+    gap: var(--fl-space-2);
   }
 </style>

@@ -291,7 +291,8 @@
    * capsules; the sort menu and New tag keep the app's control corners, as the approved mock draws them.
    */
   .tags {
-    padding: 18px 24px 64px;
+    /* The one page gutter: the page area's 8px + --fl-page-inline = 24px desktop, 16px phone. */
+    padding: 18px var(--fl-page-inline) 64px;
     color: var(--fl-text);
   }
   .tags > :global(*) {
@@ -308,8 +309,8 @@
   }
   .heading h1 {
     margin: 0;
-    font-size: 1.5rem;
-    font-weight: 700;
+    font: var(--fl-type-display);
+    letter-spacing: var(--fl-tracking-display);
   }
   /* Focused only by script, when the card that had focus has been deleted. */
   .heading h1:focus {
@@ -318,7 +319,9 @@
   .heading p {
     margin: var(--fl-space-2) 0 0;
     color: var(--fl-muted);
-    font-size: 0.875rem;
+    /* One subtitle size under every discovery page title (the prototype's 13px). */
+    font-size: var(--fl-font-callout);
+    line-height: 1.6;
   }
   .tools {
     display: flex;
@@ -340,6 +343,9 @@
   .search input {
     flex: 1;
     min-width: 0;
+    /* With the field's 1px border, the row's one control height. */
+    min-height: calc(var(--fl-control-height) - 2px);
+    height: calc(var(--fl-control-height) - 2px);
     border: 0;
     background: transparent;
     color: var(--fl-text);
@@ -353,23 +359,28 @@
     outline: var(--fl-focus-ring);
     outline-offset: var(--fl-focus-offset);
   }
-  /* A two-way switch: the chosen view is the raised half. */
+  /* A two-way switch: the chosen view is the raised half. The switch is one control height (44px,
+     48 on touch) like the row beside it; each half is that tall too, its raised fill inset 3px by a
+     clear border so the prototype's segment spacing (3px around, 2px between) is kept. */
   .view {
     display: inline-flex;
     gap: 2px;
-    padding: 3px;
+    padding: 0 3px;
     border-radius: var(--fl-radius-pill);
     background: var(--fl-raised);
   }
   .view button {
     display: grid;
     place-items: center;
-    min-width: 42px;
-    min-height: 38px;
-    padding: 0 6px;
+    width: 42px;
+    min-width: 0;
+    min-height: var(--fl-control-height);
+    padding: 0;
     border: 0;
+    border-block: 3px solid transparent;
     border-radius: var(--fl-radius-pill);
     background: transparent;
+    background-clip: padding-box;
     color: var(--fl-muted);
   }
   .view button[aria-pressed='true'] {
@@ -424,9 +435,8 @@
     color: var(--fl-danger);
   }
   @media (max-width: 700px) {
-    /* With the page's own 8px, the 16px phone gutter. */
-    .tags {
-      padding: 14px var(--fl-space-2) 64px;
+    .heading h1 {
+      font-size: var(--fl-font-title);
     }
     .head {
       flex-direction: column;
@@ -448,8 +458,8 @@
   }
   @media (pointer: coarse) {
     .view button {
-      min-width: 44px;
-      min-height: 42px;
+      width: 44px;
+      min-height: var(--fl-control-height-touch);
     }
     .text-button {
       min-height: 44px;

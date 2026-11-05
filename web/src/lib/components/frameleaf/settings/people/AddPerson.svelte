@@ -139,7 +139,8 @@
       </div>
     </Section>
   {:else}
-    <Section title={$t('frameleaf_userpage_add_title')} description={$t('frameleaf_userpage_add_description')}>
+    <!-- The page heading says "Add a person" and what it means (UsersSection), so the card is only "About". -->
+    <Section title={$t('frameleaf_userpage_about')}>
       <Row label={$t('frameleaf_userpage_name')}>
         <Field
           label={$t('frameleaf_userpage_name')}

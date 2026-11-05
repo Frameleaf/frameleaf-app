@@ -26,12 +26,20 @@
     tags,
     canEdit = false,
     labelledBy,
+    onAdd,
+    onRemove,
   }: {
     assetId: string;
     tags: TagResponseDto[];
     canEdit?: boolean;
     /** Id of the section heading that names the tag list. */
     labelledBy?: string;
+    /**
+     * Writes for something other than a file (a saved link's own tag API). Without them the tags are
+     * assigned to and removed from the asset `assetId` names.
+     */
+    onAdd?: (tagId: string) => Promise<unknown>;
+    onRemove?: (tagId: string) => Promise<unknown>;
   } = $props();
 
   const listId = $props.id();
@@ -90,17 +98,21 @@
         if (!known) {
           allTags = [...(allTags ?? []).filter((item) => item.id !== tag.id), tag];
         }
-        await tagAssets({ tagIds: [tag.id], assetIds: [id], showNotification: false });
+        await (onAdd ? onAdd(tag.id) : tagAssets({ tagIds: [tag.id], assetIds: [id], showNotification: false }));
         if (stillHere() && current.every((item) => item.id !== tag.id)) {
           current = [...current, tag];
         }
       } else {
-        await removeTag({ tagIds: [change.tag.id], assetIds: [id], showNotification: false });
+        await (onRemove
+          ? onRemove(change.tag.id)
+          : removeTag({ tagIds: [change.tag.id], assetIds: [id], showNotification: false }));
         if (stillHere()) {
           current = current.filter((item) => item.id !== change.tag.id);
         }
       }
-      eventManager.emit('AssetsTag', [id]);
+      if (!onAdd) {
+        eventManager.emit('AssetsTag', [id]);
+      }
     } catch {
       if (stillHere()) {
         failed = change;
@@ -270,6 +282,10 @@
     place-items: center;
     width: 24px;
     height: 24px;
+    /* The chip's own ×, not a row control: the global 44px minimum would make the chip 52px tall. */
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
     border-radius: 50%;
     color: var(--fl-muted);
   }

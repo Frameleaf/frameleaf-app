@@ -76,6 +76,16 @@
     })),
   );
   const stateOf = (row: TellRow) => checks.find((check) => check.kind === row.id)?.state;
+
+  /*
+   * The button says the short verb ("Set up ›", "Open ›") so the row's name keeps its room on a
+   * phone; its accessible name says where it goes ("Set up backup", "Open Background work"), as the
+   * prototype's `aria-label="Open Backup"` does.
+   */
+  const actionText = (label: Words) =>
+    label.key === 'frameleaf_attention_set_up_backup'
+      ? { text: $t('frameleaf_attention_set_up_short'), name: words(label) }
+      : { text: $t('open'), name: $t('frameleaf_attention_open_named', { values: { name: words(label) } }) };
 </script>
 
 <KitPage>
@@ -98,7 +108,7 @@
 
     {#if views.length > 0}
       <Section title={$t('frameleaf_attention_now_title')}>
-        <ItemList>
+        <ItemList noMeasure>
           {#each views as view (view.id)}
             <Item
               icon={view.icon}
@@ -109,8 +119,9 @@
               note={view.since ? words(view.since) : undefined}
             >
               {#snippet action()}
-                <a class="button" href={view.action.href}>
-                  {words(view.action.label)}<Icon icon={mdiChevronRight} size="16" aria-hidden />
+                {@const label = actionText(view.action.label)}
+                <a class="button" href={view.action.href} aria-label={label.name}>
+                  {label.text}<Icon icon={mdiChevronRight} size="16" aria-hidden />
                 </a>
               {/snippet}
             </Item>

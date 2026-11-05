@@ -25,6 +25,7 @@ import {
   mdiTagMultipleOutline,
   mdiTextBoxSearchOutline,
   mdiTuneVariant,
+  mdiViewDashboardOutline,
 } from '@mdi/js';
 import type { Translations } from 'svelte-i18n';
 import { Route } from '$lib/route';
@@ -67,7 +68,7 @@ export interface PrimaryDestinationOptions {
 
 export const buildPrimaryDestinations = ({ clients = false }: PrimaryDestinationOptions = {}): PrimaryDestination[] => [
   { id: 'library', labelKey: 'library', icon: mdiImageMultipleOutline, href: Route.photos() },
-  { id: 'pro', labelKey: 'frameleaf_pro_title', icon: mdiFolderMultipleOutline, href: '/pro' },
+  { id: 'pro', labelKey: 'frameleaf_pro_title', icon: mdiViewDashboardOutline, href: '/pro' },
   ...(clients
     ? [
         {
@@ -421,6 +422,11 @@ export const isDestinationCurrent = (current: string | URL, destination: RailDes
       return care || (utilities && url.searchParams.get('section') !== 'workflows');
     }
   }
+  // A search is the Library narrowed by it (prototype App.jsx; owner, 2026-11-05), so the rail's
+  // Library entry stays current on the results and the viewer opened from them.
+  if (destination.id === 'library' && isWithin(url.pathname, pathOf(Route.search()))) {
+    return true;
+  }
   if ([...target.searchParams].some(([key, value]) => url.searchParams.get(key) !== value)) {
     return false;
   }
@@ -502,7 +508,11 @@ export const currentTab = (pathname: string): TabBarId | null => {
   if (isWithin(pathname, pathOf(Route.search()))) {
     return 'search';
   }
-  if (isWithin(pathname, pathOf(Route.explore())) || isWithin(pathname, PEOPLE_ROOT)) {
+  if (
+    isWithin(pathname, pathOf(Route.explore())) ||
+    isWithin(pathname, PEOPLE_ROOT) ||
+    isWithin(pathname, pathOf(Route.pets()))
+  ) {
     return null;
   }
   return currentPrimaryDestination(pathname) === 'library' ? 'library' : null;

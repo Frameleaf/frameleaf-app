@@ -633,14 +633,14 @@
     width: 100%;
     max-width: 1400px;
     margin: 0 auto;
-    padding: 26px 30px 36px;
+    /* The one page gutter: the page area's 8px + --fl-page-inline = 24px desktop, 16px phone. */
+    padding: 26px var(--fl-page-inline) 36px;
     color: var(--fl-text);
     font-size: var(--fl-font-size);
   }
   @media (max-width: 640px) {
-    /* With the page's own 8px, the 16px phone gutter. */
     .fm {
-      padding: var(--fl-space-4) var(--fl-space-2) var(--fl-space-6);
+      padding-bottom: var(--fl-space-6);
     }
   }
   /* discovery.css:56-75 */
@@ -663,11 +663,12 @@
     font-size: 0.8125rem;
     line-height: 1.6;
   }
+  /* The app's 44px control floor (discovery.css draws 34px). */
   .fm-icon-button {
     display: inline-grid;
     place-items: center;
-    width: 2.125rem;
-    height: 2.125rem;
+    width: var(--fl-control-height);
+    height: var(--fl-control-height);
     color: var(--fl-text);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);
@@ -958,6 +959,8 @@
     inset-block-start: 0.5rem;
   }
   .fm-card-menu :global(button[aria-haspopup]) {
+    min-width: var(--fl-control-height);
+    min-height: var(--fl-control-height);
     color: #fff;
     background: rgb(0 0 0 / 55%);
     border-color: transparent;
@@ -1050,5 +1053,11 @@
      the page area already adds 8px. */
   .fm {
     padding-top: calc(var(--fl-page-top) - 8px);
+  }
+  /* The discovery pages' phone title size (after .fm-header h1, so it wins). */
+  @media (max-width: 700px) {
+    .fm-header h1 {
+      font-size: var(--fl-font-title);
+    }
   }
 </style>

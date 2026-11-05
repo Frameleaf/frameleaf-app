@@ -190,7 +190,7 @@ describe('buildCatalogueCommands', () => {
         },
       ],
     });
-    expect(commands.collections[0].href).toBe('/sharing/s1');
+    expect(commands.collections[0].href).toBe('/albums/s1');
   });
 
   it('names an unnamed person rather than offering a blank row', () => {

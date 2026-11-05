@@ -3,6 +3,7 @@ import {
   mdiCloudOutline,
   mdiDeleteOutline,
   mdiImport,
+  mdiMapMarkerOutline,
   mdiTools,
   mdiTwoFactorAuthentication,
 } from '@mdi/js';
@@ -78,6 +79,13 @@ export const personalSections = (
         },
       ]
     : []),
+  // Library care → Identify photo locations, for every account (its own library).
+  {
+    key: 'location-scan',
+    title: $t('frameleaf_location_scan_title'),
+    subtitle: $t('frameleaf_cc_section_location_scan_description'),
+    icon: mdiMapMarkerOutline,
+  },
   {
     key: 'contents',
     title: $t('frameleaf_cc_section_contents'),

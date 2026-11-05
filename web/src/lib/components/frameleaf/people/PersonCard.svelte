@@ -256,9 +256,13 @@
     opacity: 0;
     pointer-events: none;
   }
+  /* The trigger is a full-height 44px control, 36px wide as people.css draws it, so it sits on the
+     face's corner instead of hanging well past it; without the height floor the 18px icon left it a
+     20px sliver floating above the face. */
   .pl-menu :global(.menu-root > button) {
-    min-width: 44px;
-    padding: 0 8px;
+    min-width: 36px;
+    min-height: var(--fl-control-height);
+    padding: 0;
     border-color: transparent;
   }
   .pl-menu :global([role='menu'] hr) {

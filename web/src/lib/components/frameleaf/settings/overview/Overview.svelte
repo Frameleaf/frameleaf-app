@@ -609,7 +609,7 @@
     </Hero>
 
     <Section title={$t('frameleaf_overview_checked_title')} description={$t('frameleaf_overview_checked_description')}>
-      <ItemList>
+      <ItemList noMeasure>
         {#each checks as check (check.id)}
           <Item
             icon={check.icon}

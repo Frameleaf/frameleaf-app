@@ -11,6 +11,10 @@
    * previous editor did. A key that can delete
    * things says so. A created or rotated key is shown once in this dialog with Copy; closing it
    * drops the value and it cannot be shown again.
+   *
+   * Editing a key is the prototype's "Manage" dialog (`settings-v2/cloud/ApiKeys.jsx`): the form,
+   * then Replace key and Delete key. Those two close the dialog and say which was asked for; the
+   * key list then asks to confirm and does it.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
@@ -40,8 +44,15 @@
     apiKey?: ApiKeyResponseDto;
     /** A key value to show once, for a key that was just rotated. */
     secret?: string;
-    onClose: () => void;
+    /** Called with `replace` or `delete` when Manage closed for one of them. */
+    onClose: (next?: 'replace' | 'delete') => void;
   } = $props();
+
+  let next = $state<'replace' | 'delete'>();
+  const finish = (choice: 'replace' | 'delete') => {
+    next = choice;
+    open = false;
+  };
 
   let open = $state(true);
   let name = $state(apiKey?.name ?? '');
@@ -72,7 +83,7 @@
     }
 
     secret = '';
-    onClose();
+    onClose(next);
   });
 
   const toggle = (permission: Permission, checked: boolean) => {
@@ -119,11 +130,7 @@
 </script>
 
 <Dialog
-  title={secret
-    ? $t('frameleaf_access_key_secret_title')
-    : apiKey
-      ? $t('frameleaf_access_key_edit')
-      : $t('frameleaf_access_key_create')}
+  title={secret ? $t('frameleaf_access_key_secret_title') : apiKey ? apiKey.name : $t('frameleaf_access_key_create')}
   closeLabel={$t('close')}
   bind:open
 >
@@ -220,6 +227,24 @@
       {#if keyCanDelete(selected)}
         <p class="fl-access-notice">{$t('frameleaf_access_key_delete_warning')}</p>
       {/if}
+      {#if apiKey}
+        <div class="manage-row">
+          <span>
+            <strong>{$t('frameleaf_access_key_replace')}</strong>
+            <small>{$t('frameleaf_access_key_replace_help')}</small>
+          </span>
+          <Button disabled={working} onclick={() => finish('replace')}>{$t('frameleaf_access_key_rotate')}</Button>
+        </div>
+        <div class="manage-row">
+          <span>
+            <strong>{$t('frameleaf_access_key_delete_row')}</strong>
+            <small>{$t('frameleaf_access_key_delete_help', { values: { name: apiKey.name } })}</small>
+          </span>
+          <Button variant="danger" disabled={working} onclick={() => finish('delete')}
+            >{$t('frameleaf_access_key_delete_more')}</Button
+          >
+        </div>
+      {/if}
       <footer>
         <Button disabled={working} onclick={() => (open = false)}>{$t('cancel')}</Button>
         <Button type="submit" variant="primary" disabled={working || !valid}>
@@ -231,6 +256,24 @@
 </Dialog>
 
 <style>
+  .manage-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--fl-space-3);
+    padding-top: var(--fl-space-3);
+    border-top: 1px solid var(--fl-border);
+  }
+  .manage-row > span {
+    display: grid;
+    flex: 1 1 16rem;
+    gap: var(--fl-space-1);
+  }
+  .manage-row small {
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+  }
   .purposes {
     display: grid;
     gap: var(--fl-space-2);

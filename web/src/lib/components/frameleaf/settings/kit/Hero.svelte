@@ -41,9 +41,11 @@
 </section>
 
 <style>
+  /* backup-v2.css `.bk2-hero`: a soft wash of the answer's colour from the top-left corner. */
   .kit-hero {
+    --kit-wash: var(--fl-accent-soft);
     overflow: hidden;
-    background: var(--fl-panel);
+    background: radial-gradient(120% 160% at 0% 0%, var(--kit-wash), transparent 42%), var(--fl-panel);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-card);
   }
@@ -59,23 +61,28 @@
     gap: var(--fl-space-5);
     padding: var(--fl-space-6);
   }
+  /* backup-v2.css:116-124. */
   .icon {
     display: grid;
     place-items: center;
-    width: 64px;
-    height: 64px;
+    width: 56px;
+    height: 56px;
     color: var(--kit-tone);
     background: color-mix(in srgb, var(--kit-tone) 14%, transparent);
-    border-radius: 18px;
+    border-radius: var(--fl-space-4);
   }
   .kit-hero[data-tone='good'] {
     --kit-tone: var(--fl-accent);
   }
   .kit-hero[data-tone='warn'] {
     --kit-tone: var(--fl-warning);
+    --kit-wash: color-mix(in srgb, var(--fl-warning) 14%, transparent);
+    border-color: color-mix(in srgb, var(--fl-warning) 35%, var(--fl-border));
   }
   .kit-hero[data-tone='bad'] {
     --kit-tone: var(--fl-danger);
+    --kit-wash: color-mix(in srgb, var(--fl-danger) 14%, transparent);
+    border-color: color-mix(in srgb, var(--fl-danger) 35%, var(--fl-border));
   }
   .kit-hero[data-tone='quiet'] .icon {
     color: var(--fl-muted);
@@ -84,12 +91,13 @@
   h2 {
     margin: 0;
     font: var(--fl-type-title);
+    line-height: 1.2;
     letter-spacing: var(--fl-tracking-title);
     text-wrap: balance;
   }
   p {
     max-width: 620px;
-    margin: var(--fl-space-2) 0 0;
+    margin: var(--fl-space-1) 0 0;
     color: var(--fl-muted);
     font-size: var(--fl-font-callout);
     line-height: 1.5;
@@ -99,6 +107,10 @@
     flex-wrap: wrap;
     justify-content: flex-end;
     gap: var(--fl-space-2);
+  }
+  /* A page that passes actions only in some states leaves no empty cell (and no phone gap) in the others. */
+  .actions:empty {
+    display: none;
   }
   @container kit (max-width: 620px) {
     .main {
@@ -115,8 +127,9 @@
       grid-column: 1 / -1;
       justify-content: stretch;
     }
+    /* Each button keeps its own width as the basis, so three that don't fit wrap instead of squeezing. */
     .actions > :global(*) {
-      flex: 1;
+      flex: 1 1 auto;
     }
   }
 </style>

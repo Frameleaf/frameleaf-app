@@ -58,8 +58,8 @@
 <section class="mt-card" aria-labelledby="{reasonId}-title">
   <div class="mt-card-title">
     <div>
-      <!-- The page heading already names this section (a section named like its area does not repeat the name). -->
-      <h2 class="sr-only" id="{reasonId}-title">{$t('admin.frameleaf_maintenance_mode_title')}</h2>
+      <!-- The card names itself, as the prototype's Maintenance mode card does (Maintenance.jsx). -->
+      <h2 id="{reasonId}-title">{$t('admin.frameleaf_maintenance_mode_title')}</h2>
       <p>{$t('admin.frameleaf_maintenance_mode_description')}</p>
     </div>
     <span class="mt-status" class:is-on={active}>
@@ -91,7 +91,7 @@
           <a class="button" href={backupsHref}>{$t('admin.frameleaf_maintenance_backups_title')}</a>
         {/if}
         {#if integrityHref}
-          <a class="button" href={integrityHref}>{$t('admin.frameleaf_maintenance_integrity_title')}</a>
+          <a class="button" href={integrityHref}>{$t('frameleaf_cc_section_integrity')}</a>
         {/if}
       </div>
     </div>
@@ -131,8 +131,10 @@
     background: var(--fl-panel);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-card);
-    padding: 20px;
+    padding: var(--fl-space-6);
     min-width: 0;
+    /* The plain-words pages' column (KitPage), so the facts and preview do not stretch across a wide window. */
+    max-width: 1120px;
   }
   .mt-card-title {
     display: flex;
@@ -142,11 +144,12 @@
     margin-bottom: 14px;
   }
   .mt-card-title h2 {
-    margin: 0 0 4px;
+    margin: 0 0 var(--fl-space-2);
     font-size: 16px;
     font-weight: 600;
   }
   .mt-card-title p {
+    max-width: 720px;
     margin: 0;
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
@@ -190,13 +193,19 @@
   .mt-facts dd {
     margin: 0;
   }
+  /* Maintenance.jsx: the actions sit under a rule, every one the same height. */
   .mt-actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: var(--fl-space-2);
     align-items: center;
+    padding-top: var(--fl-space-4);
+    border-top: 1px solid var(--fl-border);
   }
   .mt-actions a.button {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--fl-control-height);
     text-decoration: none;
   }
   .mt-preview {
@@ -206,6 +215,11 @@
     text-align: center;
     background: var(--fl-canvas);
     color: var(--fl-muted);
+  }
+  /* The wrench sits centred over the preview's words, as on the maintenance page itself. */
+  .mt-preview :global(svg) {
+    display: block;
+    margin: 0 auto;
   }
   .mt-preview strong {
     display: block;

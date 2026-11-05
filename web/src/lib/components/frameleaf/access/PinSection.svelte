@@ -8,12 +8,17 @@
    * FL-721 (prototype PR 20 `Personal.jsx` LockedPin): while Locked encryption is on, the PIN can't be
    * cleared, "Forgot it?" asks for the recovery key instead of the password, and a row opens the
    * Locked encryption page.
+   *
+   * Drawn as the approved prototype's `LockedPin` (`settings-v2/cloud/Personal.jsx`): a hero that says
+   * whether the PIN guards the Locked photos, "Your PIN" (change, forgot, clear, Locked encryption and
+   * how soon they lock again) and "What gets Locked" (Always Locked). The prototype's two switches
+   * there (suggested private photos, location on public previews) have no per-person setting on the
+   * server yet, so they are not drawn.
    */
   import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import RecoverModal from '$lib/components/frameleaf/settings/security/locked-encryption/RecoverModal.svelte';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
-  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import PinDialog from '$lib/components/frameleaf/access/PinDialog.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import type { PinDialogMode } from '$lib/frameleaf/personal-access';
@@ -26,10 +31,14 @@
     type LockedEncryptionStatusResponseDto,
   } from '@frameleaf/sdk';
   import { Icon, modalManager, toastManager } from '@frameleaf/ui';
-  import { mdiChevronRight } from '@mdi/js';
+  import { mdiChevronRight, mdiLockCheckOutline, mdiLockOutline } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
-  import './access.css';
+  import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
+  import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
+  import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
+  import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
+  import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
 
   let pinEnabled = $state<boolean | undefined>(undefined);
   let failed = $state(false);
@@ -110,98 +119,111 @@
 
 <OnEvents onUserPinCodeReset={() => (pinEnabled = false)} onUserPinCodeCreated={() => (pinEnabled = true)} />
 
-<section class="fl-access-section" aria-labelledby="fl-access-pin">
-  <div class="fl-access-head">
-    <div>
-      <h3 id="fl-access-pin">{$t('frameleaf_access_pin_title')}</h3>
-      <p>
-        {#if failed}
-          {$t('frameleaf_access_pin_unknown')}
-        {:else if pinEnabled === undefined}
-          <Skeleton variant="text" width="9rem" />
-        {:else}
-          {pinEnabled
-            ? encrypted
-              ? $t('frameleaf_le_pin_encrypted_help')
-              : $t('frameleaf_access_pin_enabled')
-            : $t('frameleaf_access_pin_disabled')}
-        {/if}
-      </p>
-    </div>
-    {#if pinEnabled !== undefined}
-      <div class="fl-access-actions">
-        <Button onclick={() => open(pinEnabled ? 'change' : 'create')}>
-          {pinEnabled ? $t('frameleaf_access_pin_change') : $t('frameleaf_access_pin_create')}
-        </Button>
-        {#if pinEnabled}
-          <Button onclick={() => void forgot()}>{$t('frameleaf_le_forgot')}</Button>
-        {/if}
-        {#if pinEnabled && !encrypted}
-          <Button disabled={!encryptionKnown} onclick={() => open('clear')}>{$t('frameleaf_access_pin_clear')}</Button>
-        {/if}
-      </div>
-    {:else if failed}
-      <Button onclick={refresh}>{$t('frameleaf_locked_rules_try_again')}</Button>
-    {/if}
-  </div>
-  {#if pinEnabled}
-    <!-- FL-721 (prototype LockedPin): Locked encryption sits straight under the PIN itself -->
-    <div class="fl-access-head fl-access-encryption">
-      <div>
-        <h3>{$t('frameleaf_le_title')}</h3>
-        {#if encryptionKnown}
-          <p>
-            {encrypted
-              ? encryption?.mode === LockedEncryptionMode.Advanced
-                ? $t('frameleaf_le_pin_row_on_advanced')
-                : $t('frameleaf_le_pin_row_on')
-              : $t('frameleaf_le_pin_row_off')}
-          </p>
-        {/if}
-      </div>
-      <Button onclick={() => goto(commandCenterUrl('privacy', 'locked-encryption'))}>
-        {$t('frameleaf_le_open')}
-        <Icon icon={mdiChevronRight} size="18" aria-hidden />
-      </Button>
-    </div>
-    {#if relock !== undefined}
-      <label class="fl-access-relock">
-        <span>
-          <strong>{$t('frameleaf_access_relock_label')}</strong>
-          <small>{$t('frameleaf_access_relock_help', { values: { time: relockWords(relock) } })}</small>
-        </span>
-        <select
-          value={String(relock)}
-          disabled={savingRelock}
-          onchange={(event) => void saveRelock(Number(event.currentTarget.value))}
-        >
-          {#each RELOCK_CHOICES as minutes (minutes)}
-            <option value={String(minutes)}>{relockWords(minutes)}</option>
-          {/each}
-        </select>
-      </label>
-    {/if}
+{#snippet setPin()}
+  <Button variant="primary" onclick={() => open('create')}>{$t('frameleaf_access_pin_set_one')}</Button>
+{/snippet}
+{#snippet tryAgain()}
+  <Button onclick={refresh}>{$t('frameleaf_locked_rules_try_again')}</Button>
+{/snippet}
+
+<KitPage>
+  {#if failed}
+    <Hero
+      tone="warn"
+      icon={mdiLockOutline}
+      title={$t('frameleaf_access_pin_unknown')}
+      label={$t('frameleaf_access_pin_title')}
+      actions={tryAgain}
+    />
+  {:else if pinEnabled === true}
+    <Hero
+      tone="good"
+      icon={mdiLockCheckOutline}
+      title={$t('frameleaf_access_pin_hero_set')}
+      body={$t('frameleaf_access_pin_hero_set_body', { values: { time: relockWords(relock ?? 60) } })}
+      label={$t('frameleaf_access_pin_title')}
+    />
+  {:else if pinEnabled === false}
+    <Hero
+      tone="warn"
+      icon={mdiLockOutline}
+      title={$t('frameleaf_access_pin_hero_none')}
+      body={$t('frameleaf_access_pin_hero_none_body')}
+      label={$t('frameleaf_access_pin_title')}
+      actions={setPin}
+    />
   {/if}
-</section>
+
+  {#if pinEnabled}
+    <Section title={$t('frameleaf_access_pin_yours')}>
+      <Row
+        label={$t('frameleaf_access_pin_six')}
+        help={encrypted ? $t('frameleaf_le_pin_encrypted_help') : $t('frameleaf_access_pin_six_help')}
+      >
+        <div class="inline">
+          <Button onclick={() => open('change')}>{$t('frameleaf_access_pin_change')}</Button>
+          <Button onclick={() => void forgot()}>{$t('frameleaf_le_forgot')}</Button>
+        </div>
+      </Row>
+      {#if !encrypted}
+        <Row label={$t('frameleaf_access_pin_clear')} help={$t('frameleaf_access_pin_clear_help')}>
+          <Button variant="danger" disabled={!encryptionKnown} onclick={() => open('clear')}
+            >{$t('frameleaf_access_pin_clear_more')}</Button
+          >
+        </Row>
+      {/if}
+      <!-- FL-721 (prototype LockedPin): Locked encryption sits straight under the PIN itself -->
+      <Row
+        label={$t('frameleaf_le_title')}
+        help={encryptionKnown
+          ? encrypted
+            ? encryption?.mode === LockedEncryptionMode.Advanced
+              ? $t('frameleaf_le_pin_row_on_advanced')
+              : $t('frameleaf_le_pin_row_on')
+            : $t('frameleaf_le_pin_row_off')
+          : undefined}
+      >
+        <Button onclick={() => goto(commandCenterUrl('privacy', 'locked-encryption'))}>
+          {$t('frameleaf_le_open')}
+          <Icon icon={mdiChevronRight} size="1em" aria-hidden />
+        </Button>
+      </Row>
+      {#if relock !== undefined}
+        <Row
+          label={$t('frameleaf_access_relock_label')}
+          help={$t('frameleaf_access_relock_help_safer', { values: { time: relockWords(relock) } })}
+        >
+          <SegmentedControl
+            label={$t('frameleaf_access_relock_label')}
+            value={String(relock)}
+            disabled={savingRelock}
+            options={RELOCK_CHOICES.map((minutes) => ({
+              value: String(minutes),
+              label: minutes === 60 ? $t('frameleaf_access_relock_hour_short') : relockWords(minutes),
+            }))}
+            onChange={(value) => void saveRelock(Number(value))}
+          />
+        </Row>
+      {/if}
+    </Section>
+  {/if}
+
+  {#if pinEnabled !== undefined}
+    <Section title={$t('frameleaf_access_pin_what')}>
+      <Row label={$t('frameleaf_locked_rules_section_title')} help={$t('frameleaf_access_pin_always_help')}>
+        <Button onclick={() => goto(commandCenterUrl('privacy', 'suppressed-content'))}>
+          {$t('frameleaf_le_open')}
+          <Icon icon={mdiChevronRight} size="1em" aria-hidden />
+        </Button>
+      </Row>
+    </Section>
+  {/if}
+</KitPage>
 
 <style>
-  .fl-access-relock {
+  .inline {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--fl-space-3);
-    align-items: center;
-    justify-content: space-between;
-    margin-block: var(--fl-space-3);
-  }
-  .fl-access-relock span {
-    display: grid;
-    gap: 2px;
-  }
-  .fl-access-relock small {
-    color: var(--fl-muted);
-  }
-  .fl-access-encryption {
-    padding-top: var(--fl-space-3);
-    border-top: 1px solid var(--fl-border);
+    gap: var(--fl-space-2);
   }
 </style>

@@ -3,7 +3,9 @@
   import ResultsAssetViewer from '$lib/components/frameleaf/ResultsAssetViewer.svelte';
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
-  import EmptyPlaceholder from '$lib/components/shared-components/EmptyPlaceholder.svelte';
+  import Button from '$lib/components/frameleaf/Button.svelte';
+  import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
+  import Spinner from '$lib/components/frameleaf/Spinner.svelte';
   import { brandedArchiveName } from '$lib/frameleaf/archive-name';
   import {
     DOCUMENT_PAGE_SIZE,
@@ -20,10 +22,11 @@
   import { Route } from '$lib/route';
   import { handleError } from '$lib/utils/handle-error';
   import { navigate } from '$lib/utils/navigation';
+  import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import { searchDocuments, type AssetResponseDto } from '@frameleaf/sdk';
-  import { Button, Icon, LoadingSpinner } from '@frameleaf/ui';
-  import { mdiMagnify, mdiRefresh } from '@mdi/js';
+  import { Icon } from '@frameleaf/ui';
+  import { mdiMagnify, mdiPlayBoxOutline, mdiRefresh, mdiTextBoxSearchOutline } from '@mdi/js';
   import { onDestroy, onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
@@ -59,6 +62,16 @@
   let debounce: ReturnType<typeof setTimeout> | undefined;
 
   const timelineAssets = $derived(assets.map((asset) => toTimelineAsset(asset)));
+
+  /** The Library's Slideshow (LibraryView `startSlideshow`): from the first document, in the viewer. */
+  const startSlideshow = async () => {
+    const first = assets[0];
+    if (!first) {
+      return;
+    }
+    await navigate({ targetRoute: 'current', assetId: first.id });
+    slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+  };
   const searching = $derived(query.trim().length > 0);
 
   const load = async (reset: boolean) => {
@@ -170,68 +183,85 @@
   });
 </script>
 
+<!--
+  The Library view (prototype: the rail's Documents opens the Library narrowed to them): the Library's
+  header and title, a line saying where the list comes from, the toolbar band with the count and the
+  text search, then the grid and the Library's empty state.
+-->
 <UserPageLayout scrollbar={false}>
-  <section class="frameleaf documents m-4 mb-12 max-md:mx-(--fl-space-2)">
-    <ResultsView
-      assets={timelineAssets}
-      downloadFileName={brandedArchiveName($t('frameleaf_archive_name_documents'))}
-      onEndReached={() => void load(false)}
-      {onRemoved}
-      onSelectAll={handleSelectAll}
-      onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
-    >
-      {#snippet header()}
-        <header class="documents-header">
-          <div>
-            <h1>{$t('frameleaf_documents_title')}</h1>
-            <p class="sub" aria-live="polite">
-              {#if isLoading && assets.length === 0}
-                {$t('frameleaf_documents_loading')}
-              {:else if searching}
-                {$t('frameleaf_documents_match_count', { values: { count: total, query: query.trim() } })}
-              {:else}
-                {$t('frameleaf_documents_count', { values: { count: total } })}
-              {/if}
-            </p>
-          </div>
-          <label class="search">
-            <Icon icon={mdiMagnify} size="1.125em" aria-hidden={true} />
-            <input
-              type="search"
-              bind:value={query}
-              oninput={onQueryInput}
-              placeholder={$t('frameleaf_documents_search_placeholder')}
-              aria-label={$t('frameleaf_documents_search_placeholder')}
-              maxlength="200"
-            />
-          </label>
-          <p class="note">{$t('frameleaf_documents_note')}</p>
-        </header>
-      {/snippet}
-
-      {#snippet empty()}
-        {#if !isLoading}
-          <div class="flex min-h-[calc(66vh-11rem)] w-full flex-col place-content-center items-center gap-4">
-            {#if loadFailed}
-              <EmptyPlaceholder text={$t('frameleaf_documents_error_load')} />
-              <Button size="small" color="secondary" leadingIcon={mdiRefresh} onclick={restart}>
-                {$t('frameleaf_documents_retry')}
-              </Button>
-            {:else if searching}
-              <EmptyPlaceholder text={$t('frameleaf_documents_no_matches', { values: { query: query.trim() } })} />
-            {:else if !featureFlagsManager.value.ocr}
-              <EmptyPlaceholder text={$t('frameleaf_documents_empty_disabled')} />
-            {:else}
-              <EmptyPlaceholder text={$t('frameleaf_documents_empty')} />
-            {/if}
-          </div>
+  <section class="frameleaf documents">
+    <header class="doc-head">
+      <h1>{$t('frameleaf_documents_title')}</h1>
+    </header>
+    <p class="doc-hint">{$t('frameleaf_documents_note')}</p>
+    <div class="doc-toolbar">
+      <p class="doc-count" aria-live="polite">
+        {#if isLoading && assets.length === 0}
+          {$t('frameleaf_documents_loading')}
+        {:else if searching}
+          {$t('frameleaf_documents_match_count', { values: { count: total, query: query.trim() } })}
+        {:else}
+          {$t('frameleaf_documents_count', { values: { count: total } })}
         {/if}
-      {/snippet}
-    </ResultsView>
+      </p>
+      <!-- The Library's toolbar as far as a text search allows: the search narrows the list (the
+           Library's Filter), then Slideshow. A flat, relevance-ordered list has no layout or sort. -->
+      <div class="doc-tools">
+        <label class="search">
+          <Icon icon={mdiMagnify} size="1.125em" aria-hidden={true} />
+          <input
+            type="search"
+            bind:value={query}
+            oninput={onQueryInput}
+            placeholder={$t('frameleaf_documents_search_placeholder')}
+            aria-label={$t('frameleaf_documents_search_placeholder')}
+            maxlength="200"
+          />
+        </label>
+        <Button disabled={assets.length === 0} onclick={() => void startSlideshow()}>
+          <Icon icon={mdiPlayBoxOutline} size="16" aria-hidden={true} />
+          {$t('slideshow')}
+        </Button>
+      </div>
+    </div>
+
+    <div class="doc-grid">
+      <ResultsView
+        assets={timelineAssets}
+        downloadFileName={brandedArchiveName($t('frameleaf_archive_name_documents'))}
+        onEndReached={() => void load(false)}
+        {onRemoved}
+        onSelectAll={handleSelectAll}
+        onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
+      >
+        {#snippet empty()}
+          {#if !isLoading}
+            <div class="doc-empty">
+              {#if loadFailed}
+                <EmptyState
+                  icon={mdiTextBoxSearchOutline}
+                  message={$t('frameleaf_documents_error_load')}
+                  secondaryAction={{ label: $t('frameleaf_documents_retry'), icon: mdiRefresh, onClick: restart }}
+                />
+              {:else if searching}
+                <EmptyState
+                  icon={mdiTextBoxSearchOutline}
+                  message={$t('frameleaf_documents_no_matches', { values: { query: query.trim() } })}
+                />
+              {:else if !featureFlagsManager.value.ocr}
+                <EmptyState icon={mdiTextBoxSearchOutline} message={$t('frameleaf_documents_empty_disabled')} />
+              {:else}
+                <EmptyState icon={mdiTextBoxSearchOutline} message={$t('frameleaf_documents_empty')} />
+              {/if}
+            </div>
+          {/if}
+        {/snippet}
+      </ResultsView>
+    </div>
 
     {#if isLoading}
-      <div class="flex items-center justify-center py-16">
-        <LoadingSpinner size="giant" />
+      <div class="doc-loading">
+        <Spinner size="xl" />
       </div>
     {/if}
   </section>
@@ -245,38 +275,89 @@
 />
 
 <style>
-  .documents-header {
+  /*
+   * The Library's frame (LibraryView `.fl-library-header`, `.fl-layout-hint`, `.fl-library-toolbar`):
+   * the page area's 8px plus 16px make the 24px gutter (8px plus 8px on a phone); the header's
+   * hairline and the toolbar band run edge to edge across the page area.
+   */
+  .documents {
+    --doc-bleed: calc(-1 * (var(--fl-page-inline) + var(--fl-space-2)));
     display: flex;
-    flex-wrap: wrap;
-    gap: 0.75rem 1rem;
-    align-items: flex-end;
-    justify-content: space-between;
-    padding-block: 0.5rem 1rem;
+    flex-direction: column;
+    padding: 0 var(--fl-page-inline) var(--fl-space-12);
     color: var(--fl-text);
   }
+  .doc-head {
+    position: relative;
+    padding: calc(var(--fl-page-top) - var(--fl-space-2)) 0 var(--fl-space-3);
+  }
+  .doc-head::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    inset-inline: var(--doc-bleed);
+    border-bottom: 1px solid var(--fl-border);
+  }
+  /* The Library's title (`.fl-library-title`). */
   h1 {
     margin: 0;
-    font-size: 1.5rem;
+    /* One page-title size on every page (tokens.css --fl-type-display: 28px / 600). */
+    font-size: var(--fl-font-display);
     font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
   }
-  .sub,
-  .note {
-    margin: var(--fl-space-2) 0 0;
-    font-size: var(--fl-font-small);
-    color: var(--fl-muted);
-  }
-  .note {
-    flex-basis: 100%;
+  /* Where the Library says what its layout is for (`.fl-layout-hint`). */
+  .doc-hint {
     margin: 0;
+    padding-block: var(--fl-space-4);
+    color: var(--fl-muted);
+    font-size: 13px;
+  }
+  .doc-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--fl-space-2) var(--fl-space-3);
+    padding-block: var(--fl-space-3);
+  }
+  .doc-toolbar::before {
+    content: '';
+    position: absolute;
+    inset-block: 0;
+    inset-inline: var(--doc-bleed);
+    z-index: -1;
+    border-bottom: 1px solid var(--fl-material-edge);
+    background: var(--fl-material);
+    -webkit-backdrop-filter: var(--fl-material-blur);
+    backdrop-filter: var(--fl-material-blur);
+  }
+  .doc-count {
+    margin: 0;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+    font-variant-numeric: tabular-nums;
+  }
+  .doc-tools {
+    display: flex;
+    flex: 0 1 30rem;
+    justify-content: flex-end;
+    align-items: center;
+    gap: var(--fl-space-2);
+    min-width: 0;
   }
   .search {
     display: flex;
-    flex: 0 1 22rem;
-    gap: 0.5rem;
+    flex: 1 1 22rem;
+    gap: var(--fl-space-2);
     align-items: center;
     min-width: min(100%, 14rem);
-    min-height: 44px;
-    padding: 0 0.75rem;
+    min-height: var(--fl-control-height);
+    padding: 0 var(--fl-space-3);
     color: var(--fl-muted);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);
@@ -296,12 +377,39 @@
     border: 0;
     outline: none;
   }
-  /* FL-707 P1: one top padding above every library-side page heading (28px, 16px on phones);
-     the page area already adds 8px. */
-  .documents {
-    margin-top: 0;
+  /* The grid starts under the band, at the photo gutter. */
+  .doc-grid {
+    padding-top: var(--fl-space-half);
   }
-  .documents-header {
-    padding-top: calc(var(--fl-page-top) - 8px);
+  .doc-empty {
+    display: grid;
+    min-height: calc(66vh - 11rem);
+    place-content: center;
+  }
+  .doc-loading {
+    display: flex;
+    justify-content: center;
+    padding: var(--fl-space-12) 0;
+  }
+  @media (max-width: 767px) {
+    .documents {
+      padding-bottom: var(--fl-space-8);
+    }
+    .doc-tools {
+      flex-basis: 100%;
+    }
+    .search {
+      flex: 1 1 auto;
+    }
+  }
+  @media (pointer: coarse) {
+    .search {
+      min-height: var(--fl-control-height-touch);
+    }
+  }
+  @media (max-width: 767px) {
+    h1 {
+      font-size: var(--fl-font-title);
+    }
   }
 </style>

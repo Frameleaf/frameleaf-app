@@ -20,6 +20,8 @@
   import { canRunStudioWork } from '$lib/frameleaf/computers';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { getRenderWorkerCompatibility, type RenderWorkerCompatibilityResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
+  import { mdiChevronRight } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -50,9 +52,9 @@
 <KitPage>
   <Section title={$t('frameleaf_editing_studio_section')}>
     {#snippet action()}
-      <Button onclick={() => goto(commandCenterUrl('processing', 'hardware'))}>
-        {$t('frameleaf_editing_studio_hardware')}
-      </Button>
+      <Button onclick={() => goto(commandCenterUrl('processing', 'hardware'))}
+        >{$t('frameleaf_editing_studio_hardware')}<Icon icon={mdiChevronRight} size="1em" aria-hidden /></Button
+      >
     {/snippet}
     <Row label={$t('frameleaf_editing_studio_export')} help={$t('frameleaf_editing_studio_export_help')}>
       <Pill tone={exportState.tone}>{exportState.text}</Pill>

@@ -67,13 +67,13 @@
 {/if}
 
 {#if imageError}
-  <BrokenAsset class="size-full rounded-2xl" />
+  <BrokenAsset class="size-full" />
 {:else if !imageLoaded}
   <DelayedLoadingSpinner />
 {:else}
   <div transition:motionFade={{ duration: assetViewerFadeDuration }} class="size-full">
     <img
-      class="size-full rounded-2xl object-contain transition-all {motionClass}"
+      class="size-full object-contain transition-all {motionClass}"
       style={motionStyle}
       src={assetFileUrl}
       alt={$getAltText(asset)}

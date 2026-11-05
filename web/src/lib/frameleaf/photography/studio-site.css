@@ -765,3 +765,13 @@
 .ss [aria-invalid='true'] {
   border-color: #b3261e;
 }
+/* Editor preview only: a quiet dashed prompt where the chosen photographs will go. */
+.ss-work-empty {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: var(--fl-space-8) var(--fl-space-4);
+  border: 1px dashed color-mix(in srgb, var(--ss-text), transparent 70%);
+  border-radius: var(--fl-radius-card);
+  color: color-mix(in srgb, var(--ss-text), transparent 35%);
+  text-align: center;
+}

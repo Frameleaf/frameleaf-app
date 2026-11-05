@@ -12,24 +12,29 @@ describe('Locked PIN (FL-517)', () => {
     sdkMock.updateMyPreferences.mockResolvedValue({} as never);
   });
 
-  it('says how long an unlock lasts and offers 5 minutes, 15 minutes or an hour', async () => {
+  it('says how long an unlock lasts and offers 5 minutes, 15 minutes or 1 hour', async () => {
     render(PinSection);
 
-    const choice = await screen.findByRole('combobox', { name: /Lock again after/ });
-    expect(screen.getByText('After you unlock, Locked photos hide again after an hour.')).toBeInTheDocument();
-    expect([...(choice as HTMLSelectElement).options].map((option) => option.text)).toEqual([
-      '5 minutes',
-      '15 minutes',
-      'an hour',
-    ]);
+    const choice = await screen.findByRole('group', { name: /Lock again after/ });
+    expect(
+      screen.getByText(
+        'After you unlock, Locked photos hide again after an hour. Shorter is safer on a computer you share.',
+      ),
+    ).toBeInTheDocument();
+    const segments = [...choice.querySelectorAll('button')];
+    expect(segments.map((segment) => segment.textContent?.trim())).toEqual(['5 minutes', '15 minutes', '1 hour']);
 
-    await fireEvent.change(choice, { target: { value: '15' } });
+    await fireEvent.click(screen.getByRole('button', { name: '15 minutes' }));
     await waitFor(() =>
       expect(sdkMock.updateMyPreferences).toHaveBeenCalledWith({
         userPreferencesUpdateDto: { lockedPin: { relockMinutes: 15 } },
       }),
     );
-    expect(screen.getByText('After you unlock, Locked photos hide again after 15 minutes.')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'After you unlock, Locked photos hide again after 15 minutes. Shorter is safer on a computer you share.',
+      ),
+    ).toBeInTheDocument();
   });
 
   it('with Locked encryption on, offers no Clear PIN and opens the encryption page (FL-721)', async () => {
@@ -41,23 +46,23 @@ describe('Locked PIN (FL-517)', () => {
         'Frameleaf can’t show it to you. Your Locked files are encrypted with it, so if you forget it, only your recovery key can reset it.',
       ),
     ).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Clear PIN' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Clear PIN…' })).toBeNull();
     expect(screen.getByText('On. Your Locked files are encrypted with your PIN.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Open' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Open' })).toHaveLength(2);
   });
 
   it('keeps Clear PIN disabled while it can’t tell whether Locked encryption is on (FL-721)', async () => {
     sdkMock.getLockedEncryption.mockRejectedValue(new Error('offline'));
     render(PinSection);
 
-    expect(await screen.findByRole('button', { name: 'Clear PIN' })).toBeDisabled();
+    expect(await screen.findByRole('button', { name: 'Clear PIN…' })).toBeDisabled();
   });
 
   it('does not offer the choice before a PIN is set', async () => {
     sdkMock.getAuthStatus.mockResolvedValue({ pinCode: false } as never);
     render(PinSection);
 
-    expect(await screen.findByRole('button', { name: 'Create PIN' })).toBeInTheDocument();
-    expect(screen.queryByRole('combobox', { name: /Lock again after/ })).toBeNull();
+    expect(await screen.findByRole('button', { name: 'Set a PIN' })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: /Lock again after/ })).toBeNull();
   });
 });

@@ -116,8 +116,10 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
     group: 'library',
     // FL-413: identical files merge automatically; the per-account Merge older copies is retired
     sections: ['integrity-checks', 'duplicates', 'enrichment-care', 'unused-files'],
-    personal: ['repair'],
-    order: ['integrity-checks', 'repair', 'duplicates', 'enrichment-care', 'unused-files'],
+    // Identify photo locations (prototype `care/location-scan.jsx`): its own page, opened from the landing's
+    // Place names row and kept out of the navigation, as the prototype does.
+    personal: ['repair', 'location-scan'],
+    order: ['integrity-checks', 'repair', 'duplicates', 'enrichment-care', 'unused-files', 'location-scan'],
   },
   // Computers & background work (FL-364; before it "Compute & jobs", FL-71). Approved design
   // (2026-11-04): two pages, Background work and Computers, each with Everyday and Advanced; the area
@@ -137,7 +139,7 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
   {
     id: 'cloud',
     group: 'server',
-    sections: ['cloud-account', 'cloud-plan', 'cloud-remote', 'cloud-processing', 'cloud-backup'],
+    sections: ['cloud-account', 'cloud-plan', 'cloud-license', 'cloud-remote', 'cloud-processing', 'cloud-backup'],
     adminOnly: true,
   },
   // FL-367 (owner, 2026-10-10): Access & security is two entries. "Who can sign in" holds what an
@@ -257,6 +259,7 @@ export const isScreenArea = (area: SettingsAreaId) => SCREEN_AREAS.includes(area
  */
 export const NAV_HIDDEN_SECTIONS: Partial<Record<SettingsAreaId, readonly string[]>> = Object.freeze({
   processing: ['hardware'],
+  care: ['location-scan'],
 });
 
 /**
@@ -320,6 +323,11 @@ export const PAGE_DESCRIPTIONS: Readonly<Record<string, Translations>> = Object.
   logging: 'frameleaf_page_diagnostics_description',
   theme: 'frameleaf_page_branding_description',
   'locked-encryption': 'frameleaf_le_page_description',
+  // "How you sign in" (Personal.jsx MySignIn): the password, Frameleaf account and provider on one page.
+  password: 'frameleaf_how_page_description',
+  // Sign-in methods (SignInMethods.jsx): "How people may sign in to this server, and how to get back in."
+  authentication: 'frameleaf_signin_page_description',
+  'frameleaf-signin': 'frameleaf_signin_frameleaf_page_description',
 });
 
 /** Pages a landing page keeps behind "Advanced": kept, and closed until asked for. */
@@ -445,11 +453,13 @@ export const analyticsAreaUrl = (params: { scope?: string; range?: string } = {}
  * and Render workers are one page, Computers (FL-364).
  */
 const SERVER_ALIASES: Record<string, string> = {
-  // FL-544: Plan and Licence are one page, Your Frameleaf Cloud
-  'cloud-license': 'cloud-plan',
   // FL-365: Deleted items is one page for deleted photos and deleted accounts; the prototype's addresses.
-  // FL-539: the prototype's address of Folder checks
+  // FL-539: the prototype's address of Folder checks, and the older settings' names for its parts,
+  // so a link to them opens Folder checks now that it is a page of its own under Libraries.
   checking: 'external-library',
+  library: 'external-library',
+  'library-scan': 'external-library',
+  'library-watch': 'external-library',
   'user-settings': 'trash',
   'deleted-items': 'trash',
   retention: 'trash',
@@ -719,6 +729,7 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
     deduplication: 'identical_files',
     'unused-files': 'identical_files',
     'enrichment-care': 'repairs',
+    'location-scan': 'repairs',
   },
   processing: {
     computers: 'workers',
@@ -730,6 +741,7 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
   cloud: {
     'cloud-account': 'account_link',
     'cloud-plan': 'licensing',
+    'cloud-license': 'licensing',
     'cloud-remote': 'remote',
     'cloud-processing': 'cloud_services',
     'cloud-backup': 'cloud_services',

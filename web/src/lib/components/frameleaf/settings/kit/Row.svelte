@@ -72,10 +72,11 @@
     font-weight: 600;
   }
   p {
-    max-width: 520px;
-    margin: var(--fl-space-2) 0 0;
+    /* backup-v2.css:649-655 `.bk2-row p`: 13px, the same size as the label it explains. */
+    max-width: 580px;
+    margin: var(--fl-space-1) 0 0;
     color: var(--fl-muted);
-    font-size: var(--fl-font-small);
+    font-size: var(--fl-font-callout);
     line-height: 1.5;
   }
   b {

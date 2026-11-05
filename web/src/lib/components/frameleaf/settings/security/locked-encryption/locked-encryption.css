@@ -296,11 +296,6 @@
   max-width: 100%;
 }
 
-/* The page's first card sits 24px under "‹ Your sign-in & privacy", as in the prototype. */
-.cc-back-to-area:has(+ #setting-locked-encryption) {
-  margin-bottom: var(--fl-space-6);
-}
-
 /* These dialogs keep the prototype's 16px side gutter on a phone (the shared medium sheet uses 8px). */
 @media (max-width: 700px) {
   dialog.dialog.medium:has(.le-form) {

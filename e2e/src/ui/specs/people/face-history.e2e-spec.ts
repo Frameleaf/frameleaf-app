@@ -217,7 +217,8 @@ test.describe('face history', () => {
     const calls = await setup(context);
     await openPersonPage(page);
 
-    await action(page, 'Fix incorrect match').click();
+    await action(page, 'More actions for Ada').click();
+    await page.getByRole('menuitem', { name: 'Fix incorrect match' }).click();
     const panel = page.getByRole('dialog', { name: 'Fix incorrect match' });
     await expect(panel.getByText('2 faces to review')).toBeVisible();
 

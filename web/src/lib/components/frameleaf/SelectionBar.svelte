@@ -781,6 +781,10 @@
     margin: 4px;
     background: var(--fl-material-edge);
   }
+  /* Prototype `.sb-action` (selection-bar.css): every action on the capsule is a pill. */
+  .action {
+    border-radius: var(--fl-radius-pill);
+  }
   .action span {
     white-space: nowrap;
   }
@@ -810,7 +814,7 @@
   .action.is-primary {
     background: var(--fl-accent);
     color: var(--fl-accent-text);
-    font-weight: 600;
+    font-weight: 500;
   }
   .action.is-primary:hover:not(:disabled) {
     background: var(--fl-accent-hover, var(--fl-accent));
@@ -819,12 +823,19 @@
     opacity: 0.4;
     cursor: default;
   }
+  /* Prototype `.sb-count`: a hairline after Deselect sets the count apart from the actions. */
   .count {
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    padding-inline-end: var(--fl-space-3);
+    border-inline-end: 1px solid var(--fl-material-edge);
     color: var(--fl-text);
     font-weight: 600;
+  }
+  /* Only the count is semibold (`.sb-count > span:first-child`); its text buttons are not. */
+  .count button {
+    font-weight: 400;
   }
   .snapshot {
     color: var(--fl-muted);
@@ -940,6 +951,8 @@
       gap: 2px;
       min-inline-size: 3.5rem;
       padding: 4px 6px;
+      /* Icon over name: a pill would stretch into an oval, so the stacked buttons keep the control radius. */
+      border-radius: var(--fl-radius-control);
     }
     .actions .action span,
     .actions .action.icon-only span {
@@ -952,6 +965,10 @@
     }
     .divider {
       display: none;
+    }
+    .count {
+      padding-inline-end: 0;
+      border-inline-end: 0;
     }
   }
 </style>

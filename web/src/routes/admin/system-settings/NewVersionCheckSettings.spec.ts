@@ -109,14 +109,11 @@ describe('Updates (FL-368; the check is FL-80 S-4)', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Check now' }));
 
     expect(await status().findByRole('heading', { name: 'Frameleaf 3.3.0 is available' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /What is new/ })).toHaveAttribute(
+    expect(status().getByRole('link', { name: /What’s new/ })).toHaveAttribute(
       'href',
       'https://github.com/Frameleaf/frameleaf-app/releases?q=frameleaf-v3.3.0&expanded=true',
     );
-    expect(screen.getByRole('link', { name: /Before you update/ })).toHaveAttribute(
-      'href',
-      '/user-settings?area=backups',
-    );
+    expect(screen.getByRole('link', { name: /Open Backup/ })).toHaveAttribute('href', '/user-settings?area=backups');
   });
 
   it('says plainly when the check got no answer, and lets it be tried again', async () => {

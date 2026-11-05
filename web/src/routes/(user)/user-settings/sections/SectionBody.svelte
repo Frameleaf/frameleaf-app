@@ -8,11 +8,14 @@
   import CloudMlSection from '$lib/components/frameleaf/cloud/CloudMlSection.svelte';
   import FrameleafSignInSection from '$lib/components/frameleaf/cloud/FrameleafSignInSection.svelte';
   import HardwareSection from '$lib/components/frameleaf/cloud/HardwareSection.svelte';
+  import LicenseSection from '$lib/components/frameleaf/cloud/LicenseSection.svelte';
   import YourCloudSection from '$lib/components/frameleaf/cloud/YourCloudSection.svelte';
   import RemoteAccessSection from '$lib/components/frameleaf/cloud/RemoteAccessSection.svelte';
   import CareProgress from '$lib/components/frameleaf/settings/care/CareProgress.svelte';
   import FileChecks from '$lib/components/frameleaf/settings/care/FileChecks.svelte';
+  import PhotoLocationScan from '$lib/components/frameleaf/settings/care/PhotoLocationScan.svelte';
   import ThingsToFix from '$lib/components/frameleaf/settings/care/ThingsToFix.svelte';
+  import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
   import AttentionPage from '$lib/components/frameleaf/settings/notifications/AttentionPage.svelte';
   import type { SettingsHostSection } from '$lib/frameleaf/settings-areas';
   import UserSettingsList from '../UserSettingsList.svelte';
@@ -48,6 +51,8 @@
     <CloudAccountSection />
   {:else if section.key === 'cloud-plan'}
     <YourCloudSection />
+  {:else if section.key === 'cloud-license'}
+    <LicenseSection />
   {:else if section.key === 'cloud-remote'}
     <RemoteAccessSection />
   {:else if section.key === 'frameleaf-signin'}
@@ -67,6 +72,8 @@
   <ThingsToFix />
 {:else if section.key === 'contents'}
   <TrashSection />
+{:else if section.key === 'location-scan'}
+  <KitPage><PhotoLocationScan /></KitPage>
 {:else}
   <UserSettingsList section={section.key} />
 {/if}

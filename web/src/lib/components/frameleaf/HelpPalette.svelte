@@ -1083,7 +1083,8 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    height: 34px;
+    /* Every action in a row is one control height (Read beside "frameleaf.app", Ask beside the field). */
+    height: var(--fl-control-height);
     padding: 0 14px;
     border-radius: 10px;
     font-weight: 600;
@@ -1107,7 +1108,7 @@
 
   /* help */
   .hp-send {
-    height: 32px;
+    height: var(--fl-control-height);
   }
   .hp-context {
     display: inline-flex;

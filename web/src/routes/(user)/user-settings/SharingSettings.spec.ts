@@ -1,3 +1,4 @@
+import { PartnerDirection } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { addMessages } from 'svelte-i18n';
@@ -216,6 +217,41 @@ describe('SharingSettings: People & sharing in plain words (FL-368)', () => {
 
     const add = await screen.findByRole('button', { name: 'Add a partner' });
     await waitFor(() => expect(add).toBeEnabled());
+  });
+
+  it('asks for the sharing groups once more when the server is briefly busy, with no toast', async () => {
+    sdkMock.getRecipientGroups.mockRejectedValueOnce(new Error('busy')).mockResolvedValueOnce([]);
+    render(SharingSettings);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Manage groups' })).toBeEnabled(), {
+      timeout: 3000,
+    });
+    expect(sdkMock.getRecipientGroups).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText(en.frameleaf_sharing_groups_error)).not.toBeInTheDocument();
+  });
+
+  it('says in the section when the sharing groups still cannot be loaded, and tries again', async () => {
+    sdkMock.getRecipientGroups
+      .mockRejectedValueOnce(new Error('busy'))
+      .mockRejectedValueOnce(new Error('busy'))
+      .mockResolvedValueOnce([]);
+    render(SharingSettings);
+
+    expect(await screen.findByText(en.frameleaf_sharing_groups_error, {}, { timeout: 3000 })).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Manage groups' })).toBeEnabled());
+  });
+
+  it('says why Add a partner cannot be used when everyone already has your library', async () => {
+    sdkMock.getPartners.mockImplementation(({ direction }) =>
+      Promise.resolve(direction === PartnerDirection.SharedBy ? [user('sam', 'Sam')] : []),
+    );
+    render(SharingSettings);
+
+    expect(await screen.findByText(en.frameleaf_sharing_partner_add_none)).toBeInTheDocument();
+    // The hero says both ways round, so its body is never empty.
+    expect(screen.getByText('Sam doesn’t share theirs with you.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add a partner' })).toBeDisabled();
   });
 
   it('says when the accounts cannot be loaded and retries', async () => {

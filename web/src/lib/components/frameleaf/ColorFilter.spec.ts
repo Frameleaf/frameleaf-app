@@ -27,7 +27,7 @@ describe('find by colour', () => {
   it('maps Exact and "Only the main colour" onto tolerance and coverage', async () => {
     const onChange = vi.fn();
     render(ColorFilter, { onChange });
-    await fireEvent.input(screen.getByRole('textbox', { name: 'Hex color' }), { target: { value: '60A060' } });
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Hex colour' }), { target: { value: '60A060' } });
     await fireEvent.click(screen.getByRole('button', { name: 'Exact' }));
     await fireEvent.click(screen.getByRole('checkbox', { name: 'Only the main colour' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Show matches' }));
@@ -37,11 +37,11 @@ describe('find by colour', () => {
   it('keeps malformed colours out of the query and explains the error', async () => {
     const onChange = vi.fn();
     render(ColorFilter, { onChange });
-    const field = screen.getByRole('textbox', { name: 'Hex color' });
+    const field = screen.getByRole('textbox', { name: 'Hex colour' });
     await fireEvent.input(field, { target: { value: 'green' } });
     await fireEvent.change(field, { target: { value: 'green' } });
     expect(screen.getByRole('button', { name: 'Show matches' })).toBeDisabled();
-    expect(screen.getByRole('alert')).toHaveTextContent('Enter a hex color such as #609060.');
+    expect(screen.getByRole('alert')).toHaveTextContent('Enter a hex colour such as #609060.');
     expect(onChange).not.toHaveBeenCalled();
   });
 
@@ -60,7 +60,7 @@ describe('find by colour', () => {
     expect(onCancel).toHaveBeenCalledOnce();
     expect(screen.getByRole('button', { name: 'Loose' })).toHaveAttribute('aria-pressed', 'true');
     expect(onChange).not.toHaveBeenCalled();
-    await fireEvent.click(screen.getByRole('button', { name: 'Clear color filter' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Clear colour filter' }));
     expect(onChange).toHaveBeenLastCalledWith(undefined);
   });
 });

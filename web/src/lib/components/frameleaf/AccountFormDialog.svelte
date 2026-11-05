@@ -26,7 +26,7 @@
   import { userInteraction } from '$lib/stores/user.svelte';
   import { ByteUnit, convertFromBytes, convertToBytes } from '$lib/utils/byte-units';
   import { getUserAdmin, UserAvatarColor, type UserAdminResponseDto } from '@frameleaf/sdk';
-  import { t } from 'svelte-i18n';
+  import { t, type Translations } from 'svelte-i18n';
 
   let {
     user,
@@ -200,7 +200,7 @@
           disabled={working || (user ? !canChangeRole(user, authManager.user.id) : false)}
           onchange={(event) => (isAdmin = (event.currentTarget as HTMLSelectElement).value === 'admin')}
         >
-          <option value="user">{$t('frameleaf_users_role_user')}</option>
+          <option value="user">{$t('frameleaf_userpage_role_member')}</option>
           <option value="admin">{$t('frameleaf_users_role_admin')}</option>
         </select>
       </label>
@@ -209,7 +209,7 @@
         <select bind:value={avatarColor} disabled={working}>
           <option value="">{$t('frameleaf_users_avatar_color_automatic')}</option>
           {#each colors as color (color)}
-            <option value={color}>{color}</option>
+            <option value={color}>{$t(`frameleaf_prefs_colour_${color}` as Translations)}</option>
           {/each}
         </select>
       </label>

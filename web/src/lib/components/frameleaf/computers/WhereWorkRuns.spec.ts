@@ -105,15 +105,20 @@ describe('Where work runs (FL-364)', () => {
     sdkMock.getCloudMlStatus.mockResolvedValue({ connection: CloudMlConnection.NotLinked } as never);
   });
 
-  it('opens on the answer for a server on its own, with no picker that has only one answer', async () => {
+  it('opens on the answer for a server on its own, still with the chooser and Frameleaf Cloud shown', async () => {
     render(WhereWorkRuns);
 
     expect(await screen.findByRole('heading', { name: 'Everything runs on this server' })).toBeInTheDocument();
     expect(screen.getByText(/Studio exports can’t run yet/)).toBeInTheDocument();
     expect(screen.getAllByRole('link', { name: 'Add a computer' }).length).toBeGreaterThan(0);
-    expect(screen.queryAllByRole('radiogroup')).toHaveLength(0);
-    // One table, nine rows, in the household names.
-    expect(within(row('Faces & identity')).getByText('This server')).toBeInTheDocument();
+    // The chooser stays with one place, so this server versus Frameleaf Cloud is always visible.
+    const faces = await choices('Faces & identity');
+    expect(checked(faces)).toBe('This server');
+    expect(within(faces).getByRole('radio', { name: 'Frameleaf Cloud' })).toBeDisabled();
+    expect(within(faces).getByRole('radio', { name: 'Frameleaf Cloud' })).toHaveAttribute(
+      'title',
+      'Set up Frameleaf Cloud to send this work there.',
+    );
     expect(row('Faces & identity')).toHaveTextContent(
       'Works here. Runs at home unless face recognition is turned on for Frameleaf Cloud.',
     );
@@ -197,7 +202,7 @@ describe('Where work runs (FL-364)', () => {
     expect(checked(picker)).toBe('Ask each time');
     expect(row('Descriptions & tags')).toHaveTextContent('You choose each time you start one.');
     // Faces has no Frameleaf Cloud choice in this table; it reaches the cloud only through its destination route (FL-455).
-    expect(screen.queryByRole('radiogroup', { name: 'Where Faces & identity runs' })).not.toBeInTheDocument();
+    expect(within(await choices('Faces & identity')).getByRole('radio', { name: 'Frameleaf Cloud' })).toBeDisabled();
 
     await fireEvent.click(within(picker).getByRole('radio', { name: 'Nowhere' }));
     expect(screen.getByText('Descriptions & tags turns off.')).toBeInTheDocument();
@@ -315,8 +320,8 @@ describe('Where work runs (FL-364)', () => {
       expect(screen.getByRole('button', { name: 'Move This server up' })).toBeDisabled();
       expect(screen.getByRole('button', { name: 'Move Frameleaf Cloud down' })).toBeDisabled();
       // rows that follow the order say so
-      // A row with only one answer says it, with no choices to make.
-      expect(within(row('Faces & identity')).getByText('First available, in order')).toBeInTheDocument();
+      // A row with only one place still shows its chooser, set to the order.
+      expect(checked(await choices('Faces & identity'))).toBe('In order');
     });
 
     it('saves a new order with the rest of the page', async () => {

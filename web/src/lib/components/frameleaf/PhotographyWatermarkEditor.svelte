@@ -7,7 +7,12 @@
   import { loadLogos } from '$lib/frameleaf/photography/api';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
 
-  let { value = $bindable(), disabled = false }: { value: Watermark; disabled?: boolean } = $props();
+  /** `preview: false` when the page shows the mark itself (Watermarks draws it on a photograph). */
+  let {
+    value = $bindable(),
+    disabled = false,
+    preview: showPreview = true,
+  }: { value: Watermark; disabled?: boolean; preview?: boolean } = $props();
   let orientation = $state<'portrait' | 'landscape'>('landscape');
   let background = $state<'light' | 'dark'>('dark');
   let preview = $state('');
@@ -74,7 +79,9 @@
       if (!disposed && id) {
         value.logoAssetId = id;
         value.type = 'both';
-        await refresh();
+        if (showPreview) {
+          await refresh();
+        }
       }
     } catch (error_) {
       error = failure(error_);
@@ -82,7 +89,9 @@
   }
   onMount(() => {
     void moreLogos();
-    void refresh();
+    if (showPreview) {
+      void refresh();
+    }
   });
   onDestroy(() => {
     disposed = true;
@@ -93,7 +102,7 @@
   });
 </script>
 
-<div class="phd-watermark-editor">
+<div class="phd-watermark-editor" class:solo={!showPreview}>
   <fieldset {disabled}>
     <legend>{$t('frameleaf_photography_wm_composition')}</legend>
     <div class="phd-fields">
@@ -226,33 +235,33 @@
       ><label><input type="checkbox" bind:checked={value.backing} />{$t('frameleaf_photography_wm_backing')}</label>
     </div>
   </fieldset>
-  <section class="phd-preview" aria-label={$t('frameleaf_photography_wm_preview_label')}>
-    <div class="phd-actions">
-      <label
-        >{$t('frameleaf_photography_wm_preview_shape')}<select bind:value={orientation}
-          ><option value="landscape">{$t('frameleaf_photography_landscape')}</option><option value="portrait"
-            >{$t('frameleaf_photography_portrait')}</option
-          ></select
-        ></label
-      >
-      <label
-        >{$t('frameleaf_photography_wm_test_canvas')}<select bind:value={background}
-          ><option value="dark">{$t('frameleaf_photography_dark')}</option><option value="light"
-            >{$t('frameleaf_photography_light')}</option
-          ></select
-        ></label
-      >
-      <Button disabled={disabled || rendering} onclick={refresh}
-        >{rendering ? $t('frameleaf_photography_wm_rendering') : $t('frameleaf_photography_wm_refresh')}</Button
-      >
-    </div>
-    {#if error}<p role="alert">{error}</p>{/if}
-    {#if preview}<img
-        src={preview}
-        alt={$t('frameleaf_photography_wm_preview_alt')}
-        class:portrait={orientation === 'portrait'}
-      />{:else}<p role="status">
-        {rendering ? $t('frameleaf_photography_wm_preparing_preview') : $t('frameleaf_photography_wm_refresh_hint')}
-      </p>{/if}
-  </section>
+  {#if showPreview}<section class="phd-preview" aria-label={$t('frameleaf_photography_wm_preview_label')}>
+      <div class="phd-actions">
+        <label
+          >{$t('frameleaf_photography_wm_preview_shape')}<select bind:value={orientation}
+            ><option value="landscape">{$t('frameleaf_photography_landscape')}</option><option value="portrait"
+              >{$t('frameleaf_photography_portrait')}</option
+            ></select
+          ></label
+        >
+        <label
+          >{$t('frameleaf_photography_wm_test_canvas')}<select bind:value={background}
+            ><option value="dark">{$t('frameleaf_photography_dark')}</option><option value="light"
+              >{$t('frameleaf_photography_light')}</option
+            ></select
+          ></label
+        >
+        <Button disabled={disabled || rendering} onclick={refresh}
+          >{rendering ? $t('frameleaf_photography_wm_rendering') : $t('frameleaf_photography_wm_refresh')}</Button
+        >
+      </div>
+      {#if error}<p role="alert">{error}</p>{/if}
+      {#if preview}<img
+          src={preview}
+          alt={$t('frameleaf_photography_wm_preview_alt')}
+          class:portrait={orientation === 'portrait'}
+        />{:else}<p role="status">
+          {rendering ? $t('frameleaf_photography_wm_preparing_preview') : $t('frameleaf_photography_wm_refresh_hint')}
+        </p>{/if}
+    </section>{/if}
 </div>

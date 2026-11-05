@@ -479,12 +479,29 @@
   });
   /** LIB-P3: Best Photos keeps its own sort for the visit, opening on the ranking. */
   let rankedSort = $state<LibrarySort>('quality');
+  /**
+   * Recently added (prototype "Added — newest"): the page is ordered by arrival and keeps its own
+   * sort for the visit, as Best Photos does, so it never changes the Library's.
+   */
+  const byArrival = $derived(options?.dateType === TimeBucketDateType.Added && !options.order && !publicView);
+  let arrivalSort = $state<LibrarySort>('imported-desc');
+  const ownSort = $derived(ranked || byArrival);
   const activeSort = $derived<LibrarySort>(
-    ranked ? rankedSort : albumSortId ? effectiveAlbumSort(albumPersonalSort, options?.order) : session.state.sort,
+    ranked
+      ? rankedSort
+      : byArrival
+        ? arrivalSort
+        : albumSortId
+          ? effectiveAlbumSort(albumPersonalSort, options?.order)
+          : session.state.sort,
   );
   const changeAlbumSort = (sort: LibrarySort) => {
     if (ranked) {
       rankedSort = sort;
+      return;
+    }
+    if (byArrival) {
+      arrivalSort = sort;
       return;
     }
     if (albumSortId && albumSortUserId) {
@@ -498,16 +515,30 @@
     }
   };
   const sortable = $derived(
-    !!options && !publicView && !selectionMode && (!options.order || !!albumSortId) && !options.dateType,
+    !!options && !publicView && !selectionMode && (!options.order || !!albumSortId) && (!options.dateType || byArrival),
   );
   const TIMELINE_SORTS: readonly LibrarySort[] = ['captured-desc', 'captured-asc'];
   const FLAT_SORTS: readonly LibrarySort[] = ['captured-desc', 'captured-asc', 'imported-desc', 'filename', 'rating'];
   const RANKED_SORTS: readonly LibrarySort[] = ['quality', ...FLAT_SORTS];
+  /** Recently added's Timeline is dated by arrival, so arrival is its one order there. */
+  const ARRIVAL_TIMELINE_SORTS: readonly LibrarySort[] = ['imported-desc'];
   const sorts = $derived(
-    sortable ? (gridLayout === 'timeline' ? TIMELINE_SORTS : ranked ? RANKED_SORTS : FLAT_SORTS) : undefined,
+    sortable
+      ? gridLayout === 'timeline'
+        ? byArrival
+          ? ARRIVAL_TIMELINE_SORTS
+          : TIMELINE_SORTS
+        : ranked
+          ? RANKED_SORTS
+          : FLAT_SORTS
+      : undefined,
   );
   const shownSort = $derived(
-    gridLayout === 'timeline' && !TIMELINE_SORTS.includes(activeSort) ? albumOrderSort(options?.order) : activeSort,
+    gridLayout === 'timeline' && byArrival
+      ? 'imported-desc'
+      : gridLayout === 'timeline' && !TIMELINE_SORTS.includes(activeSort)
+        ? albumOrderSort(options?.order)
+        : activeSort,
   );
   const sortedOptions = $derived.by(() => {
     const base = queryApplied.options;
@@ -515,6 +546,17 @@
       return base;
     }
     const flat = gridLayout !== 'timeline';
+    // Recently added: its own arrival order, or, in Browse and Work, another order by capture date.
+    if (byArrival && flat && (activeSort === 'captured-desc' || activeSort === 'captured-asc')) {
+      return {
+        ...base,
+        dateType: TimeBucketDateType.Taken,
+        order: activeSort === 'captured-asc' ? AssetOrder.Asc : AssetOrder.Desc,
+      };
+    }
+    if (byArrival && (!flat || activeSort === 'imported-desc')) {
+      return base;
+    }
     switch (activeSort) {
       case 'captured-asc': {
         return { ...base, order: AssetOrder.Asc };
@@ -996,10 +1038,17 @@
 
   const focusedId = () => session.session.scrollAnchor ?? session.selection.at(-1) ?? null;
 
-  /** The item Work's panel describes: the last one selected, or the one in focus. */
+  /**
+   * The item Work's panel describes: the last one selected, or the one in focus. With neither,
+   * Work describes the first item shown, as the prototype's `selected` falls back to the first
+   * asset, so the panel never opens on an empty column.
+   */
   const inspectedAsset = $derived.by(() => {
     const id = session.selection.at(-1) ?? session.session.scrollAnchor;
-    return id ? findAsset(id) : null;
+    if (id) {
+      return findAsset(id);
+    }
+    return gridLayout === 'work' ? (loadedAssets.values().next().value ?? null) : null;
   });
   /**
    * Work with the panel beside the grid (FL-1117, prototype `workPanelBeside`): the tile the panel
@@ -1877,7 +1926,7 @@
                   onToggleInspector={() => (inspectorOpen = !inspectorOpen)}
                   {sorts}
                   sort={shownSort}
-                  onSortChange={albumSortId || ranked ? changeAlbumSort : undefined}
+                  onSortChange={albumSortId || ownSort ? changeAlbumSort : undefined}
                   unappliedFields={queryApplied.unapplied}
                   view={toolbarView}
                   onViewChange={changeView}
@@ -2218,6 +2267,10 @@
     .fl-layout-hint {
       display: none;
     }
+    /* Prototype phone layout: without the hint the tabs start at the page gutter. */
+    .fl-library-layouts > :global(.fl-layouts) {
+      margin-inline-start: 0;
+    }
   }
   /*
    * A named destination (styles.css `.collection-header`, apple-style.css:220-225): the large title
@@ -2227,10 +2280,15 @@
     /* FL-707 P1: one top padding above every library-side page heading (28px, 16px on phones). */
     padding: var(--fl-page-top) 0 var(--fl-space-3);
   }
+  /* One page-title size on every page (28px, 22px on phones), as the discovery and settings pages. */
   .fl-library-title {
-    font-size: 30px;
-    font-weight: 700;
+    font: var(--fl-type-display);
     letter-spacing: -0.02em;
+  }
+  @media (max-width: 767px) {
+    .fl-library-title {
+      font-size: var(--fl-font-title);
+    }
   }
   .fl-library-toolbar {
     position: relative;
@@ -2238,6 +2296,10 @@
   /* Under the header's hairline, clear of it and of the toolbar band (24px between sections). */
   .fl-library-subheader {
     padding-top: var(--fl-space-6);
+  }
+  /* A strip with nothing to show (Best Photos without moments) adds no gap above the layout tabs. */
+  .fl-library-subheader:empty {
+    display: none;
   }
   /*
    * Phones: the photos keep the page area's 8px edge; the header and the toolbar's text and controls

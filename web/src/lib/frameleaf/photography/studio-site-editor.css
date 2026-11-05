@@ -61,6 +61,46 @@
   font-size: 13px;
   color: var(--fl-text);
 }
+/* The publish control is a switch (prototype `Switch`), drawn as the app's Toggle: a track, a knob, accent when on. */
+.sse-switch input[role='switch'] {
+  appearance: none;
+  position: relative;
+  flex: none;
+  width: 2rem;
+  height: 1.125rem;
+  margin: 0;
+  border: 1px solid var(--fl-border-strong);
+  border-radius: var(--fl-radius-pill);
+  background: var(--fl-raised);
+  cursor: pointer;
+  transition: background var(--fl-motion-fast) var(--fl-ease);
+}
+.sse-switch input[role='switch']::after {
+  content: '';
+  position: absolute;
+  top: 0.125rem;
+  left: 0.125rem;
+  width: 0.6875rem;
+  height: 0.6875rem;
+  border-radius: 50%;
+  background: var(--fl-muted);
+  transition: transform var(--fl-motion-fast) var(--fl-ease);
+}
+.sse-switch input[role='switch']:checked {
+  border-color: var(--fl-accent);
+  background: var(--fl-accent);
+}
+.sse-switch input[role='switch']:checked::after {
+  transform: translateX(0.9375rem);
+  background: var(--fl-accent-text);
+}
+.sse-switch input[role='switch']:checked:dir(rtl)::after {
+  transform: translateX(-0.9375rem);
+}
+.sse-switch input[role='switch']:focus-visible {
+  outline: var(--fl-focus-ring);
+  outline-offset: var(--fl-focus-offset);
+}
 .sse-notice {
   font-size: 12px;
   padding: 10px 12px;
@@ -254,8 +294,11 @@
   color: var(--fl-muted);
   margin-bottom: 6px;
 }
-.sse-choice label {
+/* fieldset: outranks the workspace's `.phd label` (a field over its control), which stacked each radio over
+   its words and centred them. */
+fieldset.sse-choice label {
   display: flex;
+  flex-direction: row;
   gap: 8px;
   align-items: center;
   color: var(--fl-text);

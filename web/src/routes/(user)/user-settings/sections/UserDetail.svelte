@@ -1,8 +1,8 @@
 <script lang="ts">
   /**
-   * One account (FL-76) inside Users → People with server access (FL-71): the old
-   * `/admin/users/<id>` page, as the template's detail panel below the account list. Its header
-   * carries the profile, View analytics and Close details. FL-516: the person opens in three parts
+   * One account (FL-76) inside Users (FL-71): the old `/admin/users/<id>` page, opened in place of
+   * the list as the prototype's person page (`settings-v2/cloud/People.jsx`): their name as the page
+   * heading with email, role and when they joined, "‹ Users" back to the list, and View analytics. FL-516: the person opens in three parts
    * (`PersonPage`: About; Sign-in & security; What they've turned on) in place of seven tabs, with
    * removing them last. `?edit=1`, an older address, still opens the account form over it.
    */
@@ -10,20 +10,17 @@
   import { page } from '$app/state';
   import AccountFormDialog from '$lib/components/frameleaf/AccountFormDialog.svelte';
   import PersonPage from '$lib/components/frameleaf/settings/people/PersonPage.svelte';
-  import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
-  import Pane from '$lib/components/frameleaf/Pane.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
-  import { ICON_SIZE } from '$lib/frameleaf/tokens';
   import OnEvents from '$lib/components/OnEvents.svelte';
-  import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
+  import PageHeading from '$lib/components/frameleaf/settings/kit/PageHeading.svelte';
+  import { locale } from '$lib/stores/preferences.store';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
   import { getUserAdminActions } from '$lib/services/user-admin.service';
   import { getUserPreferencesAdmin, updateUserPreferencesAdmin, type UserAdminResponseDto } from '@frameleaf/sdk';
   import Button from '$lib/components/frameleaf/Button.svelte';
-  import { CommandPaletteDefaultProvider, Icon, toastManager } from '@frameleaf/ui';
-  import { mdiClose } from '@mdi/js';
+  import { CommandPaletteDefaultProvider, toastManager } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
   import { loadUserDetail, type UserDetailData } from './loaders';
 
@@ -119,27 +116,36 @@
   {@const { ResetPassword, ResetPinCode, Update, Delete, Restore } = getUserAdminActions($t, user)}
   <CommandPaletteDefaultProvider name={$t('user')} actions={[ResetPassword, ResetPinCode, Update, Delete, Restore]} />
 
-  <!-- The template's account detail header (AccountsLibraries.jsx): profile, View analytics, Edit account and Close. -->
-  <header>
-    <div class="resource-profile">
-      <UserAvatar {user} size="xl" />
-      <div>
-        <h2>{user.name}</h2>
-        <p>{user.email}</p>
-      </div>
-    </div>
-    <div class="resource-actions">
-      <Button onclick={() => void goto(Route.libraryAnalytics({ scope: `account:${user.id}` }))}>
-        {$t('frameleaf_users_view_analytics')}
-      </Button>
-      <IconButton label={$t('frameleaf_users_close_details')} onclick={() => void goto(Route.users())}>
-        <Icon icon={mdiClose} size={ICON_SIZE.lg} />
-      </IconButton>
-    </div>
-  </header>
+  <!-- The prototype's person page (People.jsx): their name as the page heading, "‹ Users" back to the list.
+       Held to the cards' width, so "View analytics" ends where the cards do. -->
+  <div class="heading">
+    <PageHeading
+      overline={$t('frameleaf_users_eyebrow')}
+      title={user.name}
+      description={$t('frameleaf_users_person_description', {
+        values: {
+          email: user.email,
+          role: user.isAdmin ? $t('frameleaf_users_role_admin') : $t('frameleaf_userpage_role_member'),
+          date: new Date(user.createdAt).toLocaleDateString($locale, {
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric',
+          }),
+        },
+      })}
+      back={{ href: Route.users(), label: $t('frameleaf_settings_area_users') }}
+    >
+      {#snippet actions()}
+        <Button onclick={() => void goto(Route.libraryAnalytics({ scope: `account:${user.id}` }))}>
+          {$t('frameleaf_users_view_analytics')}
+        </Button>
+      {/snippet}
+    </PageHeading>
+  </div>
 
   <!-- FL-516: one person in three parts, in place of the seven tabs (FL-76). -->
-  <Pane label={$t('frameleaf_account_detail_aria_label', { values: { name: user.name } })}>
+  <!-- The person's own cards follow the header directly: no frame around the cards (prototype People.jsx). -->
+  <section aria-label={$t('frameleaf_account_detail_aria_label', { values: { name: user.name } })}>
     {#key user.id}
       <PersonPage
         {user}
@@ -151,7 +157,7 @@
         onOpenPrivacy={authManager.authenticated && user.id === authManager.user.id ? openOwnLockedSettings : undefined}
       />
     {/key}
-  </Pane>
+  </section>
 
   {#if editing}
     <AccountFormDialog {user} onClose={() => goto(Route.viewUser(user))} />
@@ -159,9 +165,8 @@
 {/snippet}
 
 <style>
-  /* The profile and its actions stand clear of the tabbed pane under them. */
-  header {
-    margin-bottom: var(--fl-space-4);
+  .heading {
+    max-width: 1120px;
   }
   .detail-loading {
     display: flex;

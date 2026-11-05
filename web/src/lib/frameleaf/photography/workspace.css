@@ -9,6 +9,10 @@
   src: url('/fonts/noto-serif.ttf');
   font-display: swap;
 }
+/* Boxes, radios and sliders take the brand accent here as they do in the rest of the app (base.css). */
+:where(.phw, .phd) :where(input[type='checkbox'], input[type='radio'], input[type='range']) {
+  accent-color: var(--fl-accent);
+}
 .phd-checksum {
   overflow-wrap: anywhere;
   font-size: var(--fl-font-micro);
@@ -80,6 +84,14 @@
   flex-direction: row;
   align-items: center;
   margin: 12px 0;
+}
+/* A field under a row of controls (Watermarks › Preset, then Preset name) is a new row, not part of it. */
+.phd-card > .phd-row + label {
+  margin-top: var(--fl-space-4);
+}
+/* The watermark preview's controls: the button lines up with the fields beside it, not their labels. */
+.phd-preview > .phd-actions {
+  align-items: flex-end;
 }
 /* Rhythm inside a panel (approved design, 2026-11-04): rows, buttons and notes never sit on what comes
    before, and checkboxes that follow each other are divided. */
@@ -248,31 +260,167 @@
 }
 .phd-templates {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin: 22px 0;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--fl-space-4);
+  margin: var(--fl-space-6) 0 0;
 }
+/* Each template is a card with a small cover drawn from the shoot's own photographs (prototype
+   `.phx-template-grid`, `.phx-template-cover`). */
 .phd-templates button {
-  padding: 24px 18px;
+  display: flex;
+  flex-direction: column;
+  padding: var(--fl-space-2);
   text-align: start;
-  min-height: 150px;
   background: var(--fl-canvas);
   border: 1px solid var(--fl-border);
-  border-radius: var(--fl-radius-control);
+  border-radius: var(--fl-radius-card);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
 }
 .phd-templates button.selected {
   border-color: var(--fl-accent);
-  background: color-mix(in srgb, var(--fl-accent) 10%, var(--fl-canvas));
 }
-.phd-templates strong,
-.phd-templates span {
-  display: block;
+.phd-templates button > strong {
+  margin: var(--fl-space-3) var(--fl-space-2) var(--fl-space-2);
+  font-weight: 600;
 }
-.phd-templates span {
-  margin-top: 12px;
+.phd-templates button > span:not(.phd-template-cover) {
+  margin: 0 var(--fl-space-2) var(--fl-space-3);
   font-size: var(--fl-font-small);
   line-height: 1.6;
   color: var(--fl-muted);
+}
+/* The chosen template says so (prototype `.phx-selected-label`). */
+.phd .phd-templates button > small {
+  display: flex;
+  align-items: center;
+  gap: var(--fl-space-1);
+  margin: auto var(--fl-space-2) var(--fl-space-2);
+  color: var(--fl-accent);
+  font-size: var(--fl-font-micro);
+}
+.phd-template-cover {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 235px;
+  overflow: hidden;
+  border-radius: var(--fl-radius-xs);
+  font-family: 'Studio Serif', Georgia, serif;
+  text-align: center;
+}
+.phd .phd-template-cover > small {
+  padding: 10px 0;
+  font-size: var(--fl-font-micro);
+  letter-spacing: 1px;
+  color: inherit;
+}
+.phd-template-cover > .phd-cover-photo {
+  display: block;
+  flex: none;
+  width: 100%;
+  height: 115px;
+  overflow: hidden;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+.phd-template-cover :where(img, .ph-thumb-missing) {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.phd-template-cover > .phd-cover-title {
+  max-width: 100%;
+  padding: var(--fl-space-3) var(--fl-space-2);
+  overflow: hidden;
+  font-size: var(--fl-font-size);
+  line-height: 1.2;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.phd-template-cover > .phd-cover-thumbs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--fl-space-1);
+  width: 100%;
+  padding: 0 10px;
+}
+.phd-cover-thumbs > span {
+  display: block;
+  height: 36px;
+  overflow: hidden;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+.phd-template-cover.wedding > .phd-cover-title {
+  padding: 7px;
+  font-family: 'Studio Script', cursive;
+  font-size: var(--fl-font-title);
+}
+.phd-template-cover.portrait > .phd-cover-photo {
+  width: 85%;
+  border-radius: 50% 50% 0 0;
+}
+.phd-template-cover.fine-art > .phd-cover-photo {
+  width: 66%;
+  height: 110px;
+}
+.phd-template-cover.fine-art > .phd-cover-thumbs {
+  padding: 4px 28px;
+}
+.phd-template-cover.proofing {
+  font-family: inherit;
+}
+.phd-template-cover.proofing > .phd-cover-photo {
+  width: 48%;
+  height: 90px;
+  margin-top: var(--fl-space-2);
+}
+.phd-template-cover.proofing > .phd-cover-title {
+  font-size: var(--fl-font-small);
+}
+/* Presentation › Cover & pacing beside Identity & finishing touches: fields one under another. */
+.phx-two-column.phx-presentation {
+  align-items: stretch;
+}
+.phx-presentation > .phd-card > h3 {
+  margin: 0 0 var(--fl-space-4);
+}
+.phx-presentation > .phd-card > label + label,
+.phx-presentation > .phd-card > label + .phd-fields,
+.phx-presentation > .phd-card > .phd-fields + label {
+  margin-top: var(--fl-space-4);
+}
+.phx-presentation > .phd-card > .phd-fields {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: var(--fl-space-4) 0 0;
+}
+/* A switch-like row: the setting on the left, its box on the right, divided from the one before. */
+.phd .phx-presentation label.phx-check-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fl-space-4);
+  margin: var(--fl-space-4) 0 0;
+}
+.phd .phx-presentation label.phx-check-row + label.phx-check-row {
+  margin-top: var(--fl-space-3);
+  padding-top: var(--fl-space-3);
+  border-top: 1px solid var(--fl-border);
+}
+.phx-check-row > span {
+  display: grid;
+  gap: var(--fl-space-1);
+}
+.phx-check-row small {
+  color: var(--fl-muted);
+  font-size: var(--fl-font-micro);
+}
+@media (max-width: 700px) {
+  .phx-presentation > .phd-card > .phd-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .phd-order {
   border-top: 1px solid var(--fl-border);
@@ -318,8 +466,8 @@
   .phd-card {
     padding: 16px;
   }
-  .phd-templates {
-    grid-template-columns: 1fr;
+  .phd-template-cover {
+    height: 210px;
   }
 }
 .phw {
@@ -541,6 +689,10 @@
   color: var(--fl-muted);
   font-size: var(--fl-font-small);
 }
+/* The shoot count sits at the row's end, as in the prototype. */
+.phw-list-tools > span {
+  margin-inline-start: auto;
+}
 .phw-search {
   display: flex;
   align-items: center;
@@ -574,8 +726,32 @@
 }
 .phw-shoot-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  /* The prototype's three columns; two below 950px with the newest shoot across both. */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 20px;
+}
+@media (max-width: 950px) {
+  .phw-shoot-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .phw-shoot-grid > .phw-shoot-card:first-child {
+    grid-column: 1 / -1;
+  }
+  .phw-shoot-grid > .phw-shoot-card:first-child .phw-shoot-image {
+    aspect-ratio: 16 / 9;
+  }
+}
+@media (max-width: 700px) {
+  .phw-shoot-grid {
+    grid-template-columns: 1fr;
+    gap: var(--fl-space-4);
+  }
+  .phw-shoot-grid > .phw-shoot-card:first-child {
+    grid-column: auto;
+  }
+  .phw-shoot-grid > .phw-shoot-card:first-child .phw-shoot-image {
+    aspect-ratio: 1.45;
+  }
 }
 .phw-shoot-card {
   text-align: start;
@@ -719,8 +895,23 @@
   gap: 12px;
   margin-bottom: 14px;
 }
-.phw-contact-toolbar > a {
+/* A bordered button, as the prototype's "Add sample set" beside the filter tabs. */
+.phw-contact-toolbar > a.phw-add-photos {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fl-space-2);
+  min-height: var(--fl-control-height);
+  padding: 0 var(--fl-space-3);
+  color: var(--fl-text);
+  background: var(--fl-raised);
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-control);
   font-size: var(--fl-font-small);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.phw-contact-toolbar > a.phw-add-photos:hover {
+  background: color-mix(in srgb, var(--fl-raised), var(--fl-text) 8%);
 }
 .phw-tabs {
   display: flex;
@@ -794,8 +985,11 @@
   object-fit: cover;
 }
 /* The same round selector as the library's photos (approved design, 2026-11-04): it shows on hover or
-   focus, on touch screens, and on every photo once anything is selected. */
-.phw-photo-select {
+   focus, on touch screens, and on every photo once anything is selected. `.phw input` (the form fields'
+   panel colour, padding and control radius) is more specific than a bare class, so the selector is
+   named as an input here. */
+.phw input.phw-photo-select {
+  padding: 0;
   position: absolute;
   top: 8px;
   left: 8px;
@@ -818,7 +1012,7 @@
 .phw-photo-grid:has(.phw-photo-select:checked) .phw-photo-select {
   opacity: 1;
 }
-.phw-photo-select:checked {
+.phw input.phw-photo-select:checked {
   border-color: var(--fl-accent);
   background-color: var(--fl-accent);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='white' d='M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z'/%3E%3C/svg%3E");
@@ -828,7 +1022,7 @@
   outline-offset: var(--fl-focus-offset);
 }
 @media (hover: none) {
-  .phw-photo-select {
+  .phw input.phw-photo-select {
     opacity: 1;
   }
 }
@@ -1076,7 +1270,8 @@
     min-height: 32px;
   }
   .phw-header {
-    gap: 10px;
+    flex-wrap: wrap;
+    gap: var(--fl-space-3) 10px;
     padding: 14px var(--fl-space-4);
   }
   .phw-scroll {
@@ -1246,6 +1441,14 @@
   height: 100%;
   object-fit: cover;
 }
+/* Branding's small preview: the photo at the shape the server draws the mark (3:2), the mark over it. */
+.phw-brand-watermark .phw-watermark-guide.is-small {
+  height: auto;
+  aspect-ratio: 3 / 2;
+}
+.phw-watermark-guide > img.phw-guide-overlay {
+  object-fit: fill;
+}
 .phw-branding-mark .phw-watermark-guide {
   max-width: 560px;
   margin: 18px 0 0;
@@ -1309,11 +1512,27 @@
   color: var(--fl-muted);
   font-size: var(--fl-font-small);
 }
+/* Typography and colours is its own group under the identity fields. */
+.phw-brand-controls fieldset > h3 {
+  margin: var(--fl-space-2) 0 var(--fl-space-3);
+  padding-top: var(--fl-space-4);
+  border-top: 1px solid var(--fl-border);
+}
 .phw-brand-controls fieldset,
 .phw-branding-mark fieldset {
   border: 0;
   padding: 0;
   min-width: 0;
+}
+/* Branding's identity labels at the 13px other Clients forms use (Gallery settings, Shoot details). */
+.phw-brand-controls .phw-field > span {
+  font-size: var(--fl-font-callout);
+}
+/* Choose a logo and Use initials: both the full width of the column, so the pair lines up. */
+.phw-brand-controls .phw-brand-buttons {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  margin-bottom: var(--fl-space-2);
 }
 .phw-brand-buttons {
   display: flex;
@@ -1723,11 +1942,26 @@
   .phx-project-nav {
     margin-bottom: var(--fl-space-4);
   }
-  .phw-header-actions {
+  /* The title wraps and the shoot picker takes at most half the row, inside the gutter (prototype phone). */
+  .phw-header > :first-child {
+    flex: 1 1 0;
     min-width: 0;
   }
+  .phw-header-actions {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 50%;
+  }
   .phw-shoot-picker {
-    max-width: 150px;
+    width: 100%;
+    max-width: none;
+  }
+  /* A page's own actions moved into the header (Website, Watermarks) are wider than half the row: they
+     take a row of their own under the title rather than running past the 16px gutter. */
+  .phw-header-actions:has(.phw-site-actions) {
+    flex-basis: 100%;
+    max-width: none;
+    justify-content: flex-start;
   }
   /* The counts wrap under the shoot's name rather than vanish behind the Client preview button. */
   .phx-project-text small {
@@ -1754,31 +1988,44 @@
   align-items: center;
   gap: 5px;
 }
-/* Intake › Shoot brief: what came in, at a glance. */
+/* Intake: the two cards side by side are the same height (prototype `.phx-two-column .phx-panel`). */
+.phx-intake-top {
+  align-items: stretch;
+}
+.phx-intake-top > .phd-card {
+  display: flex;
+  flex-direction: column;
+}
+.phx-intake-top > .phd-card > label + label {
+  margin-top: var(--fl-space-4);
+}
+/* The drop zone takes the card's spare height beside a taller brief, so no dead band sits under it. */
+.phx-intake-top > .phd-card > .phx-drop {
+  flex: 1;
+  align-content: center;
+}
+.phx-intake-top > .phd-card > .fl-control:last-child {
+  align-self: flex-start;
+  margin-top: auto;
+}
+/* Intake › Shoot brief: what came in, at a glance; two by two, as figures (prototype). */
 .phx-import-stats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-  margin: 14px 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--fl-space-4);
+  margin: var(--fl-space-6) 0;
 }
 .phx-import-stats span {
   display: grid;
-  gap: 2px;
-  padding: 10px;
-  border-radius: var(--fl-radius-md);
-  background: var(--fl-canvas);
+  gap: var(--fl-space-1);
   font-size: var(--fl-font-small);
   color: var(--fl-muted);
 }
 .phx-import-stats strong {
   font-size: var(--fl-font-headline);
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
   color: var(--fl-text);
-}
-@media (max-width: 700px) {
-  .phx-import-stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 /* Watermarks › See it on the photograph. */
 .phw-see-tabs {
@@ -1804,12 +2051,100 @@
   color: var(--fl-text);
   box-shadow: var(--fl-shadow-1);
 }
-.phw-see img {
-  display: block;
+/* Watermarks (PhotographyWorkflow.jsx `.phx-watermark-layout`): the editor in a 320px column on the left,
+   the photograph, defaults and branding mark on the right; one column on phones. */
+.phw-wm-layout {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: var(--fl-space-6);
+  align-items: start;
+}
+.phw-wm-side {
+  display: grid;
+  gap: var(--fl-space-6);
+  min-width: 0;
+}
+.phw-wm-editor {
+  display: grid;
+  gap: var(--fl-space-4);
+}
+.phw-wm-editor > .phx-eyebrow,
+.phw-wm-editor > h3 {
+  margin: 0;
+}
+.phw-wm-editor > p,
+.phw-wm-editor > :where(label, .phd-actions, .phd-watermark-editor) {
+  margin: 0;
+}
+.phw-branding-mark .phd-fields {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+.phw-wm-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fl-space-2);
+}
+.phd-watermark-editor.solo {
+  grid-template-columns: minmax(0, 1fr);
+  margin: 0;
+}
+.phd-watermark-editor.solo .phd-fields {
+  grid-template-columns: minmax(0, 1fr);
+}
+.phw-see .phd-row {
+  align-items: flex-start;
+}
+.phw-see .phd-row select {
+  width: auto;
+}
+.phw-see .phd-row p {
+  margin: 4px 0 0;
+}
+.phw-see-canvas {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 3 / 2;
+  border-radius: var(--fl-radius-card);
+  /* A mid grey stands in until the photograph arrives, so light and dark marks both show. */
+  background: color-mix(in srgb, var(--fl-text) 45%, var(--fl-canvas));
+}
+.phw-see-canvas.portrait {
+  aspect-ratio: 2 / 3;
+  max-width: 380px;
+  margin-inline: auto;
+}
+.phw-see-canvas > :where(img, .ph-thumb-missing) {
+  position: absolute;
+  inset: 0;
   width: 100%;
-  max-height: 420px;
-  object-fit: contain;
-  border-radius: var(--fl-radius-md);
+  height: 100%;
+  object-fit: cover;
+}
+/* The mark is drawn at the photograph's shape, so it lays over it edge to edge. */
+.phw-see-canvas > img.phw-see-mark {
+  object-fit: fill;
+}
+.phw-see-status {
+  position: absolute;
+  inset-inline-start: var(--fl-space-4);
+  inset-block-end: var(--fl-space-3);
+  color: white;
+  font-size: var(--fl-font-small);
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.6);
+}
+.phd p.phw-see-caption {
+  margin: var(--fl-space-4) 0 0;
+  font-size: var(--fl-font-small);
+}
+@media (max-width: 1100px) {
+  .phw-wm-layout {
+    grid-template-columns: 280px minmax(0, 1fr);
+  }
+}
+@media (max-width: 760px) {
+  .phw-wm-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 /* Orders & delivery: where things stand, with the running total on the right. */
 .phx-order-header {
@@ -1827,8 +2162,31 @@
   font-size: var(--fl-font-title);
   font-variant-numeric: tabular-nums;
 }
+/* No selection yet: the prototype's centred empty state. */
+.phx-orders-empty {
+  display: grid;
+  justify-items: center;
+  gap: var(--fl-space-3);
+  padding: 64px var(--fl-space-6);
+  text-align: center;
+}
+.phx-orders-empty > svg {
+  color: var(--fl-muted);
+}
+.phx-orders-empty h3 {
+  margin: 0;
+}
 .phx-orders-empty p {
-  max-width: 60ch;
+  max-width: 420px;
+  margin: 0 auto var(--fl-space-3);
+}
+.phx-orders-empty .phd-actions {
+  justify-content: center;
+}
+.phx-order-header > div > p {
+  margin: var(--fl-space-2) 0 0;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
 }
 /* Intake: drop photographs or a camera folder straight into the shoot. */
 .phx-drop {
@@ -1888,6 +2246,16 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+.phw-gallery-cover.is-empty {
+  background: var(--fl-raised);
+}
+.phw-gallery-cover-empty {
+  position: absolute;
+  inset: 0 0 96px;
+  display: grid;
+  place-items: center;
+  color: var(--fl-muted);
 }
 .phx-cover-mark {
   position: absolute;
@@ -1958,13 +2326,16 @@
   padding: 0;
   list-style: none;
 }
-.phw-client-picks img {
+.phw-client-picks img,
+.phw-client-picks li .ph-thumb-missing {
   width: 100%;
+  height: auto;
   aspect-ratio: 4 / 3;
   object-fit: cover;
   border-radius: var(--fl-radius-md);
 }
-.phw-client-picks span {
+/* The caption under each pick; PhotographyThumb's placeholder is a span too, so it is excluded. */
+.phw-client-picks li > span:not(.ph-thumb-missing) {
   display: flex;
   align-items: center;
   gap: 5px;
@@ -1974,9 +2345,28 @@
   font-size: var(--fl-font-small);
   white-space: nowrap;
 }
-.phw-client-picks span svg {
+.phw-client-picks li > span:not(.ph-thumb-missing) svg {
   flex: none;
   color: var(--fl-accent);
+}
+/* Gallery: the client collection and recipient cards are separate cards, never touching; the draft
+   state and its buttons are a heading and its content. */
+.phw-gallery-main > .phd-card + .phd-card {
+  margin-top: var(--fl-space-5);
+}
+.phw-gallery-main > .phd-card > .phd-row + .phd-actions {
+  margin-top: var(--fl-space-3);
+}
+/* Gallery settings: one 12px rhythm between the fields, checkboxes and buttons stacked in the column. */
+.phx-gallery .phw-inspector-body {
+  display: grid;
+  gap: var(--fl-space-3);
+}
+.phx-gallery .phw-inspector-body > :where(h2, h3, p, label) {
+  margin: 0;
+}
+.phx-gallery .phw-inspector-body > label:has(> input[type='checkbox']) {
+  margin: 0;
 }
 .phx-gallery .phw-inspector-body h3 {
   margin: 8px 0 0;
@@ -2189,6 +2579,13 @@
   gap: 8px;
   padding-inline-start: 18px;
   list-style: disc;
+}
+/* The list is its own block under the paragraph (prototype: 16px), not a run-on. */
+.phw-privacy p {
+  margin: 0;
+}
+.phw-privacy p + ul {
+  margin: var(--fl-space-4) 0 0;
 }
 @media (max-width: 900px) {
   .phw-publish-paths,

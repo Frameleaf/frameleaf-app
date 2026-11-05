@@ -18,9 +18,11 @@
     mdiChevronLeft,
     mdiChevronRight,
     mdiClockOutline,
+    mdiCompare,
     mdiEyeOutline,
     mdiHeart,
     mdiHeartOutline,
+    mdiImageCheckOutline,
     mdiLockOutline,
   } from '@mdi/js';
   import { locale } from '$lib/stores/preferences.store';
@@ -132,6 +134,9 @@
       .join('');
   const money = (total: number, currency: string) =>
     new Intl.NumberFormat($locale, { style: 'currency', currency }).format(total / 100);
+  /** The selection tray (PhotographyClient.jsx `pc-selection-tray`): what's chosen and what it adds. */
+  const hasPackage = $derived(!!gallery && (gallery.pricing.includedCount > 0 || gallery.pricing.additionalPrice > 0));
+  const includedChosen = $derived(gallery ? Math.min(choices.length, gallery.pricing.includedCount) : 0);
   const selectedPrice = $derived(
     gallery ? Math.max(0, choices.length - gallery.pricing.includedCount) * gallery.pricing.additionalPrice : 0,
   );
@@ -204,6 +209,8 @@
     clearTimeout(saveTimer);
     saveState = 'idle';
     clearImages();
+    // The gate that follows still wears the studio's name and colours.
+    gateBrand = gallery?.brand ? { ...gallery.brand, logoUrl: null } : gateBrand;
     gallery = null;
     session = '';
     choices = [];
@@ -1012,7 +1019,10 @@
         </p>
         <p>{gallery.presentation.introduction || $t('frameleaf_photography_client_intro_default')}</p>
         {#if gallery.welcomeMessage}<p class="pc-welcome">{gallery.welcomeMessage}</p>{/if}
-        {#if gallery.mode !== 'edited-delivery' && !finished}<p class="pc-package-line">
+        <!-- Only a package the studio set up is worth a line: "0 included · $0.00" says nothing. -->
+        {#if gallery.mode !== 'edited-delivery' && !finished && (gallery.pricing.includedCount > 0 || gallery.pricing.additionalPrice > 0)}<p
+            class="pc-package-line"
+          >
             {$t('frameleaf_photography_client_pricing', {
               values: {
                 count: gallery.pricing.includedCount,
@@ -1027,32 +1037,20 @@
           {error}<button type="button" disabled={busy} onclick={reload}>{$t('frameleaf_error_retry')}</button>
         </div>{/if}
       {#if notice}<p class="pc-notice" role="status">{notice}</p>{/if}
+      <!-- PhotographyClient.jsx: the collection and the client's favourites as two tabs, the send on the right. -->
       <div class="pc-toolbar">
-        <div>
-          <h2>
-            {favoritesOnly
-              ? $t('frameleaf_photography_client_your_favourites')
-              : $t('frameleaf_photography_client_the_photographs')}
-          </h2>
-          <p>
-            {$t('frameleaf_photography_client_counts', {
-              values: { photos: gallery.photos.length, favourites: choices.length },
-            })}{gallery.pricing.selectionLimit
-              ? ` · ${$t('frameleaf_photography_client_choose_up_to', { values: { count: gallery.pricing.selectionLimit } })}`
-              : ''}{gallery.pricing.selectionDeadline
-              ? ` · ${$t('frameleaf_photography_client_choose_by', { values: { date: new Date(gallery.pricing.selectionDeadline).toLocaleDateString($locale) } })}`
-              : ''}
-          </p>
+        <div class="pc-tabs" role="group" aria-label={$t('frameleaf_photography_client_the_photographs')}>
+          {#each [[false, 'frameleaf_photography_client_all_photographs', gallery.photos.length], [true, 'frameleaf_photography_client_your_favourites', choices.length]] as const as [favourites, label, count] (label)}<button
+              type="button"
+              aria-pressed={favoritesOnly === favourites}
+              onclick={() => {
+                favoritesOnly = favourites;
+                void prepareThumbnails();
+              }}>{$t(label)}<small>{count}</small></button
+            >{/each}
         </div>
         <div class="pc-actions">
-          <button
-            type="button"
-            aria-pressed={favoritesOnly}
-            onclick={() => {
-              favoritesOnly = !favoritesOnly;
-              void prepareThumbnails();
-            }}>{$t('frameleaf_photography_client_favourites_count', { values: { count: choices.length } })}</button
-          ><PhotographyStatus
+          <PhotographyStatus
             state={saveState}
             savingLabel={$t('frameleaf_photography_saving')}
             savedLabel={$t('frameleaf_photography_client_saved')}
@@ -1067,6 +1065,20 @@
           >
         </div>
       </div>
+      {#if gallery.pricing.selectionLimit || gallery.pricing.selectionDeadline}<p class="pc-toolbar-note">
+          {[
+            gallery.pricing.selectionLimit
+              ? $t('frameleaf_photography_client_choose_up_to', { values: { count: gallery.pricing.selectionLimit } })
+              : '',
+            gallery.pricing.selectionDeadline
+              ? $t('frameleaf_photography_client_choose_by', {
+                  values: { date: new Date(gallery.pricing.selectionDeadline).toLocaleDateString($locale) },
+                })
+              : '',
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+        </p>{/if}
       {#if gallery.presentation.showChapters && gallery.chapters.length > 0}<nav
           class="pc-chapters"
           aria-label={$t('frameleaf_photography_client_chapters')}
@@ -1113,12 +1125,25 @@
           >
           <div class="pc-photo-caption">
             <div>
-              {#if gallery?.presentation.showNumbers}<span>#{String(photo.number).padStart(3, '0')}</span>{/if}<small
-                >{photoState(photo.status)}</small
-              >
+              {#if gallery?.presentation.showNumbers}<span
+                  >{$t('frameleaf_photography_client_photo_no', {
+                    values: { number: String(photo.number).padStart(3, '0') },
+                  })}</span
+                >{/if}<small>{photoState(photo.status)}</small>
             </div>
             <div class="pc-actions">
-              <button
+              <label class="pc-compare" title={$t('frameleaf_photography_compare')}
+                ><input
+                  type="checkbox"
+                  aria-label={$t('frameleaf_photography_client_compare_photo', { values: { number: photo.number } })}
+                  checked={compareIds.includes(photo.id)}
+                  disabled={!compareIds.includes(photo.id) && compareIds.length === 2}
+                  onchange={(event) =>
+                    (compareIds = event.currentTarget.checked
+                      ? [...compareIds, photo.id]
+                      : compareIds.filter((id) => id !== photo.id))}
+                /><Icon icon={mdiCompare} size="20" aria-hidden={true} /></label
+              ><button
                 type="button"
                 class="pc-heart"
                 class:is-fresh={justFavorited === photo.id}
@@ -1132,17 +1157,6 @@
                   size="20"
                   aria-hidden={true}
                 /></button
-              ><label
-                ><input
-                  type="checkbox"
-                  aria-label={$t('frameleaf_photography_client_compare_photo', { values: { number: photo.number } })}
-                  checked={compareIds.includes(photo.id)}
-                  disabled={!compareIds.includes(photo.id) && compareIds.length === 2}
-                  onchange={(event) =>
-                    (compareIds = event.currentTarget.checked
-                      ? [...compareIds, photo.id]
-                      : compareIds.filter((id) => id !== photo.id))}
-                />{$t('frameleaf_photography_compare')}</label
               >{#if photo.outputs?.some((output) => output.canDownload)}<button
                   type="button"
                   disabled={busy}
@@ -1209,15 +1223,15 @@
         <div>
           <span class="pc-eyebrow">{$t('frameleaf_photography_client_your_collection')}</span>
           <h2>{$t('frameleaf_photography_section_orders')}</h2>
-          <p>
-            {$t('frameleaf_photography_client_pricing', {
-              values: {
-                count: gallery.pricing.includedCount,
-                price: money(gallery.pricing.additionalPrice, gallery.pricing.currency),
-              },
-            })}
-          </p>
-          <p>{gallery.pricing.terms}</p>
+          {#if gallery.pricing.includedCount > 0 || gallery.pricing.additionalPrice > 0}<p>
+              {$t('frameleaf_photography_client_pricing', {
+                values: {
+                  count: gallery.pricing.includedCount,
+                  price: money(gallery.pricing.additionalPrice, gallery.pricing.currency),
+                },
+              })}
+            </p>{/if}
+          {#if gallery.pricing.terms}<p>{gallery.pricing.terms}</p>{/if}
         </div>
         <div>
           {#each gallery.rounds as round (round.id)}<p>
@@ -1297,6 +1311,37 @@
         </div>
       </section>
     </main>
+    {#if finished || gallery.mode !== 'edited-delivery'}<div class="pc-selection-tray" aria-live="polite">
+        <span
+          ><Icon icon={finished ? mdiImageCheckOutline : mdiHeartOutline} size="22" aria-hidden={true} /><strong
+            >{finished
+              ? $t('frameleaf_photography_client_tray_ready', {
+                  values: { count: downloads.length || readyOutputs.length },
+                })
+              : $t('frameleaf_photography_client_tray_chosen', { values: { count: choices.length } })}</strong
+          >{#if finished}<small>{$t('frameleaf_photography_client_tray_ready_note')}</small>{:else if hasPackage}<small
+              >{$t('frameleaf_photography_client_tray_split', {
+                values: { included: includedChosen, extra: choices.length - includedChosen },
+              })}</small
+            >{:else if gallery.pricing.selectionLimit}<small
+              >{$t('frameleaf_photography_client_choose_up_to', {
+                values: { count: gallery.pricing.selectionLimit },
+              })}</small
+            >{/if}</span
+        >
+        {#if !finished && gallery.pricing.additionalPrice > 0}<div class="pc-tray-total">
+            <strong>{money(selectedPrice, gallery.pricing.currency)}</strong><small
+              >{$t('frameleaf_photography_client_tray_estimate')}</small
+            >
+          </div>{/if}
+        {#if finished}<a class="pc-tray-action" href="#your-order">{$t('frameleaf_photography_client_tray_download')}</a
+          >{:else}<button
+            type="button"
+            class="pc-primary"
+            disabled={busy || ownerPreview || choices.length === 0}
+            onclick={() => (confirmSubmit = true)}>{$t('frameleaf_photography_client_review_selections')}</button
+          >{/if}
+      </div>{/if}
     {@render studioFooter(gallery.brand)}
     <Dialog
       open={!!opened}

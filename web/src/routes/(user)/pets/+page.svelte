@@ -552,7 +552,8 @@
     display: flex;
     flex-direction: column;
     gap: 1rem;
-    padding: 1rem;
+    /* The one page gutter: the page area's 8px + --fl-page-inline = 24px desktop, 16px phone. */
+    padding: var(--fl-space-4) var(--fl-page-inline);
   }
   /* As People's `.pl-header` (styles.css `.people-header`): one row, a hairline below. */
   .pets-header {
@@ -577,12 +578,11 @@
   .pets-summary {
     margin: var(--fl-space-2) 0 0;
     color: var(--fl-muted);
+    /* One subtitle size under every discovery page title (the prototype's 13px). */
+    font-size: var(--fl-font-callout);
+    line-height: 1.6;
   }
   @media (max-width: 700px) {
-    /* With the page's own 8px, the 16px phone gutter. */
-    .pets {
-      padding-inline: var(--fl-space-2);
-    }
     .pets-header {
       padding: 0 0 var(--fl-space-4);
       margin-bottom: 0;

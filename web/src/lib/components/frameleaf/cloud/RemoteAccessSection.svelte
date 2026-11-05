@@ -24,6 +24,7 @@
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
   import Meter from '$lib/components/frameleaf/settings/kit/Meter.svelte';
   import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
+  import Points from '$lib/components/frameleaf/settings/kit/Points.svelte';
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
   import Said from '$lib/components/frameleaf/settings/kit/Said.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
@@ -192,7 +193,8 @@
         tone: 'quiet' as const,
         icon: mdiWebOff,
         title: $t('frameleaf_gate_remote'),
-        body: $t('frameleaf_why_remote'),
+        // What it costs, in the same words as the Plan page: the licence first, then the monthly price.
+        body: `${$t('frameleaf_why_remote')} ${$t('frameleaf_ra_price')}`,
       };
     }
     if (!remote?.enabled) {
@@ -543,6 +545,20 @@
         </div>
       {/if}
     </Hero>
+
+    {#if blocked}
+      <!-- Without a plan: what one adds here, as the prototype's Remote access (settings-v2/cloud/Remote.jsx). -->
+      <Section title={$t('frameleaf_ra_plan_adds')}>
+        <Points
+          rows={[
+            { text: $t('frameleaf_ra_plan_adds_anywhere') },
+            { text: $t('frameleaf_ra_plan_adds_name') },
+            { text: $t('frameleaf_ra_plan_adds_router') },
+            { text: $t('frameleaf_ra_plan_adds_everyone') },
+          ]}
+        />
+      </Section>
+    {/if}
 
     {#if usageAvailable && remote}
       <Section title={$t('frameleaf_name_title')} description={$t('frameleaf_name_description')}>

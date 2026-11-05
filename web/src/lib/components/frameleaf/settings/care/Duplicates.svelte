@@ -375,6 +375,7 @@
       </Button>
     {/snippet}
     <Facts
+      columns={4}
       rows={[
         {
           label: $t('frameleaf_dupes_fact_saved'),
@@ -405,15 +406,10 @@
         },
       ]}
     />
-    <Promises
-      rows={[
-        {
-          icon: mdiShieldCheckOutline,
-          text: $t('frameleaf_dupes_pledge'),
-          detail: $t('frameleaf_dupes_pledge_detail'),
-        },
-      ]}
-    />
+    <!-- The prototype's `Pledge` (care/shared.jsx): an info notice with the shield. -->
+    <Notice icon={mdiShieldCheckOutline} title={$t('frameleaf_dupes_pledge')}>
+      {$t('frameleaf_dupes_pledge_detail')}
+    </Notice>
     {#if extra && extra.files > 0 && !running}
       <Notice tone="warn" title={$t('frameleaf_dupes_extra')}>
         {$t('frameleaf_dupes_extra_found', {

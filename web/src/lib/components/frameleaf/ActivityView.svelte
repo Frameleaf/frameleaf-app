@@ -633,7 +633,11 @@
         {/if}
       {/each}
       {#if backgroundCount > 0}
-        <BackgroundWorkRows cards={serverWork} cloudStatus={isAdmin ? cloudWorkSession.status : null} />
+        <BackgroundWorkRows
+          cards={serverWork}
+          cloudStatus={isAdmin ? cloudWorkSession.status : null}
+          showCount={inProgress.length > 0}
+        />
       {/if}
     </section>
   {/if}
@@ -661,7 +665,8 @@
   .fla {
     flex: 1;
     min-width: 0;
-    padding: 32px 36px 48px;
+    /* With the page's own 8px, the prototype's 32px above the eyebrow. */
+    padding: var(--fl-space-6) 36px 48px;
     color: var(--fl-text);
   }
   /* P4 (review-1030-shell.css): the filters sit on their own row, in line with the content. */
@@ -1074,7 +1079,7 @@
   @media (max-width: 700px) {
     /* With the page's own 8px, the 16px phone gutter. */
     .fla {
-      padding: 20px var(--fl-space-2) 40px;
+      padding: var(--fl-space-2) var(--fl-space-2) 40px;
     }
     .fla-job {
       grid-template-columns: 84px minmax(0, 1fr);

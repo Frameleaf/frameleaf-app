@@ -24,13 +24,16 @@
     margin: 0 0 8px;
     color: var(--fl-muted);
     font-size: 12px;
-    font-weight: 500;
+    font-weight: 400;
     letter-spacing: 1.3px;
     line-height: 1.4;
     text-transform: uppercase;
     white-space: nowrap;
   }
+  /* A crumb is text in the line, not a control row: the shared 44px button floor would push the
+     heading down on pages with a breadcrumb. */
   .cc-overline :global(button) {
+    min-height: 0;
     padding: 0;
     color: var(--fl-muted);
     background: none;

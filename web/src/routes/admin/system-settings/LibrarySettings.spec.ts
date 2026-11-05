@@ -80,6 +80,9 @@ describe('Folder checks (FL-539)', () => {
     render(LibrarySettings);
 
     expect(await screen.findByRole('heading', { name: 'These apply once you add a folder' })).toBeInTheDocument();
+    // as in the prototype, the nightly settings wait for a folder
+    expect(screen.queryByRole('switch', { name: 'Check every folder each night' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Keeping folders up to date' })).toBeNull();
   });
 
   it('offers a retry instead of "add a folder" when the folders fail to load', async () => {
@@ -106,5 +109,7 @@ describe('Folder checks (FL-539)', () => {
     await waitFor(() =>
       expect(screen.queryByRole('heading', { name: 'These apply once you add a folder' })).not.toBeInTheDocument(),
     );
+    // the nightly switch is back as soon as a folder exists
+    expect(screen.getByRole('switch', { name: 'Check every folder each night' })).toBeInTheDocument();
   });
 });

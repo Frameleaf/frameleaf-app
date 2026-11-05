@@ -19,14 +19,19 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import MlDestinationsPanel from '$lib/components/frameleaf/MlDestinationsPanel.svelte';
+  import Figure from '$lib/components/frameleaf/settings/intelligence/Figure.svelte';
+  import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
   import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
   import Pill, { type KitTone } from '$lib/components/frameleaf/settings/kit/Pill.svelte';
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
+  import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
   import WorkerInventoryPanel from '$lib/components/frameleaf/WorkerInventoryPanel.svelte';
   import { aiState, computersFrom, notAnswering, whereOf, type Computer } from '$lib/frameleaf/computers';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
+  import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
+  import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Route } from '$lib/route';
   import { OpenQueryParam } from '$lib/constants';
   import { locale } from '$lib/stores/preferences.store';
@@ -45,10 +50,17 @@
   import { t, type Translations } from 'svelte-i18n';
   import type { ComputersData } from './loaders';
   import RenderWorkersSection from './RenderWorkersSection.svelte';
+  import { RenderWorkersState } from './render-workers-state.svelte';
 
   const { data }: { data: ComputersData } = $props();
 
   let inventory = $state(data.processing.inventory);
+  // svelte-ignore state_referenced_locally (the page's Studio helper state starts from the data it loaded with)
+  const renderState = new RenderWorkersState(data.render, () => $t('frameleaf_render_workers_unable_to_load'));
+  /** The server settings draft, for the checks under Connections; absent when the page is drawn on its own. */
+  const settingsDraft = getSystemConfigDraft();
+  const configFile = $derived(featureFlagsManager.value.configFile);
+  const seconds = (milliseconds: number) => Math.round(milliseconds / 100) / 10;
   let inventoryKey = $state(0);
   let retrying = $state(false);
 
@@ -78,8 +90,28 @@
         ? $t('frameleaf_computers_cloud')
         : computer.name;
 
+  /**
+   * The Everyday cards. A Studio worker bundled with this server is part of it there, as the approved
+   * design draws it (one "This server" card); Advanced still lists it on its own (FL-589).
+   */
+  const bundled = (computer: Computer) => computer.place === 'home' && whereOf(computer) === 'server';
+  const cards = $derived(
+    computers
+      .filter((computer) => !bundled(computer))
+      .map((computer) =>
+        computer.place === 'server'
+          ? {
+              ...computer,
+              entries: [
+                ...computer.entries,
+                ...computers.filter((other) => bundled(other)).flatMap(({ entries }) => entries),
+              ],
+            }
+          : computer,
+      ),
+  );
   /** Computers, as a household counts them: this server and the ones at home. Frameleaf Cloud is a place, not a computer. */
-  const atHome = $derived(computers.filter((computer) => computer.place !== 'cloud'));
+  const atHome = $derived(cards.filter((computer) => computer.place !== 'cloud'));
   const hero = $derived(
     silent.length > 0
       ? {
@@ -135,7 +167,9 @@
   const helps = (computer: Computer) => {
     const sources = new Set(computer.entries.map((entry) => entry.source));
     return [
-      sources.has(WorkerInventorySource.MlDestination) || computer.place === 'server'
+      // With AI features off, the status already says so; "AI features" again would read as on.
+      (sources.has(WorkerInventorySource.MlDestination) || computer.place === 'server') &&
+      !(computer.place === 'server' && ai === 'off')
         ? $t('frameleaf_computers_helps_ai')
         : '',
       sources.has(WorkerInventorySource.RenderWorker) ? $t('frameleaf_computers_helps_studio') : '',
@@ -175,11 +209,18 @@
   let aiDetails = $state<HTMLElement>();
   let studioDetails = $state<HTMLElement>();
   let addSection = $state<HTMLElement>();
+  /** The closed technical details under Each computer, opened by Manage and the ways to add a computer. */
+  let technical = $state<HTMLElement>();
   /** The tile's two ways to connect a computer; links that say `?add=` open them. */
   let addOpen = $state(page.url.searchParams.has('add'));
   const open = async (target: () => HTMLElement | undefined) => {
     if (view !== 'advanced') {
       await showView('advanced');
+    }
+    await tick();
+    const disclosure = technical?.querySelector('details');
+    if (disclosure) {
+      disclosure.open = true;
     }
     const details = target();
     if (!details) {
@@ -248,7 +289,7 @@
     {/if}
     <!-- The approved cards (2026-11-04): each computer with its state, what it does and one way in. -->
     <ul class="computers" aria-label={$t('frameleaf_computers_list_title')}>
-      {#each computers as computer (computer.key)}
+      {#each cards as computer (computer.key)}
         {@const state = status(computer)}
         <li class="computer" class:is-warn={state.tone === 'warn'} class:is-off={computer.state === 'off'}>
           <span class="computer-icon"><Icon icon={ICONS[whereOf(computer)]} size="22" aria-hidden /></span>
@@ -327,6 +368,10 @@
     {/if}
     <WhereWorkRuns part="everyday" />
   {:else}
+    <!-- Advanced (prototype `WorkV3.jsx` ComputersAdvanced): Each computer, Finer choices, Limits for each
+         person, Connections, History, then what is set somewhere else. The operator managers (addresses,
+         access keys, connection codes, what each computer reported) stay reachable, closed under Each
+         computer, since the app has no page for one computer yet. -->
     <Section title={$t('frameleaf_computers_each')} description={$t('frameleaf_computers_each_description')}>
       {#each computers as computer (computer.key)}
         {@const state = status(computer)}
@@ -342,7 +387,7 @@
             .join(' · ')}
         >
           {#if computer.place === 'cloud'}
-            <a class="button" href={commandCenterUrl('cloud')}>
+            <a class="button" href={commandCenterUrl('cloud', 'cloud-processing')}>
               {$t('frameleaf_computers_manage')}<Icon icon={mdiChevronRight} size="16" aria-hidden />
             </a>
           {:else}
@@ -355,37 +400,99 @@
           {/if}
         </Row>
       {/each}
+      <div bind:this={technical}>
+        <Advanced summary={$t('frameleaf_computers_technical')}>
+          <div class="operators">
+            <section
+              id="studio-helpers"
+              class="anchor operator"
+              bind:this={studioDetails}
+              aria-labelledby="studio-helpers-title"
+            >
+              <h3 id="studio-helpers-title">{$t('frameleaf_computers_details_studio')}</h3>
+              <RenderWorkersSection
+                data={data.render}
+                store={renderState}
+                part="helpers"
+                {enrolRequest}
+                onChanged={() => void refresh()}
+              />
+            </section>
+            <section
+              id="ml-destinations"
+              class="anchor operator"
+              bind:this={aiDetails}
+              aria-labelledby="ml-destinations-title"
+            >
+              <h3 id="ml-destinations-title">{$t('frameleaf_computers_details_ai')}</h3>
+              <p>{$t('frameleaf_computers_details_ai_help')}</p>
+              <MlDestinationsPanel
+                destinations={data.processing.destinations}
+                routes={data.processing.routes}
+                {addRequest}
+                showRoutes={false}
+                onChanged={() => void refresh()}
+              />
+            </section>
+            {#if inventory}
+              <section class="operator" aria-labelledby="checks-title">
+                <h3 id="checks-title">{$t('frameleaf_computers_details_checks')}</h3>
+                <p>{$t('frameleaf_computers_checks_description')}</p>
+                <WorkerInventoryPanel
+                  {inventory}
+                  destinations={data.processing.destinations}
+                  refreshKey={inventoryKey}
+                  onInventory={(next) => (inventory = next)}
+                />
+              </section>
+            {/if}
+          </div>
+        </Advanced>
+      </div>
     </Section>
-    <WhereWorkRuns part="advanced" />
-    <div id="studio-helpers" class="anchor" bind:this={studioDetails}>
-      <Section title={$t('frameleaf_computers_details_studio')}>
-        <RenderWorkersSection data={data.render} {enrolRequest} onChanged={() => void refresh()} />
-      </Section>
-    </div>
-    <div id="ml-destinations" class="anchor" bind:this={aiDetails}>
-      <Section title={$t('frameleaf_computers_details_ai')} description={$t('frameleaf_computers_details_ai_help')}>
-        <MlDestinationsPanel
-          destinations={data.processing.destinations}
-          routes={data.processing.routes}
-          {addRequest}
-          showRoutes={false}
-          onChanged={() => void refresh()}
-        />
-      </Section>
-    </div>
-    {#if inventory}
-      <Section
-        title={$t('frameleaf_computers_details_checks')}
-        description={$t('frameleaf_computers_checks_description')}
-      >
-        <WorkerInventoryPanel
-          {inventory}
-          destinations={data.processing.destinations}
-          refreshKey={inventoryKey}
-          onInventory={(next) => (inventory = next)}
-        />
-      </Section>
-    {/if}
+    <WhereWorkRuns part="advanced">
+      {#snippet between()}
+        <RenderWorkersSection data={data.render} store={renderState} part="limits" />
+      {/snippet}
+      {#snippet connections()}
+        {#if settingsDraft}
+          {@const checks = settingsDraft.draft.machineLearning.availabilityChecks}
+          <Row label={$t('frameleaf_computers_checks_keep')} help={$t('frameleaf_computers_checks_keep_help')}>
+            <Switch
+              label={$t('frameleaf_computers_checks_keep')}
+              checked={checks.enabled}
+              held={configFile}
+              onChange={(value) => (checks.enabled = value)}
+            />
+          </Row>
+          <Row label={$t('frameleaf_computers_checks_every')} help={$t('frameleaf_computers_checks_every_help')}>
+            <Figure
+              label={$t('frameleaf_computers_checks_every_label')}
+              unit={$t('frameleaf_intel_unit_seconds')}
+              min={1}
+              max={3600}
+              step={1}
+              value={seconds(checks.interval)}
+              disabled={configFile || !checks.enabled}
+              onChange={(value) => (checks.interval = Math.round(value * 1000))}
+            />
+          </Row>
+          <Row label={$t('frameleaf_computers_checks_wait')} help={$t('frameleaf_computers_checks_wait_help')}>
+            <Figure
+              label={$t('frameleaf_computers_checks_wait_label')}
+              unit={$t('frameleaf_intel_unit_seconds')}
+              min={0.1}
+              max={600}
+              step={0.5}
+              value={seconds(checks.timeout)}
+              disabled={configFile || !checks.enabled}
+              onChange={(value) => (checks.timeout = Math.round(value * 1000))}
+            />
+          </Row>
+        {/if}
+      {/snippet}
+    </WhereWorkRuns>
+    <RenderWorkersSection data={data.render} store={renderState} part="history" />
     <Section title={$t('frameleaf_workruns_elsewhere')} description={$t('frameleaf_workruns_elsewhere_description')}>
       <Row label={$t('frameleaf_workruns_quality')} help={$t('frameleaf_workruns_quality_help')}>
         <a class="button" href={Route.systemSettings({ isOpen: OpenQueryParam.IMAGE_DESCRIPTION })}>
@@ -419,7 +526,32 @@
   .anchor {
     scroll-margin-top: var(--fl-space-6);
   }
-  /* The same disclosure mark the kit's Advanced draws. */
+  /* The operator managers under Each computer's technical details: inside the card, never wider than it. */
+  .operators {
+    display: grid;
+    gap: var(--fl-space-6);
+    min-width: 0;
+    padding-top: var(--fl-space-3);
+  }
+  .operator {
+    display: grid;
+    gap: var(--fl-space-2);
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  .operator h3 {
+    margin: 0;
+    font-size: var(--fl-font-callout);
+    font-weight: 600;
+  }
+  .operator > p {
+    max-width: 640px;
+    margin: 0 0 var(--fl-space-2);
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+    line-height: 1.5;
+  }
   .views {
     display: flex;
     flex-wrap: wrap;
@@ -442,7 +574,8 @@
   }
   .computer {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    /* The name keeps room for a word or two; a long status note wraps in its own column. */
+    grid-template-columns: auto minmax(96px, 1fr) auto;
     grid-template-rows: auto auto;
     align-items: center;
     gap: 10px 12px;
@@ -485,6 +618,7 @@
     display: grid;
     justify-items: end;
     gap: 2px;
+    max-width: 168px;
     text-align: end;
   }
   .computer > :global(.button),

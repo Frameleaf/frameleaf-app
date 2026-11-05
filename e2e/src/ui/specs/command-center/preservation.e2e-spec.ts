@@ -361,12 +361,6 @@ test.describe('Preservation packages', () => {
 
   test('exports a typed search, then verifies the package and reports what is missing or changed', async ({ page }) => {
     await page.goto(section);
-    // The closed export dialog keeps the same toggle in the DOM, so read the section's own switch.
-    const checksums = page.getByRole('switch', { name: 'Include checksums and a manifest' });
-    await expect(checksums).toBeChecked();
-    await expect(checksums).toBeDisabled();
-    await expect(page.getByText('Always protected').filter({ visible: true })).toBeVisible();
-
     await exportSearch(page);
 
     const filter = {
@@ -382,14 +376,17 @@ test.describe('Preservation packages', () => {
       expect.objectContaining({ scope: { filter }, includeMetadata: true, includeLocked: false }),
     ]);
 
-    const row = page.locator('.packages > li', { hasText: 'Search' });
+    // Each copy is one row of "Your exported copies"; what can be done with it is under Manage.
+    const row = page.locator('.kit-item', { hasText: 'Search' });
     await expect(row.getByText('Not verified')).toBeVisible();
-    await expect(row.getByRole('link', { name: 'Download package' })).toHaveAttribute(
+    await row.getByRole('button', { name: /^Manage the copy/ }).click();
+    const manage = page.getByRole('dialog', { name: /^Copy: / });
+    await expect(manage.getByRole('link', { name: 'Download', exact: true })).toHaveAttribute(
       'href',
       /\/api\/preservation\/packages\/package-1\/download$/,
     );
 
-    await row.getByRole('button', { name: 'Verify files' }).click();
+    await manage.getByRole('button', { name: 'Check again' }).click();
     await expect(row.getByText('Problems found')).toBeVisible();
     await expect(row.getByText(/0 match · 1 missing · 1 changed · 0 unexpected/)).toBeVisible();
   });
@@ -400,7 +397,14 @@ test.describe('Preservation packages', () => {
     await page.goto(section);
     await exportSearch(page);
 
-    await page.getByRole('button', { name: 'Restore…' }).click();
+    await page
+      .getByRole('button', { name: /^Manage the copy/ })
+      .first()
+      .click();
+    await page
+      .getByRole('dialog', { name: /^Copy: / })
+      .getByRole('button', { name: 'Restore…' })
+      .click();
     const dialog = page.getByRole('dialog', { name: 'Restore from an exported copy' });
     await dialog.getByRole('button', { name: 'Check this copy' }).click();
 

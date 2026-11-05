@@ -84,6 +84,11 @@
      * chip and no count here: a library page shows only what narrows its grid (review M3).
      */
     unappliedFields?: readonly string[];
+    /**
+     * How many things narrow the results, where the host keeps its own query rather than the
+     * session's (the search results page): the Filter badge shows it in place of the session's count.
+     */
+    activeCount?: number;
     /** Grid or List (prototype "Grid view" / "List view"), in every layout (LIB-P7); undefined draws neither. */
     view?: 'grid' | 'list';
     onViewChange?: (view: 'grid' | 'list') => void;
@@ -111,6 +116,7 @@
     sort,
     onSortChange,
     unappliedFields = [],
+    activeCount,
     view,
     onViewChange,
     onMoreActions,
@@ -149,7 +155,8 @@
   const appliedFields = $derived(session.chipFields.filter((field) => !unappliedFields.includes(field)));
   /** The badge counts the search text as one more thing the results are narrowed by (prototype). */
   const filterCount = $derived(
-    activeFilterFields(session.query).filter((field) => !unappliedFields.includes(field)).length + (text ? 1 : 0),
+    activeCount ??
+      activeFilterFields(session.query).filter((field) => !unappliedFields.includes(field)).length + (text ? 1 : 0),
   );
   const activeSections = $derived(
     new Set(
@@ -788,6 +795,19 @@
   /* A slot only groups a control for the phone layout below; elsewhere its controls sit in the row. */
   .fl-slot {
     display: contents;
+  }
+  /*
+   * Prototype `.button` / `.button.active` (styles.css): Grid, List and More are bordered like the
+   * toolbar's other tools, and the current view is a neutral fill rather than the accent.
+   */
+  .fl-slot-view :global(.fl-control),
+  .fl-slot-more :global(.fl-control) {
+    border-color: var(--fl-border);
+  }
+  .fl-slot-view :global(.fl-control[aria-pressed='true']) {
+    color: var(--fl-text);
+    background: color-mix(in srgb, var(--fl-text) 12%, var(--fl-raised));
+    border-color: color-mix(in srgb, var(--fl-text) 28%, var(--fl-border));
   }
   /* FL-707 item 10 (review-1030-library.css `.view-options`): View ▾ and its menu. */
   .fl-view {
