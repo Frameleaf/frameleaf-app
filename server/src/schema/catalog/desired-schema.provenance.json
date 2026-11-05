@@ -1,7 +1,7 @@
 {
-  "sourceCommit": "18b8ccba19deec85c5f8422755c54911ed7c6516",
+  "sourceCommit": "ef08669c2b9e9a721a8ce37ed2976a2b4dd77cab",
   "sourceHashes": {
-    "src/enum.ts": "12a951e417c04357b3b9bd14dce9d8b97a52f02b3417487cb2b16dbfbcafe9d3",
+    "src/enum.ts": "eec05656fa361254e47a5e64bce26488cce38142ddd697afef828b34242340a6",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
     "src/library-import/state-schema.ts": "b4d13d8e68b85c68a14257f56062df1f4efdd7a929918f21af225fa6b4998408",
     "src/queue/schema.ts": "6093d34aad84f8926892a0a0b17a7824c676470e1a25607a358936495a8651a2",
@@ -30,7 +30,7 @@
     "src/schema/tables/asset-document-edit.table.ts": "e20786febdd8281b20ae86e9f27540db3c01c7df80610e25822a1f1cec2d4360",
     "src/schema/tables/asset-edit-audit.table.ts": "31ec7ccf506f1d905bab785218246acad68f402e67d98711d89e52500a2dcc2b",
     "src/schema/tables/asset-edit.table.ts": "c59e9f658a075d8945723dbf0401ddecbf5b64dc328e35239386efb768ec8a7a",
-    "src/schema/tables/asset-exif.table.ts": "8ba900cf68e2521b750f5805640965b1afb7e66a7dc98b7c93384e83197d7534",
+    "src/schema/tables/asset-exif.table.ts": "7a2edab59c788278f2998f2dbdafa5593500041cbaf1091e274f798c6f868911",
     "src/schema/tables/asset-face-audit.table.ts": "b24df9a765cce0fd089496042f7c702c8c8b37b1eea134e4800abe03c46d3a1e",
     "src/schema/tables/asset-face.table.ts": "69c216f6f94873a74f53bd1ca80ec584188532d9c08af2306a70210a3e482c43",
     "src/schema/tables/asset-file.table.ts": "67d155381476c79d6d6a1b6f458baeea1216cbb891c73ec95bc9ac5ee7662cfe",
@@ -159,6 +159,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "b57bd944096b45f516bb29a336033410d24b145e89b708575786aa09e1a6bfbf",
-  "dumpSha256": "42679b28468f125dcf4f27be8194cf3055159879aa19ef69a5faa25dbc9d4eaa",
+  "dumpSha256": "fd2a3628896308357ad3ccd6e52c5b6d4f9e0913cde1537423ee2b8b89e57b36",
   "rawMetadataSha256": "5aca47ce58c619b5fcc7fab05f22e09e257357bd8944aaa2932a7b7b7fc25fed"
 }
