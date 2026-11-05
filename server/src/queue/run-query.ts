@@ -401,6 +401,7 @@ export type RunPageAggregate = Pick<
   | 'lastStage'
 > & { lastProgressUs: string | null };
 
+/** The ledger rows of one page: none extra for a whole-run read. */
 const pageFilter = (page?: RunPage) => {
   if (!page) return sql``;
   if (page.bookkeeping) return sql`and i."rootItemKey" is null`;
@@ -510,6 +511,7 @@ export async function readRunPage(db: Kysely<any>, page: RunPage): Promise<RunPa
   return rows[0];
 }
 
+/** Activity's runs, unfinished first; a finished run with a valid stored summary is not recounted (FL-1215). */
 export async function listRuns(db: Kysely<any>, take: number, skip: number, runId?: string): Promise<RunRead[]> {
   const { rows } = await readRuns(take, skip, runId).execute(db);
   return rows.map((raw) => {
@@ -590,6 +592,7 @@ const reportedJobsForRun = (name: string) => {
     : sql`select ${columns}, j.state, j."availableAt", false "operationPaused" from job j where j.queue = ${name}`;
 };
 
+/** One queue's current work for Background work: its live jobs and the jobs of runs still open. */
 export async function observeQueueRun(db: Kysely<any>, name: string) {
   // Passed as values, not a subquery: the planner then reads each open run's own job count. A subquery is
   // planned for an average run, which after a large scan means a pass over the queue's whole history.

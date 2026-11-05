@@ -20,12 +20,15 @@ type Cursor = { bookkeepingDone: boolean; after: string | null };
 type Partial = RunPageAggregate & { lastStages: string[] };
 type Summary = { finishedAt: string; complete?: true; final?: false; cursor?: Cursor; partial?: Partial };
 
+/** Every outcome at 0. */
 const zero = (): RunCounts => Object.fromEntries(['total', ...RUN_OUTCOMES].map((key) => [key, 0])) as RunCounts;
+/** Two count sets added outcome by outcome. */
 const add = (a: RunCounts, b: RunCounts) =>
   Object.fromEntries(
     Object.keys(a).map((key) => [key, a[key as keyof RunCounts] + b[key as keyof RunCounts]]),
   ) as RunCounts;
 
+/** One more page added to the run's partial sum; the first page starts from zero. */
 const merge = (sum: Partial | undefined, page: RunPageAggregate): Partial => {
   const base: Partial = sum ?? {
     counts: zero(),
