@@ -290,6 +290,17 @@ describe(AnalyticsService.name, () => {
       );
     });
 
+    it('still loads the report when "What the AI sees" labels fail', async () => {
+      Object.assign(sut, { seenLabels: { labels: () => Promise.reject(new Error('config unavailable')) } });
+      await expect(
+        sut.getReport(admin(), { scope: `account:${USER_ID}`, range: AnalyticsRange.Year }),
+      ).resolves.toMatchObject({ summary: { items: 100 } });
+      expect(analyticsRepository.getInsights).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ seenLabels: undefined }),
+      );
+    });
+
     it('omits processing for an account instead of filling it', async () => {
       const result = await sut.getReport(admin(), { scope: `account:${USER_ID}`, range: AnalyticsRange.Year });
       expect(analyticsRepository.getProcessingByDay).not.toHaveBeenCalled();

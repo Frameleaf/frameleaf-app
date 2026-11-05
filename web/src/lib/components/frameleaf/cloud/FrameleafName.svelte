@@ -33,6 +33,8 @@
   let editing = $state(false);
   let draft = $state('');
   let check = $state<RemoteNameCheckResponseDto | null>(null);
+  /** The name whose check failed; editing the name clears it. */
+  let checkFailed = $state<string | null>(null);
   let saving = $state(false);
   let failure = $state('');
 
@@ -60,6 +62,7 @@
         .catch(() => {
           if (typed === draft) {
             check = null;
+            checkFailed = typed;
           }
         });
     }, CHECK_MS);
@@ -75,6 +78,9 @@
     }
     if (reason) {
       return $t(`frameleaf_name_reason_${reason}`);
+    }
+    if (checkFailed === draft) {
+      return $t('frameleaf_cloud_action_failed');
     }
     if (answer && !free) {
       return answer.message ?? $t('frameleaf_name_unavailable');
@@ -155,7 +161,12 @@
         </span>
       </label>
       {#if status}
-        <p class="fln-check" class:is-bad={!!reason || (answer && !free && !same)} class:is-ok={free} role="status">
+        <p
+          class="fln-check"
+          class:is-bad={!!reason || checkFailed === draft || (answer && !free && !same)}
+          class:is-ok={free}
+          role="status"
+        >
           <Icon icon={free || same ? mdiCheckCircleOutline : mdiAlertCircleOutline} size="16" aria-hidden />
           {status}
         </p>

@@ -188,7 +188,7 @@ test.describe('Frameleaf Cloud backup run controls', () => {
   });
 
   test('cancels a restore from Settings › Background work', async ({ page }) => {
-    await page.goto('/user-settings?area=processing&section=queues');
+    await page.goto('/user-settings?area=processing&section=queues&view=advanced');
     const work = page.getByTestId('cloud-background-work');
     const controls = work.getByRole('group', { name: 'Restore from cloud backup controls' });
     await controls.getByRole('button', { name: 'Cancel' }).click();

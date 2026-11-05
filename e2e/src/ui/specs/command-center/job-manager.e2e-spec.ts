@@ -29,6 +29,8 @@ const statistics = (values: Partial<Statistics> = {}): Statistics => ({
 });
 
 const jobManager = '/user-settings?area=processing&section=queues';
+// Every task in detail, as the page was before the Everyday view (approved design, 2026-11-04).
+const advanced = `${jobManager}&view=advanced`;
 
 const setupQueueMocks = async (context: BrowserContext) => {
   const queues: MockQueue[] = [
@@ -152,7 +154,7 @@ test.describe('Job manager', () => {
   test('opens on the status and what is happening now, and pauses and resumes one kind of work through its review', async ({
     page,
   }) => {
-    await page.goto(jobManager);
+    await page.goto(advanced);
 
     await expect(page.getByRole('heading', { level: 1, name: 'Background work' })).toBeVisible();
     const status = page.getByRole('region', { name: 'Background work status' });
@@ -237,7 +239,7 @@ test.describe('Job manager', () => {
   });
 
   test('sets how hard the server works with Light, Balanced and Fast, in the settings draft', async ({ page }) => {
-    await page.goto(jobManager);
+    await page.goto(advanced);
 
     const effort = page.getByRole('group', { name: 'How hard this server works in the background' });
     await expect(effort.getByRole('button', { name: 'Balanced' })).toHaveAttribute('aria-pressed', 'true');
@@ -257,7 +259,7 @@ test.describe('Job manager', () => {
   });
 
   test('runs a task from "More tasks" through its review', async ({ page }) => {
-    await page.goto(jobManager);
+    await page.goto(advanced);
 
     await page.getByRole('button', { name: 'More tasks', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Create a maintenance job' });
@@ -273,7 +275,7 @@ test.describe('Job manager', () => {
   });
 
   test('runs enrichment tasks through their review and keeps a description reminder', async ({ page }) => {
-    await page.goto(jobManager);
+    await page.goto(advanced);
 
     await page.getByRole('button', { name: /^Redo descriptions/ }).click();
     let dialog = page.getByRole('dialog', { name: 'Enrichment tasks' });

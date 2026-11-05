@@ -73,4 +73,11 @@ describe('FrameleafName (FL-1197)', () => {
     await new Promise((resolve) => setTimeout(resolve, 400));
     expect(sdkMock.checkRemoteName).not.toHaveBeenCalled();
   });
+
+  it('says the check failed instead of checking forever', async () => {
+    sdkMock.checkRemoteName.mockRejectedValue(new Error('offline'));
+    render(FrameleafName, { name: null, onSaved: vi.fn() });
+    await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'cedar-home' } });
+    expect(await screen.findByText('That did not work. Try again.')).toBeInTheDocument();
+  });
 });

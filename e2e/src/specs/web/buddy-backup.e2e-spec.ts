@@ -21,7 +21,15 @@ const setTheme = async (page: Page, theme: 'dark' | 'light') => {
   const shell = page.locator('.frameleaf:has(.command-center)');
   await expect(shell).toBeVisible();
   if ((await shell.getAttribute('data-theme')) !== theme) {
-    await page.getByRole('button', { name: `Switch to ${theme} theme`, exact: true }).click();
+    const toggle = page.getByRole('button', { name: `Switch to ${theme} theme`, exact: true });
+    if (await toggle.isVisible()) {
+      await toggle.click();
+    } else {
+      // On a desktop the theme switch lives in the account menu.
+      await page.locator('.fl-account-button').click();
+      await page.getByRole('menuitemcheckbox', { name: 'Dark appearance' }).click();
+      await page.keyboard.press('Escape');
+    }
   }
   await expect(shell).toHaveAttribute('data-theme', theme);
 };
