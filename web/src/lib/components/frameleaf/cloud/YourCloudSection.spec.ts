@@ -184,6 +184,20 @@ describe('YourCloudSection (FL-544: Plan, Licence and Support Frameleaf as one p
     expect(screen.queryByRole('button', { name: 'Get Frameleaf Cloud' })).toBeNull();
   });
 
+  it('says the plan’s name on frameleaf.net and leads to Remote access to change it (FL-1197)', async () => {
+    sdkMock.getLicenseStatus.mockResolvedValue(
+      license({ state: LicenseState.Active, key: slot('server'), plan: slot('plan'), licensed: true }),
+    );
+    sdkMock.getRemoteAccess.mockResolvedValue({ frameleafNameAddress: 'taylor-home.frameleaf.net' } as never);
+    render(YourCloudSection);
+
+    expect(await screen.findByText(/Everyone reaches this server at taylor-home\.frameleaf\.net/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Change name…' })).toHaveAttribute(
+      'href',
+      expect.stringContaining('cloud-remote'),
+    );
+  });
+
   it('asks for the payment to be updated while the plan is in grace', async () => {
     sdkMock.getLicenseStatus.mockResolvedValue(
       license({

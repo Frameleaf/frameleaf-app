@@ -20,7 +20,7 @@
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
   import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
-  import { getCloudMlStatus, type CloudMlStatusResponseDto } from '@frameleaf/sdk';
+  import { getCloudMlStatus, getRemoteAccess, type CloudMlStatusResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import {
     mdiCloudCheckOutline,
@@ -75,6 +75,17 @@
       ),
     ),
   );
+  // FL-1197: the plan's name on frameleaf.net, changed on Remote access
+  let nameAddress = $state<string | null>(null);
+  $effect(() => {
+    if (!have.plan) {
+      nameAddress = null;
+      return;
+    }
+    void getRemoteAccess()
+      .then((remote) => (nameAddress = remote.frameleafNameAddress))
+      .catch(() => (nameAddress = null));
+  });
   const formatDate = (value: string | null | undefined) =>
     value ? new Intl.DateTimeFormat($locale, { dateStyle: 'long' }).format(new Date(value)) : '—';
   const manageUrl = $derived(status?.manageUrl ?? products?.storeUrl ?? null);
@@ -259,6 +270,14 @@
           </li>
         {/each}
       </ul>
+      {#if have.plan}
+        <p class="fc-note">
+          {nameAddress ? $t('frameleaf_yc_name', { values: { address: nameAddress } }) : $t('frameleaf_yc_name_none')}
+          <a href={commandCenterUrl('cloud', 'cloud-remote')}
+            >{nameAddress ? $t('frameleaf_name_change') : $t('frameleaf_yc_name_choose')}</a
+          >
+        </p>
+      {/if}
       {#if have.linked && !have.plan}
         <p class="fc-note">
           {$t('frameleaf_yc_price_note', {
