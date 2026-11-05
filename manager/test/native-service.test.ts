@@ -20,6 +20,7 @@ import {
   readNativeBootstrap,
   protectNativeController,
   nativeControllerAclSafe,
+  nativeWindowsSystemRoot,
   createNativeService,
   validateNativeTls,
 } from '../src/runtime/native-service.js';
@@ -220,6 +221,15 @@ test('native bootstrap is bounded, complete, strict and keeps credentials out of
     await assert.rejects(readNativeBootstrap(hanging, 10));
     assert.equal(hanging.destroyed, true);
   });
+});
+test('native Windows OS environment requires the complete protected receipt', { skip: process.platform !== 'win32' }, () => {
+  const receipt = { protocolVersion: 1, state: 'protected', systemRoot: 'C:\\Windows' };
+  assert.equal(nativeWindowsSystemRoot(receipt), 'C:\\Windows');
+  for (const value of [
+    {}, { ...receipt, protocolVersion: 2 }, { ...receipt, state: 'failed' },
+    { ...receipt, systemRoot: 'Windows' }, { ...receipt, systemRoot: 'C:\\Windows\\..\\other' },
+    { ...receipt, systemRoot: 'C:\\Windows\n' }, { ...receipt, extra: true },
+  ]) assert.throws(() => nativeWindowsSystemRoot(value), /native_controller_unprotected/);
 });
 test('native bootstrap accepts the Desktop Windows restic path spelling', { skip: process.platform !== 'win32' }, async () => {
   await fixture(async ({ bootstrap }) => {
