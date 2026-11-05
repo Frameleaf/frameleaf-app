@@ -42,7 +42,7 @@ jobs:
   native-windows-bootstrap:
     name: Manager native bootstrap (Windows)
     if: github.repository == 'Frameleaf/frameleaf-app' && github.event_name == 'pull_request'
-    runs-on: windows-2022
+    runs-on: windows-latest
     timeout-minutes: 10
     defaults:
       run:
