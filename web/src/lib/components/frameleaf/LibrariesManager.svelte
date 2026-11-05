@@ -199,12 +199,14 @@
       .sort()
       .at(-1),
   );
-  const found = $derived(
-    liveFolders.reduce(
-      (sum, row) => ({ added: sum.added + (row.scan?.added ?? 0), removed: sum.removed + (row.scan?.offlined ?? 0) }),
-      { added: 0, removed: 0 },
-    ),
-  );
+  const found = $derived.by(() => {
+    const sum = { added: 0, removed: 0 };
+    for (const row of liveFolders) {
+      sum.added += row.scan?.added ?? 0;
+      sum.removed += row.scan?.offlined ?? 0;
+    }
+    return sum;
+  });
   const next = $derived(nightly ? $t('frameleaf_checks_next_tonight') : $t('frameleaf_checks_next_none'));
   const hero = $derived.by((): { tone: 'good' | 'warn' | 'quiet'; icon: string; title: string; body: string } => {
     if (liveFolders.length === 0) {

@@ -121,11 +121,15 @@
 
   /** Every device but the one you are using now, which is only listed when this is your own account. */
   const others = $derived(visibleSessions.filter((session) => !session.current));
-  const lastActive = $derived(
-    visibleSessions.length === 0
-      ? undefined
-      : visibleSessions.reduce((latest, session) => (session.updatedAt > latest.updatedAt ? session : latest)),
-  );
+  const lastActive = $derived.by(() => {
+    let latest: (typeof visibleSessions)[number] | undefined;
+    for (const session of visibleSessions) {
+      if (!latest || session.updatedAt > latest.updatedAt) {
+        latest = session;
+      }
+    }
+    return latest;
+  });
   const devicesHelp = $derived(
     visibleSessions.length === 0
       ? $t('frameleaf_users_devices_none')

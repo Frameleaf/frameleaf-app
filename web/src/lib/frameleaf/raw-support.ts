@@ -138,7 +138,7 @@ export const cameraName = (item: Pick<RawSupportItemDto, 'make' | 'model'>) => {
     return make;
   }
   // A model that already names the maker ("NIKON D80" from "NIKON CORPORATION") stands alone.
-  const brand = make.split(/[\s,]+/)[0].toLowerCase();
+  const brand = make.split(/[\s,]+/, 1)[0].toLowerCase();
   return make && !model.toLowerCase().startsWith(brand) ? `${make} ${model}` : model;
 };
 

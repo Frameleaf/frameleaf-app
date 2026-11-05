@@ -219,7 +219,7 @@
               alt=""
               loading="lazy"
               draggable="false"
-              style:aspect-ratio={layout === 'board' ? `${tile.asset.ratio || 1}` : undefined}
+              style:aspect-ratio={layout === 'board' ? String(tile.asset.ratio || 1) : undefined}
             />
             {#if showNames}<span class="bg-name">{tile.name}</span>{/if}
           {/if}

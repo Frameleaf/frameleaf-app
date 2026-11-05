@@ -334,7 +334,7 @@
             <Button
               onclick={() =>
                 document
-                  .getElementById('describe-library')
+                  .querySelector('#describe-library')
                   ?.scrollIntoView({ behavior: motionScrollBehavior(), block: 'start' })}
               >{$t('frameleaf_cp_describe_library')}</Button
             >

@@ -204,7 +204,7 @@
   let edited = '';
   $effect(() => {
     const key = preset ? `${preset.id}:${JSON.stringify(preset.watermark)}` : '';
-    if (edited && key && key !== edited && key.split(':')[0] === edited.split(':')[0]) {
+    if (edited && key && key !== edited && key.split(':', 1)[0] === edited.split(':', 1)[0]) {
       const which = useOf(preset!.id);
       if (subject === 'preset' ? which : subject !== which) {
         subject = which ?? 'preset';

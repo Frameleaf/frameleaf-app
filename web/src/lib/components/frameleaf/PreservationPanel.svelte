@@ -113,7 +113,8 @@
       .filter(
         (item) => item.origin === PreservationPackageOrigin.Export && item.status !== PreservationPackageStatus.Removed,
       )
-      .toSorted((a, b) => b.createdAt.localeCompare(a.createdAt))[0],
+      // filter() already made a copy, so sorting it in place leaves `packages` alone (toSorted needs Chrome 110)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0],
   );
   const restorable = $derived(packages.some((item) => item.restorable));
   const managing = $derived(packages.find((item) => item.id === managingId) ?? null);

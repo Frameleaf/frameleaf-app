@@ -241,7 +241,11 @@
                 <EmptyState
                   icon={mdiTextBoxSearchOutline}
                   message={$t('frameleaf_documents_error_load')}
-                  secondaryAction={{ label: $t('frameleaf_documents_retry'), icon: mdiRefresh, onClick: restart }}
+                  secondaryAction={{
+                    label: $t('frameleaf_documents_retry'),
+                    icon: mdiRefresh,
+                    onClick: () => void restart(),
+                  }}
                 />
               {:else if searching}
                 <EmptyState
