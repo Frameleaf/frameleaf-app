@@ -42,8 +42,12 @@ export class Releases {
     private seed: string,
   ) {}
   async available(): Promise<{ tag: string; publishedAt: string; notes: string }[]> {
+    return (await this.page()).releases;
+  }
+  /** Eligible releases from GitHub's first page; `complete` when that page holds every release. */
+  async page(): Promise<{ releases: { tag: string; publishedAt: string; notes: string }[]; complete: boolean }> {
     const releases = await github('releases?per_page=30');
-    return releases
+    return { complete: releases.length < 30, releases: releases
       .filter(
         (r: any) =>
           !r.draft &&
@@ -54,7 +58,7 @@ export class Releases {
       )
       // GitHub does not list releases in publication order.
       .sort((a: any, b: any) => String(b.published_at).localeCompare(String(a.published_at)))
-      .map((r: any) => ({ tag: r.tag_name, publishedAt: r.published_at, notes: String(r.body ?? '').slice(0, 32000) }));
+      .map((r: any) => ({ tag: r.tag_name, publishedAt: r.published_at, notes: String(r.body ?? '').slice(0, 32000) })) };
   }
   async eligible(tag: string): Promise<any> {
     releaseTag.parse(tag);

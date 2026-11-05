@@ -10,7 +10,8 @@ test('automatic updates: on by default, one release step at a time, off or after
   const directory = await mkdtemp(join(tmpdir(), 'manager-auto-update-'));
   const store = new Store(directory);
   try {
-    const releases = { available: async () => ['frameleaf-v1.3.0', 'frameleaf-v1.2.0', 'frameleaf-v1.1.0', 'frameleaf-v1.2.1'].map((tag) => ({ tag, publishedAt: '', notes: '' })) };
+    let complete = false;
+    const releases = { page: async () => ({ complete, releases: ['frameleaf-v1.3.0', 'frameleaf-v1.2.0', 'frameleaf-v1.1.0', 'frameleaf-v1.2.1'].map((tag) => ({ tag, publishedAt: '', notes: '' })) }) };
     const operations = new Operations(store, {} as never, releases as never, {} as never, [], {} as never);
     const reviewed: string[] = [];
     (operations as any).reviewUpdate = async (tag: string) => (reviewed.push(tag), { id: tag });
@@ -20,6 +21,10 @@ test('automatic updates: on by default, one release step at a time, off or after
     store.set('installation', { release: 'frameleaf-v1.0.0' });
     assert.equal(await operations.autoUpdate(), null, 'list does not reach the running release');
     assert.deepEqual(reviewed, []);
+    complete = true; // the whole history is listed, so a withdrawn running release does not block the next step
+    assert.deepEqual(await operations.autoUpdate(), { id: 'frameleaf-v1.1.0' });
+    reviewed.length = 0;
+    complete = false;
     store.set('installation', { release: 'frameleaf-v1.1.0' });
     assert.deepEqual(await operations.autoUpdate(), { id: 'frameleaf-v1.2.0' });
     assert.deepEqual(reviewed, ['frameleaf-v1.2.0']);
