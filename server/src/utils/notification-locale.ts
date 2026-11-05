@@ -67,6 +67,8 @@ const argumentsOf = {
   'edge-certificate-address': z.object({ error: name, nextAttemptAt: name }).strict(),
   'edge-certificate-address-expiring': z.object({ error: name, nextAttemptAt: name, until: name }).strict(),
   'edge-certificate-domain': z.object({ error: name, nextAttemptAt: name }).strict(),
+  'edge-certificate-name': z.object({ error: name, nextAttemptAt: name }).strict(),
+  'edge-certificate-name-expiring': z.object({ error: name, nextAttemptAt: name, until: name }).strict(),
   'edge-certificate-domain-expiring': z.object({ error: name, nextAttemptAt: name, until: name }).strict(),
   'cloud-region-mismatch': z.object({}).strict(),
   'cloud-clone-suspected': z.object({}).strict(),
@@ -271,6 +273,14 @@ export const NOTIFICATION_CATALOGS: NotificationCatalogs = {
       'edge-certificate-domain-expiring': {
         title: 'Remote access certificate could not be renewed',
         body: 'The certificate for your custom domain could not be issued ({error}). It is retried automatically, next at {nextAttemptAt}. The current certificate works until {until}.',
+      },
+      'edge-certificate-name': {
+        title: 'Remote access certificate could not be renewed',
+        body: 'The certificate for this server’s name on frameleaf.net could not be issued ({error}). It is retried automatically, next at {nextAttemptAt}.',
+      },
+      'edge-certificate-name-expiring': {
+        title: 'Remote access certificate could not be renewed',
+        body: 'The certificate for this server’s name on frameleaf.net could not be issued ({error}). It is retried automatically, next at {nextAttemptAt}. The current certificate works until {until}.',
       },
       'cloud-region-mismatch': {
         title: 'Cloud processing is using the wrong region',

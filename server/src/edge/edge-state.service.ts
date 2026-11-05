@@ -1214,10 +1214,15 @@ export class EdgeStateService {
     facts: FrameleafEdgeCertificate | null,
     issuance: FrameleafEdgeIssuance,
   ) {
-    const which = kind === 'wildcard' ? 'this server’s Frameleaf address' : 'your custom domain';
+    const which = {
+      wildcard: 'this server’s Frameleaf address',
+      custom: 'your custom domain',
+      name: 'this server’s name on frameleaf.net',
+    }[kind];
+    // the notice template for each kind of certificate
+    const template = ({ wildcard: 'address', custom: 'domain', name: 'name' } as const)[kind];
     const expires = facts ? ` The current certificate works until ${facts.notAfter.slice(0, 10)}.` : '';
     const args = { error: String(issuance.lastError), nextAttemptAt: String(issuance.nextAttemptAt) };
-    const wildcard = kind === 'wildcard';
     try {
       await this.notifyAdmins({
         title: 'Remote access certificate could not be renewed',
@@ -1227,10 +1232,10 @@ export class EdgeStateService {
         systemTemplate: facts
           ? {
               version: 1,
-              key: wildcard ? 'edge-certificate-address-expiring' : 'edge-certificate-domain-expiring',
+              key: `edge-certificate-${template}-expiring` as const,
               args: { ...args, until: facts.notAfter.slice(0, 10) },
             }
-          : { version: 1, key: wildcard ? 'edge-certificate-address' : 'edge-certificate-domain', args },
+          : { version: 1, key: `edge-certificate-${template}` as const, args },
         dedupeKey: `${CERTIFICATE_NOTICE_KEY}:${kind}`,
       });
     } catch (error) {

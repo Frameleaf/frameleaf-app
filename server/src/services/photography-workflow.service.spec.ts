@@ -327,11 +327,14 @@ describe('photography workflow integration boundaries', () => {
   it('publishes only the photographs the studio kept when proofs are "selected captures only"', async () => {
     const s = await setup();
     s.row().value.config.proofCollection = 'selected';
-    // the only capture is unrated, so there is nothing to publish
+    // the only photo is unrated now, so there is nothing to publish, whatever rating the capture was taken in with
+    s.row().value.captures[0].rating = 4;
     await expect(
       s.service.publish(s.auth, s.shootId, { expectedRevision: s.row().revision, scope: 'all-eligible' }),
     ).rejects.toThrow('No eligible photographs');
-    s.row().value.captures[0].rating = 4;
+    // rated after intake: the photo's rating now is the one that counts
+    s.row().value.captures[0].rating = null;
+    s.asset.rating = 4;
     await s.service.publish(s.auth, s.shootId, { expectedRevision: s.row().revision, scope: 'all-eligible' });
     expect(s.row().value.publication?.total).toBe(1);
   });

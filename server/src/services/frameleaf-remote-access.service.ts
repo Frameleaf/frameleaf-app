@@ -35,6 +35,7 @@ import {
   remoteNameHosts,
   remotePublicUrl,
   remoteUsageSchema,
+  servedNameHost,
   serverNameCheckSchema,
   serverNameStateSchema,
   studioSiteSchema,
@@ -134,7 +135,7 @@ export class FrameleafRemoteAccessService extends BaseService {
     const directAddress = (current && state?.direct.wan?.verified && state.direct.wan.uri) || null;
     const frameleafAddress = names ? (relayNeedsPlan ? directAddress : `https://${names.names.relay}`) : null;
     const nameState = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafRemoteName);
-    const nameHosts = remoteNameHosts(nameState, link?.instanceId, now);
+    const nameHost = servedNameHost(remoteNameHosts(nameState, link?.instanceId, now).current, state, now);
 
     return {
       unavailableReason,
@@ -149,12 +150,12 @@ export class FrameleafRemoteAccessService extends BaseService {
         settings.enabled && names
           ? relayNeedsPlan
             ? directAddress
-            : remotePublicUrl(names, settings, nameHosts.current)
+            : remotePublicUrl(names, settings, nameHost)
           : null,
       // FL-1197: the frameleaf.net name, as last read from Frameleaf Cloud
       frameleafName: nameState?.instanceId === link?.instanceId ? (nameState?.name ?? null) : null,
-      frameleafNameAddress: nameHosts.current,
-      frameleafNameRouted: !!nameHosts.current,
+      frameleafNameAddress: nameHost,
+      frameleafNameRouted: !!nameHost,
       frameleafAddress,
       certificateName: state?.certificate?.names[0] ?? null,
       certificateExpiresAt: state?.certificate?.notAfter ?? null,

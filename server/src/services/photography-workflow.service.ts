@@ -1650,8 +1650,18 @@ export class PhotographyWorkflowService {
         { id, ...owner, value, revision: '' },
         value.captures.map((c) => c.id),
       );
-      // A full proof publication holds every eligible capture, or only those the photographer kept.
-      const proofs = value.config.proofCollection === 'selected' ? photographerSelected : () => true;
+      // A full proof publication holds every eligible capture, or only those the photographer kept, by the
+      // photo's rating now: ratings change after intake, and the capture keeps the one it was taken in with.
+      let proofs: (capture: PhotographyCapture) => boolean = () => true;
+      if (value.config.proofCollection === 'selected' && dto.scope === 'all-eligible') {
+        const assets = await this.repository.assets(
+          owner.ownerId,
+          owner.albumId,
+          value.captures.map((c) => c.assetId),
+        );
+        const ratings = new Map(assets.map((asset) => [asset.id, asset.rating]));
+        proofs = (c) => photographerSelected({ rating: ratings.get(c.assetId) ?? null });
+      }
       const captures = value.captures.filter(
         (c) => eligible.has(c.id) && (dto.scope === 'all-eligible' ? proofs(c) : selected.has(c.id)),
       );

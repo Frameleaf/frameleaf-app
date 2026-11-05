@@ -405,6 +405,17 @@ describe(FrameleafRemoteAccessService.name, () => {
       await expect(sut.setName(authStub.admin, 'cedar-and-light')).resolves.toEqual(named);
       expect(calls).toEqual([{ method: 'PUT', url: `${API}/v1/remote/name`, body: { name: 'cedar-and-light' } }]);
       expect(metadata.get(SystemMetadataKey.FrameleafRemoteName)).toMatchObject({ instanceId: INSTANCE_ID, ...named });
+      // until this server holds a certificate for the name, the relay refuses it, so links keep the relay address
+      await expect(sut.getStatus()).resolves.toMatchObject({
+        frameleafName: 'cedar-and-light',
+        frameleafNameAddress: null,
+        frameleafNameRouted: false,
+      });
+      const certificate = edgeState().certificate!;
+      metadata.set(
+        SystemMetadataKey.FrameleafRemoteAccess,
+        edgeState({ nameCertificate: { ...certificate, hosts: ['cedar-and-light.frameleaf.net'] } }),
+      );
       await expect(sut.getStatus()).resolves.toMatchObject({
         frameleafName: 'cedar-and-light',
         frameleafNameAddress: 'cedar-and-light.frameleaf.net',

@@ -31,6 +31,7 @@ import {
   remotePublicUrl,
   renewalDue,
   retryDelayMs,
+  servedNameHost,
   validateCustomHostname,
   wildcardNames,
 } from 'src/utils/frameleaf-remote-access.js';
@@ -318,6 +319,27 @@ describe('frameleaf remote access (FL-165)', () => {
       });
       expect(remoteNameHosts(state, 'another-link', now)).toEqual({ current: null, previous: [] });
       expect(remoteNameHosts({ ...state, routed: false }, 'instance', now)).toEqual({ current: null, previous: [] });
+    });
+
+    it('serves the name only while an unexpired certificate covers it (FL-1197)', () => {
+      const now = Date.parse('2026-11-04T12:00:00Z');
+      const host = 'taylor-home.frameleaf.net';
+      const certificate = (hosts: string[], notAfter = '2027-01-01T00:00:00Z') => ({
+        nameCertificate: {
+          names: hosts,
+          hosts,
+          serial: '1',
+          issuer: 'R11',
+          notBefore: '2026-11-01T00:00:00Z',
+          notAfter,
+          reported: true,
+        },
+      });
+      expect(servedNameHost(host, certificate([host]), now)).toBe(host);
+      expect(servedNameHost(host, { nameCertificate: null }, now)).toBeNull();
+      expect(servedNameHost(host, certificate(['old.frameleaf.net']), now)).toBeNull();
+      expect(servedNameHost(host, certificate([host], '2026-11-01T00:00:00Z'), now)).toBeNull();
+      expect(servedNameHost(null, certificate([host]), now)).toBeNull();
     });
 
     it('publishes the relay name, or the verified custom hostname when chosen', () => {

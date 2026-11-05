@@ -363,6 +363,20 @@ export const studioSiteSchema = z.object({
 export type StudioSiteState = z.infer<typeof studioSiteSchema>;
 
 /**
+ * FL-1197: the routed name, only while this server holds an unexpired certificate covering it. Until then
+ * (a first claim or a rename waiting on its certificate, or issuance failing) the relay refuses the name,
+ * so links keep the address that works.
+ */
+export const servedNameHost = (
+  host: string | null,
+  state: Pick<FrameleafRemoteAccess, 'nameCertificate'> | null | undefined,
+  now = Date.now(),
+) => {
+  const certificate = state?.nameCertificate;
+  return host && certificate?.hosts.includes(host) && Date.parse(certificate.notAfter) > now ? host : null;
+};
+
+/**
  * FL-1197: the frameleaf.net names this server answers for right now: the current name while it routes,
  * and each previous one until its 30 days end. Empty for another link's state.
  */

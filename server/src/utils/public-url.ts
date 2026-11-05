@@ -7,6 +7,7 @@ import {
   nameConnection,
   remoteNameHosts,
   remotePublicUrl,
+  servedNameHost,
   verifiedCustomHost,
 } from 'src/utils/frameleaf-remote-access.js';
 import { frameleafPublicUrl, httpsOrigin } from 'src/utils/frameleaf-sign-in.js';
@@ -91,7 +92,7 @@ export const remoteAccessPublication = async (
   }
   // FL-1197: the frameleaf.net name, while it routes, is the address and one of the connections
   const nameState = await deps.systemMetadataRepository.get(SystemMetadataKey.FrameleafRemoteName);
-  const nameHost = remoteNameHosts(nameState, link.instanceId, now).current;
+  const nameHost = servedNameHost(remoteNameHosts(nameState, link.instanceId, now).current, state, now);
   const candidates = state?.candidates ?? [];
   return {
     instanceId: link.instanceId,
