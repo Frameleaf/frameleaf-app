@@ -318,27 +318,29 @@ export async function shareSelectionPage(db: Executor, filter: { producerId: str
     }
     const {
       rows: [page],
-    } = await sql<{ after: string | null; size: number }>`with page as materialized (
+    } = await sql<{ after: string | null; size: number; copied: number }>`with page as materialized (
       ${selectionCopySource(membership.sourceRunId, membership.selectionId, membership.copyAfter)}
     ), copied as (
       insert into job_run_item("runId", "itemKey", "rootItemKey", stage, queue, selection, "jobId", state, "selectionId")
       select ${membership.runId}::uuid, "itemKey", "rootItemKey", stage, queue, selection, "jobId", state, "selectionId"
       from page where ${membership.sourceKind === 'frozen' ? sql`true` : libraryRootEntitled(sql<string>`${membership.runId}::uuid`, sql<string>`${membership.sourceRunId}::uuid`, sql<string>`page."rootItemKey"`, { selectionId: sql<string>`${membership.selectionId}::uuid`, itemKey: sql<string>`page."itemKey"`, stage: sql<string>`page.stage` })}
       on conflict do nothing returning 1
-    ) select max("itemKey") "after", count(*)::int size from page where (select count(*) from copied) >= 0`.execute(tx);
+    ) select max("itemKey") "after", count(*)::int size, (select count(*)::int from copied) copied from page`.execute(
+      tx,
+    );
     // A child's key may sort before the frozen-root cursor. Its separately sequenced origin is
     // appended under this same publication guard, including while root copying is incomplete.
     const remaining = QUEUE_BATCH - page.size;
     const history =
       remaining > 0 && membership.sourceKind === 'frozen'
         ? (
-            await sql<{ after: string | null; size: number }>`with page as materialized (
+            await sql<{ after: string | null; size: number; copied: number }>`with page as materialized (
       ${selectionLineageSource(membership.selectionId, membership.lineageAfter, remaining)}
     ), copied as (
       insert into job_run_item("runId", "itemKey", "rootItemKey", stage, queue, selection, "jobId", state, "selectionId")
       select ${membership.runId}::uuid, "itemKey", "rootItemKey", stage, queue, selection, "jobId", state, "selectionId"
       from page on conflict do nothing returning 1
-    ) select max("lineageId")::text "after", count(*)::int size from page where (select count(*) from copied) >= 0`.execute(
+    ) select max("lineageId")::text "after", count(*)::int size, (select count(*)::int from copied) copied from page`.execute(
               tx,
             )
           ).rows[0]
@@ -356,6 +358,12 @@ export async function shareSelectionPage(db: Executor, filter: { producerId: str
       "lineageAfter" = coalesce(${history?.after ?? null}::bigint, "lineageAfter"), "copyComplete" = ${complete},
       "libraryVersion" = case when ${complete} then ${membership.appendSequence}::bigint else "libraryVersion" end
       where "selectionId" = ${membership.selectionId}::uuid and "runId" = ${membership.runId}::uuid`.execute(tx);
+    // A library append caught up into a run that had already finished changes its ledger: reopen it, so
+    // settling stamps a new `finishedAt` and its stored summary (FL-1215) is not read with the old counts.
+    if (page.copied + (history?.copied ?? 0) > 0) {
+      await sql`update job_run set "finishedAt" = null
+        where id = ${membership.runId}::uuid and "finishedAt" is not null`.execute(tx);
+    }
     if (complete) {
       await sql`update job_run r set "enumerationDone" = true where r.id = ${membership.runId}::uuid
         and not exists (select 1 from job_run_item i where i."runId" = r.id and i."rootItemKey" is null

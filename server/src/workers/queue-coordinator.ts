@@ -7,7 +7,8 @@ import type { ConfigRepository } from 'src/repositories/config.repository.js';
 import { QUEUE_EXECUTION_CAPACITY } from 'src/queue/admission.js';
 import { coalescedTask } from 'src/queue/coalesced-task.js';
 import { queueNotifications } from 'src/queue/notifications.js';
-import { pruneQueueHistoryPage } from 'src/queue/retention.js';
+import { pruneQueueHistoryPage, pruneRunLedger } from 'src/queue/retention.js';
+import { summarizeRuns } from 'src/queue/run-summary.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { QUEUE_TIMING, QueueClaim, QueueWorkerMessage } from 'src/queue/types.js';
 import { QueueWatchdog, monitorQueueProgress } from 'src/queue/watchdog.js';
@@ -108,6 +109,9 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
           const page = await pruneQueueHistoryPage(maintenanceDb);
           if (!page?.fullPage || page.pruned === 0 || performance.now() >= deadline) break;
         }
+        // FL-1215: finished runs' counts are added up once, a page per statement, then old ledgers are dropped.
+        if (!stopping) await summarizeRuns(maintenanceDb, 2000);
+        if (!stopping) await pruneRunLedger(maintenanceDb, 1000);
       } catch {
         if (!stopping) parentPort!.postMessage({ type: 'unavailable' });
       } finally {

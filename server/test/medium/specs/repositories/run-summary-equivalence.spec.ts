@@ -1,6 +1,7 @@
 import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { listRuns } from 'src/queue/run-query.js';
+import { summarizeRuns } from 'src/queue/run-summary.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { DB } from 'src/schema/index.js';
 import { legacyListRuns } from 'test/medium/legacy-run-query.js';
@@ -301,16 +302,36 @@ const expectSameSummary = async (db: Kysely<DB>, world: World, step: string) => 
   return expected;
 };
 
+/**
+ * FL-1215: a finished run's stored summary, added up a few rows at a time, reads exactly as its ledger did.
+ * The steps here rewrite finished runs' rows directly, which the queue only does by reopening them, so the
+ * summaries are dropped again before the next step.
+ */
+const expectSameStoredSummary = async (db: Kysely<DB>, world: World, step: string) => {
+  const expected = await expectSameSummary(db, world, `${step} (ledger)`);
+  // Small pages, so every run is split across several, with pages ending inside a run's roots.
+  while ((await summarizeRuns(db, 60_000, 3)) > 0);
+  const {
+    rows: [stored],
+  } = await sql<{ count: number }>`select count(*)::int count from job_run
+    where id = any(${world.runs}::uuid[]) and summary->>'complete' = 'true'`.execute(db);
+  expect(await listRuns(db, 500, 0), `${step} (stored)`).toEqual(expected);
+  await sql`update job_run set summary = null where id = any(${world.runs}::uuid[])`.execute(db);
+  return stored.count;
+};
+
 it('summarises randomised ledgers exactly as the row-by-row read did', async () => {
   const db = await getKyselyDB();
   const store = new SqlQueueStore(db);
   try {
     let collapsed = 0;
     let shared = 0;
+    let stored = 0;
     for (let seed = 1; seed <= 24; seed++) {
       const world = await buildWorld(db, store, seed);
       const random = generator(seed * 7919);
       await expectSameSummary(db, world, `seed ${seed}: built`);
+      stored += await expectSameStoredSummary(db, world, `seed ${seed}: built`);
 
       // Changes that move many rows' effective state without writing those rows.
       for (const state of HEADER_STATES) {
@@ -330,6 +351,7 @@ it('summarises randomised ledgers exactly as the row-by-row read did', async () 
         select "runId","itemKey",stage from job_run_item where "runId"=${world.runs[0]}::uuid and "libraryIntent" is not null
         order by md5("itemKey"||${seed}::text) limit 5)`.execute(db);
       await expectSameSummary(db, world, `seed ${seed}: canonical outcomes`);
+      stored += await expectSameStoredSummary(db, world, `seed ${seed}: canonical outcomes`);
 
       const {
         rows: [shape],
@@ -344,6 +366,8 @@ it('summarises randomised ledgers exactly as the row-by-row read did', async () 
     // The seeds exercised both paths: rows that collapse and roots that must be read row by row.
     expect(collapsed).toBeGreaterThan(200);
     expect(shared).toBeGreaterThan(50);
+    // Finished runs were summarised and read from their summaries.
+    expect(stored).toBeGreaterThan(5);
   } finally {
     await db.destroy();
   }

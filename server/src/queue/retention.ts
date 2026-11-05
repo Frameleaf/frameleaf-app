@@ -1,4 +1,5 @@
 import { Kysely, sql } from 'kysely';
+import { performance } from 'node:perf_hooks';
 import { QUEUE_BATCH } from 'src/queue/types.js';
 import { preserveAttemptEvidence, pruneWorkerStopEvidence } from 'src/utils/attempt-evidence.js';
 
@@ -107,4 +108,78 @@ export async function pruneQueueHistoryPage(db: Kysely<any>): Promise<{ pruned: 
     await pruneWorkerStopEvidence(tx);
     return { pruned, fullPage: candidates.length === QUEUE_BATCH };
   });
+}
+
+// 5,000-row batches took up to 1.2 s on a 4M-row ledger before vacuum: this keeps a wide margin under the 5 s
+// statement timeout, which would otherwise retry the same batch every sweep.
+const LEDGER_BATCH = 2000;
+
+/**
+ * FL-1215: a summarised run's item rows serve nothing once its own jobs are pruned (so nothing can retry or
+ * re-arm them) and no other run reads them. They go 30 days after the run finished, like failed jobs; the run
+ * keeps its summary, so Activity still lists it with the same counts, without the per-item list. Its few
+ * selection headers stay (one per stage), as they always have.
+ *
+ * Kept for good: Manager and Immich imports (their manifest is the import's identity check), pet recognition
+ * (it reads the ledger when the run settles), library scans and any frozen selection another run shares or
+ * whose lineage a library proof reads.
+ */
+const prunableRun = sql<boolean>`r.summary->>'complete' = 'true' and (r.summary->>'finishedAt')::timestamptz = r."finishedAt"
+  and not coalesce((r.summary->>'ledgerPruned')::boolean, false)
+  and r."finishedAt" < now() - interval '30 days'
+  and r.kind not in ('immich-import-derived','library-import-derived')
+  and not (r.selection ? 'managerSetup' or r.selection ? 'managerSetupRequired' or r.selection ? 'petRunId')
+  and not exists (select 1 from job j where j."runId" = r.id)
+  and not exists (select 1 from job_selection_run m join job_selection s on s.id = m."selectionId"
+    where m."runId" = r.id and (s."sourceKind" <> 'frozen' or s."runId" <> r.id))
+  and not exists (select 1 from job_selection s join job_selection_run m on m."selectionId" = s.id
+    where s."runId" = r.id and m."runId" <> r.id)
+  and not exists (select 1 from job_selection s join job_selection_lineage l on l."selectionId" = s.id where s."runId" = r.id)
+  and not exists (select 1 from job_selection_lineage l where l."runId" = r.id)
+  and not exists (select 1 from job_run_item o where o."libraryExecutionRunId" = r.id)`;
+
+/**
+ * Deletes summarised runs' item rows, a batch per statement, for up to `budgetMs`. Each batch starts after the
+ * last one's key (`ledgerAfter`): the deleted rows stay in the index until vacuum, and a batch that started at
+ * the run's first key would walk all of them again.
+ */
+export async function pruneRunLedger(db: Kysely<any>, budgetMs: number): Promise<number> {
+  const start = performance.now();
+  let pruned = 0;
+  while (performance.now() - start < budgetMs) {
+    const deleted = await db.transaction().execute(async (tx) => {
+      const {
+        rows: [lock],
+      } = await sql<{ acquired: boolean }>`select pg_try_advisory_xact_lock(-333, 3) acquired`.execute(tx);
+      if (!lock.acquired) return 0;
+      const {
+        rows: [run],
+      } = await sql<{ id: string; itemKey: string | null; stage: string | null }>`select r.id,
+          r.summary #>> '{ledgerAfter,itemKey}' "itemKey", r.summary #>> '{ledgerAfter,stage}' stage
+        from job_run r where ${prunableRun}
+        order by r."finishedAt", r.id limit 1 for update skip locked`.execute(tx);
+      if (!run) return 0;
+      const {
+        rows: [batch],
+      } = await sql<{ count: number; itemKey: string | null; stage: string | null }>`with doomed as materialized (
+          select "runId", "itemKey", stage from job_run_item where "runId" = ${run.id}::uuid
+            ${run.itemKey === null ? sql`` : sql`and ("itemKey", stage) > (${run.itemKey}, ${run.stage})`}
+          order by "itemKey", stage limit ${LEDGER_BATCH}
+        ), gone as (
+          delete from job_run_item i using doomed d
+          where (i."runId", i."itemKey", i.stage) = (d."runId", d."itemKey", d.stage) returning 1
+        ) select (select count(*)::int from gone) count, last."itemKey", last.stage
+        from (select 1) one left join lateral (
+          select "itemKey", stage from doomed order by "itemKey" desc, stage desc limit 1) last on true`.execute(tx);
+      const done = batch.count < LEDGER_BATCH;
+      await sql`update job_run set summary = summary || ${JSON.stringify(
+        done ? { ledgerPruned: true } : { ledgerAfter: { itemKey: batch.itemKey, stage: batch.stage } },
+      )}::text::jsonb where id = ${run.id}::uuid`.execute(tx);
+      // A run whose last batch was empty still counts as one step, so the loop moves on.
+      return Math.max(batch.count, 1);
+    });
+    if (deleted === 0) break;
+    pruned += deleted;
+  }
+  return pruned;
 }
