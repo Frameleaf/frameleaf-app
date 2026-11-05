@@ -16,7 +16,7 @@ const inventory = (revision: string) => ({
 /** Lychee SQLite: originals live under the `images` disk (the uploads mount); LDAP accounts have no local verifier. */
 export const adapter: PreparationAdapter = {
   kind: 'lychee',
-  database: 'sqlite',
+  databases: ['sqlite'],
   async open(input) {
     const { snapshot, tested } = openSnapshotBestEffort(
       (bestEffort) => openLycheeSnapshot(input.snapshotPath!, fixture.source.version, { bestEffort }),

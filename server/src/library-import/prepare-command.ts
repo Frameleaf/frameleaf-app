@@ -62,9 +62,11 @@ export async function prepareLibraryImport(configPath: string, authorize = reque
   if (!parsed.success) throw new LibraryImportRefused('IMPORT_PREPARATION_INPUT_INVALID');
   const input = parsed.data;
   const adapter = await loadPreparationAdapter(input.source.kind);
+  const database = input.databaseUrl?.startsWith('mysql') ? 'mysql' : input.databaseUrl ? 'postgres' : 'sqlite';
   if (
-    (adapter.database === 'sqlite') !== (input.snapshotPath !== undefined) ||
-    (adapter.database !== 'sqlite') !== (input.databaseUrl !== undefined) ||
+    (input.snapshotPath === undefined) === (input.databaseUrl === undefined) ||
+    !adapter.databases.includes(database) ||
+    (input.databaseUrl !== undefined && new URL(input.databaseUrl).hostname !== '127.0.0.1') ||
     (input.snapshotPath !== undefined && !input.snapshotPath.startsWith(stagingRoot + '/'))
   )
     throw new LibraryImportRefused('IMPORT_PREPARATION_INPUT_INVALID');
