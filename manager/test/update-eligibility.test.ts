@@ -508,3 +508,40 @@ test('an update whose server never turns healthy restores the previous release a
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+// Review: a target that passed its health check may have accepted writes, so a later failure is not rolled back.
+test('an update that fails after its server turned healthy is not rolled back', async () => {
+  process.env.MANAGER_ML_ACCELERATION = 'cpu';
+  const directory = await mkdtemp(join(tmpdir(), 'manager-update-started-healthy-'));
+  const store = new Store(directory);
+  try {
+    const image = `fixture.invalid/server@sha256:${'a'.repeat(64)}`;
+    const current = { id: 'a'.repeat(12), project: 'frameleaf-test', release: 'frameleaf-v1.2.2', ml: false,
+      mounts: [], origin: 'new_library', port: 2283, sourceId: null, mayHaveWrittenMedia: true,
+      databaseRoot: directory, databasePath: join(directory, 'db') };
+    const release = { directory, nas: { tag: 'frameleaf-v1.2.3', images: { server: image, postgres: image, machineLearning: image } } };
+    await writeFile(join(directory, 'docker-compose.yml'), JSON.stringify({ services: {
+      database: {}, 'frameleaf-server': {}, 'frameleaf-machine-learning': {},
+    } }));
+    await mkdir(join(directory, 'stack'));
+    await writeFile(join(directory, 'stack', 'compose.json'), JSON.stringify({ services: { database: { image } } }));
+    store.set('installation', current);
+    store.set('database-password', 'fixture-only');
+    const { operation } = store.start('update', 'healthy', { reviewId: 'r' });
+    operation.completed = ['download-images', 'stop-application', 'database-checkpoint'];
+    store.save(operation);
+    const composed: string[] = [];
+    const operations = new Operations(store, { compose: async (_d: string, _p: string, action: string) => { composed.push(action); } } as never,
+      { eligible: async () => {} } as never, {} as never, [], { verify: async () => {} } as never);
+    (operations as any).fencing = { assertMedia: async () => {} };
+    (operations as any).libraryStatus = async () => { throw new Error('status request failed'); };
+    await assert.rejects((operations as any).applyUpdate(operation, { current, release }), /status request failed/);
+    assert.equal(operation.receipts['release-start-state'], 'started');
+    assert.equal(operation.receipts['rollback-intent'], undefined);
+    assert.deepEqual(composed, ['up'], 'nothing was stopped or restored');
+    assert.equal(store.get<any>('installation').release, 'frameleaf-v1.2.3');
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});

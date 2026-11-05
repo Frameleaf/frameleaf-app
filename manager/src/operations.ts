@@ -150,7 +150,8 @@ type UpdateReview = { expires: number; current: Installation; release: VerifiedR
  * cancellable even when its selected release was withdrawn and cannot be retargeted (review: operations.ts).
  */
 const updateStarted = (operation: Pick<Operation, 'completed' | 'receipts'>): boolean =>
-  operation.completed.includes('apply-release') || operation.receipts['release-start-state'] === 'starting';
+  operation.completed.includes('apply-release') ||
+  ['starting', 'started'].includes(operation.receipts['release-start-state'] as string);
 type Cancellation = {
   kind: 'backup' | 'update' | 'source' | 'restore' | 'reconfigure';
   installation: Installation | null;
@@ -1491,9 +1492,14 @@ export class Operations {
         this.application(),
       );
       this.store.set('installation', installation);
-      operation.receipts['release-start-state'] = 'starting';
-      this.store.save(operation); // Persist intent before the target can write.
+      // Once the target was healthy it may have accepted writes: a later failure never restores the checkpoint.
+      if (operation.receipts['release-start-state'] !== 'started') {
+        operation.receipts['release-start-state'] = 'starting';
+        this.store.save(operation); // Persist intent before the target can write.
+      }
       await this.docker.compose(this.directory(), installation.project, 'up');
+      operation.receipts['release-start-state'] = 'started';
+      this.store.save(operation);
       return this.libraryStatus();
     });
   }
