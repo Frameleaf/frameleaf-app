@@ -15,9 +15,8 @@ it('distinguishes absent credentials from missing owners and refuses malformed c
     const read = () => readSqlitePassword(db, context, 'bcrypt', 'SELECT password FROM users WHERE id=?');
     expect(await read()).toBeUndefined();
     db.prepare('UPDATE users SET password=?').run('!synthetic-unusable-password');
-    expect(
-      await readSqlitePassword(db, context, 'django-pbkdf2-sha256', 'SELECT password FROM users WHERE id=?'),
-    ).toBeUndefined();
+    for (const format of ['django-pbkdf2-sha256', 'django-password'] as const)
+      expect(await readSqlitePassword(db, context, format, 'SELECT password FROM users WHERE id=?')).toBeUndefined();
     db.prepare('UPDATE users SET password=?').run('synthetic-unqualified-secret');
     await expect(read()).rejects.toThrow(/^Imported password refused: SOURCE_PASSWORD_UNAVAILABLE$/);
     db.exec('DELETE FROM users');

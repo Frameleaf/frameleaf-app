@@ -56,7 +56,7 @@ export const openLibrephotosSnapshot = (path: string, version: string) => {
     version,
     schemaSha256: fixture.schemaSha256,
     password: (context: ImportedPasswordContext) =>
-      readSqlitePassword(database, context, 'django-pbkdf2-sha256', 'SELECT password FROM api_user WHERE id=?'),
+      readSqlitePassword(database, context, 'django-password', 'SELECT password FROM api_user WHERE id=?'),
     *rows(table: LibrephotosTable): Generator<LibrephotosRow[]> {
       if (!Object.hasOwn(projections, table)) throw new LibrephotosReadError('LIBREPHOTOS_TABLE_NOT_ALLOWED');
       try {

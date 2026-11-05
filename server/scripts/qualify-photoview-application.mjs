@@ -40,19 +40,26 @@ try {
   const hadImage = hasQualificationImage(run);
   writeFileSync(join(tmpdir(), 'image.json'), JSON.stringify({ createdImage: !hadImage }), { mode: 0o600 });
   const seeds = [];
-  for (const [owner, color] of [
-    ['admin', '#d0a020'],
-    ['alice', '#2850c8'],
+  // Photoview has no caption editor; it reads the EXIF image description of the original as the caption.
+  for (const [owner, color, caption] of [
+    ['admin', '#d0a020', 'Synthetic admin caption'],
+    ['alice', '#2850c8', 'Synthetic alice caption'],
     ['bob', '#28b050'],
     ['shared', '#2850c8'],
   ]) {
     const path = `${owner}/private/photo.jpg`;
     mkdirSync(join(originals, owner, 'private'), { recursive: true, mode: 0o700 });
     const bytes = await sharp({ create: { width: 512, height: 512, channels: 3, background: color } })
+      .withExif(caption ? { IFD0: { ImageDescription: caption } } : {})
       .jpeg()
       .toBuffer();
     writeFileSync(join(originals, path), bytes, { mode: 0o600 });
-    seeds.push({ path, bytes: String(bytes.length), sha256: createHash('sha256').update(bytes).digest('hex') });
+    seeds.push({
+      path,
+      bytes: String(bytes.length),
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+      ...(caption && { caption }),
+    });
   }
   phase = 'native startup';
   run([
@@ -225,10 +232,12 @@ try {
   const header = readFileSync(join(storage, 'photoview.sqlite')).subarray(0, 100);
   assert.equal(header.subarray(0, 16).toString(), 'SQLite format 3\0');
   assert.equal(header.readUInt32BE(96), 3_045_001);
+  const [containerId, containerImage] = run(['inspect', '--format', '{{.Id}} {{.Image}}', container]).split(' ');
   const config = join(directory, 'test.json');
   writeFileSync(
     config,
     JSON.stringify({
+      container: { id: containerId, image: containerImage, name: container },
       databasePath: join(storage, 'photoview.sqlite'),
       stagingRoot: directory,
       originals,
@@ -262,6 +271,34 @@ try {
   );
   assert.equal(tests.status, 0);
   console.log('Native Photoview accounts, directory access and reader comparison passed');
+  phase = 'native source-to-destination import';
+  const acceptance = spawnSync(
+    'pnpm',
+    [
+      '--dir',
+      'server',
+      'exec',
+      'vitest',
+      'run',
+      '--config',
+      'test/vitest.config.medium.mjs',
+      'test/medium/specs/repositories/library-import-lifecycle.spec.ts',
+      '--testNamePattern=native-photoview',
+      '--maxWorkers=1',
+    ],
+    {
+      cwd: root,
+      stdio: 'inherit',
+      env: {
+        ...process.env,
+        FRAMELEAF_NATIVE_IMPORT_SOURCE: 'photoview',
+        FRAMELEAF_NATIVE_IMPORT_CONFIG: config,
+        FRAMELEAF_NATIVE_IMPORT_RUN_ID: runId,
+      },
+    },
+  );
+  assert.equal(acceptance.status, 0);
+  console.log('Native Photoview source-to-destination import passed');
 } catch {
   failure = true;
   console.error('Photoview native qualification failed during: ' + phase);

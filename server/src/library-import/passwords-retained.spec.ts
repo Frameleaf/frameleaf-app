@@ -95,7 +95,7 @@ it('refuses retained Argon2 settings above the qualified budget before doing pas
   const original = await ImportedPassword.fromSource(context, 'php-password', argonVectors.vectors[0].hash);
   const prefix = '$flimport$1$';
   const value = JSON.parse(Buffer.from(original.forImport().slice(prefix.length), 'base64url').toString('utf8'));
-  value.settings.memoryCost = 65_537;
+  value.settings.memoryCost = 102_401;
   expect(() =>
     ImportedPassword.fromRetained(context, prefix + Buffer.from(JSON.stringify(value)).toString('base64url')),
   ).toThrow('SOURCE_PASSWORD_UNSUPPORTED');

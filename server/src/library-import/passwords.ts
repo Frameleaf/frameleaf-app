@@ -19,7 +19,13 @@ const expensivePasswordLock = new AsyncLock({ maxPending: 8, timeout: 10_000 });
 const bcryptPattern = /^\$2[ab]\$(?:0[4-9]|1[0-6])\$[./A-Za-z0-9]{53}$/;
 const saltPattern = /^\$2[ab]\$(?:0[4-9]|1[0-6])\$[./A-Za-z0-9]{22}$/;
 export type ImportedPasswordFormat =
-  'bcrypt' | 'photoprism-bcrypt' | 'django-pbkdf2-sha256' | 'php-password' | 'nextcloud-password' | 'piwigo-password';
+  | 'bcrypt'
+  | 'photoprism-bcrypt'
+  | 'django-pbkdf2-sha256'
+  | 'django-password'
+  | 'php-password'
+  | 'nextcloud-password'
+  | 'piwigo-password';
 const contextSchema = z.strictObject({
   operationId: z.uuid().transform((value) => value.toLowerCase()),
   sourceUserId: z.string().min(1).max(1024),
@@ -47,7 +53,8 @@ const argonSettings = z.strictObject({
   settings: z
     .strictObject({
       version: z.union([z.literal(16), z.literal(19)]),
-      memoryCost: z.number().int().min(8).max(65_536),
+      // Django's Argon2PasswordHasher default (LibrePhotos 1.5.1) is 102,400 KiB; verification stays serialized.
+      memoryCost: z.number().int().min(8).max(102_400),
       timeCost: z.number().int().min(1).max(10),
       parallelism: z.number().int().min(1).max(16),
       outputLen: z.number().int().min(16).max(64),
@@ -151,6 +158,11 @@ const sourceSettings = (format: ImportedPasswordFormat, encoded: string): { sett
     if (!/^[123]\|/.test(encoded)) return refused();
     return sourceSettings('php-password', encoded.slice(2));
   }
+  if (format === 'django-password')
+    // Django stores Argon2 as its algorithm name followed by the standard PHC string.
+    return encoded.startsWith('argon2$argon2')
+      ? argonSourceSettings(encoded.slice('argon2'.length))
+      : sourceSettings('django-pbkdf2-sha256', encoded);
   if (format === 'php-password')
     return encoded.startsWith('$argon2') ? argonSourceSettings(encoded) : sourceSettings('bcrypt', encoded);
   if (format === 'bcrypt' || format === 'photoprism-bcrypt') {
@@ -280,10 +292,12 @@ export class ImportedPassword {
         value.format === 'bcrypt'
           ? ['bcrypt', 'php-password', 'nextcloud-password']
           : value.format === 'argon2i' || value.format === 'argon2id'
-            ? ['php-password', 'nextcloud-password']
+            ? ['php-password', 'nextcloud-password', 'django-password']
             : value.format === 'piwigo-md5' || value.format === 'piwigo-phpass'
               ? ['piwigo-password']
-              : [value.format];
+              : value.format === 'django-pbkdf2-sha256'
+                ? ['django-pbkdf2-sha256', 'django-password']
+                : [value.format];
       if (formats.every((format) => value.verifier.slice(7, 29) !== targetSalt(context, format).slice(7)))
         return refused();
       return new ImportedPassword(context, encoded);

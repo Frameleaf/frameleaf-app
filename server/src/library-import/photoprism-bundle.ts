@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { type BigIntStats } from 'node:fs';
 import { writeLibraryImportBundle } from 'src/library-import/bundle-output.js';
 import { openPrivateImportFile } from 'src/library-import/command-input.js';
+import { type ImportManifest } from 'src/library-import/manifest.js';
 import { parseImportedOwnerIntent } from 'src/library-import/owner-reconciliation.js';
 import { type PhotoprismInventoryRecord, readPhotoprismInventory } from 'src/library-import/photoprism-inventory.js';
 import { assemblePhotoprismManifest } from 'src/library-import/photoprism-manifest.js';
@@ -11,10 +12,7 @@ import { reviewImportFiles } from 'src/library-import/transfer-runtime.js';
 
 type BundleInput = Parameters<typeof writeLibraryImportBundle>[0];
 
-/** The adapter supplies qualified account, privacy, and original-file evidence from its frozen snapshot. */
-export async function publishPhotoprismImportBundle(input: {
-  records: Iterable<PhotoprismInventoryRecord>;
-  observed: Parameters<typeof assemblePhotoprismManifest>[1];
+type PublishInput = {
   approvedLossCodes: ReadonlySet<string>;
   roots: unknown;
   placements: unknown;
@@ -24,9 +22,24 @@ export async function publishPhotoprismImportBundle(input: {
   operationId: string;
   destinationId: string;
   verifySource: () => Promise<void>;
-}) {
+};
+
+/** The adapter supplies qualified account, privacy, and original-file evidence from its frozen snapshot. */
+export async function publishPhotoprismImportBundle(
+  input: PublishInput & {
+    records: Iterable<PhotoprismInventoryRecord>;
+    observed: Parameters<typeof assemblePhotoprismManifest>[1];
+  },
+) {
   await input.verifySource();
-  const { manifest, archive } = assemblePhotoprismManifest(input.records, input.observed);
+  return publishAdapterImportBundle({ ...input, ...assemblePhotoprismManifest(input.records, input.observed) });
+}
+
+/** Source-neutral publication of one adapter's manifest and archive; the caller has already fenced the source. */
+export async function publishAdapterImportBundle(
+  input: PublishInput & { manifest: ImportManifest; archive: BundleInput['records'] },
+) {
+  const { manifest, archive } = input;
   for (const loss of manifest.losses) {
     if (!input.approvedLossCodes.has(loss.code)) throw new LibraryImportRefused('IMPORT_LOSSES_NOT_ACKNOWLEDGED');
     loss.acknowledged = true;

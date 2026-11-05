@@ -26,7 +26,7 @@ Existing accounts default to their previous behavior. A database downgrade refus
 
 Lychee's admitted SQLite reader has a separate protected password channel for local accounts. LDAP accounts select secure claims; their cached credentials are not read. The Nextcloud reader recognizes local-account password versions `1|`, `2|` and `3|`. Unprefixed legacy Nextcloud verifiers remain unqualified.
 
-The protected verifier supports qualified PHP bcrypt and Argon2i/Argon2id encodings. Argon2 parameters must match their complete canonical representation: extra parameters, key references, associated data and noncanonical encodings refuse preflight rather than being silently discarded. Supported Argon2 versions are 16 and 19, with 8–65,536 KiB memory, 1–10 iterations, 1–16 lanes, 16–64 output bytes and 8–64 salt bytes; memory must also satisfy the algorithm's lane minimum. These are implementation limits, not a complete application compatibility claim.
+The protected verifier supports qualified PHP bcrypt and Argon2i/Argon2id encodings. Argon2 parameters must match their complete canonical representation: extra parameters, key references, associated data and noncanonical encodings refuse preflight rather than being silently discarded. Supported Argon2 versions are 16 and 19, with 8–102,400 KiB memory (Django's Argon2 default), 1–10 iterations, 1–16 lanes, 16–64 output bytes and 8–64 salt bytes; memory must also satisfy the algorithm's lane minimum. These are implementation limits, not a complete application compatibility claim.
 
 The native asynchronous `@node-rs/argon2` binding performs memory-hard work outside the event loop. Existing `async-lock` serializes that work, permits eight waiting verifications and bounds waiting to ten seconds. Overload and malformed stored settings fail closed. Ordinary native passwords and the existing source formats keep their current paths.
 
@@ -43,6 +43,22 @@ The admitted Piwigo reader provides a protected callback for explicitly mapped a
 Mutating commands require Manager's matching installation and operation identity. When the importer requests source authority, Manager compares the installation, operation, destination, source identity/revision/schema, manifest checksum and file-plan checksum with its retained review, then runs the caller's live source-verification callback. A fresh challenge and matching reply travel over the existing command pipes; Server receives no Docker socket or new network endpoint. Missing, substituted, expired or disconnected authority fails closed. Status can inspect an existing journal without live Manager authority when no runner holds the execution lock. Errors retain migration records and do not imply that restarting the source is safe.
 
 This connection does not qualify an adapter, establish ownership/privacy evidence, add source discovery or finish Manager account/storage review. Callers must supply qualified source evidence and real source fencing; manifest declarations are insufficient. Source setup, deferred content baselines for fast adoption and combined acceptance remain under development. All new adapters remain internal, including when their source kind is accepted by the common command. Expanded release still requires all ten sources and private DSM acceptance.
+
+## Native application imports in Docker
+
+Each Docker-runnable source has an end-to-end check that runs its pinned application, seeds synthetic photos through the application's own API or CLI (an album, captions, a favourite or rating where the application has one, and a local account), stops it with restart disabled, captures its database and imports the capture through the common command into a fresh destination. The check then compares every imported original's bytes, owner, caption, favourite/rating, capture time, album membership and the preserved account password with what the application reported.
+
+| Source      | Script                                               | Source database            |
+| ----------- | ---------------------------------------------------- | -------------------------- |
+| PhotoPrism  | `server/scripts/qualify-photoprism-application.mjs`  | SQLite                     |
+| Photoview   | `server/scripts/qualify-photoview-application.mjs`   | SQLite                     |
+| Lychee      | `server/scripts/qualify-lychee-application.mjs`      | SQLite                     |
+| PiGallery2  | `server/scripts/qualify-pigallery2-application.mjs`  | SQLite                     |
+| Nextcloud   | `server/scripts/qualify-nextcloud-application.mjs`   | SQLite (Photos + Memories) |
+| Piwigo      | `server/scripts/qualify-piwigo-application.mjs`      | MariaDB restore            |
+| LibrePhotos | `server/scripts/qualify-librephotos-application.mjs` | PostgreSQL                 |
+
+Each script requires `FRAMELEAF_NATIVE_IMPORT_RUN_ID` (`<number>-<number>`; PhotoPrism and Photoview keep their own run-ID variables) and a dedicated `TMPDIR` named `frameleaf-<source>-<run id>`, and removes only the containers, volumes, networks and images it labelled or pulled. The import half runs `library-import-lifecycle.spec.ts` in `native-<source>` mode with `test/medium/fixtures/library-import-native-<source>.mjs`, which shares `library-import-native-common.mjs`. The import runner needs Linux; on macOS run the scripts from a Linux container that shares the Docker socket and keeps `TMPDIR` on a path the Docker host resolves identically. These checks cover the stated synthetic cases only. Ente Photos (whose uploads need its client-side encryption) and Synology Photos (DSM) are not covered.
 
 ## PhotoPrism SQLite reader
 
