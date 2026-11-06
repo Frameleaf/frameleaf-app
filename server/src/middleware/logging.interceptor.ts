@@ -93,7 +93,8 @@ const MAX_DECODE_ROUNDS = 4;
 
 /**
  * Decodes a segment until it stops changing (so `%2563` → `%63` → `c`). Returns `undefined` when it
- * would still decode after the last round, so the caller masks the whole path instead.
+ * holds a malformed escape or would still decode after the last round, so the caller masks the whole
+ * path instead.
  */
 const decodeSegment = (segment: string): string | undefined => {
   for (let round = 0; round <= MAX_DECODE_ROUNDS; round++) {
@@ -101,7 +102,8 @@ const decodeSegment = (segment: string): string | undefined => {
     try {
       next = decodeURIComponent(segment);
     } catch {
-      return segment;
+      // a malformed escape (`%63ast%`) cannot be canonicalized, so it is not trusted either
+      return undefined;
     }
     if (next === segment) {
       return segment;

@@ -318,6 +318,13 @@ describe('request log line', () => {
     expect(written(log)).not.toContain(token);
   });
 
+  it('masks the whole path when a segment holds a malformed escape', () => {
+    const token = 'synthetic-cast-token.signature';
+    const log = run('GET', `/api/%63ast%/${token}?size=preview`, 404);
+    expect(log.log).toHaveBeenCalledWith(expect.stringMatching(/^GET \/\*{8} 404 /));
+    expect(written(log)).not.toContain(token);
+  });
+
   it('masks path secrets and keeps credential routes queryless', () => {
     expect(requestLogPath('/api/cast/eyJhbGciOi.signed-token')).toBe('/api/cast/********');
     expect(requestLogPath('/api/admin/license/activate?key=FL-SABC-DEFG')).toBe('/api/admin/license/activate?********');
@@ -329,7 +336,7 @@ describe('request log line', () => {
     expect(requestLogPath('/API/%43AST/x.y?size=preview')).toBe('/API/CAST/********?size=********');
     expect(requestLogPath('/api/%6Cicense/activate?key=FL-S')).toBe('/api/license/activate?********');
     expect(requestLogPath('/api/albums/a%2Fb%3Fc')).toBe('/api/albums/a%2Fb%3Fc');
-    expect(requestLogPath('/api/albums/%E0%A4%A')).toBe('/api/albums/%E0%A4%A');
+    expect(requestLogPath('/api/albums/%E0%A4%A')).toBe('/********');
     for (const spelling of ['/api//cast/', '/api/./cast/', '/api/%2563ast/', '/api/x/../cast/', '//api/%252563ast/']) {
       expect(requestLogPath(`${spelling}eyJhbGciOi.mac`)).toBe('/api/cast/********');
     }
