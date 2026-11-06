@@ -105,7 +105,7 @@ const LAN_PROBE = `fetch((process.env.FRAMELEAF_DISCOVERY_URL||'http://127.0.0.1
 type Http = { status?: number; date?: string | null; sent?: number; received?: number; error?: string };
 const http = (r: Http | null | undefined) => (r?.status ? `answered (HTTP ${r.status})` : `no answer (${r?.error ?? 'error'})`);
 
-export async function connectionChecks(docker: Docker, installation: Installation | null, containers: Container[], storageRoots: string[]): Promise<Check[]> {
+export async function connectionChecks(docker: Docker, installation: Installation | null, containers: Container[], drives: { name: string; path: string }[]): Promise<Check[]> {
   const checks: Check[] = [];
   let start = Date.now();
   const host = await docker.compatibility().then(
@@ -186,15 +186,15 @@ export async function connectionChecks(docker: Docker, installation: Installatio
     });
   } else checks.push({ name: 'Network discovery', ok: null, detail: lan ? 'Stopped: phones on the network will not find this library automatically.' : 'Not installed: Manager only listens on this computer, or the release predates it.' });
 
-  for (const [i, root] of storageRoots.entries()) {
-    const fs = await statfs(root).catch(() => null);
+  for (const { name, path } of drives) {
+    const fs = await statfs(path).catch(() => null);
     if (!fs) {
-      checks.push({ name: `Storage ${i + 1}`, ok: false, detail: 'Manager cannot read this mounted drive.' });
+      checks.push({ name, ok: false, detail: 'Manager cannot read this mounted drive.' });
       continue;
     }
     const free = fs.bavail * fs.bsize,
       percent = Math.round((100 * fs.bavail) / Math.max(fs.blocks, 1));
-    checks.push({ name: `Storage ${i + 1}`, ok: percent >= 5 && free > 2e9, detail: `${(free / 1e9).toFixed(1)} GB free (${percent}%)` });
+    checks.push({ name, ok: percent >= 5 && free > 2e9, detail: `${(free / 1e9).toFixed(1)} GB free (${percent}%)` });
   }
   return checks;
 }

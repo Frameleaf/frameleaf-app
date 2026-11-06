@@ -112,6 +112,11 @@ const lifecycle = native ?? operations;
 const managerVersion = await readFile(new URL('../package.json', import.meta.url), 'utf8')
   .then((text) => `v${JSON.parse(text).version}`)
   .catch(() => 'unknown version');
+/** Mounted media storage and the backup destination, which can be a different drive. */
+const drives = () => [
+  ...(process.env.MANAGER_STORAGE_ROOTS ?? '').split(':').filter(Boolean).map((path, i) => ({ name: `Storage ${i + 1}`, path })),
+  { name: 'Backup drive', path: backupRoot! },
+];
 /**
  * Everything a troubleshooting run looks at: this library's containers (server, database, machine learning, LAN
  * discovery and any import runner), plus Manager's own container when Docker runs it.
@@ -474,7 +479,7 @@ class Api {
   @Post('diagnostics') async diagnostics(@Body() input: unknown) {
     z.object({}).strict().parse(input);
     const { installation, containers, clean } = await troubleshootingScope();
-    const checks = await connectionChecks(docker, installation, containers, (process.env.MANAGER_STORAGE_ROOTS ?? '').split(':').filter(Boolean));
+    const checks = await connectionChecks(docker, installation, containers, drives());
     return { checks: checks.map((c) => ({ ...c, detail: clean(c.detail) })) };
   }
   /** One text file to post on the community: checks, problems found, activity and every service's log, redacted. */
@@ -482,7 +487,7 @@ class Api {
     z.object({}).strict().parse(input);
     const { installation, containers, self, clean } = await troubleshootingScope();
     const [checks, host, logs] = await Promise.all([
-      connectionChecks(docker, installation, containers, (process.env.MANAGER_STORAGE_ROOTS ?? '').split(':').filter(Boolean)),
+      connectionChecks(docker, installation, containers, drives()),
       docker.compatibility().catch(() => null),
       Promise.all(
         [...containers, ...(self ? [self] : [])].map(async (c) => ({
