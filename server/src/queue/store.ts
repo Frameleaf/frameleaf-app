@@ -1106,8 +1106,11 @@ export class SqlQueueStore {
     return this.runReads({ take, skip });
   }
 
-  /** After a pause, start, retry or cancel, Activity's next read is fresh, never a count from before the change. */
-  private forgetRunReads() {
+  /**
+   * After a pause, start, retry or cancel, Activity's next read is fresh, never a count from before the change. Called
+   * once the change is committed; a caller that writes in its own transaction (`retryImportedWork`) calls it after.
+   */
+  forgetRunReads() {
     this.runReads.clear();
   }
 
@@ -1215,7 +1218,6 @@ export class SqlQueueStore {
       AND EXISTS (SELECT 1 FROM job_run_item WHERE "runId"=${runId}::uuid AND state IN ('pending','waiting','active'))`.execute(
       db,
     );
-    this.forgetRunReads();
   }
 
   /**

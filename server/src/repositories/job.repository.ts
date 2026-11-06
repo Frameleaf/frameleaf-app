@@ -599,6 +599,10 @@ export class JobRepository {
   retryImportedWork(runId: string, db: Kysely<DB>) {
     return this.store.retryImportedWork(runId, db);
   }
+
+  forgetRunReads() {
+    this.store.forgetRunReads();
+  }
   /** Every failed job of the queue, or only `jobId`; returns how many went back. */
   retryFailed(name: QueueName, jobId?: string) {
     return this.store.retryFailed(name, jobId);
