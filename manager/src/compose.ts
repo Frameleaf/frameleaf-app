@@ -68,8 +68,8 @@ export async function configureUnraidCompose(directory: string, hardware?: Recor
 export async function hostMemory(
   info = () => command('docker', ['info', '--format', '{{json .MemTotal}}'], { timeout: 10_000 }),
 ): Promise<number> {
-  const bytes = await info().then((r) => Number(JSON.parse(r))).catch(() => Number.NaN);
-  return Number.isFinite(bytes) && bytes > 0 ? bytes : totalmem();
+  const bytes: unknown = await info().then((r) => JSON.parse(r)).catch(() => null);
+  return typeof bytes === 'number' && Number.isFinite(bytes) && bytes > 0 ? bytes : totalmem();
 }
 const MB = 2 ** 20;
 const GB = 2 ** 30;
@@ -84,16 +84,19 @@ export function postgresTuning(bytes: number): { shm_size: string; command: stri
   const ram = bytes >= GB ? Math.round(bytes / GB) * 1024 : Math.max(64, Math.floor(bytes / MB));
   const mb = (n: number) => `${Math.floor(n)}MB`;
   const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
-  const [workMem, shm] = ram >= 64 * 1024 ? [64, 2048] : ram >= 16 * 1024 ? [32, 1024] : [16, 512];
+  const [tierWorkMem, tierShm] = ram >= 64 * 1024 ? [64, 2048] : ram >= 16 * 1024 ? [32, 1024] : [16, 512];
+  const shm = Math.min(tierShm, ram / 4);
+  // three concurrent parallel hash joins (3 × 6 × work_mem) always fit in shm_size
+  const workMem = Math.max(1, Math.min(tierWorkMem, Math.floor(shm / 18)));
   const settings = {
     shared_buffers: mb(clamp(ram / 16, Math.min(256, ram / 4), 8 * 1024)),
     effective_cache_size: mb(Math.min(ram / 4, 32 * 1024)),
     maintenance_work_mem: mb(clamp(ram / 64, Math.min(128, ram / 8), 2 * 1024)),
-    work_mem: mb(Math.min(workMem, ram / 32)),
+    work_mem: mb(workMem),
     max_wal_size: ram >= 16 * 1024 ? '4GB' : '2GB',
     random_page_cost: '1.1',
   };
-  return { shm_size: `${Math.min(shm, ram / 4)}mb`, command: ['postgres', ...Object.entries(settings).flatMap(([k, v]) => ['-c', `${k}=${v}`])] };
+  return { shm_size: `${Math.floor(shm)}mb`, command: ['postgres', ...Object.entries(settings).flatMap(([k, v]) => ['-c', `${k}=${v}`])] };
 }
 /** A compose memory limit ("2g", "512mb") in bytes. */
 const limitBytes = (limit: unknown): number => {

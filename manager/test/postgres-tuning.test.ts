@@ -53,7 +53,7 @@ test('Postgres memory follows host RAM within NAS-friendly caps', () => {
     shared_buffers: '32MB',
     effective_cache_size: '32MB',
     maintenance_work_mem: '16MB',
-    work_mem: '4MB',
+    work_mem: '1MB',
     max_wal_size: '2GB',
     random_page_cost: '1.1',
   });
@@ -63,7 +63,7 @@ test('Postgres memory follows host RAM within NAS-friendly caps', () => {
 
 test('/dev/shm holds several parallel hash joins at the chosen work_mem', () => {
   const bytes = (s: string) => Number.parseInt(s);
-  for (const gb of [2, 4, 8, 16, 32, 64, 128, 512]) {
+  for (const gb of [0.25, 0.5, 1, 2, 4, 8, 16, 32, 64, 128, 512]) {
     const s = settings(gb * GiB);
     // work_mem × hash_mem_multiplier 2 × (2 parallel workers + leader)
     assert.ok(bytes(s.shm_size) >= 3 * Number.parseInt(s.work_mem) * 2 * 3, `${gb} GB`);
@@ -76,6 +76,8 @@ test('host RAM comes from the Docker daemon, falling back to this container', as
   assert.ok((await hostMemory(async () => 'null')) > 0);
   assert.ok((await hostMemory(async () => '')) > 0);
   assert.ok((await hostMemory(async () => 'not json')) > 0);
+  assert.ok((await hostMemory(async () => 'true')) > 1);
+  assert.ok((await hostMemory(async () => '"64"')) > 64);
 });
 
 test('the database service carries the tuning at install and is re-tuned on Start', async () => {
