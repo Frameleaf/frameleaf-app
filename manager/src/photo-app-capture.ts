@@ -13,9 +13,11 @@ import { captureFencedSqliteSource } from './source-capture.js';
 export type PhotoAppCapture = {
   fence: SourceFence;
   originalsPath: string;
-  sourceRootPath: string;
+  /** The app container's own path for the originals; an export folder has none. */
+  sourceRootPath?: string;
   source: ImportPlan['source'];
-  database: 'sqlite' | 'mysql' | 'postgres';
+  /** `export`: the originals mount is a self-describing export folder, with no database to deliver. */
+  database: 'sqlite' | 'mysql' | 'postgres' | 'export';
   /** SQLite snapshot inside the operation's private staging directory. */
   snapshotPath?: string;
   /** Disposable restored copy of a MySQL/PostgreSQL source, reached by the preparation over its loopback. */

@@ -75,6 +75,8 @@ export type Source = {
 /** Reviewed Docker identities only; schema, ownership and privacy qualification remain source-specific. */
 export type SourceFence = Pick<Source, 'id' | 'workers' | 'mounts' | 'fingerprint' | 'platform' | 'restart'> & {
   containers: string[];
+  /** An export folder the owner made (Ente): nothing runs or stops; its contents' revision is the fence. */
+  folder?: { path: string; revision: string };
 };
 export type Backup = {
   name: string;

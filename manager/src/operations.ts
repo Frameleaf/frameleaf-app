@@ -11,6 +11,7 @@ import { Backups, sourceBackups } from './backups.js';
 import { Fencing } from './fencing.js';
 import { detectPhotoApps, identifyPhotoApp, photoAppKind, photoAppNames, type ContainerFileReader, type PhotoAppKind, type PhotoAppPlan } from './photo-app-sources.js';
 import { capturePhotoAppSource, restoreDatabaseUrl, type PhotoAppCapture } from './photo-app-capture.js';
+import { captureEnteFolder, folderImportNames, folderSourceId, importFolderPath, readEnteExport, type FolderImportKind } from './photo-app-folder.js';
 import { IMPORT_PREPARATION_TARGET, commonImportBootstrapStaged, prepareCommonImportRuntime, removeCommonImportBootstrap, stageCommonImportBootstrap, stageCommonImportPreparation } from './common-import-runtime.js';
 import { rollbackCommonImport } from './common-import-lifecycle.js';
 import type { ImportPreparationSeal, ImportSourceAuthoritySeal } from './import-source-authority.js';
@@ -39,6 +40,7 @@ import {
   redact,
 } from './contracts.js';
 
+const importNames: Record<PhotoAppKind | FolderImportKind, string> = { ...photoAppNames, ...folderImportNames };
 export const ReviewInput = z
   .object({
     kind: z.enum(['install', 'import']),
@@ -423,9 +425,39 @@ export class Operations {
     }
     return operation;
   }
+  /**
+   * FL-1149 (Beta): an export folder the owner made with the app's own tool (Ente Photos). Nothing is stopped; the
+   * folder must sit inside Manager's storage roots and hold the export and its saved file list.
+   */
+  async startFolderImport(kind: FolderImportKind, path: string, key: string) {
+    if (kind !== 'ente' || this.installation()) throw new Refusal('invalid_import_authority');
+    const folder = await importFolderPath(path, this.roots);
+    const input = { sourceId: folderSourceId(kind, folder), commonCapture: 'folder', photoApp: kind, importFolder: folder };
+    const prior = this.store.request('import', key, input);
+    if (prior) return prior;
+    await readEnteExport(folder);
+    const { operation, created } = this.store.start('import', key, input);
+    if (created) this.launch(operation, () => this.captureForReview(operation));
+    return operation;
+  }
   private async captureForReview(operation: Operation) {
-    await this.captureCommonSource(operation);
+    if (operation.input.commonCapture === 'folder') await this.captureFolderSource(operation);
+    else await this.captureCommonSource(operation);
     operation.state = 'awaiting-review';
+  }
+  /** Reads the export folder's identity and revision; the review and preparation mount it read-only. */
+  private async captureFolderSource(operation: Operation): Promise<PhotoAppCapture> {
+    const folder = operation.input.importFolder;
+    if (
+      typeof folder !== 'string' || operation.input.photoApp !== 'ente' || operation.kind !== 'import' ||
+      operation.state !== 'running' || operation.input.sourceId !== folderSourceId('ente', folder) || this.installation()
+    ) throw new Refusal('invalid_import_authority');
+    const capture = await this.step(operation, 'capture-common-source', async () => {
+      await mkdir(join(this.directory(), `import-runtime-${operation.id}`), { mode: 0o700, recursive: true });
+      return captureEnteFolder(await importFolderPath(folder, this.roots));
+    });
+    await this.fencing.verify(capture.fence);
+    return capture;
   }
   /** Capture only for a locked operation with an explicitly selected source. */
   async captureCommonSource(operation: Operation): Promise<PhotoAppCapture> {
@@ -491,8 +523,9 @@ export class Operations {
     approvedLossCodes: string[],
   ) {
     const stagingRoot = join(this.directory(), `import-runtime-${operation.id}`);
-    let location: { snapshotPath: string } | { databaseUrl: string };
-    if (capture.snapshotPath) {
+    let location: { snapshotPath: string } | { databaseUrl: string } | Record<string, never>;
+    if (capture.database === 'export' && capture.fence.folder && !capture.snapshotPath && !capture.restore) location = {};
+    else if (capture.snapshotPath) {
       const path = relative(stagingRoot, capture.snapshotPath);
       if (!path || path === '..' || path.startsWith('../') || isAbsolute(path)) throw new Refusal('invalid_import_authority');
       location = { snapshotPath: `${IMPORT_PREPARATION_TARGET}/${path}` };
@@ -655,12 +688,16 @@ export class Operations {
     const stagingRoot = join(this.directory(), `import-runtime-${operationId}`);
     const snapshotPath = snapshot?.snapshotPath && relative(stagingRoot, snapshot.snapshotPath);
     const reader = this.store.get<{ reader: string }>(`photo-app-restore:${operationId}`)?.reader;
-    // Exactly the captured location: the staged SQLite snapshot, or the restored copy through its reader.
-    const located = snapshot?.snapshotPath
-      ? !!snapshotPath && snapshotPath !== '..' && !snapshotPath.startsWith('../') && !isAbsolute(snapshotPath) &&
-        request.snapshotPath === `${IMPORT_PREPARATION_TARGET}/${snapshotPath}` && request.databaseUrl === undefined
-      : !!snapshot?.restore && !!reader && request.snapshotPath === undefined &&
-        request.databaseUrl === restoreDatabaseUrl(snapshot.restore, reader);
+    // Exactly the captured location: the staged SQLite snapshot, the restored copy through its reader, or for an
+    // export folder neither (the preparation reads the read-only originals mount).
+    const located = snapshot?.database === 'export'
+      ? !!snapshot.fence.folder && !snapshot.snapshotPath && !snapshot.restore &&
+        request.snapshotPath === undefined && request.databaseUrl === undefined
+      : snapshot?.snapshotPath
+        ? !!snapshotPath && snapshotPath !== '..' && !snapshotPath.startsWith('../') && !isAbsolute(snapshotPath) &&
+          request.snapshotPath === `${IMPORT_PREPARATION_TARGET}/${snapshotPath}` && request.databaseUrl === undefined
+        : !!snapshot?.restore && !!reader && request.snapshotPath === undefined &&
+          request.databaseUrl === restoreDatabaseUrl(snapshot.restore, reader);
     if (
       captured?.state !== 'awaiting-review' || this.executing.has(operationId) || !snapshot || !located ||
       digest(snapshot.fence) !== digest(fence) || digest(snapshot.source) !== digest(source)
@@ -2414,8 +2451,8 @@ export class Operations {
     return this.store.history().map(({ input, receipts, ...operation }) => ({
       ...operation,
       ...(typeof input.commonCapture === 'string' && typeof input.photoApp === 'string' &&
-        input.photoApp in photoAppNames && {
-          photoApp: { kind: input.photoApp as PhotoAppKind, name: photoAppNames[input.photoApp as PhotoAppKind] },
+        input.photoApp in importNames && {
+          photoApp: { kind: input.photoApp, name: importNames[input.photoApp as keyof typeof importNames] },
         }),
       backupSkipped: operation.kind === 'import' && !!this.store.get<Review>(`review:${input.commonCapture ? operation.id : input.reviewId}`)?.backup,
       ...(typeof receipts['reviewed-common-import'] === 'string' && { commonImport: {

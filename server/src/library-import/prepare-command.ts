@@ -20,6 +20,7 @@ export const preparationAdapterKinds = [
   'nextcloud',
   'piwigo',
   'librephotos',
+  'ente',
 ] as const;
 
 const id = z.string().min(1).max(1024);
@@ -59,6 +60,31 @@ export const loadPreparationAdapter = async (kind: string): Promise<PreparationA
   return adapter;
 };
 
+/**
+ * Exactly one delivery: a staged SQLite snapshot, a loopback database URL, or neither — only for an adapter that
+ * reads an `export` folder from `originalsRoot` (Ente).
+ */
+export function assertPreparationLocation(
+  input: { snapshotPath?: string; databaseUrl?: string },
+  adapter: Pick<PreparationAdapter, 'databases'>,
+  stagingRoot: string,
+) {
+  const database = input.databaseUrl?.startsWith('mysql')
+    ? 'mysql'
+    : input.databaseUrl
+      ? 'postgres'
+      : input.snapshotPath === undefined
+        ? 'export'
+        : 'sqlite';
+  if (
+    (input.snapshotPath !== undefined && input.databaseUrl !== undefined) ||
+    !adapter.databases.includes(database) ||
+    (input.databaseUrl !== undefined && new URL(input.databaseUrl).hostname !== '127.0.0.1') ||
+    (input.snapshotPath !== undefined && !input.snapshotPath.startsWith(stagingRoot + '/'))
+  )
+    throw new LibraryImportRefused('IMPORT_PREPARATION_INPUT_INVALID');
+}
+
 /** Private offline preparation. Only the Manager's live approval authorizes this exact request. */
 export async function prepareLibraryImport(
   configPath: string,
@@ -72,14 +98,7 @@ export async function prepareLibraryImport(
   if (!parsed.success) throw new LibraryImportRefused('IMPORT_PREPARATION_INPUT_INVALID');
   const input = { ...parsed.data, originalsRoot: mount(parsed.data.originalsRoot) };
   const adapter = await loadPreparationAdapter(input.source.kind);
-  const database = input.databaseUrl?.startsWith('mysql') ? 'mysql' : input.databaseUrl ? 'postgres' : 'sqlite';
-  if (
-    (input.snapshotPath === undefined) === (input.databaseUrl === undefined) ||
-    !adapter.databases.includes(database) ||
-    (input.databaseUrl !== undefined && new URL(input.databaseUrl).hostname !== '127.0.0.1') ||
-    (input.snapshotPath !== undefined && !input.snapshotPath.startsWith(stagingRoot + '/'))
-  )
-    throw new LibraryImportRefused('IMPORT_PREPARATION_INPUT_INVALID');
+  assertPreparationLocation(input, adapter, stagingRoot);
   const seal = {
     operationId: input.operationId,
     destinationId: input.destinationId,

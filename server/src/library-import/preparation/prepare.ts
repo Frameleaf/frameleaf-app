@@ -19,7 +19,8 @@ import { LibraryImportRefused } from 'src/library-import/state.js';
 export const UNTESTED_VERSION_LOSS = 'SOURCE_VERSION_UNTESTED';
 /** Destination media mount inside the preparation container. */
 export const DESTINATION_ROOT = '/data';
-const PLACEHOLDER_SHA256 = '0'.repeat(64);
+/** The review-only pass reads no bytes: every observed file carries this hash instead. */
+export const PLACEHOLDER_SHA256 = '0'.repeat(64);
 
 export type PreparationOwnerChoice = {
   sourceId: string;

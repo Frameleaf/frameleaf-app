@@ -4,6 +4,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import {
   operationProgress, canCancel, serviceState, formatBytes, readable, hasGpu, processorName,
   lossText, photoAppReason, untestedNotice, restrictionText, ownerEmailProblems, isPhotoAppCapture, photoAppDetail,
+  sourceVersion, photoAppName,
 } from '../ui/src/presentation.js';
 
 test('operation timelines use journal steps and never infer successful completion from an error', () => {
@@ -187,4 +188,34 @@ test('a photo-app capture is recognised until the reviewed import begins', () =>
   assert.equal(isPhotoAppCapture({ ...capture, photoApp: undefined }), false);
   assert.equal(readable('awaiting-review'), 'Waiting for your review');
   assert.doesNotMatch(readable('capture-common-source'), JARGON);
+});
+
+test('an Ente export folder reads as a folder import, never as a stopped app', () => {
+  assert.equal(photoAppName('ente'), 'Ente Photos');
+  assert.equal(
+    lossText('ENTE_SHARED_FILE_NOT_IMPORTED', 'ente'),
+    'Photos and videos other people shared with you stay in their library. Only your own come across.',
+  );
+  assert.equal(
+    untestedNotice('ente', 'ente-cli', 'ente-cli-v0.4.2'),
+    'This export isn’t exactly like the Ente exports Manager has been tested with. Photos and albums should come across; anything that can’t will be listed. For best results, export again with Ente CLI 0.4.2.',
+  );
+  assert.equal(sourceVersion('ente', 'ente-cli'), '');
+  assert.equal(sourceVersion('lychee', '5.0.0'), '5.0.0');
+  const capture = {
+    kind: 'import', state: 'awaiting-review', step: null, completed: ['capture-common-source'], error: null,
+    photoApp: { kind: 'ente', name: 'Ente Photos' },
+  };
+  assert.equal(isPhotoAppCapture(capture), true);
+  assert.equal(operationProgress(capture).steps[0].label, 'Read the export folder');
+  for (const code of [
+    'import_folder_invalid', 'import_folder_unreachable', 'import_folder_outside_roots', 'ente_export_not_found',
+    'ente_inventory_required',
+  ]) {
+    const text = readable(code);
+    assert.notEqual(text, code.replaceAll('_', ' '), code);
+    assert.doesNotMatch(text, JARGON, code);
+    assert.match(text, /^[A-Z].*\.$/u, code);
+  }
+  assert.match(readable('ente_inventory_required'), /ente-files\.json/u);
 });

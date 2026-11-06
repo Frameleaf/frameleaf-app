@@ -30,6 +30,7 @@ import { Backups } from './backups.js';
 import { Releases } from './releases.js';
 import { CommonImportBootstrapCredentials } from './common-import-runtime.js';
 import { Operations, PhotoAppPrepareInput, ReviewInput } from './operations.js';
+import { folderImportKinds } from './photo-app-folder.js';
 import { Refusal, containerId, publicSource, redact, releaseTag, secretEnvironmentValues } from './contracts.js';
 import { appdataDefaults } from './appdata.js';
 import { nativeListener } from './runtime/native-listener.js';
@@ -261,6 +262,17 @@ class Api {
   @Post('photo-app-capture') async photoAppCapture(@Body() input: unknown) {
     const { container, key } = z.object({ container: containerId, key: RequestKey }).strict().parse(input);
     return { id: (await operations.startCommonCapture(container, key)).id };
+  }
+  /**
+   * An export folder the owner made themselves (Ente Photos): nothing is stopped. The same review, preparation and
+   * cancel routes follow; cancelling only discards what Manager read.
+   */
+  @Post('photo-app-folder') async photoAppFolder(@Body() input: unknown) {
+    const { kind, path, key } = z
+      .object({ kind: z.enum(folderImportKinds), path: z.string().min(1).max(4096), key: RequestKey })
+      .strict()
+      .parse(input);
+    return { id: (await operations.startFolderImport(kind, path, key)).id };
   }
   @Post('photo-app-inspect') photoAppInspect(@Body() input: unknown) {
     const { operationId, tag } = z.object({ operationId: z.uuid(), tag: releaseTag.optional() }).strict().parse(input);

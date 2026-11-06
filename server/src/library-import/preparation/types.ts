@@ -54,10 +54,11 @@ export type OpenedPreparationSource = {
 export type PreparationAdapter = {
   kind: SourceKind;
   /**
-   * How the Manager can deliver the frozen database: a SQLite snapshot file, or a restored copy reachable on
-   * 127.0.0.1 (the preparation shares the restore container's network namespace; neither has another network).
+   * How the Manager can deliver the frozen database: a SQLite snapshot file, a restored copy reachable on
+   * 127.0.0.1 (the preparation shares the restore container's network namespace; neither has another network), or
+   * `export`: no database at all, the source is a self-describing export folder mounted at `originalsRoot`.
    */
-  databases: ('sqlite' | 'mysql' | 'postgres')[];
+  databases: ('sqlite' | 'mysql' | 'postgres' | 'export')[];
   open(input: PreparationSourceInput): Promise<OpenedPreparationSource>;
 };
 
