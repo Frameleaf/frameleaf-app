@@ -134,8 +134,8 @@ test('configured folders are hidden even under /run; only container device and r
   const roots = redactionRoots(['/run/private', '/mnt/archive', ''], ['/run/frameleaf/manager-token', '/var/lib/postgresql', '/srv/x', '/run/old-extra', '/run/frameleaf-host/private', '/dev/private']);
   // A container still running with an extra folder the saved settings no longer list, even next to Manager's own mounts.
   assert.deepEqual(roots, ['/run/private', '/mnt/archive', '/srv/x', '/run/old-extra', '/run/frameleaf-host/private', '/dev/private']);
-  const out = redactPaths('open /run/private/alice/notes.txt failed; ffmpeg /dev/dri/renderD128; token /run/frameleaf/manager-token', roots);
-  assert.ok(!out.includes('alice'), out);
+  const out = redactPaths('open /run/private/alice/notes.txt failed; ffmpeg /dev/dri/renderD128; token /run/frameleaf/manager-token; watch /dev/private/bob: gone', roots);
+  assert.ok(!out.includes('alice') && !out.includes('bob'), out);
   assert.match(out, /\/dev\/dri\/renderD128/);
   assert.match(out, /\/run\/frameleaf\/manager-token/);
 });
