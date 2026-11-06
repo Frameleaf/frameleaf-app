@@ -6,9 +6,14 @@ import {
   MediaOperationItemStatus,
   MediaOperationKind,
   MediaOperationStatus,
+  QueueName,
 } from 'src/enum.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
-import { BulkOperationService } from 'src/services/bulk-operation.service.js';
+import {
+  BULK_TICK_MS,
+  BulkOperationService,
+  MEDIA_HEALTH_BULK_BATCH_SIZE,
+} from 'src/services/bulk-operation.service.js';
 import { BulkOperationSnapshot } from 'src/utils/bulk-operation.js';
 import { MEDIA_OPERATION_AUTO_RETRY_DELAY_MS } from 'src/utils/media-operation.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
@@ -144,6 +149,7 @@ describe(BulkOperationService.name, () => {
       mediaHealth as never,
       classification as never,
       archiveOperations as never,
+      mocks.job as never,
     );
   });
 
@@ -623,6 +629,68 @@ describe(BulkOperationService.name, () => {
   });
 
   describe('run', () => {
+    describe('Media Health queue paused in Job manager', () => {
+      const libraryCare = (count: number) => {
+        const assetIds = Array.from({ length: count }, () => newUuid());
+        return snapshotOf({
+          action: MediaOperationBulkAction.RelinkMissingMedia,
+          assetIds,
+          payload: {
+            mediaHealth: assetIds.map((assetId) => ({ assetId, findingId: newUuid(), candidateId: newUuid() })),
+          },
+        });
+      };
+
+      it('does not start a Library Care bulk job while the queue is paused', async () => {
+        mocks.job.isPaused.mockResolvedValue(true);
+        await sut.run(operationOf(libraryCare(2)), 'claim');
+        expect(mocks.job.isPaused).toHaveBeenCalledWith(QueueName.MediaHealth);
+        expect(mediaHealth.applyBulkEntry).not.toHaveBeenCalled();
+        expect(operations.requeue).toHaveBeenCalledWith(expect.any(String), 'claim', {
+          delayMs: BULK_TICK_MS,
+          returnAttempt: true,
+        });
+      });
+
+      it('hands a running Library Care bulk job back between batches, cursor kept', async () => {
+        mediaHealth.applyBulkEntry.mockImplementation(
+          (_auth: unknown, _action: unknown, { assetId }: { assetId: string }) =>
+            Promise.resolve({ id: assetId, status: MediaOperationItemStatus.Ok }),
+        );
+        mocks.job.isPaused.mockResolvedValueOnce(false).mockResolvedValue(true);
+
+        await sut.run(operationOf(libraryCare(MEDIA_HEALTH_BULK_BATCH_SIZE + 1)), 'claim');
+
+        expect(mediaHealth.applyBulkEntry).toHaveBeenCalledTimes(MEDIA_HEALTH_BULK_BATCH_SIZE);
+        expect(operations.setBulkResult).toHaveBeenLastCalledWith(
+          expect.any(String),
+          'claim',
+          expect.objectContaining({ processedUnits: MEDIA_HEALTH_BULK_BATCH_SIZE }),
+        );
+        expect(operations.requeue).toHaveBeenCalledWith(expect.any(String), 'claim', {
+          delayMs: BULK_TICK_MS,
+          returnAttempt: true,
+        });
+        expect(operations.complete).not.toHaveBeenCalled();
+      });
+
+      it('settles a cancel that landed before the hand-back, applying nothing', async () => {
+        mocks.job.isPaused.mockResolvedValue(true);
+        vi.mocked(operations.requeue).mockResolvedValue(false);
+        await sut.run(operationOf(libraryCare(2)), 'claim');
+        expect(mediaHealth.applyBulkEntry).not.toHaveBeenCalled();
+        expect(operations.acknowledgeCancel).toHaveBeenCalledWith(expect.any(String), 'claim', { released: false });
+      });
+
+      it("leaves the person's own bulk edits running", async () => {
+        const snapshot = snapshotOf();
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
+        mocks.job.isPaused.mockResolvedValue(true);
+        await sut.run(operationOf(snapshot), 'claim');
+        expect(operations.complete).toHaveBeenCalled();
+      });
+    });
+
     it('does not unstack when the submitting key no longer permits stack deletion', async () => {
       const snapshot = snapshotOf({
         action: MediaOperationBulkAction.Unstack,

@@ -10,6 +10,7 @@ import {
   JobStatus,
   MediaOperationKind,
   MediaOperationStatus,
+  QueueName,
   UserStatus,
 } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
@@ -885,6 +886,35 @@ describe(LibraryScanService.name, () => {
 
       expect(operations.settlePause).toHaveBeenCalledTimes(1);
       expect(mocks.asset.createAll).toHaveBeenCalledTimes(1);
+      expect(operations.complete).not.toHaveBeenCalled();
+    });
+
+    it('claims nothing while the library queue is paused in Job manager', async () => {
+      mocks.job.isPaused.mockResolvedValue(true);
+      await sut.drain();
+      expect(operations.claimNext).not.toHaveBeenCalled();
+    });
+
+    it('hands a running scan back between batches when the library queue is paused in Job manager', async () => {
+      mocks.storage.walkLibrary.mockImplementation(() => walkOf(['/mnt/photos/a.jpg'], ['/mnt/photos/b.jpg']));
+      mocks.job.isPaused.mockResolvedValueOnce(false).mockResolvedValue(true);
+
+      await sut.run(operationOf(), 'token');
+
+      expect(mocks.job.isPaused).toHaveBeenCalledWith(QueueName.Library);
+      expect(mocks.asset.createAll).toHaveBeenCalledTimes(1);
+      expect(operations.requeue).toHaveBeenCalledWith(expect.any(String), 'token', { delayMs: 0, returnAttempt: true });
+      expect(operations.complete).not.toHaveBeenCalled();
+    });
+
+    it('settles a cancel that landed before the hand-back for a paused library queue', async () => {
+      mocks.storage.walkLibrary.mockImplementation(() => walkOf(['/mnt/photos/a.jpg'], ['/mnt/photos/b.jpg']));
+      mocks.job.isPaused.mockResolvedValueOnce(false).mockResolvedValue(true);
+      operations.requeue.mockResolvedValue(false);
+
+      await sut.run(operationOf(), 'token');
+
+      expect(operations.acknowledgeCancel).toHaveBeenCalledWith(expect.any(String), 'token', { released: false });
       expect(operations.complete).not.toHaveBeenCalled();
     });
 

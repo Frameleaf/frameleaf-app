@@ -10,10 +10,12 @@ import {
   MediaOperationKind,
   MediaOperationStatus,
   Permission,
+  QueueName,
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
 import { ArchiveOperationRepository, archiveAnswerOutcome } from 'src/repositories/archive-operation.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
   MediaOperation,
@@ -190,6 +192,7 @@ export class BulkOperationService {
     private mediaHealth: MediaHealthService,
     private classification: ClassificationService,
     private archiveOperations: ArchiveOperationRepository,
+    private jobRepository: JobRepository,
   ) {
     this.logger.setContext(BulkOperationService.name);
   }
@@ -257,6 +260,27 @@ export class BulkOperationService {
         });
       }
     }
+  }
+
+  /**
+   * Job manager's pause of the Media Health queue holds Library Care's bulk fixes too: they run here, not on that
+   * queue. The job is handed back between batches, cursor kept, and looked at again after a tick, so the bulk jobs
+   * behind it still run. Other bulk actions are the person's own edits and belong to no Job manager queue.
+   */
+  private async heldForPausedQueue({ id, claimToken, snapshot }: BulkRun): Promise<boolean> {
+    if (
+      !isMediaHealthBulkAction(snapshot.action) ||
+      (await this.jobRepository.isPaused(QueueName.MediaHealth)) !== true
+    ) {
+      return false;
+    }
+    if (await this.operations.requeue(id, claimToken, { delayMs: BULK_TICK_MS, returnAttempt: true })) {
+      this.logger.log(`Library Care bulk job ${id} held: the Media Health queue is paused`);
+    } else {
+      // Cancelled or no longer ours.
+      await this.operations.acknowledgeCancel(id, claimToken, { released: false });
+    }
+    return true;
   }
 
   /**
@@ -328,6 +352,9 @@ export class BulkOperationService {
         // Keep the claim; the lease expiring hands the job to the next worker at this cursor.
         return;
       }
+      if (await this.heldForPausedQueue(job)) {
+        return;
+      }
 
       // a duplicate decision job never splits a group across two batches (FL-61)
       const size = whole ? total : bulkBatchLength(snapshot.assetIds, processed, batchSize, groupIndex);
@@ -377,6 +404,9 @@ export class BulkOperationService {
     // The retry pass, with its own cursor. What happens here is what is reported.
     while (result.retry && result.retry.processed < result.retry.ids.length) {
       if (this.stopping) {
+        return;
+      }
+      if (await this.heldForPausedQueue(job)) {
         return;
       }
 

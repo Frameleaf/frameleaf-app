@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
-import { JobName, JobStatus, MediaOperationKind, MlWorkload, SystemMetadataKey } from 'src/enum.js';
+import { JobName, JobStatus, MediaOperationKind, MlWorkload, QueueName, SystemMetadataKey } from 'src/enum.js';
 import { CloudLibraryBatchService } from 'src/services/cloud-library-batch.service.js';
 import { SmartInfoService } from 'src/services/smart-info.service.js';
 import {
+  CLOUD_LIBRARY_POLL_MS,
   type CloudLibraryItem,
   type CloudLibrarySnapshot,
   emptyCloudLibraryResult,
@@ -108,6 +109,61 @@ describe(CloudLibraryBatchService.name, () => {
       await sut.batchQueued(now);
 
       expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.AssetDetectFaces, data: { id: 'a' } }]);
+    });
+  });
+
+  describe('queues paused in Job manager', () => {
+    const batch = (workload: 'clip' | 'face') =>
+      ({
+        id: `batch-${workload}`,
+        ownerId: 'owner',
+        kind: MediaOperationKind.CloudLibraryBatch,
+        snapshot: snapshot({ workload }),
+        result: emptyCloudLibraryResult(['asset-1']),
+      }) as unknown as MediaOperation;
+
+    beforeEach(() => {
+      mocks.mediaOperation.getUnreleasedRemoteOperations.mockResolvedValue([]);
+      mocks.mediaOperation.listCloudDescriptionPendingReleases.mockResolvedValue([]);
+    });
+
+    it('claims nothing while both Smart search and Face detection are paused', async () => {
+      mocks.job.isPaused.mockResolvedValue(true);
+      await sut.runPass(now);
+      expect(mocks.mediaOperation.claimNext).not.toHaveBeenCalled();
+    });
+
+    it("hands back a paused queue's batch for a later pass and steps the other kind's", async () => {
+      mocks.job.isPaused.mockImplementation((name) => Promise.resolve(name === QueueName.FaceDetection));
+      mocks.mediaOperation.claimNext
+        .mockResolvedValueOnce({ operation: batch('face'), claimToken: 'claim-face' })
+        .mockResolvedValueOnce({ operation: batch('clip'), claimToken: 'claim-clip' })
+        .mockResolvedValue(undefined);
+      const step = vi.spyOn(sut, 'step').mockResolvedValue(undefined as never);
+
+      await sut.runPass(now);
+
+      expect(mocks.mediaOperation.requeue).toHaveBeenCalledWith('batch-face', 'claim-face', {
+        delayMs: CLOUD_LIBRARY_POLL_MS,
+        returnAttempt: true,
+      });
+      expect(step).toHaveBeenCalledTimes(1);
+      expect(step).toHaveBeenCalledWith(expect.objectContaining({ id: 'batch-clip' }), 'claim-clip', now);
+      step.mockRestore();
+    });
+
+    it('settles a cancel that landed before the hand-back', async () => {
+      mocks.job.isPaused.mockImplementation((name) => Promise.resolve(name === QueueName.FaceDetection));
+      mocks.mediaOperation.claimNext
+        .mockResolvedValueOnce({ operation: batch('face'), claimToken: 'claim-face' })
+        .mockResolvedValue(undefined);
+      mocks.mediaOperation.requeue.mockResolvedValue(false);
+
+      await sut.runPass(now);
+
+      expect(mocks.mediaOperation.acknowledgeCancel).toHaveBeenCalledWith('batch-face', 'claim-face', {
+        released: false,
+      });
     });
   });
 

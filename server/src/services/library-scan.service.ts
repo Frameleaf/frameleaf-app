@@ -375,9 +375,17 @@ export class LibraryScanService {
     return JobStatus.Success;
   }
 
+  /**
+   * Job manager's pause of the library queue holds a running scan too: the queue job only starts the scan, which
+   * would otherwise run to the end. It is handed back between batches and the tick wakes it again on resume.
+   */
+  private async queuePaused(): Promise<boolean> {
+    return (await this.jobRepository.isPaused(QueueName.Library)) === true;
+  }
+
   /** One domain operation per wake; tick wakes remaining claimable scans without chaining attempts. */
   async drain(): Promise<void> {
-    if (this.stopping || jobSignal()?.aborted) return;
+    if (this.stopping || jobSignal()?.aborted || (await this.queuePaused())) return;
     const claim = await this.operations.claimNext({
       kinds: [KIND],
       workerId: this.workerId,
@@ -579,8 +587,11 @@ export class LibraryScanService {
 
     for await (const batch of batches) {
       if (signal.aborted) return;
-      if (this.stopping) {
-        await this.operations.requeue(operation.id, claimToken, { delayMs: 0, returnAttempt: true });
+      if (this.stopping || (await this.queuePaused())) {
+        if (!(await this.operations.requeue(operation.id, claimToken, { delayMs: 0, returnAttempt: true }))) {
+          // A cancel landed first, or the claim is gone.
+          await this.settleCancel(operation, claimToken, result);
+        }
         return;
       }
 
@@ -625,8 +636,11 @@ export class LibraryScanService {
 
     while (true) {
       if (signal.aborted) return;
-      if (this.stopping) {
-        await this.operations.requeue(operation.id, claimToken, { delayMs: 0, returnAttempt: true });
+      if (this.stopping || (await this.queuePaused())) {
+        if (!(await this.operations.requeue(operation.id, claimToken, { delayMs: 0, returnAttempt: true }))) {
+          // A cancel landed first, or the claim is gone.
+          await this.settleCancel(operation, claimToken, result);
+        }
         return;
       }
 

@@ -244,6 +244,10 @@ export class CloudLibraryBatchService extends BaseService {
     await this.releaseAbandoned();
 
     for (let step = 0; step < CLOUD_LIBRARY_STEPS_PER_PASS; step++) {
+      const paused = await this.pausedWorkloads();
+      if (paused.size === 2) {
+        break;
+      }
       const claim = await this.mediaOperationRepository.claimNext({
         kinds: [MediaOperationKind.CloudLibraryBatch],
         workerId: this.workerId,
@@ -253,6 +257,20 @@ export class CloudLibraryBatchService extends BaseService {
         break;
       }
       try {
+        if (paused.has(parseCloudLibrarySnapshot(claim.operation.snapshot).workload)) {
+          // Handed back for a later pass, so this pass goes on to the other kind's batches.
+          const held = await this.mediaOperationRepository.requeue(claim.operation.id, claim.claimToken, {
+            delayMs: CLOUD_LIBRARY_POLL_MS,
+            returnAttempt: true,
+          });
+          if (!held) {
+            // Cancelled meanwhile: a later pass releases any cloud job.
+            await this.mediaOperationRepository.acknowledgeCancel(claim.operation.id, claim.claimToken, {
+              released: false,
+            });
+          }
+          continue;
+        }
         await this.step(claim.operation, claim.claimToken, now);
       } catch (error) {
         jobSignal()?.throwIfAborted();
@@ -267,6 +285,21 @@ export class CloudLibraryBatchService extends BaseService {
         }
       }
     }
+  }
+
+  /**
+   * Job manager's pause of Smart search or Face detection holds that kind's cloud batches too: they run here, not
+   * on those queues. Each step already hands its batch back, so a pause takes effect at the next step.
+   */
+  private async pausedWorkloads(): Promise<Set<CloudLibraryWorkload>> {
+    const [clip, face] = await Promise.all([
+      this.jobRepository.isPaused(QueueName.SmartSearch),
+      this.jobRepository.isPaused(QueueName.FaceDetection),
+    ]);
+    const paused = new Set<CloudLibraryWorkload>();
+    if (clip) paused.add('clip');
+    if (face) paused.add('face');
+    return paused;
   }
 
   /* ------------------------------------------------------------------ */

@@ -25,9 +25,11 @@ import {
   MlDestinationKind,
   MlWorkload,
   Permission,
+  QueueName,
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import {
@@ -182,6 +184,7 @@ export class EnrichmentPlanService {
     private machineLearning: MachineLearningRepository,
     private configRepository: ConfigRepository,
     private systemMetadata: SystemMetadataRepository,
+    private jobRepository: JobRepository,
   ) {
     this.logger.setContext(EnrichmentPlanService.name);
   }
@@ -490,7 +493,7 @@ export class EnrichmentPlanService {
 
   /** Work through queued plans until none is left or we are stopping. Lapsed claims are the sweep's. */
   async drain(): Promise<void> {
-    while (!this.stopping) {
+    while (!this.stopping && !(await this.queuePaused())) {
       const claim = await this.operations.claimNext({
         kinds: [MediaOperationKind.EnrichmentPlan],
         workerId: this.workerId,
@@ -510,6 +513,24 @@ export class EnrichmentPlanService {
         });
       }
     }
+  }
+
+  /**
+   * Job manager's pause of Descriptions & tags holds enrichment plans too: they run here, not on that queue, so
+   * without this a pause there changed nothing.
+   */
+  private async queuePaused(): Promise<boolean> {
+    return (await this.jobRepository.isPaused(QueueName.ImageDescription)) === true;
+  }
+
+  /** Hands the plan back between assets, cursor kept, until the queue is resumed. */
+  private async holdForPausedQueue(id: string, claimToken: string) {
+    if (await this.operations.requeue(id, claimToken, { delayMs: 0, returnAttempt: true })) {
+      this.logger.log(`Enrichment plan ${id} held: the Descriptions & tags queue is paused`);
+      return;
+    }
+    // Cancelled or no longer ours.
+    await this.operations.acknowledgeCancel(id, claimToken, { released: false });
   }
 
   /**
@@ -567,6 +588,10 @@ export class EnrichmentPlanService {
       if (this.stopping) {
         return;
       }
+      if (await this.queuePaused()) {
+        await this.holdForPausedQueue(id, claimToken);
+        return;
+      }
       const assetId = snapshot.assetIds[processed];
       const marked = { ...result, inFlight: assetId };
       if (!(await this.proceed(id, claimToken, await this.write(id, claimToken, marked, processed, total)))) {
@@ -607,6 +632,10 @@ export class EnrichmentPlanService {
     // The retry pass, with its own cursor. What happens here is what is reported.
     while (result.retry && result.retry.processed < result.retry.ids.length) {
       if (this.stopping) {
+        return;
+      }
+      if (await this.queuePaused()) {
+        await this.holdForPausedQueue(id, claimToken);
         return;
       }
       const pass = result.retry;

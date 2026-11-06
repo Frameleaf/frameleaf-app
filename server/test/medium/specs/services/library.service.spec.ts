@@ -75,6 +75,7 @@ class LibraryTestContext extends MediumTestContext<typeof LibraryService> {
     const jobs = this.getMock(JobRepository);
     jobs.queue.mockResolvedValue();
     jobs.queueAll.mockResolvedValue();
+    jobs.isPaused.mockResolvedValue(false);
 
     // Retain strict legacy queue mocks, but execute the source acceptance/domain fence in PostgreSQL.
     const atomicJobs = new JobRepository(
