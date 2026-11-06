@@ -285,12 +285,14 @@ export class MediaHealthOperationService {
     snapshot: MediaHealthOperationSnapshot,
     counts: Counts,
   ) {
+    // Marked paused while the claim is still ours: once requeued, a worker that sees the queue resumed may claim
+    // it and mark it running, and a later 'paused' write would hide that.
+    await this.mediaHealth.setRunState(snapshot, 'paused', counts);
     if (!(await this.operations.requeue(id, claimToken, { delayMs: 0, returnAttempt: true }))) {
       // Cancelled or no longer ours: settled as a stop would settle it.
       await this.handBack(id, claimToken, snapshot, counts);
       return;
     }
-    await this.mediaHealth.setRunState(snapshot, 'paused', counts);
     this.logger.log(`Library Care job ${id} held: the Media Health queue is paused`);
   }
 

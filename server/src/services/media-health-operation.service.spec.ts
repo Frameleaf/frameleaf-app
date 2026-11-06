@@ -100,6 +100,9 @@ describe(MediaHealthOperationService.name, () => {
         'paused',
         expect.objectContaining({ cursor: 'asset-25' }),
       );
+      // Paused is written while the claim is still ours, so a worker resuming it after the requeue isn't overwritten.
+      const pausedAt = vi.mocked(mediaHealth.setRunState).mock.invocationCallOrder.at(-1)!;
+      expect(pausedAt).toBeLessThan(vi.mocked(operations.requeue).mock.invocationCallOrder.at(-1)!);
     });
   });
 

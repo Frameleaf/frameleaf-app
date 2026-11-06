@@ -4,7 +4,6 @@ import { JobName, JobStatus, MediaOperationKind, MlWorkload, QueueName, SystemMe
 import { CloudLibraryBatchService } from 'src/services/cloud-library-batch.service.js';
 import { SmartInfoService } from 'src/services/smart-info.service.js';
 import {
-  CLOUD_LIBRARY_POLL_MS,
   type CloudLibraryItem,
   type CloudLibrarySnapshot,
   emptyCloudLibraryResult,
@@ -133,37 +132,33 @@ describe(CloudLibraryBatchService.name, () => {
       expect(mocks.mediaOperation.claimNext).not.toHaveBeenCalled();
     });
 
-    it("hands back a paused queue's batch for a later pass and steps the other kind's", async () => {
+    it("claims only the other kind's batches while one queue is paused, so paused ones never use up a pass", async () => {
       mocks.job.isPaused.mockImplementation((name) => Promise.resolve(name === QueueName.FaceDetection));
       mocks.mediaOperation.claimNext
-        .mockResolvedValueOnce({ operation: batch('face'), claimToken: 'claim-face' })
         .mockResolvedValueOnce({ operation: batch('clip'), claimToken: 'claim-clip' })
         .mockResolvedValue(undefined);
       const step = vi.spyOn(sut, 'step').mockResolvedValue(undefined as never);
 
       await sut.runPass(now);
 
-      expect(mocks.mediaOperation.requeue).toHaveBeenCalledWith('batch-face', 'claim-face', {
-        delayMs: CLOUD_LIBRARY_POLL_MS,
-        returnAttempt: true,
-      });
+      expect(mocks.mediaOperation.claimNext).toHaveBeenCalledWith(
+        expect.objectContaining({ snapshotWorkloads: ['clip'] }),
+      );
+      expect(mocks.mediaOperation.requeue).not.toHaveBeenCalled();
       expect(step).toHaveBeenCalledTimes(1);
       expect(step).toHaveBeenCalledWith(expect.objectContaining({ id: 'batch-clip' }), 'claim-clip', now);
       step.mockRestore();
     });
 
-    it('settles a cancel that landed before the hand-back', async () => {
-      mocks.job.isPaused.mockImplementation((name) => Promise.resolve(name === QueueName.FaceDetection));
-      mocks.mediaOperation.claimNext
-        .mockResolvedValueOnce({ operation: batch('face'), claimToken: 'claim-face' })
-        .mockResolvedValue(undefined);
-      mocks.mediaOperation.requeue.mockResolvedValue(false);
+    it('claims every kind when neither queue is paused', async () => {
+      mocks.job.isPaused.mockResolvedValue(false);
+      mocks.mediaOperation.claimNext.mockResolvedValue(undefined);
 
       await sut.runPass(now);
 
-      expect(mocks.mediaOperation.acknowledgeCancel).toHaveBeenCalledWith('batch-face', 'claim-face', {
-        released: false,
-      });
+      expect(mocks.mediaOperation.claimNext).toHaveBeenCalledWith(
+        expect.not.objectContaining({ snapshotWorkloads: expect.anything() }),
+      );
     });
   });
 
