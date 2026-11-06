@@ -81,6 +81,7 @@ export class ServerService extends BaseService {
     }
   }
 
+  /** Logs which worker, database, media folder, machine learning and port this process is using. */
   private async logStartupSummary() {
     const { database, storage, port } = this.configRepository.getEnv();
     const { machineLearning } = await this.getConfig({ withCache: true });

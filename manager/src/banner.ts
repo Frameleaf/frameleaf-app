@@ -32,6 +32,7 @@ export const renderBanner = (
  */
 export const print = (text: string) =>
   (process.env.MANAGER_RUNTIME === 'native' ? process.stderr : process.stdout).write(`${text}\n`);
+/** A console line with the `manager:` prefix. */
 export const log = (message: string) => print(`manager: ${message}`);
 
 /** A Manager address as logged: IDs shown as `:id`, query values masked. */

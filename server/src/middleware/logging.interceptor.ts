@@ -206,6 +206,7 @@ export class LoggingInterceptor implements NestInterceptor {
     this.logger.setContext(LoggingInterceptor.name);
   }
 
+  /** Adds the redacted request body at `verbose` level once the handler finishes. */
   intercept(context: ExecutionContext, next: CallHandler<any>): Observable<any> {
     const handler = context.switchToHttp();
     const req = handler.getRequest<Request>();
