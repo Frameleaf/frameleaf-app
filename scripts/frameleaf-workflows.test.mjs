@@ -2278,4 +2278,15 @@ test("E2E matrix lanes execute each intended suite once per architecture", () =>
       assert.equal(names.includes("Docker build"), shard !== "icloud");
     }
   }
+  // FL-1148: without this variable both ui jobs would run the whole ui project.
+  assert.equal(
+    browser.steps.find((s) => s.name === "Run ui tests (web)").env
+      .PLAYWRIGHT_UI_SHARD,
+    "${{ matrix.shard }}",
+  );
+  assert.deepEqual(
+    browser.strategy.matrix.shard.filter((shard) => /^ui-/.test(shard)),
+    ["ui-1", "ui-2"],
+    "e2e/playwright.config.ts selects files for exactly ui-1 and ui-2",
+  );
 });

@@ -19,12 +19,13 @@ process.env.PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS = '1';
 
 // FL-1148: CI runs the ui project as two jobs split by file. ui-1 takes the timeline and memory specs
 // (about half the ui time, mostly timeline.e2e-spec.ts); ui-2 takes every other file. ui-2 is the
-// complement of ui-1, so each spec runs exactly once. Unset runs the whole project.
+// complement of ui-1, so each spec runs exactly once. ui-1's pattern stays unanchored like the root
+// testMatch below, so a .e2e-spec.tsx file in those folders is not dropped. Unset runs the whole project.
 const uiShard = process.env.PLAYWRIGHT_UI_SHARD;
 const uiShardOneDirs = /[/\\](timeline|memory)[/\\]/;
 const uiShardSelection = uiShard
   ? {
-      'ui-1': { testMatch: new RegExp(String.raw`${uiShardOneDirs.source}.*\.e2e-spec\.ts$`) },
+      'ui-1': { testMatch: new RegExp(String.raw`${uiShardOneDirs.source}.*\.e2e-spec\.ts`) },
       'ui-2': { testIgnore: uiShardOneDirs },
     }[uiShard]
   : {};
