@@ -151,6 +151,20 @@ describe(CloudLibraryBatchService.name, () => {
       expect(step).toHaveBeenCalledWith(expect.objectContaining({ id: 'batch-clip' }), 'claim-clip', now);
       step.mockRestore();
     });
+
+    it('settles a cancel that landed before the hand-back', async () => {
+      mocks.job.isPaused.mockImplementation((name) => Promise.resolve(name === QueueName.FaceDetection));
+      mocks.mediaOperation.claimNext
+        .mockResolvedValueOnce({ operation: batch('face'), claimToken: 'claim-face' })
+        .mockResolvedValue(undefined);
+      mocks.mediaOperation.requeue.mockResolvedValue(false);
+
+      await sut.runPass(now);
+
+      expect(mocks.mediaOperation.acknowledgeCancel).toHaveBeenCalledWith('batch-face', 'claim-face', {
+        released: false,
+      });
+    });
   });
 
   describe('steps', () => {

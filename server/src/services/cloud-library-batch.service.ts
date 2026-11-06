@@ -259,10 +259,16 @@ export class CloudLibraryBatchService extends BaseService {
       try {
         if (paused.has(parseCloudLibrarySnapshot(claim.operation.snapshot).workload)) {
           // Handed back for a later pass, so this pass goes on to the other kind's batches.
-          await this.mediaOperationRepository.requeue(claim.operation.id, claim.claimToken, {
+          const held = await this.mediaOperationRepository.requeue(claim.operation.id, claim.claimToken, {
             delayMs: CLOUD_LIBRARY_POLL_MS,
             returnAttempt: true,
           });
+          if (!held) {
+            // Cancelled meanwhile: a later pass releases any cloud job.
+            await this.mediaOperationRepository.acknowledgeCancel(claim.operation.id, claim.claimToken, {
+              released: false,
+            });
+          }
           continue;
         }
         await this.step(claim.operation, claim.claimToken, now);

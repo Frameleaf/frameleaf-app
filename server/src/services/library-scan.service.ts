@@ -588,7 +588,10 @@ export class LibraryScanService {
     for await (const batch of batches) {
       if (signal.aborted) return;
       if (this.stopping || (await this.queuePaused())) {
-        await this.operations.requeue(operation.id, claimToken, { delayMs: 0, returnAttempt: true });
+        if (!(await this.operations.requeue(operation.id, claimToken, { delayMs: 0, returnAttempt: true }))) {
+          // A cancel landed first, or the claim is gone.
+          await this.settleCancel(operation, claimToken, result);
+        }
         return;
       }
 
@@ -634,7 +637,10 @@ export class LibraryScanService {
     while (true) {
       if (signal.aborted) return;
       if (this.stopping || (await this.queuePaused())) {
-        await this.operations.requeue(operation.id, claimToken, { delayMs: 0, returnAttempt: true });
+        if (!(await this.operations.requeue(operation.id, claimToken, { delayMs: 0, returnAttempt: true }))) {
+          // A cancel landed first, or the claim is gone.
+          await this.settleCancel(operation, claimToken, result);
+        }
         return;
       }
 

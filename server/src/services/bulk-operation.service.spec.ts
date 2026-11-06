@@ -674,6 +674,14 @@ describe(BulkOperationService.name, () => {
         expect(operations.complete).not.toHaveBeenCalled();
       });
 
+      it('settles a cancel that landed before the hand-back, applying nothing', async () => {
+        mocks.job.isPaused.mockResolvedValue(true);
+        vi.mocked(operations.requeue).mockResolvedValue(false);
+        await sut.run(operationOf(libraryCare(2)), 'claim');
+        expect(mediaHealth.applyBulkEntry).not.toHaveBeenCalled();
+        expect(operations.acknowledgeCancel).toHaveBeenCalledWith(expect.any(String), 'claim', { released: false });
+      });
+
       it("leaves the person's own bulk edits running", async () => {
         const snapshot = snapshotOf();
         mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));

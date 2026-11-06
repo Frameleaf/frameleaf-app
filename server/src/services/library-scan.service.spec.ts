@@ -907,6 +907,17 @@ describe(LibraryScanService.name, () => {
       expect(operations.complete).not.toHaveBeenCalled();
     });
 
+    it('settles a cancel that landed before the hand-back for a paused library queue', async () => {
+      mocks.storage.walkLibrary.mockImplementation(() => walkOf(['/mnt/photos/a.jpg'], ['/mnt/photos/b.jpg']));
+      mocks.job.isPaused.mockResolvedValueOnce(false).mockResolvedValue(true);
+      operations.requeue.mockResolvedValue(false);
+
+      await sut.run(operationOf(), 'token');
+
+      expect(operations.acknowledgeCancel).toHaveBeenCalledWith(expect.any(String), 'token', { released: false });
+      expect(operations.complete).not.toHaveBeenCalled();
+    });
+
     it.each(['cancelled', 'claim-lost', 'resumed'])(
       'rechecks active authority after a failed pause before checking indexed files: %s',
       async (state) => {
