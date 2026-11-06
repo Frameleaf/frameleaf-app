@@ -922,7 +922,7 @@ export class SqlQueueStore {
       if (!run) return 'not_found' as const;
       if (Object.keys(run.holds ?? {}).length === 0 && !run.held) return 'not_held' as const;
       if (!run.activated) return 'import_not_activated' as const;
-      await sql`update job_run set "finishedAt" = null, selection = (selection - 'holdsCursor')
+      await sql`update job_run set "finishedAt" = null, selection = (selection - 'holdsCursor' - 'authorityHeld')
           || jsonb_build_object('holds', '{}'::jsonb, 'holdsDirty', true, 'releasedAt', now())
         where id = ${runId}::uuid`.execute(tx);
       await sql`select pg_notify('frameleaf_jobs', '')`.execute(tx);

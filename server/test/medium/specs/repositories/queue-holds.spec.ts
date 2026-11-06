@@ -62,8 +62,19 @@ describe('queue holds', () => {
     expect(await store.counts(queue)).toMatchObject({ paused: 1, waiting: 0, delayed: 0 });
     // An import is released only once its journal is activated.
     expect(await store.releaseRun(runId)).toBe('import_not_activated');
-    await sql`update job_run set kind = 'AssetGenerateThumbnailsQueueAll' where id = ${runId}::uuid`.execute(db);
+    // A Release also drops the holds the upgrade saved, so setup cannot put them back.
+    await sql`update job_run set kind = 'AssetGenerateThumbnailsQueueAll',
+      selection = selection || '{"authorityHeld":{"AssetGenerateThumbnails":"setup"}}' where id = ${runId}::uuid`.execute(
+      db,
+    );
     expect(await store.releaseRun(runId)).toBe('released');
+    expect(
+      (
+        await sql<{
+          saved: boolean;
+        }>`select selection ? 'authorityHeld' saved from job_run where id = ${runId}::uuid`.execute(db)
+      ).rows[0].saved,
+    ).toBe(false);
     expect(await store.reconcileHolds(1000)).toBe(1);
     expect(await held(runId)).toEqual([
       { itemKey: 'a', held: false },
