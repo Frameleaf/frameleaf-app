@@ -7,7 +7,7 @@ describe(DatabaseService.name, () => {
   let mocks: ServiceMocks;
   beforeEach(() => {
     ({ sut, mocks } = newTestService(DatabaseService));
-    mocks.database.getPostgresVersion.mockResolvedValue('19beta4 (Debian)');
+    mocks.database.getPostgresVersion.mockResolvedValue('19rc1 (Debian)');
     mocks.database.getPostgresVersionRange.mockReturnValue('>=19.0.0 <20.0.0');
     mocks.database.getExtensionVersionRange.mockReturnValue('>=0.8.7 <0.9.0');
     mocks.database.getExtensionVersions.mockResolvedValue([

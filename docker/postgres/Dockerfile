@@ -1,6 +1,6 @@
 # Fresh Frameleaf installations use one PostgreSQL 19 database. The base digest
 # is a multi-platform index containing both amd64 and arm64 images.
-ARG POSTGRES_IMAGE=docker.io/library/postgres:19beta4-bookworm@sha256:4c618d9a30e0b88078b9371a0499d7055da9ab7f5afe386a460758eac9857f06
+ARG POSTGRES_IMAGE=docker.io/library/postgres:19rc1-bookworm@sha256:e698169ffdd3c23af2a1675d30f48eeab6883fb277bf5be6911ceac5cfaf760f
 FROM ${POSTGRES_IMAGE} AS vector-build
 
 ARG PGVECTOR_VERSION=0.8.7
@@ -21,7 +21,7 @@ LABEL org.opencontainers.image.title="frameleaf-postgres" \
       org.opencontainers.image.description="PostgreSQL 19 with pgvector 0.8.7 for Frameleaf" \
       org.opencontainers.image.source="https://github.com/Frameleaf/frameleaf-app" \
       org.opencontainers.image.licenses="PostgreSQL" \
-      org.opencontainers.image.version="19beta4-pgvector0.8.7"
+      org.opencontainers.image.version="19rc1-pgvector0.8.7"
 
 COPY --from=vector-build /opt/vector/ /
 COPY healthcheck.sh set-env.sh /usr/local/bin/

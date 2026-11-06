@@ -218,8 +218,8 @@ const POSTGRES_REFERENCE =
 /**
  * A release that replaces the database image in place (same PostgreSQL major, no logical restore) must say
  * so in the signed NAS manifest: exactly which previous image references it may replace and that a
- * checkpoint backup precedes the change. Manager refuses any undeclared database image change as an
- * update. Absent for releases that keep their database image.
+ * checkpoint backup precedes the change. Manager moves every undeclared database image change by dump and
+ * restore into a new folder (FL-1265). Absent for releases that keep their database image or move it.
  */
 function verifyDatabaseImageChange(change, postgres) {
   if (change === undefined) return;

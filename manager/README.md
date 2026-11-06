@@ -160,15 +160,31 @@ Keep original library locations available when restoring. A database backup cann
 
 ## Database image changes
 
-A release that ships a different `frameleaf-postgres` image is refused as an update
-(`database_image_change_requires_restore`) and taken through a restore into a new database
-folder, unless the release's signed NAS manifest declares the change in place: same PostgreSQL
-major, the installed image listed in `databaseImageChange.from`, and a checkpoint backup taken
-first (Manager always snapshots one before `apply-release`). Release engineering declares it by
-adding `docker/postgres/database-image-change.json` for the release that makes the move; the
-bundle verifier checks it, and Manager retargets a withdrawn update only to a release that is
-allowed for the installed image. Moving from a PostgreSQL beta to its GA build is such a
-declaration; a new major always restores.
+A release that ships a different `frameleaf-postgres` image moves the database during the update
+(FL-1265), unless the release's signed NAS manifest declares the change in place. After
+`stop-application` and `database-checkpoint`, the `database-move` step records the stopped
+database's row count for every table, its extensions and the source image (`database-move-intent`),
+allocates a new folder beside the current one (`frameleaf-<id>-postgres-*`, sized at four times the
+checkpoint dump; the review checks the current database size first), stops the stack, renders the
+release's stack on the new folder, starts only the new database, restores the checkpoint dump into
+it and compares: same tables and row counts, same extensions, and the server version the image tag
+names (`19rc1` for `19rc1-pgvector0.8.7`). `apply-release` then starts the release on the new
+folder. The previous folder is never written again: if the move fails, or the release does not
+start before it served, the rollback puts back the previous release's `compose.json` from the
+checkpoint (old image, old folder) without a restore (`database_move_failed_rolled_back` or
+`update_failed_rolled_back`); a cancel does the same. A rerun after an interruption restores
+into another new folder. Folders a move leaves behind are listed in
+`retained-database-directories` and never deleted. A move never goes to an older PostgreSQL major
+or to an image Manager cannot identify (`database_image_change_unsupported`).
+
+An in-place change needs the same PostgreSQL major and the same on-disk catalog, the installed
+image listed in `databaseImageChange.from`, and a checkpoint backup taken first (Manager always
+snapshots one before `apply-release`). Release engineering declares it by adding
+`docker/postgres/database-image-change.json` for the release that makes the move; the bundle
+verifier checks it, and Manager retargets a withdrawn update only to a release whose image it can
+take (in place or by a move). Use it only for a rebuild whose data directory the new image opens:
+a PostgreSQL beta, RC or GA step usually changes the catalog version (19 beta 4 to 19 RC 1 did),
+and those move by dump and restore.
 
 ## Recovery of PostgreSQL and Manager
 

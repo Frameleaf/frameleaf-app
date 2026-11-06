@@ -7,7 +7,8 @@ import { Operations } from '../src/operations.js';
 import { Releases } from '../src/releases.js';
 import { compareReleases } from '../src/release-order.js';
 import { Store } from '../src/store.js';
-import { Refusal, databaseImageChangeAllowed, postgresMajor } from '../src/contracts.js';
+import { Refusal, databaseImageChangeAllowed, databaseImageMove, postgresMajor, postgresVersion } from '../src/contracts.js';
+import { fileHash } from '../src/files.js';
 import {
   navSection,
   newerReleases,
@@ -772,3 +773,336 @@ for (const [marker, rollsBack] of [['after-start', false], ['before-start', true
     }
   });
 }
+
+// FL-1265: a frameleaf-postgres image that cannot open the data directory (19 beta 4 to 19 RC 1) moves the
+// database by dump and restore into a new folder; the previous folder is never written again.
+test('a database image the bundle does not declare in place moves by dump and restore', () => {
+  const image = (tag: string, digest = 'a') => `ghcr.io/frameleaf/frameleaf-postgres:${tag}@sha256:${digest.repeat(64)}`;
+  const beta = image('19beta4-pgvector0.8.7');
+  const rc = image('19rc1-pgvector0.8.7', 'b');
+  const release = (postgres: string, databaseImageChange?: any) => ({ images: { postgres } as any, databaseImageChange });
+  assert.equal(databaseImageMove(beta, release(rc)), true, 'beta to RC moves');
+  assert.equal(databaseImageMove(beta, release(beta)), false, 'same image stays');
+  assert.equal(databaseImageMove(beta, release(image('20.0-pgvector0.9.0', 'c'))), true, 'a new major moves');
+  assert.equal(databaseImageMove(image('20.0-pgvector0.9.0', 'c'), release(rc)), false, 'never to an older major');
+  assert.equal(databaseImageMove('postgres:19', release(rc)), false, 'never from an image Manager cannot identify');
+  assert.equal(databaseImageMove(beta, release('postgres:19@sha256:' + 'd'.repeat(64))), false);
+  const declared = { strategy: 'in-place', from: [beta.split('@')[0]], to: rc.split('@')[0], requiresBackup: true };
+  assert.equal(databaseImageMove(beta, release(rc, declared)), false, 'a declared in-place change is not moved');
+  assert.equal(postgresVersion(rc), '19rc1');
+  assert.equal(postgresVersion(beta.split('@')[0]), '19beta4');
+  assert.equal(postgresVersion(image('19.0-pgvector0.8.7')), '19.0');
+  assert.equal(postgresVersion(image('latest')), null);
+  // A major-only tag names no exact version: the move then checks only the server's major (19.1 passes).
+  assert.equal(postgresVersion(image('19-pgvector0.8.7')), null);
+});
+
+// `majorOnly`: the release names a major-only image (`19-…`) and the restored server reports 19.1.
+// `source: 'unreadable'`: the stopped original cannot be inventoried, before the move journals its intent.
+type MoveOptions = {
+  space?: boolean; restore?: 'fails' | 'differs' | 'hangs'; start?: 'fails'; majorOnly?: boolean; source?: 'unreadable';
+};
+async function databaseMoveFixture(options: MoveOptions = {}) {
+  process.env.MANAGER_ML_ACCELERATION = 'cpu';
+  const directory = await mkdtemp(join(tmpdir(), 'manager-database-move-'));
+  const store = new Store(join(directory, 'state'));
+  const digest = (c: string) => `@sha256:${c.repeat(64)}`;
+  const beta = `ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7${digest('a')}`;
+  const rc = `ghcr.io/frameleaf/frameleaf-postgres:${options.majorOnly ? '19' : '19rc1'}-pgvector0.8.7${digest('b')}`;
+  const server = (name: string) => `fixture.invalid/${name}${digest('c')}`;
+  const id = 'a'.repeat(12);
+  // renderCompose doubles `$` for Compose interpolation; the folder names contain one on purpose.
+  const escaped = (path: string) => path.replaceAll('$', '$$$$');
+  const current = { id, project: 'frameleaf-test', release: 'frameleaf-v1.2.5', ml: false, mounts: [], origin: 'new_library',
+    port: 2283, sourceId: null, mayHaveWrittenMedia: true, databaseRoot: directory,
+    databasePath: join(directory, `frameleaf-${id}-postgres-$old`) };
+  const bundle = (tag: string, postgres: string, name: string) => ({ directory: join(directory, tag), nas: { tag,
+    platforms: ['linux/amd64'], images: { server: server(name), postgres, machineLearning: server('ml') } } });
+  const previousRelease = bundle(current.release, beta, 'old-server');
+  const release = bundle('frameleaf-v1.2.6', rc, 'new-server');
+  for (const { directory: folder } of [previousRelease, release]) {
+    await mkdir(folder);
+    await writeFile(join(folder, 'docker-compose.yml'), JSON.stringify({ services: {
+      database: {}, 'frameleaf-server': {}, 'frameleaf-machine-learning': {} } }));
+  }
+  const previousCompose = { services: {
+    database: { image: beta, volumes: [{ type: 'bind', source: escaped(current.databasePath), target: '/var/lib/postgresql' }] },
+    'frameleaf-server': { image: server('old-server') },
+  } };
+  const stack = join(directory, 'state', 'stack', 'compose.json');
+  await mkdir(join(directory, 'state', 'stack'), { recursive: true });
+  await writeFile(stack, JSON.stringify(previousCompose));
+  store.set('installation', current);
+  store.set('database-password', 'fixture-only');
+  store.set('application-config', { environment: {}, settings: null, services: {} });
+  const review = { expires: Date.now() + 60_000, current, release, platform: 'linux/amd64' };
+  store.set('update:r', review);
+  const { operation } = store.start('update', 'move', { reviewId: 'r' });
+  const checkpoint = join(directory, 'state', 'checkpoints', operation.id);
+  await mkdir(checkpoint, { recursive: true });
+  await writeFile(join(checkpoint, 'database.dump'), 'pre-update dump');
+  await writeFile(join(checkpoint, 'compose.json'), JSON.stringify(previousCompose));
+  operation.completed = ['download-images', 'stop-application', 'database-checkpoint'];
+  operation.receipts['checkpoint-dump'] = { sha256: await fileHash(join(checkpoint, 'database.dump')) };
+  store.save(operation);
+
+  // The database "running" is whichever folder compose.json mounts; each folder holds its own tables.
+  const library = { version: '19beta4', extensions: ['plpgsql', 'vector'], tables: { 'public.asset': 3, 'public.user': 1 } };
+  const folders = new Map<string, any>([[current.databasePath, library]]);
+  const running = async () => {
+    const compose = JSON.parse(await readFile(stack, 'utf8'));
+    const data = compose.services.database.volumes.find((v: any) => v.target === '/var/lib/postgresql');
+    return { path: data.source.replaceAll('$$', '$') as string, compose };
+  };
+  const composed: string[][] = [];
+  const restored: string[] = [];
+  const allocated: number[] = [];
+  let hang: () => void = () => {};
+  const reachedRestore = new Promise<void>((resolve) => (hang = resolve));
+  const docker = {
+    compose: async (_dir: string, _project: string, action: string, services: string[] = []) => {
+      composed.push([action, ...services]);
+      const { path, compose } = await running();
+      if (action === 'up' && !folders.has(path))
+        folders.set(path, { version: compose.services.database.image === rc ? (options.majorOnly ? '19.1' : '19rc1') : '19beta4',
+          extensions: ['plpgsql'], tables: {} });
+      if (action === 'up' && !services.length && options.start === 'fails' && compose.services['frameleaf-server'].image === server('new-server'))
+        throw new Error('container frameleaf-test-frameleaf-server-1 is unhealthy');
+    },
+    inventory: async () => [{ Id: 'b'.repeat(64), Config: { Labels: { 'app.frameleaf.manager': id, 'com.docker.compose.service': 'database' } },
+      Mounts: [{ Type: 'bind', Source: (await running()).path, RW: true, Destination: '/var/lib/postgresql' }] }],
+    sql: async (_db: unknown, query: string) => {
+      if (query.includes('frameleaf-served')) return '';
+      // The original database's measured size: more than the 1 GiB minimum and far more than the dump x4.
+      if (query.includes('pg_database_size')) return String(2 * 1024 ** 3);
+      assert.match(query, /query_to_xml/);
+      const { path } = await running();
+      if (options.source === 'unreadable' && path === current.databasePath) throw new Error('psql: connection refused');
+      return JSON.stringify(folders.get(path));
+    },
+    verifyDump: async () => {},
+    restore: async (_db: unknown, file: string) => {
+      const { path } = await running();
+      assert.notEqual(path, current.databasePath, 'never restored into the previous folder');
+      assert.equal(file, join(checkpoint, 'database.dump'));
+      restored.push(path);
+      if (options.restore === 'hangs' && restored.length === 1) {
+        hang();
+        return new Promise<void>(() => {});
+      }
+      if (options.restore === 'fails') throw new Error('pg_restore: error: could not execute query');
+      const copy = structuredClone(library);
+      if (options.restore === 'differs') copy.tables['public.asset'] = 2;
+      folders.set(path, { ...copy, version: folders.get(path).version });
+    },
+  };
+  let attempt = 0;
+  const databaseStorage = {
+    verify: async () => {},
+    validate: async () => ({}),
+    allocate: async (root: string, installation: string, bytes: number) => {
+      allocated.push(bytes);
+      if (options.space === false) throw new Refusal('insufficient_database_space');
+      return join(root, `frameleaf-${installation}-postgres-$new${++attempt}`);
+    },
+  };
+  const releases = { eligible: async () => {}, verify: async () => {},
+    acquire: async (tag: string) => (tag === current.release ? previousRelease : release) };
+  const create = () => {
+    const operations = new Operations(store, docker as never, releases as never, {} as never, [], databaseStorage as never);
+    (operations as any).fencing = { assertMedia: async () => {}, verify: async () => {} };
+    (operations as any).libraryStatus = async () => null;
+    operations.serverWatchMs = 60_000;
+    return operations;
+  };
+  return { directory, store, operation, review, current, release, previousCompose, beta, rc, folders,
+    composed, restored, allocated, reachedRestore, create, escaped,
+    stackNow: async () => JSON.parse(await readFile(stack, 'utf8')),
+    cleanup: async () => { store.close(); await rm(directory, { recursive: true, force: true }); } };
+}
+const moved = (f: { directory: string; current: { id: string } }, attempt: number) =>
+  join(f.directory, `frameleaf-${f.current.id}-postgres-$new${attempt}`);
+
+test('an update to a new PostgreSQL build moves the database into a new folder and starts the release on it', async () => {
+  const f = await databaseMoveFixture();
+  try {
+    await (f.create() as any).applyUpdate(f.operation, f.review);
+    assert.deepEqual(f.composed, [['stop'], ['up', 'database'], ['up']]);
+    assert.deepEqual(f.restored, [moved(f, 1)], 'the checkpoint went into the new folder only');
+    assert.deepEqual(f.allocated, [2 * 1024 ** 3], 'room for the restored database: its measured size, as reviewed');
+    assert.equal(f.operation.receipts['cancelled'], undefined);
+    assert.equal(f.operation.receipts['rollback-intent'], undefined);
+    assert.ok(f.operation.completed.includes('database-move') && f.operation.completed.includes('apply-release'));
+    const installation = f.store.get<any>('installation');
+    assert.equal(installation.release, f.release.nas.tag);
+    assert.equal(installation.databasePath, moved(f, 1));
+    const stack = await f.stackNow();
+    assert.equal(stack.services.database.image, f.rc);
+    assert.equal(stack.services.database.volumes.find((v: any) => v.target === '/var/lib/postgresql').source, f.escaped(moved(f, 1)));
+    assert.deepEqual(f.folders.get(f.current.databasePath).tables, { 'public.asset': 3, 'public.user': 1 }, 'previous folder unchanged');
+    assert.deepEqual(f.store.get('retained-database-directories'), [f.current.databasePath], 'the previous folder is kept');
+  } finally {
+    await f.cleanup();
+  }
+});
+
+for (const failure of ['fails', 'differs'] as const)
+test(`a database move whose restore ${failure === 'fails' ? 'fails' : 'does not match'} puts the previous release back on its folder`, async () => {
+  const f = await databaseMoveFixture({ restore: failure });
+  try {
+    await (f.create() as any).applyUpdate(f.operation, f.review);
+    assert.equal(f.operation.receipts['rollback-intent'], failure === 'fails' ? 'database_move_failed' : 'database_move_verification_failed');
+    assert.equal(f.operation.receipts['cancelled'], 'database_move_failed_rolled_back');
+    assert.deepEqual(f.composed, [['stop'], ['up', 'database'], ['stop'], ['up']], 'no restore into the previous folder');
+    assert.deepEqual(await f.stackNow(), f.previousCompose, 'the previous image and folder');
+    assert.deepEqual(f.store.get<any>('installation'), f.current);
+    assert.deepEqual(f.store.get('retained-database-directories'), [moved(f, 1)]);
+    assert.deepEqual(f.store.get('rolled-back-releases'), [f.release.nas.tag]);
+    assert.ok(!f.operation.completed.includes('apply-release'), 'the new release never started');
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('a major-only target image moves the database when the restored server reports a minor version', async () => {
+  const f = await databaseMoveFixture({ majorOnly: true });
+  try {
+    await (f.create() as any).applyUpdate(f.operation, f.review);
+    assert.equal(f.operation.receipts['rollback-intent'], undefined, 'no database_move_version_mismatch rollback');
+    assert.equal(f.operation.receipts['cancelled'], undefined);
+    assert.ok(f.operation.completed.includes('database-move') && f.operation.completed.includes('apply-release'));
+    assert.equal(f.folders.get(moved(f, 1)).version, '19.1');
+    assert.equal(f.store.get<any>('installation').release, f.release.nas.tag);
+    assert.equal(f.store.get<any>('installation').databasePath, moved(f, 1));
+    assert.equal((await f.stackNow()).services.database.image, f.rc);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('a database move that fails before its intent cancels the update and restarts the previous release', async () => {
+  const f = await databaseMoveFixture({ source: 'unreadable' });
+  try {
+    await (f.create() as any).applyUpdate(f.operation, f.review);
+    assert.equal(f.operation.receipts['database-move-intent'], undefined);
+    assert.equal(f.operation.receipts['rollback-intent'], undefined);
+    assert.equal((f.operation.receipts['cancellation-intent'] as any).kind, 'update');
+    assert.equal(f.operation.receipts['cancelled'], 'database_move_failed_rolled_back');
+    assert.deepEqual(f.composed, [['up']], 'the stopped application starts again on its own folder');
+    assert.deepEqual(f.allocated, []);
+    assert.deepEqual(f.restored, []);
+    assert.deepEqual(await f.stackNow(), f.previousCompose);
+    assert.deepEqual(f.store.get<any>('installation'), f.current);
+    assert.equal(f.store.get('rolled-back-releases'), null, 'the release itself is not blamed');
+    // The update ends cancelled (not failed), so no resume can reuse its checkpoint once the server wrote again.
+    assert.ok(f.operation.completed.includes('cancel-restart-previous'));
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('a database move without room for the new folder changes nothing and restarts the previous release', async () => {
+  const f = await databaseMoveFixture({ space: false });
+  try {
+    await (f.create() as any).applyUpdate(f.operation, f.review);
+    assert.equal(f.operation.receipts['rollback-intent'], 'insufficient_database_space');
+    assert.equal(f.operation.receipts['cancelled'], 'database_move_failed_rolled_back');
+    assert.deepEqual(f.composed, [['stop'], ['up']]);
+    assert.deepEqual(f.restored, []);
+    assert.deepEqual(await f.stackNow(), f.previousCompose);
+    assert.deepEqual(f.store.get<any>('installation'), f.current);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('reviewing an update that moves the database checks the database drive has room for a second copy', async () => {
+  for (const room of [true, false]) {
+    const f = await databaseMoveFixture();
+    try {
+      const operations = f.create() as any;
+      const checked: unknown[][] = [];
+      operations.databaseStorage.validate = async (...args: unknown[]) => {
+        checked.push(args);
+        if (!room) throw new Refusal('insufficient_database_space');
+        return {};
+      };
+      operations.docker.compatibility = async () => ({ platform: 'linux/amd64' });
+      operations.docker.sql = async (_db: unknown, query: string) =>
+        query.includes('pg_database_size') ? String(3 * 1024 ** 3) : JSON.stringify({ major: 19, extensions: [] });
+      if (!room) {
+        await assert.rejects(operations.reviewUpdate(f.release.nas.tag), /insufficient_database_space/);
+        continue;
+      }
+      const review = await operations.reviewUpdate(f.release.nas.tag);
+      assert.deepEqual(checked, [[f.current.databaseRoot, 3 * 1024 ** 3, f.current.id]]);
+      assert.deepEqual(review.databaseMove, { from: '19beta4', to: '19rc1', bytes: 3 * 1024 ** 3 });
+      assert.match(review.recovery, /new folder beside the current one/);
+      assert.equal(f.store.get<any>(`update:${review.id}`).databaseMove.to, f.rc);
+    } finally {
+      await f.cleanup();
+    }
+  }
+});
+
+test('a moved release that does not start goes back to the previous folder without restoring the checkpoint', async () => {
+  const f = await databaseMoveFixture({ start: 'fails' });
+  try {
+    await (f.create() as any).applyUpdate(f.operation, f.review);
+    assert.equal(f.operation.receipts['rollback-intent'], 'release_start_failed');
+    assert.equal(f.operation.receipts['cancelled'], 'update_failed_rolled_back');
+    assert.deepEqual(f.restored, [moved(f, 1)], 'only the move restored, into its own folder');
+    assert.deepEqual(f.composed, [['stop'], ['up', 'database'], ['up'], ['stop'], ['up']]);
+    assert.deepEqual(await f.stackNow(), f.previousCompose);
+    assert.deepEqual(f.store.get<any>('installation'), f.current);
+    assert.ok(f.operation.completed.includes('rollback-previous-database'));
+    assert.ok(!f.operation.completed.includes('rollback-restore-database'));
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('an interrupted database move resumes into another new folder and keeps the partial one', async () => {
+  const f = await databaseMoveFixture({ restore: 'hangs' });
+  try {
+    // Manager stops while pg_restore runs: the journal is all the next Manager has.
+    void (f.create() as any).applyUpdate(f.operation, f.review);
+    await f.reachedRestore;
+    const journal = f.store.history().find((o) => o.id === f.operation.id)!;
+    assert.equal(journal.step, 'database-move');
+    assert.deepEqual((journal.receipts['database-move-intent'] as any).attempts, [moved(f, 1)]);
+    await (f.create() as any).applyUpdate(journal, f.review);
+    assert.deepEqual(f.restored, [moved(f, 1), moved(f, 2)]);
+    assert.ok(journal.completed.includes('apply-release'));
+    assert.equal(f.store.get<any>('installation').databasePath, moved(f, 2));
+    assert.deepEqual(f.store.get('retained-database-directories'), [f.current.databasePath, moved(f, 1)]);
+    assert.deepEqual(f.folders.get(moved(f, 2)).tables, f.folders.get(f.current.databasePath).tables);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('cancelling an interrupted database move restarts the previous release on its own folder', async () => {
+  const f = await databaseMoveFixture({ restore: 'hangs' });
+  try {
+    void (f.create() as any).applyUpdate(f.operation, f.review);
+    await f.reachedRestore;
+    const journal = f.store.history().find((o) => o.id === f.operation.id)!;
+    journal.state = 'interrupted';
+    f.store.save(journal);
+    const operations = f.create();
+    const listed = operations.history().find((o) => o.id === journal.id)!;
+    assert.equal(listed.canCancel, true);
+    assert.equal(listed.databaseMove, true);
+    await operations.recover(journal.id);
+    assert.equal(f.store.history().find((o) => o.id === journal.id)!.receipts['cancelled'], 'update_cancelled_previous_release_running');
+    const stack = await f.stackNow();
+    assert.equal(stack.services.database.image, f.beta);
+    assert.equal(stack.services.database.volumes.find((v: any) => v.target === '/var/lib/postgresql').source,
+      f.escaped(f.current.databasePath));
+    assert.deepEqual(f.store.get<any>('installation'), f.current);
+    assert.deepEqual(f.store.get('retained-database-directories'), [moved(f, 1)]);
+  } finally {
+    await f.cleanup();
+  }
+});

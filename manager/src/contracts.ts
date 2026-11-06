@@ -163,7 +163,7 @@ export type NasManifest = {
   /**
    * Declared by release engineering (docker/postgres/database-image-change.json at bundle time) when this
    * release's database image may replace the listed previous images in place, without a logical restore.
-   * Absent for every release that keeps the same image.
+   * Absent for every release that keeps the same image or moves the database by dump and restore.
    */
   databaseImageChange?: DatabaseImageChange;
 };
@@ -177,15 +177,20 @@ export type DatabaseImageChange = {
   requiresBackup: true;
   notes?: string;
 };
-/** PostgreSQL major of a frameleaf-postgres image reference, e.g. 19 for `…/frameleaf-postgres:19beta4-pgvector0.8.7@sha256:…`. */
+/** PostgreSQL major of a frameleaf-postgres image reference, e.g. 19 for `…/frameleaf-postgres:19rc1-pgvector0.8.7@sha256:…`. */
 export function postgresMajor(image: string): number | null {
   const match = /frameleaf-postgres:(\d+)(?:[^@]*)?(?:@sha256:[a-f0-9]{64})?$/.exec(image);
   return match ? Number(match[1]) : null;
 }
+/** The exact PostgreSQL version a frameleaf-postgres tag names, as `server_version` starts: `19rc1`, `19.0`. A major-only tag (`19-…`) names none, so callers compare majors. */
+export function postgresVersion(image: string): string | null {
+  return /frameleaf-postgres:(\d+(?:beta\d+|rc\d+|\.\d+))-[^@]*(?:@sha256:[a-f0-9]{64})?$/.exec(image)?.[1] ?? null;
+}
 /**
  * Whether an update may switch the running database image to this release's in place (review M2): only the
- * same PostgreSQL major, and only when the signed nas-manifest declares exactly this transition. Everything
- * else (a new major, an undeclared beta-to-GA move) takes the restore path into a fresh directory.
+ * same PostgreSQL major, and only when the signed nas-manifest declares exactly this transition (a rebuild
+ * whose data directory format is unchanged). Every other change moves the database by dump and restore
+ * into a new folder (databaseImageMove).
  */
 export function databaseImageChangeAllowed(current: string, release: Pick<NasManifest, 'images' | 'databaseImageChange'>): boolean {
   const target = release.images.postgres;
@@ -202,6 +207,17 @@ export function databaseImageChangeAllowed(current: string, release: Pick<NasMan
     Array.isArray(change.from) &&
     change.from.includes(reference(current))
   );
+}
+/**
+ * FL-1265: whether an update moves the database to this release's frameleaf-postgres image by a logical dump
+ * and restore into a new folder beside the current one (e.g. 19 beta 4 to 19 RC 1, whose catalogs differ).
+ * Never to an older major, and never for an image Manager cannot identify.
+ */
+export function databaseImageMove(current: string, release: Pick<NasManifest, 'images' | 'databaseImageChange'>): boolean {
+  if (databaseImageChangeAllowed(current, release)) return false;
+  const from = postgresMajor(current),
+    to = postgresMajor(release.images.postgres);
+  return from !== null && to !== null && to >= from;
 }
 export function publicSource(source: Source) {
   const { database, environment, settings, restart, settingsBase, ...safe } = source;

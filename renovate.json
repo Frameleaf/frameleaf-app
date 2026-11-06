@@ -20,7 +20,7 @@
       "groupName": null
     },
     {
-      "description": "Frameleaf's Postgres image pins PostgreSQL 19 beta 4 and pgvector 0.8.7 by digest and checksum; change them only with a migration plan (FL-191).",
+      "description": "Frameleaf's Postgres image pins PostgreSQL 19 RC 1 and pgvector 0.8.7 by digest and checksum; change them only with a migration plan (FL-191).",
       "matchPackageNames": ["ghcr.io/frameleaf/frameleaf-postgres", "docker.io/pgvector/pgvector"],
       "enabled": false
     }

@@ -1,6 +1,6 @@
 # Standalone PostgreSQL
 
-Frameleaf uses one PostgreSQL 19 database with pgvector 0.8.7 and HNSW indexes. The owned database image is `ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7@sha256:7b155ed85302ab66c1022309f1f70f0b79f98f70bd52af8d7d3611a0cbf08cf0`. Use the digest in the Frameleaf release manifest for deployment. PostgreSQL 19 beta 4 is the current development baseline; an image build or source review does not establish production readiness.
+Frameleaf uses one PostgreSQL 19 database with pgvector 0.8.7 and HNSW indexes. The owned database image is `ghcr.io/frameleaf/frameleaf-postgres:19rc1-pgvector0.8.7`. Use the digest pinned in the Frameleaf release's Compose file and manifest for deployment. PostgreSQL 19 RC 1 is the current baseline; an image build or source review does not establish production readiness.
 
 The PostgreSQL image is public and supports AMD64 and ARM64. Pulling this image does not require a GitHub account or registry credentials.
 
@@ -17,6 +17,43 @@ All Frameleaf content, configuration, jobs, import journals and shared coordinat
 For an external database, set `DB_URL` to its connection URL or configure the `DB_HOSTNAME`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD` and `DB_DATABASE_NAME` variables. Protect credentials in deployment secrets and do not place them in support logs. TLS options are part of the PostgreSQL connection URL; use the trust policy required by your database administrator.
 
 The release Compose file mounts the database parent directory at `/var/lib/postgresql`. The owned image writes its versioned cluster beneath that directory. A PostgreSQL 14/15/16/17/18 cluster is not a PostgreSQL 19 volume; changing an image tag is not a major-version migration.
+
+## Moving to a new PostgreSQL build
+
+Some releases change the PostgreSQL build in a way that cannot open the existing database folder, for example PostgreSQL 19 beta 4 to 19 RC 1. The new database refuses the old folder ("database files are incompatible with server"), so the database is copied across with a dump and restore into a new, empty folder. The old folder is kept as it is, so you can go back.
+
+Frameleaf Manager does this for you when you update: it copies the database into a new folder beside the current one, checks every table, then starts the new release. If anything fails, it puts the previous release back on the old folder. Make sure the database drive has free space for a second copy of the database.
+
+Move by hand only when you update to a release whose `docker-compose.yml` names a different database image from the one you run now, for example `frameleaf-postgres:19rc1-…` instead of `19beta4-…`. If the new file still names your current image, keep your database folder and update normally: a restore with the same image only creates another copy that the next build still cannot open.
+
+For a plain Docker Compose installation, run these commands in the folder with your `docker-compose.yml` and `.env`:
+
+1. Keep a copy of `.env`. While Frameleaf is still running, keep the exact server and machine learning images it runs under local tags (this works for hardware-specific machine learning images too). Then stop Frameleaf, leaving the database running, and save a dump outside the database folder:
+
+   ```bash
+   docker tag "$(docker compose images -q frameleaf-server)" frameleaf-server:before-move
+   docker tag "$(docker compose images -q frameleaf-machine-learning)" frameleaf-machine-learning:before-move
+   docker compose stop frameleaf-server frameleaf-machine-learning
+   docker compose exec -T database sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom' > frameleaf-move.dump &&
+     docker compose down
+   ```
+
+   Do not pass `-v` or `--volumes` to `down`. If the dump command fails, stop here: Frameleaf's database is unchanged, so start it again with `docker compose up -d`. Check that `frameleaf-move.dump` is not empty.
+
+2. Replace `docker-compose.yml` with the new release's file (keep a copy of the old one). In `.env`, point `DB_DATA_LOCATION` at a new, empty folder, for example `./postgres19rc1`. Leave the old folder untouched. Then run `docker compose config` and check two things under the `database` service: `image` is the new release's database image, and `volumes` mounts the new, empty folder. If an override file still names the old image or folder, keep a copy of that file, then update it before you continue.
+
+3. Start only the new database, wait until `docker compose ps database` shows it healthy, then restore the dump:
+
+   ```bash
+   docker compose up -d --wait database
+   docker compose exec -T database sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --exit-on-error --single-transaction --no-owner --no-acl' < frameleaf-move.dump
+   ```
+
+4. If the restore fails, stop here and go back (below). If it succeeds, start Frameleaf with `docker compose up -d` and check your library.
+
+To go back, run `docker compose down`, restore the old `docker-compose.yml`, the old `.env` (its `DB_DATA_LOCATION` and `FRAMELEAF_VERSION`) and any override file you changed, point the server and machine learning services at the `before-move` tags from step 1 (in an override file, or by editing the old `docker-compose.yml`), and run `docker compose up -d --pull never`. Going back after Frameleaf has run on the new database loses everything it changed since step 4: photos uploaded since then stay in the upload folder but are no longer in the library. So go back straight away, before anyone uploads or edits; once they have, do not go back, keep both folders and ask for help instead. Delete the old folder and the dump only once you are happy with the new release.
+
+On Unraid or TrueNAS templates the steps are the same: stop the Frameleaf server and machine learning containers, save the dump by running the same `pg_dump` command with `docker exec -i` against the database container (for example `frameleaf-postgres`), then set that container's image to the new release's and its data folder to a new, empty folder. Start it, restore the dump with the same `pg_restore` command, and start Frameleaf.
 
 ## Schema ownership
 
