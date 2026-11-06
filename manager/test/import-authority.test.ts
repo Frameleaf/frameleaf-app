@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Operations, type CommonImportReview } from '../src/operations.js';
-import { identifyPhotoprismSqliteSource } from '../src/photoprism-source.js';
+import { identifyPhotoApp } from '../src/photo-app-sources.js';
 import { Store } from '../src/store.js';
 import { Docker, SERVER_ADMIN, type Container } from '../src/docker.js';
 import { digest, type Installation, type Source, type Operation } from '../src/contracts.js';
@@ -740,9 +740,12 @@ test('common review reports the source and space without exposing the private bu
   } as const;
   const { fence, media, bootstrapAdminId, ...receipt } = common;
   const request = {
+    format: 'frameleaf-prepare-library-import',
+    version: 2,
+    action: 'prepare',
     operationId: common.binding.operationId,
     destinationId: common.destinationId,
-    observed: { source: common.binding.source },
+    source: common.binding.source,
     snapshotPath: '/run/frameleaf/import-preparation/capture/snapshot.sqlite',
   };
   const root = join(f.operations.directory(), `import-runtime-${request.operationId}`);
@@ -755,7 +758,8 @@ test('common review reports the source and space without exposing the private bu
   for (const changed of [
     { operationId: randomUUID() },
     { snapshotPath: '/run/frameleaf/import-preparation/substitute.sqlite' },
-    { observed: { source: { ...common.binding.source, revision: 'substitute' } } },
+    { source: { ...common.binding.source, revision: 'substitute' } },
+    { snapshotPath: undefined, databaseUrl: 'mysql://reader:pw@127.0.0.1:3306/photoprism' },
   ]) {
     await assert.rejects(
       f.operations.prepareCommonReview(input, { fence, media, bootstrapAdminId, request: { ...request, ...changed } }),
@@ -763,7 +767,8 @@ test('common review reports the source and space without exposing the private bu
     );
   }
   f.docker.pull = async (candidate) => { assert.equal(candidate, image); };
-  f.docker.prepareImportBundle = async (directory, candidate, authority, reviewedMedia) => {
+  f.docker.prepareImportBundle = async (directory, candidate, authority, reviewedMedia, restore) => {
+    assert.equal(restore, undefined);
     assert.equal(directory, f.operations.directory());
     assert.equal(candidate, image);
     assert.deepEqual(reviewedMedia, media);
@@ -861,18 +866,20 @@ test('capture reserves the Manager operation until the reviewed import is approv
   f.store.save(f.operation);
   f.store.set('installation', null);
   const id = 'a'.repeat(64);
-  const sourceFixture = JSON.parse(await readFile(new URL('../../server/src/library-import/fixtures/photoprism/261029-sqlite.json', import.meta.url), 'utf8'));
-  f.docker.inspect = async () => ({
+  const app = {
     Id: id,
-    Config: { Image: sourceFixture.source.runtimeImage, Env: ['PHOTOPRISM_DATABASE_DRIVER=sqlite', 'PHOTOPRISM_DATABASE_DSN=/photoprism/storage/index.db'] },
+    Name: '/photoprism',
+    State: { Running: true },
+    Config: { Image: 'photoprism/photoprism:latest', Env: ['PHOTOPRISM_DATABASE_DRIVER=sqlite'], Labels: {} },
     HostConfig: { RestartPolicy: { Name: 'no', MaximumRetryCount: 0 } },
     Mounts: [
       { Type: 'bind', Source: '/fixture/source-storage', Destination: '/photoprism/storage', RW: true },
       { Type: 'bind', Source: '/fixture/source-originals', Destination: '/photoprism/originals', RW: true },
     ],
     NetworkSettings: { Networks: {} },
-  }) as Container;
-  const detected = identifyPhotoprismSqliteSource(await f.docker.inspect(id), 'docker')!;
+  } as unknown as Container;
+  f.inventory.push(app);
+  const detected = await identifyPhotoApp(app, [app], async () => null);
   const source = { kind: 'photoprism', identity: id, version: 'fixture', revision: 'fixture', schemaSha256: 'a'.repeat(64) };
   const internal = f.operations as unknown as {
     captureCommonSource(operation: Operation): Promise<void>;
@@ -885,10 +892,11 @@ test('capture reserves the Manager operation until the reviewed import is approv
     assert.throws(() => f.store.start('install', 'second-installation', {}), /operation_in_progress/);
     operation.receipts['capture-common-source'] = { fence: detected.fence, source };
   };
-  const operation = await f.operations.startCommonCapture(id, 'capture-request', 'docker');
+  const operation = await f.operations.startCommonCapture(id, 'capture-request');
   await new Promise<void>((resolve) => setImmediate(resolve));
   assert.equal(f.store.history().find(({ id }) => id === operation.id)?.state, 'awaiting-review');
-  assert.equal((await f.operations.startCommonCapture(id, 'capture-request', 'docker')).id, operation.id);
+  assert.equal((await f.operations.startCommonCapture(id, 'capture-request')).id, operation.id);
+  assert.deepEqual(f.store.get(`photo-app-plan:${operation.id}`), detected);
   assert.equal(calls, 1);
   let installCalls = 0;
   internal.install = async (approved) => {

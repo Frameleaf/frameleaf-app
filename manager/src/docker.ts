@@ -28,6 +28,57 @@ const preparationReceipt = z.strictObject({
   requiredMediaBytes: count,
   summary: z.strictObject({ owners: count, assets: count, files: count, albums: count, preservationDifferences: count }),
 });
+const sourceText = z.string().min(1).max(1024);
+/** The review-only pass of `prepare-library-import` (action `inspect`); nothing is written. */
+export const importInspection = z.strictObject({
+  format: z.literal('frameleaf-library-import-inspection'),
+  source: importSourceSchema,
+  tested: z.boolean(),
+  testedVersion: z.string().max(1024),
+  summary: z.strictObject({
+    owners: count,
+    assets: count,
+    albums: count,
+    files: count,
+    bytes: z.string().regex(/^(0|[1-9]\d{0,30})$/u),
+  }),
+  owners: z
+    .array(
+      z.strictObject({
+        sourceId: sourceText,
+        name: z.string().max(1024),
+        email: z.string().max(320).nullable(),
+        assets: count,
+        restrictions: z.array(z.string().min(1).max(200)).max(100),
+      }),
+    )
+    .max(10_000),
+  losses: z.array(z.strictObject({ code: sourceText, count })).max(1000),
+});
+export type ImportInspection = z.infer<typeof importInspection>;
+/** The read-only account the preparation uses on the disposable copy; the copy's superuser only loads the dump. */
+export const SOURCE_RESTORE_READER = 'frameleaf_reader';
+/** The disposable copy of a source app's MySQL/PostgreSQL database, one per capture operation. */
+export const sourceRestoreName = (operationId: string) => `frameleaf-import-source-${operationId}`;
+const restoreName = /^frameleaf-import-source-[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u;
+export type SourceDatabaseLogin = {
+  engine: 'mysql' | 'postgres';
+  container: string;
+  name: string;
+  user: string;
+  password: string;
+};
+export type SourceRestore = {
+  engine: 'mysql' | 'postgres';
+  /** The container name, `frameleaf-import-source-<operationId>`. */
+  name: string;
+  /** The source database container's image ID; the copy runs the same engine build. */
+  image: string;
+  database: string;
+  password: string;
+};
+// The password reaches docker through its environment, never argv; the extra name lets failure logs mask it.
+const loginEnv = (variable: string, password: string) => ({ [variable]: password, FRAMELEAF_SOURCE_PASSWORD: password });
 
 export type Container = {
   Id: string;
@@ -502,35 +553,10 @@ export class Docker {
     image: string,
     authority: ImportPreparationAuthority,
     media: { source: string; target: string }[],
+    restore?: string,
   ) {
-    const { operationId, destinationId, source, preparationSha256 } = authority;
-    if (
-      !imageDigest.safeParse(image).success || !z.uuid().safeParse(operationId).success ||
-      !z.uuid().safeParse(destinationId).success || !importHash.safeParse(preparationSha256).success ||
-      !importSourceSchema.safeParse(source).success || typeof authority.verify !== 'function'
-    ) throw new Refusal('invalid_import_authority');
-    const root = join(directory, `import-runtime-${operationId}`);
-    const safePath = (value: string) => value !== '/' && resolve(value) === value && !/[\x00-\x1f,]/u.test(value);
-    if (
-      !safePath(root) || new Set(media.map(({ target }) => target)).size !== media.length ||
-      media.some(({ source, target }) =>
-        !safePath(source) || !/^\/(?:data|import-media\/[a-z0-9][a-z0-9_-]*)$/u.test(target) ||
-        root === source || root.startsWith(source + '/') || source.startsWith(root + '/'),
-      )
-    ) throw new Refusal('import_runtime_media_invalid');
-    await authority.verify();
-    const output = await this.execute('docker', [
-      'run', '--rm', '--interactive', '--network', 'none', '--log-driver', 'none', '--pull', 'never',
-      '--name', `frameleaf-import-prepare-${operationId}`,
-      '--mount', `type=bind,src=${root},dst=${IMPORT_PREPARATION_TARGET}`,
-      ...media.flatMap(({ source, target }) => ['--mount', `type=bind,src=${source},dst=${target},readonly`]),
-      '--entrypoint', SERVER_ADMIN, image, 'prepare-library-import', '--config', `${IMPORT_PREPARATION_TARGET}/prepare.json`,
-    ], {
-      cwd: directory,
-      timeout: 86_400_000,
-      reply: (line) => replyImportPreparationAuthority(line, authority),
-    });
-    await authority.verify();
+    const output = await this.runImportPreparation(directory, image, authority, media, restore);
+    const { operationId, destinationId, source } = authority;
     try {
       const result = preparationReceipt.parse(JSON.parse(output.trim().split('\n').at(-1)!));
       const prefix = `bundle-${operationId}-`;
@@ -543,6 +569,228 @@ export class Docker {
     } catch {
       throw new Refusal('invalid_import_response');
     }
+  }
+  /** The same offline runner for the review-only `inspect` request: owners, counts and losses, nothing written. */
+  async inspectImportSource(
+    directory: string,
+    image: string,
+    authority: ImportPreparationAuthority,
+    media: { source: string; target: string }[],
+    restore?: string,
+  ): Promise<ImportInspection> {
+    const output = await this.runImportPreparation(directory, image, authority, media, restore);
+    try {
+      const result = importInspection.parse(JSON.parse(output.trim().split('\n').at(-1)!));
+      if (JSON.stringify(result.source) !== JSON.stringify(importSourceSchema.parse(authority.source)))
+        throw new Error('Inspection source changed');
+      return result;
+    } catch {
+      throw new Refusal('invalid_import_response');
+    }
+  }
+  /**
+   * Runs the staged `prepare.json` (inspect or prepare) offline. With `restore`, the container shares only that
+   * disposable database copy's network namespace (itself `--network none`), so 127.0.0.1 reaches the copy and
+   * nothing else.
+   */
+  private async runImportPreparation(
+    directory: string,
+    image: string,
+    authority: ImportPreparationAuthority,
+    media: { source: string; target: string }[],
+    restore?: string,
+  ): Promise<string> {
+    const { operationId, destinationId, source, preparationSha256 } = authority;
+    if (
+      !imageDigest.safeParse(image).success || !z.uuid().safeParse(operationId).success ||
+      !z.uuid().safeParse(destinationId).success || !importHash.safeParse(preparationSha256).success ||
+      !importSourceSchema.safeParse(source).success || typeof authority.verify !== 'function' ||
+      (restore !== undefined && (restore !== sourceRestoreName(operationId) || !restoreName.test(restore)))
+    ) throw new Refusal('invalid_import_authority');
+    const root = join(directory, `import-runtime-${operationId}`);
+    const safePath = (value: string) => value !== '/' && resolve(value) === value && !/[\x00-\x1f,]/u.test(value);
+    if (
+      !safePath(root) || new Set(media.map(({ target }) => target)).size !== media.length ||
+      media.some(({ source, target }) =>
+        !safePath(source) || !/^\/(?:data|import-media\/[a-z0-9][a-z0-9_-]*)$/u.test(target) ||
+        root === source || root.startsWith(source + '/') || source.startsWith(root + '/'),
+      )
+    ) throw new Refusal('import_runtime_media_invalid');
+    await authority.verify();
+    const output = await this.execute('docker', [
+      'run', '--rm', '--interactive', '--network', restore ? `container:${restore}` : 'none', '--log-driver', 'none', '--pull', 'never',
+      '--name', `frameleaf-import-prepare-${operationId}`,
+      '--mount', `type=bind,src=${root},dst=${IMPORT_PREPARATION_TARGET}`,
+      ...media.flatMap(({ source, target }) => ['--mount', `type=bind,src=${source},dst=${target},readonly`]),
+      '--entrypoint', SERVER_ADMIN, image, 'prepare-library-import', '--config', `${IMPORT_PREPARATION_TARGET}/prepare.json`,
+    ], {
+      cwd: directory,
+      timeout: 86_400_000,
+      reply: (line) => replyImportPreparationAuthority(line, authority),
+    });
+    await authority.verify();
+    return output;
+  }
+  /** The first of these client programs the container has (MariaDB 11 images dropped the `mysql*` names). */
+  private async databaseProgram(container: string, programs: string[]): Promise<string> {
+    for (const program of programs) {
+      try {
+        await this.execute('docker', ['exec', container, program, '--version']);
+        return program;
+      } catch {
+        /* try the next name */
+      }
+    }
+    throw new Refusal('database_image_unsupported');
+  }
+  /**
+   * Dump a stopped source app's database with the database container's own client into a private file.
+   * MySQL/MariaDB: one consistent transaction with routines and triggers; PostgreSQL: pg_dump custom format.
+   */
+  async dumpSourceDatabase(login: SourceDatabaseLogin, destination: string): Promise<void> {
+    containerId.parse(login.container);
+    if (!/^[A-Za-z0-9_$-]{1,64}$/u.test(login.name) || !/^[A-Za-z0-9_.@-]{1,64}$/u.test(login.user) || !isAbsolute(destination))
+      throw new Refusal('invalid_source_database');
+    try {
+      if (login.engine === 'mysql') {
+        const program = await this.databaseProgram(login.container, ['mariadb-dump', 'mysqldump']);
+        await this.execute('docker', [
+          'exec', '--env', 'MYSQL_PWD', login.container, program,
+          '--user', login.user, '--single-transaction', '--routines', '--triggers', '--events', '--no-tablespaces',
+          '--hex-blob', '--default-character-set=utf8mb4', '--databases', login.name,
+        ], { outputFile: destination, timeout: 7_200_000, env: loginEnv('MYSQL_PWD', login.password) });
+      } else
+        await this.execute('docker', [
+          'exec', '--env', 'PGPASSWORD', login.container, 'pg_dump', '--no-password',
+          '--username', login.user, '--dbname', login.name, '--format=custom', '--no-owner', '--no-acl',
+        ], { outputFile: destination, timeout: 7_200_000, env: loginEnv('PGPASSWORD', login.password) });
+    } catch (error) {
+      if (error instanceof Refusal && error.code === 'database_image_unsupported') throw error;
+      throw new Refusal('source_database_dump_failed');
+    }
+  }
+  /**
+   * Start the disposable copy from the source database's own image with no network at all and a fresh root
+   * password. Only `docker exec` and a preparation container sharing its namespace can reach it.
+   */
+  async startSourceRestore(restore: SourceRestore, operationId: string): Promise<string> {
+    if (
+      restore.name !== sourceRestoreName(operationId) || !restoreName.test(restore.name) ||
+      !/^sha256:[a-f0-9]{64}$/u.test(restore.image) || !/^[A-Za-z0-9_$-]{1,64}$/u.test(restore.database) ||
+      !/^[a-f0-9]{64}$/u.test(restore.password)
+    ) throw new Refusal('invalid_source_database');
+    const environment = restore.engine === 'mysql'
+      ? ['--env', 'MARIADB_ROOT_PASSWORD', '--env', 'MYSQL_ROOT_PASSWORD']
+      : ['--env', 'POSTGRES_PASSWORD', '--env', 'POSTGRES_USER=postgres', '--env', `POSTGRES_DB=${restore.database}`];
+    const id = (await this.execute('docker', [
+      'run', '--detach', '--name', restore.name, '--network', 'none', '--restart', 'no', '--pull', 'never',
+      '--log-driver', 'none', '--label', `app.frameleaf.manager.import-source=${operationId}`,
+      ...environment, restore.image,
+    ], {
+      env: restore.engine === 'mysql'
+        ? { MARIADB_ROOT_PASSWORD: restore.password, MYSQL_ROOT_PASSWORD: restore.password, FRAMELEAF_SOURCE_PASSWORD: restore.password }
+        : loginEnv('POSTGRES_PASSWORD', restore.password),
+    })).trim();
+    return containerId.parse(id);
+  }
+  /** True once the copy accepts TCP on 127.0.0.1; image entrypoints first run a socket-only setup server. */
+  async sourceRestoreReady(restore: SourceRestore): Promise<boolean> {
+    if (!restoreName.test(restore.name)) throw new Refusal('invalid_source_database');
+    try {
+      if (restore.engine === 'mysql') {
+        const program = await this.databaseProgram(restore.name, ['mariadb', 'mysql']);
+        await this.execute('docker', [
+          'exec', '--env', 'MYSQL_PWD', restore.name, program, '--protocol=tcp', '--host=127.0.0.1', '--user=root',
+          '--execute=SELECT 1',
+        ], { env: loginEnv('MYSQL_PWD', restore.password), timeout: 30_000 });
+      } else
+        await this.execute('docker', [
+          'exec', restore.name, 'pg_isready', '--host=127.0.0.1', '--username=postgres', `--dbname=${restore.database}`,
+        ], { timeout: 30_000 });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  /** Load the dump into the copy over its loopback, as the copy's own superuser. */
+  async restoreSourceDatabase(restore: SourceRestore, file: string): Promise<void> {
+    if (!restoreName.test(restore.name) || !isAbsolute(file)) throw new Refusal('invalid_source_database');
+    try {
+      if (restore.engine === 'mysql') {
+        const program = await this.databaseProgram(restore.name, ['mariadb', 'mysql']);
+        await this.execute('docker', [
+          'exec', '--interactive', '--env', 'MYSQL_PWD', restore.name, program, '--protocol=tcp', '--host=127.0.0.1',
+          '--user=root', '--default-character-set=utf8mb4',
+        ], { inputFile: file, timeout: 7_200_000, env: loginEnv('MYSQL_PWD', restore.password) });
+      } else
+        await this.execute('docker', [
+          'exec', '--interactive', '--env', 'PGPASSWORD', restore.name, 'pg_restore', '--no-password', '--host=127.0.0.1',
+          '--username=postgres', `--dbname=${restore.database}`, '--exit-on-error', '--single-transaction', '--no-owner', '--no-acl',
+        ], { inputFile: file, timeout: 7_200_000, env: loginEnv('PGPASSWORD', restore.password) });
+    } catch {
+      throw new Refusal('source_database_restore_failed');
+    }
+  }
+  /**
+   * Lock the loaded copy for the offline readers: a global read-only server (MySQL also super_read_only) and a
+   * reader with no role and only catalogue-reading grants (MySQL: SELECT, RELOAD, LOCK TABLES, TRIGGER, EVENT,
+   * SHOW VIEW and, where the engine has it, SHOW CREATE ROUTINE / SHOW_ROUTINE; PostgreSQL: SELECT on public).
+   */
+  async secureSourceRestore(restore: SourceRestore, readerPassword: string): Promise<void> {
+    if (!restoreName.test(restore.name) || !/^[a-f0-9]{64}$/u.test(readerPassword) || !/^[A-Za-z0-9_$-]{1,64}$/u.test(restore.database))
+      throw new Refusal('invalid_source_database');
+    const reader = SOURCE_RESTORE_READER;
+    try {
+      if (restore.engine === 'mysql') {
+        const program = await this.databaseProgram(restore.name, ['mariadb', 'mysql']);
+        // The SQL (with the reader's password) goes through stdin, never argv.
+        const sql = (statements: string) =>
+          this.execute('docker', [
+            'exec', '--interactive', '--env', 'MYSQL_PWD', restore.name, program, '--protocol=tcp', '--host=127.0.0.1', '--user=root',
+          ], { input: statements, env: loginEnv('MYSQL_PWD', restore.password), timeout: 60_000 });
+        const optional = (statement: string) => sql(statement).then(() => true, () => false);
+        await sql(
+          `CREATE USER '${reader}'@'%' IDENTIFIED BY '${readerPassword}';\n` +
+            `GRANT SELECT, RELOAD, LOCK TABLES, TRIGGER, EVENT, SHOW VIEW ON *.* TO '${reader}'@'%';\n`,
+        );
+        // MariaDB 11.3+ names it SHOW CREATE ROUTINE, MySQL 8.0.20+ SHOW_ROUTINE; older engines have neither.
+        if (!(await optional(`GRANT SHOW CREATE ROUTINE ON *.* TO '${reader}'@'%';`)))
+          await optional(`GRANT SHOW_ROUTINE ON *.* TO '${reader}'@'%';`);
+        await sql('SET GLOBAL read_only=1;');
+        // MySQL only; MariaDB has no super_read_only.
+        await optional('SET GLOBAL super_read_only=1;');
+      } else {
+        const database = `"${restore.database}"`;
+        await this.execute('docker', [
+          'exec', '--interactive', '--env', 'PGPASSWORD', restore.name, 'psql', '--no-password', '--host=127.0.0.1',
+          '--username=postgres', `--dbname=${restore.database}`, '--set=ON_ERROR_STOP=1', '--quiet',
+        ], {
+          input: [
+            `CREATE ROLE ${reader} LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD '${readerPassword}';`,
+            `REVOKE CREATE ON SCHEMA public FROM PUBLIC;`,
+            `GRANT CONNECT ON DATABASE ${database} TO ${reader};`,
+            `GRANT USAGE ON SCHEMA public TO ${reader};`,
+            `GRANT SELECT ON ALL TABLES IN SCHEMA public TO ${reader};`,
+            `GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO ${reader};`,
+            `ALTER ROLE ${reader} SET default_transaction_read_only = on;`,
+            `ALTER DATABASE ${database} SET default_transaction_read_only = on;`,
+          ].join('\n') + '\n',
+          env: loginEnv('PGPASSWORD', restore.password),
+          timeout: 60_000,
+        });
+      }
+    } catch {
+      throw new Refusal('source_database_restore_failed');
+    }
+  }
+  /** Remove the copy and its anonymous data volume; a copy that was never created is already gone. */
+  async removeSourceRestore(name: string): Promise<void> {
+    if (!restoreName.test(name)) throw new Refusal('invalid_source_database');
+    const existing = (await this.inventory()).find((c) => c.Name === `/${name}`);
+    if (!existing) return;
+    if (existing.Config.Labels?.['app.frameleaf.manager.import-source'] !== name.slice('frameleaf-import-source-'.length))
+      throw new Refusal('import_container_identity_changed');
+    await this.execute('docker', ['rm', '--force', '--volumes', existing.Id]);
   }
   /** Fixed offline command only; container identity survives a Manager restart. */
   async importCommand(

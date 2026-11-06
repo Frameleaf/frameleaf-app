@@ -14,7 +14,8 @@ const canonicalPath = z
 const inputSchema = z.strictObject({
   databasePath: canonicalPath,
   stagingRoot: canonicalPath,
-  expectedSchemaSha256: z.string().regex(/^[a-f0-9]{64}$/u),
+  /** Optional: without it the snapshot's schema fingerprint is only reported (best-effort sources). */
+  expectedSchemaSha256: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
 });
 const within = (path: string, root: string) => root === '/' || path === root || path.startsWith(root + '/');
 const identity = (info: BigIntStats) =>
@@ -67,7 +68,7 @@ export async function captureFencedSqliteSource(fencing: Fencing, sourceInput: S
     await fencing.stop(source);
     const before = await databaseState(databasePath);
     snapshot = await captureSqliteSnapshot(databasePath, stagingRoot);
-    if (snapshot.schemaSha256 !== expectedSchemaSha256) throw new Refusal('source_snapshot_schema_unqualified');
+    if (expectedSchemaSha256 !== undefined && snapshot.schemaSha256 !== expectedSchemaSha256) throw new Refusal('source_snapshot_schema_unqualified');
     const sha256 = await fileHash(snapshot.path);
     await fencing.verify(source);
     if (

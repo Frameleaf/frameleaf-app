@@ -1,15 +1,16 @@
 import { randomBytes, randomUUID } from 'node:crypto';
-import { mkdir, readFile, writeFile, stat, rename, open, realpath } from 'node:fs/promises';
+import { lstat, mkdir, readFile, writeFile, stat, rename, open, realpath, rm } from 'node:fs/promises';
 import { isAbsolute, join, relative } from 'node:path';
 import { z } from 'zod';
 import { Store } from './store.js';
-import { Docker, type Container } from './docker.js';
+import { Docker, type ImportInspection } from './docker.js';
 import { Discovery, COMPATIBLE_SETTINGS, maskSettings, unmaskSettings, unsupportedSettings } from './discovery.js';
 import { Releases, type VerifiedRelease } from './releases.js';
 import { compareReleases, isNewerRelease } from './release-order.js';
 import { Backups, sourceBackups } from './backups.js';
 import { Fencing } from './fencing.js';
-import { capturePhotoprismSqliteSource, identifyPhotoprismSqliteSource } from './photoprism-source.js';
+import { detectPhotoApps, identifyPhotoApp, photoAppKind, photoAppNames, type ContainerFileReader, type PhotoAppKind, type PhotoAppPlan } from './photo-app-sources.js';
+import { capturePhotoAppSource, restoreDatabaseUrl, type PhotoAppCapture } from './photo-app-capture.js';
 import { IMPORT_PREPARATION_TARGET, prepareCommonImportRuntime, removeCommonImportBootstrap, stageCommonImportBootstrap, stageCommonImportPreparation } from './common-import-runtime.js';
 import { rollbackCommonImport } from './common-import-lifecycle.js';
 import type { ImportPreparationSeal, ImportSourceAuthoritySeal } from './import-source-authority.js';
@@ -56,6 +57,23 @@ export const ReviewInput = z
     services: ServiceOverrides.optional(),
   })
   .strict();
+/** POST photo-app-prepare: every inspected owner gets an email, every reported loss is approved. */
+export const PhotoAppPrepareInput = z.strictObject({
+  operationId: z.uuid(),
+  owners: z
+    .array(
+      z.strictObject({
+        sourceId: z.string().min(1).max(1024),
+        email: z.email().max(254),
+        acknowledgeRestrictions: z.boolean().optional(),
+      }),
+    )
+    .max(10_000),
+  approvedLossCodes: z.array(z.string().min(1).max(1024)).max(1000),
+  review: ReviewInput.pick({ tag: true, databaseRoot: true, port: true, ml: true, name: true, services: true })
+    .extend({ mediaPath: z.string().min(1).max(4096) })
+    .strict(),
+});
 export type CommonImportReview = {
   fence: SourceFence;
   destinationId: string;
@@ -344,61 +362,279 @@ export class Operations {
       backup: backup ? { action: 'reuse', name: backup.name, takenAt: backup.takenAt } : { action: 'create' },
     };
   }
+  /**
+   * Small text files of a photo app's configuration (Nextcloud config.php, Piwigo database.inc.php, PiGallery2
+   * config.json): through the running container, else through the host folder it maps.
+   */
+  private readAppFile: ContainerFileReader = async (container, path) => {
+    const limit = 1_048_576;
+    if (container.State.Running) {
+      try {
+        const text = await this.docker.readFile(container.Id, path);
+        return text.length <= limit ? text : null;
+      } catch {
+        /* fall back to the host mount */
+      }
+    }
+    const mount = container.Mounts.filter(
+      (m) => m.Source && (m.Destination === path || path.startsWith(`${m.Destination.replace(/\/$/u, '')}/`)),
+    ).sort((a, b) => b.Destination.length - a.Destination.length)[0];
+    if (!mount) return null;
+    try {
+      const host = mount.Source + path.slice(mount.Destination.length);
+      const info = await stat(host);
+      return info.isFile() && info.size <= limit ? await readFile(host, 'utf8') : null;
+    } catch {
+      return null;
+    }
+  };
+  /** How long a restored copy of a source database may take to accept connections (polls once per delay). */
+  restoreReadyDelayMs = 1000;
+  /** FL-1149 (Beta): photo apps on this host, importable or with the reason code they are not. */
+  async photoAppSources() {
+    return { sources: await detectPhotoApps(await this.docker.inventory(), this.readAppFile) };
+  }
   /** Reserve the shared operation before any source service can be stopped. */
-  async startCommonCapture(sourceContainer: string, key: string, platform: SourceFence['platform']) {
-    if (!containerId.safeParse(sourceContainer).success) throw new Refusal('invalid_import_authority');
-    const container = await this.docker.inspect(sourceContainer);
-    const detected = identifyPhotoprismSqliteSource(container, platform);
-    if (!detected || container.Id !== sourceContainer || this.installation())
-      throw new Refusal('invalid_import_authority');
-    const { operation, created } = this.store.start('import', key, {
-      sourceId: detected.fence.id,
-      commonCapture: sourceContainer,
-      sourcePlatform: platform,
-    });
-    if (created) this.launch(operation, () => this.captureForReview(operation, container, platform));
+  async startCommonCapture(sourceContainer: string, key: string) {
+    if (!containerId.safeParse(sourceContainer).success || this.installation()) throw new Refusal('invalid_import_authority');
+    const all = await this.docker.inventory();
+    const app = all.find((c) => c.Id === sourceContainer);
+    const kind = app && photoAppKind(app);
+    if (!app || !kind) throw new Refusal('photo_app_not_recognised');
+    const input = { sourceId: digest([kind, app.Id]), commonCapture: sourceContainer, photoApp: kind };
+    // A retried request returns its operation even after its app was stopped.
+    const prior = this.store.request('import', key, input);
+    if (prior) return prior;
+    let plan: PhotoAppPlan;
+    try {
+      plan = await identifyPhotoApp(app, all, this.readAppFile);
+    } catch (error) {
+      if (error instanceof Refusal) throw new Refusal('photo_app_not_importable', 409, error.code);
+      throw error;
+    }
+    if (plan.fence.id !== input.sourceId) throw new Refusal('invalid_import_authority');
+    const { operation, created } = this.store.start('import', key, input);
+    if (created) {
+      // The plan holds the source database login: private store only, never the journal or a response.
+      this.store.set(`photo-app-plan:${operation.id}`, plan);
+      operation.receipts['common-source-fence'] = plan.fence;
+      this.store.save(operation);
+      this.launch(operation, () => this.captureForReview(operation));
+    }
     return operation;
   }
-  private async captureForReview(operation: Operation, container: Container, platform: SourceFence['platform']) {
-    await this.captureCommonSource(operation, container, platform);
+  private async captureForReview(operation: Operation) {
+    await this.captureCommonSource(operation);
     operation.state = 'awaiting-review';
   }
   /** Capture only for a locked operation with an explicitly selected source. */
-  async captureCommonSource(operation: Operation, container: Container, platform: SourceFence['platform']) {
+  async captureCommonSource(operation: Operation): Promise<PhotoAppCapture> {
+    const plan = this.store.get<PhotoAppPlan>(`photo-app-plan:${operation.id}`);
     const recorded = operation.receipts['common-source-fence'] as SourceFence | undefined;
-    const restart = recorded?.restart[container.Id];
-    const original = restart && container.HostConfig.RestartPolicy.Name === 'no'
-      ? { ...container, HostConfig: { ...container.HostConfig, RestartPolicy: restart } }
-      : container;
-    const source = identifyPhotoprismSqliteSource(original, platform);
     if (
-      !source || operation.kind !== 'import' || operation.state !== 'running' ||
-      operation.input.sourceId !== source.fence.id || this.installation() ||
-      !z.uuid().safeParse(operation.id).success
+      !plan || !recorded || digest(recorded) !== digest(plan.fence) ||
+      operation.kind !== 'import' || operation.state !== 'running' ||
+      operation.input.sourceId !== plan.fence.id || operation.input.commonCapture !== plan.container ||
+      this.installation() || !z.uuid().safeParse(operation.id).success
     ) throw new Refusal('invalid_import_authority');
-    if (recorded && digest(recorded) !== digest(source.fence))
-      throw new Refusal('source_changed_review_again');
-    if (!recorded) {
-      operation.receipts['common-source-fence'] = source.fence;
-      this.store.save(operation);
-    }
-    const snapshot = await this.step(operation, 'capture-common-source', async () => {
+    const capture = await this.step(operation, 'capture-common-source', async () => {
       await mkdir(this.directory(), { mode: 0o700, recursive: true });
       const stagingRoot = join(this.directory(), `import-runtime-${operation.id}`);
       await mkdir(stagingRoot, { mode: 0o700, recursive: true });
-      return capturePhotoprismSqliteSource(this.fencing, original, platform, stagingRoot);
+      return capturePhotoAppSource(this.fencing, this.docker, plan, {
+        operationId: operation.id,
+        stagingRoot,
+        restoreSecrets: plan.server ? this.restoreSecrets(operation.id) : undefined,
+        beforeRestore: (name) => {
+          operation.receipts['photo-app-restore'] = name;
+          this.store.save(operation);
+        },
+        readyDelayMs: this.restoreReadyDelayMs,
+      });
     });
-    await this.fencing.verify(snapshot.fence);
-    return snapshot;
+    await this.fencing.verify(capture.fence);
+    return capture;
+  }
+  /** The disposable copy's root and reader passwords, created once per operation in the private store. */
+  private restoreSecrets(operationId: string): { root: string; reader: string } {
+    const key = `photo-app-restore:${operationId}`;
+    const existing = this.store.get<{ root: string; reader: string }>(key);
+    if (existing) return existing;
+    const secrets = { root: randomBytes(32).toString('hex'), reader: randomBytes(32).toString('hex') };
+    this.store.set(key, secrets);
+    return secrets;
+  }
+  /** A captured photo-app import waiting for its review, not running anything. */
+  private capturedPhotoApp(operationId: string): Operation {
+    const operation = this.store.history().find((o) => o.id === operationId);
+    if (
+      !operation || operation.kind !== 'import' || typeof operation.input.commonCapture !== 'string' ||
+      operation.state !== 'awaiting-review' || this.executing.has(operationId) ||
+      operation.receipts['reviewed-common-import'] !== undefined || !operation.receipts['capture-common-source']
+    ) throw new Refusal('photo_app_capture_not_ready');
+    return operation;
+  }
+  private photoAppIdentity(operation: Operation): { destinationId: string; owners: Record<string, string> } {
+    const ids = (operation.receipts['photo-app-ids'] as { destinationId: string; owners: Record<string, string> } | undefined) ??
+      { destinationId: randomUUID(), owners: {} };
+    operation.receipts['photo-app-ids'] = ids;
+    return ids;
+  }
+  /** The v2 `prepare-library-import` request for this captured source. */
+  private photoAppRequest(
+    operation: Operation,
+    capture: PhotoAppCapture,
+    action: 'inspect' | 'prepare',
+    owners: { sourceId: string; destinationId: string; email: string; acknowledgeRestrictions?: boolean }[],
+    approvedLossCodes: string[],
+  ) {
+    const stagingRoot = join(this.directory(), `import-runtime-${operation.id}`);
+    let location: { snapshotPath: string } | { databaseUrl: string };
+    if (capture.snapshotPath) {
+      const path = relative(stagingRoot, capture.snapshotPath);
+      if (!path || path === '..' || path.startsWith('../') || isAbsolute(path)) throw new Refusal('invalid_import_authority');
+      location = { snapshotPath: `${IMPORT_PREPARATION_TARGET}/${path}` };
+    } else if (capture.restore) {
+      const secrets = this.store.get<{ reader: string }>(`photo-app-restore:${operation.id}`);
+      if (!secrets?.reader) throw new Refusal('invalid_import_authority');
+      location = { databaseUrl: restoreDatabaseUrl(capture.restore, secrets.reader) };
+    } else throw new Refusal('invalid_import_authority');
+    return {
+      format: 'frameleaf-prepare-library-import',
+      version: 2,
+      action,
+      operationId: operation.id,
+      destinationId: this.photoAppIdentity(operation).destinationId,
+      source: capture.source,
+      ...location,
+      originalsRoot: '/import-media/source',
+      ...(capture.sourceRootPath && { sourceRootPath: capture.sourceRootPath }),
+      approvedLossCodes,
+      owners,
+    };
+  }
+  /** The server image of a release this host can run, downloaded for the offline preparation. */
+  private async preparationImage(tag: string | undefined): Promise<string> {
+    const chosen = tag ?? (await this.releases.available())[0]?.tag;
+    if (!chosen) throw new Refusal('release_unavailable');
+    const platform = (await this.docker.compatibility()).platform;
+    const release = await this.releases.acquire(chosen);
+    if (!release.nas.platforms.includes(platform)) throw new Refusal('release_architecture_unavailable');
+    await this.docker.pull(release.nas.images.server, platform);
+    return release.nas.images.server;
+  }
+  /** Review-only pass over the frozen source: owners, counts and losses. Run once; the answer is journaled. */
+  async inspectPhotoApp(operationId: string, tag?: string): Promise<ImportInspection> {
+    const operation = this.capturedPhotoApp(operationId);
+    const cached = operation.receipts['photo-app-inspection'] as ImportInspection | undefined;
+    if (cached) return cached;
+    this.executing.add(operationId);
+    try {
+      const capture = operation.receipts['capture-common-source'] as PhotoAppCapture;
+      const request = this.photoAppRequest(operation, capture, 'inspect', [], []);
+      this.store.save(operation);
+      const image = await this.preparationImage(tag);
+      await this.fencing.verify(capture.fence);
+      const path = await stageCommonImportPreparation(this.directory(), operationId, request);
+      const preparationSha256 = await fileHash(path);
+      const inspection = await this.docker.inspectImportSource(
+        this.directory(),
+        image,
+        {
+          operationId,
+          destinationId: request.destinationId,
+          source: capture.source,
+          preparationSha256,
+          verify: async () => {
+            await this.fencing.verify(capture.fence);
+            if ((await fileHash(path)) !== preparationSha256) throw new Refusal('import_common_review_changed');
+          },
+        },
+        [{ source: capture.originalsPath, target: '/import-media/source' }],
+        capture.restore?.name,
+      );
+      operation.receipts['photo-app-inspection'] = inspection;
+      this.store.save(operation);
+      return inspection;
+    } finally {
+      this.executing.delete(operationId);
+    }
+  }
+  /**
+   * Map every inspected owner to an email, approve every reported loss, then prepare the bundle and return the
+   * ordinary common-import review (install with its approval token).
+   */
+  async preparePhotoApp(value: z.infer<typeof PhotoAppPrepareInput>, managerPort?: number) {
+    const operation = this.capturedPhotoApp(value.operationId);
+    const inspection = operation.receipts['photo-app-inspection'] as ImportInspection | undefined;
+    if (!inspection) throw new Refusal('photo_app_inspection_required');
+    const expected = inspection.owners.map((owner) => owner.sourceId);
+    const chosen = value.owners.map((owner) => owner.sourceId);
+    if (new Set(chosen).size !== chosen.length || chosen.length !== expected.length || expected.some((id) => !chosen.includes(id)))
+      throw new Refusal('photo_app_owner_unmapped');
+    const emails = value.owners.map((owner) => owner.email.toLowerCase());
+    if (new Set(emails).size !== emails.length) throw new Refusal('photo_app_owner_email_duplicate');
+    const losses = inspection.losses.map((loss) => loss.code);
+    const approved = new Set(value.approvedLossCodes);
+    if (losses.some((code) => !approved.has(code)) || [...approved].some((code) => !losses.includes(code)))
+      throw new Refusal('photo_app_loss_unapproved');
+    const capture = operation.receipts['capture-common-source'] as PhotoAppCapture;
+    const ids = this.photoAppIdentity(operation);
+    for (const id of expected) ids.owners[id] ??= randomUUID();
+    const request = this.photoAppRequest(
+      operation,
+      capture,
+      'prepare',
+      value.owners.map(({ sourceId, email, acknowledgeRestrictions }) => ({
+        sourceId,
+        destinationId: ids.owners[sourceId],
+        email,
+        ...(acknowledgeRestrictions !== undefined && { acknowledgeRestrictions }),
+      })),
+      losses,
+    );
+    this.store.save(operation);
+    const input = ReviewInput.parse({ ...value.review, kind: 'import', sourceId: capture.fence.id, lifecycle: 'docker-only' });
+    // Placements are library/<owner>/…; the preparation reviews them with /data read-only, so the owner folders
+    // must exist first. Only these folders, private, in an approved and writable destination.
+    const media = await storagePath(input.mediaPath!, this.roots, 0);
+    for (const folder of [join(media, 'library'), ...expected.map((id) => join(media, 'library', ids.owners[id]))]) {
+      await mkdir(folder, { mode: 0o700 }).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== 'EEXIST') throw error;
+      });
+      if (!(await lstat(folder)).isDirectory() || (await realpath(folder)) !== folder) throw new Refusal('import_runtime_media_invalid');
+    }
+    return this.prepareCommonReview(
+      input,
+      {
+        fence: capture.fence,
+        request,
+        media: [
+          { source: input.mediaPath!, target: '/data', readOnly: false },
+          { source: capture.originalsPath, target: '/import-media/source', readOnly: true },
+        ],
+      },
+      managerPort,
+    );
+  }
+  /** Before install only: the app's containers get their restart policy back and run again; the copy is removed. */
+  async cancelPhotoApp(operationId: string): Promise<void> {
+    const operation = this.store.history().find((o) => o.id === operationId);
+    if (
+      !operation || operation.kind !== 'import' || typeof operation.input.commonCapture !== 'string' ||
+      operation.receipts['reviewed-common-import'] !== undefined || operation.state === 'running' ||
+      operation.state === 'complete' || this.executing.has(operationId)
+    ) throw new Refusal('photo_app_cancel_unavailable');
+    await this.recover(operationId);
   }
   /** Internal adapter handoff after snapshot, account and privacy review, with the source already fenced. */
   async prepareCommonReview(
     input: z.infer<typeof ReviewInput>,
     prepared: {
       fence: SourceFence;
-      request: Pick<ImportPreparationSeal, 'operationId' | 'destinationId'> & {
-        observed: { source: ImportPreparationSeal['source'] };
-        snapshotPath: string;
+      request: Pick<ImportPreparationSeal, 'operationId' | 'destinationId' | 'source'> & {
+        snapshotPath?: string;
+        databaseUrl?: string;
         [key: string]: unknown;
       };
       media: CommonImportReview['media'];
@@ -407,18 +643,23 @@ export class Operations {
     managerPort?: number,
   ) {
     const { fence, request, media, bootstrapAdminId } = prepared;
-    const { operationId, destinationId, observed: { source } } = request;
+    const { operationId, destinationId, source } = request;
     if (this.installation() || input.kind !== 'import' || input.sourceId !== fence.id || !input.mediaPath ||
       !media.some((mount) => mount.target === '/data' && mount.source === input.mediaPath && !mount.readOnly))
       throw new Refusal('invalid_import_authority');
     const captured = this.store.history().find((item) => item.id === operationId && typeof item.input.commonCapture === 'string');
-    const snapshot = captured?.receipts['capture-common-source'] as Awaited<ReturnType<typeof capturePhotoprismSqliteSource>> | undefined;
+    const snapshot = captured?.receipts['capture-common-source'] as PhotoAppCapture | undefined;
     const stagingRoot = join(this.directory(), `import-runtime-${operationId}`);
-    const snapshotPath = snapshot && relative(stagingRoot, snapshot.snapshotPath);
+    const snapshotPath = snapshot?.snapshotPath && relative(stagingRoot, snapshot.snapshotPath);
+    const reader = this.store.get<{ reader: string }>(`photo-app-restore:${operationId}`)?.reader;
+    // Exactly the captured location: the staged SQLite snapshot, or the restored copy through its reader.
+    const located = snapshot?.snapshotPath
+      ? !!snapshotPath && snapshotPath !== '..' && !snapshotPath.startsWith('../') && !isAbsolute(snapshotPath) &&
+        request.snapshotPath === `${IMPORT_PREPARATION_TARGET}/${snapshotPath}` && request.databaseUrl === undefined
+      : !!snapshot?.restore && !!reader && request.snapshotPath === undefined &&
+        request.databaseUrl === restoreDatabaseUrl(snapshot.restore, reader);
     if (
-      captured?.state !== 'awaiting-review' || this.executing.has(operationId) || !snapshot ||
-      !snapshotPath || snapshotPath === '..' || snapshotPath.startsWith('../') || isAbsolute(snapshotPath) ||
-      request.snapshotPath !== `${IMPORT_PREPARATION_TARGET}/${snapshotPath}` ||
+      captured?.state !== 'awaiting-review' || this.executing.has(operationId) || !snapshot || !located ||
       digest(snapshot.fence) !== digest(fence) || digest(snapshot.source) !== digest(source)
     ) throw new Refusal('invalid_import_authority');
     this.executing.add(operationId);
@@ -445,7 +686,7 @@ export class Operations {
           await this.fencing.verify(fence);
           if ((await fileHash(path)) !== preparationSha256) throw new Refusal('import_common_review_changed');
         },
-      }, media);
+      }, media, snapshot.restore?.name);
       return await this.review(input, managerPort, { ...receipt, fence, media, bootstrapAdminId });
     } finally {
       this.executing.delete(operationId);
@@ -588,7 +829,7 @@ export class Operations {
     if (!!review.common?.bootstrapAdminId !== (bootstrap !== undefined))
       throw new Refusal('import_bootstrap_credentials_required');
     if (captured) {
-      const snapshot = captured.receipts['capture-common-source'] as Awaited<ReturnType<typeof capturePhotoprismSqliteSource>> | undefined;
+      const snapshot = captured.receipts['capture-common-source'] as PhotoAppCapture | undefined;
       if (
         !review.common || !approvalToken || captured.state !== 'awaiting-review' || this.executing.has(captured.id) ||
         !snapshot || digest(snapshot.fence) !== digest(review.common.fence) ||
@@ -651,9 +892,7 @@ export class Operations {
       if (operation.receipts['cancellation-intent']) return this.cancelOperation(operation);
       if (operation.kind === 'import' && typeof operation.input.commonCapture === 'string' &&
         !operation.receipts['reviewed-common-import']) {
-        const platform = operation.input.sourcePlatform;
-        if (platform !== 'docker' && platform !== 'unraid') throw new Refusal('invalid_import_authority');
-        return this.captureForReview(operation, await this.docker.inspect(operation.input.commonCapture), platform);
+        return this.captureForReview(operation);
       }
       if (operation.kind === 'move-library') return this.applyMove(operation);
       if (operation.kind === 'update') {
@@ -966,6 +1205,12 @@ export class Operations {
       );
     }
     if (common) await this.runCommonImport(operation, common, installation);
+    // The bundle is imported: the restored source copy and the plan's source login are no longer needed.
+    if (common && typeof operation.input.commonCapture === 'string')
+      await this.step(operation, 'remove-source-copy', async () => {
+        await this.removePhotoAppCopy(operation);
+        return true;
+      });
     await this.step(operation, 'start-frameleaf', async () => {
       if (sourceFence) await this.fencing.verify(sourceFence);
       await this.fencing.assertMedia(installation.mounts, installation);
@@ -2094,11 +2339,40 @@ export class Operations {
         return true;
       });
     }
+    if (typeof operation.input.commonCapture === 'string') {
+      await this.step(operation, 'cancel-photo-app', async () => {
+        const plan = this.store.get<PhotoAppPlan>(`photo-app-plan:${operation.id}`);
+        await this.removePhotoAppCopy(operation);
+        if (!installation) {
+          // Nothing reached Frameleaf: the staging is discarded and the app runs again as it did before review.
+          await rm(join(this.directory(), `import-runtime-${operation.id}`), { recursive: true, force: true });
+          const present = await this.docker.inventory();
+          for (const id of plan?.running ?? [])
+            if (present.some((c) => c.Id === id && !c.State.Running)) await this.docker.start(id);
+        }
+        return true;
+      });
+      if (!installation) {
+        operation.receipts['cancelled'] = 'photo_app_import_cancelled';
+        return;
+      }
+    }
     operation.receipts['cancelled'] = 'recovered_source_stopped';
+  }
+  /** Removes the disposable source database copy and forgets the source login and the copy's passwords. */
+  private async removePhotoAppCopy(operation: Operation): Promise<void> {
+    const restore = operation.receipts['photo-app-restore'];
+    if (typeof restore === 'string') await this.docker.removeSourceRestore(restore);
+    this.store.delete(`photo-app-plan:${operation.id}`);
+    this.store.delete(`photo-app-restore:${operation.id}`);
   }
   history() {
     return this.store.history().map(({ input, receipts, ...operation }) => ({
       ...operation,
+      ...(typeof input.commonCapture === 'string' && typeof input.photoApp === 'string' &&
+        input.photoApp in photoAppNames && {
+          photoApp: { kind: input.photoApp as PhotoAppKind, name: photoAppNames[input.photoApp as PhotoAppKind] },
+        }),
       backupSkipped: operation.kind === 'import' && !!this.store.get<Review>(`review:${input.commonCapture ? operation.id : input.reviewId}`)?.backup,
       ...(typeof receipts['reviewed-common-import'] === 'string' && { commonImport: {
         requiresBootstrap: !!this.store.get<Review>(`review:${input.commonCapture ? operation.id : input.reviewId}`)?.common?.bootstrapAdminId,
