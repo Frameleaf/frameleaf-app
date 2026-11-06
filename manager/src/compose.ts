@@ -258,6 +258,8 @@ export function applyServiceOverrides(services: Record<string, unknown>, overrid
   for (const [name, override] of Object.entries(overrides)) {
     const service = services[name] as Record<string, any> | undefined;
     if (!service || !override) continue;
+    if (name === 'database' && limitBytes(override.memory) < 256 * MB)
+      throw new Refusal('service_override_conflict', 409, 'database: the library database needs a memory limit of at least 256 MB.');
     const targets = new Set<string>((service.volumes ?? []).map((mount: { target: string }) => mount.target));
     for (const mount of override.mounts) {
       if (targets.has(mount.target) || RESERVED_TARGETS.some((r) => mount.target === r || mount.target.startsWith(`${r}/`)))

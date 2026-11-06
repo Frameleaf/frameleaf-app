@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { hostMemory, postgresTuning, renderCompose, retuneDatabase } from '../src/compose.js';
+import { checkServiceOverrides, hostMemory, postgresTuning, renderCompose, retuneDatabase } from '../src/compose.js';
 import type { Installation } from '../src/contracts.js';
 import type { VerifiedRelease } from '../src/releases.js';
 
@@ -117,6 +117,18 @@ test('the database service carries the tuning at install and is re-tuned on Star
       services: { database: { environment: {}, mounts: [], memory: '4g' } },
     }, 'cpu', 128 * GiB);
     assert.deepEqual((await read()).services.database.command, postgresTuning(4 * GiB).command);
+
+    // Postgres cannot run in a few MB: such a limit is refused before anything is written
+    await assert.rejects(
+      renderCompose(release, installation, 'pw', stack, {
+        environment: {},
+        settings: null,
+        authority: 'database',
+        services: { database: { environment: {}, mounts: [], memory: '8mb' } },
+      }, 'cpu', 128 * GiB),
+      (error: any) => error.code === 'service_override_conflict' && /256 MB/.test(error.detail),
+    );
+    assert.throws(() => checkServiceOverrides([], { database: { environment: {}, mounts: [], memory: '100m' } }), /service_override_conflict/);
 
     // Installations rendered before tuning existed get it on their next Start; an unchanged file is not rewritten
     const legacy = await read();
