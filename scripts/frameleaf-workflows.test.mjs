@@ -2142,7 +2142,8 @@ test("isolated test lanes cover every shard and keep required gates fail-closed"
     1,
     2,
     3,
-    "ui",
+    "ui-1",
+    "ui-2",
     "maintenance",
     "icloud",
   ]);
@@ -2197,7 +2198,7 @@ test("E2E matrix lanes execute each intended suite once per architecture", () =>
           always: () => true,
           success: () => true,
           failure: () => false,
-          startsWith: (value, prefix) => value.startsWith(prefix),
+          startsWith: (value, prefix) => String(value).startsWith(prefix),
           github: {
             event_name: "pull_request",
             event: {
@@ -2261,7 +2262,9 @@ test("E2E matrix lanes execute each intended suite once per architecture", () =>
       const names = selected(browser, { runner, shard });
       const expected = Number.isInteger(shard)
         ? 0
-        : ["ui", "maintenance", "icloud"].indexOf(shard) + 1;
+        : ["ui", "maintenance", "icloud"].indexOf(
+            shard.replace(/^ui-\d$/, "ui"),
+          ) + 1;
       assert.deepEqual(
         names.filter((name) => browserRuns.includes(name)),
         [browserRuns[expected]],

@@ -1121,7 +1121,8 @@ jobs:
           - ubuntu-24.04-arm
         # FL-380: the specs are split by file across three stacks of their own. The web project shares
         # one server and database per stack, so it stays on one worker; each extra project owns a lane.
-        shard: [1, 2, 3, ui, maintenance, icloud]
+        # FL-1148: the ui project is split by file into ui-1 and ui-2 (see PLAYWRIGHT_UI_SHARD in e2e/playwright.config.ts).
+        shard: [1, 2, 3, ui-1, ui-2, maintenance, icloud]
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -1145,7 +1146,10 @@ jobs:
         run: pnpm install --frozen-lockfile
         if: ${{ !cancelled() }}
       - name: Install Playwright Browsers
-        run: pnpm exec playwright install --with-deps chromium --only-shell
+        # FL-1148: no --with-deps. Both runner images already carry Chromium's libraries, so it only
+        # added CJK/X fonts from the Azure apt mirror, which stalled 5-10 minutes on about one job in ten.
+        # No spec compares screenshots, and the launch check below fails fast if a library goes missing.
+        run: pnpm exec playwright install chromium --only-shell
         if: ${{ !cancelled() }}
       - name: Verify Playwright browser launch
         timeout-minutes: 1
@@ -1194,12 +1198,13 @@ jobs:
       - name: Run ui tests (web)
         env:
           PLAYWRIGHT_DISABLE_WEBSERVER: true
-        # Keep UI whole: test-level sharding previously grouped the heavy timeline cases and timed out.
+          PLAYWRIGHT_UI_SHARD: ${{ matrix.shard }}
+        # Split by file, not with --shard: test-level sharding previously grouped the heavy timeline cases and timed out.
         run: pnpm test:web:ui
-        if: ${{ !cancelled() && steps.docker.outcome == 'success' && matrix.shard == 'ui' }}
+        if: ${{ !cancelled() && steps.docker.outcome == 'success' && startsWith(matrix.shard, 'ui-') }}
       - name: Archive ui test (web) results
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: ${{ (success() || failure()) && matrix.shard == 'ui' }}
+        if: ${{ (success() || failure()) && startsWith(matrix.shard, 'ui-') }}
         with:
           name: e2e-ui-test-results-${{ matrix.runner }}-${{ matrix.shard }}
           path: e2e/playwright-report/
