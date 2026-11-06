@@ -93,7 +93,8 @@ test('source database dump, disposable copy and reader keep passwords out of arg
   await docker.restoreSourceDatabase(restore, '/private/stage/source.sql');
   const restored = calls.slice(from);
   const load = restored.findIndex((call) => call.options.inputFile === '/private/stage/source.sql');
-  assert(restored.findIndex((call) => call.options.input === 'SET GLOBAL event_scheduler=OFF;\n') < load);
+  const disable = restored.findIndex((call) => call.options.input === 'SET GLOBAL event_scheduler=OFF;\n');
+  assert(load >= 0 && disable >= 0 && disable < load);
   scheduler = 'ON';
   await assert.rejects(docker.restoreSourceDatabase(restore, '/private/stage/source.sql'), /source_database_restore_failed/);
   scheduler = 'OFF';
