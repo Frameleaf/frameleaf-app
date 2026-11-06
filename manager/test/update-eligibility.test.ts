@@ -797,14 +797,18 @@ test('a database image the bundle does not declare in place moves by dump and re
   assert.equal(postgresVersion(image('19-pgvector0.8.7')), null);
 });
 
-type MoveOptions = { space?: boolean; restore?: 'fails' | 'differs' | 'hangs'; start?: 'fails' };
+// `majorOnly`: the release names a major-only image (`19-…`) and the restored server reports 19.1.
+// `source: 'unreadable'`: the stopped original cannot be inventoried, before the move journals its intent.
+type MoveOptions = {
+  space?: boolean; restore?: 'fails' | 'differs' | 'hangs'; start?: 'fails'; majorOnly?: boolean; source?: 'unreadable';
+};
 async function databaseMoveFixture(options: MoveOptions = {}) {
   process.env.MANAGER_ML_ACCELERATION = 'cpu';
   const directory = await mkdtemp(join(tmpdir(), 'manager-database-move-'));
   const store = new Store(join(directory, 'state'));
   const digest = (c: string) => `@sha256:${c.repeat(64)}`;
   const beta = `ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7${digest('a')}`;
-  const rc = `ghcr.io/frameleaf/frameleaf-postgres:19rc1-pgvector0.8.7${digest('b')}`;
+  const rc = `ghcr.io/frameleaf/frameleaf-postgres:${options.majorOnly ? '19' : '19rc1'}-pgvector0.8.7${digest('b')}`;
   const server = (name: string) => `fixture.invalid/${name}${digest('c')}`;
   const id = 'a'.repeat(12);
   // renderCompose doubles `$` for Compose interpolation; the folder names contain one on purpose.
@@ -860,7 +864,8 @@ async function databaseMoveFixture(options: MoveOptions = {}) {
       composed.push([action, ...services]);
       const { path, compose } = await running();
       if (action === 'up' && !folders.has(path))
-        folders.set(path, { version: compose.services.database.image === rc ? '19rc1' : '19beta4', extensions: ['plpgsql'], tables: {} });
+        folders.set(path, { version: compose.services.database.image === rc ? (options.majorOnly ? '19.1' : '19rc1') : '19beta4',
+          extensions: ['plpgsql'], tables: {} });
       if (action === 'up' && !services.length && options.start === 'fails' && compose.services['frameleaf-server'].image === server('new-server'))
         throw new Error('container frameleaf-test-frameleaf-server-1 is unhealthy');
     },
@@ -868,8 +873,12 @@ async function databaseMoveFixture(options: MoveOptions = {}) {
       Mounts: [{ Type: 'bind', Source: (await running()).path, RW: true, Destination: '/var/lib/postgresql' }] }],
     sql: async (_db: unknown, query: string) => {
       if (query.includes('frameleaf-served')) return '';
+      // The original database's measured size: more than the 1 GiB minimum and far more than the dump x4.
+      if (query.includes('pg_database_size')) return String(2 * 1024 ** 3);
       assert.match(query, /query_to_xml/);
-      return JSON.stringify(folders.get((await running()).path));
+      const { path } = await running();
+      if (options.source === 'unreadable' && path === current.databasePath) throw new Error('psql: connection refused');
+      return JSON.stringify(folders.get(path));
     },
     verifyDump: async () => {},
     restore: async (_db: unknown, file: string) => {
@@ -920,7 +929,7 @@ test('an update to a new PostgreSQL build moves the database into a new folder a
     await (f.create() as any).applyUpdate(f.operation, f.review);
     assert.deepEqual(f.composed, [['stop'], ['up', 'database'], ['up']]);
     assert.deepEqual(f.restored, [moved(f, 1)], 'the checkpoint went into the new folder only');
-    assert.deepEqual(f.allocated, [1024 ** 3], 'room for the restored database (at least 1 GiB, dump x4)');
+    assert.deepEqual(f.allocated, [2 * 1024 ** 3], 'room for the restored database: its measured size, as reviewed');
     assert.equal(f.operation.receipts['cancelled'], undefined);
     assert.equal(f.operation.receipts['rollback-intent'], undefined);
     assert.ok(f.operation.completed.includes('database-move') && f.operation.completed.includes('apply-release'));
@@ -950,6 +959,43 @@ test(`a database move whose restore ${failure === 'fails' ? 'fails' : 'does not 
     assert.deepEqual(f.store.get('retained-database-directories'), [moved(f, 1)]);
     assert.deepEqual(f.store.get('rolled-back-releases'), [f.release.nas.tag]);
     assert.ok(!f.operation.completed.includes('apply-release'), 'the new release never started');
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('a major-only target image moves the database when the restored server reports a minor version', async () => {
+  const f = await databaseMoveFixture({ majorOnly: true });
+  try {
+    await (f.create() as any).applyUpdate(f.operation, f.review);
+    assert.equal(f.operation.receipts['rollback-intent'], undefined, 'no database_move_version_mismatch rollback');
+    assert.equal(f.operation.receipts['cancelled'], undefined);
+    assert.ok(f.operation.completed.includes('database-move') && f.operation.completed.includes('apply-release'));
+    assert.equal(f.folders.get(moved(f, 1)).version, '19.1');
+    assert.equal(f.store.get<any>('installation').release, f.release.nas.tag);
+    assert.equal(f.store.get<any>('installation').databasePath, moved(f, 1));
+    assert.equal((await f.stackNow()).services.database.image, f.rc);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('a database move that fails before its intent cancels the update and restarts the previous release', async () => {
+  const f = await databaseMoveFixture({ source: 'unreadable' });
+  try {
+    await (f.create() as any).applyUpdate(f.operation, f.review);
+    assert.equal(f.operation.receipts['database-move-intent'], undefined);
+    assert.equal(f.operation.receipts['rollback-intent'], undefined);
+    assert.equal((f.operation.receipts['cancellation-intent'] as any).kind, 'update');
+    assert.equal(f.operation.receipts['cancelled'], 'database_move_failed_rolled_back');
+    assert.deepEqual(f.composed, [['up']], 'the stopped application starts again on its own folder');
+    assert.deepEqual(f.allocated, []);
+    assert.deepEqual(f.restored, []);
+    assert.deepEqual(await f.stackNow(), f.previousCompose);
+    assert.deepEqual(f.store.get<any>('installation'), f.current);
+    assert.equal(f.store.get('rolled-back-releases'), null, 'the release itself is not blamed');
+    // The update ends cancelled (not failed), so no resume can reuse its checkpoint once the server wrote again.
+    assert.ok(f.operation.completed.includes('cancel-restart-previous'));
   } finally {
     await f.cleanup();
   }

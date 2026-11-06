@@ -180,6 +180,8 @@ type DatabaseMoveIntent = {
   from: { image: string; databasePath: string };
   to: { image: string };
   source: DatabaseInventory;
+  /** Room each attempt's folder needs: the source database's size, the estimate the review checked. */
+  bytes: number;
   attempts: string[];
 };
 type DatabaseMove = Omit<DatabaseMoveIntent, 'to'> & { to: { image: string; databasePath: string } };
@@ -1703,9 +1705,8 @@ export class Operations {
     if (!release.nas.platforms.includes(compatibility.platform)) throw new Refusal('release_architecture_unavailable');
     let databaseMove: UpdateReview['databaseMove'];
     if (move) {
-      // ponytail: the review estimates the restored database at its current size; the move itself allocates by
-      // the checkpoint (dump x4) and rolls back if that no longer fits.
-      const bytes = Math.max(1024 ** 3, Number(await this.docker.sql(database, 'SELECT pg_database_size(current_database());')));
+      // The move allocates its new folder by the same estimate, measured again once the application stopped.
+      const bytes = await this.databaseMoveBytes(database);
       await this.databaseStorage.validate(current.databaseRoot, bytes, current.id);
       databaseMove = { from: currentImage, to: release.nas.images.postgres, bytes };
     }
@@ -1870,10 +1871,23 @@ export class Operations {
       try {
         await this.moveDatabase(operation, review);
       } catch (error) {
-        // Before its intent nothing changed and the update stays cancellable. After it, only the new folder was
-        // written: the previous release goes back on its unchanged folder.
-        if (!operation.receipts['database-move-intent']) throw error;
+        // Before its intent nothing changed but the application is stopped: the update is cancelled and the
+        // previous release started again, so no retry reuses this checkpoint after the server wrote again.
+        // After it, only the new folder was written: the previous release goes back on its unchanged folder.
         const reason = error instanceof Refusal ? error.code : ((error as Error)?.message ?? String(error));
+        if (!operation.receipts['database-move-intent']) {
+          console.error(redact(`manager: the database move to ${review.release.nas.images.postgres} did not start (${reason}); starting ${review.current.release} again`));
+          operation.receipts['cancellation-intent'] = {
+            kind: 'update',
+            installation: this.installation(),
+            archive: join(this.store.directory, `cancelled-stack-${operation.id}`),
+          } satisfies Cancellation;
+          this.store.save(operation);
+          await this.cancelOperation(operation);
+          operation.receipts['cancelled'] = 'database_move_failed_rolled_back';
+          this.store.save(operation);
+          return;
+        }
         console.error(redact(`manager: the database did not move to ${review.release.nas.images.postgres} (${reason}); rolling back to ${review.current.release}`));
         operation.receipts['rollback-intent'] = error instanceof Refusal ? error.code : 'database_move_failed';
         this.store.save(operation);
@@ -1982,6 +1996,7 @@ export class Operations {
       if (!receipt || (await fileHash(dump)) !== receipt.sha256) throw new Refusal('checkpoint_dump_changed');
       let intent = operation.receipts['database-move-intent'] as DatabaseMoveIntent | undefined;
       if (!intent) {
+        const source = await this.targetDatabase(review.current);
         intent = {
           from: {
             image: JSON.parse(await readFile(join(this.directory(), 'compose.json'), 'utf8')).services.database.image,
@@ -1989,7 +2004,8 @@ export class Operations {
           },
           to: { image: review.release.nas.images.postgres },
           // The application stopped before the checkpoint, so the running database still matches its dump.
-          source: await this.databaseInventory(await this.targetDatabase(review.current)),
+          source: await this.databaseInventory(source),
+          bytes: await this.databaseMoveBytes(source),
           attempts: [],
         };
         operation.receipts['database-move-intent'] = intent;
@@ -1999,11 +2015,7 @@ export class Operations {
       }
       if (intent.to.image !== review.release.nas.images.postgres) throw new Refusal('database_move_target_changed');
       // Every attempt restores into a folder of its own: an interrupted one may have left a partial restore.
-      const databasePath = await this.databaseStorage.allocate(
-        review.current.databaseRoot,
-        review.current.id,
-        Math.max(1024 ** 3, (await stat(dump)).size * 4),
-      );
+      const databasePath = await this.databaseStorage.allocate(review.current.databaseRoot, review.current.id, intent.bytes);
       intent.attempts.push(databasePath);
       this.store.save(operation);
       const target: Installation = { ...review.current, release: review.release.nas.tag, databasePath };
@@ -2020,6 +2032,10 @@ export class Operations {
       if (!sameInventory(moved, intent.source)) throw new Refusal('database_move_verification_failed');
       return { ...intent, to: { image: intent.to.image, databasePath } } satisfies DatabaseMove;
     });
+  }
+  /** FL-1265: room a database move needs for the restored copy, checked at review and allocated by the move. */
+  private async databaseMoveBytes(database: Database): Promise<number> {
+    return Math.max(1024 ** 3, Number(await this.docker.sql(database, 'SELECT pg_database_size(current_database());')));
   }
   private async databaseInventory(database: Database): Promise<DatabaseInventory> {
     return JSON.parse(await this.docker.sql(database, DATABASE_INVENTORY));

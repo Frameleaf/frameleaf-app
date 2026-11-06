@@ -24,6 +24,8 @@ Some releases change the PostgreSQL build in a way that cannot open the existing
 
 Frameleaf Manager does this for you when you update: it copies the database into a new folder beside the current one, checks every table, then starts the new release. If anything fails, it puts the previous release back on the old folder. Make sure the database drive has free space for a second copy of the database.
 
+Move by hand only when you update to a release whose `docker-compose.yml` names a different database image from the one you run now, for example `frameleaf-postgres:19rc1-…` instead of `19beta4-…`. If the new file still names your current image, keep your database folder and update normally: a restore with the same image only creates another copy that the next build still cannot open.
+
 For a plain Docker Compose installation, run these commands in the folder with your `docker-compose.yml` and `.env`:
 
 1. Stop Frameleaf, leaving the database running, and save a dump outside the database folder:
