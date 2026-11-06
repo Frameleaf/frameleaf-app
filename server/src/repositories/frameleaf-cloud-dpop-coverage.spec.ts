@@ -79,6 +79,8 @@ const RAW_SOCKETS = {
   'library-import/pigallery2-mysql-source.ts': 'isolated PiGallery2 database restore',
   // Operator-configured restored Piwigo database; source DB credentials only, never a Cloud token or instance identity.
   'library-import/piwigo-source.ts': 'isolated Piwigo database restore',
+  // Reads the Piwigo copy's table prefix on 127.0.0.1 (the preparation shares only that copy's network namespace).
+  'library-import/preparation/piwigo.ts': 'isolated Piwigo database restore',
   // the relay tunnel: its token comes from a DPoP call and the tunnel's PROOF is signed by the instance key
   'edge/edge-relay.service.ts': 'relay tunnel',
   // the edge worker's own upstream (this server) on the local host
