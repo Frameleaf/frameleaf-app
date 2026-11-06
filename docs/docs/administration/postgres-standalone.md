@@ -28,9 +28,11 @@ Move by hand only when you update to a release whose `docker-compose.yml` names 
 
 For a plain Docker Compose installation, run these commands in the folder with your `docker-compose.yml` and `.env`:
 
-1. Keep a copy of `.env` and note the images you run now with `docker compose images` (including a hardware-specific machine learning image); going back uses them. Stop Frameleaf, leaving the database running, and save a dump outside the database folder:
+1. Keep a copy of `.env`. While Frameleaf is still running, keep the exact server and machine learning images it runs under local tags (this works for hardware-specific machine learning images too). Then stop Frameleaf, leaving the database running, and save a dump outside the database folder:
 
    ```bash
+   docker tag "$(docker compose images -q frameleaf-server)" frameleaf-server:before-move
+   docker tag "$(docker compose images -q frameleaf-machine-learning)" frameleaf-machine-learning:before-move
    docker compose stop frameleaf-server frameleaf-machine-learning
    docker compose exec -T database sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom' > frameleaf-move.dump &&
      docker compose down
@@ -49,7 +51,7 @@ For a plain Docker Compose installation, run these commands in the folder with y
 
 4. If the restore fails, stop here and go back (below). If it succeeds, start Frameleaf with `docker compose up -d` and check your library.
 
-To go back, run `docker compose down`, restore the old `docker-compose.yml`, the old `.env` (its `DB_DATA_LOCATION` and `FRAMELEAF_VERSION`) and any override file you changed, make sure `docker compose config` names the images you noted in step 1, and run `docker compose up -d`. Going back after Frameleaf has run on the new database loses everything it changed since step 4: photos uploaded since then stay in the upload folder but are no longer in the library. So go back straight away, before anyone uploads or edits; once they have, do not go back, keep both folders and ask for help instead. Delete the old folder and the dump only once you are happy with the new release.
+To go back, run `docker compose down`, restore the old `docker-compose.yml`, the old `.env` (its `DB_DATA_LOCATION` and `FRAMELEAF_VERSION`) and any override file you changed, point the server and machine learning services at the `before-move` tags from step 1 (in an override file, or by editing the old `docker-compose.yml`), and run `docker compose up -d --pull never`. Going back after Frameleaf has run on the new database loses everything it changed since step 4: photos uploaded since then stay in the upload folder but are no longer in the library. So go back straight away, before anyone uploads or edits; once they have, do not go back, keep both folders and ask for help instead. Delete the old folder and the dump only once you are happy with the new release.
 
 On Unraid or TrueNAS templates the steps are the same: stop the Frameleaf server and machine learning containers, save the dump by running the same `pg_dump` command with `docker exec -i` against the database container (for example `frameleaf-postgres`), then set that container's image to the new release's and its data folder to a new, empty folder. Start it, restore the dump with the same `pg_restore` command, and start Frameleaf.
 
