@@ -89,28 +89,48 @@ const ID_SEGMENT = /^(?=[^/]*\d)[\w-]{20,}$/;
  * The path written on a request line: path secrets masked, IDs shown as `:id`, and only the names of
  * query parameters kept (every value masked; credential routes keep no query at all).
  */
+/** Decodes a segment until it stops changing (so `%2563` → `%63` → `c`), at most a few rounds. */
+const decodeSegment = (segment: string) => {
+  for (let round = 0; round < 4; round++) {
+    let next: string;
+    try {
+      next = decodeURIComponent(segment);
+    } catch {
+      break;
+    }
+    if (next === segment) {
+      break;
+    }
+    segment = next;
+  }
+  return segment;
+};
+
 /**
- * Percent-decodes each path segment so an encoded route literal (`/api/%63ast/<token>`) still meets
- * the secret-route patterns; a decoded `/`, `?` or `#` is re-encoded to keep segment boundaries.
+ * The canonical form of the path, so an unusual spelling (`/api//cast/…`, `/api/./cast/…`,
+ * `/api/%63ast/…`, `/api/%2563ast/…`) still meets the secret-route patterns: segments are decoded,
+ * empty and `.` segments dropped and `..` resolved; a decoded `/`, `?` or `#` is re-encoded so it
+ * cannot create a segment or a query.
  */
-const decodePath = (url: string) => {
+const canonicalPath = (url: string) => {
   const cut = url.search(/[?#]/);
-  const path = cut === -1 ? url : url.slice(0, cut);
-  const decoded = path
-    .split('/')
-    .map((segment) => {
-      try {
-        return decodeURIComponent(segment).replaceAll(/[/?#]/g, (char) => encodeURIComponent(char));
-      } catch {
-        return segment;
-      }
-    })
-    .join('/');
-  return cut === -1 ? decoded : decoded + url.slice(cut);
+  const segments: string[] = [];
+  for (const raw of (cut === -1 ? url : url.slice(0, cut)).split('/')) {
+    const segment = decodeSegment(raw);
+    if (segment === '' || segment === '.') {
+      continue;
+    }
+    if (segment === '..') {
+      segments.pop();
+      continue;
+    }
+    segments.push(segment.replaceAll(/[/?#]/g, (char) => encodeURIComponent(char)));
+  }
+  return `/${segments.join('/')}${cut === -1 ? '' : url.slice(cut)}`;
 };
 
 export const requestLogPath = (url: string) => {
-  const masked = redactPathSecrets(decodePath(url));
+  const masked = redactPathSecrets(canonicalPath(url));
   const cut = masked.search(/[?#]/);
   const path = (cut === -1 ? masked : masked.slice(0, cut))
     .split('/')

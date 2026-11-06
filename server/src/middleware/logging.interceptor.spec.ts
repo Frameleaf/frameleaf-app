@@ -300,6 +300,16 @@ describe('request log line', () => {
     expect(written(log)).not.toContain('0f8e7d6c');
   });
 
+  it.each(['/api//cast/', '/api/./cast/', '/api/%63ast/', '/api/%2563ast/'])(
+    'never logs a cast token on a failed request to %s',
+    (spelling) => {
+      const token = 'synthetic-cast-token.signature';
+      const log = run('GET', `${spelling}${token}`, 404);
+      expect(log.log).toHaveBeenCalledWith(expect.stringContaining('GET /api/cast/******** 404'));
+      expect(written(log)).not.toContain(token);
+    },
+  );
+
   it('masks path secrets and keeps credential routes queryless', () => {
     expect(requestLogPath('/api/cast/eyJhbGciOi.signed-token')).toBe('/api/cast/********');
     expect(requestLogPath('/api/admin/license/activate?key=FL-SABC-DEFG')).toBe('/api/admin/license/activate?********');
@@ -312,6 +322,9 @@ describe('request log line', () => {
     expect(requestLogPath('/api/%6Cicense/activate?key=FL-S')).toBe('/api/license/activate?********');
     expect(requestLogPath('/api/albums/a%2Fb%3Fc')).toBe('/api/albums/a%2Fb%3Fc');
     expect(requestLogPath('/api/albums/%E0%A4%A')).toBe('/api/albums/%E0%A4%A');
+    for (const spelling of ['/api//cast/', '/api/./cast/', '/api/%2563ast/', '/api/x/../cast/', '//api/%252563ast/']) {
+      expect(requestLogPath(`${spelling}eyJhbGciOi.mac`)).toBe('/api/cast/********');
+    }
   });
 
   it('moves request lines to debug when FRAMELEAF_LOG_REQUESTS=false, but still warns on server errors', () => {
