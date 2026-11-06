@@ -310,6 +310,14 @@ describe('request log line', () => {
     },
   );
 
+  it('masks the whole path when a segment is encoded more times than it decodes', () => {
+    const token = 'synthetic-cast-token.signature';
+    expect(requestLogPath('/api/%25252563ast/x.y')).toBe('/api/cast/********');
+    const log = run('GET', `/api/%2525252563ast/${token}?size=preview`, 404);
+    expect(log.log).toHaveBeenCalledWith(expect.stringMatching(/^GET \/\*{8} 404 /));
+    expect(written(log)).not.toContain(token);
+  });
+
   it('masks path secrets and keeps credential routes queryless', () => {
     expect(requestLogPath('/api/cast/eyJhbGciOi.signed-token')).toBe('/api/cast/********');
     expect(requestLogPath('/api/admin/license/activate?key=FL-SABC-DEFG')).toBe('/api/admin/license/activate?********');

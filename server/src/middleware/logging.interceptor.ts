@@ -89,34 +89,45 @@ const ID_SEGMENT = /^(?=[^/]*\d)[\w-]{20,}$/;
  * The path written on a request line: path secrets masked, IDs shown as `:id`, and only the names of
  * query parameters kept (every value masked; credential routes keep no query at all).
  */
-/** Decodes a segment until it stops changing (so `%2563` → `%63` → `c`), at most a few rounds. */
-const decodeSegment = (segment: string) => {
-  for (let round = 0; round < 4; round++) {
+const MAX_DECODE_ROUNDS = 4;
+
+/**
+ * Decodes a segment until it stops changing (so `%2563` → `%63` → `c`). Returns `undefined` when it
+ * would still decode after the last round, so the caller masks the whole path instead.
+ */
+const decodeSegment = (segment: string): string | undefined => {
+  for (let round = 0; round <= MAX_DECODE_ROUNDS; round++) {
     let next: string;
     try {
       next = decodeURIComponent(segment);
     } catch {
-      break;
+      return segment;
     }
     if (next === segment) {
-      break;
+      return segment;
+    }
+    if (round === MAX_DECODE_ROUNDS) {
+      return undefined;
     }
     segment = next;
   }
-  return segment;
+  return undefined;
 };
 
 /**
  * The canonical form of the path, so an unusual spelling (`/api//cast/…`, `/api/./cast/…`,
  * `/api/%63ast/…`, `/api/%2563ast/…`) still meets the secret-route patterns: segments are decoded,
  * empty and `.` segments dropped and `..` resolved; a decoded `/`, `?` or `#` is re-encoded so it
- * cannot create a segment or a query.
+ * cannot create a segment or a query. `undefined` when a segment is encoded too many times to trust.
  */
-const canonicalPath = (url: string) => {
+const canonicalPath = (url: string): string | undefined => {
   const cut = url.search(/[?#]/);
   const segments: string[] = [];
   for (const raw of (cut === -1 ? url : url.slice(0, cut)).split('/')) {
     const segment = decodeSegment(raw);
+    if (segment === undefined) {
+      return undefined;
+    }
     if (segment === '' || segment === '.') {
       continue;
     }
@@ -130,7 +141,11 @@ const canonicalPath = (url: string) => {
 };
 
 export const requestLogPath = (url: string) => {
-  const masked = redactPathSecrets(canonicalPath(url));
+  const canonical = canonicalPath(url);
+  if (canonical === undefined) {
+    return `/${REDACTED}`;
+  }
+  const masked = redactPathSecrets(canonical);
   const cut = masked.search(/[?#]/);
   const path = (cut === -1 ? masked : masked.slice(0, cut))
     .split('/')
