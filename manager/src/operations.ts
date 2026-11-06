@@ -971,11 +971,9 @@ export class Operations {
         throw new Refusal('configuration_recovery_required');
       if (!restoring) assertCommonImportReview(operation, (review as Review).common);
       const sourceFence = restoring ? null : ((review as Review).common?.fence ?? (review as Review).source);
-      // Once Frameleaf has started, the original app no longer matters (see start-frameleaf); other writers still do.
       if (sourceFence && operation.completed.includes('fence-source')) {
-        if (installation && (operation.completed.includes('start-frameleaf') || (await this.serverStarted(installation))))
-          await this.fencing.assertMedia(installation.mounts, installation);
-        else await this.fencing.verify(sourceFence, installation ?? undefined);
+        await this.verifySourceUntilTakeover(sourceFence, installation ?? undefined);
+        if (installation) await this.fencing.assertMedia(installation.mounts, installation);
       }
       if (operation.step === 'restore-new-database' && !operation.completed.includes('restore-new-database')) {
         if (!installation || installation.mayHaveWrittenMedia) throw new Refusal('manual_media_recovery_required');
@@ -1280,10 +1278,7 @@ export class Operations {
         return true;
       });
     await this.step(operation, 'start-frameleaf', async () => {
-      // The fence guards the server's first start. Once an earlier attempt started it, the server owns the library,
-      // so a later change to the original app (removed, or its export edited) must not strand the import on resume.
-      // assertMedia below still refuses any other container that could write the media.
-      if (sourceFence && !(await this.serverStarted(installation))) await this.fencing.verify(sourceFence);
+      if (sourceFence) await this.verifySourceUntilTakeover(sourceFence);
       await this.fencing.assertMedia(installation.mounts, installation);
       await this.releases.eligible(review.input.tag);
       installation.mayHaveWrittenMedia = true;
@@ -1583,11 +1578,19 @@ export class Operations {
       await this.step(operation, kind, () => this.composeAction(installation, kind));
     } else throw new Refusal('invalid_control_operation');
   }
+  /**
+   * FL-1263: the reviewed source must stay as reviewed until Frameleaf takes over the library (the installation may
+   * have written media). After that the owner may change or remove the original app; callers still run
+   * assertMedia, which refuses any other container that could write the media, the original app included.
+   */
+  private async verifySourceUntilTakeover(source: Source | SourceFence, installation?: Installation): Promise<void> {
+    if (!this.installation()?.mayHaveWrittenMedia) await this.fencing.verify(source, installation);
+  }
   /** Storage, source fencing and media ownership are rechecked before anything that can start containers. */
   private async composeAction(installation: Installation, kind: 'start' | 'stop' | 'restart'): Promise<boolean> {
     if (kind !== 'stop') await this.databaseStorage.verify(installation);
     if (kind !== 'stop' && installation.sourceId)
-      await this.fencing.verify(this.store.get<Source>(`source:${installation.sourceId}`)!, installation);
+      await this.verifySourceUntilTakeover(this.store.get<Source>(`source:${installation.sourceId}`)!, installation);
     if (kind !== 'stop') await this.fencing.assertMedia(installation.mounts, installation);
     if (kind !== 'stop') await retuneDatabase(this.directory());
     // `restart` keeps a container's old command and shm_size; `up` recreates the database when they changed.
@@ -1840,7 +1843,7 @@ export class Operations {
       const installation = { ...review.current, release: review.release.nas.tag };
       this.store.set('previous-installation', review.current);
       const source = installation.sourceId ? this.store.get<Source>(`source:${installation.sourceId}`) : null;
-      if (source) await this.fencing.verify(source, installation);
+      if (source) await this.verifySourceUntilTakeover(source, installation);
       await this.fencing.assertMedia(installation.mounts, installation);
       // PostgreSQL image changes require a logical restore into a new host directory, unless the signed
       // bundle declares this exact same-major transition in place; the checkpoint above is its fallback.
@@ -2318,7 +2321,7 @@ export class Operations {
         await this.databaseStorage.verify(previous);
         await this.fencing.assertMedia(previous.mounts, previous);
         if (previous.sourceId)
-          await this.fencing.verify(this.store.get<Source>(`source:${previous.sourceId}`)!, previous);
+          await this.verifySourceUntilTakeover(this.store.get<Source>(`source:${previous.sourceId}`)!, previous);
         await this.docker.compose(this.directory(), previous.project, 'up');
         return true;
       });
