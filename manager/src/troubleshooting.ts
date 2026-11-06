@@ -39,11 +39,13 @@ export function redactPaths(text: string, roots: string[]): string {
     .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '[email]');
 }
 
-// Containers' device and runtime mounts (/dev/dri, /run/frameleaf/...) say nothing about the library and help GPU questions.
-const SYSTEM = /^\/(dev|run|sys|proc|etc|var\/run|var\/lib\/docker)(\/|$)/;
+// Only what Manager or Docker itself mounts into containers stays visible (GPU devices help with acceleration
+// questions; the rest names no one). Any other container mount is hidden, including a /run folder left from an
+// earlier container setting while a change to those settings is still unresolved.
+const SYSTEM = /^\/(dev|sys|proc|run\/frameleaf(-host)?|(var\/)?run\/docker\.sock|etc\/(localtime|timezone|hosts|hostname|resolv\.conf)|var\/lib\/postgresql|cache)(\/|$)/;
 /**
  * Folders to hide in a report. Configured ones (library mounts, extra folders, storage, backups, Manager state) are
- * always hidden, even under /run; what Docker reports as mounted is hidden unless it is a device or runtime path.
+ * always hidden; what Docker reports as mounted is hidden unless it is one of the system mounts above.
  */
 export const redactionRoots = (configured: string[], containerMounts: string[]) =>
   [...configured, ...containerMounts.filter((path) => !SYSTEM.test(path ?? ''))].filter(Boolean);
