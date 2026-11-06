@@ -1571,6 +1571,8 @@ export class Operations {
       await this.fencing.verify(this.store.get<Source>(`source:${installation.sourceId}`)!, installation);
     if (kind !== 'stop') await this.fencing.assertMedia(installation.mounts, installation);
     if (kind !== 'stop') await retuneDatabase(this.directory());
+    // `restart` keeps a container's old command and shm_size; `up` recreates the database when they changed.
+    if (kind === 'restart') await this.docker.compose(this.directory(), installation.project, 'up', ['database']);
     await this.docker.compose(this.directory(), installation.project, kind === 'start' ? 'up' : kind);
     return true;
   }

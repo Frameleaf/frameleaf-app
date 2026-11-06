@@ -74,25 +74,26 @@ export async function hostMemory(
 const MB = 2 ** 20;
 const GB = 2 ** 30;
 /**
- * Postgres memory settings for a host with this much RAM, capped so a shared NAS keeps room for other apps.
- * RAM is rounded to whole GB first (a "16 GB" box reports ~15.6) so the values stay put across reboots.
+ * Postgres memory settings for a host (or memory limit) this size, capped so a shared NAS keeps room for other
+ * apps. RAM is rounded to whole GB first (a "16 GB" box reports ~15.6) so the values stay put across reboots;
+ * under 1 GB (an administrator limit) it is used as is and the floors shrink so Postgres stays inside it.
  * Parallel hash joins live in /dev/shm: each query needs about work_mem × hash_mem_multiplier (2) ×
  * (max_parallel_workers_per_gather (2) + 1) = 6 × work_mem there, and shm_size leaves 3-5× that for concurrency.
  */
 export function postgresTuning(bytes: number): { shm_size: string; command: string[] } {
-  const gb = Math.max(1, Math.round(bytes / GB));
-  const mb = (n: number) => `${Math.round(n)}MB`;
+  const ram = bytes >= GB ? Math.round(bytes / GB) * 1024 : Math.max(64, Math.floor(bytes / MB));
+  const mb = (n: number) => `${Math.floor(n)}MB`;
   const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
-  const [workMem, shm] = gb >= 64 ? [64, '2g'] : gb >= 16 ? [32, '1g'] : [16, '512mb'];
+  const [workMem, shm] = ram >= 64 * 1024 ? [64, 2048] : ram >= 16 * 1024 ? [32, 1024] : [16, 512];
   const settings = {
-    shared_buffers: mb(clamp((gb * 1024) / 16, 256, 8 * 1024)),
-    effective_cache_size: mb(Math.min((gb * 1024) / 4, 32 * 1024)),
-    maintenance_work_mem: mb(clamp((gb * 1024) / 64, 128, 2 * 1024)),
-    work_mem: `${workMem}MB`,
-    max_wal_size: gb >= 16 ? '4GB' : '2GB',
+    shared_buffers: mb(clamp(ram / 16, Math.min(256, ram / 4), 8 * 1024)),
+    effective_cache_size: mb(Math.min(ram / 4, 32 * 1024)),
+    maintenance_work_mem: mb(clamp(ram / 64, Math.min(128, ram / 8), 2 * 1024)),
+    work_mem: mb(Math.min(workMem, ram / 32)),
+    max_wal_size: ram >= 16 * 1024 ? '4GB' : '2GB',
     random_page_cost: '1.1',
   };
-  return { shm_size: shm, command: ['postgres', ...Object.entries(settings).flatMap(([k, v]) => ['-c', `${k}=${v}`])] };
+  return { shm_size: `${Math.min(shm, ram / 4)}mb`, command: ['postgres', ...Object.entries(settings).flatMap(([k, v]) => ['-c', `${k}=${v}`])] };
 }
 /** A compose memory limit ("2g", "512mb") in bytes. */
 const limitBytes = (limit: unknown): number => {

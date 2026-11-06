@@ -28,7 +28,7 @@ test('Postgres memory follows host RAM within NAS-friendly caps', () => {
   });
   // A "16 GB" host reports a little less; rounding keeps it in the 16 GB tier
   assert.deepEqual(settings(15.6 * GiB), {
-    shm_size: '1g',
+    shm_size: '1024mb',
     shared_buffers: '1024MB',
     effective_cache_size: '4096MB',
     maintenance_work_mem: '256MB',
@@ -37,7 +37,7 @@ test('Postgres memory follows host RAM within NAS-friendly caps', () => {
     random_page_cost: '1.1',
   });
   assert.deepEqual(settings(128 * GiB), {
-    shm_size: '2g',
+    shm_size: '2048mb',
     shared_buffers: '8192MB',
     effective_cache_size: '32768MB',
     maintenance_work_mem: '2048MB',
@@ -47,12 +47,22 @@ test('Postgres memory follows host RAM within NAS-friendly caps', () => {
   });
   assert.equal(settings(1024 * GiB).shared_buffers, '8192MB');
   assert.equal(settings(1024 * GiB).effective_cache_size, '32768MB');
-  assert.equal(settings(0.5 * GiB).shared_buffers, '256MB');
+  // An administrator limit under 1 GB shrinks everything to fit inside it
+  assert.deepEqual(settings(128 * 2 ** 20), {
+    shm_size: '32mb',
+    shared_buffers: '32MB',
+    effective_cache_size: '32MB',
+    maintenance_work_mem: '16MB',
+    work_mem: '4MB',
+    max_wal_size: '2GB',
+    random_page_cost: '1.1',
+  });
+  assert.equal(settings(512 * 2 ** 20).shared_buffers, '128MB');
   assert.deepEqual(postgresTuning(125.7 * GiB), postgresTuning(125.8 * GiB));
 });
 
 test('/dev/shm holds several parallel hash joins at the chosen work_mem', () => {
-  const bytes = (s: string) => Number.parseInt(s) * (s.endsWith('g') ? 1024 : 1);
+  const bytes = (s: string) => Number.parseInt(s);
   for (const gb of [2, 4, 8, 16, 32, 64, 128, 512]) {
     const s = settings(gb * GiB);
     // work_mem × hash_mem_multiplier 2 × (2 parallel workers + leader)
@@ -113,7 +123,7 @@ test('the database service carries the tuning at install and is re-tuned on Star
     await retuneDatabase(stack, 16 * GiB);
     const tuned = await readFile(path, 'utf8');
     assert.deepEqual(JSON.parse(tuned).services.database.command, postgresTuning(16 * GiB).command);
-    assert.equal(JSON.parse(tuned).services.database.shm_size, '1g');
+    assert.equal(JSON.parse(tuned).services.database.shm_size, '1024mb');
     await retuneDatabase(stack, 16 * GiB);
     assert.equal(await readFile(path, 'utf8'), tuned);
     await retuneDatabase(join(dir, 'missing'), 16 * GiB);
