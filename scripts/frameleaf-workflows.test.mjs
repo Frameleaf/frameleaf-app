@@ -309,7 +309,11 @@ const owned = readdirSync(path.join(root, ".github/workflows")).filter(
     name !== "jira-issue-key.yml",
 );
 const required = {
-  "Test & Lint Server": ["test.yml", "server-unit-tests", /ci-unit/],
+  "Test & Lint Server": [
+    "test.yml",
+    "server-unit-tests",
+    /test "\$RESULT" = success/,
+  ],
   "Test Web": ["test.yml", "web-unit-tests", /ci-unit/],
   "Lint Web": [
     "test.yml",
@@ -405,7 +409,10 @@ test("all nine protected checks execute on Frameleaf main PRs", () => {
     );
     assert.equal(
       j.needs,
-      id === "server-medium-tests" ? "server-medium-core-tests" : undefined,
+      {
+        "server-medium-tests": "server-medium-core-tests",
+        "server-unit-tests": "server-unit-lanes",
+      }[id],
       `${name} must execute directly or aggregate every isolated shard`,
     );
     assert.equal(admission(j.if, "Frameleaf/frameleaf-app"), true);
@@ -2010,7 +2017,8 @@ test("action upgrades preserve scoped mise authentication and the existing uv ca
   const ml = workflow("frameleaf-quality.yml").jobs[
     "machine-learning"
   ].steps.find((step) => step.uses?.startsWith("astral-sh/setup-uv@"));
-  assert.equal(ml.with["save-cache"], true);
+  // FL-1264: only main saves; a PR-scoped cache is readable by that PR alone and evicts useful ones.
+  assert.equal(ml.with["save-cache"], "${{ github.ref == 'refs/heads/main' }}");
   const scanner = workflow("org-zizmor.yml").jobs.zizmor.steps.find((step) =>
     step.uses?.startsWith("astral-sh/setup-uv@"),
   );
