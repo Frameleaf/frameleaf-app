@@ -168,8 +168,19 @@ export async function command(
         child.kill('SIGKILL');
       } else result = Buffer.concat([result, chunk]);
     };
-    child.stdout.on('data', keep);
-    if (options.mergeStderr) child.stderr.on('data', (chunk: string) => keep(Buffer.from(chunk)));
+    if (!options.mergeStderr) child.stdout.on('data', keep);
+    else
+      // Whole lines only, per stream: a stderr chunk never lands inside a stdout line that spans two chunks.
+      for (const stream of [child.stdout, child.stderr] as const) {
+        let pending = Buffer.alloc(0);
+        stream.on('data', (chunk: Buffer | string) => {
+          const all = Buffer.concat([pending, Buffer.from(chunk)]);
+          const end = all.length > 1024 * 1024 ? all.length : all.lastIndexOf(10) + 1;
+          pending = all.subarray(end);
+          if (end) keep(all.subarray(0, end));
+        });
+        stream.once('end', () => pending.length && keep(Buffer.concat([pending, Buffer.from('\n')])));
+      }
   }
   if (options.reply) {
     const reply = options.reply;

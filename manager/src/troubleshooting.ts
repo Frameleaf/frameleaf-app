@@ -19,9 +19,12 @@ const hidden = (path: string) => `[path]${path.match(MEDIA)?.[0] ?? ''}`;
  * Hide where a library lives and what is in it, for a report someone posts publicly. Every mounted folder (host
  * and container side), anything under a usual photo folder, and every media file name becomes `[path]`,
  * `[path].jpg` or `[file].jpg`; e-mail addresses go too. Code paths (`/usr/src/app/server/dist/...`) stay, so stack
- * traces still help. ponytail: over-redacts the rest of a line after a library path rather than risk a folder name.
+ * traces still help. Best effort: the owner still reads the report before posting it.
+ * ponytail: over-redacts the rest of a line after a library path rather than risk a folder name. Lines are cut at
+ * 2000 characters and the scans that look ahead for a media extension are bounded, so one long line stays cheap.
  */
 export function redactPaths(text: string, roots: string[]): string {
+  text = text.replace(/^(.{2000}).+$/gm, '$1 …[line shortened]');
   for (const root of [...new Set(roots.map((r) => r.replace(/[\\/]+$/, '')))].filter((r) => r.length > 1).sort((a, b) => b.length - a.length))
     text = text.replace(new RegExp(`${escape(root)}${END}${REST}`, 'gm'), hidden);
   return text
@@ -30,9 +33,9 @@ export function redactPaths(text: string, roots: string[]): string {
       return ext ? `${quoted[0]}[file]${ext[0]}${quoted[0]}` : quoted;
     })
     .replace(new RegExp(`${LIBRARY}${END}${REST}`, 'gim'), hidden)
-    .replace(new RegExp(String.raw`(?:[A-Za-z]:)?[\\/][^\n"'\`<>|,;:()]*?${MEDIA.source}`, 'gi'), hidden)
+    .replace(new RegExp(String.raw`(?:[A-Za-z]:)?[\\/][^\n"'\`<>|,;:()]{0,512}?${MEDIA.source}`, 'gi'), hidden)
     .replace(PATH, (path) => (MEDIA.test(path) ? `[file]${path.match(MEDIA)![0]}` : path))
-    .replace(new RegExp(`[^\\s"'\`<>|,;:()[\\]{}=\\\\/]+${MEDIA.source}`, 'gi'), (_name, ext: string) => `[file].${ext}`)
+    .replace(new RegExp(`[^\\s"'\`<>|,;:()[\\]{}=\\\\/]{1,255}${MEDIA.source}`, 'gi'), (_name, ext: string) => `[file].${ext}`)
     .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '[email]');
 }
 
@@ -81,13 +84,13 @@ const ms = (start: number) => `${Date.now() - start} ms`;
 // Runs inside the server container (Node is there); it sees the stack network exactly as the server does.
 const SERVER_PROBE = `const net=require('node:net'),dns=require('node:dns').promises,t=5000,ml=process.argv[1],cloud=process.env.FRAMELEAF_CLOUD_URL||'https://api.frameleaf.cloud';
 const tcp=(h,p)=>new Promise(r=>{const s=net.connect(p,h),d=()=>{s.destroy()};s.setTimeout(t);s.on('connect',()=>{d();r('ok')});s.on('timeout',()=>{d();r('timed out')});s.on('error',e=>r(e.code||'error'))});
-const get=u=>fetch(u,{signal:AbortSignal.timeout(t)}).then(r=>({status:r.status,date:r.headers.get('date')}),e=>({error:(e.cause&&e.cause.code)||e.name}));
+const get=u=>{const t0=Date.now();return fetch(u,{signal:AbortSignal.timeout(t)}).then(r=>({status:r.status,date:r.headers.get('date'),sent:t0,received:Date.now()}),e=>({error:(e.cause&&e.cause.code)||e.name}))};
 const host=new URL(cloud).hostname;
-Promise.all([tcp('database',5432),get('http://127.0.0.1:2283/api/server/ping'),ml?get('http://'+ml+':3003/ping'):null,dns.lookup(host).then(()=>'ok',e=>e.code||'error'),get(cloud),Date.now()]).then(([database,api,ml,dns,cloud,now])=>process.stdout.write(JSON.stringify({database,api,ml,dns,cloud,now,host})));`;
+Promise.all([tcp('database',5432),get('http://127.0.0.1:2283/api/server/ping'),ml?get('http://'+ml+':3003/ping'):null,dns.lookup(host).then(()=>'ok',e=>e.code||'error'),get(cloud)]).then(([database,api,ml,dns,cloud])=>process.stdout.write(JSON.stringify({database,api,ml,dns,cloud,host})));`;
 // Runs in the LAN discovery companion, which uses host networking: the same address phones on the network use.
-const LAN_PROBE = `fetch(process.env.FRAMELEAF_DISCOVERY_URL+'/api/server/ping',{signal:AbortSignal.timeout(5000)}).then(r=>process.stdout.write(String(r.status)),e=>process.stdout.write((e.cause&&e.cause.code)||e.name));`;
+const LAN_PROBE = `fetch((process.env.FRAMELEAF_DISCOVERY_URL||'http://127.0.0.1:2283')+'/api/server/ping',{signal:AbortSignal.timeout(5000)}).then(r=>process.stdout.write(String(r.status)),e=>process.stdout.write((e.cause&&e.cause.code)||e.name));`;
 
-type Http = { status?: number; date?: string | null; error?: string };
+type Http = { status?: number; date?: string | null; sent?: number; received?: number; error?: string };
 const http = (r: Http | null | undefined) => (r?.status ? `answered (HTTP ${r.status})` : `no answer (${r?.error ?? 'error'})`);
 
 export async function connectionChecks(docker: Docker, installation: Installation | null, containers: Container[], storageRoots: string[]): Promise<Check[]> {
@@ -122,8 +125,12 @@ export async function connectionChecks(docker: Docker, installation: Installatio
   const published = server && Object.values(server.HostConfig.PortBindings ?? {}).flat().some((b) => Number(b?.HostPort) === installation.port);
   checks.push({
     name: `Port ${installation.port} published`,
-    ok: !!published,
-    detail: published ? 'Docker forwards this port to the Frameleaf server.' : 'Docker does not forward the library port. Restart the library from Manager.',
+    ok: server ? !!published : null,
+    detail: !server
+      ? 'Unknown: Manager cannot see the Frameleaf server container.'
+      : published
+        ? 'Docker forwards this port to the Frameleaf server.'
+        : 'Docker does not forward the library port. Restart the library from Manager.',
   });
 
   const ml = containers.find((c) => serviceName(c).includes('machine-learning'));
@@ -131,7 +138,7 @@ export async function connectionChecks(docker: Docker, installation: Installatio
     start = Date.now();
     const probe = await docker
       .node(server.Id, SERVER_PROBE, [ml ? serviceName(ml) : ''])
-      .then((text) => JSON.parse(text) as { database: string; api: Http; ml: Http | null; dns: string; cloud: Http; now: number; host: string })
+      .then((text) => JSON.parse(text) as { database: string; api: Http; ml: Http | null; dns: string; cloud: Http; host: string })
       .catch(() => null);
     if (!probe) checks.push({ name: 'Checks from the server', ok: false, detail: 'Manager could not run checks inside the server container.' });
     else {
@@ -144,12 +151,15 @@ export async function connectionChecks(docker: Docker, installation: Installatio
         { name: 'Internet name lookup', ok: probe.dns === 'ok', detail: probe.dns === 'ok' ? `${probe.host} resolves.` : `${probe.host} does not resolve (${probe.dns}). Check the host DNS.` },
         { name: 'Frameleaf Cloud reachable', ok: !!probe.cloud.status, detail: `${probe.host} ${http(probe.cloud)} (${ms(start)} for all server checks)` },
       );
-      const skew = probe.cloud.date ? Math.round((probe.now - Date.parse(probe.cloud.date)) / 1000) : null;
-      if (skew !== null && Number.isFinite(skew))
+      // The server stamped its Date somewhere between send and receive, to the second: allow for both.
+      const { date, sent = 0, received = 0 } = probe.cloud;
+      const skew = date ? ((sent + received) / 2 - Date.parse(date)) / 1000 : NaN;
+      const slack = (received - sent) / 2000 + 1;
+      if (Number.isFinite(skew))
         checks.push({
           name: 'Host clock',
-          ok: Math.abs(skew) < 60,
-          detail: Math.abs(skew) < 60 ? 'Within a minute of Frameleaf Cloud.' : `${Math.abs(skew)} s ${skew > 0 ? 'ahead' : 'behind'}. Sign-in and secure connections fail when the clock is wrong; turn on network time.`,
+          ok: Math.abs(skew) - slack < 60,
+          detail: Math.abs(skew) - slack < 60 ? 'Within a minute of Frameleaf Cloud.' : `About ${Math.round(Math.abs(skew))} s ${skew > 0 ? 'ahead' : 'behind'}. Sign-in and secure connections fail when the clock is wrong; turn on network time.`,
         });
     }
   }
@@ -197,7 +207,8 @@ export function renderReport(report: Report): string {
   const i = report.installation;
   return [
     'Frameleaf troubleshooting report',
-    `Generated ${report.generated}. Passwords, keys, folder paths, file names and e-mail addresses are removed.`,
+    `Generated ${report.generated}. Manager tried to remove passwords, keys, folder paths, file names and e-mail addresses.`,
+    'Removal is best effort: read the whole report before you post it, and delete anything private that is left (names, addresses, folders).',
     '',
     `Manager ${report.manager} (${report.runtime})`,
     report.host ? `Docker ${report.host.version} · Compose ${report.host.compose} · ${report.host.platform} · ${report.host.processors ?? '?'} CPUs · ${report.host.memory ? `${(report.host.memory / 1e9).toFixed(1)} GB RAM` : '? RAM'}` : 'Docker: unavailable',

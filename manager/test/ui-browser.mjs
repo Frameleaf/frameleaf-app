@@ -41,7 +41,7 @@ let expectedHttpErrors = 0;
 page.on('pageerror', (e) => errors.push(e.message));
 page.on('console', (e) => {
   if (e.type() === 'error') {
-    if (expectedHttpErrors > 0 && /status of 40[19]\b/u.test(e.text())) expectedHttpErrors--;
+    if (expectedHttpErrors > 0 && /status of (?:40[19]|502)\b/u.test(e.text())) expectedHttpErrors--;
     else errors.push(e.text());
   }
 });
@@ -296,7 +296,14 @@ await page.route('**/manager-api/**', async (route) => {
     dashboard.administrator.name = body.name;
     value = { csrf: 'rotated-csrf' };
     dashboard.csrf = value.csrf;
-  } else if (['backup-key', 'export'].includes(path))
+  } else if (path === 'diagnostics-report')
+    // The first answer is a proxy's HTML error page; the next one is the report.
+    return route.fulfill(
+      requests.filter((r) => r.path === 'diagnostics-report').length === 1
+        ? { status: 502, contentType: 'text/html', body: '<html><body>Bad gateway</body></html>' }
+        : { contentType: 'text/plain', body: 'Frameleaf troubleshooting report\n' },
+    );
+  else if (['backup-key', 'export'].includes(path))
     return route.fulfill({
       contentType: 'application/octet-stream',
       headers: { 'Content-Disposition': 'attachment; filename="fixture-recovery.txt"' },
@@ -376,6 +383,14 @@ try {
       'https://frameleaf.app/help/community/c/bug-reports/9',
     );
     await screenshot('services-troubleshooting');
+    expectedHttpErrors = 1;
+    await page.getByRole('button', { name: 'Download report' }).click();
+    await page.locator('#main').getByText('Manager sent an unexpected answer.', { exact: false }).waitFor();
+    const report = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Download report' }).click();
+    assert.match((await report).suggestedFilename(), /^frameleaf-troubleshooting-\d{4}-\d{2}-\d{2}\.txt$/);
+    await page.getByText('Report downloaded. Read it, then attach it to a post in Community › Bug reports.', { exact: true }).waitFor();
+    assert.equal(requests.filter((r) => r.path === 'diagnostics-report').length, 2);
     await mainButton('Stop stack').click();
     assert.equal(await page.locator('dialog').isVisible(), true);
     await button('Cancel').click();

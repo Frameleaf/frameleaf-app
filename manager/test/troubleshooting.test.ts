@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
-import { Docker } from '../src/docker.js';
+import { Docker, command } from '../src/docker.js';
 import { findProblems, levelCounts, redactPaths, renderReport } from '../src/troubleshooting.js';
 
 test('library paths, media file names and e-mail addresses never reach a shared report', () => {
@@ -83,4 +86,46 @@ test('service logs keep stderr and come back in time order without timestamps', 
   }) as never);
   assert.equal(await docker.logs(id, { tail: 1000, since: '24h' }), 'first (stderr)\nsecond (stdout)\nthird (stdout)');
   assert.deepEqual(seen, { args: ['logs', '--timestamps', '--tail', '1000', '--since', '24h', id], mergeStderr: true });
+});
+
+test('merged streams keep whole lines when a stdout line arrives in two chunks around a stderr line', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-merge-'));
+  const fake = join(directory, 'docker');
+  await writeFile(
+    fake,
+    `#!${process.execPath}
+const pause = () => new Promise((r) => setTimeout(r, 30));
+(async () => {
+  process.stdout.write('2026-11-06T10:00:02.000000000Z out-start');
+  await pause();
+  process.stderr.write('2026-11-06T10:00:01.000000000Z err-line\\n');
+  await pause();
+  process.stdout.write('-out-end\\n2026-11-06T10:00:03.000000000Z no-newline');
+})();
+`,
+  );
+  await chmod(fake, 0o700);
+  try {
+    const text = await command('docker', ['logs'], { executable: fake, mergeStderr: true });
+    assert.deepEqual(text.split('\n').filter(Boolean).sort(), [
+      '2026-11-06T10:00:01.000000000Z err-line',
+      '2026-11-06T10:00:02.000000000Z out-start-out-end',
+      '2026-11-06T10:00:03.000000000Z no-newline',
+    ]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('redaction stays fast on long lines without a media extension', () => {
+  const lines = [
+    '/a'.repeat(50_000),
+    'x'.repeat(100_000),
+    `/data/${'folder name '.repeat(5_000)}`,
+    Array.from({ length: 2_000 }, () => `/usr/src/app/x${'y'.repeat(500)}`).join(' '),
+  ].join('\n');
+  const start = performance.now();
+  const out = redactPaths(lines.repeat(20), ['/mnt/user/photos']);
+  assert.ok(performance.now() - start < 2_000, `took ${Math.round(performance.now() - start)} ms`);
+  assert.ok(out.split('\n').every((line) => line.length < 2_100));
 });

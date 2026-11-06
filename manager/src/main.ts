@@ -125,16 +125,19 @@ async function troubleshootingScope() {
     : undefined;
   const secrets = [...containers, ...(self ? [self] : [])].flatMap((c) => secretEnvironmentValues(c.Config.Env ?? []));
   secrets.push(store.get<string>('database-password') ?? '');
-  // Device and runtime mounts (/dev/dri, /run/frameleaf/...) say nothing about the library and help GPU questions.
+  // Containers' device and runtime mounts (/dev/dri, /run/frameleaf/...) say nothing about the library and help GPU
+  // questions. Configured library, storage and state folders are always hidden, wherever they are (even /run/user/...).
   const system = /^\/(dev|run|sys|proc|etc|var\/run|var\/lib\/docker)(\/|$)/;
   const roots = [
     ...(installation?.mounts ?? []).flatMap((m) => [m.source, m.target]),
-    ...[...containers, ...(self ? [self] : [])].flatMap((c) => (c.Mounts ?? []).flatMap((m) => [m.Source, m.Destination])),
+    ...[...containers, ...(self ? [self] : [])]
+      .flatMap((c) => (c.Mounts ?? []).flatMap((m) => [m.Source, m.Destination]))
+      .filter((path) => !system.test(path ?? '')),
     ...(process.env.MANAGER_STORAGE_ROOTS ?? '').split(':'),
     backupRoot!,
     directory!,
     installation?.databaseRoot ?? '',
-  ].filter((root) => root && !system.test(root));
+  ].filter(Boolean);
   const clean = (text: string) => redactPaths(redact(text, secrets), roots);
   return { installation, containers, self, clean };
 }
