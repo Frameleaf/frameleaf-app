@@ -54,6 +54,7 @@ it('starts the retained import regeneration during first setup once ready, resum
       {
         getJobCounts: vi.fn().mockResolvedValue({ active: 0, waiting: 0, delayed: 0, paused: 0, failed: 0 }),
         retryImportedWork: (runId: string, tx: typeof db) => new SqlQueueStore(db).retryImportedWork(runId, tx),
+        forgetRunReads: vi.fn(),
       } as never,
       users as never,
       {} as never,

@@ -177,6 +177,26 @@ describe('palette indexing lifecycle', () => {
     });
     expect(media.extractAssetPalette).not.toHaveBeenCalled();
   });
+  it('never queues an image whose colors are known again', async () => {
+    const { service, palettes, jobs } = setup();
+    palettes.get.mockResolvedValue({ status: 'ready', sourceRevision: 'rev' });
+    await service.onRestore({ assetIds: ['asset'] } as never);
+    await service.onDevelopCurrentChanged({ assetId: 'asset' } as never);
+    await service.handleBackfill({});
+    expect(jobs.queue).not.toHaveBeenCalled();
+    expect(palettes.publish).not.toHaveBeenCalled();
+  });
+  it('reads an ordinary photo from its preview, never the original on the library drive', async () => {
+    const { service, palettes, media } = setup();
+    palettes.source.mockResolvedValue({
+      ...source,
+      originalPath: '/library/photo.jpg',
+      originalFileName: 'photo.jpg',
+      files: [{ type: 'preview', path: '/thumbs/photo-preview.jpg', isEdited: false, isTransparent: false }],
+    } as never);
+    await service.handleExtract({ id: 'asset', sourceRevision: 'rev' });
+    expect(media.extractAssetPalette).toHaveBeenCalledWith('/thumbs/photo-preview.jpg', expect.anything());
+  });
   it('keeps unedited GIF alpha by decoding a representative original frame', async () => {
     const { service, palettes, media } = setup();
     palettes.source.mockResolvedValue({
@@ -257,7 +277,7 @@ describe('palette indexing lifecycle', () => {
     expect(palettes.page).toHaveBeenCalledWith('before');
     expect(jobs.queue).toHaveBeenLastCalledWith({
       name: JobName.AssetPaletteQueueAll,
-      data: { afterId: 'asset-99', force: undefined },
+      data: { afterId: 'asset-99' },
     });
   });
 });

@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { DB } from 'src/schema/index.js';
 import { JobName, QueueName } from 'src/enum.js';
 import { enterQueueTurnstile, isLockContention, lockQueues, withQueueCatalogue } from 'src/queue/catalogue.js';
+import { costReusedRead } from 'src/queue/coalesced-task.js';
 import {
   publishLibraryFollowups,
   redactLibraryPayloads,
@@ -556,7 +557,7 @@ export class SqlQueueStore {
    * dependencies and holds still apply. False when the job is not waiting to run in this queue.
    */
   async startNow(queue: string, jobId: string): Promise<boolean> {
-    return this.db.transaction().execute(async (tx) => {
+    const started = await this.db.transaction().execute(async (tx) => {
       await lockQueues(tx, [queue]);
       const { rows } = await sql<{ id: string }>`update job j set state = 'waiting', "availableAt" = ${STARTED_BY_HAND}
         where id = ${jobId}::uuid and queue = ${queue} and state in ('pending','waiting')
@@ -569,6 +570,8 @@ export class SqlQueueStore {
       }
       return rows.length > 0;
     });
+    this.forgetRunReads();
+    return started;
   }
 
   async heartbeat(workerId: string, claims: Array<{ id: string; token: string }>) {
@@ -1034,6 +1037,7 @@ export class SqlQueueStore {
   async pause(name: string, paused: boolean) {
     await sql`insert into job_queue(name, paused) values (${name}, ${paused})
       on conflict (name) do update set paused = excluded.paused`.execute(this.db);
+    this.forgetRunReads();
   }
 
   async isPaused(name: string) {
@@ -1093,8 +1097,21 @@ export class SqlQueueStore {
     return rows.map(({ queue }) => queue);
   }
 
+  /** Activity and the running-jobs summary poll this; a costly recount is shared and not repeated at once. */
+  private readonly runReads = costReusedRead(({ take, skip }: { take: number; skip: number }) =>
+    listRuns(this.db, take, skip),
+  );
+
   listRuns(take: number, skip: number) {
-    return listRuns(this.db, take, skip);
+    return this.runReads({ take, skip });
+  }
+
+  /**
+   * After a pause, start, retry or cancel, Activity's next read is fresh, never a count from before the change. Called
+   * once the change is committed; a caller that writes in its own transaction (`retryImportedWork`) calls it after.
+   */
+  forgetRunReads() {
+    this.runReads.clear();
   }
 
   listRunItems(runId: string, take: number, skip: number) {
@@ -1110,11 +1127,13 @@ export class SqlQueueStore {
     if (entityIds?.length === 0) return;
     const about = entityIds ? sql`and j.data ->> 'id' = any(${entityIds}::text[])` : sql``;
     await this.cancel(queue, states, about, !entityIds);
+    this.forgetRunReads();
   }
 
   /** Cancel one queued job by its `options.jobId`; a later request for its run stage re-arms the same row. */
-  cancelQueued(queue: string, externalId: string) {
-    return this.cancel(queue, ['pending', 'waiting'], sql`and j."externalId" = ${externalId}`, false);
+  async cancelQueued(queue: string, externalId: string) {
+    await this.cancel(queue, ['pending', 'waiting'], sql`and j."externalId" = ${externalId}`, false);
+    this.forgetRunReads();
   }
 
   private async cancel(queue: string, states: QueueState[], about: RawBuilder<unknown>, wholeQueue: boolean) {
@@ -1240,6 +1259,7 @@ export class SqlQueueStore {
       });
       total += count;
       if (count < 1000) {
+        this.forgetRunReads();
         return total;
       }
     }

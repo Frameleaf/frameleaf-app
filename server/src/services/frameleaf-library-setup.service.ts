@@ -180,6 +180,7 @@ export class FrameleafLibrarySetupService {
 
   async begin(retry = false): Promise<void> {
     const identity = this.identity();
+    let retriedImportedWork = false;
     await this.locked(async (db) => {
       const previous = await this.read<SetupState>(this.key(), db);
       // Retrying a stopped setup, or one the owner dismissed (in any phase, finished included), checks again.
@@ -201,8 +202,10 @@ export class FrameleafLibrarySetupService {
           imported?.journal.status === 'activated' &&
           imported.run?.enumerationDone &&
           imported.run.selection.managerSetup?.startedAt
-        )
+        ) {
           await this.jobs.retryImportedWork(imported.run.id, db);
+          retriedImportedWork = true;
+        }
       }
       const ml = process.env.FRAMELEAF_MANAGER_ML_ENABLED;
       let processingChoiceApplied = previous?.processingChoiceApplied ?? false;
@@ -272,6 +275,8 @@ export class FrameleafLibrarySetupService {
       await this.write(this.key(), state, db);
       await this.startImportedRegeneration(state, db);
     });
+    // Committed now: Activity's next read must not reuse counts from before the retry.
+    if (retriedImportedWork) this.jobs.forgetRunReads();
   }
 
   private importedRun(db = this.db, lock = false) {

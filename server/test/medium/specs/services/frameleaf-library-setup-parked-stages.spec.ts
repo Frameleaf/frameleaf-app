@@ -136,6 +136,7 @@ const setup = (ml: { enabled: boolean }) =>
     {
       getJobCounts: vi.fn().mockResolvedValue({ active: 0, waiting: 0, delayed: 0, paused: 0, failed: 0 }),
       retryImportedWork: vi.fn(),
+      forgetRunReads: vi.fn(),
     } as never,
     { hasAdmin: vi.fn().mockResolvedValue(true), getAdmin: vi.fn().mockResolvedValue({ id: randomUUID() }) } as never,
     { getNow: vi.fn().mockResolvedValue({ nowId: randomUUID() }) } as never,

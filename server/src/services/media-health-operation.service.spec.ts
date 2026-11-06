@@ -75,7 +75,32 @@ describe(MediaHealthOperationService.name, () => {
       mocks.logger as never,
       operations,
       mediaHealth as unknown as MediaHealthService,
+      mocks.job as never,
     );
+  });
+
+  describe('Media Health queue paused in Job manager', () => {
+    it('claims nothing while the queue is paused', async () => {
+      mocks.job.isPaused.mockResolvedValue(true);
+      await sut.drain();
+      expect(operations.claimNext).not.toHaveBeenCalled();
+    });
+
+    it('hands a running scan back between batches, cursor kept, and marks its runs paused', async () => {
+      mocks.job.isPaused.mockResolvedValueOnce(false).mockResolvedValue(true);
+      mediaHealth.scanPage.mockResolvedValueOnce(page(MEDIA_HEALTH_SCAN_BATCH, 'asset-25'));
+      await sut.run(operationOf(scanSnapshot), 'token');
+      expect(mediaHealth.scanPage).toHaveBeenCalledTimes(1);
+      expect(operations.requeue).toHaveBeenCalledWith('0195e2a0-0000-7000-8000-0000000000e1', 'token', {
+        delayMs: 0,
+        returnAttempt: true,
+      });
+      expect(mediaHealth.setRunState).toHaveBeenLastCalledWith(
+        expect.anything(),
+        'paused',
+        expect.objectContaining({ cursor: 'asset-25' }),
+      );
+    });
   });
 
   describe('scan', () => {
