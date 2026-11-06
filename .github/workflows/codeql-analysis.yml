@@ -33,6 +33,8 @@ jobs:
         uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d
         with:
           languages: ${{ matrix.language }}
+          # One trap cache per main commit (~70 MB each) filled half the 10 GB Actions cache.
+          trap-caching: false
       - name: Autobuild
         uses: github/codeql-action/autobuild@24c54180a607b1449ed407dd24f251e4e9147c8d
       - name: Perform CodeQL Analysis

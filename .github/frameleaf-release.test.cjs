@@ -315,6 +315,14 @@ test("manual releases require a successful canonical exact-SHA Docker run", () =
 const testJobNames = [
   "Scripts unit tests",
   "Test & Lint Server",
+  "Server Lane (format-types)",
+  "Server Lane (lint-1)",
+  "Server Lane (lint-2)",
+  "Server Lane (lint-3)",
+  "Server Lane (unit-1)",
+  "Server Lane (unit-2)",
+  "Server Lane (unit-3)",
+  "Server Lane (runtime)",
   "Unit Test CLI",
   "Unit Test CLI (Windows)",
   "Lint Web",
@@ -416,7 +424,7 @@ test("same-SHA Test qualification requires every real non-mobile job, including 
   const evidence = await requireTestQualification(sha, fixture.request);
   assert.equal(evidence.runId, 42);
   assert.equal(evidence.attempt, 2);
-  assert.equal(evidence.jobs.length, 60);
+  assert.equal(evidence.jobs.length, 68);
   assert.equal(
     evidence.jobs.filter((job) =>
       job.name.startsWith("End-to-End Tests (Server & CLI)"),

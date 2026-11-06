@@ -93,14 +93,31 @@ jobs:
       - name: Validate the Studio render spec and goldens
         run: node --test studio/tools/render-goldens.test.mjs
     timeout-minutes: 60
-  server-unit-tests:
-    name: Test & Lint Server
+  # FL-1264: the server checks used to run one after another in a single 31-minute job (eslint alone
+  # took 14.5 minutes). Each lane now runs on its own runner; Test & Lint Server is the protected
+  # aggregate. `mise run //server:ci-unit` still runs the same checks serially for local use.
+  server-unit-lanes:
+    name: Server Lane
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
     env:
       NODE_OPTIONS: --max-old-space-size=6144
+    strategy:
+      fail-fast: false
+      matrix:
+        lane:
+          [
+            format-types,
+            lint-1,
+            lint-2,
+            lint-3,
+            unit-1,
+            unit-2,
+            unit-3,
+            runtime,
+          ]
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -113,30 +130,79 @@ jobs:
           github_token: ${{ github.token }}
           install_args: --locked
           version: 2026.10.8
-      - name: Run ci-unit
+      - name: Install server dependencies and plugins
         run: |
-          export FL285_VOLUME_FOLDER="$RUNNER_TEMP/fl285-volume"
-          mkdir "$FL285_VOLUME_FOLDER"
-          sudo mount -t tmpfs -o "size=32m,uid=$(id -u),gid=$(id -g),mode=0700" tmpfs "$FL285_VOLUME_FOLDER"
-          trap 'sudo umount "$FL285_VOLUME_FOLDER"; rmdir "$FL285_VOLUME_FOLDER"' EXIT
-          mise run //server:ci-unit
-      - name: Run Buddy Backup and recovery runtime tests
-        working-directory: ./server
-        run: node --test --test-timeout=15000 test/runtime/buddy-backup.test.mjs test/runtime/buddy-recovery.test.mjs
+          mise run //server:install
+          mise run //:plugins
+      # PRs reuse main's ESLint results, so only changed files are linted. Main never restores: its
+      # full lint also catches type-aware findings in files a PR did not touch.
+      - name: Restore server ESLint cache from main
+        if: startsWith(matrix.lane, 'lint-') && github.event_name == 'pull_request'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: server/.eslintcache
+          key: server-eslint-${{ matrix.lane }}-${{ hashFiles('pnpm-lock.yaml', 'server/eslint.config.mjs', 'server/tsconfig*.json') }}-${{ github.sha }}
+          restore-keys: server-eslint-${{ matrix.lane }}-${{ hashFiles('pnpm-lock.yaml', 'server/eslint.config.mjs', 'server/tsconfig*.json') }}-
+      - name: Run ${{ matrix.lane }}
+        env:
+          LANE: ${{ matrix.lane }}
+        run: |
+          case "$LANE" in
+            format-types)
+              mise run //server:format
+              mise run //server:check
+              ;;
+            lint-*)
+              SERVER_LINT_SHARD="${LANE#lint-}/3" SERVER_LINT_CACHE=.eslintcache mise run //server:lint
+              ;;
+            unit-*)
+              export FL285_VOLUME_FOLDER="$RUNNER_TEMP/fl285-volume"
+              mkdir "$FL285_VOLUME_FOLDER"
+              sudo mount -t tmpfs -o "size=32m,uid=$(id -u),gid=$(id -g),mode=0700" tmpfs "$FL285_VOLUME_FOLDER"
+              trap 'sudo umount "$FL285_VOLUME_FOLDER"; rmdir "$FL285_VOLUME_FOLDER"' EXIT
+              cd server
+              pnpm run test --run "--shard=${LANE#unit-}/3"
+              ;;
+            runtime)
+              mise run //server:test-runtime
+              cd server
+              node --test --test-timeout=15000 test/runtime/buddy-backup.test.mjs test/runtime/buddy-recovery.test.mjs
+              ;;
+            *) echo "::error::Unknown server lane $LANE"; exit 1 ;;
+          esac
+      - name: Save server ESLint cache for PRs
+        if: success() && startsWith(matrix.lane, 'lint-') && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: server/.eslintcache
+          key: server-eslint-${{ matrix.lane }}-${{ hashFiles('pnpm-lock.yaml', 'server/eslint.config.mjs', 'server/tsconfig*.json') }}-${{ github.sha }}
       - name: Capture automatic server lint fixes
-        if: failure()
+        if: failure() && (matrix.lane == 'format-types' || startsWith(matrix.lane, 'lint-'))
         run: |
           timeout 15m pnpm --filter frameleaf format:fix || true
           timeout 15m pnpm --filter frameleaf lint:fix || true
           git diff --binary > "$RUNNER_TEMP/server-lint.patch"
       - name: Archive automatic server lint fixes
-        if: failure()
+        if: failure() && (matrix.lane == 'format-types' || startsWith(matrix.lane, 'lint-'))
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: server-lint-autofix
+          name: server-lint-autofix-${{ matrix.lane }}
           path: ${{ runner.temp }}/server-lint.patch
           retention-days: 7
     timeout-minutes: 60
+  server-unit-tests:
+    name: Test & Lint Server
+    needs: server-unit-lanes
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    if: ${{ always() && github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
+    steps:
+      - name: Verify every server lane succeeded
+        env:
+          RESULT: ${{ needs.server-unit-lanes.result }}
+        run: test "$RESULT" = success
+    timeout-minutes: 5
   cli-unit-tests:
     name: Unit Test CLI
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
