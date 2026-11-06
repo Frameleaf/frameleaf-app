@@ -25,6 +25,7 @@ import {
   MlWorkload,
   NotificationLevel,
   NotificationType,
+  QueueName,
   SystemMetadataKey,
 } from 'src/enum.js';
 import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
@@ -2110,6 +2111,22 @@ describe(CloudMlBatchService.name, () => {
   });
 
   describe('runPass', () => {
+    it('claims no batch while Descriptions & tags is paused in Job manager', async () => {
+      mocks.job.isPaused.mockResolvedValue(true);
+      await sut.runPass(now);
+      expect(mocks.job.isPaused).toHaveBeenCalledWith(QueueName.ImageDescription);
+      expect(mocks.mediaOperation.claimNext).not.toHaveBeenCalled();
+    });
+
+    it('claims no further batch once Descriptions & tags is paused between steps', async () => {
+      mocks.job.isPaused.mockResolvedValueOnce(false).mockResolvedValue(true);
+      mocks.mediaOperation.claimNext.mockResolvedValue({ operation: operation(), claimToken: 'claim-1' });
+      const step = vi.spyOn(sut, 'step').mockResolvedValue(false);
+      await sut.runPass(now);
+      expect(mocks.mediaOperation.claimNext).toHaveBeenCalledTimes(1);
+      step.mockRestore();
+    });
+
     it('leaves stopped-parent settlement in charge when collection is aborted', async () => {
       const abort = new AbortController();
       const context: QueueExecution = {

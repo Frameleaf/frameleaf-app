@@ -8,6 +8,7 @@ import {
   MediaOperationStatus,
   MlAdmissionRefusal,
   MlWorkload,
+  QueueName,
 } from 'src/enum.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { EnrichmentPlanService } from 'src/services/enrichment-plan.service.js';
@@ -117,6 +118,7 @@ describe(EnrichmentPlanService.name, () => {
       mocks.machineLearning as never,
       mocks.config as never,
       mocks.systemMetadata as never,
+      mocks.job as never,
     );
   });
 
@@ -262,6 +264,32 @@ describe(EnrichmentPlanService.name, () => {
       ]);
       expect(enrichment.describeAsset).not.toHaveBeenCalled();
       expect(operations.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Descriptions & tags queue paused in Job manager', () => {
+    it('claims no plan while the queue is paused', async () => {
+      mocks.job.isPaused.mockResolvedValue(true);
+      await sut.drain();
+      expect(mocks.job.isPaused).toHaveBeenCalledWith(QueueName.ImageDescription);
+      expect(operations.claimNext).not.toHaveBeenCalled();
+    });
+
+    it('hands a running plan back between assets, cursor kept', async () => {
+      const snapshot = snapshotOf({ assetIds: [newUuid(), newUuid()] });
+      momentRepository.getAssetKinds.mockImplementation(([id]: string[]) =>
+        Promise.resolve(kindsOf([[id, AssetType.Image]])),
+      );
+      mocks.access.asset.checkOwnerAccess.mockImplementation((_userId, ids) => Promise.resolve(new Set(ids)));
+      mocks.job.isPaused.mockResolvedValueOnce(false).mockResolvedValue(true);
+
+      await sut.run(operationOf(snapshot), 'token');
+
+      expect(enrichment.describeAsset).toHaveBeenCalledOnce();
+      expect(operations.requeue).toHaveBeenCalledWith(expect.any(String), 'token', { delayMs: 0, returnAttempt: true });
+      const last = vi.mocked(operations.setBulkResult).mock.calls.at(-1)![2];
+      expect(last.processedUnits).toBe(1);
+      expect(operations.complete).not.toHaveBeenCalled();
     });
   });
 

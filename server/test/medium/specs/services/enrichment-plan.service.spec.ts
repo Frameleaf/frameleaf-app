@@ -79,6 +79,7 @@ const setup = () => {
     machineLearning,
     ctx.get(ConfigRepository),
     ctx.get(SystemMetadataRepository),
+    { isPaused: vi.fn().mockResolvedValue(false) } as never,
   );
 
   const newOwner = async () => {

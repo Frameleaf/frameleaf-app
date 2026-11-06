@@ -116,6 +116,7 @@ describe('recorded duplicate Undo lease', () => {
       unused,
       unused,
       unused,
+      assetCtx.getMock(JobRepository),
     );
     const { user } = await ctx.newUser();
     const { session } = await ctx.newSession({ userId: user.id, pinExpiresAt: new Date(Date.now() + 60_000) });

@@ -296,6 +296,10 @@ export class CloudMlBatchService extends BaseService {
 
     let finished = false;
     for (let step = 0; step < CLOUD_DESCRIPTION_STEPS_PER_PASS; step++) {
+      // Job manager's pause of Descriptions & tags holds cloud batches too; each step hands its batch back.
+      if ((await this.jobRepository.isPaused(QueueName.ImageDescription)) === true) {
+        break;
+      }
       const claim = await this.mediaOperationRepository.claimNext({
         kinds: [MediaOperationKind.CloudDescriptionBatch],
         workerId: this.workerId,
