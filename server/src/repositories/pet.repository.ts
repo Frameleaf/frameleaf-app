@@ -856,7 +856,10 @@ export class PetRepository {
     // finished. Queue retries, pauses and dependency deferrals keep the run open until then; this read
     // never enqueues or resets anything.
     const count = (key: string) => sql`coalesce((r.summary->'counts'->>${key}::text)::int, 0)`;
-    const failed = sql`${count('failed')} + ${count('needsAttention')} + ${count('blocked')} > 0`;
+    // A failed producer is a task, not a photo: only the task totals hold it.
+    const task = (key: string) => sql`coalesce((r.summary->'stageTotals'->>${key}::text)::int, 0)`;
+    const failed = sql`${count('failed')} + ${count('needsAttention')} + ${count('blocked')}
+      + ${task('failed')} + ${task('needsAttention')} + ${task('blocked')} > 0`;
     await sql`update public.pet_recognition_run p set
       status = case when ${failed} then ${PetRecognitionRunStatus.Failed}
         when ${count('cancelled')} > 0 then ${PetRecognitionRunStatus.Cancelled}

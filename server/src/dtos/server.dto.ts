@@ -360,7 +360,7 @@ const ServerFeaturesSchema = z
     supporter: z.boolean().describe('Whether this server carries a Frameleaf supporter licence (FL-156)'),
     jobCapacity: z
       .object({
-        value: z.int().describe('Jobs this server runs at once across all tasks, as in effect now'),
+        value: z.int().min(1).max(32).describe('Jobs this server runs at once across all tasks, as in effect now'),
         fromEnvironment: z
           .boolean()
           .describe('Whether FRAMELEAF_JOB_CAPACITY set it, so the job.capacity setting has no effect'),

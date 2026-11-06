@@ -1,6 +1,6 @@
 import { CompiledQuery, Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
-import { pruneQueueHistory } from 'src/queue/retention.js';
+import { pruneQueueHistory, pruneQueueHistoryPage } from 'src/queue/retention.js';
 import { listRuns } from 'src/queue/run-query.js';
 import { finishRuns } from 'src/queue/run-summary.js';
 import { SqlQueueStore } from 'src/queue/store.js';
@@ -36,8 +36,9 @@ describe('bounded PostgreSQL queue history', () => {
       db,
     );
     await store.finishEnumeration(runId);
-    // FL-1265: an open run's jobs are its counts, so nothing is pruned until the run is finished
-    expect(await pruneQueueHistory(db)).toBe(0);
+    // FL-1265: an open run's jobs are its counts, so nothing is pruned until the run is finished; the page is
+    // still due, so the coordinator goes on to the history behind it
+    expect(await pruneQueueHistoryPage(db)).toEqual({ pruned: 0, fullPage: true, due: true });
     await sql`delete from system_metadata where key = 'frameleaf-queue-retention-cursor'`.execute(db);
     expect(await finishRuns(db, 10)).toBe(1);
 
@@ -202,7 +203,7 @@ describe('bounded PostgreSQL queue history', () => {
           );
           expect(await pruneQueueHistory(observed)).toBe(0);
           expect(await pruneQueueHistory(observed)).toBe(0);
-          const firstPage = queries.find(({ sql }) => sql.includes('select id, "finishedAt"::text from job'))!;
+          const firstPage = queries.find(({ sql }) => sql.includes('select id, "finishedAt"::text,'))!;
           expect(await explain(firstPage)).toBeLessThanOrEqual(250);
           const locks = queries.filter(
             ({ sql }) => sql.includes('select id from job') && sql.includes('for update skip locked'),
@@ -210,7 +211,7 @@ describe('bounded PostgreSQL queue history', () => {
           expect(locks).toHaveLength(2);
           for (const lock of locks) expect(await explain(lock)).toBeLessThanOrEqual(250);
         });
-        const pages = queries.filter(({ sql }) => sql.includes('select id, "finishedAt"::text from job'));
+        const pages = queries.filter(({ sql }) => sql.includes('select id, "finishedAt"::text,'));
         expect(pages).toHaveLength(2);
         for (const page of pages) expect(await explain(page)).toBeLessThanOrEqual(250);
         // The prior eligibility-first selector must exceed the same physical-work budget.

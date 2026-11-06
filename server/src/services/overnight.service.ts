@@ -34,6 +34,7 @@ import {
   type OvernightState,
   type OvernightStep,
   type OvernightStepResult,
+  QUIET_HOURS_NEVER,
   QUIET_HOURS_QUEUES,
   isHeavyWorkWindow,
   isStepDue,
@@ -44,9 +45,6 @@ import {
   overnightStopAt,
 } from 'src/utils/overnight.js';
 import { serverTimeZone } from 'src/utils/server-time-zone.js';
-
-/** Quiet hours' closing time for a schedule that never fires. */
-const QUIET_HOURS_NEVER = new Date('9999-12-31T00:00:00.000Z');
 
 /** How often a run in progress looks whether the step it waits for has finished. */
 const WATCH_INTERVAL_MS = 30_000;

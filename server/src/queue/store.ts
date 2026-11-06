@@ -256,7 +256,9 @@ export class SqlQueueStore {
     const dedupKey =
       intent.name === JobName.SmartAlbumReevaluate
         ? sql<string>`${`${intent.name}:`}::text || s.id::text || ${`:${kind}`}::text`
-        : sql<string>`${`sel:${intent.name}:`}::text || ${itemKey} || ${`:${createHash('sha1').update(canonicalJson(intent.data)).digest('hex')}`}::text`;
+        : // A row's own data (a pet run's id) is part of the request: a restarted run must not coalesce into the old one.
+          sql<string>`${`sel:${intent.name}:`}::text || ${itemKey} || ${`:${createHash('sha1').update(canonicalJson(intent.data)).digest('hex')}`}::text
+            || coalesce(':' || md5((s."row"->'data')::text), '')`;
     const {
       rows: [page],
     } = await sql<{ selected: number; inserted: number; last: string | null }>`with page as materialized (

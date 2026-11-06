@@ -279,9 +279,16 @@ describe(RunningJobService.name, () => {
       );
       // FL-1265: quiet hours close the queue (job_queue."closedUntil"); they don't pause it.
       mocks.job.getPausedQueues.mockResolvedValue(new Set());
+      mocks.job.getQueueSchedule.mockResolvedValue(new Date('2026-10-31T06:00:00.000Z'));
 
       const result = await sut.getRunning(authStub.admin);
+      // Once the window opens the queue runs again, even before quiet hours forget they held it.
+      mocks.job.getQueueSchedule.mockResolvedValue(new Date('2026-10-31T03:00:00.000Z'));
+      const opened = await sut.getRunning(authStub.admin);
       vi.useRealTimers();
+
+      expect(opened.queues[1]).toMatchObject({ name: QueueName.VideoConversion, state: 'waiting' });
+      expect(opened.queues[1]).not.toHaveProperty('heldForNight');
 
       expect(result.queues).toEqual([
         expect.objectContaining({ name: QueueName.ThumbnailGeneration, isPaused: false }),

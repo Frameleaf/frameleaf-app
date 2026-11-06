@@ -199,6 +199,9 @@ export const isHeavyWorkWindow = (
   return now < overnightStopAt(start.toISO()!, nightly.stopTime, zone)!;
 };
 
+/** Quiet hours' closing time for a schedule that never fires. */
+export const QUIET_HOURS_NEVER = new Date('9999-12-31T00:00:00.000Z');
+
 /** The next scheduled overnight start after `now`; null when the schedule never fires. */
 export const nextOvernightStart = (
   nightly: { startTime: string; days: number[] },

@@ -304,7 +304,7 @@ describe('coordinator capacity admission', () => {
       vi.useFakeTimers();
       vi.spyOn(performance, 'now').mockImplementation(() => Date.now());
       await coordinate(coordinatorData);
-      const held = Promise.withResolvers<{ pruned: number; fullPage: boolean }>();
+      const held = Promise.withResolvers<{ pruned: number; fullPage: boolean; due: boolean }>();
       const task = stage === 'recovery' ? fixture.store.recoverExpired : vi.mocked(pruneQueueHistoryPage);
       task.mockImplementationOnce(() => held.promise);
       try {
@@ -321,7 +321,7 @@ describe('coordinator capacity admission', () => {
         expect(fixture.store.recoverExpired).toHaveBeenCalledTimes(sweeps);
         expect(pruneQueueHistoryPage).toHaveBeenCalledTimes(prunes);
       } finally {
-        held.resolve({ pruned: 0, fullPage: false });
+        held.resolve({ pruned: 0, fullPage: false, due: false });
         await vi.advanceTimersByTimeAsync(0);
       }
     },
@@ -358,18 +358,20 @@ describe('coordinator capacity admission', () => {
     vi.useFakeTimers();
     vi.spyOn(performance, 'now').mockImplementation(() => Date.now());
     vi.mocked(pruneQueueHistoryPage)
-      .mockResolvedValueOnce({ pruned: QUEUE_BATCH, fullPage: true })
+      .mockResolvedValueOnce({ pruned: QUEUE_BATCH, fullPage: true, due: true })
       // a full page that had to keep some jobs (an open parent, an unfinished run) still goes on
-      .mockResolvedValueOnce({ pruned: 3, fullPage: true })
-      .mockResolvedValueOnce({ pruned: 12, fullPage: false });
+      .mockResolvedValueOnce({ pruned: 3, fullPage: true, due: true })
+      // FL-1265: so does a due page an open run kept whole
+      .mockResolvedValueOnce({ pruned: 0, fullPage: true, due: true })
+      .mockResolvedValueOnce({ pruned: 12, fullPage: false, due: true });
     await coordinate(coordinatorData);
-    expect(pruneQueueHistoryPage).toHaveBeenCalledTimes(3);
+    expect(pruneQueueHistoryPage).toHaveBeenCalledTimes(4);
   });
 
   it('waits for the next sweep when a full page has nothing due yet', async () => {
     vi.useFakeTimers();
     vi.spyOn(performance, 'now').mockImplementation(() => Date.now());
-    vi.mocked(pruneQueueHistoryPage).mockResolvedValue({ pruned: 0, fullPage: true });
+    vi.mocked(pruneQueueHistoryPage).mockResolvedValue({ pruned: 0, fullPage: true, due: false });
     await coordinate(coordinatorData);
     expect(pruneQueueHistoryPage).toHaveBeenCalledOnce();
   });
@@ -379,7 +381,7 @@ describe('coordinator capacity admission', () => {
     vi.spyOn(performance, 'now').mockImplementation(() => Date.now());
     vi.mocked(pruneQueueHistoryPage).mockImplementation(() => {
       vi.setSystemTime(Date.now() + QUEUE_TIMING.pruneBudget);
-      return Promise.resolve({ pruned: QUEUE_BATCH, fullPage: true });
+      return Promise.resolve({ pruned: QUEUE_BATCH, fullPage: true, due: true });
     });
     await coordinate(coordinatorData);
     expect(pruneQueueHistoryPage).toHaveBeenCalledOnce();

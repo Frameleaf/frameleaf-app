@@ -102,6 +102,17 @@ describe('pet run reconciliation with queue run outcomes', () => {
     expect(await pets.getRun(ownerId)).toMatchObject({ id: domain.id, status: expected });
   });
 
+  it('settles a run whose producer failed after some photos completed as failed (FL-1265)', async () => {
+    const ownerId = await newOwner();
+    const domain = await start(ownerId);
+    await sql`delete from job where queue = ${queue}`.execute(db);
+    // the photo counts are all completed; only the task totals hold the failed producer
+    await sql`update job_run set "finishedAt" = now(), summary = jsonb_build_object('complete', true, 'finishedAt', now(),
+      'counts', '{"total":2,"completed":2}'::jsonb, 'stageTotals', '{"total":3,"completed":2,"failed":1}'::jsonb)
+      where id = ${domain.id}::uuid`.execute(db);
+    expect(await pets.getRun(ownerId)).toMatchObject({ id: domain.id, status: PetRecognitionRunStatus.Failed });
+  });
+
   it('does not settle from a summary stamped for an earlier finish', async () => {
     const ownerId = await newOwner();
     const domain = await start(ownerId);
@@ -243,6 +254,33 @@ describe('pet run reconciliation with queue run outcomes', () => {
       assetCount: assets.length,
       status: PetRecognitionRunStatus.Running,
     });
+  });
+
+  it('selects the photos again for a restarted run while the earlier run still has them waiting (FL-1265)', async () => {
+    const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
+    const { user } = await ctx.newUser();
+    await ctx.newAsset({ ownerId: user.id });
+    jobs['handlers'][JobName.PetRecognition] = { queueName: queue as QueueName } as never;
+    const intent = jobs['intent']({ name: JobName.PetRecognition, data: {} } as never);
+    const select = (runId: string) =>
+      db.transaction().execute((tx) =>
+        store.insertSelectionPage(
+          { ...intent, runId },
+          db
+            .selectFrom('asset')
+            .select(['asset.id', sql<Record<string, unknown>>`jsonb_build_object('runId', ${runId}::text)`.as('data')])
+            .where('asset.ownerId', '=', user.id),
+          null,
+          10,
+          tx,
+        ),
+      );
+    const first = await start(user.id);
+    expect(await select(first.id)).toMatchObject({ inserted: 1 });
+    const restarted = await start(user.id);
+    expect(await select(restarted.id)).toMatchObject({ inserted: 1 });
+    await pets.setSelectedRunAssets(restarted.id, restarted.id);
+    expect(await pets.getRun(user.id)).toMatchObject({ id: restarted.id, assetCount: 1 });
   });
 
   it('keeps paused and dependency-deferred work live, then reflects canonical cancellation', async () => {

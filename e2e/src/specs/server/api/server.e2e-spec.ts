@@ -166,6 +166,8 @@ describe('/server', () => {
         cloudMl: false,
         cloudBackup: false,
         supporter: false,
+        // FL-1265: depends on the runner's processors
+        jobCapacity: { fromEnvironment: false, value: expect.any(Number) },
         imageCapabilities: {
           experimentalEnabled: false,
           qualified: false,

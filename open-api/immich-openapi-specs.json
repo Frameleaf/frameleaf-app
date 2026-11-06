@@ -29134,6 +29134,12 @@
         "responses": {
           "204": {
             "description": ""
+          },
+          "400": {
+            "description": "The run's import is not activated yet"
+          },
+          "404": {
+            "description": "Job run not found"
           }
         },
         "security": [
@@ -138014,8 +138020,8 @@
           },
           "value": {
             "description": "Jobs this server runs at once across all tasks, as in effect now",
-            "maximum": 9007199254740991,
-            "minimum": -9007199254740991,
+            "maximum": 32,
+            "minimum": 1,
             "type": "integer"
           }
         },

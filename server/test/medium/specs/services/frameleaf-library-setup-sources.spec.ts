@@ -13,6 +13,7 @@ import { MediaOperationRepository } from 'src/repositories/media-operation.repos
 import { FrameleafLibrarySetupService } from 'src/services/frameleaf-library-setup.service.js';
 import { PersonService } from 'src/services/person.service.js';
 import { SmartInfoService } from 'src/services/smart-info.service.js';
+import { QUIET_HOURS_NEVER } from 'src/utils/overnight.js';
 import { getKyselyDB, newTestService } from 'test/utils.js';
 
 const cases = [
@@ -517,6 +518,9 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
             total: 3,
           });
           expect(schedule).toHaveBeenCalledWith(QueueName.VideoConversion);
+          // A schedule that never fires closes it with no time to start again.
+          schedule.mockResolvedValue(QUIET_HOURS_NEVER);
+          expect(await stage('search')).toMatchObject({ status: 'waiting', heldForNight: true, resumesAt: null });
           // A queue an administrator resumed during the day runs, and a paused setup says paused.
           schedule.mockResolvedValue(null);
           expect(await stage('search')).toMatchObject({ status: 'running' });

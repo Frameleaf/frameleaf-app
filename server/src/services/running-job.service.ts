@@ -150,8 +150,8 @@ export class RunningJobService {
         return null;
       }
 
-      // Quiet hours close a queue until the overnight window; it is not paused.
-      const held = holds.has(name);
+      // Quiet hours close a queue until the overnight window; it is not paused. Its schedule says whether it still is.
+      const held = holds.has(name) && ((await this.jobRepository.getQueueSchedule(name))?.getTime() ?? 0) > Date.now();
       return {
         name,
         isPaused,

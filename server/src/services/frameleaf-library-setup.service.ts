@@ -22,6 +22,7 @@ import { MediaHealthService } from 'src/services/media-health.service.js';
 import { SystemConfigService } from 'src/services/system-config.service.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { parseScanResult } from 'src/utils/media-health-operation.js';
+import { QUIET_HOURS_NEVER } from 'src/utils/overnight.js';
 import { fromAck } from 'src/utils/sync.js';
 
 type SetupState = {
@@ -631,7 +632,11 @@ export class FrameleafLibrarySetupService {
       resumesAt = Math.min(resumesAt ?? closedUntil, closedUntil);
     }
     if (queues.size === 0) return null;
-    return { resumesAt: resumesAt !== null && Number.isFinite(resumesAt) ? new Date(resumesAt).toISOString() : null };
+    // A schedule that never fires closes the queue without a time to start again.
+    return {
+      resumesAt:
+        resumesAt !== null && resumesAt < QUIET_HOURS_NEVER.getTime() ? new Date(resumesAt).toISOString() : null,
+    };
   }
 
   /** FL-1146: Pause holds new work and Library Care's scans at their next checkpoint; nothing is lost. */

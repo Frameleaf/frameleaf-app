@@ -25,7 +25,10 @@ export async function up(db: Kysely<any>): Promise<void> {
         WHEN coalesce(rr.selection #> '{managerSetup,parkedStages}', '[]'::jsonb) ? s.stage THEN 'parked'
         ELSE 'setup' END) holds
       FROM job_selection s JOIN job_run rr ON rr.id = s."runId"
-      WHERE rr.kind IN ${IMPORT_KINDS} AND s."sourceKind" = 'frozen' AND s.state = 'enumerating'
+      WHERE rr.kind IN ${IMPORT_KINDS} AND s."sourceKind" = 'frozen' AND (s.state = 'enumerating'
+        -- The old claim also held a Manager import's fed work until first setup started, and while setup was paused.
+        OR (jsonb_typeof(rr.selection->'managerSetup') = 'object'
+          AND (rr.selection #>> '{managerSetup,startedAt}' IS NULL OR rr.selection #> '{managerSetup,paused}' = 'true'::jsonb)))
       GROUP BY s."runId") h
     WHERE r.id = h."runId"`.execute(db);
   // Jobs already queued for a held stage were held by the claim's old predicate; hold them the new way.
@@ -53,7 +56,10 @@ export async function up(db: Kysely<any>): Promise<void> {
           SELECT p.*, s."safeToRetry" "selectionSafeToRetry", s.sensitive "selectionSensitive",
             s."deadlineMs" "selectionDeadlineMs", r.selection rsel
           FROM page p JOIN job_selection s ON s.id = p."selectionId" JOIN job_run r ON r.id = p."runId"
-          WHERE p."runId" = s."runId" AND p."libraryExecutionRunId" IS NULL
+          WHERE p."runId" = s."runId"
+            -- An item that owns its own execution is this run's work; one shared from another run's item is not.
+            AND (p."libraryExecutionRunId" IS NULL
+              OR (p."libraryExecutionRunId", p."libraryExecutionItemKey") = (p."runId", p."itemKey"))
             AND (s."sourceKind" <> 'frozen' OR s."capturedAt" IS NOT NULL)
             AND (s."sourceKind" <> 'library-child' OR p."libraryOriginComplete")
             AND (s.state IN ('enumerating','ready') OR (s."sourceKind" = 'library-initial' AND s.state = 'needs_attention'))

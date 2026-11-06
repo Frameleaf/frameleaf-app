@@ -116,11 +116,12 @@ export async function coordinate({
         await maintenanceStore.recoverExpired();
         // FL-1213: one page per sweep cannot keep up after a big library scan (millions of jobs at 250
         // per 30 seconds), so keep going for a few seconds while pages are full and still deleting. A full
-        // page that deleted nothing (history not yet due) waits for the next sweep instead of spinning.
+        // page that deleted nothing waits for the next sweep once its history is not yet due; one kept whole for
+        // an open run goes on to the history behind it.
         const deadline = performance.now() + QUEUE_TIMING.pruneBudget;
         while (!stopping) {
           const page = await pruneQueueHistoryPage(maintenanceDb);
-          if (!page?.fullPage || page.pruned === 0 || performance.now() >= deadline) break;
+          if (!page?.fullPage || (page.pruned === 0 && !page.due) || performance.now() >= deadline) break;
         }
         // FL-1265: runs whose work has ended are finished, their counts written once.
         if (!stopping) await finishRuns(maintenanceDb, 10);

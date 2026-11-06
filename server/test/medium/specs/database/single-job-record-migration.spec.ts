@@ -42,21 +42,37 @@ describe('SingleJobRecord migration', () => {
     const open = randomUUID();
     const imported = randomUUID();
     const finished = randomUUID();
+    // a Manager import fed before first setup started, and a library scan whose child item owns its execution
+    const fed = randomUUID();
+    const scan = randomUUID();
     await sql`INSERT INTO job_queue(name, paused) VALUES (${queue}, true), ('quiet', true)`.execute(db);
     await sql`INSERT INTO system_metadata(key, value)
       VALUES ('overnight-sequence', '{"quiet":{"holding":["quiet"]}}'::jsonb)`.execute(db);
     await sql`INSERT INTO job_run(id, kind, selection, "enumerationDone") VALUES
       (${open}::uuid, 'AssetGenerateThumbnailsQueueAll', '{}', true),
       (${imported}::uuid, 'immich-import-derived', '{"managerSetup":{}}', true),
-      (${finished}::uuid, 'AssetGenerateThumbnailsQueueAll', '{}', true)`.execute(db);
+      (${finished}::uuid, 'AssetGenerateThumbnailsQueueAll', '{}', true),
+      (${fed}::uuid, 'library-import-derived', '{"managerSetup":{}}', true),
+      (${scan}::uuid, 'library-scan', '{}', false)`.execute(db);
     await sql`UPDATE job_run SET "finishedAt" = now() WHERE id = ${finished}::uuid`.execute(db);
-    const selections = { open: randomUUID(), imported: randomUUID(), finished: randomUUID() };
+    const selections = {
+      open: randomUUID(),
+      imported: randomUUID(),
+      finished: randomUUID(),
+      fed: randomUUID(),
+      scan: randomUUID(),
+    };
     await sql`INSERT INTO job_selection(id, "runId", stage, queue, "safeToRetry", sensitive, "deadlineMs", state, "capturedAt")
       VALUES (${selections.open}::uuid, ${open}::uuid, 'AssetGenerateThumbnails', ${queue}, true, false, 600000, 'ready', now()),
         (${selections.imported}::uuid, ${imported}::uuid, 'AssetGenerateThumbnails', ${queue}, true, false, 600000, 'enumerating', now()),
-        (${selections.finished}::uuid, ${finished}::uuid, 'AssetGenerateThumbnails', ${queue}, true, false, 600000, 'ready', now())`.execute(
+        (${selections.finished}::uuid, ${finished}::uuid, 'AssetGenerateThumbnails', ${queue}, true, false, 600000, 'ready', now()),
+        (${selections.fed}::uuid, ${fed}::uuid, 'AssetGenerateThumbnails', ${queue}, true, false, 600000, 'ready', now())`.execute(
       db,
     );
+    await sql`INSERT INTO job_selection(id, "runId", stage, queue, "safeToRetry", sensitive, "deadlineMs", state,
+        "sourceKind", "libraryOperationId")
+      VALUES (${selections.scan}::uuid, ${scan}::uuid, 'AssetGenerateThumbnails', ${queue}, true, false, 600000, 'ready',
+        'library-child', ${scan}::uuid)`.execute(db);
     const item = (runId: string, selectionId: string, key: string, state = 'pending') =>
       sql`(${runId}::uuid, ${key}, ${key}, 'AssetGenerateThumbnails', ${queue}, ${JSON.stringify({ id: key })}::text::jsonb,
         ${selectionId}::uuid, ${state})`;
@@ -68,6 +84,19 @@ describe('SingleJobRecord migration', () => {
         item(finished, selections.finished, 'd', 'completed'),
         item(finished, selections.finished, 'e', 'failed'),
       ])}`.execute(db);
+    const fedJob = randomUUID();
+    await sql`INSERT INTO job_run_item("runId", "itemKey", "rootItemKey", stage, queue, selection, "selectionId", "jobId")
+      VALUES (${fed}::uuid, 'f', 'f', 'AssetGenerateThumbnails', ${queue}, '{"id":"f"}', ${selections.fed}::uuid, ${fedJob}::uuid)`.execute(
+      db,
+    );
+    await sql`INSERT INTO job(id, queue, name, data, "safeToRetry", "deadlineMs", "runId", "itemKey", "rootItemKey")
+      VALUES (${fedJob}::uuid, ${queue}, 'AssetGenerateThumbnails', '{"id":"f"}', true, 600000, ${fed}::uuid, 'f', 'f')`.execute(
+      db,
+    );
+    await sql`INSERT INTO job_run_item("runId", "itemKey", "rootItemKey", stage, queue, selection, "selectionId",
+        "librarySourceKey", "libraryIntent", "libraryOriginComplete", "libraryExecutionRunId", "libraryExecutionItemKey")
+      VALUES (${scan}::uuid, 'g', 'g', 'AssetGenerateThumbnails', ${queue}, '{"id":"g"}', ${selections.scan}::uuid,
+        'source-g', '{"data":{"id":"g"}}', true, ${scan}::uuid, 'g')`.execute(db);
 
     // History, as on a long-running server: the migration deletes what retention would and keeps the rest.
     const worker = randomUUID();
@@ -105,7 +134,7 @@ describe('SingleJobRecord migration', () => {
     expect((await migrator().migrateToLatest()).error).toBeUndefined();
 
     const { rows: kept } = await sql<{ key: string | null }>`SELECT "itemKey" key FROM job
-      WHERE "itemKey" IS NULL OR "itemKey" NOT IN ('a','b','c') ORDER BY "itemKey" NULLS FIRST`.execute(db);
+      WHERE "itemKey" IS NULL OR "itemKey" NOT IN ('a','b','c','f','g') ORDER BY "itemKey" NULLS FIRST`.execute(db);
     // the open run's job (no item key), recent history, a parent with a live child, a stopped attempt's evidence
     expect(kept.map(({ key }) => key)).toEqual([null, 'child', 'new-done', 'new-failed', 'old-parent', 'old-stopped']);
     const { rows: workers } = await sql<{ id: string }>`SELECT id FROM job_worker`.execute(db);
@@ -113,13 +142,15 @@ describe('SingleJobRecord migration', () => {
     expect(await relfile()).not.toBe(before);
 
     const { rows: jobs } = await sql<{ runId: string; itemKey: string; held: boolean; data: unknown }>`
-      SELECT "runId", "itemKey", "availableAt" = 'infinity' held, data FROM job WHERE "itemKey" IN ('a','b','c') ORDER BY "itemKey"`.execute(
+      SELECT "runId", "itemKey", "availableAt" = 'infinity' held, data FROM job WHERE "itemKey" IN ('a','b','c','f','g') ORDER BY "itemKey"`.execute(
       db,
     );
     expect(jobs).toEqual([
       { runId: open, itemKey: 'a', held: false, data: { id: 'a' } },
       { runId: open, itemKey: 'b', held: false, data: { id: 'b' } },
       { runId: imported, itemKey: 'c', held: true, data: { id: 'c' } },
+      { runId: fed, itemKey: 'f', held: true, data: { id: 'f' } },
+      { runId: scan, itemKey: 'g', held: false, data: { id: 'g' } },
     ]);
     const { rows: runs } = await sql<{ id: string; selection: any; summary: any }>`
       SELECT id, selection, summary FROM job_run`.execute(db);
@@ -128,6 +159,7 @@ describe('SingleJobRecord migration', () => {
       holds: { AssetGenerateThumbnails: 'setup' },
       holdsDirty: true,
     });
+    expect(byId[fed].selection).toMatchObject({ holds: { AssetGenerateThumbnails: 'setup' } });
     expect(byId[finished].summary).toMatchObject({
       complete: true,
       migrated: true,

@@ -10,15 +10,18 @@ export async function pruneQueueHistory(db: Kysely<any>): Promise<number> {
 }
 
 /**
- * One retention page: how many jobs it deleted, and whether it read a full page of candidates (so more
- * history may follow). A full page can delete fewer than a page when some jobs must still be kept.
+ * One retention page: how many jobs it deleted, whether it read a full page of candidates (so more history may
+ * follow), and whether its newest candidate is old enough to be due (so the history after it may be due too). A full
+ * page can delete fewer than a page when some jobs must still be kept.
  */
-export async function pruneQueueHistoryPage(db: Kysely<any>): Promise<{ pruned: number; fullPage: boolean }> {
+export async function pruneQueueHistoryPage(
+  db: Kysely<any>,
+): Promise<{ pruned: number; fullPage: boolean; due: boolean }> {
   return db.transaction().execute(async (tx) => {
     const {
       rows: [lock],
     } = await sql<{ acquired: boolean }>`select pg_try_advisory_xact_lock(-333, 1) acquired`.execute(tx);
-    if (!lock.acquired) return { pruned: 0, fullPage: false };
+    if (!lock.acquired) return { pruned: 0, fullPage: false, due: false };
     const {
       rows: [cursor],
     } = await sql<{
@@ -44,7 +47,8 @@ export async function pruneQueueHistoryPage(db: Kysely<any>): Promise<{ pruned: 
     // can force every coordinator sweep to rescan the entire retained history.
     const candidates = through
       ? (
-          await sql<{ id: string; finishedAt: string }>`select id, "finishedAt"::text from job
+          await sql<{ id: string; finishedAt: string; due: boolean }>`select id, "finishedAt"::text,
+        "finishedAt" < now() - interval '7 days' due from job
       where state in ('completed','failed','cancelled','blocked') and "latestPending" is null
         and "finishedAt" is not null
         and ("finishedAt",id) <= (${through.throughAt}::timestamptz,${through.throughId}::uuid)
@@ -98,6 +102,6 @@ export async function pruneQueueHistoryPage(db: Kysely<any>): Promise<{ pruned: 
       order by w."heartbeatAt" limit ${QUEUE_BATCH} for update skip locked
     )`.execute(tx);
     await pruneWorkerStopEvidence(tx);
-    return { pruned, fullPage: candidates.length === QUEUE_BATCH };
+    return { pruned, fullPage: candidates.length === QUEUE_BATCH, due: !!last?.due };
   });
 }
