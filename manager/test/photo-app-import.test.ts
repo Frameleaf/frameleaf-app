@@ -542,9 +542,21 @@ test('cancelling a captured photo app removes the copy and staging and starts th
   const staging = join(f.operations.directory(), `import-runtime-${operation.id}`);
   await access(staging);
   f.events.length = 0;
+  // A failed restart keeps the plan, the copy and the staging, so cancelling again still restarts the app.
+  const start = f.docker.start;
+  f.docker.start = async () => {
+    throw new Error('docker unavailable');
+  };
+  await assert.rejects(f.operations.cancelPhotoApp(operation.id));
+  assert.deepEqual(f.events, ['fence-recover']);
+  assert.notEqual(f.store.get(`photo-app-plan:${operation.id}`), null);
+  await access(staging);
+  f.docker.start = start;
+  f.events.length = 0;
   await f.operations.cancelPhotoApp(operation.id);
   const name = sourceRestoreName(operation.id);
-  assert.deepEqual(f.events, ['fence-recover', `remove:${name}`, 'start:app']);
+  // The finished source recovery is not repeated; the restart happens before the copy is removed.
+  assert.deepEqual(f.events, ['start:app', `remove:${name}`]);
   await assert.rejects(access(staging), /ENOENT/);
   const cancelled = f.store.history().find((o) => o.id === operation.id) as Operation;
   assert.equal(cancelled.state, 'complete');
