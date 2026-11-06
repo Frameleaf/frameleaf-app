@@ -240,7 +240,8 @@ const getEnv = (): EnvData => {
     configFile: dto.FRAMELEAF_CONFIG_FILE,
     logLevel: dto.FRAMELEAF_LOG_LEVEL,
     logFormat: dto.FRAMELEAF_LOG_FORMAT || LogFormat.Console,
-    logRequests: dto.FRAMELEAF_LOG_REQUESTS ?? true,
+    // Read directly, not through EnvSchema: its keys are a response enum the native apps decode strictly.
+    logRequests: !/^(?:false|0|no|off)$/i.test(process.env.FRAMELEAF_LOG_REQUESTS?.trim() ?? ''),
 
     buildMetadata: {
       build: dto.FRAMELEAF_BUILD,

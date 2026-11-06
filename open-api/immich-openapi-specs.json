@@ -79407,7 +79407,6 @@
                     "FRAMELEAF_IMPORT_ROOTS",
                     "FRAMELEAF_LOG_LEVEL",
                     "FRAMELEAF_LOG_FORMAT",
-                    "FRAMELEAF_LOG_REQUESTS",
                     "FRAMELEAF_MEDIA_LOCATION",
                     "FRAMELEAF_ALLOW_EXTERNAL_PLUGINS",
                     "FRAMELEAF_PLUGINS_INSTALL_FOLDER",
@@ -79459,7 +79458,7 @@
                   ],
                   "type": "string"
                 },
-                "maxItems": 62,
+                "maxItems": 61,
                 "type": "array"
               },
               "version": {
@@ -79891,7 +79890,6 @@
                         "FRAMELEAF_IMPORT_ROOTS",
                         "FRAMELEAF_LOG_LEVEL",
                         "FRAMELEAF_LOG_FORMAT",
-                        "FRAMELEAF_LOG_REQUESTS",
                         "FRAMELEAF_MEDIA_LOCATION",
                         "FRAMELEAF_ALLOW_EXTERNAL_PLUGINS",
                         "FRAMELEAF_PLUGINS_INSTALL_FOLDER",
@@ -79943,7 +79941,7 @@
                       ],
                       "type": "string"
                     },
-                    "maxItems": 62,
+                    "maxItems": 61,
                     "type": "array"
                   },
                   "version": {

@@ -36589,7 +36589,6 @@ export enum EnvironmentKeys {
     FrameleafImportRoots = "FRAMELEAF_IMPORT_ROOTS",
     FrameleafLogLevel = "FRAMELEAF_LOG_LEVEL",
     FrameleafLogFormat = "FRAMELEAF_LOG_FORMAT",
-    FrameleafLogRequests = "FRAMELEAF_LOG_REQUESTS",
     FrameleafMediaLocation = "FRAMELEAF_MEDIA_LOCATION",
     FrameleafAllowExternalPlugins = "FRAMELEAF_ALLOW_EXTERNAL_PLUGINS",
     FrameleafPluginsInstallFolder = "FRAMELEAF_PLUGINS_INSTALL_FOLDER",

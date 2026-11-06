@@ -12,6 +12,7 @@ const resetEnv = () => {
     'FRAMELEAF_SHUTDOWN_GRACE_SECONDS',
     'FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS',
     'FRAMELEAF_ALLOW_SETUP',
+    'FRAMELEAF_LOG_REQUESTS',
     'FRAMELEAF_ENV',
     'FRAMELEAF_WORKERS_INCLUDE',
     'FRAMELEAF_WORKERS_EXCLUDE',
@@ -72,6 +73,16 @@ describe('getEnv', () => {
 
     expect(config.plugins.external).toEqual({ allow: false });
     expect(config.setup).toEqual({ allow: true });
+  });
+
+  it('logs requests unless FRAMELEAF_LOG_REQUESTS turns them off', () => {
+    expect(getEnv().logRequests).toBe(true);
+    for (const off of ['false', 'FALSE', '0', 'no', ' off ']) {
+      process.env.FRAMELEAF_LOG_REQUESTS = off;
+      expect(getEnv().logRequests).toBe(false);
+    }
+    process.env.FRAMELEAF_LOG_REQUESTS = 'true';
+    expect(getEnv().logRequests).toBe(true);
   });
 
   describe('shutdown (FL-291)', () => {
