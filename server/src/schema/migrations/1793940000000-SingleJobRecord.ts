@@ -158,7 +158,32 @@ export async function up(db: Kysely<any>): Promise<void> {
   await sql`UPDATE system_metadata SET value = jsonb_set(value, '{quiet,holding}', 'null'::jsonb)
     WHERE key = 'overnight-sequence' AND jsonb_typeof(value->'quiet') = 'object'`.execute(db);
 
-  await sql`ANALYZE job, job_run`.execute(db);
+  // History the retention sweep would delete anyway, in one pass instead of millions of page-sized ones. Same keep
+  // rules (retention.ts); a job with an attempt that did not complete is left to the sweep, which keeps its evidence.
+  await sql`DELETE FROM job j
+    WHERE j.state IN ('completed','failed','cancelled','blocked') AND j."latestPending" IS NULL
+      AND j."finishedAt" < now() - CASE WHEN j.state = 'completed' THEN interval '7 days' ELSE interval '30 days' END
+      AND NOT EXISTS (SELECT 1 FROM job child WHERE child."parentId" = j.id)
+      AND NOT EXISTS (SELECT 1 FROM job_run r WHERE r.id = j."runId" AND r."finishedAt" IS NULL)
+      AND NOT EXISTS (SELECT 1 FROM job_attempt a WHERE a."jobId" = j.id
+        AND (a.outcome IS DISTINCT FROM 'completed' OR a."finishedAt" IS NULL))`.execute(db);
+  await sql`DELETE FROM job_worker w WHERE w.state = 'lost' AND w."heartbeatAt" < now() - interval '7 days'
+    AND NOT EXISTS (SELECT 1 FROM job j WHERE j."workerId" = w.id)
+    AND NOT EXISTS (SELECT 1 FROM job_attempt a WHERE a."workerId" = w.id)`.execute(db);
+  // Deleting rows does not give disk back. Rewrite the queue tables compactly (VACUUM FULL cannot run in a transaction;
+  // CLUSTER on a named table can). ponytail: needs free space for the rows kept, which the drops above just freed.
+  for (const [table, index] of [
+    ['job', 'job_pkey'],
+    ['job_attempt', 'job_attempt_pkey'],
+    ['job_run', 'job_run_pkey'],
+    ['job_worker', 'job_worker_pkey'],
+  ]) {
+    await sql`CLUSTER ${sql.id(table)} USING ${sql.id(index)}`.execute(db);
+    // A one-off rewrite: leave no clustering mark in the schema.
+    await sql`ALTER TABLE ${sql.id(table)} SET WITHOUT CLUSTER`.execute(db);
+  }
+
+  await sql`ANALYZE job, job_attempt, job_run, job_worker`.execute(db);
 }
 
 export function down(): Promise<never> {

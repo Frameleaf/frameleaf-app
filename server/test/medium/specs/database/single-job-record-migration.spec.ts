@@ -69,10 +69,53 @@ describe('SingleJobRecord migration', () => {
         item(finished, selections.finished, 'e', 'failed'),
       ])}`.execute(db);
 
+    // History, as on a long-running server: the migration deletes what retention would and keeps the rest.
+    const worker = randomUUID();
+    const goneWorker = randomUUID();
+    await sql`INSERT INTO job_worker(id, state, "heartbeatAt") VALUES
+      (${worker}::uuid, 'lost', now() - interval '40 days'), (${goneWorker}::uuid, 'lost', now() - interval '40 days')`.execute(
+      db,
+    );
+    const history = (key: string, state: string, age: string, extra = sql``) =>
+      sql`INSERT INTO job(id, queue, name, data, state, "safeToRetry", "deadlineMs", "finishedAt", "itemKey", "runId", "parentId")
+        SELECT gen_random_uuid(), ${queue}, 'AssetGenerateThumbnails', '{}', ${state}, true, 600000,
+          now() - ${age}::interval, ${key}, NULL, NULL ${extra} RETURNING id`.execute(db);
+    await history('old-done', 'completed', '8 days');
+    await history('new-done', 'completed', '1 day');
+    await history('old-failed', 'failed', '31 days');
+    await history('new-failed', 'failed', '10 days');
+    const [{ id: parent }] = (await history('old-parent', 'completed', '8 days')).rows as { id: string }[];
+    await sql`INSERT INTO job(id, queue, name, data, state, "safeToRetry", "deadlineMs", "itemKey", "parentId")
+      VALUES (gen_random_uuid(), ${queue}, 'AssetGenerateThumbnails', '{}', 'pending', true, 600000, 'child', ${parent}::uuid)`.execute(
+      db,
+    );
+    await sql`INSERT INTO job(id, queue, name, data, state, "safeToRetry", "deadlineMs", "finishedAt", "itemKey", "runId")
+      VALUES (gen_random_uuid(), ${queue}, 'AssetGenerateThumbnails', '{}', 'completed', true, 600000, now() - interval '8 days',
+        NULL, ${open}::uuid)`.execute(db);
+    const [{ id: stopped }] = (await history('old-stopped', 'completed', '8 days')).rows as { id: string }[];
+    await sql`INSERT INTO job_attempt("jobId", attempt, token, "workerId", outcome, "finishedAt")
+      VALUES (${stopped}::uuid, 1, gen_random_uuid(), ${worker}::uuid, 'stopped', now() - interval '8 days')`.execute(
+      db,
+    );
+    const relfile = async () =>
+      (await sql<{ node: string }>`SELECT relfilenode::text node FROM pg_class WHERE relname = 'job'`.execute(db))
+        .rows[0].node;
+    const before = await relfile();
+
     expect((await migrator().migrateToLatest()).error).toBeUndefined();
 
+    const { rows: kept } = await sql<{ key: string | null }>`SELECT "itemKey" key FROM job
+      WHERE "itemKey" IS NULL OR "itemKey" NOT IN ('a','b','c') ORDER BY "itemKey" NULLS FIRST`.execute(db);
+    // the open run's job (no item key), recent history, a parent with a live child, a stopped attempt's evidence
+    expect(kept.map(({ key }) => key)).toEqual([null, 'child', 'new-done', 'new-failed', 'old-parent', 'old-stopped']);
+    const { rows: workers } = await sql<{ id: string }>`SELECT id FROM job_worker`.execute(db);
+    expect(workers.map(({ id }) => id)).toEqual([worker]);
+    expect(await relfile()).not.toBe(before);
+
     const { rows: jobs } = await sql<{ runId: string; itemKey: string; held: boolean; data: unknown }>`
-      SELECT "runId", "itemKey", "availableAt" = 'infinity' held, data FROM job ORDER BY "itemKey"`.execute(db);
+      SELECT "runId", "itemKey", "availableAt" = 'infinity' held, data FROM job WHERE "itemKey" IN ('a','b','c') ORDER BY "itemKey"`.execute(
+      db,
+    );
     expect(jobs).toEqual([
       { runId: open, itemKey: 'a', held: false, data: { id: 'a' } },
       { runId: open, itemKey: 'b', held: false, data: { id: 'b' } },
