@@ -36,6 +36,8 @@ export interface EnvData {
   configFile?: string;
   logLevel?: LogLevel;
   logFormat?: LogFormat;
+  /** FRAMELEAF_LOG_REQUESTS: API request lines at `log` level (true) or `debug` (false). */
+  logRequests: boolean;
 
   buildMetadata: {
     build?: string;
@@ -238,6 +240,7 @@ const getEnv = (): EnvData => {
     configFile: dto.FRAMELEAF_CONFIG_FILE,
     logLevel: dto.FRAMELEAF_LOG_LEVEL,
     logFormat: dto.FRAMELEAF_LOG_FORMAT || LogFormat.Console,
+    logRequests: dto.FRAMELEAF_LOG_REQUESTS ?? true,
 
     buildMetadata: {
       build: dto.FRAMELEAF_BUILD,

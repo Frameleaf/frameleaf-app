@@ -75,6 +75,8 @@ export const EnvSchema = z
       .pipe(z.array(z.string().refine(isAbsolute, 'Every import root must be an absolute path'))),
     FRAMELEAF_LOG_LEVEL: LogLevelSchema.optional(),
     FRAMELEAF_LOG_FORMAT: LogFormatSchema.optional(),
+    /** false moves the one-line API request log from `log` to `debug` level. */
+    FRAMELEAF_LOG_REQUESTS: stringBool.optional(),
     FRAMELEAF_MEDIA_LOCATION: absolutePath,
     IMMICH_MICROSERVICES_METRICS_PORT: z.coerce.number().int().optional(),
     FRAMELEAF_ALLOW_EXTERNAL_PLUGINS: stringBool.optional(),

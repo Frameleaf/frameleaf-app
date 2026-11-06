@@ -8,6 +8,7 @@ export const envData: EnvData = {
   shutdown: { graceMs: 5000, deadlineMs: 9000, workerDeadlineMs: 8000 },
   environment: FrameleafEnvironment.Production,
   logFormat: LogFormat.Console,
+  logRequests: true,
 
   buildMetadata: {},
   cls: {

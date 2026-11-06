@@ -1,7 +1,14 @@
 import { ExecutionContext } from '@nestjs/common';
 import { Request, Response } from 'express';
+import { EventEmitter } from 'node:events';
 import { firstValueFrom, of, throwError } from 'rxjs';
-import { LoggingInterceptor, redactLogUrl, replacer } from 'src/middleware/logging.interceptor.js';
+import {
+  LoggingInterceptor,
+  redactLogUrl,
+  replacer,
+  requestLogMiddleware,
+  requestLogPath,
+} from 'src/middleware/logging.interceptor.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 
 describe('logging interceptor redaction (FL-81)', () => {
@@ -244,8 +251,83 @@ describe('secret request body exclusion', () => {
         await expect(result).resolves.toBe('ok');
       }
       expect(log.verbose).not.toHaveBeenCalled();
-      expect(log.debug).toHaveBeenCalledWith(expect.stringContaining(path));
       expect(JSON.stringify(log.debug.mock.calls)).not.toContain('synthetic-private-material');
     }
+  });
+});
+
+describe('request log line', () => {
+  const USER_ID = '6f1c9a0e-5b7d-4c3e-9a1f-0e2d3c4b5a69';
+  const run = (
+    method: string,
+    originalUrl: string,
+    statusCode: number,
+    { enabled = true, finished = true, headers = {} as Record<string, string> } = {},
+  ) => {
+    const log = { debug: vi.fn(), log: vi.fn(), warn: vi.fn() };
+    const req = { method, originalUrl, headers, user: { user: { id: USER_ID } } } as unknown as Request;
+    const res = Object.assign(new EventEmitter(), { statusCode, writableFinished: finished }) as unknown as Response;
+    const next = vi.fn();
+    requestLogMiddleware(log as unknown as LoggingRepository, { enabled })(req, res, next);
+    expect(next).toHaveBeenCalledOnce();
+    res.emit('close');
+    return log;
+  };
+  const written = (log: ReturnType<typeof run>) =>
+    JSON.stringify([log.debug.mock.calls, log.log.mock.calls, log.warn.mock.calls]);
+
+  it('writes method, path, status, duration and user at log level', () => {
+    const log = run('GET', '/api/albums', 200);
+    expect(log.log).toHaveBeenCalledWith(
+      expect.stringMatching(new RegExp(String.raw`^GET /api/albums 200 \d+ms user=${USER_ID}$`)),
+    );
+  });
+
+  it('never writes tokens, keys, passwords, cookies or IDs from the address', () => {
+    const secret = 'synthetic-secret-3b9f1c7a2e';
+    const log = run(
+      'GET',
+      `/api/assets/0f8e7d6c-5b4a-4392-8170-6f5e4d3c2b1a/thumbnail?key=${secret}&password=${secret}&size=preview`,
+      401,
+      {
+        headers: { authorization: `Bearer ${secret}`, cookie: `frameleaf_access_token=${secret}`, 'x-api-key': secret },
+      },
+    );
+    expect(log.log).toHaveBeenCalledWith(
+      expect.stringMatching(/^GET \/api\/assets\/:id\/thumbnail\?key=\*{8}&password=\*{8}&size=\*{8} 401 /),
+    );
+    expect(written(log)).not.toContain(secret);
+    expect(written(log)).not.toContain('0f8e7d6c');
+  });
+
+  it('masks path secrets and keeps credential routes queryless', () => {
+    expect(requestLogPath('/api/cast/eyJhbGciOi.signed-token')).toBe('/api/cast/********');
+    expect(requestLogPath('/api/admin/license/activate?key=FL-SABC-DEFG')).toBe('/api/admin/license/activate?********');
+    expect(requestLogPath('/api/shared-links/me?slug=holiday-2026&key=Zk3jR8b2Lq9xV7c1Np4tW6')).toBe(
+      '/api/shared-links/me?slug=********&key=********',
+    );
+    expect(requestLogPath('/api/server/about')).toBe('/api/server/about');
+  });
+
+  it('moves request lines to debug when FRAMELEAF_LOG_REQUESTS=false, but still warns on server errors', () => {
+    const quiet = run('GET', '/api/albums', 200, { enabled: false });
+    expect(quiet.log).not.toHaveBeenCalled();
+    expect(quiet.debug).toHaveBeenCalledWith(expect.stringContaining('GET /api/albums 200'));
+    expect(run('GET', '/api/albums', 500, { enabled: false }).warn).toHaveBeenCalledOnce();
+  });
+
+  it('keeps health-check polls and timeline thumbnails out of the log unless they fail', () => {
+    expect(run('GET', '/api/server/ping', 200).log).not.toHaveBeenCalled();
+    expect(run('GET', '/api/server/version', 200).log).not.toHaveBeenCalled();
+    expect(run('GET', `/api/assets/${USER_ID}/thumbnail?size=thumbnail`, 200).log).not.toHaveBeenCalled();
+    expect(run('GET', '/api/server/ping', 503).warn).toHaveBeenCalledOnce();
+    expect(run('GET', `/api/assets/${USER_ID}/thumbnail`, 404).log).toHaveBeenCalledOnce();
+  });
+
+  it('ignores web pages and static files, and records aborted requests', () => {
+    expect(written(run('GET', '/_app/immutable/app.js', 200))).toBe('[[],[],[]]');
+    expect(run('POST', '/api/assets', 200, { finished: false }).log).toHaveBeenCalledWith(
+      expect.stringContaining('POST /api/assets aborted'),
+    );
   });
 });

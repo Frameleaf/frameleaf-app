@@ -56,7 +56,7 @@ export async function bootstrap() {
     throw error;
   }
 
-  logger.log(`Frameleaf Microservices is running [v${serverVersion}] [${environment}] `);
+  logger.log(`Frameleaf Microservices is running [v${serverVersion}] [${environment}] - ready`);
 }
 
 if (!isMainThread) {

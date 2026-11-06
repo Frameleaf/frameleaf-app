@@ -42,6 +42,7 @@ import {
 } from 'src/utils/misc.js';
 import { remoteAccessPublication } from 'src/utils/public-url.js';
 import { systemTimeZone } from 'src/utils/server-time-zone.js';
+import { startupSummary } from 'src/utils/startup-summary.js';
 
 @Injectable()
 export class ServerService extends BaseService {
@@ -64,7 +65,21 @@ export class ServerService extends BaseService {
         });
       }
     }
-    this.logger.log(`Feature Flags: ${JSON.stringify(await this.getFeatures(), null, 2)}`);
+    this.logger.log(`Feature Flags: ${JSON.stringify(await this.getFeatures())}`);
+    const { database, storage, port } = this.configRepository.getEnv();
+    const { machineLearning } = await this.getConfig({ withCache: true });
+    for (const line of startupSummary({
+      worker: this.configRepository.getWorker(),
+      version: serverVersion.toString(),
+      database: database.config,
+      postgresVersion: await this.databaseRepository.getPostgresVersion(),
+      mediaLocation: StorageCore.getMediaLocation(),
+      importRoots: storage.importRoots,
+      machineLearning,
+      port,
+    })) {
+      this.logger.log(line);
+    }
     // FL-430: every server has an identity key from its first boot (not only once it links), so apps
     // can pin it at sign-in; creation is exclusive, so workers booting together end with one key
     try {

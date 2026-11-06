@@ -27,7 +27,7 @@ WORKDIR /app/manager
 COPY --from=build /app/manager/node_modules /app/node_modules
 COPY --from=build /app/manager/build ./build
 COPY --from=build /app/manager/ui/dist ./ui/dist
-COPY manager/release-worker.cjs manager/media-copy.cjs manager/entrypoint.sh ./
+COPY manager/package.json manager/release-worker.cjs manager/media-copy.cjs manager/entrypoint.sh ./
 COPY .github/frameleaf-release.cjs .github/verify-release-bundle.cjs /app/.github/
 COPY cosign.pub /app/cosign.pub
 ENV NODE_ENV=production

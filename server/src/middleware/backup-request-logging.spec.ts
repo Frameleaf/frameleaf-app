@@ -71,7 +71,6 @@ describe('backup request diagnostics', () => {
     expect(cloud.storeEscrow).toHaveBeenCalledWith(undefined, { passphrase });
     expect(log.verbose).not.toHaveBeenCalled();
     expect(output()).not.toContain(passphrase);
-    expect(log.debug).toHaveBeenCalledWith(expect.stringContaining('PUT /ADMIN/CLOUD/BACKUP/ESCROW/ 200'));
   });
 
   it('wraps and imports a real local Buddy recovery package without logging its contents', async () => {
@@ -138,7 +137,6 @@ describe('backup request diagnostics', () => {
     expect(status).toBe(200);
     expect(cloud.startVerify).toHaveBeenCalledWith(undefined, { depth: 'sample' });
     expect(log.verbose).toHaveBeenCalledWith(JSON.stringify({ depth: 'sample' }));
-    expect(log.debug).toHaveBeenCalledWith(expect.stringContaining('?pass_phrase=********&page=2 200'));
     expect(output()).not.toContain(passphrase);
   });
 });

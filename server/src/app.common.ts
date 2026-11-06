@@ -8,6 +8,7 @@ import sirv from 'sirv';
 import { IMMICH_SERVER_START, excludePaths, serverVersion } from 'src/constants.js';
 import { MaintenanceWorkerService } from 'src/maintenance/maintenance-worker.service.js';
 import { frameleafViaMiddleware } from 'src/middleware/frameleaf-via.middleware.js';
+import { requestLogMiddleware } from 'src/middleware/logging.interceptor.js';
 import { WebSocketAdapter } from 'src/middleware/websocket.adapter.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -27,7 +28,8 @@ export async function configureExpress(
   },
 ) {
   const configRepository = app.get(ConfigRepository);
-  const { environment, host, port, helmet, resourcePaths, network, frameleafCloud } = configRepository.getEnv();
+  const { environment, host, port, helmet, resourcePaths, network, frameleafCloud, logRequests } =
+    configRepository.getEnv();
 
   const logger = await app.resolve(LoggingRepository);
   logger.setContext('Bootstrap');
@@ -40,6 +42,10 @@ export async function configureExpress(
     app.use(helmetMiddleware(helmet.config));
     logger.log('Initialized helmet middleware');
   }
+
+  const requestLogger = await app.resolve(LoggingRepository);
+  requestLogger.setContext('Request');
+  app.use(requestLogMiddleware(requestLogger, { enabled: logRequests }));
 
   app.use(cookieParser());
   // FL-161: record how the request arrived (vouched for by the edge worker's per-boot secret) and
@@ -97,5 +103,5 @@ export async function configureExpress(
   const server = await (host ? app.listen(port, host) : app.listen(port));
   server.requestTimeout = 24 * 60 * 60 * 1000;
 
-  logger.log(`${IMMICH_SERVER_START} on ${await app.getUrl()} [v${serverVersion}] [${environment}] `);
+  logger.log(`${IMMICH_SERVER_START} on ${await app.getUrl()} [v${serverVersion}] [${environment}] - ready`);
 }
