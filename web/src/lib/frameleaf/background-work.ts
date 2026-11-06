@@ -124,8 +124,9 @@ const fromQueue = (queue: DurableQueueRun): BackgroundWorkCard | null => {
   if (running + waiting <= 0 && !queue.unavailable) {
     return null;
   }
-  // Work quiet hours hold is waiting for tonight, not paused until someone starts it again (FL-711).
-  const tonight = queue.isPaused && queue.heldForNight;
+  // Work quiet hours hold is waiting for tonight, not paused until someone starts it again (FL-711). FL-1265: quiet
+  // hours no longer pause the queue, so a queue someone paused says paused even at night.
+  const tonight = !!queue.heldForNight && !queue.isPaused;
   const paused = !tonight && (queue.isPaused || queue.state === 'paused');
   const stage: BackgroundWorkStage = paused ? 'paused' : running > 0 && !tonight ? 'running' : 'queued';
   const total = Math.max(queue.total, queue.processed + running + waiting);

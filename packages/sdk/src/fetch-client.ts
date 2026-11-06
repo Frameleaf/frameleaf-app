@@ -1663,6 +1663,8 @@ export type AdminConfigForkJobSettingsDto = {
 };
 export type AdminConfigJobDto = {
     backgroundTask: AdminConfigJobSettingsDto;
+    /** Jobs that run at once across all tasks (0 = automatic, from the processor count; 1-32) */
+    capacity?: number;
     editor: AdminConfigJobSettingsDto;
     faceDetection: AdminConfigJobSettingsDto;
     imageDescription?: AdminConfigForkJobSettingsDto;
@@ -9286,12 +9288,18 @@ export type JobCreateDto = {
 export type JobRunResponseDto = {
     active: number;
     blocked: number;
+    /** Some of its work is held (first setup or a paused setup) and can be released from the Jobs page */
+    canRelease?: boolean;
     cancelled: number;
     completed: number;
+    /** The counts are photos; when false they are tasks (the run works on something other than photos) */
+    countsPhotos?: boolean;
     createdAt: string;
     delayed: number;
     enumerationDone: boolean;
     failed: number;
+    /** Queues with failed or needs-attention jobs in this run */
+    failedQueues?: QueueName[];
     finishedAt: string | null;
     /** Selected items an import's first setup still holds back: until Library Care's file check ends, or while setup is paused */
     held?: number;
@@ -15363,6 +15371,12 @@ export type ImageCapabilitiesDto = {
     /** Known unsupported capabilities; never infer support from the container extension */
     unavailable: string[];
 };
+export type ServerJobCapacityDto = {
+    /** Whether FRAMELEAF_JOB_CAPACITY set it, so the job.capacity setting has no effect */
+    fromEnvironment: boolean;
+    /** Jobs this server runs at once across all tasks, as in effect now */
+    value: number;
+};
 export type ServerFeaturesDto = {
     /** Whether Ask Search (natural-language questions about the library) is enabled and can answer */
     askSearch: boolean;
@@ -15385,6 +15399,7 @@ export type ServerFeaturesDto = {
     imageDescription: boolean;
     /** Whether face import is enabled */
     importFaces: boolean;
+    jobCapacity?: ServerJobCapacityDto;
     /** Whether map feature is enabled */
     map: boolean;
     /** Whether NSFW detection is enabled */
@@ -15463,6 +15478,8 @@ export type LibraryMoveResumeDto = {
 };
 export type LibrarySetupStatusDto = {
     canFinish: boolean;
+    /** A file check or library scan ended early (failed or cancelled). Setup carried on; Library Care lists what it could not check */
+    checkProblem?: boolean;
     /** The owner stopped setup to let the server run; held work was released. Retrying brings setup back */
     dismissed: boolean;
     installation: string;
@@ -15503,6 +15520,8 @@ export type LibrarySetupProgressDto = {
     /** False when this server was not set up from an import, or before its first setup */
     active: boolean;
     albums: number;
+    /** A file check or library scan ended early (failed or cancelled). Setup carried on; Library Care lists what it could not check */
+    checkProblem?: boolean;
     /** When everything finished; null while setup runs */
     completedAt: string | null;
     /** Originals listed in Library Care as missing or changed */
@@ -27894,6 +27913,17 @@ export function getJobRunItems({ id, skip, take }: {
         take
     }))}`, {
         ...opts
+    }));
+}
+/**
+ * Release held job run work
+ */
+export function releaseJobRun({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/jobs/runs/${encodeURIComponent(id)}/release`, {
+        ...opts,
+        method: "POST"
     }));
 }
 /**

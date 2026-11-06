@@ -317,10 +317,12 @@ export class LibraryImportController {
             ],
           );
           if (updated.length !== 1) return refuse('IMPORT_ACTIVATION_CHANGED');
+          // FL-1265: activation only drops the holds; the coordinator releases the held jobs in batches after commit.
           if (!manager)
-            await tx.query(`UPDATE job_selection SET state='ready' WHERE "runId"=$1::uuid AND state='enumerating'`, [
-              runId,
-            ]);
+            await tx.query(
+              `UPDATE job_run SET selection = selection || '{"holds":{},"holdsDirty":true}'::jsonb WHERE id=$1::uuid`,
+              [runId],
+            );
           return {
             runId,
             activatedAt: sealed.payload.activatedAt,

@@ -5,7 +5,8 @@ import type { createPostgres } from '@frameleaf/sql-tools';
 import { executionSignal } from 'src/utils/execution-signal.js';
 
 type Client = ReturnType<typeof createPostgres>;
-export const DATABASE_POOL_SIZE = 10;
+// FL-1265: room for the largest job capacity (32) plus request work; postgres.js opens connections only on demand.
+export const DATABASE_POOL_SIZE = 36;
 export const DATABASE_ACQUIRE_TIMEOUT_MS = 5000;
 export const DATABASE_MAX_WAITERS = 64;
 export const DATABASE_CLEANUP_TIMEOUT_MS = 2000;

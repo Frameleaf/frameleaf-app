@@ -270,7 +270,15 @@ describe(AssetJobRepository.name, () => {
                 .where('asset.isEdited', '=', false),
             ),
         );
-      expect(await store.feedManifest(queue)).toBe(0);
+      // FL-1265: the selection is inserted as jobs at once, its page cursor saved with the producer
+      const selected = () =>
+        db
+          .selectFrom('job')
+          .select('data')
+          .where('queue', '=', queue)
+          .where('name', '=', JobName.AssetGenerateThumbnails)
+          .execute();
+      expect(await selected()).toHaveLength(ids.length);
       await sql`update job set "leaseExpiresAt" = now() - interval '1 second' where id = ${first.id}::uuid`.execute(db);
       await store.recoverExpired();
       expect(await store.claim(queue, worker)).toEqual([]);
@@ -282,7 +290,8 @@ describe(AssetJobRepository.name, () => {
       await recordStoppedAttempt(db, first.id, first.token);
       const resumed = new SqlQueueStore(db);
       await resumed.recoverExpired();
-      await sql`update job set "availableAt" = now() where id = ${first.id}::uuid`.execute(db);
+      // Ahead of the selected thumbnails, which are already queued (FL-1265)
+      await sql`update job set "availableAt" = now() - interval '1 day' where id = ${first.id}::uuid`.execute(db);
       const replacementWorker = randomUUID();
       await resumed.initialize([queue], replacementWorker);
       const [retry] = await resumed.claim(queue, replacementWorker);
@@ -292,15 +301,8 @@ describe(AssetJobRepository.name, () => {
       await freeze(retry);
       expect(await resumed.complete(first, [])).toBe(false);
       expect(await resumed.complete(retry, [])).toBe(true);
-      expect(await resumed.feedManifest(queue)).toBe(250);
-      expect(await new SqlQueueStore(db).feedManifest(queue)).toBe(1);
-      expect(await resumed.feedManifest(queue)).toBe(0);
-      const jobs = await db
-        .selectFrom('job')
-        .select('data')
-        .where('queue', '=', queue)
-        .where('name', '=', JobName.AssetGenerateThumbnails)
-        .execute();
+      // The retried producer's saved cursor says the selection is done: the later asset is not added.
+      const jobs = await selected();
       expect(jobs).toHaveLength(ids.length);
       expect(new Set(jobs.map(({ data }) => data.id))).toEqual(new Set(ids));
       expect(await originalFiles()).toEqual(filesBefore);

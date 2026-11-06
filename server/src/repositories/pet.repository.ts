@@ -5,8 +5,6 @@ import type { AssetVisibility } from 'src/enum.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { JobName, LibraryScope, PetObservationState, PetRecognitionRunStatus, PetSpecies } from 'src/enum.js';
-import { lockQueueCatalogue } from 'src/queue/catalogue.js';
-import { selectionItemContext, selectionItemState, unfinishedRunItems } from 'src/queue/selection-state.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -799,8 +797,8 @@ export class PetRepository {
   async setSelectedRunAssets(runId: string, queueRunId: string) {
     const {
       rows: [count],
-    } = await sql<{ count: number }>`select count(*)::int count from job_run_item
-      where "runId" = ${queueRunId}::uuid and selection->>'runId' = ${runId} and "selectionId" is not null`.execute(
+    } = await sql<{ count: number }>`select count(*)::int count from job
+      where "runId" = ${queueRunId}::uuid and name = ${JobName.PetRecognition} and data->>'runId' = ${runId}`.execute(
       this.db,
     );
     await this.setRunAssets(runId, count.count);
@@ -854,16 +852,19 @@ export class PetRepository {
   }
   // ---------------------------------------------------------- recognition runs (FL-58)
   async getRun(ownerId: string, requestedQueueRunId?: string): Promise<PetRecognitionRun | undefined> {
-    const itemContext = selectionItemContext(sql<string>`r.id`);
-    // Only retained terminal evidence may settle a live domain run. Queue retries, pauses and
-    // dependency deferrals remain authoritative; this read never enqueues or resets anything.
+    // FL-1265: a finished queue run settles a live domain run from the summary written once when it
+    // finished. Queue retries, pauses and dependency deferrals keep the run open until then; this read
+    // never enqueues or resets anything.
+    const count = (key: string) => sql`coalesce((r.summary->'counts'->>${key}::text)::int, 0)`;
+    // A failed producer is a task, not a photo: only the task totals hold it.
+    const task = (key: string) => sql`coalesce((r.summary->'stageTotals'->>${key}::text)::int, 0)`;
+    const failed = sql`${count('failed')} + ${count('needsAttention')} + ${count('blocked')}
+      + ${task('failed')} + ${task('needsAttention')} + ${task('blocked')} > 0`;
     await sql`update public.pet_recognition_run p set
-      status = case when exists (select 1 ${itemContext} where i."runId" = r.id
-        and ${selectionItemState} in ('failed', 'needs_attention', 'blocked')) then ${PetRecognitionRunStatus.Failed}
-        when exists (select 1 ${itemContext} where i."runId" = r.id and ${selectionItemState} = 'cancelled')
-          then ${PetRecognitionRunStatus.Cancelled} else ${PetRecognitionRunStatus.Completed} end,
-      error = case when exists (select 1 ${itemContext} where i."runId" = r.id
-        and ${selectionItemState} in ('failed', 'needs_attention', 'blocked'))
+      status = case when ${failed} then ${PetRecognitionRunStatus.Failed}
+        when ${count('cancelled')} > 0 then ${PetRecognitionRunStatus.Cancelled}
+        else ${PetRecognitionRunStatus.Completed} end,
+      error = case when ${failed}
           then 'Pet recognition queue run ended with errors; review the job run before retrying.' else null end,
       "finishedAt" = r."finishedAt", "updatedAt" = clock_timestamp()
       from system_metadata m join job_run r on r.id = (m.value->>'queueRunId')::uuid
@@ -871,8 +872,8 @@ export class PetRepository {
         and m.value->>'petRunId' = p.id::text
         and p.status in (${PetRecognitionRunStatus.Queued}, ${PetRecognitionRunStatus.Running})
         and r."enumerationDone" and r."finishedAt" is not null
-        and exists (select 1 from job_run_item i where i."runId" = r.id)
-        and not (${unfinishedRunItems(sql<string>`r.id`)})`.execute(this.db);
+        and r.summary->>'complete' = 'true' and (r.summary->>'finishedAt')::timestamptz = r."finishedAt"
+        and ${count('total')} > 0`.execute(this.db);
     return sql<PetRecognitionRun>`
       SELECT p.* FROM public.pet_recognition_run p WHERE p."ownerId" = ${ownerId}
         and (${requestedQueueRunId ?? null}::uuid is null or exists (
@@ -889,8 +890,6 @@ export class PetRepository {
     enqueue?: (tx: Transaction<DB>, runId: string) => Promise<void>,
   ): Promise<PetRecognitionRun> {
     return this.forkWrite(async (tx) => {
-      // Admission and producer checkpoints take catalogue locks before any pet domain locks.
-      if (enqueue) await lockQueueCatalogue(tx);
       const {
         rows: [run],
       } = await sql<PetRecognitionRun>`
@@ -911,8 +910,9 @@ export class PetRepository {
     `.execute(tx);
       await sql`delete from system_metadata where key = ${'frameleaf-pet-run:' + ownerId}`.execute(tx);
       if (enqueue) {
-        await sql`insert into job_run(id, kind, selection)
-          values (${run.id}::uuid, ${JobName.PetRecognitionQueueAll}, ${JSON.stringify({ ownerId, petRunId: run.id })}::text::jsonb)`.execute(
+        // The live producer job keeps the run open; enumeration has nothing else to wait for.
+        await sql`insert into job_run(id, kind, selection, "enumerationDone")
+          values (${run.id}::uuid, ${JobName.PetRecognitionQueueAll}, ${JSON.stringify({ ownerId, petRunId: run.id })}::text::jsonb, true)`.execute(
           tx,
         );
         await this.linkRun(run.id, run.id, tx);

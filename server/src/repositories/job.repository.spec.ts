@@ -751,7 +751,7 @@ describe(JobRepository.name, () => {
       expect(sut['store'].defer).not.toHaveBeenCalled();
     });
 
-    it('backpressures 128 claimed handlers before they can exhaust the ten-session execution pool', async () => {
+    it('backpressures 128 claimed handlers to the shared execution capacity', async () => {
       const work = Promise.withResolvers<void>();
       let active = 0;
       let peak = 0;
@@ -779,7 +779,7 @@ describe(JobRepository.name, () => {
       try {
         await new Promise<void>((resolve) => setImmediate(resolve));
         expect(peak).toBeGreaterThan(0);
-        expect(peak).toBeLessThan(10);
+        expect(peak).toBeLessThanOrEqual(QUEUE_EXECUTION_CAPACITY);
       } finally {
         work.resolve();
         await Promise.all(executions);
@@ -790,7 +790,7 @@ describe(JobRepository.name, () => {
       expect(sut['store'].defer).not.toHaveBeenCalled();
     });
 
-    it('waits outside SQL for publication and never reruns external work after an outcome error', async () => {
+    it('publishes completions side by side and never reruns external work after an outcome error', async () => {
       const publication = Promise.withResolvers<void>();
       const entered = Promise.withResolvers<void>();
       let running = 0;
@@ -816,8 +816,7 @@ describe(JobRepository.name, () => {
       ];
       try {
         await entered.promise;
-        await Promise.resolve();
-        expect(peak).toBe(1);
+        await vi.waitFor(() => expect(peak).toBe(2));
       } finally {
         publication.resolve();
         await Promise.all(executions);
@@ -826,6 +825,33 @@ describe(JobRepository.name, () => {
       expect(sut['store'].complete).toHaveBeenCalledTimes(2);
       expect(sut['store'].fail).toHaveBeenCalledTimes(2);
       expect(sut['store'].defer).not.toHaveBeenCalled();
+    });
+
+    it('runs a completion again after a deadlock, without the follow-ups its rolled-back adoption added', async () => {
+      sut['eventRepository'].emit = vi.fn().mockImplementation(() => {
+        const context = queueExecution.getStore()!;
+        context.followups.push({ name: 'kept' } as never);
+        context.adoptions.push(() => {
+          context.followups.push({ name: 'adopted' } as never);
+          return Promise.resolve();
+        });
+        return Promise.resolve();
+      });
+      const seen: string[][] = [];
+      sut['store'].complete = vi
+        .fn()
+        .mockImplementation(async (_claim, followups: Array<{ name: string }>, adopt: (tx: never) => Promise<void>) => {
+          await adopt({} as never);
+          seen.push(followups.map(({ name }) => name));
+          if (seen.length === 1) throw Object.assign(new Error('deadlock detected'), { code: '40P01' });
+          return true;
+        });
+      await sut['execute'](claim(5), new AbortController());
+      expect(seen).toEqual([
+        ['kept', 'adopted'],
+        ['kept', 'adopted'],
+      ]);
+      expect(sut['store'].fail).not.toHaveBeenCalled();
     });
 
     it.each([true, false])(

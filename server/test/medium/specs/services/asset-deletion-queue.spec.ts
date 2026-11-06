@@ -4,7 +4,6 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { JobName, PhysicalFileType, QueueName } from 'src/enum.js';
-import { queueAdmission } from 'src/queue/admission.js';
 import { afterJobCommit } from 'src/queue/context.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -141,8 +140,18 @@ describe('Queued asset deletion publication', () => {
     await jobs.queue({ name: JobName.AssetDelete, data: { id: asset.id, deleteOnDisk: true } });
     const [claim] = await jobs['store'].claim(QueueName.BackgroundTask, worker);
     expect(claim).toBeDefined();
-    // An in-flight publication owns the catalogue; deletion must not take an asset lock first.
-    const release = await queueAdmission(db).publication.acquire(new AbortController().signal);
+    // Completion waits on its own job row while the handler has returned: deletion must not have locked the asset.
+    const held = Promise.withResolvers<boolean>();
+    const locked = Promise.withResolvers<void>();
+    const holder = db.transaction().execute(async (tx) => {
+      await sql`select id from job where id=${claim.id}::uuid for update`.execute(tx);
+      locked.resolve();
+      // A cancellation commits with this lock, before the waiting completion reads the row.
+      if (await held.promise)
+        await sql`update job set "cancelRequestedAt"=clock_timestamp() where id=${claim.id}::uuid`.execute(tx);
+    });
+    await locked.promise;
+    const release = (cancel = false) => held.resolve(cancel);
     const abort = new AbortController();
     const execution = jobs['execute'](claim, abort);
     try {
@@ -156,13 +165,15 @@ describe('Queued asset deletion publication', () => {
       });
       expect(announced).toEqual([]);
       if (outcome.startsWith('cancelled')) {
-        await sql`update job set "cancelRequestedAt"=clock_timestamp() where id=${claim.id}::uuid`.execute(db);
+        release(true);
+        await holder;
         abort.abort(new Error('Deletion cancelled'));
       } else if (outcome === 'restored') {
         await db.updateTable('asset').set({ deletedAt: null }).where('id', '=', asset.id).execute();
       }
     } finally {
       release();
+      await holder;
       await execution;
     }
     const accepted = outcome.startsWith('accepted');

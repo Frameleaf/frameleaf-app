@@ -20,7 +20,7 @@ describe('a job waiting for a preview', () => {
     await db.destroy();
   });
 
-  it("stops waiting once its run's thumbnail item for the asset has ended", async () => {
+  it("stops waiting once its run's thumbnail job for the asset has ended", async () => {
     const runId = randomUUID();
     const [pending, damaged, skipped, absent] = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
     await sql`INSERT INTO job_queue(name) VALUES (${QueueName.ThumbnailGeneration}) ON CONFLICT DO NOTHING`.execute(db);
@@ -30,10 +30,9 @@ describe('a job waiting for a preview', () => {
       [damaged, 'failed'],
       [skipped, 'completed'],
     ]) {
-      await sql`INSERT INTO job_run_item("runId","itemKey",stage,queue,selection,state)
-        VALUES (${runId}::uuid,${itemKey},${JobName.AssetGenerateThumbnails},${QueueName.ThumbnailGeneration},'{}'::jsonb,${state})`.execute(
-        db,
-      );
+      await sql`INSERT INTO job(id,queue,name,data,state,"safeToRetry","deadlineMs","runId","itemKey","rootItemKey")
+        VALUES (gen_random_uuid(),${QueueName.ThumbnailGeneration},${JobName.AssetGenerateThumbnails},'{}'::jsonb,${state},
+          true,600000,${runId}::uuid,${itemKey},${itemKey})`.execute(db);
     }
     const inRun = (assetId: string) =>
       queueExecution.run({ claim: { runId } } as unknown as QueueExecution, () => jobs.previewMayArrive(assetId));

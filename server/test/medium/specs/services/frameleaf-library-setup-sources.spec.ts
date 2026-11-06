@@ -13,6 +13,7 @@ import { MediaOperationRepository } from 'src/repositories/media-operation.repos
 import { FrameleafLibrarySetupService } from 'src/services/frameleaf-library-setup.service.js';
 import { PersonService } from 'src/services/person.service.js';
 import { SmartInfoService } from 'src/services/smart-info.service.js';
+import { QUIET_HOURS_NEVER } from 'src/utils/overnight.js';
 import { getKyselyDB, newTestService } from 'test/utils.js';
 
 const cases = [
@@ -147,16 +148,19 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
     return Promise.resolve({});
   });
   const operations = new MediaOperationRepository(db);
-  const isPaused = vi.fn().mockResolvedValue(true);
+  const idle = { active: 0, waiting: 0, delayed: 0, paused: 0, failed: 0 };
+  const counts = vi.fn().mockResolvedValue(idle);
+  const schedule = vi.fn().mockResolvedValue(null);
+  const jobs = new JobRepository({} as never, {} as never, {} as never, { setContext: vi.fn() } as never, db);
+  for (const [jobName, queueName] of stages)
+    jobs['handlers'][jobName] = { jobName, queueName, handler: vi.fn(), label: 'synthetic setup' };
+  Object.assign(jobs, { getJobCounts: counts, getQueueSchedule: schedule });
   const make = (connection = db) =>
     new FrameleafLibrarySetupService(
       connection,
       { getAll: vi.fn().mockResolvedValue([]) } as never,
       {} as never,
-      {
-        getJobCounts: vi.fn().mockResolvedValue({ active: 0, waiting: 0, delayed: 0, paused: 0, failed: 0 }),
-        isPaused,
-      } as never,
+      jobs,
       users as never,
       { getNow: vi.fn().mockResolvedValue({ nowId: randomUUID() }) } as never,
       {} as never,
@@ -169,12 +173,30 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
         selection: { managerSetup: { startedAt: string | null } };
       }>`SELECT selection FROM job_run WHERE id=${id}::uuid`.execute(db)
     ).rows[0].selection.managerSetup;
-  const ready = async () =>
-    (
-      await sql<{
-        stage: string;
-      }>`SELECT stage FROM job_selection WHERE "runId"=${id}::uuid AND state='ready' ORDER BY stage`.execute(db)
-    ).rows.map(({ stage }) => stage);
+  /** The stages the run's holds let run. */
+  const ready = async () => {
+    const holds =
+      (
+        await sql<{
+          holds: object | null;
+        }>`SELECT selection->'holds' AS holds FROM job_run WHERE id=${id}::uuid`.execute(db)
+      ).rows[0]?.holds ?? {};
+    return stages
+      .map(([stage]) => stage as string)
+      .filter((stage) => !(stage in holds))
+      .sort();
+  };
+  const store = new SqlQueueStore(db);
+  /** Puts the run's jobs of these stages back to waiting, as if they had not run yet. */
+  const pending = (names: string[]) =>
+    sql`UPDATE job SET state='pending',"finishedAt"=NULL,"availableAt"=now() WHERE "runId"=${id}::uuid
+      AND name=ANY(${names}::text[])`.execute(db);
+  /** A job of the run for a stage the fixture has no photo for. */
+  const extra = (itemKey: string, name: JobName, queue: QueueName) =>
+    sql`INSERT INTO job(id,queue,name,data,"safeToRetry",sensitive,"deadlineMs","runId","itemKey","rootItemKey")
+      VALUES(${randomUUID()}::uuid,${queue},${name},'{}'::jsonb,true,false,60000,${id}::uuid,${itemKey},${itemKey})`.execute(
+      db,
+    );
   try {
     process.env.FRAMELEAF_MANAGER_INSTALLATION = installation;
     process.env.FRAMELEAF_MANAGER_ORIGIN = 'new_import';
@@ -196,22 +218,21 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
     ])
       await sql`INSERT INTO frameleaf_library_import_mapping(operation_id,entity_kind,source_id,destination_id,record_sha256)
         VALUES(${binding.operationId}::uuid,${kind},${sourceId},${destinationId}::uuid,${'e'.repeat(64)})`.execute(db);
-    const jobs = new JobRepository({} as never, {} as never, {} as never, { setContext: vi.fn() } as never, db);
-    for (const [jobName, queueName] of stages)
-      jobs['handlers'][jobName] = { jobName, queueName, handler: vi.fn(), label: 'synthetic setup' };
     expect(
       await jobs.dispatchImportedLibraryWork(
         { binding, destinationId },
         { installation, operationId: binding.operationId },
       ),
     ).toBe(id);
+    // Prepared: every stage held until first setup.
+    expect(await ready()).toEqual([]);
     expect(
       (
         await sql<{
-          count: number;
-        }>`SELECT count(*)::int AS count FROM job_selection WHERE "runId"=${id}::uuid`.execute(db)
-      ).rows[0].count,
-    ).toBe(stages.length);
+          held: boolean;
+        }>`SELECT bool_and("availableAt"='infinity') AS held FROM job WHERE "runId"=${id}::uuid`.execute(db)
+      ).rows[0].held,
+    ).toBe(outcome === 'empty' ? null : true);
     if (mismatch.startsWith('restore-')) {
       process.env.FRAMELEAF_MANAGER_ORIGIN = 'restored_library';
       if (mismatch === 'restore-none') delete process.env.FRAMELEAF_MANAGER_IMPORT_INSTALLATION;
@@ -295,8 +316,10 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
     expect((await sql<{ count: number }>`SELECT count(*)::int AS count FROM job_run`.execute(db)).rows[0].count).toBe(
       1,
     );
-    await sql`UPDATE job_selection SET state='ready' WHERE "runId"=${id}::uuid AND state='enumerating'`.execute(db);
-    await sql`UPDATE job_run_item SET state='completed' WHERE "runId"=${id}::uuid`.execute(db);
+    await sql`UPDATE job_run SET selection=selection || '{"holds":{}}'::jsonb WHERE id=${id}::uuid`.execute(db);
+    await sql`UPDATE job SET state='completed',"finishedAt"=now(),"availableAt"=now() WHERE "runId"=${id}::uuid`.execute(
+      db,
+    );
     await sql`UPDATE system_metadata SET value=value || ${JSON.stringify({
       phase: 'verifying',
       healthAfter: new Date().toISOString(),
@@ -310,8 +333,9 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
         case 'repeated-begin': {
           const before = (await sql`SELECT xmin::text AS version FROM job_run WHERE id=${id}::uuid`.execute(db))
             .rows[0];
+          // A poll with nothing to change writes nothing and takes no run lock, even while another holds it.
           await db.transaction().execute(async (blocker) => {
-            await sql`SELECT name FROM job_queue FOR NO KEY UPDATE`.execute(blocker);
+            await sql`SELECT id FROM job_run WHERE id=${id}::uuid FOR UPDATE`.execute(blocker);
             await db.connection().execute(async (connection) => {
               await sql`SET lock_timeout='500ms'`.execute(connection);
               try {
@@ -327,34 +351,24 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
           break;
         }
         case 'queued-pause': {
-          const store = new SqlQueueStore(db);
           const worker = randomUUID();
           await store.initialize([QueueName.MetadataExtraction, QueueName.ThumbnailGeneration], worker);
-          await sql`UPDATE job_run_item SET state='pending' WHERE "runId"=${id}::uuid AND stage IN (${JobName.AssetExtractMetadata},${JobName.AssetGenerateThumbnails})`.execute(
-            db,
-          );
-          await store.feedManifest(QueueName.MetadataExtraction);
+          await pending([JobName.AssetExtractMetadata, JobName.AssetGenerateThumbnails]);
           const [active] = await store.claim(QueueName.MetadataExtraction, worker, 1);
           expect(active.runId).toBe(id);
           await sql`UPDATE job_queue SET concurrency=1 WHERE name=${QueueName.ThumbnailGeneration}`.execute(db);
-          await store.enqueue([
-            {
-              queue: QueueName.ThumbnailGeneration,
-              name: JobName.AssetGenerateThumbnails,
-              data: { id: randomUUID() },
-              safeToRetry: true,
-              sensitive: false,
-              deadlineMs: 60_000,
-            },
-          ]);
+          // A second thumbnail of the import, still waiting when setup pauses.
+          await extra('second-photo', JobName.AssetGenerateThumbnails, QueueName.ThumbnailGeneration);
           const [occupying] = await store.claim(QueueName.ThumbnailGeneration, worker, 1);
-          await store.feedManifest(QueueName.ThumbnailGeneration);
+          expect(occupying.runId).toBe(id);
           expect(await store.claim(QueueName.ThumbnailGeneration, worker)).toEqual([]);
           await make().setPaused(true);
+          while ((await store.reconcileHolds(1000)) > 0);
           await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup}',(selection->'managerSetup')-'paused') WHERE id=${id}::uuid`.execute(
             db,
           );
           await make().begin(); // A restarted Manager repairs the durable hold before accepting more work.
+          // Running work finishes; the paused import's waiting work does not start.
           expect(await store.complete(occupying, [])).toBe(true);
           expect(await store.claim(QueueName.ThumbnailGeneration, worker)).toEqual([]);
           expect(await store.complete(active, [])).toBe(true);
@@ -372,6 +386,7 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
           expect(other.runId).toBeNull();
           expect(await store.complete(other, [])).toBe(true);
           await make().setPaused(false);
+          while ((await store.reconcileHolds(1000)) > 0);
           const [resumed] = await store.claim(QueueName.ThumbnailGeneration, worker, 1);
           expect(resumed.runId).toBe(id);
 
@@ -481,11 +496,8 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
         }
         case 'quiet-hours': {
           // Metadata counts with thumbnails, and video conversion with smart search and faces: setup waits for both.
-          await sql`INSERT INTO job_run_item("runId","itemKey",stage,queue,state,selection) VALUES
-            (${id}::uuid,'synthetic-metadata',${JobName.AssetExtractMetadata},${QueueName.MetadataExtraction},'pending','{}'::jsonb),
-            (${id}::uuid,'synthetic-video',${JobName.AssetEncodeVideo},${QueueName.VideoConversion},'pending','{}'::jsonb)`.execute(
-            db,
-          );
+          await extra('synthetic-metadata', JobName.AssetExtractMetadata, QueueName.MetadataExtraction);
+          await extra('synthetic-video', JobName.AssetEncodeVideo, QueueName.VideoConversion);
           const stage = async (name: string) => (await make().progress()).stages.find(({ id }) => id === name);
           expect(await stage('thumbnails')).toMatchObject({ status: 'running', done: 2, total: 3 });
           expect(await stage('search')).toEqual({
@@ -495,25 +507,25 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
             done: 2,
             total: 3,
           });
-          // FL-577: quiet hours hold the remaining video conversion by day, so the stage waits for tonight.
-          await sql`INSERT INTO system_metadata(key,value) VALUES('overnight-sequence',${JSON.stringify({
-            run: null,
-            nights: [],
-            quiet: { holding: [QueueName.SmartSearch, QueueName.FaceDetection, QueueName.VideoConversion] },
-          })}::text::jsonb)`.execute(db);
+          // FL-577: quiet hours close the remaining video conversion by day, so the stage waits for tonight.
+          const tonight = new Date(Date.now() + 3_600_000);
+          schedule.mockResolvedValue(tonight);
           expect(await stage('search')).toMatchObject({
             status: 'waiting',
             heldForNight: true,
-            resumesAt: expect.any(String),
+            resumesAt: tonight.toISOString(),
             done: 2,
             total: 3,
           });
-          expect(isPaused).toHaveBeenCalledWith(QueueName.VideoConversion);
+          expect(schedule).toHaveBeenCalledWith(QueueName.VideoConversion);
+          // A schedule that never fires closes it with no time to start again.
+          schedule.mockResolvedValue(QUIET_HOURS_NEVER);
+          expect(await stage('search')).toMatchObject({ status: 'waiting', heldForNight: true, resumesAt: null });
           // A queue an administrator resumed during the day runs, and a paused setup says paused.
-          isPaused.mockResolvedValue(false);
+          schedule.mockResolvedValue(null);
           expect(await stage('search')).toMatchObject({ status: 'running' });
           expect(await stage('search')).not.toHaveProperty('heldForNight');
-          isPaused.mockResolvedValue(true);
+          schedule.mockResolvedValue(tonight);
           await make().setPaused(true);
           expect(await stage('search')).toMatchObject({ status: 'paused' });
           expect(await stage('search')).not.toHaveProperty('heldForNight');
@@ -529,18 +541,15 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
           break;
         }
         case 'terminal-alias': {
-          const store = new SqlQueueStore(db);
+          // The last job of the run finishing is what lets setup complete.
           const worker = randomUUID();
           await store.initialize([QueueName.SmartSearch], worker);
-          await sql`UPDATE job_run_item SET state='pending' WHERE "runId"=${id}::uuid AND stage=${JobName.SmartSearch}`.execute(
-            db,
-          );
-          await store.feedManifest(QueueName.SmartSearch);
+          await pending([JobName.SmartSearch]);
           const [claim] = await store.claim(QueueName.SmartSearch, worker, 1);
+          expect((await make().status()).phase).toBe('verifying');
           expect(await store.complete(claim, [])).toBe(true);
-          await sql`UPDATE job_run_item SET state='active' WHERE "runId"=${id}::uuid AND stage=${JobName.SmartSearch}`.execute(
-            db,
-          );
+          await sql`UPDATE system_metadata SET value=jsonb_set(value,'{quietSince}',${JSON.stringify(Date.now() - 11_000)}::text::jsonb)
+            WHERE key=${`frameleaf-manager-library-setup:${installation}`}`.execute(db);
           expect((await make().status()).phase).toBe('complete');
           expect(await make().progress()).toMatchObject({ completedAt: expect.any(String) });
 
@@ -548,7 +557,6 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
         }
         default: {
           if (outcome.startsWith('disabled')) {
-            const store = new SqlQueueStore(db);
             const worker = randomUUID();
             const smart = newTestService(SmartInfoService).sut;
             const faces = newTestService(PersonService).sut;
@@ -561,10 +569,7 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
               [JobName.SmartSearch, QueueName.SmartSearch],
               [JobName.AssetDetectFaces, QueueName.FaceDetection],
             ] as const) {
-              await sql`UPDATE job_run_item SET state='pending' WHERE "runId"=${id}::uuid AND stage=${stage}`.execute(
-                db,
-              );
-              await store.feedManifest(queue);
+              await pending([stage]);
               const [claim] = await store.claim(queue, worker, 1);
               expect(claim).toBeDefined();
               const invoke = () =>
@@ -589,10 +594,7 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
             }
             if (outcome === 'disabled') {
               // With AI processing off, videos still count in the stage, which still says AI is off.
-              await sql`INSERT INTO job_run_item("runId","itemKey",stage,queue,state,selection)
-                VALUES(${id}::uuid,'synthetic-video',${JobName.AssetEncodeVideo},${QueueName.VideoConversion},'pending','{}'::jsonb)`.execute(
-                db,
-              );
+              await extra('synthetic-video', JobName.AssetEncodeVideo, QueueName.VideoConversion);
               expect((await make().progress()).stages.find(({ id }) => id === 'search')).toEqual({
                 id: 'search',
                 status: 'running',
@@ -600,18 +602,15 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
                 done: 0,
                 total: 1,
               });
-              await sql`DELETE FROM job_run_item WHERE "runId"=${id}::uuid AND "itemKey"='synthetic-video'`.execute(db);
+              await sql`DELETE FROM job WHERE "runId"=${id}::uuid AND "itemKey"='synthetic-video'`.execute(db);
             } else if (outcome === 'disabled-people') {
               // A retained people-preview child remains required while the AI stages wait for enablement.
-              await sql`INSERT INTO job_run_item("runId","itemKey",stage,queue,state,selection)
-            VALUES(${id}::uuid,${randomUUID()},${JobName.PersonGenerateThumbnail},${QueueName.ThumbnailGeneration},'pending','{}'::jsonb)`.execute(
-                db,
-              );
+              await extra(randomUUID(), JobName.PersonGenerateThumbnail, QueueName.ThumbnailGeneration);
               expect((await make().status()).phase).toBe('verifying');
               const previews = (await make().progress()).stages.find(({ id }) => id === 'thumbnails');
               // The photo's metadata and thumbnail are done; the person preview is not.
               expect(previews).toMatchObject({ total: 3, done: 2, status: 'running' });
-              await sql`UPDATE job_run_item SET state='completed' WHERE "runId"=${id}::uuid AND stage=${JobName.PersonGenerateThumbnail}`.execute(
+              await sql`UPDATE job SET state='completed',"finishedAt"=now() WHERE "runId"=${id}::uuid AND name=${JobName.PersonGenerateThumbnail}`.execute(
                 db,
               );
               await sql`UPDATE system_metadata SET value=jsonb_set(value,'{quietSince}',${JSON.stringify(Date.now() - 11_000)}::text::jsonb)
@@ -622,24 +621,23 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
               completedAt: expect.any(String),
               stages: expect.arrayContaining([{ id: 'search', status: 'waiting', disabled: true, done: 0, total: 0 }]),
             });
-            expect((await sql`SELECT "dependencyReason" FROM job WHERE "runId"=${id}::uuid`.execute(db)).rows).toEqual([
-              { dependencyReason: 'workload-disabled' },
-              { dependencyReason: 'workload-disabled' },
-            ]);
+            expect(
+              (
+                await sql`SELECT "dependencyReason" FROM job WHERE "runId"=${id}::uuid AND "dependencyReason" IS NOT NULL`.execute(
+                  db,
+                )
+              ).rows,
+            ).toEqual([{ dependencyReason: 'workload-disabled' }, { dependencyReason: 'workload-disabled' }]);
           } else {
             if (outcome === 'halting-failed') {
-              // A halting queue's item stops setup.
-              await sql`INSERT INTO job_queue(name) VALUES(${QueueName.MediaHealth}) ON CONFLICT DO NOTHING`.execute(
-                db,
+              // FL-1265: a file check job that failed is reported, never a stop: setup completes.
+              counts.mockImplementation((queue: QueueName) =>
+                Promise.resolve(queue === QueueName.MediaHealth ? { ...idle, failed: 1 } : idle),
               );
-              await sql`INSERT INTO job_run_item("runId","itemKey",stage,queue,state,selection)
-                VALUES(${id}::uuid,${randomUUID()},${JobName.MediaHealthScanMissing},${QueueName.MediaHealth},'failed','{}'::jsonb)`.execute(
-                db,
-              );
-              expect((await make().status()).phase).toBe('needs-attention');
-              expect(await make().progress()).toMatchObject({ phase: 'needs-attention', completedAt: null });
+              expect(await make().status()).toMatchObject({ phase: 'complete', checkProblem: true });
+              expect(await make().progress()).toMatchObject({ phase: 'complete', checkProblem: true });
             } else {
-              await sql`UPDATE job_run_item SET state=${outcome} WHERE "runId"=${id}::uuid AND stage=${JobName.SmartSearch}`.execute(
+              await sql`UPDATE job SET state=${outcome},"finishedAt"=now() WHERE "runId"=${id}::uuid AND name=${JobName.SmartSearch}`.execute(
                 db,
               );
               // FL-1165: one item's search step that ended badly is listed, never a reason to halt setup, and
@@ -658,7 +656,7 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
       return;
     }
     for (const stage of [JobName.SmartSearch, JobName.AssetDetectFaces]) {
-      await sql`UPDATE job_run_item SET state='pending' WHERE "runId"=${id}::uuid AND stage=${stage}`.execute(db);
+      await pending([stage]);
       await sql`UPDATE system_metadata SET value=jsonb_set(value,'{quietSince}',${JSON.stringify(Date.now() - 11_000)}::text::jsonb)
         WHERE key=${`frameleaf-manager-library-setup:${installation}`}`.execute(db);
       expect((await make().status()).phase).toBe('verifying');
@@ -668,15 +666,16 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
         WHERE key=${`frameleaf-manager-library-setup:${installation}`}`.execute(db)
         ).rows[0].quiet,
       ).toBeNull();
-      await sql`UPDATE job_run_item SET state='completed' WHERE "runId"=${id}::uuid AND stage=${stage}`.execute(db);
+      await sql`UPDATE job SET state='completed',"finishedAt"=now() WHERE "runId"=${id}::uuid AND name=${stage}`.execute(
+        db,
+      );
     }
     const unrelated = randomUUID();
     await sql`INSERT INTO job_run(id,kind,selection,"enumerationDone")
       VALUES(${unrelated}::uuid,'synthetic-unrelated','{}'::jsonb,true)`.execute(db);
-    await sql`INSERT INTO job_run_item("runId","itemKey",stage,queue,state,selection)
-      VALUES(${unrelated}::uuid,'unrelated',${JobName.SmartSearch},${QueueName.SmartSearch},'pending','{}'::jsonb)`.execute(
-      db,
-    );
+    await sql`INSERT INTO job(id,queue,name,data,"safeToRetry",sensitive,"deadlineMs","runId","itemKey")
+      VALUES(${randomUUID()}::uuid,${QueueName.SmartSearch},${JobName.SmartSearch},'{}'::jsonb,true,false,60000,
+        ${unrelated}::uuid,'unrelated')`.execute(db);
     await sql`UPDATE system_metadata SET value=jsonb_set(value,'{quietSince}',${JSON.stringify(Date.now() - 11_000)}::text::jsonb)
       WHERE key=${`frameleaf-manager-library-setup:${installation}`}`.execute(db);
     expect((await make().status()).phase).toBe('complete');

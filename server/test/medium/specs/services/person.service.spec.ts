@@ -830,11 +830,10 @@ describe(PersonService.name, () => {
         rootItemKey: string;
         selection: JobOf<JobName.FacialRecognition>;
         state: string;
-        jobId: string | null;
-      }>`select "itemKey", "rootItemKey", selection, state, "jobId" from job_run_item
-        where stage = ${JobName.FacialRecognition}
+      }>`select "itemKey", "rootItemKey", data selection, state from job
+        where name = ${JobName.FacialRecognition}
         and "itemKey" in (${assetFace.id}, ${assetFaceUser1.id})`.execute(ctx.database);
-      // Other earlier fixtures can also be selected, but both owners' roots must be durable and unadmitted.
+      // Other earlier fixtures can also be selected, but both owners' roots must have a waiting job.
       expect(rows).toHaveLength(2);
       expect(rows).toEqual(
         expect.arrayContaining([
@@ -843,14 +842,12 @@ describe(PersonService.name, () => {
             rootItemKey: asset.id,
             selection: { id: assetFace.id, deferred: false, force: true },
             state: 'pending',
-            jobId: null,
           },
           {
             itemKey: assetFaceUser1.id,
             rootItemKey: assetUser1.id,
             selection: { id: assetFaceUser1.id, deferred: false, force: true },
             state: 'pending',
-            jobId: null,
           },
         ]),
       );
@@ -910,9 +907,8 @@ describe(PersonService.name, () => {
         rootItemKey: string;
         selection: JobOf<JobName.FacialRecognition>;
         state: string;
-        jobId: string | null;
-      }>`select "itemKey", "rootItemKey", selection, state, "jobId" from job_run_item
-        where stage = ${JobName.FacialRecognition}
+      }>`select "itemKey", "rootItemKey", data selection, state from job
+        where name = ${JobName.FacialRecognition}
         and "itemKey" in (${assetFace.id}, ${assetFaceUser1.id})`.execute(ctx.database);
       expect(rows).toEqual([
         {
@@ -920,7 +916,6 @@ describe(PersonService.name, () => {
           rootItemKey: asset.id,
           selection: { id: assetFace.id, deferred: false, force: true },
           state: 'pending',
-          jobId: null,
         },
       ]);
       expect(rows.some(({ itemKey }) => itemKey === assetFaceUser1.id)).toBe(false);

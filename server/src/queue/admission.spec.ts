@@ -59,25 +59,37 @@ describe('queue admission', () => {
     (await next)();
   });
 
-  it('shares budgets per database and releases admission after an action throws', async () => {
+  it('shares budgets per database', () => {
     const db = {};
-    const first = queueAdmission(db);
-    const second = queueAdmission(db);
-    const release = await first.publication.acquire(new AbortController().signal);
-    let entered = false;
-    const failed = expect(
-      second.publication.run(new AbortController().signal, () => {
-        entered = true;
-        return Promise.reject(new Error('failed'));
-      }),
-    ).rejects.toThrow('failed');
+    expect(queueAdmission(db)).toBe(queueAdmission(db));
+    expect(queueAdmission({})).not.toBe(queueAdmission(db));
+  });
+
+  it('applies a new capacity at once', async () => {
+    const admission = new QueueAdmission(1);
+    const first = await admission.acquire(new AbortController().signal);
+    let granted = false;
+    const second = admission.acquire(new AbortController().signal).then((release) => {
+      granted = true;
+      return release;
+    });
     await Promise.resolve();
-    expect(entered).toBe(false);
-    // A separate execution database has its own capacity, not a process-global lock.
-    const other = await queueAdmission({}).publication.acquire(new AbortController().signal);
-    other();
-    release();
-    await failed;
-    (await first.publication.acquire(new AbortController().signal))();
+    expect(granted).toBe(false);
+    admission.resize(2);
+    const releaseSecond = await second;
+    expect(granted).toBe(true);
+    // Shrinking lets running work finish; the slot it frees is not handed on while over capacity.
+    admission.resize(1);
+    let third = false;
+    const pending = admission.acquire(new AbortController().signal).then((release) => {
+      third = true;
+      return release;
+    });
+    first();
+    await Promise.resolve();
+    expect(third).toBe(false);
+    releaseSecond();
+    (await pending)();
+    expect(third).toBe(true);
   });
 });

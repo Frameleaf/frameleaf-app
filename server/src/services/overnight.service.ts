@@ -34,10 +34,12 @@ import {
   type OvernightState,
   type OvernightStep,
   type OvernightStepResult,
+  QUIET_HOURS_NEVER,
   QUIET_HOURS_QUEUES,
   isHeavyWorkWindow,
   isStepDue,
   keepNight,
+  nextOvernightStart,
   nextOvernightStep,
   overnightCron,
   overnightStopAt,
@@ -239,10 +241,11 @@ export class OvernightService {
   }
 
   /**
-   * FL-577: quiet hours. Outside the overnight window the heavy queues are paused, and the ones this
-   * server paused are remembered; when the window opens only those are resumed. A queue the
-   * administrator paused stays paused, and one they resume during the day stays resumed until the
-   * next window.
+   * FL-577: quiet hours. Outside the overnight window the heavy queues are closed until the next
+   * overnight start (FL-1265: a schedule on the queue, never a pause, so it opens by itself even if
+   * this server is down then), and the ones closed are remembered; when the window opens they are
+   * opened again. A queue the administrator resumes during the day leaves `holding` and stays open
+   * until the next window. A pause the administrator made is theirs and is never touched here.
    */
   private async keepQuietHours(): Promise<void> {
     const config = await this.readConfig();
@@ -263,18 +266,21 @@ export class OvernightService {
     const open = !quietHours || isHeavyWorkWindow(DateTime.now(), nightlyTasks, zone, quiet.caughtUpAt);
     if (open && quiet.holding !== null) {
       for (const name of quiet.holding) {
-        await this.jobRepository.resume(name);
+        await this.jobRepository.setQueueSchedule(name, null);
       }
-      quiet = { ...quiet, holding: null };
-    } else if (!open && quiet.holding === null) {
-      const holding: QueueName[] = [];
-      for (const name of QUIET_HOURS_QUEUES) {
-        if (!(await this.jobRepository.isPaused(name))) {
-          await this.jobRepository.pause(name);
-          holding.push(name);
+      const { until: _, ...rest } = quiet;
+      quiet = { ...rest, holding: null };
+    } else if (!open) {
+      // A schedule that never fires keeps them closed until it changes.
+      const until = nextOvernightStart(nightlyTasks, zone) ?? QUIET_HOURS_NEVER;
+      // A changed schedule moves the opening of queues already closed.
+      if (quiet.holding === null || quiet.until !== until.toISOString()) {
+        const holding = quiet.holding ?? [...QUIET_HOURS_QUEUES];
+        for (const name of holding) {
+          await this.jobRepository.setQueueSchedule(name, until);
         }
+        quiet = { ...quiet, holding, until: until.toISOString() };
       }
-      quiet = { ...quiet, holding };
     }
     if (JSON.stringify(quiet) !== JSON.stringify(state.quiet ?? { holding: null })) {
       await this.save({ ...state, quiet });

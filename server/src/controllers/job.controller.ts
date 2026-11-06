@@ -1,5 +1,5 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Put, Query } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { JobRunIdParamDto, JobRunItemPageDto, JobRunPageDto, JobRunSearchDto } from 'src/dtos/job-run.dto.js';
@@ -34,6 +34,21 @@ export class JobController {
   @Endpoint({ summary: 'Inspect selected job run items', history: new HistoryBuilder().added('v3').alpha('v3') })
   getJobRunItems(@Param() { id }: JobRunIdParamDto, @Query() dto: JobRunSearchDto): Promise<JobRunItemPageDto> {
     return this.service.getRunItems(id, dto);
+  }
+
+  @Post('runs/:id/release')
+  @Authenticated({ permission: Permission.JobCreate, admin: true })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiResponse({ status: 400, description: "The run's import is not activated yet" })
+  @ApiResponse({ status: 404, description: 'Job run not found' })
+  @Endpoint({
+    summary: 'Release held job run work',
+    description:
+      'Start the work a run holds back: the first setup of an import, or a paused setup. An import can be released once it is activated. Releasing a run with nothing held does nothing.',
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+  releaseJobRun(@Param() { id }: JobRunIdParamDto): Promise<void> {
+    return this.service.releaseRun(id);
   }
 
   @Get()

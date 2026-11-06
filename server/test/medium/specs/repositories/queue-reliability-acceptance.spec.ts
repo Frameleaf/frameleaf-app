@@ -4,9 +4,9 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import postgres from 'postgres';
 import { AssetVisibility } from 'src/enum.js';
-import { freezeSelection } from 'src/queue/manifest.js';
+import { finishRuns } from 'src/queue/run-summary.js';
 import { SqlQueueStore } from 'src/queue/store.js';
-import { QUEUE_HIGH_WATER, QUEUE_TIMING, QueueIntent } from 'src/queue/types.js';
+import { QUEUE_TIMING, QueueIntent } from 'src/queue/types.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetUploadResourceRepository } from 'src/repositories/asset-upload-resource.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -275,17 +275,24 @@ describe('queue connection recovery and repeated database pressure', () => {
       await store.initialize([queue], worker);
       await store.setConcurrency(queue, 64);
       for (let round = 0; round < 3; round++) {
-        const runId = await freezeSelection(
-          execution,
-          intent(queue),
-          execution
-            .selectFrom(sql<{ id: string }>`(select generate_series(1, 1250)::text id)`.as('selected'))
-            .select('id'),
-        );
+        const runId = await publications.createRun('reliability-round', {});
+        await publications.finishEnumeration(runId);
+        await execution
+          .transaction()
+          .execute((tx) =>
+            publications.insertSelectionPage(
+              { ...intent(queue), runId },
+              execution
+                .selectFrom(sql<{ id: string }>`(select generate_series(1, 1250)::text id)`.as('selected'))
+                .select('id'),
+              null,
+              2000,
+              tx,
+            ),
+          );
         let resourceId: string | undefined;
         let finished = false;
         for (let batch = 0; batch < 40; batch++) {
-          expect(await store.feedManifest(queue)).toBeLessThanOrEqual(250);
           const claims = await store.claim(queue, worker);
           expect(claims.length).toBeGreaterThan(0);
           expect(claims.length).toBeLessThanOrEqual(64);
@@ -293,7 +300,7 @@ describe('queue connection recovery and repeated database pressure', () => {
           const { rows } = await sql<{ count: number }>`select count(*)::int count from job
             where queue = ${queue} and state in ('pending','waiting','active')`.execute(admin);
           maximumLive = Math.max(maximumLive, rows[0].count);
-          expect(rows[0].count).toBeLessThanOrEqual(QUEUE_HIGH_WATER);
+          expect(rows[0].count).toBeLessThanOrEqual(1250);
           const interact = async () => {
             const started = performance.now();
             if (!resourceId) {
@@ -326,7 +333,6 @@ describe('queue connection recovery and repeated database pressure', () => {
             const started = performance.now();
             await store.pause(queue, true);
             expect(await store.claim(queue, worker)).toEqual([]);
-            expect(await store.feedManifest(queue)).toBe(0);
             await store.pause(queue, false);
             expect(performance.now() - started).toBeLessThan(5000);
           };
@@ -350,6 +356,8 @@ describe('queue connection recovery and repeated database pressure', () => {
             );
             expect(pool.transactions).toBe(0);
           }
+          await finishRuns(coordinator, 10);
+          store.forgetRunReads();
           const run = (await store.listRuns(100, 0)).find((value) => value.id === runId)!;
           if (run.finishedAt) {
             expect(run).toMatchObject({

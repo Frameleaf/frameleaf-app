@@ -6,6 +6,8 @@ export interface JobQueueTable {
   name: string;
   paused: Generated<boolean>;
   concurrency: Generated<number>;
+  /** FL-1265: quiet hours; nothing new is claimed from this queue until then. */
+  closedUntil: Timestamp | null;
 }
 export interface JobWorkerTable {
   id: string;
@@ -22,17 +24,6 @@ export interface JobRunTable {
   finishedAt: Timestamp | null;
   /** FL-1215: see `run-summary.ts`. */
   summary: Record<string, unknown> | null;
-}
-export interface JobRunItemTable {
-  runId: string;
-  itemKey: string;
-  rootItemKey: string | null;
-  stage: string;
-  queue: string;
-  selection: Record<string, unknown>;
-  state: Generated<QueueState>;
-  jobId: string | null;
-  selectionVersion: Generated<number>;
 }
 export interface JobTable {
   id: string;
@@ -82,20 +73,4 @@ export interface QueueDatabase {
   job_queue: JobQueueTable;
   job_worker: JobWorkerTable;
   job_run: JobRunTable;
-  job_run_item: JobRunItemTable;
-  job_selection_run: {
-    runId: string;
-    selectionId: string;
-    copyAfter: string | null;
-    lineageAfter: Generated<string>;
-    copyComplete: Generated<boolean>;
-  };
-  job_selection_lineage: {
-    id: Generated<string>;
-    selectionId: string;
-    runId: string;
-    itemKey: string;
-    stage: string;
-    superseded: Generated<boolean>;
-  };
 }

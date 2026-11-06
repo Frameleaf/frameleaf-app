@@ -1,153 +1,58 @@
 import { Kysely, sql } from 'kysely';
-import { performance } from 'node:perf_hooks';
-import { RUN_OUTCOMES, RunCounts, RunPage, RunPageAggregate, readRunPage } from 'src/queue/run-query.js';
-import { libraryRunPending } from 'src/queue/selection-state.js';
+import { RunSummary, aggregateRun, readSurroundings } from 'src/queue/run-query.js';
+
+/** The run `r`'s live work that keeps it open: pending tasks of a parked stage don't. */
+const liveWork = sql<boolean>`exists (select 1 from job j where j."runId" = r.id
+  and j.state in ('pending','waiting','active') and not (j.state in ('pending','waiting') and j.name = any(array(
+    select stage from jsonb_each_text(case when jsonb_typeof(r.selection->'holds') = 'object'
+      then r.selection->'holds' else '{}' end) holds(stage, reason) where reason = 'parked'))))`;
 
 /**
- * FL-1215: Activity reads a run's counts from its whole ledger, millions of rows after a large scan. A run's counts
- * are final once it is marked finished, fully enumerated, has no live job and its own read reports no unfinished
- * stage: from then on only a reopen can change them, and every reopen (a retry, a re-armed stage, a released
- * parked stage, a library append, a late producer selection) clears `finishedAt`. So the coordinator adds the
- * run's ledger up once, a page of roots per statement, and stores the result stamped with that `finishedAt`.
- * `listRuns` uses it only while the stamp still matches; settling again stamps a new `finishedAt`.
+ * FL-1265: the coordinator sweep finishes runs. A run is finished when it is enumerated and has no live job (parked
+ * stages aside); its counts are added up once, in the same statement that stamps `finishedAt`, so Activity and
+ * pruned history read the stored summary from then on. A run already stamped whose summary is missing or stale keeps
+ * its `finishedAt` and gets one. Reopening a run sets `finishedAt` to null, which leaves the summary stale.
  *
- * The partial sum lives in `summary` while pages are added (`cursor`). A page reads its roots' rows only, and
- * every row of a root falls in one page, so per-root outcomes and per-stage counts add up exactly.
+ * Each run is its own transaction: the run row is locked `for no key update skip locked` (jobs can still be inserted
+ * against it), so whoever reopens it in the meantime either waits for this to commit or is seen by the final check.
+ * Returns how many runs were finished.
+ * ponytail: the open-run check reads each enumerated open run's first live job; parked-only runs read their parked tasks.
  */
-const LOCK = sql`pg_try_advisory_xact_lock(-333, 2)`;
-
-type Cursor = { bookkeepingDone: boolean; after: string | null };
-type Partial = RunPageAggregate & { lastStages: string[] };
-type Summary = { finishedAt: string; complete?: true; final?: false; cursor?: Cursor; partial?: Partial };
-
-/** Every outcome at 0. */
-const zero = (): RunCounts => Object.fromEntries(['total', ...RUN_OUTCOMES].map((key) => [key, 0])) as RunCounts;
-/** Two count sets added outcome by outcome. */
-const add = (a: RunCounts, b: RunCounts) =>
-  Object.fromEntries(
-    Object.keys(a).map((key) => [key, a[key as keyof RunCounts] + b[key as keyof RunCounts]]),
-  ) as RunCounts;
-
-/** One more page added to the run's partial sum; the first page starts from zero. */
-const merge = (sum: Partial | undefined, page: RunPageAggregate): Partial => {
-  const base: Partial = sum ?? {
-    counts: zero(),
-    stageTotals: zero(),
-    unfinishedStages: 0,
-    readyStages: 0,
-    held: 0,
-    dependencyWaiting: false,
-    dependencyUnavailable: false,
-    dependencyReasons: [],
-    dependencyFailed: false,
-    lastStage: null,
-    lastProgressUs: null,
-    lastStages: [],
-  };
-  const later =
-    page.lastProgressUs !== null &&
-    (base.lastProgressUs === null || BigInt(page.lastProgressUs) > BigInt(base.lastProgressUs));
-  const tied = page.lastProgressUs !== null && page.lastProgressUs === base.lastProgressUs;
-  return {
-    counts: add(base.counts, page.counts),
-    stageTotals: add(base.stageTotals, page.stageTotals),
-    unfinishedStages: base.unfinishedStages + page.unfinishedStages,
-    readyStages: base.readyStages + page.readyStages,
-    held: base.held + page.held,
-    dependencyWaiting: base.dependencyWaiting || page.dependencyWaiting,
-    dependencyUnavailable: base.dependencyUnavailable || page.dependencyUnavailable,
-    dependencyReasons: [...new Set([...(base.dependencyReasons ?? []), ...(page.dependencyReasons ?? [])])],
-    dependencyFailed: base.dependencyFailed || page.dependencyFailed,
-    lastProgressUs: later ? page.lastProgressUs : base.lastProgressUs,
-    // The latest stage ties break by stage name in the database's collation; the final write picks from these.
-    lastStages: later ? [page.lastStage!] : tied ? [...base.lastStages, page.lastStage!] : base.lastStages,
-    lastStage: null,
-  };
-};
-
-/** The finished run to summarise next: one already in progress first, then the most recently finished. */
-const nextRun = (db: Kysely<any>) =>
-  sql<{
-    id: string;
-    finishedAt: string;
-    summary: Summary | null;
-  }>`select r.id, r."finishedAt"::text "finishedAt", r.summary
-    from job_run r where r."finishedAt" is not null and r."enumerationDone"
-      and (r.summary is null or (r.summary->>'finishedAt')::timestamptz is distinct from r."finishedAt" or r.summary ? 'cursor')
-      and not exists (select 1 from job j where j."runId" = r.id and j.state in ('pending','waiting','active'))
-    order by coalesce(r.summary ? 'cursor', false) desc, r."finishedAt" desc, r.id limit 1`.execute(db);
-
-/** Add one more page of the next finished run. False when there is nothing left to summarise. */
-async function summarizeStep(db: Kysely<any>, pageRows: number): Promise<boolean> {
-  return db.transaction().execute(async (tx) => {
-    const {
-      rows: [lock],
-    } = await sql<{ acquired: boolean }>`select ${LOCK} acquired`.execute(tx);
-    if (!lock.acquired) return false;
-    const {
-      rows: [run],
-    } = await nextRun(tx);
-    if (!run) return false;
-    const previous = run.summary;
-    const resume = previous?.cursor && previous.finishedAt === run.finishedAt ? previous : undefined;
-    const cursor: Cursor = resume?.cursor ?? { bookkeepingDone: false, after: null };
-    let page: RunPage;
-    if (cursor.bookkeepingDone) {
-      // The page ends at a root's last row: the root found `pageRows` rows on includes all of its stages.
+export async function finishRuns(db: Kysely<any>, limit: number): Promise<number> {
+  const { rows: candidates } = await sql<{ id: string }>`select r.id from job_run r where r."enumerationDone"
+      and (r."finishedAt" is null or not coalesce(r.summary->>'complete' = 'true'
+        and (r.summary->>'finishedAt')::timestamptz = r."finishedAt", false))
+      and not ${liveWork}
+    order by r."createdAt", r.id limit ${limit}`.execute(db);
+  if (candidates.length === 0) return 0;
+  const around = await readSurroundings(db);
+  let finished = 0;
+  for (const { id } of candidates) {
+    const done = await db.transaction().execute(async (tx) => {
+      await sql`set local statement_timeout = '120s'`.execute(tx);
       const {
-        rows: [bound],
-      } = await sql<{ upto: string }>`select "rootItemKey" upto from job_run_item
-        where "runId" = ${run.id}::uuid and "rootItemKey" is not null
-          ${cursor.after === null ? sql`` : sql`and "rootItemKey" > ${cursor.after}`}
-        order by "rootItemKey" offset ${pageRows - 1} limit 1`.execute(tx);
-      page = { runId: run.id, bookkeeping: false, after: cursor.after, upto: bound?.upto ?? null };
-    } else {
-      page = { runId: run.id, bookkeeping: true, after: null, upto: null };
-    }
-    const aggregate = await readRunPage(tx, page);
-    if (!aggregate) return true;
-    const partial = merge(resume?.partial, aggregate);
-    const finished = !page.bookkeeping && page.upto === null;
-    if (!finished) {
-      const next: Summary = {
-        finishedAt: run.finishedAt,
-        cursor: page.bookkeeping ? { bookkeepingDone: true, after: null } : { bookkeepingDone: true, after: page.upto },
-        partial,
+        rows: [run],
+      } = await sql<{ holds: unknown }>`select r.selection->'holds' holds from job_run r
+        where r.id = ${id}::uuid and r."enumerationDone" and not ${liveWork}
+        for no key update skip locked`.execute(tx);
+      if (!run) return false;
+      const aggregate = await aggregateRun(tx, { id, holds: run.holds }, around, true);
+      const summary: Omit<RunSummary, 'complete' | 'finishedAt'> = {
+        counts: aggregate.counts,
+        stageTotals: aggregate.stageTotals,
+        dependencyFailed: aggregate.dependencyFailed,
+        lastProgressAt: aggregate.lastProgressAt?.toISOString() ?? null,
+        lastStage: aggregate.lastStage,
+        countsPhotos: aggregate.countsPhotos,
+        failedQueues: aggregate.failedQueues,
       };
-      await sql`update job_run set summary = ${JSON.stringify(next)}::text::jsonb
-        where id = ${run.id}::uuid and "finishedAt" = ${run.finishedAt}::timestamptz`.execute(tx);
-      return true;
-    }
-    // A run marked finished whose own read still has unfinished stages (or that a library append reopened for
-    // enumeration since) is not final: it is recounted on every read, as before, until it settles again.
-    const { numAffectedRows } =
-      partial.unfinishedStages > 0
-        ? { numAffectedRows: 0n }
-        : await sql`update job_run r set summary = jsonb_build_object('finishedAt', ${run.finishedAt}::text,
-            'complete', true, 'counts', ${JSON.stringify(partial.counts)}::text::jsonb,
-            'stageTotals', ${JSON.stringify(partial.stageTotals)}::text::jsonb,
-            'dependencyFailed', ${partial.dependencyFailed}::boolean, 'lastProgressUs', ${partial.lastProgressUs}::text,
-            'lastStage', (select min(stage) from unnest(${partial.lastStages}::text[]) stage))
-          where r.id = ${run.id}::uuid and r."finishedAt" = ${run.finishedAt}::timestamptz
-            and r."enumerationDone" and not (${libraryRunPending(sql<string>`r.id`)})
-            and not exists (select 1 from job j where j."runId" = r.id and j.state in ('pending','waiting','active'))`.execute(
-            tx,
-          );
-    if (!numAffectedRows) {
-      await sql`update job_run set summary = ${JSON.stringify({ finishedAt: run.finishedAt, final: false })}::text::jsonb
-        where id = ${run.id}::uuid and "finishedAt" = ${run.finishedAt}::timestamptz`.execute(tx);
-    }
-    return true;
-  });
-}
-
-/** Summarise finished runs a page at a time: at least one page, then more for up to `budgetMs`. Returns the pages added. */
-export async function summarizeRuns(db: Kysely<any>, budgetMs: number, pageRows = 2000): Promise<number> {
-  const start = performance.now();
-  let pages = 0;
-  do {
-    if (!(await summarizeStep(db, pageRows))) break;
-    pages++;
-  } while (performance.now() - start < budgetMs);
-  return pages;
+      const { numAffectedRows } = await sql`update job_run r set "finishedAt" = coalesce(r."finishedAt", now()),
+          summary = ${JSON.stringify(summary)}::text::jsonb
+            || jsonb_build_object('complete', true, 'finishedAt', coalesce(r."finishedAt", now()))
+        where r.id = ${id}::uuid and r."enumerationDone" and not ${liveWork}`.execute(tx);
+      return numAffectedRows === 1n;
+    });
+    if (done) finished++;
+  }
+  return finished;
 }

@@ -10,6 +10,7 @@ import {
   libraryImportDerivedRunId,
 } from 'src/library-import/derived-work.js';
 import { LibraryImportRefused, parseLibraryImportBinding } from 'src/library-import/state.js';
+import { type RunHolds } from 'src/queue/types.js';
 import { type DB } from 'src/schema/index.js';
 
 type SetupSelection = Record<string, unknown> & {
@@ -20,9 +21,13 @@ type SetupSelection = Record<string, unknown> & {
     preparedAt: string | null;
     startedAt: string | null;
     paused?: boolean;
-    /** FL-1177: stages held after the file check because their machine learning is off; see `releaseStages`. */
-    parkedStages?: unknown;
   };
+  /** FL-1265: what holds each stage's jobs; setup rewrites it (`FrameleafLibrarySetupService.applyHolds`). */
+  holds?: RunHolds;
+  /** FL-1265: the holds before the upgrade held the run for setup authority; setup drops it once verified. */
+  authorityHeld?: RunHolds;
+  /** Set when an administrator released the run from Jobs; setup then holds nothing for the file check. */
+  releasedAt?: string;
 };
 type SetupRun = { id: string; kind: string; selection: SetupSelection; enumerationDone: boolean };
 

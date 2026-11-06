@@ -36,6 +36,9 @@ export const durableRun = (overrides: Partial<DurableJobRun> = {}): JobRunRespon
     lastStage: 'AssetThumbnailGeneration',
     reasons: ['stage_failed'],
     noDispatchBacklog: false,
+    canRelease: false,
+    countsPhotos: true,
+    failedQueues: [],
     ...overrides,
   };
   // The convenience literals come directly from these generated string enums.

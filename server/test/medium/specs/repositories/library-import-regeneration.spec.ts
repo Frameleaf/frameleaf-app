@@ -2,12 +2,12 @@ import { Kysely, RawNode, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { JobName, QueueName } from 'src/enum.js';
 import { connectImportDatabase } from 'src/immich-import/database.js';
+import { insertRunJobs } from 'src/immich-import/derived-work.js';
 import { destinationPlanFingerprint, parseDestinationImportPlan } from 'src/library-import/destination-plan.js';
 import fixture from 'src/library-import/fixtures/manager-plan-v1.json' with { type: 'json' };
 import { LIBRARY_IMPORT_LOCK } from 'src/library-import/lock.js';
 import { manifestFingerprint, parseImportManifest } from 'src/library-import/manifest.js';
 import { queueExecution } from 'src/queue/context.js';
-import { freezeSelection } from 'src/queue/manifest.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { publicationTransaction } from 'src/queue/transaction.js';
 import { QueueClaim } from 'src/queue/types.js';
@@ -116,10 +116,21 @@ const setup = async (count = 2) => {
   return { context: { binding, destinationId: plan.destinationId }, plan, manifest, ids, stageQueues };
 };
 
+/** No queue would start any of the import's work. */
+const expectNothingClaimable = async (stageQueues: ReadonlyArray<readonly [JobName, QueueName]>) => {
+  const store = new SqlQueueStore(db);
+  const worker = randomUUID();
+  const queues = [...new Set(stageQueues.map(([, queue]) => queue))];
+  await store.initialize(queues, worker);
+  for (const queue of queues) expect(await store.claim(queue, worker)).toEqual([]);
+};
+
 it.each([0, 2, 301])('retains exactly the sealed %s-photo cohort and video work without activation', async (count) => {
   const { context, ids, stageQueues } = await setup(count);
   const id = await repository.prepareImportedLibraryWork(context);
-  const snapshot = await sql`SELECT "itemKey",stage,selection FROM job_run_item ORDER BY stage,"itemKey"`.execute(db);
+  const snapshot = await sql`SELECT "itemKey",name AS stage,data AS selection FROM job ORDER BY name,"itemKey"`.execute(
+    db,
+  );
   const expected = ids.flatMap((asset, index) => [
     ...[JobName.AssetExtractMetadata, JobName.AssetGenerateThumbnails, JobName.SmartSearch].map((stage) => ({
       itemKey: asset,
@@ -133,13 +144,11 @@ it.each([0, 2, 301])('retains exactly the sealed %s-photo cohort and video work 
   expect(snapshot.rows).toEqual(expect.arrayContaining(expected));
   expect(await repository.prepareImportedLibraryWork(context)).toBe(id);
   expect(
-    (await sql`SELECT "itemKey",stage,selection FROM job_run_item ORDER BY stage,"itemKey"`.execute(db)).rows,
+    (await sql`SELECT "itemKey",name AS stage,data AS selection FROM job ORDER BY name,"itemKey"`.execute(db)).rows,
   ).toEqual(snapshot.rows);
-  for (const queue of new Set(stageQueues.map(([, queue]) => queue)))
-    await expect(new SqlQueueStore(db).feedManifest(queue)).resolves.toBe(0);
-  expect((await sql`SELECT 1 FROM job`.execute(db)).rows).toEqual([]);
-  expect((await sql`SELECT state,"capturedAt" IS NOT NULL AS captured FROM job_selection`.execute(db)).rows).toEqual(
-    Array.from({ length: 6 }, () => ({ state: 'enumerating', captured: true })),
+  await expectNothingClaimable(stageQueues);
+  expect((await sql`SELECT DISTINCT state,attempt,"availableAt"='infinity' AS held FROM job`.execute(db)).rows).toEqual(
+    count === 0 ? [] : [{ state: 'pending', attempt: 0, held: true }],
   );
   const [{ selection, enumerationDone }] = (
     await sql<{
@@ -155,14 +164,12 @@ it.each([0, 2])('recovers finalized held work after a lost acknowledgement with 
   const { context, stageQueues } = await setup(count);
   const id = await repository.prepareImportedLibraryWork(context);
   await new SqlQueueStore(db).finishEnumeration(id);
-  const before = (await sql`SELECT * FROM job_run_item ORDER BY stage,"itemKey"`.execute(db)).rows;
+  const before = (await sql`SELECT * FROM job ORDER BY name,"itemKey"`.execute(db)).rows;
   const runBefore = (await sql`SELECT * FROM job_run WHERE id=${id}::uuid`.execute(db)).rows;
   expect(await repository.prepareImportedLibraryWork(context)).toBe(id);
-  expect((await sql`SELECT * FROM job_run_item ORDER BY stage,"itemKey"`.execute(db)).rows).toEqual(before);
+  expect((await sql`SELECT * FROM job ORDER BY name,"itemKey"`.execute(db)).rows).toEqual(before);
   expect((await sql`SELECT * FROM job_run WHERE id=${id}::uuid`.execute(db)).rows).toEqual(runBefore);
-  for (const queue of new Set(stageQueues.map(([, queue]) => queue)))
-    expect(await new SqlQueueStore(db).feedManifest(queue)).toBe(0);
-  expect((await sql`SELECT 1 FROM job`.execute(db)).rows).toEqual([]);
+  await expectNothingClaimable(stageQueues);
 });
 
 it('finalizes generic work through the repository without releasing it or duplicating a retry', async () => {
@@ -172,20 +179,20 @@ it('finalizes generic work through the repository without releasing it or duplic
   expect((await sql`SELECT "enumerationDone" FROM job_run WHERE id=${id}::uuid`.execute(db)).rows).toEqual([
     { enumerationDone: true },
   ]);
-  expect((await sql`SELECT DISTINCT state FROM job_selection WHERE "runId"=${id}::uuid`.execute(db)).rows).toEqual([
-    { state: 'enumerating' },
-  ]);
-  expect((await sql`SELECT 1 FROM job`.execute(db)).rows).toEqual([]);
+  expect(
+    (await sql`SELECT DISTINCT state,"availableAt"='infinity' AS held FROM job WHERE "runId"=${id}::uuid`.execute(db))
+      .rows,
+  ).toEqual([{ state: 'pending', held: true }]);
 });
 
 it('refuses finalized work that has been released or has processed an item', async () => {
   const { context } = await setup();
   const id = await repository.prepareImportedLibraryWork(context);
   await new SqlQueueStore(db).finishEnumeration(id);
-  await sql`UPDATE job_selection SET state='ready' WHERE "runId"=${id}::uuid`.execute(db);
+  await sql`UPDATE job SET "availableAt"=now() WHERE "runId"=${id}::uuid`.execute(db);
   await expect(repository.prepareImportedLibraryWork(context)).rejects.toThrow('DERIVED_WORK_MANIFEST_MISMATCH');
-  await sql`UPDATE job_selection SET state='enumerating' WHERE "runId"=${id}::uuid`.execute(db);
-  await sql`UPDATE job_run_item SET state='completed' WHERE "runId"=${id}::uuid`.execute(db);
+  await sql`UPDATE job SET "availableAt"='infinity' WHERE "runId"=${id}::uuid`.execute(db);
+  await sql`UPDATE job SET state='completed',"finishedAt"=now() WHERE "runId"=${id}::uuid`.execute(db);
   await expect(repository.prepareImportedLibraryWork(context)).rejects.toThrow('DERIVED_WORK_MANIFEST_MISMATCH');
 });
 
@@ -217,13 +224,13 @@ it('revalidates prepared work on the locked session without committing its outer
     expect((await sql`SELECT "finishedAt" FROM job_run WHERE id=${id}::uuid`.execute(db)).rows).toEqual([
       { finishedAt: null },
     ]);
-    expect((await sql`SELECT 1 FROM job`.execute(db)).rows).toEqual([]);
+    expect((await sql`SELECT 1 FROM job WHERE "availableAt"<>'infinity'`.execute(db)).rows).toEqual([]);
   } finally {
     await connection.close();
   }
 });
 
-it('locks the queue catalogue before waiting for the prepared run header', async () => {
+it('takes no queue lock while waiting for the prepared run header', async () => {
   const { context } = await setup();
   const id = await repository.dispatchImportedLibraryWork(context);
   const connection = await importConnection();
@@ -251,7 +258,7 @@ it('locks the queue catalogue before waiting for the prepared run header', async
         db
           .transaction()
           .execute((worker) => sql`SELECT name FROM job_queue ORDER BY name FOR NO KEY UPDATE NOWAIT`.execute(worker)),
-      ).rejects.toMatchObject({ code: '55P03' });
+      ).resolves.toBeDefined();
     });
     expect(await validation).toBe(id);
   } finally {
@@ -263,21 +270,18 @@ it('locks the queue catalogue before waiting for the prepared run header', async
 it('independently refuses a corrupt captured payload in the activation transaction', async () => {
   const { context } = await setup();
   const id = await repository.dispatchImportedLibraryWork(context);
-  const before = (await sql`SELECT stage,"itemKey",selection FROM job_run_item ORDER BY stage,"itemKey"`.execute(db))
-    .rows;
+  const before = (await sql`SELECT name,"itemKey",data FROM job ORDER BY name,"itemKey"`.execute(db)).rows;
   const connection = await importConnection();
   try {
     await expect(
       connection.db.withSession!((session) =>
         session.transaction(async (tx) => {
-          await tx.query('UPDATE job_run_item SET selection=\'{}\'::jsonb WHERE "runId"=$1::uuid', [id]);
+          await tx.query('UPDATE job SET data=\'{}\'::jsonb WHERE "runId"=$1::uuid', [id]);
           await repository.validateImportedLibraryWork(tx, context);
         }),
       ),
     ).rejects.toThrow('DERIVED_WORK_MANIFEST_MISMATCH');
-    expect(
-      (await sql`SELECT stage,"itemKey",selection FROM job_run_item ORDER BY stage,"itemKey"`.execute(db)).rows,
-    ).toEqual(before);
+    expect((await sql`SELECT name,"itemKey",data FROM job ORDER BY name,"itemKey"`.execute(db)).rows).toEqual(before);
   } finally {
     await connection.close();
   }
@@ -297,7 +301,7 @@ it('rolls every captured stage back after an interruption and then recovers', as
     transformQuery: ({ node }) => {
       if (
         node.kind === 'RawNode' &&
-        (node as RawNode).sqlFragments.join(' ').startsWith('insert into job_selection(') &&
+        (node as RawNode).sqlFragments.join(' ').startsWith('insert into job(') &&
         ++captures === 3
       )
         throw new Error('synthetic private source detail');
@@ -315,15 +319,14 @@ it('rolls every captured stage back after an interruption and then recovers', as
   Object.assign(broken['handlers'], repository['handlers']);
   await expect(broken.prepareImportedLibraryWork(context)).rejects.toThrow('DERIVED_WORK_PREPARATION_FAILED');
   expect(captures).toBe(3);
-  expect((await sql`SELECT 1 FROM job_run UNION ALL SELECT 1 FROM job_selection`.execute(db)).rows).toEqual([]);
-  expect((await sql`SELECT 1 FROM job_run_item`.execute(db)).rows).toEqual([]);
+  expect((await sql`SELECT 1 FROM job_run UNION ALL SELECT 1 FROM job`.execute(db)).rows).toEqual([]);
   await repository.prepareImportedLibraryWork(context);
 });
 
-it('recovers committed work after reconnect without releasing it or creating jobs', async () => {
+it('recovers committed work after reconnect without releasing it or inserting it twice', async () => {
   const { context } = await setup();
   const id = await repository.prepareImportedLibraryWork(context);
-  const rows = (await sql`SELECT * FROM job_run_item ORDER BY stage,"itemKey"`.execute(db)).rows;
+  const rows = (await sql`SELECT * FROM job ORDER BY name,"itemKey"`.execute(db)).rows;
   const [{ name }] = (await sql<{ name: string }>`SELECT current_database() AS name`.execute(db)).rows;
   const handlers = repository['handlers'];
   await db.destroy();
@@ -333,9 +336,8 @@ it('recovers committed work after reconnect without releasing it or creating job
   repository = new JobRepository({} as never, {} as never, {} as never, { setContext: vi.fn() } as never, db);
   Object.assign(repository['handlers'], handlers);
   expect(await repository.prepareImportedLibraryWork(context)).toBe(id);
-  expect((await sql`SELECT * FROM job_run_item ORDER BY stage,"itemKey"`.execute(db)).rows).toEqual(rows);
-  await expect(new SqlQueueStore(db).feedManifest(QueueName.MetadataExtraction)).resolves.toBe(0);
-  expect((await sql`SELECT 1 FROM job`.execute(db)).rows).toEqual([]);
+  expect((await sql`SELECT * FROM job ORDER BY name,"itemKey"`.execute(db)).rows).toEqual(rows);
+  await expectNothingClaimable([[JobName.AssetExtractMetadata, QueueName.MetadataExtraction]]);
 });
 
 it('refuses concurrent importer access before preparing work', async () => {
@@ -406,7 +408,7 @@ it("selects each owner's own imported face even when a shared group features ano
   await repository.prepareImportedLibraryWork(context);
   expect(
     (
-      await sql`SELECT "itemKey","rootItemKey",selection FROM job_run_item WHERE stage=${JobName.PersonGenerateThumbnail}`.execute(
+      await sql`SELECT "itemKey","rootItemKey",data AS selection FROM job WHERE name=${JobName.PersonGenerateThumbnail}`.execute(
         db,
       )
     ).rows,
@@ -468,37 +470,36 @@ it.each([
   'changed data',
   'released stage',
   'cancelled item',
-  'missing membership',
+  'started item',
   'foreign run',
 ] as const)('refuses %s on recovery without repairing immutable work', async (kind) => {
   const { context, ids } = await setup();
   const id = await repository.prepareImportedLibraryWork(context);
   switch (kind) {
     case 'missing item': {
-      await sql`DELETE FROM job_run_item WHERE "itemKey"=${ids[0]} AND stage=${JobName.SmartSearch}`.execute(db);
+      await sql`DELETE FROM job WHERE "itemKey"=${ids[0]} AND name=${JobName.SmartSearch}`.execute(db);
       break;
     }
     case 'extra item': {
-      await sql`INSERT INTO job_run_item("runId","itemKey",stage,queue,selection)
-        VALUES(${id}::uuid,'extra',${JobName.SmartSearch},${QueueName.SmartSearch},'{}'::jsonb)`.execute(db);
+      await sql`INSERT INTO job(id,queue,name,data,"safeToRetry",sensitive,"deadlineMs","availableAt","runId","itemKey","rootItemKey")
+        VALUES(${randomUUID()}::uuid,${QueueName.SmartSearch},${JobName.SmartSearch},'{"id":"extra"}'::jsonb,true,false,
+          60000,'infinity',${id}::uuid,'extra','extra')`.execute(db);
       break;
     }
     case 'changed data': {
-      await sql`UPDATE job_run_item SET selection='{}'::jsonb WHERE stage=${JobName.AssetDetectFaces}`.execute(db);
+      await sql`UPDATE job SET data='{}'::jsonb WHERE name=${JobName.AssetDetectFaces}`.execute(db);
       break;
     }
     case 'released stage': {
-      await sql`UPDATE job_selection SET state='ready' WHERE stage=${JobName.SmartSearch}`.execute(db);
+      await sql`UPDATE job SET "availableAt"=now() WHERE name=${JobName.SmartSearch}`.execute(db);
       break;
     }
     case 'cancelled item': {
-      await sql`UPDATE job_run_item SET state='cancelled' WHERE stage=${JobName.SmartSearch}`.execute(db);
+      await sql`UPDATE job SET state='cancelled',"finishedAt"=now() WHERE name=${JobName.SmartSearch}`.execute(db);
       break;
     }
-    case 'missing membership': {
-      await sql`DELETE FROM job_selection_run WHERE "selectionId" IN (SELECT id FROM job_selection WHERE stage=${JobName.SmartSearch})`.execute(
-        db,
-      );
+    case 'started item': {
+      await sql`UPDATE job SET attempt=1 WHERE name=${JobName.SmartSearch}`.execute(db);
       break;
     }
     case 'foreign run': {
@@ -506,11 +507,11 @@ it.each([
       break;
     }
   }
-  const before = (await sql`SELECT * FROM job_run_item ORDER BY stage,"itemKey"`.execute(db)).rows;
+  const before = (await sql`SELECT * FROM job ORDER BY name,"itemKey"`.execute(db)).rows;
   await expect(repository.prepareImportedLibraryWork(context)).rejects.toThrow(
     kind === 'foreign run' ? 'DERIVED_RUN_IDENTITY_MISMATCH' : 'DERIVED_WORK_MANIFEST_MISMATCH',
   );
-  expect((await sql`SELECT * FROM job_run_item ORDER BY stage,"itemKey"`.execute(db)).rows).toEqual(before);
+  expect((await sql`SELECT * FROM job ORDER BY name,"itemKey"`.execute(db)).rows).toEqual(before);
 });
 afterAll(async () => db?.destroy());
 
@@ -577,21 +578,6 @@ it('ignores a non-metadata execution even inside an import run', async () => {
     inspect({ ...claim(await run('library-import-derived')), name: JobName.AssetGenerateThumbnails }),
   ).resolves.toBe(false);
 });
-it.each(['pending', 'waiting', 'active', 'completed', 'cancelled', 'failed', 'blocked', 'needs_attention'])(
-  'checks %s shared memberships when a manual run owns the execution',
-  async (state) => {
-    const imported = await run('library-import-derived');
-    const input = claim(await run('manual'));
-    await sql`INSERT INTO job_run_item("runId","itemKey",stage,queue,selection,"jobId",state)
-      VALUES(${imported}::uuid,${String(input.data.id)},${input.name},${input.queue},'{}'::jsonb,${input.id}::uuid,${state})`.execute(
-      db,
-    );
-    await expect(inspect(input)).resolves.toBe(['pending', 'waiting', 'active'].includes(state));
-    await sql`UPDATE job_run SET "finishedAt"=now() WHERE id=${imported}::uuid`.execute(db);
-    await expect(inspect(input)).resolves.toBe(false);
-  },
-);
-
 const metadataIntent = {
   name: JobName.AssetExtractMetadata,
   queue: QueueName.MetadataExtraction,
@@ -600,26 +586,18 @@ const metadataIntent = {
   sensitive: false,
   deadlineMs: 30_000,
 };
-it('captures held work inside the import transaction without admitting executions', async () => {
-  const id = await run('library-import-derived');
+it('inserts held work inside the import transaction without letting it run', async () => {
+  const id = randomUUID();
+  await sql`INSERT INTO job_run(id,kind,selection) VALUES(${id}::uuid,'library-import-derived',
+    ${JSON.stringify({ holds: { [JobName.AssetExtractMetadata]: 'setup' } })}::text::jsonb)`.execute(db);
   const asset = randomUUID();
   await db
     .transaction()
-    .execute((tx) =>
-      freezeSelection(
-        tx,
-        metadataIntent,
-        tx.selectNoFrom(sql<string>`${asset}`.as('id')),
-        undefined,
-        id,
-        sql.lit('enumerating'),
-      ),
-    );
-  expect((await sql`SELECT state,"capturedAt" IS NOT NULL AS captured FROM job_selection`.execute(db)).rows).toEqual([
-    { state: 'enumerating', captured: true },
+    .execute((tx) => insertRunJobs(tx, id, metadataIntent, tx.selectNoFrom(sql<string>`${asset}`.as('id'))));
+  expect((await sql`SELECT "itemKey",state,"availableAt"='infinity' AS held FROM job`.execute(db)).rows).toEqual([
+    { itemKey: asset, state: 'pending', held: true },
   ]);
-  await expect(new SqlQueueStore(db).feedManifest(QueueName.MetadataExtraction)).resolves.toBe(0);
-  expect((await sql<{ count: number }>`SELECT count(*)::int AS count FROM job`.execute(db)).rows[0].count).toBe(0);
+  await expectNothingClaimable([[JobName.AssetExtractMetadata, QueueName.MetadataExtraction]]);
 });
 it('rolls back both the run and captured work when import preparation is interrupted', async () => {
   await expect(
@@ -628,25 +606,16 @@ it('rolls back both the run and captured work when import preparation is interru
       await sql`INSERT INTO job_run(id,kind,selection) VALUES(${id}::uuid,'library-import-derived','{}'::jsonb)`.execute(
         tx,
       );
-      await freezeSelection(
-        tx,
-        metadataIntent,
-        tx.selectNoFrom(sql<string>`${randomUUID()}`.as('id')),
-        undefined,
-        id,
-        sql.lit('enumerating'),
-      );
+      await insertRunJobs(tx, id, metadataIntent, tx.selectNoFrom(sql<string>`${randomUUID()}`.as('id')));
       throw new Error('synthetic import preparation interrupted');
     }),
   ).rejects.toThrow('synthetic import preparation interrupted');
   expect(
     (
       await sql`SELECT (SELECT count(*)::int FROM job_run) AS runs,
-        (SELECT count(*)::int FROM job_selection) AS selections,
-        (SELECT count(*)::int FROM job_run_item) AS items,
         (SELECT count(*)::int FROM job) AS executions`.execute(db)
     ).rows,
-  ).toEqual([{ runs: 0, selections: 0, items: 0, executions: 0 }]);
+  ).toEqual([{ runs: 0, executions: 0 }]);
 });
 
 it('retains immutable Manager setup authority with the held generic work', async () => {
@@ -670,9 +639,8 @@ it('retains immutable Manager setup authority with the held generic work', async
     'DERIVED_MANAGER_SETUP_IDENTITY_MISMATCH',
   );
   expect(
-    (await sql`SELECT 1 FROM job_selection WHERE "runId"=${id}::uuid AND state<>'enumerating'`.execute(db)).rows,
+    (await sql`SELECT 1 FROM job WHERE "runId"=${id}::uuid AND "availableAt"<>'infinity'`.execute(db)).rows,
   ).toEqual([]);
-  expect((await sql`SELECT 1 FROM job WHERE "runId"=${id}::uuid`.execute(db)).rows).toEqual([]);
 });
 
 it.each(['installation', 'operation', 'extra-field'])(
@@ -690,6 +658,6 @@ it.each(['installation', 'operation', 'extra-field'])(
       'DERIVED_MANAGER_SETUP_IDENTITY_MISMATCH',
     );
     expect((await sql`SELECT 1 FROM job_run`.execute(db)).rows).toEqual([]);
-    expect((await sql`SELECT 1 FROM job_selection`.execute(db)).rows).toEqual([]);
+    expect((await sql`SELECT 1 FROM job`.execute(db)).rows).toEqual([]);
   },
 );

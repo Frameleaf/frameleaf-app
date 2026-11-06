@@ -64,7 +64,9 @@
 
   // The kept answer belongs to an administrator; another account never sees it.
   const visible = $derived(!!authManager.user?.isAdmin && !!progress?.active && !progress.completedAt);
+  // FL-1265: only an import that cannot be verified needs attention; a file check or scan that ended early is a notice.
   const attention = $derived(progress?.phase === Phase.NeedsAttention);
+  const checkProblem = $derived(!attention && !!progress?.checkProblem);
   /** A stage with AI processing off still has work while videos are left in it. */
   const hasWork = (stage: Stage) => !stage.disabled || stage.done < stage.total;
   const current = $derived(
@@ -97,17 +99,8 @@
         : stage.id === LibrarySetupStageId.Search && stage.status === LibrarySetupStageStatus.Waiting
           ? $t('setup_bar_stage_search_waiting')
           : $t(`setup_bar_stage_${stage.id}_detail`);
-  // The stage status has no failed value (native clients decode it strictly); a halted setup means the check stopped.
-  const stopped = (stage: { id: LibrarySetupStageId; status: LibrarySetupStageStatus }) =>
-    attention && stage.id === LibrarySetupStageId.Check && stage.status !== LibrarySetupStageStatus.Done;
-  /** What needs attention, in words: the file check that stopped, else setup as a whole. */
-  const attentionDetail = $derived(
-    progress?.stages.length === 0
-      ? 'setup_bar_identity_attention_detail'
-      : progress?.stages.some((stage) => stopped(stage))
-        ? 'setup_bar_check_stopped_detail'
-        : 'setup_bar_attention_detail',
-  );
+  // The stage status has no failed value (native clients decode it strictly): a check that ended early is a notice.
+  const endedEarly = (stage: Stage) => checkProblem && stage.id === LibrarySetupStageId.Check;
   const statusIcon = {
     [LibrarySetupStageStatus.Done]: mdiCheckCircle,
     [LibrarySetupStageStatus.Running]: mdiProgressClock,
@@ -198,7 +191,7 @@
   };
   const togglePause = () =>
     act(() => afterAction(pauseLibrarySetup({ librarySetupPauseDto: { paused: !progress!.paused } })));
-  // A failed or cancelled file check stops setup; starting it again is the only way on (Library Care says why).
+  // A file check or scan that ended early can be run again; setup carries on meanwhile (Library Care says why).
   const retry = () =>
     act(async () => {
       await beginLibrarySetup();
@@ -270,7 +263,7 @@
       </strong>
       <span class="fl-setup-bar-detail">
         {#if attention}
-          {$t(attentionDetail)}
+          {$t('setup_bar_identity_attention_detail')}
         {:else if current && current.total > 0}
           {$t('setup_bar_progress', {
             values: {
@@ -294,7 +287,12 @@
         <span class="fl-setup-bar-percent">{percent}%</span>
       {/if}
     </p>
-    {#if progress.flagged > 0}
+    {#if checkProblem}
+      <a class="fl-setup-bar-flag" href={Route.libraryCare()}>
+        <Icon icon={mdiAlertCircleOutline} size="16" aria-hidden={true} />
+        {$t('setup_bar_check_problem')}
+      </a>
+    {:else if progress.flagged > 0}
       <a class="fl-setup-bar-flag" href={Route.libraryCare()}>
         <Icon icon={mdiAlertCircleOutline} size="16" aria-hidden={true} />
         {$t('setup_bar_flagged', { values: { count: progress.flagged } })}
@@ -313,11 +311,12 @@
       </div>
     {/if}
     <div class="fl-setup-bar-actions">
-      {#if attention && progress.stages.length > 0}
-        <button type="button" class="button primary" disabled={busy} onclick={retry}>
-          {$t('retry')}
+      {#if checkProblem}
+        <button type="button" class="button" disabled={busy} onclick={retry}>
+          {$t('setup_bar_check_again')}
         </button>
-      {:else if !attention}
+      {/if}
+      {#if !attention}
         <button type="button" class="button fl-setup-bar-pause" disabled={busy} onclick={togglePause}>
           <Icon icon={progress.paused ? mdiPlay : mdiPause} size="18" aria-hidden={true} />
           {progress.paused ? $t('resume') : $t('pause')}
@@ -338,7 +337,7 @@
     {#if open}
       <section class="fl-setup-bar-panel" id="fl-setup-bar-panel" aria-label={$t('setup_bar_title')}>
         {#if attention}
-          <p>{$t(attentionDetail)}</p>
+          <p>{$t('setup_bar_identity_attention_detail')}</p>
         {/if}
         {#if progress.stages.length > 0}
           <ol>
@@ -360,14 +359,14 @@
                 hasWork(stage) && share > 0 && share < 1 && stage.status !== LibrarySetupStageStatus.Done}
               <li
                 class:is-done={stage.status === LibrarySetupStageStatus.Done}
-                class:is-running={stage.status === LibrarySetupStageStatus.Running && !stopped(stage)}
+                class:is-running={stage.status === LibrarySetupStageStatus.Running}
                 class:is-waiting={stage.status === LibrarySetupStageStatus.Waiting}
-                class:is-stopped={stopped(stage)}
+                class:is-early={endedEarly(stage)}
               >
                 <Icon
                   icon={!hasWork(stage)
                     ? mdiPauseCircleOutline
-                    : stopped(stage)
+                    : endedEarly(stage)
                       ? mdiAlertCircleOutline
                       : statusIcon[stage.status]}
                   size="18"
@@ -378,8 +377,8 @@
                   <div class="fl-setup-stage-head">
                     <strong>{stageTitle(stage.id)}</strong>
                     <span
-                      >{stopped(stage)
-                        ? $t('setup_bar_status_stopped')
+                      >{endedEarly(stage)
+                        ? $t('setup_bar_status_ended_early')
                         : partial
                           ? `${Math.floor(share * 100)}%`
                           : !hasWork(stage)
@@ -387,17 +386,13 @@
                             : $t(`setup_bar_status_${stage.status}`)}</span
                     >
                   </div>
-                  <!-- Where the check stopped, and that Retry carries on from there (approved design, 2026-11-04). -->
+                  <!-- FL-1265: a check that ended early never stops setup; Library care lists the files it missed. -->
                   <p>
-                    {stopped(stage)
-                      ? $t('setup_bar_stage_check_stopped', {
-                          values: {
-                            done: stage.done.toLocaleString($locale),
-                            total: stage.total.toLocaleString($locale),
-                          },
-                        })
-                      : stageDetail(stage)}
+                    {endedEarly(stage) ? $t('setup_bar_stage_check_ended_early') : stageDetail(stage)}
                   </p>
+                  {#if endedEarly(stage)}
+                    <a class="fl-setup-stage-link" href={Route.libraryCare()}>{$t('setup_bar_check_problem_link')}</a>
+                  {/if}
                   {#if stage.heldForNight && stage.disabled}
                     <!-- Only videos are saved for the night; AI processing stays off. -->
                     <p>{$t('setup_bar_stage_search_disabled')}</p>
@@ -420,13 +415,14 @@
                 ? $t('setup_bar_footer_paused')
                 : $t('setup_bar_footer')}
           </p>
-          <!-- Retry, or Pause and Resume, again where the details are. -->
-          {#if attention && progress.stages.length > 0}
+          <!-- Check again, and Pause or Resume, again where the details are. -->
+          {#if checkProblem}
             <button type="button" class="button fl-setup-bar-panel-pause" disabled={busy} onclick={retry}>
               <Icon icon={mdiRefresh} size="18" aria-hidden={true} />
-              {$t('retry')}
+              {$t('setup_bar_check_again')}
             </button>
-          {:else if !attention}
+          {/if}
+          {#if !attention}
             <button type="button" class="button fl-setup-bar-panel-pause" disabled={busy} onclick={togglePause}>
               <Icon icon={progress.paused ? mdiPlay : mdiPause} size="18" aria-hidden={true} />
               {progress.paused ? $t('resume') : $t('pause')}
@@ -572,14 +568,21 @@
     margin-top: 1px;
     color: var(--fl-muted);
   }
-  /* The check that stopped: amber, like other things that need a look. */
-  .fl-setup-bar-panel li.is-stopped :global(.fl-setup-stage-icon),
-  .fl-setup-bar-panel li.is-stopped .fl-setup-stage-head span {
-    color: var(--fl-warning);
-  }
   .fl-setup-bar-panel li.is-done :global(.fl-setup-stage-icon),
   .fl-setup-bar-panel li.is-running :global(.fl-setup-stage-icon) {
     color: var(--fl-accent);
+  }
+  /* The check that ended early: amber, like other things that need a look. */
+  .fl-setup-bar-panel li.is-early :global(.fl-setup-stage-icon),
+  .fl-setup-bar-panel li.is-early .fl-setup-stage-head span {
+    color: var(--fl-warning);
+  }
+  .fl-setup-stage-link {
+    display: inline-block;
+    margin-top: 6px;
+    color: var(--fl-accent);
+    font-size: 12px;
+    font-weight: 500;
   }
   .fl-setup-stage-head {
     display: flex;

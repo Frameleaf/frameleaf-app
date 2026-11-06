@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import type { JobItem } from 'src/types.js';
 import { OnEvent } from 'src/decorators.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
-import { JobRunItemPageDto, JobRunPageDto, JobRunSearchDto } from 'src/dtos/job-run.dto.js';
+import { JobRunItemPageDto, JobRunPageDto, JobRunSearchDto, mapJobRun } from 'src/dtos/job-run.dto.js';
 import { JobCreateDto } from 'src/dtos/job.dto.js';
 import {
   AssetType,
@@ -118,31 +118,7 @@ export class JobService extends BaseService {
   async getRuns({ take, skip }: JobRunSearchDto): Promise<JobRunPageDto> {
     const rows = await this.jobRepository.listRuns(take + 1, skip);
     return {
-      items: rows.slice(0, take).map((row) => ({
-        id: row.id,
-        kind: row.kind,
-        createdAt: row.createdAt.toISOString(),
-        finishedAt: row.finishedAt?.toISOString() ?? null,
-        enumerationDone: row.enumerationDone,
-        total: row.total,
-        completed: row.completed,
-        failed: row.failed,
-        needsAttention: row.needsAttention,
-        cancelled: row.cancelled,
-        active: row.active,
-        retrying: row.retrying,
-        delayed: row.delayed,
-        paused: row.paused,
-        waiting: row.waiting,
-        blocked: row.blocked,
-        stageTotals: row.stageTotals,
-        state: row.state,
-        lastProgressAt: row.lastProgressAt?.toISOString() ?? null,
-        lastStage: row.lastStage,
-        reasons: row.reasons,
-        noDispatchBacklog: row.noDispatchBacklog,
-        held: row.held,
-      })),
+      items: rows.slice(0, take).map((row) => mapJobRun(row)),
       hasNextPage: rows.length > take,
     };
   }
@@ -163,6 +139,17 @@ export class JobService extends BaseService {
       })),
       hasNextPage: rows.length > take,
     };
+  }
+
+  /** Release a run's held work (first setup or a paused setup); an import only once it is activated. */
+  async releaseRun(id: string): Promise<void> {
+    const result = await this.jobRepository.releaseRun(id);
+    if (result === 'not_found') {
+      throw new NotFoundException('Job run not found');
+    }
+    if (result === 'import_not_activated') {
+      throw new BadRequestException("This import hasn't finished yet; its work can be released once it has");
+    }
   }
 
   async create(dto: JobCreateDto): Promise<void> {

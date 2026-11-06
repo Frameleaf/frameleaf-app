@@ -21,12 +21,12 @@ import {
   QueueName,
 } from 'src/enum.js';
 import { publishJobDiagnostic, publishJobResult, queueExecution } from 'src/queue/context.js';
-import { feedManifest, freezeSelection } from 'src/queue/manifest.js';
 import { queueNotifications } from 'src/queue/notifications.js';
+import { finishRuns } from 'src/queue/run-summary.js';
 import { SqlQueueStore, resetQueueAfterRestore } from 'src/queue/store.js';
 import { superviseQueueWorker } from 'src/queue/supervisor.js';
 import { publicationDatabase, publicationTransaction } from 'src/queue/transaction.js';
-import { QUEUE_HIGH_WATER, QUEUE_TIMING, QueueClaim, QueueIntent } from 'src/queue/types.js';
+import { QUEUE_TIMING, QueueClaim, QueueIntent } from 'src/queue/types.js';
 import { QueueWatchdog, monitorQueueProgress } from 'src/queue/watchdog.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -45,7 +45,6 @@ describe('PostgreSQL queue', () => {
   let queue: string;
   let workerA: string;
   let workerB: string;
-  let capturedQueries: string[] | undefined;
   const intent = (extra: Partial<QueueIntent> = {}): QueueIntent => ({
     queue,
     name: 'thumbnail',
@@ -56,9 +55,7 @@ describe('PostgreSQL queue', () => {
     ...extra,
   });
   beforeAll(async () => {
-    db = await getKyselyDB(undefined, (event) => {
-      if (event.level === 'query') capturedQueries?.push(event.query.sql);
-    });
+    db = await getKyselyDB();
     store = new SqlQueueStore(db);
   });
   beforeEach(async () => {
@@ -87,91 +84,6 @@ describe('PostgreSQL queue', () => {
       expect(job.wait).toBeLessThanOrEqual(30);
       expect(await store.defer(claim, 'destination-capacity')).toBe(false);
       await sql`update job set "availableAt"=now() where id=${claim.id}::uuid`.execute(db);
-    }
-  });
-
-  it('discovers paused manifest-only work and pending producers in one read without treating retained terminal jobs as work', async () => {
-    const producerQueue = `${queue}-producer`;
-    const idleQueue = `${queue}-idle`;
-    await store.initialize([producerQueue, idleQueue]);
-    await store.enqueue([intent({ queue: producerQueue, name: 'producer' }), intent({ queue: idleQueue })]);
-    const [finished] = await store.claim(idleQueue, workerA);
-    await store.complete(finished, []);
-    const runId = await freezeSelection(
-      db,
-      intent(),
-      db.selectFrom('job_worker').select('id').where('id', '=', workerA),
-    );
-    await store.pause(queue, true);
-    expect((await sql`select id from job where queue = ${queue}`.execute(db)).rows).toEqual([]);
-    capturedQueries = [];
-    try {
-      expect((await store.queuesWithUnfinishedWork([idleQueue, queue, producerQueue])).sort()).toEqual(
-        [queue, producerQueue].sort(),
-      );
-      expect(capturedQueries).toHaveLength(1);
-      expect(await store.claim(queue, workerA)).toEqual([]);
-      expect(await store.feedManifest(queue)).toBe(0);
-      await store.pause(queue, false);
-      expect(await store.feedManifest(queue)).toBe(1);
-      const [selected] = await store.claim(queue, workerA);
-      expect(selected.runId).toBe(runId);
-      await store.complete(selected, []);
-      const [producer] = await store.claim(producerQueue, workerA);
-      await store.complete(producer, []);
-      expect(await store.queuesWithUnfinishedWork([queue, producerQueue, idleQueue])).toEqual([]);
-      capturedQueries = [];
-      expect(await store.queuesWithUnfinishedWork([])).toEqual([]);
-      expect(capturedQueries).toEqual([]);
-    } finally {
-      capturedQueries = undefined;
-    }
-  });
-
-  it('finishes an empty manifest page without linkage updates or a recount and clears filling state', async () => {
-    const enqueue = vi.fn(() => Promise.resolve());
-    await sql`update job_queue set "manifestFilling" = true where name = ${queue}`.execute(db);
-    capturedQueries = [];
-    try {
-      expect(await feedManifest(db, queue, enqueue)).toBe(0);
-      expect(enqueue).not.toHaveBeenCalled();
-      expect(capturedQueries.filter((query) => query.startsWith('update job_run_item'))).toEqual([]);
-      expect(capturedQueries.filter((query) => query.includes('select count(*)::int count from job'))).toHaveLength(1);
-      expect((await sql`select "manifestFilling" from job_queue where name = ${queue}`.execute(db)).rows).toEqual([
-        { manifestFilling: false },
-      ]);
-      capturedQueries = [];
-      expect(await feedManifest(db, queue, enqueue)).toBe(0);
-      expect(capturedQueries.filter((query) => query.startsWith('update job_queue'))).toEqual([]);
-    } finally {
-      capturedQueries = undefined;
-    }
-  });
-
-  it('stops after an empty promotion page while still claiming waiting work and preserving pending eligibility', async () => {
-    capturedQueries = [];
-    try {
-      expect(await store.claim(queue, workerA)).toEqual([]);
-      expect(capturedQueries.filter((query) => query.startsWith("update job set state = 'waiting'"))).toHaveLength(1);
-      await store.enqueue([intent(), intent({ options: { delay: 30_000 } })]);
-      const { rows: waiting } = await sql<{ id: string }>`update job set state = 'waiting'
-        where queue = ${queue} and "availableAt" <= now() returning id`.execute(db);
-      await store.enqueue([intent({ parentId: waiting[0].id })]);
-      capturedQueries = [];
-      const [claim] = await store.claim(queue, workerA);
-      expect(claim.id).toBe(waiting[0].id);
-      expect(claim.attempt).toBe(1);
-      expect(capturedQueries.filter((query) => query.startsWith("update job set state = 'waiting'"))).toHaveLength(1);
-      expect(
-        (await sql`select id from job where queue = ${queue} and state = 'pending'`.execute(db)).rows,
-      ).toHaveLength(2);
-      expect(await store.complete(claim, [])).toBe(true);
-      expect(await store.claim(queue, workerB)).toHaveLength(1);
-      expect(
-        (await sql`select id from job where queue = ${queue} and state = 'pending'`.execute(db)).rows,
-      ).toHaveLength(1);
-    } finally {
-      capturedQueries = undefined;
     }
   });
 
@@ -295,9 +207,10 @@ describe('PostgreSQL queue', () => {
         { outcome: 'restored_discarded_backup', token: second.token, workerId: workerA, settled: true },
         { outcome: 'restored_discarded_backup', token: first.token, workerId: workerA, settled: true },
       ]);
-      expect((await sql`select state from job_run_item where "runId" = ${runId}::uuid`.execute(db)).rows).toEqual([
+      expect((await sql`select state from job where "runId" = ${runId}::uuid`.execute(db)).rows).toEqual([
         { state: 'cancelled' },
       ]);
+      await finishRuns(db, 100);
       expect(
         (await sql`select "finishedAt" is not null settled from job_run where id = ${runId}::uuid`.execute(db)).rows,
       ).toEqual([{ settled: true }]);
@@ -521,46 +434,6 @@ describe('PostgreSQL queue', () => {
     expect((await store.counts(queue)).delayed).toBe(1);
   });
 
-  it('keeps face sub-stages distinct while all descendants count toward their selected asset', async () => {
-    const runId = await store.createRun('face-fixture', {});
-    const root = randomUUID();
-    await store.enqueue([intent({ runId, itemKey: root, rootItemKey: root })]);
-    const [claim] = await store.claim(queue, workerA);
-    const face = randomUUID();
-    expect(
-      await store.complete(claim, [
-        intent({ name: JobName.FacialRecognition, data: { id: face }, runId, itemKey: face, rootItemKey: root }),
-      ]),
-    ).toBe(true);
-    const [recognition] = await store.claim(queue, workerB);
-    const executor = new JobRepository({} as never, {} as never, {} as never, { setContext: vi.fn() } as never, db);
-    executor['handlers'][JobName.FacialRecognition] = { queueName: queue as QueueName } as never;
-    const next = queueExecution.run(
-      {
-        claim: recognition,
-        signal: new AbortController().signal,
-        progress: vi.fn(),
-        progressUnits: 0,
-        adoptions: [],
-        followups: [],
-        buffering: true,
-      },
-      () => executor['intent']({ name: JobName.FacialRecognition, data: { id: face, deferred: true } }),
-    );
-    expect(next.itemKey).toBe(`${face}/deferred`);
-    expect(next.rootItemKey).toBe(root);
-    expect(await store.complete(recognition, [next])).toBe(true);
-    const [deferred] = await store.claim(queue, workerA);
-    expect(deferred.itemKey).toBe(`${face}/deferred`);
-    expect(deferred.rootItemKey).toBe(root);
-    expect(await store.complete(deferred, [])).toBe(true);
-    const {
-      rows: [counts],
-    } = await sql<{ items: number; stages: number }>`select count(distinct "rootItemKey")::int items,
-      count(*)::int stages from job_run_item where "runId" = ${runId}::uuid`.execute(db);
-    expect(counts).toEqual({ items: 1, stages: 3 });
-  });
-
   it('wakes through a real dedicated LISTEN session while durable admission still works without it', async () => {
     const {
       rows: [database],
@@ -653,7 +526,7 @@ describe('PostgreSQL queue', () => {
     }
     expect(adopted).not.toHaveBeenCalled();
     expect(diagnosed).not.toHaveBeenCalled();
-    expect((await sql`select state from job_run_item where "runId" = ${runId}::uuid`.execute(db)).rows).toEqual([
+    expect((await sql`select state from job where "runId" = ${runId}::uuid`.execute(db)).rows).toEqual([
       { state: 'pending' },
     ]);
     unavailable = false;
@@ -808,12 +681,13 @@ describe('PostgreSQL queue', () => {
       const { rows: proofs } = await sql`select value->>'jobId' "jobId", value ? 'stoppedAt' stopped
         from system_metadata where key = ${'frameleaf-attempt-evidence:' + claim.token}`.execute(db);
       expect(proofs).toEqual([{ jobId: claim.id, stopped: true }]);
-      const { rows: items } = await sql`select "itemKey", state from job_run_item
+      const { rows: items } = await sql`select "itemKey", state from job
         where "runId" = ${runId}::uuid order by "itemKey"`.execute(db);
       expect(items).toEqual([
         { itemKey: 'child', state: 'blocked' },
         { itemKey: 'parent', state: 'cancelled' },
       ]);
+      await finishRuns(db, 100);
       const { rows: runs } = await sql`select "finishedAt" is not null finished from job_run
         where id = ${runId}::uuid`.execute(db);
       expect(runs).toEqual([{ finished: true }]);
@@ -947,7 +821,7 @@ describe('PostgreSQL queue', () => {
       );
       expect(
         (
-          await sql`select "itemKey", state from job_run_item where "runId" = ${runId}::uuid
+          await sql`select "itemKey", state from job where "runId" = ${runId}::uuid
         order by "itemKey"`.execute(db)
         ).rows,
       ).toEqual([
@@ -977,6 +851,7 @@ describe('PostgreSQL queue', () => {
       expect(await store.claim(queue, workerA)).toEqual([]);
       expect(await store.retryFailed(queue)).toBe(0);
       expect(await store.hasUnfinishedWork(queue)).toBe(false);
+      await finishRuns(db, 100);
       expect(
         (await sql`select "finishedAt" is not null finished from job_run where id = ${runId}::uuid`.execute(db)).rows,
       ).toEqual([{ finished: true }]);
@@ -1043,13 +918,13 @@ describe('PostgreSQL queue', () => {
         where id = ${old.id}::uuid`.execute(db);
       await recordStoppedAttempt(db, old.id, old.token);
       expect(await store.fail(old, 'cancel', undefined, { stopRequestedOnly: true })).toBe(true);
-      const { rows: original } = await sql`select "itemKey", state from job_run_item
+      const { rows: original } = await sql`select "itemKey", state from job
         where "runId" = ${runId}::uuid order by "itemKey"`.execute(db);
       expect(original).toEqual([
         { itemKey: 'dependent', state: 'blocked' },
         { itemKey: 'old', state: 'cancelled' },
       ]);
-      const { rows: latest } = await sql`select state from job_run_item where "runId" = ${latestRun}::uuid`.execute(db);
+      const { rows: latest } = await sql`select state from job where "runId" = ${latestRun}::uuid`.execute(db);
       expect(latest).toEqual([{ state: safeToRetry ? 'pending' : 'needs_attention' }]);
       const claims = await store.claim(queue, workerB);
       if (safeToRetry) {
@@ -1105,13 +980,14 @@ describe('PostgreSQL queue', () => {
     expect(independent.itemKey).toBe('independent');
     await store.complete(independent, []);
     expect(await store.claim(queue, workerB)).toEqual([]);
-    const { rows: items } = await sql`select "rootItemKey", state from job_run_item
+    const { rows: items } = await sql`select "rootItemKey", state from job
       where "runId" in (${runId}::uuid, ${latestRun}::uuid) order by "rootItemKey"`.execute(db);
+    // FL-1265: the discarded latest request was never a job of its run
     expect(items).toEqual([
       { rootItemKey: 'independent', state: 'completed' },
-      { rootItemKey: 'latest', state: 'needs_attention' },
       { rootItemKey: 'old', state: 'needs_attention' },
     ]);
+    await finishRuns(db, 100);
     expect(
       (
         await sql`select id from job_run where id in (${runId}::uuid, ${latestRun}::uuid)
@@ -1221,7 +1097,7 @@ describe('PostgreSQL queue', () => {
       expect(claims[0].data).toEqual(latestData);
       expect(await store.complete(claims[0], [])).toBe(true);
       if (withRunItem) {
-        const { rows } = await sql`select state from job_run_item where "runId" = ${latestRun}::uuid`.execute(db);
+        const { rows } = await sql`select state from job where "runId" = ${latestRun}::uuid`.execute(db);
         expect(rows).toEqual([{ state: 'completed' }]);
       }
     },
@@ -1489,7 +1365,7 @@ describe('PostgreSQL queue', () => {
       );
       await store.setConcurrency(caseQueue, concurrency);
       const readRun = async () => (await store.listRuns(100, 0)).find((run) => run.id === runId)!;
-      expect(await readRun()).toMatchObject({ total: 0, enumerationDone: false, stageTotals: { total: 1 } });
+      expect(await readRun()).toMatchObject({ stageTotals: { total: 1 } });
       const scheduled = async () =>
         (
           await sql<{ count: number }>`select count(*)::int count from job
@@ -1497,14 +1373,10 @@ describe('PostgreSQL queue', () => {
         ).rows[0].count;
       let batches = 0;
       let replacements = 0;
-      let maximumScheduled = 0;
       for (;;) {
         signal.throwIfAborted();
         if (heartbeatError) throw heartbeatError;
-        expect(await store.feedManifest(caseQueue)).toBeLessThanOrEqual(250);
         activeClaims = await store.claim(caseQueue, batches % 2 ? caseWorkerA : caseWorkerB);
-        maximumScheduled = Math.max(maximumScheduled, await scheduled());
-        expect(maximumScheduled).toBeLessThanOrEqual(QUEUE_HIGH_WATER);
         expect(activeClaims.length).toBeLessThanOrEqual(concurrency);
         // The facade and store remain production code; only the four handlers are synthetic.
         await Promise.all(
@@ -1529,23 +1401,17 @@ describe('PostgreSQL queue', () => {
             total: media,
             enumerationDone: true,
             completed: 0,
-            waiting: media,
             stageTotals: { total: media + 1, completed: 1 },
           });
-          expect(await scheduled()).toBe(0); // the entire selection is still manifest-only
+          // FL-1265: the selection is inserted as jobs straight away
+          expect(await scheduled()).toBe(media);
         }
-        maximumScheduled = Math.max(maximumScheduled, await scheduled());
-        expect(maximumScheduled).toBeLessThanOrEqual(QUEUE_HIGH_WATER);
         // Accelerate the retry clock only. No terminal states or item outcomes are fabricated.
         await sql`update job set "availableAt" = now() where queue = ${caseQueue} and state = 'pending' and attempt > 0`.execute(
           db,
         );
         const counts = await store.counts(caseQueue);
-        const {
-          rows: [backlog],
-        } = await sql<{ count: number }>`select count(*)::int count from job_run_item
-          where "runId" = ${runId}::uuid and "jobId" is null and state = 'pending'`.execute(db);
-        if (counts.waiting + counts.active + counts.delayed + backlog.count === 0) break;
+        if (counts.waiting + counts.active + counts.delayed === 0) break;
         batches++;
         if (batches === 1 || batches === 20) {
           executor = makeExecutor();
@@ -1554,6 +1420,8 @@ describe('PostgreSQL queue', () => {
         if (batches > 1500) throw new Error('Pipeline stopped making bounded progress');
       }
       expect(replacements).toBe(2);
+      await finishRuns(db, 10);
+      store.forgetRunReads();
       const final = await readRun();
       expect(final).toMatchObject({
         state: 'completed_with_errors',
@@ -1740,122 +1608,6 @@ describe('PostgreSQL queue', () => {
     expect(child.state).toBe('blocked');
     expect(await store.claim(queue, workerB)).toHaveLength(1);
   });
-  it('settles superseded runs separately and dispatches the newest request after a terminal predecessor failure', async () => {
-    const runs = await Promise.all([1, 2, 3].map(() => store.createRun('overlap', {})));
-    const options = { deduplication: { id: 'overlap', keepLastIfActive: true } };
-    await store.enqueue([intent({ options, safeToRetry: false, runId: runs[0], itemKey: 'asset' })]);
-    const [first] = await store.claim(queue, workerA);
-    await store.enqueue([intent({ options, runId: runs[1], itemKey: 'asset', data: { revision: 2 } })]);
-    await store.enqueue([intent({ options, runId: runs[2], itemKey: 'asset', data: { revision: 3 } })]);
-    for (const run of runs) {
-      await store.finishEnumeration(run);
-    }
-    await store.fail(first, 'ambiguous predecessor');
-    const states = async () =>
-      (
-        await sql<{ runId: string; state: string }>`select "runId", state from job_run_item
-      where "runId" = any(${runs}::uuid[])`.execute(db)
-      ).rows;
-    expect(await states()).toEqual(
-      expect.arrayContaining([
-        { runId: runs[0], state: 'needs_attention' },
-        { runId: runs[1], state: 'cancelled' },
-        { runId: runs[2], state: 'pending' },
-      ]),
-    );
-    const [latest] = await store.claim(queue, workerB);
-    expect(latest.data).toEqual({ revision: 3 });
-    await store.complete(latest, []);
-    expect(await states()).toContainEqual({ runId: runs[2], state: 'completed' });
-    expect(await store.claim(queue, workerA)).toEqual([]);
-  });
-
-  it('keeps a repeated stage in one run pending until its newest revision commits', async () => {
-    const runId = await store.createRun('same-run', {});
-    const options = { deduplication: { id: 'same-run', keepLastIfActive: true } };
-    await store.enqueue([intent({ options, runId, itemKey: 'asset' })]);
-    const [first] = await store.claim(queue, workerA);
-    await store.enqueue([intent({ options, runId, itemKey: 'asset', data: { revision: 2 } })]);
-    await store.finishEnumeration(runId);
-    await store.complete(first, []);
-    const [next] = await store.claim(queue, workerB);
-    expect(next.id).toBe(first.id);
-    expect(next.attempt).toBe(first.attempt + 1);
-    expect(next.data).toEqual({ revision: 2 });
-    expect(await store.complete(first, [])).toBe(false);
-    await store.complete(next, []);
-    const {
-      rows: [run],
-    } = await sql<{ finishedAt: Date }>`select "finishedAt" from job_run where id = ${runId}::uuid`.execute(db);
-    expect(run.finishedAt).not.toBeNull();
-  });
-  it('reuses an immutable producer selection after restart while the source library changes', async () => {
-    const runId = await store.createRun('selection-restart', {});
-    await store.enqueue([intent({ runId, itemKey: 'producer' })]);
-    const [claim] = await store.claim(queue, workerA);
-    const repository = new JobRepository({} as never, {} as never, {} as never, { setContext: vi.fn() } as never, db);
-    repository['handlers'][JobName.AssetGenerateThumbnails] = {
-      queueName: queue as QueueName,
-      jobName: JobName.AssetGenerateThumbnails,
-      label: 'fixture',
-      handler: vi.fn(),
-    };
-    const later = randomUUID();
-    const selection = db.selectFrom('job_worker').select('id').where('id', 'in', [workerA, workerB, later]);
-    await queueExecution.run(
-      {
-        claim,
-        signal: new AbortController().signal,
-        progress: vi.fn(),
-        progressUnits: 0,
-        adoptions: [],
-        followups: [],
-        buffering: false,
-      },
-      async () => {
-        await repository.queueSelection(JobName.AssetGenerateThumbnails, selection);
-        await store.initialize([], later);
-        await repository.queueSelection(JobName.AssetGenerateThumbnails, selection);
-      },
-    );
-    const { rows } = await sql<{ itemKey: string }>`select "itemKey" from job_run_item
-      where "runId" = ${runId}::uuid and stage = ${JobName.AssetGenerateThumbnails}`.execute(db);
-    expect(rows.map((row) => row.itemKey).sort()).toEqual([workerA, workerB].sort());
-  });
-  it('carries required child stages into every run sharing a deduplicated parent', async () => {
-    const firstRun = await store.createRun('shared-parent', {});
-    const otherRun = await store.createRun('shared-parent', {});
-    const options = { deduplication: { id: 'shared-parent' } };
-    await store.enqueue([intent({ runId: firstRun, itemKey: 'asset', options })]);
-    const [parent] = await store.claim(queue, workerA);
-    await store.enqueue([intent({ runId: otherRun, itemKey: 'asset', options })]);
-    await store.finishEnumeration(firstRun);
-    await store.finishEnumeration(otherRun);
-    await store.complete(parent, [
-      intent({ name: 'required-ml', runId: firstRun, itemKey: 'asset', parentId: parent.id }),
-    ]);
-    const { rows: runs } = await sql<{
-      id: string;
-      stages: number;
-      completed: number;
-      pending: number;
-      finishedAt: Date | null;
-    }>`
-      select r.id, r."finishedAt", count(*)::int stages,
-        count(*) filter(where i.state = 'completed')::int completed,
-        count(*) filter(where i.state in ('pending','waiting'))::int pending
-      from job_run r join job_run_item i on i."runId" = r.id
-      where r.id in (${firstRun}::uuid, ${otherRun}::uuid) group by r.id`.execute(db);
-    for (const id of [firstRun, otherRun]) {
-      expect(runs.find((run) => run.id === id)).toMatchObject({
-        stages: 2,
-        completed: 1,
-        pending: 1,
-        finishedAt: null,
-      });
-    }
-  });
-
   it('does not replay unsafe side effects through a newer pending request after an ambiguous stop', async () => {
     const options = { deduplication: { id: 'unsafe-latest', keepLastIfActive: true } };
     await store.enqueue([intent({ options, safeToRetry: false })]);

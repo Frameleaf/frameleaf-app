@@ -2,6 +2,7 @@ import { Kysely, sql } from 'kysely';
 import { v5 } from 'uuid';
 import { z } from 'zod';
 import { JobName } from 'src/enum.js';
+import { insertRunJobs } from 'src/immich-import/derived-work.js';
 import { bindDestinationImportPlan } from 'src/library-import/destination-plan.js';
 import { LIBRARY_IMPORT_LOCK } from 'src/library-import/lock.js';
 import { parseImportManifest } from 'src/library-import/manifest.js';
@@ -11,9 +12,7 @@ import {
   LibraryImportRefused,
   parseLibraryImportBinding,
 } from 'src/library-import/state.js';
-import { lockQueueCatalogue } from 'src/queue/catalogue.js';
-import { freezeSelection } from 'src/queue/manifest.js';
-import { QueueIntent } from 'src/queue/types.js';
+import { QueueIntent, RunHolds } from 'src/queue/types.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { DB } from 'src/schema/index.js';
 
@@ -129,10 +128,8 @@ export async function prepareLibraryImportWork(
           data: name === JobName.AssetDetectFaces ? { preserveImportedFaces: true } : {},
         };
       });
-      // Preserve the queue's catalogue -> run -> selection lock order.
-      for (const queue of [...new Set(stages.map((intent) => intent.queue))].sort())
-        await sql`insert into job_queue(name) values (${queue}) on conflict do nothing`.execute(tx);
-      await lockQueueCatalogue(tx);
+      // FL-1265: everything waits for activation (or Manager's first setup) to release it.
+      const held: RunHolds = Object.fromEntries(stages.map((intent) => [intent.name, 'setup']));
       const selection = {
         version: 1,
         operationId: binding.operationId,
@@ -142,10 +139,12 @@ export async function prepareLibraryImportWork(
         prepared: true,
       };
       const { rows: runs } = await sql<{ kind: string; valid: boolean; managed: boolean; setup: unknown }>`select kind,
-        (selection - 'managerSetup' - 'managerSetupRequired'=${JSON.stringify(selection)}::text::jsonb
+        (selection - 'managerSetup' - 'managerSetupRequired' - 'holds' - 'holdsDirty' - 'holdsCursor' - 'releasedAt'
+          - 'authorityHeld'
+          =${JSON.stringify(selection)}::text::jsonb
           and (not selection ? 'managerSetupRequired' or selection->'managerSetupRequired'='true'::jsonb)
           and ("finishedAt" is null or ("enumerationDone" and not exists (
-            select 1 from job_run_item where "runId"=job_run.id))))
+            select 1 from job where "runId"=job_run.id))))
           as valid,(selection ? 'managerSetup' or selection ? 'managerSetupRequired') as managed,selection->'managerSetup' as setup
           from job_run where id=${runId}::uuid for update`.execute(tx);
       if (runs[0] && (runs[0].kind !== LIBRARY_IMPORT_DERIVED_RUN_KIND || !runs[0].valid))
@@ -165,6 +164,7 @@ export async function prepareLibraryImportWork(
       } else {
         const retained = {
           ...selection,
+          holds: held,
           ...(manager && {
             managerSetupRequired: true,
             managerSetup: { ...manager, preparedAt: null, startedAt: null },
@@ -192,42 +192,32 @@ export async function prepareLibraryImportWork(
             : intent.name === JobName.AssetEncodeVideo
               ? assets.where('mapped.type', '=', 'VIDEO')
               : assets;
-        if (!runs[0]) await freezeSelection(tx, intent, selected, undefined, runId, sql.lit('enumerating'));
-        // Independently compare both directions; a frozen selection is never silently repaired.
+        if (!runs[0]) await insertRunJobs(tx, runId, intent, selected);
+        // Independently compare both directions; held work is never silently repaired.
+        const expected = sql`select p.id::text as "itemKey",coalesce(to_jsonb(p)->>'rootItemKey',p.id::text) as "rootItemKey",
+          ${JSON.stringify(intent.data)}::text::jsonb || coalesce(to_jsonb(p)->'data','{}'::jsonb) || jsonb_build_object('id',p.id) as data
+          from (${selected}) p`;
+        const actual = sql`select "itemKey","rootItemKey",data from job where "runId"=${runId}::uuid and name=${intent.name}`;
         const { rows: invalid } = await sql`select 1 where exists (
-          select 1 from job_selection s where s."runId"=${runId}::uuid and s.stage=${intent.name}
-            and (s.queue<>${intent.queue} or s.state<>'enumerating' or s."capturedAt" is null
-              or s."producerId" is not null or s."safeToRetry"<>${intent.safeToRetry}
-              or s.sensitive<>${intent.sensitive} or s."deadlineMs"<>${intent.deadlineMs})
-        ) or (select count(*) from job_selection where "runId"=${runId}::uuid and stage=${intent.name})<>1
-        or exists (
-          (select p.id::text,coalesce(to_jsonb(p)->>'rootItemKey',p.id::text) as root,
-            ${JSON.stringify(intent.data)}::text::jsonb || coalesce(to_jsonb(p)->'data','{}'::jsonb) || jsonb_build_object('id',p.id) as data
-            from (${selected}) p
-           except select i."itemKey",i."rootItemKey",i.selection from job_run_item i
-             join job_selection s on s.id=i."selectionId" and s."runId"=i."runId" and s.stage=i.stage and s.queue=i.queue
-             where i."runId"=${runId}::uuid and i.stage=${intent.name})
-          union all
-          (select i."itemKey",i."rootItemKey",i.selection from job_run_item i
-             where i."runId"=${runId}::uuid and i.stage=${intent.name}
-           except select p.id::text,coalesce(to_jsonb(p)->>'rootItemKey',p.id::text),
-             ${JSON.stringify(intent.data)}::text::jsonb || coalesce(to_jsonb(p)->'data','{}'::jsonb) || jsonb_build_object('id',p.id)
-             from (${selected}) p)
-        )`.execute(tx);
+          ((${expected}) except (${actual})) union all ((${actual}) except (${expected})))`.execute(tx);
         if (invalid.length > 0) return refuse('DERIVED_WORK_MANIFEST_MISMATCH');
       }
-      const names = stages.map((intent) => intent.name);
-      const { rows: invalidState } = await sql`select 1 where
-        (select count(*) from job_selection where "runId"=${runId}::uuid)<>${stages.length}
-        or exists (select 1 from job_run_item where "runId"=${runId}::uuid
-          and (stage<>all(${names}::text[]) or state<>'pending' or "jobId" is not null or "selectionVersion"<>0))
-        or exists (select 1 from job where "runId"=${runId}::uuid)
-        or (select count(*) from job_selection_run where "runId"=${runId}::uuid)<>${stages.length}
-        or exists (select 1 from job_selection_run m join job_selection s on s.id=m."selectionId"
-          where (m."runId"=${runId}::uuid or s."runId"=${runId}::uuid)
-            and (m."runId"<>s."runId" or not m."copyComplete" or m."copyAfter" is not null or m."lineageAfter"<>0))`.execute(
-        tx,
+      // Every job of the run is one of these stages, still held and never started.
+      const expectedStages = sql.join(
+        stages.map(
+          (intent) =>
+            sql`(${intent.name}::text,${intent.queue}::text,${intent.safeToRetry}::boolean,${intent.sensitive}::boolean,
+            ${intent.deadlineMs}::int)`,
+        ),
       );
+      const { rows: invalidState } = await sql`select 1 from job_run where id=${runId}::uuid
+          and coalesce(selection->'holds','{}'::jsonb)<>${JSON.stringify(held)}::text::jsonb
+        union all select 1 from job j
+        left join (values ${expectedStages}) as e(name,queue,"safeToRetry",sensitive,"deadlineMs") on e.name=j.name
+        where j."runId"=${runId}::uuid and (e.name is null or j.queue<>e.queue or j."safeToRetry"<>e."safeToRetry"
+          or j.sensitive<>e.sensitive or j."deadlineMs"<>e."deadlineMs" or j.state<>'pending' or j.attempt<>0
+          or j."availableAt"<>'infinity'::timestamptz or j."parentId" is not null)
+        limit 1`.execute(tx);
       if (invalidState.length > 0) return refuse('DERIVED_WORK_MANIFEST_MISMATCH');
       if (manager)
         await sql`update job_run set selection=jsonb_set(selection,'{managerSetup,preparedAt}',to_jsonb(clock_timestamp()))

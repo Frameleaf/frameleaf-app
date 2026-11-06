@@ -1,26 +1,29 @@
 <script lang="ts">
-  import {
-    listDurableJobRuns,
-    listDurableJobRunItems,
-    type DurableJobRun,
-    type DurableJobItem,
-    type QueueName,
-  } from '@frameleaf/sdk';
+  /**
+   * Recent work (FL-1265): one plain row per run of server work. What it was, how far it has got in photos (or
+   * tasks, for work that is not about photos), what is holding it up in words, a link to anything that failed, and
+   * Release when the server is holding it back for setup.
+   */
+  import { isHttpError, listDurableJobRuns, releaseJobRun, type DurableJobRun } from '@frameleaf/sdk';
   import Button from '$lib/components/frameleaf/Button.svelte';
-  import { untrack } from 'svelte';
-  import { locale, t } from 'svelte-i18n';
+  import Pill, { type KitTone } from '$lib/components/frameleaf/settings/kit/Pill.svelte';
   import type { ActivityFilter } from '$lib/frameleaf/activity';
   import {
-    DURABLE_OUTCOMES,
+    failedItems,
     isRunSettled,
     matchesRunFilter,
-    runOutcomeKey,
-    runReasonKey,
+    runBlockers,
+    runFailedQueues,
     runStateKey,
     runTitleKey,
     settledItems,
   } from '$lib/frameleaf/durable-runs';
   import { jobQueue } from '$lib/frameleaf/job-queues';
+  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
+  import { Route } from '$lib/route';
+  import { handleError } from '$lib/utils/handle-error';
+  import { untrack } from 'svelte';
+  import { locale, t, type Translations } from 'svelte-i18n';
 
   let {
     filter = 'all',
@@ -28,58 +31,46 @@
     focusRunId = null,
   }: { filter?: ActivityFilter; refreshToken?: number; focusRunId?: string | null } = $props();
   const PAGE_SIZE = 25;
+  const headingId = $props.id();
   let runs = $state<DurableJobRun[]>([]);
   let offset = $state(0);
   let hasNext = $state(false);
   let loading = $state(false);
   let unavailable = $state(false);
-  let selectedId = $state<string | null>(null);
-  let items = $state<DurableJobItem[]>([]);
-  let itemOffset = $state(0);
-  let itemsHaveNext = $state(false);
-  let itemsLoading = $state(false);
-  let itemsUnavailable = $state(false);
-  let itemRequest = 0;
-  let pendingItemsId: string | null = null;
+  let releasing = $state<string | null>(null);
+  let notice = $state('');
   const visible = $derived(runs.filter((run) => matchesRunFilter(run, filter)));
   const number = (value: number) => value.toLocaleString($locale ?? undefined);
-  const title = (run: DurableJobRun) =>
-    $t(runTitleKey(run.kind, jobQueue(run.kind as QueueName)?.key, 'frameleaf_job_runs_server_work'));
-  const loadItems = async (id: string, skip = 0) => {
-    if (itemsLoading && pendingItemsId === id) {
-      return;
-    }
-    const request = ++itemRequest;
-    pendingItemsId = id;
-    itemsLoading = true;
-    try {
-      const page = await listDurableJobRunItems({ id, take: PAGE_SIZE, skip });
-      if (selectedId !== id || request !== itemRequest) {
-        return;
-      }
-      items = page.items;
-      itemsHaveNext = page.hasNextPage;
-      itemOffset = skip;
-      itemsUnavailable = false;
-    } catch {
-      if (request === itemRequest && selectedId === id) {
-        itemsUnavailable = true;
-      }
-    } finally {
-      if (request === itemRequest) {
-        itemsLoading = false;
-        pendingItemsId = null;
-      }
-    }
+  const when = (iso: string) =>
+    new Intl.DateTimeFormat($locale ?? undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso));
+  const ownQueue = (run: DurableJobRun) => jobQueue(run.kind as Parameters<typeof jobQueue>[0]);
+  const title = (run: DurableJobRun) => $t(runTitleKey(run.kind, ownQueue(run)?.key, 'frameleaf_job_runs_server_work'));
+  const queueTitle = (name: Parameters<typeof jobQueue>[0]) => {
+    const key = jobQueue(name)?.key;
+    return key ? $t(`frameleaf_jobs_queue_${key}` as Translations) : name;
   };
-  const inspect = (id: string) => {
-    selectedId = id;
-    items = [];
-    itemOffset = 0;
-    itemsHaveNext = false;
-    itemsUnavailable = false;
-    void loadItems(id);
+  /** Photos when the work is one per photo, tasks otherwise. */
+  const photos = (run: DurableJobRun) => run.countsPhotos !== false;
+  const howFar = (run: DurableJobRun) => {
+    const done = settledItems(run);
+    if (!run.enumerationDone) {
+      return $t(photos(run) ? 'frameleaf_job_runs_photos_so_far' : 'frameleaf_job_runs_tasks_so_far', {
+        values: { count: done },
+      });
+    }
+    return $t(photos(run) ? 'frameleaf_job_runs_photos' : 'frameleaf_job_runs_tasks', {
+      values: { count: run.total, done: number(done) },
+    });
   };
+  const tone = (run: DurableJobRun): KitTone =>
+    ['completed', 'running', 'retrying'].includes(run.state)
+      ? 'good'
+      : ['completed_with_errors', 'needs_attention', 'paused', 'blocked', 'unavailable'].includes(run.state)
+        ? 'warn'
+        : 'off';
+  const percent = (run: DurableJobRun) =>
+    run.total > 0 ? Math.min(100, Math.floor((settledItems(run) / run.total) * 100)) : 0;
+
   /** A read asked for while another is on its way (a refresh, a poll): it runs once that read ends. */
   let queuedSkip: number | null = null;
   const load = async (skip = offset): Promise<void> => {
@@ -94,9 +85,6 @@
       hasNext = page.hasNextPage;
       offset = skip;
       unavailable = false;
-      if (selectedId) {
-        void loadItems(selectedId, itemOffset);
-      }
     } catch {
       unavailable = true;
     } finally {
@@ -108,15 +96,26 @@
       await load(next);
     }
   };
+  const release = async (run: DurableJobRun) => {
+    releasing = run.id;
+    notice = '';
+    try {
+      await releaseJobRun({ id: run.id });
+      notice = $t('frameleaf_job_runs_released', { values: { name: title(run) } });
+    } catch (error) {
+      if (isHttpError(error) && error.status === 400) {
+        notice = $t('frameleaf_job_runs_release_import_not_ready');
+      } else {
+        handleError(error, $t('frameleaf_job_runs_release_failed'));
+      }
+    } finally {
+      releasing = null;
+    }
+    await load();
+  };
   $effect(() => {
     void refreshToken;
     untrack(() => void load(0));
-  });
-  $effect(() => {
-    const id = focusRunId;
-    if (id) {
-      untrack(() => inspect(id));
-    }
   });
   $effect(() => {
     // A hidden tab is not polled; the next tick after it shows again catches up.
@@ -132,125 +131,173 @@
   });
 </script>
 
-<section class="jm-history" aria-label={$t('frameleaf_job_runs_title')}>
-  <h3>{$t('frameleaf_job_runs_title')}</h3>
-  <p>{$t('frameleaf_job_runs_help')}</p>
-  {#if unavailable}<p role="status">{$t('frameleaf_job_runs_unavailable')}</p>{/if}
-  {#if !loading && runs.length === 0 && !unavailable}<p>{$t('frameleaf_job_runs_empty')}</p>{/if}
-  <ol>
+<section class="runs" aria-labelledby={headingId}>
+  <header>
+    <h3 id={headingId}>{$t('frameleaf_job_runs_title')}</h3>
+    <p>{$t('frameleaf_job_runs_help')}</p>
+  </header>
+  {#if unavailable}<p class="note" role="status">{$t('frameleaf_job_runs_unavailable')}</p>{/if}
+  {#if notice}<p class="note" role="status">{notice}</p>{/if}
+  {#if !loading && runs.length === 0 && !unavailable}<p class="note">{$t('frameleaf_job_runs_empty')}</p>{/if}
+  <ul>
     {#each visible as run (run.id)}
-      <li>
-        <strong>{title(run)}</strong>
-        <span>{$t(runStateKey(run.state))}</span>
-        <p>
-          {$t('frameleaf_job_runs_progress', { values: { done: number(settledItems(run)), total: number(run.total) } })}
-        </p>
-        {#if run.enumerationDone && run.total > 0}
-          <progress max={run.total} value={settledItems(run)} aria-label={$t('frameleaf_job_runs_selected_items')}
-          ></progress>
+      {@const failed = failedItems(run)}
+      {@const blockers = runBlockers(run)}
+      <li class:is-focused={focusRunId === run.id}>
+        <div class="head">
+          <strong>{title(run)}</strong>
+          <Pill tone={tone(run)}>{$t(runStateKey(run.state))}</Pill>
+        </div>
+        <p class="far">{howFar(run)}</p>
+        {#if run.enumerationDone && run.total > 0 && !isRunSettled(run)}
+          <span class="bar" aria-hidden="true"><span style:width="{percent(run)}%"></span></span>
         {/if}
-        <dl>
-          {#each DURABLE_OUTCOMES as outcome (outcome)}
-            {#if run[outcome] > 0}<dt>{$t(runOutcomeKey(outcome))}</dt>
-              <dd>{number(run[outcome])}</dd>{/if}
-          {/each}
-        </dl>
-        <p>{$t('frameleaf_job_runs_stages', { values: { count: number(run.stageTotals.total) } })}</p>
-        {#if run.lastStage}<p>{$t('frameleaf_job_runs_last_stage', { values: { stage: run.lastStage } })}</p>{/if}
-        {#if run.lastProgressAt}<time datetime={run.lastProgressAt}
-            >{$t('frameleaf_job_runs_last_progress', {
-              values: { time: new Date(run.lastProgressAt).toLocaleString($locale ?? undefined) },
-            })}</time
-          >{/if}
-        {#each run.reasons as reason (reason)}<p>{$t(runReasonKey(reason))}</p>{/each}
-        <Button onclick={() => inspect(run.id)}>{$t('frameleaf_job_runs_inspect')}</Button>
-        {#if selectedId === run.id}
-          <section aria-label={$t('frameleaf_job_runs_items')}>
-            {#if itemsUnavailable}<p role="status">{$t('frameleaf_job_runs_items_unavailable')}</p>{/if}
-            <ol start={itemOffset + 1}>
-              {#each items as item (item.id)}
-                <li>
-                  <strong>{$t(runOutcomeKey(item.outcome))}</strong>
-                  <span>{$t('frameleaf_job_runs_stages', { values: { count: number(item.stageTotals.total) } })}</span>
-                  <dl>
-                    {#each DURABLE_OUTCOMES as outcome (outcome)}{#if item.stageTotals[outcome] > 0}<dt>
-                          {$t(runOutcomeKey(outcome))}
-                        </dt>
-                        <dd>{number(item.stageTotals[outcome])}</dd>{/if}{/each}
-                  </dl>
-                  {#if item.lastStage}<p>
-                      {$t('frameleaf_job_runs_last_stage', { values: { stage: item.lastStage } })}
-                    </p>{/if}
-                  {#if item.lastProgressAt}<time datetime={item.lastProgressAt}
-                      >{$t('frameleaf_job_runs_last_progress', {
-                        values: { time: new Date(item.lastProgressAt).toLocaleString($locale ?? undefined) },
-                      })}</time
-                    >{/if}
-                  {#each item.reasons as reason (reason)}<p>{$t(runReasonKey(reason))}</p>{/each}
-                </li>
-              {/each}
-            </ol>
-            <div class="pager">
-              <Button
-                disabled={itemsLoading || itemOffset === 0}
-                onclick={() => void loadItems(run.id, Math.max(0, itemOffset - PAGE_SIZE))}
-                >{$t('frameleaf_job_runs_previous')}</Button
+        {#each blockers as key (key)}
+          <p class="why">
+            {key === 'frameleaf_job_runs_why_setup' && (run.held ?? 0) > 0
+              ? $t(photos(run) ? 'frameleaf_job_runs_why_setup_photos' : 'frameleaf_job_runs_why_setup_tasks', {
+                  values: { count: run.held },
+                })
+              : $t(key)}
+          </p>
+        {/each}
+        {#if failed > 0}
+          <p class="why is-failed">
+            {$t(photos(run) ? 'frameleaf_job_runs_failed_photos' : 'frameleaf_job_runs_failed_tasks', {
+              values: { count: failed },
+            })}
+            {#each runFailedQueues(run, ownQueue(run)?.name) as queue (queue)}
+              <a href={Route.viewQueue({ name: queue, tab: 'failed' })}
+                >{$t('frameleaf_job_runs_see_failed', { values: { name: queueTitle(queue) } })}</a
               >
-              <Button disabled={itemsLoading} onclick={() => void loadItems(run.id, itemOffset)}
-                >{$t('frameleaf_job_runs_refresh')}</Button
-              >
-              <Button
-                disabled={itemsLoading || !itemsHaveNext}
-                onclick={() => void loadItems(run.id, itemOffset + PAGE_SIZE)}>{$t('frameleaf_job_runs_next')}</Button
-              >
-            </div>
-          </section>
+            {:else}
+              <a href={commandCenterUrl('processing', 'queues')}>{$t('frameleaf_job_runs_see_failed_all')}</a>
+            {/each}
+          </p>
         {/if}
+        <div class="foot">
+          <time datetime={run.finishedAt ?? run.createdAt}>
+            {run.finishedAt
+              ? $t('frameleaf_job_runs_finished_at', { values: { time: when(run.finishedAt) } })
+              : $t('frameleaf_job_runs_started_at', { values: { time: when(run.createdAt) } })}
+          </time>
+          {#if run.canRelease}
+            <Button disabled={releasing !== null} onclick={() => void release(run)}>
+              {$t('frameleaf_job_runs_release')}
+            </Button>
+          {/if}
+        </div>
       </li>
     {/each}
-  </ol>
-  <div class="pager">
-    <Button disabled={loading || offset === 0} onclick={() => void load(Math.max(0, offset - PAGE_SIZE))}
-      >{$t('frameleaf_job_runs_previous')}</Button
-    >
-    <Button disabled={loading} onclick={() => void load()}>{$t('frameleaf_job_runs_refresh')}</Button>
-    <Button disabled={loading || !hasNext} onclick={() => void load(offset + PAGE_SIZE)}
-      >{$t('frameleaf_job_runs_next')}</Button
-    >
-  </div>
+  </ul>
+  {#if offset > 0 || hasNext}
+    <div class="pager">
+      <Button disabled={loading || offset === 0} onclick={() => void load(Math.max(0, offset - PAGE_SIZE))}
+        >{$t('frameleaf_job_runs_previous')}</Button
+      >
+      <Button disabled={loading || !hasNext} onclick={() => void load(offset + PAGE_SIZE)}
+        >{$t('frameleaf_job_runs_next')}</Button
+      >
+    </div>
+  {/if}
 </section>
 
 <style>
-  section {
-    margin-block: 1rem;
+  .runs {
+    margin-top: var(--fl-space-6);
+    padding-top: var(--fl-space-5);
+    border-top: 1px solid var(--fl-border);
+  }
+  header {
+    display: grid;
+    gap: var(--fl-space-1);
+    margin-bottom: var(--fl-space-3);
   }
   h3 {
+    margin: 0;
+    font-size: var(--fl-font-size);
     font-weight: 600;
   }
-  li {
-    padding-block: 0.75rem;
-    border-block-end: 1px solid var(--fl-border);
-  }
-  li > span {
-    margin-inline-start: 0.75rem;
-  }
-  dl {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-  dd {
-    margin-inline-end: 0.75rem;
-  }
-  p,
-  time {
+  header p,
+  .note {
+    margin: 0;
     color: var(--fl-muted);
     font-size: var(--fl-font-callout);
+  }
+  .note {
+    margin-block: var(--fl-space-3);
+  }
+  ul {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  li {
+    display: grid;
+    gap: var(--fl-space-2);
+    padding: var(--fl-space-4) 0;
+    border-bottom: 1px solid var(--fl-border);
+  }
+  li.is-focused {
+    padding-inline: var(--fl-space-3);
+    border-radius: var(--fl-radius-card);
+    background: var(--fl-panel);
+  }
+  .head,
+  .foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--fl-space-2) var(--fl-space-4);
+  }
+  .head strong {
+    font-size: var(--fl-font-callout);
+    font-weight: 600;
+  }
+  p {
+    margin: 0;
+  }
+  .far {
+    font-size: var(--fl-font-callout);
+    font-variant-numeric: tabular-nums;
+  }
+  .why {
+    color: var(--fl-muted);
+    font-size: var(--fl-font-callout);
+    line-height: 1.5;
+  }
+  .why.is-failed {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--fl-space-1) var(--fl-space-3);
+    color: var(--fl-text);
+  }
+  .why a {
+    color: var(--fl-accent);
+    font-weight: 500;
+  }
+  .bar {
+    display: block;
+    height: 4px;
+    overflow: hidden;
+    border-radius: var(--fl-radius-pill);
+    background: var(--fl-border);
+  }
+  .bar > span {
+    display: block;
+    height: 100%;
+    background: var(--fl-accent);
+  }
+  time {
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
   }
   .pager {
     display: flex;
     flex-wrap: wrap;
     gap: var(--fl-space-2);
-    margin-top: var(--fl-space-3);
+    margin-top: var(--fl-space-4);
   }
 </style>

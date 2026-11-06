@@ -4,24 +4,36 @@ import { performance } from 'node:perf_hooks';
 import { type MessagePort, parentPort, workerData } from 'node:worker_threads';
 import postgres from 'postgres';
 import type { ConfigRepository } from 'src/repositories/config.repository.js';
-import { QUEUE_EXECUTION_CAPACITY } from 'src/queue/admission.js';
 import { coalescedTask } from 'src/queue/coalesced-task.js';
 import { queueNotifications } from 'src/queue/notifications.js';
-import { pruneQueueHistoryPage, pruneRunLedger } from 'src/queue/retention.js';
-import { summarizeRuns } from 'src/queue/run-summary.js';
+import { pruneQueueHistoryPage } from 'src/queue/retention.js';
+import { finishRuns } from 'src/queue/run-summary.js';
 import { SqlQueueStore } from 'src/queue/store.js';
-import { QUEUE_TIMING, QueueClaim, QueueWorkerMessage } from 'src/queue/types.js';
+import { QUEUE_EXECUTION_CAPACITY, QUEUE_TIMING, QueueClaim, QueueWorkerMessage } from 'src/queue/types.js';
 import { QueueWatchdog, monitorQueueProgress } from 'src/queue/watchdog.js';
+
+/** Report hold reconciliation on its third failure in a row, then every 120th (about every ten minutes). */
+const HOLDS_FAILURE_REPORT = 3;
+const HOLDS_FAILURE_REPEAT = 120;
 
 type CoordinatorData = {
   workerId: string;
   queues: string[];
+  /** Jobs run at once across all queues; a `capacity` message changes it live. */
+  capacity?: number;
   connection: ReturnType<ConfigRepository['getEnv']>['database']['config'];
   supervisor: MessagePort;
 };
 
 /** This thread owns no media execution. Even a synchronous handler hang cannot stop its watchdog. */
-export async function coordinate({ workerId, queues, connection, supervisor }: CoordinatorData) {
+export async function coordinate({
+  workerId,
+  queues,
+  capacity: initialCapacity,
+  connection,
+  supervisor,
+}: CoordinatorData) {
+  let executionCapacity = initialCapacity ?? QUEUE_EXECUTION_CAPACITY;
   const createClient = (max: number) => {
     const options = { max, connect_timeout: 5, connection: { statement_timeout: 5000, lock_timeout: 3000 } };
     return connection.connectionType === 'url'
@@ -68,6 +80,11 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
         progress.set(message.id, message.units);
         break;
       }
+      case 'capacity': {
+        executionCapacity = message.value;
+        void tick();
+        break;
+      }
       case 'stop': {
         stopping = true;
         break;
@@ -103,15 +120,16 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
         await maintenanceStore.recoverExpired();
         // FL-1213: one page per sweep cannot keep up after a big library scan (millions of jobs at 250
         // per 30 seconds), so keep going for a few seconds while pages are full and still deleting. A full
-        // page that deleted nothing (history not yet due) waits for the next sweep instead of spinning.
+        // page that deleted nothing waits for the next sweep once its history is not yet due; one kept whole for
+        // an open run goes on to the history behind it.
         const deadline = performance.now() + QUEUE_TIMING.pruneBudget;
         while (!stopping) {
           const page = await pruneQueueHistoryPage(maintenanceDb);
-          if (!page?.fullPage || page.pruned === 0 || performance.now() >= deadline) break;
+          if (!page?.fullPage || (page.pruned === 0 && !page.due) || performance.now() >= deadline) break;
         }
-        // FL-1215: finished runs' counts are added up once, a page per statement, then old ledgers are dropped.
-        if (!stopping) await summarizeRuns(maintenanceDb, 2000);
-        if (!stopping) await pruneRunLedger(maintenanceDb, 1000);
+        // FL-1265: runs whose work has ended are finished, their counts written once.
+        if (!stopping) await finishRuns(maintenanceDb, 10);
+        if (!stopping) await maintenanceStore.settleTerminalLibrarySources();
       } catch {
         if (!stopping) parentPort!.postMessage({ type: 'unavailable' });
       } finally {
@@ -119,6 +137,30 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
         maintenance = undefined;
       }
     })();
+  };
+
+  // FL-1265: changed run holds reach their jobs in batches, a little each visit, on the maintenance session.
+  // Repeated failures leave held work claimable or released work waiting, so the parent logs them.
+  let holdsBusy = false;
+  let holdsFailures = 0;
+  const reconcileHolds = () => {
+    if (stopping || holdsBusy) return;
+    holdsBusy = true;
+    void maintenanceStore
+      .reconcileHolds(1000)
+      .then(() => (holdsFailures = 0))
+      .catch((error: unknown) => {
+        holdsFailures++;
+        if (stopping || (holdsFailures !== HOLDS_FAILURE_REPORT && holdsFailures % HOLDS_FAILURE_REPEAT !== 0)) return;
+        // Only the database error code: the message may carry connection details or job data.
+        const code = (error as { code?: unknown } | null)?.code;
+        parentPort!.postMessage({
+          type: 'holdsFailing',
+          failures: holdsFailures,
+          code: typeof code === 'string' ? code : undefined,
+        });
+      })
+      .finally(() => (holdsBusy = false));
   };
 
   const tick = coalescedTask(async () => {
@@ -132,6 +174,7 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
         await beat();
       }
       sweep();
+      reconcileHolds();
       if (!progressBusy) {
         progressBusy = true;
         try {
@@ -151,20 +194,17 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
         parentPort!.postMessage({ type: 'cancel', id: deadline.id });
       }
       if (!stopping) {
-        // Ordinary wakes discover work once, rather than running idle sharing/claim transactions
-        // across the catalogue. Full scans also advance terminal alias cleanup and redaction.
-        const outstanding = reconcile ? undefined : new Set(await store.queuesWithUnfinishedWork(queues));
+        // Ordinary wakes discover claimable work once, rather than running an idle claim per queue.
+        const outstanding = reconcile ? undefined : new Set(await store.queuesWithUnfinishedWork(queues, false));
         const start = nextQueue;
         for (let offset = 0; offset < queues.length; offset++) {
-          const capacity = QUEUE_EXECUTION_CAPACITY - active.size;
+          const capacity = executionCapacity - active.size;
           if (stopping || capacity <= 0) break;
           const index = (start + offset) % queues.length;
           const queue = queues[index];
           if (outstanding && !outstanding.has(queue)) continue;
           // Resume at the next queue after filling the shared budget, so a deep queue cannot starve others.
           nextQueue = (index + 1) % queues.length;
-          await store.feedManifest(queue);
-          if (stopping) break;
           const claims = await store.claim(queue, workerId, capacity);
           claimed += claims.length;
           for (const claim of claims) {

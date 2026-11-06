@@ -12,30 +12,31 @@ import type { JobCounts, JobItem, JobOf } from 'src/types.js';
 import { JOBS_NOT_RETRIED, JOBS_UNSAFE_TO_RERUN_AFTER_STOP, JOBS_WITH_SENSITIVE_DATA } from 'src/constants.js';
 import { JobConfig } from 'src/decorators.js';
 import { QueueJobResponseDto, QueueJobSearchDto } from 'src/dtos/queue.dto.js';
-import { JobName, JobNameSchema, JobStatus, MetadataKey, QueueCleanType, QueueJobStatus, QueueName } from 'src/enum.js';
+import {
+  JobName,
+  JobNameSchema,
+  JobStatus,
+  MediaOperationKind,
+  MetadataKey,
+  QueueCleanType,
+  QueueJobStatus,
+  QueueName,
+} from 'src/enum.js';
 import { transferImportedWork } from 'src/immich-import/derived-work.js';
 import { validatePreparedLibraryImportWork } from 'src/library-import/activation-work.js';
 import { type ManagerLibrarySetup, prepareLibraryImportWork } from 'src/library-import/derived-work.js';
 import { ReviewedImportContext } from 'src/library-import/reviewed-inputs.js';
-import { QUEUE_EXECUTION_CAPACITY, queueAdmission } from 'src/queue/admission.js';
-import { lockQueues, withQueueCatalogue } from 'src/queue/catalogue.js';
+import { queueAdmission } from 'src/queue/admission.js';
+import { retryLockContention } from 'src/queue/catalogue.js';
+import { automaticJobCapacity, clampJobCapacity, readJobCapacity } from 'src/queue/configuration.js';
 import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
-import {
-  type LibrarySourceIdentity,
-  appendLibraryInitialSources,
-  closeLibrarySource,
-  ensureLibrarySource,
-  markLibrarySourceOutcome,
-  settleTerminalLibrarySources,
-  withLibraryQueueFence,
-} from 'src/queue/library-admission.js';
-import { attachProducerRun, freezeSelection, getManifestJobOptions } from 'src/queue/manifest.js';
 import { deliverJobObservers } from 'src/queue/observers.js';
 import { reportedQueueJobs } from 'src/queue/run-query.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { assertPublicationSource, publicationTransaction } from 'src/queue/transaction.js';
 import {
   JobDependencyReason,
+  type LibrarySourceIdentity,
   QUEUE_BATCH,
   QUEUE_TIMING,
   QueueClaim,
@@ -43,6 +44,7 @@ import {
   QueueExecution,
   QueueIntent,
   QueueOptions,
+  type RunHolds,
   toJobItem,
 } from 'src/queue/types.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
@@ -51,7 +53,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { ANALYTICS_AUTO_RETRY_DELAY_MS } from 'src/utils/analytics.js';
 import { assertAssetSource, readAssetSource } from 'src/utils/asset-source-authority.js';
 import { recordStoppedAttempt } from 'src/utils/attempt-evidence.js';
-import { DATABASE_ACQUIRE_TIMEOUT_MS, DATABASE_POOL_SIZE } from 'src/utils/execution-database.js';
+import { DATABASE_POOL_SIZE } from 'src/utils/execution-database.js';
 import { forgetLockedClaim, lockedKeyLoadedSinceDeferral } from 'src/utils/locked-read.js';
 import { FrameleafStartupError, getKeyByValue } from 'src/utils/misc.js';
 import { inheritWorkflowCausation } from 'src/utils/workflow-context.js';
@@ -136,6 +138,8 @@ const REPEATABLE_JOBS = new Set<JobName>([
   JobName.LockedRewrap,
   JobName.LockedSweep,
 ]);
+/** Rows a selection producer inserts per fenced transaction. */
+const SELECTION_PAGE = 2000;
 // A dependency that stays down defers every job behind it; say so once per queue and reason, not per job.
 const DEFERRAL_WARNING_INTERVAL_MS = 10 * 60_000;
 
@@ -166,6 +170,8 @@ export class JobRepository {
   private rollingAvgBuffers: Partial<Record<JobName, number[]>> = {};
   private deferralWarnedAt = new Map<string, number>();
   private store: SqlQueueStore;
+  /** System config `job.capacity`: 0 is automatic. */
+  private capacitySetting = 0;
 
   constructor(
     private moduleRef: ModuleRef,
@@ -245,12 +251,14 @@ export class JobRepository {
     const { port1, port2 } = new MessageChannel();
     const workerId = randomUUID();
     parentPort.postMessage({ type: 'queue-watchdog-port', workerId, port: port1 }, [port1]);
+    const capacity = this.getExecutionCapacity();
     this.logger.log(
-      `Queue execution capacity: ${QUEUE_EXECUTION_CAPACITY} jobs across all queues (${DATABASE_POOL_SIZE} database sessions)`,
+      `Queue execution capacity: ${capacity.value} jobs across all queues (${capacity.source}; up to ${DATABASE_POOL_SIZE} database sessions)`,
     );
     this.coordinator = new Worker(new URL('../workers/queue-coordinator.js', import.meta.url), {
       workerData: {
         workerId,
+        capacity: capacity.value,
         queues: Object.values(QueueName),
         connection: this.configRepository.getEnv().database.config,
         supervisor: port2,
@@ -258,15 +266,31 @@ export class JobRepository {
       transferList: [port2],
     });
     this.coordinator.on('message', (message: QueueDispatch | { type: 'unavailable' }) => {
-      if (message.type === 'execute') {
-        const abort = new AbortController();
-        const finished = this.execute(message.claim, abort).finally(() => {
-          this.active.delete(message.claim.id);
-          this.coordinator?.postMessage({ type: 'settled', id: message.claim.id });
-        });
-        this.active.set(message.claim.id, { abort, finished });
-      } else if (message.type === 'cancel') {
-        this.active.get(message.id)?.abort.abort(new Error('Job deadline or lease expired'));
+      switch (message.type) {
+        case 'execute': {
+          const abort = new AbortController();
+          const finished = this.execute(message.claim, abort).finally(() => {
+            this.active.delete(message.claim.id);
+            this.coordinator?.postMessage({ type: 'settled', id: message.claim.id });
+          });
+          this.active.set(message.claim.id, { abort, finished });
+          break;
+        }
+        case 'cancel': {
+          this.active.get(message.id)?.abort.abort(new Error('Job deadline or lease expired'));
+          break;
+        }
+        case 'holdsFailing': {
+          this.logger.warn(
+            `Held and released jobs are not being updated: ${message.failures} failed attempts in a row` +
+              (message.code ? ` (database error ${message.code})` : ''),
+          );
+          break;
+        }
+        case 'unavailable': {
+          // The coordinator's watchdog owns the outage decision.
+          break;
+        }
       }
     });
     this.coordinator.on('error', () =>
@@ -304,9 +328,7 @@ export class JobRepository {
         // Handler/native work has returned; lease expiry alone cannot attest this.
         // Keep this before durable completion, while the watchdog still owns the claim.
         try {
-          await admission.publication.run(AbortSignal.timeout(DATABASE_ACQUIRE_TIMEOUT_MS), () =>
-            recordStoppedAttempt(this.store.db, claim.id, claim.token),
-          );
+          await recordStoppedAttempt(this.store.db, claim.id, claim.token);
         } catch {
           this.logger.warn('Could not persist stopped-attempt evidence; output cleanup will retain it');
         }
@@ -314,30 +336,35 @@ export class JobRepository {
       abort.signal.throwIfAborted();
       if (context.dependencyReason) {
         this.warnDeferral(claim, context.dependencyReason);
-        settled = await admission.publication.run(abort.signal, () =>
-          this.store.defer(claim, context.dependencyReason!),
-        );
+        settled = await this.store.defer(claim, context.dependencyReason);
         await this.wakeIfLockedKeyLoaded(claim, context.dependencyReason, settled);
         return;
       }
       if (context.outcome === 'failed') {
         throw new Error('Handler returned Failed');
       }
-      settled = await queueExecution.run(context, () =>
-        this.store.complete(
-          claim,
-          context.followups,
-          async (tx) => {
-            await publicationTransaction.run(tx, async () => {
-              context.buffering = true;
-              for (const adopt of context.adoptions) {
-                await adopt(tx);
-              }
-              abort.signal.throwIfAborted();
-            });
-          },
-          (publish) => admission.publication.run(abort.signal, publish),
-        ),
+      // FL-1265: completions run side by side; one that loses a deadlock runs again with its adoption's
+      // in-memory effects undone.
+      const followups = context.followups.length;
+      const afterCommit = context.afterCommit?.length ?? 0;
+      settled = await retryLockContention(
+        abort.signal,
+        () =>
+          queueExecution.run(context, () =>
+            this.store.complete(claim, context.followups, async (tx) => {
+              await publicationTransaction.run(tx, async () => {
+                context.buffering = true;
+                for (const adopt of context.adoptions) {
+                  await adopt(tx);
+                }
+                abort.signal.throwIfAborted();
+              });
+            }),
+          ),
+        () => {
+          context.followups.length = followups;
+          if (context.afterCommit) context.afterCommit.length = afterCommit;
+        },
       );
       if (settled) {
         // Native execution can settle while the reserved callback chain drains independently.
@@ -371,26 +398,22 @@ export class JobRepository {
         if (!started || context.dependencyReason) {
           // No handler ran on an admission refusal, even for unsafe/operation-owned jobs.
           // A rejected fence can only settle below with matching stop proof; never invent a new claim.
-          settled = await admission.publication.run(AbortSignal.timeout(DATABASE_ACQUIRE_TIMEOUT_MS), () =>
-            this.store.defer(claim, context.dependencyReason ?? 'local-capacity'),
-          );
+          settled = await this.store.defer(claim, context.dependencyReason ?? 'local-capacity');
           await this.wakeIfLockedKeyLoaded(claim, context.dependencyReason, settled);
           return;
         }
-        settled = await this.store.fail(
-          claim,
-          error instanceof Error ? error.message : 'Job failed',
-          context.failureDiagnostics?.length
-            ? async (tx) =>
-                publicationTransaction.run(tx, async () => {
-                  for (const publish of context.failureDiagnostics!) await publish(tx);
-                })
-            : undefined,
-          {
-            settlements: context.failureSettlements,
-            publication: (publish) =>
-              admission.publication.run(AbortSignal.timeout(DATABASE_ACQUIRE_TIMEOUT_MS), publish),
-          },
+        settled = await retryLockContention(undefined, () =>
+          this.store.fail(
+            claim,
+            error instanceof Error ? error.message : 'Job failed',
+            context.failureDiagnostics?.length
+              ? async (tx) =>
+                  publicationTransaction.run(tx, async () => {
+                    for (const publish of context.failureDiagnostics!) await publish(tx);
+                  })
+              : undefined,
+            { settlements: context.failureSettlements },
+          ),
         );
       } catch {
         // No successful database outcome was observed. Lease recovery owns this claim.
@@ -402,12 +425,12 @@ export class JobRepository {
           // The database fence can observe cancellation before the coordinator's abort arrives.
           // Settle only this stopped claim, never publish its rejected output or rerun its handler.
           // A deferred operation also needs this handoff when expiry alone rejected publication.
-          await this.store.fail(claim, 'Job deadline or cancellation requested', undefined, {
-            stopRequestedOnly: !context.failureSettlements?.length,
-            settlements: context.failureSettlements,
-            publication: (publish) =>
-              admission.publication.run(AbortSignal.timeout(DATABASE_ACQUIRE_TIMEOUT_MS), publish),
-          });
+          await retryLockContention(undefined, () =>
+            this.store.fail(claim, 'Job deadline or cancellation requested', undefined, {
+              stopRequestedOnly: !context.failureSettlements?.length,
+              settlements: context.failureSettlements,
+            }),
+          );
         } catch {
           this.logger.error('Could not persist stopped job outcome; lease recovery is pending');
         }
@@ -514,19 +537,14 @@ export class JobRepository {
     return response;
   }
 
-  /** Shared executions can retain an import membership even when another run owns the job. */
+  /** Metadata extraction of an import's own run keeps what the import brought. */
   async isImportedMetadataJob(): Promise<boolean> {
     const claim = queueExecution.getStore()?.claim;
     if (!claim || claim.name !== JobName.AssetExtractMetadata) return false;
     const {
       rows: [row],
-    } = await sql<{ preserve: boolean }>`select
-      exists (select 1 from job_run r where r.id=${claim.runId}::uuid
-        and r.kind in ('immich-import-derived','library-import-derived'))
-      or exists (select 1 from job_run_item i join job_run r on r.id=i."runId"
-        where i."jobId"=${claim.id}::uuid and i.stage=${claim.name}
-          and i.state in ('pending','waiting','active') and r."finishedAt" is null
-          and r.kind in ('immich-import-derived','library-import-derived')) as preserve`.execute(
+    } = await sql<{ preserve: boolean }>`select exists (select 1 from job_run r where r.id=${claim.runId}::uuid
+        and r.kind in ('immich-import-derived','library-import-derived')) as preserve`.execute(
       publicationTransaction.getStore() ?? this.store.db,
     );
     if (typeof row?.preserve !== 'boolean') throw new Error('Imported metadata context unavailable');
@@ -570,8 +588,30 @@ export class JobRepository {
   pause(name: QueueName) {
     return this.store.pause(name, true);
   }
+  /** Clears the pause only; quiet hours and holds are separate (queue.service emits `QueueResumed`). */
   resume(name: QueueName) {
     return this.store.pause(name, false);
+  }
+  /** FL-1265 quiet hours: the queue claims nothing new until `closedUntil`; null opens it. */
+  setQueueSchedule(name: QueueName, closedUntil: Date | null) {
+    return this.store.setSchedule(name, closedUntil);
+  }
+  getQueueSchedule(name: QueueName) {
+    return this.store.getSchedule(name);
+  }
+  /** FL-1265: `FRAMELEAF_JOB_CAPACITY` wins; otherwise the `job.capacity` setting, 0 meaning automatic. */
+  getExecutionCapacity(): { value: number; source: 'environment' | 'setting' | 'automatic' } {
+    const environment = readJobCapacity();
+    if (environment !== undefined) return { value: environment, source: 'environment' };
+    if (this.capacitySetting > 0) return { value: clampJobCapacity(this.capacitySetting), source: 'setting' };
+    return { value: automaticJobCapacity(), source: 'automatic' };
+  }
+  /** Applies at once, without a restart: running jobs finish, then at most the new capacity runs. */
+  setExecutionCapacity(setting: number) {
+    this.capacitySetting = Number.isFinite(setting) && setting > 0 ? setting : 0;
+    const { value } = this.getExecutionCapacity();
+    queueAdmission(this.store.db).execution.resize(value);
+    this.coordinator?.postMessage({ type: 'capacity', value });
   }
   empty(name: QueueName) {
     return this.store.clear(name, ['pending', 'waiting']);
@@ -596,8 +636,27 @@ export class JobRepository {
   clear(name: QueueName, _type: QueueCleanType) {
     return this.store.clear(name, ['failed', 'needs_attention', 'blocked']);
   }
+  /** Generic run retry (the import Retry). The caller commits, then calls `forgetRunReads`. */
   retryImportedWork(runId: string, db: Kysely<DB>) {
-    return this.store.retryImportedWork(runId, db);
+    return this.store.retryRun(runId, db);
+  }
+  /** Writes the run's holds; the coordinator applies them to its jobs after commit. */
+  setRunHolds(runId: string, holds: RunHolds, db: Kysely<DB> = this.store.db) {
+    return this.store.setRunHolds(runId, holds, db);
+  }
+  releaseRun(runId: string) {
+    return this.store.releaseRun(runId);
+  }
+  runHasLiveWork(runId: string, options?: { ignoreParked?: boolean }, db?: Kysely<DB>) {
+    return this.store.runHasLiveWork(runId, options, db);
+  }
+  async getRunStageProgress(
+    runId: string,
+  ): Promise<Array<{ name: JobName; queue: QueueName; total: number; done: number }>> {
+    return (await this.store.runStageProgress(runId)).flatMap(({ name, total, done }) => {
+      const handler = this.handlers[name as JobName];
+      return handler ? [{ name: name as JobName, queue: handler.queueName, total, done }] : [];
+    });
   }
 
   forgetRunReads() {
@@ -621,8 +680,9 @@ export class JobRepository {
   getJobCounts(name: QueueName): Promise<JobCounts> {
     return this.store.counts(name);
   }
-  hasUnfinishedWork(name: QueueName): Promise<boolean> {
-    return this.store.hasUnfinishedWork(name);
+  /** Held work counts unless `includeHeld` is false. */
+  hasUnfinishedWork(name: QueueName, options: { includeHeld?: boolean } = {}): Promise<boolean> {
+    return this.store.hasUnfinishedWork(name, options.includeHeld ?? true);
   }
   /** The paused queues, read once for a snapshot of every queue. */
   getPausedQueues(): Promise<Set<string>> {
@@ -635,7 +695,7 @@ export class JobRepository {
   hasDedupJob(name: QueueName, id: string) {
     return this.store.hasDedup(name, id);
   }
-  private getQueueName(name: JobName) {
+  getQueueName(name: JobName): QueueName {
     return (this.handlers[name] as JobMapItem).queueName;
   }
 
@@ -661,35 +721,40 @@ export class JobRepository {
     const admit = (tx: Transaction<DB>) => this.store.admitRun(id, kind, selection, admission.intents, tx);
     if (context?.buffering) {
       // The run and its parent-dependent intents become visible only with successful publication.
-      context.adoptions.push(admit);
-    } else {
-      await withQueueCatalogue(
-        (work) => this.store.db.transaction().execute(work),
-        // Keep the established queue -> parent job -> run/item lock order across every captured batch.
-        async (tx) => {
-          if (context) {
-            const { rows } = await sql`select id from job where id = ${context.claim.id}::uuid
-            and token = ${context.claim.token}::uuid and state = 'active' and "leaseExpiresAt" > clock_timestamp()
-            and "cancelRequestedAt" is null for update`.execute(tx);
-            if (rows.length === 0) throw new Error('Producer lost its claim');
-          }
-          await admit(tx);
-          if (context) {
-            context.signal.throwIfAborted();
-            const { rows } = await sql`select id from job where id = ${context.claim.id}::uuid
-            and token = ${context.claim.token}::uuid and state = 'active' and "leaseExpiresAt" > clock_timestamp()
-            and "cancelRequestedAt" is null`.execute(tx);
-            if (rows.length === 0) throw new Error('Producer lost its claim during admission');
-            context.signal.throwIfAborted();
-          }
-        },
-      );
+      context.adoptions.push(async (tx) => void (await admit(tx)));
+      return id;
     }
-    return id;
+    // Work already queued for these intents answers with its own run.
+    return (await this.fenced(context, admit)).runId;
+  }
+
+  /**
+   * One transaction fenced by the current claim (when inside a job): the claim is locked before `work` and still
+   * held after it, or nothing commits.
+   */
+  private fenced<T>(context: QueueExecution | undefined, work: (tx: Transaction<DB>) => Promise<T>): Promise<T> {
+    context?.signal.throwIfAborted();
+    const claimHeld = (tx: Transaction<DB>, lock: boolean) =>
+      sql`select id from job where id = ${context!.claim.id}::uuid and token = ${context!.claim.token}::uuid
+        and state = 'active' and "leaseExpiresAt" > clock_timestamp() and "cancelRequestedAt" is null
+        ${lock ? sql`for update` : sql``}`.execute(tx);
+    return this.store.db.transaction().execute(async (tx) => {
+      if (context && (await claimHeld(tx, true)).rows.length === 0) throw new Error('Producer lost its claim');
+      const value = await work(tx);
+      if (context) {
+        context.signal.throwIfAborted();
+        if ((await claimHeld(tx, false)).rows.length === 0) throw new Error('Producer lost its claim');
+      }
+      return value;
+    });
   }
 
   listRuns(take: number, skip: number) {
     return this.store.listRuns(take, skip);
+  }
+
+  getRun(runId: string) {
+    return this.store.getRun(runId);
   }
 
   listRunItems(runId: string, take: number, skip: number) {
@@ -754,17 +819,22 @@ export class JobRepository {
     };
   }
 
-  /** Give setup checkpoints a retained canonical outcome before any domain setup can commit. */
+  /** The run of the current producer job; a producer started outside a run gets one of its own. */
   async ensureProducerRun(): Promise<string | undefined> {
     const context = queueExecution.getStore();
     if (!context) return;
-    const result = await withQueueCatalogue(
-      (work) => this.store.db.transaction().execute(work),
-      (tx) => attachProducerRun(tx, context.claim),
-    );
-    context.claim.runId = result.runId;
-    context.claim.itemKey = result.producerItemKey;
-    return result.runId;
+    if (context.claim.runId) return context.claim.runId;
+    const runId = randomUUID();
+    const itemKey = `producer/${context.claim.id}`;
+    await this.fenced(context, async (tx) => {
+      await sql`insert into job_run(id, kind, selection, "enumerationDone")
+        values (${runId}::uuid, ${context.claim.name}, '{}'::jsonb, true)`.execute(tx);
+      await sql`update job set "runId" = ${runId}::uuid, "itemKey" = ${itemKey}
+        where id = ${context.claim.id}::uuid and token = ${context.claim.token}::uuid`.execute(tx);
+    });
+    context.claim.runId = runId;
+    context.claim.itemKey = itemKey;
+    return runId;
   }
 
   /** Persist small database-only producer setup with its claim. No network or file I/O may enter this callback. */
@@ -772,25 +842,29 @@ export class JobRepository {
     const context = queueExecution.getStore();
     if (!context) return prepare();
     const { claim } = context;
-    return withQueueCatalogue(
-      (work) => this.store.db.transaction().execute(work),
-      async (tx) => {
-        const {
-          rows: [job],
-        } = await sql<{ checkpoints: Record<string, T> | null }>`select data->'_producerCheckpoints' checkpoints
+    return this.store.db.transaction().execute(async (tx) => {
+      const {
+        rows: [job],
+      } = await sql<{ checkpoints: Record<string, T> | null }>`select data->'_producerCheckpoints' checkpoints
         from job where id = ${claim.id}::uuid and token = ${claim.token}::uuid and state = 'active'
         and "leaseExpiresAt" > clock_timestamp() and "cancelRequestedAt" is null for update`.execute(tx);
-        if (!job) throw new Error('Producer checkpoint lost its claim');
-        if (job.checkpoints && Object.hasOwn(job.checkpoints, key)) return job.checkpoints[key];
-        const value = await publicationTransaction.run(tx, prepare);
-        const { rows } = await sql`update job set data = jsonb_set(data, '{_producerCheckpoints}',
+      if (!job) throw new Error('Producer checkpoint lost its claim');
+      if (job.checkpoints && Object.hasOwn(job.checkpoints, key)) return job.checkpoints[key];
+      const value = await publicationTransaction.run(tx, prepare);
+      const { rows } = await sql`update job set data = jsonb_set(data, '{_producerCheckpoints}',
         coalesce(data->'_producerCheckpoints', '{}'::jsonb) || jsonb_build_object(${key}::text, ${JSON.stringify(value)}::text::jsonb))
         where id = ${claim.id}::uuid and token = ${claim.token}::uuid and "leaseExpiresAt" > clock_timestamp()
           and "cancelRequestedAt" is null returning id`.execute(tx);
-        if (rows.length === 0) throw new Error('Producer checkpoint lost its claim');
-        return value;
-      },
-    );
+      if (rows.length === 0) throw new Error('Producer checkpoint lost its claim');
+      return value;
+    });
+  }
+
+  /** A library scan's run (its operation id) exists before its first batch; idempotent. */
+  private async openLibraryScanRun(tx: Transaction<DB>, identity: LibrarySourceIdentity) {
+    await sql`insert into job_run(id, kind, selection, "enumerationDone") values (${identity.operationId}::uuid,
+      ${MediaOperationKind.LibraryScan}, ${JSON.stringify({ libraryId: identity.libraryId })}::text::jsonb, false)
+      on conflict do nothing`.execute(tx);
   }
 
   /** A queue producer cannot leave a new domain scan behind after losing its own acceptance fence. */
@@ -800,27 +874,30 @@ export class JobRepository {
   ): Promise<T> {
     if (runAdmission.getStore() || publicationTransaction.getStore())
       throw new Error('Library submission requires its own fenced transaction');
-    const context = queueExecution.getStore();
-    return withLibraryQueueFence(this.store.db, context, async (tx) => {
-      const { operationId, value } = await create(tx as Transaction<DB>);
-      const intent = this.intent({ name: JobName.SidecarCheck, data: { id: operationId, source: 'upload' } });
-      await ensureLibrarySource(tx, { operationId, libraryId }, intent, context);
+    return this.fenced(queueExecution.getStore(), async (tx) => {
+      const { operationId, value } = await create(tx);
+      await this.openLibraryScanRun(tx, { operationId, libraryId });
       return value;
     });
   }
 
-  /** Bind the operation's source to its submitter, never to a later deduplicated drain wake. */
-  async ensureLibraryScanSource(identity: LibrarySourceIdentity, attachOrigin = true): Promise<void> {
+  /** The scan's run, for an operation that is still active. */
+  async ensureLibraryScanSource(identity: LibrarySourceIdentity, _attachOrigin = true): Promise<void> {
     if (runAdmission.getStore() || publicationTransaction.getStore())
       throw new Error('Library source setup requires its own fenced transaction');
-    const context = queueExecution.getStore();
-    const intent = this.intent({ name: JobName.SidecarCheck, data: { id: identity.operationId, source: 'upload' } });
-    await withLibraryQueueFence(this.store.db, context, (tx) =>
-      ensureLibrarySource(tx, identity, intent, attachOrigin ? context : undefined),
-    );
+    await this.fenced(queueExecution.getStore(), async (tx) => {
+      const { rows } = await sql`select id from media_operation where id = ${identity.operationId}::uuid
+        and kind = ${MediaOperationKind.LibraryScan} and snapshot->>'libraryId' = ${identity.libraryId}
+        and status not in ('completed','failed','cancelled') for update`.execute(tx);
+      if (rows.length === 0) throw new Error('Library source operation is no longer active');
+      await this.openLibraryScanRun(tx, identity);
+    });
   }
 
-  /** Only library scans may publish bounded assets, durable sources and a checkpoint before completion. */
+  /**
+   * Assets a scan batch imports and their processing jobs commit together (FL-1265: they run at once, before the scan
+   * ends). `close` marks the scan's enumeration done.
+   */
   async commitLibraryScanBatch<T>(
     identity: LibrarySourceIdentity,
     examined: number,
@@ -831,50 +908,87 @@ export class JobRepository {
       throw new Error('Library acceptance is limited to 250 examined items');
     if (runAdmission.getStore() || publicationTransaction.getStore())
       throw new Error('Library acceptance cannot nest publication transactions');
-    return withLibraryQueueFence(this.store.db, queueExecution.getStore(), async (tx) => {
-      const { value, assetIds, accepted } = await work(tx as Transaction<DB>);
+    return this.fenced(queueExecution.getStore(), async (tx) => {
+      const { value, assetIds, accepted } = await work(tx);
       if (!accepted) return value;
       if (assetIds.length > QUEUE_BATCH) throw new Error('Library acceptance is limited to 250 source intents');
+      await this.openLibraryScanRun(tx, identity);
       const intents = assetIds.map((id) => ({
         ...this.intent({ name: JobName.SidecarCheck, data: { id, source: 'upload' } }),
         runId: identity.operationId,
+        itemKey: id,
         rootItemKey: id,
         parentId: undefined,
       }));
-      await appendLibraryInitialSources(tx, identity.operationId, intents);
-      if (close && value) await closeLibrarySource(tx, identity.operationId);
+      await this.store.enqueue(intents, tx, identity.operationId);
+      if (close && value) await this.store.finishEnumeration(identity.operationId, tx);
       return value;
     });
   }
 
-  /** Mandatory terminal control only: the update callback must fence the exact domain claim. */
+  /** Terminal control: the update callback must fence the exact domain claim. Jobs already queued keep running. */
   async settleLibraryScanSource<T>(operationId: string, update: (tx: Transaction<DB>) => Promise<T>): Promise<T> {
-    return withLibraryQueueFence(this.store.db, undefined, async (tx) => {
-      const outcome = await update(tx as Transaction<DB>);
-      await markLibrarySourceOutcome(tx, operationId);
+    return this.store.db.transaction().execute(async (tx) => {
+      const outcome = await update(tx);
+      await this.store.finishEnumeration(operationId, tx);
       return outcome;
     });
   }
 
-  /** Domain recovery may fail a scan without a live worker; retained open sources remain non-runnable. */
+  /** Scans ended by domain recovery or cancellation without a live worker: their runs may finish. */
   settleTerminalLibrarySources(): Promise<number> {
-    return withLibraryQueueFence(this.store.db, undefined, settleTerminalLibrarySources);
+    return this.store.settleTerminalLibrarySources();
   }
 
-  /** Materialize the full selected ID set in PostgreSQL before workers see any item. */
+  /**
+   * FL-1265: inserts the selected items as jobs of the producer's run, a keyset page per fenced transaction; the page
+   * cursor is saved with the producer, so a retried producer carries on. Identical requests coalesce into live jobs.
+   */
   async queueSelection(
     name: JobName,
     selection: SelectQueryBuilder<any, any, { id: string }>,
     data: Record<string, unknown> = {},
-  ) {
+  ): Promise<{ runId: string; inserted: number }> {
     if (runAdmission.getStore()) throw new Error('Run admission supports queue/queueAll, not queueSelection');
-    await freezeSelection(
-      this.store.db,
-      this.intent({ name, data } as JobItem),
-      selection,
-      queueExecution.getStore(),
-      runSubmission.getStore(),
-    );
+    const context = queueExecution.getStore();
+    const submitted = runSubmission.getStore();
+    const producerRun = submitted ?? (await this.ensureProducerRun());
+    const intent = this.intent({ name, data } as JobItem);
+    let inserted = 0;
+    if (!context) {
+      // Nothing would resume a partial selection: it is inserted in one transaction.
+      return this.store.db.transaction().execute(async (tx) => {
+        const runId = producerRun ?? randomUUID();
+        if (!producerRun) {
+          await sql`insert into job_run(id, kind, selection, "enumerationDone")
+            values (${runId}::uuid, ${name}, '{}'::jsonb, true)`.execute(tx);
+        }
+        for (let after: string | null = null; ;) {
+          const page = await this.store.insertSelectionPage({ ...intent, runId }, selection, after, SELECTION_PAGE, tx);
+          inserted += page.inserted;
+          after = page.last;
+          if (after === null) return { runId, inserted };
+        }
+      });
+    }
+    const runId = producerRun!;
+    const cursors = context.claim.data._selectionCursor as
+      Record<string, { after: string | null; done: boolean }> | undefined;
+    if (cursors?.[name]?.done) return { runId, inserted };
+    let after = cursors?.[name]?.after ?? null;
+    do {
+      const page = await this.fenced(context, async (tx) => {
+        const page = await this.store.insertSelectionPage({ ...intent, runId }, selection, after, SELECTION_PAGE, tx);
+        await sql`update job set data = jsonb_set(data, '{_selectionCursor}', coalesce(data->'_selectionCursor', '{}'::jsonb)
+          || jsonb_build_object(${name}::text, jsonb_build_object('after', ${page.last}::text, 'done', ${page.last === null})))
+          where id = ${context.claim.id}::uuid and token = ${context.claim.token}::uuid`.execute(tx);
+        return page;
+      });
+      inserted += page.inserted;
+      after = page.last;
+      context.progress(++context.progressUnits);
+    } while (after !== null);
+    return { runId, inserted };
   }
 
   /**
@@ -916,9 +1030,8 @@ export class JobRepository {
     if (!runId) return true;
     const { rows } = await sql<{
       live: boolean;
-    }>`select coalesce(j.state, i.state) in ('pending','waiting','active') live
-      from job_run_item i left join job j on j.id = i."jobId"
-      where i."runId" = ${runId}::uuid and i."itemKey" = ${assetId} and i.stage = ${JobName.AssetGenerateThumbnails}`.execute(
+    }>`select state in ('pending','waiting','active') live from job
+      where "runId" = ${runId}::uuid and "itemKey" = ${assetId} and name = ${JobName.AssetGenerateThumbnails}`.execute(
       publicationTransaction.getStore() ?? this.store.db,
     );
     return rows[0]?.live ?? true;
@@ -1002,18 +1115,9 @@ export class JobRepository {
       return;
     }
     if (context) {
-      for (let offset = 0; offset < intents.length; offset += 250) {
-        const batch = intents.slice(offset, offset + 250);
-        await this.store.db.transaction().execute(async (tx) => {
-          await lockQueues(tx, [...new Set(batch.map((item) => item.queue))]);
-          const { rows } = await sql`select id from job where id = ${context.claim.id}::uuid
-            and token = ${context.claim.token}::uuid and state = 'active' and "leaseExpiresAt" > clock_timestamp()
-            and "cancelRequestedAt" is null for update`.execute(tx);
-          if (rows.length === 0) {
-            throw new Error('Producer lost its claim');
-          }
-          await this.store.enqueueFollowups(context.claim, batch, tx);
-        });
+      for (let offset = 0; offset < intents.length; offset += QUEUE_BATCH) {
+        const batch = intents.slice(offset, offset + QUEUE_BATCH);
+        await this.fenced(context, (tx) => this.store.enqueueFollowups(context.claim, batch, tx));
       }
     } else {
       await this.store.enqueue(intents);
@@ -1023,8 +1127,9 @@ export class JobRepository {
     return this.queueAll([item]);
   }
 
+  /** Held work (an import waiting for setup) is not waited for. */
   async waitForQueueCompletion(...queues: QueueName[]): Promise<void> {
-    while ((await Promise.all(queues.map((queue) => this.store.hasUnfinishedWork(queue)))).some(Boolean)) {
+    while ((await Promise.all(queues.map((queue) => this.store.hasUnfinishedWork(queue, false)))).some(Boolean)) {
       queueExecution.getStore()?.signal.throwIfAborted();
       await sleep(QUEUE_TIMING.scan);
     }
@@ -1037,8 +1142,9 @@ export class JobRepository {
       (extract(epoch from j."createdAt") * 1000)::bigint::float8 timestamp, j.attempt "attemptsMade", j.error "failedReason",
       case when j.state in ('failed','needs_attention','blocked') then 'failed'
         when j."operationPaused" then 'paused'
+        when j.state in ('pending','waiting') and j."availableAt" = 'infinity'::timestamptz then 'paused'
         when j.state in ('pending','waiting') and j."availableAt" > now() then 'delayed'
-        when j.state in ('pending','waiting') and q.paused then 'paused'
+        when j.state in ('pending','waiting') and (q.paused or coalesce(q."closedUntil" > now(), false)) then 'paused'
         when j.state = 'pending' then 'waiting' else j.state end status
       from (${reportedQueueJobs(name)}) j join job_queue q on q.name = j.queue
       ) jobs where status = any(${statuses}::text[])
@@ -1185,7 +1291,7 @@ export class JobRepository {
       }
       case JobName.SmartAlbumReevaluate: {
         // An asset's food evaluation must never coalesce with another asset or its travel evaluation.
-        return getManifestJobOptions(item.name, { id: item.data.id, kind: item.data.kind }) ?? null;
+        return { deduplication: { id: `${item.name}:${item.data.id}:${item.data.kind ?? 'all'}` } };
       }
       case JobName.AnalyticsCollect: {
         // FL-79: the nightly run is one per night; its one automatic retry waits a few minutes.

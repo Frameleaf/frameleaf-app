@@ -629,6 +629,12 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'untrackedFiles.enabled',
   },
   {
+    pattern: 'job.capacity',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/jobs/BackgroundWorkEveryday.svelte',
+    evidence: 'jobConfig.capacity',
+  },
+  {
     pattern: 'job.*.concurrency',
     kind: 'control',
     file: 'src/lib/components/frameleaf/jobs/BackgroundWorkOverview.svelte',

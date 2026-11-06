@@ -120,6 +120,7 @@ export const adminConfigDefaults = {
     integrityCheck: {
       concurrency: 1,
     },
+    capacity: 0,
   },
   logging: {
     enabled: true,

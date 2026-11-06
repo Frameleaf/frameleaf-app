@@ -2,7 +2,8 @@ import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { JobName, PetRecognitionRunStatus, QueueName } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
-import { pruneQueueHistory } from 'src/queue/retention.js';
+import { pruneQueueHistoryPage } from 'src/queue/retention.js';
+import { finishRuns } from 'src/queue/run-summary.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { QueueClaim } from 'src/queue/types.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -15,7 +16,7 @@ import { getLibraryQueueDB } from 'test/medium/library-queue-database.js';
 import { newMediumService } from 'test/medium.factory.js';
 
 /** Real queue transitions and transactions; fixture setup replaces media/ML work only. */
-describe('pet run reconciliation with canonical queue outcomes', () => {
+describe('pet run reconciliation with queue run outcomes', () => {
   let db: Kysely<DB>;
   let store: SqlQueueStore;
   let pets: PetRepository;
@@ -65,6 +66,8 @@ describe('pet run reconciliation with canonical queue outcomes', () => {
     await recordStoppedAttempt(db, claim.id, claim.token);
     await store.fail(claim, 'fixture setup failure');
   };
+  /** The coordinator sweep that finishes runs and writes their summary once. */
+  const settle = () => finishRuns(db, 10);
   const retry = async (claim: QueueClaim) => {
     await sql`update job set "availableAt" = now() where id = ${claim.id}::uuid`.execute(db);
     const [next] = await store.claim(queue, workerId);
@@ -81,48 +84,43 @@ describe('pet run reconciliation with canonical queue outcomes', () => {
   });
 
   it.each([
-    ['pending', 'needs_attention', PetRecognitionRunStatus.Failed],
-    ['pending', 'cancelled', PetRecognitionRunStatus.Cancelled],
-    ['completed', 'needs_attention', PetRecognitionRunStatus.Completed],
-  ] as const)(
-    'reconciles a retained %s shared executor under a %s cold header',
-    async (itemState, headerState, expected) => {
-      const ownerId = await newOwner(),
-        domain = await pets.startRun(ownerId, 'local');
-      const executorRun = await store.createRun('library-executor-status-fixture', {});
-      const secondaryRun = await store.createRun('library-secondary-status-fixture', {});
-      const ownerSource = randomUUID(),
-        secondarySource = randomUUID();
-      for (const [source, run, state] of [
-        [ownerSource, executorRun, headerState],
-        [secondarySource, secondaryRun, 'ready'],
-      ] as const) {
-        await sql`insert into job_selection(id,"runId",stage,queue,"safeToRetry",sensitive,"deadlineMs",state,
-        "sourceKind","libraryOperationId","capturedAt","sourceClosedAt")
-        values (${source}::uuid,${run}::uuid,'library-child/pet-status',${queue},true,false,60000,${state},
-          'library-child',${run}::uuid,now(),now())`.execute(db);
-        await sql`insert into job_selection_run("selectionId","runId","copyComplete") values (${source}::uuid,${run}::uuid,true)`.execute(
-          db,
-        );
-      }
-      await sql`insert into job_run_item("runId","itemKey","rootItemKey",stage,queue,selection,"selectionId",state)
-      values (${executorRun}::uuid,'owner','media-root',${JobName.PetRecognition},${queue},'{}'::jsonb,${ownerSource}::uuid,${itemState})`.execute(
-        db,
-      );
-      await sql`insert into job_run_item("runId","itemKey","rootItemKey",stage,queue,selection,"selectionId",state,"libraryExecutionRunId","libraryExecutionItemKey")
-      values (${secondaryRun}::uuid,'secondary','media-root',${JobName.PetRecognition},${queue},'{}'::jsonb,${secondarySource}::uuid,'pending',${executorRun}::uuid,'owner')`.execute(
-        db,
-      );
-      await sql`update job_run set "enumerationDone"=true,"finishedAt"=now() where id=${secondaryRun}::uuid`.execute(
-        db,
-      );
-      await pets.linkRun(domain.id, secondaryRun);
-      // No detailed job exists: outcome and source decision must survive payload/job retention.
-      expect(await pets.getRun(ownerId)).toMatchObject({ id: domain.id, status: expected });
-      expect(await pets.getRun(ownerId)).toMatchObject({ id: domain.id, status: expected });
-      expect((await sql`select id from job where queue=${queue}`.execute(db)).rows).toEqual([]);
-    },
-  );
+    [{ total: 3, completed: 1, failed: 1 }, PetRecognitionRunStatus.Failed],
+    [{ total: 3, completed: 2, blocked: 1 }, PetRecognitionRunStatus.Failed],
+    [{ total: 3, completed: 2, needsAttention: 1 }, PetRecognitionRunStatus.Failed],
+    [{ total: 3, completed: 2, cancelled: 1 }, PetRecognitionRunStatus.Cancelled],
+    [{ total: 3, completed: 3 }, PetRecognitionRunStatus.Completed],
+  ] as const)('settles from the finished run summary %j (FL-1265)', async (counts, expected) => {
+    const ownerId = await newOwner();
+    const domain = await start(ownerId);
+    // No job is left: the outcome survives job history pruning in the summary written once at finish.
+    await sql`delete from job where queue = ${queue}`.execute(db);
+    expect(await pets.getRun(ownerId)).toMatchObject({ id: domain.id, status: PetRecognitionRunStatus.Queued });
+    await sql`update job_run set "finishedAt" = now(),
+      summary = jsonb_build_object('complete', true, 'finishedAt', now(), 'counts', ${JSON.stringify(counts)}::text::jsonb)
+      where id = ${domain.id}::uuid`.execute(db);
+    expect(await pets.getRun(ownerId)).toMatchObject({ id: domain.id, status: expected });
+    expect(await pets.getRun(ownerId)).toMatchObject({ id: domain.id, status: expected });
+  });
+
+  it('settles a run whose producer failed after some photos completed as failed (FL-1265)', async () => {
+    const ownerId = await newOwner();
+    const domain = await start(ownerId);
+    await sql`delete from job where queue = ${queue}`.execute(db);
+    // the photo counts are all completed; only the task totals hold the failed producer
+    await sql`update job_run set "finishedAt" = now(), summary = jsonb_build_object('complete', true, 'finishedAt', now(),
+      'counts', '{"total":2,"completed":2}'::jsonb, 'stageTotals', '{"total":3,"completed":2,"failed":1}'::jsonb)
+      where id = ${domain.id}::uuid`.execute(db);
+    expect(await pets.getRun(ownerId)).toMatchObject({ id: domain.id, status: PetRecognitionRunStatus.Failed });
+  });
+
+  it('does not settle from a summary stamped for an earlier finish', async () => {
+    const ownerId = await newOwner();
+    const domain = await start(ownerId);
+    await sql`update job_run set "finishedAt" = now(), summary = jsonb_build_object('complete', true,
+      'finishedAt', now() - interval '1 hour', 'counts', '{"total":1,"failed":1}'::jsonb)
+      where id = ${domain.id}::uuid`.execute(db);
+    expect(await pets.getRun(ownerId)).toMatchObject({ status: PetRecognitionRunStatus.Queued });
+  });
 
   it('rolls back the replacement domain run, canonical run, linkage and admission together', async () => {
     const ownerId = await newOwner();
@@ -160,8 +158,9 @@ describe('pet run reconciliation with canonical queue outcomes', () => {
     expect(await store.claim(queue, workerId)).toEqual([]); // durable retry backoff
     const second = await retry(first);
     await fail(second);
+    await settle();
     await sql`update job set "finishedAt" = now() - interval '31 days' where id = ${first.id}::uuid`.execute(db);
-    await pruneQueueHistory(db);
+    await pruneQueueHistoryPage(db);
     const history = await sql`select id from job where id = ${first.id}::uuid`.execute(db);
     expect(history.rows).toEqual([]);
     expect(await pets.getRun(ownerId)).toMatchObject({
@@ -204,6 +203,7 @@ describe('pet run reconciliation with canonical queue outcomes', () => {
       expect(resumed).toEqual(JSON.parse(JSON.stringify(prepared)));
     });
     await fail(second);
+    await settle();
     expect(await pets.getRun(ownerId)).toMatchObject({ id: prepared[0].id, status: PetRecognitionRunStatus.Failed });
     expect(await pets.getRun(cancelledOwner)).toMatchObject({ status: PetRecognitionRunStatus.Cancelled });
     expect(await pets.getRun(replacedOwner)).toMatchObject({
@@ -212,7 +212,7 @@ describe('pet run reconciliation with canonical queue outcomes', () => {
     });
   });
 
-  it('reuses pre-setup run attachment when freezing a successful empty selection', async () => {
+  it('reuses pre-setup run attachment for a successful empty selection', async () => {
     const ownerId = await newOwner();
     const run = await start(ownerId);
     const [claim] = await store.claim(queue, workerId);
@@ -229,9 +229,58 @@ describe('pet run reconciliation with canonical queue outcomes', () => {
       expect(claim.runId).toBe(run.id);
     });
     await store.complete(claim, []);
+    await settle();
     expect(await pets.getRun(ownerId)).toMatchObject({ id: run.id, status: PetRecognitionRunStatus.Completed });
-    const { rows } = await sql`select id from job_selection where "runId" = ${run.id}::uuid`.execute(db);
-    expect(rows).toHaveLength(1);
+  });
+
+  it('counts the selected photos of the run from its jobs (FL-1265)', async () => {
+    const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
+    const { user } = await ctx.newUser();
+    const assets = [(await ctx.newAsset({ ownerId: user.id })).asset, (await ctx.newAsset({ ownerId: user.id })).asset];
+    const run = await start(user.id);
+    const [claim] = await store.claim(queue, workerId);
+    jobs['handlers'][JobName.PetRecognition] = { queueName: queue as QueueName } as never;
+    await inClaim(claim, () =>
+      jobs.queueSelection(
+        JobName.PetRecognition,
+        db
+          .selectFrom('asset')
+          .select(['asset.id', sql<Record<string, unknown>>`jsonb_build_object('runId', ${run.id}::text)`.as('data')])
+          .where('asset.ownerId', '=', user.id),
+      ),
+    );
+    await pets.setSelectedRunAssets(run.id, run.id);
+    expect(await pets.getRun(user.id)).toMatchObject({
+      assetCount: assets.length,
+      status: PetRecognitionRunStatus.Running,
+    });
+  });
+
+  it('selects the photos again for a restarted run while the earlier run still has them waiting (FL-1265)', async () => {
+    const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
+    const { user } = await ctx.newUser();
+    await ctx.newAsset({ ownerId: user.id });
+    jobs['handlers'][JobName.PetRecognition] = { queueName: queue as QueueName } as never;
+    const intent = jobs['intent']({ name: JobName.PetRecognition, data: {} } as never);
+    const select = (runId: string) =>
+      db.transaction().execute((tx) =>
+        store.insertSelectionPage(
+          { ...intent, runId },
+          db
+            .selectFrom('asset')
+            .select(['asset.id', sql<Record<string, unknown>>`jsonb_build_object('runId', ${runId}::text)`.as('data')])
+            .where('asset.ownerId', '=', user.id),
+          null,
+          10,
+          tx,
+        ),
+      );
+    const first = await start(user.id);
+    expect(await select(first.id)).toMatchObject({ inserted: 1 });
+    const restarted = await start(user.id);
+    expect(await select(restarted.id)).toMatchObject({ inserted: 1 });
+    await pets.setSelectedRunAssets(restarted.id, restarted.id);
+    expect(await pets.getRun(user.id)).toMatchObject({ id: restarted.id, assetCount: 1 });
   });
 
   it('keeps paused and dependency-deferred work live, then reflects canonical cancellation', async () => {
@@ -243,7 +292,10 @@ describe('pet run reconciliation with canonical queue outcomes', () => {
     const [claim] = await store.claim(queue, workerId);
     await store.defer(claim, 'destination-unavailable');
     expect(await pets.getRun(ownerId)).toMatchObject({ status: PetRecognitionRunStatus.Queued });
+    await settle();
+    expect(await pets.getRun(ownerId)).toMatchObject({ status: PetRecognitionRunStatus.Queued });
     await store.clear(queue, ['pending', 'waiting']);
+    await settle();
     expect(await pets.getRun(ownerId)).toMatchObject({ status: PetRecognitionRunStatus.Cancelled });
     expect(await store.claim(queue, workerId)).toEqual([]);
   });
@@ -279,11 +331,12 @@ describe('pet run reconciliation with canonical queue outcomes', () => {
     } = await sql<{ state: string; attempt: number }>`select state, attempt from job
       where id = ${claim.id}::uuid`.execute(db);
     expect(outcome).toEqual({ state: 'needs_attention', attempt: 1 });
+    await settle();
     expect(await pets.getRun(ownerId)).toMatchObject({ id: run.id, status: PetRecognitionRunStatus.Failed });
     expect(await store.claim(queue, workerId)).toEqual([]);
   });
 
-  it('refuses a replaced or different-owner explicit request and fences stale producer attachment', async () => {
+  it('refuses a replaced or different-owner explicit request and keeps a stale producer in its run', async () => {
     const ownerId = await newOwner();
     const otherOwner = await newOwner();
     const old = await start(ownerId);
@@ -294,8 +347,11 @@ describe('pet run reconciliation with canonical queue outcomes', () => {
     expect(await pets.getRun(otherOwner, old.id)).toBeUndefined();
     expect(await pets.getRun(ownerId, replacement.id)).toMatchObject({ id: replacement.id });
     await fail(claim);
+    // The producer already belongs to its run; a stale claim reads it back and writes nothing.
     await inClaim(claim, async () => {
-      await expect(jobs.ensureProducerRun()).rejects.toThrow('lost its claim');
+      expect(await jobs.ensureProducerRun()).toBe(old.id);
     });
+    const { rows } = await sql<{ runId: string }>`select "runId" from job where id = ${claim.id}::uuid`.execute(db);
+    expect(rows).toEqual([{ runId: old.id }]);
   });
 });

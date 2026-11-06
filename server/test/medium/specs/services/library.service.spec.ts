@@ -1112,15 +1112,11 @@ describe(LibraryService.name, () => {
         expect.objectContaining({ status: MediaOperationStatus.Completed }),
       );
 
-      const { rows: intents } = await sql`select "libraryIntent" from job_run_item
-        where "rootItemKey"=${asset.id} and stage=${JobName.SidecarCheck}`.execute(ctx.database);
+      // FL-1265: the scan batch commits the photo's job in the scan's run.
+      const { rows: intents } = await sql`select name, data from job
+        where "rootItemKey"=${asset.id} and name=${JobName.SidecarCheck}`.execute(ctx.database);
       expect(intents).toEqual([
-        expect.objectContaining({
-          libraryIntent: expect.objectContaining({
-            name: JobName.SidecarCheck,
-            data: { id: asset.id, source: 'upload' },
-          }),
-        }),
+        { name: JobName.SidecarCheck, data: expect.objectContaining({ id: asset.id, source: 'upload' }) },
       ]);
       expect(ctx.getMock(JobRepository).queueAll).not.toHaveBeenCalled();
     });

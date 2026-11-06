@@ -2,7 +2,6 @@ import { Kysely, KyselyPlugin, RawNode, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
-import { onTestFailed } from 'vitest';
 import { defaults, mapAdminConfig } from 'src/dtos/config.dto.js';
 import { JobName, QueueName } from 'src/enum.js';
 import { digest } from 'src/immich-import/adapters.js';
@@ -10,13 +9,11 @@ import { IMPORT_DERIVED_STAGES, importDerivedRunId } from 'src/immich-import/der
 import { assertImmichImportActivated } from 'src/immich-import/state.js';
 import { ImportConfig } from 'src/immich-import/types.js';
 import { queueExecution } from 'src/queue/context.js';
-import { freezeSelection } from 'src/queue/manifest.js';
 import { SqlQueueStore } from 'src/queue/store.js';
-import { QUEUE_BATCH, QUEUE_HIGH_WATER, QUEUE_LOW_WATER, QueueClaim } from 'src/queue/types.js';
+import { QUEUE_BATCH, QueueClaim } from 'src/queue/types.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { FrameleafLibrarySetupService } from 'src/services/frameleaf-library-setup.service.js';
 import { getKyselyConfig } from 'src/utils/database.js';
-import { createImportScaleDiagnostics } from 'test/medium/import-scale-diagnostics.js';
 import { SCALE_ITEMS, scaleIt } from 'test/medium/scale.js';
 import { PostgresImportFixture } from 'test/medium/specs/immich-import/postgres-transport.fixture.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -56,7 +53,7 @@ const repositoryFor = (db: Kysely<any>) => {
 const observe = (
   options: {
     beforeAcknowledgement?: (number: number) => void;
-    beforeCapture?: (number: number) => void;
+    beforeInsert?: (number: number) => void;
     afterCapture?: () => void;
   } = {},
 ) => {
@@ -68,8 +65,8 @@ const observe = (
       const statement = node.kind === 'RawNode' ? (node as RawNode).sqlFragments.join(' ') : '';
       if (statement.startsWith('update frameleaf_immich_import_work w'))
         options.beforeAcknowledgement?.(++acknowledgement);
-      if (statement.startsWith('insert into job_selection(')) options.beforeCapture?.(++captures);
-      // This next read happens after freezeSelection has returned and its capture has committed.
+      if (statement.startsWith('insert into job(')) options.beforeInsert?.(++captures);
+      // This next read happens after every stage's insert has committed.
       if (statement.startsWith('select asset_id, kind from frameleaf_immich_import_work')) options.afterCapture?.();
       return node;
     },
@@ -109,67 +106,48 @@ describe('offline import derived-work durable ownership', () => {
       select md5(n::text)::uuid, kind from generate_series(1, ${count}) n
       cross join unnest(${IMPORT_DERIVED_STAGES.map(([kind]) => kind)}::text[]) kind`.execute(db);
   };
+  /** FL-1265: the import's work is its jobs; `held` counts those waiting for setup (`availableAt = 'infinity'`). */
   const counts = async () =>
     (
       await sql<{
         runs: number;
-        stages: number;
         roots: number;
-        memberships: number;
+        jobs: number;
+        held: number;
         acknowledged: number;
         pending: number;
-        jobs: number;
       }>`select (select count(*)::int from job_run) runs,
-    (select count(*)::int from job_selection where stage <> ${IDENTICAL}) stages,
-    (select count(distinct "rootItemKey")::int from job_run_item where stage <> ${IDENTICAL}) roots,
-    (select count(*)::int from job_run_item where stage <> ${IDENTICAL}) memberships,
+    (select count(distinct "rootItemKey")::int from job where name <> ${IDENTICAL}) roots,
+    (select count(*)::int from job where name <> ${IDENTICAL}) jobs,
+    (select count(*)::int from job where "availableAt" = 'infinity') held,
     (select count(*)::int from frameleaf_immich_import_work where dispatched_at is not null) acknowledged,
-    (select count(*)::int from frameleaf_immich_import_work where dispatched_at is null) pending,
-    (select count(*)::int from job) jobs`.execute(db)
+    (select count(*)::int from frameleaf_immich_import_work where dispatched_at is null) pending`.execute(db)
     ).rows[0];
+  const holds = async () =>
+    (await sql<{ holds: unknown }>`select selection->'holds' as holds from job_run`.execute(db)).rows[0]?.holds;
 
-  it('transfers once without workers or hot jobs and retains one root per asset with four stages', async () => {
+  it('transfers once into one job per asset and stage, plus people thumbnails and identical files', async () => {
     await seed(2);
     expect(await repository.dispatchImportedWork()).toBe(runId);
-    expect(await counts()).toEqual({
-      runs: 1,
-      stages: 5,
-      roots: 2,
-      memberships: 8,
-      acknowledged: 8,
-      pending: 0,
-      jobs: 0,
-    });
-    expect(await new SqlQueueStore(db).listRuns(10, 0)).toEqual([
-      expect.objectContaining({
-        id: runId,
-        // two assets with four stages each, and the identical-files item (FL-414)
-        total: 3,
-        enumerationDone: true,
-        state: 'unavailable',
-        stageTotals: expect.objectContaining({ total: 9, waiting: 9 }),
-      }),
-    ]);
+    expect(await counts()).toEqual({ runs: 1, roots: 2, jobs: 8, held: 0, acknowledged: 8, pending: 0 });
     expect(await repositoryFor(db).dispatchImportedWork()).toBe(runId);
-    expect((await counts()).memberships).toBe(8);
+    expect((await counts()).jobs).toBe(8);
+    expect((await sql`select "enumerationDone", selection ? 'holds' as held from job_run`.execute(db)).rows).toEqual([
+      { enumerationDone: true, held: false },
+    ]);
+    // FL-414: the identical-files item is inserted with the import run and runs with it
     expect(
       (
-        await sql`select state, "capturedAt" is not null as captured from job_selection
-      where stage = ${JobName.PersonGenerateThumbnail}`.execute(db)
-      ).rows,
-    ).toEqual([{ state: 'ready', captured: true }]);
-    // FL-414: the identical-files stage is frozen with the import run and admitted with it
-    expect(
-      (
-        await sql`select s.state, s.queue, i."itemKey", i.selection from job_selection s
-      join job_run_item i on i."selectionId" = s.id where s.stage = ${IDENTICAL}`.execute(db)
+        await sql`select queue, "itemKey", "rootItemKey", data, "availableAt" <= now() as ready from job
+        where name = ${IDENTICAL}`.execute(db)
       ).rows,
     ).toEqual([
       {
-        state: 'ready',
         queue: QueueName.StorageTemplateMigration,
         itemKey: 'identical-files',
-        selection: { id: 'identical-files', importRunId: runId },
+        rootItemKey: 'identical-files',
+        data: { id: 'identical-files', importRunId: runId },
+        ready: true,
       },
     ]);
   });
@@ -191,6 +169,16 @@ describe('offline import derived-work durable ownership', () => {
       },
     };
   };
+  const allHeld = Object.fromEntries(
+    [
+      JobName.AssetExtractMetadata,
+      JobName.AssetGenerateThumbnails,
+      JobName.SmartSearch,
+      JobName.AssetDetectFaces,
+      JobName.PersonGenerateThumbnail,
+      IDENTICAL,
+    ].map((stage) => [stage, 'setup']),
+  );
 
   it.each(['missing config', 'wrong installation', 'wrong operation', 'wrong origin', 'changed config'])(
     'refuses Manager preparation with %s before creating a run or acknowledging work',
@@ -225,34 +213,28 @@ describe('offline import derived-work durable ownership', () => {
       await expect(repository.dispatchImportedWork(invalid === 'missing config' ? undefined : config)).rejects.toThrow(
         code,
       );
-      expect(await counts()).toMatchObject({ runs: 0, stages: 0, acknowledged: 0, pending: 4, jobs: 0 });
+      expect(await counts()).toMatchObject({ runs: 0, jobs: 0, acknowledged: 0, pending: 4 });
     },
   );
 
-  it('commits even a partial Manager capture held, then resumes all five stages without publishing work', async () => {
+  it('holds even a partial Manager transfer, then resumes every stage held without starting work', async () => {
     const config = managerConfig();
     await sql`update frameleaf_immich_import set config_fingerprint = ${digest(config)}`.execute(db);
     await seed(2);
     const id = importDerivedRunId('source-fixture', digest(config));
     const fault = observe({
-      beforeCapture: (number) => {
+      beforeInsert: (number) => {
         if (number === 2) throw new Error('interrupted preparation');
       },
     });
     await expect(repositoryFor(db.withPlugin(fault.plugin)).dispatchImportedWork(config)).rejects.toThrow(
       'interrupted preparation',
     );
-    expect((await sql`select state, "capturedAt" is not null as captured from job_selection`.execute(db)).rows).toEqual(
-      [{ state: 'enumerating', captured: true }],
-    );
+    expect(await counts()).toMatchObject({ runs: 1, jobs: 2, held: 2, acknowledged: 0 });
     expect((await sql`select selection->'managerSetup' as setup from job_run`.execute(db)).rows).toEqual([
       { setup: { installation: 'abcdef123456', operationId: 'fixture-operation', preparedAt: null, startedAt: null } },
     ]);
-    for (const queue of queues) expect(await store.feedManifest(queue)).toBe(0);
     expect(await repositoryFor(db).dispatchImportedWork(config)).toBe(id);
-    expect((await sql`select state, "capturedAt" is not null as captured from job_selection`.execute(db)).rows).toEqual(
-      Array.from({ length: 6 }, () => ({ state: 'enumerating', captured: true })),
-    );
     const prepared = (await sql`select selection, "enumerationDone" from job_run`.execute(db)).rows;
     expect(prepared).toEqual([
       {
@@ -261,6 +243,7 @@ describe('offline import derived-work durable ownership', () => {
           source: 'source-fixture',
           config: digest(config),
           managerSetupRequired: true,
+          holds: allHeld,
           managerSetup: {
             installation: 'abcdef123456',
             operationId: 'fixture-operation',
@@ -272,93 +255,32 @@ describe('offline import derived-work durable ownership', () => {
     ]);
     expect(await repositoryFor(db).dispatchImportedWork(config)).toBe(id);
     expect((await sql`select selection, "enumerationDone" from job_run`.execute(db)).rows).toEqual(prepared);
-    for (const queue of queues) expect(await store.feedManifest(queue)).toBe(0);
-    expect(await counts()).toMatchObject({ runs: 1, stages: 5, memberships: 8, acknowledged: 8, pending: 0, jobs: 0 });
+    expect(await counts()).toMatchObject({ runs: 1, jobs: 8, held: 9, acknowledged: 8, pending: 0 });
+    const worker = randomUUID();
+    await store.initialize(queues, worker);
+    for (const queue of queues) expect(await store.claim(queue, worker)).toEqual([]);
   });
 
-  it('does not re-hold started work or revive cancelled and attention stages on Manager resume', async () => {
+  it('reads the holds a concurrent release wrote and never re-holds released work on resume', async () => {
     const config = managerConfig();
     await sql`update frameleaf_immich_import set config_fingerprint = ${digest(config)}`.execute(db);
     await seed(1);
     const id = await repository.dispatchImportedWork(config);
-    // Model the setup service's committed release; actual settings/admin/journal authority is tested there.
-    await db.transaction().execute(async (tx) => {
-      await sql`select id from job_run where id = ${id}::uuid for update`.execute(tx);
-      await sql`update job_run set selection = jsonb_set(selection, '{managerSetup,startedAt}', to_jsonb(clock_timestamp()))
-        where id = ${id}::uuid`.execute(tx);
-      await sql`update job_selection set state = case
-        when stage = ${JobName.AssetExtractMetadata} then 'cancelled'
-        when stage = ${JobName.SmartSearch} then 'needs_attention' else 'ready' end`.execute(tx);
-    });
+    // Model the setup service's committed release of the early stages; its authority is tested there.
+    await sql`update job_run set selection = jsonb_set(jsonb_set(selection, '{managerSetup,startedAt}',
+        to_jsonb(clock_timestamp())), '{holds}', (selection->'holds') - ${JobName.AssetExtractMetadata}::text)
+      where id = ${id}::uuid`.execute(db);
+    await sql`update job set "availableAt" = now() where name = ${JobName.AssetExtractMetadata}`.execute(db);
+    // A metadata row lost since (as if it was never inserted) comes back released, the rest stay held.
+    await sql`delete from job where name = ${JobName.AssetExtractMetadata}`.execute(db);
     const prepared = (await sql`select selection from job_run`.execute(db)).rows;
-    const selections = (await sql`select id, state from job_selection order by id`.execute(db)).rows;
     expect(await repositoryFor(db).dispatchImportedWork(config)).toBe(id);
     expect((await sql`select selection from job_run`.execute(db)).rows).toEqual(prepared);
-    expect((await sql`select id, state from job_selection order by id`.execute(db)).rows).toEqual(selections);
-    expect(await store.feedManifest(QueueName.MetadataExtraction)).toBe(0);
-    expect(await store.feedManifest(QueueName.SmartSearch)).toBe(0);
-    expect(await store.feedManifest(QueueName.ThumbnailGeneration)).toBe(1);
-    expect(await store.feedManifest(QueueName.ThumbnailGeneration)).toBe(0);
-    expect(await counts()).toMatchObject({ runs: 1, memberships: 4, acknowledged: 4, jobs: 1 });
-  });
-
-  it('reads a concurrent first-setup release after the run lock and never restores the hold', async () => {
-    const config = managerConfig();
-    await sql`update frameleaf_immich_import set config_fingerprint = ${digest(config)}`.execute(db);
-    await seed(1);
-    const id = await repository.dispatchImportedWork(config);
-    const attempted = Promise.withResolvers<void>();
-    const captureDb = db.withPlugin({
-      transformQuery: ({ node }) => {
-        const statement = node.kind === 'RawNode' ? (node as RawNode).sqlFragments.join(' ') : '';
-        if (statement.startsWith('select id from job_run') && statement.includes('for update')) attempted.resolve();
-        return node;
-      },
-      transformResult: ({ result }) => Promise.resolve(result),
-    });
-    let capture: Promise<unknown> | undefined;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      await db.transaction().execute(async (tx) => {
-        await sql`select id from job_run where id = ${id}::uuid for update`.execute(tx);
-        capture = freezeSelection(
-          captureDb,
-          {
-            name: JobName.AssetExtractMetadata,
-            queue: QueueName.MetadataExtraction,
-            data: {},
-            safeToRetry: true,
-            sensitive: false,
-            deadlineMs: 60_000,
-          },
-          db.selectFrom('frameleaf_immich_import_work').select('asset_id as id').where('kind', '=', 'metadata'),
-          undefined,
-          id,
-          sql<'enumerating' | 'ready'>`case when (select selection #>> '{managerSetup,startedAt}'
-          from job_run where id = ${id}::uuid) is not null then 'ready' else 'enumerating' end`,
-        );
-        // Attach a rejection handler immediately, while preserving the original promise for assertion.
-        void capture.catch(() => {});
-        await Promise.race([
-          attempted.promise,
-          new Promise<never>((_, reject) => {
-            timer = setTimeout(() => reject(new Error('capture did not attempt the setup run lock')), 5000);
-          }),
-        ]);
-        await sql`update job_run set selection = jsonb_set(selection, '{managerSetup,startedAt}', to_jsonb(clock_timestamp()))
-          where id = ${id}::uuid`.execute(tx);
-        await sql`update job_selection set state = 'ready' where "runId" = ${id}::uuid and state = 'enumerating'`.execute(
-          tx,
-        );
-      });
-      await expect(capture).resolves.toBe(id);
-      expect((await sql`select distinct state from job_selection`.execute(db)).rows).toEqual([{ state: 'ready' }]);
-      expect(await store.feedManifest(QueueName.MetadataExtraction)).toBe(1);
-      expect(await counts()).toMatchObject({ runs: 1, memberships: 4, jobs: 1 });
-    } finally {
-      clearTimeout(timer);
-      await capture?.catch(() => {});
-    }
+    const worker = randomUUID();
+    await store.initialize(queues, worker);
+    expect(await store.claim(QueueName.MetadataExtraction, worker)).toHaveLength(1);
+    expect(await store.claim(QueueName.ThumbnailGeneration, worker)).toEqual([]);
+    expect(await counts()).toMatchObject({ runs: 1, jobs: 4, acknowledged: 4 });
   });
 
   it.each([undefined, { mode: 'independent-copy' as const }])(
@@ -377,10 +299,7 @@ describe('offline import derived-work durable ownership', () => {
       await expect(repositoryFor(db).dispatchImportedWork(config)).rejects.toThrow(
         'DERIVED_MANAGER_SETUP_IDENTITY_MISMATCH',
       );
-      expect((await sql`select distinct state from job_selection`.execute(db)).rows).toEqual([
-        { state: 'enumerating' },
-      ]);
-      expect(await counts()).toMatchObject({ runs: 1, stages: 5, jobs: 0 });
+      expect(await counts()).toMatchObject({ runs: 1, jobs: 4, held: 5 });
     },
   );
 
@@ -401,10 +320,8 @@ describe('offline import derived-work durable ownership', () => {
       await expect(repositoryFor(db).dispatchImportedWork(config)).rejects.toThrow(
         'DERIVED_MANAGER_SETUP_IDENTITY_MISMATCH',
       );
-      expect((await sql`select distinct state from job_selection`.execute(db)).rows).toEqual([
-        { state: 'enumerating' },
-      ]);
-      expect(await counts()).toMatchObject({ runs: 1, stages: 5, jobs: 0 });
+      expect(await counts()).toMatchObject({ runs: 1, jobs: 4, held: 5 });
+      expect(await holds()).toEqual(allHeld);
     },
   );
 
@@ -417,9 +334,7 @@ describe('offline import derived-work durable ownership', () => {
       await sql`update frameleaf_immich_import set config_fingerprint = ${digest(config)}`.execute(db);
       await seed(1);
       await repository.dispatchImportedWork(config);
-      expect((await sql`select distinct state from job_selection`.execute(db)).rows).toEqual([
-        { state: 'enumerating' },
-      ]);
+      expect(await holds()).toEqual(allHeld);
       expect(
         (await sql<{ marker: unknown }>`select selection->'managerSetup' as marker from job_run`.execute(db)).rows[0]
           .marker,
@@ -429,23 +344,20 @@ describe('offline import derived-work durable ownership', () => {
         preparedAt: expect.any(String),
         startedAt: null,
       });
-      expect(await store.feedManifest(QueueName.MetadataExtraction)).toBe(0);
       vi.stubEnv('FRAMELEAF_MANAGER_INSTALLATION', 'abcdef654321');
       await expect(repository.dispatchImportedWork(config)).rejects.toThrow('DERIVED_MANAGER_SETUP_IDENTITY_MISMATCH');
-      expect((await sql`select distinct state from job_selection`.execute(db)).rows).toEqual([
-        { state: 'enumerating' },
-      ]);
+      expect(await holds()).toEqual(allHeld);
       vi.stubEnv('FRAMELEAF_MANAGER_INSTALLATION', 'abcdef123456');
       vi.stubEnv('FRAMELEAF_MANAGER_ML_ENABLED', 'true');
       await sql`delete from system_metadata where key='frameleaf-manager-library-setup:abcdef123456'`.execute(db);
       await sql`update frameleaf_immich_import set status='activated'`.execute(db);
+      const counted = vi.fn().mockResolvedValue({ active: 0, waiting: 0, delayed: 0, paused: 0, failed: 0 });
+      const setupJobs = Object.assign(repositoryFor(db), { getJobCounts: counted });
       const setup = new FrameleafLibrarySetupService(
         db,
         { getAll: vi.fn().mockResolvedValue([]) } as never,
         {} as never,
-        {
-          getJobCounts: vi.fn().mockResolvedValue({ active: 0, waiting: 0, delayed: 0, paused: 0, failed: 0 }),
-        } as never,
+        setupJobs,
         { hasAdmin: vi.fn().mockResolvedValue(true) } as never,
         {} as never,
         {} as never,
@@ -456,16 +368,22 @@ describe('offline import derived-work durable ownership', () => {
         {} as never,
       );
       await setup.begin();
-      expect(
-        (
-          await sql<{ stage: string }>`select stage from job_selection where state='ready' order by stage`.execute(db)
-        ).rows.map(({ stage }) => stage),
-      ).toEqual([JobName.AssetExtractMetadata, JobName.AssetGenerateThumbnails].sort());
-      expect(await store.feedManifest(QueueName.MetadataExtraction)).toBe(1);
+      // First setup starts the run: the early stages run now, the rest wait for the file check.
+      expect(await holds()).toEqual({
+        [JobName.SmartSearch]: 'setup',
+        [JobName.AssetDetectFaces]: 'setup',
+        [JobName.PersonGenerateThumbnail]: 'setup',
+        [IDENTICAL]: 'setup',
+      });
+      while ((await store.reconcileHolds(1000)) > 0);
+      const worker = randomUUID();
+      await store.initialize(queues, worker);
+      expect(await store.claim(QueueName.MetadataExtraction, worker)).toHaveLength(1);
+      expect(await store.claim(QueueName.SmartSearch, worker)).toEqual([]);
     },
   );
 
-  it('reuses frozen memberships after a crash before the first journal acknowledgement', async () => {
+  it('reuses inserted jobs after a crash before the first journal acknowledgement', async () => {
     await seed(3);
     const fault = observe({
       afterCapture: () => {
@@ -475,35 +393,28 @@ describe('offline import derived-work durable ownership', () => {
     await expect(repositoryFor(db.withPlugin(fault.plugin)).dispatchImportedWork()).rejects.toThrow(
       'lost capture acknowledgement',
     );
-    const before = (await sql`select id from job_selection order by id`.execute(db)).rows;
-    expect(await counts()).toMatchObject({ stages: 5, memberships: 12, pending: 12, acknowledged: 0, jobs: 0 });
+    const before = (await sql`select id from job order by id`.execute(db)).rows;
+    expect(await counts()).toMatchObject({ jobs: 12, pending: 12, acknowledged: 0 });
     expect(await repositoryFor(db).dispatchImportedWork()).toBe(runId);
-    expect((await sql`select id from job_selection order by id`.execute(db)).rows).toEqual(before);
-    expect(await counts()).toMatchObject({ memberships: 12, pending: 0, acknowledged: 12, jobs: 0 });
+    expect((await sql`select id from job order by id`.execute(db)).rows).toEqual(before);
+    expect(await counts()).toMatchObject({ jobs: 12, pending: 0, acknowledged: 12 });
   });
 
-  it('resumes the same run after only one stage has committed its snapshot', async () => {
+  it('resumes the same run after only one stage has committed its jobs', async () => {
     await seed(3);
     const fault = observe({
-      beforeCapture: (number) => {
-        if (number === 2) throw new Error('connection lost between stage captures');
+      beforeInsert: (number) => {
+        if (number === 2) throw new Error('connection lost between stage inserts');
       },
     });
     await expect(repositoryFor(db.withPlugin(fault.plugin)).dispatchImportedWork()).rejects.toThrow(
-      'connection lost between stage captures',
+      'connection lost between stage inserts',
     );
-    const [captured] = (await sql<{ id: string }>`select id from job_selection`.execute(db)).rows;
-    expect(await counts()).toMatchObject({ runs: 1, stages: 1, memberships: 3, pending: 12, acknowledged: 0, jobs: 0 });
+    const [inserted] = (await sql<{ id: string }>`select id from job limit 1`.execute(db)).rows;
+    expect(await counts()).toMatchObject({ runs: 1, jobs: 3, pending: 12, acknowledged: 0 });
     expect(await repositoryFor(db).dispatchImportedWork()).toBe(runId);
-    expect((await sql`select id from job_selection where id = ${captured.id}::uuid`.execute(db)).rows).toHaveLength(1);
-    expect(await counts()).toMatchObject({
-      runs: 1,
-      stages: 5,
-      memberships: 12,
-      pending: 0,
-      acknowledged: 12,
-      jobs: 0,
-    });
+    expect((await sql`select id from job where id = ${inserted.id}::uuid`.execute(db)).rows).toHaveLength(1);
+    expect(await counts()).toMatchObject({ runs: 1, jobs: 12, pending: 0, acknowledged: 12 });
   });
 
   it('rolls back every acknowledgement in a page if even one retained payload is inconsistent', async () => {
@@ -516,13 +427,13 @@ describe('offline import derived-work durable ownership', () => {
     await expect(repositoryFor(db.withPlugin(fault.plugin)).dispatchImportedWork()).rejects.toThrow(
       'lost capture acknowledgement',
     );
-    await sql`update job_run_item set selection = '{}'::jsonb where ("runId", "itemKey", stage) = (
-      select "runId", "itemKey", stage from job_run_item order by "itemKey", stage limit 1)`.execute(db);
+    await sql`update job set data = '{}'::jsonb where id = (
+      select id from job where name <> ${IDENTICAL} order by "itemKey", name limit 1)`.execute(db);
     await expect(repositoryFor(db).dispatchImportedWork()).rejects.toThrow('DERIVED_WORK_MANIFEST_MISMATCH');
-    expect(await counts()).toMatchObject({ pending: 12, acknowledged: 0, memberships: 12, jobs: 0 });
+    expect(await counts()).toMatchObject({ pending: 12, acknowledged: 0, jobs: 12 });
   });
 
-  it('resumes after a committed 250-row acknowledgement without recapturing or creating executions', async () => {
+  it('resumes after a committed 250-row acknowledgement without inserting work twice', async () => {
     await seed(200);
     const fault = observe({
       beforeAcknowledgement: (number) => {
@@ -532,16 +443,16 @@ describe('offline import derived-work durable ownership', () => {
     await expect(repositoryFor(db.withPlugin(fault.plugin)).dispatchImportedWork()).rejects.toThrow(
       'connection lost after journal page',
     );
-    expect(await counts()).toMatchObject({ acknowledged: 250, pending: 550, memberships: 800, jobs: 0 });
+    expect(await counts()).toMatchObject({ acknowledged: 250, pending: 550, jobs: 800 });
     expect(await repositoryFor(db).dispatchImportedWork()).toBe(runId);
-    expect(await counts()).toMatchObject({ acknowledged: 800, pending: 0, memberships: 800, jobs: 0 });
+    expect(await counts()).toMatchObject({ acknowledged: 800, pending: 0, jobs: 800 });
     expect(fault.maximumRows()).toBe(QUEUE_BATCH);
   });
 
-  it.each(['legacy acknowledgement', 'changed identity', 'changed membership', 'added to an empty snapshot'])(
+  it.each(['legacy acknowledgement', 'changed identity', 'changed payload', 'changed queue'])(
     'fails closed for %s instead of minting a new retry budget',
     async (corruption) => {
-      if (corruption !== 'added to an empty snapshot') await seed(1);
+      await seed(1);
       if (corruption === 'legacy acknowledgement') {
         await sql`update frameleaf_immich_import_work set dispatched_at = now()`.execute(db);
         await expect(repository.dispatchImportedWork()).rejects.toThrow('ACKNOWLEDGEMENT_WITHOUT_RUN');
@@ -552,17 +463,17 @@ describe('offline import derived-work durable ownership', () => {
       switch (corruption) {
         case 'changed identity': {
           await sql`update job_run set selection = 'null'::jsonb`.execute(db);
-
           break;
         }
-        case 'changed membership': {
-          await sql`update job_run_item set selection = jsonb_build_object('id', 'another-asset')`.execute(db);
-
+        case 'changed payload': {
+          await sql`update job set data = jsonb_build_object('id', 'another-asset')`.execute(db);
           break;
         }
-        case 'added to an empty snapshot': {
-          await seed(1);
-
+        case 'changed queue': {
+          // The run's job for that asset and stage exists, so a resume cannot insert a correct one beside it.
+          await sql`update job set queue = ${QueueName.SmartSearch} where name = ${JobName.AssetExtractMetadata}`.execute(
+            db,
+          );
           break;
         }
         // No default
@@ -570,8 +481,7 @@ describe('offline import derived-work durable ownership', () => {
       await expect(repositoryFor(db).dispatchImportedWork()).rejects.toThrow(
         corruption === 'changed identity' ? 'DERIVED_RUN_IDENTITY_MISMATCH' : 'DERIVED_WORK_MANIFEST_MISMATCH',
       );
-      expect((await counts()).jobs).toBe(0);
-      expect((await counts()).runs).toBe(1);
+      expect(await counts()).toMatchObject({ runs: 1, jobs: 4 });
     },
   );
 
@@ -589,7 +499,6 @@ describe('offline import derived-work durable ownership', () => {
       await repository.dispatchImportedWork();
       const worker = randomUUID();
       await store.initialize(queues, worker);
-      expect(await store.feedManifest(queue)).toBe(1);
       const [first] = await store.claim(queue, worker);
       expect(first).toMatchObject({ runId, safeToRetry: true, attempt: 1 });
       const data = { id: first.itemKey, ...(queue === QueueName.FaceDetection && { preserveImportedFaces: true }) };
@@ -609,9 +518,9 @@ describe('offline import derived-work durable ownership', () => {
         );
       expect(await pin(first, 'paid-destination-original')).toBe('paid-destination-original');
       await store.fail(first, 'transport lost');
+      // The routing a handler added to the job's data does not fail the resumed audit (containment).
       await repositoryFor(db).dispatchImportedWork();
-      expect(await store.feedManifest(queue)).toBe(0);
-      await sql`update job set "availableAt" = now()`.execute(db);
+      await sql`update job set "availableAt" = now() where state = 'pending'`.execute(db);
       const [retry] = await new SqlQueueStore(db).claim(queue, worker);
       expect(retry).toMatchObject({ id: first.id, runId, itemKey: first.itemKey, attempt: 2 });
       expect(retry.data).toEqual({
@@ -623,71 +532,36 @@ describe('offline import derived-work durable ownership', () => {
       expect(await pin(retry, 'paid-destination-reconfigured')).toBe('paid-destination-original');
       await store.fail(retry, 'exhausted');
       await repositoryFor(db).dispatchImportedWork();
-      expect(await store.feedManifest(queue)).toBe(0);
       expect(await store.claim(queue, worker)).toEqual([]);
-      expect((await sql`select attempt, "retryBaseAttempt", state from job`.execute(db)).rows).toEqual([
-        { attempt: 2, retryBaseAttempt: 0, state: 'failed' },
-      ]);
-      // Completed thumbnail cleanup must not make the retained selection eligible again.
-      expect(await store.feedManifest(QueueName.ThumbnailGeneration)).toBe(1);
+      expect(
+        (await sql`select attempt, "retryBaseAttempt", state from job where queue = ${queue}`.execute(db)).rows,
+      ).toEqual([{ attempt: 2, retryBaseAttempt: 0, state: 'failed' }]);
       const [thumbnail] = await store.claim(QueueName.ThumbnailGeneration, worker);
       expect(thumbnail.data).toEqual({ id: thumbnail.itemKey }); // no upload/notify fanout flags
       await store.complete(thumbnail, []);
-      await sql`delete from job where id = ${thumbnail.id}::uuid`.execute(db);
       await repositoryFor(db).dispatchImportedWork();
-      expect(await store.feedManifest(QueueName.ThumbnailGeneration)).toBe(0);
-      expect((await counts()).memberships).toBe(4);
+      expect(await store.claim(QueueName.ThumbnailGeneration, worker)).toEqual([]);
+      expect((await counts()).jobs).toBe(4);
     },
   );
 
-  scaleIt('transfers %i roots and four stages each in bounded pages, then caps each queue at 1000', 0.6, async () => {
-    const diagnostics = createImportScaleDiagnostics(process.env.FRAMELEAF_MEDIUM_DIAGNOSTICS === '1');
-    onTestFailed(() => diagnostics.snapshot());
-    const diagnosticDb = db.withPlugin(diagnostics.plugin);
-    const diagnosticStore = new SqlQueueStore(diagnosticDb);
-    const feed = (store: SqlQueueStore, queue: QueueName) =>
-      diagnostics.run('share-feed', () => store.feedManifest(queue));
-    await diagnostics.run('seed', () => seed(SCALE_ITEMS));
+  scaleIt('transfers %i roots and four stages each in bounded acknowledgement pages', 0.6, async () => {
+    await seed(SCALE_ITEMS);
     const observed = observe();
     const started = performance.now();
-    await diagnostics.run('dispatch', () =>
-      repositoryFor(diagnosticDb.withPlugin(observed.plugin)).dispatchImportedWork(),
-    );
+    await repositoryFor(db.withPlugin(observed.plugin)).dispatchImportedWork();
     const transferredMs = performance.now() - started;
-    expect(await diagnostics.run('counts', counts)).toEqual({
+    expect(await counts()).toEqual({
       runs: 1,
-      stages: 5,
       roots: SCALE_ITEMS,
-      memberships: 4 * SCALE_ITEMS,
+      jobs: 4 * SCALE_ITEMS,
+      held: 0,
       acknowledged: 4 * SCALE_ITEMS,
       pending: 0,
-      jobs: 0,
     });
     expect(observed.maximumRows()).toBe(QUEUE_BATCH);
-    for (const queue of queues) {
-      for (let admitted = 0; admitted < QUEUE_HIGH_WATER; admitted += QUEUE_BATCH) {
-        expect(await feed(diagnosticStore, queue)).toBe(QUEUE_BATCH);
-      }
-      expect(await feed(new SqlQueueStore(diagnosticDb), queue)).toBe(0);
-    }
-    // Exercise the coordinator's low-water policy with deterministic completed fixture executions.
-    const queue = queues[0];
-    await diagnostics.run('low-water-update', () =>
-      sql`update job set state = 'completed' where id in (
-      select id from job where queue = ${queue} order by id limit ${QUEUE_HIGH_WATER - QUEUE_LOW_WATER - 1})`.execute(
-        db,
-      ),
-    );
-    expect(await feed(diagnosticStore, queue)).toBe(0);
-    await diagnostics.run('low-water-update', () =>
-      sql`update job set state = 'completed' where id = (
-      select id from job where queue = ${queue} and state = 'pending' order by id limit 1)`.execute(db),
-    );
-    expect(await feed(diagnosticStore, queue)).toBe(QUEUE_BATCH);
-    expect(await feed(diagnosticStore, queue)).toBe(QUEUE_BATCH);
-    expect(await feed(diagnosticStore, queue)).toBe(0);
     process.stdout.write(
-      `Import manifest: roots=${SCALE_ITEMS} stages=${4 * SCALE_ITEMS} transferMs=${Math.round(transferredMs)} maxRows=${observed.maximumRows()} queueCap=${QUEUE_HIGH_WATER}\n`,
+      `Import transfer: roots=${SCALE_ITEMS} jobs=${4 * SCALE_ITEMS} transferMs=${Math.round(transferredMs)}\n`,
     );
   });
 });
@@ -729,18 +603,21 @@ it.each(['independent-copy', 'manager-in-place'] as const)(
       expect(await fixture.destination.db.query('SELECT "importPaths" FROM public.library')).toEqual([
         { importPaths: [fixture.config.mediaRoots[0].target] },
       ]);
-      expect(await new SqlQueueStore(db).listRuns(10, 0)).toEqual([
-        // FL-414: only the identical-files item, which still recovers orphans in an empty library
-        expect.objectContaining({ enumerationDone: true, total: 1 }),
+      // FL-414: only the identical-files item, which still recovers orphans in an empty library
+      expect(
+        (
+          await sql`select name, "itemKey", data->>'importRunId' as "importRunId",
+            "availableAt" = 'infinity' as held from job`.execute(db)
+        ).rows,
+      ).toEqual([
+        {
+          name: IDENTICAL,
+          itemKey: 'identical-files',
+          importRunId: expect.any(String),
+          held: mode === 'manager-in-place',
+        },
       ]);
-      expect(
-        (await sql`select stage, "itemKey", selection->>'importRunId' as "importRunId" from job_run_item`.execute(db))
-          .rows,
-      ).toEqual([{ stage: IDENTICAL, itemKey: 'identical-files', importRunId: expect.any(String) }]);
-      expect(
-        (await sql`select state, count(*)::int as count from job_selection group by state`.execute(db)).rows,
-      ).toEqual([{ state: mode === 'manager-in-place' ? 'enumerating' : 'ready', count: 6 }]);
-      expect((await sql`select id from job`.execute(db)).rows).toEqual([]);
+      expect((await sql`select "enumerationDone" from job_run`.execute(db)).rows).toEqual([{ enumerationDone: true }]);
     } finally {
       await db?.destroy();
       await fixture.close();
@@ -814,15 +691,14 @@ it.each(['independent-copy', 'manager-in-place'] as const)(
       ).rejects.toThrow('lost handoff acknowledgement');
       await expect(assertImmichImportActivated(fixture.destination.db)).rejects.toThrow('NOT_ACTIVATED');
       const detection = (
-        await sql`select "runId", selection, "selectionId" from job_run_item
-          where stage = ${JobName.AssetDetectFaces}`.execute(db)
+        await sql`select id, "runId", data from job where name = ${JobName.AssetDetectFaces}`.execute(db)
       ).rows;
       expect(detection).toEqual([
-        expect.objectContaining({ selection: { id: fixture.asset, preserveImportedFaces: true } }),
+        expect.objectContaining({ data: { id: fixture.asset, preserveImportedFaces: true } }),
       ]);
       const before = (
-        await sql`select "runId", "itemKey", "rootItemKey", selection, "selectionId" from job_run_item
-      where stage = ${JobName.PersonGenerateThumbnail} order by "itemKey"`.execute(db)
+        await sql`select id, "runId", "itemKey", "rootItemKey", data from job
+      where name = ${JobName.PersonGenerateThumbnail} order by "itemKey"`.execute(db)
       ).rows;
       expect(before).toHaveLength(2);
       for (const ownerId of [fixture.owner, fixture.reader]) {
@@ -831,39 +707,37 @@ it.each(['independent-copy', 'manager-in-place'] as const)(
           expect.objectContaining({
             itemKey: id,
             rootItemKey: fixture.asset,
-            selection: { id, ownerId, personGroupId: person, selectionFaceId: face },
+            data: { id, ownerId, personGroupId: person, selectionFaceId: face },
           }),
         );
       }
       // A retained stage with altered face identity cannot acknowledge the import's repair obligation.
-      await sql`update job_run_item set selection = jsonb_set(selection, '{selectionFaceId}', to_jsonb(${protectedFace}::text))
-      where stage = ${JobName.PersonGenerateThumbnail}`.execute(db);
+      await sql`update job set data = jsonb_set(data, '{selectionFaceId}', to_jsonb(${protectedFace}::text))
+      where name = ${JobName.PersonGenerateThumbnail}`.execute(db);
       await expect(repositoryFor(db).dispatchImportedWork(fixture.config)).rejects.toThrow(
         'DERIVED_PERSON_WORK_MANIFEST_MISMATCH',
       );
-      await sql`update job_run_item set selection = jsonb_set(selection, '{selectionFaceId}', to_jsonb(${face}::text))
-      where stage = ${JobName.PersonGenerateThumbnail}`.execute(db);
+      await sql`update job set data = jsonb_set(data, '{selectionFaceId}', to_jsonb(${face}::text))
+      where name = ${JobName.PersonGenerateThumbnail}`.execute(db);
       await fixture.restartConnections();
-      // A missing preservation contract must not be accepted merely because capture already committed.
-      await sql`update job_run_item set selection = selection - 'preserveImportedFaces'
-        where stage = ${JobName.AssetDetectFaces}`.execute(db);
+      // A missing preservation contract must not be accepted merely because the insert already committed.
+      await sql`update job set data = data - 'preserveImportedFaces' where name = ${JobName.AssetDetectFaces}`.execute(
+        db,
+      );
       await expect(repositoryFor(db).dispatchImportedWork(fixture.config)).rejects.toThrow(
         'DERIVED_WORK_MANIFEST_MISMATCH',
       );
-      await sql`update job_run_item set selection = selection || '{"preserveImportedFaces":true}'::jsonb
-        where stage = ${JobName.AssetDetectFaces}`.execute(db);
+      await sql`update job set data = data || '{"preserveImportedFaces":true}'::jsonb
+        where name = ${JobName.AssetDetectFaces}`.execute(db);
       await fixture.importer().verify((config) => repositoryFor(db!).dispatchImportedWork(config));
       await expect(assertImmichImportActivated(fixture.destination.db)).resolves.toBeUndefined();
       expect(
-        (
-          await sql`select "runId", selection, "selectionId" from job_run_item
-            where stage = ${JobName.AssetDetectFaces}`.execute(db)
-        ).rows,
+        (await sql`select id, "runId", data from job where name = ${JobName.AssetDetectFaces}`.execute(db)).rows,
       ).toEqual(detection);
       expect(
         (
-          await sql`select "runId", "itemKey", "rootItemKey", selection, "selectionId" from job_run_item
-      where stage = ${JobName.PersonGenerateThumbnail} order by "itemKey"`.execute(db)
+          await sql`select id, "runId", "itemKey", "rootItemKey", data from job
+      where name = ${JobName.PersonGenerateThumbnail} order by "itemKey"`.execute(db)
         ).rows,
       ).toEqual(before);
       expect(
@@ -877,17 +751,14 @@ it.each(['independent-copy', 'manager-in-place'] as const)(
           face,
         ]),
       ).toEqual([{ id: face, personGroupId: person, isVisible: true }]);
-      if (mode === 'manager-in-place') {
-        expect(
-          (await sql`select state, count(*)::int as count from job_selection group by state`.execute(db)).rows,
-        ).toEqual([{ state: 'enumerating', count: 6 }]);
-        expect(await new SqlQueueStore(db).feedManifest(QueueName.ThumbnailGeneration)).toBe(0);
-      }
-      expect((await sql`select id from job`.execute(db)).rows).toEqual([]);
+      // Manager's import waits for first setup; a copied one runs as soon as it is inserted.
+      expect((await sql`select bool_and("availableAt" = 'infinity') as held from job`.execute(db)).rows).toEqual([
+        { held: mode === 'manager-in-place' },
+      ]);
       expect(
         (
-          await sql`select count(*)::int as count from job_run_item
-            where stage != ${JobName.PersonGenerateThumbnail} and stage != ${IDENTICAL}`.execute(db)
+          await sql`select count(*)::int as count from job
+            where name != ${JobName.PersonGenerateThumbnail} and name != ${IDENTICAL}`.execute(db)
         ).rows,
       ).toEqual([{ count: 4 }]);
     } finally {
@@ -912,17 +783,14 @@ it('verifies and activates a real offline source after durable transfer while al
     await expect(assertImmichImportActivated(fixture.destination.db)).resolves.toBeUndefined();
     const state = await importer.status();
     expect(state).toMatchObject({ status: 'activated', derivedRunId: expect.any(String), pendingDerivedWork: '0' });
-    expect((await sql`select id from job`.execute(db)).rows).toEqual([]);
     expect((await sql`select id from job_worker`.execute(db)).rows).toEqual([]);
-    expect(await new SqlQueueStore(db).listRuns(10, 0)).toEqual([
-      expect.objectContaining({
-        id: state.derivedRunId,
-        // one asset with its four stages, and the identical-files item (FL-414)
-        total: 2,
-        stageTotals: expect.objectContaining({ total: 5 }),
-        enumerationDone: true,
-      }),
-    ]);
+    // One asset with its four stages, and the identical-files item (FL-414); nothing has run.
+    expect(
+      (
+        await sql`select "runId", count(distinct "rootItemKey")::int as roots, count(*)::int as total,
+          bool_and(state = 'pending' and attempt = 0) as untouched from job group by "runId"`.execute(db)
+      ).rows,
+    ).toEqual([{ runId: state.derivedRunId, roots: 2, total: 5, untouched: true }]);
   } finally {
     await db?.destroy();
     await fixture.close();

@@ -281,18 +281,15 @@ describe('/jobs', () => {
               INSERT INTO job_run (id, kind, selection, "enumerationDone", "createdAt", "finishedAt")
               VALUES ($3::uuid, 'e2e-terminal-failed-api', jsonb_build_object('fixture', 'terminal-failed-api'),
                 true, now() - interval '35 seconds', now() - interval '1 second') RETURNING id
-            ), fixture_item AS (
-              INSERT INTO job_run_item ("runId", "itemKey", "rootItemKey", stage, queue, selection, "jobId", state)
-              SELECT r.id, a.id::text, a.id::text, $9::text, $8::text, jsonb_build_object('id', a.id), $2::uuid, 'failed'
-              FROM fixture_run r CROSS JOIN fixture_asset a RETURNING "runId", "itemKey"
             ), fixture_job AS (
               INSERT INTO job (id, queue, name, data, state, "safeToRetry", sensitive, "deadlineMs", attempt,
                 "retryBaseAttempt", "runId", "itemKey", "rootItemKey", "workerId", "availableAt", "createdAt",
                 "startedAt", "finishedAt", "progressAt", error)
-              SELECT $2::uuid, $8::text, $9::text, jsonb_build_object('id', i."itemKey"), 'failed', true, false,
-                600000, 2, 0, i."runId", i."itemKey", i."itemKey", w.id, now() + interval '29 seconds',
+              SELECT $2::uuid, $8::text, $9::text, jsonb_build_object('id', a.id::text), 'failed', true, false,
+                600000, 2, 0, r.id, a.id::text, a.id::text, w.id, now() + interval '29 seconds',
                 now() - interval '35 seconds', now() - interval '2 seconds', now() - interval '1 second',
-                now() - interval '2 seconds', $11::text FROM fixture_item i CROSS JOIN fixture_worker w RETURNING id
+                now() - interval '2 seconds', $11::text
+              FROM fixture_run r CROSS JOIN fixture_asset a CROSS JOIN fixture_worker w RETURNING id
             ), fixture_attempts AS (
               INSERT INTO job_attempt ("jobId", attempt, token, "workerId", "startedAt", "finishedAt", outcome, error)
               SELECT j.id, a.attempt, a.token, $4::uuid, now() - a.started, now() - a.finished, a.outcome, $11::text
@@ -384,7 +381,6 @@ describe('/jobs', () => {
               [jobId, workerId],
             );
             expect(removed.rows).toEqual([{ id: jobId }]);
-            await db.query('DELETE FROM job_run_item WHERE "runId" = $1 AND "jobId" = $2', [runId, jobId]);
             await db.query('DELETE FROM job_run WHERE id = $1', [runId]);
             await db.query('DELETE FROM job_worker WHERE id = $1', [workerId]);
             await db.query('DELETE FROM asset WHERE id = $1 AND "ownerId" = $2', [assetId, admin.userId]);
@@ -468,9 +464,8 @@ describe('/jobs', () => {
       expect(current.hasUnfinishedWork).toBe(true);
       expect(current.statistics).toMatchObject({ failed: 0, paused: 1, active: 0 });
       const { rows: retriedRows } = await db!.query(
-        `SELECT j.state, j.attempt, j."retryBaseAttempt", j.token,
-        i.state AS "itemState", r."finishedAt" AS "runFinishedAt" FROM job j
-        JOIN job_run_item i ON i."jobId" = j.id JOIN job_run r ON r.id = i."runId" WHERE j.id = $1`,
+        `SELECT j.state, j.attempt, j."retryBaseAttempt", j.token, r."finishedAt" AS "runFinishedAt"
+        FROM job j JOIN job_run r ON r.id = j."runId" WHERE j.id = $1`,
         [jobId],
       );
       const [retried] = retriedRows;
@@ -479,7 +474,6 @@ describe('/jobs', () => {
         attempt: 2,
         retryBaseAttempt: 2,
         token: null,
-        itemState: 'pending',
         runFinishedAt: null,
       });
       const { rows: attempts } = await db!.query(

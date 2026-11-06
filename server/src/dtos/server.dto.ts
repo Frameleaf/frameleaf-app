@@ -358,6 +358,16 @@ const ServerFeaturesSchema = z
     cloudMl: z.boolean().describe('Whether the Frameleaf Cloud plan includes cloud processing (FL-156)'),
     cloudBackup: z.boolean().describe('Whether the Frameleaf Cloud plan includes cloud backup (FL-156)'),
     supporter: z.boolean().describe('Whether this server carries a Frameleaf supporter licence (FL-156)'),
+    jobCapacity: z
+      .object({
+        value: z.int().min(1).max(32).describe('Jobs this server runs at once across all tasks, as in effect now'),
+        fromEnvironment: z
+          .boolean()
+          .describe('Whether FRAMELEAF_JOB_CAPACITY set it, so the job.capacity setting has no effect'),
+      })
+      .optional()
+      .describe('Background work capacity in effect (FL-1265)')
+      .meta({ id: 'ServerJobCapacityDto' }),
   })
   .meta({ id: 'ServerFeaturesDto' });
 

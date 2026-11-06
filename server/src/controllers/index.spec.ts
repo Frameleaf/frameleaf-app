@@ -95,6 +95,7 @@ const ADMIN_ROUTES = new Set([
   'POST eagle-imports/check',
   'PATCH libraries/:id',
   'POST jobs',
+  'POST jobs/runs/:id/release',
   'POST libraries',
   'POST libraries/:id/scan',
   // FL-539: Check every file again

@@ -478,11 +478,7 @@ export const utils = {
                             const { rows } = await query(
                               context,
                               `SELECT
-                    EXISTS (SELECT 1 FROM job WHERE state IN ('pending','waiting','active'))
-                    OR EXISTS (SELECT 1 FROM job_selection WHERE state IN ('enumerating','ready'))
-                    OR EXISTS (SELECT 1 FROM job_selection_run m JOIN job_selection s ON s.id = m."selectionId"
-                      WHERE NOT m."copyComplete" OR (m."runId" <> s."runId" AND m."libraryVersion" < s."appendSequence"))
-                    OR EXISTS (SELECT 1 FROM job_run_item WHERE "jobId" IS NULL AND "selectionId" IS NULL AND state IN ('pending','waiting','active')) unfinished`,
+                    EXISTS (SELECT 1 FROM job WHERE state IN ('pending','waiting','active')) unfinished`,
                             );
                             if (!rows[0].unfinished && !resetConfig) {
                               const operations = await unfinishedOperations(context);
@@ -508,14 +504,15 @@ export const utils = {
                           lastUnfinishedQueues = before
                             .filter((queue) => queue.hasUnfinishedWork)
                             .map((queue) => queue.name);
-                          phase = 'inspect sensitive library intents';
-                          const { rows: dirtyIntents } = await query(
+                          // FL-1265: Empty keeps held work (an import waiting for setup), so the reset removes it
+                          // itself; it never started, so it has no attempts or follow-ups.
+                          phase = 'remove held work';
+                          const { rows: heldWork } = await query(
                             context,
-                            `SELECT DISTINCT queue FROM job_run_item WHERE "jobId" IS NULL
-                            AND "libraryIntent"->>'sensitive' = 'true'
-                            AND ("libraryIntent" ? 'options' OR "libraryIntent"->'data' != '{}'::jsonb)`,
+                            `DELETE FROM job WHERE state IN ('pending','waiting') AND "availableAt" = 'infinity'
+                            RETURNING queue`,
                           );
-                          const dirtyQueues = new Set(dirtyIntents.map((row) => row.queue));
+                          const dirtyQueues = new Set(heldWork.map((row) => row.queue));
                           for (const queue of before) {
                             if (
                               !queue.hasUnfinishedWork &&

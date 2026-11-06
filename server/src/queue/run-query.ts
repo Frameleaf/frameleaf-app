@@ -1,13 +1,6 @@
-import { Kysely, RawBuilder, sql } from 'kysely';
+import { Kysely, sql } from 'kysely';
+import { createHash } from 'node:crypto';
 import { JobName, QueueName } from 'src/enum.js';
-import {
-  initialCanonicalOutcomeContext,
-  initialSelectionEntitlementRows,
-  libraryRunPending,
-  managerImportHeld,
-  selectionItemContext,
-  selectionItemState,
-} from 'src/queue/selection-state.js';
 
 export const RUN_OUTCOMES = [
   'completed',
@@ -55,7 +48,7 @@ export type RunReason =
   | 'destination-budget'
   | 'source-unavailable'
   | 'local-capacity';
-const DEPENDENCY_REASONS = [
+const DEPENDENCY_REASONS = new Set<string>([
   'workload-disabled',
   'destination-unavailable',
   'destination-configuration',
@@ -63,7 +56,13 @@ const DEPENDENCY_REASONS = [
   'destination-budget',
   'source-unavailable',
   'local-capacity',
-] as const;
+]);
+/** The public name of a stored dependency reason; internal ones (a missing Locked key) have none. */
+const publicDependency = (reason: string) => {
+  const name = reason === 'destination-capacity' ? 'destination-unavailable' : reason;
+  return DEPENDENCY_REASONS.has(name) ? (name as RunReason) : undefined;
+};
+
 export type RunRead = RunCounts & {
   id: string;
   kind: string;
@@ -76,8 +75,14 @@ export type RunRead = RunCounts & {
   lastStage: string | null;
   reasons: RunReason[];
   noDispatchBacklog: boolean;
-  /** FL-1177: selected items an import's first setup still holds back (the file check, or a paused setup). */
+  /** Photos (roots) with unstarted work a setup or pause hold keeps back. */
   held: number;
+  /** Something is held that the Jobs page may release (an import only once it is activated). */
+  canRelease: boolean;
+  /** The counts are photos (job roots); false: they are tasks. */
+  countsPhotos: boolean;
+  /** Queues with failed or needs-attention jobs in this run. */
+  failedQueues: string[];
 };
 export type RunItemRead = {
   id: string;
@@ -88,495 +93,494 @@ export type RunItemRead = {
   reasons: RunReason[];
 };
 
-// Capacity keeps its own retry policy in storage; reads retain the released public reason enum.
-// Neither payloads nor free-text errors enter these reads. Stage names are operational job names.
-// Bookkeeping (rootItemKey NULL) affects run settlement, but never selected-media item counts.
-// OFFSET 0 retains one effective-state evaluation without a second full materialized ledger.
-// The initial canonical tuple is its own entitlement/owner. Without either a detailed
-// job or retained executor pointer, the complete state context reduces to item/header state.
-// Frozen rows and admitted/shared owners keep the complete ownership/proof context.
-const initialCanonicalWithoutExecution = sql<boolean>`snapshot."sourceKind"='library-initial'
-  and i."runId"=snapshot."runId" and i."runId"=snapshot."libraryOperationId" and i."jobId" is null and i."libraryExecutionRunId" is null`;
+/** What a run's stored summary holds (`run-summary.ts`); migrated and FL-1215 summaries carry fewer fields. */
+export type RunSummary = {
+  complete: true;
+  finishedAt: string;
+  counts: RunCounts;
+  stageTotals: RunCounts;
+  dependencyFailed?: boolean;
+  lastProgressAt?: string | null;
+  /** FL-1215 summaries */
+  lastProgressUs?: string | null;
+  lastStage?: string | null;
+  countsPhotos?: boolean;
+  failedQueues?: string[];
+};
 
-// An initial alias with no sparse canonical exception has pending/null-owner state.
-// Item-specific frozen proofs cannot grant an initial row: their source must be library-child.
-const initialColdAliasWithoutExecution = sql<boolean>`snapshot."sourceKind"='library-initial'
-  and i."runId"!=snapshot."runId" and i.state='pending' and i."jobId" is null
-  and i."libraryExecutionRunId" is null and initial_canonical."itemKey" is null`;
-const simpleInitialState = sql<boolean>`(${initialCanonicalWithoutExecution}) or (${initialColdAliasWithoutExecution})`;
+type HoldReason = 'setup' | 'paused' | 'parked';
+type Holds = Record<string, HoldReason>;
+type Header = {
+  id: string;
+  kind: string;
+  createdAt: Date;
+  finishedAt: Date | null;
+  enumerationDone: boolean;
+  holds: Holds | null;
+  summary: RunSummary | null;
+  summarized: boolean;
+};
+/** Queue switches and worker liveness, read once for every run on a page. */
+type Surroundings = { paused: Set<string>; closed: Set<string>; workerAvailable: boolean };
+/** A run's counts before they are turned into a state and reasons. */
+export type RunAggregate = {
+  counts: RunCounts;
+  stageTotals: RunCounts;
+  countsPhotos: boolean;
+  failedQueues: string[];
+  dependencyFailed: boolean;
+  lastProgressAt: Date | null;
+  lastStage: string | null;
+  /** live tasks that keep the run open (parked stages left out) */
+  unfinished: number;
+  held: number;
+  heldReasons: Set<'setup' | 'paused'>;
+  dependencyReasons: RunReason[];
+  deferred: number;
+};
 
-const materializedInitialEntitlementContext = sql`left join initial_entitlements initial_entitlement
-  on initial_entitlement."runId"=i."runId" and initial_entitlement."selectionId"=snapshot.id`;
+const LIVE = new Set(['pending', 'waiting', 'active']);
+const zero = (): RunCounts => Object.fromEntries(['total', ...RUN_OUTCOMES].map((key) => [key, 0])) as RunCounts;
+const add = (counts: RunCounts, outcome: RunOutcome, n: number) => {
+  counts[outcome] += n;
+  counts.total += n;
+};
 
-// The cold initial rows of a scope, each flagged `simpleInitial`: no job, time or dependency.
-const initialCandidates = (filter: RawBuilder<boolean>, scope: RawBuilder<unknown> = sql``) => sql`
-  select i."runId",i."rootItemKey",i.stage,
-    case when i."runId"!=snapshot."libraryOperationId" and not coalesce(initial_entitlement.entitled,false) then 'cancelled'
-      when i.state='pending' and snapshot.state in ('needs_attention','cancelled') then snapshot.state else i.state end state,
-    null::timestamptz "availableAt",null::int attempt,null::int "retryBaseAttempt",null::text "dependencyReason",q.paused,
-    null::timestamptz "meaningfulAt",null::text "parentState",(${simpleInitialState}) "simpleInitial"
-  from job_run_item i ${scope} join job_selection snapshot on snapshot.id=i."selectionId"
-  ${initialCanonicalOutcomeContext}
-  ${materializedInitialEntitlementContext}
-  left join job_queue q on q.name=i.queue
-  -- Exclude non-cold rows before sparse joins; stale statistics can otherwise repeat whole-source scans.
-  where ${filter} and snapshot."sourceKind"='library-initial'
-    and i."jobId" is null and i."libraryExecutionRunId" is null offset 0`;
+const HOLD_REASONS = new Set<unknown>(['setup', 'paused', 'parked']);
+const holdsOf = (value: unknown): Holds => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).filter(([, reason]) => HOLD_REASONS.has(reason))) as Holds;
+};
+const namesHeldAs = (holds: Holds, reason: HoldReason) =>
+  Object.entries(holds)
+    .filter(([, value]) => value === reason)
+    .map(([name]) => name);
 
-// A whole-run summary does not need one row for each cold initial row. They carry no job, time or
-// dependency, so rows of one run with the same state and pause are interchangeable to every
-// aggregate except the per-root one, and a root with a single ledger row has that row's outcome.
-// `collapse` therefore emits them as one row per (run, state, pause) that stands for `weight` rows,
-// `fast` when they have a root. Roots with more than one ledger row in their run (`shared_roots`,
-// read from the root index) are the exception: their cold rows are emitted again one by one for
-// the per-root aggregate, each with a `fast` row of weight -1 that takes it back out of the
-// collapsed count. Only a run that holds rows of a library source can have a cold initial row, so
-// the roots of every other run are left unread. A page of items never collapses.
-const collapsedInitialRows = (filter: RawBuilder<boolean>) => sql`
-  select "runId",null::text "rootItemKey",null::text stage,state,null::timestamptz "availableAt",null::int attempt,
-    null::int "retryBaseAttempt",null::text "dependencyReason",paused,null::timestamptz "meaningfulAt",null::text "parentState",
-    count(*) weight,("rootItemKey" is not null) fast,false held
-  from (${initialCandidates(filter)}) initial_candidates where "simpleInitial"
-  group by "runId",state,paused,("rootItemKey" is not null) offset 0
-  ) union all (
-  select "runId",case when taken_back then null else "rootItemKey" end,case when taken_back then null else stage end,state,
-    "availableAt",attempt,"retryBaseAttempt","dependencyReason",paused,"meaningfulAt","parentState",
-    case when taken_back then -1 else 1 end::bigint weight,taken_back fast,false held
-  from (${initialCandidates(
-    filter,
-    sql`join shared_roots on shared_roots."runId"=i."runId" and shared_roots."rootItemKey"=i."rootItemKey"`,
-  )}) shared_candidates cross join (values (false),(true)) copies(taken_back)
-  where "simpleInitial" offset 0`;
+const IMPORT_JOURNALS: Record<string, string> = {
+  'immich-import-derived': 'frameleaf_immich_import',
+  'library-import-derived': 'frameleaf_library_import',
+};
 
-// Classify simple initial rows after the scoped joins. Pushing that correlated predicate
-// below them estimates one cold row and repeats queue/entitlement lookups for every root.
-const stagesFor = (
-  filter: RawBuilder<boolean>,
-  runScope: RawBuilder<string>,
-  collapse = false,
-  /** FL-1177: whether a row's run is a Manager import, whose first setup holds its stages. */
-  heldRun: RawBuilder<boolean> = sql<boolean>`false`,
-) => sql`with initial_entitlements as materialized (${initialSelectionEntitlementRows(runScope)})${
-  collapse
-    ? sql`, shared_roots as materialized (
-    select "runId","rootItemKey" from (
-      select shared_item."runId",shared_item."rootItemKey" from job_run_item shared_item
-      where shared_item."runId" in (
-        select library_run.id from (${runScope}) library_run
-        where exists (
-          select 1 from job_selection library_source where library_source."sourceKind"='library-initial'
-            and exists (select 1 from job_run_item library_item
-              where library_item."selectionId"=library_source.id and library_item."runId"=library_run.id)))
-        and shared_item."rootItemKey" is not null
-      order by shared_item."runId",shared_item."rootItemKey" offset 0) rooted
-    group by "runId","rootItemKey" having count(*) > 1)`
-    : sql``
-}
-  select "runId","rootItemKey",stage,state,"availableAt","dependencyReason","meaningfulAt",held,${collapse ? sql`weight,fast,` : sql``}
-  case
-    when state = 'needs_attention' then 'needsAttention'
-    when state not in ('pending','waiting') then state
-    when paused then 'paused'
-    when "dependencyReason" is not null then 'blocked'
-    when "parentState" is not null and "parentState" != 'completed' then 'blocked'
-    when attempt > "retryBaseAttempt" then 'retrying'
-    when "availableAt" > now() then 'delayed'
-    else 'waiting' end outcome
-  from ((
-  select i."runId", i."rootItemKey", i.stage, ${selectionItemState} state, j."availableAt", j.attempt, j."retryBaseAttempt",
-  case when j."dependencyReason"='destination-capacity' then 'destination-unavailable' else j."dependencyReason" end "dependencyReason", q.paused,
-  greatest(j."progressAt", j."startedAt", j."finishedAt") "meaningfulAt",
-  p.state "parentState"${collapse ? sql`,1::bigint weight,false fast` : sql``},
-  -- FL-1177: a stage a Manager import's first setup has not released yet has nothing to dispatch.
-  case when snapshot."sourceKind"='frozen' and snapshot.state='enumerating' and j.id is null and i.state='pending'
-    then ${heldRun} else false end held
-  ${selectionItemContext(runScope, materializedInitialEntitlementContext)}
-  left join job_queue q on q.name = coalesce(j.queue, i.queue)
-  left join lateral (select parent.state from job parent where j."parentId" is not null
-    and parent.id = j."parentId" limit 1) p on true
-  where ${filter} and not coalesce((${simpleInitialState}),false) offset 0
-  ) union all (
-  ${
-    collapse
-      ? collapsedInitialRows(filter)
-      : sql`select "runId","rootItemKey",stage,state,"availableAt",attempt,"retryBaseAttempt","dependencyReason",paused,"meaningfulAt","parentState",false held
-  from (${initialCandidates(filter)}) initial_candidates where "simpleInitial" offset 0`
-  }
-  )) effective`;
+/** A pending task of a held, paused or closed stage, else `waiting`; first match wins. */
+const liveOutcome = (name: string, holds: Holds, queueOf: Map<string, string>, around: Surroundings): RunOutcome => {
+  if (holds[name] === 'setup') return 'blocked';
+  if (holds[name] === 'paused') return 'paused';
+  const queue = queueOf.get(name);
+  if (queue && around.paused.has(queue)) return 'paused';
+  if (queue && around.closed.has(queue)) return 'delayed';
+  return 'waiting';
+};
 
-const counts = (alias: string) => sql`jsonb_build_object('total', count(*)::int,
-  ${sql.join(RUN_OUTCOMES.map((key) => sql`${key}::text, count(*) filter (where ${sql.ref(`${alias}.outcome`)} = ${key})::int`))})`;
-
-/** `counts` over rows that each stand for `weight` identical ones. */
-const weightedCounts = (
-  alias: string,
-) => sql`jsonb_build_object('total', coalesce(sum(${sql.ref(`${alias}.weight`)}), 0)::int,
-  ${sql.join(RUN_OUTCOMES.map((key) => sql`${key}::text, coalesce(sum(${sql.ref(`${alias}.weight`)}) filter (where ${sql.ref(`${alias}.outcome`)} = ${key}), 0)::int`))})`;
-
-// Nonterminal stages take precedence: a failed thumbnail plus a live face stage is still active.
-// A stored blocked stage is terminal prerequisite failure; a derived blocked pending stage is not.
-// One scalar aggregate preserves this priority without nine aggregate states per root.
-const selectedPriority = sql<number>`case
-  when outcome='active' then 10
-  when outcome='retrying' then 9
-  when outcome='waiting' then 8
-  when outcome='delayed' then 7
-  when outcome='paused' then 6
-  when outcome='blocked' and state in ('pending','waiting') then 5
-  when outcome='needsAttention' then 4
-  when outcome in ('failed','blocked') then 3
-  when outcome='cancelled' then 2 else 1 end`;
-
-const priorityOutcome = (priority: RawBuilder<number>) => sql`case ${priority}
-  when 10 then 'active' when 9 then 'retrying' when 8 then 'waiting'
-  when 7 then 'delayed' when 6 then 'paused' when 5 then 'blocked'
-  when 4 then 'needsAttention' when 3 then 'failed' when 2 then 'cancelled'
-  else 'completed' end`;
-
-const selectedOutcome = (priority: RawBuilder<number> = selectedPriority) =>
-  priorityOutcome(sql<number>`max(${priority})`);
+const PRIORITY: Record<RunOutcome, number> = {
+  active: 10,
+  retrying: 9,
+  waiting: 8,
+  delayed: 7,
+  paused: 6,
+  blocked: 5,
+  needsAttention: 4,
+  failed: 3,
+  cancelled: 2,
+  completed: 1,
+};
+const STATE_TOP = sql<number>`max(case when state = 'active' then 10 when state in ('pending','waiting') then 8
+  when state = 'needs_attention' then 4 when state in ('failed','blocked') then 3 when state = 'cancelled' then 2 else 1 end)`;
+const TOP_OUTCOME: Record<number, RunOutcome> = {
+  10: 'active',
+  4: 'needsAttention',
+  3: 'failed',
+  2: 'cancelled',
+  1: 'completed',
+};
+const stateOutcome = (state: string): RunOutcome =>
+  state === 'needs_attention' ? 'needsAttention' : (state as RunOutcome);
 
 const workerAvailable = sql<boolean>`exists (
   select 1 from job_worker where state = 'running' and "heartbeatAt" > now() - interval '60 seconds'
 )`;
 
-type Aggregate = Omit<RunRead, keyof RunCounts | 'state' | 'reasons' | 'noDispatchBacklog'> & {
-  setupPaused?: boolean;
-  counts: RunCounts;
-  readyStages: number;
-  unfinishedStages: number;
-  dependencyWaiting: boolean;
-  dependencyUnavailable: boolean;
-  dependencyReasons: RunReason[] | null;
-  dependencyFailed: boolean;
-  workerAvailable: boolean;
-  noDispatchBacklog: boolean;
-  librarySourceAttention?: boolean;
-  managerSetupPending?: boolean;
-};
+export async function readSurroundings(db: Kysely<any>): Promise<Surroundings> {
+  const { rows } = await sql<{ name: string; paused: boolean; closed: boolean }>`select name, paused,
+      coalesce("closedUntil" > now(), false) closed from job_queue where paused or "closedUntil" > now()`.execute(db);
+  const {
+    rows: [worker],
+  } = await sql<{ available: boolean }>`select ${workerAvailable} available`.execute(db);
+  return {
+    paused: new Set(rows.filter((row) => row.paused).map((row) => row.name)),
+    closed: new Set(rows.filter((row) => !row.paused && row.closed).map((row) => row.name)),
+    workerAvailable: worker.available,
+  };
+}
 
-export const runReasons = (row: {
-  stageTotals: RunCounts;
-  dependencyWaiting: boolean;
-  dependencyUnavailable: boolean;
-  dependencyReasons: RunReason[] | null;
-  dependencyFailed: boolean;
-  workerAvailable: boolean;
-  noDispatchBacklog: boolean;
-  enumerationDone: boolean;
-  unfinishedStages: number;
-  librarySourceAttention?: boolean;
-  managerSetupPending?: boolean;
-}): RunReason[] => {
-  const reasons: RunReason[] = [];
-  // A library source that needs attention stopped counting: it failed or was cancelled (FL-588).
-  if (!row.enumerationDone && !row.librarySourceAttention) {
-    reasons.push('enumerating');
+/** The queue of each named stage of a run: any one of its jobs says it, read through the run's progress index. */
+async function stageQueues(db: Kysely<any>, runId: string, names: string[]) {
+  if (names.length === 0) return new Map<string, string>();
+  const { rows } = await sql<{ name: string; queue: string }>`select n.name, q.queue
+    from unnest(${names}::text[]) n(name)
+    cross join lateral (select queue from job j where j."runId" = ${runId}::uuid and j.name = n.name limit 1) q`.execute(
+    db,
+  );
+  return new Map(rows.map((row) => [row.name, row.queue]));
+}
+
+/**
+ * The newest progress of a run: its running jobs' (few, through the active-lease index) or its latest finished job
+ * among the last 5000 finished anywhere (the history index read backwards). `exact` (finishing a run, once) falls
+ * back to the run's own jobs.
+ * ponytail: a live run that finished nothing among the last 5000 jobs shows no last progress until it does.
+ */
+async function lastProgress(db: Kysely<any>, runId: string, exact: boolean) {
+  const {
+    rows: [latest],
+  } = await sql<{ name: string; at: Date }>`select name, at from (
+      (select name, greatest("progressAt", "startedAt") at from job where state = 'active' and "runId" = ${runId}::uuid)
+      union all
+      (select name, "finishedAt" at from (select name, "finishedAt", "runId" from job
+        where state in ('completed','failed','cancelled','blocked') and "latestPending" is null
+        order by "finishedAt" desc, id desc limit 5000) recent where "runId" = ${runId}::uuid)
+    ) progress where at is not null order by at desc, name limit 1`.execute(db);
+  if (latest || !exact) return latest;
+  const {
+    rows: [own],
+  } = await sql<{ name: string; at: Date }>`select name, "finishedAt" at from job
+    where "runId" = ${runId}::uuid and "finishedAt" is not null order by "finishedAt" desc, name limit 1`.execute(db);
+  return own;
+}
+
+/**
+ * FL-1265: the counts of a run that has no valid summary. Two passes over `job_run_progress`
+ * ("runId","rootItemKey",name,state), both answered from the index: one grouped by root in index order (a photo's
+ * outcome is its most pressing task's), one by stage and state. Pending tasks of a parked stage are left out:
+ * they don't keep the run open, and switching machine learning back on brings them back.
+ * ponytail: per-task retry, delay and parent-wait outcomes aren't read here (they need the heap): pending work counts
+ * as waiting unless its stage is held, or its queue (one per job name) is paused or closed; deferred work moves to
+ * blocked in the task totals (and in the photos when nothing else waits). `listRunItems` reads each photo exactly.
+ */
+export async function aggregateRun(
+  db: Kysely<any>,
+  run: { id: string; holds: unknown },
+  around: Surroundings,
+  exact = false,
+): Promise<RunAggregate> {
+  const holds = holdsOf(run.holds);
+  const parked = namesHeldAs(holds, 'parked');
+  const notParked = sql`not (state in ('pending','waiting') and name = any(${parked}::text[]))`;
+  const { rows: roots } = await sql<{ top: number; live: string[] | null; rooted: boolean; n: number }>`
+    select top, live, rooted, count(*)::int n from (
+      select "rootItemKey" is not null rooted, ${STATE_TOP} top,
+        array_agg(distinct name) filter (where state in ('pending','waiting')) live
+      from job where "runId" = ${run.id}::uuid and ${notParked}
+      group by "rootItemKey"
+    ) roots group by top, live, rooted`.execute(db);
+  const { rows: tasks } = await sql<{ name: string; state: string; n: number }>`select name, state, count(*)::int n
+    from job where "runId" = ${run.id}::uuid and ${notParked} group by name, state`.execute(db);
+  const { rows: deferred } = await sql<{ reason: string; n: number }>`select "dependencyReason" reason, count(*)::int n
+    from job where "runId" = ${run.id}::uuid and state = 'pending' and "dependencyReason" is not null
+    group by "dependencyReason"`.execute(db);
+
+  const liveNames = [
+    ...new Set(tasks.filter((task) => task.state === 'pending' || task.state === 'waiting').map((task) => task.name)),
+  ];
+  const failedNames = [
+    ...new Set(
+      tasks.filter((task) => task.state === 'failed' || task.state === 'needs_attention').map((task) => task.name),
+    ),
+  ];
+  const switched = around.paused.size + around.closed.size > 0;
+  const queueOf = await stageQueues(db, run.id, [...new Set([...(switched ? liveNames : []), ...failedNames])]);
+
+  const stageTotals = zero();
+  for (const { name, state, n } of tasks) {
+    add(
+      stageTotals,
+      state === 'pending' || state === 'waiting' ? liveOutcome(name, holds, queueOf, around) : stateOutcome(state),
+      n,
+    );
   }
-  const setupPending = row.managerSetupPending && (!row.enumerationDone || row.unfinishedStages > 0);
-  if (setupPending) reasons.push('first_setup_pending');
-  if ((!row.enumerationDone || row.unfinishedStages > 0) && !row.workerAvailable && !setupPending) {
-    reasons.push('worker_unavailable');
+  const deferredCount = deferred.reduce((sum, row) => sum + row.n, 0);
+  const moved = Math.min(deferredCount, stageTotals.waiting);
+  stageTotals.waiting -= moved;
+  stageTotals.blocked += moved;
+
+  const photos = zero();
+  let held = 0;
+  for (const { top, live, rooted, n } of roots) {
+    if (!rooted) continue;
+    let outcome = TOP_OUTCOME[top];
+    if (top === 8) {
+      outcome = 'blocked';
+      for (const name of live ?? []) {
+        const next = liveOutcome(name, holds, queueOf, around);
+        if (PRIORITY[next] > PRIORITY[outcome]) outcome = next;
+      }
+    }
+    add(photos, outcome, n);
+    const isHeld = (live ?? []).some(
+      (name) => name !== JobName.IdenticalFilesCheck && (holds[name] === 'setup' || holds[name] === 'paused'),
+    );
+    if (isHeld) held += n;
   }
-  if (row.noDispatchBacklog) {
-    reasons.push('no_dispatch_backlog');
+  // Which photos the deferred tasks belong to isn't read; when every waiting task is deferred, so are their photos.
+  if (deferredCount > 0 && stageTotals.waiting === 0) {
+    photos.blocked += photos.waiting;
+    photos.waiting = 0;
   }
-  if (row.dependencyUnavailable) {
-    reasons.push('dependency_unavailable');
+  const countsPhotos = roots.some((row) => row.rooted);
+  const heldReasons = new Set<'setup' | 'paused'>();
+  for (const name of liveNames) {
+    const reason = holds[name];
+    if (reason === 'setup' || reason === 'paused') heldReasons.add(reason);
   }
-  reasons.push(...(row.dependencyReasons ?? []));
-  if (row.dependencyWaiting && !row.dependencyUnavailable) {
-    reasons.push('dependency_wait');
-  }
-  if (row.dependencyFailed) {
-    reasons.push('dependency_failed');
-  }
-  if (row.stageTotals.retrying > 0) {
-    reasons.push('retry_backoff');
-  }
-  if (row.stageTotals.delayed > 0) {
-    reasons.push('scheduled_delay');
-  }
-  if (row.stageTotals.paused > 0) {
-    reasons.push('queue_paused');
-  }
-  if (row.librarySourceAttention || row.stageTotals.needsAttention > 0) {
-    reasons.push('needs_attention');
-  }
-  if (row.stageTotals.failed > 0) {
-    reasons.push('stage_failed');
-  }
-  return reasons;
-};
+  const latest = await lastProgress(db, run.id, exact);
+  return {
+    counts: countsPhotos ? photos : { ...stageTotals },
+    stageTotals,
+    countsPhotos,
+    failedQueues: [
+      ...new Set(failedNames.map((name) => queueOf.get(name)).filter((queue) => queue !== undefined)),
+    ].sort(),
+    dependencyFailed: tasks.some((task) => task.state === 'blocked'),
+    lastProgressAt: latest?.at ?? null,
+    lastStage: latest?.name ?? null,
+    unfinished: tasks.filter((task) => LIVE.has(task.state)).reduce((sum, task) => sum + task.n, 0),
+    held,
+    heldReasons,
+    dependencyReasons: [
+      ...new Set(deferred.map((row) => publicDependency(row.reason)).filter((reason) => reason !== undefined)),
+    ].sort(),
+    deferred: deferredCount,
+  };
+}
+
+/** The aggregate a finished run's summary stands for. */
+const fromSummary = (summary: RunSummary): RunAggregate => ({
+  counts: summary.counts,
+  stageTotals: summary.stageTotals,
+  countsPhotos: summary.countsPhotos ?? true,
+  failedQueues: summary.failedQueues ?? [],
+  dependencyFailed: summary.dependencyFailed ?? summary.stageTotals.blocked > 0,
+  lastProgressAt: summary.lastProgressAt
+    ? new Date(summary.lastProgressAt)
+    : summary.lastProgressUs
+      ? new Date(Number(BigInt(summary.lastProgressUs) / 1000n))
+      : null,
+  lastStage: summary.lastStage ?? null,
+  unfinished: 0,
+  held: 0,
+  heldReasons: new Set(),
+  dependencyReasons: [],
+  deferred: 0,
+});
 
 export const runState = (
-  row: Pick<
-    Aggregate,
-    | 'enumerationDone'
-    | 'unfinishedStages'
-    | 'workerAvailable'
-    | 'stageTotals'
-    | 'readyStages'
-    | 'librarySourceAttention'
-    | 'managerSetupPending'
-  > &
-    Partial<Pick<Aggregate, 'held' | 'setupPaused'>>,
+  run: { enumerationDone: boolean; workerAvailable: boolean },
+  aggregate: Pick<RunAggregate, 'stageTotals' | 'unfinished' | 'heldReasons'>,
 ): RunState => {
-  const stages = row.stageTotals;
-  if (row.librarySourceAttention && stages.active === 0) return 'needs_attention';
-  if (row.enumerationDone && row.unfinishedStages === 0) {
-    if (stages.failed + stages.needsAttention + stages.blocked > 0) {
-      return 'completed_with_errors';
-    }
-    if (stages.cancelled > 0) {
-      return 'cancelled';
-    }
+  const stages = aggregate.stageTotals;
+  if (run.enumerationDone && aggregate.unfinished === 0) {
+    if (stages.failed + stages.needsAttention + stages.blocked > 0) return 'completed_with_errors';
+    if (stages.cancelled > 0) return 'cancelled';
     return 'completed';
   }
-  // FL-1177: a paused first setup is paused while its last admitted jobs finish, and before it has started.
-  if (row.setupPaused && row.held) return 'paused';
-  if (stages.active > 0) {
-    return 'running';
-  }
-  if (row.managerSetupPending) return 'blocked';
-  if (stages.paused > 0 && stages.waiting + stages.retrying + stages.delayed === 0) {
-    return 'paused';
-  }
-  if (stages.delayed > 0 && stages.waiting + stages.retrying === 0) {
-    return 'delayed';
-  }
-  if (stages.blocked > 0 && stages.waiting + stages.retrying === 0) {
-    return 'blocked';
-  }
-  if (stages.retrying > 0 && row.readyStages === 0) {
-    return 'retrying';
-  }
-  if (!row.workerAvailable) {
-    return 'unavailable';
-  }
-  if (stages.retrying > 0) {
-    return 'retrying';
-  }
-  if (stages.waiting > 0) {
-    return 'waiting';
-  }
+  // A paused setup is paused while its last started jobs finish.
+  if (aggregate.heldReasons.has('paused') && !aggregate.heldReasons.has('setup')) return 'paused';
+  if (stages.active > 0) return 'running';
+  if (aggregate.heldReasons.has('setup')) return 'blocked';
+  if (stages.paused > 0 && stages.waiting + stages.retrying + stages.delayed === 0) return 'paused';
+  if (stages.delayed > 0 && stages.waiting + stages.retrying === 0) return 'delayed';
+  if (stages.blocked > 0 && stages.waiting + stages.retrying === 0) return 'blocked';
+  if (!run.workerAvailable) return 'unavailable';
+  if (stages.retrying > 0) return 'retrying';
+  if (stages.waiting > 0) return 'waiting';
   return 'running';
 };
 
-/**
- * FL-1177: the stages a Manager import parked after its file check because their machine learning is off. The run
- * settles without them, so its summary and items leave them out; switching machine learning on releases them.
- */
-const parkedStages = (selection: RawBuilder<unknown>) => sql<string[]>`coalesce(case
-  when jsonb_typeof(${selection} #> '{managerSetup,parkedStages}') = 'array'
-  then array(select jsonb_array_elements_text(${selection} #> '{managerSetup,parkedStages}')) end, '{}'::text[])`;
-
-/** A library scan that failed or was cancelled: nothing more will happen in it, so it lists with the finished runs (FL-588). */
-const librarySourceAttention = sql<boolean>`exists (select 1 from job_selection_run m join job_selection s on s.id = m."selectionId"
-  where m."runId" = r.id and s."sourceKind" = 'library-initial' and s.state = 'needs_attention')`;
-
-/**
- * FL-1215: a run's counts once nothing can change them: it is marked finished, enumerated and has no live job, and
- * its stored summary was taken at that same `finishedAt` (`run-summary.ts`). Anything that reopens the run clears
- * `finishedAt`, and settling it again stamps a new one, so a reopened run is recounted from its ledger.
- */
-const summaryValid = sql<boolean>`coalesce(r.summary->>'complete' = 'true'
-  and (r.summary->>'finishedAt')::timestamptz = r."finishedAt", false)`;
-
-const ZERO_COUNTS = JSON.stringify(Object.fromEntries(['total', ...RUN_OUTCOMES].map((k) => [k, 0])));
-
-/** One page of a run's ledger (FL-1215): its bookkeeping rows, or its roots after `after` up to `upto`. */
-export type RunPage = { runId: string; bookkeeping: boolean; after: string | null; upto: string | null };
-export type RunPageAggregate = Pick<
-  Aggregate,
-  | 'counts'
-  | 'stageTotals'
-  | 'unfinishedStages'
-  | 'readyStages'
-  | 'held'
-  | 'dependencyWaiting'
-  | 'dependencyUnavailable'
-  | 'dependencyReasons'
-  | 'dependencyFailed'
-  | 'lastStage'
-> & { lastProgressUs: string | null };
-
-/** The ledger rows of one page: none extra for a whole-run read. */
-const pageFilter = (page?: RunPage) => {
-  if (!page) return sql``;
-  if (page.bookkeeping) return sql`and i."rootItemKey" is null`;
-  return sql`and i."rootItemKey" is not null ${page.after === null ? sql`` : sql`and i."rootItemKey" > ${page.after}`}
-    ${page.upto === null ? sql`` : sql`and i."rootItemKey" <= ${page.upto}`}`;
+export const runReasons = (
+  run: { enumerationDone: boolean; workerAvailable: boolean },
+  aggregate: RunAggregate,
+  noDispatchBacklog: boolean,
+): RunReason[] => {
+  const stages = aggregate.stageTotals;
+  const reasons: RunReason[] = [];
+  const open = !run.enumerationDone || aggregate.unfinished > 0;
+  if (!run.enumerationDone) reasons.push('enumerating');
+  const setupPending = aggregate.heldReasons.has('setup');
+  if (setupPending) reasons.push('first_setup_pending');
+  if (open && !run.workerAvailable && !setupPending) reasons.push('worker_unavailable');
+  if (noDispatchBacklog) reasons.push('no_dispatch_backlog');
+  if (aggregate.deferred > 0) reasons.push('dependency_unavailable');
+  reasons.push(...aggregate.dependencyReasons);
+  if (aggregate.dependencyFailed) reasons.push('dependency_failed');
+  if (stages.retrying > 0) reasons.push('retry_backoff');
+  if (stages.delayed > 0) reasons.push('scheduled_delay');
+  if (stages.paused > 0) reasons.push('queue_paused');
+  if (stages.needsAttention > 0) reasons.push('needs_attention');
+  if (stages.failed > 0) reasons.push('stage_failed');
+  return reasons;
 };
 
+async function importActivated(db: Kysely<any>, kind: string) {
+  const journal = IMPORT_JOURNALS[kind];
+  if (!journal) return true;
+  const { rows } = await sql`select 1 from ${sql.table(journal)} where status = 'activated'`.execute(db);
+  return rows.length > 0;
+}
+
+async function toRead(db: Kysely<any>, run: Header, around: Surroundings): Promise<RunRead> {
+  const aggregate = run.summarized && run.summary ? fromSummary(run.summary) : await aggregateRun(db, run, around);
+  const context = { enumerationDone: run.enumerationDone, workerAvailable: around.workerAvailable };
+  const state = runState(context, aggregate);
+  const ready = aggregate.stageTotals.waiting;
+  const noDispatchBacklog =
+    ready > 0 &&
+    aggregate.stageTotals.active === 0 &&
+    (aggregate.lastProgressAt ?? run.createdAt).getTime() < Date.now() - 2 * 60_000;
+  const canRelease = aggregate.heldReasons.size > 0 && (await importActivated(db, run.kind));
+  return {
+    id: run.id,
+    kind: run.kind,
+    createdAt: run.createdAt,
+    finishedAt: ['completed', 'completed_with_errors', 'cancelled'].includes(state) ? run.finishedAt : null,
+    enumerationDone: run.enumerationDone,
+    ...aggregate.counts,
+    stageTotals: aggregate.stageTotals,
+    state,
+    lastProgressAt: aggregate.lastProgressAt,
+    lastStage: aggregate.lastStage,
+    reasons: runReasons(context, aggregate, noDispatchBacklog),
+    noDispatchBacklog,
+    held: aggregate.held,
+    canRelease,
+    countsPhotos: aggregate.countsPhotos,
+    failedQueues: aggregate.failedQueues,
+  };
+}
+
+/** A stored summary is the run's counts while it was taken at the run's current `finishedAt`. */
+const SUMMARIZED = sql<boolean>`coalesce(r."finishedAt" is not null and r.summary->>'complete' = 'true'
+  and (r.summary->>'finishedAt')::timestamptz = r."finishedAt", false)`;
+
+const headers = (where: ReturnType<typeof sql>, take: number, skip: number) => sql<Header>`
+  select r.id, r.kind, r."createdAt", r."finishedAt", r."enumerationDone", r.selection->'holds' holds, r.summary,
+    ${SUMMARIZED} summarized
+  from job_run r ${where}
+  order by r."finishedAt" is not null, r."createdAt" desc, r.id desc limit ${take} offset ${skip}`;
+
 /**
- * The aggregates `listRuns` reads, for the runs on one page or, with `page`, one slice of one run's ledger. Slices
- * split a run by root, so their sums are the whole run's: `run-summary.ts` adds them up a page at a time.
+ * Activity's runs, unfinished first. A finished run reads its stored summary; an unfinished one is counted from its
+ * jobs (`aggregateRun`), one run at a time. The store shares a costly read between pollers (`costReusedRead`).
  */
-const readRuns = (take: number, skip: number, runId?: string, page?: RunPage) => sql<
-  Aggregate & {
-    summarized: boolean;
-    lastProgressUs: string | null;
-  }
->`with runs as (
-      select r.*, r.settled or r."librarySourceAttention" "sortsFinished",
-        ${page ? sql`false` : sql`r.settled and r."enumerationDone" and ${summaryValid}`} summarized
-      from (select r.id, r.kind, r."createdAt", r."finishedAt", r.summary,
-        -- A run with live jobs sorts with the unfinished ones even if it was marked finished, so the
-        -- first page (Activity reads only that) never drops busy work. A failed library scan lists
-        -- with the finished runs (FL-588).
-        (r."finishedAt" is not null and not exists (select 1 from job j
-          where j."runId" = r.id and j.state in ('pending','waiting','active'))) settled,
-        (r."enumerationDone" and not (${libraryRunPending(sql<string>`r.id`)})) "enumerationDone",
-        ${librarySourceAttention} "librarySourceAttention",
-        coalesce(r.kind in ('immich-import-derived','library-import-derived')
-          and r.selection->'managerSetup'->>'installation' ~ '^[a-f0-9]{12}$'
-          and nullif(r.selection->'managerSetup'->>'operationId','') is not null
-          and r.selection->'managerSetup' ? 'startedAt'
-          and r.selection->'managerSetup'->>'startedAt' is null,false) "managerSetupPending",
-        (r.kind in ('immich-import-derived','library-import-derived')
-          and coalesce(jsonb_typeof(r.selection->'managerSetup') = 'object', false)) "managerImport",
-        coalesce(r.selection #> '{managerSetup,paused}' = 'true'::jsonb, false) "setupPaused",
-        ${parkedStages(sql`r.selection`)} "parkedStages"
-      from job_run r
-      ${runId === undefined ? sql`` : sql`where r.id = ${runId}::uuid`}) r
-      order by "sortsFinished", r."createdAt" desc, r.id desc limit ${take} offset ${skip}
-    ), stages as (${stagesFor(
-      // A parked stage's unstarted items leave the summary; its finished and failed ones stay in it.
-      // A summarised run is never recounted (FL-1215). An array, so the ledger is read through its run index
-      // whatever the estimate of `runs`: a semi-join here can hash all ledgers first.
-      sql<boolean>`i."runId" = any(array(select id from runs where not summarized)) ${pageFilter(page)}
-        and not (i."jobId" is null and i.state = 'pending'
-        and exists (select 1 from runs parked where parked.id = i."runId" and i.stage = any(parked."parkedStages")))`,
-      sql<string>`select id from runs where not summarized`,
-      !page,
-      sql<boolean>`exists (select 1 from runs manager where manager.id = i."runId" and manager."managerImport")`,
-    )}), run_stages as (
-      select s.* from stages s
-    ), selected as (
-      (select "runId", "rootItemKey", ${selectedOutcome(sql<number>`priority`)} outcome, 1::bigint weight
-      -- Sort bytewise root identities and one priority integer to bound spill work.
-      from (select * from (
-        select "runId", "rootItemKey" collate "C" "rootItemKey", ${selectedPriority} priority from run_stages
-        where "rootItemKey" is not null offset 0) ranked_roots
-        order by "runId", "rootItemKey" collate "C" offset 0) ordered_roots
-      group by "runId", "rootItemKey")
-      -- A collapsed row stands for that many roots of one stage each: a root's outcome is that stage's.
-      ${page ? sql`` : sql`union all (select "runId", null, ${priorityOutcome(selectedPriority)} outcome, weight from run_stages where fast)`}
-    ), item_counts as (
-      select s."runId", ${weightedCounts('s')} totals from selected s group by s."runId"
-    ), stage_counts as (
-      select s."runId", ${page ? counts('s') : weightedCounts('s')} totals,
-        ${page ? sql`count(*) filter (where s.state in ('pending','waiting','active'))` : sql`coalesce(sum(s.weight) filter (where s.state in ('pending','waiting','active')), 0)`} unfinished,
-        bool_or(s.state = 'blocked') "dependencyFailed",
-        array_remove(array[${sql.join([...DEPENDENCY_REASONS].sort().map((reason) => sql`case when bool_or(s.state in ('pending','waiting') and s."dependencyReason"=${reason}) then ${reason}::text end`))}],null) "dependencyReasons",
-        bool_or(s."dependencyReason" is not null and s.state in ('pending','waiting')) "dependencyUnavailable",
-        bool_or(s.outcome = 'blocked' and s.state in ('pending','waiting')) "dependencyWaiting",
-        ${
-          page
-            ? sql`count(*) filter (where s.outcome in ('waiting','retrying') and coalesce(s."availableAt", now()) <= now() and not s.held)`
-            : sql`coalesce(sum(s.weight) filter (where s.outcome in ('waiting','retrying') and coalesce(s."availableAt", now()) <= now()
-          and not s.held), 0)`
-        } ready,
-        ${page ? sql`count(*) filter (where s.outcome = 'active')` : sql`coalesce(sum(s.weight) filter (where s.outcome = 'active'), 0)`} active,
-        -- Photos only: a server import's one identical-files item is not one.
-        count(distinct s."rootItemKey") filter (where s.held and s.stage <> ${JobName.IdenticalFilesCheck}) held
-      from run_stages s group by s."runId"
-    ), latest as (
-      select distinct on ("runId") "runId", stage, "meaningfulAt" from run_stages
-      where "meaningfulAt" is not null order by "runId", "meaningfulAt" desc, stage
-    ) select r.*,
-      coalesce(case when r.summarized then r.summary->'counts' end, items.totals, ${ZERO_COUNTS}::text::jsonb) counts,
-      coalesce(case when r.summarized then r.summary->'stageTotals' end, stage.totals, ${ZERO_COUNTS}::text::jsonb) "stageTotals",
-      coalesce(stage.unfinished, 0)::int "unfinishedStages", coalesce(stage."dependencyWaiting", false) "dependencyWaiting",
-      coalesce(stage.ready, 0)::int "readyStages", coalesce(stage.held, 0)::int held,
-      coalesce(stage."dependencyUnavailable", false) "dependencyUnavailable", stage."dependencyReasons",
-      case when r.summarized then (r.summary->>'dependencyFailed')::boolean
-        else coalesce(stage."dependencyFailed", false) end "dependencyFailed",
-      case when r.summarized then timestamptz 'epoch' + (r.summary->>'lastProgressUs')::bigint * interval '1 microsecond'
-        else latest."meaningfulAt" end "lastProgressAt",
-      case when r.summarized then r.summary->>'lastStage' else latest.stage end "lastStage",
-      -- Exact, for adding up pages: a JavaScript Date keeps only milliseconds.
-      (extract(epoch from latest."meaningfulAt") * 1000000)::bigint::text "lastProgressUs",
-      ${workerAvailable} "workerAvailable",
-      coalesce(stage.ready > 0 and stage.active = 0 and not ${managerImportHeld(sql<string>`r.id`)} and
-        coalesce(latest."meaningfulAt", r."createdAt") < now() - interval '2 minutes', false) "noDispatchBacklog"
-    from runs r left join item_counts items on items."runId" = r.id
-    left join stage_counts stage on stage."runId" = r.id left join latest on latest."runId" = r.id
-    order by r."sortsFinished", r."createdAt" desc, r.id desc`;
-
-/** FL-1215: the aggregates of one slice of one run's ledger, which `run-summary.ts` adds up into its summary. */
-export async function readRunPage(db: Kysely<any>, page: RunPage): Promise<RunPageAggregate | undefined> {
-  const { rows } = await readRuns(1, 0, page.runId, page).execute(db);
-  return rows[0];
+export async function listRuns(db: Kysely<any>, take: number, skip: number): Promise<RunRead[]> {
+  const { rows } = await headers(sql``, take, skip).execute(db);
+  if (rows.length === 0) return [];
+  const around = await readSurroundings(db);
+  const runs: RunRead[] = [];
+  for (const row of rows) runs.push(await toRead(db, row, around));
+  return runs;
 }
 
-/** Activity's runs, unfinished first; a finished run with a valid stored summary is not recounted (FL-1215). */
-export async function listRuns(db: Kysely<any>, take: number, skip: number, runId?: string): Promise<RunRead[]> {
-  const { rows } = await readRuns(take, skip, runId).execute(db);
-  return rows.map((raw) => {
-    const row = raw;
-    const state = runState(row);
-    return {
-      id: row.id,
-      kind: row.kind,
-      createdAt: row.createdAt,
-      finishedAt: ['completed', 'completed_with_errors', 'cancelled'].includes(state) ? row.finishedAt : null,
-      enumerationDone: row.enumerationDone,
-      ...row.counts,
-      stageTotals: row.stageTotals,
-      state,
-      lastProgressAt: row.lastProgressAt,
-      lastStage: row.lastStage,
-      reasons: runReasons(row),
-      noDispatchBacklog: row.noDispatchBacklog,
-      held: row.held,
-    };
-  });
+export async function getRun(db: Kysely<any>, runId: string): Promise<RunRead | undefined> {
+  const {
+    rows: [row],
+  } = await headers(sql`where r.id = ${runId}::uuid`, 1, 0).execute(db);
+  return row ? toRead(db, row, await readSurroundings(db)) : undefined;
 }
 
+/** A page of a run's photos (roots, in root order) with the outcome of each of their tasks. */
 export async function listRunItems(
   db: Kysely<any>,
   runId: string,
   take: number,
   skip: number,
 ): Promise<RunItemRead[] | undefined> {
-  const { rows: exists } = await sql`select 1 from job_run where id = ${runId}::uuid`.execute(db);
-  if (exists.length === 0) {
-    return;
-  }
-  // An array expression, not `= any (subquery)`, which would compare each stage with the whole array.
-  const parked = sql<
-    string[]
-  >`coalesce((select ${parkedStages(sql`r.selection`)} from job_run r where r.id = ${runId}::uuid), '{}'::text[])`;
-  const { rows } = await sql<RunItemRead>`with roots as materialized (
-      select distinct "rootItemKey" from job_run_item where "runId" = ${runId}::uuid and "rootItemKey" is not null
-        and not ("jobId" is null and state = 'pending' and stage = any(${parked}))
-      order by "rootItemKey" limit ${take} offset ${skip}
-    ), stages as (${stagesFor(sql<boolean>`i."runId" = ${runId}::uuid and i."rootItemKey" in (select "rootItemKey" from roots) and not (i."jobId" is null and i.state = 'pending' and i.stage = any(${parked}))`, sql<string>`${runId}::uuid`)}), selected as (
-    select s."rootItemKey", ${selectedOutcome()} outcome, ${counts('s')} "stageTotals",
-      max(s."meaningfulAt") "lastProgressAt", bool_or(s.state = 'blocked') "dependencyFailed",
-      array_agg(distinct s."dependencyReason") filter (where s.state in ('pending','waiting') and s."dependencyReason" = any(${[...DEPENDENCY_REASONS]}::text[])) "dependencyReasons",
-      bool_or(s."dependencyReason" is not null and s.state in ('pending','waiting')) "dependencyUnavailable",
-      bool_or(s.outcome = 'blocked' and s.state in ('pending','waiting')) "dependencyWaiting",
-      count(*) filter (where s.state in ('pending','waiting','active')) unfinished
-    from stages s where s."runId" = ${runId}::uuid and s."rootItemKey" is not null group by s."rootItemKey"
-  ) select md5(${runId} || ':' || selected."rootItemKey") id, outcome, "stageTotals", "lastProgressAt", latest.stage "lastStage",
-    array_remove(array[
-      case when "dependencyFailed" then 'dependency_failed' end,
-      case when "dependencyUnavailable" then 'dependency_unavailable'
-        when outcome = 'blocked' and unfinished > 0 then 'dependency_wait' end,
-      case when outcome = 'retrying' then 'retry_backoff' end,
-      case when outcome = 'delayed' then 'scheduled_delay' end,
-      case when outcome = 'paused' then 'queue_paused' end,
-      case when ("stageTotals" ->> 'needsAttention')::int > 0 then 'needs_attention' end,
-      case when ("stageTotals" ->> 'failed')::int > 0 then 'stage_failed' end
-    ], null) || coalesce("dependencyReasons", array[]::text[]) reasons
-    from selected left join lateral (select stage from stages s where s."runId" = ${runId}::uuid
-      and s."rootItemKey" = selected."rootItemKey" and s."meaningfulAt" is not null
-      order by s."meaningfulAt" desc, stage limit 1) latest on true
-    order by selected."rootItemKey"`.execute(db);
-  return rows;
+  const {
+    rows: [run],
+  } = await sql<{ holds: unknown }>`select selection->'holds' holds from job_run where id = ${runId}::uuid`.execute(db);
+  if (!run) return;
+  const holds = holdsOf(run.holds);
+  const notParked = sql`not (j.state in ('pending','waiting') and j.name = any(${namesHeldAs(holds, 'parked')}::text[]))`;
+  const { rows: page } = await sql<{ root: string }>`select j."rootItemKey" root from job j
+    where j."runId" = ${runId}::uuid and j."rootItemKey" is not null and ${notParked}
+    group by j."rootItemKey" order by j."rootItemKey" limit ${take} offset ${skip}`.execute(db);
+  if (page.length === 0) return [];
+  const { rows: tasks } = await sql<{
+    root: string;
+    name: string;
+    state: string;
+    held: boolean;
+    paused: boolean;
+    closed: boolean;
+    dependencyReason: string | null;
+    parentState: string | null;
+    retrying: boolean;
+    delayed: boolean;
+    meaningfulAt: Date | null;
+  }>`select j."rootItemKey" root, j.name, j.state, j."availableAt" = 'infinity' held, coalesce(q.paused, false) paused,
+      coalesce(q."closedUntil" > now(), false) closed, j."dependencyReason", p.state "parentState",
+      j.attempt > j."retryBaseAttempt" retrying, j."availableAt" > now() delayed,
+      greatest(j."progressAt", j."startedAt", j."finishedAt") "meaningfulAt"
+    from job j left join job_queue q on q.name = j.queue left join job p on p.id = j."parentId"
+    where j."runId" = ${runId}::uuid and j."rootItemKey" = any(${page.map(({ root }) => root)}::text[]) and ${notParked}`.execute(
+    db,
+  );
+  const outcomeOf = (task: (typeof tasks)[number]): RunOutcome => {
+    if (task.state !== 'pending' && task.state !== 'waiting') return stateOutcome(task.state);
+    if (task.held) return holds[task.name] === 'paused' ? 'paused' : 'blocked';
+    if (task.paused) return 'paused';
+    if (task.dependencyReason || (task.parentState && task.parentState !== 'completed')) return 'blocked';
+    if (task.retrying) return 'retrying';
+    if (task.delayed || task.closed) return 'delayed';
+    return 'waiting';
+  };
+  return page.map(({ root }) => {
+    const own = tasks.filter((task) => task.root === root);
+    const stageTotals = zero();
+    let outcome: RunOutcome = 'completed';
+    let latest: (typeof tasks)[number] | undefined;
+    const dependencies = new Set<RunReason>();
+    let dependencyUnavailable = false;
+    for (const task of own) {
+      const taskOutcome = outcomeOf(task);
+      add(stageTotals, taskOutcome, 1);
+      // A live blocked task outranks a finished failure; a stored `blocked` (failed prerequisite) does not.
+      const live = task.state === 'pending' || task.state === 'waiting';
+      const priority = taskOutcome === 'blocked' && !live ? PRIORITY.failed : PRIORITY[taskOutcome];
+      if (priority > PRIORITY[outcome]) outcome = priority === PRIORITY.failed ? 'failed' : taskOutcome;
+      if (live && task.dependencyReason) {
+        dependencyUnavailable = true;
+        const reason = publicDependency(task.dependencyReason);
+        if (reason) dependencies.add(reason);
+      }
+      if (
+        task.meaningfulAt &&
+        (!latest?.meaningfulAt ||
+          task.meaningfulAt > latest.meaningfulAt ||
+          (task.meaningfulAt.getTime() === latest.meaningfulAt.getTime() && task.name < latest.name))
+      ) {
+        latest = task;
+      }
+    }
+    const unfinished = own.some((task) => LIVE.has(task.state));
+    const reasons: RunReason[] = [];
+    if (own.some((task) => task.state === 'blocked')) reasons.push('dependency_failed');
+    if (dependencyUnavailable) reasons.push('dependency_unavailable');
+    else if (outcome === 'blocked' && unfinished) reasons.push('dependency_wait');
+    const waitReason = ({ retrying: 'retry_backoff', delayed: 'scheduled_delay', paused: 'queue_paused' } as const)[
+      outcome as 'retrying' | 'delayed' | 'paused'
+    ];
+    if (waitReason) reasons.push(waitReason);
+    if (stageTotals.needsAttention > 0) reasons.push('needs_attention');
+    if (stageTotals.failed > 0) reasons.push('stage_failed');
+    reasons.push(...[...dependencies].sort());
+    return {
+      id: createHash('md5').update(`${runId}:${root}`).digest('hex'),
+      outcome,
+      stageTotals,
+      lastProgressAt: latest?.meaningfulAt ?? null,
+      lastStage: latest?.name ?? null,
+      reasons,
+    };
+  });
 }
 
 /** Editor and video-conversion deliveries report their media operation's state (paused, cancelled, a lost

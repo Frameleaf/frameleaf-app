@@ -13,7 +13,6 @@ import { retainReviewedImportInputs } from 'src/library-import/reviewed-inputs.j
 import { reconcileImportedStacks } from 'src/library-import/stack-reconciliation.js';
 import { CanonicalStackWriter } from 'src/library-import/stack-writer.js';
 import { LibraryImportJournal } from 'src/library-import/state.js';
-import { SqlQueueStore } from 'src/queue/store.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -391,12 +390,12 @@ it('holds regeneration for the sealed stack cohort without changing its relation
   const run = await repository.prepareImportedLibraryWork(context);
   expect(await repository.prepareImportedLibraryWork(context)).toBe(run);
   expect((await sql`SELECT id,"stackId" FROM public.asset ORDER BY id`.execute(db)).rows).toEqual(before);
-  expect((await sql`SELECT count(*)::text AS count FROM job_run_item`.execute(db)).rows).toEqual([{ count: '12' }]);
-  expect((await sql`SELECT state FROM job_selection`.execute(db)).rows).toEqual(
-    Array.from({ length: 6 }, () => ({ state: 'enumerating' })),
-  );
-  for (const queue of new Set(stages.map(([, queue]) => queue)))
-    expect(await new SqlQueueStore(db).feedManifest(queue)).toBe(0);
-  expect((await sql`SELECT 1 FROM job`.execute(db)).rows).toEqual([]);
+  // FL-1265: every stage is inserted held, untouched, until activation releases it.
+  expect(
+    (
+      await sql`SELECT count(*)::text AS count, bool_and(state='pending' AND attempt=0 AND "availableAt"='infinity') AS held
+        FROM job`.execute(db)
+    ).rows,
+  ).toEqual([{ count: '12', held: true }]);
   expect((await sql`SELECT "enumerationDone" FROM job_run`.execute(db)).rows).toEqual([{ enumerationDone: false }]);
 });

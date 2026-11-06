@@ -7,9 +7,11 @@ import {
   IMPORT_DERIVED_RUN_KIND,
   IMPORT_DERIVED_RUN_STAGES,
   importDerivedRunId,
+  insertRunJobs,
 } from 'src/immich-import/derived-work.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
@@ -39,12 +41,23 @@ it('releases a restored prepared import once with a real admin and effective set
   setup.ctx.getMock(ConfigRepository).getEnv.mockReturnValue(mockEnvData({}));
   const metadata = setup.ctx.get(SystemMetadataRepository);
   const users = new UserRepository(db);
+  const jobs = new JobRepository({} as never, {} as never, {} as never, { setContext: vi.fn() } as never, db);
+  for (const jobName of stages)
+    jobs['handlers'][jobName] = {
+      jobName,
+      queueName: 'restore-regeneration' as never,
+      handler: vi.fn(),
+      label: 'synthetic',
+    };
+  Object.assign(jobs, {
+    getJobCounts: vi.fn().mockResolvedValue({ active: 0, waiting: 0, delayed: 0, paused: 0, failed: 0 }),
+  });
   const make = () =>
     new FrameleafLibrarySetupService(
       db,
       { getAll: vi.fn().mockResolvedValue([]) } as never,
       {} as never,
-      { getJobCounts: vi.fn().mockResolvedValue({ active: 0, waiting: 0, delayed: 0, paused: 0, failed: 0 }) } as never,
+      jobs,
       users,
       {} as never,
       // Setup scans every account, including the asset-less admin made below.
@@ -65,11 +78,15 @@ it('releases a restored prepared import once with a real admin and effective set
         };
       }>`SELECT selection FROM job_run WHERE id=${id}::uuid`.execute(db)
     ).rows[0];
-  const selections = async () =>
+  /** The run's work: one job per stage, with its state and whether it is held. */
+  const work = async () =>
     (
-      await sql<{ stage: string; state: string; capturedAt: Date | null }>`
-        SELECT stage,state,"capturedAt" FROM job_selection WHERE "runId"=${id}::uuid ORDER BY stage`.execute(db)
+      await sql<{ name: string; state: string; held: boolean }>`
+        SELECT name,state,"availableAt"='infinity' AS held FROM job WHERE "runId"=${id}::uuid ORDER BY name`.execute(db)
     ).rows;
+  const holds = async () =>
+    (await sql<{ holds: unknown }>`SELECT selection->'holds' AS holds FROM job_run WHERE id=${id}::uuid`.execute(db))
+      .rows[0].holds;
   try {
     process.env.FRAMELEAF_MANAGER_INSTALLATION = 'ddddeeeeffff';
     process.env.FRAMELEAF_MANAGER_ORIGIN = 'restored_library';
@@ -85,29 +102,22 @@ it('releases a restored prepared import once with a real admin and effective set
       VALUES (${source},${fingerprint},'frozen-fixture','activated')`.execute(db);
     await sql`INSERT INTO job_queue(name) VALUES ('restore-regeneration')`.execute(db);
     const operationId = randomUUID();
+    const prepared = Object.fromEntries(stages.map((stage) => [stage, 'setup']));
     await sql`INSERT INTO job_run(id,kind,selection,"enumerationDone") VALUES (${id}::uuid,${IMPORT_DERIVED_RUN_KIND},
-      ${JSON.stringify({ source, config: fingerprint, managerSetup: { installation: original, operationId, preparedAt: null, startedAt: null } })}::text::jsonb,true)`.execute(
+      ${JSON.stringify({ source, config: fingerprint, holds: prepared, managerSetup: { installation: original, operationId, preparedAt: null, startedAt: null } })}::text::jsonb,true)`.execute(
       db,
     );
-    for (const stage of stages) {
-      const selection = randomUUID();
-      const state =
-        stage === JobName.AssetGenerateThumbnails
-          ? 'cancelled'
-          : stage === JobName.AssetDetectFaces
-            ? 'needs_attention'
-            : 'enumerating';
-      await sql`INSERT INTO job_selection(id,"runId",stage,queue,"safeToRetry",sensitive,"deadlineMs",state,"capturedAt")
-        VALUES (${selection}::uuid,${id}::uuid,${stage},'restore-regeneration',true,false,1000,${state},
-        ${stage === JobName.PersonGenerateThumbnail ? null : new Date()})`.execute(db);
-      await sql`INSERT INTO job_run_item("runId","itemKey","rootItemKey",stage,queue,selection,"selectionId",state)
-        VALUES (${id}::uuid,${stage},'retained-asset',${stage},'restore-regeneration','{}',${selection}::uuid,
-          ${state === 'enumerating' ? 'pending' : state})`.execute(db);
-    }
+    for (const stage of stages)
+      await insertRunJobs(
+        db,
+        id,
+        { queue: 'restore-regeneration', name: stage, data: {}, safeToRetry: true, sensitive: false, deadlineMs: 1000 },
+        db.selectNoFrom(sql<string>`'retained-asset'::text`.as('id')),
+      );
+    // Terminal work survives the restore as it was.
+    await sql`UPDATE job SET state=CASE name WHEN ${JobName.AssetGenerateThumbnails} THEN 'cancelled' ELSE 'needs_attention' END,
+      "finishedAt"=now() WHERE name IN (${JobName.AssetGenerateThumbnails},${JobName.AssetDetectFaces})`.execute(db);
     await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup,preparedAt}',to_jsonb(now()::text)) WHERE id=${id}::uuid`.execute(
-      db,
-    );
-    await sql`UPDATE job_selection SET "capturedAt"=now() WHERE "runId"=${id}::uuid AND "capturedAt" IS NULL`.execute(
       db,
     );
     await make().begin();
@@ -118,9 +128,6 @@ it('releases a restored prepared import once with a real admin and effective set
     });
     expect((await run()).selection.managerSetup.startedAt).toBeNull();
     await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup,preparedAt}','null'::jsonb) WHERE id=${id}::uuid`.execute(
-      db,
-    );
-    await sql`UPDATE job_selection SET "capturedAt"=NULL WHERE "runId"=${id}::uuid AND stage=${JobName.PersonGenerateThumbnail}`.execute(
       db,
     );
     const { user } = await setup.ctx.newUser({ isAdmin: true });
@@ -136,15 +143,13 @@ it('releases a restored prepared import once with a real admin and effective set
         trash: { days: 17 },
       }),
     );
+    await make().begin(); // Not prepared yet.
+    expect((await run()).selection.managerSetup.startedAt).toBeNull();
     await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup,preparedAt}',to_jsonb(now()::text)) WHERE id=${id}::uuid`.execute(
       db,
     );
-    await make().begin(); // Fifth captured snapshot still absent.
-    expect((await run()).selection.managerSetup.startedAt).toBeNull();
-    await sql`UPDATE job_selection SET "capturedAt"=now() WHERE "runId"=${id}::uuid AND "capturedAt" IS NULL`.execute(
-      db,
-    );
-    const captured = await selections();
+    const captured = await work();
+    expect(captured.filter((row) => row.state === 'pending').every((row) => row.held)).toBe(true);
     delete process.env.FRAMELEAF_MANAGER_IMPORT_INSTALLATION;
     await make().begin();
     expect((await make().status()).regeneration).toMatchObject({
@@ -176,7 +181,7 @@ it('releases a restored prepared import once with a real admin and effective set
     const repository = new DatabaseRepository(db, LoggingRepository.create(), new ConfigRepository());
     await repository.resetTransientExecutionState();
     await repository.resetTransientExecutionState(); // Lost offline acknowledgement, no new budget.
-    expect(await selections()).toEqual(captured);
+    expect(await work()).toEqual(captured);
     expect(
       (
         await sql`SELECT state,attempt,"retryBaseAttempt",token,"leaseExpiresAt" FROM job WHERE id=${safeJob}::uuid`.execute(
@@ -192,10 +197,10 @@ it('releases a restored prepared import once with a real admin and effective set
     expect(marker).toMatchObject({ installation: original, operationId, startedAt: expect.any(String) });
     // FL-1146: metadata and thumbnails start at once; the rest wait for the original-file check.
     const early = new Set<string>([JobName.AssetExtractMetadata, JobName.AssetGenerateThumbnails]);
-    expect((await selections()).map((row) => row.state)).toEqual(
-      captured.map((row) => (row.state === 'enumerating' && early.has(row.stage) ? 'ready' : row.state)),
+    expect(await holds()).toEqual(
+      Object.fromEntries(stages.filter((stage) => !early.has(stage)).map((stage) => [stage, 'setup'])),
     );
-    expect((await selections()).map((row) => row.capturedAt)).toEqual(captured.map((row) => row.capturedAt));
+    expect((await work()).map((row) => row.state)).toEqual(captured.map((row) => row.state));
     expect(await setup.sut.getAdminConfigWithRevision()).toEqual(settings);
     process.env.FRAMELEAF_MANAGER_INSTALLATION = '444455556666'; // Restore the restored library again.
     await make().begin(true);
@@ -203,12 +208,11 @@ it('releases a restored prepared import once with a real admin and effective set
     expect((await make().status()).regeneration?.runId).toBe(id);
     expect((await sql`SELECT count(*)::int AS count FROM job_run`.execute(db)).rows).toEqual([{ count: 1 }]);
     expect((await sql`SELECT count(*)::int AS count FROM job WHERE "runId"=${id}::uuid`.execute(db)).rows).toEqual([
-      { count: 0 },
+      { count: stages.length },
     ]);
     expect((await make().status({ user: { isAdmin: false } } as AuthDto)).regeneration).toBeNull();
     // An entirely cancelled restored run stays cancelled and never gets a false start receipt.
-    await sql`UPDATE job_selection SET state='cancelled' WHERE "runId"=${id}::uuid`.execute(db);
-    await sql`UPDATE job_run_item SET state='cancelled' WHERE "runId"=${id}::uuid`.execute(db);
+    await sql`UPDATE job SET state='cancelled',"finishedAt"=now() WHERE "runId"=${id}::uuid`.execute(db);
     await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup,startedAt}','null'::jsonb) WHERE id=${id}::uuid`.execute(
       db,
     );

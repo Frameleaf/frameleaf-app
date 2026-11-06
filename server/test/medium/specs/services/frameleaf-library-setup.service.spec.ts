@@ -9,8 +9,9 @@ import {
   IMPORT_DERIVED_RUN_KIND,
   IMPORT_DERIVED_RUN_STAGES,
   importDerivedRunId,
+  insertRunJobs,
 } from 'src/immich-import/derived-work.js';
-import { SqlQueueStore } from 'src/queue/store.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
 import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repository.js';
@@ -46,16 +47,22 @@ it('starts the retained import regeneration during first setup once ready, resum
     }),
     updateAdminConfigWithRevision: vi.fn().mockResolvedValue({}),
   };
+  const jobs = new JobRepository({} as never, {} as never, {} as never, { setContext: vi.fn() } as never, db);
+  for (const jobName of stages)
+    jobs['handlers'][jobName] = {
+      jobName,
+      queueName: 'manager-regeneration' as QueueName,
+      handler: vi.fn(),
+      label: 'synthetic',
+    };
   const make = () =>
     new FrameleafLibrarySetupService(
       db,
       { getAll: vi.fn().mockResolvedValue([]) } as never,
       {} as never,
-      {
+      Object.assign(jobs, {
         getJobCounts: vi.fn().mockResolvedValue({ active: 0, waiting: 0, delayed: 0, paused: 0, failed: 0 }),
-        retryImportedWork: (runId: string, tx: typeof db) => new SqlQueueStore(db).retryImportedWork(runId, tx),
-        forgetRunReads: vi.fn(),
-      } as never,
+      }),
       users as never,
       {} as never,
       {} as never,
@@ -67,11 +74,14 @@ it('starts the retained import regeneration during first setup once ready, resum
       await sql<{ selection: { managerSetup: { startedAt: string | null } } }>`
     SELECT selection FROM job_run WHERE id=${id}::uuid`.execute(db)
     ).rows[0];
-  const selections = async () =>
-    (
-      await sql<{ stage: string; state: string }>`
-    SELECT stage,state FROM job_selection WHERE "runId"=${id}::uuid ORDER BY stage`.execute(db)
-    ).rows;
+  const holds = async () =>
+    (await sql<{ holds: unknown }>`SELECT selection->'holds' AS holds FROM job_run WHERE id=${id}::uuid`.execute(db))
+      .rows[0].holds;
+  const waiting = Object.fromEntries(
+    [JobName.SmartSearch, JobName.AssetDetectFaces, JobName.PersonGenerateThumbnail, JobName.IdenticalFilesCheck].map(
+      (stage) => [stage, 'setup'],
+    ),
+  );
   try {
     process.env.FRAMELEAF_MANAGER_INSTALLATION = installation;
     process.env.FRAMELEAF_MANAGER_ORIGIN = 'new_import';
@@ -79,16 +89,22 @@ it('starts the retained import regeneration during first setup once ready, resum
     await sql`INSERT INTO frameleaf_immich_import(source_fingerprint,config_fingerprint,source_version,status)
       VALUES (${source},${configFingerprint},'frozen-fixture','verifying')`.execute(db);
     await sql`INSERT INTO job_queue(name) VALUES ('manager-regeneration')`.execute(db);
+    const prepared = Object.fromEntries(stages.map((stage) => [stage, 'setup']));
     await sql`INSERT INTO job_run(id,kind,selection,"enumerationDone") VALUES (${id}::uuid,${IMPORT_DERIVED_RUN_KIND},
-      ${JSON.stringify({ source, config: configFingerprint, managerSetup: { installation, operationId: randomUUID(), preparedAt: null, startedAt: null } })}::text::jsonb,false)`.execute(
+      ${JSON.stringify({ source, config: configFingerprint, holds: prepared, managerSetup: { installation, operationId: randomUUID(), preparedAt: null, startedAt: null } })}::text::jsonb,false)`.execute(
       db,
     );
-    for (const name of stages) {
-      await sql`INSERT INTO job_selection(id,"runId",stage,queue,"safeToRetry",sensitive,"deadlineMs",state,"capturedAt")
-        VALUES (${randomUUID()}::uuid,${id}::uuid,${name},'manager-regeneration',true,false,1000,
-        ${name === JobName.AssetGenerateThumbnails ? 'cancelled' : 'enumerating'},
-        ${name === JobName.PersonGenerateThumbnail ? null : new Date()})`.execute(db);
-    }
+    for (const name of stages)
+      await insertRunJobs(
+        db,
+        id,
+        { queue: 'manager-regeneration', name, data: {}, safeToRetry: true, sensitive: false, deadlineMs: 1000 },
+        db.selectNoFrom(sql<string>`'asset'::text`.as('id')),
+      );
+    // A cancelled stage is never revived by setup.
+    await sql`UPDATE job SET state='cancelled',"finishedAt"=now() WHERE name=${JobName.AssetGenerateThumbnails}`.execute(
+      db,
+    );
     const service = make();
     await service.begin();
     expect((await service.status()).regeneration).toMatchObject({
@@ -109,13 +125,10 @@ it('starts the retained import regeneration during first setup once ready, resum
     await service.begin();
     expect((await run()).selection.managerSetup.startedAt).toBeNull();
     await sql`UPDATE frameleaf_immich_import SET status='activated'`.execute(db);
-    await sql`UPDATE job_run SET "enumerationDone"=true,selection=jsonb_set(selection,'{managerSetup,preparedAt}',to_jsonb(now()::text)) WHERE id=${id}::uuid`.execute(
-      db,
-    );
-    await service.begin(); // The fifth, person-thumbnail capture is incomplete.
+    await service.begin(); // Activated, but its work is not prepared yet.
     expect((await run()).selection.managerSetup.startedAt).toBeNull();
-    expect((await selections()).filter((row) => row.state === 'ready')).toEqual([]);
-    await sql`UPDATE job_selection SET "capturedAt"=now() WHERE "runId"=${id}::uuid AND stage=${JobName.PersonGenerateThumbnail}`.execute(
+    expect(await holds()).toEqual(prepared);
+    await sql`UPDATE job_run SET "enumerationDone"=true,selection=jsonb_set(selection,'{managerSetup,preparedAt}',to_jsonb(now()::text)) WHERE id=${id}::uuid`.execute(
       db,
     );
     await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup,installation}','"555555556666"'::jsonb) WHERE id=${id}::uuid`.execute(
@@ -133,20 +146,8 @@ it('starts the retained import regeneration during first setup once ready, resum
     await Promise.all([service.begin(), make().begin()]);
     const startedAt = (await run()).selection.managerSetup.startedAt;
     expect(startedAt).toEqual(expect.any(String));
-    expect(await selections()).toEqual(
-      stages
-        .toSorted()
-        // FL-1146: metadata (and thumbnails) start at once; the rest wait for the original-file check.
-        .map((stage) => ({
-          stage,
-          state:
-            stage === JobName.AssetGenerateThumbnails
-              ? 'cancelled'
-              : stage === JobName.AssetExtractMetadata
-                ? 'ready'
-                : 'enumerating',
-        })),
-    );
+    // FL-1146: metadata (and thumbnails) start at once; the rest wait for the original-file check.
+    expect(await holds()).toEqual(waiting);
     // FL-1146 setup bar: smart search and faces wait for the original-file check; pause holds every stage.
     const progress = await make().progress();
     expect(progress).toMatchObject({ active: true, paused: false, completedAt: null, people: 0, albums: 0 });
@@ -157,17 +158,21 @@ it('starts the retained import regeneration during first setup once ready, resum
     ]);
     const held = await make().setPaused(true);
     expect(held.paused).toBe(true);
-    expect((await selections()).filter((row) => row.state === 'ready')).toEqual([]);
+    expect(await holds()).toEqual(Object.fromEntries(stages.map((stage) => [stage, 'paused'])));
     await make().setPaused(false);
-    expect((await selections()).filter((row) => row.state === 'ready')).toEqual([
-      { stage: JobName.AssetExtractMetadata, state: 'ready' },
-    ]);
+    expect(await holds()).toEqual(waiting);
     await make().begin(true); // Restart/retry must not mint a run or revive cancellation.
     expect((await run()).selection.managerSetup.startedAt).toBe(startedAt);
     expect((await sql<{ count: number }>`SELECT count(*)::int AS count FROM job_run`.execute(db)).rows[0].count).toBe(
       1,
     );
-    expect((await sql<{ count: number }>`SELECT count(*)::int AS count FROM job`.execute(db)).rows[0].count).toBe(0);
+    expect((await sql<{ count: number }>`SELECT count(*)::int AS count FROM job`.execute(db)).rows[0].count).toBe(
+      stages.length,
+    );
+    expect(
+      (await sql<{ state: string }>`SELECT state FROM job WHERE name=${JobName.AssetGenerateThumbnails}`.execute(db))
+        .rows,
+    ).toEqual([{ state: 'cancelled' }]);
     // Existing phone/setup completion is independent of this durable run's work.
     const revision = randomUUID(),
       sessionId = randomUUID();
@@ -177,25 +182,15 @@ it('starts the retained import regeneration during first setup once ready, resum
     await sql`INSERT INTO system_metadata(key,value) VALUES (${key + ':phone:' + sessionId},${JSON.stringify({ revision, tokenHash: 'fixture', finished: true })}::text::jsonb)`.execute(
       db,
     );
-    const selectionId = (
-      await sql<{
-        id: string;
-      }>`SELECT id FROM job_selection WHERE "runId"=${id}::uuid AND stage=${JobName.PersonGenerateThumbnail}`.execute(
-        db,
-      )
-    ).rows[0].id;
-    await sql`INSERT INTO job_run_item("runId","itemKey","rootItemKey",stage,queue,selection,"selectionId",state)
-      VALUES (${id}::uuid,'private-person','private-asset',${JobName.PersonGenerateThumbnail},'manager-regeneration','{}',${selectionId}::uuid,'pending')`.execute(
+    // Everything else ran; one person thumbnail waits for its destination.
+    await sql`UPDATE job SET state='completed',"finishedAt"=now() WHERE "runId"=${id}::uuid AND state='pending'`.execute(
       db,
     );
+    await sql`UPDATE job_run SET selection=selection || '{"holds":{}}'::jsonb WHERE id=${id}::uuid`.execute(db);
     const jobId = randomUUID();
-    await sql`INSERT INTO job(id,queue,name,data,"safeToRetry",sensitive,"deadlineMs","runId","itemKey","dependencyReason")
-      VALUES (${jobId}::uuid,'manager-regeneration',${JobName.PersonGenerateThumbnail},'{}',true,false,1000,${id}::uuid,'private-person','destination-unavailable')`.execute(
-      db,
-    );
-    await sql`UPDATE job_run_item SET "jobId"=${jobId}::uuid WHERE "runId"=${id}::uuid AND "itemKey"='private-person'`.execute(
-      db,
-    );
+    await sql`INSERT INTO job(id,queue,name,data,"safeToRetry",sensitive,"deadlineMs","runId","itemKey","rootItemKey","dependencyReason")
+      VALUES (${jobId}::uuid,'manager-regeneration',${JobName.PersonGenerateThumbnail},'{}',true,false,1000,${id}::uuid,
+        'private-person','private-asset','destination-unavailable')`.execute(db);
     const pending = await make().status();
     expect(pending.canFinish).toBe(true);
     expect(pending.regeneration).toMatchObject({ runId: id, state: 'blocked', startedAt, blocked: 1 });
@@ -773,8 +768,12 @@ it('serializes setup, resumes from persisted intent and keeps device completion 
     // FL-1165: a thumbnail failing on a damaged original is listed, not a reason to stop setup
     thumbnailFailures = 40;
     expect((await first.status(auth)).phase).not.toBe('needs-attention');
+    expect((await first.status(auth)).checkProblem).toBe(false);
+    // FL-1265: a library scan or file check job failing is reported, never a stop; Retry checks again.
     counts.failed = 4;
-    expect((await first.status(auth)).phase).toBe('needs-attention');
+    const reported = await first.status(auth);
+    expect(reported.checkProblem).toBe(true);
+    expect(reported.phase).not.toBe('needs-attention');
     await first.begin(true);
     // a retry starts over with today's failures as its baseline: the first poll commits the
     // integrity-scan admission again, the next one verifies

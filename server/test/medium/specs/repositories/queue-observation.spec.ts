@@ -2,7 +2,6 @@ import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { JobName, QueueName } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
-import { freezeSelection } from 'src/queue/manifest.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { QueueExecution, QueueIntent } from 'src/queue/types.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -49,7 +48,9 @@ describe('durable queue observation', () => {
       label: 'inference fixture',
       handler: vi.fn(),
     };
-    const runId = await store.createRun('inference-followups', {});
+    const runId = randomUUID();
+    await sql`insert into job_run(id, kind, selection, "enumerationDone")
+      values (${runId}::uuid, 'inference-followups', '{}', true)`.execute(db);
     await store.enqueue(
       [JobName.AssetMetadataPostprocess, JobName.SmartSearchPostprocess].map((name) =>
         intent({ name, data: { id: 'asset' }, runId, itemKey: 'asset', rootItemKey: 'asset' }),
@@ -119,33 +120,17 @@ describe('durable queue observation', () => {
     expect((await snapshot()).hasUnfinishedWork).toBe(false);
   });
 
-  it('reports an actual frozen selection before its first job is admitted', async () => {
-    await freezeSelection(db, intent(), db.selectFrom('job_worker').select('id').where('id', '=', worker));
-    expect(await snapshot()).toMatchObject({
-      hasUnfinishedWork: true,
-      statistics: { active: 0, waiting: 0, delayed: 0, paused: 0 },
-    });
+  it('reports held work as unfinished, and Empty keeps it', async () => {
+    const runId = randomUUID();
+    await sql`insert into job_run(id, kind, selection, "enumerationDone")
+      values (${runId}::uuid, 'held', '{"holds":{"observation-fixture":"setup"}}', true)`.execute(db);
+    await store.enqueue([intent({ runId, itemKey: 'asset', rootItemKey: 'asset' })]);
+    await sql`update job set "availableAt" = 'infinity' where queue = ${queue}`.execute(db);
+    expect(await snapshot()).toMatchObject({ hasUnfinishedWork: true, statistics: { active: 0 } });
+    expect(await store.claim(queue, worker)).toEqual([]);
     await store.clear(queue, ['pending', 'waiting']);
-    expect((await snapshot()).hasUnfinishedWork).toBe(false);
-  });
-
-  it('retains unfinished membership-copy work when the materialized queue is empty', async () => {
-    const frozenRun = await freezeSelection(
-      db,
-      intent(),
-      db.selectFrom('job_worker').select('id').where('id', '=', worker),
-    );
-    const {
-      rows: [frozen],
-    } = await sql<{ id: string }>`select id from job_selection where "runId"=${frozenRun}::uuid`.execute(db);
-    await store.clear(queue, ['pending', 'waiting']);
-    const runId = await store.createRun('late-selection-alias', {});
-    await sql`insert into job_selection_run ("selectionId","runId","copyComplete")
-      values (${frozen.id}::uuid,${runId}::uuid,false)`.execute(db);
-    expect(await snapshot()).toMatchObject({
-      hasUnfinishedWork: true,
-      statistics: { active: 0, waiting: 0, delayed: 0, paused: 0 },
-    });
+    expect((await snapshot()).hasUnfinishedWork).toBe(true);
+    expect(await store.getRun(runId)).toMatchObject({ held: 1, state: 'blocked', reasons: ['first_setup_pending'] });
   });
 
   it('keeps terminal failure visible separately from unfinished work', async () => {

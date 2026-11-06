@@ -1,3 +1,4 @@
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { JobRunSearchDto } from 'src/dtos/job-run.dto.js';
 import { RunItemRead, RunRead } from 'src/queue/run-query.js';
 import { JobService } from 'src/services/job.service.js';
@@ -30,6 +31,9 @@ const run: RunRead = {
   reasons: ['stage_failed'],
   noDispatchBacklog: false,
   held: 0,
+  canRelease: false,
+  countsPhotos: true,
+  failedQueues: ['thumbnailGeneration'],
 };
 describe('durable run read service', () => {
   let sut: JobService;
@@ -77,6 +81,27 @@ describe('durable run read service', () => {
       items: [],
       hasNextPage: false,
     });
+  });
+  it('maps the additive release, photo and failed-queue fields', async () => {
+    mocks.job.listRuns.mockResolvedValue([{ ...run, held: 4, canRelease: true, countsPhotos: false }]);
+    const page = await sut.getRuns(JobRunSearchDto.schema.parse({}));
+    expect(page.items[0]).toMatchObject({
+      held: 4,
+      canRelease: true,
+      countsPhotos: false,
+      failedQueues: ['thumbnailGeneration'],
+    });
+  });
+  it('releases a held run and refuses an import that is not activated yet', async () => {
+    mocks.job.releaseRun.mockResolvedValueOnce('released');
+    await expect(sut.releaseRun(run.id)).resolves.toBeUndefined();
+    expect(mocks.job.releaseRun).toHaveBeenCalledWith(run.id);
+    mocks.job.releaseRun.mockResolvedValueOnce('not_held');
+    await expect(sut.releaseRun(run.id)).resolves.toBeUndefined();
+    mocks.job.releaseRun.mockResolvedValueOnce('import_not_activated');
+    await expect(sut.releaseRun(run.id)).rejects.toBeInstanceOf(BadRequestException);
+    mocks.job.releaseRun.mockResolvedValueOnce('not_found');
+    await expect(sut.releaseRun(run.id)).rejects.toBeInstanceOf(NotFoundException);
   });
   it.each([{ take: 0 }, { take: 101 }, { skip: -1 }, { take: 'all' }])('rejects invalid pagination %j', (page) => {
     expect(() => JobRunSearchDto.schema.parse(page)).toThrow();

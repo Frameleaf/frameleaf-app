@@ -58,8 +58,8 @@ export const validateFrameleafCatalog = (catalog: DatabaseSchema): DatabaseSchem
     'user',
     'icloud_weekly_grant',
     'job',
-    'job_run_item',
-    'job_selection',
+    'job_run',
+    'job_attempt',
     'frameleaf_immich_import',
     'frameleaf_rate_limit',
     'socket_io_attachments',
@@ -69,8 +69,9 @@ export const validateFrameleafCatalog = (catalog: DatabaseSchema): DatabaseSchem
     if (catalog.tables.every((table) => table.name !== name)) throw new Error(`Canonical catalog is missing ${name}`);
   }
   for (const [tableName, columnName] of [
-    ['job_run_item', 'selectionId'],
-    ['job_queue', 'manifestFilling'],
+    // Present in the immutable baseline too, which is validated with the same sentinels.
+    ['job', 'rootItemKey'],
+    ['job_run', 'enumerationDone'],
   ]) {
     if (!catalog.tables.find(({ name }) => name === tableName)?.columns.some(({ name }) => name === columnName)) {
       throw new Error(`Canonical catalog is missing ${tableName}.${columnName}`);

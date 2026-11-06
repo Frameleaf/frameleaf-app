@@ -29115,6 +29115,63 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/jobs/runs/{id}/release": {
+      "post": {
+        "description": "Start the work a run holds back: the first setup of an import, or a paused setup. An import can be released once it is activated. Releasing a run with nothing held does nothing.",
+        "operationId": "releaseJobRun",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "400": {
+            "description": "The run's import is not activated yet"
+          },
+          "404": {
+            "description": "Job run not found"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Release held job run work",
+        "tags": [
+          "Jobs"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.create",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/jobs/{name}": {
       "put": {
         "deprecated": true,
@@ -66536,6 +66593,13 @@
           "backgroundTask": {
             "$ref": "#/components/schemas/AdminConfigJobSettingsDto"
           },
+          "capacity": {
+            "default": 0,
+            "description": "Jobs that run at once across all tasks (0 = automatic, from the processor count; 1-32)",
+            "maximum": 32,
+            "minimum": 0,
+            "type": "integer"
+          },
           "editor": {
             "$ref": "#/components/schemas/AdminConfigJobSettingsDto"
           },
@@ -98260,6 +98324,10 @@
             "minimum": 0,
             "type": "integer"
           },
+          "canRelease": {
+            "description": "Some of its work is held (first setup or a paused setup) and can be released from the Jobs page",
+            "type": "boolean"
+          },
           "cancelled": {
             "maximum": 9007199254740991,
             "minimum": 0,
@@ -98269,6 +98337,10 @@
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
+          },
+          "countsPhotos": {
+            "description": "The counts are photos; when false they are tasks (the run works on something other than photos)",
+            "type": "boolean"
           },
           "createdAt": {
             "format": "date-time",
@@ -98287,6 +98359,13 @@
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
+          },
+          "failedQueues": {
+            "description": "Queues with failed or needs-attention jobs in this run",
+            "items": {
+              "$ref": "#/components/schemas/QueueName"
+            },
+            "type": "array"
           },
           "finishedAt": {
             "format": "date-time",
@@ -100572,6 +100651,10 @@
             "minimum": 0,
             "type": "integer"
           },
+          "checkProblem": {
+            "description": "A file check or library scan ended early (failed or cancelled). Setup carried on; Library Care lists what it could not check",
+            "type": "boolean"
+          },
           "completedAt": {
             "description": "When everything finished; null while setup runs",
             "nullable": true,
@@ -100688,6 +100771,10 @@
       "LibrarySetupStatusDto": {
         "properties": {
           "canFinish": {
+            "type": "boolean"
+          },
+          "checkProblem": {
+            "description": "A file check or library scan ended early (failed or cancelled). Setup carried on; Library Care lists what it could not check",
             "type": "boolean"
           },
           "dismissed": {
@@ -137672,6 +137759,9 @@
             "description": "Whether face import is enabled",
             "type": "boolean"
           },
+          "jobCapacity": {
+            "$ref": "#/components/schemas/ServerJobCapacityDto"
+          },
           "map": {
             "description": "Whether map feature is enabled",
             "type": "boolean"
@@ -137918,6 +138008,26 @@
           "identityKeys",
           "instanceId",
           "linked"
+        ],
+        "type": "object"
+      },
+      "ServerJobCapacityDto": {
+        "description": "Background work capacity in effect (FL-1265)",
+        "properties": {
+          "fromEnvironment": {
+            "description": "Whether FRAMELEAF_JOB_CAPACITY set it, so the job.capacity setting has no effect",
+            "type": "boolean"
+          },
+          "value": {
+            "description": "Jobs this server runs at once across all tasks, as in effect now",
+            "maximum": 32,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "fromEnvironment",
+          "value"
         ],
         "type": "object"
       },
