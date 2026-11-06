@@ -115,6 +115,7 @@ export class MediaHealthOperationService {
   /** Lapsed claims are recovered by `MediaOperationSweepService`, for every kind, not here. */
   async drain(): Promise<void> {
     while (!this.stopping) {
+      // A queued job is left as it is: only a scan that is running is handed back and marked paused.
       if (await this.queuePaused()) {
         return;
       }

@@ -132,7 +132,9 @@ export class AssetPaletteRepository {
       .where('isOffline', '=', false)
       .where('visibility', '!=', AssetVisibility.Hidden)
       .where('type', 'in', [AssetType.Image, AssetType.Video])
-      // Images whose colors are known are never queued again by the restart and nightly pass.
+      // Images whose colors are known are never queued again by the restart and nightly pass. A finished palette
+      // whose picture later changed (an edit, a new develop, a replaced file) is redone by that change's event,
+      // or when the palette is read, not by this pass.
       .where(({ not, exists, selectFrom }) =>
         not(
           exists(

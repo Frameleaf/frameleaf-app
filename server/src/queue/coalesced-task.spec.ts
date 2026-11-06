@@ -75,6 +75,23 @@ describe('cost-reused reads', () => {
     expect(load).toHaveBeenCalledTimes(3);
   });
 
+  it('forgets every reuse on clear, including a read still in flight', async () => {
+    let clock = 0;
+    let release!: (value: string) => void;
+    const load = vi
+      .fn()
+      .mockImplementationOnce(() => new Promise<string>((resolve) => (release = resolve)))
+      .mockResolvedValue('after the change');
+    const read = costReusedRead(load, { now: () => clock });
+    const inFlight = read({ take: 25 });
+    read.clear(); // a cancel lands while the slow count is running
+    clock = 12_000;
+    release('before the change');
+    await expect(inFlight).resolves.toBe('before the change');
+    await expect(read({ take: 25 })).resolves.toBe('after the change');
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+
   it('never reuses a cheap read, so a change made just before shows at once', async () => {
     let clock = 0;
     const load = vi.fn(() => {

@@ -557,7 +557,7 @@ export class SqlQueueStore {
    * dependencies and holds still apply. False when the job is not waiting to run in this queue.
    */
   async startNow(queue: string, jobId: string): Promise<boolean> {
-    return this.db.transaction().execute(async (tx) => {
+    const started = await this.db.transaction().execute(async (tx) => {
       await lockQueues(tx, [queue]);
       const { rows } = await sql<{ id: string }>`update job j set state = 'waiting', "availableAt" = ${STARTED_BY_HAND}
         where id = ${jobId}::uuid and queue = ${queue} and state in ('pending','waiting')
@@ -570,6 +570,8 @@ export class SqlQueueStore {
       }
       return rows.length > 0;
     });
+    this.forgetRunReads();
+    return started;
   }
 
   async heartbeat(workerId: string, claims: Array<{ id: string; token: string }>) {
@@ -1035,6 +1037,7 @@ export class SqlQueueStore {
   async pause(name: string, paused: boolean) {
     await sql`insert into job_queue(name, paused) values (${name}, ${paused})
       on conflict (name) do update set paused = excluded.paused`.execute(this.db);
+    this.forgetRunReads();
   }
 
   async isPaused(name: string) {
@@ -1103,6 +1106,11 @@ export class SqlQueueStore {
     return this.runReads({ take, skip });
   }
 
+  /** After a pause, start, retry or cancel, Activity's next read is fresh, never a count from before the change. */
+  private forgetRunReads() {
+    this.runReads.clear();
+  }
+
   listRunItems(runId: string, take: number, skip: number) {
     return listRunItems(this.db, runId, take, skip);
   }
@@ -1116,11 +1124,13 @@ export class SqlQueueStore {
     if (entityIds?.length === 0) return;
     const about = entityIds ? sql`and j.data ->> 'id' = any(${entityIds}::text[])` : sql``;
     await this.cancel(queue, states, about, !entityIds);
+    this.forgetRunReads();
   }
 
   /** Cancel one queued job by its `options.jobId`; a later request for its run stage re-arms the same row. */
-  cancelQueued(queue: string, externalId: string) {
-    return this.cancel(queue, ['pending', 'waiting'], sql`and j."externalId" = ${externalId}`, false);
+  async cancelQueued(queue: string, externalId: string) {
+    await this.cancel(queue, ['pending', 'waiting'], sql`and j."externalId" = ${externalId}`, false);
+    this.forgetRunReads();
   }
 
   private async cancel(queue: string, states: QueueState[], about: RawBuilder<unknown>, wholeQueue: boolean) {
@@ -1205,6 +1215,7 @@ export class SqlQueueStore {
       AND EXISTS (SELECT 1 FROM job_run_item WHERE "runId"=${runId}::uuid AND state IN ('pending','waiting','active'))`.execute(
       db,
     );
+    this.forgetRunReads();
   }
 
   /**
@@ -1246,6 +1257,7 @@ export class SqlQueueStore {
       });
       total += count;
       if (count < 1000) {
+        this.forgetRunReads();
         return total;
       }
     }
