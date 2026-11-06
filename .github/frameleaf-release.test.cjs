@@ -366,13 +366,15 @@ const testJobNames = [
   "End-to-End Tests (Web) (ubuntu-24.04, 1)",
   "End-to-End Tests (Web) (ubuntu-24.04, 2)",
   "End-to-End Tests (Web) (ubuntu-24.04, 3)",
-  "End-to-End Tests (Web) (ubuntu-24.04, ui)",
+  "End-to-End Tests (Web) (ubuntu-24.04, ui-1)",
+  "End-to-End Tests (Web) (ubuntu-24.04, ui-2)",
   "End-to-End Tests (Web) (ubuntu-24.04, maintenance)",
   "End-to-End Tests (Web) (ubuntu-24.04, icloud)",
   "End-to-End Tests (Web) (ubuntu-24.04-arm, 1)",
   "End-to-End Tests (Web) (ubuntu-24.04-arm, 2)",
   "End-to-End Tests (Web) (ubuntu-24.04-arm, 3)",
-  "End-to-End Tests (Web) (ubuntu-24.04-arm, ui)",
+  "End-to-End Tests (Web) (ubuntu-24.04-arm, ui-1)",
+  "End-to-End Tests (Web) (ubuntu-24.04-arm, ui-2)",
   "End-to-End Tests (Web) (ubuntu-24.04-arm, maintenance)",
   "End-to-End Tests (Web) (ubuntu-24.04-arm, icloud)",
   "End-to-End Tests Success",
@@ -424,7 +426,7 @@ test("same-SHA Test qualification requires every real non-mobile job, including 
   const evidence = await requireTestQualification(sha, fixture.request);
   assert.equal(evidence.runId, 42);
   assert.equal(evidence.attempt, 2);
-  assert.equal(evidence.jobs.length, 68);
+  assert.equal(evidence.jobs.length, 70);
   assert.equal(
     evidence.jobs.filter((job) =>
       job.name.startsWith("End-to-End Tests (Server & CLI)"),
@@ -434,7 +436,7 @@ test("same-SHA Test qualification requires every real non-mobile job, including 
   assert.equal(
     evidence.jobs.filter((job) => job.name.startsWith("End-to-End Tests (Web)"))
       .length,
-    12,
+    14,
   );
   assert.equal(
     evidence.jobs.some(
