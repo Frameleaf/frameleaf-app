@@ -34,13 +34,16 @@ export async function up(db: Kysely<any>): Promise<void> {
   // The old claim also held every stage of a Manager import whose setup authority does not match this installation.
   // Setup never rewrites holds for such a run, so they stay until it matches or an administrator releases it.
   // Setup progress (phase, pause, processing choice) is left out: setup recomputes those holds on its next pass.
+  // `authorityHeld` keeps the holds the run had before: a migration run without Manager's settings holds a valid
+  // import too, and setup, once it has verified the import's authority, recomputes from them and drops the marker.
   const current = process.env.FRAMELEAF_MANAGER_INSTALLATION ?? '';
   const origin = process.env.FRAMELEAF_MANAGER_ORIGIN ?? '';
   const expected = origin === 'restored_library' ? (process.env.FRAMELEAF_MANAGER_IMPORT_INSTALLATION ?? '') : current;
   const profile = origin === 'new_import' || (origin === 'restored_library' && !!expected);
   const validProfile = profile && /^[a-f0-9]{12}$/.test(current) && /^[a-f0-9]{12}$/.test(expected);
   await sql`UPDATE job_run r SET selection = r.selection
-      || jsonb_build_object('holds', h.holds || coalesce(r.selection->'holds', '{}'::jsonb), 'holdsDirty', true)
+      || jsonb_build_object('holds', h.holds || coalesce(r.selection->'holds', '{}'::jsonb), 'holdsDirty', true,
+        'authorityHeld', coalesce(r.selection->'holds', '{}'::jsonb))
     FROM (SELECT rr.id, jsonb_object_agg(st.stage, 'setup'::text) holds FROM job_run rr
       CROSS JOIN LATERAL (SELECT stage FROM job_selection WHERE "runId" = rr.id
         UNION SELECT name FROM job WHERE "runId" = rr.id AND state IN ('pending','waiting')) st

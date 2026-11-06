@@ -4,6 +4,10 @@ import { Migrator } from 'kysely/migration';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import postgres from 'postgres';
+import { importDerivedRunId } from 'src/immich-import/derived-work.js';
+import { SqlQueueStore } from 'src/queue/store.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
+import { FrameleafLibrarySetupService } from 'src/services/frameleaf-library-setup.service.js';
 import { getKyselyConfig } from 'src/utils/database.js';
 
 const BEFORE = '1793930000000-AssetPaletteContentRevision';
@@ -205,48 +209,66 @@ describe('SingleJobRecord migration', () => {
 
   describe('a started Manager import', () => {
     const installation = '126500000001';
-    /** `null`: Manager required setup, but its marker was never written. */
-    const setup = async (markerInstallation: string | null) => {
+    const restoredFrom = '126500000003';
+    const source = { source: 'synthetic-source', config: 'synthetic-config' };
+    const run = importDerivedRunId(source.source, source.config);
+    const managerEnv = (origin = 'new_import', importInstallation = '') => {
       vi.stubEnv('FRAMELEAF_MANAGER_INSTALLATION', installation);
-      vi.stubEnv('FRAMELEAF_MANAGER_ORIGIN', 'new_import');
-      vi.stubEnv('FRAMELEAF_MANAGER_IMPORT_INSTALLATION', '');
-      const queue = 'thumbnailGeneration';
-      const run = randomUUID();
-      const selection = randomUUID();
+      vi.stubEnv('FRAMELEAF_MANAGER_ORIGIN', origin);
+      vi.stubEnv('FRAMELEAF_MANAGER_IMPORT_INSTALLATION', importInstallation);
+    };
+    /** `marker: null`: Manager required setup, but its marker was never written. */
+    const setup = async (
+      marker: string | null,
+      {
+        env = true,
+        origin = 'new_import',
+        journal = 'activated',
+        startedAt = new Date().toISOString(),
+        stages = [['AssetGenerateThumbnails', 'thumbnailGeneration']],
+      }: { env?: boolean; origin?: string; journal?: string; startedAt?: string; stages?: string[][] } = {},
+    ) => {
+      vi.unstubAllEnvs();
+      if (env) managerEnv(origin, origin === 'restored_library' ? restoredFrom : '');
+      // A migration run without Manager's settings, e.g. by a separate process.
+      else
+        for (const name of ['INSTALLATION', 'ORIGIN', 'IMPORT_INSTALLATION'])
+          vi.stubEnv(`FRAMELEAF_MANAGER_${name}`, '');
       const operationId = randomUUID();
-      const startedAt = new Date().toISOString();
-      await sql`INSERT INTO job_queue(name) VALUES (${queue})`.execute(db);
       await sql`INSERT INTO frameleaf_immich_import(source_fingerprint, config_fingerprint, source_version, status)
-        VALUES ('synthetic-source', 'synthetic-config', 'synthetic', 'activated')`.execute(db);
+        VALUES (${source.source}, ${source.config}, 'synthetic', ${journal})`.execute(db);
       await sql`INSERT INTO job_run(id, kind, selection, "enumerationDone") VALUES (${run}::uuid, 'immich-import-derived',
         ${JSON.stringify({
-          source: 'synthetic-source',
-          config: 'synthetic-config',
+          ...source,
           managerSetupRequired: true,
           managerSetup:
-            markerInstallation === null
+            marker === null
               ? undefined
-              : { installation: markerInstallation, operationId, preparedAt: startedAt, startedAt, paused: false },
+              : { installation: marker, operationId, preparedAt: new Date().toISOString(), startedAt, paused: false },
         })}::text::jsonb, true)`.execute(db);
-      await sql`INSERT INTO job_selection(id, "runId", stage, queue, "safeToRetry", sensitive, "deadlineMs", state, "capturedAt")
-        VALUES (${selection}::uuid, ${run}::uuid, 'AssetGenerateThumbnails', ${queue}, true, false, 600000, 'ready', now())`.execute(
-        db,
-      );
-      const fed = randomUUID();
-      await sql`INSERT INTO job_run_item("runId", "itemKey", "rootItemKey", stage, queue, selection, "selectionId", state, "jobId")
-        VALUES (${run}::uuid, 'fed', 'fed', 'AssetGenerateThumbnails', ${queue}, '{"id":"fed"}', ${selection}::uuid, 'waiting', ${fed}::uuid),
-          (${run}::uuid, 'unfed', 'unfed', 'AssetGenerateThumbnails', ${queue}, '{"id":"unfed"}', ${selection}::uuid, 'pending', NULL)`.execute(
-        db,
-      );
-      await sql`INSERT INTO job(id, queue, name, data, "safeToRetry", "deadlineMs", "runId", "itemKey", "rootItemKey")
-        VALUES (${fed}::uuid, ${queue}, 'AssetGenerateThumbnails', '{"id":"fed"}', true, 600000, ${run}::uuid, 'fed', 'fed')`.execute(
-        db,
-      );
+      for (const [stage, queue] of stages) {
+        const selection = randomUUID();
+        const fed = randomUUID();
+        await sql`INSERT INTO job_queue(name) VALUES (${queue}) ON CONFLICT DO NOTHING`.execute(db);
+        await sql`INSERT INTO job_selection(id, "runId", stage, queue, "safeToRetry", sensitive, "deadlineMs", state, "capturedAt")
+          VALUES (${selection}::uuid, ${run}::uuid, ${stage}, ${queue}, true, false, 600000, 'ready', now())`.execute(
+          db,
+        );
+        await sql`INSERT INTO job_run_item("runId", "itemKey", "rootItemKey", stage, queue, selection, "selectionId", state, "jobId")
+          VALUES (${run}::uuid, 'fed', 'fed', ${stage}, ${queue}, '{"id":"fed"}', ${selection}::uuid, 'waiting', ${fed}::uuid),
+            (${run}::uuid, 'unfed', 'unfed', ${stage}, ${queue}, '{"id":"unfed"}', ${selection}::uuid, 'pending', NULL)`.execute(
+          db,
+        );
+        await sql`INSERT INTO job(id, queue, name, data, "safeToRetry", "deadlineMs", "runId", "itemKey", "rootItemKey")
+          VALUES (${fed}::uuid, ${queue}, ${stage}, '{"id":"fed"}', true, 600000, ${run}::uuid, 'fed', 'fed')`.execute(
+          db,
+        );
+      }
       // The owner's server: setup stopped in needs-attention after a failed file check; setup itself releases that.
       await sql`INSERT INTO system_metadata(key, value) VALUES (${'frameleaf-manager-library-setup:' + installation},
         ${JSON.stringify({
           installation,
-          origin: 'new_import',
+          origin,
           phase: 'needs-attention',
           processingChoiceApplied: true,
           importRunId: run,
@@ -254,17 +276,83 @@ describe('SingleJobRecord migration', () => {
         })}::text::jsonb)`.execute(db);
 
       expect((await migrator().migrateToLatest()).error).toBeUndefined();
-
+      return read();
+    };
+    const read = async () => {
       const { rows: jobs } = await sql<{
         itemKey: string;
         held: boolean;
       }>`SELECT "itemKey", "availableAt" = 'infinity' held
-        FROM job WHERE "runId" = ${run}::uuid ORDER BY "itemKey"`.execute(db);
+        FROM job WHERE "runId" = ${run}::uuid ORDER BY "itemKey", name`.execute(db);
       const {
         rows: [{ selection: migrated }],
       } = await sql<{ selection: any }>`SELECT selection FROM job_run WHERE id = ${run}::uuid`.execute(db);
       return { jobs, selection: migrated };
     };
+    /** The server's regular setup pass, run with Manager's settings, then the coordinator applying its holds. */
+    const serverPass = async (state: Record<string, unknown>, faces = true) => {
+      managerEnv();
+      await sql`UPDATE system_metadata SET value = value || ${JSON.stringify(state)}::text::jsonb
+        WHERE key = ${'frameleaf-manager-library-setup:' + installation}`.execute(db);
+      const jobs = new JobRepository({} as never, {} as never, {} as never, { setContext: vi.fn() } as never, db);
+      const service = new FrameleafLibrarySetupService(
+        db,
+        { getAll: vi.fn().mockResolvedValue([]) } as never,
+        {} as never,
+        jobs,
+        {
+          hasAdmin: vi.fn().mockResolvedValue(true),
+          getAdmin: vi.fn().mockResolvedValue({ id: randomUUID() }),
+        } as never,
+        { getNow: vi.fn().mockResolvedValue({ nowId: randomUUID() }) } as never,
+        {} as never,
+        {
+          getAdminConfigWithRevision: vi.fn().mockResolvedValue({
+            config: {
+              machineLearning: { enabled: true, clip: { enabled: true }, facialRecognition: { enabled: faces } },
+            },
+            revision: 'synthetic',
+          }),
+        } as never,
+        {} as never,
+      );
+      await service.status();
+      const store = new SqlQueueStore(db);
+      while ((await store.reconcileHolds(1000)) > 0);
+      return read();
+    };
+    /** Setup in needs-attention because one account's file check failed and another's was cancelled. */
+    const stoppedCheck = async () => {
+      const healthAfter = new Date(Date.now() - 60_000).toISOString();
+      const health: Record<string, string> = {};
+      for (const status of ['failed', 'cancelled']) {
+        const owner = randomUUID();
+        await sql`WITH g AS (INSERT INTO cluster_group DEFAULT VALUES RETURNING id)
+          INSERT INTO "user"(id, email, "clusterGroupId") SELECT ${owner}::uuid, ${`${owner}@example.test`}, id FROM g`.execute(
+          db,
+        );
+        health[owner] = (
+          await sql<{
+            id: string;
+          }>`INSERT INTO media_operation("ownerId", kind, status, destination, label, snapshot, settings)
+            VALUES (${owner}::uuid, 'media_health', ${status}, 'local', 'Synthetic full check', '{"mode":"scan"}', '{}')
+            RETURNING id`.execute(db)
+        ).rows[0].id;
+      }
+      return {
+        startedAt: healthAfter,
+        healthAfter,
+        libraries: [],
+        scans: {},
+        health,
+        owners: Object.keys(health),
+        checkReleasedAt: null,
+        failedBaseline: {},
+        revision: null,
+        quietSince: null,
+      };
+    };
+    const migrationHolds = { AssetGenerateThumbnails: 'setup' };
 
     it('stays held when its setup authority belongs to another installation', async () => {
       const { jobs, selection } = await setup('126500000002');
@@ -284,6 +372,18 @@ describe('SingleJobRecord migration', () => {
       ]);
     });
 
+    it('stays held when its import was never activated', async () => {
+      const { jobs, selection } = await setup(installation, { journal: 'verifying' });
+      expect(selection).toMatchObject({ holds: { AssetGenerateThumbnails: 'setup' } });
+      expect(jobs.every(({ held }) => held)).toBe(true);
+    });
+
+    it('stays held when its setup start time is not a time', async () => {
+      const { jobs, selection } = await setup(installation, { startedAt: 'not-a-time' });
+      expect(selection).toMatchObject({ holds: { AssetGenerateThumbnails: 'setup' } });
+      expect(jobs.every(({ held }) => held)).toBe(true);
+    });
+
     it('is not held when its setup authority matches, even with setup in needs-attention', async () => {
       const { jobs, selection } = await setup(installation);
       expect(selection.holds).toBeUndefined();
@@ -291,6 +391,57 @@ describe('SingleJobRecord migration', () => {
         { itemKey: 'fed', held: false },
         { itemKey: 'unfed', held: false },
       ]);
+    });
+
+    it('is not held in a restored library whose import came from the installation Manager restored', async () => {
+      const { jobs, selection } = await setup(restoredFrom, { origin: 'restored_library' });
+      expect(selection.holds).toBeUndefined();
+      expect(jobs.every(({ held }) => !held)).toBe(true);
+    });
+
+    it('is released by the server once it verifies setup authority the migration could not', async () => {
+      const migrated = await setup(installation, { env: false });
+      expect(migrated.selection).toMatchObject({ holds: migrationHolds, authorityHeld: {} });
+      expect(migrated.jobs.every(({ held }) => held)).toBe(true);
+
+      const { jobs, selection } = await serverPass(await stoppedCheck());
+      expect(selection.holds).toEqual({});
+      expect(selection).not.toHaveProperty('authorityHeld');
+      expect(jobs).toEqual([
+        { itemKey: 'fed', held: false },
+        { itemKey: 'unfed', held: false },
+      ]);
+    });
+
+    it('is released after a finished setup, with no stage parked that was not held before', async () => {
+      const stages = [
+        ['AssetGenerateThumbnails', 'thumbnailGeneration'],
+        ['AssetDetectFaces', 'faceDetection'],
+      ];
+      await setup(installation, { env: false, stages });
+      const now = new Date().toISOString();
+      const { jobs, selection } = await serverPass(
+        {
+          phase: 'complete',
+          revision: randomUUID(),
+          checkReleasedAt: now,
+          completedAt: now,
+          dismissedAt: now,
+          libraries: [],
+          scans: {},
+        },
+        false,
+      );
+      expect(selection.holds).toEqual({});
+      expect(jobs).toHaveLength(4);
+      expect(jobs.every(({ held }) => !held)).toBe(true);
+    });
+
+    it('stays held after the server pass when its setup authority belongs to another installation', async () => {
+      await setup('126500000002', { env: false });
+      const { jobs, selection } = await serverPass(await stoppedCheck());
+      expect(selection).toMatchObject({ holds: migrationHolds, authorityHeld: {} });
+      expect(jobs.every(({ held }) => held)).toBe(true);
     });
   });
 

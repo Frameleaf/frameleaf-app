@@ -24,6 +24,8 @@ type SetupSelection = Record<string, unknown> & {
   };
   /** FL-1265: what holds each stage's jobs; setup rewrites it (`FrameleafLibrarySetupService.applyHolds`). */
   holds?: RunHolds;
+  /** FL-1265: the holds before the upgrade held the run for setup authority; setup drops it once verified. */
+  authorityHeld?: RunHolds;
   /** Set when an administrator released the run from Jobs; setup then holds nothing for the file check. */
   releasedAt?: string;
 };

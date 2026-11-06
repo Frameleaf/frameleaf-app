@@ -140,6 +140,7 @@ export async function prepareLibraryImportWork(
       };
       const { rows: runs } = await sql<{ kind: string; valid: boolean; managed: boolean; setup: unknown }>`select kind,
         (selection - 'managerSetup' - 'managerSetupRequired' - 'holds' - 'holdsDirty' - 'holdsCursor' - 'releasedAt'
+          - 'authorityHeld'
           =${JSON.stringify(selection)}::text::jsonb
           and (not selection ? 'managerSetupRequired' or selection->'managerSetupRequired'='true'::jsonb)
           and ("finishedAt" is null or ("enumerationDone" and not exists (

@@ -419,17 +419,25 @@ export class FrameleafLibrarySetupService {
    * FL-1265: writes the holds this setup wants on its import's run (see `desiredHolds`) when they differ from the
    * stored ones. It reads first, so a poll with nothing to change takes no run lock. Nothing is written before first
    * setup starts the run (the run keeps preparation's holds) or for a run this setup does not match.
+   *
+   * A run the upgrade held because it could not verify setup authority (`authorityHeld`, e.g. migrated without
+   * Manager's settings) is recomputed from the holds it had before, once its import is activated and matches.
    */
   private async applyHolds(state: SetupState, db: Kysely<DB>, locked = false): Promise<void> {
     const imported = await this.importedRun(db, locked);
     const run = imported?.run;
     if (!imported || !run?.selection.managerSetup?.startedAt || !this.importedSetupMatches(state, imported)) return;
-    const holds = desiredHolds(state, run.selection, imported.stages, await this.disabledImportStages(), (stage) =>
+    const before = run.selection.authorityHeld;
+    if (before && imported.journal.status !== 'activated') return;
+    const selection = before ? { ...run.selection, holds: before } : run.selection;
+    const holds = desiredHolds(state, selection, imported.stages, await this.disabledImportStages(), (stage) =>
       this.jobs.getQueueName(stage as JobName),
     );
-    if (sameHolds(holds, run.selection.holds)) return;
+    if (!before && sameHolds(holds, run.selection.holds)) return;
     if (!locked) return this.applyHolds(state, db, true);
     await this.jobs.setRunHolds(run.id, holds, db);
+    if (before)
+      await sql`UPDATE job_run SET selection=selection - 'authorityHeld' WHERE id=${run.id}::uuid`.execute(db);
   }
 
   private async regenerationStatus(state: SetupState) {
