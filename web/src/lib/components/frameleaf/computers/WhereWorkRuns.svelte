@@ -92,6 +92,7 @@
     mdiTransitConnectionVariant,
   } from '@mdi/js';
   import { onMount, type Snippet } from 'svelte';
+  import { WorkRunsDraft } from './work-runs-draft.svelte';
   import { t, type Translations } from 'svelte-i18n';
 
   type Routed = Exclude<WorkKind, 'render'>;
@@ -154,41 +155,77 @@
     cloudOn,
   });
 
-  // ---- the page's own draft: one Save for the whole table -------------------------------------------
+  /**
+   * Which part to draw (approved design, 2026-11-04): Computers › Everyday shows the who-does-what grid
+   * with its Save, Computers › Advanced the order to try and the related settings elsewhere. Without
+   * one, the whole page as it was.
+   */
+  let {
+    part = 'all',
+    between,
+    connections,
+    draft,
+    onAdd,
+  }: {
+    part?: 'all' | 'everyday' | 'advanced';
+    /** The unsaved choices, kept by the page so they outlast this part being drawn again (FL-1252). */
+    draft?: WorkRunsDraft;
+    /** Opens the page's own "Add a computer" in place of following the link to it (FL-1245). */
+    onAdd?: () => void;
+    /** Advanced only: what the page draws between Finer choices and Connections (Limits for each person). */
+    between?: Snippet;
+    /** Advanced only: the page's own rows at the top of Connections, before the order to try. */
+    connections?: Snippet;
+  } = $props();
+  // svelte-ignore state_referenced_locally (the page hands over one draft for the life of this part)
+  const work = draft ?? new WorkRunsDraft();
+  /** A plain click on an "Add a computer" link, when the page shows the ways to add one itself. */
+  const addHere = (event: MouseEvent) => {
+    if (onAdd && !(event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)) {
+      event.preventDefault();
+      onAdd();
+    }
+  };
 
-  let picked = $state<Partial<Record<Routed, RouteChoice>>>({});
-  let pickedFollowers = $state<Partial<Record<Follower, RouteChoice>>>({});
-  let suggest = $state<StartWith>();
+  // ---- the page's own draft: one Save for the whole table -------------------------------------------
+  // The unsaved choices themselves are `work`, above with the props.
+
   let saving = $state(false);
   let said = $state('');
   let failed = $state('');
 
+  // A kept pick for a computer that has since gone (the draft outlives the table, FL-1252) is dropped,
+  // so it is neither shown nor saved.
+  const picked = $derived(
+    Object.fromEntries(
+      Object.entries(work.picked).filter(([kind, id]) => choicesFor(kind as Routed, facts).includes(id)),
+    ) as typeof work.picked,
+  );
+  const followers = $derived(
+    Object.fromEntries(
+      Object.entries(work.followers).filter(([id, value]) => followerChoices(id as Follower, facts).includes(value)),
+    ) as typeof work.followers,
+  );
   const choice = (kind: Routed) => picked[kind] ?? currentChoice(kind, facts);
-  const follower = (id: Follower) => pickedFollowers[id] ?? followerChoice(id, facts);
-  const writes = $derived(routeWrites(picked, pickedFollowers, facts));
-  const suggestChanged = $derived(suggest !== undefined && suggest !== savedCloudMl?.startWith);
+  const follower = (id: Follower) => followers[id] ?? followerChoice(id, facts);
+  const writes = $derived(routeWrites(picked, followers, facts));
+  const suggestChanged = $derived(work.suggest !== undefined && work.suggest !== savedCloudMl?.startWith);
   const changedRows = $derived(ROUTED.filter((kind) => choice(kind) !== currentChoice(kind, facts)));
 
   // FL-456: the order is part of the same draft and the same Save.
-  let pickedOrder = $state<MlProcessingSource[]>();
-  const order = $derived(pickedOrder ?? processing?.order ?? []);
-  const orderChanged = $derived(!!processing && !!pickedOrder && !sameOrder(pickedOrder, processing.order));
-  const move = (index: number, step: -1 | 1) => (pickedOrder = moveSource(order, index, step));
+  const order = $derived(work.order ?? processing?.order ?? []);
+  const orderChanged = $derived(!!processing && !!work.order && !sameOrder(work.order, processing.order));
+  const move = (index: number, step: -1 | 1) => (work.order = moveSource(order, index, step));
   const sourceName = (source: MlProcessingSource) => $t(SOURCE_NAME_KEY[source]);
 
   // Approved design (2026-11-04): what work set to run on a computer at home does while it isn't answering.
-  let pickedWhen = $state<MlWhenUnavailable>();
-  const whenUnavailable = $derived(pickedWhen ?? processing?.whenUnavailable ?? MlWhenUnavailable.Wait);
-  const whenChanged = $derived(!!processing && pickedWhen !== undefined && pickedWhen !== processing.whenUnavailable);
+  const whenUnavailable = $derived(work.when ?? processing?.whenUnavailable ?? MlWhenUnavailable.Wait);
+  const whenChanged = $derived(!!processing && work.when !== undefined && work.when !== processing.whenUnavailable);
 
   const dirty = $derived(hasWrites(writes) || suggestChanged || orderChanged || whenChanged);
 
   const undo = () => {
-    picked = {};
-    pickedFollowers = {};
-    pickedOrder = undefined;
-    pickedWhen = undefined;
-    suggest = undefined;
+    work.clear();
     failed = '';
   };
 
@@ -197,10 +234,10 @@
     said = '';
     failed = '';
     try {
-      if ((orderChanged && pickedOrder) || whenChanged) {
+      if ((orderChanged && work.order) || whenChanged) {
         processing = await setMlProcessingOrder({
           mlProcessingOrderUpdateDto: {
-            order: pickedOrder ?? processing!.order,
+            order: work.order ?? processing!.order,
             ...(whenChanged && { whenUnavailable }),
           },
         });
@@ -223,8 +260,8 @@
         for (const [kind, mode] of cloudChanges) {
           cloudMl.routing[kind as keyof typeof cloudMl.routing] = mode;
         }
-        if (suggest !== undefined) {
-          cloudMl.startWith = suggest;
+        if (work.suggest !== undefined) {
+          cloudMl.startWith = work.suggest;
         }
         if (!(await settingsDraft.saveKeys(['frameleafCloud']))) {
           throw new Error('settings');
@@ -430,23 +467,6 @@
   };
   const anyAsk = $derived(ROUTED.some((kind) => choice(kind) === ASK));
 
-  /**
-   * Which part to draw (approved design, 2026-11-04): Computers › Everyday shows the who-does-what grid
-   * with its Save, Computers › Advanced the order to try and the related settings elsewhere. Without
-   * one, the whole page as it was.
-   */
-  let {
-    part = 'all',
-    between,
-    connections,
-  }: {
-    part?: 'all' | 'everyday' | 'advanced';
-    /** Advanced only: what the page draws between Finer choices and Connections (Limits for each person). */
-    between?: Snippet;
-    /** Advanced only: the page's own rows at the top of Connections, before the order to try. */
-    connections?: Snippet;
-  } = $props();
-
   /** Finer choices (prototype `Routing.jsx` FinerChoices): the two follower rows, and the place suggested when asked. */
   const showFollowers = $derived(
     (followerChoices('pets', facts).length > 3 ||
@@ -553,7 +573,7 @@
                 </small>
               </div>
               {#if fixed && current === NONE}
-                <a class="button" href={commandCenterUrl('processing', 'computers', { add: 'name' })}>
+                <a class="button" href={commandCenterUrl('processing', 'computers', { add: 'name' })} onclick={addHere}>
                   {$t('frameleaf_computers_add')}
                 </a>
               {:else if fixed}
@@ -581,7 +601,7 @@
                         : option === CLOUD && !cloudOn
                           ? $t('frameleaf_workruns_cloud_not_set_up')
                           : $t('frameleaf_workruns_cannot_here')}
-                      onclick={() => (picked = { ...picked, [kind]: option })}
+                      onclick={() => (work.picked = { ...work.picked, [kind]: option })}
                     >
                       {#if icon}<Icon {icon} size="15" aria-hidden />{/if}
                       <span>{columnLabel(option)}</span>
@@ -637,7 +657,7 @@
               ]}
               value={whenUnavailable}
               disabled={locked || saving}
-              onChange={(value) => (pickedWhen = value as MlWhenUnavailable)}
+              onChange={(value) => (work.when = value as MlWhenUnavailable)}
             />
           </Row>
         </Section>
@@ -659,7 +679,7 @@
               })}
               value={follower(id)}
               disabled={saving}
-              onchange={(event) => (pickedFollowers = { ...pickedFollowers, [id]: event.currentTarget.value })}
+              onchange={(event) => (work.followers = { ...work.followers, [id]: event.currentTarget.value })}
             >
               {#each options as option (option)}
                 <option value={option}>{choiceLabel(option, workName(FOLLOWERS[id].follows))}</option>
@@ -674,9 +694,9 @@
         <select
           class="fl-control"
           aria-label={$t('frameleaf_workruns_ask_label')}
-          value={suggest ?? savedCloudMl?.startWith}
+          value={work.suggest ?? savedCloudMl?.startWith}
           disabled={saving || locked}
-          onchange={(event) => (suggest = event.currentTarget.value as StartWith)}
+          onchange={(event) => (work.suggest = event.currentTarget.value as StartWith)}
         >
           <option value={StartWith.Local}>{$t('frameleaf_workruns_ask_home')}</option>
           <option value={StartWith.Cloud}>{$t('frameleaf_workruns_choice_cloud')}</option>

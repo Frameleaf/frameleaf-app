@@ -271,6 +271,21 @@ describe('LibrariesManager (FL-78)', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(en.frameleaf_libraries_error_scan);
   });
 
+  it('keeps one live region in the page across the list, a library and Add a folder (FL-1248)', async () => {
+    const { container, rerender } = setup(null, { selectedKey: null });
+    const region = container.querySelector('.kit-said-region');
+    expect(region).toHaveAttribute('role', 'status');
+    expect(region).toBeEmptyDOMElement();
+
+    await rerender({ selectedKey: 'library:lib-1' });
+    expect(container.querySelectorAll('.kit-said-region')).toHaveLength(1);
+    expect(container.querySelector('.kit-said-region')).toBe(region);
+
+    await rerender({ createOnOpen: true });
+    expect(container.querySelectorAll('.kit-said-region')).toHaveLength(1);
+    expect(container.querySelector('.kit-said-region')).toBe(region);
+  });
+
   it('opens Add a folder of photos as a page of its own, in four steps (FL-539)', async () => {
     const first = setup(null, { selectedKey: null });
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_libraries_add }));

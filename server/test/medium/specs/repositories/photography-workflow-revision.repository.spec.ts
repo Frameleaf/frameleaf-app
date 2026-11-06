@@ -1,6 +1,7 @@
 import { ConflictException } from '@nestjs/common';
 import { Kysely } from 'kysely';
 import type { PhotographyWorkflow } from 'src/services/photography-workflow.service.js';
+import { UserStatus } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PhotographyWorkflowRepository } from 'src/repositories/photography-workflow.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -61,5 +62,46 @@ describe(PhotographyWorkflowRepository.name, () => {
       repository.mutateKeepingRevision(shootId, user.id, album.id, held, initial, () => {}),
     ).rejects.toBeInstanceOf(ConflictException);
     await expect(repository.get(shootId)).resolves.toMatchObject({ revision: saved.row.revision });
+  });
+
+  it('lists reminders only for live galleries: album kept, studio active (FL-1234)', async () => {
+    const { ctx } = newMediumService(BaseService, { database, real: [], mock: [LoggingRepository] });
+    const repository = new PhotographyWorkflowRepository(database);
+    const value = {
+      config: { title: 'Wedding', reminders: { selection: true } },
+      sessions: [],
+      recipients: [],
+    } as unknown as PhotographyWorkflow;
+    const gallery = async () => {
+      const { user } = await ctx.newUser();
+      const { album } = await ctx.newAlbum({ ownerId: user.id });
+      const shootId = newUuid();
+      await repository.mutateKeepingRevision(shootId, user.id, album.id, null, value, () => {});
+      return { shootId, user, album };
+    };
+    const live = await gallery();
+    const albumDeleted = await gallery();
+    const studioDeactivated = await gallery();
+    const studioDeleted = await gallery();
+    await ctx.softDeleteAlbum(albumDeleted.album.id);
+    await database
+      .updateTable('user')
+      .set({ status: UserStatus.Removing })
+      .where('id', '=', studioDeactivated.user.id)
+      .execute();
+    await database.updateTable('user').set({ deletedAt: new Date() }).where('id', '=', studioDeleted.user.id).execute();
+
+    const ids: string[] = [];
+    let cursor: string | null = null;
+    for (;;) {
+      const rows = await repository.remindable(cursor);
+      ids.push(...rows.map((row) => row.id));
+      if (rows.length < 200) break;
+      cursor = rows.at(-1)!.id;
+    }
+    expect(ids).toContain(live.shootId);
+    expect(ids).not.toContain(albumDeleted.shootId);
+    expect(ids).not.toContain(studioDeactivated.shootId);
+    expect(ids).not.toContain(studioDeleted.shootId);
   });
 });

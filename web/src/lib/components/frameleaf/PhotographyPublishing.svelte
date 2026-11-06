@@ -78,13 +78,27 @@
 
   /** Saves the domain and, when given, whether the website is published; the rest of the site stays as it is. */
   async function save(enabled = stored?.site.enabled ?? false) {
-    if (!stored || busy || !domainOk) {
+    if (!stored || !domainOk) {
+      return;
+    }
+    await put({ ...stored.site, enabled, domain: domain.trim().toLowerCase() });
+  }
+
+  /** Stops publishing the site as it is stored; whatever is typed in the domain field is neither needed nor saved. */
+  async function stop() {
+    if (!stored) {
+      return;
+    }
+    await put({ ...stored.site, enabled: false });
+  }
+
+  async function put(site: Site) {
+    if (!stored || busy) {
       return;
     }
     busy = true;
     error = '';
     message = '';
-    const site: Site = { ...stored.site, enabled, domain: domain.trim().toLowerCase() };
     try {
       const result = await siteRequest('PUT', { expectedRevision: stored.revision, site });
       if (!disposed) {
@@ -202,8 +216,7 @@
           {#if published}
             <Button disabled={busy || !stored || !domainOk || !domainChanged} onclick={() => save()}
               >{$t('frameleaf_photography_publishing_save_domain')}</Button
-            ><Button disabled={busy || !stored} onclick={() => save(false)}
-              >{$t('frameleaf_photography_publishing_stop')}</Button
+            ><Button disabled={busy || !stored} onclick={stop}>{$t('frameleaf_photography_publishing_stop')}</Button
             >{#if stored}<a class="button" href={stored.url} target="_blank" rel="noopener"
                 >{$t('frameleaf_photography_site_open')} ↗</a
               >{/if}

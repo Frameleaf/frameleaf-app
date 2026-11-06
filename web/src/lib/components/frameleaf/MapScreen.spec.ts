@@ -563,6 +563,47 @@ describe('MapScreen (FL-193)', () => {
       expect(onOpenAsset).toHaveBeenCalledWith(item.id, [item.id], undefined);
     });
 
+    it('drops the In view rows of the old filters as soon as a filter changes (FL-1247)', async () => {
+      mapSettings.update((settings) => ({ ...settings, showAssetPanel: true, onlyFavorites: false }));
+      sdkMock.getMapMarkers.mockImplementation(({ skip }) =>
+        Promise.resolve(skip === 0 ? [{ ...item, originalFileName: 'tram.jpg' }] : []),
+      );
+      render(MapScreen, { title: 'Map', onOpenAsset: vi.fn() });
+      expect(await screen.findByText('tram.jpg')).toBeInTheDocument();
+
+      // the new filters' points take a while (or never come)
+      sdkMock.getMapClusters.mockReturnValue(new Promise(() => {}));
+      try {
+        mapSettings.update((settings) => ({ ...settings, onlyFavorites: true }));
+        await waitFor(() => expect(screen.queryByText('tram.jpg')).toBeNull());
+      } finally {
+        mapSettings.update((settings) => ({ ...settings, onlyFavorites: false }));
+      }
+    });
+
+    it('never adds a page read under the old filters once a filter changes (FL-1247)', async () => {
+      mapSettings.update((settings) => ({ ...settings, showAssetPanel: true, onlyFavorites: false }));
+      let answer: (rows: unknown[]) => void = () => {};
+      let signal: AbortSignal | undefined;
+      sdkMock.getMapMarkers.mockImplementation((_query, options) => {
+        signal = options?.signal ?? undefined;
+        return new Promise((resolve) => (answer = resolve as typeof answer)) as never;
+      });
+      render(MapScreen, { title: 'Map', onOpenAsset: vi.fn() });
+      await waitFor(() => expect(sdkMock.getMapMarkers).toHaveBeenCalled());
+
+      sdkMock.getMapClusters.mockReturnValue(new Promise(() => {}));
+      try {
+        mapSettings.update((settings) => ({ ...settings, onlyFavorites: true }));
+        await waitFor(() => expect(signal?.aborted).toBe(true));
+        answer([{ ...item, originalFileName: 'old.jpg' }]);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(screen.queryByText('old.jpg')).toBeNull();
+      } finally {
+        mapSettings.update((settings) => ({ ...settings, onlyFavorites: false }));
+      }
+    });
+
     it('loads every item at once when the settings ask for it', async () => {
       mapSettings.update((settings) => ({ ...settings, loadAllItems: true }));
       sdkMock.getMapMarkers.mockResolvedValue([item]);

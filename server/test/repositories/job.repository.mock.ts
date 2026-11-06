@@ -74,7 +74,7 @@ export const newJobRepositoryMock = (): Mocked<RepositoryInterface<JobRepository
     getStoppedClaims: vitest.fn().mockResolvedValue(new Set()),
     retryFailed: vitest.fn(),
     startNow: vitest.fn(),
-    findWaitingJob: vitest.fn(),
+    findOpenJob: vitest.fn(),
     retryImportedWork: vitest.fn(),
     waitForQueueCompletion: vitest.fn(),
     removeJob: vitest.fn(),

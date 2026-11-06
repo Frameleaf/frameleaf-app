@@ -43,3 +43,34 @@ it('looks a pasted ID up directly and shows why the work could not start', async
   await fireEvent.click(screen.getByRole('button', { name: 'Start now IMG_1.jpg' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('That task is turned off.');
 });
+
+it('lists photos only when asked, for work the server does on photos alone (FL-1249)', async () => {
+  render(RunOneDialog, {
+    open: true,
+    title: 'Run on one item',
+    verb: 'Start now',
+    note: 'Pick one.',
+    photosOnly: true,
+    onStart: vi.fn(),
+  });
+  await screen.findByText('IMG_1.jpg');
+  expect(sdkMock.searchAssets).toHaveBeenLastCalledWith({
+    metadataSearchDto: expect.objectContaining({ type: AssetTypeEnum.Image }),
+  });
+});
+
+it('clears a failed search once a later one works (FL-1249)', async () => {
+  sdkMock.searchAssets.mockRejectedValueOnce(new Error('Search is down'));
+  render(RunOneDialog, {
+    open: true,
+    title: 'Run on one item',
+    verb: 'Start now',
+    note: 'Pick one.',
+    onStart: vi.fn(),
+  });
+  expect(await screen.findByRole('alert')).toHaveTextContent('Something went wrong');
+
+  await fireEvent.input(screen.getByRole('searchbox'), { target: { value: 'IMG' } });
+  await screen.findByText('IMG_1.jpg');
+  await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+});

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { ImportDatabase } from 'src/immich-import/types.js';
 import { bindDestinationImportPlan } from 'src/library-import/destination-plan.js';
-import { parseImportManifest } from 'src/library-import/manifest.js';
+import { importsLocked, parseImportManifest } from 'src/library-import/manifest.js';
 import {
   LibraryImportBinding,
   LibraryImportJournal,
@@ -44,7 +44,7 @@ export async function reconcileImportedAlbums(
       if (plan.owners.some((owner) => owners.get(owner.sourceId) !== owner.destinationId.toLowerCase())) mismatch();
       // A Locked item keeps its albums (owner 2026-09-27); only the source's private items are Locked.
       const locked = new Set(
-        manifest.assets.filter((asset) => asset.visibility === 'locked').map((asset) => assets.get(asset.id)),
+        manifest.assets.filter((asset) => importsLocked(asset)).map((asset) => assets.get(asset.id)),
       );
       const albumMappings = new Map(
         mappings.filter((row) => row.entity_kind === 'album').map((row) => [row.source_id, row]),

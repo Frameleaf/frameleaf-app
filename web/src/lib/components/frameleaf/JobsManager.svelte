@@ -281,12 +281,46 @@
         : sumJobCounts(queues.map((queue) => ({ ...queue, statistics: statsOf(queue) ?? NO_STATS }))),
   );
 
+  // Strings, so a stats tick (new row objects, same queues) doesn't refetch the counts below.
+  const rowNames = $derived(rows.map((row) => row.definition.name).join(','));
+  const selectedQueue = $derived(selected?.definition.name);
+  // The open queue's counts as one string: the account's are read again when these change, not on every tick.
+  const selectedCounts = $derived(selected ? JSON.stringify(selected.queue.statistics) : '');
+  // One account-counts read at a time per account and queue list: a change while one is out asks for one more
+  // read after it, so a slow read on a busy queue still lands instead of being dropped every poll. A different
+  // account or list (a new generation) drops the older answer. Plain variables: bookkeeping, not page state.
+  let statsGeneration = 0;
+  let statsRunning: string | undefined;
+  let statsAgain = false;
+  const readOwnerStats = async (account: string, names: QueueName[], key: string, generation: number) => {
+    statsRunning = key;
+    do {
+      statsAgain = false;
+      const entries = await Promise.all(
+        names.map((queueName) =>
+          getQueueOwnerStatistics({ name: queueName, ownerId: account })
+            .then((stats) => [queueName, stats] as const)
+            .catch(() => undefined),
+        ),
+      );
+      if (generation !== statsGeneration) {
+        return;
+      }
+      ownerStats = new Map(entries.filter((entry) => entry !== undefined));
+      failedStats = new Set(names.filter((_, index) => entries[index] === undefined));
+      statsOwner = account;
+    } while (statsAgain);
+    statsRunning = undefined;
+  };
   // An account's counts: the open queue's, or every listed queue's; again after each command.
   $effect(() => {
     const account = owner;
-    const name = selected?.definition.name;
+    const name = selectedQueue;
     void jobsReload;
+    void selectedCounts;
     if (account === 'all') {
+      statsGeneration++;
+      statsRunning = undefined;
       ownerStats = new Map();
       failedStats = new Set();
       statsOwner = undefined;
@@ -295,26 +329,18 @@
     if (untrack(() => statsOwner) !== account) {
       ownerStats = new Map();
     }
-    const names = name ? [name] : untrack(() => rows.map((row) => row.definition.name));
-    let cancelled = false;
-    void Promise.all(
-      names.map((queueName) =>
-        getQueueOwnerStatistics({ name: queueName, ownerId: account })
-          .then((stats) => [queueName, stats] as const)
-          .catch(() => undefined),
-      ),
-    ).then((entries) => {
-      if (cancelled) {
-        return;
-      }
-
-      ownerStats = new Map(entries.filter((entry) => entry !== undefined));
-      failedStats = new Set(names.filter((_, index) => entries[index] === undefined));
-      statsOwner = account;
-    });
-    return () => {
-      cancelled = true;
-    };
+    // the listed queues' names, tracked as one string so stats ticks don't refetch
+    const names = name ? [name] : rowNames ? (rowNames.split(',') as QueueName[]) : [];
+    if (names.length === 0) {
+      // queues not loaded yet: counts stay unknown until they are, rather than reading 0
+      return;
+    }
+    const key = `${account}|${names.join(',')}`;
+    if (statsRunning === key) {
+      statsAgain = true;
+      return;
+    }
+    void readOwnerStats(account, names, key, ++statsGeneration);
   });
   const metrics = $derived([
     { label: $t('frameleaf_jobs_metric_processing'), value: counts.active, icon: mdiPlay, warning: false },
@@ -713,7 +739,12 @@
       command: action,
       names,
       title: $t(`frameleaf_bgwork_feature_review_${action}` as Translations, { values: { name } }),
-      detail: $t(`frameleaf_bgwork_feature_review_${action}_detail` as Translations),
+      // as on one task's own redo: resetting face results gets the faces warning
+      detail:
+        action === 'force' &&
+        rows.some(({ definition }) => names.includes(definition.name) && definition.force === 'reset')
+          ? $t('frameleaf_jobs_review_force_faces')
+          : $t(`frameleaf_bgwork_feature_review_${action}_detail` as Translations),
       affected: names.length,
       dangerous: action === 'force',
       error: names.length === 0 ? $t('frameleaf_bgwork_feature_review_nothing') : undefined,
@@ -1795,6 +1826,7 @@
       { values: { name: runLabelFor(selected.definition) } },
     )}${selected.queue.isPaused ? ` ${$t('frameleaf_jobs_run_one_paused')}` : ''}`}
     videosOnly={selected.definition.name === QueueName.VideoConversion}
+    photosOnly={selected.definition.name === QueueName.NsfwDetection}
     onStart={runOne}
   />
 {/if}

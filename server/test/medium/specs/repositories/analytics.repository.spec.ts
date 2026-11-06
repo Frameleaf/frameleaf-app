@@ -533,10 +533,16 @@ describe('AnalyticsRepository.getInsights (FL-79)', () => {
     expect(magic.farAndWide!.travelledKm).toBeGreaterThan(12_000);
     expect(magic.underTheHood.databaseRows).toBeGreaterThanOrEqual(0);
 
-    // another reader gets neither tags nor places
-    const anonymous = await sut.getInsights(account(user.id), noNames);
+    // another reader gets neither tags nor places, nor the light, the seasons or what the AI sees (FL-1243)
+    const anonymous = await sut.getInsights(account(user.id), {
+      ...noNames,
+      seenLabels: [{ id: 'mountains', embedding: axis(0) }],
+    });
     expect(anonymous.magic!.topTags).toEqual([]);
     expect(anonymous.magic!.farAndWide).toBeNull();
+    expect(anonymous.magic!.light).toEqual({ goldenMorning: 0, goldenEvening: 0, blueHour: 0, daylight: 0, night: 0 });
+    expect(anonymous.magic!.months).toEqual([]);
+    expect(anonymous.magic!.seen).toBeNull();
   });
 
   it('partitions the same items as the summary and reads no names for another reader', async () => {

@@ -149,7 +149,10 @@ describe('LibraryRail', () => {
         { album: owned('Summer', 2048), children: [] },
       ],
     });
-    sdkMock.updateAlbumInfo.mockResolvedValue({} as never);
+    sdkMock.updateAlbumInfo.mockResolvedValue({ ...owned('Summer', 0) } as never);
+    sdkMock.setAlbumOrder.mockResolvedValue(undefined as never);
+    const updated = vi.fn();
+    const off = eventManager.on({ AlbumUpdate: updated });
     render(LibraryRail);
     const summer = await screen.findByRole('link', { name: 'Summer' });
     expect(summer).toHaveAttribute('draggable', 'true');
@@ -157,8 +160,51 @@ describe('LibraryRail', () => {
     await waitFor(() =>
       expect(sdkMock.updateAlbumInfo).toHaveBeenCalledWith({ id: 'Summer', updateAlbumDto: { sortOrder: 0 } }),
     );
-    // The sidebar reads the tree again to show the new order.
-    await waitFor(() => expect(sdkMock.getAlbumHierarchy).toHaveBeenCalledTimes(2));
+    // Also as the person's own order, which the server shows first (FL-1240).
+    await waitFor(() =>
+      expect(sdkMock.setAlbumOrder).toHaveBeenCalledWith({
+        albumOrderDto: { parentId: null, albumIds: ['Summer', 'Hikes'], hierarchy: true },
+      }),
+    );
+    // An open Albums page hears of it, and the sidebar reads the tree again to show the new order.
+    expect(updated).toHaveBeenCalledWith(expect.objectContaining({ id: 'Summer' }));
+    await waitFor(() => expect(sdkMock.getAlbumHierarchy.mock.calls.length).toBeGreaterThanOrEqual(2));
+    off();
+  });
+
+  it('moves an album in a group arranged on the Albums page by saving that order, not a sortOrder (FL-1240)', async () => {
+    const me = authManager.user;
+    const owned = (id: string, sortOrder: number) =>
+      albumFactory.build({
+        id,
+        albumName: id,
+        kind: AlbumKind.Album,
+        parentId: null,
+        sortOrder,
+        albumUsers: [{ user: me, role: AlbumUserRole.Owner }],
+      } as never);
+    // The person's own order shows Summer first although its shared sortOrder is higher.
+    sdkMock.getAlbumHierarchy.mockResolvedValue({
+      roots: [
+        { album: owned('Summer', 2048), children: [] },
+        { album: owned('Hikes', 1024), children: [] },
+        { album: owned('Trips', 3072), children: [] },
+      ],
+    });
+    sdkMock.setAlbumOrder.mockResolvedValue(undefined as never);
+    const updated = vi.fn();
+    const off = eventManager.on({ AlbumUpdate: updated });
+    render(LibraryRail);
+    await fireEvent.keyDown(await screen.findByRole('link', { name: 'Trips' }), { key: 'ArrowUp', altKey: true });
+    await waitFor(() =>
+      expect(sdkMock.setAlbumOrder).toHaveBeenCalledWith({
+        albumOrderDto: { parentId: null, albumIds: ['Summer', 'Trips', 'Hikes'], hierarchy: true },
+      }),
+    );
+    expect(sdkMock.updateAlbumInfo).not.toHaveBeenCalled();
+    expect(await screen.findByText('Moved “Trips”')).toBeInTheDocument();
+    expect(updated).toHaveBeenCalledWith(expect.objectContaining({ id: 'Trips' }));
+    off();
   });
 
   it('expands each nested branch without hiding its own page link', async () => {

@@ -490,6 +490,8 @@ describe('PhotoPrism common manifest assembly', () => {
 
   it.each([
     ['archive', 0n, 'archive'],
+    ['trash', 0n, 'trash'],
+    // FL-1230: a private photo in Trash stays private: trashed and Locked
     ['trash', 1n, 'trash'],
     // Owner 2026-11-04: an archived private photo stays private, so it imports Locked
     ['archive', 1n, 'locked'],
@@ -518,6 +520,7 @@ describe('PhotoPrism common manifest assembly', () => {
     // Unlocking returns an archived private photo to the Archive
     expect(result.manifest.assets[0].archived).toBe(state === 'locked' ? true : undefined);
     expect(result.manifest.assets[0].metadata.deletedAt).toBe(state === 'trash' ? '2026-11-01T00:00:00Z' : undefined);
+    expect(result.manifest.assets[0].locked).toBe(state === 'trash' && isPrivate ? true : undefined);
   });
 
   it('keeps hidden and missing historical memberships out of destination albums', () => {

@@ -301,6 +301,17 @@ describe('LibrePhotos common manifest mapping', () => {
     expect(manifest.assets.find((photo) => photo.id === photoId('trash'))?.metadata.deletedAt).toBe(
       '2026-11-01T19:20:53.620027Z',
     );
+    expect(manifest.assets.find((photo) => photo.id === photoId('trash'))?.locked).toBeUndefined();
+  });
+
+  it('imports a hidden photo in Trash both trashed and Locked (FL-1230)', async () => {
+    database.prepare('UPDATE api_photo SET hidden=1 WHERE id=?').run(photoId('trash'));
+    const { manifest } = await read(snapshot(), input());
+    expect(manifest.assets.find((photo) => photo.id === photoId('trash'))).toMatchObject({
+      visibility: 'trash',
+      locked: true,
+      metadata: { deletedAt: '2026-11-01T19:20:53.620027Z' },
+    });
   });
 
   it('preserves safe stack membership and archives incompatible visibility without changing it', async () => {
@@ -322,6 +333,23 @@ describe('LibrePhotos common manifest mapping', () => {
         assetIds: [photoId('alice'), photoId('archived')],
       },
     ]);
+  });
+
+  it('archives a stack whose trashed members differ in being Locked instead of refusing the import (FL-1230)', async () => {
+    const { trashed_at: trashedAt } = database
+      .prepare('SELECT trashed_at FROM api_photo WHERE id=?')
+      .get(photoId('trash')) as { trashed_at: string };
+    database
+      .prepare('UPDATE api_photo SET archived=0, in_trashcan=1, trashed_at=? WHERE id IN (?, ?)')
+      .run(trashedAt, photoId('alice'), photoId('archived'));
+    database.prepare('UPDATE api_photo SET hidden=1 WHERE id=?').run(photoId('archived'));
+    const { manifest } = await read(snapshot(), input());
+    expect(manifest).toHaveProperty('stacks', []);
+    expect(manifest.losses).toContainEqual({
+      code: 'LIBREPHOTOS_STACK_ARCHIVED',
+      entityId: content.rows.api_photostack[0].id,
+      acknowledged: false,
+    });
   });
 
   it('maps the actual PostgreSQL text fixture through the qualified decoder and async pages', async () => {

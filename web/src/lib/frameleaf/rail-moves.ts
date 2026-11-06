@@ -1,13 +1,21 @@
 /**
  * Moving albums in the sidebar (approved design, 2026-11-04, `LibraryRail.jsx`): drag an album above or
  * below another to reorder it, onto an album or collection to put it inside, or use ⌥ and the arrows.
- * A move is saved as the album's `parentId` and `sortOrder` (lower first, nulls last on the server).
+ * A move is saved as the album's `parentId` and `sortOrder` (lower first, nulls last on the server), and as
+ * the person's own order for the group it lands in. The server shows each person's own order first
+ * (`album_position`, written by the Albums page's custom order too), so `sortOrder` alone would leave the
+ * album where it was in any group they have arranged.
  */
 import { AlbumKind, type AlbumResponseDto } from '@frameleaf/sdk';
 import { canEdit, isOwner } from '$lib/frameleaf/album-directory';
 
 export type RailDrop = 'before' | 'after' | 'into';
-export type RailUpdate = { id: string; sortOrder: number; parentId?: string | null };
+export type RailUpdate = { id: string; sortOrder?: number; parentId?: string | null };
+/**
+ * A planned move: the album writes (`updates`, possibly none) and the whole group it lands in, in the
+ * order the sidebar will show it, saved as the person's own order (`setAlbumOrder`, `hierarchy: true`).
+ */
+export type RailMove = { updates: RailUpdate[]; parentId: string | null; albumIds: string[] };
 
 const GAP = 1024;
 
@@ -31,7 +39,7 @@ export function planRailMove(
   targetId: string,
   where: RailDrop,
   userId: string,
-): RailUpdate[] | null {
+): RailMove | null {
   const byId = new Map(records.map((album) => [album.id, album]));
   const dragged = byId.get(dragId);
   const target = byId.get(targetId);
@@ -71,6 +79,14 @@ export function planRailMove(
     return null;
   }
   const moved = parentId === (dragged.parentId ?? null) ? {} : { parentId };
+  const plan = (updates: RailUpdate[]): RailMove => ({ updates, parentId, albumIds: order.map(({ id }) => id) });
+  // Where the person's own order differs from the shared one, a number between the neighbours shown
+  // means nothing: only their own order and, when it changed, the album's parent are saved.
+  const personal = plan(Object.keys(moved).length > 0 ? [{ id: dragged.id, ...moved }] : []);
+  const shown = records.filter((album) => album.kind !== AlbumKind.Space && (album.parentId ?? null) === parentId);
+  if (!followsSortOrder(shown)) {
+    return personal;
+  }
   const previous = order[index - 1];
   const next = order[index + 1];
   const low = previous?.sortOrder ?? null;
@@ -81,21 +97,32 @@ export function planRailMove(
   if ((!previous || low !== null) && !exhausted) {
     // Nulls sort last, so before an unplaced album any number after `low` will do.
     const sortOrder = between ?? (low === null ? (high === null ? GAP : high - GAP) : low + GAP);
-    return [{ id: dragged.id, sortOrder, ...moved }];
+    return plan([{ id: dragged.id, sortOrder, ...moved }]);
   }
   // The albums above it have no place yet, or no room is left: number them, which only their owner may do.
+  // Otherwise the shared order stays as it is and the move is the person's own.
   const placed = exhausted ? order : order.slice(0, index + 1);
   if (placed.some((album) => album.id !== dragged.id && !isOwner(album, userId))) {
-    return null;
+    return personal;
   }
-  return placed.flatMap((album, i) =>
-    album.id === dragged.id
-      ? [{ id: album.id, sortOrder: (i + 1) * GAP, ...moved }]
-      : album.sortOrder === (i + 1) * GAP
-        ? []
-        : [{ id: album.id, sortOrder: (i + 1) * GAP }],
+  return plan(
+    placed.flatMap((album, i) =>
+      album.id === dragged.id
+        ? [{ id: album.id, sortOrder: (i + 1) * GAP, ...moved }]
+        : album.sortOrder === (i + 1) * GAP
+          ? []
+          : [{ id: album.id, sortOrder: (i + 1) * GAP }],
+    ),
   );
 }
+
+/** Whether albums shown in this order are also in `sortOrder` order (lower first, unplaced last). */
+const followsSortOrder = (albums: AlbumResponseDto[]) =>
+  albums.every((album, i) => {
+    const previous = i > 0 ? (albums[i - 1].sortOrder ?? null) : null;
+    const current = album.sortOrder ?? null;
+    return i === 0 || current === null || (previous !== null && previous <= current);
+  });
 
 /** ⌥↑ and ⌥↓ move an album among its siblings, ⌥→ puts it in the one above, ⌥← takes it out one level. */
 export function planKeyMove(
@@ -103,7 +130,7 @@ export function planKeyMove(
   albumId: string,
   key: string,
   userId: string,
-): RailUpdate[] | null {
+): RailMove | null {
   const album = records.find(({ id }) => id === albumId);
   if (!album) {
     return null;

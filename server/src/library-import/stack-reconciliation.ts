@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { ImportDatabase } from 'src/immich-import/types.js';
 import { bindDestinationImportPlan } from 'src/library-import/destination-plan.js';
-import { parseImportManifest, storedVisibility } from 'src/library-import/manifest.js';
+import { importsLocked, parseImportManifest, storedVisibility } from 'src/library-import/manifest.js';
 import {
   LibraryImportBinding,
   LibraryImportJournal,
@@ -77,7 +77,7 @@ export async function reconcileImportedStacks(
             ownerEligible: true,
             membersOwned: true,
             coherentState: true,
-            unlocked: primary.visibility !== 'locked',
+            unlocked: !importsLocked(primary),
           };
         })
         .sort((a, b) => a.id.localeCompare(b.id));

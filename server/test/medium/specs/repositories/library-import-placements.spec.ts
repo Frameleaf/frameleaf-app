@@ -23,7 +23,7 @@ const wrap = (connection: Kysely<any>): ImportDatabase => ({
     (await connection.executeQuery(CompiledQuery.raw(statement, parameters))).rows as Record<string, unknown>[],
   transaction: (body) => connection.transaction().execute((tx) => body(wrap(tx))),
 });
-const setup = async (twoOwners: boolean) => {
+const setup = async (twoOwners: boolean, privateInTrash = false) => {
   const plan = parseDestinationImportPlan(fixture.plan);
   plan.owners = [{ ...plan.owners[0], destinationId: randomUUID() }];
   if (twoOwners) plan.owners.push({ sourceId: 'owner-2', destinationId: randomUUID() });
@@ -65,12 +65,14 @@ const setup = async (twoOwners: boolean) => {
       type: 'IMAGE',
       fileModifiedAt: '2020-01-02T03:04:05Z',
       originalFileNames: { 'file-1': id + '.jpg', ...(!twoOwners && index === 1 ? { 'file-2': id + '.raw' } : {}) },
-      visibility: index === 0 ? 'archive' : 'hidden',
+      visibility: index === 0 ? 'archive' : privateInTrash ? 'trash' : 'hidden',
+      ...(index === 1 && privateInTrash ? { locked: true } : {}),
       metadata: {
         takenAt: '2020-01-01T03:04:05Z',
         timeZone: 'UTC',
         description: 'Manual ' + id,
         favorite: index === 0,
+        ...(index === 1 && privateInTrash ? { deletedAt: '2020-02-01T00:00:00Z' } : {}),
       },
     })),
     albums: [],
@@ -289,3 +291,22 @@ it.each(['missing', 'hash', 'swapped'])(
     await expect(reconcileImportedAssets(actual, context, inputs)).rejects.toThrow('ASSET_RECONCILIATION_MISMATCH');
   },
 );
+
+it('imports a private item from the source Trash both trashed and Locked (FL-1230)', async () => {
+  const { context, inputs, journal } = await setup(false, true);
+  const writer = new CanonicalAssetWriter(wrap(db), context);
+  const ids = [];
+  for (const input of inputs) ids.push(await writer.write(input));
+  const rows = await wrap(db).query(
+    `SELECT a.id::text,a.visibility,a.status,a."deletedAt" IS NOT NULL AS trashed,
+      EXISTS(SELECT 1 FROM public.asset_lock l WHERE l."assetId"=a.id) AS locked
+    FROM public.asset a WHERE a.id=ANY($1::uuid[]) ORDER BY a."originalFileName"`,
+    [ids],
+  );
+  expect(rows).toEqual([
+    { id: ids[0], visibility: 'archive', status: 'active', trashed: false, locked: false },
+    { id: ids[1], visibility: 'timeline', status: 'trashed', trashed: true, locked: true },
+  ]);
+  await journal.phase(context.binding, 'verifying');
+  await expect(reconcileImportedAssets(wrap(db), context, inputs)).resolves.toMatchObject({ assets: 2 });
+});

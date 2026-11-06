@@ -765,13 +765,37 @@ describe(AnalyticsService.name, () => {
         seasons: { spring: 0, summer: 2 + 3, autumn: 0, winter: 4 },
         topTags: [{ name: 'Hiking', count: 9 }],
         farAndWide: null,
-        underTheHood: { searchVectors: 10, faceVectors: 20, previews: 30, databaseRows: 40 },
+        // the whole server's row count is for administrators only (FL-1243)
+        underTheHood: { searchVectors: 10, faceVectors: 20, previews: 30, databaseRows: 0 },
         shutter: [
           { camera: 'Canon EOS R6', count: 48_210 },
           { camera: 'FUJIFILM X-T4', count: 1200 },
         ],
         seen: { described: 7, labels: [{ id: 'mountains', count: 7 }] },
       });
+    });
+
+    it("reports the whole server's database rows only to administrators (FL-1243)", async () => {
+      const magic = {
+        colour: [],
+        light: { goldenMorning: 0, goldenEvening: 0, blueHour: 0, daylight: 0, night: 0 },
+        months: [],
+        topTags: [],
+        farAndWide: null,
+        underTheHood: { searchVectors: 1, faceVectors: 2, previews: 3, databaseRows: 40 },
+        shutter: [],
+        seen: null,
+      };
+      analyticsRepository.getInsights.mockResolvedValue(insightRows({ magic }));
+      const own = await read(user(), `account:${USER_ID}`);
+      expect(own.insights!.magic!.underTheHood).toEqual({
+        searchVectors: 1,
+        faceVectors: 2,
+        previews: 3,
+        databaseRows: 0,
+      });
+      const server = await read(admin(), 'all');
+      expect(server.insights!.magic!.underTheHood.databaseRows).toBe(40);
     });
 
     it("reads names, people and places only for the owner's own scope", async () => {
