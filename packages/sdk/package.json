@@ -1,6 +1,6 @@
 {
   "name": "@frameleaf/sdk",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "description": "Auto-generated TypeScript SDK for the Frameleaf API",
   "repository": {
     "type": "git",
