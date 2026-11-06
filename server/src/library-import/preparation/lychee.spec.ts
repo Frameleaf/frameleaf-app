@@ -113,6 +113,11 @@ describe('Lychee preparation adapter', () => {
     expect(inspection.losses).toContainEqual({ code: UNTESTED_VERSION_LOSS, count: 1 });
   });
 
+  it('refuses malformed migration records even when the schema is untested', async () => {
+    edit("INSERT INTO migrations(migration,batch) VALUES('9999_future',0)");
+    await expect(inspectPreparationSource(adapter, input())).rejects.toThrow('LYCHEE_MIGRATIONS_INVALID');
+  });
+
   it('refuses when an original is missing from the mount', async () => {
     await rm(join(originalsRoot, content.originals[0].path.slice('/uploads/'.length)));
     await expect(inspectPreparationSource(adapter, input())).rejects.toThrow('IMPORT_SOURCE_ORIGINALS_MISSING');

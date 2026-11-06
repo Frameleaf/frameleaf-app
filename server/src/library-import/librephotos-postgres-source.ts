@@ -113,6 +113,16 @@ export const openLibrephotosPostgresSnapshot = async (
       return strict;
     };
     if (bestEffort) {
+      // Unfamiliar migration names are version drift; unfinished, malformed or repeated records are not.
+      const seen = new Set<string>();
+      for (const row of await reserved.unsafe(
+        'SELECT app,name,pg_catalog.isfinite(applied) AS finished FROM public.django_migrations',
+      )) {
+        const key = JSON.stringify([row.app, row.name]);
+        if (typeof row.app !== 'string' || typeof row.name !== 'string' || row.finished !== true || seen.has(key))
+          throw new LibrephotosSnapshotError('LIBREPHOTOS_MIGRATIONS_INCOMPLETE');
+        seen.add(key);
+      }
       // A failed catalog query would abort the snapshot transaction; the savepoint keeps it readable.
       await reserved.unsafe('SAVEPOINT frameleaf_qualification');
       try {
