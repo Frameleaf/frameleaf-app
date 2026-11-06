@@ -496,7 +496,7 @@ test('a MariaDB source is dumped after its app stops, restored into a disposable
   assert.deepEqual(result.commonImport, {
     source: 'photoprism',
     version: '240915',
-    requiresBootstrap: false,
+    requiresBootstrap: true,
     requiredMediaBytes: 300,
     summary: {
       owners: 2,

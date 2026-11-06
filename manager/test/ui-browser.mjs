@@ -135,7 +135,7 @@ await page.route('**/manager-api/**', async (route) => {
   else if (path === 'photo-app-capture') {
     const operation = {
       id: '7c0a3f52-5b8e-4a59-9d3e-2f0c1d4e5a6b', kind: 'import', state: 'running', step: 'capture-common-source',
-      completed: [], error: null, createdAt: Date.now(), canCancel: false,
+      completed: [], error: null, createdAt: Date.now(), canCancel: false, photoApp: { kind: 'lychee', name: 'Lychee' },
     };
     dashboard.operations = [operation];
     value = { id: operation.id };
@@ -818,6 +818,7 @@ try {
     dashboard.operations = [{
       id: '5e4d3c2b-1a09-4f8e-9d7c-6b5a4f3e2d1c', kind: 'import', state: 'awaiting-review', step: null,
       completed: ['capture-common-source'], error: null, createdAt: Date.now(), canCancel: true,
+      photoApp: { kind: 'lychee', name: 'Lychee' },
     }];
     await page.goto(origin);
     await mainButton('Review what comes across').waitFor();

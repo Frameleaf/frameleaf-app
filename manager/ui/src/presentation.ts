@@ -9,6 +9,8 @@ export type JournalOperation = {
   detail?: string | null;
   replacesInstallation?: boolean;
   commonImport?: { requiresBootstrap: boolean };
+  /** Set by Manager on imports from another photo app. */
+  photoApp?: { kind: string; name: string };
 };
 export const operationNames: Record<string, string> = {
   'move-library': 'Moving your library',
@@ -195,6 +197,10 @@ const refusals: Record<string, string> = {
   photo_app_owner_unmapped: 'Every account needs an email address before the import can continue.',
   photo_app_loss_unapproved: 'Confirm the list of details that won’t come across, then try again.',
   photo_app_inspection_required: 'Review what comes across first, then try again.',
+  photo_app_capture_not_ready: 'Manager is still reading the app’s library. Wait a moment, then try again.',
+  photo_app_owner_email_duplicate: 'Each account needs its own email address.',
+  photo_app_import_cancelled: 'The import was cancelled and the app is running again.',
+  photo_app_not_recognised: 'Manager no longer recognises this app. Look again for apps to import.',
   photo_app_cancel_unavailable: 'This import can’t be cancelled right now. Wait for the current step to finish, then try again.',
   invalid_import_authority: 'This import changed or expired. Cancel it and start again from the beginning.',
   source_database_dump_failed: 'Manager couldn’t read the app’s database. Check that its database is running, then try again.',
@@ -497,6 +503,8 @@ const lossTexts: Record<string, (app: string) => string> = {
   CROSS_OWNER_ALBUM_RESTRICTED: () => 'Photos someone added to another person’s album stay with their owner, outside that album.',
   CROSS_OWNER_MEMBERSHIP_ARCHIVED: () => 'Photos someone added to another person’s album stay with their owner, outside that album.',
   PRIVATE_ALBUM_MEMBERSHIP_ARCHIVED: () => 'Private photos are left out of the albums they were in.',
+  DYNAMIC_ALBUM_ARCHIVED: (app) => `Smart albums ${app} fills automatically (moments, months, searches) won’t come across.`,
+  SAVED_SEARCH_ARCHIVED: (app) => `Saved searches from ${app} won’t come across.`,
   DELETED_ALBUM_ARCHIVED: (app) => `Albums you deleted in ${app} stay deleted.`,
   CAPTURE_TIME_FALLBACK: () => 'Photos with no recorded date use their file date instead.',
   CAPTURE_TIME_UNAVAILABLE: () => 'Photos with no recorded date use their file date instead.',
@@ -562,7 +570,4 @@ export function ownerEmailProblems(owners: { sourceId: string; email: string }[]
 
 /** A capture from another photo app that has not been approved for import yet. */
 export const isPhotoAppCapture = (operation: JournalOperation | null | undefined) =>
-  !!operation &&
-  operation.kind === 'import' &&
-  !operation.commonImport &&
-  (operation.step === 'capture-common-source' || operation.completed.includes('capture-common-source'));
+  !!operation && operation.kind === 'import' && !!operation.photoApp && !operation.commonImport;

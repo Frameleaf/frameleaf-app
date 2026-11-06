@@ -474,11 +474,13 @@ export class Operations {
     ) throw new Refusal('photo_app_capture_not_ready');
     return operation;
   }
-  private photoAppIdentity(operation: Operation): { destinationId: string; owners: Record<string, string> } {
-    const ids = (operation.receipts['photo-app-ids'] as { destinationId: string; owners: Record<string, string> } | undefined) ??
+  private photoAppIdentity(operation: Operation): { destinationId: string; owners: Record<string, string>; bootstrapAdminId: string } {
+    const ids = (operation.receipts['photo-app-ids'] as { destinationId: string; owners: Record<string, string>; bootstrapAdminId?: string } | undefined) ??
       { destinationId: randomUUID(), owners: {} };
+    // Owner decision 2026-10-30: the first administrator is always a local account the installer creates.
+    ids.bootstrapAdminId ??= randomUUID();
     operation.receipts['photo-app-ids'] = ids;
-    return ids;
+    return ids as { destinationId: string; owners: Record<string, string>; bootstrapAdminId: string };
   }
   /** The v2 `prepare-library-import` request for this captured source. */
   private photoAppRequest(
@@ -613,6 +615,7 @@ export class Operations {
           { source: input.mediaPath!, target: '/data', readOnly: false },
           { source: capture.originalsPath, target: '/import-media/source', readOnly: true },
         ],
+        bootstrapAdminId: ids.bootstrapAdminId,
       },
       managerPort,
     );

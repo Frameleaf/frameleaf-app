@@ -106,11 +106,17 @@ const JARGON = /\b(fence|fenced|snapshot|manifest|loss code|qualification|partit
 test('every loss a photo-app reader can report reads as a plain sentence', () => {
   const directory = new URL('../../server/src/library-import/', import.meta.url);
   const codes = new Set(['SOURCE_VERSION_UNTESTED']);
-  for (const file of readdirSync(directory).filter((name) => name.endsWith('-manifest.ts'))) {
+  const files = [
+    ...readdirSync(directory).filter((name) => name.endsWith('-manifest.ts')),
+    ...readdirSync(new URL('preparation/', directory))
+      .filter((name) => name.endsWith('.ts') && !name.endsWith('.spec.ts'))
+      .map((name) => 'preparation/' + name),
+  ];
+  for (const file of files) {
     const source = readFileSync(new URL(file, directory), 'utf8');
     for (const [, code] of source.matchAll(/loss\('([A-Z0-9_]+)'/gu)) codes.add(code);
     // Losses a reader records up front, outside loss(): { code: 'X', acknowledged: false }
-    for (const [, code] of source.matchAll(/\{ code: '([A-Z0-9_]+)', acknowledged: false \}/gu)) codes.add(code);
+    for (const [, code] of source.matchAll(/\{ code: '([A-Z0-9_]+)'(, entityId: [^,]+)?, acknowledged: false \}/gu)) codes.add(code);
   }
   assert.ok(codes.size > 60, `found ${codes.size} loss codes`);
   for (const code of codes) {
@@ -171,11 +177,14 @@ test('account restrictions and email checks speak to the owner', () => {
 });
 
 test('a photo-app capture is recognised until the reviewed import begins', () => {
-  const capture = { kind: 'import', state: 'awaiting-review', step: null, completed: ['capture-common-source'], error: null };
+  const capture = {
+    kind: 'import', state: 'awaiting-review', step: null, completed: ['capture-common-source'], error: null,
+    photoApp: { kind: 'lychee', name: 'Lychee' },
+  };
   assert.equal(isPhotoAppCapture(capture), true);
   assert.equal(isPhotoAppCapture({ ...capture, state: 'running', step: 'capture-common-source', completed: [] }), true);
   assert.equal(isPhotoAppCapture({ ...capture, commonImport: { requiresBootstrap: false } }), false);
-  assert.equal(isPhotoAppCapture({ ...capture, completed: [] }), false);
+  assert.equal(isPhotoAppCapture({ ...capture, photoApp: undefined }), false);
   assert.equal(readable('awaiting-review'), 'Waiting for your review');
   assert.doesNotMatch(readable('capture-common-source'), JARGON);
 });
