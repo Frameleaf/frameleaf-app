@@ -9,6 +9,8 @@ export type JournalOperation = {
   detail?: string | null;
   replacesInstallation?: boolean;
   commonImport?: { requiresBootstrap: boolean };
+  /** Set by Manager on imports from another photo app. */
+  photoApp?: { kind: string; name: string };
 };
 export const operationNames: Record<string, string> = {
   'move-library': 'Moving your library',
@@ -41,7 +43,7 @@ export const stepNames: Record<string, string> = {
   'copy-current-database': 'Copy the current stopped database',
   'database-backup': 'Create and verify a database backup',
   'stage-bootstrap-admin': 'Secure the destination administrator details',
-  'capture-common-source': 'Capture the source snapshot',
+  'capture-common-source': 'Stop the app and read its library',
   'preflight-common-import': 'Verify the reviewed import before transfer',
   'cancel-common-import': 'Verify rollback before restarting the source',
   'configure-offline-import': 'Prepare the offline importer',
@@ -191,13 +193,38 @@ const refusals: Record<string, string> = {
   unsupported_database_connection: 'Check the database connection: it needs a password and a port that is a whole number from 1 to 65535.',
   manager_unexpected_response:
     'Manager sent an unexpected answer. It may be restarting, or a proxy in front of it may have failed. Wait a moment, then try again.',
+  photo_app_not_importable: 'This app can’t be imported yet. Choose another app, or look again after fixing what’s listed.',
+  photo_app_owner_unmapped: 'Every account needs an email address before the import can continue.',
+  photo_app_loss_unapproved: 'Confirm the list of details that won’t come across, then try again.',
+  photo_app_inspection_required: 'Review what comes across first, then try again.',
+  photo_app_capture_not_ready: 'Manager is still reading the app’s library. Wait a moment, then try again.',
+  photo_app_owner_email_duplicate: 'Each account needs its own email address.',
+  photo_app_import_cancelled: 'The import was cancelled and the app is running again.',
+  photo_app_not_recognised: 'Manager no longer recognises this app. Look again for apps to import.',
+  photo_app_cancel_unavailable: 'This import can’t be cancelled right now. Wait for the current step to finish, then try again.',
+  import_folder_invalid: 'Enter the folder’s full path, starting with /, such as /mnt/user/photos/ente-export.',
+  import_folder_unreachable: 'Manager can’t open that folder. Check the path is spelled exactly right and that the folder exists.',
+  import_folder_outside_roots:
+    'Manager can’t reach that folder. Move the export into one of the folders listed under step 3, then enter its new path.',
+  ente_export_not_found:
+    'That folder doesn’t hold an Ente export. Choose the folder you exported to, or run the export command from step 1 first.',
+  ente_inventory_required:
+    'The list of your Ente files is missing. Run the command from step 2 so ente-files.json is saved inside the export folder, then try again.',
+  invalid_import_authority: 'This import changed or expired. Cancel it and start again from the beginning.',
+  source_database_dump_failed: 'Manager couldn’t read the app’s database. Check that its database is running, then try again.',
+  source_database_restore_failed: 'Manager couldn’t open its copy of the app’s database. Try again; the app’s own database is unchanged.',
   operation_failed:
     'This step stopped with an unexpected error. The Manager container log has the details. Completed steps are kept, so you can resume.',
 };
+const states: Record<string, string> = {
+  'awaiting-review': 'Waiting for your review',
+};
 export const readable = (value: string, detail?: string) => {
+  if (value.startsWith('source_snapshot_') && !refusals[value])
+    return `Manager couldn’t save a copy of the app’s library (${value}). The app’s own data is unchanged; cancel to start it again.${detail ? ' ' + detail : ''}`;
   const refused = /^server_refused_(\d{3})$/.exec(value);
   if (refused) return `The Frameleaf server refused Manager's request (${refused[1]}). Check the server logs, then resume.`;
-  const text = stepNames[value] ?? moveRefusals[value] ?? refusals[value] ?? value.replaceAll(/[_-]/g, ' ');
+  const text = stepNames[value] ?? states[value] ?? moveRefusals[value] ?? refusals[value] ?? value.replaceAll(/[_-]/g, ' ');
   return detail ? `${text} ${detail}` : text;
 };
 export function operationProgress(operation: JournalOperation, backupSkipped = false) {
@@ -214,7 +241,7 @@ export function operationProgress(operation: JournalOperation, backupSkipped = f
   const successful = operation.state === 'complete' && !operation.error;
   const steps = ids.map((id) => ({
     id,
-    label: readable(id),
+    label: id === 'capture-common-source' && isFolderImport(operation.photoApp?.kind) ? 'Read the export folder' : readable(id),
     state: operation.completed.includes(id)
       ? 'complete'
       : id === operation.step
@@ -289,6 +316,7 @@ export const releaseNotesText = (notes: string) =>
     .trim();
 
 export const setupScreens = [
+  'photo-app',
   'import',
   'fresh',
   'restore',
@@ -400,3 +428,174 @@ export function containerOverrides(
   }
   return { services, invalid };
 }
+
+// ---------------------------------------------------------------- imports from other photo apps (Beta)
+export type PhotoAppKind = 'photoprism' | 'photoview' | 'pigallery2' | 'lychee' | 'nextcloud' | 'piwigo' | 'librephotos' | 'ente';
+export type PhotoAppSource = {
+  container: string;
+  kind: PhotoAppKind | string;
+  name?: string;
+  version: string | null;
+  database: 'sqlite' | 'mysql' | 'postgres' | 'unknown' | string;
+  importable: boolean;
+  reason?: string;
+};
+const photoAppNames: Record<string, string> = {
+  photoprism: 'PhotoPrism',
+  photoview: 'Photoview',
+  pigallery2: 'PiGallery2',
+  lychee: 'Lychee',
+  nextcloud: 'Nextcloud',
+  piwigo: 'Piwigo',
+  librephotos: 'LibrePhotos',
+  ente: 'Ente Photos',
+};
+/** The product name owners know, never the container name. */
+export const photoAppName = (kind: string | undefined, fallback = 'your photo app') =>
+  (kind && photoAppNames[kind]) || fallback;
+const databaseNames: Record<string, string> = { sqlite: 'SQLite', mysql: 'MySQL', postgres: 'PostgreSQL' };
+export const databaseName = (database: string | undefined) => (database && databaseNames[database]) || 'an unknown database';
+/** "PhotoPrism 240915 · SQLite" for the picker. */
+export const photoAppDetail = (source: Pick<PhotoAppSource, 'version' | 'database'>) =>
+  [source.version ? `Version ${source.version}` : 'Version unknown', databaseName(source.database)].join(' · ');
+
+const sourceReasons: Record<string, (app: string, database: string) => string> = {
+  database_unsupported: (app, database) => `${app} on ${database} isn't supported yet.`,
+  database_unknown: (app) => `Manager couldn't tell which database ${app} uses.`,
+  database_container_not_found: (app) => `Manager couldn't find ${app}'s database. Check that its database container is running.`,
+  database_image_unsupported: (app) => `${app}'s database runs on a version Manager can't copy yet.`,
+  database_credentials_unavailable: (app) => `Manager couldn't find the login ${app} uses for its database.`,
+  source_mount_missing: (app) => `${app}'s photo folder isn't mapped into its container, so Manager can't find your photos.`,
+  source_mount_unsupported: (app) => `${app} keeps your photos in a Docker volume. Imports need a regular folder on the server.`,
+  source_mount_unqualified: (app) => `${app}'s photo folders overlap or are nested in a way Manager can't import safely yet.`,
+};
+/** Why a detected app is greyed out, in words: Manager sends a code, a sentence, or nothing. */
+export function photoAppReason(source: Pick<PhotoAppSource, 'kind' | 'database' | 'reason'>) {
+  const app = photoAppName(source.kind);
+  const database = databaseName(source.database);
+  const reason = source.reason?.trim();
+  if (reason && /\s/.test(reason)) return reason;
+  const known = reason ? sourceReasons[reason] : undefined;
+  if (known) return known(app, database);
+  if (reason) return `${app} can't be imported yet (${reason}).`;
+  return source.database === 'unknown'
+    ? sourceReasons.database_unknown(app, database)
+    : sourceReasons.database_unsupported(app, database);
+}
+
+/**
+ * Apps imported from a folder the owner exported themselves, not from a container on this server. Nothing is
+ * stopped and the export records no app version.
+ */
+export const isFolderImport = (kind: string | undefined) => kind === 'ente';
+/** The version shown beside an app's name; an export folder has none worth showing. */
+export const sourceVersion = (kind: string | undefined, version: string | null | undefined) =>
+  (!isFolderImport(kind) && version) || '';
+/** Ente's CLI release names (`ente-cli-v0.4.2`) as owners see them. */
+const enteCli = (version: string | null | undefined) => (version ?? '').replace(/^ente-cli-v?/u, 'Ente CLI ');
+
+/** Shown when the reader was not qualified against this exact version (no version pinning: best effort). */
+export function untestedNotice(kind: string, version: string | null | undefined, testedVersion: string | null | undefined) {
+  if (isFolderImport(kind))
+    return (
+      'This export isn’t exactly like the Ente exports Manager has been tested with. ' +
+      'Photos and albums should come across; anything that can’t will be listed. ' +
+      `For best results, export again${testedVersion ? ` with ${enteCli(testedVersion)}` : ''}.`
+    );
+  const app = photoAppName(kind);
+  return (
+    `${version ? `${app} ${version}` : `This version of ${app}`} hasn't been tested. ` +
+    'Photos and albums should come across; anything that can’t will be listed. ' +
+    `For best results, upgrade ${app}${testedVersion ? ` to ${testedVersion}` : ''} first.`
+  );
+}
+
+export const UNTESTED_VERSION_LOSS = 'SOURCE_VERSION_UNTESTED';
+// Every reader names its losses <APP>_<WHAT>; the <WHAT> part means the same thing for every app.
+const lossTexts: Record<string, (app: string) => string> = {
+  SOURCE_METADATA_ARCHIVED: (app) => `Some ${app}-only details and settings won't come across.`,
+  SHARING_RESTRICTED: () => 'Shared links and sharing between accounts won’t come across. You can share again in Frameleaf.',
+  PEOPLE_ARCHIVED: () => 'Named people and face groups won’t come across. Frameleaf finds faces again on its own.',
+  TITLE_ARCHIVED: () => 'Photo titles won’t come across. Descriptions do.',
+  ALBUM_SNAPSHOT: () => 'Smart albums become regular albums holding the photos they show today.',
+  ALBUM_SNAPSHOT_REQUIRED: () => 'Smart albums become regular albums holding the photos they show today.',
+  ALBUM_PARTITIONED: () => 'Albums with photos from several accounts are split into one album per account.',
+  ALBUM_HIERARCHY_ARCHIVED: () => 'Albums inside other albums come across side by side, without the nesting.',
+  CATEGORY_HIERARCHY_ARCHIVED: () => 'Albums inside other albums come across side by side, without the nesting.',
+  DIRECTORY_HIERARCHY_ARCHIVED: () => 'Albums inside other albums come across side by side, without the nesting.',
+  ALBUM_TAGS_ARCHIVED: () => 'Tags on albums won’t come across. Tags on photos do.',
+  ALBUM_VISIBILITY_ARCHIVED: () => 'Hidden and archived albums come across as regular albums.',
+  ALBUM_MEMBERSHIP_RESTRICTED: () => 'Photos their owner couldn’t see in an album are left out of that album.',
+  CROSS_OWNER_ALBUM_RESTRICTED: () => 'Photos someone added to another person’s album stay with their owner, outside that album.',
+  CROSS_OWNER_MEMBERSHIP_ARCHIVED: () => 'Photos someone added to another person’s album stay with their owner, outside that album.',
+  PRIVATE_ALBUM_MEMBERSHIP_ARCHIVED: () => 'Private photos are left out of the albums they were in.',
+  DYNAMIC_ALBUM_ARCHIVED: (app) => `Smart albums ${app} fills automatically (moments, months, searches) won’t come across.`,
+  SAVED_SEARCH_ARCHIVED: (app) => `Saved searches from ${app} won’t come across.`,
+  DELETED_ALBUM_ARCHIVED: (app) => `Albums you deleted in ${app} stay deleted.`,
+  CAPTURE_TIME_FALLBACK: () => 'Photos with no recorded date use their file date instead.',
+  CAPTURE_TIME_UNAVAILABLE: () => 'Photos with no recorded date use their file date instead.',
+  CAPTURE_OFFSET_UNKNOWN: () => 'Some photos have no time zone, so they keep the time exactly as recorded.',
+  CAPTURE_TIME_ZONE_UNRESOLVED: () => 'Some photos have no time zone, so they keep the time exactly as recorded.',
+  CAPTURE_CLOCK_UNKNOWN: () => 'Some photos have no time zone, so their time is shown in UTC.',
+  CAPTURE_PRECISION_ARCHIVED: () => 'Some photo times lose tiny fractions of a second.',
+  VIEWER_RATINGS_ARCHIVED: () => 'Ratings other people gave won’t come across. Each owner’s own rating does.',
+  VIEWER_PREFERENCES_ARCHIVED: () => 'Favourites other people set won’t come across. Each owner’s own favourites do.',
+  OWNER_RATING_ARCHIVED: () => 'Ratings Frameleaf can’t show (above 5 stars, or from guests) won’t come across.',
+  AGGREGATE_RATING_ARCHIVED: () => 'Average visitor ratings won’t come across.',
+  ROTATION_ARCHIVED: (app) => `Rotations made in ${app} won’t come across; photos show the way their files are saved.`,
+  UNVALIDATED_CONTENT_HIDDEN: (app) => `Photos still waiting for approval in ${app} come across hidden.`,
+  MISSING_IMAGE_RELATIONSHIPS_ARCHIVED: () => 'Album and tag links for photos missing from disk won’t come across.',
+  DUPLICATE_PATHS_ARCHIVED: () => 'Extra copies of the same photo in other folders are imported once.',
+  STACK_ARCHIVED: () => 'Some grouped photos come across as separate photos.',
+  LABELS_ARCHIVED: () => 'Automatic labels won’t come across. Frameleaf’s smart search finds things on its own.',
+  LABEL_TAG_UNREPRESENTABLE: () => 'Some labels have names Frameleaf can’t use as tags, so they won’t come across.',
+  TAG_NORMALIZED: () => 'Some tag names are tidied up, such as extra spaces removed.',
+  RESTRICTED_SYSTEM_TAGS_ARCHIVED: (app) => `${app}'s system tags won’t come across.`,
+  GLOBAL_PRIVACY_REQUIRES_QUALIFICATION: (app) => `${app}'s privacy settings won’t come across. Check who can see what in Frameleaf afterwards.`,
+  LIVE_PHOTO_REQUIRES_QUALIFICATION: () => 'Live Photos come across as a separate photo and video.',
+  ORIGINAL_NAME_ARCHIVED: () => 'Some original file names won’t come across.',
+  SHARED_FILE_NOT_IMPORTED: () =>
+    'Photos and videos other people shared with you stay in their library. Only your own come across.',
+};
+/** One short sentence per loss. Unknown codes still say which app and keep the code for support. */
+export function lossText(code: string, kind: string) {
+  const app = photoAppName(kind);
+  if (code === UNTESTED_VERSION_LOSS) return `This version of ${app} hasn't been tested, so some details may not come across.`;
+  const suffix = Object.keys(lossTexts)
+    .filter((key) => code === key || code.endsWith('_' + key))
+    .sort((a, b) => b.length - a.length)[0];
+  return suffix ? lossTexts[suffix](app) : `Some ${app} details won't come across (${code}).`;
+}
+
+const restrictionTexts: Record<string, (app: string) => string> = {
+  'account-disabled': (app) => `This account is turned off in ${app}.`,
+  'password-login-disabled': (app) => `This account can't sign in with a password in ${app}.`,
+  'second-factor-required': (app) => `This account uses two-step sign-in in ${app}.`,
+  'external-identity-required': (app) => `This account signs in through another service in ${app}.`,
+  'restricted-library-access': (app) => `This account can only see part of its library in ${app}.`,
+  'other-source-restrictions': (app) => `This account has other limits in ${app}.`,
+};
+export const restrictionText = (code: string, kind: string) =>
+  restrictionTexts[code]?.(photoAppName(kind)) ?? `This account has a limit in ${photoAppName(kind)} (${code}).`;
+
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
+/** Every imported account needs its own valid email; the message says what to fix, keyed by source id. */
+export function ownerEmailProblems(owners: { sourceId: string; email: string }[]) {
+  const problems: Record<string, string> = {};
+  const seen = new Map<string, number>();
+  for (const owner of owners) {
+    const email = owner.email.trim().toLowerCase();
+    if (email) seen.set(email, (seen.get(email) ?? 0) + 1);
+  }
+  for (const owner of owners) {
+    const email = owner.email.trim().toLowerCase();
+    if (!email) problems[owner.sourceId] = 'Enter an email address for this account.';
+    else if (!EMAIL.test(email)) problems[owner.sourceId] = 'Enter a valid email address, like name@example.com.';
+    else if ((seen.get(email) ?? 0) > 1) problems[owner.sourceId] = 'Each account needs its own email address.';
+  }
+  return problems;
+}
+
+/** A capture from another photo app that has not been approved for import yet. */
+export const isPhotoAppCapture = (operation: JournalOperation | null | undefined) =>
+  !!operation && operation.kind === 'import' && !!operation.photoApp && !operation.commonImport;

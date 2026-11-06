@@ -16,9 +16,19 @@ class LibrephotosSnapshotError extends Error {
   }
 }
 
-/** The caller fences source services and restarts; the exclusive reservation cannot silently switch snapshots. */
-export const openLibrephotosPostgresSnapshot = async (url: string, version: string, writersStopped: boolean) => {
-  if (version !== fixture.source.version) throw new LibrephotosSnapshotError('LIBREPHOTOS_VERSION_UNQUALIFIED');
+/**
+ * The caller fences source services and restarts; the exclusive reservation cannot silently switch snapshots.
+ * `bestEffort` (owner decision FL-1149) skips the version, engine, catalog fingerprint and migration pins; the
+ * read-only role, exclusive client, row decoding and inventory-count checks stay.
+ */
+export const openLibrephotosPostgresSnapshot = async (
+  url: string,
+  version: string,
+  writersStopped: boolean,
+  { bestEffort = false }: { bestEffort?: boolean } = {},
+) => {
+  if (!bestEffort && version !== fixture.source.version)
+    throw new LibrephotosSnapshotError('LIBREPHOTOS_VERSION_UNQUALIFIED');
   if (!writersStopped) throw new LibrephotosSnapshotError('LIBREPHOTOS_WRITERS_NOT_FENCED');
   let pool: postgres.Sql | undefined;
   let connection: postgres.ReservedSql | undefined;
@@ -38,6 +48,7 @@ export const openLibrephotosPostgresSnapshot = async (url: string, version: stri
     }
   };
   let decoder: ReturnType<typeof createLibrephotosPostgresDecoder>;
+  let qualified = !bestEffort;
   try {
     pool = postgres(url, {
       max: 1,
@@ -61,7 +72,7 @@ export const openLibrephotosPostgresSnapshot = async (url: string, version: stri
           OR pg_catalog.has_any_column_privilege(current_user,c.oid,'INSERT,UPDATE')
           OR pg_catalog.pg_has_role(current_user,c.relowner,'MEMBER')
           OR EXISTS (SELECT 1 FROM pg_catalog.pg_roles writer
-            WHERE pg_catalog.pg_has_role(current_user,writer.oid,'SET')
+            WHERE pg_catalog.pg_has_role(current_user,writer.oid,'${bestEffort ? 'MEMBER' : 'SET'}')
             AND (pg_catalog.has_table_privilege(writer.oid,c.oid,'INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER')
               OR pg_catalog.has_any_column_privilege(writer.oid,c.oid,'INSERT,UPDATE'))))) AS writable,
       EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE datname=current_database()
@@ -77,25 +88,52 @@ export const openLibrephotosPostgresSnapshot = async (url: string, version: stri
       throw new LibrephotosSnapshotError('LIBREPHOTOS_SOURCE_NOT_READ_ONLY');
     }
     const [engine] = await connection.unsafe("SELECT current_setting('server_version') AS version");
-    if (engine?.version !== fixture.source.database.version)
-      throw new LibrephotosSnapshotError('LIBREPHOTOS_POSTGRES_ENGINE_UNQUALIFIED');
     const reserved = connection;
-    const schema = await readPostgresSourceSchema(async (statement) => [...(await reserved.unsafe(statement))]);
-    decoder = createLibrephotosPostgresDecoder(schema, version, engine.version);
-    const required = new Set(fixture.migrations.map(({ app, name }) => JSON.stringify([app, name])));
-    for (const row of await connection.unsafe(
-      'SELECT app,name,pg_catalog.isfinite(applied) AS finished FROM public.django_migrations ORDER BY app,name',
-    )) {
-      if (
-        typeof row.app !== 'string' ||
-        typeof row.name !== 'string' ||
-        row.finished !== true ||
-        !required.delete(JSON.stringify([row.app, row.name]))
-      ) {
-        throw new LibrephotosSnapshotError('LIBREPHOTOS_MIGRATIONS_INCOMPLETE');
+    // Every pin, in order; best effort records the first failure as untested instead of refusing.
+    const qualify = async () => {
+      if (version !== fixture.source.version) throw new LibrephotosSnapshotError('LIBREPHOTOS_VERSION_UNQUALIFIED');
+      if (engine?.version !== fixture.source.database.version)
+        throw new LibrephotosSnapshotError('LIBREPHOTOS_POSTGRES_ENGINE_UNQUALIFIED');
+      const schema = await readPostgresSourceSchema(async (statement) => [...(await reserved.unsafe(statement))]);
+      const strict = createLibrephotosPostgresDecoder(schema, version, engine.version);
+      const required = new Set(fixture.migrations.map(({ app, name }) => JSON.stringify([app, name])));
+      for (const row of await reserved.unsafe(
+        'SELECT app,name,pg_catalog.isfinite(applied) AS finished FROM public.django_migrations ORDER BY app,name',
+      )) {
+        if (
+          typeof row.app !== 'string' ||
+          typeof row.name !== 'string' ||
+          row.finished !== true ||
+          !required.delete(JSON.stringify([row.app, row.name]))
+        ) {
+          throw new LibrephotosSnapshotError('LIBREPHOTOS_MIGRATIONS_INCOMPLETE');
+        }
       }
-    }
-    if (required.size > 0) throw new LibrephotosSnapshotError('LIBREPHOTOS_MIGRATIONS_INCOMPLETE');
+      if (required.size > 0) throw new LibrephotosSnapshotError('LIBREPHOTOS_MIGRATIONS_INCOMPLETE');
+      return strict;
+    };
+    if (bestEffort) {
+      // Unfamiliar migration names are version drift; unfinished, malformed or repeated records are not.
+      const seen = new Set<string>();
+      for (const row of await reserved.unsafe(
+        'SELECT app,name,pg_catalog.isfinite(applied) AS finished FROM public.django_migrations',
+      )) {
+        const key = JSON.stringify([row.app, row.name]);
+        if (typeof row.app !== 'string' || typeof row.name !== 'string' || row.finished !== true || seen.has(key))
+          throw new LibrephotosSnapshotError('LIBREPHOTOS_MIGRATIONS_INCOMPLETE');
+        seen.add(key);
+      }
+      // A failed catalog query would abort the snapshot transaction; the savepoint keeps it readable.
+      await reserved.unsafe('SAVEPOINT frameleaf_qualification');
+      try {
+        decoder = await qualify();
+        qualified = true;
+        await reserved.unsafe('RELEASE SAVEPOINT frameleaf_qualification');
+      } catch {
+        await reserved.unsafe('ROLLBACK TO SAVEPOINT frameleaf_qualification');
+        decoder = createLibrephotosPostgresDecoder(undefined, version, String(engine?.version), { bestEffort });
+      }
+    } else decoder = await qualify();
   } catch (error) {
     await close();
     if (error instanceof LibrephotosSnapshotError) throw error;
@@ -118,6 +156,8 @@ export const openLibrephotosPostgresSnapshot = async (url: string, version: stri
   return {
     version,
     schemaSha256: decoder.schemaSha256,
+    /** Every version, engine, catalog and migration pin matched; always true outside best effort. */
+    qualified,
     password: async (input: ImportedPasswordContext): Promise<ImportedPassword | undefined> => {
       if (closed) throw new LibrephotosSnapshotError('LIBREPHOTOS_POSTGRES_SNAPSHOT_CLOSED');
       try {

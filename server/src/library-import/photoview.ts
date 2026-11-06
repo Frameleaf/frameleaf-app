@@ -60,7 +60,7 @@ const qualifiedSchema = (database: DatabaseSync) => {
 };
 
 /** Source identity, stopped-writer evidence, ownership and original bytes remain caller obligations. */
-export const openPhotoviewSnapshot = (path: string, version: string) => {
+export const openPhotoviewSnapshot = (path: string, version: string, options: { bestEffort?: boolean } = {}) => {
   if (version !== fixture.source.version) throw new PhotoviewReadError('PHOTOVIEW_VERSION_UNQUALIFIED');
   let database: DatabaseSync;
   try {
@@ -71,7 +71,8 @@ export const openPhotoviewSnapshot = (path: string, version: string) => {
   let schemaSha256: string;
   try {
     database.exec('PRAGMA query_only=ON; PRAGMA trusted_schema=OFF; BEGIN');
-    schemaSha256 = qualifiedSchema(database);
+    // Best effort (owner decision FL-1149): an untested schema is read through the same projections.
+    schemaSha256 = options.bestEffort ? sqliteSchemaFingerprint(database) : qualifiedSchema(database);
     if (database.prepare('PRAGMA foreign_key_check').get())
       throw new PhotoviewReadError('PHOTOVIEW_RELATIONSHIPS_INVALID');
   } catch (error) {

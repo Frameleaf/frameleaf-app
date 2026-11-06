@@ -1,12 +1,10 @@
 // Native Lychee qualification: the parent owns the stopped disposable application; this imports its capture.
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { access, mkdir } from 'node:fs/promises';
+import { access, mkdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
-  copyPlacements,
   nativeContext,
-  ownerIntent,
   runNativeCommonImport,
   sha256,
   stoppedContainerAuthority,
@@ -18,8 +16,6 @@ const { directory, stateDirectory, sourceDirectory, runId, input } = await nativ
 const { default: fixture } = await import('src/library-import/fixtures/lychee/7.12.0-sqlite.json', {
   with: { type: 'json' },
 });
-const { openLycheeSnapshot, readLycheeManifest } = await import('src/library-import/lychee.js');
-const { publishAdapterImportBundle } = await import('src/library-import/photoprism-bundle.js');
 const { verifyImportedPassword } = await import('src/library-import/passwords.js');
 const { captureSqliteSnapshot } = await import('src/library-import/sqlite.js');
 
@@ -63,82 +59,55 @@ const operationId = randomUUID(),
   destinationId = randomUUID(),
   ownerId = randomUUID();
 const destinationRoot = path.join(directory, 'destination');
-await mkdir(destinationRoot, { mode: 0o700 });
-const snapshot = openLycheeSnapshot(captured.path, fixture.source.version);
-let bundle, approvedLossCodes, credential;
-try {
-  const users = [...snapshot.rows('users')].flat();
-  assert.equal(users.length, 1);
-  assert.equal(users[0].id, 1n);
-  assert.equal(users[0].username, input.username);
-  assert.equal(users[0].may_administrate, 1n);
-  assert.equal(users[0].is_ldap, 0n);
-  assert.ok(!Object.hasOwn(users[0], 'password'));
-  const photos = [...snapshot.rows('photos')].flat();
-  assert.deepEqual(new Set(photos.map((photo) => photo.id)), new Set(input.photos.map((photo) => photo.id)));
-  const variants = [...snapshot.rows('size_variants')].flat().filter((variant) => variant.type <= 1n);
-  assert.equal(variants.length, input.photos.length);
-  const files = variants.map((variant) => {
-    const expected = input.photos.find((photo) => photo.id === variant.photo_id);
-    assert.ok(expected && expected.path === variant.short_path, 'Source original must have independent API evidence');
-    assert.equal(variant.type, 1n);
-    assert.equal(String(variant.filesize), expected.bytes);
-    return {
-      id: `variant:${variant.id}`,
-      assetId: variant.photo_id,
-      path: variant.short_path,
-      sha256: expected.sha256,
-    };
-  });
-  const { roots, observed, placements } = await copyPlacements({
-    sourceRoot: input.uploadsRoot,
-    destinationRoot,
-    files,
-  });
-  for (const placement of placements)
-    await mkdir(path.dirname(path.join(destinationRoot, placement.destinationPath)), { recursive: true, mode: 0o700 });
-  const source = {
-    kind: 'lychee',
-    version: fixture.source.version,
-    identity: input.containers[0].id,
-    revision,
-    schemaSha256: captured.schemaSha256,
-  };
-  const { manifest, archive } = readLycheeManifest(snapshot, {
-    source,
-    inventory: {
-      complete: true,
-      ownershipComplete: true,
-      privacyComplete: true,
-      writersStopped: true,
-      revisionBefore: revision,
-      revisionAfter: revision,
-    },
-    files: observed,
-    materializedAlbums: {},
-  });
-  // Reviewed differences: source-only columns stay in the protected archive and Lychee titles have no destination field.
-  approvedLossCodes = ['LYCHEE_SOURCE_METADATA_ARCHIVED', 'LYCHEE_TITLE_ARCHIVED'];
-  assert.deepEqual([...new Set(manifest.losses.map((loss) => loss.code))].toSorted(ordered), approvedLossCodes);
-  assert.equal(manifest.losses.filter((loss) => loss.code === 'LYCHEE_TITLE_ARCHIVED').length, input.photos.length);
-  credential = await snapshot.password({ operationId, sourceUserId: input.sourceUserId, destinationUserId: ownerId });
-  assert.ok(credential, 'Lychee local administrator password must be portable');
-  bundle = await publishAdapterImportBundle({
-    manifest,
-    archive,
-    approvedLossCodes: new Set(approvedLossCodes),
-    roots,
-    placements,
-    ownerMappings: [{ sourceId: input.sourceUserId, destinationId: ownerId }],
-    owners: [{ intent: ownerIntent(input.sourceUserId, revision), credential }],
-    stagingRoot: directory,
-    operationId,
-    destinationId,
-    verifySource,
-  });
-} finally {
-  snapshot.close();
-}
+await mkdir(path.join(destinationRoot, 'library', ownerId), { recursive: true, mode: 0o700 });
+// The Manager path (FL-1149): the production preparation command reads the capture through the Lychee adapter,
+// first to review it (inspect), then to publish the bundle with the administrator's owner and loss choices.
+const { prepareLibraryImport } = await import('src/library-import/prepare-command.js');
+const source = {
+  kind: 'lychee',
+  version: fixture.source.version,
+  identity: input.containers[0].id,
+  revision,
+  schemaSha256: captured.schemaSha256,
+};
+const mounts = { '/import-media/source': input.uploadsRoot, '/data': destinationRoot };
+const preparation = async (request) => {
+  const configPath = path.join(directory, 'prepare.json');
+  await writeFile(configPath, JSON.stringify(request), { mode: 0o600 });
+  try {
+    return await prepareLibraryImport(configPath, verifySource, (mount) => mounts[mount] ?? assert.fail(mount));
+  } finally {
+    await rm(configPath, { force: true });
+  }
+};
+const request = {
+  format: 'frameleaf-prepare-library-import',
+  version: 2,
+  operationId,
+  destinationId,
+  source,
+  snapshotPath: captured.path,
+  originalsRoot: '/import-media/source',
+  sourceRootPath: '/app/public/uploads',
+};
+const inspection = await preparation({ ...request, action: 'inspect', approvedLossCodes: [], owners: [] });
+assert.equal(inspection.tested, true, 'The pinned Lychee build must read as tested');
+assert.equal(inspection.summary.assets, input.photos.length);
+assert.equal(inspection.summary.albums, 1);
+assert.deepEqual(
+  inspection.owners.map(({ sourceId, assets, restrictions }) => ({ sourceId, assets, restrictions })),
+  [{ sourceId: input.sourceUserId, assets: input.photos.length, restrictions: [] }],
+);
+// Reviewed differences: source-only columns stay in the protected archive and Lychee titles have no destination field.
+const approvedLossCodes = inspection.losses.map(({ code }) => code);
+assert.deepEqual(approvedLossCodes.toSorted(ordered), ['LYCHEE_SOURCE_METADATA_ARCHIVED', 'LYCHEE_TITLE_ARCHIVED']);
+const receipt = await preparation({
+  ...request,
+  action: 'prepare',
+  approvedLossCodes,
+  owners: [{ sourceId: input.sourceUserId, destinationId: ownerId, email: 'lychee-owner@example.test' }],
+});
+const bundle = { bundleDirectory: path.join(directory, receipt.bundleName), receipt };
 await runNativeCommonImport({
   source: 'lychee',
   directory,

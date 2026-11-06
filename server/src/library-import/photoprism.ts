@@ -91,11 +91,19 @@ class PhotoprismReadError extends Error {
   }
 }
 
-/** Reads only an already captured, privately staged snapshot. This establishes schema compatibility, not migration qualification. */
-export const openPhotoprismSnapshot = (path: string, version: string) => {
-  if (version !== fixture.source.version) throw new PhotoprismReadError('PHOTOPRISM_VERSION_UNQUALIFIED');
+/**
+ * Reads only an already captured, privately staged snapshot. This establishes schema compatibility, not migration
+ * qualification. `bestEffort` (owner decision FL-1149) skips the version, schema-fingerprint, required-migration and
+ * build pins while keeping every integrity check; `qualified` then reports whether those pins would have passed.
+ */
+export const openPhotoprismSnapshot = (path: string, version: string, options: { bestEffort?: boolean } = {}) => {
+  const bestEffort = options.bestEffort === true;
+  if (!bestEffort && version !== fixture.source.version)
+    throw new PhotoprismReadError('PHOTOPRISM_VERSION_UNQUALIFIED');
   let database: DatabaseSync;
   let photoDetails: StatementSync;
+  let schemaSha256: string;
+  let qualified = true;
   try {
     database = new DatabaseSync(path, { readOnly: true, allowExtension: false });
   } catch {
@@ -103,9 +111,14 @@ export const openPhotoprismSnapshot = (path: string, version: string) => {
   }
   try {
     database.exec('PRAGMA query_only=ON; PRAGMA trusted_schema=OFF; BEGIN');
-    if (sqliteSchemaFingerprint(database) !== fixture.schemaSha256) {
-      throw new PhotoprismReadError('PHOTOPRISM_SCHEMA_UNQUALIFIED');
-    }
+    // A pin either refuses (qualified read) or marks the read untested (best effort).
+    const pin = (passed: boolean, code: string) => {
+      if (passed) return;
+      if (!bestEffort) throw new PhotoprismReadError(code);
+      qualified = false;
+    };
+    schemaSha256 = sqliteSchemaFingerprint(database);
+    pin(schemaSha256 === fixture.schemaSha256, 'PHOTOPRISM_SCHEMA_UNQUALIFIED');
     assertSqliteTextSafe(database, 'SELECT id,error,finished_at FROM migrations');
     assertSqliteTextSafe(database, 'SELECT version,error,migrated_at FROM versions ORDER BY id DESC LIMIT 1');
     const required = new Set(fixture.migrations.map(({ id }) => id));
@@ -121,12 +134,11 @@ export const openPhotoprismSnapshot = (path: string, version: string) => {
     const versionRow = database
       .prepare('SELECT version,error,migrated_at FROM versions ORDER BY id DESC LIMIT 1')
       .get();
-    if (required.size > 0 || !versionRow || versionRow.error !== '' || !finished(versionRow.migrated_at)) {
+    if (!versionRow || versionRow.error !== '' || !finished(versionRow.migrated_at)) {
       throw new PhotoprismReadError('PHOTOPRISM_MIGRATIONS_INCOMPLETE');
     }
-    if (versionRow.version !== fixture.source.executableVersion) {
-      throw new PhotoprismReadError('PHOTOPRISM_BUILD_UNQUALIFIED');
-    }
+    pin(required.size === 0, 'PHOTOPRISM_MIGRATIONS_INCOMPLETE');
+    pin(versionRow.version === fixture.source.executableVersion, 'PHOTOPRISM_BUILD_UNQUALIFIED');
     photoDetails = database.prepare('SELECT * FROM details WHERE photo_id=?');
     photoDetails.setReadBigInts(true);
   } catch (error) {
@@ -136,7 +148,9 @@ export const openPhotoprismSnapshot = (path: string, version: string) => {
   }
   return {
     version,
-    schemaSha256: fixture.schemaSha256,
+    schemaSha256,
+    /** The schema, migrations and build match the qualified fixture (always true unless best effort). */
+    qualified,
     password: (context: ImportedPasswordContext) =>
       readSqlitePassword(
         database,

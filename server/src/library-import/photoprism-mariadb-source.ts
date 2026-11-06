@@ -80,15 +80,22 @@ const columnTypes = new Map(
   fixture.schema.columns.map((row) => [row.TABLE_NAME + '.' + row.COLUMN_NAME, row.COLUMN_TYPE]),
 );
 
-/** Isolated restored database only; the controller separately proves source fencing, ownership and byte integrity. */
+/**
+ * Isolated restored database only; the controller separately proves source fencing, ownership and byte integrity.
+ * `bestEffort` (owner decision FL-1149) skips the version, engine-version, schema, migration and build pins and keeps
+ * every isolation and integrity check; `onQualified` reports whether the source schema, migrations and build match the
+ * qualified fixture (the restore engine is the importer's, so its version does not make a source untested).
+ */
 export async function* readPhotoprismMariadbInventory(
   input: z.infer<typeof configSchema>,
   withPasswords?: (read: (context: ImportedPasswordContext) => Promise<ImportedPassword | undefined>) => Promise<void>,
+  options: { bestEffort?: boolean; onQualified?: (qualified: boolean) => void } = {},
 ): AsyncGenerator<PhotoprismInventoryRecord> {
+  const bestEffort = options.bestEffort === true;
   const parsed = configSchema.safeParse(input);
   if (!parsed.success) return refuse('PHOTOPRISM_SOURCE_CONFIG_INVALID');
   const config = parsed.data;
-  if (config.version !== fixture.source.version) return refuse('PHOTOPRISM_VERSION_UNQUALIFIED');
+  if (!bestEffort && config.version !== fixture.source.version) return refuse('PHOTOPRISM_VERSION_UNQUALIFIED');
   const loopback = ['127.0.0.1', '::1'].includes(config.host);
   if (!loopback && !config.tls) return refuse('PHOTOPRISM_SOURCE_TLS_REQUIRED');
   if (!loopback && isIP(config.host)) return refuse('PHOTOPRISM_SOURCE_TLS_HOST_UNQUALIFIED');
@@ -136,7 +143,11 @@ export async function* readPhotoprismMariadbInventory(
         'SELECT VERSION() AS version,@@global.read_only AS read_only,@@wsrep_on AS wsrep_on,@@lower_case_table_names AS lower_case_table_names,CURRENT_USER() AS account,CURRENT_ROLE() AS roles',
       );
       const row = rows[0];
-      if (rows.length !== 1 || row.version !== fixture.runtime.databaseVersion || row.lower_case_table_names !== 0n)
+      if (
+        rows.length !== 1 ||
+        (!bestEffort && row.version !== fixture.runtime.databaseVersion) ||
+        row.lower_case_table_names !== 0n
+      )
         return refuse('PHOTOPRISM_ENGINE_UNQUALIFIED');
       if (row.read_only !== 1n || row.wsrep_on !== 0n) return refuse('PHOTOPRISM_RESTORE_NOT_ISOLATED');
       if (
@@ -209,14 +220,27 @@ export async function* readPhotoprismMariadbInventory(
               ? JSON.parse(rows[0].records)
               : rows[0].records;
       }
-      return admitPhotoprismMariadbSchema({
+      const admission = {
         schema,
         version: config.version,
         databaseVersion: String(original.version),
         lowerCaseTableNames: Number(original.lower_case_table_names),
         migrations: await query('SELECT id,dialect,stage,error,finished_at FROM migrations'),
         versions: await query('SELECT version,error,migrated_at FROM versions ORDER BY id DESC LIMIT 1'),
-      });
+      };
+      if (!bestEffort) return admitPhotoprismMariadbSchema(admission);
+      let qualified = true;
+      try {
+        admitPhotoprismMariadbSchema({
+          ...admission,
+          version: fixture.source.version,
+          databaseVersion: fixture.runtime.databaseVersion,
+        });
+      } catch {
+        qualified = false;
+      }
+      options.onQualified?.(qualified);
+      return admitPhotoprismMariadbSchema(admission, { bestEffort: true });
     };
     await admit();
     for (const [code, sql] of photoprismRelationshipChecks) if ((await query(sql)).length > 0) return refuse(code);

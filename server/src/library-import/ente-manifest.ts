@@ -140,6 +140,11 @@ export function readEnteManifest(input: {
   source: ImportManifest['source'];
   inventory: ImportManifest['inventory'];
   accounts: unknown[];
+  /**
+   * A one-account import (the Manager's Ente export folder): albums owned by an account outside the import are
+   * accepted and keep only the imported account's own files. The caller excludes files other accounts own.
+   */
+  foreignAlbums?: 'own-files';
 }) {
   if (
     input.source.kind !== 'ente' ||
@@ -228,7 +233,9 @@ export function readEnteManifest(input: {
     for (const album of account.albums) {
       const ownerId = album.record.ente.ownerID;
       const authoritative = accounts.get(ownerId)?.albumIndex.get(album.record.ente.albumID);
-      if (!authoritative || authoritative.record.ente.ownerID !== ownerId) return refuse('ENTE_OWNER_EXPORT_REQUIRED');
+      const foreign = input.foreignAlbums === 'own-files' && !accounts.has(ownerId);
+      if (!foreign && (!authoritative || authoritative.record.ente.ownerID !== ownerId))
+        return refuse('ENTE_OWNER_EXPORT_REQUIRED');
       const view =
         album.record.ente.ownerID === account.id
           ? album.record.ente.magicMetadata

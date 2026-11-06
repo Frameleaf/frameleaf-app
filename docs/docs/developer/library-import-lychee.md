@@ -1,6 +1,6 @@
 # Lychee import qualification
 
-The Lychee adapter is under development. A source reader and synthetic fixtures do not establish migration compatibility or destination privacy enforcement. Keep the expanded feature internal until all ten source families pass combined qualification.
+The Lychee adapter is under development. A source reader and synthetic fixtures do not establish migration compatibility or destination privacy enforcement. The Manager offers it as a Beta import (FL-1149).
 
 ## Pinned native evidence
 

@@ -15,10 +15,18 @@ class Pigallery2ReadError extends Error {
   }
 }
 
-/** Reads a frozen snapshot; caller separately qualifies source identity, global policy, explicit owners and original bytes. */
-export const openPigallery2Snapshot = (path: string, version: string) => {
-  if (version !== fixture.source.version) throw new Pigallery2ReadError('PIGALLERY2_VERSION_UNQUALIFIED');
+/**
+ * Reads a frozen snapshot; caller separately qualifies source identity, global policy, explicit owners and original
+ * bytes. `bestEffort` (owner decision FL-1149) skips the version, schema-fingerprint and data-structure-version pins and
+ * keeps the relationship check; `qualified` reports whether those pins would have passed.
+ */
+export const openPigallery2Snapshot = (path: string, version: string, options: { bestEffort?: boolean } = {}) => {
+  const bestEffort = options.bestEffort === true;
+  if (!bestEffort && version !== fixture.source.version)
+    throw new Pigallery2ReadError('PIGALLERY2_VERSION_UNQUALIFIED');
   let database: DatabaseSync;
+  let schemaSha256: string;
+  let qualified = true;
   try {
     database = new DatabaseSync(path, { readOnly: true, allowExtension: false });
   } catch {
@@ -26,13 +34,26 @@ export const openPigallery2Snapshot = (path: string, version: string) => {
   }
   try {
     database.exec('PRAGMA query_only=ON; PRAGMA trusted_schema=OFF; BEGIN');
-    if (sqliteSchemaFingerprint(database) !== fixture.schemaSha256)
-      throw new Pigallery2ReadError('PIGALLERY2_SCHEMA_UNQUALIFIED');
-    const statement = database.prepare('SELECT version FROM version_entity');
-    statement.setReadBigInts(true);
-    const versions = statement.all();
-    if (versions.length !== 1 || versions[0].version !== BigInt(fixture.runtime.dataStructureVersion))
-      throw new Pigallery2ReadError('PIGALLERY2_STRUCTURE_VERSION_UNQUALIFIED');
+    const pin = (passed: boolean, code: string) => {
+      if (passed) return;
+      if (!bestEffort) throw new Pigallery2ReadError(code);
+      qualified = false;
+    };
+    schemaSha256 = sqliteSchemaFingerprint(database);
+    pin(schemaSha256 === fixture.schemaSha256, 'PIGALLERY2_SCHEMA_UNQUALIFIED');
+    let versions: Record<string, SQLOutputValue>[] = [];
+    try {
+      const statement = database.prepare('SELECT version FROM version_entity');
+      statement.setReadBigInts(true);
+      versions = statement.all();
+    } catch (error) {
+      // A best-effort source may have renamed its structure-version table; that only makes it untested.
+      if (!bestEffort) throw error;
+    }
+    pin(
+      versions.length === 1 && versions[0].version === BigInt(fixture.runtime.dataStructureVersion),
+      'PIGALLERY2_STRUCTURE_VERSION_UNQUALIFIED',
+    );
     if (database.prepare('PRAGMA foreign_key_check').get())
       throw new Pigallery2ReadError('PIGALLERY2_RELATIONSHIPS_INVALID');
   } catch (error) {
@@ -42,7 +63,9 @@ export const openPigallery2Snapshot = (path: string, version: string) => {
   }
   return {
     version,
-    schemaSha256: fixture.schemaSha256,
+    schemaSha256,
+    /** The schema and data-structure version match the qualified fixture (always true unless best effort). */
+    qualified,
     password: (context: ImportedPasswordContext) =>
       readSqlitePassword(database, context, 'bcrypt', 'SELECT password FROM user_entity WHERE id=?'),
     *rows(table: Pigallery2Table): Generator<Pigallery2Row[]> {

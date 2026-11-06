@@ -40,15 +40,22 @@ const quote = (name: string) => '`' + name.replaceAll('`', '``') + '`';
 const integerTypes = new Set(['TINY', 'SHORT', 'LONG', 'LONGLONG', 'INT24', 'YEAR']);
 const privileges = ['SELECT', 'RELOAD', 'TRIGGER', 'EVENT', 'SHOW VIEW'];
 
-/** Isolated restored database only. The controller separately proves original source identity, fencing and privacy. */
+/**
+ * Isolated restored database only. The controller separately proves original source identity, fencing and privacy.
+ * `bestEffort` (owner decision FL-1149) skips the version, engine, schema-fingerprint and structure-version pins and
+ * keeps every isolation, relationship and inventory check; `onQualified` reports whether the source schema and
+ * structure version match the qualified fixture (the restore engine is the importer's, not the source's).
+ */
 export async function* readPigallery2MysqlRestore(
   input: Config,
   withPasswords?: (read: (context: ImportedPasswordContext) => Promise<ImportedPassword | undefined>) => Promise<void>,
+  options: { bestEffort?: boolean; onQualified?: (qualified: boolean) => void } = {},
 ): AsyncGenerator<{ table: Pigallery2Table; rows: Pigallery2Row[] }> {
+  const bestEffort = options.bestEffort === true;
   const parsed = configSchema.safeParse(input);
   if (!parsed.success) return refuse('PIGALLERY2_SOURCE_CONFIG_INVALID');
   const config = parsed.data;
-  if (config.version !== fixture.source.version) return refuse('PIGALLERY2_VERSION_UNQUALIFIED');
+  if (!bestEffort && config.version !== fixture.source.version) return refuse('PIGALLERY2_VERSION_UNQUALIFIED');
   const loopback = ['127.0.0.1', '::1'].includes(config.host);
   if (!loopback && !config.tls) return refuse('PIGALLERY2_SOURCE_TLS_REQUIRED');
   if (!loopback && isIP(config.host)) return refuse('PIGALLERY2_SOURCE_TLS_HOST_UNQUALIFIED');
@@ -93,7 +100,7 @@ export async function* readPigallery2MysqlRestore(
         'SELECT VERSION() AS version,@@global.read_only AS read_only,@@global.super_read_only AS super_read_only,CURRENT_USER() AS account,CURRENT_ROLE() AS roles,DATABASE() AS `database`,@@lower_case_table_names AS lower_case_table_names,@@server_uuid AS server_uuid',
       );
       const row = rows[0];
-      if (rows.length !== 1 || row.version !== fixture.runtime.databaseVersion)
+      if (rows.length !== 1 || (!bestEffort && row.version !== fixture.runtime.databaseVersion))
         return refuse('PIGALLERY2_ENGINE_UNQUALIFIED');
       if (
         row.read_only !== 1n ||
@@ -132,16 +139,36 @@ export async function* readPigallery2MysqlRestore(
     const table = (name: string) => quote(config.database) + '.' + quote(name);
     const admit = async () => {
       const schema = await readMysqlSourceSchema(query, 'mysql');
-      if (mysqlSchemaFingerprint(schema, '') !== fixture.schemaSha256) return refuse('PIGALLERY2_SCHEMA_UNQUALIFIED');
-      const versions = await query(`SELECT version FROM ${table('version_entity')} LIMIT 2`);
-      if (versions.length !== 1 || versions[0].version !== BigInt(fixture.runtime.dataStructureVersion))
-        return refuse('PIGALLERY2_STRUCTURE_VERSION_UNQUALIFIED');
-      return admitPigallery2MysqlSchema({
-        schema,
-        version: config.version,
-        databaseVersion: String(original.version),
-        structureVersion: Number(versions[0].version),
-      });
+      if (!bestEffort) {
+        if (mysqlSchemaFingerprint(schema, '') !== fixture.schemaSha256) return refuse('PIGALLERY2_SCHEMA_UNQUALIFIED');
+        const versions = await query(`SELECT version FROM ${table('version_entity')} LIMIT 2`);
+        if (versions.length !== 1 || versions[0].version !== BigInt(fixture.runtime.dataStructureVersion))
+          return refuse('PIGALLERY2_STRUCTURE_VERSION_UNQUALIFIED');
+        return admitPigallery2MysqlSchema({
+          schema,
+          version: config.version,
+          databaseVersion: String(original.version),
+          structureVersion: Number(versions[0].version),
+        });
+      }
+      let qualified = false;
+      try {
+        const versions = await query(`SELECT version FROM ${table('version_entity')} LIMIT 2`);
+        admitPigallery2MysqlSchema({
+          schema,
+          version: fixture.source.version,
+          databaseVersion: fixture.runtime.databaseVersion,
+          structureVersion: versions.length === 1 ? Number(versions[0].version) : undefined,
+        });
+        qualified = true;
+      } catch {
+        // An unknown structure only makes a best-effort source untested.
+      }
+      options.onQualified?.(qualified);
+      return admitPigallery2MysqlSchema(
+        { schema, version: '', databaseVersion: '', structureVersion: undefined },
+        { bestEffort },
+      );
     };
     await admit();
     for (const relation of fixture.schema.foreignKeys) {

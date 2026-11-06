@@ -29,8 +29,9 @@ import { Security, trustedProxyList } from './security.js';
 import { Backups } from './backups.js';
 import { Releases } from './releases.js';
 import { CommonImportBootstrapCredentials } from './common-import-runtime.js';
-import { Operations, ReviewInput } from './operations.js';
-import { Refusal, publicSource, redact, secretEnvironmentValues } from './contracts.js';
+import { Operations, PhotoAppPrepareInput, ReviewInput } from './operations.js';
+import { folderImportKinds } from './photo-app-folder.js';
+import { Refusal, containerId, publicSource, redact, releaseTag, secretEnvironmentValues } from './contracts.js';
 import { appdataDefaults } from './appdata.js';
 import { nativeListener } from './runtime/native-listener.js';
 import { publishNativeClaimProof, requireNativeClaimProof } from './runtime/native-claim.js';
@@ -252,6 +253,38 @@ class Api {
     return settings === undefined
       ? operations.sourceSettings(sourceId)
       : operations.saveSourceSettings(sourceId, settings);
+  }
+  /** FL-1149 (Beta): other photo apps on this host, importable or with a reason code. */
+  @Get('photo-app-sources') photoAppSources() {
+    return operations.photoAppSources();
+  }
+  /** Stops the app (its database keeps running), captures it, and leaves the operation awaiting review. */
+  @Post('photo-app-capture') async photoAppCapture(@Body() input: unknown) {
+    const { container, key } = z.object({ container: containerId, key: RequestKey }).strict().parse(input);
+    return { id: (await operations.startCommonCapture(container, key)).id };
+  }
+  /**
+   * An export folder the owner made themselves (Ente Photos): nothing is stopped. The same review, preparation and
+   * cancel routes follow; cancelling only discards what Manager read.
+   */
+  @Post('photo-app-folder') async photoAppFolder(@Body() input: unknown) {
+    const { kind, path, key } = z
+      .object({ kind: z.enum(folderImportKinds), path: z.string().min(1).max(4096), key: RequestKey })
+      .strict()
+      .parse(input);
+    return { id: (await operations.startFolderImport(kind, path, key)).id };
+  }
+  @Post('photo-app-inspect') photoAppInspect(@Body() input: unknown) {
+    const { operationId, tag } = z.object({ operationId: z.uuid(), tag: releaseTag.optional() }).strict().parse(input);
+    return operations.inspectPhotoApp(operationId, tag);
+  }
+  @Post('photo-app-prepare') photoAppPrepare(@Body() input: unknown, @Req() request: Request) {
+    return operations.preparePhotoApp(PhotoAppPrepareInput.parse(input), managerPort(request));
+  }
+  @Post('photo-app-cancel') async photoAppCancel(@Body() input: unknown) {
+    const { operationId } = z.object({ operationId: z.uuid() }).strict().parse(input);
+    await operations.cancelPhotoApp(operationId);
+    return { cancelled: true };
   }
   @Get('storage') async storage() {
     const roots = [

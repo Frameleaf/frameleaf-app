@@ -49,15 +49,20 @@ const close = (connection: Connection | undefined, bodyFailed: boolean): void =>
   }
 };
 
-/** Reads an isolated, read_only restored source. Caller proves snapshot identity, source fencing and original-file consistency. */
+/**
+ * Reads an isolated, read_only restored source. Caller proves snapshot identity, source fencing and original-file
+ * consistency. `bestEffort` (owner decision FL-1149) skips the version, engine, metadata-visibility and schema
+ * fingerprint pins and locks only the projected tables; isolation, pending-upload, batch and cursor checks stay.
+ */
 export async function* readPiwigoRestore(
   input: Config,
   withPasswords?: (read: (context: ImportedPasswordContext) => Promise<ImportedPassword | undefined>) => Promise<void>,
+  { bestEffort = false }: { bestEffort?: boolean } = {},
 ): AsyncGenerator<{ table: PiwigoTable; rows: PiwigoRow[] }> {
   const parsed = configSchema.safeParse(input);
   if (!parsed.success) refuse('PIWIGO_SOURCE_CONFIG_INVALID');
   const config = parsed.data!;
-  if (config.version !== fixture.source.version) refuse('PIWIGO_VERSION_UNQUALIFIED');
+  if (!bestEffort && config.version !== fixture.source.version) refuse('PIWIGO_VERSION_UNQUALIFIED');
   const loopback = ['127.0.0.1', '::1'].includes(config.host);
   if (!config.tls && !loopback) refuse('PIWIGO_SOURCE_TLS_REQUIRED');
   // mysql2 omits the TLS server name for IP literals; remote identity is qualified only with DNS hosts.
@@ -99,10 +104,19 @@ export async function* readPiwigoRestore(
       return rows;
     };
     const [profile] = await query(
-      'SELECT VERSION() AS version,@@global.read_only AS read_only,@@wsrep_on AS wsrep_on,CURRENT_USER() AS account',
+      bestEffort
+        ? 'SELECT VERSION() AS version,@@global.read_only AS read_only,CURRENT_USER() AS account'
+        : 'SELECT VERSION() AS version,@@global.read_only AS read_only,@@wsrep_on AS wsrep_on,CURRENT_USER() AS account',
     );
-    if (profile?.version !== fixture.runtime.databaseVersion) refuse('PIWIGO_ENGINE_UNQUALIFIED');
-    if (profile.read_only !== 1n || profile.wsrep_on !== 0n) refuse('PIWIGO_RESTORE_NOT_ISOLATED');
+    if (!bestEffort && profile?.version !== fixture.runtime.databaseVersion) refuse('PIWIGO_ENGINE_UNQUALIFIED');
+    // MySQL has no wsrep_on variable; an absent row means no Galera replication.
+    const wsrep = bestEffort ? (await query("SHOW VARIABLES LIKE 'wsrep_on'"))[0]?.Value : undefined;
+    if (
+      !profile ||
+      profile.read_only !== 1n ||
+      (bestEffort ? wsrep !== undefined && String(wsrep).toUpperCase() !== 'OFF' : profile.wsrep_on !== 0n)
+    )
+      refuse('PIWIGO_RESTORE_NOT_ISOLATED');
     if (
       typeof profile.account !== 'string' ||
       profile.account.split('@').length !== 2 ||
@@ -112,11 +126,16 @@ export async function* readPiwigoRestore(
     const grants = await query(
       `SELECT PRIVILEGE_TYPE FROM information_schema.USER_PRIVILEGES WHERE GRANTEE=CONCAT(QUOTE(SUBSTRING_INDEX(CURRENT_USER(),'@',1)),'@',QUOTE(SUBSTRING_INDEX(CURRENT_USER(),'@',-1)))`,
     );
-    if (metadataPrivileges.some((privilege) => grants.every((grant) => grant.PRIVILEGE_TYPE !== privilege)))
+    // Complete catalog visibility only matters to the fingerprint, which best effort does not pin.
+    if (
+      !bestEffort &&
+      metadataPrivileges.some((privilege) => grants.every((grant) => grant.PRIVILEGE_TYPE !== privilege))
+    )
       refuse('PIWIGO_METADATA_VISIBILITY_UNQUALIFIED');
     await query("SET SESSION time_zone='+00:00'");
     await query('SET SESSION group_concat_max_len=16777216');
     const admit = async () =>
+      bestEffort ||
       admitPiwigoSchema({
         schema: await readMysqlSourceSchema(query),
         prefix: config.prefix,
@@ -125,13 +144,23 @@ export async function* readPiwigoRestore(
       });
     await admit();
     const table = (name: string) => `${quote(config.database)}.${quote(config.prefix + name)}`;
-    await query(
-      'LOCK TABLES ' +
-        fixture.schema.tables
-          .map((row) => table(row.TABLE_NAME.slice(fixture.tablePrefix.length)) + ' READ')
-          .join(',') +
-        ' WAIT 5',
-    );
+    if (bestEffort) {
+      // Untested installs may lack native tables or run MySQL, which has no LOCK TABLES ... WAIT.
+      await query('SET SESSION lock_wait_timeout=5');
+      await query(
+        'LOCK TABLES ' +
+          Object.keys(piwigoProjections)
+            .map((name) => table(name) + ' READ')
+            .join(','),
+      );
+    } else
+      await query(
+        'LOCK TABLES ' +
+          fixture.schema.tables
+            .map((row) => table(row.TABLE_NAME.slice(fixture.tablePrefix.length)) + ' READ')
+            .join(',') +
+          ' WAIT 5',
+      );
     await admit();
     if ((await query(`SELECT image_id,category_id FROM ${table('lounge')} LIMIT 1000`)).length > 0)
       refuse('PIWIGO_PENDING_UPLOADS');

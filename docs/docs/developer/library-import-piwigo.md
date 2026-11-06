@@ -1,6 +1,6 @@
 # Piwigo import qualification
 
-The Piwigo adapter is under development. Schema admission and synthetic fixtures do not provide an importer, destination permission enforcement or migration compatibility. Keep the expanded feature internal until all ten source families pass combined qualification.
+The Piwigo adapter is under development. Schema admission and synthetic fixtures do not provide an importer, destination permission enforcement or migration compatibility. The Manager offers it as a Beta import (FL-1149).
 
 ## Pinned native evidence
 

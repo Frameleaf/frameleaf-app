@@ -5,7 +5,7 @@
   import MoveLibrary from './MoveLibrary.svelte';
   import { encodeQr, qrPath } from './qr.mjs';
   import { regenerationPresentation } from './regeneration';
-  import { operationNames, operationProgress, canCancel, serviceState, readable, formatBytes, hasGpu, processorName, plural, newerReleases, releaseNotesText, navSection, CONTAINERS, emptyContainers, parseContainerSettings, containerSummary, containerOverrides, containerText } from './presentation';
+  import { operationNames, operationProgress, canCancel, serviceState, readable, formatBytes, hasGpu, processorName, plural, newerReleases, releaseNotesText, navSection, CONTAINERS, emptyContainers, parseContainerSettings, containerSummary, containerOverrides, containerText, photoAppName, photoAppDetail, photoAppReason, untestedNotice, lossText, restrictionText, ownerEmailProblems, isPhotoAppCapture, isFolderImport, sourceVersion, type PhotoAppSource } from './presentation';
 
   let httpSession = '';
   let csrf = '',
@@ -45,6 +45,19 @@
     tag = $state(''),
     review = $state<any>(null);
   let libraryName = $state('Home library');
+  // Imports from other photo apps (Beta): capture → inspect → accounts and losses → prepare → common import review.
+  let photoApps = $state<PhotoAppSource[]>([]),
+    photoAppChoice = $state(''),
+    photoAppOperation = $state(''),
+    photoAppInspection = $state<any>(null),
+    photoAppOwners = $state<{ sourceId: string; name: string; assets: number; restrictions: string[]; email: string; acknowledged: boolean }[]>([]),
+    photoAppLossesAccepted = $state(false),
+    photoAppUntestedAccepted = $state(false),
+    photoAppCaptured = $state<PhotoAppSource | null>(null),
+    // Ente Photos: the owner exports with Ente's own tool, then points Manager at the folder.
+    enteFolder = $state('');
+  const ENTE_CHOICE = 'ente-folder';
+  let photoAppAwaitingInspect = '';
   let kind = $state<'install' | 'import'>('install'),
     step = $state(0),
     mediaPath = $state(''),
@@ -122,6 +135,7 @@
     downloads: 'Get the app',
     phone: 'Library preparation',
     'setup-complete': 'Setup complete',
+    'photo-app': 'Import from another app',
     overview: 'Overview',
     services: 'Services',
     storage: 'Storage',
@@ -139,6 +153,21 @@
     unavailable: 'Waiting for Frameleaf',
   };
   const installation = $derived(dashboard?.installation);
+  const photoAppChosen = $derived(photoApps.find((app) => app.container === photoAppChoice && app.importable));
+  const enteChosen = $derived(photoAppChoice === ENTE_CHOICE);
+  const photoAppKind = $derived(
+    photoAppInspection?.source?.kind ?? photoAppCaptured?.kind ?? dashboard?.operations?.find(isPhotoAppCapture)?.photoApp?.kind,
+  );
+  const photoAppFolder = $derived(isFolderImport(photoAppKind));
+  const photoAppLabel = $derived(photoAppName(photoAppKind));
+  const photoAppProblems = $derived(ownerEmailProblems(photoAppOwners));
+  const photoAppReady = $derived(
+    !!photoAppInspection &&
+      (photoAppInspection.tested || photoAppUntestedAccepted) &&
+      (!photoAppInspection.losses.length || photoAppLossesAccepted) &&
+      !Object.keys(photoAppProblems).length &&
+      photoAppOwners.every((owner) => !owner.restrictions.length || owner.acknowledged),
+  );
   const otherInstallations = $derived((dashboard?.installations ?? []).filter((i: any) => !i.current));
   // Manager and app ports sit in pairs (2282/2283); suggest the next free number after every known one.
   const nextManagerPort = $derived(
@@ -178,12 +207,15 @@
         ? !dashboard?.onboardingFinished &&
           (['success', 'profile', 'downloads', 'phone'].includes(screen) ||
             (screen === 'progress' && ['install', 'import'].includes(operation?.kind)))
-        : ['welcome', 'import', 'fresh', 'restore', 'progress', 'setup-complete'].includes(screen)),
+        : ['welcome', 'import', 'photo-app', 'fresh', 'restore', 'progress', 'setup-complete'].includes(screen)),
   );
+  const photoAppSteps = ['Choose an app', 'Review your library', 'Start import'];
   const onboardingSteps = ['Server ready', 'Your details', 'Get the app', 'Finish setup'];
   const flowSteps = $derived(
     screen === 'import'
       ? importSteps
+      : screen === 'photo-app'
+        ? photoAppSteps
       : screen === 'fresh'
         ? ['Storage', 'Checks', 'Install']
         : screen === 'restore'
@@ -194,8 +226,8 @@
     { label: 'Administrator', screens: [] as string[], items: [] as string[], current: -1 },
     { label: 'Choose how to begin', screens: ['welcome'], items: [], current: -1 },
     {
-      label: screen === 'import' ? 'Import library' : screen === 'restore' ? 'Restore a backup' : screen === 'fresh' || installation ? 'New library' : 'Set up',
-      screens: ['import', 'fresh', 'restore'],
+      label: screen === 'import' ? 'Import library' : screen === 'photo-app' ? 'Import from another app' : screen === 'restore' ? 'Restore a backup' : screen === 'fresh' || installation ? 'New library' : 'Set up',
+      screens: ['import', 'photo-app', 'fresh', 'restore'],
       items: flowSteps,
       current: step,
     },
@@ -283,7 +315,7 @@
     await tick();
     page?.scrollTo({ top: 0 });
     document.querySelector<HTMLElement>('#main h1')?.focus();
-    if (value === 'welcome' && !installation) await loadSources();
+    if (value === 'welcome' && !installation) await Promise.all([loadSources(), loadPhotoApps()]);
     if (value === 'backups') await loadBackups();
     if (value === 'services' && installation) await loadContainerSettings();
     if (value === 'updates') await loadReleases();
@@ -323,6 +355,118 @@
     refused = result.refused;
     discoveryLoaded = true;
     if (sources.length === 1) sourceId = sources[0].id;
+  }
+  async function loadPhotoApps() {
+    // Beta: a Manager without the photo-app routes (or a failed scan) just shows no other apps.
+    try {
+      photoApps = (await api('photo-app-sources')).sources ?? [];
+    } catch (e) {
+      if (e instanceof Error && e.message === 'sign_in_required') throw e;
+      photoApps = [];
+    }
+    if (photoAppChoice !== ENTE_CHOICE && !photoApps.some((app) => app.container === photoAppChoice && app.importable))
+      photoAppChoice = photoApps.find((app) => app.importable)?.container ?? '';
+  }
+  function resetPhotoApp() {
+    photoAppOperation = '';
+    photoAppAwaitingInspect = '';
+    photoAppInspection = null;
+    photoAppOwners = [];
+    photoAppLossesAccepted = false;
+    photoAppUntestedAccepted = false;
+  }
+  async function capturePhotoApp() {
+    const chosen = photoAppChosen;
+    if (!chosen) return;
+    resetPhotoApp();
+    photoAppCaptured = chosen;
+    await start('photo-app-capture', { container: chosen.container });
+    photoAppOperation = photoAppAwaitingInspect = selectedOperation;
+  }
+  async function startEnteFolder() {
+    const path = enteFolder.trim();
+    if (!path) return;
+    resetPhotoApp();
+    photoAppCaptured = { container: '', kind: 'ente', name: 'Ente Photos', version: null, database: 'export', importable: true };
+    await start('photo-app-folder', { kind: 'ente', path });
+    photoAppOperation = photoAppAwaitingInspect = selectedOperation;
+  }
+  async function copyCommand(text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      notify('Command copied.');
+    } catch {
+      notify('Select the command and copy it.');
+    }
+  }
+  async function inspectPhotoApp(id: string) {
+    photoAppAwaitingInspect = '';
+    const inspection = await api('photo-app-inspect', { operationId: id });
+    photoAppOperation = id;
+    photoAppInspection = inspection;
+    photoAppOwners = inspection.owners.map((owner: any) => ({ ...owner, email: owner.email ?? '', acknowledged: false }));
+    photoAppLossesAccepted = false;
+    photoAppUntestedAccepted = !!inspection.tested;
+    // The same storage, port and release choices as an Immich import, starting fresh for this library.
+    kind = 'import';
+    port = !otherInstallations.some((i: any) => i.appPort === 2283) ? 2283 : (dashboard?.suggestedPort ?? 2283);
+    review = null;
+    containers = emptyContainers();
+    containersOpen = false;
+    lifecycle = false;
+    cutoverAccepted = false;
+    importAdminName = importAdminEmail = importAdminPassword = '';
+    if (!releasesLoaded) await loadReleases();
+    if (!releases.some((release) => release.tag === tag)) tag = releases[0]?.tag ?? '';
+    step = 1;
+    await go('photo-app');
+  }
+  async function preparePhotoApp() {
+    if (!photoAppReady) return;
+    if (!document.querySelector<HTMLFormElement>('#configuration-form')?.reportValidity()) return;
+    const overrides = containerOverrides(containers, containersMl);
+    if (overrides.invalid) {
+      containersOpen = true;
+      throw new Error('container_settings_invalid');
+    }
+    checking = true;
+    try {
+      review = await api('photo-app-prepare', {
+        operationId: photoAppOperation,
+        owners: photoAppOwners.map((owner) => ({
+          sourceId: owner.sourceId,
+          email: owner.email.trim(),
+          ...(owner.restrictions.length ? { acknowledgeRestrictions: owner.acknowledged } : {}),
+        })),
+        approvedLossCodes: photoAppInspection.losses.map((loss: { code: string }) => loss.code),
+        review: {
+          tag,
+          databaseRoot,
+          mediaPath,
+          port,
+          ml,
+          name: libraryName,
+          ...(Object.keys(overrides.services).length ? { services: overrides.services } : {}),
+        },
+      });
+    } finally {
+      checking = false;
+    }
+    cutoverAccepted = false;
+    step = 2;
+    await tick();
+    page?.scrollTo({ top: 0 });
+  }
+  async function cancelPhotoApp(id: string) {
+    const app = photoAppLabel;
+    const folder = photoAppFolder;
+    await api('photo-app-cancel', { operationId: id });
+    resetPhotoApp();
+    review = null;
+    closeModal();
+    await refresh();
+    await go(installation ? 'overview' : 'welcome');
+    notify(folder ? 'Import cancelled. Your export folder is unchanged.' : `Import cancelled. ${app === 'your photo app' ? 'Your photo app' : app} is starting again.`);
   }
   async function loadReleases() {
     releases = await api('releases');
@@ -609,6 +753,12 @@
       if (signedIn && !document.hidden && !busy && !polling) {
         polling = true;
         void refresh(AbortSignal.timeout(30_000))
+          .then(() => {
+            if (!photoAppAwaitingInspect || screen !== 'progress') return;
+            const captured = dashboard?.operations?.find((item: any) => item.id === photoAppAwaitingInspect);
+            if (captured?.state === 'awaiting-review') void run(() => inspectPhotoApp(captured.id));
+            else if (!captured || captured.state !== 'running') photoAppAwaitingInspect = '';
+          })
           .catch(() => {
             disconnected = true;
             if (!signedIn) error = 'Your session expired. Sign in to continue.';
@@ -727,7 +877,7 @@
             {@render notice('Local management and a separate account', 'Manager stays available when the photo application is stopped.', 'good', 'lock')}
             {#if location.protocol === 'http:'}{@render notice('Unencrypted connection', 'HTTP sends your password and management traffic without encryption. Sign in only on a network you trust.', 'warning', 'warning')}{/if}
           </div><div class="card-footer"><span class="safety-note"><Icon name="shield"/>Protected local session</span><button class="button primary" disabled={busy}>{claimed ? 'Sign in' : 'Create administrator'}</button></div></form>
-        {:else if activeOperation && !['progress', 'activity'].includes(screen)}
+        {:else if activeOperation && !['progress', 'activity', 'photo-app'].includes(screen)}
           <div class="notice warning operation-banner"><Icon name="clock"/><div class="grow"><strong>{operationNames[activeOperation.kind]}</strong><p>{activeOperation.state === 'running' ? 'Running in the background' : 'A saved operation needs attention before another operation can begin.'}</p></div><button class="button quiet" onclick={() => { selectedOperation = activeOperation.id; void run(() => go('progress')); }}>View operation</button></div>
         {/if}
 
@@ -738,39 +888,16 @@
             <div class="actions mt16"><button class="button primary" onclick={() => run(() => go('overview'))}>Open overview</button><button class="button quiet" onclick={() => run(() => go('backups'))}>View backups</button></div>
           {:else}
             {#if sources.length}<section class="card detected-card"><div class="card-body"><div class="detected-label"><Icon name="check"/>FOUND ON THIS SERVER</div><div class="feature-row"><div class="import-art" aria-hidden="true"><span class="import-art-node"><Icon name="database"/></span><span class="import-art-flow"><i></i><i></i><i></i></span><span class="import-art-node target"><img src="/assets/frameleaf-symbol.svg" alt=""/></span></div><div class="feature-copy"><h2>Bring your photo library</h2><p>Import your accounts, albums, and settings. Keep your photos and external libraries exactly where they are.</p></div><span class="badge">{sources.length === 1 ? sources[0].product + ' ' + sources[0].version : sources.length + ' installations'}</span></div>{#if sources.length === 1}<div class="mini-stats"><div><strong>{sources[0].summary.assets.toLocaleString()}</strong><small>Photos & videos</small></div><div><strong>{sources[0].summary.users}</strong><small>{sources[0].summary.users === 1 ? 'Account' : 'Accounts'}</small></div><div><strong>{sources[0].summary.albums}</strong><small>Albums</small></div><div><strong>{sources[0].mounts.filter((item: any) => item.readOnly).length}</strong><small>Read-only mappings</small></div></div>{/if}</div><div class="card-footer"><span class="safety-note"><Icon name="folder"/>Existing media locations preserved</span><button class="button primary" disabled={busy || !!activeOperation} onclick={() => run(() => choose('import'))}>Review import</button></div></section>
-            {:else}<section class="card"><div class="card-body"><div class="row mb16"><Icon name="import"/><h2>{discoveryLoaded ? 'No supported photo installation found' : 'Find your existing library'}</h2></div><p class="muted">Manager detects installations through the host Docker engine. Review discovered sources before making any change.</p><button class="button quiet mt16" disabled={busy} onclick={() => run(loadSources)}>Find installations</button></div></section>{/if}
+            {:else if !photoApps.length}<section class="card"><div class="card-body"><div class="row mb16"><Icon name="import"/><h2>{discoveryLoaded ? 'No supported photo installation found' : 'Find your existing library'}</h2></div><p class="muted">Manager detects installations through the host Docker engine. Review discovered sources before making any change.</p><button class="button quiet mt16" disabled={busy} onclick={() => run(loadSources)}>Find installations</button></div></section>{/if}
             {#if refused.length}<div class="notice warning mt16"><Icon name="warning"/><div><strong>Some installations need attention</strong>{#each refused as item}<p>{readable(item.code)}</p>{/each}</div></div>{/if}
+            {@render photoAppPicker()}
             <p class="section-label">Or start another way</p><div class="two-cols"><section class="card option-card"><div class="card-body"><div class="icon-tile"><Icon name="plus"/></div><h2>Set up a new library</h2><p>Choose your storage and let Manager prepare a fresh Frameleaf installation.</p><button class="text-button" disabled={busy || !!activeOperation} onclick={() => run(() => choose('install'))}>Set up Frameleaf</button></div></section><section class="card option-card"><div class="card-body"><div class="icon-tile"><Icon name="restore"/></div><h2>Restore a backup</h2><p>Restore your database and reconnect media that already exists on your server.</p><button class="text-button" disabled={busy || !!activeOperation} onclick={() => run(() => startRestore())}>Choose a backup</button></div></section></div>
             <p class="quiet-note"><Icon name="info"/>You can review every change before setup or import begins.</p>
           {/if}
         {:else if screen === 'import'}
           {@render steps(importSteps, step)}
           {#if review?.commonImport}
-            {@render heading('Review library import', review.downtime)}
-            <form class="card" onsubmit={(event) => { event.preventDefault(); void run(startCommonImport); }}>
-              <div class="card-header"><h2>Reviewed library</h2><span class="badge">{review.commonImport.source} {review.commonImport.version}</span></div>
-              <div class="card-body">
-                <p>{review.commonImport.summary.assets} photos and videos · {review.commonImport.summary.albums} albums · {review.commonImport.summary.owners} accounts</p>
-                <p class="meta mt16">Media space required: {formatBytes(review.commonImport.requiredMediaBytes)}</p>
-                {#if review.commonImport.summary.preservationDifferences}
-                  <p class="meta mt16">Preservation differences recorded: {review.commonImport.summary.preservationDifferences}</p>
-                {/if}
-                <p class="meta mt16">{review.recovery}</p>
-                {#if review.commonImport.requiresBootstrap}
-                  {#if location.protocol !== 'https:'}
-                    <div class="mt16">{@render notice('Secure connection required', 'Open Manager over HTTPS to set the destination administrator password.', 'warning')}</div>
-                  {:else}
-                    <h3 class="mt16">Destination administrator</h3>
-                    {@render importAdministratorFields()}
-                  {/if}
-                {/if}
-                <label class="check-row mt24"><input type="checkbox" bind:checked={cutoverAccepted}/><span>I’ve reviewed the transfer and recovery information.</span></label>
-              </div>
-              <div class="card-footer">
-                <button type="button" class="button quiet" onclick={() => { review = null; step = 0; importAdminPassword = ''; }}>Back</button>
-                <button class="button primary" disabled={busy || !cutoverAccepted || (!!activeOperation && (activeOperation.id !== review.id || activeOperation.state !== 'awaiting-review')) || (review.commonImport.requiresBootstrap && location.protocol !== 'https:')}>Start import</button>
-              </div>
-            </form>
+            {@render commonImportReview(() => { review = null; step = 0; importAdminPassword = ''; })}
           {:else if step === 0}
             {@render heading(sources.length > 1 ? 'Choose a photo installation' : `Review your ${source?.product ?? 'photo'} installation`, 'Your existing database will be kept for recovery.')}
             {#if !sources.length}{@render notice('No supported source available', 'Find and resolve the source installation before starting an import.', 'warning')}<button class="button quiet mt16" onclick={() => run(loadSources)}>Find installations</button>{/if}
@@ -800,13 +927,23 @@
             {/if}
             <div class="wizard-footer"><button class="button quiet" onclick={() => { review = null; step = lastImportStep - 1; }}>Back</button></div>
           {/if}
+        {:else if screen === 'photo-app'}
+          {@render steps(photoAppSteps, step)}
+          {#if review?.commonImport}
+            {@render commonImportReview(() => { review = null; step = 1; cutoverAccepted = false; importAdminPassword = ''; }, () => showModal('photo-app-cancel', photoAppOperation))}
+          {:else if !photoAppInspection}
+            {@render heading('Nothing to review yet', 'Choose an app to import from on the first page of setup.')}
+            <div class="wizard-footer"><button class="button quiet" onclick={() => run(() => go('welcome'))}>Back</button></div>
+          {:else}
+            {@render photoAppReview()}
+          {/if}
         {:else if screen === 'fresh'}
           {@render steps(['Storage', 'Checks', 'Install'], step)}
           {#if step === 0}{@render heading('Give your library a home', 'Choose the server locations and connection settings for this installation.')}{@render configuration()}<div class="wizard-footer"><button class="button quiet" onclick={() => run(() => go('welcome'))}>Back</button>{#if checking}<p class="muted checking-note" role="status">Checking the server. This can take up to a minute.</p>{/if}<button class="button primary" disabled={busy || !mediaPath || !tag || !lifecycle} aria-busy={checking} onclick={() => run(prepare)}>{#if checking}<span class="spinner" aria-hidden="true"></span>Checking…{:else}Check this configuration{/if}</button></div>
           {:else if step === 1}{@render heading('This server is ready', 'Manager checked storage, compatibility, and the complete signed release bundle.')}<section class="card"><div class="card-header"><h2>Preflight checks</h2></div>{#each [['folder', 'Storage permissions and free space', formatBytes(review.requiredBytes) + ' required; selected mounted locations validated'], ['network', 'Frameleaf port', String(port) + ' checked against Docker and Manager ports'], ['server', 'Docker compatibility', dashboard.host?.platform ?? 'Host compatibility checked'], ['shield', 'Release signature and eligibility', review.tag + ' · Verified release bundle'], ['database', 'PostgreSQL host storage', review.databaseStorage.root]] as [icon, title, detail]}<div class="list-row"><Icon name={icon}/><div><strong>{title}</strong><p>{detail}</p></div><span class="badge good">Passed</span></div>{/each}</section><p class="meta mt16">Docker’s final port bind remains authoritative for other host processes.</p><div class="wizard-footer"><button class="button quiet" onclick={() => { step = 0; review = null; }}>Back</button><button class="button primary" onclick={() => step = 2}>Review installation</button></div>
           {:else}{@render heading('Ready to set up Frameleaf', 'Manager will prepare the services and take you into Frameleaf when your server is ready.')}<section class="card"><div class="card-header"><h2>New installation</h2><span class="badge good">{review.tag}</span></div>{#each [['folder', 'Photo library', mediaPath], ['database', 'New PostgreSQL database', databaseRoot], ['shield', 'Encrypted database backups', dashboard.backupRoot], ['network', 'Application port', String(port)], ['cpu', 'Processing', `${processorName(dashboard.host?.acceleration)} · Machine learning ${ml ? 'on' : 'off'}`]] as [icon, title, detail]}<div class="list-row"><Icon name={icon}/><div><strong>{title}</strong><p><code>{detail}</code></p></div></div>{/each}</section>{@render containerReview()}<div class="mt16">{@render notice('Managed independently', 'Your photo library keeps running when Manager is unavailable. Keep a protected configuration export for manual recovery.')}</div><div class="wizard-footer"><button class="button quiet" onclick={() => step = 1}>Back</button><button class="button primary" disabled={busy || !!activeOperation} onclick={() => run(() => start('install', { reviewId: review.id }))}>Install Frameleaf</button></div>{/if}
         {:else if screen === 'progress'}
-          {#if operation && timeline}{@render heading(operationNames[operation.kind] ?? 'Manager operation', operation.state === 'running' ? 'You can close this page. Manager records every completed step.' : operation.state === 'complete' && !operation.error ? 'The recorded operation completed successfully.' : 'Review the saved step before continuing.')}
+          {#if operation && timeline}{@render heading(operationNames[operation.kind] ?? 'Manager operation', isPhotoAppCapture(operation) && operation.state === 'awaiting-review' ? (isFolderImport(operation.photoApp?.kind) ? 'Manager has read your export folder. Review what comes across before anything is imported.' : 'Your app is stopped and Manager has read its library. Review what comes across before anything is imported.') : operation.state === 'running' ? 'You can close this page. Manager records every completed step.' : operation.state === 'complete' && !operation.error ? 'The recorded operation completed successfully.' : 'Review the saved step before continuing.')}
             <section class="card"><div class="card-body">{#if setupMode}<div class="progress-hero"><div class="progress-ring" class:done={timeline.successful} style="--p: {timeline.percent}" role="progressbar" aria-label="Operation progress" aria-valuenow={timeline.percent} aria-valuemin="0" aria-valuemax="100">{#if timeline.successful}<Icon name="check"/>{:else}<strong>{timeline.percent}%</strong>{/if}</div><div><strong>{timeline.successful ? 'All done' : readable(operation.step ?? operation.state)}</strong><p class="meta">{operation.state === 'running' ? 'This usually takes a few minutes.' : readable(operation.state)}</p></div></div>{:else}<div class="spread progress-label"><span>{readable(operation.step ?? operation.state)}</span><strong>{timeline.percent}%</strong></div><progress class="progress" aria-label="Operation progress" value={timeline.percent} max="100"></progress>{/if}<ol class="timeline mt16">{#each timeline.steps as item, index}<li class:done={item.state === 'complete'} class:running={item.state === 'running'}><span class="stage-icon">{#if item.state === 'complete'}<Icon name="check"/>{:else if item.state === 'running'}<Icon name="loader" class="spin"/>{:else}{index + 1}{/if}</span><div><strong>{item.label}</strong></div><span class="stage-time">{readable(item.state)}</span></li>{/each}</ol>{#if operation.error}<div class="notice warning mt16" role="alert"><Icon name="warning"/><div><strong>{readable(operation.error, operation.detail)}</strong><p>Completed journal steps are retained. Resume runs the next safe step.</p></div></div>{/if}</div><div class="card-footer"><span class="safety-note"><Icon name="shield"/>Completed steps are recorded</span><span class="badge" class:good={timeline.successful}>{readable(operation.state)}</span></div></section>
             {#if operation.error === 'import_bootstrap_credentials_required'}
               {#if location.protocol === 'https:'}
@@ -819,7 +956,7 @@
                 <div class="mt16">{@render notice('Secure connection required', 'Open Manager over HTTPS to re-enter the destination administrator password.', 'warning')}</div>
               {/if}
             {/if}
-            <div class="wizard-footer"><button class="button quiet" onclick={() => run(() => go('activity'))}>Operation history</button><div class="actions">{#if operation.kind === 'move-library' && operation.state === 'running'}<button class="button quiet" disabled={busy || !operation.canStop} onclick={() => run(async () => { await api('stop-move', { id: operation.id }); await refresh(); })}>Stop safely</button>{/if}{#if ['failed', 'interrupted'].includes(operation.state)}{#if operation.error !== 'import_bootstrap_credentials_required'}<button class="button primary" disabled={busy} onclick={() => run(async () => { await api('resume', { id: operation.id }); await refresh(); })}>Resume safely</button>{/if}{#if (operation.canCancel ?? canCancel(operation, installation))}<button class="button danger" disabled={busy} onclick={() => showModal('recover')}>{operation.kind === 'move-library' ? 'Cancel safely' : operation.kind === 'backup' ? 'Cancel backup' : operation.kind === 'update' ? 'Cancel update and restart' : 'Recover the stopped source'}</button>{/if}{:else if timeline.successful}<button class="button primary" onclick={() => run(() => go(['install', 'import', 'restore'].includes(operation.kind) && !dashboard.onboardingFinished ? 'success' : 'overview'))}>Continue</button>{/if}</div></div>
+            <div class="wizard-footer"><button class="button quiet" onclick={() => run(() => go('activity'))}>Operation history</button><div class="actions">{#if isPhotoAppCapture(operation)}<button class="button quiet" disabled={busy} onclick={() => showModal('photo-app-cancel', operation.id)}>Cancel import</button>{#if operation.state === 'awaiting-review'}<button class="button primary" disabled={busy} onclick={() => run(() => inspectPhotoApp(operation.id))}>Review what comes across</button>{/if}{/if}{#if operation.kind === 'move-library' && operation.state === 'running'}<button class="button quiet" disabled={busy || !operation.canStop} onclick={() => run(async () => { await api('stop-move', { id: operation.id }); await refresh(); })}>Stop safely</button>{/if}{#if ['failed', 'interrupted'].includes(operation.state)}{#if operation.error !== 'import_bootstrap_credentials_required'}<button class="button primary" disabled={busy} onclick={() => run(async () => { await api('resume', { id: operation.id }); await refresh(); })}>Resume safely</button>{/if}{#if !isPhotoAppCapture(operation) && (operation.canCancel ?? canCancel(operation, installation))}<button class="button danger" disabled={busy} onclick={() => showModal('recover')}>{operation.kind === 'move-library' ? 'Cancel safely' : operation.kind === 'backup' ? 'Cancel backup' : operation.kind === 'update' ? 'Cancel update and restart' : 'Recover the stopped source'}</button>{/if}{:else if timeline.successful}<button class="button primary" onclick={() => run(() => go(['install', 'import', 'restore'].includes(operation.kind) && !dashboard.onboardingFinished ? 'success' : 'overview'))}>Continue</button>{/if}</div></div>
           {:else}{@render heading('No recorded operation', 'Start setup or choose a maintenance operation.')}<button class="button primary" onclick={() => run(() => go(installation ? 'overview' : 'welcome'))}>Continue</button>{/if}
         {:else if screen === 'success'}
           {@render steps(onboardingSteps, 0)}<div class="success-icon"><Icon name="check"/></div>{@render heading(installation?.origin === 'new_import' ? 'Your import is in Frameleaf' : 'Your server is ready', 'Now make it yours and connect your phone. Library preparation continues in the background.')}{@render notice('Services are ready', installation?.origin === 'new_import' ? 'Your users, albums and settings are imported. The original app remains stopped, and your media stays in place.' : 'Continue with your local photo account and mobile app.')}{@render regeneration()}<div class="wizard-footer"><span class="meta">Library preparation continues</span><button class="button primary" onclick={() => run(() => go('profile'))}>Continue to your details <Icon name="arrow"/></button></div>
@@ -872,6 +1009,161 @@
         {/if}
         {/if}
 {/snippet}
+{#snippet commonImportReview(back: () => void, cancel?: () => void)}
+            {@render heading('Review library import', review.downtime)}
+            <form class="card" onsubmit={(event) => { event.preventDefault(); void run(startCommonImport); }}>
+              <div class="card-header"><h2>Reviewed library</h2><span class="badge">{photoAppName(review.commonImport.source, review.commonImport.source)} {sourceVersion(review.commonImport.source, review.commonImport.version)}</span></div>
+              <div class="card-body">
+                <p>{review.commonImport.summary.assets} photos and videos · {review.commonImport.summary.albums} albums · {review.commonImport.summary.owners} accounts</p>
+                <p class="meta mt16">Media space required: {formatBytes(review.commonImport.requiredMediaBytes)}</p>
+                {#if review.commonImport.summary.preservationDifferences}
+                  <p class="meta mt16">Preservation differences recorded: {review.commonImport.summary.preservationDifferences}</p>
+                {/if}
+                <p class="meta mt16">{review.recovery}</p>
+                {#if review.commonImport.requiresBootstrap}
+                  {#if location.protocol !== 'https:'}
+                    <div class="mt16">{@render notice('Secure connection required', 'Open Manager over HTTPS to set the destination administrator password.', 'warning')}</div>
+                  {:else}
+                    <h3 class="mt16">Destination administrator</h3>
+                    {@render importAdministratorFields()}
+                  {/if}
+                {/if}
+                <label class="check-row mt24"><input type="checkbox" bind:checked={cutoverAccepted}/><span>I’ve reviewed the transfer and recovery information.</span></label>
+              </div>
+              <div class="card-footer">
+                <div class="actions"><button type="button" class="button quiet" onclick={back}>Back</button>{#if cancel}<button type="button" class="button quiet" disabled={busy} onclick={cancel}>Cancel import</button>{/if}</div>
+                <button class="button primary" disabled={busy || !cutoverAccepted || (!!activeOperation && (activeOperation.id !== review.id || activeOperation.state !== 'awaiting-review')) || (review.commonImport.requiresBootstrap && location.protocol !== 'https:')}>Start import</button>
+              </div>
+            </form>
+{/snippet}
+{#snippet photoAppPicker()}
+  <section class="card photo-apps mt24" aria-labelledby="photo-apps-title">
+    <div class="card-header"><h2 id="photo-apps-title">Import from another photo app</h2><span class="badge warning">Beta</span></div>
+    <div class="card-body">
+      <p class="muted">Imports from other apps are new. Manager reads your library and leaves the original app’s photos and data untouched.</p>
+      <div class="photo-app-list" role="radiogroup" aria-label="Photo apps you can import">
+        {#each photoApps as app (app.container)}
+          <label class="radio-card" class:unavailable={!app.importable}>
+            <input type="radio" name="photo-app" bind:group={photoAppChoice} value={app.container} disabled={!app.importable}/>
+            <div>
+              <div class="spread"><strong>{photoAppName(app.kind, app.name ?? app.kind)}</strong><span class="badge">{photoAppDetail(app)}</span></div>
+              {#if app.name && app.name.toLowerCase() !== photoAppName(app.kind, '').toLowerCase()}<p>{app.name}</p>{/if}
+              {#if !app.importable}<p class="photo-app-reason">{photoAppReason(app)}</p>{/if}
+            </div>
+          </label>
+        {/each}
+        <label class="radio-card">
+          <input type="radio" name="photo-app" bind:group={photoAppChoice} value={ENTE_CHOICE}/>
+          <div>
+            <div class="spread"><strong>Ente Photos</strong><span class="badge">Export folder</span></div>
+            <p>Import a folder you export with Ente’s own command-line tool. Works with ente.io and self-hosted Ente.</p>
+          </div>
+        </label>
+      </div>
+      {#if enteChosen}{@render enteSteps()}{/if}
+    </div>
+    <div class="card-footer">
+      <button class="text-button" disabled={busy} onclick={() => run(async () => { await Promise.all([loadSources(), loadPhotoApps()]); })}>Look again</button>
+      {#if enteChosen}
+        <button class="button primary" disabled={busy || !!activeOperation || !enteFolder.trim()} onclick={() => run(startEnteFolder)}>Continue</button>
+      {:else}
+        <button class="button primary" disabled={busy || !!activeOperation || !photoAppChosen} onclick={() => showModal('photo-app-capture')}>{photoAppChosen ? `Import from ${photoAppName(photoAppChosen.kind)}` : 'Import'}</button>
+      {/if}
+    </div>
+  </section>
+{/snippet}
+{#snippet command(text: string)}
+  <div class="command-row"><code>{text}</code><button type="button" class="button quiet" aria-label={`Copy: ${text}`} onclick={() => copyCommand(text)}>Copy</button></div>
+{/snippet}
+
+{#snippet enteSteps()}
+  <div class="ente-steps" aria-labelledby="ente-steps-title">
+    <h3 id="ente-steps-title">Three steps to bring Ente Photos across</h3>
+    <p class="muted">Manager never asks for your Ente password. You export your library with Ente’s own tool, then Manager reads the folder.</p>
+    <ol class="ente-step-list">
+      <li>
+        <span class="ente-step-number" aria-hidden="true">1</span>
+        <div>
+          <strong>Export your library</strong>
+          <p>On a computer where Ente’s command-line tool is signed in to your account, run:</p>
+          {@render command('ente photos export ente-export')}
+        </div>
+      </li>
+      <li>
+        <span class="ente-step-number" aria-hidden="true">2</span>
+        <div>
+          <strong>Save the list of your files</strong>
+          <p>This tells Manager which photos are yours. Run it in the same place:</p>
+          {@render command('ente photos file list --all --json > ente-export/ente-files.json')}
+        </div>
+      </li>
+      <li>
+        <span class="ente-step-number" aria-hidden="true">3</span>
+        <div>
+          <strong>Tell Manager where the export is</strong>
+          <p>Put the ente-export folder somewhere Manager can reach{#if dashboard?.storageRoots?.length}, inside {dashboard.storageRoots.join(' or ')}{/if}, then enter its full path.</p>
+          <label class="field ente-folder"><span>Folder path</span><input bind:value={enteFolder} placeholder="/mnt/user/photos/ente-export" autocomplete="off" spellcheck="false"/><small>Manager only reads this folder and never changes it.</small></label>
+        </div>
+      </li>
+    </ol>
+    <p class="muted">Only photos and videos you own come across. Anything other people shared with you stays in their library.</p>
+  </div>
+{/snippet}
+
+{#snippet photoAppReview()}
+  {@const inspection = photoAppInspection}
+  {@render heading(`Review your ${photoAppLabel} library`, 'Nothing has been imported yet. Check what comes across, then choose where your library goes.')}
+  <div class="photo-app-review">
+    {@render notice('Beta: imports from other apps are new', photoAppFolder ? 'Manager only reads your export folder and never changes it. Your Ente account isn’t touched.' : `Manager leaves ${photoAppLabel}’s photos and data untouched. ${photoAppLabel} stays stopped until the import finishes, or starts again if you cancel.`, 'warning', 'info')}
+    {#if !inspection.tested}
+      <section class="card untested-notice" aria-labelledby="untested-title">
+        <div class="card-body">
+          <div class="row"><Icon name="warning"/><h2 id="untested-title">This version hasn’t been tested</h2></div>
+          <p>{untestedNotice(photoAppKind, inspection.source?.version, inspection.testedVersion)}</p>
+          {#if !photoAppUntestedAccepted}
+            <div class="actions"><button class="button primary" onclick={() => (photoAppUntestedAccepted = true)}>Continue anyway</button><button class="button quiet" disabled={busy} onclick={() => showModal('photo-app-cancel', photoAppOperation)}>Cancel import</button></div>
+          {/if}
+        </div>
+      </section>
+    {/if}
+    {#if photoAppUntestedAccepted}
+      <section class="card" aria-labelledby="photo-app-summary">
+        <div class="card-header"><h2 id="photo-app-summary">What Manager found</h2><span class="badge">{photoAppLabel}{sourceVersion(photoAppKind, inspection.source?.version) ? ' ' + sourceVersion(photoAppKind, inspection.source?.version) : ''}</span></div>
+        <div class="card-body"><div class="mini-stats">
+          <div><strong>{inspection.summary.assets.toLocaleString()}</strong><small>Photos & videos</small></div>
+          <div><strong>{inspection.summary.albums.toLocaleString()}</strong><small>{inspection.summary.albums === 1 ? 'Album' : 'Albums'}</small></div>
+          <div><strong>{inspection.summary.owners.toLocaleString()}</strong><small>{inspection.summary.owners === 1 ? 'Account' : 'Accounts'}</small></div>
+          <div><strong>{formatBytes(Number(inspection.summary.bytes))}</strong><small>Size</small></div>
+        </div></div>
+      </section>
+      <section class="card" aria-labelledby="photo-app-losses">
+        <div class="card-header"><h2 id="photo-app-losses">What won’t come across</h2>{#if inspection.losses.length}<span class="badge warning">{plural(inspection.losses.length, 'item')}</span>{/if}</div>
+        {#if inspection.losses.length}
+          <ul class="loss-list">{#each inspection.losses as loss (loss.code)}<li><Icon name="info"/><span>{lossText(loss.code, photoAppKind)}</span>{#if loss.count > 1}<span class="badge">{loss.count.toLocaleString()} affected</span>{/if}</li>{/each}</ul>
+          <div class="card-body"><label class="check-row"><input type="checkbox" bind:checked={photoAppLossesAccepted}/><span>I understand these details won’t come across to Frameleaf.</span></label></div>
+        {:else}<div class="card-body"><p class="muted">Everything Manager found comes across.</p></div>{/if}
+      </section>
+      <section class="card" aria-labelledby="photo-app-accounts">
+        <div class="card-header"><div><h2 id="photo-app-accounts">Accounts</h2><p class="meta">Each account becomes a Frameleaf account. People sign in with the email address you give it here.</p></div><span class="badge">{plural(photoAppOwners.length, 'account')}</span></div>
+        <div class="table-wrap"><table class="account-table">
+          <thead><tr><th>{photoAppLabel} account</th><th>Photos & videos</th><th>Frameleaf email</th></tr></thead>
+          <tbody>{#each photoAppOwners as owner (owner.sourceId)}
+            {@const problem = photoAppProblems[owner.sourceId]}
+            <tr>
+              <td><strong>{owner.name}</strong>{#each owner.restrictions as restriction}<small class="amber">{restrictionText(restriction, photoAppKind)}</small>{/each}
+                {#if owner.restrictions.length}<label class="check-row mt16"><input type="checkbox" bind:checked={owner.acknowledged}/><span>Import {owner.name}’s account anyway</span></label>{/if}</td>
+              <td>{owner.assets.toLocaleString()}</td>
+              <td><label class="field"><input type="email" aria-label={`Email for ${owner.name}`} bind:value={owner.email} required maxlength="254" autocomplete="off" spellcheck="false" aria-invalid={!!problem}/>{#if problem}<small class="field-error">{problem}</small>{/if}</label></td>
+            </tr>
+          {/each}</tbody>
+        </table></div>
+      </section>
+      <div>{@render configuration()}</div>
+      {#if checking}<p class="muted checking-note" role="status">Checking your library and this server. This can take a few minutes.</p>{/if}
+    {/if}
+  </div>
+  <div class="wizard-footer"><button class="button quiet" disabled={busy} onclick={() => showModal('photo-app-cancel', photoAppOperation)}>Cancel import</button>{#if photoAppUntestedAccepted}<button class="button primary" disabled={busy || !photoAppReady || !mediaPath || !tag || !lifecycle} aria-busy={checking} onclick={() => run(preparePhotoApp)}>{#if checking}<span class="spinner" aria-hidden="true"></span>Checking…{:else}Check and review import{/if}</button>{/if}</div>
+{/snippet}
 {#snippet advancedContainers()}
   <details class="card mt16 containers" bind:open={containersOpen}>
     <summary class="card-header"><div><h2>Advanced container settings</h2><p class="meta">{containerRows.length ? containerRows.map((row) => `${row.label}: ${row.summary || 'needs attention'}`).join(' · ') : 'Environment variables, extra folders and limits for each container. Optional.'}</p></div><Icon name="chevron"/></summary>
@@ -895,10 +1187,10 @@
   {#if containerRows.length}<section class="card mt16"><div class="card-header"><h2>Advanced container settings</h2></div>{#each containerRows as row (row.id)}<div class="list-row"><Icon name="settings"/><div><strong>{row.label}</strong><p>{row.summary}</p></div></div>{/each}</section>{/if}
 {/snippet}
 {#snippet configuration()}
-  <form id="configuration-form" onsubmit={(event) => { event.preventDefault(); void run(prepare); }}>
+  <form id="configuration-form" onsubmit={(event) => { event.preventDefault(); void run(screen === 'photo-app' ? preparePhotoApp : prepare); }}>
   <section class="card"><div class="card-header"><h2>Storage & access</h2></div><div class="card-body"><div class="form-grid">
     <label class="field full"><span>Library name</span><input bind:value={libraryName} required maxlength="120"/></label>
-    {#if kind === 'install'}<label class="field full"><span>Media location</span><select bind:value={mediaPath} required><option value="">Choose a mounted folder</option>{#each dashboard.storageRoots as root}<option value={root}>{root}</option>{/each}</select><small>Originals and generated media remain in this mounted location.</small></label>{/if}
+    {#if kind === 'install' || screen === 'photo-app'}<label class="field full"><span>Media location</span><select bind:value={mediaPath} required><option value="">Choose a mounted folder</option>{#each dashboard.storageRoots as root}<option value={root}>{root}</option>{/each}</select><small>{screen === 'photo-app' ? `Frameleaf keeps your imported library and new uploads here. ${photoAppLabel}'s own folders aren’t changed.` : 'Originals and generated media remain in this mounted location.'}</small></label>{/if}
     <label class="field"><span>PostgreSQL appdata location</span><input bind:value={databaseRoot} list="database-roots" required autocomplete="off" spellcheck="false"/><small>New dedicated host-disk storage, outside Docker’s virtual disk.</small></label><label class="field"><span>Frameleaf port</span><input type="number" bind:value={port} min="1024" max="65535" required/><small>{kind === 'import' ? 'You can keep the original app’s port; it is stopped before Frameleaf starts. ' : ''}{#each otherInstallations.filter((i: any) => i.appPort) as other}{other.name} uses port {other.appPort}.{' '}{/each}Manager remains on its own port.</small></label>
     <label class="field"><span>Frameleaf release</span><select bind:value={tag} required><option value="">Select a verified release</option>{#each releases as release}<option value={release.tag}>{release.tag}</option>{/each}</select>{#if !releases.length}<small>No eligible signed release was offered. Refresh releases or check distribution availability.</small>{/if}</label><label class="field"><span>Database backup destination</span><input value={dashboard.backupRoot} readonly/><small>Mounted encrypted database backups only.</small></label>
     {#if dashboard.databaseStorage.detectedPath}<p class="meta full">Detected Unraid appdata: <code>{dashboard.databaseStorage.detectedPath}</code>. To use another disk, mount its folder into Manager at the identical host path.</p>{/if}
@@ -908,7 +1200,7 @@
 <datalist id="database-roots">{#each dashboard?.databaseStorage?.roots ?? [] as root}<option value={root}></option>{/each}</datalist>
 <dialog bind:this={dialog} aria-labelledby="dialog-title" onclose={() => { password = ''; newPassword = ''; modal = ''; }}>
   <button class="button quiet icon-button modal-close" onclick={closeModal} aria-label="Close dialog"><Icon name="close"/></button>
-  <div class="modal-body"><h2 id="dialog-title">{({ control: modalAction === 'stop' ? 'Stop your photo library' : 'Restart your photo library', update: 'Update Frameleaf', recover: 'Recover the saved operation', administrator: 'Secure your Manager', export: 'Export configuration', 'backup-key': 'Export recovery key', recovery: 'Recover Manager', 'skip-setup': 'Skip setup and let the server run?', 'source-recovery': 'Returning to your original app', 'add-installation': 'Add another installation', help: 'Frameleaf Manager guide' } as Record<string, string>)[modal]}</h2>
+  <div class="modal-body"><h2 id="dialog-title">{({ control: modalAction === 'stop' ? 'Stop your photo library' : 'Restart your photo library', update: 'Update Frameleaf', recover: 'Recover the saved operation', administrator: 'Secure your Manager', export: 'Export configuration', 'backup-key': 'Export recovery key', recovery: 'Recover Manager', 'skip-setup': 'Skip setup and let the server run?', 'source-recovery': 'Returning to your original app', 'add-installation': 'Add another installation', help: 'Frameleaf Manager guide', 'photo-app-capture': `Stop ${photoAppName(photoAppChosen?.kind)} for the import?`, 'photo-app-cancel': 'Cancel this import?' } as Record<string, string>)[modal]}</h2>
     {#if error}<p class="amber mt16" role="alert">{error}</p>{/if}
     {#if modal === 'control'}<p class="mt16">Photo access and background processing will pause. Manager stays available to manage the recorded operation.</p>
     {:else if modal === 'update'}<p class="mt16">Manager rechecks eligibility, downloads compatible images and creates a database recovery point before applying this release.</p><p class="meta mt16">{updateReview?.recovery}</p>
@@ -920,8 +1212,10 @@
     {:else if modal === 'recovery'}<ol class="timeline mt16">{#each [['Keep the existing state folder', 'Preserve the Manager journal, configuration and recovery keys.'], ['Stop and replace only Manager', 'Use a verified image with the same exact bind mappings, Manager origin and Docker socket.'], ['Sign in and review the journal', 'An unfinished operation appears as interrupted. Resume only after reviewing its saved step.'], ['Use the protected configuration export if necessary', 'Recover the photo stack with its recorded Compose project. Keep secrets private; media recovery is separate.']] as [title, detail], index}<li><span class="stage-icon">{index + 1}</span><div><strong>{title}</strong><p>{detail}</p></div></li>{/each}</ol>
     {:else if modal === 'source-recovery'}<p class="mt16">Your original database is retained. After Frameleaf writes to shared media, restarting the original app requires a separate recovery review.</p><div class="mt16">{@render notice('Database recovery does not restore media', 'Keep both applications stopped while checking the matching database and media. Manager does not automatically restore files or restart the original source.', 'warning', 'warning')}</div>
     {:else if modal === 'add-installation'}<p class="mt16">Each Frameleaf installation on this server has its own Manager, photo library and database backups. They don’t share accounts or photos.</p><ol class="timeline mt16">{#each [['Install Frameleaf Manager again', dashboard?.host?.platform === 'unraid' ? 'In Unraid Apps, install Frameleaf Manager again and give it a new name.' : 'Use the same installer as before, with a new container name.'], ['Choose a new Manager port', `For example ${nextManagerPort}. This Manager keeps its own port.`], ['Choose separate folders', 'Give it its own state, photo and backup folders. The appdata folder can be shared.'], ['Open the new Manager', 'Create its administrator, then set up or import its library.']] as [title, detail], index}<li><span class="stage-icon">{index + 1}</span><div><strong>{title}</strong><p>{detail}</p></div></li>{/each}</ol>
+    {:else if modal === 'photo-app-capture'}<p class="mt16">{photoAppName(photoAppChosen?.kind)} stays stopped while Manager reads its library and, once you approve, imports it into Frameleaf. Stopping it means nothing changes part-way through.</p><p class="mt16">Your photos and {photoAppName(photoAppChosen?.kind)}’s own data are left as they are. Nothing is imported until you’ve reviewed it, and if you cancel before the import starts, Manager starts {photoAppName(photoAppChosen?.kind)} again.</p>
+    {:else if modal === 'photo-app-cancel'}<p class="mt16">{#if photoAppFolder}Manager discards what it read. Nothing is imported, and your export folder stays as it is.{:else}Manager discards what it read and starts {photoAppLabel === 'your photo app' ? 'your photo app' : photoAppLabel} again. Nothing is imported, and its photos and data stay as they were.{/if}</p>
     {:else if modal === 'help'}<p class="mt16">Set up a new library, import a supported photo installation, or restore an encrypted database recovery point. Review every configuration before starting.</p><ul class="checklist"><li><Icon name="server"/>Services: lifecycle controls and sanitized logs</li><li><Icon name="drive"/>Storage: mounted capacity and exact media mappings</li><li><Icon name="shield"/>Backups: database recovery points and key export</li><li><Icon name="update"/>Updates: verified eligibility and recovery checkpoint</li><li><Icon name="activity"/>Activity: saved journal, retry and recovery</li></ul>{/if}
   </div>
-  <div class="modal-footer"><button class="button quiet" onclick={closeModal}>Cancel</button>{#if modal === 'control'}<button class="button danger" disabled={busy} onclick={() => run(() => control(modalAction))}>{modalAction === 'stop' ? 'Stop services' : 'Restart services'}</button>{:else if modal === 'update'}<button class="button primary" disabled={busy} onclick={() => run(() => start('update', { id: updateReview.id }))}>Update Frameleaf</button>{:else if modal === 'recover'}<button class="button danger" disabled={busy} onclick={() => run(async () => { await api('recover', { id: operation.id }); await refresh(); closeModal(); })}>Confirm recovery</button>{:else if modal === 'skip-setup'}<button class="button primary" disabled={busy} onclick={() => run(async () => { const result = await api('skip-setup', {}); await refresh(); closeModal(); await go('overview'); if (result?.dismissed === false) notify('Setup is finished in Manager. This Frameleaf version keeps preparing your library in its own time; update Frameleaf to start held work at once.'); })}>Skip setup</button>{:else if ['administrator', 'export', 'backup-key'].includes(modal)}<button class="button primary" type="submit" form="credential-form" disabled={busy}>{modal === 'administrator' ? 'Save account' : 'Download'}</button>{:else}<button class="button primary" onclick={closeModal}>Done</button>{/if}</div>
+  <div class="modal-footer"><button class="button quiet" onclick={closeModal}>{modal === 'photo-app-cancel' ? 'Keep import' : 'Cancel'}</button>{#if modal === 'photo-app-capture'}<button class="button primary" disabled={busy || !photoAppChosen} onclick={() => run(capturePhotoApp)}>Stop {photoAppName(photoAppChosen?.kind)} and continue</button>{:else if modal === 'photo-app-cancel'}<button class="button danger" disabled={busy} onclick={() => run(() => cancelPhotoApp(modalAction))}>Cancel import</button>{:else if modal === 'control'}<button class="button danger" disabled={busy} onclick={() => run(() => control(modalAction))}>{modalAction === 'stop' ? 'Stop services' : 'Restart services'}</button>{:else if modal === 'update'}<button class="button primary" disabled={busy} onclick={() => run(() => start('update', { id: updateReview.id }))}>Update Frameleaf</button>{:else if modal === 'recover'}<button class="button danger" disabled={busy} onclick={() => run(async () => { await api('recover', { id: operation.id }); await refresh(); closeModal(); })}>Confirm recovery</button>{:else if modal === 'skip-setup'}<button class="button primary" disabled={busy} onclick={() => run(async () => { const result = await api('skip-setup', {}); await refresh(); closeModal(); await go('overview'); if (result?.dismissed === false) notify('Setup is finished in Manager. This Frameleaf version keeps preparing your library in its own time; update Frameleaf to start held work at once.'); })}>Skip setup</button>{:else if ['administrator', 'export', 'backup-key'].includes(modal)}<button class="button primary" type="submit" form="credential-form" disabled={busy}>{modal === 'administrator' ? 'Save account' : 'Download'}</button>{:else}<button class="button primary" onclick={closeModal}>Done</button>{/if}</div>
 </dialog>
 <div id="toast" role="status" aria-live="polite" class:visible={!!toast}>{toast}<button class="button quiet icon-button" onclick={() => toast = ''} aria-label="Dismiss notification"><Icon name="close"/></button></div>
