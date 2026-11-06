@@ -16,7 +16,7 @@ import { IMPORT_PREPARATION_TARGET, commonImportBootstrapStaged, prepareCommonIm
 import { rollbackCommonImport } from './common-import-lifecycle.js';
 import type { ImportPreparationSeal, ImportSourceAuthoritySeal } from './import-source-authority.js';
 import type { AutostartFile } from './unraid-autostart.js';
-import { ApplicationConfig, checkServiceOverrides, releaseImages, renderCompose, ServiceOverrides, STUDIO_WORKER_TARGET, storagePath } from './compose.js';
+import { ApplicationConfig, checkServiceOverrides, releaseImages, renderCompose, retuneDatabase, ServiceOverrides, STUDIO_WORKER_TARGET, storagePath } from './compose.js';
 import { atomicJson, copyVerified, fileHash } from './files.js';
 import { PostgresStorage } from './postgres-storage.js';
 import { LibraryMove, type ServerPauseStatus } from './library-move.js';
@@ -1570,6 +1570,9 @@ export class Operations {
     if (kind !== 'stop' && installation.sourceId)
       await this.fencing.verify(this.store.get<Source>(`source:${installation.sourceId}`)!, installation);
     if (kind !== 'stop') await this.fencing.assertMedia(installation.mounts, installation);
+    if (kind !== 'stop') await retuneDatabase(this.directory());
+    // `restart` keeps a container's old command and shm_size; `up` recreates the database when they changed.
+    if (kind === 'restart') await this.docker.compose(this.directory(), installation.project, 'up', ['database']);
     await this.docker.compose(this.directory(), installation.project, kind === 'start' ? 'up' : kind);
     return true;
   }
