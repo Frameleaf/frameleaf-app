@@ -85,6 +85,10 @@ const setup = (
       isPaused: vi.fn((name: QueueName) => Promise.resolve(mocks.job.paused.has(name))),
       pause: vi.fn((name: QueueName) => Promise.resolve(void mocks.job.paused.add(name))),
       resume: vi.fn((name: QueueName) => Promise.resolve(void mocks.job.paused.delete(name))),
+      closed: new Map<QueueName, Date>(),
+      setQueueSchedule: vi.fn((name: QueueName, until: Date | null) =>
+        Promise.resolve(void (until ? mocks.job.closed.set(name, until) : mocks.job.closed.delete(name))),
+      ),
       getJobCounts: vi.fn((name: QueueName) =>
         Promise.resolve(
           name === QueueName.BackgroundTask ? counts(1, busy.cleanup ? 1 : 0) : counts(busy[name] ? 1 : 0),
@@ -300,47 +304,83 @@ describe(OvernightService.name, () => {
     });
   });
 
-  it('holds heavy work back during the day and lets it run in the window (FL-577)', async () => {
+  it('closes heavy work until the window during the day and opens it in the window (FL-577, FL-1265)', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-10-20T14:00:00Z'));
     const { sut, mocks, stored } = setup({ stopTime: '06:00', quietHours: true });
-    // the administrator paused face detection by hand; quiet hours must not resume it
+    // the administrator paused face detection by hand; quiet hours never touch a pause
     mocks.job.paused.add(QueueName.FaceDetection);
 
     await sut.move();
-    expect(mocks.job.paused).toEqual(new Set(QUIET_HOURS_QUEUES));
-    expect(mocks.job.pause).not.toHaveBeenCalledWith(QueueName.FaceDetection);
-    expect(mocks.job.pause).not.toHaveBeenCalledWith(QueueName.ThumbnailGeneration);
-    expect(mocks.job.pause).not.toHaveBeenCalledWith(QueueName.MetadataExtraction);
-    expect(stored.state?.quiet?.holding).not.toContain(QueueName.FaceDetection);
+    const until = new Date('2026-10-21T00:00:00.000Z');
+    expect(mocks.job.closed).toEqual(new Map(QUIET_HOURS_QUEUES.map((name) => [name, until])));
+    expect(mocks.job.pause).not.toHaveBeenCalled();
+    expect(mocks.job.paused).toEqual(new Set([QueueName.FaceDetection]));
+    expect(mocks.job.setQueueSchedule).not.toHaveBeenCalledWith(QueueName.ThumbnailGeneration, expect.anything());
+    expect(mocks.job.setQueueSchedule).not.toHaveBeenCalledWith(QueueName.MetadataExtraction, expect.anything());
+    expect(stored.state?.quiet).toEqual({ holding: [...QUIET_HOURS_QUEUES], until: until.toISOString() });
+
+    // a later look while closed writes nothing again
+    mocks.job.setQueueSchedule.mockClear();
+    await sut.move();
+    expect(mocks.job.setQueueSchedule).not.toHaveBeenCalled();
 
     vi.setSystemTime(new Date('2026-10-21T00:01:00Z'));
     await sut.move();
+    expect(mocks.job.closed.size).toBe(0);
+    expect(mocks.job.resume).not.toHaveBeenCalled();
     expect(mocks.job.paused).toEqual(new Set([QueueName.FaceDetection]));
-    expect(stored.state?.quiet?.holding).toBeNull();
+    expect(stored.state?.quiet).toEqual({ holding: null });
 
     vi.setSystemTime(new Date('2026-10-21T06:00:00Z'));
     await sut.move();
-    expect(mocks.job.paused).toEqual(new Set(QUIET_HOURS_QUEUES));
+    expect(mocks.job.closed).toEqual(
+      new Map(QUIET_HOURS_QUEUES.map((name) => [name, new Date('2026-10-22T00:00:00.000Z')])),
+    );
   });
 
-  it('with no stop time, holds heavy work again once it has caught up (FL-577)', async () => {
+  it('keeps a queue the administrator resumed open until the next window (FL-711)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-20T14:00:00Z'));
+    const { sut, mocks, stored } = setup({ stopTime: '06:00', quietHours: true });
+    await sut.move();
+    // what QueueService does on Resume
+    mocks.job.closed.delete(QueueName.SmartSearch);
+    stored.state = {
+      ...stored.state!,
+      quiet: { ...stored.state!.quiet!, holding: QUIET_HOURS_QUEUES.filter((name) => name !== QueueName.SmartSearch) },
+    };
+    await sut.move();
+    expect(mocks.job.closed.has(QueueName.SmartSearch)).toBe(false);
+  });
+
+  it('moves the opening when the schedule changes while closed (FL-1265)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-20T14:00:00Z'));
+    const { sut, mocks, config } = setup({ stopTime: '06:00', quietHours: true });
+    await sut.move();
+    config.nightlyTasks.startTime = '02:00';
+    await sut.move();
+    expect(mocks.job.closed.get(QueueName.SmartSearch)).toEqual(new Date('2026-10-21T02:00:00.000Z'));
+  });
+
+  it('with no stop time, closes heavy work again once it has caught up (FL-577)', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-10-21T00:01:00Z'));
     const { sut, mocks, busy } = setup({ quietHours: true });
     busy[QueueName.SmartSearch] = true;
     await sut.move();
-    expect(mocks.job.pause).not.toHaveBeenCalled();
+    expect(mocks.job.setQueueSchedule).not.toHaveBeenCalled();
 
     vi.setSystemTime(new Date('2026-10-21T09:00:00Z'));
     busy[QueueName.SmartSearch] = false;
     await sut.move();
-    expect(mocks.job.paused).toEqual(new Set(QUIET_HOURS_QUEUES));
+    expect(mocks.job.closed.keys().toArray()).toEqual([...QUIET_HOURS_QUEUES]);
 
     // new work arriving during the day waits for the next start
     busy[QueueName.SmartSearch] = true;
     await sut.move();
-    expect(mocks.job.resume).not.toHaveBeenCalled();
+    expect(mocks.job.closed.get(QueueName.SmartSearch)).toEqual(new Date('2026-10-22T00:00:00.000Z'));
   });
 
   it('never holds work on a testing server (FL-577)', async () => {
@@ -349,17 +389,17 @@ describe(OvernightService.name, () => {
     const { sut, mocks } = setup({ stopTime: '06:00', quietHours: true });
     mocks.config.getEnv.mockReturnValue({ configFile: 'test', environment: FrameleafEnvironment.Testing });
     await sut.move();
-    expect(mocks.job.pause).not.toHaveBeenCalled();
+    expect(mocks.job.setQueueSchedule).not.toHaveBeenCalled();
   });
 
-  it('releases what quiet hours held when the switch is turned off (FL-577)', async () => {
+  it('opens what quiet hours closed when the switch is turned off (FL-577)', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-10-20T14:00:00Z'));
     const { sut, mocks, config } = setup({ stopTime: '06:00', quietHours: true });
     await sut.move();
     config.nightlyTasks.quietHours = false;
     await sut.move();
-    expect(mocks.job.paused.size).toBe(0);
+    expect(mocks.job.closed.size).toBe(0);
   });
 
   it('does not start a second run while one is going', async () => {

@@ -115,6 +115,8 @@ type EventMap = {
 
   // queue events
   QueueStart: [QueueStartEvent];
+  /** FL-1265: an administrator resumed a queue (Jobs); its pause and quiet-hours schedule are cleared. */
+  QueueResumed: [{ queue: QueueName }];
   /** the nightly jobs ran with database cleanup on; in-process cleanups that are not queue jobs (FL-32) */
   NightlyDatabaseCleanup: [];
 

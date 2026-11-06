@@ -252,6 +252,7 @@ export class ServerService extends BaseService {
     } = await this.getConfig({ withCache: true });
     const { configFile } = this.configRepository.getEnv();
     const cloud = await this.frameleafCloudFlags();
+    const capacity = this.jobRepository.getExecutionCapacity();
 
     return {
       ...cloud,
@@ -279,6 +280,7 @@ export class ServerService extends BaseService {
       // universal storage: one file per content is always on
       physicalDeduplication: true,
       realtimeTranscoding: ffmpeg.realtime.enabled,
+      jobCapacity: { value: capacity.value, fromEnvironment: capacity.source === 'environment' },
     };
   }
 

@@ -37,7 +37,7 @@ it('boots one canonical PG19 database with one Frameleaf ledger and HNSW', async
       'icloud_connection',
       'asset_checksum',
       'job',
-      'job_run_item',
+      'job_run',
       'frameleaf_immich_import',
       'frameleaf_upload_lease',
     ]) {

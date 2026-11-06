@@ -167,8 +167,9 @@ export const queueRow = (queue: DurableQueueRun): RunningJobRow => {
   // The server's own sum, but never less than what is visibly in hand right now.
   const total = Math.max(queue.total, queue.processed + queue.active + queue.waiting);
   const done = Math.min(queue.processed, total);
-  // FL-711: quiet hours saved it for the night; it starts again by itself, so it is not a warning.
-  const tonight = queue.isPaused && !!queue.heldForNight;
+  // FL-711: quiet hours saved it for the night; it starts again by itself, so it is not a warning. FL-1265: quiet
+  // hours no longer pause the queue, so a queue someone paused says paused even at night.
+  const tonight = !!queue.heldForNight && !queue.isPaused;
 
   return {
     id: `queue:${queue.name}`,
@@ -214,12 +215,12 @@ export const queueRow = (queue: DurableQueueRun): RunningJobRow => {
   };
 };
 
-/** Counts selected media once across stages; the queue rows remain stage/job counts. */
+/** Counts photos once across their tasks (or tasks, for work that is not about photos); queue rows count jobs. */
 export const durableRunRow = (run: DurableJobRun): RunningJobRow => ({
   id: `run:${run.id}`,
   source: 'run',
   titleKey: 'frameleaf_job_runs_server_work',
-  kindKey: 'frameleaf_job_runs_selected_items',
+  kindKey: run.countsPhotos === false ? 'frameleaf_job_runs_kind_tasks' : 'frameleaf_job_runs_kind_photos',
   statusKey: runStateKey(run.state),
   tone: runTone(run.state),
   live: run.state === 'running' || run.state === 'retrying',

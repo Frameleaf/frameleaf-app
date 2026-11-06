@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type { JobRunResponseDto } from 'src/dtos/job-run.dto.js';
-import type { RunRead } from 'src/queue/run-query.js';
+import { JobRunResponseDto, mapJobRun } from 'src/dtos/job-run.dto.js';
 import { mapMemoryExport } from 'src/dtos/memory.dto.js';
 import { QueueRunDto, RunningJobsResponseDto } from 'src/dtos/running-job.dto.js';
 import { MemoryExportStatus, Permission, QueueName, SystemMetadataKey } from 'src/enum.js';
@@ -151,7 +150,8 @@ export class RunningJobService {
         return null;
       }
 
-      const held = isPaused && holds.has(name);
+      // Quiet hours close a queue until the overnight window; it is not paused.
+      const held = holds.has(name);
       return {
         name,
         isPaused,
@@ -163,19 +163,20 @@ export class RunningJobService {
         total: run.processed + run.active + run.waiting,
         startedAt: run.startedAt ? run.startedAt.toISOString() : null,
         unavailable: false,
-        state: isPaused
-          ? 'paused'
-          : run.active > 0
-            ? 'running'
-            : run.blocked > 0 && run.blocked === run.waiting
-              ? 'blocked'
-              : run.delayed > 0 && run.delayed === run.waiting
-                ? 'delayed'
-                : run.workerAvailable
-                  ? run.retrying > 0
-                    ? 'retrying'
-                    : 'waiting'
-                  : 'unavailable',
+        state:
+          isPaused || held
+            ? 'paused'
+            : run.active > 0
+              ? 'running'
+              : run.blocked > 0 && run.blocked === run.waiting
+                ? 'blocked'
+                : run.delayed > 0 && run.delayed === run.waiting
+                  ? 'delayed'
+                  : run.workerAvailable
+                    ? run.retrying > 0
+                      ? 'retrying'
+                      : 'waiting'
+                    : 'unavailable',
         noDispatchBacklog: run.noDispatchBacklog,
         lastProgressAt: run.lastProgressAt?.toISOString() ?? null,
       };
@@ -210,31 +211,7 @@ export class RunningJobService {
     try {
       const rows = await this.jobRepository.listRuns(25, 0);
       return {
-        runs: rows.map((row: RunRead) => ({
-          id: row.id,
-          kind: row.kind,
-          createdAt: row.createdAt.toISOString(),
-          finishedAt: row.finishedAt?.toISOString() ?? null,
-          enumerationDone: row.enumerationDone,
-          total: row.total,
-          completed: row.completed,
-          failed: row.failed,
-          needsAttention: row.needsAttention,
-          cancelled: row.cancelled,
-          active: row.active,
-          retrying: row.retrying,
-          delayed: row.delayed,
-          paused: row.paused,
-          waiting: row.waiting,
-          blocked: row.blocked,
-          stageTotals: row.stageTotals,
-          state: row.state,
-          lastProgressAt: row.lastProgressAt?.toISOString() ?? null,
-          lastStage: row.lastStage,
-          reasons: row.reasons,
-          noDispatchBacklog: row.noDispatchBacklog,
-          held: row.held,
-        })),
+        runs: rows.map((row) => mapJobRun(row)),
         unavailable: false,
       };
     } catch {

@@ -47,9 +47,14 @@ export type OvernightRun = {
   waitingForBackupSince?: string | null;
 };
 
-/** FL-577: quiet hours. `holding`: the heavy queues this server paused; null while heavy work may run. */
+/**
+ * FL-577: quiet hours. `holding`: the heavy queues whose schedule this server closed; null while heavy
+ * work may run. FL-1265: closing sets the queue's `closedUntil` (`until`), never a pause.
+ */
 export type OvernightQuiet = {
   holding: QueueName[] | null;
+  /** When the closed queues open again by themselves: the next overnight start. */
+  until?: string;
   /** With no stop time, when the heavy work last caught up; it waits again until the next start. */
   caughtUpAt?: string;
 };
@@ -194,11 +199,24 @@ export const isHeavyWorkWindow = (
   return now < overnightStopAt(start.toISO()!, nightly.stopTime, zone)!;
 };
 
+/** The next scheduled overnight start after `now`; null when the schedule never fires. */
+export const nextOvernightStart = (
+  nightly: { startTime: string; days: number[] },
+  zone: string,
+  now: Date = new Date(),
+): Date | null => {
+  try {
+    return new CronTime(overnightCron(nightly), zone).getNextDateFrom(now, zone).toJSDate();
+  } catch {
+    return null;
+  }
+};
+
 /**
  * FL-711: the heavy queues quiet hours hold now, each with when the overnight window opens and they
- * start again by themselves (null when the schedule never fires). Callers check the queue is still
- * paused: one an administrator resumed during the day is no longer held. Such a pause lifts on its
- * own, so it is said as "saved for tonight", never as work that waits until someone starts it again.
+ * start again by themselves (null when the schedule never fires). A queue an administrator resumes
+ * leaves `holding`, so every entry is still held. Such a hold lifts on its own, so it is said as
+ * "saved for tonight", never as work that waits until someone starts it again.
  */
 export const quietHoursHolds = (
   state: Pick<OvernightState, 'quiet'> | null | undefined,
@@ -210,11 +228,6 @@ export const quietHoursHolds = (
   if (holding.length === 0) {
     return new Map();
   }
-  let resumesAt: string | null = null;
-  try {
-    resumesAt = new CronTime(overnightCron(nightly), zone).getNextDateFrom(now, zone).toUTC().toISO();
-  } catch {
-    // a schedule that never fires has no next start
-  }
+  const resumesAt = nextOvernightStart(nightly, zone, now)?.toISOString() ?? null;
   return new Map(holding.map((name) => [name, resumesAt]));
 };

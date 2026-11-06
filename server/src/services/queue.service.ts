@@ -112,6 +112,7 @@ export class QueueService extends BaseService {
 
   @OnEvent({ name: 'ConfigInit' })
   async onConfigInit({ newConfig: config }: ArgOf<'ConfigInit'>) {
+    this.jobRepository.setExecutionCapacity(config.job.capacity);
     if (this.worker === FrameleafWorker.Microservices) {
       this.updateConcurrency(config);
       return;
@@ -133,6 +134,8 @@ export class QueueService extends BaseService {
 
   @OnEvent({ name: 'ConfigUpdate', server: true })
   onConfigUpdate({ newConfig: config }: ArgOf<'ConfigUpdate'>) {
+    // FL-1265: applies live; FRAMELEAF_JOB_CAPACITY, when set, wins over the setting.
+    this.jobRepository.setExecutionCapacity(config.job.capacity);
     if (this.worker === FrameleafWorker.Microservices) {
       this.updateConcurrency(config);
       return;
@@ -264,15 +267,15 @@ export class QueueService extends BaseService {
   }
 
   /**
-   * FL-711: a queue the administrator resumes is theirs again. Quiet hours stop holding it, so a pause
-   * they make later is said as their own (and listed as work that waits) and the window's opening
-   * does not resume it for them. The queue is resumed under the same lock quiet hours take to pause
-   * and record it, so the overnight runner cannot pause it again in between and leave it paused but
-   * no longer held.
+   * FL-711: a queue the administrator resumes is theirs again: its pause and its quiet-hours schedule
+   * are cleared and quiet hours stop holding it until the next window. FL-1265: Resume also releases
+   * that queue's held import work (setup listens for `QueueResumed`). The schedule is cleared under the
+   * lock quiet hours take to close and record it, so the overnight runner cannot close it in between.
    */
   private async resumeAndReleaseQuietHold(name: QueueName): Promise<void> {
     await this.databaseRepository.withLock(DatabaseLock.OvernightSequenceRun, async () => {
       await this.jobRepository.resume(name);
+      await this.jobRepository.setQueueSchedule(name, null);
       const state = await this.systemMetadataRepository.get(SystemMetadataKey.OvernightSequence);
       const holding = state?.quiet?.holding;
       if (!state || !holding?.includes(name)) {
@@ -281,6 +284,7 @@ export class QueueService extends BaseService {
       const quiet = { ...state.quiet, holding: holding.filter((held) => held !== name) };
       await this.systemMetadataRepository.set(SystemMetadataKey.OvernightSequence, { ...state, quiet });
     });
+    await this.eventRepository.emit('QueueResumed', { queue: name });
   }
 
   /**

@@ -1,9 +1,6 @@
-import { QUEUE_BATCH } from 'src/queue/types.js';
-import { DATABASE_POOL_SIZE } from 'src/utils/execution-database.js';
+import { QUEUE_BATCH, QUEUE_EXECUTION_CAPACITY } from 'src/queue/types.js';
 
-// Leave session headroom for handler fan-out and non-job work in the execution pool.
-// The coordinator and its LISTEN connection retain their own independent pools.
-export const QUEUE_EXECUTION_CAPACITY = Math.max(1, DATABASE_POOL_SIZE - 2);
+export { QUEUE_EXECUTION_CAPACITY } from 'src/queue/types.js';
 
 export class QueueAdmissionFull extends Error {
   constructor() {
@@ -17,6 +14,17 @@ export class QueueAdmission {
   private waiting = new Set<() => void>();
 
   constructor(private capacity: number) {}
+
+  /** Applies at once: a larger capacity grants waiters now, a smaller one lets running work finish. */
+  resize(capacity: number) {
+    this.capacity = capacity;
+    while (this.active < this.capacity && this.waiting.size > 0) {
+      const next = this.waiting.values().next().value!;
+      this.waiting.delete(next);
+      this.active++;
+      next();
+    }
+  }
 
   async acquire(signal: AbortSignal): Promise<() => void> {
     signal.throwIfAborted();
@@ -41,7 +49,7 @@ export class QueueAdmission {
     const release = () => {
       if (released) return;
       released = true;
-      const next = this.waiting.values().next().value;
+      const next = this.active <= this.capacity ? this.waiting.values().next().value : undefined;
       if (next) {
         this.waiting.delete(next);
         next();
@@ -68,13 +76,13 @@ export class QueueAdmission {
   }
 }
 
-const admissions = new WeakMap<object, { execution: QueueAdmission; publication: QueueAdmission }>();
+const admissions = new WeakMap<object, { execution: QueueAdmission }>();
 
 /** Facades sharing one execution database also share its admission budget. */
 export const queueAdmission = (db: object) => {
   let admission = admissions.get(db);
   if (!admission) {
-    admission = { execution: new QueueAdmission(QUEUE_EXECUTION_CAPACITY), publication: new QueueAdmission(1) };
+    admission = { execution: new QueueAdmission(QUEUE_EXECUTION_CAPACITY) };
     admissions.set(db, admission);
   }
   return admission;

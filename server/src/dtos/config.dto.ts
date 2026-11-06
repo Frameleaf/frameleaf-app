@@ -1019,6 +1019,13 @@ const AdminConfigSchemaWithVisibility = z
         editor: AdminConfigJobSettingsSchema,
         integrityCheck: AdminConfigJobSettingsSchema,
         petRecognition: ForkJobSettingsSchema.default({ concurrency: 1 }),
+        // FL-1265: jobs running at once on this server, across every task. FRAMELEAF_JOB_CAPACITY wins when set.
+        capacity: z
+          .int()
+          .min(0)
+          .max(32)
+          .default(0)
+          .describe('Jobs that run at once across all tasks (0 = automatic, from the processor count; 1-32)'),
       })
       .meta({ id: 'AdminConfigJobDto' }),
     logging: z
@@ -1716,6 +1723,7 @@ export const defaults = Object.freeze<SystemConfig>({
     editor: { concurrency: 2 },
     integrityCheck: { concurrency: 1 },
     petRecognition: { concurrency: 1 },
+    capacity: 0,
   },
   logging: {
     enabled: true,

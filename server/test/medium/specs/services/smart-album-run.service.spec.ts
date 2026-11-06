@@ -13,7 +13,7 @@ import {
   QueueName,
 } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
-import { freezeSelection } from 'src/queue/manifest.js';
+import { finishRuns } from 'src/queue/run-summary.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { publicationTransaction } from 'src/queue/transaction.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
@@ -45,7 +45,7 @@ const executionFor = (claim: QueueClaim): QueueExecution => ({
   buffering: false,
 });
 
-/** Real canonical baseline, queue facade/executor, manifest feeder and membership repositories. */
+/** Real canonical baseline, queue facade/executor and membership repositories. */
 const durableFixture = async (db: Kysely<DB>) => {
   const { sut, ctx } = newMediumService(SmartAlbumService, {
     database: db,
@@ -122,12 +122,22 @@ const durableFixture = async (db: Kysely<DB>) => {
     const runId = await repository.createRun('SmartAlbumReevaluateAll', {}, () =>
       repository.queue({ name: JobName.SmartAlbumReevaluateAll, data: { ...(kind && { kind }) } }),
     );
+    // Started by hand, as Start does, ahead of item jobs an earlier run left waiting.
+    const {
+      rows: [producer],
+    } = await sql<{ id: string }>`select id from job where "runId" = ${runId}::uuid
+      and name = ${JobName.SmartAlbumReevaluateAll} and state = 'pending'`.execute(db);
+    expect(await store.startNow(queue, producer.id)).toBe(true);
     const [claim] = await store.claim(queue, worker);
     expect(claim.name).toBe(JobName.SmartAlbumReevaluateAll);
     await repository['execute'](claim, new AbortController());
     return runId;
   };
-  const run = async (runId: string) => (await store.listRuns(100, 0)).find((row) => row.id === runId)!;
+  /** A run as the Jobs page reads it, after the coordinator sweep has finished what it can. */
+  const run = async (runId: string) => {
+    await finishRuns(db, 10);
+    return (await store.listRuns(100, 0)).find((row) => row.id === runId)!;
+  };
   const next = async () => {
     const claims = await store.claim(queue, worker);
     expect(claims).toHaveLength(1);
@@ -171,7 +181,7 @@ describe('durable smart-album reevaluation', () => {
     await db.destroy();
   });
 
-  it('freezes a large selection before execution and feeds only 250 up to the existing 1000 watermark', async () => {
+  it('starts one job per selected asset in the run before any runs (FL-1265)', async () => {
     const f = await durableFixture(db);
     const assets = Array.from({ length: 1001 }, () => mediumFactory.assetInsert({ ownerId: f.user.id }));
     await db.insertInto('asset').values(assets).execute();
@@ -191,22 +201,13 @@ describe('durable smart-album reevaluation', () => {
       .execute();
     const runId = await f.start('travel');
     expect(await f.run(runId)).toMatchObject({ total: 1001, completed: 0, waiting: 1001, enumerationDone: true });
-    const before = await sql<{ count: number; executions: number }>`select count(*)::int count,
-      count("jobId")::int executions from job_run_item where "runId" = ${runId}::uuid and stage = ${JobName.SmartAlbumReevaluate}`.execute(
-      db,
-    );
-    expect(before.rows[0]).toEqual({ count: 1001, executions: 0 });
+    const { rows } = await sql<{ count: number; held: number }>`select count(*)::int count,
+      count(*) filter (where state = 'pending')::int held
+      from job where "runId" = ${runId}::uuid and name = ${JobName.SmartAlbumReevaluate}`.execute(db);
+    expect(rows[0]).toEqual({ count: 1001, held: 1001 });
     expect(await f.memberships()).toEqual([]);
-    await f.selectedAsset(); // created after the snapshot; must not enter this run
-    await f.restart();
-    for (let batch = 0; batch < 4; batch++) expect(await f.store.feedManifest(f.queue)).toBe(250);
-    expect(await f.store.feedManifest(f.queue)).toBe(0);
+    await f.selectedAsset(); // created after the selection was read; not in this run
     expect(await f.run(runId)).toMatchObject({ total: 1001, completed: 0 });
-    const after = await sql<{ count: number; executions: number }>`select count(*)::int count,
-      count("jobId")::int executions from job_run_item where "runId" = ${runId}::uuid and stage = ${JobName.SmartAlbumReevaluate}`.execute(
-      db,
-    );
-    expect(after.rows[0]).toEqual({ count: 1001, executions: 1000 });
     // ponytail: 1001 seeded assets take longer than the 5 s default on shared CI runners.
   }, 30_000);
 
@@ -215,14 +216,12 @@ describe('durable smart-album reevaluation', () => {
     const good = [await f.selectedAsset(), await f.selectedAsset()];
     const corrupt = await f.selectedAsset({ invalid: 'not an array' });
     const runId = await f.start('travel');
-    const repeated = await f.start('travel');
-    expect(await f.store.feedManifest(f.queue)).toBe(3);
     await f.next();
     await f.restart();
     await f.next();
     await f.next();
-    for (const id of [runId, repeated])
-      expect(await f.run(id)).toMatchObject({ total: 3, completed: 2, retrying: 1, failed: 0, finishedAt: null });
+    // A run read says a photo awaiting its retry is waiting; the photo's own row says retrying.
+    expect(await f.run(runId)).toMatchObject({ total: 3, completed: 2, waiting: 1, failed: 0, finishedAt: null });
     expect((await f.memberships()).map((row) => row.assetId).sort()).toEqual(good.map(({ id }) => id).sort());
     await sql`update job set "availableAt" = now() where queue = ${f.queue} and data->>'id' = ${corrupt.id}`.execute(
       db,
@@ -231,14 +230,13 @@ describe('durable smart-album reevaluation', () => {
     expect(retry.data.id).toBe(corrupt.id);
     expect(retry.attempt).toBe(2);
     expect(await f.store.claim(f.queue, f.worker)).toEqual([]);
-    for (const id of [runId, repeated])
-      expect(await f.run(id)).toMatchObject({
-        total: 3,
-        completed: 2,
-        failed: 1,
-        retrying: 0,
-        state: 'completed_with_errors',
-      });
+    expect(await f.run(runId)).toMatchObject({
+      total: 3,
+      completed: 2,
+      failed: 1,
+      retrying: 0,
+      state: 'completed_with_errors',
+    });
     const { rows } = await sql<{
       outcome: string;
     }>`select outcome from job_attempt where "jobId" = ${retry.id}::uuid order by attempt`.execute(db);
@@ -270,7 +268,6 @@ describe('durable smart-album reevaluation', () => {
       expect(selection.map((row) => row.id)).not.toContain(id);
     const runId = await f.start('travel');
     await f.ctx.softDeleteAsset(eligible[0].id);
-    expect(await f.store.feedManifest(f.queue)).toBe(4);
     for (let item = 0; item < 4; item++) await f.next();
     expect(await f.run(runId)).toMatchObject({ total: 4, completed: 4, failed: 0, state: 'completed' });
     expect((await f.memberships()).map(({ assetId }) => assetId).sort()).toEqual(
@@ -281,7 +278,7 @@ describe('durable smart-album reevaluation', () => {
     );
   });
 
-  it('coalesces overlapping same-kind manifests while keeping assets, different kinds and all-kinds independent', async () => {
+  it('coalesces overlapping same-kind selections while keeping assets, different kinds and all-kinds independent', async () => {
     const f = await durableFixture(db);
     const first = await f.selectedAsset(['beach', 'food']);
     const second = await f.selectedAsset(['beach', 'food']);
@@ -289,7 +286,6 @@ describe('durable smart-album reevaluation', () => {
     const repeatedTravel = await f.start('travel'); // first producer completed; its selected work is still live
     const food = await f.start('food');
     const all = await f.start();
-    expect(await f.store.feedManifest(f.queue)).toBe(6); // eight ledger items share six execution slots
     for (const id of [first.id, second.id]) {
       await f.repository.queue({ name: JobName.SmartAlbumReevaluate, data: { id, kind: 'travel' } });
       await f.repository.queue({ name: JobName.SmartAlbumReevaluate, data: { id, kind: 'food' } });
@@ -299,26 +295,18 @@ describe('durable smart-album reevaluation', () => {
       from job where queue = ${f.queue} and state = 'pending'`.execute(db);
     expect(rows).toHaveLength(6);
     expect(rows.every(({ safe }) => safe)).toBe(true);
-    expect(rows.map(({ key }) => key).sort()).toEqual(
-      [first.id, second.id]
-        .flatMap((id) => ['travel', 'food', 'all'].map((kind) => `${JobName.SmartAlbumReevaluate}:${id}:${kind}`))
-        .sort(),
-    );
-    const memberships = await sql<{ runId: string; itemKey: string; jobId: string }>`select "runId", "itemKey", "jobId"
-      from job_run_item where "runId" = any(${[travel, repeatedTravel]}::uuid[]) and stage = ${JobName.SmartAlbumReevaluate}`.execute(
-      db,
-    );
-    expect(memberships.rows).toHaveLength(4);
-    for (const id of [first.id, second.id]) {
-      const aliases = memberships.rows.filter((row) => row.itemKey === id);
-      expect(aliases).toHaveLength(2);
-      expect(new Set(aliases.map((row) => row.jobId)).size).toBe(1);
-      expect(aliases[0].jobId).not.toBeNull();
-    }
+    // FL-1265: a run counts only its own jobs; the repeated Start found its items already waiting.
+    const { rows: owned } = await sql<{ runId: string; count: number }>`select "runId", count(*)::int count
+      from job where queue = ${f.queue} and name = ${JobName.SmartAlbumReevaluate} group by "runId"`.execute(db);
+    expect(Object.fromEntries(owned.map((row) => [row.runId, row.count]))).toEqual({
+      [travel]: 2,
+      [food]: 2,
+      [all]: 2,
+    });
     await f.restart();
     for (let item = 0; item < 6; item++) await f.next();
     expect(await f.store.claim(f.queue, f.worker)).toEqual([]);
-    for (const runId of [travel, repeatedTravel, food, all]) {
+    for (const runId of [travel, food, all]) {
       expect(await f.run(runId)).toMatchObject({
         total: 2,
         completed: 2,
@@ -326,11 +314,13 @@ describe('durable smart-album reevaluation', () => {
         state: 'completed',
         enumerationDone: true,
       });
+    }
+    for (const runId of [travel, repeatedTravel, food, all]) {
       const {
         rows: [settled],
       } = await sql<{ finished: boolean; pending: number }>`select r."finishedAt" is not null finished,
-        count(*) filter (where i.state in ('pending','waiting','active'))::int pending
-        from job_run r join job_run_item i on i."runId" = r.id where r.id = ${runId}::uuid group by r.id`.execute(db);
+        (select count(*)::int from job j where j."runId" = r.id and j.state in ('pending','waiting','active')) pending
+        from job_run r where r.id = ${runId}::uuid`.execute(db);
       expect(settled).toEqual({ finished: true, pending: 0 });
     }
     const {
@@ -350,33 +340,20 @@ describe('durable smart-album reevaluation', () => {
     );
   });
 
-  it('attaches a later manifest to an already-active item and settles both runs on its accepted publication', async () => {
+  it('never runs an item twice when a later Start finds it already running (FL-1265)', async () => {
     const f = await durableFixture(db);
     const asset = await f.selectedAsset();
     const original = await f.start('travel');
-    expect(await f.store.feedManifest(f.queue)).toBe(1);
     const [claim] = await f.store.claim(f.queue, f.worker);
     expect(claim.data.id).toBe(asset.id);
-    const later = await f.store.createRun('SmartAlbumReevaluateAll', {});
-    await freezeSelection(
-      db,
-      f.repository['intent']({ name: JobName.SmartAlbumReevaluate, data: { kind: 'travel', id: asset.id } }),
-      f.ctx.get(AssetJobRepository).selectionForSmartAlbumReevaluation(),
-      undefined,
-      later,
-    );
-    await f.store.finishEnumeration(later);
-    expect(await f.store.feedManifest(f.queue)).toBe(0); // attaches to the live execution rather than adding another
-    expect(await f.run(later)).toMatchObject({ total: 1, active: 1, completed: 0, finishedAt: null });
-    const { rows: aliases } = await sql<{ jobId: string; state: string }>`select "jobId", state from job_run_item
-      where "runId" = any(${[original, later]}::uuid[]) and stage = ${JobName.SmartAlbumReevaluate}`.execute(db);
-    expect(aliases).toEqual([
-      { jobId: claim.id, state: 'active' },
-      { jobId: claim.id, state: 'active' },
-    ]);
+    const later = await f.start('travel');
+    const { rows } = await sql<{ id: string }>`select id from job
+      where queue = ${f.queue} and name = ${JobName.SmartAlbumReevaluate}`.execute(db);
+    expect(rows).toEqual([{ id: claim.id }]);
     await f.repository['execute'](claim, new AbortController());
-    for (const runId of [original, later])
-      expect(await f.run(runId)).toMatchObject({ total: 1, completed: 1, state: 'completed' });
+    expect(await f.run(original)).toMatchObject({ total: 1, completed: 1, state: 'completed' });
+    // The later run holds only its producer: it counts tasks, and none of them is the photo.
+    expect(await f.run(later)).toMatchObject({ total: 1, completed: 1, finishedAt: expect.any(Date) });
     expect(await f.store.claim(f.queue, f.worker)).toEqual([]);
   });
 
@@ -386,7 +363,6 @@ describe('durable smart-album reevaluation', () => {
       const f = await durableFixture(db);
       const asset = await f.selectedAsset();
       await f.start('travel');
-      await f.store.feedManifest(f.queue);
       const [claim] = await f.store.claim(f.queue, f.worker);
       const execution = executionFor(claim);
       await queueExecution.run(execution, () => f.sut.handleReevaluate({ id: asset.id, kind: 'travel' }));
@@ -441,7 +417,6 @@ describe('durable smart-album reevaluation', () => {
       new Error('request failed', { cause: Object.assign(new Error('connection refused'), { code: 'ECONNREFUSED' }) }),
     );
     const runId = await f.start('travel');
-    await f.store.feedManifest(f.queue);
     const claim = await f.next();
     expect(await f.run(runId)).toMatchObject({
       total: 1,
@@ -479,9 +454,8 @@ describe('durable smart-album reevaluation', () => {
       await f.ctx.get(SearchRepository).upsert(asset.id, unitVector);
       f.ctx.getMock(MachineLearningRepository).encodeText.mockResolvedValue(result);
       const runId = await f.start('travel');
-      await f.store.feedManifest(f.queue);
       const claim = await f.next();
-      expect(await f.run(runId)).toMatchObject({ retrying: 1, blocked: 0, failed: 0 });
+      expect(await f.run(runId)).toMatchObject({ waiting: 1, blocked: 0, failed: 0 });
       await sql`update job set "availableAt" = now() where id = ${claim.id}::uuid`.execute(db);
       await f.next();
       expect(await f.run(runId)).toMatchObject({ total: 1, failed: 1, blocked: 0, state: 'completed_with_errors' });
@@ -518,7 +492,6 @@ describe('durable smart-album reevaluation', () => {
             },
       );
       const runId = await f.start('travel');
-      await f.store.feedManifest(f.queue);
       const claim = await f.next();
       expect(await f.run(runId)).toMatchObject({
         total: 1,

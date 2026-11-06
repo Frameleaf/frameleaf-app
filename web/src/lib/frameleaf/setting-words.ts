@@ -43,6 +43,11 @@ const LEVELS = Object.fromEntries(
 
 /** Server settings, by their path in the saved settings. */
 export const SERVER_WORDS: Readonly<Record<string, Words>> = Object.freeze({
+  // Background work › How many run at once (FL-1265)
+  'job.capacity': {
+    label: 'frameleaf_bgwork_capacity',
+    values: ($t, value) => (value === 0 ? $t('frameleaf_bgwork_capacity_automatic') : undefined),
+  },
   // People & sharing
   'server.publicUsers': { label: 'frameleaf_sharing_find_label' },
   // Server & updates › Server name & welcome

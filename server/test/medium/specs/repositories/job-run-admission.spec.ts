@@ -2,6 +2,7 @@ import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { JobName, QueueCommand, QueueName } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
+import { finishRuns } from 'src/queue/run-summary.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { QueueExecution } from 'src/queue/types.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -21,11 +22,13 @@ describe('atomic initial run admission', () => {
   const assertNoAdmission = async () => {
     expect(await runs()).toEqual([]);
     expect(await db.selectFrom('job').select('id').where('queue', '=', queue).execute()).toEqual([]);
-    expect(await db.selectFrom('job_run_item').select('runId').where('queue', '=', queue).execute()).toEqual([]);
   };
+  /** The coordinator sweep finishes runs (FL-1265); run it, then every run in `ids` must be finished. */
   const assertFinished = async (ids: string[]) => {
+    await finishRuns(db, 1000);
     const rows = await db.selectFrom('job_run').selectAll().where('id', 'in', ids).execute();
-    expect(rows).toHaveLength(ids.length);
+    // A start that coalesced into live work returned that work's run, so an id can repeat.
+    expect(rows).toHaveLength(new Set(ids).size);
     for (const row of rows) {
       expect(row.enumerationDone).toBe(true);
       expect(row.finishedAt).not.toBeNull();
@@ -107,9 +110,10 @@ describe('atomic initial run admission', () => {
   it('rolls back the run, intents and item ledger after an actual SQL admission failure', async () => {
     const admissionStore = jobs['store'];
     const enqueue = admissionStore.enqueue.bind(admissionStore);
-    const injected = vi.spyOn(admissionStore, 'enqueue').mockImplementationOnce(async (intents, tx) => {
-      await enqueue(intents, tx);
+    const injected = vi.spyOn(admissionStore, 'enqueue').mockImplementationOnce(async (intents, tx, liveRunId) => {
+      await enqueue(intents, tx, liveRunId);
       await sql`select 1 / 0`.execute(tx!);
+      return 0;
     });
     try {
       await expect(submit()).rejects.toThrow(/division by zero/);
@@ -148,22 +152,23 @@ describe('atomic initial run admission', () => {
   it('rejects manifest admission inside the callback before materializing a selection', async () => {
     await expect(
       jobs.createRun(queue, {}, () =>
-        jobs.queueSelection(JobName.ImageDescription, db.selectFrom('asset').select('id')),
+        jobs.queueSelection(JobName.ImageDescription, db.selectFrom('asset').select('id')).then(() => {}),
       ),
     ).rejects.toThrow('not queueSelection');
     await assertNoAdmission();
   });
 
-  it('attaches concurrent deduplicated starts to one job and settles both accepted runs', async () => {
+  it('returns the run already doing the work when the same start is asked for again (FL-1265)', async () => {
     const ids = await Promise.all([submit(), submit()]);
-    expect(new Set(ids).size).toBe(2);
+    expect(new Set(ids).size).toBe(1);
+    expect(await runs()).toHaveLength(1);
     const claims = await store.claim(queue, workerId);
     expect(claims).toHaveLength(1);
-    const memberships = await db.selectFrom('job_run_item').selectAll().where('runId', 'in', ids).execute();
-    expect(memberships).toHaveLength(2);
-    expect(new Set(memberships.map((row) => row.jobId))).toEqual(new Set([claims[0].id]));
+    expect(claims[0].runId).toBe(ids[0]);
+    expect(await submit()).toBe(ids[0]);
     expect(await store.complete(claims[0], [])).toBe(true);
     await assertFinished(ids);
+    expect(await store.getRun(ids[0])).toMatchObject({ state: 'completed', countsPhotos: false, total: 1 });
   });
 
   it('retains latest-active replacement accounting until that replacement actually completes', async () => {
@@ -191,19 +196,10 @@ describe('atomic initial run admission', () => {
       const ids = [await start()];
       const predecessor = state === 'active' ? (await store.claim(queue, workerId))[0] : undefined;
       for (let replacement = 0; replacement < 4; replacement++) ids.push(await start(replacement === 3));
-      const cancelled = ids.slice(state === 'active' ? 1 : 0, -1);
-      await assertFinished(cancelled);
-      const reads = await store.listRuns(100, 0);
-      for (const id of cancelled) {
-        expect(reads.find((run) => run.id === id)).toMatchObject({
-          enumerationDone: true,
-          state: 'cancelled',
-          total: 0,
-          stageTotals: { total: 1, cancelled: 1, active: 0, waiting: 0 },
-        });
-      }
-      expect(reads.find((run) => run.id === independentId)).toMatchObject({
-        enumerationDone: false,
+      // FL-1265: a replaced start counts only its own jobs; once replaced it has nothing live and finishes.
+      await assertFinished(ids.slice(state === 'active' ? 1 : 0, -1).filter((id) => id !== ids.at(-1)));
+      expect((await store.listRuns(100, 0)).find((run) => run.id === independentId)).toMatchObject({
+        enumerationDone: true,
         finishedAt: null,
         state: 'running',
         stageTotals: { active: 1 },
@@ -223,129 +219,6 @@ describe('atomic initial run admission', () => {
       await assertFinished([independentId]);
     },
   );
-
-  it('waits for durable unadmitted descendant stages after a producer is superseded', async () => {
-    await store.setConcurrency(queue, 2);
-    const originalId = await jobs.createRun(queue, {}, () =>
-      jobs.queueAll([{ name: JobName.LibraryScanRun }, { name: JobName.AssetEncodeVideoQueueAll, data: {} }]),
-    );
-    const claims = await store.claim(queue, workerId);
-    expect(claims).toHaveLength(2);
-    const replaced = claims.find((claim) => claim.name === JobName.LibraryScanRun)!;
-    const producer = claims.find((claim) => claim.name === JobName.AssetEncodeVideoQueueAll)!;
-    await queueExecution.run(
-      {
-        claim: producer,
-        signal: new AbortController().signal,
-        progress: () => {},
-        progressUnits: 0,
-        adoptions: [],
-        followups: [],
-        buffering: false,
-      },
-      () =>
-        jobs.queueSelection(
-          JobName.ImageDescriptionQueueAll,
-          db.selectFrom('job_run').select('id').where('id', '=', originalId),
-        ),
-    );
-    expect(await store.complete(producer, [])).toBe(true);
-    await store.defer(replaced, 'source-unavailable');
-    const latestId = await jobs.createRun(queue, {}, () => jobs.queue({ name: JobName.LibraryScanRun }));
-    expect((await runs()).find((run) => run.id === originalId)).toMatchObject({
-      enumerationDone: true,
-      finishedAt: null,
-    });
-    const descendant = await db
-      .selectFrom('job_run_item')
-      .selectAll()
-      .where('runId', '=', originalId)
-      .where('rootItemKey', '=', originalId)
-      .executeTakeFirstOrThrow();
-    expect(descendant).toMatchObject({ state: 'pending', jobId: null });
-    expect(await store.feedManifest(queue)).toBe(1);
-    const finalClaims = await store.claim(queue, workerId);
-    expect(finalClaims).toHaveLength(2);
-    for (const claim of finalClaims) expect(await store.complete(claim, [])).toBe(true);
-    await assertFinished([originalId, latestId]);
-    const read = (await store.listRuns(100, 0)).find((run) => run.id === originalId);
-    expect(read).toMatchObject({
-      state: 'cancelled',
-      total: 1,
-      completed: 1,
-      stageTotals: { total: 3, completed: 2, cancelled: 1 },
-    });
-  });
-
-  it('preserves a stopped manifest producer across reload and supersession until its descendants settle', async () => {
-    await store.setConcurrency(queue, 2);
-    const start = (force = false) =>
-      jobs.createRun(queue, {}, () => jobs.queue({ name: JobName.LibraryScanRun, data: { force } }));
-    const originalId = await start();
-    const [producer] = await store.claim(queue, workerId);
-    const freeze = (claim: typeof producer, id: string) =>
-      queueExecution.run(
-        {
-          claim,
-          signal: new AbortController().signal,
-          progress: () => {},
-          progressUnits: 0,
-          adoptions: [],
-          followups: [],
-          buffering: false,
-        },
-        () =>
-          jobs.queueSelection(
-            JobName.ImageDescriptionQueueAll,
-            db.selectFrom('job_run').select('id').where('id', '=', id),
-          ),
-      );
-    await freeze(producer, originalId);
-    await store.defer(producer, 'source-unavailable');
-    const replacements: string[] = [];
-    for (let replacement = 0; replacement < 4; replacement++) replacements.push(await start(replacement === 3));
-    await assertFinished(replacements.slice(0, -1));
-    expect((await runs()).find((run) => run.id === originalId)).toMatchObject({
-      enumerationDone: false,
-      finishedAt: null,
-    });
-    expect(
-      await db.selectFrom('job').select(['runId', 'data']).where('id', '=', producer.id).executeTakeFirstOrThrow(),
-    ).toMatchObject({ runId: originalId, data: { force: false } });
-
-    // Reload only persisted state, as a replacement worker does; no previous execution context survives.
-    const restarted = new SqlQueueStore(db);
-    await sql`update job set "availableAt" = now() where id = ${producer.id}::uuid`.execute(db);
-    const resumed = await restarted.claim(queue, workerId);
-    expect(resumed).toHaveLength(1);
-    expect(resumed[0]).toMatchObject({ id: producer.id, runId: originalId, attempt: 2 });
-    await freeze(resumed[0], randomUUID()); // retry reuses the original snapshot, not the changed selection
-    expect(await db.selectFrom('job_selection').select('id').where('runId', '=', originalId).execute()).toHaveLength(1);
-    expect(await restarted.complete(resumed[0], [])).toBe(true);
-    expect((await runs()).find((run) => run.id === originalId)).toMatchObject({
-      enumerationDone: true,
-      finishedAt: null,
-    });
-    expect(await restarted.feedManifest(queue)).toBe(1);
-    const finalClaims = await restarted.claim(queue, workerId);
-    expect(finalClaims).toHaveLength(2);
-    const latest = finalClaims.find((claim) => claim.name === JobName.LibraryScanRun)!;
-    const descendant = finalClaims.find((claim) => claim.name === JobName.ImageDescriptionQueueAll)!;
-    expect(latest).toMatchObject({ runId: replacements.at(-1), data: { force: true }, attempt: 1 });
-    expect(descendant).toMatchObject({ runId: originalId, data: { id: originalId } });
-    for (const claim of finalClaims) expect(await restarted.complete(claim, [])).toBe(true);
-    await assertFinished([originalId, ...replacements]);
-    expect(await restarted.claim(queue, workerId)).toEqual([]);
-    expect(await db.selectFrom('job_attempt').select('attempt').where('jobId', '=', latest.id).execute()).toEqual([
-      { attempt: 1 },
-    ]);
-    expect((await restarted.listRuns(100, 0)).find((run) => run.id === originalId)).toMatchObject({
-      state: 'completed',
-      total: 1,
-      completed: 1,
-      stageTotals: { total: 2, completed: 2 },
-    });
-  });
 
   it('preserves a stopped checkpoint owner even before it has materialized a selection', async () => {
     const start = () => jobs.createRun(queue, {}, () => jobs.queue({ name: JobName.LibraryScanRun }));
@@ -430,7 +303,6 @@ describe('atomic initial run admission', () => {
     };
     await expect(queueExecution.run(context, submit)).rejects.toThrow('Producer lost its claim');
     expect(await runs()).toEqual([]);
-    expect(await db.selectFrom('job_run_item').select('runId').where('queue', '=', queue).execute()).toEqual([]);
   });
 
   it.each(['expired', 'cancelled', 'token-replaced', 'aborted'] as const)(
@@ -451,7 +323,7 @@ describe('atomic initial run admission', () => {
       const admissionStore = jobs['store'];
       const admit = admissionStore.admitRun.bind(admissionStore);
       const fault = vi.spyOn(admissionStore, 'admitRun').mockImplementationOnce(async (...args) => {
-        await admit(...args); // Real run, item and job rows exist inside the transaction before authority changes.
+        const admitted = await admit(...args); // Real run and job rows exist inside the transaction before authority changes.
         const tx = args[4];
         switch (reason) {
           case 'expired': {
@@ -473,86 +345,52 @@ describe('atomic initial run admission', () => {
             break;
           }
         }
+        return admitted;
       });
       try {
         await expect(
           queueExecution.run(context, () =>
             jobs.createRun(queue, {}, () => jobs.queue({ name: JobName.AssetEncodeVideoQueueAll, data: {} })),
           ),
-        ).rejects.toThrow(
-          reason === 'aborted' ? 'parent stopped during admission' : 'Producer lost its claim during admission',
-        );
+        ).rejects.toThrow(reason === 'aborted' ? 'parent stopped during admission' : 'Producer lost its claim');
       } finally {
         fault.mockRestore();
       }
       expect(await runs()).toEqual([]);
-      expect(await db.selectFrom('job_run_item').select('runId').where('queue', '=', queue).execute()).toEqual([]);
       expect(await db.selectFrom('job').select(['id', 'runId', 'token']).where('queue', '=', queue).execute()).toEqual([
         { id: parent.id, runId: null, token: parent.token },
       ]);
     },
   );
 
-  it.each(['checkpoint', 'snapshot'] as const)(
-    'empty settles a waiting %s owner and its never-started latest run with retained descendants',
-    async (kind) => {
-      const start = () => jobs.createRun(queue, {}, () => jobs.queue({ name: JobName.LibraryScanRun }));
-      const originalId = await start();
-      const [owner] = await store.claim(queue, workerId);
-      const context: QueueExecution = {
-        claim: owner,
-        signal: new AbortController().signal,
-        progress: () => {},
-        progressUnits: 0,
-        adoptions: [],
-        followups: [],
-        buffering: false,
-      };
-      await queueExecution.run(context, async () => {
-        if (kind === 'checkpoint') await jobs.prepareCheckpoint('setup', () => Promise.resolve({ accepted: true }));
-        else
-          await jobs.queueSelection(
-            JobName.ImageDescriptionQueueAll,
-            db.selectFrom('job_run').select('id').where('id', '=', originalId),
-          );
-      });
-      await store.defer(owner, 'source-unavailable');
-      const latestId = await start();
-      await sql`update job set state = 'waiting' where id = ${owner.id}::uuid`.execute(db);
-      await jobs.empty(queue as QueueName);
-      await assertFinished([originalId, latestId]);
-      const reads = await store.listRuns(100, 0);
-      expect(reads.find((run) => run.id === latestId)).toMatchObject({
-        state: 'cancelled',
-        total: 0,
-        stageTotals: { total: 1, cancelled: 1 },
-      });
-      expect(reads.find((run) => run.id === originalId)).toMatchObject({
-        state: 'cancelled',
-        total: kind === 'snapshot' ? 1 : 0,
-        stageTotals: { total: kind === 'snapshot' ? 2 : 1, cancelled: kind === 'snapshot' ? 2 : 1 },
-      });
-      if (kind === 'snapshot') {
-        expect(
-          await db
-            .selectFrom('job_run_item')
-            .select(['state', 'jobId'])
-            .where('runId', '=', originalId)
-            .where('rootItemKey', '=', originalId)
-            .execute(),
-        ).toEqual([{ state: 'pending', jobId: null }]);
-        // Cold rows remain immutable; the terminal header supplies their cancelled outcome.
-        expect(await db.selectFrom('job_selection').select('state').where('runId', '=', originalId).execute()).toEqual([
-          { state: 'cancelled' },
-        ]);
-        expect(await store.feedManifest(queue)).toBe(0);
-      }
-      expect(await store.claim(queue, workerId)).toEqual([]);
-      expect(
-        await db.selectFrom('job').select(['state', 'latestPending']).where('id', '=', owner.id).execute(),
-      ).toEqual([{ state: 'cancelled', latestPending: null }]);
-    },
-  );
+  it('empty settles a waiting checkpoint owner and its never-started latest run', async () => {
+    const start = () => jobs.createRun(queue, {}, () => jobs.queue({ name: JobName.LibraryScanRun }));
+    const originalId = await start();
+    const [owner] = await store.claim(queue, workerId);
+    const context: QueueExecution = {
+      claim: owner,
+      signal: new AbortController().signal,
+      progress: () => {},
+      progressUnits: 0,
+      adoptions: [],
+      followups: [],
+      buffering: false,
+    };
+    await queueExecution.run(context, () => jobs.prepareCheckpoint('setup', () => Promise.resolve({ accepted: true })));
+    await store.defer(owner, 'source-unavailable');
+    const latestId = await start();
+    await sql`update job set state = 'waiting' where id = ${owner.id}::uuid`.execute(db);
+    await jobs.empty(queue as QueueName);
+    await assertFinished([originalId, latestId]);
+    const reads = await store.listRuns(100, 0);
+    expect(reads.find((run) => run.id === originalId)).toMatchObject({ state: 'cancelled' });
+    // The never-started latest request had no job of its own: its run finishes empty.
+    expect(reads.find((run) => run.id === latestId)).toMatchObject({ total: 0, finishedAt: expect.any(Date) });
+    expect(await store.claim(queue, workerId)).toEqual([]);
+    expect(await db.selectFrom('job').select(['state', 'latestPending']).where('id', '=', owner.id).execute()).toEqual([
+      { state: 'cancelled', latestPending: null },
+    ]);
+  });
 
   it('does not create a run after the real QueueService rejects an already-active start', async () => {
     await jobs.queue(item());
@@ -566,7 +404,10 @@ describe('atomic initial run admission', () => {
   });
 
   it('preserves caller-owned explicit run IDs outside createRun admission', async () => {
-    const id = await store.createRun(queue, {});
+    const id = randomUUID();
+    await sql`insert into job_run(id, kind, selection, "enumerationDone") values (${id}::uuid, ${queue}, '{}', true)`.execute(
+      db,
+    );
     await db.transaction().execute((tx) => jobs.queueInTransaction(tx, item(), id));
     const [claim] = await store.claim(queue, workerId);
     expect(claim.runId).toBe(id);

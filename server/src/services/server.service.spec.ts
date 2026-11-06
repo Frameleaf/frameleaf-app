@@ -464,8 +464,14 @@ describe(ServerService.name, () => {
         cloudMl: false,
         cloudBackup: false,
         supporter: false,
+        jobCapacity: { value: 8, fromEnvironment: false },
       });
       expect(mocks.systemMetadata.get).toHaveBeenCalled();
+    });
+
+    it('says when FRAMELEAF_JOB_CAPACITY sets the job capacity (FL-1265)', async () => {
+      mocks.job.getExecutionCapacity.mockReturnValue({ value: 4, source: 'environment' });
+      await expect(sut.getFeatures()).resolves.toMatchObject({ jobCapacity: { value: 4, fromEnvironment: true } });
     });
 
     it('reports installed decoders independently from render, export and qualification', async () => {

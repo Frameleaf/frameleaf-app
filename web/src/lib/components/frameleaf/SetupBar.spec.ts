@@ -64,8 +64,8 @@ describe('SetupBar', () => {
     expect(screen.getByText('Starts by itself when the file check is finished.')).toBeInTheDocument();
   });
 
-  it('lets the owner stop a stopped setup and let the server run, after confirming', async () => {
-    sdkMock.getLibrarySetupProgress.mockResolvedValue(progress({ phase: Phase.NeedsAttention }));
+  it('lets the owner stop setup that needs attention and let the server run, after confirming', async () => {
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(progress({ phase: Phase.NeedsAttention, stages: [] }));
     render(SetupBar);
     expect(await screen.findByText('Setup needs attention')).toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: /Details/ }));
@@ -340,44 +340,36 @@ describe('SetupBar', () => {
     expect(screen.queryByText('Setting up your library')).not.toBeInTheDocument();
   });
 
-  it('says when setup needs attention and offers a retry instead of pause', async () => {
-    sdkMock.getLibrarySetupProgress.mockResolvedValue(progress({ phase: Phase.NeedsAttention }));
-    render(SetupBar);
-
-    expect(await screen.findByText('Setup needs attention')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Pause' })).not.toBeInTheDocument();
-    await fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
-    expect(sdkMock.beginLibrarySetup).toHaveBeenCalled();
-  });
-
-  it('marks the file check stopped, not in progress, says where, and offers Retry in Details', async () => {
-    sdkMock.getLibrarySetupProgress.mockResolvedValue(progress({ phase: Phase.NeedsAttention }));
-    render(SetupBar);
-    expect(
-      await screen.findByText(
-        'A file check stopped before it finished. Retry it, or see Library care for what happened.',
-      ),
-    ).toBeInTheDocument();
-    await fireEvent.click(await screen.findByRole('button', { name: /Details/ }));
-    expect(screen.getByText('Stopped')).toBeInTheDocument();
-    expect(screen.queryByText('In progress')).not.toBeInTheDocument();
-    const details = screen.getByRole('region', { name: 'Setting up your library' });
-    expect(details).toHaveTextContent(/Stopped at [\d,]+ of [\d,]+\. Retry carries on from there/);
-    expect(details).toHaveTextContent('Everything already checked is kept.');
-    await fireEvent.click(within(details).getByRole('button', { name: 'Retry' }));
-    expect(sdkMock.beginLibrarySetup).toHaveBeenCalled();
-  });
-
-  it('keeps Retry and a general warning when attention follows completed stages', async () => {
-    const value = progress({ phase: Phase.NeedsAttention });
-    value.stages = value.stages.map((stage) => ({ ...stage, status: LibrarySetupStageStatus.Done, done: stage.total }));
+  it('shows a file check that ended early as a notice: setup carries on, with Check again and Pause', async () => {
+    const value = progress({ checkProblem: true });
+    value.stages[0] = { ...value.stages[0], status: LibrarySetupStageStatus.Done, done: value.stages[0].total };
     sdkMock.getLibrarySetupProgress.mockResolvedValue(value);
     render(SetupBar);
-    expect(await screen.findByText('Setup needs attention')).toBeInTheDocument();
-    expect(
-      screen.getByText('Library setup stopped before it finished. Retry it, or see Library care for what happened.'),
-    ).toBeInTheDocument();
-    await fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+
+    expect(await screen.findByText('Setting up your library')).toBeInTheDocument();
+    expect(screen.queryByText('Setup needs attention')).not.toBeInTheDocument();
+    expect(screen.getByText(/Making thumbnails · 500,000 of 823,034/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /The file check didn’t finish/ })).toHaveAttribute(
+      'href',
+      expect.stringContaining('care'),
+    );
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
+    expect(sdkMock.beginLibrarySetup).toHaveBeenCalled();
+  });
+
+  it('marks the file check ended early, never stopped, and links to the files it missed', async () => {
+    const value = progress({ checkProblem: true });
+    value.stages[0] = { ...value.stages[0], status: LibrarySetupStageStatus.Done, done: value.stages[0].total };
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(value);
+    render(SetupBar);
+    await fireEvent.click(await screen.findByRole('button', { name: /Details/ }));
+    const details = screen.getByRole('region', { name: 'Setting up your library' });
+    expect(within(details).getByText('Ended early')).toBeInTheDocument();
+    expect(details).not.toHaveTextContent(/Stopped/);
+    expect(details).toHaveTextContent('Setup carried on without it.');
+    expect(within(details).getByRole('link', { name: 'See the files in Library care' })).toBeInTheDocument();
+    await fireEvent.click(within(details).getByRole('button', { name: 'Check again' }));
     expect(sdkMock.beginLibrarySetup).toHaveBeenCalled();
   });
 
@@ -401,13 +393,11 @@ describe('SetupBar', () => {
 
   it.each([false, true])('reports rejected setup actions and clears busy, retry=%s', async (retry) => {
     const failure = new Error('synthetic action refusal');
-    sdkMock.getLibrarySetupProgress.mockResolvedValue(
-      progress({ phase: retry ? Phase.NeedsAttention : Phase.Rescanning }),
-    );
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(progress({ checkProblem: retry }));
     const action = retry ? sdkMock.beginLibrarySetup : sdkMock.pauseLibrarySetup;
     action.mockRejectedValueOnce(failure);
     render(SetupBar);
-    const button = await screen.findByRole('button', { name: retry ? 'Retry' : 'Pause' });
+    const button = await screen.findByRole('button', { name: retry ? 'Check again' : 'Pause' });
     await fireEvent.click(button);
     await vi.waitFor(() =>
       expect(handleError).toHaveBeenCalledWith(failure, 'Unable to update library setup. Try again.'),

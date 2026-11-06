@@ -170,10 +170,17 @@ describe('row tone, as on the prototype’s Activity chips', () => {
     });
     expect(queueRow(queue({ active: 0 }))).toMatchObject({ tone: 'neutral', live: false });
     expect(queueRow(queue({ isPaused: true }))).toMatchObject({ tone: 'warning', live: false });
-    // FL-711: quiet hours saved it for the night and start it again by themselves; it can still be resumed now.
-    expect(queueRow(queue({ isPaused: true, heldForNight: true }))).toMatchObject({
+    // FL-711: quiet hours saved it for the night and start it again by themselves. FL-1265: they no longer pause the
+    // queue, so it can still be paused, and a queue someone paused says paused at night too.
+    expect(queueRow(queue({ state: 'paused' as QueueRunDto['state'], heldForNight: true }))).toMatchObject({
       tone: 'neutral',
       statusKey: 'frameleaf_activity_bg_tonight_unscheduled',
+      control: { kind: 'pause' },
+    });
+    expect(
+      queueRow(queue({ isPaused: true, state: 'paused' as QueueRunDto['state'], heldForNight: true })),
+    ).toMatchObject({
+      tone: 'warning',
       control: { kind: 'resume' },
     });
     expect(memoryExportRow(exportRun())).toMatchObject({ tone: 'info', live: true });

@@ -280,17 +280,22 @@ it.each([false, true])(
     expect(source).toHaveBeenCalledTimes(2);
     const gate = new DatabaseRepository(db, { setContext: () => {} } as never, {} as never);
     await expect(gate.assertImportActivated()).resolves.toBeUndefined();
-    const selections = await connection.db.query('SELECT state FROM job_selection WHERE "runId"=$1::uuid', [
-      result.runId,
-    ]);
-    expect(selections).toHaveLength(6);
-    expect(selections.every((row) => row.state === (managed ? 'enumerating' : 'ready'))).toBe(true);
-    expect(await connection.db.query('SELECT 1 FROM job')).toEqual([]);
+    // FL-1265: Manager's work stays held for first setup; anything else is released by activation (the holds go and
+    // the coordinator lets the jobs run after commit).
+    const [run] = await connection.db.query(
+      `SELECT selection->'holds' AS holds, selection->>'holdsDirty' AS dirty FROM job_run WHERE id=$1::uuid`,
+      [result.runId],
+    );
+    expect(run).toEqual(
+      managed
+        ? { holds: expect.objectContaining({ [JobName.SmartSearch]: 'setup' }), dirty: null }
+        : { holds: {}, dirty: 'true' },
+    );
+    expect(await connection.db.query(`SELECT 1 FROM job WHERE state<>'pending' OR attempt<>0`)).toEqual([]);
     expect(JSON.stringify(result)).not.toMatch(/owner@example|Imported owner|private source|"binding"|"source":/);
     // Completed work can be collected; replay uses the retained proof without preparing or verifying it again.
     await connection.db.transaction(async (tx) => {
-      await tx.query('DELETE FROM job_run_item WHERE "runId"=$1::uuid', [result.runId]);
-      await tx.query('DELETE FROM job_selection WHERE "runId"=$1::uuid', [result.runId]);
+      await tx.query('DELETE FROM job WHERE "runId"=$1::uuid', [result.runId]);
       await tx.query('DELETE FROM job_run WHERE id=$1::uuid', [result.runId]);
     });
     await expect(
@@ -310,9 +315,10 @@ it('keeps writers fenced and prepared work held when the source changes during v
   await expect(controller.activate(jobs(), source)).rejects.toThrow('IMPORT_CONTROLLER_UNAVAILABLE');
   expect((await controller.status()).run?.status).toBe('verifying');
   expect(await connection.db.query('SELECT activation FROM frameleaf_library_import')).toEqual([{ activation: null }]);
-  expect(
-    (await connection.db.query('SELECT state FROM job_selection')).every((row) => row.state === 'enumerating'),
-  ).toBe(true);
+  expect((await connection.db.query(`SELECT selection->'holds' AS holds FROM job_run`))[0].holds).toMatchObject({
+    [JobName.SmartSearch]: 'setup',
+    [JobName.AssetExtractMetadata]: 'setup',
+  });
   await expect(controller.activate(jobs(), async () => {})).resolves.toHaveProperty('runId');
 });
 
@@ -362,9 +368,13 @@ it('rolls back the proof and queue release together when activation cannot be co
   );
   expect((await controller.status()).run?.status).toBe('verifying');
   expect(await connection.db.query('SELECT activation FROM frameleaf_library_import')).toEqual([{ activation: null }]);
-  expect(
-    (await connection.db.query('SELECT state FROM job_selection')).every((row) => row.state === 'enumerating'),
-  ).toBe(true);
+  expect((await connection.db.query(`SELECT selection->'holds' AS holds FROM job_run`))[0].holds).toMatchObject({
+    [JobName.SmartSearch]: 'setup',
+    [JobName.AssetExtractMetadata]: 'setup',
+  });
+  expect(await connection.db.query(`SELECT selection->'holds' = '{}'::jsonb AS released FROM job_run`)).toEqual([
+    { released: false },
+  ]);
 });
 
 it('independently refuses work released after preparation and requires the same Manager authority on replay', async () => {
@@ -377,13 +387,25 @@ it('independently refuses work released after preparation and requires the same 
     controller.activate(
       jobs(),
       async () => {
-        if (++checks === 2) await connection.db.query("UPDATE job_selection SET state='ready'");
+        if (++checks === 2) await connection.db.query(`UPDATE job_run SET selection=selection || '{"holds":{}}'`);
       },
       manager,
     ),
   ).rejects.toThrow('DERIVED_WORK_MANIFEST_MISMATCH');
   expect((await controller.status()).run?.status).toBe('verifying');
-  await connection.db.query("UPDATE job_selection SET state='enumerating'");
+  const held = Object.fromEntries(
+    [
+      JobName.AssetExtractMetadata,
+      JobName.AssetGenerateThumbnails,
+      JobName.SmartSearch,
+      JobName.AssetDetectFaces,
+      JobName.AssetEncodeVideo,
+      JobName.PersonGenerateThumbnail,
+    ].map((stage) => [stage, 'setup']),
+  );
+  await connection.db.query(`UPDATE job_run SET selection=selection || jsonb_build_object('holds',$1::text::jsonb)`, [
+    JSON.stringify(held),
+  ]);
   await controller.activate(jobs(), async () => {}, manager);
   await expect(controller.activate(jobs(), async () => {})).rejects.toThrow('DERIVED_MANAGER_SETUP_IDENTITY_MISMATCH');
   await expect(

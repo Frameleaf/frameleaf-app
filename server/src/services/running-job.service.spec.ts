@@ -256,7 +256,7 @@ describe(RunningJobService.name, () => {
       expect(result.queues).toEqual([expect.objectContaining({ name: QueueName.SmartSearch, isPaused: true })]);
     });
 
-    it('says when quiet hours saved a paused queue for the night, and when it starts again (FL-711)', async () => {
+    it('says when quiet hours closed a queue for the night, and when it starts again (FL-711)', async () => {
       vi.useFakeTimers({ now: new Date('2026-10-31T03:28:00.000Z'), toFake: ['Date'] });
       mocks.systemMetadata.get.mockImplementation((key: SystemMetadataKey) =>
         Promise.resolve(
@@ -277,7 +277,8 @@ describe(RunningJobService.name, () => {
             : idle,
         ),
       );
-      mocks.job.getPausedQueues.mockResolvedValue(new Set([QueueName.VideoConversion]));
+      // FL-1265: quiet hours close the queue (job_queue."closedUntil"); they don't pause it.
+      mocks.job.getPausedQueues.mockResolvedValue(new Set());
 
       const result = await sut.getRunning(authStub.admin);
       vi.useRealTimers();
@@ -286,7 +287,8 @@ describe(RunningJobService.name, () => {
         expect.objectContaining({ name: QueueName.ThumbnailGeneration, isPaused: false }),
         expect.objectContaining({
           name: QueueName.VideoConversion,
-          isPaused: true,
+          isPaused: false,
+          state: 'paused',
           heldForNight: true,
           resumesAt: '2026-10-31T06:00:00.000Z',
         }),

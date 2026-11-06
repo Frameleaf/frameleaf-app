@@ -81,11 +81,11 @@ describe('PostgreSQL queue JSON parameters', () => {
     expect(await store.complete(first, [intent({ name: 'next-stage', data: downstream })])).toBe(true);
     const [next] = await store.claim(queue, worker);
     expect(next).toMatchObject({ runId, rootItemKey: 'asset-a', data: downstream });
-    const { rows: ledger } = await sql`select stage, selection, jsonb_typeof(selection) as type from job_run_item
-      where "runId" = ${runId}::uuid order by stage`.execute(db);
-    expect(ledger).toEqual([
-      { stage: 'json-stage', selection: data, type: 'object' },
-      { stage: 'next-stage', selection: downstream, type: 'object' },
+    const { rows: jobs } = await sql`select name, data, jsonb_typeof(data) as type from job
+      where "runId" = ${runId}::uuid order by name`.execute(db);
+    expect(jobs).toEqual([
+      { name: 'json-stage', data, type: 'object' },
+      { name: 'next-stage', data: downstream, type: 'object' },
     ]);
     expect(await store.complete(next, [])).toBe(true);
   });

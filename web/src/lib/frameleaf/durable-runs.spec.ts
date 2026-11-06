@@ -1,15 +1,42 @@
 import { type DurableRunningJobs, QueueName } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import { durableRun } from '$lib/__mocks__/durable-runs.mock';
-import { isRunSettled, matchesRunFilter, settledItems } from '$lib/frameleaf/durable-runs';
+import {
+  isRunSettled,
+  matchesRunFilter,
+  runBlockers,
+  runFailedQueues,
+  settledItems,
+} from '$lib/frameleaf/durable-runs';
 import { buildRunningJobRows, durableRunRow, queueRow } from '$lib/frameleaf/running-jobs';
 
 describe('durable run views', () => {
-  it('uses selected items rather than multiple stages for progress', () => {
+  it('counts photos once rather than each of their tasks for progress', () => {
     const run = durableRun();
     expect(settledItems(run)).toBe(14_992);
     expect(durableRunRow(run)).toMatchObject({ total: 15_000, done: 14_992, percent: 99, live: true });
     expect(durableRunRow(durableRun({ enumerationDone: false })).percent).toBeNull();
+  });
+  it('says what holds a run up in plain words, and nothing once it has finished (FL-1265)', () => {
+    expect(runBlockers(durableRun({ state: 'paused', reasons: [] }))).toEqual(['frameleaf_job_runs_why_paused']);
+    expect(runBlockers(durableRun({ state: 'blocked', reasons: ['first_setup_pending'] }))).toEqual([
+      'frameleaf_job_runs_why_setup',
+    ]);
+    expect(runBlockers(durableRun({ state: 'blocked', reasons: [], held: 3 }))).toEqual([
+      'frameleaf_job_runs_why_setup',
+    ]);
+    expect(runBlockers(durableRun({ state: 'delayed', reasons: ['scheduled_delay', 'local-capacity'] }))).toEqual([
+      'frameleaf_job_runs_why_night',
+      'frameleaf_job_runs_why_ml',
+    ]);
+    expect(runBlockers(durableRun({ state: 'completed', reasons: ['queue_paused'] }))).toEqual([]);
+  });
+  it('links failures to the queues the server names, else to the run’s own queue', () => {
+    expect(
+      runFailedQueues(durableRun({ failedQueues: [QueueName.FaceDetection] }), QueueName.ThumbnailGeneration),
+    ).toEqual([QueueName.FaceDetection]);
+    expect(runFailedQueues(durableRun(), QueueName.ThumbnailGeneration)).toEqual([QueueName.ThumbnailGeneration]);
+    expect(runFailedQueues(durableRun(), undefined)).toEqual([]);
   });
   it('shows partial failures on the failed filter without treating active work as settled', () => {
     const run = durableRun();

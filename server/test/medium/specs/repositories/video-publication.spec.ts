@@ -312,13 +312,6 @@ describe('retained video publication under queue and operation claims', () => {
         and token = ${fixture.claim.token}::uuid`.execute(db)
       ).rows,
     ).toEqual([{ outcome: 'needs_attention' }]);
-    expect(
-      (
-        await sql`select count(*)::int count from job_run_item where "jobId"=any(${[fixture.claim.id, retry.id]}::uuid[])`.execute(
-          db,
-        )
-      ).rows,
-    ).toEqual([{ count: 0 }]);
     expect(await fixture.store.fail(fixture.claim, 'stale failure')).toBe(false);
   });
 

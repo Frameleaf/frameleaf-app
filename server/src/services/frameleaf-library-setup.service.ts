@@ -4,22 +4,13 @@ import { InjectKysely } from 'nestjs-kysely';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { ArgOf } from 'src/repositories/event.repository.js';
 import { OnEvent } from 'src/decorators.js';
 import { AdminConfigDto } from 'src/dtos/config.dto.js';
 import { LibrarySetupProgressDto } from 'src/dtos/frameleaf-library-setup.dto.js';
-import {
-  FrameleafWorker,
-  JobName,
-  MediaOperationKind,
-  QueueName,
-  SyncEntityType,
-  SystemMetadataKey,
-  UserStatus,
-} from 'src/enum.js';
+import { FrameleafWorker, JobName, MediaOperationKind, QueueName, SyncEntityType, UserStatus } from 'src/enum.js';
 import { readImportedSetupRun } from 'src/library-import/setup-run.js';
-import { lockQueueCatalogue } from 'src/queue/catalogue.js';
-import { listRuns } from 'src/queue/run-query.js';
-import { unfinishedRunItems } from 'src/queue/selection-state.js';
+import { RunHolds } from 'src/queue/types.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { type MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
@@ -31,8 +22,6 @@ import { MediaHealthService } from 'src/services/media-health.service.js';
 import { SystemConfigService } from 'src/services/system-config.service.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { parseScanResult } from 'src/utils/media-health-operation.js';
-import { OvernightState, quietHoursHolds } from 'src/utils/overnight.js';
-import { serverTimeZone } from 'src/utils/server-time-zone.js';
 import { fromAck } from 'src/utils/sync.js';
 
 type SetupState = {
@@ -54,6 +43,15 @@ type SetupState = {
   processingChoiceApplied?: boolean;
   /** FL-1146: the owner paused setup from the setup bar. */
   paused?: boolean;
+  /** The run's Jobs release (`releasedAt`) seen when the owner last paused; a newer one wins over the pause. */
+  pauseSeenRelease?: string | null;
+  /** FL-1265: queues resumed in Jobs while setup was paused; their stages run anyway. Pausing again clears it. */
+  resumedQueues?: string[];
+  /**
+   * FL-1265: a library scan or a file check ended early (failed or cancelled), or one of their jobs failed. Reported,
+   * never a stop: setup carries on and Retry checks again.
+   */
+  checkProblem?: boolean;
   /** FL-1146: when the original-file check finished and the stages that wait for it were released. */
   checkReleasedAt?: string | null;
   /** FL-1146: when everything finished, for the one-time completion window. */
@@ -81,9 +79,9 @@ const SETUP_QUEUES = [
   QueueName.MediaHealth,
 ];
 /**
- * FL-1165: the queues whose failures stop setup. A thumbnail, metadata, sidecar or video job that fails on one
- * damaged original is listed in Background work and Library Care like the original itself (FL-1146), never a
- * reason to halt: a large import always holds some, and each one would otherwise put setup back to needs-attention.
+ * FL-1165: the queues whose failures are reported as a check problem. A thumbnail, metadata, sidecar or video job that
+ * fails on one damaged original is listed in Background work and Library Care like the original itself (FL-1146).
+ * FL-1265: these are reported too, never a stop.
  */
 const HALTING_QUEUES = new Set<QueueName>([QueueName.Library, QueueName.MediaHealth]);
 const KEY = 'frameleaf-manager-library-setup';
@@ -97,8 +95,46 @@ const SEARCH_STAGES: string[] = [JobName.SmartSearch, JobName.AssetDetectFaces, 
 /** The setup bar's early stage: what starts with the file check. */
 const THUMBNAIL_STAGES: string[] = [...EARLY_STAGES, JobName.PersonGenerateThumbnail];
 const phoneKey = (sessionId: string) => `:phone:${sessionId}`;
-/** Every held stage may run: the file check finished, or the owner dismissed setup to let the server run. */
-const released = (state: SetupState) => !!state.checkReleasedAt || !!state.dismissedAt;
+/**
+ * Every held stage may run: the file check ended, the owner dismissed setup to let the server run, or an administrator
+ * released the run from Jobs.
+ */
+const released = (state: SetupState, selection: SetupSelection) =>
+  !!state.checkReleasedAt || !!state.dismissedAt || !!selection.releasedAt;
+type SetupSelection = NonNullable<NonNullable<Awaited<ReturnType<typeof readImportedSetupRun>>>['run']>['selection'];
+const ENDED = new Set(['completed', 'failed', 'cancelled']);
+
+/**
+ * FL-1265: what should hold each stage of the import's run, recomputed on every poll. Before first setup starts every
+ * stage waits; a pause holds what has not started (a queue resumed in Jobs runs anyway); until the file check ends
+ * only the early stages run; after it, a stage whose machine learning is off and that was still held is parked, so
+ * the run settles without it, and runs again when machine learning is switched on.
+ */
+const desiredHolds = (
+  state: SetupState,
+  selection: SetupSelection,
+  stages: readonly string[],
+  disabled: string[],
+  queueOf: (stage: string) => string,
+): RunHolds => {
+  const holds: RunHolds = {};
+  const current = selection.holds ?? {};
+  const releaseWins = !!selection.releasedAt && selection.releasedAt !== state.pauseSeenRelease;
+  for (const stage of stages) {
+    if (!selection.managerSetup?.startedAt && !selection.releasedAt) {
+      holds[stage] = 'setup';
+    } else if (state.paused && !releaseWins && !state.resumedQueues?.includes(queueOf(stage))) {
+      holds[stage] = 'paused';
+    } else if (!released(state, selection) && !EARLY_STAGES.includes(stage)) {
+      holds[stage] = 'setup';
+    } else if (disabled.includes(stage) && current[stage] !== undefined) {
+      holds[stage] = 'parked';
+    }
+  }
+  return holds;
+};
+const sameHolds = (a: RunHolds, b: RunHolds = {}) =>
+  Object.keys(a).length === Object.keys(b).length && Object.entries(a).every(([stage, hold]) => b[stage] === hold);
 /** Library Care's full check of an account: every original, not only recent changes or chosen photos. */
 const fullScan = (table: string) =>
   sql`${sql.ref(`${table}.kind`)}='media_health' AND ${sql.ref(`${table}.snapshot`)}->>'mode'='scan'
@@ -183,19 +219,15 @@ export class FrameleafLibrarySetupService {
     let retriedImportedWork = false;
     await this.locked(async (db) => {
       const previous = await this.read<SetupState>(this.key(), db);
-      // Retrying a stopped setup, or one the owner dismissed (in any phase, finished included), checks again.
+      // Retrying a stopped setup, one whose check ended early, or one the owner dismissed (in any phase, finished
+      // included), checks again.
       const reopened = retry && !!previous?.dismissedAt;
-      if (
-        previous &&
-        previous.phase !== 'awaiting-account' &&
-        !(retry && previous.phase === 'needs-attention') &&
-        !reopened
-      ) {
+      const retrying = retry && (previous?.phase === 'needs-attention' || !!previous?.checkProblem);
+      if (previous && previous.phase !== 'awaiting-account' && !retrying && !reopened) {
         await this.startImportedRegeneration(previous, db);
         return;
       }
-      if (retry && previous?.phase === 'needs-attention') {
-        await lockQueueCatalogue(db);
+      if (retrying) {
         const imported = await this.importedRun(db, true);
         if (
           this.importedSetupMatches(previous, imported) &&
@@ -244,6 +276,8 @@ export class FrameleafLibrarySetupService {
         owners,
         // A retry keeps the owner's pause and what the file check already released (FL-1146).
         paused: previous?.paused,
+        pauseSeenRelease: previous?.pauseSeenRelease,
+        resumedQueues: previous?.resumedQueues,
         heldScans: previous?.paused
           ? [
               ...new Set([
@@ -345,10 +379,7 @@ export class FrameleafLibrarySetupService {
       current.run.selection.managerSetup.paused === !!state.paused &&
       current.run.selection.managerSetupRequired === true
     )
-      return this.reconcileParkedStages(state, current.run.id, current.run.selection.managerSetup.parkedStages, db);
-    await lockQueueCatalogue(db);
-    // Queue claims and pause changes serialize before the run and selection locks.
-    // Capture cannot re-hold snapshots after observing this committed start acknowledgement.
+      return this.applyHolds(state, db);
     const imported = await this.importedRun(db, true);
     if (!imported) return;
     const { journal, run } = imported;
@@ -366,80 +397,38 @@ export class FrameleafLibrarySetupService {
     await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup,paused}',${JSON.stringify(!!state.paused)}::text::jsonb) || '{"managerSetupRequired":true}'::jsonb
       WHERE id=${run.id}::uuid AND (selection #> '{managerSetup,paused}' IS DISTINCT FROM ${JSON.stringify(!!state.paused)}::text::jsonb
         OR selection->'managerSetupRequired' IS DISTINCT FROM 'true'::jsonb)`.execute(db);
-    if (marker.startedAt) return;
-    if (state.origin === 'restored_library') {
-      const summary = (await listRuns(db, 1, 0, run.id))[0];
-      if (!summary || ['completed', 'cancelled', 'completed_with_errors', 'needs_attention'].includes(summary.state)) {
-        return;
+    if (!marker.startedAt) {
+      if (state.origin === 'restored_library') {
+        const summary = await this.jobs.getRun(run.id);
+        if (
+          !summary ||
+          ['completed', 'cancelled', 'completed_with_errors', 'needs_attention'].includes(summary.state)
+        ) {
+          return;
+        }
       }
+      // Prepared (every stage inserted, held) and activated: first setup starts the run.
+      await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup,startedAt}',${JSON.stringify(new Date().toISOString())}::text::jsonb)
+        WHERE id=${run.id}::uuid`.execute(db);
     }
-    // FL-414: Manager releases the identical-files stage with the others
-    const stages = [...imported.stages];
-    const {
-      rows: [prepared],
-    } = await sql<{ ready: boolean }>`SELECT
-      (SELECT count(*) FROM job_selection WHERE "runId"=${run.id}::uuid
-        AND stage=ANY(${stages}::text[]) AND "capturedAt" IS NOT NULL)=${stages.length}
-      AND NOT EXISTS(SELECT 1 FROM job_selection WHERE "runId"=${run.id}::uuid AND "capturedAt" IS NULL) AS ready`.execute(
-      db,
+    await this.applyHolds(state, db, true);
+  }
+
+  /**
+   * FL-1265: writes the holds this setup wants on its import's run (see `desiredHolds`) when they differ from the
+   * stored ones. It reads first, so a poll with nothing to change takes no run lock. Nothing is written before first
+   * setup starts the run (the run keeps preparation's holds) or for a run this setup does not match.
+   */
+  private async applyHolds(state: SetupState, db: Kysely<DB>, locked = false): Promise<void> {
+    const imported = await this.importedRun(db, locked);
+    const run = imported?.run;
+    if (!imported || !run?.selection.managerSetup?.startedAt || !this.importedSetupMatches(state, imported)) return;
+    const holds = desiredHolds(state, run.selection, imported.stages, await this.disabledImportStages(), (stage) =>
+      this.jobs.getQueueName(stage as JobName),
     );
-    if (!prepared?.ready) return;
-    const startedAt = new Date().toISOString();
-    await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup,startedAt}',${JSON.stringify(startedAt)}::text::jsonb)
-      WHERE id=${run.id}::uuid`.execute(db);
-    // A setup paused before the run was prepared stays held; resuming releases these stages.
-    if (!state.paused) {
-      await this.releaseStages(run.id, released(state), db);
-    }
-  }
-
-  /**
-   * Lets the queue admit a held stage's items: before the file check only the early stages, after it (`checked`)
-   * every stage whose work is switched on. Stages that wait for the file check are released by `advance`.
-   *
-   * FL-1177: after the check, a stage whose machine learning is off stays held, "parked" in the run's marker, and the
-   * run settles without it rather than waiting for machine learning for good. Switching it on releases it (see
-   * `reconcileParkedStages`) and reopens the run, which the queue only admits while open. A stage that already has
-   * live jobs is never parked: they wait for machine learning as before. The caller holds the queue catalogue.
-   */
-  private async releaseStages(runId: string, checked: boolean, db: Kysely<DB>) {
-    if (!checked) {
-      await sql`UPDATE job_selection SET state='ready' WHERE "runId"=${runId}::uuid
-        AND "capturedAt" IS NOT NULL AND state='enumerating' AND stage=ANY(${EARLY_STAGES}::text[])`.execute(db);
-      return;
-    }
-    const { rows } = await sql<{ stage: string }>`SELECT s.stage FROM job_selection s WHERE s."runId"=${runId}::uuid
-      AND s."capturedAt" IS NOT NULL AND s.state='enumerating' AND s.stage=ANY(${await this.disabledImportStages()}::text[])
-      AND NOT EXISTS (SELECT 1 FROM job_run_item i WHERE i."selectionId"=s.id AND i."jobId" IS NOT NULL
-        AND i.state IN ('pending','waiting','active'))
-      ORDER BY s.stage`.execute(db);
-    const parked = rows.map(({ stage }) => stage);
-    const { numAffectedRows } = await sql`UPDATE job_selection SET state='ready' WHERE "runId"=${runId}::uuid
-      AND "capturedAt" IS NOT NULL AND state='enumerating' AND stage<>ALL(${parked}::text[])`.execute(db);
-    await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup,parkedStages}',${JSON.stringify(parked)}::text::jsonb)
-      ${numAffectedRows ? sql`,"finishedAt"=NULL` : sql``} WHERE id=${runId}::uuid`.execute(db);
-    await sql`UPDATE job_run SET "finishedAt"=now() WHERE id=${runId}::uuid AND "enumerationDone" AND "finishedAt" IS NULL
-      AND NOT (${unfinishedRunItems(sql<string>`${runId}::uuid`, parked)})`.execute(db);
-  }
-
-  /**
-   * FL-1177, on every setup poll once the file check has released the stages: releases a parked stage whose machine
-   * learning has been switched on since, and settles the run once only parked stages are left. It reads first, so a
-   * poll with nothing to do takes no queue lock.
-   */
-  private async reconcileParkedStages(state: SetupState, runId: string, marker: unknown, db: Kysely<DB>) {
-    const parked = Array.isArray(marker) ? marker.filter((stage) => typeof stage === 'string') : [];
-    if (!released(state) || state.paused || parked.length === 0) return;
-    const disabled: string[] = await this.disabledImportStages();
-    if (parked.every((stage) => disabled.includes(stage))) {
-      const { rows } = await sql`SELECT 1 FROM job_run WHERE id=${runId}::uuid AND "enumerationDone"
-        AND "finishedAt" IS NULL AND NOT (${unfinishedRunItems(sql<string>`${runId}::uuid`, parked)})`.execute(db);
-      if (rows.length === 0) return;
-    }
-    await lockQueueCatalogue(db);
-    const imported = await this.importedRun(db, true);
-    if (this.importedSetupMatches(state, imported) && imported?.run?.selection.managerSetup?.startedAt)
-      await this.releaseStages(imported.run.id, true, db);
+    if (sameHolds(holds, run.selection.holds)) return;
+    if (!locked) return this.applyHolds(state, db, true);
+    await this.jobs.setRunHolds(run.id, holds, db);
   }
 
   private async regenerationStatus(state: SetupState) {
@@ -457,7 +446,7 @@ export class FrameleafLibrarySetupService {
     )
       return null;
     const matches = !!run && this.importedSetupMatches(state, imported);
-    const summary = matches ? (await listRuns(this.db, 1, 0, run.id))[0] : null;
+    const summary = matches ? await this.jobs.getRun(run.id) : null;
     const pending =
       !!marker &&
       !marker.startedAt &&
@@ -534,20 +523,12 @@ export class FrameleafLibrarySetupService {
         ? imported.run
         : null;
     const disabled = run ? await this.disabledImportStages() : [];
-    const { rows: stages } = run
-      ? await sql<{
-          stage: string;
-          queue: string;
-          total: number;
-          done: number;
-        }>`SELECT i.stage, i.queue, count(*)::int AS total,
-          -- Settled, not only completed: an item's failure is listed in Background work and never holds setup (FL-1165).
-          count(*) FILTER (WHERE coalesce(j.state,i.state) NOT IN ('pending','waiting','active'))::int AS done
-          FROM job_run_item i LEFT JOIN job j ON j.id=i."jobId"
-          WHERE i."runId"=${run.id}::uuid AND i.stage<>all(${disabled}::text[]) GROUP BY i.stage, i.queue`.execute(
-          this.db,
-        )
-      : { rows: [] };
+    // Settled, not only completed: an item's failure is listed in Background work and never holds setup (FL-1165).
+    const stages = run
+      ? (await this.jobs.getRunStageProgress(run.id))
+          .filter(({ name }) => !disabled.includes(name))
+          .map(({ name, queue, total, done }) => ({ stage: name as string, queue: queue as string, total, done }))
+      : [];
     const sum = (names: string[]) => {
       const part = { total: 0, done: 0 };
       for (const row of stages) {
@@ -605,6 +586,7 @@ export class FrameleafLibrarySetupService {
       active: true,
       phase: state.phase,
       paused: !!state.paused,
+      checkProblem: !!state.checkProblem,
       completedAt: state.completedAt ?? null,
       items,
       people,
@@ -634,22 +616,22 @@ export class FrameleafLibrarySetupService {
   }
 
   /**
-   * FL-577: quiet hours pause the search stage's queues outside the overnight window. When every queue that still
-   * holds some of its work is saved for the night, the bar says when it starts again instead of "In progress".
+   * FL-577: quiet hours close the search stage's queues outside the overnight window. When every queue that still
+   * holds some of its work is closed, the bar says when it starts again instead of "In progress".
    */
   private async heldForNight(rows: { stage: string; queue: string; total: number; done: number }[]) {
     const queues = new Set(
       rows.filter((row) => SEARCH_STAGES.includes(row.stage) && row.done < row.total).map((row) => row.queue),
     );
-    const overnight = await this.read<OvernightState>(SystemMetadataKey.OvernightSequence);
-    if (!overnight?.quiet?.holding?.length) return null;
-    const { config } = await this.config.getAdminConfigWithRevision();
-    const holds = quietHoursHolds(overnight, config.nightlyTasks, serverTimeZone(config.server));
+    let resumesAt: number | null = null;
     for (const queue of queues) {
-      // A queue an administrator resumed during the day is no longer held.
-      if (!holds.has(queue as QueueName) || !(await this.jobs.isPaused(queue as QueueName))) return null;
+      // FL-1265: a queue an administrator resumed during the day has no schedule left.
+      const closedUntil = (await this.jobs.getQueueSchedule(queue as QueueName))?.getTime();
+      if (closedUntil === undefined || !(closedUntil > Date.now())) return null;
+      resumesAt = Math.min(resumesAt ?? closedUntil, closedUntil);
     }
-    return { resumesAt: holds.values().next().value ?? null };
+    if (queues.size === 0) return null;
+    return { resumesAt: resumesAt !== null && Number.isFinite(resumesAt) ? new Date(resumesAt).toISOString() : null };
   }
 
   /** FL-1146: Pause holds new work and Library Care's scans at their next checkpoint; nothing is lost. */
@@ -676,24 +658,18 @@ export class FrameleafLibrarySetupService {
     changed: (MediaOperation | undefined)[],
     db: Kysely<DB>,
   ) {
-    await lockQueueCatalogue(db);
     const imported = await this.importedRun(db, true);
     if (this.importedSetupRequired(state, imported) && !this.importedSetupMatches(state, imported))
       throw new BadRequestException('Imported setup identity mismatch');
     state.paused = paused;
+    state.pauseSeenRelease = paused ? (imported?.run?.selection.releasedAt ?? null) : undefined;
+    state.resumedQueues = undefined;
     if (this.importedSetupMatches(state, imported) && imported?.run) {
       await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup,paused}',${JSON.stringify(paused)}::text::jsonb)
         WHERE id=${imported.run.id}::uuid`.execute(db);
     }
-    if (this.importedSetupMatches(state, imported) && imported?.run?.selection.managerSetup?.startedAt) {
-      if (paused) {
-        // Held items stay where they are: running jobs finish, and no new ones are admitted.
-        await sql`UPDATE job_selection SET state='enumerating' WHERE "runId"=${imported.run.id}::uuid
-          AND state='ready'`.execute(db);
-      } else {
-        await this.releaseStages(imported.run.id, released(state), db);
-      }
-    }
+    // Held items stay where they are: running jobs finish, and no new ones start.
+    await this.applyHolds(state, db, true);
     for (const [ownerId, operationId] of Object.entries(state.health)) {
       changed.push(
         await (paused
@@ -744,10 +720,31 @@ export class FrameleafLibrarySetupService {
     await this.active;
   }
 
+  /** FL-1265: resuming a queue in Jobs runs its import work even while setup stays paused. */
+  @OnEvent({ name: 'QueueResumed' })
+  async onQueueResumed({ queue }: ArgOf<'QueueResumed'>) {
+    let key;
+    try {
+      key = this.key();
+    } catch {
+      return; // not a Manager-provisioned server
+    }
+    await this.locked(async (db) => {
+      const state = await this.read<SetupState>(key, db);
+      if (!state?.paused || state.resumedQueues?.includes(queue)) return;
+      state.resumedQueues = [...(state.resumedQueues ?? []), queue];
+      await this.write(key, state, db);
+      await this.applyHolds(state, db, true);
+    });
+  }
+
   private async advance(): Promise<SetupState> {
     await this.begin();
     return this.locked(async (db) => {
       const state = (await this.read<SetupState>(this.key(), db))!;
+      // FL-1265: needs-attention is informational and found again on every poll (only an import that no longer matches
+      // sets it now), so one saved by an older server, or by a mismatch since put right, carries on.
+      if (state.phase === 'needs-attention') state.phase = 'rescanning';
       if (state.phase === 'rescanning' || state.phase === 'verifying') {
         const boundImport = await this.importedRun(db);
         if (this.importedSetupRequired(state, boundImport) && !this.importedSetupMatches(state, boundImport)) {
@@ -803,12 +800,12 @@ export class FrameleafLibrarySetupService {
                 status: string;
               }>`SELECT id,status FROM media_operation WHERE id=ANY(${ids}::uuid[])`.execute(db)
             : { rows: [] };
+        // FL-1265: a scan that failed or was cancelled has ended too; what it imported is processed, and the problem is
+        // reported (Retry scans again).
         const scansFinished = state.libraries.every((id) =>
-          records.rows.some((r) => r.id === state.scans[id] && r.status === 'completed'),
+          records.rows.some((r) => r.id === state.scans[id] && ENDED.has(r.status)),
         );
-        if (records.rows.some((record) => ['failed', 'cancelled'].includes(record.status))) {
-          state.phase = 'needs-attention';
-        }
+        let checkProblem = records.rows.some((record) => ['failed', 'cancelled'].includes(record.status));
         if (scansFinished && !state.healthAfter) {
           // Commit full-scan admission after external discovery. The following call can safely
           // recover a lost queue acknowledgement, and must cover the resulting inventory.
@@ -888,33 +885,25 @@ export class FrameleafLibrarySetupService {
             AND op."createdAt" >= ${state.healthAfter}::timestamptz`.execute(db)
             : { rows: [] };
         // FL-1146: a missing or changed original is kept and listed in Library Care; it never stops setup.
-        if (health.rows.some((record) => ['failed', 'cancelled'].includes(record.status))) {
-          state.phase = 'needs-attention';
-        }
+        // FL-1265: nor does a check that failed or was cancelled: it has ended, it is reported, and Retry carries it on.
+        checkProblem ||= health.rows.some(
+          (record) =>
+            ['failed', 'cancelled'].includes(record.status) || (record.status === 'completed' && !record.verified),
+        );
         const healthFinished = state.owners.every((id) =>
-          health.rows.some(
-            (record) => record.id === state.health[id] && record.status === 'completed' && record.verified,
-          ),
+          health.rows.some((record) => record.id === state.health[id] && ENDED.has(record.status)),
         );
         if (scansFinished && healthFinished && !state.checkReleasedAt && !state.paused) {
-          // Catalogue before the run lock, as every other release does: settling a run serializes with queue work.
-          await lockQueueCatalogue(db);
-          const imported = await this.importedRun(db, true);
-          if (this.importedSetupMatches(state, imported) && imported?.run?.selection.managerSetup?.startedAt) {
-            await this.releaseStages(imported.run.id, true, db);
-          }
           state.checkReleasedAt = new Date().toISOString();
+          await this.applyHolds(state, db, true);
         }
         // Sidecar completion enqueues metadata, which enqueues derivatives. An idle downstream
         // queue alone cannot establish a final sync revision.
         const queues = await Promise.all(SETUP_QUEUES.map((q) => this.jobs.getJobCounts(q)));
-        if (
-          queues.some(
-            (q, i) => HALTING_QUEUES.has(SETUP_QUEUES[i]) && q.failed > (state.failedBaseline?.[SETUP_QUEUES[i]] ?? 0),
-          )
-        ) {
-          state.phase = 'needs-attention';
-        }
+        checkProblem ||= queues.some(
+          (q, i) => HALTING_QUEUES.has(SETUP_QUEUES[i]) && q.failed > (state.failedBaseline?.[SETUP_QUEUES[i]] ?? 0),
+        );
+        state.checkProblem = checkProblem;
         const idle = queues.every((q) => q.active === 0 && q.waiting === 0 && q.delayed === 0 && q.paused === 0);
         let importedUnfinished = false;
         if (this.importedSetupRequired(state, boundImport)) {
@@ -922,21 +911,18 @@ export class FrameleafLibrarySetupService {
           const imported = await this.importedRun(db, true);
           importedUnfinished = true;
           if (this.importedSetupMatches(state, imported) && imported?.run?.enumerationDone) {
+            // A stage whose machine learning is off (parked, or waiting for it) does not keep setup open; held and
+            // running work of every other stage does.
             const disabled = await this.disabledImportStages();
-            const { rows } = await sql<{ unfinished: boolean; failed: boolean }>`SELECT
-              (${unfinishedRunItems(sql<string>`${imported.run.id}::uuid`, disabled)}
-                OR EXISTS(SELECT 1 FROM job WHERE "runId"=${imported.run.id}::uuid AND state='active')
-                OR EXISTS(SELECT 1 FROM job_run_item i WHERE i."runId"=${imported.run.id}::uuid AND i.state='active'
-                  AND NOT EXISTS(SELECT 1 FROM job j WHERE j.id=i."jobId" AND j.state NOT IN ('pending','waiting','active')))) AS unfinished,
-              (EXISTS(SELECT 1 FROM job_run_item i LEFT JOIN job j ON j.id=i."jobId"
-                WHERE i."runId"=${imported.run.id}::uuid AND i.queue=ANY(${[...HALTING_QUEUES]}::text[]) AND
-                  (i.state IN ('failed','needs_attention','cancelled','blocked') OR j.state IN ('failed','needs_attention','cancelled','blocked')))
-                OR EXISTS(SELECT 1 FROM job_selection WHERE "runId"=${imported.run.id}::uuid
-                  AND state IN ('needs_attention','cancelled'))) AS failed`.execute(db);
-            importedUnfinished = rows[0]?.unfinished ?? true;
-            // FL-1165: one item's thumbnail, metadata or other per-file step that failed is listed in Background work
-            // and Library Care, never a reason to halt; only the halting queues' items and a failed source stop setup.
-            if (rows[0]?.failed) state.phase = 'needs-attention';
+            importedUnfinished =
+              disabled.length === 0
+                ? await this.jobs.runHasLiveWork(imported.run.id, { ignoreParked: true }, db)
+                : (
+                    await sql<{ live: boolean }>`SELECT EXISTS(SELECT 1 FROM job WHERE "runId"=${imported.run.id}::uuid
+                      AND state IN ('pending','waiting','active') AND name<>ALL(${disabled}::text[])) AS live`.execute(
+                      db,
+                    )
+                  ).rows[0].live;
           }
         }
         // Setup is not complete until the file check has released the stages that wait for it, nor while a pause
@@ -947,8 +933,7 @@ export class FrameleafLibrarySetupService {
           !healthFinished ||
           !idle ||
           importedUnfinished ||
-          !state.checkReleasedAt ||
-          state.phase === 'needs-attention'
+          !state.checkReleasedAt
         ) {
           state.quietSince = null;
         } else {
@@ -1011,14 +996,11 @@ export class FrameleafLibrarySetupService {
           if (!(error instanceof BadRequestException)) throw error;
         });
       }
-      await lockQueueCatalogue(db);
-      const imported = await this.importedRun(db, true);
-      if (this.importedSetupMatches(state, imported) && imported?.run?.selection.managerSetup?.startedAt) {
-        await this.releaseStages(imported.run.id, true, db);
-      }
-      // A run not started yet releases every stage when it starts (startImportedRegeneration). The file check itself is
-      // not marked finished: the bar would say so if setup were brought back.
+      // A run not started yet releases every stage when it starts (startImportedRegeneration); one held because its
+      // import is not activated or no longer matches shows as held in Jobs, with Release. The file check itself is not
+      // marked finished: the bar would say so if setup were brought back.
       state.dismissedAt = new Date().toISOString();
+      await this.applyHolds(state, db, true);
       await this.write(this.key(), state, db);
     });
     for (const row of changed) this.operations.notifyCancellation(row);
@@ -1044,6 +1026,7 @@ export class FrameleafLibrarySetupService {
       dismissed,
       ...identity,
       phase: state.phase,
+      checkProblem: !!state.checkProblem,
       revision: state.revision,
       rescanComplete: state.phase === 'complete',
       verificationPassed: state.phase === 'complete',

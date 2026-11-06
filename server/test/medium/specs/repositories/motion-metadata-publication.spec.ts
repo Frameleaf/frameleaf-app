@@ -128,13 +128,13 @@ describe('motion metadata publication owns its encode follow-up', () => {
     expect(
       await db.selectFrom('job').select('parentId').where('id', '=', encodes[0].id).executeTakeFirstOrThrow(),
     ).toEqual({ parentId: f.claim.id });
-    const rows = await db.selectFrom('job_run_item').select(['stage', 'state']).where('runId', '=', f.runId).execute();
+    const rows = await db.selectFrom('job').select(['name', 'state']).where('runId', '=', f.runId).execute();
     expect(rows).toHaveLength(3);
     expect(rows).toEqual(
       expect.arrayContaining([
-        { stage: JobName.AssetExtractMetadata, state: 'completed' },
-        { stage: JobName.AssetEncodeVideo, state: 'active' },
-        { stage: JobName.AssetMetadataPostprocess, state: 'pending' },
+        { name: JobName.AssetExtractMetadata, state: 'completed' },
+        { name: JobName.AssetEncodeVideo, state: 'active' },
+        { name: JobName.AssetMetadataPostprocess, state: 'pending' },
       ]),
     );
   });
@@ -143,9 +143,10 @@ describe('motion metadata publication owns its encode follow-up', () => {
     const f = await prepare();
     const commit = await f.stage();
     const enqueue = f.store.enqueue.bind(f.store);
-    const fault = vi.spyOn(f.store, 'enqueue').mockImplementationOnce(async (intents, tx) => {
-      await enqueue(intents, tx);
+    const fault = vi.spyOn(f.store, 'enqueue').mockImplementationOnce(async (intents, tx, liveRunId) => {
+      await enqueue(intents, tx, liveRunId);
       await sql`select 1 / 0`.execute(tx!);
+      return 0;
     });
     try {
       await expect(commit()).rejects.toThrow(/division by zero/);

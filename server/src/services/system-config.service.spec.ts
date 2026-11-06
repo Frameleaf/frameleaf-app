@@ -65,6 +65,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
     [QueueName.IntegrityCheck]: { concurrency: 1 },
     [QueueName.Editor]: { concurrency: 2 },
     [QueueName.PetRecognition]: { concurrency: 1 },
+    capacity: 0,
   },
   backup: {
     database: {
@@ -842,6 +843,20 @@ describe(SystemConfigService.name, () => {
       mocks.systemMetadata.readFile.mockResolvedValue(JSON.stringify({ library: { scan: { cronExpression: 'foo' } } }));
 
       await expect(sut.getAdminConfig()).rejects.toThrow('effective_config_candidate_invalid');
+    });
+
+    it.each([-1, 33, 1.5])('should reject a job capacity of %s (FL-1265)', async (capacity) => {
+      mocks.config.getEnv.mockReturnValue(mockEnvData({ configFile: 'immich-config.json' }));
+      mocks.systemMetadata.readFile.mockResolvedValue(JSON.stringify({ job: { capacity } }));
+
+      await expect(sut.getAdminConfig()).rejects.toThrow('effective_config_candidate_invalid');
+    });
+
+    it.each([0, 1, 32])('should accept a job capacity of %s (FL-1265)', async (capacity) => {
+      mocks.config.getEnv.mockReturnValue(mockEnvData({ configFile: 'immich-config.json' }));
+      mocks.systemMetadata.readFile.mockResolvedValue(JSON.stringify({ job: { capacity } }));
+
+      await expect(sut.getAdminConfig()).resolves.toMatchObject({ job: { capacity } });
     });
 
     it('should log errors with the config file', async () => {

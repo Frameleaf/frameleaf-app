@@ -15,9 +15,10 @@ const fixture = vi.hoisted(() => ({
     recoverExpired: vi.fn(),
     progress: vi.fn(),
     deadlines: vi.fn(),
-    feedManifest: vi.fn(),
     claim: vi.fn(),
     queuesWithUnfinishedWork: vi.fn(),
+    reconcileHolds: vi.fn(),
+    settleTerminalLibrarySources: vi.fn(),
   },
 }));
 
@@ -37,9 +38,8 @@ vi.mock('src/queue/store.js', () => ({
 }));
 vi.mock('src/queue/retention.js', () => ({
   pruneQueueHistoryPage: vi.fn().mockResolvedValue(undefined),
-  pruneRunLedger: vi.fn().mockResolvedValue(0),
 }));
-vi.mock('src/queue/run-summary.js', () => ({ summarizeRuns: vi.fn().mockResolvedValue(0) }));
+vi.mock('src/queue/run-summary.js', () => ({ finishRuns: vi.fn().mockResolvedValue(0) }));
 vi.mock('src/queue/notifications.js', () => ({
   queueNotifications: (_client: unknown, wake: () => void) => {
     fixture.wake = wake;
@@ -53,6 +53,8 @@ const coordinatorData = {
   connection: { connectionType: 'url' as const, url: 'postgres://fixture' },
   supervisor: { postMessage: vi.fn() } as unknown as MessagePort,
 };
+/** The queues visited for claims, in order. */
+const visits = () => fixture.store.claim.mock.calls.map(([queue]) => queue as string);
 
 describe('coordinator capacity admission', () => {
   beforeEach(() => {
@@ -60,6 +62,8 @@ describe('coordinator capacity admission', () => {
     fixture.store.deadlines.mockResolvedValue([]);
     fixture.store.claim.mockResolvedValue([]);
     fixture.store.queuesWithUnfinishedWork.mockResolvedValue(coordinatorData.queues);
+    fixture.store.reconcileHolds.mockResolvedValue(0);
+    fixture.store.settleTerminalLibrarySources.mockResolvedValue(0);
     fixture.port = Object.assign(new EventEmitter(), { postMessage: vi.fn() });
   });
   afterEach(() => {
@@ -71,33 +75,31 @@ describe('coordinator capacity admission', () => {
     vi.restoreAllMocks();
   });
 
-  it.each(['manifest', 'claim'])(
-    'starts no further claims after shutdown during a pending %s request',
-    async (stage) => {
-      vi.useFakeTimers();
-      await coordinate(coordinatorData);
-      fixture.store.feedManifest.mockClear();
-      fixture.store.claim.mockClear();
-      fixture.store.queuesWithUnfinishedWork.mockResolvedValue(['deep', 'thumbnail']);
-      const held = Promise.withResolvers<unknown[]>();
-      if (stage === 'manifest') fixture.store.feedManifest.mockImplementationOnce(() => held.promise);
-      else fixture.store.claim.mockImplementationOnce(() => held.promise);
-      fixture.wake!();
-      await vi.advanceTimersByTimeAsync(0);
-      fixture.port!.emit('message', { type: 'stop' });
-      const admitted = { id: 'late-claim', queue: 'deep', deadlineMs: 60_000 };
-      held.resolve(stage === 'claim' ? [admitted] : []);
-      await vi.advanceTimersByTimeAsync(0);
-      expect(fixture.store.feedManifest.mock.calls).toEqual([['deep']]);
-      expect(fixture.store.claim.mock.calls).toEqual(
-        stage === 'claim' ? [['deep', 'worker', QUEUE_EXECUTION_CAPACITY]] : [],
-      );
-      // Already acquired claims reach the executor's pre-handler deferral guard.
-      expect(vi.mocked(fixture.port!.postMessage).mock.calls).toEqual(
-        stage === 'claim' ? [[{ type: 'execute', claim: admitted }]] : [],
-      );
-    },
-  );
+  it('starts no further claims after shutdown during a pending claim request', async () => {
+    vi.useFakeTimers();
+    await coordinate(coordinatorData);
+    fixture.store.claim.mockClear();
+    fixture.store.queuesWithUnfinishedWork.mockResolvedValue(['deep', 'thumbnail']);
+    const held = Promise.withResolvers<unknown[]>();
+    fixture.store.claim.mockImplementationOnce(() => held.promise);
+    fixture.wake!();
+    await vi.advanceTimersByTimeAsync(0);
+    fixture.port!.emit('message', { type: 'stop' });
+    const admitted = { id: 'late-claim', queue: 'deep', deadlineMs: 60_000 };
+    held.resolve([admitted]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fixture.store.claim.mock.calls).toEqual([['deep', 'worker', QUEUE_EXECUTION_CAPACITY]]);
+    // Already acquired claims reach the executor's pre-handler deferral guard.
+    expect(vi.mocked(fixture.port!.postMessage).mock.calls).toEqual([[{ type: 'execute', claim: admitted }]]);
+  });
+
+  it('applies a new capacity to the next claims', async () => {
+    await coordinate(coordinatorData);
+    fixture.store.claim.mockClear();
+    fixture.store.queuesWithUnfinishedWork.mockResolvedValue(['deep']);
+    fixture.port!.emit('message', { type: 'capacity', value: 3 });
+    await vi.waitFor(() => expect(fixture.store.claim).toHaveBeenCalledWith('deep', 'worker', 3));
+  });
 
   it('claims only free capacity and rotates queues as slots settle without claiming waiting work', async () => {
     const dispatched: QueueClaim[] = [];
@@ -131,7 +133,6 @@ describe('coordinator capacity admission', () => {
   it('rediscovers cross-queue children when a notification arrives during dispatch without overlapping visits', async () => {
     await coordinate(coordinatorData);
     fixture.store.claim.mockClear();
-    fixture.store.feedManifest.mockClear();
     const outstanding = new Set(['deep']);
     fixture.store.queuesWithUnfinishedWork.mockImplementation(() => Promise.resolve([...outstanding]));
     let release!: () => void;
@@ -159,7 +160,6 @@ describe('coordinator capacity admission', () => {
       release();
       await vi.waitFor(() => expect(fixture.port!.postMessage).toHaveBeenCalledTimes(2));
       expect(fixture.store.queuesWithUnfinishedWork).toHaveBeenCalledTimes(2);
-      expect(fixture.store.feedManifest.mock.calls).toEqual([['deep'], ['thumbnail']]);
       expect(fixture.store.claim.mock.calls).toEqual([
         ['deep', 'worker', QUEUE_EXECUTION_CAPACITY],
         ['thumbnail', 'worker', QUEUE_EXECUTION_CAPACITY - 1],
@@ -173,7 +173,6 @@ describe('coordinator capacity admission', () => {
   it('leaves pause admission to the store and lets another outstanding queue use the free capacity', async () => {
     await coordinate(coordinatorData);
     fixture.store.claim.mockClear();
-    fixture.store.feedManifest.mockClear();
     fixture.store.queuesWithUnfinishedWork.mockResolvedValue(['deep', 'thumbnail']);
     let paused = true;
     fixture.store.claim.mockImplementation((queue: string) =>
@@ -199,13 +198,13 @@ describe('coordinator capacity admission', () => {
   it('finds work within five seconds despite dropped notifications, and reconciles after a claim', async () => {
     vi.useFakeTimers();
     await coordinate(coordinatorData);
-    expect(fixture.store.feedManifest.mock.calls).toEqual(coordinatorData.queues.map((queue) => [queue]));
-    fixture.store.feedManifest.mockClear();
+    expect(visits()).toEqual(coordinatorData.queues);
+    fixture.store.claim.mockClear();
     fixture.store.queuesWithUnfinishedWork.mockResolvedValue([]);
     fixture.wake!();
     await vi.advanceTimersByTimeAsync(0);
     expect(fixture.store.queuesWithUnfinishedWork).toHaveBeenCalledOnce();
-    expect(fixture.store.feedManifest).not.toHaveBeenCalled();
+    expect(fixture.store.claim).not.toHaveBeenCalled();
     // A durable child commits with no delivered notification. The scan's discovery probe finds it.
     let childAvailable = true;
     fixture.store.queuesWithUnfinishedWork.mockImplementation(() =>
@@ -221,14 +220,13 @@ describe('coordinator capacity admission', () => {
       type: 'execute',
       claim: { id: 'dropped-child', queue: 'thumbnail', deadlineMs: 60_000 },
     });
-    fixture.store.feedManifest.mockClear();
+    fixture.store.claim.mockClear();
     fixture.port!.emit('message', { type: 'settled', id: 'dropped-child' });
     await vi.advanceTimersByTimeAsync(0);
-    expect(fixture.store.feedManifest).not.toHaveBeenCalled();
+    expect(fixture.store.claim).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(QUEUE_TIMING.scan);
-    // feedManifest runs sharing/terminal-alias settlement and redaction even without unfinished work;
-    // the pass starts from the queue after the last one served
-    expect(fixture.store.feedManifest.mock.calls.flat().toSorted((a, b) => String(a).localeCompare(String(b)))).toEqual(
+    // a full pass visits every queue, starting from the queue after the last one served
+    expect(visits().toSorted((a, b) => a.localeCompare(b))).toEqual(
       coordinatorData.queues.toSorted((a, b) => a.localeCompare(b)),
     );
   });
@@ -241,7 +239,7 @@ describe('coordinator capacity admission', () => {
       await vi.advanceTimersByTimeAsync(ms);
       await vi.advanceTimersByTimeAsync(0);
     };
-    const fullPasses = () => fixture.store.feedManifest.mock.calls.length / coordinatorData.queues.length;
+    const fullPasses = () => fixture.store.claim.mock.calls.length / coordinatorData.queues.length;
     expect(fullPasses()).toBe(1);
     // idle passes are spaced 10 s, 20 s, then 30 s apart
     await advance(10_000);
@@ -259,21 +257,21 @@ describe('coordinator capacity admission', () => {
   it('remembers a full scan requested while an ordinary dispatch visit is waiting', async () => {
     vi.useFakeTimers();
     await coordinate(coordinatorData);
-    fixture.store.feedManifest.mockClear();
+    fixture.store.claim.mockClear();
     fixture.store.queuesWithUnfinishedWork.mockResolvedValue(['deep']);
     let release!: () => void;
     const held = new Promise<void>((resolve) => (release = resolve));
-    fixture.store.feedManifest.mockImplementationOnce(() => held);
+    fixture.store.claim.mockImplementationOnce(() => held.then(() => []));
     try {
       fixture.wake!();
       await vi.advanceTimersByTimeAsync(0);
-      expect(fixture.store.feedManifest.mock.calls).toEqual([['deep']]);
+      expect(visits()).toEqual(['deep']);
       // an idle start-up skips the first scan's full pass, so the second one asks for it
       await vi.advanceTimersByTimeAsync(QUEUE_TIMING.scan * 2);
-      expect(fixture.store.feedManifest).toHaveBeenCalledOnce();
+      expect(fixture.store.claim).toHaveBeenCalledOnce();
       release();
       await vi.advanceTimersByTimeAsync(0);
-      expect(fixture.store.feedManifest.mock.calls).toEqual([['deep'], ['thumbnail'], ['ml'], ['deep']]);
+      expect(visits()).toEqual(['deep', 'thumbnail', 'ml', 'deep']);
       expect(fixture.store.queuesWithUnfinishedWork).toHaveBeenCalledOnce();
     } finally {
       release();
@@ -349,7 +347,7 @@ describe('coordinator capacity admission', () => {
     fixture.store.recoverExpired.mockRejectedValueOnce(new Error('fixture recovery failure'));
     await coordinate(coordinatorData);
     expect(fixture.port!.postMessage).toHaveBeenCalledWith({ type: 'unavailable' });
-    expect(fixture.store.feedManifest).toHaveBeenCalledTimes(coordinatorData.queues.length);
+    expect(fixture.store.claim).toHaveBeenCalledTimes(coordinatorData.queues.length);
     expect(pruneQueueHistoryPage).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(QUEUE_TIMING.sweep);
     expect(fixture.store.recoverExpired).toHaveBeenCalledTimes(2);
@@ -420,12 +418,12 @@ describe('coordinator capacity admission', () => {
   });
 
   it('retains a failed full reconciliation for the next ordinary wake', async () => {
-    fixture.store.feedManifest.mockRejectedValueOnce(new Error('fixture outage'));
+    fixture.store.claim.mockRejectedValueOnce(new Error('fixture outage'));
     await coordinate(coordinatorData);
     expect(fixture.port!.postMessage).toHaveBeenCalledWith({ type: 'unavailable' });
-    fixture.store.feedManifest.mockClear();
+    fixture.store.claim.mockClear();
     fixture.wake!();
-    await vi.waitFor(() => expect(fixture.store.feedManifest).toHaveBeenCalledTimes(3));
+    await vi.waitFor(() => expect(fixture.store.claim).toHaveBeenCalledTimes(3));
     expect(fixture.store.queuesWithUnfinishedWork).not.toHaveBeenCalled();
   });
 });

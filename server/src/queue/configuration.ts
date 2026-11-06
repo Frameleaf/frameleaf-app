@@ -1,3 +1,4 @@
+import { availableParallelism } from 'node:os';
 /** Deadlines are process-wide so the executor and independent coordinator agree. */
 export const readQueueDeadlineProfiles = (env: NodeJS.ProcessEnv = process.env) => {
   const finiteMilliseconds = (name: string, fallback: number, maximum = 86_400_000): number => {
@@ -17,4 +18,20 @@ export const readQueueDeadlineProfiles = (env: NodeJS.ProcessEnv = process.env) 
     // Keep cancellation below the fixed lease so fencing precedes possible recovery.
     cancelGrace: finiteMilliseconds('FRAMELEAF_JOB_CANCEL_GRACE_MS', 10_000, 30_000),
   });
+};
+
+export const JOB_CAPACITY_LIMIT = 32;
+/** Automatic job capacity: one job per CPU, at most 16. */
+export const automaticJobCapacity = () => Math.min(availableParallelism(), 16);
+export const clampJobCapacity = (value: number) => Math.min(JOB_CAPACITY_LIMIT, Math.max(1, Math.trunc(value)));
+
+/** FL-1265: `FRAMELEAF_JOB_CAPACITY` sets how many jobs run at once and overrides the Settings value. */
+export const readJobCapacity = (env: NodeJS.ProcessEnv = process.env): number | undefined => {
+  const raw = env.FRAMELEAF_JOB_CAPACITY;
+  if (raw === undefined || raw === '') return undefined;
+  const value = Number(raw);
+  if (!/^[1-9]\d*$/.test(raw) || value > JOB_CAPACITY_LIMIT) {
+    throw new Error(`FRAMELEAF_JOB_CAPACITY must be an integer between 1 and ${JOB_CAPACITY_LIMIT}`);
+  }
+  return value;
 };

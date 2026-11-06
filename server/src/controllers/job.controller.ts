@@ -36,6 +36,19 @@ export class JobController {
     return this.service.getRunItems(id, dto);
   }
 
+  @Post('runs/:id/release')
+  @Authenticated({ permission: Permission.JobCreate, admin: true })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Release held job run work',
+    description:
+      'Start the work a run holds back: the first setup of an import, or a paused setup. An import can be released once it is activated. Releasing a run with nothing held does nothing.',
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+  releaseJobRun(@Param() { id }: JobRunIdParamDto): Promise<void> {
+    return this.service.releaseRun(id);
+  }
+
   @Get()
   @Authenticated({ permission: Permission.JobRead, admin: true })
   @Endpoint({

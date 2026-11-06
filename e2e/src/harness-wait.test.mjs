@@ -263,7 +263,7 @@ test('reset reads all queues in one request and refuses incomplete or invalid ag
   await assert.rejects(read(), (error) => error === failure);
 });
 
-test('reset skips only empty clean queues and rechecks periodic work without bypassing privacy or failures', async () => {
+test('reset skips only empty clean queues and rechecks periodic work without leaving held work or failures', async () => {
   const source = readFileSync(new URL('./utils.ts', import.meta.url), 'utf8');
   const start = source.indexOf('const headers = asBearerAuth(token);', source.indexOf('drainQueues:'));
   const tail = 'return operations.length > 0;';
@@ -272,9 +272,9 @@ test('reset skips only empty clean queues and rechecks periodic work without byp
   const idle = { name: 'idle', hasUnfinishedWork: false, statistics: { failed: 0 } };
   const live = { ...idle, name: 'live', hasUnfinishedWork: true };
   const failed = { ...idle, name: 'failed', statistics: { failed: 1 } };
-  const privateQueue = { ...idle, name: 'private' };
-  let snapshots = [[idle, live, failed, privateQueue], [idle]];
-  let dirty = [{ queue: 'private' }];
+  const heldQueue = { ...idle, name: 'held' };
+  let snapshots = [[idle, live, failed, heldQueue], [idle]];
+  let dirty = [{ queue: 'held' }];
   let failure;
   let reads = 0;
   const clears = [];
@@ -295,10 +295,8 @@ test('reset skips only empty clean queues and rechecks periodic work without byp
     },
     (context, statement) => {
       context.remaining();
-      assert.match(statement, /^SELECT DISTINCT queue FROM job_run_item/);
-      assert.match(statement, /"jobId" IS NULL/);
-      assert.match(statement, /"libraryIntent"->>'sensitive' = 'true'/);
-      assert.match(statement, /"libraryIntent" \? 'options' OR "libraryIntent"->'data' != '\{\}'::jsonb/);
+      assert.match(statement, /^DELETE FROM job WHERE state IN \('pending','waiting'\) AND "availableAt" = 'infinity'/);
+      assert.match(statement, /RETURNING queue$/);
       return failure ? Promise.reject(failure) : Promise.resolve({ rows: dirty });
     },
     ({ name, queueDeleteDto }, { signal }) => {
@@ -312,7 +310,7 @@ test('reset skips only empty clean queues and rechecks periodic work without byp
   );
   const run = () => withDeadline('selected reset queues', 1_000, drain);
   assert.equal(await run(), false);
-  assert.deepEqual(clears, ['live', 'failed', 'private']);
+  assert.deepEqual(clears, ['live', 'failed', 'held']);
   assert.equal(reads, 2);
 
   clears.length = 0;
@@ -326,7 +324,7 @@ test('reset skips only empty clean queues and rechecks periodic work without byp
 
   clears.length = 0;
   snapshots = [[idle], [idle]];
-  failure = new Error('privacy snapshot unavailable');
+  failure = new Error('held work removal failed');
   const previousReads = reads;
   await assert.rejects(run(), (error) => error === failure);
   assert.deepEqual(clears, []);

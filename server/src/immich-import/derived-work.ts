@@ -1,11 +1,10 @@
-import { Kysely, sql } from 'kysely';
+import { Kysely, SelectQueryBuilder, sql } from 'kysely';
 import { v5 } from 'uuid';
 import { JobName } from 'src/enum.js';
 import { digest } from 'src/immich-import/adapters.js';
 import { assertMediaPolicy, managerImportAuthority } from 'src/immich-import/media.js';
 import { ImportConfig, ImportRefused } from 'src/immich-import/types.js';
-import { freezeSelection } from 'src/queue/manifest.js';
-import { QUEUE_BATCH, QueueIntent } from 'src/queue/types.js';
+import { QUEUE_BATCH, QueueIntent, RunHolds } from 'src/queue/types.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 
 export const IMPORT_DERIVED_RUN_KIND = 'immich-import-derived';
@@ -29,6 +28,35 @@ export const IMPORT_IDENTICAL_FILES_ITEM = 'identical-files';
 /** The same verified journal must resolve the same run even after a lost commit acknowledgement. */
 export const importDerivedRunId = (sourceFingerprint: string, configFingerprint: string): string =>
   v5(JSON.stringify([IMPORT_DERIVED_RUN_KIND, sourceFingerprint, configFingerprint]), v5.URL);
+
+/**
+ * FL-1265: one job per selected item in the run, inserted once (a retry adds only what is missing). A stage the run's
+ * holds name starts held (`availableAt = 'infinity'`); setup changes holds under the run's FOR UPDATE, so reading them
+ * FOR SHARE keeps an older view from re-holding work a concurrent release just let go.
+ */
+export async function insertRunJobs(
+  db: Kysely<any>,
+  runId: string,
+  intent: QueueIntent,
+  selection: SelectQueryBuilder<any, any, { id: string }>,
+) {
+  const insert = async (tx: Kysely<any>) => {
+    await sql`insert into job_queue(name) values (${intent.queue}) on conflict do nothing`.execute(tx);
+    const {
+      rows: [run],
+    } = await sql<{ held: boolean }>`select coalesce(selection->'holds','{}'::jsonb) ? ${intent.name} as held
+      from job_run where id = ${runId}::uuid for share`.execute(tx);
+    await sql`insert into job(id, queue, name, data, "safeToRetry", sensitive, "deadlineMs", "availableAt",
+        "runId", "itemKey", "rootItemKey")
+      select gen_random_uuid(), ${intent.queue}, ${intent.name},
+        ${JSON.stringify(intent.data)}::text::jsonb || coalesce(to_jsonb(s)->'data','{}'::jsonb) || jsonb_build_object('id', s.id),
+        ${intent.safeToRetry}, ${intent.sensitive}, ${intent.deadlineMs},
+        ${run?.held ? sql`'infinity'::timestamptz` : sql`now()`}, ${runId}::uuid, s.id::text,
+        coalesce(to_jsonb(s)->>'rootItemKey', s.id::text)
+      from (${selection}) s on conflict do nothing`.execute(tx);
+  };
+  return db.isTransaction ? insert(db) : db.transaction().execute(insert);
+}
 
 /** Transfer ownership to retained manifests, without creating executions or loading the library into JS. */
 export async function transferImportedWork(
@@ -111,7 +139,9 @@ export async function transferImportedWork(
       const selection = {
         source: journal.source_fingerprint,
         config: journal.config_fingerprint,
+        // FL-1265: a managed import's work is held until first setup releases it.
         ...(managed && {
+          holds: Object.fromEntries(IMPORT_DERIVED_RUN_STAGES.map((stage) => [stage, 'setup'])) as RunHolds,
           managerSetupRequired: true,
           managerSetup: {
             installation: authority.installation,
@@ -131,15 +161,8 @@ export async function transferImportedWork(
     return id;
   });
 
-  // Evaluated while freezeSelection holds the run lock, also used by first-setup release.
-  const readiness = managed
-    ? sql<'enumerating' | 'ready'>`case when (select selection #>> '{managerSetup,startedAt}' from job_run
-        where id = ${runId}::uuid) is not null then 'ready' else 'enumerating' end`
-    : undefined;
-
-  // The importer bulk-loads the journal and the freezes below bulk-load the run's memberships.
-  // Plan their reads from fresh statistics rather than whatever sample autovacuum last took;
-  // SKIP_LOCKED leaves a table alone while autovacuum is already analyzing it.
+  // The importer bulk-loads the journal; plan the inserts below from fresh statistics rather than whatever sample
+  // autovacuum last took. SKIP_LOCKED leaves a table alone while autovacuum is already analyzing it.
   await sql`analyze (skip_locked) frameleaf_immich_import_work`.execute(db);
   const stages = IMPORT_DERIVED_STAGES.map(([kind, name]) => {
     const intent = intentFor(name);
@@ -148,15 +171,11 @@ export async function transferImportedWork(
     return { kind, intent };
   });
   for (const { kind, intent } of stages) {
-    // The whole stage is frozen by INSERT SELECT, including an empty stage. Retries reuse its
-    // original membership; acknowledged rows remain in the journal and are never excluded here.
-    await freezeSelection(
+    await insertRunJobs(
       db,
+      runId,
       intent,
       db.selectFrom('frameleaf_immich_import_work').select('asset_id as id').where('kind', '=', kind),
-      undefined,
-      runId,
-      readiness,
     );
   }
 
@@ -164,35 +183,30 @@ export async function transferImportedWork(
   // asset thumbnails: matching an existing imported face does not create this follow-up work.
   const people = new PersonRepository(db).selectionForThumbnails(false);
   const personIntent = intentFor(JobName.PersonGenerateThumbnail);
-  await freezeSelection(db, personIntent, people, undefined, runId, readiness);
+  await insertRunJobs(db, runId, personIntent, people);
   const { rows: missingPeople } = await sql`select 1 from (${people}) p where not exists (
-    select 1 from job_run_item i join job_selection s on s.id = i."selectionId"
-    where i."runId" = ${runId}::uuid and s."runId" = i."runId"
-      and i.stage = ${personIntent.name} and s.stage = i.stage
-      and i.queue = ${personIntent.queue} and s.queue = i.queue
-      and s."capturedAt" is not null and i."itemKey" = p.id and i."rootItemKey" = p."rootItemKey"::text
-      and i.selection = ${JSON.stringify(personIntent.data)}::text::jsonb || p.data || jsonb_build_object('id', p.id)
+    select 1 from job j where j."runId" = ${runId}::uuid and j.name = ${personIntent.name}
+      and j.queue = ${personIntent.queue} and j."itemKey" = p.id::text and j."rootItemKey" = p."rootItemKey"::text
+      and j.data @> (${JSON.stringify(personIntent.data)}::text::jsonb || coalesce(to_jsonb(p)->'data','{}'::jsonb)
+        || jsonb_build_object('id', p.id))
   ) limit 1`.execute(db);
   if (missingPeople.length > 0) throw new ImportRefused('DERIVED_PERSON_WORK_MANIFEST_MISMATCH');
 
   // FL-414: once the import is activated, the identical-files run (FL-413) reads every file again,
   // stores identical files once, merges identical photos and recovers orphans into Recovered Media.
-  // One item for the whole server, frozen here like every stage, so the importer still changes no files.
+  // One item for the whole server, inserted here like every stage, so the importer still changes no files.
   const identicalIntent = intentFor(JobName.IdenticalFilesCheck);
   identicalIntent.data = { ...identicalIntent.data, importRunId: runId };
-  await freezeSelection(
+  await insertRunJobs(
     db,
+    runId,
     identicalIntent,
     db.selectNoFrom(sql<string>`${sql.lit(IMPORT_IDENTICAL_FILES_ITEM)}`.as('id')),
-    undefined,
-    runId,
-    readiness,
   );
-  const { rows: identical } = await sql`select 1 from job_run_item i join job_selection s on s.id = i."selectionId"
-    where i."runId" = ${runId}::uuid and i.stage = ${identicalIntent.name} and s."capturedAt" is not null
-      and i."itemKey" = ${IMPORT_IDENTICAL_FILES_ITEM} limit 1`.execute(db);
+  const { rows: identical } = await sql`select 1 from job where "runId" = ${runId}::uuid
+    and name = ${identicalIntent.name} and "itemKey" = ${IMPORT_IDENTICAL_FILES_ITEM} limit 1`.execute(db);
   if (identical.length === 0) throw new ImportRefused('DERIVED_IDENTICAL_FILES_MANIFEST_MISMATCH');
-  await sql`analyze (skip_locked) job_run_item, job_selection, job_selection_run`.execute(db);
+  await sql`analyze (skip_locked) job`.execute(db);
 
   const stageNames = sql.join(
     stages.map(
@@ -200,12 +214,12 @@ export async function transferImportedWork(
         sql`(${kind}, ${intent.name}, ${intent.queue}, ${JSON.stringify(intent.data)}::text::jsonb)`,
     ),
   );
+  // Containment, not equality: handlers add routing (`_queueDestinations`) to a job's data as it runs.
   const retained = sql`exists (
     select 1 from (values ${stageNames}) as expected(kind, stage, queue, data)
-    join job_run_item i on i."runId" = ${runId}::uuid and i."itemKey" = w.asset_id::text and i.stage = expected.stage
-    join job_selection s on s.id = i."selectionId" and s."runId" = i."runId" and s.stage = i.stage
-    where expected.kind = w.kind and i.queue = expected.queue and s.queue = expected.queue
-      and i."rootItemKey" = w.asset_id::text and i.selection = expected.data || jsonb_build_object('id', w.asset_id::text))`;
+    join job j on j."runId" = ${runId}::uuid and j."itemKey" = w.asset_id::text and j.name = expected.stage
+    where expected.kind = w.kind and j.queue = expected.queue and j."rootItemKey" = w.asset_id::text
+      and j.data @> (expected.data || jsonb_build_object('id', w.asset_id::text)))`;
   let cursor: { asset_id: string; kind: string } | undefined;
   while (true) {
     const page = await db.transaction().execute(async (tx) => {

@@ -10,6 +10,12 @@ export class LibrarySetupStatusDto extends createZodDto(
     dismissed: z
       .boolean()
       .describe('The owner stopped setup to let the server run; held work was released. Retrying brings setup back'),
+    checkProblem: z
+      .boolean()
+      .optional()
+      .describe(
+        'A file check or library scan ended early (failed or cancelled). Setup carried on; Library Care lists what it could not check',
+      ),
     revision: z.uuid().nullable(),
     rescanComplete: z.boolean(),
     verificationPassed: z.boolean(),
@@ -71,6 +77,12 @@ export class LibrarySetupProgressDto extends createZodDto(
     active: z.boolean().describe('False when this server was not set up from an import, or before its first setup'),
     phase: z.enum(['awaiting-account', 'rescanning', 'verifying', 'needs-attention', 'complete']).nullable(),
     paused: z.boolean(),
+    checkProblem: z
+      .boolean()
+      .optional()
+      .describe(
+        'A file check or library scan ended early (failed or cancelled). Setup carried on; Library Care lists what it could not check',
+      ),
     completedAt: z.string().nullable().describe('When everything finished; null while setup runs'),
     items: z.number().int().nonnegative(),
     people: z.number().int().nonnegative().describe('Named people, for the completion window'),

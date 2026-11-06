@@ -12,12 +12,8 @@ export const MEDIUM_SCALE_SUITES = Object.freeze({
   scale: [
     'test/medium/specs/performance/large-library-plans.spec.ts',
     'test/medium/specs/repositories/sql-queue.spec.ts',
-    'test/medium/specs/repositories/queue-selection-lineage.spec.ts',
-    'test/medium/specs/repositories/queue-selection-recovery.spec.ts',
     'test/medium/specs/repositories/queue-scale.spec.ts',
     'test/medium/specs/repositories/queue-reliability-acceptance.spec.ts',
-    'test/medium/specs/repositories/queue-selection-scale.spec.ts',
-    'test/medium/specs/repositories/library-atomic-admission.spec.ts',
     'test/medium/specs/repositories/icloud-identity-adoption.repository.spec.ts',
     'test/medium/specs/repositories/library-production-source.spec.ts',
     'test/medium/specs/repositories/library-public-summary.spec.ts',

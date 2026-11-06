@@ -1,7 +1,7 @@
 import type { Transaction } from 'kysely';
 import type { JobItem } from 'src/types.js';
 import type { AssetSourceSnapshot } from 'src/utils/asset-source-authority.js';
-import { readQueueDeadlineProfiles } from 'src/queue/configuration.js';
+import { automaticJobCapacity, readJobCapacity, readQueueDeadlineProfiles } from 'src/queue/configuration.js';
 
 export const QUEUE_TIMING = {
   heartbeat: 15_000,
@@ -14,8 +14,13 @@ export const QUEUE_TIMING = {
   retryDelay: 30_000,
 } as const;
 export const QUEUE_BATCH = 250;
-export const QUEUE_HIGH_WATER = 1000;
-export const QUEUE_LOW_WATER = 500;
+/** Jobs run at once across all queues at startup; Settings can change it live (`JobRepository.setExecutionCapacity`). */
+export const QUEUE_EXECUTION_CAPACITY: number = readJobCapacity() ?? automaticJobCapacity();
+/** FL-1265: why a run's stage is held. A held job is pending with `availableAt = 'infinity'`. */
+export type RunHoldReason = 'setup' | 'paused' | 'parked';
+/** `job_run.selection.holds`, keyed by job name. */
+export type RunHolds = Partial<Record<string, RunHoldReason>>;
+export type LibrarySourceIdentity = { operationId: string; libraryId: string };
 export type QueueState =
   'pending' | 'waiting' | 'active' | 'completed' | 'failed' | 'needs_attention' | 'cancelled' | 'blocked';
 export const TERMINAL_QUEUE_STATES: QueueState[] = ['completed', 'failed', 'needs_attention', 'cancelled', 'blocked'];
@@ -36,8 +41,6 @@ export type QueueIntent = {
   itemKey?: string;
   rootItemKey?: string | null;
   parentId?: string;
-  /** Internal accounting identities sharing this one accepted execution, including deferred latest requests. */
-  memberships?: Array<{ runId: string; itemKey: string; rootItemKey: string | null }>;
 };
 export type JobDependencyReason =
   | 'workload-disabled'
@@ -91,5 +94,8 @@ export type QueueExecution = {
 };
 export type QueueDispatch = { type: 'execute'; claim: QueueClaim } | { type: 'cancel'; id: string };
 export type QueueWorkerMessage =
-  { type: 'settled'; id: string } | { type: 'progress'; id: string; units: number } | { type: 'stop' };
+  | { type: 'settled'; id: string }
+  | { type: 'progress'; id: string; units: number }
+  | { type: 'capacity'; value: number }
+  | { type: 'stop' };
 export const toJobItem = (claim: QueueClaim) => ({ name: claim.name, data: claim.data }) as JobItem;

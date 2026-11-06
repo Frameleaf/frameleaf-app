@@ -59,6 +59,12 @@ describe(QueueService.name, () => {
       expect(mocks.job.setConcurrency).toHaveBeenNthCalledWith(9, QueueName.BackgroundTask, 5);
       expect(mocks.job.setConcurrency).toHaveBeenNthCalledWith(10, QueueName.StorageTemplateMigration, 1);
     });
+
+    it('applies the job capacity setting live (FL-1265)', () => {
+      sut.onConfigUpdate({ newConfig: { ...defaults, job: { ...defaults.job, capacity: 12 } }, oldConfig: defaults });
+
+      expect(mocks.job.setExecutionCapacity).toHaveBeenCalledWith(12);
+    });
   });
 
   describe('handleNightlyJobs', () => {
@@ -260,6 +266,8 @@ describe(QueueService.name, () => {
       await sut.runCommandLegacy(QueueName.MetadataExtraction, { command: QueueCommand.Resume, force: false });
 
       expect(mocks.job.resume).toHaveBeenCalledWith(QueueName.MetadataExtraction);
+      expect(mocks.job.setQueueSchedule).toHaveBeenCalledWith(QueueName.MetadataExtraction, null);
+      expect(mocks.event.emit).toHaveBeenCalledWith('QueueResumed', { queue: QueueName.MetadataExtraction });
     });
 
     it('stops quiet hours holding a queue the administrator resumes (FL-711)', async () => {
@@ -273,6 +281,8 @@ describe(QueueService.name, () => {
       await sut.update(authStub.admin, QueueName.VideoConversion, { isPaused: false });
 
       expect(mocks.job.resume).toHaveBeenCalledWith(QueueName.VideoConversion);
+      expect(mocks.job.setQueueSchedule).toHaveBeenCalledWith(QueueName.VideoConversion, null);
+      expect(mocks.event.emit).toHaveBeenCalledWith('QueueResumed', { queue: QueueName.VideoConversion });
       expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.OvernightSequence, {
         run: null,
         nights: [],
@@ -303,6 +313,10 @@ describe(QueueService.name, () => {
         calls.push(`resume:${locked}`);
         return Promise.resolve();
       });
+      mocks.job.setQueueSchedule.mockImplementation(() => {
+        calls.push(`open:${locked}`);
+        return Promise.resolve();
+      });
       mocks.systemMetadata.set.mockImplementation(() => {
         calls.push(`release:${locked}`);
         return Promise.resolve();
@@ -310,7 +324,13 @@ describe(QueueService.name, () => {
 
       await sut.runCommandLegacy(QueueName.VideoConversion, { command: QueueCommand.Resume, force: false });
 
-      expect(calls).toEqual([`lock:${DatabaseLock.OvernightSequenceRun}`, 'resume:true', 'release:true', 'unlock']);
+      expect(calls).toEqual([
+        `lock:${DatabaseLock.OvernightSequenceRun}`,
+        'resume:true',
+        'open:true',
+        'release:true',
+        'unlock',
+      ]);
     });
 
     it('does not resume a queue when the quiet hours lock cannot be taken', async () => {
@@ -321,6 +341,8 @@ describe(QueueService.name, () => {
       );
 
       expect(mocks.job.resume).not.toHaveBeenCalled();
+      expect(mocks.job.setQueueSchedule).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('QueueResumed', expect.anything());
       expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
     });
 

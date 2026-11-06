@@ -82,7 +82,6 @@ describe('desktop inference database diagnostics', () => {
     'insert into "user" (id, password) values ($1, $2)',
     'update "user" set "pinCode" = $1 where id = $2',
     'select id from "user" where password = $1',
-    'insert into job_run_item("runId", "itemKey", selection) values ($1::uuid, $2, $3::text::jsonb)',
   ])('redacts private inputs, output and error details for %s', async (statement) => {
     const config = getKyselyConfig({
       connectionType: 'url',

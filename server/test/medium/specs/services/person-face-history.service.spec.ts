@@ -194,14 +194,12 @@ describe('face decisions through reprocessing (FL-57)', () => {
     await sut.reassignFacesById(auth, bea.personGroupId, { id: face.id });
 
     await sut.handleQueueRecognizeFaces({ force: true });
-    // Capture is durable but does not execute the per-face reset before worker admission.
+    // The jobs are durable, but the per-face reset waits for a worker to run them.
     expect((await facesOf()).find(({ id }) => id === neighbour.id)?.personGroupId).toBe(ada.personGroupId);
     const { rows: recognition } = await sql<{
       rootItemKey: string;
       selection: JobOf<JobName.FacialRecognition>;
-    }>`select "rootItemKey", selection from job_run_item where stage = ${JobName.FacialRecognition}`.execute(
-      ctx.database,
-    );
+    }>`select "rootItemKey", data selection from job where name = ${JobName.FacialRecognition}`.execute(ctx.database);
     expect(recognition).toHaveLength(2);
     expect(recognition).toEqual(
       expect.arrayContaining(
@@ -224,9 +222,7 @@ describe('face decisions through reprocessing (FL-57)', () => {
     const { rows: detection } = await sql<{
       rootItemKey: string;
       selection: JobOf<JobName.AssetDetectFaces>;
-    }>`select "rootItemKey", selection from job_run_item where stage = ${JobName.AssetDetectFaces}`.execute(
-      ctx.database,
-    );
+    }>`select "rootItemKey", data selection from job where name = ${JobName.AssetDetectFaces}`.execute(ctx.database);
     expect(detection).toEqual([{ rootItemKey: face.assetId, selection: { id: face.assetId } }]);
     // Only actual per-asset publication removes an absent undecided face; the owner's decision stays.
     detect([]);

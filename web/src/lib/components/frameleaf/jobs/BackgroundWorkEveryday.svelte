@@ -14,6 +14,7 @@
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
   import Pill from '$lib/components/frameleaf/settings/kit/Pill.svelte';
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
+  import Select from '$lib/components/frameleaf/settings/kit/Select.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import type { KitTone } from '$lib/components/frameleaf/settings/kit/Pill.svelte';
   import { summariseWork, workLeft, workState, type WorkRow } from '$lib/frameleaf/computers';
@@ -22,6 +23,7 @@
   import { applyPreset, presetOf, type WorkNumbers, type WorkPreset } from '$lib/frameleaf/work-presets';
   import { WORK_FEATURES, type WorkFeature, type WorkFeatureId } from '$lib/frameleaf/work-features';
   import type { OverviewTask } from '$lib/components/frameleaf/jobs/BackgroundWorkOverview.svelte';
+  import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Route } from '$lib/route';
   import {
     getMlWorkloadRoutes,
@@ -157,6 +159,35 @@
   const chooseWhen = (value: string) => {
     if (nightly && !locked) {
       nightly.quietHours = value === 'night';
+    }
+  };
+
+  // ---- how many jobs run at once, across every task (FL-1265) ---------------------------------------
+
+  const CAPACITY_MOST = 32;
+  const jobConfig = $derived(store?.draft.job as { capacity?: number } | undefined);
+  /** What the server runs now, and whether its setup fixed it (then the setting has no effect). */
+  const capacity = $derived.by(() => {
+    try {
+      return featureFlagsManager.value.jobCapacity;
+    } catch {
+      return undefined;
+    }
+  });
+  const capacityOptions = $derived([
+    { value: '0', label: $t('frameleaf_bgwork_capacity_automatic') },
+    ...Array.from({ length: CAPACITY_MOST }, (_, index) => ({ value: String(index + 1), label: String(index + 1) })),
+  ]);
+  const capacityHelp = $derived(
+    capacity?.fromEnvironment
+      ? $t('frameleaf_bgwork_capacity_server', { values: { count: capacity.value } })
+      : capacity
+        ? `${$t('frameleaf_bgwork_capacity_help')} ${$t('frameleaf_bgwork_capacity_now', { values: { count: capacity.value } })}`
+        : $t('frameleaf_bgwork_capacity_help'),
+  );
+  const chooseCapacity = (value: string) => {
+    if (jobConfig && !locked && !capacity?.fromEnvironment) {
+      jobConfig.capacity = Number(value);
     }
   };
 
@@ -365,6 +396,15 @@
 </Section>
 
 <Section title={$t('frameleaf_bgwork_at_once')}>
+  <Row label={$t('frameleaf_bgwork_capacity')} help={capacityHelp}>
+    <Select
+      label={$t('frameleaf_bgwork_capacity')}
+      value={capacity?.fromEnvironment ? String(capacity.value) : String(jobConfig?.capacity ?? 0)}
+      options={capacityOptions}
+      disabled={locked || !jobConfig || !!capacity?.fromEnvironment}
+      onChange={chooseCapacity}
+    />
+  </Row>
   <Row label={$t('frameleaf_bgwork_at_once_label')} help={$t('frameleaf_bgwork_at_once_help')}>
     <Button onclick={() => onAdvanced()}>
       {$t('frameleaf_bgwork_open_advanced')}<Icon icon={mdiChevronRight} size="16" aria-hidden />

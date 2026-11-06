@@ -26,8 +26,8 @@ const catalog = (): DatabaseSchema => ({
     'user',
     'icloud_weekly_grant',
     'job',
-    'job_run_item',
-    'job_selection',
+    'job_run',
+    'job_attempt',
     'frameleaf_immich_import',
     'frameleaf_rate_limit',
     'socket_io_attachments',
@@ -38,8 +38,10 @@ const catalog = (): DatabaseSchema => ({
 
 it('refuses incomplete or lossy catalog capture instead of hiding missing helper objects', () => {
   const missing = catalog();
-  missing.tables = missing.tables.filter(({ name }) => name !== 'job_run_item');
-  expect(() => validateFrameleafCatalog(missing)).toThrow('missing job_run_item');
+  missing.tables = missing.tables.filter(({ name }) => name !== 'job_run');
+  expect(() => validateFrameleafCatalog(missing)).toThrow('missing job_run');
+  const columnless = catalog();
+  expect(() => validateFrameleafCatalog(columnless)).toThrow('missing job.rootItemKey');
   const lossy = catalog();
   lossy.warnings.push('Unable to find type for smart_search.embedding');
   expect(() => validateFrameleafCatalog(lossy)).toThrow('unresolved reader warnings');

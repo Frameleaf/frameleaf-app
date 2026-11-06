@@ -69,8 +69,7 @@ export async function validatePreparedLibraryImportWork(
     const bound = { binding: parseLibraryImportBinding(context.binding), destinationId: context.destinationId };
     const manager = managerInput === undefined ? undefined : { ...managerInput };
     const id = libraryImportDerivedRunId(bound.binding);
-    // Match preparation and queue workers: queue catalogue before the run header.
-    await tx.query('SELECT name FROM job_queue ORDER BY name FOR NO KEY UPDATE');
+    // The run header is the one lock: it serializes with setup and the holds reconciler.
     const [run] = await tx.query(
       `SELECT selection #>> '{managerSetup,preparedAt}' AS prepared
       FROM job_run WHERE id=$1::uuid AND "enumerationDone" FOR UPDATE`,

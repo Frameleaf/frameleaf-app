@@ -4,7 +4,6 @@ import { performance } from 'node:perf_hooks';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { JobName, JobStatus, MediaOperationKind, MediaOperationStatus, QueueName } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
-import { shareSelectionPage } from 'src/queue/manifest.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { QUEUE_TIMING, QueueExecution } from 'src/queue/types.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
@@ -19,55 +18,9 @@ import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
 import { LibraryScanService } from 'src/services/library-scan.service.js';
 import { LibraryService } from 'src/services/library.service.js';
-import { explainLibraryRunRead, getLibraryQueueDB, profileLibraryRunRead } from 'test/medium/library-queue-database.js';
+import { getLibraryQueueDB } from 'test/medium/library-queue-database.js';
 import { SCALE_ITEMS, scaleIt } from 'test/medium/scale.js';
 import { MediumTestContext } from 'test/medium.factory.js';
-
-const libraryLedgerShape = () => sql<{
-  rows: number;
-  maximumItemKeyLength: number | null;
-  maximumSourceKeyLength: number | null;
-  intentRows: number;
-  runs: number;
-}>`select coalesce(sum(rows),0)::int rows,
-  max("maximumItemKeyLength")::int "maximumItemKeyLength",
-  max("maximumSourceKeyLength")::int "maximumSourceKeyLength",
-  coalesce(sum("intentRows"),0)::int "intentRows",count(*)::int runs
-  from (select "runId",count(*) rows,max(length("itemKey")) "maximumItemKeyLength",
-    max(length("librarySourceKey")) "maximumSourceKeyLength",
-    count(*) filter (where "libraryIntent" is not null) "intentRows"
-    from job_run_item group by "runId") per_run`;
-
-it('preserves ledger diagnostics for empty and multiple-run ledgers', async () => {
-  const db = await getLibraryQueueDB();
-  const store = new SqlQueueStore(db);
-  const original = () =>
-    sql`select count(*)::int rows,
-    max(length("itemKey"))::int "maximumItemKeyLength",max(length("librarySourceKey"))::int "maximumSourceKeyLength",
-    count(*) filter (where "libraryIntent" is not null)::int "intentRows",count(distinct "runId")::int runs
-    from job_run_item`.execute(db);
-  try {
-    const empty = (await libraryLedgerShape().execute(db)).rows;
-    expect(empty).toEqual((await original()).rows);
-    expect(empty).toEqual([
-      { rows: 0, maximumItemKeyLength: null, maximumSourceKeyLength: null, intentRows: 0, runs: 0 },
-    ]);
-    await store.initialize([QueueName.Sidecar]);
-    const first = await store.createRun('diagnostic-first', {});
-    const second = await store.createRun('diagnostic-second', {});
-    await sql`insert into job_run_item("runId","itemKey",stage,queue,selection,"librarySourceKey","libraryIntent")
-      values (${first}::uuid,'x',${JobName.SidecarCheck},${QueueName.Sidecar},'{}',null,null),
-        (${first}::uuid,'long-key',${JobName.SidecarCheck},${QueueName.Sidecar},'{}','12345','{}'),
-        (${second}::uuid,'yyy',${JobName.SidecarCheck},${QueueName.Sidecar},'{}',null,null)`.execute(db);
-    const populated = (await libraryLedgerShape().execute(db)).rows;
-    expect(populated).toEqual((await original()).rows);
-    expect(populated).toEqual([
-      { rows: 3, maximumItemKeyLength: 8, maximumSourceKeyLength: 5, intentRows: 1, runs: 2 },
-    ]);
-  } finally {
-    await db.destroy();
-  }
-});
 
 /** Synthetic read-only paths, real service/queue/domain/asset/source SQL. This does not decode media. */
 scaleIt('scans %i paths through manual/QueueAll/tick entrypoints with bounded control reads', 1.2, async () => {
@@ -196,23 +149,15 @@ scaleIt('scans %i paths through manual/QueueAll/tick entrypoints with bounded co
     const origin = (
       await sql<{ runId: string }>`select "runId" from job where id=${producerClaim.id}::uuid`.execute(db)
     ).rows[0].runId;
-    const sources = (
-      await sql<{
-        id: string;
-        state: string;
-        sourceClosedAt: Date | null;
-      }>`select id,state,"sourceClosedAt" from job_selection
-      where "sourceKind"='library-initial' order by id`.execute(db)
+    // FL-1265: each scan is its own run, keyed by its operation; the producer's run counts only itself.
+    const scanRuns = (
+      await sql<{ id: string; enumerationDone: boolean }>`select id, "enumerationDone" from job_run
+        where kind = ${MediaOperationKind.LibraryScan} order by id`.execute(db)
     ).rows;
-    expect(sources).toHaveLength(2);
-    expect(sources.every((source) => source.state === 'enumerating' && source.sourceClosedAt === null)).toBe(true);
-    expect(sources.map((source) => source.id)).toContain(requested.operation.id);
-    expect(sources.map((source) => source.id)).not.toContain(origin);
-    expect((await store.listRuns(10, 0)).find((run) => run.id === origin)).toMatchObject({
-      total: 0,
-      enumerationDone: false,
-      finishedAt: null,
-    });
+    expect(scanRuns).toHaveLength(2);
+    expect(scanRuns.every((run) => !run.enumerationDone)).toBe(true);
+    expect(scanRuns.map((run) => run.id)).toContain(requested.operation.id);
+    expect(scanRuns.map((run) => run.id)).not.toContain(origin);
     await service.tick(); // a deduplicated wake is control work, never another selected-media run/source
     const executeDrain = async (claim: typeof drainClaim) => {
       progressUnits = 0;
@@ -266,85 +211,37 @@ scaleIt('scans %i paths through manual/QueueAll/tick entrypoints with bounded co
     expect(operationsRead.every((operation) => operation.status === MediaOperationStatus.Completed)).toBe(true);
     const {
       rows: [counts],
-    } = await sql<{ assets: number; sources: number; media: number; open: number; hot: number }>`
+    } = await sql<{ assets: number; runs: number; media: number; open: number; held: number }>`
       select (select count(*)::int from asset where "libraryId"=any(${[first.id, second.id]}::uuid[])) assets,
-        (select count(*)::int from job_selection where "sourceKind"='library-initial') sources,
-        (select count(*)::int from job_run_item i join job_selection s on s.id=i."selectionId" where s."sourceKind"='library-initial' and i."runId"=s."runId") media,
-        (select count(*)::int from job_selection where "sourceKind"='library-initial' and ("sourceClosedAt" is null or "capturedAt" is null or state!='ready')) open,
-        (select count(*)::int from job where queue=${QueueName.Sidecar} and state in ('pending','waiting','active')) hot`.execute(
+        (select count(*)::int from job_run where kind = ${MediaOperationKind.LibraryScan}) runs,
+        (select count(*)::int from job j join job_run r on r.id = j."runId"
+          where r.kind = ${MediaOperationKind.LibraryScan} and j.name = ${JobName.SidecarCheck} and j."rootItemKey" = j."itemKey") media,
+        (select count(*)::int from job_run where kind = ${MediaOperationKind.LibraryScan} and not "enumerationDone") open,
+        (select count(*)::int from job where queue=${QueueName.Sidecar} and state in ('pending','waiting')) held`.execute(
       db,
     );
-    expect(counts).toEqual({ assets: SCALE_ITEMS, sources: 2, media: SCALE_ITEMS, open: 0, hot: 0 });
-    let visits = 0,
-      maximumCopyPage = 0,
-      maximumControlMs = 0,
-      previousCopied = 0;
-    while (await shareSelectionPage(db, { queue: QueueName.Sidecar })) {
-      visits++;
-      const copyStarted = performance.now();
-      // Fixed two-source metadata query, never a count over the growing alias manifest.
-      const cursors = (
-        await sql<{ copyAfter: string | null }>`select m."copyAfter" from job_selection_run m
-          join job_selection s on s.id=m."selectionId" where m."runId"=${origin}::uuid
-          and s."sourceKind"='library-initial'`.execute(db)
-      ).rows;
-      maximumControlMs = Math.max(maximumControlMs, performance.now() - copyStarted);
-      const copied = cursors.reduce((total, cursor) => total + Number(cursor.copyAfter?.split('/').at(-1) ?? 0), 0);
-      maximumCopyPage = Math.max(maximumCopyPage, copied - previousCopied);
-      previousCopied = copied;
-    }
-    const ledgerQuery = libraryLedgerShape().compile(db);
-    // Estimated plan of this diagnostic itself; no extra full-ledger execution or connection.
-    console.info(
-      'library-service-ledger-estimated-plan',
-      JSON.stringify(
-        (
-          await db.executeQuery({
-            ...ledgerQuery,
-            sql: 'explain (format json) ' + ledgerQuery.sql,
-          })
-        ).rows[0],
-      ),
-    );
-    const ledgerStarted = performance.now();
-    const ledgerShape = (await db.executeQuery(ledgerQuery)).rows[0];
-    console.info(
-      'library-service-ledger-shape',
-      JSON.stringify({ ...ledgerShape, elapsedMs: performance.now() - ledgerStarted }),
-    );
+    // Every imported photo has its job; the paused Sidecar queue keeps them waiting, not lost.
+    expect(counts).toEqual({ assets: SCALE_ITEMS, runs: 2, media: SCALE_ITEMS, open: 0, held: SCALE_ITEMS });
     const summaryStarted = performance.now();
-    const summary = await (async () => {
-      try {
-        return (await store.listRuns(10, 0)).find((run) => run.id === origin)!;
-      } catch (error) {
-        console.info('library-service-summary-estimated-plan', JSON.stringify(await explainLibraryRunRead(db)));
-        await profileLibraryRunRead(db);
-        throw error;
-      }
-    })();
-    maximumControlMs = Math.max(maximumControlMs, performance.now() - summaryStarted);
-    expect(summary.total).toBe(SCALE_ITEMS);
-    expect(summary.stageTotals.total).toBe(SCALE_ITEMS + 1);
-    expect(summary.enumerationDone).toBe(true);
-    expect(summary.state).toBe('paused');
+    const runs = await jobs.listRuns(10, 0);
+    const maximumControlMs = performance.now() - summaryStarted;
+    const scan = runs.find((run) => run.id === requested.operation.id)!;
+    expect(scan.total).toBe(SCALE_ITEMS - 1);
+    expect(scan.enumerationDone).toBe(true);
+    expect(scan.state).toBe('paused');
     expect(maximumWalkPage).toBe(1000);
     expect(maximumActiveIterators).toBe(1);
     expect(activeIterators).toBe(0);
-    expect(maximumCopyPage).toBeLessThanOrEqual(250);
-    expect(await store.feedManifest(QueueName.Sidecar)).toBe(0);
     await store.pause(QueueName.Sidecar, false);
-    for (let page = 0; page < 4; page++) expect(await store.feedManifest(QueueName.Sidecar)).toBe(250);
-    expect(await store.feedManifest(QueueName.Sidecar)).toBe(0);
-    expect((await store.counts(QueueName.Sidecar)).waiting).toBe(1000);
+    await store.setConcurrency(QueueName.Sidecar, 5);
+    expect(await store.claim(QueueName.Sidecar, worker, 5)).toHaveLength(5);
     console.info(
       'library-service-source-calibration',
       JSON.stringify({
         paths: SCALE_ITEMS,
         sourceHeaders: 2,
         maximumWalkPage,
-        maximumCopyPage,
         maximumActiveIterators,
-        visits,
         maximumControlMs,
         elapsedMs: performance.now() - started,
       }),

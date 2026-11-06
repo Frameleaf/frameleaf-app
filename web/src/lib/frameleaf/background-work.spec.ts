@@ -106,7 +106,7 @@ describe('buildBackgroundWorkCards (SHARING-P1)', () => {
       summary({
         queues: [
           queue(QueueName.VideoConversion, {
-            isPaused: true,
+            isPaused: false,
             heldForNight: true,
             resumesAt: '2026-10-31T06:00:00.000Z',
             state: 'paused',

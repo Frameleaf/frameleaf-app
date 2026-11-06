@@ -2,7 +2,6 @@ import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { JobName, QueueName } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
-import { freezeSelection } from 'src/queue/manifest.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { QUEUE_TIMING, QueueClaim, QueueExecution, QueueIntent } from 'src/queue/types.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -66,14 +65,17 @@ describe('Locked sealing after separate publications in one run', () => {
     if (state === 'latest' || state === 'clear') parents.push(parent(JobName.AssetExtractMetadata));
     if (frozen) {
       for (const intent of parents)
-        await freezeSelection(
-          db,
-          intent,
-          db.selectFrom(sql<{ id: string }>`(select ${asset}::text id)`.as('selected')).select('id'),
-          undefined,
-          runId,
-        );
-      await store.feedManifest(queue);
+        await db
+          .transaction()
+          .execute((tx) =>
+            store.insertSelectionPage(
+              { ...intent, runId },
+              db.selectFrom(sql<{ id: string }>`(select ${asset}::text id)`.as('selected')).select('id'),
+              null,
+              10,
+              tx,
+            ),
+          );
     } else {
       await store.enqueue(parents);
     }
@@ -98,7 +100,8 @@ describe('Locked sealing after separate publications in one run', () => {
       expect(await store.claim(QueueName.BackgroundTask, worker)).toEqual([]);
       expect((await store.listRuns(100, 0)).find((run) => run.id === runId)).toMatchObject({
         state: 'cancelled',
-        stageTotals: { cancelled: 2 },
+        // FL-1265: the later request replaced the earlier one while the seal ran; only it became a job
+        stageTotals: { cancelled: 1 },
       });
       return;
     }
@@ -113,23 +116,14 @@ describe('Locked sealing after separate publications in one run', () => {
     const { rows } = await sql<{
       state: string;
       rootItemKey: string;
-      jobId: string;
-    }>`select state, "rootItemKey", "jobId" from job_run_item where "runId"=${runId}::uuid and stage=${JobName.LockedSeal}`.execute(
-      db,
-    );
-    expect(rows).toHaveLength(parents.length);
+    }>`select state, "rootItemKey" from job where "runId"=${runId}::uuid and name=${JobName.LockedSeal}`.execute(db);
+    // FL-1265: a seal that coalesced into a pending one is that one job; a run counts only its own jobs
+    expect(rows).toHaveLength(state === 'pending' ? 1 : 2);
     expect(rows.every((row) => row.state === 'completed' && row.rootItemKey === asset)).toBe(true);
-    expect(new Set(rows.map((row) => row.jobId)).size).toBe(state === 'pending' ? 1 : 2);
     expect((await store.listRuns(100, 0)).find((run) => run.id === runId)).toMatchObject({
       state: 'completed',
       stageTotals: { cancelled: 0 },
     });
-    if (frozen) {
-      const { rows: lineage } = await sql<{ superseded: boolean }>`select superseded from job_selection_lineage
-          where "runId"=${runId}::uuid and stage=${JobName.LockedSeal}`.execute(db);
-      expect(lineage).toHaveLength(parents.length);
-      expect(lineage.every((row) => !row.superseded)).toBe(true);
-    }
     // Ordinary same-run stages retain their once-only identity after a completed publication.
     await store.enqueue([parent(JobName.AssetGenerateThumbnails)]);
     expect(await store.claim(queue, worker)).toEqual([]);

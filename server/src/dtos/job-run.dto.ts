@@ -1,5 +1,7 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import type { RunRead } from 'src/queue/run-query.js';
+import { QueueName, QueueNameSchema } from 'src/enum.js';
 
 export const JobRunOutcomeSchema = z.enum([
   'completed',
@@ -91,6 +93,18 @@ export const JobRunResponseSchema = counts
       .describe(
         "Selected items an import's first setup still holds back: until Library Care's file check ends, or while setup is paused",
       ),
+    canRelease: z
+      .boolean()
+      .optional()
+      .describe('Some of its work is held (first setup or a paused setup) and can be released from the Jobs page'),
+    countsPhotos: z
+      .boolean()
+      .optional()
+      .describe('The counts are photos; when false they are tasks (the run works on something other than photos)'),
+    failedQueues: z
+      .array(QueueNameSchema)
+      .optional()
+      .describe('Queues with failed or needs-attention jobs in this run'),
   })
   .extend(progress.shape)
   .meta({ id: 'JobRunResponseDto' });
@@ -113,3 +127,33 @@ export class JobRunItemPageDto extends createZodDto(
     })
     .meta({ id: 'JobRunItemPageDto' }),
 ) {}
+
+/** The public summary of a run: counts and progress only, never a selection, payload or error text. */
+export const mapJobRun = (row: RunRead): JobRunResponseDto => ({
+  id: row.id,
+  kind: row.kind,
+  createdAt: row.createdAt.toISOString(),
+  finishedAt: row.finishedAt?.toISOString() ?? null,
+  enumerationDone: row.enumerationDone,
+  total: row.total,
+  completed: row.completed,
+  failed: row.failed,
+  needsAttention: row.needsAttention,
+  cancelled: row.cancelled,
+  active: row.active,
+  retrying: row.retrying,
+  delayed: row.delayed,
+  paused: row.paused,
+  waiting: row.waiting,
+  blocked: row.blocked,
+  stageTotals: row.stageTotals,
+  state: row.state,
+  lastProgressAt: row.lastProgressAt?.toISOString() ?? null,
+  lastStage: row.lastStage,
+  reasons: row.reasons,
+  noDispatchBacklog: row.noDispatchBacklog,
+  held: row.held,
+  canRelease: row.canRelease,
+  countsPhotos: row.countsPhotos,
+  failedQueues: row.failedQueues as QueueName[],
+});
