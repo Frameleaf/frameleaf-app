@@ -3,6 +3,7 @@ import { Insertable, Kysely, Selectable, SqlBool, type Transaction, Updateable, 
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { DesktopEnrollmentDto } from 'src/dtos/desktop.dto.js';
 import type { MlEndpoint, MlSelection } from 'src/repositories/machine-learning.repository.js';
 import type { CloudProbeFacts } from 'src/utils/frameleaf-cloud.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
@@ -40,6 +41,14 @@ import {
 export type MlDestinationRow = Selectable<MlDestinationTable> & {
   /** Preserve PostgreSQL microseconds across the driver's Date conversion for probe CAS. */
   updatedAtToken: string;
+};
+/** An approved Frameleaf Desktop helper (FL-456), as the Computers page and the processing order read it. */
+export type DesktopHelperRow = {
+  id: string;
+  name: string;
+  platform: DesktopEnrollmentDto['platform'];
+  ready: boolean;
+  lastSeenAt: Date | null;
 };
 export type MlCloudModelChoiceRow = Selectable<MlCloudModelChoiceTable>;
 export type MlWorkloadRouteRow = Selectable<MlWorkloadRouteTable>;
@@ -482,13 +491,23 @@ export class MlDestinationRepository {
 
   /** FL-456: approved Frameleaf Desktop helpers, and how many of them are ready now. */
   async getDesktopCounts(): Promise<{ approved: number; ready: number }> {
+    const helpers = await this.getDesktopHelpers();
+    return { approved: helpers.length, ready: helpers.filter((helper) => helper.ready).length };
+  }
+
+  /**
+   * Approved Frameleaf Desktop helpers of accounts with desktop assistance, each with whether it is ready
+   * now (online in the last 90 seconds with a current qualification) and when it last checked in. The
+   * Computers page lists these and the processing order counts them, so both read the same helpers.
+   */
+  async getDesktopHelpers(): Promise<DesktopHelperRow[]> {
     const metadata = await new SystemMetadataRepository(this.db).get(SystemMetadataKey.FrameleafDesktopAssistance);
     const policy = desktopAssistancePolicySchema.safeParse(metadata ?? { version: 1, accounts: {} });
     if (!policy.success || Object.keys(policy.data.accounts).length === 0) {
-      return { approved: 0, ready: 0 };
+      return [];
     }
-    const { rows } = await sql<{ userId: string; isAdmin: boolean; ready: boolean }>`
-      SELECT d."userId", u."isAdmin", EXISTS (
+    const { rows } = await sql<DesktopHelperRow & { userId: string; isAdmin: boolean }>`
+      SELECT d.id, d.name, d.platform, d."userId", u."isAdmin", EXISTS (
         SELECT 1 FROM desktop_worker_session w
         JOIN session p ON p.id = w."photoSessionId" AND p."userId" = d."userId"
         JOIN desktop_worker_qualification q ON q."sessionId" = w.id AND q."deviceId" = d.id
@@ -497,11 +516,16 @@ export class MlDestinationRepository {
           AND w."revokedAt" IS NULL AND w."expiresAt" > clock_timestamp()
           AND w."lastSeenAt" > clock_timestamp() - interval '90 seconds'
           AND (p."expiresAt" IS NULL OR p."expiresAt" > clock_timestamp())
-      ) AS ready
+      ) AS ready, (
+        SELECT max(w."lastSeenAt") FROM desktop_worker_session w
+        WHERE w."deviceId" = d.id AND w."authorizationEpoch" = d."authorizationEpoch"
+      ) AS "lastSeenAt"
       FROM desktop_device d JOIN "user" u ON u.id = d."userId" AND u."deletedAt" IS NULL
-      WHERE d.state = 'preparing' AND d.mode = 'client-worker' AND d."revokedAt" IS NULL`.execute(this.db);
-    const permitted = rows.filter((row) => desktopAccountPermitted(policy.data, row.userId, row.isAdmin));
-    return { approved: permitted.length, ready: permitted.filter((row) => row.ready).length };
+      WHERE d.state = 'preparing' AND d.mode = 'client-worker' AND d."revokedAt" IS NULL
+      ORDER BY d.name, d.id`.execute(this.db);
+    return rows
+      .filter((row) => desktopAccountPermitted(policy.data, row.userId, row.isAdmin))
+      .map(({ id, name, platform, ready, lastSeenAt }) => ({ id, name, platform, ready, lastSeenAt }));
   }
 
   /**

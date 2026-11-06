@@ -164,12 +164,30 @@
             : undefined,
     };
   };
+  /** A computer known only through its Frameleaf Desktop app: the app is managed on the computer itself. */
+  const desktopOnly = (computer: Computer) => computer.entries.length === 0 && computer.desktops.length > 0;
+  /** The platform a Frameleaf Desktop helper runs on, as people call it. */
+  const platform = (computer: Computer) => {
+    const desktop = computer.desktops[0];
+    return desktop ? $t(`frameleaf_computers_platform_${desktop.platform}` as Translations) : undefined;
+  };
+  /** The note under a computer's status. */
+  const note = (computer: Computer) =>
+    desktopOnly(computer)
+      ? $t(
+          computer.state === 'ready'
+            ? 'frameleaf_computers_desktop_ready_note'
+            : 'frameleaf_computers_desktop_closed_note',
+        )
+      : (status(computer).note ?? $t('frameleaf_computers_doing', { values: { count: doing(computer) } }));
   /** What a computer helps with, and how many kinds of work are set to run on it. */
   const helps = (computer: Computer) => {
     const sources = new Set(computer.entries.map((entry) => entry.source));
     return [
       // With AI features off, the status already says so; "AI features" again would read as on.
-      (sources.has(WorkerInventorySource.MlDestination) || computer.place === 'server') &&
+      (sources.has(WorkerInventorySource.MlDestination) ||
+        computer.desktops.length > 0 ||
+        computer.place === 'server') &&
       !(computer.place === 'server' && ai === 'off')
         ? $t('frameleaf_computers_helps_ai')
         : '',
@@ -309,14 +327,14 @@
           <div class="computer-name">
             <strong>{name(computer)}</strong>
             <small>
-              {[$t(`frameleaf_computers_where_${whereOf(computer)}` as Translations), computer.card]
+              {[$t(`frameleaf_computers_where_${whereOf(computer)}` as Translations), platform(computer), computer.card]
                 .filter(Boolean)
                 .join(' · ')}
             </small>
           </div>
           <div class="computer-status">
             <Pill tone={state.tone}>{state.words}</Pill>
-            <small>{state.note ?? $t('frameleaf_computers_doing', { values: { count: doing(computer) } })}</small>
+            <small>{note(computer)}</small>
           </div>
           {#if computer.place === 'server'}
             <a class="button" href={commandCenterUrl('processing', 'hardware')}>
@@ -326,7 +344,7 @@
             <a class="button" href={commandCenterUrl('cloud', 'cloud-account')}>
               {$t('frameleaf_computers_cloud_credit')}<Icon icon={mdiChevronRight} size="16" aria-hidden />
             </a>
-          {:else}
+          {:else if !desktopOnly(computer)}
             <Button
               label={$t('frameleaf_computers_manage_named', { values: { name: name(computer) } })}
               onclick={() => void manage(computer)}
@@ -392,6 +410,7 @@
           label={name(computer)}
           help={[
             $t(`frameleaf_computers_where_${whereOf(computer)}` as Translations),
+            platform(computer),
             computer.card,
             state.words,
             helps(computer).length > 0 ? list(helps(computer)) : '',
@@ -403,7 +422,7 @@
             <a class="button" href={commandCenterUrl('cloud', 'cloud-processing')}>
               {$t('frameleaf_computers_manage')}<Icon icon={mdiChevronRight} size="16" aria-hidden />
             </a>
-          {:else}
+          {:else if !desktopOnly(computer)}
             <Button
               label={$t('frameleaf_computers_manage_named', { values: { name: name(computer) } })}
               onclick={() => void manage(computer)}

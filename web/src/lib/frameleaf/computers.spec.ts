@@ -74,6 +74,26 @@ describe('computersFrom', () => {
     expect(computers[1].card).toBe('GeForce RTX 3060');
   });
 
+  it('lists each Frameleaf Desktop helper as a computer at home, ready or not answering', () => {
+    const computers = computersFrom({
+      ...inventory([entry({}), entry({ name: 'Office PC', kind: MlDestinationKind.Lan })]),
+      desktopHelpers: [
+        { id: 'd1', name: 'Studio Mac', platform: 'macos', ready: true, lastSeenAt: null },
+        { id: 'd2', name: 'Laptop', platform: 'windows', ready: false, lastSeenAt: null },
+        { id: 'd3', name: 'office pc', platform: 'windows', ready: true, lastSeenAt: null },
+      ],
+    } as WorkerInventoryResponseDto);
+    expect(computers.map(({ key, place, state }) => [key, place, state])).toEqual([
+      ['server', 'server', 'ready'],
+      ['office pc', 'home', 'ready'],
+      ['studio mac', 'home', 'ready'],
+      ['laptop', 'home', 'not-answering'],
+    ]);
+    expect(computers[1].desktops.map(({ id }) => id)).toEqual(['d3']);
+    expect(whereOf(computers[2])).toBe('home');
+    expect(notAnswering(computers).map(({ name }) => name)).toEqual(['Laptop']);
+  });
+
   it('a computer is as healthy as its least healthy record that is switched on', () => {
     const [, office] = computersFrom(
       inventory([

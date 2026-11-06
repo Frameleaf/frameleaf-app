@@ -93,6 +93,7 @@ describe(WorkerInventoryService.name, () => {
     );
     mocks.mlDestination.getSpend.mockResolvedValue(0);
     mocks.mlDestination.getCloudModelChoices.mockResolvedValue([]);
+    mocks.mlDestination.getDesktopHelpers.mockResolvedValue([]);
     mocks.job.getJobCounts.mockResolvedValue(counts(0, 0));
     mocks.job.isPaused.mockResolvedValue(false);
 
@@ -316,6 +317,23 @@ describe(WorkerInventoryService.name, () => {
       activeOperations: 1,
       maxConcurrentOperations: 2,
     });
+  });
+
+  it('lists each approved Frameleaf Desktop helper as ready or not answering', async () => {
+    const seen = new Date('2026-11-06T10:00:00.000Z');
+    mocks.mlDestination.getDesktopHelpers.mockResolvedValue([
+      { id: 'mac', name: 'Studio Mac', platform: 'macos', ready: true, lastSeenAt: seen },
+      { id: 'pc', name: 'Office PC', platform: 'windows', ready: false, lastSeenAt: null },
+    ]);
+
+    const { entries, desktopHelpers } = await sut.getInventory();
+
+    expect(desktopHelpers).toEqual([
+      { id: 'mac', name: 'Studio Mac', platform: 'macos', ready: true, lastSeenAt: seen.toISOString() },
+      { id: 'pc', name: 'Office PC', platform: 'windows', ready: false, lastSeenAt: null },
+    ]);
+    // apps reading entries see no new kind of source
+    expect(entries.some((entry) => entry.id === 'mac' || entry.id === 'pc')).toBe(false);
   });
 
   it('names the server processes running restorations, merged per process', async () => {

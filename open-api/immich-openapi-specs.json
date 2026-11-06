@@ -156135,6 +156135,38 @@
         ],
         "type": "string"
       },
+      "WorkerDesktopHelperDto": {
+        "properties": {
+          "id": {
+            "description": "Desktop device ID",
+            "type": "string"
+          },
+          "lastSeenAt": {
+            "description": "Last check-in, or null",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "platform": {
+            "$ref": "#/components/schemas/DesktopPlatform"
+          },
+          "ready": {
+            "description": "Online in the last 90 seconds with a current qualification, so it can take AI work now",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "lastSeenAt",
+          "name",
+          "platform",
+          "ready"
+        ],
+        "type": "object"
+      },
       "WorkerGpuDto": {
         "properties": {
           "memoryTotalBytes": {
@@ -156341,6 +156373,13 @@
             },
             "type": "array"
           },
+          "desktopHelpers": {
+            "description": "Approved Frameleaf Desktop helpers of accounts with desktop assistance",
+            "items": {
+              "$ref": "#/components/schemas/WorkerDesktopHelperDto"
+            },
+            "type": "array"
+          },
           "entries": {
             "items": {
               "$ref": "#/components/schemas/WorkerInventoryEntryDto"
@@ -156379,6 +156418,7 @@
         "required": [
           "checkedAt",
           "configuredUrls",
+          "desktopHelpers",
           "entries",
           "libraryBacklog",
           "libraryQueues",

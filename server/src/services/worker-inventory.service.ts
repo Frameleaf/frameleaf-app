@@ -102,13 +102,14 @@ export class WorkerInventoryService {
       { configRepo: this.configRepository, metadataRepo: this.systemMetadataRepository, logger: this.logger },
       { withCache: true },
     );
-    const [rows, routes, renderWorkers, restorationLoad, claimants, queues] = await Promise.all([
+    const [rows, routes, renderWorkers, restorationLoad, claimants, queues, desktops] = await Promise.all([
       this.mlDestinationRepository.getAll(),
       this.mlDestinationRepository.getRoutes(),
       this.renderWorkerService.list(),
       this.mediaOperationRepository.getDestinationLoad(RESTORATION_OPERATION_KINDS),
       this.mediaOperationRepository.getClaimants(RESTORATION_OPERATION_KINDS),
       readQueueBacklogs(this.jobRepository, ALL_LIBRARY_ANALYSIS_QUEUES),
+      this.mlDestinationRepository.getDesktopHelpers(),
     ]);
 
     const backlog = libraryAnalysisBacklog(queues);
@@ -141,10 +142,16 @@ export class WorkerInventoryService {
     for (const worker of renderWorkers) {
       entries.push(this.renderEntry(worker));
     }
-
     return {
       entries,
       runners: this.runners(claimants),
+      desktopHelpers: desktops.map((desktop) => ({
+        id: desktop.id,
+        name: desktop.name,
+        platform: desktop.platform,
+        ready: desktop.ready,
+        lastSeenAt: iso(desktop.lastSeenAt),
+      })),
       libraryRoutes: Object.values(MlWorkload)
         .filter((workload) => LIBRARY_ML_WORKLOADS.includes(workload))
         .map((workload) => ({

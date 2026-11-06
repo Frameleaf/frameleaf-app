@@ -147,6 +147,7 @@ describe('where work goes (FL-456)', () => {
   it('counts no desktop helpers without desktop assistance', async () => {
     await db.deleteFrom('system_metadata').where('key', '=', SystemMetadataKey.FrameleafDesktopAssistance).execute();
     expect(await routes.getDesktopCounts()).toEqual({ approved: 0, ready: 0 });
+    expect(await routes.getDesktopHelpers()).toEqual([]);
     expect(await routes.hasReadyDesktop()).toBe(false);
   });
 });

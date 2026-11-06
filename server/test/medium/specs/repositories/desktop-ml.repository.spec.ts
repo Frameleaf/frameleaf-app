@@ -121,11 +121,20 @@ it('knows when an online, qualified helper of the owner is ready for a model (FL
   expect(await own.sut.hasReadyWorker(own.request.ownerId, randomUUID())).toBe(false);
   const counts = await new MlDestinationRepository(db).getDesktopCounts();
   expect(counts.ready).toBeGreaterThanOrEqual(4);
+  const ownIds = new Set(own.grants.map((grant) => grant.deviceId));
+  const listed = async () =>
+    (await new MlDestinationRepository(db).getDesktopHelpers()).filter((helper) => ownIds.has(helper.id));
+  // the Computers page lists each helper by name and platform, ready while it checks in
+  expect(await listed()).toHaveLength(ownIds.size);
+  expect((await listed()).every((helper) => helper.ready && helper.lastSeenAt instanceof Date)).toBe(true);
+  expect((await listed())[0]).toMatchObject({ name: 'Synthetic worker', platform: 'linux' });
 
   // not seen for a while: not ready
   await sql`UPDATE desktop_worker_session SET "lastSeenAt" = clock_timestamp() - interval '5 minutes'
     WHERE "deviceId" IN (${sql.join(own.grants.map((grant) => grant.deviceId))})`.execute(db);
   expect(await own.sut.hasReadyWorker(own.request.ownerId, own.request.modelKey)).toBe(false);
+  // still listed, as not answering
+  expect((await listed()).map((helper) => helper.ready)).toEqual([...ownIds].map(() => false));
 
   const unqualified = await setup(false);
   expect(await unqualified.sut.hasReadyWorker(unqualified.request.ownerId, unqualified.request.modelKey)).toBe(false);
