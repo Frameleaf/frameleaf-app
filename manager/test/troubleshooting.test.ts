@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { Docker, command } from '../src/docker.js';
-import { findProblems, levelCounts, redactPaths, renderReport } from '../src/troubleshooting.js';
+import { findProblems, levelCounts, redactPaths, redactionRoots, renderReport } from '../src/troubleshooting.js';
 
 test('library paths, media file names and e-mail addresses never reach a shared report', () => {
   const roots = ['/mnt/user/photos', '/data'];
@@ -128,4 +128,13 @@ test('redaction stays fast on long lines without a media extension', () => {
   const out = redactPaths(lines.repeat(20), ['/mnt/user/photos']);
   assert.ok(performance.now() - start < 2_000, `took ${Math.round(performance.now() - start)} ms`);
   assert.ok(out.split('\n').every((line) => line.length < 2_100));
+});
+
+test('configured folders are hidden even under /run; only container device and runtime mounts stay visible', () => {
+  const roots = redactionRoots(['/run/private', '/mnt/archive', ''], ['/run/private', '/run/frameleaf/manager-token', '/dev/dri', '/srv/x']);
+  assert.deepEqual(roots, ['/run/private', '/mnt/archive', '/srv/x']);
+  const out = redactPaths('open /run/private/alice/notes.txt failed; ffmpeg /dev/dri/renderD128; token /run/frameleaf/manager-token', roots);
+  assert.ok(!out.includes('alice'), out);
+  assert.match(out, /\/dev\/dri\/renderD128/);
+  assert.match(out, /\/run\/frameleaf\/manager-token/);
 });

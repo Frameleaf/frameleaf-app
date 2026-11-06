@@ -39,6 +39,15 @@ export function redactPaths(text: string, roots: string[]): string {
     .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '[email]');
 }
 
+// Containers' device and runtime mounts (/dev/dri, /run/frameleaf/...) say nothing about the library and help GPU questions.
+const SYSTEM = /^\/(dev|run|sys|proc|etc|var\/run|var\/lib\/docker)(\/|$)/;
+/**
+ * Folders to hide in a report. Configured ones (library mounts, extra folders, storage, backups, Manager state) are
+ * always hidden, even under /run; what Docker reports as mounted is hidden unless it is a device or runtime path.
+ */
+export const redactionRoots = (configured: string[], containerMounts: string[]) =>
+  [...configured, ...containerMounts.filter((path) => !SYSTEM.test(path ?? ''))].filter(Boolean);
+
 const KNOWN: { problem: string; pattern: RegExp; hint: string }[] = [
   { problem: 'Out of memory', pattern: /out of memory|heap out of memory|OOMKilled|Killed process|cannot allocate memory|ENOMEM/i, hint: 'The host ran short of RAM. Close other apps or containers, or turn off machine learning on small machines.' },
   { problem: 'Disk full', pattern: /no space left on device|ENOSPC|disk quota exceeded/i, hint: 'A drive is full. Free space on the library, database or Docker drive.' },

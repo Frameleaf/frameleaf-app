@@ -40,7 +40,7 @@ import { HostAutostart } from './unraid-autostart.js';
 import { ServiceOverrides, detectAcceleration, hostInstallations, suggestedPort } from './compose.js';
 import { sharePortWithRedirect } from './http-redirect.js';
 import { log, print, renderBanner, requestLog } from './banner.js';
-import { connectionChecks, redactPaths, renderReport } from './troubleshooting.js';
+import { connectionChecks, redactPaths, redactionRoots, renderReport } from './troubleshooting.js';
 
 const directory = process.env.MANAGER_DATA;
 const runtime = process.env.MANAGER_RUNTIME ?? 'docker';
@@ -125,19 +125,19 @@ async function troubleshootingScope() {
     : undefined;
   const secrets = [...containers, ...(self ? [self] : [])].flatMap((c) => secretEnvironmentValues(c.Config.Env ?? []));
   secrets.push(store.get<string>('database-password') ?? '');
-  // Containers' device and runtime mounts (/dev/dri, /run/frameleaf/...) say nothing about the library and help GPU
-  // questions. Configured library, storage and state folders are always hidden, wherever they are (even /run/user/...).
-  const system = /^\/(dev|run|sys|proc|etc|var\/run|var\/lib\/docker)(\/|$)/;
-  const roots = [
-    ...(installation?.mounts ?? []).flatMap((m) => [m.source, m.target]),
-    ...[...containers, ...(self ? [self] : [])]
-      .flatMap((c) => (c.Mounts ?? []).flatMap((m) => [m.Source, m.Destination]))
-      .filter((path) => !system.test(path ?? '')),
-    ...(process.env.MANAGER_STORAGE_ROOTS ?? '').split(':'),
-    backupRoot!,
-    directory!,
-    installation?.databaseRoot ?? '',
-  ].filter(Boolean);
+  const extraFolders = installation
+    ? Object.values(operations.containerSettings().services).flatMap((service) => service?.mounts ?? [])
+    : [];
+  const roots = redactionRoots(
+    [
+      ...[...(installation?.mounts ?? []), ...extraFolders].flatMap((m) => [m.source, m.target]),
+      ...(process.env.MANAGER_STORAGE_ROOTS ?? '').split(':'),
+      backupRoot!,
+      directory!,
+      installation?.databaseRoot ?? '',
+    ],
+    [...containers, ...(self ? [self] : [])].flatMap((c) => (c.Mounts ?? []).flatMap((m) => [m.Source, m.Destination])),
+  );
   const clean = (text: string) => redactPaths(redact(text, secrets), roots);
   return { installation, containers, self, clean };
 }
