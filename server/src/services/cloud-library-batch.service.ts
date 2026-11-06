@@ -248,29 +248,17 @@ export class CloudLibraryBatchService extends BaseService {
       if (paused.size === 2) {
         break;
       }
+      // A paused kind's batches are never claimed, so they cannot use up this pass's steps.
       const claim = await this.mediaOperationRepository.claimNext({
         kinds: [MediaOperationKind.CloudLibraryBatch],
         workerId: this.workerId,
         leaseMs: CLOUD_LIBRARY_LEASE_MS,
+        ...(paused.size > 0 && { snapshotWorkloads: (['clip', 'face'] as const).filter((w) => !paused.has(w)) }),
       });
       if (!claim) {
         break;
       }
       try {
-        if (paused.has(parseCloudLibrarySnapshot(claim.operation.snapshot).workload)) {
-          // Handed back for a later pass, so this pass goes on to the other kind's batches.
-          const held = await this.mediaOperationRepository.requeue(claim.operation.id, claim.claimToken, {
-            delayMs: CLOUD_LIBRARY_POLL_MS,
-            returnAttempt: true,
-          });
-          if (!held) {
-            // Cancelled meanwhile: a later pass releases any cloud job.
-            await this.mediaOperationRepository.acknowledgeCancel(claim.operation.id, claim.claimToken, {
-              released: false,
-            });
-          }
-          continue;
-        }
         await this.step(claim.operation, claim.claimToken, now);
       } catch (error) {
         jobSignal()?.throwIfAborted();

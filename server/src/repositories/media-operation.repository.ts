@@ -958,6 +958,8 @@ export class MediaOperationRepository {
      * so each worker names its own snapshot kind and never takes another's job.
      */
     snapshotKinds?: readonly string[];
+    /** Only jobs whose `snapshot.workload` is one of these (cloud library batches of a queue that isn't paused). */
+    snapshotWorkloads?: readonly string[];
   }): Promise<
     | {
         operation: MediaOperation;
@@ -1003,6 +1005,9 @@ export class MediaOperationRepository {
             )
             .$if(!!options.snapshotKinds?.length, (qb) =>
               qb.where(sql<boolean>`"snapshot"->>'kind' = any(${[...options.snapshotKinds!]}::text[])`),
+            )
+            .$if(!!options.snapshotWorkloads?.length, (qb) =>
+              qb.where(sql<boolean>`"snapshot"->>'workload' = any(${[...options.snapshotWorkloads!]}::text[])`),
             )
             .orderBy('createdAt', 'asc')
             .limit(1)
