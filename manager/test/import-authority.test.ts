@@ -447,6 +447,113 @@ test('resumed cutover captures fenced settings and applies the reviewed ML choic
   }
 });
 
+test('resuming after Frameleaf already started does not re-check the original app (source changed since)', async () => {
+  const f = await fixture();
+  try {
+    // An earlier start-frameleaf attempt started the server, then reported failure.
+    f.store.set('installation', { ...f.installation, mayHaveWrittenMedia: true });
+    let started = false;
+    let mediaChecks = 0;
+    f.docker.compose = async () => { started = true; };
+    const internal = f.operations as unknown as {
+      fencing: { verify(): Promise<void>; assertMedia(): Promise<void> };
+      releases: { eligible(): Promise<void> };
+    };
+    // The reviewed source was removed after Frameleaf took over the library.
+    internal.fencing = {
+      verify: async () => { throw new Error('source_changed_review_again'); },
+      assertMedia: async () => { mediaChecks++; },
+    };
+    internal.releases = { eligible: async () => {} };
+    f.store.set('review:fixture-review', { input: { tag: 'v1.0.0' }, source: f.source, backup: null, release: {} });
+    f.operation.input = { reviewId: 'fixture-review' };
+    f.operation.state = 'failed';
+    f.operation.step = 'start-frameleaf';
+    f.operation.completed = [
+      'preflight', 'download-images', 'configure', 'review-source', 'fence-source', 'start-database',
+      'capture-fenced-settings', 'copy-current-database', 'database-backup', 'check-media-writable',
+      'configure-offline-import', 'import-canonical-database', 'verify-import', 'import-settings',
+      'retire-source-services', 'prepare-library',
+    ];
+    f.operation.receipts.configure = f.installation;
+    f.store.save(f.operation);
+    f.operations.resume(f.operation.id);
+    let resumed = f.store.history().find((o) => o.id === f.operation.id)!;
+    for (let i = 0; i < 200 && resumed.state === 'running'; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      resumed = f.store.history().find((o) => o.id === f.operation.id)!;
+    }
+    assert.equal(resumed.state, 'complete', resumed.error ?? undefined);
+    assert.ok(started);
+    assert.ok(resumed.completed.includes('start-frameleaf'));
+    // Other media writers are still refused on both the resume precheck and the start step.
+    assert.equal(mediaChecks, 2);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('a journaled Frameleaf start counts on resume even after its container is gone', async () => {
+  const f = await fixture();
+  try {
+    let mediaChecks = 0;
+    const internal = f.operations as unknown as { fencing: { verify(): Promise<void>; assertMedia(): Promise<void> } };
+    internal.fencing = {
+      verify: async () => { throw new Error('source_changed_review_again'); },
+      assertMedia: async () => { mediaChecks++; },
+    };
+    f.store.set('review:fixture-review', { input: { tag: 'v1.0.0' }, source: f.source, backup: null, release: {} });
+    f.operation.input = { reviewId: 'fixture-review' };
+    f.operation.state = 'failed';
+    f.store.set('installation', { ...f.installation, mayHaveWrittenMedia: true });
+    f.operation.completed = [
+      'preflight', 'download-images', 'configure', 'review-source', 'fence-source', 'start-database',
+      'capture-fenced-settings', 'copy-current-database', 'database-backup', 'check-media-writable',
+      'configure-offline-import', 'import-canonical-database', 'verify-import', 'import-settings',
+      'retire-source-services', 'start-frameleaf', 'prepare-library',
+    ];
+    f.operation.receipts.configure = f.installation;
+    f.store.save(f.operation);
+    f.operations.resume(f.operation.id);
+    let resumed = f.store.history().find((o) => o.id === f.operation.id)!;
+    for (let i = 0; i < 200 && resumed.state === 'running'; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      resumed = f.store.history().find((o) => o.id === f.operation.id)!;
+    }
+    assert.equal(resumed.state, 'complete', resumed.error ?? undefined);
+    assert.equal(resumed.error, null);
+    assert.equal(mediaChecks, 1);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('starting Frameleaf later checks only for media writers once the original app is gone', async () => {
+  const f = await fixture();
+  try {
+    const internal = f.operations as unknown as {
+      composeAction(installation: Installation, kind: 'start'): Promise<boolean>;
+      fencing: { verify(): Promise<void>; assertMedia(): Promise<void> };
+    };
+    let mediaChecks = 0;
+    internal.fencing = {
+      verify: async () => { throw new Error('source_changed_review_again'); },
+      assertMedia: async () => { mediaChecks++; },
+    };
+    const commands: string[] = [];
+    f.docker.compose = async (_directory: string, _project: string, command: string) => { commands.push(command); };
+    // Before takeover the reviewed source must still be fenced.
+    await assert.rejects(internal.composeAction(f.installation, 'start'), /source_changed_review_again/);
+    const installation = { ...f.installation, mayHaveWrittenMedia: true };
+    f.store.set('installation', installation);
+    await internal.composeAction(installation, 'start');
+    assert.deepEqual(commands, ['up']);
+    assert.equal(mediaChecks, 1);
+  } finally {
+    await f.cleanup();
+  }
+});
+
 test('the media check asks the server image, with its own mounts and user, which folders it cannot write (FL-414)', async () => {
   const commands: string[][] = [];
   const docker = new Docker(async (binary, args, options) => {
