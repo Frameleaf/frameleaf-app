@@ -28,7 +28,10 @@ const decoded = (table: LibrephotosTable) => {
 const bob = '9123f215-cc36-5324-88d9-a2f9b0efecd0'.replaceAll('-', '');
 
 /** LibrePhotos 1.5.1 content behind a mocked postgres.js transport; `engine` other than 18.6 is untested. */
-const restore = (engine = fixture.source.database.version) => {
+const restore = (
+  engine = fixture.source.database.version,
+  migrations = fixture.migrations.map((row) => ({ ...row, finished: true })),
+) => {
   const statements: string[] = [];
   transport.reserve.mockResolvedValue({ unsafe: transport.unsafe, release: transport.release });
   transport.end.mockResolvedValue(undefined);
@@ -46,8 +49,7 @@ const restore = (engine = fixture.source.database.version) => {
         },
       ]);
     if (statement.includes("current_setting('server_version')")) return Promise.resolve([{ version: engine }]);
-    if (statement.includes('FROM public.django_migrations'))
-      return Promise.resolve(fixture.migrations.map((row) => ({ ...row, finished: true })));
+    if (statement.includes('FROM public.django_migrations')) return Promise.resolve(migrations);
     const catalog = Object.entries(postgresSchemaQueries).find(([, sql]) => sql === statement);
     if (catalog) return Promise.resolve(fixture.structure[catalog[0] as keyof typeof fixture.structure]);
     if (statement.startsWith('SELECT password FROM ONLY public.api_user')) return Promise.resolve([{ password: '' }]);
@@ -115,6 +117,15 @@ describe('LibrePhotos preparation adapter', () => {
     expect(statements).toContain('ROLLBACK TO SAVEPOINT frameleaf_qualification');
     // PostgreSQL before 16 has no SET role privilege; membership is the stricter pre-16 equivalent.
     expect(statements.find((sql) => sql.includes('rolsuper'))).toContain("writer.oid,'MEMBER'");
+  });
+
+  it('refuses an unfinished migration record even when the version is untested', async () => {
+    const migrations = fixture.migrations.map((row) => ({ ...row, finished: true }));
+    restore('15.4', [...migrations, { app: 'api', name: '9999_future', finished: false }]);
+    await expect(inspectPreparationSource(adapter, input())).rejects.toThrow('LIBREPHOTOS_MIGRATIONS_INCOMPLETE');
+    // An unfamiliar but finished migration is version drift, read best effort.
+    restore('15.4', [...migrations, { app: 'api', name: '9999_future', finished: true }]);
+    expect((await inspectPreparationSource(adapter, input())).tested).toBe(false);
   });
 
   it('maps manual dates with the owner zone and keeps the password channel on the snapshot', async () => {

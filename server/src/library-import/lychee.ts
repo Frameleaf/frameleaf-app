@@ -48,6 +48,21 @@ export const openLycheeSnapshot = (path: string, version: string, options: { bes
     database.exec('PRAGMA query_only=ON; PRAGMA trusted_schema=OFF; BEGIN');
     // Best effort (owner decision FL-1149): an untested schema is read through the same projections.
     if (options.bestEffort) {
+      // Unfamiliar migration names are version drift; malformed or repeated records are not.
+      assertSqliteTextSafe(database, 'SELECT migration,batch FROM migrations');
+      const migrations = database.prepare('SELECT migration,batch FROM migrations');
+      migrations.setReadBigInts(true);
+      const seen = new Set<string>();
+      for (const row of migrations.iterate()) {
+        if (
+          typeof row.migration !== 'string' ||
+          seen.has(row.migration) ||
+          typeof row.batch !== 'bigint' ||
+          row.batch <= 0n
+        )
+          throw new LycheeReadError('LYCHEE_MIGRATIONS_INVALID');
+        seen.add(row.migration);
+      }
       if (database.prepare('PRAGMA foreign_key_check').get()) throw new LycheeReadError('LYCHEE_RELATIONSHIPS_INVALID');
       return snapshotReader(database, version);
     }

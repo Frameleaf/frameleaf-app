@@ -32,8 +32,10 @@ test('source database dump, disposable copy and reader keep passwords out of arg
   const calls: { args: string[]; options: CommandOptions }[] = [];
   const operationId = randomUUID();
   const name = sourceRestoreName(operationId);
+  let scheduler = 'OFF';
   const docker = new Docker(async (_binary, args, options = {}) => {
     calls.push({ args, options });
+    if (options.input?.includes('@@global.event_scheduler')) return `${scheduler}\n`;
     if (args[0] === 'exec' && args.includes('--version') && ['mariadb-dump', 'mariadb'].includes(args.at(-2)!))
       throw new Error('not in this image');
     if (args[0] === 'run') return `${'c'.repeat(64)}\n`;
@@ -86,8 +88,19 @@ test('source database dump, disposable copy and reader keep passwords out of arg
     /invalid_source_database/,
   );
 
+  // Restored events never run against the copy: the scheduler is off before the dump loads.
+  let from = calls.length;
+  await docker.restoreSourceDatabase(restore, '/private/stage/source.sql');
+  const restored = calls.slice(from);
+  const load = restored.findIndex((call) => call.options.inputFile === '/private/stage/source.sql');
+  assert(restored.findIndex((call) => call.options.input === 'SET GLOBAL event_scheduler=OFF;\n') < load);
+  scheduler = 'ON';
+  await assert.rejects(docker.restoreSourceDatabase(restore, '/private/stage/source.sql'), /source_database_restore_failed/);
+  scheduler = 'OFF';
+
+  from = calls.length;
   await docker.secureSourceRestore(restore, '2'.repeat(64));
-  const statements = calls.filter((call) => call.options.input).map((call) => call.options.input!);
+  const statements = calls.slice(from).filter((call) => call.options.input).map((call) => call.options.input!);
   assert.match(statements[0], /CREATE USER 'frameleaf_reader'@'%' IDENTIFIED BY '2{64}';/u);
   assert.match(
     statements[0],

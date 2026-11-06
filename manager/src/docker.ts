@@ -718,6 +718,8 @@ export class Docker {
     try {
       if (restore.engine === 'mysql') {
         const program = await this.databaseProgram(restore.name, ['mariadb', 'mysql']);
+        // Events restored from the dump must never run against the copy: it has to stay what was hashed.
+        await this.stopSourceRestoreEvents(restore, program);
         await this.execute('docker', [
           'exec', '--interactive', '--env', 'MYSQL_PWD', restore.name, program, '--protocol=tcp', '--host=127.0.0.1',
           '--user=root', '--default-character-set=utf8mb4',
@@ -730,6 +732,17 @@ export class Docker {
     } catch {
       throw new Refusal('source_database_restore_failed');
     }
+  }
+  /** Turn the copy's event scheduler off (an image may already start it DISABLED) and confirm it stays off. */
+  private async stopSourceRestoreEvents(restore: SourceRestore, program: string): Promise<void> {
+    const run = (statement: string) =>
+      this.execute('docker', [
+        'exec', '--interactive', '--env', 'MYSQL_PWD', restore.name, program, '--protocol=tcp', '--host=127.0.0.1',
+        '--user=root', '--batch', '--skip-column-names',
+      ], { input: statement + '\n', env: loginEnv('MYSQL_PWD', restore.password), timeout: 60_000 });
+    await run('SET GLOBAL event_scheduler=OFF;').catch(() => undefined);
+    const state = (await run('SELECT @@global.event_scheduler;')).trim().toUpperCase();
+    if (state !== 'OFF' && state !== 'DISABLED') throw new Refusal('source_database_restore_failed');
   }
   /**
    * Lock the loaded copy for the offline readers: a global read-only server (MySQL also super_read_only) and a
@@ -756,6 +769,7 @@ export class Docker {
         // MariaDB 11.3+ names it SHOW CREATE ROUTINE, MySQL 8.0.20+ SHOW_ROUTINE; older engines have neither.
         if (!(await optional(`GRANT SHOW CREATE ROUTINE ON *.* TO '${reader}'@'%';`)))
           await optional(`GRANT SHOW_ROUTINE ON *.* TO '${reader}'@'%';`);
+        await this.stopSourceRestoreEvents(restore, program);
         await sql('SET GLOBAL read_only=1;');
         // MySQL only; MariaDB has no super_read_only.
         await optional('SET GLOBAL super_read_only=1;');
