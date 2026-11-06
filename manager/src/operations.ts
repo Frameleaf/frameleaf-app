@@ -971,8 +971,12 @@ export class Operations {
         throw new Refusal('configuration_recovery_required');
       if (!restoring) assertCommonImportReview(operation, (review as Review).common);
       const sourceFence = restoring ? null : ((review as Review).common?.fence ?? (review as Review).source);
-      if (sourceFence && operation.completed.includes('fence-source'))
-        await this.fencing.verify(sourceFence, installation ?? undefined);
+      // Once Frameleaf has started, the original app no longer matters (see start-frameleaf); other writers still do.
+      if (sourceFence && operation.completed.includes('fence-source')) {
+        if (installation && (await this.serverStarted(installation)))
+          await this.fencing.assertMedia(installation.mounts, installation);
+        else await this.fencing.verify(sourceFence, installation ?? undefined);
+      }
       if (operation.step === 'restore-new-database' && !operation.completed.includes('restore-new-database')) {
         if (!installation || installation.mayHaveWrittenMedia) throw new Refusal('manual_media_recovery_required');
         // pg_restore may have committed before Manager died. Never replay it against that directory.

@@ -457,17 +457,22 @@ test('resuming after Frameleaf already started does not re-check the original ap
       Mounts: [],
     } as unknown as Container);
     let started = false;
+    let mediaChecks = 0;
     f.docker.compose = async () => { started = true; };
     const internal = f.operations as unknown as {
-      install(operation: Operation, review: unknown): Promise<void>;
       fencing: { verify(): Promise<void>; assertMedia(): Promise<void> };
       releases: { eligible(): Promise<void> };
     };
+    // The reviewed source was removed after Frameleaf took over the library.
     internal.fencing = {
       verify: async () => { throw new Error('source_changed_review_again'); },
-      assertMedia: async () => {},
+      assertMedia: async () => { mediaChecks++; },
     };
     internal.releases = { eligible: async () => {} };
+    f.store.set('review:fixture-review', { input: { tag: 'v1.0.0' }, source: f.source, backup: null, release: {} });
+    f.operation.input = { reviewId: 'fixture-review' };
+    f.operation.state = 'failed';
+    f.operation.step = 'start-frameleaf';
     f.operation.completed = [
       'preflight', 'download-images', 'configure', 'review-source', 'fence-source', 'start-database',
       'capture-fenced-settings', 'copy-current-database', 'database-backup', 'check-media-writable',
@@ -475,9 +480,18 @@ test('resuming after Frameleaf already started does not re-check the original ap
       'retire-source-services', 'prepare-library',
     ];
     f.operation.receipts.configure = f.installation;
-    await internal.install(f.operation, { input: { tag: 'v1.0.0' }, source: f.source, backup: null, release: {} });
+    f.store.save(f.operation);
+    f.operations.resume(f.operation.id);
+    let resumed = f.store.history().find((o) => o.id === f.operation.id)!;
+    for (let i = 0; i < 200 && resumed.state === 'running'; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      resumed = f.store.history().find((o) => o.id === f.operation.id)!;
+    }
+    assert.equal(resumed.state, 'complete', resumed.error ?? undefined);
     assert.ok(started);
-    assert.ok(f.operation.completed.includes('start-frameleaf'));
+    assert.ok(resumed.completed.includes('start-frameleaf'));
+    // Other media writers are still refused on both the resume precheck and the start step.
+    assert.equal(mediaChecks, 2);
   } finally {
     await f.cleanup();
   }
