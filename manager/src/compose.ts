@@ -1,5 +1,6 @@
 import { readFile, readdir, writeFile, mkdir, realpath, statfs, access } from 'node:fs/promises';
 import { constants, realpathSync } from 'node:fs';
+import { totalmem } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { load } from 'js-yaml';
 import { z } from 'zod';
@@ -59,6 +60,65 @@ export async function configureUnraidCompose(directory: string, hardware?: Recor
     }
   }
   await atomicJson(path, compose);
+}
+/**
+ * Host RAM in bytes. Manager's own container may sit under a cgroup limit, so the Docker daemon's MemTotal
+ * (the host's) wins; os.totalmem() is the fallback.
+ */
+export async function hostMemory(
+  info = () => command('docker', ['info', '--format', '{{json .MemTotal}}'], { timeout: 10_000 }),
+): Promise<number> {
+  const bytes = await info().then((r) => Number(JSON.parse(r)), () => Number.NaN);
+  return Number.isFinite(bytes) && bytes > 0 ? bytes : totalmem();
+}
+const MB = 2 ** 20;
+const GB = 2 ** 30;
+/**
+ * Postgres memory settings for a host with this much RAM, capped so a shared NAS keeps room for other apps.
+ * RAM is rounded to whole GB first (a "16 GB" box reports ~15.6) so the values stay put across reboots.
+ * Parallel hash joins live in /dev/shm: each query needs about work_mem × hash_mem_multiplier (2) ×
+ * (max_parallel_workers_per_gather (2) + 1) = 6 × work_mem there, and shm_size leaves 3-5× that for concurrency.
+ */
+export function postgresTuning(bytes: number): { shm_size: string; command: string[] } {
+  const gb = Math.max(1, Math.round(bytes / GB));
+  const mb = (n: number) => `${Math.round(n)}MB`;
+  const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
+  const [workMem, shm] = gb >= 64 ? [64, '2g'] : gb >= 16 ? [32, '1g'] : [16, '512mb'];
+  const settings = {
+    shared_buffers: mb(clamp((gb * 1024) / 16, 256, 8 * 1024)),
+    effective_cache_size: mb(Math.min((gb * 1024) / 4, 32 * 1024)),
+    maintenance_work_mem: mb(clamp((gb * 1024) / 64, 128, 2 * 1024)),
+    work_mem: `${workMem}MB`,
+    max_wal_size: gb >= 16 ? '4GB' : '2GB',
+    random_page_cost: '1.1',
+  };
+  return { shm_size: shm, command: ['postgres', ...Object.entries(settings).flatMap(([k, v]) => ['-c', `${k}=${v}`])] };
+}
+/** A compose memory limit ("2g", "512mb") in bytes. */
+const limitBytes = (limit: unknown): number => {
+  const match = /^(\d+(?:\.\d+)?)([kmg])b?$/i.exec(String(limit ?? ''));
+  return match ? Number(match[1]) * { k: 1024, m: MB, g: GB }[match[2].toLowerCase() as 'k' | 'm' | 'g'] : Infinity;
+};
+/** Sizes the database service from host RAM, or from its own memory limit when the administrator set a lower one. */
+function tuneDatabase(service: Record<string, any>, memory: number): void {
+  Object.assign(service, postgresTuning(Math.min(memory, limitBytes(service.deploy?.resources?.limits?.memory))));
+}
+/**
+ * Re-applies the RAM-derived Postgres settings to a saved compose.json before Start, so installations made
+ * before FL-1258 pick them up without a reconfigure. Writes only when something changed.
+ */
+export async function retuneDatabase(directory: string, memory?: number): Promise<void> {
+  const path = join(directory, 'compose.json');
+  const saved = await readFile(path, 'utf8').catch((error) => {
+    if (error.code === 'ENOENT') return null; // nothing rendered yet; compose reports it
+    throw error;
+  });
+  const compose = saved && JSON.parse(saved);
+  const database = compose?.services?.database;
+  if (!database) return;
+  const before = JSON.stringify(database);
+  tuneDatabase(database, memory ?? (await hostMemory()));
+  if (JSON.stringify(database) !== before) await atomicJson(path, compose);
 }
 /** Device passthrough per variant, matching docker/hwaccel.ml.yml. */
 const ACCELERATION_SERVICE: Record<Exclude<Acceleration, 'cpu'>, Record<string, unknown>> = {
@@ -351,6 +411,7 @@ export async function renderCompose(
   directory: string,
   config?: ApplicationConfig,
   acceleration?: Acceleration,
+  memory?: number,
 ): Promise<void> {
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const template = load(await readFile(join(release.directory, 'docker-compose.yml'), 'utf8')) as any;
@@ -440,7 +501,6 @@ export async function renderCompose(
       image: postgres,
       labels,
       restart: 'unless-stopped',
-      shm_size: '128mb',
       environment: {
         POSTGRES_USER: 'frameleaf',
         POSTGRES_PASSWORD_FILE: DATABASE_PASSWORD_TARGET,
@@ -534,6 +594,7 @@ export async function renderCompose(
     };
   }
   applyServiceOverrides(services, application.services);
+  tuneDatabase(services.database as Record<string, any>, memory ?? (await hostMemory()));
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const compose = JSON.parse(
     JSON.stringify(
