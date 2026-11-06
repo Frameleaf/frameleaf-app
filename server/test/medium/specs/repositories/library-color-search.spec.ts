@@ -336,6 +336,13 @@ describe('shared color and subtree search', () => {
       path: '/synthetic/replaced.png',
       isEdited: false,
     });
+    // A rebuilt preview is the same picture: its colors stay current.
+    expect((await repo.searchStatisticsV3({ filter }, scope(owner.user.id))).total).toBe(1);
+    await db
+      .updateTable('asset')
+      .set({ checksum: Buffer.from('replaced file') })
+      .where('id', '=', item.asset.id)
+      .execute();
     expect((await repo.searchStatisticsV3({ filter }, scope(owner.user.id))).total).toBe(0);
   });
 });

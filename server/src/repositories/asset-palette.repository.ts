@@ -131,7 +131,19 @@ export class AssetPaletteRepository {
       .where('deletedAt', 'is', null)
       .where('isOffline', '=', false)
       .where('visibility', '!=', AssetVisibility.Hidden)
-      .where('type', 'in', [AssetType.Image, AssetType.Video]);
+      .where('type', 'in', [AssetType.Image, AssetType.Video])
+      // Images whose colors are known are never queued again by the restart and nightly pass.
+      .where(({ not, exists, selectFrom }) =>
+        not(
+          exists(
+            selectFrom('asset_palette')
+              .select('asset_palette.assetId')
+              .whereRef('asset_palette.assetId', '=', 'asset.id')
+              .where('asset_palette.status', '=', 'ready')
+              .where('asset_palette.version', '=', 1),
+          ),
+        ),
+      );
     if (afterId) query = query.where('id', '>', afterId);
     return query.orderBy('id').limit(100).execute();
   }

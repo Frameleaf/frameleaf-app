@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { OnEvent } from 'src/decorators.js';
-import { FrameleafWorker, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
+import { FrameleafWorker, MediaOperationKind, MediaOperationStatus, QueueName } from 'src/enum.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
   MediaOperation,
@@ -76,6 +77,7 @@ export class MediaHealthOperationService {
     private logger: LoggingRepository,
     private operations: MediaOperationRepository,
     private mediaHealth: MediaHealthService,
+    private jobRepository: JobRepository,
   ) {
     this.logger.setContext(MediaHealthOperationService.name);
   }
@@ -113,6 +115,9 @@ export class MediaHealthOperationService {
   /** Lapsed claims are recovered by `MediaOperationSweepService`, for every kind, not here. */
   async drain(): Promise<void> {
     while (!this.stopping) {
+      if (await this.queuePaused()) {
+        return;
+      }
       const claim = await this.operations.claimNext({
         kinds: [MediaOperationKind.MediaHealth],
         workerId: this.workerId,
@@ -203,6 +208,10 @@ export class MediaHealthOperationService {
         await this.handBack(id, claimToken, snapshot, result);
         return;
       }
+      if (await this.queuePaused()) {
+        await this.holdForPausedQueue(id, claimToken, snapshot, result);
+        return;
+      }
 
       const cursor = result.cursor;
       const page = await this.contended(() => this.mediaHealth.scanPage(snapshot, cursor, MEDIA_HEALTH_SCAN_BATCH));
@@ -260,6 +269,30 @@ export class MediaHealthOperationService {
     }
   }
 
+  /**
+   * Job manager's pause of the Media Health queue holds Library Care scans and searches too: they run here,
+   * not on that queue, so without this a pause there changed nothing.
+   */
+  private async queuePaused(): Promise<boolean> {
+    return (await this.jobRepository.isPaused(QueueName.MediaHealth)) === true;
+  }
+
+  /** Hands the job back between batches, cursor kept, until the queue is resumed; its runs say paused meanwhile. */
+  private async holdForPausedQueue(
+    id: string,
+    claimToken: string,
+    snapshot: MediaHealthOperationSnapshot,
+    counts: Counts,
+  ) {
+    if (!(await this.operations.requeue(id, claimToken, { delayMs: 0, returnAttempt: true }))) {
+      // Cancelled or no longer ours: settled as a stop would settle it.
+      await this.handBack(id, claimToken, snapshot, counts);
+      return;
+    }
+    await this.mediaHealth.setRunState(snapshot, 'paused', counts);
+    this.logger.log(`Library Care job ${id} held: the Media Health queue is paused`);
+  }
+
   /** Repeats a step that lost a lock wait; a scan step is an upsert, so running it again is harmless. */
   private async contended<T>(step: () => Promise<T>): Promise<T> {
     for (let attempt = 1; ; attempt++) {
@@ -295,6 +328,10 @@ export class MediaHealthOperationService {
     while (!complete) {
       if (this.stopping) {
         await this.handBack(id, claimToken, snapshot, result);
+        return;
+      }
+      if (await this.queuePaused()) {
+        await this.holdForPausedQueue(id, claimToken, snapshot, result);
         return;
       }
 

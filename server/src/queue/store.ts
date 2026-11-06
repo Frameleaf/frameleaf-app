@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { DB } from 'src/schema/index.js';
 import { JobName, QueueName } from 'src/enum.js';
 import { enterQueueTurnstile, isLockContention, lockQueues, withQueueCatalogue } from 'src/queue/catalogue.js';
+import { costReusedRead } from 'src/queue/coalesced-task.js';
 import {
   publishLibraryFollowups,
   redactLibraryPayloads,
@@ -1093,8 +1094,13 @@ export class SqlQueueStore {
     return rows.map(({ queue }) => queue);
   }
 
+  /** Activity and the running-jobs summary poll this; a costly recount is shared and not repeated at once. */
+  private readonly runReads = costReusedRead(({ take, skip }: { take: number; skip: number }) =>
+    listRuns(this.db, take, skip),
+  );
+
   listRuns(take: number, skip: number) {
-    return listRuns(this.db, take, skip);
+    return this.runReads({ take, skip });
   }
 
   listRunItems(runId: string, take: number, skip: number) {

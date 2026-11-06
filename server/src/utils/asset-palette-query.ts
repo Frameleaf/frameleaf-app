@@ -2,15 +2,21 @@ import { sql } from 'kysely';
 import type { ColorFilter } from 'src/dtos/search.dto.js';
 import { rgbToOklab } from 'src/utils/asset-palette.js';
 
-/** Shared by state reads and color search: stale derived rows never count as current matches. */
+/**
+ * Shared by state reads and color search: stale derived rows never count as current matches.
+ *
+ * Only what changes the pixels a palette is taken from, or how they are read: the file's content, its extension (GIF
+ * frames, RAW previews), its edits, its orientation, the current develop and a video's cover frame. Metadata re-reads, regenerated thumbnails, renames and storage moves leave it as
+ * it was, so an image whose colors are known is never decoded again for them. Migration 1793930000000 holds a frozen
+ * copy of this expression: change both together.
+ */
 export const assetPaletteRevision = (alias = 'asset') => {
   const ref = (column: string) => sql.ref(`${alias}.${column}`);
   return sql<string>`md5(jsonb_build_array(
-    ${ref('ownerId')}, ${ref('type')}, ${ref('originalFileName')}, ${ref('checksum')}, ${ref('originalPath')}, ${ref('fileModifiedAt')}, ${ref('isEdited')},
-    (select jsonb_agg(to_jsonb(e) order by e.sequence, e.id) from asset_edit e where e."assetId" = ${ref('id')}),
-    (select jsonb_agg(to_jsonb(f) order by f.id) from asset_file f where f."assetId" = ${ref('id')}),
-    (select to_jsonb(x) from asset_exif x where x."assetId" = ${ref('id')}),
-    (select jsonb_agg(to_jsonb(d) order by d.id) from asset_develop_revision d where d."assetId" = ${ref('id')} and d."ownerId" = ${ref('ownerId')} and d."isCurrent"),
+    ${ref('checksum')}, ${ref('fileModifiedAt')}, ${ref('isEdited')}, lower(substring(${ref('originalFileName')} from '[.]([^.]*)$')),
+    (select jsonb_agg(jsonb_build_array(e.action, e.parameters) order by e.sequence, e.id) from asset_edit e where e."assetId" = ${ref('id')}),
+    (select x.orientation from asset_exif x where x."assetId" = ${ref('id')}),
+    (select jsonb_agg(jsonb_build_array(d.id, d.status) order by d.id) from asset_develop_revision d where d."assetId" = ${ref('id')} and d."ownerId" = ${ref('ownerId')} and d."isCurrent"),
     (select m."coverTimestampMs" from video_moment_index m where m."assetId" = ${ref('id')})
   )::text)`;
 };

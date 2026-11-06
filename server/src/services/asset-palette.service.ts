@@ -98,24 +98,25 @@ export class AssetPaletteService {
 
   async retry(auth: AuthDto, id: string): Promise<void> {
     await requireAccess(this.access, { auth, permission: Permission.AssetUpdate, ids: [id] });
-    await this.enqueue(id, true);
+    await this.enqueue(id);
   }
 
-  private async enqueue(id: string, force = false) {
+  private async enqueue(id: string) {
     const source = await this.palettes.source(id);
     if (!source) return;
     const previous = await this.palettes.get(id);
-    if (!force && previous?.status === 'ready' && previous.sourceRevision === source.sourceRevision) return;
+    // An image whose colors are known is never decoded again for them, Retry and the nightly pass included.
+    if (previous?.status === 'ready' && previous.sourceRevision === source.sourceRevision) return;
     await this.palettes.publish(id, source.sourceRevision, this.state(source, 'pending'));
     await this.jobs.queue({ name: JobName.AssetPaletteExtract, data: { id, sourceRevision: source.sourceRevision } });
   }
 
   @OnJob({ name: JobName.AssetPaletteQueueAll, queue: QueueName.ThumbnailGeneration })
-  async handleBackfill({ afterId, force }: JobOf<JobName.AssetPaletteQueueAll>): Promise<JobStatus> {
+  async handleBackfill({ afterId }: JobOf<JobName.AssetPaletteQueueAll>): Promise<JobStatus> {
     const page = await this.palettes.page(afterId);
-    for (const { id } of page) await this.enqueue(id, force);
+    for (const { id } of page) await this.enqueue(id);
     if (page.length === 100)
-      await this.jobs.queue({ name: JobName.AssetPaletteQueueAll, data: { afterId: page.at(-1)!.id, force } });
+      await this.jobs.queue({ name: JobName.AssetPaletteQueueAll, data: { afterId: page.at(-1)!.id } });
     return JobStatus.Success;
   }
 
@@ -175,15 +176,21 @@ export class AssetPaletteService {
       return source.develop.status === AssetDevelopRevisionStatus.Rendered && source.develop.masterPath
         ? { path: source.develop.masterPath, options }
         : undefined;
+    const preview = source.files.find(
+      (file) => file.type === AssetFileType.Preview && file.isEdited === source.isEdited,
+    );
+    // The preview already shows the edits and orientation and lives on the server's own storage: decoding every
+    // original instead read a 1M-photo library end to end off the array. Only a transparent image keeps its
+    // original, because the preview is flattened and would lose the alpha.
+    if (preview && !preview.isTransparent) {
+      return { path: preview.path, options };
+    }
     const video = source.type === AssetType.Video;
     const hdr = source.exif?.imageEncoding?.dynamicRange === 'hdr';
     const raw = mimeTypes.isRaw(source.originalFileName) && !source.originalFileName.toLowerCase().endsWith('.psd');
     const complexEdits = source.edits.some(({ action }) => !['crop', 'rotate', 'mirror'].includes(action));
     if (video || hdr || raw || complexEdits) {
-      const file = source.files.find(
-        (file) => file.type === AssetFileType.Preview && file.isEdited === source.isEdited,
-      );
-      return file ? { path: file.path, options } : undefined;
+      return preview ? { path: preview.path, options } : undefined;
     }
     return {
       path: source.originalPath,

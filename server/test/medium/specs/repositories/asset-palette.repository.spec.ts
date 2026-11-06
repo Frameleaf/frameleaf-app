@@ -8,6 +8,7 @@ import { AssetDevelopRepository } from 'src/repositories/asset-develop.repositor
 import { AssetPaletteRepository } from 'src/repositories/asset-palette.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
+import { up as stampContentRevision } from 'src/schema/migrations/1793930000000-AssetPaletteContentRevision.js';
 import { BaseService } from 'src/services/base.service.js';
 import { rgbToOklab } from 'src/utils/asset-palette.js';
 import { defaultDevelopRecipe } from 'src/utils/develop-recipe.js';
@@ -40,7 +41,7 @@ const setup = async () => {
 };
 
 describe('current palette SQL persistence', () => {
-  it('invalidates old palette reads and publication when edits or generated files change', async () => {
+  it('invalidates old palette reads and publication when edits change, not when a preview is generated again', async () => {
     const { repo, asset, ready, source } = await setup();
     expect(await repo.publish(asset.id, source.sourceRevision, ready)).toBe(true);
     expect(await repo.get(asset.id)).toEqual(ready);
@@ -66,7 +67,30 @@ describe('current palette SQL persistence', () => {
         isEdited: true,
       })
       .execute();
-    expect((await repo.source(asset.id))?.sourceRevision).not.toBe(edited?.sourceRevision);
+    // The same picture: an image whose colors are known is never decoded again because its preview was rebuilt.
+    expect((await repo.source(asset.id))?.sourceRevision).toBe(edited?.sourceRevision);
+  });
+  it('carries a finished palette over to the content revision without decoding again (migration matches the query)', async () => {
+    const { repo, asset, ready } = await setup();
+    await db
+      .insertInto('asset_edit')
+      .values({ assetId: asset.id, action: AssetEditAction.Rotate, parameters: { angle: 90 }, sequence: 0 })
+      .execute();
+    const { sourceRevision } = (await repo.source(asset.id))!;
+    await db
+      .insertInto('asset_palette')
+      .values({ assetId: asset.id, ...ready, sourceRevision: 'revision-before-the-migration', ownerOnly: false })
+      .execute();
+    expect(await repo.get(asset.id)).toEqual(expect.objectContaining({ status: 'pending' }));
+    await stampContentRevision(db);
+    expect(await repo.get(asset.id)).toEqual({ ...ready, sourceRevision });
+  });
+  it('keeps the revision through a rename that keeps the extension, whatever its case', async () => {
+    const { repo, asset } = await setup();
+    await db.updateTable('asset').set({ originalFileName: 'IMG_0001.JPG' }).where('id', '=', asset.id).execute();
+    const before = (await repo.source(asset.id))?.sourceRevision;
+    await db.updateTable('asset').set({ originalFileName: 'holiday.jpg' }).where('id', '=', asset.id).execute();
+    expect((await repo.source(asset.id))?.sourceRevision).toBe(before);
   });
   it('invalidates source selection when an image filename changes representative-frame handling', async () => {
     const { repo, asset, source } = await setup();
