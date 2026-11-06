@@ -2421,14 +2421,16 @@ export class Operations {
     if (typeof operation.input.commonCapture === 'string') {
       await this.step(operation, 'cancel-photo-app', async () => {
         const plan = this.store.get<PhotoAppPlan>(`photo-app-plan:${operation.id}`);
-        await this.removePhotoAppCopy(operation);
         if (!installation) {
-          // Nothing reached Frameleaf: the staging is discarded and the app runs again as it did before review.
-          await rm(join(this.directory(), `import-runtime-${operation.id}`), { recursive: true, force: true });
+          // Nothing reached Frameleaf: the app runs again as it did before review. Restart first, so a failed
+          // start can be retried while the plan still lists what was running.
           const present = await this.docker.inventory();
           for (const id of plan?.running ?? [])
             if (present.some((c) => c.Id === id && !c.State.Running)) await this.docker.start(id);
         }
+        await this.removePhotoAppCopy(operation);
+        if (!installation)
+          await rm(join(this.directory(), `import-runtime-${operation.id}`), { recursive: true, force: true });
         return true;
       });
       if (!installation) {
