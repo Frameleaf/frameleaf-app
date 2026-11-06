@@ -371,6 +371,10 @@ try {
     await page.getByText('Machine learning no answer (ECONNREFUSED)', { exact: true }).waitFor();
     assert.equal(await page.getByText('Problem', { exact: true }).count(), 1);
     await page.getByRole('button', { name: 'Check again' }).waitFor();
+    assert.equal(
+      await page.getByRole('link', { name: 'Post on the community ↗' }).getAttribute('href'),
+      'https://frameleaf.app/help/community/c/bug-reports/9',
+    );
     await screenshot('services-troubleshooting');
     await mainButton('Stop stack').click();
     assert.equal(await page.locator('dialog').isVisible(), true);
