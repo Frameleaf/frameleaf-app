@@ -28,7 +28,7 @@ Move by hand only when you update to a release whose `docker-compose.yml` names 
 
 For a plain Docker Compose installation, run these commands in the folder with your `docker-compose.yml` and `.env`:
 
-1. Stop Frameleaf, leaving the database running, and save a dump outside the database folder:
+1. Note the images you run now with `docker compose images` (you need them only if you go back and your Compose file uses `latest` tags). Stop Frameleaf, leaving the database running, and save a dump outside the database folder:
 
    ```bash
    docker compose stop frameleaf-server frameleaf-machine-learning
@@ -38,7 +38,7 @@ For a plain Docker Compose installation, run these commands in the folder with y
 
    Do not pass `-v` or `--volumes` to `down`. If the dump command fails, stop here: Frameleaf's database is unchanged, so start it again with `docker compose up -d`. Check that `frameleaf-move.dump` is not empty.
 
-2. Replace `docker-compose.yml` with the new release's file (keep a copy of the old one). In `.env`, point `DB_DATA_LOCATION` at a new, empty folder, for example `./postgres19rc1`. Leave the old folder untouched. Then run `docker compose config | grep 'image:.*frameleaf-postgres'` and check it shows the new release's database image; if an override file still names the old one, keep a copy of that file, then update it before you continue.
+2. Replace `docker-compose.yml` with the new release's file (keep a copy of the old one). In `.env`, point `DB_DATA_LOCATION` at a new, empty folder, for example `./postgres19rc1`. Leave the old folder untouched. Then run `docker compose config` and check two things under the `database` service: `image` is the new release's database image, and `volumes` mounts the new, empty folder. If an override file still names the old image or folder, keep a copy of that file, then update it before you continue.
 
 3. Start only the new database, wait until `docker compose ps database` shows it healthy, then restore the dump:
 
@@ -49,7 +49,7 @@ For a plain Docker Compose installation, run these commands in the folder with y
 
 4. If the restore fails, stop here and go back (below). If it succeeds, start Frameleaf with `docker compose up -d` and check your library.
 
-To go back, run `docker compose down`, restore the old `docker-compose.yml`, any override file you changed and the old `DB_DATA_LOCATION`, and run `docker compose up -d`. Delete the old folder and the dump only once you are happy with the new release.
+To go back, run `docker compose down`, restore the old `docker-compose.yml`, any override file you changed and the old `DB_DATA_LOCATION`, set the images you noted in step 1 if your Compose file uses `latest` tags, and run `docker compose up -d`. Going back after Frameleaf has run on the new database loses everything it changed since step 4 (new uploads stay on disk but are no longer in the library), so go back straight away or not at all, and keep the new folder until you are sure. Delete the old folder and the dump only once you are happy with the new release.
 
 On Unraid or TrueNAS templates the steps are the same: stop the Frameleaf server and machine learning containers, save the dump by running the same `pg_dump` command with `docker exec -i` against the database container (for example `frameleaf-postgres`), then set that container's image to the new release's and its data folder to a new, empty folder. Start it, restore the dump with the same `pg_restore` command, and start Frameleaf.
 
