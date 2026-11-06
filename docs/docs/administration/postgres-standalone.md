@@ -38,7 +38,7 @@ For a plain Docker Compose installation, run these commands in the folder with y
 
    Do not pass `-v` or `--volumes` to `down`. If the dump command fails, stop here: Frameleaf's database is unchanged, so start it again with `docker compose up -d`. Check that `frameleaf-move.dump` is not empty.
 
-2. Replace `docker-compose.yml` with the new release's file (keep a copy of the old one). In `.env`, point `DB_DATA_LOCATION` at a new, empty folder, for example `./postgres19rc1`. Leave the old folder untouched.
+2. Replace `docker-compose.yml` with the new release's file (keep a copy of the old one). In `.env`, point `DB_DATA_LOCATION` at a new, empty folder, for example `./postgres19rc1`. Leave the old folder untouched. Then run `docker compose config | grep 'image:.*frameleaf-postgres'` and check it shows the new release's database image; if an override file still names the old one, update it before you continue.
 
 3. Start only the new database, wait until `docker compose ps database` shows it healthy, then restore the dump:
 

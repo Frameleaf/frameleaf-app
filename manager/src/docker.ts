@@ -341,7 +341,7 @@ export class Docker {
     containerId.parse(id);
     return this.execute('docker', ['exec', id, 'node', '-e', script, '--', ...args]);
   }
-  async sql(db: Database, sql: string): Promise<string> {
+  async sql(db: Database, sql: string, timeout?: number): Promise<string> {
     containerId.parse(db.container);
     return this.execute(
       'docker',
@@ -365,7 +365,7 @@ export class Docker {
         '-At',
       ],
       // The password reaches docker through its environment, never its argv.
-      { input: sql, env: { PGPASSWORD: db.password } },
+      { input: sql, timeout, env: { PGPASSWORD: db.password } },
     );
   }
   async dump(db: Database, destination: string): Promise<void> {

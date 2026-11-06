@@ -2038,7 +2038,8 @@ export class Operations {
     return Math.max(1024 ** 3, Number(await this.docker.sql(database, 'SELECT pg_database_size(current_database());')));
   }
   private async databaseInventory(database: Database): Promise<DatabaseInventory> {
-    return JSON.parse(await this.docker.sql(database, DATABASE_INVENTORY));
+    // Counting every table of a large library can outlast the default 2 minutes; same budget as dump and restore.
+    return JSON.parse(await this.docker.sql(database, DATABASE_INVENTORY, 7_200_000));
   }
   /**
    * FL-1210: whether the server's `frameleaf-served` marker (written on each boot's first real request)
