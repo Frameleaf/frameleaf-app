@@ -66,6 +66,22 @@ export class ServerService extends BaseService {
       }
     }
     this.logger.log(`Feature Flags: ${JSON.stringify(await this.getFeatures())}`);
+    // Diagnostics only: a failure here must never stop the identity key or the rest of startup.
+    try {
+      await this.logStartupSummary();
+    } catch (error) {
+      this.logger.warn(`Could not print the startup summary: ${error}`);
+    }
+    // FL-430: every server has an identity key from its first boot (not only once it links), so apps
+    // can pin it at sign-in; creation is exclusive, so workers booting together end with one key
+    try {
+      await loadInstanceIdentity(this.identityDeps);
+    } catch (error) {
+      this.logger.warn(`Could not load this server's identity key: ${error}`);
+    }
+  }
+
+  private async logStartupSummary() {
     const { database, storage, port } = this.configRepository.getEnv();
     const { machineLearning } = await this.getConfig({ withCache: true });
     for (const line of startupSummary({
@@ -79,13 +95,6 @@ export class ServerService extends BaseService {
       port,
     })) {
       this.logger.log(line);
-    }
-    // FL-430: every server has an identity key from its first boot (not only once it links), so apps
-    // can pin it at sign-in; creation is exclusive, so workers booting together end with one key
-    try {
-      await loadInstanceIdentity(this.identityDeps);
-    } catch (error) {
-      this.logger.warn(`Could not load this server's identity key: ${error}`);
     }
   }
 
