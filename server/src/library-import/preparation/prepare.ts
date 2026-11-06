@@ -186,7 +186,10 @@ export async function preparePreparationSource(
       const owner = choices.get(asset.ownerId)!.destinationId;
       for (const fileId of asset.fileIds) {
         const file = files.get(fileId)!;
-        const destinationPath = posix.join('library', owner, file.path);
+        // Flat per owner: the read-only preparation can't create folders, so the Manager creates only
+        // `library/<owner>` before preparing. The hash prefix keeps same-named files from different folders apart.
+        const name = createHash('sha256').update(file.id).digest('hex').slice(0, 16) + '-' + posix.basename(file.path);
+        const destinationPath = posix.join('library', owner, name);
         if (placed.has(destinationPath)) continue;
         placed.add(destinationPath);
         placements.push({
