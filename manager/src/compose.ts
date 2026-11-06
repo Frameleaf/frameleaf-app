@@ -105,7 +105,14 @@ const limitBytes = (limit: unknown): number => {
 };
 /** Sizes the database service from host RAM, or from its own memory limit when the administrator set a lower one. */
 function tuneDatabase(service: Record<string, any>, memory: number): void {
-  Object.assign(service, postgresTuning(Math.min(memory, limitBytes(service.deploy?.resources?.limits?.memory))));
+  const limit = limitBytes(service.deploy?.resources?.limits?.memory);
+  if (limit < 256 * MB) {
+    // A limit saved before the 256 MB minimum existed: leave the database as it was before tuning.
+    delete service.command;
+    service.shm_size = '128mb';
+    return;
+  }
+  Object.assign(service, postgresTuning(Math.min(memory, limit)));
 }
 /**
  * Re-applies the RAM-derived Postgres settings to a saved compose.json before Start, so installations made

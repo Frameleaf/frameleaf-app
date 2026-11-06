@@ -142,6 +142,14 @@ test('the database service carries the tuning at install and is re-tuned on Star
     assert.equal(JSON.parse(tuned).services.database.shm_size, '1024mb');
     await retuneDatabase(stack, 16 * GiB);
     assert.equal(await readFile(path, 'utf8'), tuned);
+    // A tiny limit saved before the 256 MB minimum keeps the untuned database rather than settings above it
+    const tiny = JSON.parse(tuned);
+    tiny.services.database.deploy = { resources: { limits: { memory: '8mb' } } };
+    await writeFile(path, JSON.stringify(tiny));
+    await retuneDatabase(stack, 16 * GiB);
+    const kept = (await read()).services.database;
+    assert.equal(kept.command, undefined);
+    assert.equal(kept.shm_size, '128mb');
     await retuneDatabase(join(dir, 'missing'), 16 * GiB);
   } finally {
     await rm(dir, { recursive: true, force: true });
