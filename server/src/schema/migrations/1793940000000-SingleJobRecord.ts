@@ -31,6 +31,45 @@ export async function up(db: Kysely<any>): Promise<void> {
           AND (rr.selection #>> '{managerSetup,startedAt}' IS NULL OR rr.selection #> '{managerSetup,paused}' = 'true'::jsonb)))
       GROUP BY s."runId") h
     WHERE r.id = h."runId"`.execute(db);
+  // The old claim also held every stage of a Manager import whose setup authority does not match this installation.
+  // Setup never rewrites holds for such a run, so they stay until it matches or an administrator releases it.
+  // Setup progress (phase, pause, processing choice) is left out: setup recomputes those holds on its next pass.
+  const current = process.env.FRAMELEAF_MANAGER_INSTALLATION ?? '';
+  const origin = process.env.FRAMELEAF_MANAGER_ORIGIN ?? '';
+  const expected = origin === 'restored_library' ? (process.env.FRAMELEAF_MANAGER_IMPORT_INSTALLATION ?? '') : current;
+  const profile = origin === 'new_import' || (origin === 'restored_library' && !!expected);
+  const validProfile = profile && /^[a-f0-9]{12}$/.test(current) && /^[a-f0-9]{12}$/.test(expected);
+  await sql`UPDATE job_run r SET selection = r.selection
+      || jsonb_build_object('holds', h.holds || coalesce(r.selection->'holds', '{}'::jsonb), 'holdsDirty', true)
+    FROM (SELECT rr.id, jsonb_object_agg(st.stage, 'setup'::text) holds FROM job_run rr
+      CROSS JOIN LATERAL (SELECT stage FROM job_selection WHERE "runId" = rr.id
+        UNION SELECT name FROM job WHERE "runId" = rr.id AND state IN ('pending','waiting')) st
+      WHERE rr.kind IN ${IMPORT_KINDS} AND rr."finishedAt" IS NULL
+        AND (rr.selection ? 'managerSetupRequired' OR rr.selection ? 'managerSetup' OR ${profile})
+        AND (${validProfile}
+          AND ((rr.kind = 'immich-import-derived' AND EXISTS (SELECT 1 FROM frameleaf_immich_import journal
+              WHERE journal.status = 'activated' AND journal.source_fingerprint = rr.selection->>'source'
+                AND journal.config_fingerprint = rr.selection->>'config' AND NOT EXISTS (SELECT 1 FROM frameleaf_library_import)))
+            OR (rr.kind = 'library-import-derived' AND EXISTS (SELECT 1 FROM frameleaf_library_import journal
+              WHERE journal.status = 'activated' AND journal.binding->>'operationId' = rr.selection->>'operationId'
+                AND journal.binding->>'manifestSha256' = rr.selection->>'manifestSha256'
+                AND journal.binding->>'planSha256' = rr.selection->>'planSha256'
+                AND lower(journal.reviewed_plan->>'destinationId') = rr.selection->>'destinationId'
+                AND NOT EXISTS (SELECT 1 FROM frameleaf_immich_import))))
+          AND (NOT rr.selection ? 'managerSetupRequired' OR rr.selection->'managerSetupRequired' = 'true'::jsonb)
+          AND jsonb_typeof(rr.selection->'managerSetup') = 'object'
+          AND rr.selection #>> '{managerSetup,installation}' = ${expected}
+          AND nullif(rr.selection #>> '{managerSetup,operationId}', '') IS NOT NULL
+          AND jsonb_typeof(rr.selection #> '{managerSetup,startedAt}') = 'string'
+          AND pg_input_is_valid(rr.selection #>> '{managerSetup,startedAt}', 'timestamp with time zone')
+          AND jsonb_typeof(rr.selection #> '{managerSetup,preparedAt}') = 'string'
+          AND pg_input_is_valid(rr.selection #>> '{managerSetup,preparedAt}', 'timestamp with time zone')
+          AND EXISTS (SELECT 1 FROM system_metadata setup WHERE setup.key = ${'frameleaf-manager-library-setup:' + current}
+            AND setup.value->>'installation' = ${current} AND setup.value->>'origin' = ${origin}
+            AND setup.value->>'importRunId' = rr.id::text
+            AND setup.value->>'importOperationId' = rr.selection #>> '{managerSetup,operationId}')) IS NOT TRUE
+      GROUP BY rr.id) h
+    WHERE r.id = h.id`.execute(db);
   // Jobs already queued for a held stage were held by the claim's old predicate; hold them the new way.
   await sql`UPDATE job j SET "availableAt" = 'infinity'::timestamptz FROM job_run r
     WHERE r.id = j."runId" AND r.selection ? 'holds' AND r.selection->'holds' ? j.name
@@ -58,10 +97,10 @@ export async function up(db: Kysely<any>): Promise<void> {
           FROM page p JOIN job_selection s ON s.id = p."selectionId" JOIN job_run r ON r.id = p."runId"
           WHERE p."runId" = s."runId"
             -- An item that owns its own execution is this run's work; one shared from another run's item is not.
+            -- An owner still discovering its origins is converted too: that discovery only fed the dropped lineage.
             AND (p."libraryExecutionRunId" IS NULL
               OR (p."libraryExecutionRunId", p."libraryExecutionItemKey") = (p."runId", p."itemKey"))
             AND (s."sourceKind" <> 'frozen' OR s."capturedAt" IS NOT NULL)
-            AND (s."sourceKind" <> 'library-child' OR p."libraryOriginComplete")
             AND (s.state IN ('enumerating','ready') OR (s."sourceKind" = 'library-initial' AND s.state = 'needs_attention'))
         ), inserted AS (
           INSERT INTO job (id, queue, name, data, "dedupKey", "externalId", "safeToRetry", sensitive, "deadlineMs",

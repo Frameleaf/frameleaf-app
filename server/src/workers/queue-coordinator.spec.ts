@@ -354,6 +354,31 @@ describe('coordinator capacity admission', () => {
     expect(pruneQueueHistoryPage).toHaveBeenCalledOnce();
   });
 
+  it('reports hold reconciliation failing three times in a row, without the error text', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(performance, 'now').mockImplementation(() => Date.now());
+    const failure = Object.assign(new Error('fixture postgres://secret@db failure'), { code: '57014' });
+    fixture.store.reconcileHolds.mockRejectedValue(failure);
+    const reports = () =>
+      vi.mocked(fixture.port!.postMessage).mock.calls.filter(([message]) => message.type === 'holdsFailing');
+    await coordinate(coordinatorData);
+    await vi.advanceTimersByTimeAsync(QUEUE_TIMING.scan);
+    expect(fixture.store.reconcileHolds).toHaveBeenCalledTimes(2);
+    expect(reports()).toEqual([]);
+    await vi.advanceTimersByTimeAsync(QUEUE_TIMING.scan);
+    expect(reports()).toEqual([[{ type: 'holdsFailing', failures: 3, code: '57014' }]]);
+    // A success starts the count again.
+    fixture.store.reconcileHolds.mockResolvedValueOnce(0);
+    await vi.advanceTimersByTimeAsync(QUEUE_TIMING.scan * 3);
+    expect(fixture.store.reconcileHolds).toHaveBeenCalledTimes(6);
+    expect(reports()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(QUEUE_TIMING.scan);
+    expect(reports()).toEqual([
+      [{ type: 'holdsFailing', failures: 3, code: '57014' }],
+      [{ type: 'holdsFailing', failures: 3, code: '57014' }],
+    ]);
+  });
+
   it('keeps pruning while pages are full and still deleting, then stops at a short page', async () => {
     vi.useFakeTimers();
     vi.spyOn(performance, 'now').mockImplementation(() => Date.now());

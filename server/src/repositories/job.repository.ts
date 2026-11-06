@@ -266,15 +266,31 @@ export class JobRepository {
       transferList: [port2],
     });
     this.coordinator.on('message', (message: QueueDispatch | { type: 'unavailable' }) => {
-      if (message.type === 'execute') {
-        const abort = new AbortController();
-        const finished = this.execute(message.claim, abort).finally(() => {
-          this.active.delete(message.claim.id);
-          this.coordinator?.postMessage({ type: 'settled', id: message.claim.id });
-        });
-        this.active.set(message.claim.id, { abort, finished });
-      } else if (message.type === 'cancel') {
-        this.active.get(message.id)?.abort.abort(new Error('Job deadline or lease expired'));
+      switch (message.type) {
+        case 'execute': {
+          const abort = new AbortController();
+          const finished = this.execute(message.claim, abort).finally(() => {
+            this.active.delete(message.claim.id);
+            this.coordinator?.postMessage({ type: 'settled', id: message.claim.id });
+          });
+          this.active.set(message.claim.id, { abort, finished });
+          break;
+        }
+        case 'cancel': {
+          this.active.get(message.id)?.abort.abort(new Error('Job deadline or lease expired'));
+          break;
+        }
+        case 'holdsFailing': {
+          this.logger.warn(
+            `Held and released jobs are not being updated: ${message.failures} failed attempts in a row` +
+              (message.code ? ` (database error ${message.code})` : ''),
+          );
+          break;
+        }
+        case 'unavailable': {
+          // The coordinator's watchdog owns the outage decision.
+          break;
+        }
       }
     });
     this.coordinator.on('error', () =>

@@ -12,6 +12,10 @@ import { SqlQueueStore } from 'src/queue/store.js';
 import { QUEUE_EXECUTION_CAPACITY, QUEUE_TIMING, QueueClaim, QueueWorkerMessage } from 'src/queue/types.js';
 import { QueueWatchdog, monitorQueueProgress } from 'src/queue/watchdog.js';
 
+/** Report hold reconciliation on its third failure in a row, then every 120th (about every ten minutes). */
+const HOLDS_FAILURE_REPORT = 3;
+const HOLDS_FAILURE_REPEAT = 120;
+
 type CoordinatorData = {
   workerId: string;
   queues: string[];
@@ -136,13 +140,26 @@ export async function coordinate({
   };
 
   // FL-1265: changed run holds reach their jobs in batches, a little each visit, on the maintenance session.
+  // Repeated failures leave held work claimable or released work waiting, so the parent logs them.
   let holdsBusy = false;
+  let holdsFailures = 0;
   const reconcileHolds = () => {
     if (stopping || holdsBusy) return;
     holdsBusy = true;
     void maintenanceStore
       .reconcileHolds(1000)
-      .catch(() => {})
+      .then(() => (holdsFailures = 0))
+      .catch((error: unknown) => {
+        holdsFailures++;
+        if (stopping || (holdsFailures !== HOLDS_FAILURE_REPORT && holdsFailures % HOLDS_FAILURE_REPEAT !== 0)) return;
+        // Only the database error code: the message may carry connection details or job data.
+        const code = (error as { code?: unknown } | null)?.code;
+        parentPort!.postMessage({
+          type: 'holdsFailing',
+          failures: holdsFailures,
+          code: typeof code === 'string' ? code : undefined,
+        });
+      })
       .finally(() => (holdsBusy = false));
   };
 

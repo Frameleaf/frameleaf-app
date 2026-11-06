@@ -92,7 +92,11 @@ export type QueueExecution = {
   outcome?: 'completed' | 'failed';
   dependencyReason?: JobDependencyReason;
 };
-export type QueueDispatch = { type: 'execute'; claim: QueueClaim } | { type: 'cancel'; id: string };
+export type QueueDispatch =
+  | { type: 'execute'; claim: QueueClaim }
+  | { type: 'cancel'; id: string }
+  /** Run holds failed to reach their jobs this many times in a row (`code` is the database error code, if any). */
+  | { type: 'holdsFailing'; failures: number; code?: string };
 export type QueueWorkerMessage =
   | { type: 'settled'; id: string }
   | { type: 'progress'; id: string; units: number }
