@@ -13,6 +13,7 @@ import { attachLockedKeyIpc } from 'src/utils/locked-key-ipc.js';
 import { isStartUpError } from 'src/utils/misc.js';
 import { closeGracefully, onStopRequest } from 'src/utils/shutdown.js';
 
+/** Starts the microservices worker (job queues, no HTTP) and logs its ready line. */
 export async function bootstrap() {
   // FL-291: the supervisor's stop message lets running jobs finish or hands them back before the
   // thread exits
@@ -56,7 +57,7 @@ export async function bootstrap() {
     throw error;
   }
 
-  logger.log(`Frameleaf Microservices is running [v${serverVersion}] [${environment}] `);
+  logger.log(`Frameleaf Microservices is running [v${serverVersion}] [${environment}] - ready`);
 }
 
 if (!isMainThread) {

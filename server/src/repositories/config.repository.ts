@@ -36,6 +36,8 @@ export interface EnvData {
   configFile?: string;
   logLevel?: LogLevel;
   logFormat?: LogFormat;
+  /** FRAMELEAF_LOG_REQUESTS: API request lines at `log` level (true) or `debug` (false). */
+  logRequests: boolean;
 
   buildMetadata: {
     build?: string;
@@ -184,6 +186,7 @@ const resolveHelmetFile = (helmetFile: 'true' | 'false' | string | undefined) =>
   }
 };
 
+/** Validates the environment once and maps it to the server's settings. */
 const getEnv = (): EnvData => {
   // FL-294: deprecated IMMICH_ names are resolved to their FRAMELEAF_ names before validation, and a
   // pair set to two different values refuses to start
@@ -238,6 +241,8 @@ const getEnv = (): EnvData => {
     configFile: dto.FRAMELEAF_CONFIG_FILE,
     logLevel: dto.FRAMELEAF_LOG_LEVEL,
     logFormat: dto.FRAMELEAF_LOG_FORMAT || LogFormat.Console,
+    // Read directly, not through EnvSchema: its keys are a response enum the native apps decode strictly.
+    logRequests: !/^(?:false|0|no|off)$/i.test(process.env.FRAMELEAF_LOG_REQUESTS?.trim() ?? ''),
 
     buildMetadata: {
       build: dto.FRAMELEAF_BUILD,

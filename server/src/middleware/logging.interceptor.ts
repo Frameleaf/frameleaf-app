@@ -1,6 +1,7 @@
 import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nestjs/common';
-import { Request, Response } from 'express';
+import { NextFunction, Request, Response } from 'express';
 import { Observable, finalize } from 'rxjs';
+import type { AuthRequest } from 'src/middleware/auth.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 
 const maxArrayLength = 100;
@@ -81,6 +82,125 @@ export const redactLogUrl = (url: string) => {
   return changed ? `${url.slice(0, queryStart)}?${params.toString()}` : url;
 };
 
+/** An ID-like path segment: a UUID or any long opaque value (20+ URL-safe characters with a digit). */
+const ID_SEGMENT = /^(?=[^/]*\d)[\w-]{20,}$/;
+
+/**
+ * The path written on a request line: path secrets masked, IDs shown as `:id`, and only the names of
+ * query parameters kept (every value masked; credential routes keep no query at all).
+ */
+const MAX_DECODE_ROUNDS = 4;
+
+/**
+ * Decodes a segment until it stops changing (so `%2563` → `%63` → `c`). Returns `undefined` when it
+ * holds a malformed escape or would still decode after the last round, so the caller masks the whole
+ * path instead.
+ */
+const decodeSegment = (segment: string): string | undefined => {
+  for (let round = 0; round <= MAX_DECODE_ROUNDS; round++) {
+    let next: string;
+    try {
+      next = decodeURIComponent(segment);
+    } catch {
+      // a malformed escape (`%63ast%`) cannot be canonicalized, so it is not trusted either
+      return undefined;
+    }
+    if (next === segment) {
+      return segment;
+    }
+    if (round === MAX_DECODE_ROUNDS) {
+      return undefined;
+    }
+    segment = next;
+  }
+  return undefined;
+};
+
+/**
+ * The canonical form of the path, so an unusual spelling (`/api//cast/…`, `/api/./cast/…`,
+ * `/api/%63ast/…`, `/api/%2563ast/…`) still meets the secret-route patterns: segments are decoded,
+ * empty and `.` segments dropped and `..` resolved; a decoded `/`, `?` or `#` is re-encoded so it
+ * cannot create a segment or a query. `undefined` when a segment is encoded too many times to trust.
+ */
+const canonicalPath = (url: string): string | undefined => {
+  const cut = url.search(/[?#]/);
+  const segments: string[] = [];
+  for (const raw of (cut === -1 ? url : url.slice(0, cut)).split('/')) {
+    const segment = decodeSegment(raw);
+    if (segment === undefined) {
+      return undefined;
+    }
+    if (segment === '' || segment === '.') {
+      continue;
+    }
+    if (segment === '..') {
+      segments.pop();
+      continue;
+    }
+    segments.push(segment.replaceAll(/[/?#]/g, (char) => encodeURIComponent(char)));
+  }
+  return `/${segments.join('/')}${cut === -1 ? '' : url.slice(cut)}`;
+};
+
+export const requestLogPath = (url: string) => {
+  const canonical = canonicalPath(url);
+  if (canonical === undefined) {
+    return `/${REDACTED}`;
+  }
+  const masked = redactPathSecrets(canonical);
+  const cut = masked.search(/[?#]/);
+  const path = (cut === -1 ? masked : masked.slice(0, cut))
+    .split('/')
+    .map((segment) => (ID_SEGMENT.test(segment) ? ':id' : segment))
+    .join('/');
+  if (cut === -1 || masked[cut] === '#') {
+    return path;
+  }
+  if (QUERYLESS_ROUTES.test(masked) || DIRECT_UPLOAD_ROUTE.test(masked)) {
+    return `${path}?${REDACTED}`;
+  }
+  const names = [...new Set(new URLSearchParams(masked.slice(cut + 1).split('#', 1)[0]).keys())];
+  return names.length === 0
+    ? path
+    : `${path}?${names.map((name) => `${encodeURIComponent(name)}=${REDACTED}`).join('&')}`;
+};
+
+/** Polled by the container health check and the Manager; a successful poll is never worth a line. */
+const POLL_ROUTES = /^\/api\/server\/(?:ping|version)\/?$/i;
+/** One request per timeline tile; successes go to `debug` so browsing a large library stays readable. */
+const TILE_ROUTES = /^\/api\/(?:assets\/[^/]+\/(?:thumbnail|video\/playback)|people\/[^/]+\/thumbnail)\/?$/i;
+
+/**
+ * One line per API request once its response is sent or the client goes away: method, redacted
+ * path, status, duration and the signed-in user's ID. Express middleware rather than an interceptor,
+ * so requests a guard refuses (401, 403, 429) and unknown routes (404) are logged too. Tokens,
+ * cookies, keys and bodies are never written.
+ */
+export const requestLogMiddleware =
+  (logger: LoggingRepository, { enabled }: { enabled: boolean }) =>
+  (req: Request, res: Response, next: NextFunction) => {
+    const url = req.originalUrl;
+    if (!/^\/api(?:[/?#]|$)/i.test(url)) {
+      return next();
+    }
+    const start = performance.now();
+    res.once('close', () => {
+      const path = url.split(/[?#]/, 1)[0];
+      const status = res.writableFinished ? res.statusCode : 'aborted';
+      const ok = res.writableFinished && res.statusCode < 400;
+      const userId = (req as AuthRequest).user?.user?.id;
+      const line = `${req.method} ${requestLogPath(url)} ${status} ${(performance.now() - start).toFixed(0)}ms${userId ? ` user=${userId}` : ''}`;
+      if (res.writableFinished && res.statusCode >= 500) {
+        logger.warn(line);
+      } else if (!enabled || (ok && (POLL_ROUTES.test(path) || TILE_ROUTES.test(path)))) {
+        logger.debug(line);
+      } else {
+        logger.log(line);
+      }
+    });
+    next();
+  };
+
 export const replacer = (key: string, value: unknown) => {
   if (key && isSecretName(key)) {
     return REDACTED;
@@ -103,22 +223,14 @@ export class LoggingInterceptor implements NestInterceptor {
     this.logger.setContext(LoggingInterceptor.name);
   }
 
+  /** Adds the redacted request body at `verbose` level once the handler finishes. */
   intercept(context: ExecutionContext, next: CallHandler<any>): Observable<any> {
     const handler = context.switchToHttp();
     const req = handler.getRequest<Request>();
-    const res = handler.getResponse<Response>();
 
-    const { method, ip, url } = req;
-
-    const start = performance.now();
-
+    // The request line itself is written by `requestLogMiddleware`; this adds the redacted body.
     return next.handle().pipe(
       finalize(() => {
-        const finish = performance.now();
-        const duration = (finish - start).toFixed(2);
-        const { statusCode } = res;
-
-        this.logger.debug(`${method} ${redactLogUrl(url)} ${statusCode} ${duration}ms ${ip}`);
         if (
           !BODYLESS_ROUTES.test(req.route?.path ?? req.path) &&
           !DIRECT_UPLOAD_ROUTE.test(req.path) &&

@@ -39,6 +39,7 @@ import { PostgresStorage } from './postgres-storage.js';
 import { HostAutostart } from './unraid-autostart.js';
 import { ServiceOverrides, detectAcceleration, hostInstallations, suggestedPort } from './compose.js';
 import { sharePortWithRedirect } from './http-redirect.js';
+import { log, print, renderBanner, requestLog } from './banner.js';
 
 const directory = process.env.MANAGER_DATA;
 const runtime = process.env.MANAGER_RUNTIME ?? 'docker';
@@ -502,8 +503,14 @@ class Api {
 @Module({ controllers: [Api] })
 class ManagerModule {}
 
+/** Prints the banner and startup details, mounts the request log and API, then listens. */
 async function main() {
   process.umask(0o077);
+  const version = await readFile(new URL('../package.json', import.meta.url), 'utf8')
+    .then((text) => `v${JSON.parse(text).version}`)
+    .catch(() => 'unknown version');
+  print(renderBanner('Frameleaf Manager', version));
+  log(`starting ${version} on ${defaults.platform} (${runtime}); state ${directory}, backups ${backupRoot}`);
   await mkdir(directory!, { recursive: true, mode: 0o700 });
   const cert = join(directory!, 'tls.crt'),
     key = join(directory!, 'tls.key');
@@ -546,6 +553,7 @@ async function main() {
     bodyParser: false,
     httpsOptions,
   });
+  app.use(requestLog());
   app.use(desktopApi(store, security, new DesktopGrants(store, security), lifecycle, native ?? undefined));
   app.use(security.guard);
   if (native) {
@@ -594,6 +602,7 @@ async function main() {
     await app.init();
     await new Promise<void>((done) => sharePortWithRedirect(app.getHttpServer()).listen(9443, '0.0.0.0', done));
   }
+  log(`ready, listening on port ${native ? nativeAddress!.port : 9443} (${http ? 'http' : 'https'})`);
   if (native) process.stdout.write(JSON.stringify(native.ready(origin!)) + '\n');
   // ponytail: fixed 6-hour check; add quiet-hours scheduling if owners ask for updates at a set time.
   else setInterval(() => operations.autoUpdate().catch((error) => console.error(`manager: automatic update skipped: ${error?.code ?? error}`)), 6 * 3_600_000).unref();

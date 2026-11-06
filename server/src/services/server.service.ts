@@ -42,9 +42,11 @@ import {
 } from 'src/utils/misc.js';
 import { remoteAccessPublication } from 'src/utils/public-url.js';
 import { systemTimeZone } from 'src/utils/server-time-zone.js';
+import { startupSummary } from 'src/utils/startup-summary.js';
 
 @Injectable()
 export class ServerService extends BaseService {
+  /** Marks config-file servers as set up, logs feature flags and the startup summary, and loads the identity key. */
   @OnEvent({ name: 'AppBootstrap' })
   async onBootstrap(): Promise<void> {
     const featureFlags = await this.getFeatures();
@@ -64,13 +66,37 @@ export class ServerService extends BaseService {
         });
       }
     }
-    this.logger.log(`Feature Flags: ${JSON.stringify(await this.getFeatures(), null, 2)}`);
+    this.logger.log(`Feature Flags: ${JSON.stringify(await this.getFeatures())}`);
+    // Diagnostics only: a failure here must never stop the identity key or the rest of startup.
+    try {
+      await this.logStartupSummary();
+    } catch (error) {
+      this.logger.warn(`Could not print the startup summary: ${error}`);
+    }
     // FL-430: every server has an identity key from its first boot (not only once it links), so apps
     // can pin it at sign-in; creation is exclusive, so workers booting together end with one key
     try {
       await loadInstanceIdentity(this.identityDeps);
     } catch (error) {
       this.logger.warn(`Could not load this server's identity key: ${error}`);
+    }
+  }
+
+  /** Logs which worker, database, media folder, machine learning and port this process is using. */
+  private async logStartupSummary() {
+    const { database, storage, port } = this.configRepository.getEnv();
+    const { machineLearning } = await this.getConfig({ withCache: true });
+    for (const line of startupSummary({
+      worker: this.configRepository.getWorker(),
+      version: serverVersion.toString(),
+      database: database.config,
+      postgresVersion: await this.databaseRepository.getPostgresVersion(),
+      mediaLocation: StorageCore.getMediaLocation(),
+      importRoots: storage.importRoots,
+      machineLearning,
+      port,
+    })) {
+      this.logger.log(line);
     }
   }
 

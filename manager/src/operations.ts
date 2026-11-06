@@ -22,6 +22,7 @@ import { PostgresStorage } from './postgres-storage.js';
 import { LibraryMove, type ServerPauseStatus } from './library-move.js';
 import { Retention } from './retention.js';
 import { environment } from './docker.js';
+import { elapsed, log } from './banner.js';
 import {
   Refusal,
   containerId,
@@ -889,13 +890,17 @@ export class Operations {
     if (created) this.launch(operation, () => this.install(operation, review, bootstrap));
     return operation;
   }
+  /** Runs an operation in the background, journalling and logging how it ends. */
   private launch(operation: Operation, work: () => Promise<void>): void {
     this.executing.add(operation.id);
+    const started = Date.now();
+    log(`${operation.kind} ${operation.id}: started`);
     void work()
       .then(() => {
         if (operation.state !== 'awaiting-review') operation.state = 'complete';
         operation.error = (operation.receipts['cancelled'] as string | undefined) ?? null;
         this.store.save(operation);
+        log(`${operation.kind} ${operation.id}: ${operation.state}${operation.error ? ` (${operation.error})` : ''} in ${elapsed(started)}`);
       })
       .catch((error) => {
         operation.state = 'failed';
@@ -999,15 +1004,22 @@ export class Operations {
     });
     return operation;
   }
+  /** Runs one journalled step once (a completed step returns its receipt), logging start, finish and failure. */
   private async step<T>(operation: Operation, name: string, action: () => Promise<T>): Promise<T> {
     if (operation.completed.includes(name)) return operation.receipts[name] as T;
     operation.step = name;
     this.store.save(operation); // fsync'd intent precedes the external effect
-    const receipt = await action();
+    const started = Date.now();
+    log(`${operation.kind} ${operation.id}: ${name} started`);
+    const receipt = await action().catch((error) => {
+      log(`${operation.kind} ${operation.id}: ${name} failed after ${elapsed(started)}`);
+      throw error;
+    });
     operation.receipts[name] = receipt ?? null;
     operation.completed.push(name);
     operation.step = null;
     this.store.save(operation);
+    log(`${operation.kind} ${operation.id}: ${name} finished in ${elapsed(started)}`);
     return receipt;
   }
   private async install(operation: Operation, review: Review, bootstrap?: unknown): Promise<void> {

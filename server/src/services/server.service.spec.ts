@@ -1,6 +1,7 @@
 import type { FrameleafLicense, FrameleafLicenseClaims } from 'src/types.js';
 import { SystemMetadataKey } from 'src/enum.js';
 import { ServerService } from 'src/services/server.service.js';
+import * as frameleafCloudGateway from 'src/utils/frameleaf-cloud-gateway.js';
 import * as frameleafRemoteAccess from 'src/utils/frameleaf-remote-access.js';
 import { UserFactory } from 'test/factories/user.factory.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
@@ -36,6 +37,18 @@ describe(ServerService.name, () => {
 
   it('should work', () => {
     expect(sut).toBeDefined();
+  });
+
+  describe('onBootstrap', () => {
+    it('still loads the identity key when the startup summary cannot be gathered', async () => {
+      const loadIdentity = vi
+        .spyOn(frameleafCloudGateway, 'loadInstanceIdentity')
+        .mockResolvedValue(undefined as never);
+      mocks.database.getPostgresVersion.mockRejectedValue(new Error('database unavailable'));
+      await expect(sut.onBootstrap()).resolves.toBeUndefined();
+      expect(loadIdentity).toHaveBeenCalledOnce();
+      loadIdentity.mockRestore();
+    });
   });
 
   describe('getConnections (FL-165)', () => {

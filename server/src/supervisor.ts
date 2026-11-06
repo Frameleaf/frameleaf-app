@@ -5,12 +5,14 @@ import { randomBytes } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { Worker } from 'node:worker_threads';
 import { PostgresError } from 'postgres';
+import { serverVersion } from 'src/constants.js';
 import { DatabaseLock, ExitCode, FrameleafWorker, LogLevel, SystemMetadataKey } from 'src/enum.js';
 import { superviseQueueWorker } from 'src/queue/supervisor.js';
 import { WorkerStopProofRecorder } from 'src/queue/worker-stop-proof.js';
 import { ConfigRepository, warnDeprecatedEnv } from 'src/repositories/config.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { type DB } from 'src/schema/index.js';
+import { renderBanner } from 'src/utils/banner.js';
 import { buddyMaintenanceState } from 'src/utils/buddy-backup-maintenance.js';
 import { getKyselyConfig } from 'src/utils/database.js';
 import { LockedKeyMessage, LockedKeyRelay, isLockedKeyMessage, isLockedKeyReady } from 'src/utils/locked-key-ipc.js';
@@ -506,6 +508,7 @@ export class Workers {
   }
 }
 
+/** Runs an admin command, or prints the banner and starts every server worker. */
 async function main() {
   const immichApp = process.argv[2];
   if (immichApp) {
@@ -548,6 +551,7 @@ async function main() {
   }
 
   process.title = 'frameleaf';
+  console.log(renderBanner('Frameleaf', `v${serverVersion}`));
   // FL-294: one warning per start for deprecated IMMICH_ variables (the workers stay quiet)
   warnDeprecatedEnv();
   const workers = new Workers();
