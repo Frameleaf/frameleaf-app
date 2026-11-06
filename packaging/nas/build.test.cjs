@@ -129,7 +129,7 @@ test('authenticated TrueNAS and Unraid packaging refuses untrusted releases and 
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'frameleaf-nas-'));
   const tag = 'frameleaf-v1.0.0';
   const sha = 'a'.repeat(40);
-  const database = 'ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7';
+  const database = 'ghcr.io/frameleaf/frameleaf-postgres:19rc1-pgvector0.8.7';
   const bundle = path.join(root, 'bundle');
   const output = path.join(root, 'output');
   const sourceRoot = path.join(root, 'source');
@@ -283,7 +283,7 @@ test('authenticated TrueNAS and Unraid packaging refuses untrusted releases and 
     }
     const values = read('truenas/ix-dev/community/frameleaf/ix_values.yaml');
     assert(values.includes('repository: "ghcr.io/frameleaf/frameleaf-postgres"'));
-    assert(values.includes(`19beta4-pgvector0.8.7@${digest(8)}`));
+    assert(values.includes(`19rc1-pgvector0.8.7@${digest(8)}`));
     assert(!values.includes('immich-app'));
     if (process.env.TRUENAS_LIBRARY) {
       const rendered = execFileSync('python3', [
