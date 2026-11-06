@@ -102,6 +102,7 @@ const restoration = entry({
 const inventory = (overrides: Partial<WorkerInventoryResponseDto> = {}): WorkerInventoryResponseDto => ({
   entries: [entry(), cloud, restoration],
   runners: [],
+  desktopHelpers: [],
   libraryRoutes: [
     { workload: MlWorkload.Face, destinationId: entry().id, queues: [QueueName.FaceDetection] },
     { workload: MlWorkload.Clip, destinationId: null, queues: [QueueName.SmartSearch] },

@@ -1,5 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import { DesktopPlatformSchema } from 'src/dtos/desktop.dto.js';
 import {
   MediaOperationKindSchema,
   MlAdmissionRefusalSchema,
@@ -88,6 +89,22 @@ const WorkerRunnerSchema = z
   })
   .meta({ id: 'WorkerRunnerDto' });
 
+/**
+ * An approved Frameleaf Desktop helper (FL-456), judged as the processing pool judges it. A list of its
+ * own rather than an inventory entry, so apps that read `entries` see no new kind of source.
+ */
+const WorkerDesktopHelperSchema = z
+  .object({
+    id: z.string().describe('Desktop device ID'),
+    name: z.string(),
+    platform: DesktopPlatformSchema,
+    ready: z
+      .boolean()
+      .describe('Online in the last 90 seconds with a current qualification, so it can take AI work now'),
+    lastSeenAt: z.string().meta({ format: 'date-time' }).nullable().describe('Last check-in, or null'),
+  })
+  .meta({ id: 'WorkerDesktopHelperDto' });
+
 const WorkerQueueBacklogSchema = z
   .object({
     queue: QueueNameSchema,
@@ -109,6 +126,9 @@ const WorkerInventoryResponseSchema = z
   .object({
     entries: z.array(WorkerInventoryEntrySchema),
     runners: z.array(WorkerRunnerSchema).describe('Server processes running restorations now'),
+    desktopHelpers: z
+      .array(WorkerDesktopHelperSchema)
+      .describe('Approved Frameleaf Desktop helpers of accounts with desktop assistance'),
     libraryRoutes: z.array(WorkerLibraryRouteSchema),
     libraryQueues: z.array(WorkerQueueBacklogSchema),
     libraryBacklog: z.int().describe('Library-analysis jobs active or waiting, not counting paused queues'),

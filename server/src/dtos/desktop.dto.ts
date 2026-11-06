@@ -2,7 +2,7 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 
 export const DesktopModeSchema = z.enum(['local-server', 'client-worker']).meta({ id: 'DesktopMode' });
-const DesktopPlatformSchema = z.enum(['macos', 'windows', 'linux']).meta({ id: 'DesktopPlatform' });
+export const DesktopPlatformSchema = z.enum(['macos', 'windows', 'linux']).meta({ id: 'DesktopPlatform' });
 const DesktopArchitectureSchema = z.enum(['arm64', 'x86_64']).meta({ id: 'DesktopArchitecture' });
 export const DesktopDeviceStateSchema = z
   .enum(['awaiting-approval', 'preparing', 'paused', 'revoked'])

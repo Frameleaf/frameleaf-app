@@ -4065,6 +4065,16 @@ export type AssetStatsResponseDto = {
     /** Number of videos */
     videos: number;
 };
+export type WorkerDesktopHelperDto = {
+    /** Desktop device ID */
+    id: string;
+    /** Last check-in, or null */
+    lastSeenAt: string | null;
+    name: string;
+    platform: DesktopPlatform;
+    /** Online in the last 90 seconds with a current qualification, so it can take AI work now */
+    ready: boolean;
+};
 export type WorkerWorkloadAdmissionDto = {
     /** Whether the last check would admit this workload here */
     admitted: boolean;
@@ -4148,6 +4158,8 @@ export type WorkerInventoryResponseDto = {
     checkedAt: string;
     /** The machine-learning URL list, in order */
     configuredUrls: string[];
+    /** Approved Frameleaf Desktop helpers of accounts with desktop assistance */
+    desktopHelpers: WorkerDesktopHelperDto[];
     entries: WorkerInventoryEntryDto[];
     /** Library-analysis jobs active or waiting, not counting paused queues */
     libraryBacklog: number;
@@ -37590,6 +37602,11 @@ export enum AssetVisibility {
     Hidden = "hidden",
     Locked = "locked"
 }
+export enum DesktopPlatform {
+    Macos = "macos",
+    Windows = "windows",
+    Linux = "linux"
+}
 export enum MlWorkerAcceleration {
     Unknown = "unknown",
     Cpu = "cpu",
@@ -38570,11 +38587,6 @@ export enum DesktopArchitecture {
 export enum DesktopMode {
     LocalServer = "local-server",
     ClientWorker = "client-worker"
-}
-export enum DesktopPlatform {
-    Macos = "macos",
-    Windows = "windows",
-    Linux = "linux"
 }
 export enum DesktopRoutePreservation {
     All = "all"

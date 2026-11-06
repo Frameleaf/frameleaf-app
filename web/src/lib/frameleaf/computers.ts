@@ -12,6 +12,7 @@ import {
   WorkerInventorySource,
   type QueueResponseDto,
   type RenderWorkerCompatibilityResponseDto,
+  type WorkerDesktopHelperDto,
   type WorkerInventoryEntryDto,
   type WorkerInventoryResponseDto,
 } from '@frameleaf/sdk';
@@ -34,6 +35,8 @@ export type Computer = {
   state: ComputerState;
   /** The server's records behind this computer: an AI address, a Studio helper, or both. */
   entries: WorkerInventoryEntryDto[];
+  /** Frameleaf Desktop apps on this computer that help with AI features for their account. */
+  desktops: WorkerDesktopHelperDto[];
   /** The graphics card it reported, when it has one. */
   card?: string;
 };
@@ -53,7 +56,9 @@ const placeOf = (entry: WorkerInventoryEntryDto): ComputerPlace =>
  * own row (it answers on its own), but it runs here, not at home.
  */
 export const whereOf = (computer: Computer): ComputerPlace =>
-  computer.place === 'home' && computer.entries.every((entry) => entry.kind === MlDestinationKind.Local)
+  computer.place === 'home' &&
+  computer.desktops.length === 0 &&
+  computer.entries.every((entry) => entry.kind === MlDestinationKind.Local)
     ? 'server'
     : computer.place;
 
@@ -68,10 +73,20 @@ export const entryState = (entry: WorkerInventoryEntryDto): ComputerState => {
   return entry.readiness === MlWorkerReadiness.Unknown ? 'unchecked' : 'ready';
 };
 
+/** A Frameleaf Desktop helper is ready while its app checks in, and not answering once it stops. */
+export const desktopState = (desktop: WorkerDesktopHelperDto): ComputerState =>
+  desktop.ready ? 'ready' : 'not-answering';
+
 const WORST: readonly ComputerState[] = ['not-answering', 'unchecked', 'ready', 'off'];
 /** A computer with several records is as healthy as its least healthy one that is switched on. */
-const combinedState = (entries: readonly WorkerInventoryEntryDto[]): ComputerState => {
-  const states = new Set(entries.map((entry) => entryState(entry)));
+const combinedState = (
+  entries: readonly WorkerInventoryEntryDto[],
+  desktops: readonly WorkerDesktopHelperDto[] = [],
+): ComputerState => {
+  const states = new Set([
+    ...entries.map((entry) => entryState(entry)),
+    ...desktops.map((desktop) => desktopState(desktop)),
+  ]);
   return WORST.find((state) => states.has(state)) ?? 'off';
 };
 
@@ -92,6 +107,7 @@ export const computersFrom = (inventory: WorkerInventoryResponseDto | null | und
     // This server is the one answering the page. Its AI features are read separately (`aiState`).
     state: 'ready',
     entries: own,
+    desktops: [],
     card: own.flatMap((entry) => entry.gpus)[0]?.name,
   };
   const helpers = new Map<string, Computer>();
@@ -102,18 +118,32 @@ export const computersFrom = (inventory: WorkerInventoryResponseDto | null | und
       continue;
     }
     if (place === 'cloud') {
-      cloud ??= { key: CLOUD_KEY, name: '', place, state: 'off', entries: [] };
+      cloud ??= { key: CLOUD_KEY, name: '', place, state: 'off', entries: [], desktops: [] };
       cloud.entries.push(entry);
       continue;
     }
     const key = helperKey(entry.name);
-    const helper = helpers.get(key) ?? { key, name: entry.name.trim(), place, state: 'off', entries: [] };
+    const helper = helpers.get(key) ?? { key, name: entry.name.trim(), place, state: 'off', entries: [], desktops: [] };
     helper.entries.push(entry);
+    helpers.set(key, helper);
+  }
+  // Frameleaf Desktop helpers are computers at home too; one with the same name as an address is that computer.
+  for (const desktop of inventory?.desktopHelpers ?? []) {
+    const key = helperKey(desktop.name);
+    const helper = helpers.get(key) ?? {
+      key,
+      name: desktop.name.trim(),
+      place: 'home' as const,
+      state: 'off' as const,
+      entries: [],
+      desktops: [],
+    };
+    helper.desktops.push(desktop);
     helpers.set(key, helper);
   }
   const rest = [...helpers.values(), ...(cloud ? [cloud] : [])].map((computer) => ({
     ...computer,
-    state: combinedState(computer.entries),
+    state: combinedState(computer.entries, computer.desktops),
     card: computer.entries.flatMap((entry) => entry.gpus)[0]?.name,
   }));
   return [server, ...rest];

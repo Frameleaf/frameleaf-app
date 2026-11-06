@@ -36,9 +36,9 @@ const entry = (overrides: object) => ({
   renderKinds: [],
   ...overrides,
 });
-const data = (entries: object[], machineLearningEnabled = true) =>
+const data = (entries: object[], machineLearningEnabled = true, desktopHelpers: object[] = []) =>
   ({
-    processing: { destinations: [], routes: [], inventory: { entries, machineLearningEnabled } },
+    processing: { destinations: [], routes: [], inventory: { entries, machineLearningEnabled, desktopHelpers } },
     render: { workers: [], limits: { instance: {}, users: [] }, audit: [], users: [] },
   }) as unknown as ComputersData;
 
@@ -119,6 +119,28 @@ describe('Computers (FL-364)', () => {
     const office = within(computer('Office PC'));
     expect(office.getByText('Not answering')).toBeInTheDocument();
     expect(office.getByText('Work set to run there waits until it’s back.')).toBeInTheDocument();
+  });
+
+  it('lists a linked Frameleaf Desktop as its own computer, ready while open and not answering once closed', () => {
+    render(ComputersSection, {
+      data: data([entry({})], true, [
+        { id: 'd1', name: 'Studio Mac', platform: 'macos', ready: true, lastSeenAt: null },
+        { id: 'd2', name: 'Laptop', platform: 'windows', ready: false, lastSeenAt: null },
+      ]),
+    });
+
+    const mac = within(computer('Studio Mac'));
+    expect(mac.getByText('At home · Mac')).toBeInTheDocument();
+    expect(mac.getByText('Ready')).toBeInTheDocument();
+    expect(mac.getByText('Frameleaf Desktop is helping with AI features.')).toBeInTheDocument();
+    // The app is managed on the computer itself, so there is no Details for it here.
+    expect(mac.queryByRole('button')).not.toBeInTheDocument();
+
+    const laptop = within(computer('Laptop'));
+    expect(laptop.getByText('At home · Windows')).toBeInTheDocument();
+    expect(laptop.getByText('Not answering')).toBeInTheDocument();
+    expect(laptop.getByText('Open Frameleaf Desktop on it to help again.')).toBeInTheDocument();
+    expect(screen.getByText('Laptop isn’t answering')).toBeInTheDocument();
   });
 
   it('says AI features are off and links to the switch, instead of naming a place', () => {
