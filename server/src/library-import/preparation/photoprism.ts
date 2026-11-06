@@ -80,8 +80,12 @@ const portableVerifier = (user: PhotoprismRow | undefined) =>
   user.expires_at === null &&
   user.deleted_at === null;
 
-/** PhotoPrism generates exactly this filter for a folder album; any other dynamic album stays archived. */
-const folderFilter = (path: string) => `path:"${path}" public:true`;
+/**
+ * PhotoPrism generates exactly this filter for a folder album (form.Serialize quotes a value only when it holds
+ * a space or one of :'()[]-+`); any other dynamic album stays archived.
+ */
+const folderFilter = (path: string) =>
+  `path:${/[\s:'()[\]\-+`]/u.test(path) ? `"${path}"` : path} public:true`;
 
 type Loaded = {
   tested: boolean;
