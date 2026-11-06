@@ -40,6 +40,7 @@ import { HostAutostart } from './unraid-autostart.js';
 import { ServiceOverrides, detectAcceleration, hostInstallations, suggestedPort } from './compose.js';
 import { sharePortWithRedirect } from './http-redirect.js';
 import { log, print, renderBanner, requestLog } from './banner.js';
+import { connectionChecks, redactPaths, redactionRoots, renderReport } from './troubleshooting.js';
 
 const directory = process.env.MANAGER_DATA;
 const runtime = process.env.MANAGER_RUNTIME ?? 'docker';
@@ -108,6 +109,43 @@ const operations = new Operations(
   process.env.MANAGER_UNRAID_AUTOSTART ?? (defaults.platform === 'unraid' ? new HostAutostart(docker, directory) : undefined),
 );
 const lifecycle = native ?? operations;
+const managerVersion = await readFile(new URL('../package.json', import.meta.url), 'utf8')
+  .then((text) => `v${JSON.parse(text).version}`)
+  .catch(() => 'unknown version');
+/** Mounted media storage and the backup destination, which can be a different drive. */
+const drives = () => [
+  ...(process.env.MANAGER_STORAGE_ROOTS ?? '').split(':').filter(Boolean).map((path, i) => ({ name: `Storage ${i + 1}`, path })),
+  { name: 'Backup drive', path: backupRoot! },
+];
+/**
+ * Everything a troubleshooting run looks at: this library's containers (server, database, machine learning, LAN
+ * discovery and any import runner), plus Manager's own container when Docker runs it.
+ */
+async function troubleshootingScope() {
+  const installation = operations.installation();
+  const inventory = await docker.inventory().catch(() => []);
+  const containers = installation ? inventory.filter((c) => c.Config.Labels?.['app.frameleaf.manager'] === installation.id) : [];
+  const self = runtime === 'docker' && /^[a-f0-9]{12}$/.test(process.env.HOSTNAME ?? '')
+    ? inventory.find((c) => c.Id.startsWith(process.env.HOSTNAME!))
+    : undefined;
+  const secrets = [...containers, ...(self ? [self] : [])].flatMap((c) => secretEnvironmentValues(c.Config.Env ?? []));
+  secrets.push(store.get<string>('database-password') ?? '');
+  const extraFolders = installation
+    ? Object.values(operations.containerSettings().services).flatMap((service) => service?.mounts ?? [])
+    : [];
+  const roots = redactionRoots(
+    [
+      ...[...(installation?.mounts ?? []), ...extraFolders].flatMap((m) => [m.source, m.target]),
+      ...(process.env.MANAGER_STORAGE_ROOTS ?? '').split(':'),
+      backupRoot!,
+      directory!,
+      installation?.databaseRoot ?? '',
+    ],
+    [...containers, ...(self ? [self] : [])].flatMap((c) => (c.Mounts ?? []).flatMap((m) => [m.Source, m.Destination])),
+  );
+  const clean = (text: string) => redactPaths(redact(text, secrets), roots);
+  return { installation, containers, self, clean };
+}
 /** The port the administrator reached Manager on: never offered to, or accepted for, the Frameleaf stack. */
 const managerPort = (request: Request) => Number(new URL(security.requestOrigin(request)).port || 443);
 const RequestKey = z.string().uuid();
@@ -437,6 +475,50 @@ class Api {
       ]),
     };
   }
+  /** Connection checks across the stack, for the Services screen. Details carry no paths or secrets. */
+  @Post('diagnostics') async diagnostics(@Body() input: unknown) {
+    z.object({}).strict().parse(input);
+    const { installation, containers, clean } = await troubleshootingScope();
+    const checks = await connectionChecks(docker, installation, containers, drives());
+    return { checks: checks.map((c) => ({ ...c, detail: clean(c.detail) })) };
+  }
+  /** One text file to post on the community: checks, problems found, activity and every service's log, redacted. */
+  @Post('diagnostics-report') async diagnosticsReport(@Body() input: unknown, @Res() response: Response) {
+    z.object({}).strict().parse(input);
+    const { installation, containers, self, clean } = await troubleshootingScope();
+    const [checks, host, logs] = await Promise.all([
+      connectionChecks(docker, installation, containers, drives()),
+      docker.compatibility().catch(() => null),
+      Promise.all(
+        [...containers, ...(self ? [self] : [])].map(async (c) => ({
+          service: c === self ? 'manager' : (c.Config.Labels?.['com.docker.compose.service'] ?? c.Name.replace(/^\//, '')),
+          text: clean(await docker.logs(c.Id, { tail: 1000, since: '24h' }).catch((error: Error) => `(logs unavailable: ${error.message})`)),
+        })),
+      ),
+    ]);
+    const generated = new Date().toISOString();
+    const text = renderReport({
+      generated,
+      manager: managerVersion,
+      runtime: `${runtime} on ${defaults.platform}`,
+      installation,
+      host,
+      checks: checks.map((c) => ({ ...c, detail: clean(c.detail) })),
+      operations: operations
+        .history()
+        .slice(0, 15)
+        .map((o) => ({
+          kind: o.kind,
+          state: o.state,
+          step: o.step ?? undefined,
+          error: o.error ? clean([o.error, o.detail].filter(Boolean).join(': ')) : undefined,
+          created: new Date(o.createdAt).toISOString().slice(0, 19) + 'Z',
+        })),
+      logs,
+    });
+    response.setHeader('Content-Disposition', `attachment; filename="frameleaf-troubleshooting-${generated.slice(0, 10)}.txt"`);
+    response.type('text/plain').send(text);
+  }
   @Post('profile') profile(@Body() input: unknown) {
     const profile = z
       .object({
@@ -506,9 +588,7 @@ class ManagerModule {}
 /** Prints the banner and startup details, mounts the request log and API, then listens. */
 async function main() {
   process.umask(0o077);
-  const version = await readFile(new URL('../package.json', import.meta.url), 'utf8')
-    .then((text) => `v${JSON.parse(text).version}`)
-    .catch(() => 'unknown version');
+  const version = managerVersion;
   print(renderBanner('Frameleaf Manager', version));
   log(`starting ${version} on ${defaults.platform} (${runtime}); state ${directory}, backups ${backupRoot}`);
   await mkdir(directory!, { recursive: true, mode: 0o700 });
