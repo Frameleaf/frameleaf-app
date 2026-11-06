@@ -89,8 +89,28 @@ const ID_SEGMENT = /^(?=[^/]*\d)[\w-]{20,}$/;
  * The path written on a request line: path secrets masked, IDs shown as `:id`, and only the names of
  * query parameters kept (every value masked; credential routes keep no query at all).
  */
+/**
+ * Percent-decodes each path segment so an encoded route literal (`/api/%63ast/<token>`) still meets
+ * the secret-route patterns; a decoded `/`, `?` or `#` is re-encoded to keep segment boundaries.
+ */
+const decodePath = (url: string) => {
+  const cut = url.search(/[?#]/);
+  const path = cut === -1 ? url : url.slice(0, cut);
+  const decoded = path
+    .split('/')
+    .map((segment) => {
+      try {
+        return decodeURIComponent(segment).replaceAll(/[/?#]/g, (char) => encodeURIComponent(char));
+      } catch {
+        return segment;
+      }
+    })
+    .join('/');
+  return cut === -1 ? decoded : decoded + url.slice(cut);
+};
+
 export const requestLogPath = (url: string) => {
-  const masked = redactPathSecrets(url);
+  const masked = redactPathSecrets(decodePath(url));
   const cut = masked.search(/[?#]/);
   const path = (cut === -1 ? masked : masked.slice(0, cut))
     .split('/')

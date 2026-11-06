@@ -307,6 +307,11 @@ describe('request log line', () => {
       '/api/shared-links/me?slug=********&key=********',
     );
     expect(requestLogPath('/api/server/about')).toBe('/api/server/about');
+    expect(requestLogPath('/api/%63ast/eyJhbGciOi.mac')).toBe('/api/cast/********');
+    expect(requestLogPath('/API/%43AST/x.y?size=preview')).toBe('/API/CAST/********?size=********');
+    expect(requestLogPath('/api/%6Cicense/activate?key=FL-S')).toBe('/api/license/activate?********');
+    expect(requestLogPath('/api/albums/a%2Fb%3Fc')).toBe('/api/albums/a%2Fb%3Fc');
+    expect(requestLogPath('/api/albums/%E0%A4%A')).toBe('/api/albums/%E0%A4%A');
   });
 
   it('moves request lines to debug when FRAMELEAF_LOG_REQUESTS=false, but still warns on server errors', () => {
