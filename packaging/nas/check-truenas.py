@@ -45,16 +45,26 @@ values["ix_context"] = {"app_name": "frameleaf", "app_metadata": metadata}
 template = jinja2.Environment(extensions=["jinja2.ext.do"], undefined=jinja2.StrictUndefined).from_string(
     (app / "templates/docker-compose.yaml").read_text()
 )
-for enabled in (False, True):
+for enabled, shm_size, db_port in ((False, 2048, 5432), (True, 8192, 5544)):
     candidate = copy.deepcopy(values)
     candidate["frameleaf"]["enable_ml"] = enabled
+    candidate["frameleaf"]["shm_size_mb"] = shm_size
+    candidate["consts"]["db_port"] = db_port
     candidate["frameleaf"]["additional_envs"] = [{"name": "FRAMELEAF_IDENTITY_DIR", "value": "/private/identity"}]
     candidate["frameleaf"]["ml_additional_envs"] = [{"name": "MACHINE_LEARNING_WORKERS", "value": "2"}]
+    if enabled:
+        candidate["frameleaf"]["additional_envs"].append({"name": "FRAMELEAF_LOG_LEVEL", "value": "debug"})
+        candidate["frameleaf"]["ml_additional_envs"].append({"name": "FRAMELEAF_LOG_LEVEL", "value": "warn"})
     result = json.loads(template.render(values=candidate, ix_lib=SimpleNamespace(base=SimpleNamespace(render=render))))
+    server = result["services"]["server"]
+    assert server["shm_size"] == f"{shm_size}M"
+    assert server["environment"]["DB_PORT"] == str(db_port)
+    assert server["environment"].get("FRAMELEAF_LOG_LEVEL") == ("debug" if enabled else None)
     assert result["services"]["server"]["environment"]["FRAMELEAF_MACHINE_LEARNING_ENABLED"] == str(enabled).lower()
     assert ("machine-learning" in result["services"]) == enabled
     if enabled:
         ml = result["services"]["machine-learning"]
+        assert ml["environment"]["FRAMELEAF_LOG_LEVEL"] == "warn"
         assert "FRAMELEAF_IDENTITY_DIR" not in ml["environment"]
         assert "DB_PASSWORD" not in ml["environment"]
         assert ml["environment"]["MACHINE_LEARNING_WORKERS"] == "2"
@@ -73,6 +83,8 @@ for enabled in (False, True):
     assert not any("METRICS" in name for name in result["services"]["server"]["environment"])
     assert "api_metrics_port" not in candidate["network"] and "microservices_metrics_port" not in candidate["network"]
     postgres = result["services"]["postgres"]
+    assert postgres["environment"]["PGPORT"] == str(db_port)
+    assert str(db_port) in str(postgres["healthcheck"])
     assert postgres["environment"]["PGDATA"] == "/var/lib/postgresql/19/docker"
     assert postgres["user"] == "999:999"
     assert any(mount["target"] == "/var/lib/postgresql" for mount in postgres["volumes"])
