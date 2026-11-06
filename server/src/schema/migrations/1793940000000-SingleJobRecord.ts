@@ -170,7 +170,8 @@ export async function up(db: Kysely<any>): Promise<void> {
     WHERE j.state IN ('completed','failed','cancelled','blocked') AND j."latestPending" IS NULL
       AND j."finishedAt" < now() - CASE WHEN j.state = 'completed' THEN interval '7 days' ELSE interval '30 days' END
       AND NOT EXISTS (SELECT 1 FROM job child WHERE child."parentId" = j.id)
-      AND NOT EXISTS (SELECT 1 FROM job_run r WHERE r.id = j."runId" AND r."finishedAt" IS NULL)
+      AND NOT EXISTS (SELECT 1 FROM job_run r WHERE r.id = j."runId"
+        AND (r."finishedAt" IS NULL OR r.selection->'holds' @? '$.* ? (@ == "parked")'))
       AND NOT EXISTS (SELECT 1 FROM job_attempt a WHERE a."jobId" = j.id
         AND (a.outcome IS DISTINCT FROM 'completed' OR a."finishedAt" IS NULL))`.execute(db);
   await sql`DELETE FROM job_worker w WHERE w.state = 'lost' AND w."heartbeatAt" < now() - interval '7 days'

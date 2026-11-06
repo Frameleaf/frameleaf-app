@@ -52,6 +52,19 @@ describe('bounded PostgreSQL queue history', () => {
     );
   });
 
+  it('keeps the jobs of a finished run while one of its stages is parked', async () => {
+    const runId = await store.createRun('retention-parked', {});
+    await sql`insert into job(id, queue, name, data, state, "safeToRetry", "deadlineMs", "runId", "itemKey", "finishedAt")
+      values (gen_random_uuid(), ${queue}, 'thumbnail', '{}', 'completed', true, 600000, ${runId}::uuid, 'a',
+        now() - interval '40 days')`.execute(db);
+    await sql`update job_run set "finishedAt" = now(), selection = '{"holds":{"SmartSearch":"parked"}}'
+      where id = ${runId}::uuid`.execute(db);
+    expect(await pruneQueueHistory(db)).toBe(0);
+    await sql`update job_run set selection = '{"holds":{}}' where id = ${runId}::uuid`.execute(db);
+    await sql`delete from system_metadata where key = 'frameleaf-queue-retention-cursor'`.execute(db);
+    expect(await pruneQueueHistory(db)).toBe(1);
+  });
+
   it('retains unfinished runs, active work, needs-attention work and parents of surviving children', async () => {
     const runId = await store.createRun('unfinished', {});
     await store.enqueue(

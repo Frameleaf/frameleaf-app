@@ -76,7 +76,9 @@ export async function pruneQueueHistoryPage(
         and j."finishedAt" < now() - case when j.state = 'completed' then interval '7 days' else interval '30 days' end
         and not exists(select 1 from job child where child."parentId" = j.id)
         -- FL-1265: a run's jobs are its counts until it finishes and writes its summary
-        and not exists(select 1 from job_run r where r.id = j."runId" and r."finishedAt" is null)
+        -- a parked stage can reopen a finished run, which recounts it from its jobs
+        and not exists(select 1 from job_run r where r.id = j."runId"
+          and (r."finishedAt" is null or r.selection->'holds' @? '$.* ? (@ == "parked")'))
         and not exists(select 1 from job_attempt a where a."jobId" = j.id
           and (a.outcome is distinct from 'completed' or a."finishedAt" is null)
           and not exists(select 1 from system_metadata m
