@@ -12,7 +12,7 @@ test('compiled schema provider loads both pinned catalogs and validates source p
   for (const schema of [getFrameleafBaselineSchema(), getFrameleafSchema()]) {
     assert.equal(schema.schemaName, 'public');
     assert.ok(schema.tables.some(({ name }) => name === 'asset'));
-    assert.ok(schema.tables.some(({ name }) => name === 'job_run_item'));
+    assert.ok(schema.tables.some(({ name }) => name === 'job_run'));
     assert.deepEqual(schema.warnings, []);
   }
 });
