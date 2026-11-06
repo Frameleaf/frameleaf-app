@@ -1,8 +1,8 @@
 {
   "image": "ghcr.io/frameleaf/frameleaf-postgres",
-  "version": "19beta4-pgvector0.8.7",
-  "digest": "sha256:7b155ed85302ab66c1022309f1f70f0b79f98f70bd52af8d7d3611a0cbf08cf0",
-  "sourceCommit": "947568067639827de73e2de7260103df697c7f51",
-  "workflowRun": "https://github.com/Frameleaf/frameleaf-app/actions/runs/39005486731",
+  "version": "19rc1-pgvector0.8.7",
+  "digest": "sha256:3efd98096adf147872590ebdb31ffd58ee18de5e54e2309ca431417279b629ff",
+  "sourceCommit": "34f31aa0454753577745b451e4b27a33725c85ea",
+  "workflowRun": "https://github.com/Frameleaf/frameleaf-app/actions/runs/42307132383",
   "platforms": ["linux/amd64", "linux/arm64"]
 }

@@ -26,7 +26,7 @@ const compose = (path) =>
   load(read(path).replace(/!(?:reset|override)\b/g, ""));
 // FL-191: Frameleaf publishes its own database image, built from docker/postgres.
 const databaseImage =
-  "ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7@sha256:7b155ed85302ab66c1022309f1f70f0b79f98f70bd52af8d7d3611a0cbf08cf0";
+  "ghcr.io/frameleaf/frameleaf-postgres:19rc1-pgvector0.8.7@sha256:3efd98096adf147872590ebdb31ffd58ee18de5e54e2309ca431417279b629ff";
 
 test("server identifiers use Frameleaf throughout the tracked source", () => {
   const result = spawnSync(

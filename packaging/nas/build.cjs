@@ -29,7 +29,7 @@ async function build(directory, expectedTag, output, verification = {}) {
   const replacements = {
     '@RELEASE_TAG@': manifest.tag,
     '@PG_REPOSITORY@': postgres.split('@')[0].split(':')[0],
-    '@PG_TAG@': `${postgres.split('@')[0].split(':')[1] || '19beta4-pgvector0.8.7'}@${postgres.split('@')[1]}`,
+    '@PG_TAG@': `${postgres.split('@')[0].split(':')[1] || '19rc1-pgvector0.8.7'}@${postgres.split('@')[1]}`,
   };
   const render = (body) => {
     for (const [key, value] of Object.entries(replacements)) body = body.replaceAll(key, value);
