@@ -182,9 +182,9 @@ export function postgresMajor(image: string): number | null {
   const match = /frameleaf-postgres:(\d+)(?:[^@]*)?(?:@sha256:[a-f0-9]{64})?$/.exec(image);
   return match ? Number(match[1]) : null;
 }
-/** The PostgreSQL version a frameleaf-postgres tag names, as `server_version` starts: `19rc1`, `19.0`. */
+/** The exact PostgreSQL version a frameleaf-postgres tag names, as `server_version` starts: `19rc1`, `19.0`. A major-only tag (`19-…`) names none, so callers compare majors. */
 export function postgresVersion(image: string): string | null {
-  return /frameleaf-postgres:(\d+(?:beta\d+|rc\d+|\.\d+)?)-[^@]*(?:@sha256:[a-f0-9]{64})?$/.exec(image)?.[1] ?? null;
+  return /frameleaf-postgres:(\d+(?:beta\d+|rc\d+|\.\d+))-[^@]*(?:@sha256:[a-f0-9]{64})?$/.exec(image)?.[1] ?? null;
 }
 /**
  * Whether an update may switch the running database image to this release's in place (review M2): only the

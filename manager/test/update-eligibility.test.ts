@@ -793,6 +793,8 @@ test('a database image the bundle does not declare in place moves by dump and re
   assert.equal(postgresVersion(beta.split('@')[0]), '19beta4');
   assert.equal(postgresVersion(image('19.0-pgvector0.8.7')), '19.0');
   assert.equal(postgresVersion(image('latest')), null);
+  // A major-only tag names no exact version: the move then checks only the server's major (19.1 passes).
+  assert.equal(postgresVersion(image('19-pgvector0.8.7')), null);
 });
 
 type MoveOptions = { space?: boolean; restore?: 'fails' | 'differs' | 'hangs'; start?: 'fails' };

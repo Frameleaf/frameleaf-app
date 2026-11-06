@@ -30,11 +30,11 @@ For a plain Docker Compose installation, run these commands in the folder with y
 
    ```bash
    docker compose stop frameleaf-server frameleaf-machine-learning
-   docker compose exec -T database sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom' > frameleaf-move.dump
-   docker compose down
+   docker compose exec -T database sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom' > frameleaf-move.dump &&
+     docker compose down
    ```
 
-   Do not pass `-v` or `--volumes` to `down`. Check that `frameleaf-move.dump` is not empty.
+   Do not pass `-v` or `--volumes` to `down`. If the dump command fails, stop here: Frameleaf's database is unchanged, so start it again with `docker compose up -d`. Check that `frameleaf-move.dump` is not empty.
 
 2. Replace `docker-compose.yml` with the new release's file (keep a copy of the old one). In `.env`, point `DB_DATA_LOCATION` at a new, empty folder, for example `./postgres19rc1`. Leave the old folder untouched.
 
@@ -45,7 +45,7 @@ For a plain Docker Compose installation, run these commands in the folder with y
    docker compose exec -T database sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --exit-on-error --single-transaction --no-owner --no-acl' < frameleaf-move.dump
    ```
 
-4. Start Frameleaf with `docker compose up -d` and check your library.
+4. If the restore fails, stop here and go back (below). If it succeeds, start Frameleaf with `docker compose up -d` and check your library.
 
 To go back, run `docker compose down`, restore the old `docker-compose.yml` and the old `DB_DATA_LOCATION`, and run `docker compose up -d`. Delete the old folder and the dump only once you are happy with the new release.
 
