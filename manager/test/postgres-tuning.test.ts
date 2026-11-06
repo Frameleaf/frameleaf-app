@@ -74,6 +74,8 @@ test('host RAM comes from the Docker daemon, falling back to this container', as
   assert.equal(await hostMemory(async () => String(64 * GiB)), 64 * GiB);
   assert.ok((await hostMemory(async () => { throw new Error('no docker'); })) > 0);
   assert.ok((await hostMemory(async () => 'null')) > 0);
+  assert.ok((await hostMemory(async () => '')) > 0);
+  assert.ok((await hostMemory(async () => 'not json')) > 0);
 });
 
 test('the database service carries the tuning at install and is re-tuned on Start', async () => {

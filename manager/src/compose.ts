@@ -68,7 +68,7 @@ export async function configureUnraidCompose(directory: string, hardware?: Recor
 export async function hostMemory(
   info = () => command('docker', ['info', '--format', '{{json .MemTotal}}'], { timeout: 10_000 }),
 ): Promise<number> {
-  const bytes = await info().then((r) => Number(JSON.parse(r)), () => Number.NaN);
+  const bytes = await info().then((r) => Number(JSON.parse(r))).catch(() => Number.NaN);
   return Number.isFinite(bytes) && bytes > 0 ? bytes : totalmem();
 }
 const MB = 2 ** 20;
