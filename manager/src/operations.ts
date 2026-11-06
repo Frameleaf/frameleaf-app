@@ -973,7 +973,7 @@ export class Operations {
       const sourceFence = restoring ? null : ((review as Review).common?.fence ?? (review as Review).source);
       // Once Frameleaf has started, the original app no longer matters (see start-frameleaf); other writers still do.
       if (sourceFence && operation.completed.includes('fence-source')) {
-        if (installation && (await this.serverStarted(installation)))
+        if (installation && (operation.completed.includes('start-frameleaf') || (await this.serverStarted(installation))))
           await this.fencing.assertMedia(installation.mounts, installation);
         else await this.fencing.verify(sourceFence, installation ?? undefined);
       }

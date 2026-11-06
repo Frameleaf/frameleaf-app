@@ -497,6 +497,34 @@ test('resuming after Frameleaf already started does not re-check the original ap
   }
 });
 
+test('a journaled Frameleaf start counts on resume even after its container is gone', async () => {
+  const f = await fixture();
+  try {
+    let mediaChecks = 0;
+    const internal = f.operations as unknown as { fencing: { verify(): Promise<void>; assertMedia(): Promise<void> } };
+    internal.fencing = {
+      verify: async () => { throw new Error('source_changed_review_again'); },
+      assertMedia: async () => { mediaChecks++; },
+    };
+    f.store.set('review:fixture-review', { input: { tag: 'v1.0.0' }, source: f.source, backup: null, release: {} });
+    f.operation.input = { reviewId: 'fixture-review' };
+    f.operation.state = 'failed';
+    f.operation.completed = ['configure', 'fence-source', 'start-frameleaf', 'prepare-library'];
+    f.operation.receipts.configure = f.installation;
+    f.store.save(f.operation);
+    f.operations.resume(f.operation.id);
+    let resumed = f.store.history().find((o) => o.id === f.operation.id)!;
+    for (let i = 0; i < 200 && resumed.state === 'running'; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      resumed = f.store.history().find((o) => o.id === f.operation.id)!;
+    }
+    assert.notEqual(resumed.error, 'operation_failed');
+    assert.equal(mediaChecks >= 1, true);
+  } finally {
+    await f.cleanup();
+  }
+});
+
 test('the media check asks the server image, with its own mounts and user, which folders it cannot write (FL-414)', async () => {
   const commands: string[][] = [];
   const docker = new Docker(async (binary, args, options) => {
