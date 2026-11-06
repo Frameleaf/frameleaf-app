@@ -1,4 +1,5 @@
 import { statfs } from 'node:fs/promises';
+import { RESERVED_TARGETS } from './compose.js';
 import { redact, type Installation } from './contracts.js';
 import type { Container, Docker } from './docker.js';
 
@@ -39,16 +40,16 @@ export function redactPaths(text: string, roots: string[]): string {
     .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '[email]');
 }
 
-// Only what Manager or Docker itself mounts into containers stays visible (GPU devices help with acceleration
-// questions; the rest names no one). Any other container mount is hidden, including a /run folder left from an
-// earlier container setting while a change to those settings is still unresolved.
-const SYSTEM = /^\/(dev|sys|proc|run\/frameleaf|(var\/)?run\/docker\.sock|etc\/(localtime|timezone|hosts|hostname|resolv\.conf)|var\/lib\/postgresql|cache)(\/|$)/;
+// Only the targets Manager reserves (extra folders may not use them) stay visible: they name no one. GPU devices
+// reach containers as devices, not mounts, so /dev/dri still shows wherever a log mentions it. Every other mount a
+// container has is hidden, including one left from an earlier container setting while a change is unresolved.
+const reserved = (path: string) => RESERVED_TARGETS.some((target) => path === target || path.startsWith(`${target}/`));
 /**
  * Folders to hide in a report. Configured ones (library mounts, extra folders, storage, backups, Manager state) are
- * always hidden; what Docker reports as mounted is hidden unless it is one of the system mounts above.
+ * always hidden; what Docker reports as mounted is hidden unless it is one of Manager's reserved targets above.
  */
 export const redactionRoots = (configured: string[], containerMounts: string[]) =>
-  [...configured, ...containerMounts.filter((path) => !SYSTEM.test(path ?? ''))].filter(Boolean);
+  [...configured, ...containerMounts.filter((path) => path && !reserved(path))].filter(Boolean);
 
 const KNOWN: { problem: string; pattern: RegExp; hint: string }[] = [
   { problem: 'Out of memory', pattern: /out of memory|heap out of memory|OOMKilled|Killed process|cannot allocate memory|ENOMEM/i, hint: 'The host ran short of RAM. Close other apps or containers, or turn off machine learning on small machines.' },

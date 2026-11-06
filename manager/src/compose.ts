@@ -185,7 +185,7 @@ export async function releaseImages(
 /** Names Manager sets itself; an advanced setting may not rewire the stack or move the media. */
 export const RESERVED_ENVIRONMENT = /^(DB_|POSTGRES_|FRAMELEAF_MANAGER_|IMMICH_CONFIG_FILE$|IMMICH_MEDIA_LOCATION$)/;
 /** Container paths Manager mounts itself; an extra folder may not shadow them. */
-const RESERVED_TARGETS = ['/run/frameleaf', '/var/lib/postgresql', '/cache'];
+export const RESERVED_TARGETS = ['/run/frameleaf', '/var/lib/postgresql', '/cache'];
 /**
  * Host paths that are never bind-mounted into the network-exposed stack, whatever an administrator (or a
  * stolen Manager session) asks for: the Docker socket and data root, kernel and device trees, system
