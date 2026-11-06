@@ -18,7 +18,7 @@ const images = {
   studio:
     "mirror.gcr.io/library/node@sha256:2bd396628eceb5c999a6e43731fab69d5fb98b94ba9d9d90b5f64575c5178765",
   postgres:
-    "mirror.gcr.io/library/postgres@sha256:4c618d9a30e0b88078b9371a0499d7055da9ab7f5afe386a460758eac9857f06",
+    "mirror.gcr.io/library/postgres@sha256:e698169ffdd3c23af2a1675d30f48eeab6883fb277bf5be6911ceac5cfaf760f",
   python:
     "mirror.gcr.io/library/python@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1",
   cuda: "mirror.gcr.io/nvidia/cuda@sha256:94c1577b2cd9dd6c0312dc04dff9cb2fdce2b268018abc3d7c2dbcacf1155000",
@@ -33,7 +33,7 @@ const defaults = {
   studio:
     "node:22.23.4-bookworm@sha256:2bd396628eceb5c999a6e43731fab69d5fb98b94ba9d9d90b5f64575c5178765",
   postgres:
-    "docker.io/library/postgres:19beta4-bookworm@sha256:4c618d9a30e0b88078b9371a0499d7055da9ab7f5afe386a460758eac9857f06",
+    "docker.io/library/postgres:19rc1-bookworm@sha256:e698169ffdd3c23af2a1675d30f48eeab6883fb277bf5be6911ceac5cfaf760f",
   python:
     "python:3.12.15-slim-trixie@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1",
   cuda: "nvidia/cuda:12.8.1-runtime-ubuntu22.04@sha256:4a801ef9232d2b05e69df4eb8aa054dbbe2824e5499e1e6e857320bb01ac41a9",

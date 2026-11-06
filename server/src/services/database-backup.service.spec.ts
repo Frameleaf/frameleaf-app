@@ -523,7 +523,7 @@ describe(DatabaseBackupService.name, () => {
             "databaseMajorVersion": 19,
             "databasePassword": "postgres",
             "databaseUsername": "postgres",
-            "databaseVersion": "19beta4 (Debian 19~beta4-1.pgdg12+1)",
+            "databaseVersion": "19rc1 (Debian 19~rc1-1.pgdg12+1)",
           }
         `);
       });
@@ -547,7 +547,7 @@ describe(DatabaseBackupService.name, () => {
           "databaseMajorVersion": 19,
           "databasePassword": "postgres",
           "databaseUsername": "postgres",
-          "databaseVersion": "19beta4 (Debian 19~beta4-1.pgdg12+1)",
+          "databaseVersion": "19rc1 (Debian 19~rc1-1.pgdg12+1)",
         }
       `);
       });
@@ -575,7 +575,7 @@ describe(DatabaseBackupService.name, () => {
           "databaseMajorVersion": 19,
           "databasePassword": "postgres",
           "databaseUsername": "postgres",
-          "databaseVersion": "19beta4 (Debian 19~beta4-1.pgdg12+1)",
+          "databaseVersion": "19rc1 (Debian 19~rc1-1.pgdg12+1)",
         }
       `);
       });
@@ -635,7 +635,7 @@ describe(DatabaseBackupService.name, () => {
             "databaseMajorVersion": 19,
             "databasePassword": "mypwd",
             "databaseUsername": "mypg",
-            "databaseVersion": "19beta4 (Debian 19~beta4-1.pgdg12+1)",
+            "databaseVersion": "19rc1 (Debian 19~rc1-1.pgdg12+1)",
           }
         `);
       });
@@ -663,7 +663,7 @@ describe(DatabaseBackupService.name, () => {
             "databaseMajorVersion": 19,
             "databasePassword": "mypwd",
             "databaseUsername": "mypg",
-            "databaseVersion": "19beta4 (Debian 19~beta4-1.pgdg12+1)",
+            "databaseVersion": "19rc1 (Debian 19~rc1-1.pgdg12+1)",
           }
         `);
       });
@@ -706,7 +706,7 @@ describe(DatabaseBackupService.name, () => {
             "databaseMajorVersion": 19,
             "databasePassword": "mypwd",
             "databaseUsername": "mypg",
-            "databaseVersion": "19beta4 (Debian 19~beta4-1.pgdg12+1)",
+            "databaseVersion": "19rc1 (Debian 19~rc1-1.pgdg12+1)",
           }
         `);
       });
@@ -728,7 +728,7 @@ describe(DatabaseBackupService.name, () => {
             "databaseMajorVersion": 19,
             "databasePassword": "mypwd",
             "databaseUsername": "mypg",
-            "databaseVersion": "19beta4 (Debian 19~beta4-1.pgdg12+1)",
+            "databaseVersion": "19rc1 (Debian 19~rc1-1.pgdg12+1)",
           }
         `);
       });
@@ -769,7 +769,7 @@ describe(DatabaseBackupService.name, () => {
             "databaseMajorVersion": 19,
             "databasePassword": "",
             "databaseUsername": "postgres",
-            "databaseVersion": "19beta4 (Debian 19~beta4-1.pgdg12+1)",
+            "databaseVersion": "19rc1 (Debian 19~rc1-1.pgdg12+1)",
           }
         `);
       });
@@ -813,7 +813,7 @@ describe(DatabaseBackupService.name, () => {
             "databaseMajorVersion": 19,
             "databasePassword": "",
             "databaseUsername": "postgres",
-            "databaseVersion": "19beta4 (Debian 19~beta4-1.pgdg12+1)",
+            "databaseVersion": "19rc1 (Debian 19~rc1-1.pgdg12+1)",
           }
         `);
       });

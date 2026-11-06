@@ -27,8 +27,10 @@ import {
   Refusal,
   containerId,
   databaseImageChangeAllowed,
+  databaseImageMove,
   digest,
   postgresMajor,
+  postgresVersion,
   recentBackup,
   releaseTag,
   type Installation,
@@ -163,7 +165,34 @@ type RestoreReview = {
   platform: string;
   current: Installation | null;
 };
-type UpdateReview = { expires: number; current: Installation; release: VerifiedRelease; platform: string };
+type UpdateReview = {
+  expires: number;
+  current: Installation;
+  release: VerifiedRelease;
+  platform: string;
+  /** FL-1265: the update moves the database to a new image by dump and restore. */
+  databaseMove?: { from: string; to: string; bytes: number };
+};
+/** Row counts of every table, the extensions and the server version, compared across a database move. */
+type DatabaseInventory = { version: string; extensions: string[]; tables: Record<string, number> };
+/** Journaled before a database move changes anything; `attempts` are the new folders allocated so far. */
+type DatabaseMoveIntent = {
+  from: { image: string; databasePath: string };
+  to: { image: string };
+  source: DatabaseInventory;
+  attempts: string[];
+};
+type DatabaseMove = Omit<DatabaseMoveIntent, 'to'> & { to: { image: string; databasePath: string } };
+const DATABASE_INVENTORY = `SELECT json_build_object(
+  'version', split_part(current_setting('server_version'), ' ', 1),
+  'extensions', (SELECT coalesce(json_agg(extname ORDER BY extname), '[]') FROM pg_extension),
+  'tables', (SELECT coalesce(json_object_agg(format('%I.%I', table_schema, table_name),
+      (xpath('/row/c/text()', query_to_xml(format('SELECT count(*) AS c FROM %I.%I', table_schema, table_name), false, true, '')))[1]::text::bigint), '{}')
+    FROM information_schema.tables WHERE table_type = 'BASE TABLE' AND table_schema NOT IN ('pg_catalog', 'information_schema')));`;
+const sameInventory = (a: DatabaseInventory, b: DatabaseInventory) =>
+  digest([...a.extensions].sort()) === digest([...b.extensions].sort()) &&
+  digest(Object.entries(a.tables).sort(([x], [y]) => (x < y ? -1 : 1))) ===
+    digest(Object.entries(b.tables).sort(([x], [y]) => (x < y ? -1 : 1)));
 /**
  * Whether an update may have started its target release: apply-release completed, or it journaled
  * `release-start-state = 'starting'` right before `compose up`. An update that failed inside apply-release
@@ -1473,8 +1502,7 @@ export class Operations {
     if (!this.installation()) return null;
     return this.serverRequest('DELETE', 'library-setup/manager');
   }
-  async targetDatabase(): Promise<Database> {
-    const installation = this.installation();
+  async targetDatabase(installation = this.installation()): Promise<Database> {
     if (!installation) throw new Refusal('no_installation');
     await this.databaseStorage.verify(installation);
     const db = (await this.docker.inventory()).filter(
@@ -1656,21 +1684,31 @@ export class Operations {
     if (!current || !isNewerRelease(tag, current.release)) throw new Refusal('select_a_new_release');
     const compatibility = await this.docker.compatibility();
     const release = await this.releases.acquire(tag);
-    const existingCompose = JSON.parse(await readFile(join(this.directory(), 'compose.json'), 'utf8'));
-    // A database image change is an update only when the signed bundle declares it in place for this major.
-    if (!databaseImageChangeAllowed(existingCompose.services.database.image, release.nas))
-      throw new Refusal('database_image_change_requires_restore');
+    const currentImage: string = JSON.parse(await readFile(join(this.directory(), 'compose.json'), 'utf8')).services.database.image;
+    // The database image stays, changes in place when the signed bundle declares it for this major, or moves to a
+    // new folder by dump and restore (FL-1265).
+    const move = databaseImageMove(currentImage, release.nas);
+    if (!move && !databaseImageChangeAllowed(currentImage, release.nas)) throw new Refusal('database_image_change_unsupported');
+    const database = await this.targetDatabase();
     const postgres = JSON.parse(
       await this.docker.sql(
-        await this.targetDatabase(),
+        database,
         `SELECT json_build_object('major',current_setting('server_version_num')::int / 10000,
       'extensions',(SELECT json_agg(json_build_object('name',extname,'version',extversion) ORDER BY extname) FROM pg_extension));`,
       ),
     );
     const expectedMajor = postgresMajor(release.nas.images.postgres) ?? 19;
-    if (postgres.major !== expectedMajor)
-      throw new Refusal(expectedMajor === 19 ? 'canonical_postgres_19_required' : 'database_image_change_requires_restore');
+    if (move ? postgres.major > expectedMajor : postgres.major !== expectedMajor)
+      throw new Refusal(expectedMajor === 19 ? 'canonical_postgres_19_required' : 'database_image_change_unsupported');
     if (!release.nas.platforms.includes(compatibility.platform)) throw new Refusal('release_architecture_unavailable');
+    let databaseMove: UpdateReview['databaseMove'];
+    if (move) {
+      // ponytail: the review estimates the restored database at its current size; the move itself allocates by
+      // the checkpoint (dump x4) and rolls back if that no longer fits.
+      const bytes = Math.max(1024 ** 3, Number(await this.docker.sql(database, 'SELECT pg_database_size(current_database());')));
+      await this.databaseStorage.validate(current.databaseRoot, bytes, current.id);
+      databaseMove = { from: currentImage, to: release.nas.images.postgres, bytes };
+    }
     const id = randomUUID();
     this.store.set(`update:${id}`, {
       id,
@@ -1678,14 +1716,23 @@ export class Operations {
       current,
       release,
       platform: compatibility.platform,
+      ...(databaseMove && { databaseMove }),
     });
     return {
       id,
       from: current.release,
       to: tag,
       backupScope: 'database-only',
-      recovery:
-        'A database checkpoint is created before updating. Media changes require separate recovery before returning to older software.',
+      ...(databaseMove && {
+        databaseMove: {
+          from: postgresVersion(databaseMove.from) ?? `PostgreSQL ${postgresMajor(databaseMove.from)}`,
+          to: postgresVersion(databaseMove.to) ?? `PostgreSQL ${postgresMajor(databaseMove.to)}`,
+          bytes: databaseMove.bytes,
+        },
+      }),
+      recovery: databaseMove
+        ? 'A database checkpoint is created before updating. This release uses a new database engine, so Manager copies the database into a new folder beside the current one and checks it; the current folder is kept unchanged, and if anything fails Manager puts the previous release back on it. Media changes require separate recovery before returning to older software.'
+        : 'A database checkpoint is created before updating. Media changes require separate recovery before returning to older software.',
     };
   }
   update(id: string, key: string): Operation {
@@ -1764,8 +1811,12 @@ export class Operations {
         409,
         `${review.release.nas.tag} was withdrawn after this update was reviewed and the review has expired. Cancel this update, then review the newer release before installing it.`,
       );
-    // Same checks as reviewUpdate: a release that changes PostgreSQL or lacks this platform needs a restore instead.
-    const postgres = JSON.parse(await readFile(join(this.directory(), 'compose.json'), 'utf8')).services.database.image;
+    // Same checks as reviewUpdate: the database image must be one this installation can take, and once a database
+    // move began only a release with the image it moves to.
+    const moving = operation.receipts['database-move-intent'] as DatabaseMoveIntent | undefined;
+    const postgres = moving?.from.image ?? JSON.parse(await readFile(join(this.directory(), 'compose.json'), 'utf8')).services.database.image;
+    const databaseAllowed = (nas: VerifiedRelease['nas']) =>
+      moving ? nas.images.postgres === moving.to.image : databaseImageChangeAllowed(postgres, nas) || databaseImageMove(postgres, nas);
     let release: VerifiedRelease | undefined;
     const newer = (await this.releases.available())
       .map(({ tag }) => tag)
@@ -1773,7 +1824,7 @@ export class Operations {
       .sort(compareReleases);
     for (const tag of newer) {
       const candidate = await this.releases.acquire(tag);
-      if (databaseImageChangeAllowed(postgres, candidate.nas) && candidate.nas.platforms.includes(review.platform)) {
+      if (databaseAllowed(candidate.nas) && candidate.nas.platforms.includes(review.platform)) {
         release = candidate;
         break;
       }
@@ -1811,8 +1862,33 @@ export class Operations {
       await this.backups.initialize();
       return this.backups.snapshot(await this.checkpoint(operation), operation.id);
     });
+    // FL-1265: a database image that cannot reuse the data directory moves first. compose.json still names the
+    // installed image here: only the move itself (which journals its intent first) re-renders it.
+    const installed: string | undefined = JSON.parse(await readFile(join(this.directory(), 'compose.json'), 'utf8')).services
+      .database?.image;
+    if (operation.receipts['database-move-intent'] || (installed && databaseImageMove(installed, review.release.nas))) {
+      try {
+        await this.moveDatabase(operation, review);
+      } catch (error) {
+        // Before its intent nothing changed and the update stays cancellable. After it, only the new folder was
+        // written: the previous release goes back on its unchanged folder.
+        if (!operation.receipts['database-move-intent']) throw error;
+        const reason = error instanceof Refusal ? error.code : ((error as Error)?.message ?? String(error));
+        console.error(redact(`manager: the database did not move to ${review.release.nas.images.postgres} (${reason}); rolling back to ${review.current.release}`));
+        operation.receipts['rollback-intent'] = error instanceof Refusal ? error.code : 'database_move_failed';
+        this.store.save(operation);
+        return this.rollbackUpdate(operation, review);
+      }
+    }
     try {
       await this.applyRelease(operation, review);
+      const moved = operation.receipts['database-move'] as DatabaseMove | undefined;
+      if (moved) {
+        // The previous folder (and any interrupted attempt's) is no longer used; it is kept as it was.
+        const retained = this.store.get<string[]>('retained-database-directories') ?? [];
+        const unused = [moved.from.databasePath, ...moved.attempts.filter((path) => path !== moved.to.databasePath)];
+        this.store.set('retained-database-directories', [...new Set([...retained, ...unused])]);
+      }
     } catch (error) {
       // Issue 863: a target that started but never turned healthy boot-loops. Before 'starting' nothing ran,
       // and the operation stays cancellable back to the previous release instead.
@@ -1838,19 +1914,28 @@ export class Operations {
   }
   private async applyRelease(operation: Operation, review: UpdateReview): Promise<void> {
     await this.step(operation, 'apply-release', async () => {
-      await this.databaseStorage.verify(review.current);
+      // FL-1265: after a database move the release runs on the moved folder.
+      const moved = operation.completed.includes('database-move')
+        ? (operation.receipts['database-move'] as DatabaseMove)
+        : undefined;
+      const installation = {
+        ...review.current,
+        release: review.release.nas.tag,
+        ...(moved && { databasePath: moved.to.databasePath }),
+      };
+      await this.databaseStorage.verify(installation);
       await this.releases.eligible(review.release.nas.tag);
-      const installation = { ...review.current, release: review.release.nas.tag };
       this.store.set('previous-installation', review.current);
       const source = installation.sourceId ? this.store.get<Source>(`source:${installation.sourceId}`) : null;
       if (source) await this.verifySourceUntilTakeover(source, installation);
       await this.fencing.assertMedia(installation.mounts, installation);
-      // PostgreSQL image changes require a logical restore into a new host directory, unless the signed
-      // bundle declares this exact same-major transition in place; the checkpoint above is its fallback.
+      // A PostgreSQL image that cannot reuse the data directory was moved above (compose.json names the new image
+      // by now); otherwise the signed bundle declares this exact same-major transition in place, with the
+      // checkpoint above as its fallback.
       const oldCompose = JSON.parse(await readFile(join(this.directory(), 'compose.json'), 'utf8'));
       const previousImage: string = oldCompose.services.database.image;
       if (!databaseImageChangeAllowed(previousImage, review.release.nas))
-        throw new Refusal('database_image_change_requires_restore');
+        throw new Refusal('database_image_change_unsupported');
       if (previousImage !== review.release.nas.images.postgres) {
         if (!operation.completed.includes('database-checkpoint')) throw new Refusal('database_checkpoint_required');
         operation.receipts['database-image-change'] = { from: previousImage, to: review.release.nas.images.postgres };
@@ -1882,6 +1967,62 @@ export class Operations {
       this.store.save(operation);
       return this.libraryStatus();
     });
+  }
+  /**
+   * FL-1265: moves the database to the release's PostgreSQL image when that image cannot open the current data
+   * directory (a beta, RC or major change). With the application stopped, the checkpoint dump is restored into a
+   * new folder beside the current one under the new image and compared with the stopped original (row counts of
+   * every table, extensions, server version). apply-release then starts the release on the new folder. The
+   * original folder is never written again, so a rollback or cancel puts the previous release back on it.
+   */
+  private async moveDatabase(operation: Operation, review: UpdateReview): Promise<DatabaseMove> {
+    return this.step(operation, 'database-move', async () => {
+      const dump = join(this.store.directory, 'checkpoints', operation.id, 'database.dump');
+      const receipt = operation.receipts['checkpoint-dump'] as { sha256: string } | undefined;
+      if (!receipt || (await fileHash(dump)) !== receipt.sha256) throw new Refusal('checkpoint_dump_changed');
+      let intent = operation.receipts['database-move-intent'] as DatabaseMoveIntent | undefined;
+      if (!intent) {
+        intent = {
+          from: {
+            image: JSON.parse(await readFile(join(this.directory(), 'compose.json'), 'utf8')).services.database.image,
+            databasePath: review.current.databasePath,
+          },
+          to: { image: review.release.nas.images.postgres },
+          // The application stopped before the checkpoint, so the running database still matches its dump.
+          source: await this.databaseInventory(await this.targetDatabase(review.current)),
+          attempts: [],
+        };
+        operation.receipts['database-move-intent'] = intent;
+        // Cancel renders the previous release's stack again before starting anything.
+        if (operation.receipts['release-start-state'] === undefined) operation.receipts['release-start-state'] = 'prepared';
+        this.store.save(operation);
+      }
+      if (intent.to.image !== review.release.nas.images.postgres) throw new Refusal('database_move_target_changed');
+      // Every attempt restores into a folder of its own: an interrupted one may have left a partial restore.
+      const databasePath = await this.databaseStorage.allocate(
+        review.current.databaseRoot,
+        review.current.id,
+        Math.max(1024 ** 3, (await stat(dump)).size * 4),
+      );
+      intent.attempts.push(databasePath);
+      this.store.save(operation);
+      const target: Installation = { ...review.current, release: review.release.nas.tag, databasePath };
+      await this.docker.compose(this.directory(), review.current.project, 'stop');
+      await renderCompose(review.release, target, this.store.get<string>('database-password')!, this.directory(), this.application());
+      await this.docker.compose(this.directory(), target.project, 'up', ['database']);
+      const database = await this.targetDatabase(target);
+      await this.docker.verifyDump(database, dump);
+      await this.docker.restore(database, dump);
+      const moved = await this.databaseInventory(database);
+      const version = postgresVersion(intent.to.image);
+      if (version ? moved.version !== version : Number.parseInt(moved.version, 10) !== postgresMajor(intent.to.image))
+        throw new Refusal('database_move_version_mismatch', 409, `Expected ${version ?? intent.to.image}, found ${moved.version}.`);
+      if (!sameInventory(moved, intent.source)) throw new Refusal('database_move_verification_failed');
+      return { ...intent, to: { image: intent.to.image, databasePath } } satisfies DatabaseMove;
+    });
+  }
+  private async databaseInventory(database: Database): Promise<DatabaseInventory> {
+    return JSON.parse(await this.docker.sql(database, DATABASE_INVENTORY));
   }
   /**
    * FL-1210: whether the server's `frameleaf-served` marker (written on each boot's first real request)
@@ -1960,15 +2101,32 @@ export class Operations {
    * Put the previous release back after its replacement started and failed. The target may have migrated
    * the database, so its directory is retained and the pre-update checkpoint is restored into a new empty
    * one; the stack is the previous release's compose.json from that checkpoint, pointed at the new directory.
+   * FL-1265: after a database move (or a failed one) the previous folder was never written again, so the
+   * previous release's compose.json goes back unchanged, on its own image and folder, without a restore.
    */
   private async rollbackUpdate(operation: Operation, review: UpdateReview): Promise<void> {
     const previous = review.current;
     const checkpoint = join(this.store.directory, 'checkpoints', operation.id);
+    // renderCompose stores every string with `$` doubled for Compose interpolation.
+    const escaped = (path: string) => path.replaceAll('$', () => '$$');
+    const move = operation.receipts['database-move-intent'] as DatabaseMoveIntent | undefined;
     await this.step(operation, 'rollback-stop-release', async () => {
       await this.docker.compose(this.directory(), previous.project, 'stop');
       return true;
     });
-    const restored = await this.step(operation, 'rollback-restore-database', async () => {
+    if (move)
+      await this.step(operation, 'rollback-previous-database', async () => {
+        const compose = JSON.parse(await readFile(join(checkpoint, 'compose.json'), 'utf8'));
+        const data = compose.services.database.volumes.find((v: any) => v.target === '/var/lib/postgresql');
+        if (data?.source !== escaped(previous.databasePath) || compose.services.database.image !== move.from.image)
+          throw new Refusal('database_path_changed');
+        const retired = this.store.get<string[]>('retained-database-directories') ?? [];
+        this.store.set('retained-database-directories', [...new Set([...retired, ...move.attempts])]);
+        await atomicJson(join(this.directory(), 'compose.json'), compose);
+        this.store.set('installation', previous);
+        return true;
+      });
+    const restored: Installation = move ? previous : await this.step(operation, 'rollback-restore-database', async () => {
       const dump = join(checkpoint, 'database.dump');
       const receipt = operation.receipts['checkpoint-dump'] as { sha256: string } | undefined;
       if (!receipt || (await fileHash(dump)) !== receipt.sha256) throw new Refusal('checkpoint_dump_changed');
@@ -1983,8 +2141,6 @@ export class Operations {
       };
       const compose = JSON.parse(await readFile(join(checkpoint, 'compose.json'), 'utf8'));
       const data = compose.services.database.volumes.find((v: any) => v.target === '/var/lib/postgresql');
-      // renderCompose stores every string with `$` doubled for Compose interpolation.
-      const escaped = (path: string) => path.replaceAll('$', () => '$$');
       if (data?.source !== escaped(previous.databasePath)) throw new Refusal('database_path_changed');
       data.source = escaped(installation.databasePath);
       await atomicJson(join(this.directory(), 'compose.json'), compose);
@@ -2003,7 +2159,8 @@ export class Operations {
     // Automatic updates never choose this release again; the administrator can still review it by hand.
     const rolledBack = this.store.get<string[]>('rolled-back-releases') ?? [];
     this.store.set('rolled-back-releases', [...new Set([...rolledBack, review.release.nas.tag])]);
-    operation.receipts['cancelled'] = 'update_failed_rolled_back';
+    operation.receipts['cancelled'] =
+      move && !operation.completed.includes('database-move') ? 'database_move_failed_rolled_back' : 'update_failed_rolled_back';
   }
   async reviewRestore(snapshot: string, databaseRoot: string, managerPort?: number) {
     const current = this.installation();
@@ -2307,13 +2464,19 @@ export class Operations {
       // 'prepared' means apply-release rendered the target's stack (and may have recorded it as the
       // installation) but never journaled its start: the previous release's record and compose.json are
       // put back before anything is started. Before that point nothing on disk changed.
+      // FL-1265: a database move re-renders the stack on a new folder; its previous folder was never written again.
+      const move = operation.receipts['database-move-intent'] as DatabaseMoveIntent | undefined;
       let previous = installation;
-      if (operation.receipts['release-start-state'] === 'prepared') {
+      if (operation.receipts['release-start-state'] === 'prepared' || move) {
         const review = this.store.get<UpdateReview>(`update:${operation.input.reviewId}`);
         if (!review) throw new Refusal('review_missing');
         previous = review.current;
       }
       await this.step(operation, 'cancel-restart-previous', async () => {
+        if (move) {
+          const retained = this.store.get<string[]>('retained-database-directories') ?? [];
+          this.store.set('retained-database-directories', [...new Set([...retained, ...move.attempts])]);
+        }
         if (previous !== installation) {
           this.store.set('installation', previous);
           await this.renderServices(previous, this.application().services);
@@ -2485,6 +2648,9 @@ export class Operations {
       } }),
       replacesInstallation:
         operation.kind === 'restore' && !!this.store.get<RestoreReview>(`restore:${input.reviewId}`)?.current,
+      databaseMove:
+        operation.kind === 'update' &&
+        (!!receipts['database-move-intent'] || !!this.store.get<UpdateReview>(`update:${input.reviewId}`)?.databaseMove),
       canStop: operation.kind === 'move-library' && operation.state === 'running' && !receipts['move-writes-intent'],
       canCancel:
         ['failed', 'interrupted', 'awaiting-review'].includes(operation.state) &&

@@ -45,8 +45,8 @@ Building Frameleaf's Postgres image (`docker/postgres`) pulls the PostgreSQL bas
 
 | What                                          | Setting                                                                                                                                                          |
 | :-------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Postgres base image (medium tests, e2e stack) | `export FRAMELEAF_CI_POSTGRES_IMAGE=mirror.gcr.io/library/postgres@sha256:4c618d9a30e0b88078b9371a0499d7055da9ab7f5afe386a460758eac9857f06`                      |
-| Postgres base image (manual build)            | `docker build --build-arg POSTGRES_IMAGE=mirror.gcr.io/library/postgres@sha256:4c618d9a30e0b88078b9371a0499d7055da9ab7f5afe386a460758eac9857f06 docker/postgres` |
+| Postgres base image (medium tests, e2e stack) | `export FRAMELEAF_CI_POSTGRES_IMAGE=mirror.gcr.io/library/postgres@sha256:e698169ffdd3c23af2a1675d30f48eeab6883fb277bf5be6911ceac5cfaf760f`                      |
+| Postgres base image (manual build)            | `docker build --build-arg POSTGRES_IMAGE=mirror.gcr.io/library/postgres@sha256:e698169ffdd3c23af2a1675d30f48eeab6883fb277bf5be6911ceac5cfaf760f docker/postgres` |
 | testcontainers reaper (Ryuk)                  | `export RYUK_CONTAINER_IMAGE=mirror.gcr.io/testcontainers/ryuk@sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0`                          |
 | Any other Docker Hub image                    | Add `"registry-mirrors": ["https://mirror.gcr.io"]` to the Docker daemon settings (Docker Desktop: Settings → Docker Engine)                                     |
 

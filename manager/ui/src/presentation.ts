@@ -8,6 +8,8 @@ export type JournalOperation = {
   error: string | null;
   detail?: string | null;
   replacesInstallation?: boolean;
+  /** An update that moves the database to a new PostgreSQL image (FL-1265). */
+  databaseMove?: boolean;
   commonImport?: { requiresBootstrap: boolean };
   /** Set by Manager on imports from another photo app. */
   photoApp?: { kind: string; name: string };
@@ -55,9 +57,11 @@ export const stepNames: Record<string, string> = {
   'prepare-library': 'Begin library preparation',
   'stop-application': 'Pause application writes',
   'database-checkpoint': 'Create a database recovery point',
+  'database-move': 'Copy the database to the new database engine and check it',
   'apply-release': 'Apply and verify the update',
   'rollback-stop-release': 'Stop the release that did not start',
   'rollback-restore-database': 'Restore the database from before the update',
+  'rollback-previous-database': 'Switch back to the database folder from before the update',
   'rollback-start-previous': 'Start the previous release',
   'restore-new-database': 'Restore into the new empty database',
   'reconstruct-execution-state': 'Reconcile restored background work',
@@ -101,7 +105,7 @@ const plans: Record<string, string[]> = {
     'start-frameleaf',
     'prepare-library',
   ],
-  update: ['download-images', 'stop-application', 'database-checkpoint', 'apply-release'],
+  update: ['download-images', 'stop-application', 'database-checkpoint', 'database-move', 'apply-release'],
   restore: [
     'download-images',
     'stop-previous-installation',
@@ -155,8 +159,18 @@ const refusals: Record<string, string> = {
     'The new release did not start, so Manager put back the previous release and the library as it was before the update. Nothing was lost; try the update again later.',
   update_review_expired:
     'The reviewed release was withdrawn and this review has expired. Cancel this update, then review the newer release before installing it.',
+  database_move_failed_rolled_back:
+    'Manager could not move the database to the new release’s database engine, so it put back the previous release on its unchanged database folder. Nothing was lost. Check that the database folder’s drive has free space, then try the update again.',
+  database_image_change_unsupported:
+    'This release’s database engine cannot replace the one this server runs. Choose another release.',
+  // Journals from Managers before FL-1265, which refused these updates.
   database_image_change_requires_restore:
-    'This release changes the database engine image. It cannot be applied as an update; restore a recovery point into a new database folder on the new release instead.',
+    'This release changes the database engine. This Manager moves the database itself: review the update again.',
+  database_move_verification_failed:
+    'The copied database did not match the original, so Manager kept the original. Nothing was lost.',
+  database_move_version_mismatch: 'The new database engine reported an unexpected version, so Manager kept the original database.',
+  insufficient_database_space:
+    'The drive that holds the database folder does not have enough free space. Free some space, then try again.',
   database_checkpoint_required: 'A database checkpoint must exist before the database image can change. Resume the update to take one.',
   media_path_unsupported_character: 'A folder name contains a comma or a control character, which Docker cannot accept. Rename the folder, then review again.',
   settings_not_json: 'Settings must be a JSON object. Check for a missing comma or bracket, then save again.',
@@ -236,7 +250,8 @@ export function operationProgress(operation: JournalOperation, backupSkipped = f
     (id) =>
       (id !== 'stage-bootstrap-admin' || operation.commonImport?.requiresBootstrap) &&
       (id !== 'database-backup' || !backupSkipped) &&
-      (!['stop-previous-installation', 'archive-previous-installation'].includes(id) || operation.replacesInstallation),
+      (!['stop-previous-installation', 'archive-previous-installation'].includes(id) || operation.replacesInstallation) &&
+      (id !== 'database-move' || operation.databaseMove || operation.completed.includes(id) || operation.step === id),
   );
   const successful = operation.state === 'complete' && !operation.error;
   const steps = ids.map((id) => ({

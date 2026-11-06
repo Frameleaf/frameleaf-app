@@ -964,8 +964,13 @@ test("the server base is built in-repo and identical in the production and devel
 
 test("the owned Postgres image uses PG19 and pgvector only", () => {
   const dockerfile = read("docker/postgres/Dockerfile");
-  assert.match(dockerfile, /postgres:19beta4/);
+  assert.match(dockerfile, /postgres:19rc1-bookworm@sha256:/);
   assert.match(dockerfile, /0\.8\.7/);
+  // FL-1265: publication tags the image with the version its Dockerfile declares.
+  assert.equal(
+    load(read(".github/workflows/postgres.yml")).jobs.publish.env.VERSION_TAG,
+    dockerfile.match(/org\.opencontainers\.image\.version="([^"]+)"/)[1],
+  );
   assert.doesNotMatch(dockerfile, /VECTORCHORD|PGVECTORS/);
   // Every test stack builds this image instead of pulling a database image.
   for (const [file, context] of [
