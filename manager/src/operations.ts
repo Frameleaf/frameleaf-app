@@ -1276,7 +1276,10 @@ export class Operations {
         return true;
       });
     await this.step(operation, 'start-frameleaf', async () => {
-      if (sourceFence) await this.fencing.verify(sourceFence);
+      // The fence guards the server's first start. Once an earlier attempt started it, the server owns the library,
+      // so a later change to the original app (removed, or its export edited) must not strand the import on resume.
+      // assertMedia below still refuses any other container that could write the media.
+      if (sourceFence && !(await this.serverStarted(installation))) await this.fencing.verify(sourceFence);
       await this.fencing.assertMedia(installation.mounts, installation);
       await this.releases.eligible(review.input.tag);
       installation.mayHaveWrittenMedia = true;

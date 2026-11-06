@@ -447,6 +447,42 @@ test('resumed cutover captures fenced settings and applies the reviewed ML choic
   }
 });
 
+test('resuming after Frameleaf already started does not re-check the original app (source changed since)', async () => {
+  const f = await fixture();
+  try {
+    f.inventory.push({
+      Id: 'target-server',
+      State: { Running: true, StartedAt: '2026-11-01T00:00:00Z' },
+      Config: { Labels: { 'app.frameleaf.manager': f.installation.id, 'com.docker.compose.service': 'frameleaf-server' } },
+      Mounts: [],
+    } as unknown as Container);
+    let started = false;
+    f.docker.compose = async () => { started = true; };
+    const internal = f.operations as unknown as {
+      install(operation: Operation, review: unknown): Promise<void>;
+      fencing: { verify(): Promise<void>; assertMedia(): Promise<void> };
+      releases: { eligible(): Promise<void> };
+    };
+    internal.fencing = {
+      verify: async () => { throw new Error('source_changed_review_again'); },
+      assertMedia: async () => {},
+    };
+    internal.releases = { eligible: async () => {} };
+    f.operation.completed = [
+      'preflight', 'download-images', 'configure', 'review-source', 'fence-source', 'start-database',
+      'capture-fenced-settings', 'copy-current-database', 'database-backup', 'check-media-writable',
+      'configure-offline-import', 'import-canonical-database', 'verify-import', 'import-settings',
+      'retire-source-services', 'prepare-library',
+    ];
+    f.operation.receipts.configure = f.installation;
+    await internal.install(f.operation, { input: { tag: 'v1.0.0' }, source: f.source, backup: null, release: {} });
+    assert.ok(started);
+    assert.ok(f.operation.completed.includes('start-frameleaf'));
+  } finally {
+    await f.cleanup();
+  }
+});
+
 test('the media check asks the server image, with its own mounts and user, which folders it cannot write (FL-414)', async () => {
   const commands: string[][] = [];
   const docker = new Docker(async (binary, args, options) => {
