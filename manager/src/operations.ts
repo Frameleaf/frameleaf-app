@@ -890,6 +890,7 @@ export class Operations {
     if (created) this.launch(operation, () => this.install(operation, review, bootstrap));
     return operation;
   }
+  /** Runs an operation in the background, journalling and logging how it ends. */
   private launch(operation: Operation, work: () => Promise<void>): void {
     this.executing.add(operation.id);
     const started = Date.now();
@@ -1003,6 +1004,7 @@ export class Operations {
     });
     return operation;
   }
+  /** Runs one journalled step once (a completed step returns its receipt), logging start, finish and failure. */
   private async step<T>(operation: Operation, name: string, action: () => Promise<T>): Promise<T> {
     if (operation.completed.includes(name)) return operation.receipts[name] as T;
     operation.step = name;

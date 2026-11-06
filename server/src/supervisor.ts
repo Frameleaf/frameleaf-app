@@ -508,6 +508,7 @@ export class Workers {
   }
 }
 
+/** Runs an admin command, or prints the banner and starts every server worker. */
 async function main() {
   const immichApp = process.argv[2];
   if (immichApp) {

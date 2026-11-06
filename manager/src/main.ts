@@ -503,6 +503,7 @@ class Api {
 @Module({ controllers: [Api] })
 class ManagerModule {}
 
+/** Prints the banner and startup details, mounts the request log and API, then listens. */
 async function main() {
   process.umask(0o077);
   const version = await readFile(new URL('../package.json', import.meta.url), 'utf8')

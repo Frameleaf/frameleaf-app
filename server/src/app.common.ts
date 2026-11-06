@@ -16,6 +16,7 @@ import { ApiService } from 'src/services/api.service.js';
 import { DatabaseService } from 'src/services/database.service.js';
 import { useSwagger } from 'src/utils/misc.js';
 
+/** Sets up middleware (request log, cookies, body parsing, web assets) and starts listening, then logs the ready line. */
 export async function configureExpress(
   app: NestExpressApplication,
   {

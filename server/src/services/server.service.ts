@@ -46,6 +46,7 @@ import { startupSummary } from 'src/utils/startup-summary.js';
 
 @Injectable()
 export class ServerService extends BaseService {
+  /** Marks config-file servers as set up, logs feature flags and the startup summary, and loads the identity key. */
   @OnEvent({ name: 'AppBootstrap' })
   async onBootstrap(): Promise<void> {
     const featureFlags = await this.getFeatures();

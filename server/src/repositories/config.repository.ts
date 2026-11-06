@@ -186,6 +186,7 @@ const resolveHelmetFile = (helmetFile: 'true' | 'false' | string | undefined) =>
   }
 };
 
+/** Validates the environment once and maps it to the server's settings. */
 const getEnv = (): EnvData => {
   // FL-294: deprecated IMMICH_ names are resolved to their FRAMELEAF_ names before validation, and a
   // pair set to two different values refuses to start
