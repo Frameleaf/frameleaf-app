@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { ImportDatabase } from 'src/immich-import/types.js';
 import { bindDestinationImportPlan } from 'src/library-import/destination-plan.js';
-import { ImportManifest, parseImportManifest } from 'src/library-import/manifest.js';
+import { ImportManifest, importsLocked, parseImportManifest } from 'src/library-import/manifest.js';
 import { LibraryImportBinding, LibraryImportJournal, LibraryImportRefused } from 'src/library-import/state.js';
 
 /** Internal role grants require a source inventory already qualified for equivalent destination permissions. */
@@ -25,7 +25,7 @@ export class CanonicalAlbumWriter {
     const manifest = parseImportManifest(context.manifest);
     this.albums = new Map(manifest.albums.map((album) => [album.id, album]));
     this.owners = new Map(plan.owners.map((owner) => [owner.sourceId, owner.destinationId.toLowerCase()]));
-    this.locked = new Set(manifest.assets.filter((asset) => asset.visibility === 'locked').map((asset) => asset.id));
+    this.locked = new Set(manifest.assets.filter((asset) => importsLocked(asset)).map((asset) => asset.id));
   }
 
   async write(sourceAlbumId: unknown): Promise<string> {

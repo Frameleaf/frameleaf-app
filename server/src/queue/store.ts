@@ -360,6 +360,22 @@ export class SqlQueueStore {
     if (jobIds.length === 0) return;
     await sql`update job_run set "finishedAt" = null where "finishedAt" is not null and id in (
       select "runId" from job_run_item where "jobId" = any(${jobIds}::uuid[]) and state != 'cancelled')`.execute(db);
+    // FL-1241: a library source's copies in other runs read these canonical rows' outcome (directly, or through
+    // a row sharing their execution) with no row of their own pointing at the job; reopen those runs too, so
+    // their stored summaries stop being trusted. Each step is an index lookup from the jobs' own rows.
+    await sql`with canonical as materialized (
+        select c."runId", c."itemKey", c.stage, c."selectionId" from job_run_item c
+        where c."jobId" = any(${jobIds}::uuid[]) and c."libraryIntent" is not null and c.state != 'cancelled'
+      ), shared as materialized (
+        select s."runId", s."itemKey", s.stage, s."selectionId" from canonical c join job_run_item s
+          on s."libraryExecutionRunId" = c."runId" and s."libraryExecutionItemKey" = c."itemKey" and s.stage = c.stage
+        where s.state != 'cancelled'
+      ), owners as (select * from canonical union select * from shared)
+      update job_run set "finishedAt" = null where "finishedAt" is not null and id in (
+        select "runId" from shared
+        union select a."runId" from owners o join job_run_item a on a."selectionId" = o."selectionId"
+          and a."itemKey" = o."itemKey" and a.stage = o.stage and a."runId" != o."runId"
+        where a.state != 'cancelled')`.execute(db);
   }
 
   private async insertRunItem(intent: QueueIntent, db: Executor, state: QueueState = 'pending') {
@@ -1185,13 +1201,15 @@ export class SqlQueueStore {
     );
   }
 
-  /** The newest job of this name still waiting to run on one item, if there is one. */
-  async findWaitingJob(queue: string, name: string, itemId: string): Promise<string | undefined> {
-    const { rows } = await sql<{ id: string }>`select id from job where queue = ${queue} and name = ${name}
-      and state in ('pending','waiting') and data->>'id' = ${itemId} order by "createdAt" desc, id desc limit 1`.execute(
-      this.db,
-    );
-    return rows[0]?.id;
+  /**
+   * The job of this name already running on one item or, with none running, the newest one still
+   * waiting to run on it (FL-1249: Run on one item counts a running job as started).
+   */
+  async findOpenJob(queue: string, name: string, itemId: string): Promise<{ id: string; active: boolean } | undefined> {
+    const { rows } = await sql<{ id: string; active: boolean }>`select id, state = 'active' as active from job
+      where queue = ${queue} and name = ${name} and state in ('pending','waiting','active') and data->>'id' = ${itemId}
+      order by state = 'active' desc, "createdAt" desc, id desc limit 1`.execute(this.db);
+    return rows[0];
   }
 
   /** Puts failed jobs back with their saved data: every one in the queue, or only `jobId`. */

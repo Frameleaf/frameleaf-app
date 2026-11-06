@@ -1,4 +1,5 @@
 import {
+  AssetTypeEnum,
   createJob,
   deferImageDescriptionRequeue,
   emptyQueue,
@@ -16,6 +17,7 @@ import {
   retryFailedQueueJobs,
   retryQueueJob,
   runQueueOnOne,
+  searchAssets,
   startQueueJob,
   runQueueCommandLegacy,
   searchUsersAdmin,
@@ -540,6 +542,77 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
         .slice(1, 3),
     ).toEqual(['1', '2']);
   });
+
+  it("lets a slow read of an account's counts land while the open queue keeps changing (FL-1239)", async () => {
+    const reads: ((value: Awaited<ReturnType<typeof getQueueOwnerStatistics>>) => void)[] = [];
+    vi.mocked(getQueueOwnerStatistics).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          reads.push(resolve);
+        }),
+    );
+    const counts = (failed: number) => ({
+      active: 0,
+      completed: 0,
+      delayed: 0,
+      failed,
+      paused: 0,
+      waiting: 0,
+      truncated: false,
+    });
+    at('&queue=face-detection&tab=failed&scope=account:grace');
+    render(JobsManager);
+    await waitFor(() => expect(getQueueOwnerStatistics).toHaveBeenCalledTimes(1));
+
+    // two polls with new counts while the first read is still out: no new read yet
+    for (const waiting of [3, 4]) {
+      queues.list = [queue(QueueName.FaceDetection, { waiting })];
+      queues.changed();
+      await tick();
+    }
+    expect(getQueueOwnerStatistics).toHaveBeenCalledTimes(1);
+
+    // the first read lands and shows, then one more read follows for the changes meanwhile
+    reads[0](counts(2));
+    expect(await screen.findByRole('tab', { name: /Failed\s*2/ })).toBeInTheDocument();
+    await waitFor(() => expect(getQueueOwnerStatistics).toHaveBeenCalledTimes(2));
+    reads[1](counts(5));
+    expect(await screen.findByRole('tab', { name: /Failed\s*5/ })).toBeInTheDocument();
+    expect(getQueueOwnerStatistics).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads an account's counts once the queues load, rather than showing 0 (FL-1239)", async () => {
+    vi.mocked(getQueueOwnerStatistics).mockResolvedValue({
+      active: 0,
+      completed: 0,
+      delayed: 0,
+      failed: 4,
+      paused: 0,
+      waiting: 0,
+      truncated: false,
+    });
+    queues.list = [];
+    at('&view=advanced&scope=account:grace');
+    render(JobsManager);
+    await tick();
+    expect(getQueueOwnerStatistics).not.toHaveBeenCalled();
+    // Nothing read yet: a dash, not 0.
+    expect(screen.getByText('Failed', { selector: '.jm-metric span' }).nextElementSibling).toHaveTextContent('—');
+
+    queues.list = [queue(QueueName.ThumbnailGeneration), queue(QueueName.FaceDetection)];
+    queues.changed();
+    await waitFor(() => expect(getQueueOwnerStatistics).toHaveBeenCalledTimes(2));
+    expect(getQueueOwnerStatistics).toHaveBeenCalledWith({ name: QueueName.FaceDetection, ownerId: 'grace' });
+    await waitFor(() =>
+      expect(screen.getByText('Failed', { selector: '.jm-metric span' }).nextElementSibling).toHaveTextContent('8'),
+    );
+
+    // A stats tick for the same queues does not read them again.
+    queues.list = [queue(QueueName.ThumbnailGeneration, { waiting: 3 }), queue(QueueName.FaceDetection)];
+    queues.changed();
+    await tick();
+    expect(getQueueOwnerStatistics).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('Job manager on returning to the window', () => {
@@ -707,6 +780,36 @@ describe('Background work › Everyday (approved design, 2026-11-04)', () => {
     expect(updateQueue).not.toHaveBeenCalledWith(expect.objectContaining({ name: QueueName.FaceDetection }));
   });
 
+  it('counts everything as paused when only the task that cannot pause still runs (FL-1238)', async () => {
+    queues.list = [
+      queue(QueueName.ThumbnailGeneration, { waiting: 2 }, true),
+      queue(QueueName.StorageTemplateMigration, {}, true),
+      queue(QueueName.BackgroundTask, { active: 1 }),
+    ];
+    at('');
+    render(JobsManager);
+
+    const status = within(screen.getByRole('region', { name: 'Background work status' }));
+    expect(status.getByRole('heading', { name: 'Background work is paused' })).toBeInTheDocument();
+    expect(status.queryByRole('button', { name: 'Pause everything' })).not.toBeInTheDocument();
+    // Upkeep holds the background task, which never pauses: its menu offers Resume, not Pause.
+    await fireEvent.click(screen.getByRole('button', { name: 'More for Upkeep' }));
+    expect(await screen.findByRole('menuitem', { name: 'Resume' })).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'Pause' })).not.toBeInTheDocument();
+  });
+
+  it('warns about face results before doing Faces all again, as one task’s redo does (FL-1253)', async () => {
+    queues.list = [queue(QueueName.FaceDetection), queue(QueueName.FacialRecognition)];
+    at('');
+    render(JobsManager);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'More for Faces & identity' }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Do it all again…' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Do Faces & identity all again' });
+    expect(within(dialog).getByText(en.frameleaf_jobs_review_force_faces)).toBeInTheDocument();
+    expect(within(dialog).queryByText(en.frameleaf_bgwork_feature_review_force_detail)).not.toBeInTheDocument();
+  });
+
   it('opens Advanced at one feature’s tasks from its menu', async () => {
     at('');
     render(JobsManager);
@@ -766,6 +869,20 @@ describe('One job at a time (approved design, 2026-11-04)', () => {
     const button = screen.getByRole('button', { name: 'Run on one item…' });
     expect(button).toBeDisabled();
     expect(button.closest('span')).toHaveAttribute('title', 'This task can’t run on one item yet.');
+  });
+
+  it('lists photos only for Locked content, which the server reads for photos alone (FL-1249)', async () => {
+    queues.list = [queue(QueueName.NsfwDetection)];
+    at('&queue=nsfw-detection');
+    render(JobsManager);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Run on one item…' }));
+    await screen.findByRole('dialog', { name: 'Run on one item' });
+    await waitFor(() =>
+      expect(searchAssets).toHaveBeenCalledWith({
+        metadataSearchDto: expect.objectContaining({ type: AssetTypeEnum.Image }),
+      }),
+    );
   });
 
   it('runs a task on one item picked from the library', async () => {

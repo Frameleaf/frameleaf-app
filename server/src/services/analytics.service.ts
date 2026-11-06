@@ -98,7 +98,10 @@ const SEASON_OF_MONTH = [
   'winter',
 ] as const;
 
-const mapMagic = (magic: NonNullable<AnalyticsInsightRows['magic']>): NonNullable<AnalyticsInsightsDto['magic']> => {
+const mapMagic = (
+  magic: NonNullable<AnalyticsInsightRows['magic']>,
+  isAdmin: boolean,
+): NonNullable<AnalyticsInsightsDto['magic']> => {
   // Items without a place follow the hemisphere most located items were taken in.
   const located = magic.months.filter((row) => row.south !== null);
   const south = located.filter((row) => row.south).reduce((n, row) => n + row.count, 0);
@@ -116,7 +119,8 @@ const mapMagic = (magic: NonNullable<AnalyticsInsightRows['magic']>): NonNullabl
     seasons,
     topTags: magic.topTags,
     farAndWide: magic.farAndWide,
-    underTheHood: magic.underTheHood,
+    // FL-1243: the whole server's row count is the administrator's to know
+    underTheHood: { ...magic.underTheHood, databaseRows: isAdmin ? magic.underTheHood.databaseRows : 0 },
     shutter: magic.shutter.map((row) => ({
       camera: cameraName(row.make, row.model) ?? row.make ?? '',
       count: row.count,
@@ -125,7 +129,7 @@ const mapMagic = (magic: NonNullable<AnalyticsInsightRows['magic']>): NonNullabl
   };
 };
 
-const mapInsights = (rows: AnalyticsInsightRows, items: number): AnalyticsInsightsDto => {
+const mapInsights = (rows: AnalyticsInsightRows, items: number, isAdmin: boolean): AnalyticsInsightsDto => {
   const punch = new Map(rows.punchcard.map((cell) => [`${cell.weekday}:${cell.hour}`, cell.count]));
   const keyed = <T extends string>(values: readonly T[], list: Array<{ count: number }>, field: string) =>
     fixedBuckets(
@@ -173,7 +177,7 @@ const mapInsights = (rows: AnalyticsInsightRows, items: number): AnalyticsInsigh
       videoDurationMs,
       videoHours: Math.round(videoDurationMs / 360_000) / 10,
     },
-    ...(rows.magic && { magic: mapMagic(rows.magic) }),
+    ...(rows.magic && { magic: mapMagic(rows.magic, isAdmin) }),
   };
 };
 
@@ -496,7 +500,7 @@ export class AnalyticsService {
         costedAttempts: costed,
         uncostedAttempts: attempts - costed,
       },
-      insights: mapInsights(insights, items),
+      insights: mapInsights(insights, items, auth.user.isAdmin),
     };
   }
 

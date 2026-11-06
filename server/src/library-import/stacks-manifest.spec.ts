@@ -106,6 +106,12 @@ describe('sealed import stacks', () => {
     value.assets[1].visibility = 'timeline';
     expect(() => parseImportManifest(value)).toThrow('STACK_VISIBILITY_MISMATCH');
   });
+  it('refuses grouping a Locked item in Trash with one that is only in Trash (FL-1230)', () => {
+    const value = inventory();
+    for (const asset of value.assets) asset.visibility = 'trash';
+    Object.assign(value.assets[1], { locked: true });
+    expect(() => parseImportManifest(value)).toThrow('STACK_VISIBILITY_MISMATCH');
+  });
   it('refuses grouping different effective album access', () => {
     const value = inventory();
     value.albums[0].members = [{ userId: 'bob', role: 'viewer' }];

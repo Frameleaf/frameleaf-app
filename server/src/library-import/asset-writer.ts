@@ -9,6 +9,7 @@ import {
   ImportManifest,
   importOriginalFileNameSchema,
   importTimestampSchema as timestamp,
+  importsLocked,
   parseImportManifest,
   storedVisibility,
 } from 'src/library-import/manifest.js';
@@ -319,7 +320,7 @@ export class CanonicalAssetWriter {
           );
           if (metadata.tags !== undefined) await writeImportedTags(tx, ownerId, destinationId, metadata.tags);
           // Owner 2026-11-04: a source's private item is Locked, a Live Photo as a whole (FL-34).
-          if (asset.visibility === 'locked')
+          if (importsLocked(asset))
             await tx.query(`INSERT INTO public.asset_lock("assetId",reason) SELECT unnest($1::uuid[]),$2`, [
               [destinationId, ...(livePhotoVideoId === null ? [] : [livePhotoVideoId])],
               AssetLockReason.Marked,

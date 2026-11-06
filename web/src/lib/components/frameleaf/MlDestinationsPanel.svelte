@@ -261,8 +261,13 @@
     draftError = null;
     draftOpen = true;
   };
+  // Only a request raised while the panel is on the page opens the form: Computers › Advanced draws the
+  // panel afresh each time it is shown, and an earlier request must not open it again (FL-1250).
+  // svelte-ignore state_referenced_locally (the request already handled when the panel was drawn)
+  let handledAdd = addRequest;
   $effect(() => {
-    if (addRequest > 0) {
+    if (addRequest !== handledAdd) {
+      handledAdd = addRequest;
       untrack(() => openCreate(MlDestinationKind.Lan));
     }
   });

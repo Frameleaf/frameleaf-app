@@ -58,6 +58,15 @@ const MAX_INQUIRIES = 500;
 const liveDomain = (site: PhotographySite | null | undefined) =>
   site?.enabled && site.domain ? { domain: site.domain, slug: site.slug } : null;
 
+type SiteDomain = { domain: string; slug: string };
+const sameDomain = (a: SiteDomain | null | undefined, b: SiteDomain | null | undefined) =>
+  !!a && !!b && a.domain === b.domain && a.slug === b.slug;
+
+/** FL-1233: Cloud serves one studio website per server on its own domain; another studio already has it. */
+export const STUDIO_DOMAIN_HELD =
+  'Another studio on this server already shows its website on its own domain, and a server can have only one. ' +
+  'This website stays at its Frameleaf address until that studio turns its own domain off.';
+
 @Injectable()
 export class PhotographySiteService {
   /** Studios whose older websites are having their photo copies made (see `catchUp`). */
@@ -130,7 +139,7 @@ export class PhotographySiteService {
     if (JSON.stringify(liveDomain(before)) === JSON.stringify(liveDomain(after))) {
       return;
     }
-    void this.reportStoredDomain(ownerId)
+    void this.reportStoredDomain(ownerId, liveDomain(before))
       .then(({ problem }) => problem && this.logger.warn(`The studio website's own domain wasn't reported: ${problem}`))
       .catch((error: unknown) => this.logger.warn(`The studio website's own domain wasn't reported: ${error}`));
   }
@@ -138,31 +147,68 @@ export class PhotographySiteService {
   /**
    * Tells Cloud the domain as stored when the report goes out, one report at a time: a report that
    * waited behind another can't send a domain a later save has replaced.
+   *
+   * FL-1233: every account can be a studio, but Cloud serves one own-domain website per server. So a report
+   * first reads what Cloud serves and replaces it only when Cloud serves nothing, this studio's own site, or
+   * a site no studio still publishes; it takes the domain down only when it is this studio's. Cloud's slug
+   * names the studio (each studio's address is its own), and that studio holds the domain while it is active
+   * and still publishes that domain; `previous` is this studio's live domain before the save, which it may
+   * take down only while no studio holds it.
    */
-  private reportStoredDomain(ownerId: string) {
+  private reportStoredDomain(ownerId: string, previous: SiteDomain | null = null) {
     const report = this.domainReports.then(async () => {
       const { record } = await this.repository.studioRecord(ownerId);
-      return this.remoteAccess.reportStudioSite(liveDomain(record.site));
+      const wanted = liveDomain(record.site);
+      const current = await this.remoteAccess.studioSiteStatus();
+      if (current.problem) {
+        return current;
+      }
+      const served = current.site;
+      if (!served) {
+        return wanted ? this.remoteAccess.reportStudioSite(wanted) : current;
+      }
+      if (sameDomain(served, wanted)) {
+        return current;
+      }
+      // Always ask who holds it now: another studio may have taken this studio's old address meanwhile.
+      const holder = await this.domainHolder(served);
+      if (holder === ownerId || (!holder && (wanted || sameDomain(served, previous)))) {
+        return this.remoteAccess.reportStudioSite(wanted);
+      }
+      // another studio's website (left alone), or one this studio has no domain to replace and no claim to take down
+      return { site: null, problem: wanted ? STUDIO_DOMAIN_HELD : null };
     });
     this.domainReports = report.catch(() => {});
     return report;
+  }
+
+  /** The active studio that publishes the domain Cloud serves, if any (FL-1233). */
+  private async domainHolder(served: SiteDomain): Promise<string | null> {
+    const holder = await this.repository.siteOwnerBySlug(served.slug);
+    if (!holder || !(await this.repository.studioOwner(holder))) {
+      return null;
+    }
+    const { record } = await this.repository.studioRecord(holder);
+    return liveDomain(record.site)?.domain === served.domain ? holder : null;
   }
 
   /** FL-705 `GET photography/site/domain`: how Frameleaf Cloud sees this studio's own domain, and the DNS records. */
   async siteDomain(auth: AuthDto) {
     const ownerId = this.workflow.studioOwner(auth);
     const { record } = await this.repository.studioRecord(ownerId);
-    const domain = record.site?.enabled ? record.site.domain : '';
-    if (!domain) {
+    const mine = liveDomain(record.site);
+    if (!mine) {
       return { site: null, problem: null };
     }
     let answer = await this.remoteAccess.studioSiteStatus();
-    if (!answer.site && !answer.problem) {
-      // Cloud never heard of it (published while remote access was off, or the report was lost): tell it now
+    // The same domain under another studio's address is not this studio's site (FL-1233)
+    if (!answer.problem && !sameDomain(answer.site, mine)) {
+      // Cloud never heard of it (published while remote access was off, or the report was lost), or serves
+      // another domain: tell it now, unless another studio holds the server's one own domain (FL-1233)
       answer = await this.reportStoredDomain(ownerId);
     }
     // one studio per server has its own domain; another studio's is not this one's to show
-    return answer.site && answer.site.domain !== domain ? { site: null, problem: null } : answer;
+    return answer.site && !sameDomain(answer.site, mine) ? { site: null, problem: answer.problem } : answer;
   }
 
   private view(revision: string | null, site: PhotographySite, record: StudioRecord) {

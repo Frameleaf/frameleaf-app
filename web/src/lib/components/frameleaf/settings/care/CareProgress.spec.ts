@@ -1,5 +1,5 @@
-import { QueueCommand, QueueName, type AdminConfigDto, type QueueResponseDto } from '@frameleaf/sdk';
-import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import { AssetTypeEnum, QueueCommand, QueueName, type AdminConfigDto, type QueueResponseDto } from '@frameleaf/sdk';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { SystemConfigDraftStore } from '$lib/frameleaf/system-config-draft.svelte';
@@ -106,6 +106,30 @@ describe('Search and recognition progress (FL-366)', () => {
     expect(await hero().findByRole('heading', { name: 'Reading is paused' })).toBeInTheDocument();
     await fireEvent.click(hero().getByRole('button', { name: 'Finish now' }));
     expect(sdkMock.updateQueue).toHaveBeenCalledWith({ name: QueueName.Ocr, queueUpdateDto: { isPaused: false } });
+  });
+
+  it('keeps its status region in the page before anything is said, so a message is announced (FL-1248)', async () => {
+    newStore();
+    render(CareProgress, { pollMs: 60_000 });
+
+    await hero().findByRole('heading', { name: 'Nothing is waiting to be read' });
+    const region = screen.getByRole('status');
+    expect(region).toBeEmptyDOMElement();
+  });
+
+  it('lists photos only when redoing one item for Locked detection (FL-1249)', async () => {
+    sdkMock.searchAssets.mockResolvedValue({ assets: { items: [] } } as never);
+    newStore();
+    render(CareProgress, { pollMs: 60_000 });
+
+    await fireEvent.click(
+      await screen.findByRole('button', { name: 'Read one photo or video again for Locked detection' }),
+    );
+    await waitFor(() =>
+      expect(sdkMock.searchAssets).toHaveBeenCalledWith({
+        metadataSearchDto: expect.objectContaining({ type: AssetTypeEnum.Image }),
+      }),
+    );
   });
 
   it('queues the photo details still to read', async () => {

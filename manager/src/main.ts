@@ -195,6 +195,8 @@ class Api {
       installation,
       operations: operations.history(),
       autoUpdate: store.get<boolean>('auto-update') !== false,
+      /** Why the last automatic update check could not start an update, until a later check does. */
+      autoUpdateFailure: store.get<{ code: string; at: string }>('auto-update-failure'),
       profile: store.get('profile'),
       administrator: { name: store.get<{ name: string }>('administrator')?.name },
       managerOrigin: security.requestOrigin(request),

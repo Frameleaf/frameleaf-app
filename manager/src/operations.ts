@@ -12,7 +12,7 @@ import { Fencing } from './fencing.js';
 import { detectPhotoApps, identifyPhotoApp, photoAppKind, photoAppNames, type ContainerFileReader, type PhotoAppKind, type PhotoAppPlan } from './photo-app-sources.js';
 import { capturePhotoAppSource, restoreDatabaseUrl, type PhotoAppCapture } from './photo-app-capture.js';
 import { captureEnteFolder, folderImportNames, folderSourceId, importFolderPath, readEnteExport, type FolderImportKind } from './photo-app-folder.js';
-import { IMPORT_PREPARATION_TARGET, prepareCommonImportRuntime, removeCommonImportBootstrap, stageCommonImportBootstrap, stageCommonImportPreparation } from './common-import-runtime.js';
+import { IMPORT_PREPARATION_TARGET, commonImportBootstrapStaged, prepareCommonImportRuntime, removeCommonImportBootstrap, stageCommonImportBootstrap, stageCommonImportPreparation } from './common-import-runtime.js';
 import { rollbackCommonImport } from './common-import-lifecycle.js';
 import type { ImportPreparationSeal, ImportSourceAuthoritySeal } from './import-source-authority.js';
 import type { AutostartFile } from './unraid-autostart.js';
@@ -908,7 +908,16 @@ export class Operations {
         );
         this.store.save(operation);
       })
-      .finally(() => {
+      .finally(async () => {
+        // FL-1242: the destination administrator's password never outlives the run that staged it.
+        if (
+          operation.kind === 'import' &&
+          operation.state !== 'running' &&
+          (operation.completed.includes('stage-bootstrap-admin') || operation.step === 'stage-bootstrap-admin')
+        )
+          await removeCommonImportBootstrap(this.directory(), operation.id).catch((error) =>
+            console.error(`manager: could not remove the staged import administrator: ${error?.code ?? error}`),
+          );
         this.executing.delete(operation.id);
         // A settled operation no longer needs its plaintext dump, recovery record or restored snapshot.
         void this.retention.sweep();
@@ -1033,6 +1042,9 @@ export class Operations {
       };
       if (operation.completed.includes('stage-bootstrap-admin')) {
         if (bootstrap !== undefined) await stage();
+        // A run that stopped removed the staged password (FL-1242): the administrator enters it again to resume.
+        else if (!(await commonImportBootstrapStaged(this.directory(), operation.id)))
+          throw new Refusal('import_bootstrap_credentials_required');
       } else await this.step(operation, 'stage-bootstrap-admin', stage);
     }
     await this.step(operation, 'download-images', async () => {
@@ -1663,24 +1675,41 @@ export class Operations {
   }
   /**
    * Automatic updates (on unless the administrator turned them off): the same review and database checkpoint as
-   * a manual update, one release step per check. Waits while anything is running, and stops after a failed update
-   * until the administrator deals with it.
+   * a manual update, one release step per check. Waits while any operation holds the lock (a failed or interrupted
+   * one too), and stops after an update that failed, was rolled back or was cancelled until a later update the
+   * administrator starts succeeds. A release that was rolled back is never chosen automatically again. A check
+   * that could not start an update is kept as `auto-update-failure` for the dashboard.
    */
   async autoUpdate(): Promise<Operation | null> {
     if (this.store.get<boolean>('auto-update') === false) return null;
     const current = this.installation();
-    const history = this.store.history();
-    if (!current || history.some((o) => o.state === 'running' || o.state === 'awaiting-review')) return null;
-    const lastUpdate = history.find((o) => o.kind === 'update');
-    if (lastUpdate && lastUpdate.state !== 'complete') return null;
-    const [next] = (await this.releases.available())
-      .map(({ tag }) => tag)
-      .filter((tag) => isNewerRelease(tag, current.release)).sort(compareReleases);
-    if (!next) return null;
-    const { id } = await this.reviewUpdate(next);
-    // The administrator may have turned automatic updates off while the release was being reviewed.
-    if (this.store.get<boolean>('auto-update') === false) return null;
-    return this.update(id, randomUUID());
+    if (!current || this.store.locked()) return null;
+    // A rolled-back or cancelled update completes with its code as the error.
+    const lastUpdate = this.store.history().find((o) => o.kind === 'update');
+    if (lastUpdate && (lastUpdate.state !== 'complete' || lastUpdate.error)) return null;
+    try {
+      const rolledBack = new Set(this.store.get<string[]>('rolled-back-releases') ?? []);
+      const [next] = (await this.releases.available())
+        .map(({ tag }) => tag)
+        .filter((tag) => isNewerRelease(tag, current.release) && !rolledBack.has(tag))
+        .sort(compareReleases);
+      if (!next) {
+        this.store.delete('auto-update-failure');
+        return null;
+      }
+      const { id } = await this.reviewUpdate(next);
+      // The administrator may have turned automatic updates off while the release was being reviewed.
+      if (this.store.get<boolean>('auto-update') === false) return null;
+      const operation = this.update(id, randomUUID());
+      this.store.delete('auto-update-failure');
+      return operation;
+    } catch (error) {
+      this.store.set('auto-update-failure', {
+        code: error instanceof Refusal ? error.code : 'operation_failed',
+        at: new Date().toISOString(),
+      });
+      throw error;
+    }
   }
   /**
    * Retry withdrawn targets with the next newer compatible release, retaining targets that may have started.
@@ -1869,17 +1898,24 @@ export class Operations {
       check().catch((error) =>
         console.error(redact(`manager: could not journal the new server's health (${(error as Error)?.message ?? error})`)),
       );
-    const timer = setInterval(() => void logged(), this.serverWatchMs);
+    // One poll at a time; the one in flight when the interval stops is awaited, so a `server-served` it records
+    // is journaled before the caller decides between keeping the target and rolling back.
+    let polling: Promise<void> | undefined;
+    const timer = setInterval(() => {
+      polling ??= logged().finally(() => (polling = undefined));
+    }, this.serverWatchMs);
     timer.unref();
     try {
       await start();
     } catch (error) {
       // The start's own failure is what the caller reports; the caller re-checks Docker before any rollback.
       clearInterval(timer);
+      await polling;
       await logged();
       throw error;
     }
     clearInterval(timer);
+    await polling;
     await check();
   }
   /** Whether Docker shows the target's server passing a health probe in its (bounded) health log. */
@@ -1939,6 +1975,9 @@ export class Operations {
       await this.docker.compose(this.directory(), restored.project, 'up');
       return true;
     });
+    // Automatic updates never choose this release again; the administrator can still review it by hand.
+    const rolledBack = this.store.get<string[]>('rolled-back-releases') ?? [];
+    this.store.set('rolled-back-releases', [...new Set([...rolledBack, review.release.nas.tag])]);
     operation.receipts['cancelled'] = 'update_failed_rolled_back';
   }
   async reviewRestore(snapshot: string, databaseRoot: string, managerPort?: number) {

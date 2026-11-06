@@ -441,6 +441,9 @@ export class OvernightService {
           result = 'failed';
         }
       }
+      if (step === 'cleanup' && (result === 'done' || result === 'unfinished')) {
+        this.optimizeDatabase();
+      }
       // The counts that run every night go with the first step, whether or not it runs.
       if (step === 'cleanup' && result !== 'done' && result !== 'unfinished') {
         await this.queueService.handleNightlyJobs({ cleanup: false }).catch((error: unknown) => {
@@ -462,6 +465,16 @@ export class OvernightService {
       }
       await this.save(state);
     }
+  }
+
+  /**
+   * FL-1235: once the tidy-up's jobs have deleted their rows, reclaim the dead space and refresh the
+   * planner statistics. Not awaited: a whole-database VACUUM can outlast any job's deadline, and the
+   * run moves on meanwhile. Plain VACUUM does not lock tables, so the app keeps running.
+   */
+  // ponytail: whole database; per-table list if a large library makes this run too long
+  private optimizeDatabase() {
+    void this.databaseRepository.vacuum({ analyze: true });
   }
 
   /** "Stop": the run ends now; the steps it did not reach run on the next night. */

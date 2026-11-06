@@ -43,6 +43,7 @@
     type OutputDefinition,
     type PresentationBlock,
   } from '$lib/frameleaf/photography/workflow-api';
+  import { endOfLocalDayIso, localDateInput } from '$lib/frameleaf/photography/date-input';
   import { fileUploadHandler, openFileUploadDialog } from '$lib/utils/file-uploader';
   import { getAssetMediaUrl } from '$lib/utils';
   import { Route } from '$lib/route';
@@ -1128,11 +1129,9 @@
             ><label
               >{$t('frameleaf_photography_selection_deadline')}<input
                 type="date"
-                value={draft.config.selectionDeadline?.slice(0, 10) ?? ''}
+                value={localDateInput(draft.config.selectionDeadline)}
                 onchange={(event) => {
-                  draft!.config.selectionDeadline = event.currentTarget.value
-                    ? new Date(`${event.currentTarget.value}T23:59:59`).toISOString()
-                    : null;
+                  draft!.config.selectionDeadline = endOfLocalDayIso(event.currentTarget.value);
                 }}
               /></label
             >
@@ -1185,11 +1184,9 @@
           <label
             >{$t('frameleaf_photography_gallery_expiry')}<input
               type="date"
-              value={draft.config.expiresAt?.slice(0, 10) ?? ''}
+              value={localDateInput(draft.config.expiresAt)}
               onchange={(event) => {
-                draft!.config.expiresAt = event.currentTarget.value
-                  ? new Date(`${event.currentTarget.value}T23:59:59`).toISOString()
-                  : null;
+                draft!.config.expiresAt = endOfLocalDayIso(event.currentTarget.value);
               }}
             /></label
           >
@@ -2129,7 +2126,7 @@
                   name: recipientName.trim(),
                   ...(recipientEmail.trim() && { email: recipientEmail.trim() }),
                   password: recipientPassword || null,
-                  expiresAt: recipientExpiry ? new Date(`${recipientExpiry}T23:59:59`).toISOString() : null,
+                  expiresAt: endOfLocalDayIso(recipientExpiry),
                   canProof: true,
                   canDownload: recipientDownload,
                   captureIds: restrictInvitation ? selected : null,
@@ -2142,11 +2139,9 @@
             <label
               >{$t('frameleaf_photography_gallery_expiry')}<input
                 type="date"
-                value={draft.config.expiresAt?.slice(0, 10) ?? ''}
+                value={localDateInput(draft.config.expiresAt)}
                 onchange={(event) => {
-                  draft!.config.expiresAt = event.currentTarget.value
-                    ? new Date(`${event.currentTarget.value}T23:59:59`).toISOString()
-                    : null;
+                  draft!.config.expiresAt = endOfLocalDayIso(event.currentTarget.value);
                 }}
               /></label
             ><label

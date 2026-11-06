@@ -217,9 +217,8 @@
   {#if failure}
     <Notice tone="warn" title={$t('frameleaf_cloud_action_failed')}>{failure}</Notice>
   {/if}
-  {#if notice}
-    <Said message={notice} onDismiss={() => (notice = '')} />
-  {/if}
+  <!-- Always in the page, so a message that appears in it is announced (FL-1248). -->
+  <Said message={notice} onDismiss={() => (notice = '')} />
 
   {#if !status || !license || !products}
     <div class="fc-loading" role="status" aria-label={$t('frameleaf_cloud_loading')}>

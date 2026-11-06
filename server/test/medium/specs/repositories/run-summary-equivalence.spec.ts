@@ -353,6 +353,15 @@ it('summarises randomised ledgers exactly as the row-by-row read did', async () 
       await expectSameSummary(db, world, `seed ${seed}: canonical outcomes`);
       stored += await expectSameStoredSummary(db, world, `seed ${seed}: canonical outcomes`);
 
+      // FL-1241: "Retry failed" on a canonical job also reopens the origins whose cold copies read it. The
+      // stored summaries are kept this time: only the queue's own reopen may stop them being trusted.
+      while ((await summarizeRuns(db, 60_000, 3)) > 0);
+      for (const queue of world.queues) {
+        await store.retryFailed(queue);
+      }
+      await expectSameSummary(db, world, `seed ${seed}: retry failed`);
+      await sql`update job_run set summary = null where id = any(${world.runs}::uuid[])`.execute(db);
+
       const {
         rows: [shape],
       } = await sql<{ shared: number; cold: number }>`select
@@ -372,3 +381,96 @@ it('summarises randomised ledgers exactly as the row-by-row read did', async () 
     await db.destroy();
   }
 }, 180_000);
+
+it('reopens an origin whose cold copy reads a canonical job put back by "Retry failed" (FL-1241)', async () => {
+  const db = await getKyselyDB();
+  const store = new SqlQueueStore(db);
+  try {
+    const queue = `retry-alias-${randomUUID()}`;
+    await store.initialize([queue]);
+    const operation = await store.createRun('retry-alias-operation', {});
+    const origin = await store.createRun('retry-alias-origin', {});
+    // A library scan's source has the operation's own id.
+    const initial = operation;
+    const producer = randomUUID();
+    const canonicalJob = randomUUID();
+    await sql`insert into job_selection(id,"runId",stage,queue,"safeToRetry",sensitive,"deadlineMs",state,"sourceKind","libraryOperationId","capturedAt")
+      values (${initial}::uuid,${operation}::uuid,'initial',${queue},true,false,60000,'ready','library-initial',${operation}::uuid,now())`.execute(
+      db,
+    );
+    // The origin asked for the library through a producer request that is still live, so it is entitled.
+    await db
+      .insertInto('job_run_item')
+      .values([
+        {
+          runId: origin,
+          itemKey: 'producer',
+          rootItemKey: null,
+          stage: 'produce',
+          queue,
+          selection: {},
+          state: 'completed',
+        },
+        {
+          runId: operation,
+          itemKey: 'library/1',
+          rootItemKey: 'root-1',
+          stage: 'initial',
+          queue,
+          selection: {},
+          selectionId: initial,
+          librarySourceKey: 'source-1',
+          libraryIntent: { name: 'initial' },
+          state: 'failed',
+        },
+        // The origin's cold copy: it reads its state from the operation's canonical row.
+        {
+          runId: origin,
+          itemKey: 'library/1',
+          rootItemKey: 'root-1',
+          stage: 'initial',
+          queue,
+          selection: {},
+          selectionId: initial,
+          state: 'pending',
+        },
+      ] as never)
+      .execute();
+    const job = { queue, data: {}, safeToRetry: true, sensitive: false, deadlineMs: 60_000, finishedAt: PAST };
+    await db
+      .insertInto('job')
+      .values([
+        { ...job, id: producer, runId: origin, itemKey: 'producer', name: 'produce', state: 'completed' },
+        { ...job, id: canonicalJob, runId: operation, itemKey: 'library/1', name: 'initial', state: 'failed' },
+      ] as never)
+      .execute();
+    await sql`update job_run_item set "jobId" = case "runId" when ${origin}::uuid then ${producer}::uuid else ${canonicalJob}::uuid end
+      where ("runId" = ${origin}::uuid and "itemKey" = 'producer') or "runId" = ${operation}::uuid`.execute(db);
+    await sql`insert into job_selection_run("runId","selectionId","copyComplete") values (${origin}::uuid,${initial}::uuid,true)`.execute(
+      db,
+    );
+    await sql`insert into job_library_source_producer("selectionId","producerId") values (${initial}::uuid,${producer}::uuid)`.execute(
+      db,
+    );
+    await sql`update job_run set "enumerationDone" = true, "finishedAt" = ${PAST} where id = any(${[operation, origin]}::uuid[])`.execute(
+      db,
+    );
+    while ((await summarizeRuns(db, 60_000, 3)) > 0);
+    const [before] = await listRuns(db, 1, 0, origin);
+    expect(before).toMatchObject({ failed: 1, state: 'completed_with_errors' });
+    const {
+      rows: [stored],
+    } = await sql<{
+      complete: boolean;
+    }>`select summary->>'complete' = 'true' complete from job_run where id = ${origin}::uuid`.execute(db);
+    expect(stored.complete).toBe(true);
+
+    expect(await store.retryFailed(queue)).toBe(1);
+
+    const [after] = await listRuns(db, 1, 0, origin);
+    expect(after).toEqual((await legacyListRuns(db, 1, 0, origin))[0]);
+    expect(after).toMatchObject({ failed: 0, finishedAt: null });
+  } finally {
+    await db.destroy();
+  }
+});

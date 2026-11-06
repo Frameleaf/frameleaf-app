@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { manifestFingerprint, parseImportManifest, storedVisibility } from 'src/library-import/manifest.js';
+import {
+  importsLocked,
+  manifestFingerprint,
+  parseImportManifest,
+  storedVisibility,
+} from 'src/library-import/manifest.js';
 
 const manifest = () => ({
   format: 'frameleaf-library-import',
@@ -46,6 +51,17 @@ describe('library import manifest trust boundary', () => {
     );
     Object.assign(value.assets[0], { visibility: 'archive' });
     expect(() => parseImportManifest(value)).toThrow('ASSET_ARCHIVED_REQUIRES_LOCKED');
+  });
+  it('keeps a private item in Trash both trashed and Locked, and refuses Locked outside Trash (FL-1230)', () => {
+    const value = manifest();
+    Object.assign(value.assets[0], { visibility: 'trash', locked: true });
+    const [asset] = parseImportManifest(value).assets;
+    expect(storedVisibility(asset)).toBe('timeline');
+    expect(importsLocked(asset)).toBe(true);
+    expect(importsLocked({ visibility: 'trash' })).toBe(false);
+    expect(importsLocked({ visibility: 'locked' })).toBe(true);
+    Object.assign(value.assets[0], { visibility: 'timeline' });
+    expect(() => parseImportManifest(value)).toThrow('ASSET_LOCKED_REQUIRES_TRASH');
   });
   it('preserves an explicit cleared location for regeneration locks', () => {
     const value = manifest();

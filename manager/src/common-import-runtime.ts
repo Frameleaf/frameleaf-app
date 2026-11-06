@@ -197,6 +197,18 @@ export async function removeCommonImportBootstrap(directory: string, operationId
   }
 }
 
+/** Whether a run still has the destination administrator's details staged; a stopped run removes them. */
+export async function commonImportBootstrapStaged(directory: string, operationId: string): Promise<boolean> {
+  if (!z.uuid().safeParse(operationId).success) throw new Refusal('invalid_import_authority');
+  const info = await lstat(join(directory, `import-runtime-${operationId}`, 'config', bootstrapName)).catch(
+    (error: NodeJS.ErrnoException) => {
+      if (error.code !== 'ENOENT') throw error;
+      return null;
+    },
+  );
+  return !!info?.isFile();
+}
+
 export const CommonImportBootstrapCredentials = z.strictObject({
   email: z
     .email()

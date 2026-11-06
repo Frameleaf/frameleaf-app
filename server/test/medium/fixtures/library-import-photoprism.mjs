@@ -46,7 +46,6 @@ assert.match(input.nativeLibrary.containerId, /^[a-f0-9]{64}$/u);
 const sourceRoot = join(sourceDirectory, 'originals');
 const destinationRoot = join(directory, 'destination');
 await mkdir(destinationRoot, { mode: 0o700 });
-await mkdir(join(destinationRoot, 'owner/camera'), { recursive: true, mode: 0o700 });
 const sha256 = async (path) =>
   createHash('sha256')
     .update(await readFile(path))
@@ -101,60 +100,14 @@ const source = {
   revision,
   schemaSha256: captured.schemaSha256,
 };
-const roots = [];
-for (const [id, path] of [
-  ['source', sourceRoot],
-  ['destination', destinationRoot],
-]) {
-  const info = await stat(path, { bigint: true });
-  roots.push({ id, path, device: String(info.dev), inode: String(info.ino) });
-}
-const observed = [],
-  drafts = [];
 for (const file of originals) {
   assert.equal(file.role, 'original');
   const expected = input.nativeLibrary.photos.find((photo) => photo.path === file.path);
   assert(expected, 'Source original must have independent API byte evidence');
   const path = join(sourceRoot, file.path);
-  const info = await stat(path, { bigint: true });
   assert.equal(await sha256(path), expected.sha256);
-  assert.equal(String(info.size), expected.bytes);
-  observed.push({
-    id: file.id,
-    path: file.path,
-    bytes: expected.bytes,
-    sha256: expected.sha256,
-    role: 'original',
-    modifiedAt: info.mtime.toISOString(),
-  });
-  drafts.push({
-    id: file.id,
-    sourceAssetId: file.photoId,
-    sourceFileId: file.id,
-    mode: 'copy',
-    sourceRoot: 'source',
-    sourcePath: file.path,
-    destinationRoot: 'destination',
-    destinationPath: 'owner/' + file.path,
-    expectedBytes: expected.bytes,
-    expectedSha256: expected.sha256,
-  });
+  assert.equal(String((await stat(path)).size), expected.bytes);
 }
-const sourceEvidence = {
-  source,
-  inventory: {
-    complete: true,
-    ownershipComplete: true,
-    privacyComplete: true,
-    writersStopped: true,
-    revisionBefore: revision,
-    revisionAfter: revision,
-  },
-  photoOwners: Object.fromEntries(photos.map((photo) => [photo.id, input.sourceUserId])),
-  albumOwners: Object.fromEntries(albums.map((album) => [album.id, input.sourceUserId])),
-  files: observed,
-  materializedAlbums: input.nativeLibrary.materializedAlbums,
-};
 const reviewedLosses = new Set([
   'PHOTOPRISM_SOURCE_METADATA_ARCHIVED',
   'PHOTOPRISM_TITLE_ARCHIVED',
@@ -179,47 +132,47 @@ try {
 } finally {
   snapshot.close();
 }
-const ownerIntents = [
-  {
-    sourceUserId: input.sourceUserId,
-    email: 'native-owner@example.test',
-    login: {
-      revision,
-      snapshotSha256: revision,
-      accountEnabled: true,
-      passwordLoginEnabled: true,
-      secondFactorRequired: false,
-      externalIdentityRequired: false,
-      ownedLibraryAccess: 'full',
-      otherRestrictions: 'none',
-    },
-    disposition: { kind: 'preserve' },
-  },
-];
-const publication = {
-  format: 'frameleaf-prepare-library-import',
-  version: 1,
-  adapter: 'photoprism-sqlite',
-  snapshotPath: captured.path,
-  observed: sourceEvidence,
-  approvedLossCodes: [...reviewedLosses],
-  operationId,
-  destinationId,
-  roots,
-  placements: drafts,
-  ownerMappings: [{ sourceId: input.sourceUserId, destinationId: ownerId }],
-  ownerIntents,
-};
+// The Manager path (FL-1149): the production preparation command reads the capture through the PhotoPrism
+// adapter, first to review it (inspect), then to publish the bundle with the administrator's choices.
+await mkdir(join(destinationRoot, 'library', ownerId), { recursive: true, mode: 0o700 });
+const mounts = { '/import-media/source': sourceRoot, '/data': destinationRoot };
 const preparationPath = join(directory, 'prepare.json');
-await writeFile(preparationPath, JSON.stringify({ ...publication, approvedLossCodes: [] }), { mode: 0o600 });
 const approvePreparation = async (seal) => {
   assert.deepEqual(seal, { operationId, destinationId, source, preparationSha256: await sha256(preparationPath) });
   await authorize();
 };
-await assert.rejects(prepareLibraryImport(preparationPath, approvePreparation), /IMPORT_LOSSES_NOT_ACKNOWLEDGED/);
+const preparation = async (request) => {
+  await writeFile(preparationPath, JSON.stringify(request), { mode: 0o600 });
+  return prepareLibraryImport(preparationPath, approvePreparation, (mount) => mounts[mount] ?? assert.fail(mount));
+};
+const request = {
+  format: 'frameleaf-prepare-library-import',
+  version: 2,
+  operationId,
+  destinationId,
+  source,
+  snapshotPath: captured.path,
+  originalsRoot: '/import-media/source',
+  sourceRootPath: '/photoprism/originals',
+};
+const inspection = await preparation({ ...request, action: 'inspect', approvedLossCodes: [], owners: [] });
+assert.equal(inspection.tested, true, 'The pinned PhotoPrism build must read as tested');
+assert.equal(inspection.summary.assets, 2);
+assert.deepEqual(
+  inspection.owners.map(({ sourceId, assets, restrictions }) => ({ sourceId, assets, restrictions })),
+  [{ sourceId: input.sourceUserId, assets: 2, restrictions: [] }],
+);
+const approvedLossCodes = inspection.losses.map(({ code }) => code);
+// The adapter reads PhotoPrism's own dynamic albums from the database and reports them as not coming across.
+for (const code of approvedLossCodes)
+  assert(reviewedLosses.has(code) || code === 'PHOTOPRISM_DYNAMIC_ALBUM_ARCHIVED', `Unexpected difference ${code}`);
+const owners = [{ sourceId: input.sourceUserId, destinationId: ownerId, email: 'native-owner@example.test' }];
+await assert.rejects(
+  preparation({ ...request, action: 'prepare', approvedLossCodes: [], owners }),
+  /IMPORT_LOSSES_NOT_ACKNOWLEDGED/,
+);
 assert(!(await readdir(directory)).some((name) => name.startsWith(`bundle-${operationId}-`)));
-await writeFile(preparationPath, JSON.stringify(publication), { mode: 0o600 });
-const receipt = await prepareLibraryImport(preparationPath, approvePreparation);
+const receipt = await preparation({ ...request, action: 'prepare', approvedLossCodes, owners });
 const bundle = { receipt, bundleDirectory: join(directory, receipt.bundleName) };
 const config = {
   format: 'frameleaf-library-import-command',

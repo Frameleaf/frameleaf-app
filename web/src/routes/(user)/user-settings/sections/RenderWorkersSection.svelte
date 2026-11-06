@@ -80,9 +80,16 @@
       onChanged?.();
     }
   };
+  // Only a request raised while this part is on the page opens the form: Advanced is drawn afresh each
+  // time it is shown, and an earlier request must not open it again (FL-1250).
+  // svelte-ignore state_referenced_locally (the request already handled when this part was drawn)
+  let handledEnrol = enrolRequest;
   $effect(() => {
-    if (enrolRequest > 0 && part !== 'limits' && part !== 'history') {
-      workerDialog = {};
+    if (enrolRequest !== handledEnrol) {
+      handledEnrol = enrolRequest;
+      if (part !== 'limits' && part !== 'history') {
+        workerDialog = {};
+      }
     }
   });
 

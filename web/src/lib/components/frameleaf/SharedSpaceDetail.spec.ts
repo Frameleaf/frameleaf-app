@@ -10,6 +10,7 @@ import { init, register, waitLocale } from 'svelte-i18n';
 import { get } from 'svelte/store';
 import { goto, replaceState } from '$app/navigation';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
 import { openFileUploadDialog } from '$lib/utils/file-uploader';
 import { albumFactory } from '@test-data/factories/album-factory';
@@ -289,5 +290,16 @@ describe('SharedSpaceDetail header (FL-83 AL-42)', () => {
 
     await waitFor(() => expect(goto).toHaveBeenCalledWith(expect.stringContaining('/sharing/space-1/photos/a1')));
     await waitFor(() => expect(get(slideshowStore.slideshowState)).toBe(SlideshowState.PlaySlideshow));
+  });
+
+  it('goes back to the shared spaces when the open space is deleted elsewhere, as from the sidebar (FL-1244)', async () => {
+    const space = spaceAs(AlbumUserRole.Owner);
+    renderSpace(space);
+
+    eventManager.emit('AlbumDelete', albumFactory.build({ id: 'another' }));
+    expect(goto).not.toHaveBeenCalledWith('/sharing');
+
+    eventManager.emit('AlbumDelete', space);
+    await waitFor(() => expect(goto).toHaveBeenCalledWith('/sharing'));
   });
 });

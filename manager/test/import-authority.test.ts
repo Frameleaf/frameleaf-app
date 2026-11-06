@@ -691,6 +691,12 @@ test('journals credential staging without retaining the administrator password i
     userId: common.bootstrapAdminId,
     ...credentials,
   });
+  // FL-1242: a run that stops removes the staged password; resuming asks the administrator for it again.
+  await rm(join(root, 'config', 'bootstrap-admin.json'));
+  const review = { source: null, common, release: { directory: '/fixture' }, input: { tag: 'fixture' } };
+  await assert.rejects(internal.install(f.operation, review), /import_bootstrap_credentials_required/);
+  await assert.rejects(internal.install(f.operation, review, credentials), /releases.verify is not a function/);
+  assert(await readFile(join(root, 'config', 'bootstrap-admin.json'), 'utf8'));
 });
 
 test('common review reports the source and space without exposing the private bundle binding', async (t) => {

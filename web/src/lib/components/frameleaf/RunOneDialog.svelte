@@ -26,6 +26,7 @@
     verb,
     note,
     videosOnly = false,
+    photosOnly = false,
     onStart,
   }: {
     open?: boolean;
@@ -34,6 +35,8 @@
     verb: string;
     note: string;
     videosOnly?: boolean;
+    /** Lists photos only, for the tasks the server runs on photos alone (Locked content's reread). */
+    photosOnly?: boolean;
     onStart: (asset: AssetResponseDto) => Promise<void>;
   } = $props();
 
@@ -49,6 +52,8 @@
   async function search(text: string) {
     const current = ++generation;
     searching = true;
+    // a later search that works clears an earlier one's failure
+    error = '';
     try {
       const id = UUID.exec(text)?.[0];
       const { assets } = await searchAssets({
@@ -57,6 +62,7 @@
           order: AssetOrder.Desc,
           visibility: AssetVisibility.Timeline,
           ...(videosOnly && { type: AssetTypeEnum.Video }),
+          ...(photosOnly && { type: AssetTypeEnum.Image }),
           ...(id ? { id } : text.trim() ? { originalFileName: text.trim() } : {}),
         },
       });

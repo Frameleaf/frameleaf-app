@@ -11,16 +11,6 @@ export class DatabaseService extends BaseService {
     await this.initialize();
   }
 
-  /**
-   * Nightly optimization: after the other tidy-ups have deleted their rows, reclaim the dead space
-   * and refresh planner statistics. Plain VACUUM does not lock tables, so the app keeps running.
-   */
-  // ponytail: whole database; per-table list if a large library makes this run too long
-  @OnEvent({ name: 'NightlyDatabaseCleanup', priority: 1000 })
-  async onNightlyDatabaseCleanup() {
-    await this.databaseRepository.vacuum({ analyze: true });
-  }
-
   async initialize(options: { allowInactiveImport?: boolean } = {}) {
     const version = await this.databaseRepository.getPostgresVersion();
     const current = semver.coerce(version);
