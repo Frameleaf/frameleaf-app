@@ -1,6 +1,6 @@
 # Ente Photos import contract
 
-The component resolver and common-manifest mapper are internal; they do not enable an importer or establish source compatibility. The initial research target is the official Rust CLI `ente-cli-v0.4.2`, source commit `d536e8e913443b9d88c1e60e3a5463cb78ba5592`. Legacy Go CLI and desktop exports require separate qualification; Takeout-like fields do not establish an identical export contract.
+The component resolver and common-manifest mapper are internal and do not establish source compatibility on their own; the Manager's Beta import below is the only importer that uses them. The initial research target is the official Rust CLI `ente-cli-v0.4.2`, source commit `d536e8e913443b9d88c1e60e3a5463cb78ba5592`. Legacy Go CLI and desktop exports require separate qualification; Takeout-like fields do not establish an identical export contract.
 
 ## Inputs and ownership
 
@@ -43,6 +43,20 @@ The mapper coalesces repeated placements by source file ID and component, select
 | Other metadata and placement evidence         | Preserve credential-free records in the protected archive                                                |
 
 The synthetic mapping suite expands the native fixture's complete ID inventories using its representative sidecars. It covers repeated placements, distinct owners with equal bytes, edited metadata, album relationships, Live Photos, incomplete or changed captures and safe refusal of unsupported inputs. This is mapping evidence, not a complete native migration or a release qualification. Encrypted account secrets and root verifiers are excluded from both manifest and archive; the export does not provide a compatible destination login verifier.
+
+## Manager import
+
+The Manager's Beta "Import from another photo app" picker always offers Ente Photos as an export folder. The owner runs the official CLI; the Manager never does, so it never handles the Ente password, second factor or CLI keyring, and the same steps work against ente.io or a self-hosted Museum:
+
+1. `ente photos export <folder>`
+2. `ente photos file list --all --json > <folder>/ente-files.json` (`--all` is required; the default result limit is 100)
+3. Enter the folder's path in the Manager. It must be inside one of the Manager's storage roots.
+
+`POST photo-app-folder` (`{ kind: 'ente', path, key }`) refuses a folder outside the roots or without `export.json` and `ente-files.json`, then captures it without stopping anything. The revision is a SHA256 over `export.json`, `ente-files.json` and a sorted listing (path, type, size, modification time in nanoseconds) of every file outside `Trash/`; every later fence check recomputes it and refuses `source_changed_review_again` if the folder changed. The folder is mounted read-only at `/import-media/source`, and the preparation request carries neither `snapshotPath` nor `databaseUrl`: the `ente` adapter declares the `export` delivery. Review, preparation and cancel are the common photo-app flow; cancelling only discards the staging.
+
+One account per import: the account is the export's `userID`, named `Ente account <userID>`, with no portable password verifier, so the owner claims it through an emailed link. Inventory files owned by another account (shared with this one) are left out, their bytes are never read, and each is reported as `ENTE_SHARED_FILE_NOT_IMPORTED`. Albums another account owns keep only this account's own files. A missing or invalid `ente-files.json` is refused as `ENTE_INVENTORY_REQUIRED`.
+
+The export records no CLI version, so the import is tested when the export matches the qualified contract (format/version and strict sidecar and inventory parsing). When strict parsing fails only on fields the qualified CLI did not write, those fields are dropped and the import continues best effort with `SOURCE_VERSION_UNTESTED`. Preparation recomputes every original's BLAKE2b-512 and compares it with its sidecar hash. There is no Docker qualification for this path: seeding Ente needs its client-side encryption and the CLI only exports, so the adapter is tested against the real CLI output in the sanitized fixture.
 
 ## Native evidence
 

@@ -202,6 +202,14 @@ const refusals: Record<string, string> = {
   photo_app_import_cancelled: 'The import was cancelled and the app is running again.',
   photo_app_not_recognised: 'Manager no longer recognises this app. Look again for apps to import.',
   photo_app_cancel_unavailable: 'This import can’t be cancelled right now. Wait for the current step to finish, then try again.',
+  import_folder_invalid: 'Enter the folder’s full path, starting with /, such as /mnt/user/photos/ente-export.',
+  import_folder_unreachable: 'Manager can’t open that folder. Check the path is spelled exactly right and that the folder exists.',
+  import_folder_outside_roots:
+    'Manager can’t reach that folder. Move the export into one of the folders listed under step 3, then enter its new path.',
+  ente_export_not_found:
+    'That folder doesn’t hold an Ente export. Choose the folder you exported to, or run the export command from step 1 first.',
+  ente_inventory_required:
+    'The list of your Ente files is missing. Run the command from step 2 so ente-files.json is saved inside the export folder, then try again.',
   invalid_import_authority: 'This import changed or expired. Cancel it and start again from the beginning.',
   source_database_dump_failed: 'Manager couldn’t read the app’s database. Check that its database is running, then try again.',
   source_database_restore_failed: 'Manager couldn’t open its copy of the app’s database. Try again; the app’s own database is unchanged.',
@@ -233,7 +241,7 @@ export function operationProgress(operation: JournalOperation, backupSkipped = f
   const successful = operation.state === 'complete' && !operation.error;
   const steps = ids.map((id) => ({
     id,
-    label: readable(id),
+    label: id === 'capture-common-source' && isFolderImport(operation.photoApp?.kind) ? 'Read the export folder' : readable(id),
     state: operation.completed.includes(id)
       ? 'complete'
       : id === operation.step
@@ -422,7 +430,7 @@ export function containerOverrides(
 }
 
 // ---------------------------------------------------------------- imports from other photo apps (Beta)
-export type PhotoAppKind = 'photoprism' | 'photoview' | 'pigallery2' | 'lychee' | 'nextcloud' | 'piwigo' | 'librephotos';
+export type PhotoAppKind = 'photoprism' | 'photoview' | 'pigallery2' | 'lychee' | 'nextcloud' | 'piwigo' | 'librephotos' | 'ente';
 export type PhotoAppSource = {
   container: string;
   kind: PhotoAppKind | string;
@@ -440,6 +448,7 @@ const photoAppNames: Record<string, string> = {
   nextcloud: 'Nextcloud',
   piwigo: 'Piwigo',
   librephotos: 'LibrePhotos',
+  ente: 'Ente Photos',
 };
 /** The product name owners know, never the container name. */
 export const photoAppName = (kind: string | undefined, fallback = 'your photo app') =>
@@ -474,8 +483,25 @@ export function photoAppReason(source: Pick<PhotoAppSource, 'kind' | 'database' 
     : sourceReasons.database_unsupported(app, database);
 }
 
+/**
+ * Apps imported from a folder the owner exported themselves, not from a container on this server. Nothing is
+ * stopped and the export records no app version.
+ */
+export const isFolderImport = (kind: string | undefined) => kind === 'ente';
+/** The version shown beside an app's name; an export folder has none worth showing. */
+export const sourceVersion = (kind: string | undefined, version: string | null | undefined) =>
+  (!isFolderImport(kind) && version) || '';
+/** Ente's CLI release names (`ente-cli-v0.4.2`) as owners see them. */
+const enteCli = (version: string | null | undefined) => (version ?? '').replace(/^ente-cli-v?/u, 'Ente CLI ');
+
 /** Shown when the reader was not qualified against this exact version (no version pinning: best effort). */
 export function untestedNotice(kind: string, version: string | null | undefined, testedVersion: string | null | undefined) {
+  if (isFolderImport(kind))
+    return (
+      'This export isn’t exactly like the Ente exports Manager has been tested with. ' +
+      'Photos and albums should come across; anything that can’t will be listed. ' +
+      `For best results, export again${testedVersion ? ` with ${enteCli(testedVersion)}` : ''}.`
+    );
   const app = photoAppName(kind);
   return (
     `${version ? `${app} ${version}` : `This version of ${app}`} hasn't been tested. ` +
@@ -528,6 +554,8 @@ const lossTexts: Record<string, (app: string) => string> = {
   GLOBAL_PRIVACY_REQUIRES_QUALIFICATION: (app) => `${app}'s privacy settings won’t come across. Check who can see what in Frameleaf afterwards.`,
   LIVE_PHOTO_REQUIRES_QUALIFICATION: () => 'Live Photos come across as a separate photo and video.',
   ORIGINAL_NAME_ARCHIVED: () => 'Some original file names won’t come across.',
+  SHARED_FILE_NOT_IMPORTED: () =>
+    'Photos and videos other people shared with you stay in their library. Only your own come across.',
 };
 /** One short sentence per loss. Unknown codes still say which app and keep the code for support. */
 export function lossText(code: string, kind: string) {

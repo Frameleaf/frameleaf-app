@@ -3,6 +3,7 @@ import { Docker, environment, sharesMedia, type Container } from './docker.js';
 import { databaseCandidates, Discovery } from './discovery.js';
 import { Refusal, type Source, type SourceFence, type Installation, type Mount } from './contracts.js';
 import { Store } from './store.js';
+import { verifyFolderFence } from './photo-app-folder.js';
 import type { AutostartFile } from './unraid-autostart.js';
 
 // Unraid's rc.docker reads one exact container name and optional delay on each line.
@@ -170,6 +171,8 @@ export class Fencing {
       );
   }
   async stop(source: Source | SourceFence): Promise<void> {
+    // An export folder has nothing to stop: it only has to still hold what was reviewed.
+    if ('folder' in source && source.folder) return verifyFolderFence(source.folder);
     // The durable intent permits only our own restart-policy changes on a retry. All other
     // configuration and container identities must still match the reviewed source.
     const intent = this.store.get<string>(`fence:${source.id}`);
@@ -277,6 +280,7 @@ export class Fencing {
     }
   }
   async verify(source: Source | SourceFence, installation?: Installation): Promise<void> {
+    if ('folder' in source && source.folder) return verifyFolderFence(source.folder);
     await new Discovery(this.docker).revalidate(this.pinned(source), true);
     await this.assertMedia(source.mounts, installation, source.workers);
     const all = await this.docker.inventory();
@@ -293,6 +297,8 @@ export class Fencing {
   }
   async recover(source: Source | SourceFence, installation: Installation | null): Promise<void> {
     if (installation?.mayHaveWrittenMedia) throw new Refusal('media_recovery_required_no_automatic_source_restart');
+    // Nothing was stopped for an export folder, so there is nothing to put back.
+    if ('folder' in source && source.folder) return;
     // Repair a journalled partial write before retrying the fence or restoring any service.
     await this.reconcileAutostart();
     await this.stop(source);

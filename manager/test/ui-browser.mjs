@@ -41,7 +41,7 @@ let expectedHttpErrors = 0;
 page.on('pageerror', (e) => errors.push(e.message));
 page.on('console', (e) => {
   if (e.type() === 'error') {
-    if (expectedHttpErrors > 0 && e.text().includes('status of 401')) expectedHttpErrors--;
+    if (expectedHttpErrors > 0 && /status of 40[19]\b/u.test(e.text())) expectedHttpErrors--;
     else errors.push(e.text());
   }
 });
@@ -136,6 +136,15 @@ await page.route('**/manager-api/**', async (route) => {
     const operation = {
       id: '7c0a3f52-5b8e-4a59-9d3e-2f0c1d4e5a6b', kind: 'import', state: 'running', step: 'capture-common-source',
       completed: [], error: null, createdAt: Date.now(), canCancel: false, photoApp: { kind: 'lychee', name: 'Lychee' },
+    };
+    dashboard.operations = [operation];
+    value = { id: operation.id };
+  } else if (path === 'photo-app-folder') {
+    if (!body.path.startsWith('/fixture/media/'))
+      return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ code: 'import_folder_outside_roots' }) });
+    const operation = {
+      id: '3b2a1c0d-9e8f-4a7b-8c6d-5e4f3a2b1c0d', kind: 'import', state: 'running', step: 'capture-common-source',
+      completed: [], error: null, createdAt: Date.now(), canCancel: false, photoApp: { kind: 'ente', name: 'Ente Photos' },
     };
     dashboard.operations = [operation];
     value = { id: operation.id };
@@ -828,6 +837,66 @@ try {
     assert.equal(requests.findLast((r) => r.path === 'photo-app-cancel').body.operationId, '5e4d3c2b-1a09-4f8e-9d7c-6b5a4f3e2d1c');
     await page.getByText('is starting again.', { exact: false }).waitFor();
     photoAppSources = [];
+  });
+  await check('Ente Photos: the export-folder card explains the steps, then reads the folder into the same review', async () => {
+    dashboard.installation = null;
+    dashboard.operations = [];
+    commonReview = null;
+    photoAppSources = [];
+    photoAppInspection = {
+      format: 'frameleaf-library-import-inspection',
+      source: { kind: 'ente', version: 'ente-cli' },
+      tested: true,
+      testedVersion: 'ente-cli-v0.4.2',
+      summary: { owners: 1, assets: 5, albums: 3, files: 5, bytes: '6436' },
+      owners: [{ sourceId: '1580559962386438', name: 'Ente account 1580559962386438', email: null, assets: 5, restrictions: [] }],
+      losses: [{ code: 'ENTE_SHARED_FILE_NOT_IMPORTED', count: 2 }, { code: 'ENTE_SOURCE_METADATA_ARCHIVED', count: 1 }],
+    };
+    await page.goto(origin);
+    const picker = page.locator('section.photo-apps');
+    // Always offered, even with no other photo app on this server; nothing is chosen for the owner.
+    await picker.getByRole('heading', { name: 'Import from another photo app' }).waitFor();
+    const ente = picker.getByRole('radio', { name: /Ente Photos/u });
+    assert.equal(await ente.isChecked(), false);
+    await ente.check();
+    await picker.getByText('ente photos export ente-export', { exact: true }).waitFor();
+    await picker.getByText('ente photos file list --all --json > ente-export/ente-files.json', { exact: true }).waitFor();
+    assert.match(await picker.innerText(), /never asks for your Ente password/u);
+    assert.match(await picker.innerText(), /inside \/fixture\/media or \/fixture\/new-drive/u);
+    assert.equal(await picker.getByRole('button', { name: /^Copy: /u }).count(), 2);
+    const next = picker.getByRole('button', { name: 'Continue', exact: true });
+    assert.equal(await next.isDisabled(), true);
+    assert.doesNotMatch(await picker.innerText(), /fence|snapshot|manifest/iu);
+    await screenshot('ente-steps');
+    // A folder Manager can't reach says what to do, in words.
+    await picker.getByRole('textbox', { name: /^Folder path/u }).fill('/elsewhere/ente-export');
+    expectedHttpErrors = 1;
+    await next.click();
+    await page.getByRole('alert').getByText(/Manager can’t reach that folder\./u).waitFor();
+    await picker.getByRole('textbox', { name: /^Folder path/u }).fill('/fixture/media/ente-export');
+    await next.click();
+    const folder = requests.findLast((r) => r.path === 'photo-app-folder').body;
+    assert.equal(folder.kind, 'ente');
+    assert.equal(folder.path, '/fixture/media/ente-export');
+    assert.ok(folder.key);
+    assert.equal(requests.filter((r) => r.path === 'photo-app-capture' && r.body.container === undefined).length, 0);
+    await page.locator('ol.timeline').getByText('Read the export folder', { exact: true }).waitFor();
+    Object.assign(dashboard.operations[0], { state: 'awaiting-review', step: null, completed: ['capture-common-source'], canCancel: true });
+    await refresh();
+    await page.getByText('Manager has read your export folder. Review what comes across before anything is imported.', { exact: true }).waitFor();
+    await mainButton('Review what comes across').click();
+    await page.getByRole('heading', { name: 'Review your Ente Photos library' }).waitFor();
+    await page.getByText('Manager only reads your export folder and never changes it. Your Ente account isn’t touched.', { exact: true }).waitFor();
+    await page.getByText('Photos and videos other people shared with you stay in their library. Only your own come across.', { exact: true }).waitFor();
+    await page.locator('main .badge', { hasText: /^Ente Photos$/u }).waitFor();
+    assert.equal(await page.getByLabel('Email for Ente account 1580559962386438').inputValue(), '');
+    assert.doesNotMatch(await page.locator('main').innerText(), /ENTE_|ente-cli|stays stopped|fence|snapshot|manifest/iu);
+    await screenshot('ente-review');
+    await page.locator('.wizard-footer').getByRole('button', { name: 'Cancel import', exact: true }).click();
+    await page.locator('dialog').getByText('Manager discards what it read. Nothing is imported, and your export folder stays as it is.', { exact: true }).waitFor();
+    await page.locator('dialog').getByRole('button', { name: 'Cancel import', exact: true }).click();
+    await page.getByText('Import cancelled. Your export folder is unchanged.', { exact: true }).waitFor();
+    assert.equal(requests.findLast((r) => r.path === 'photo-app-cancel').body.operationId, '3b2a1c0d-9e8f-4a7b-8c6d-5e4f3a2b1c0d');
   });
   assert.deepEqual(errors, []);
   console.log('All Manager browser checks passed.');
