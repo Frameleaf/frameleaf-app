@@ -131,9 +131,9 @@ test('redaction stays fast on long lines without a media extension', () => {
 });
 
 test('configured folders are hidden even under /run; only container device and runtime mounts stay visible', () => {
-  const roots = redactionRoots(['/run/private', '/mnt/archive', ''], ['/run/frameleaf/manager-token', '/dev/dri', '/srv/x', '/run/old-extra']);
-  // /run/old-extra: a container still running with an extra folder the saved settings no longer list.
-  assert.deepEqual(roots, ['/run/private', '/mnt/archive', '/srv/x', '/run/old-extra']);
+  const roots = redactionRoots(['/run/private', '/mnt/archive', ''], ['/run/frameleaf/manager-token', '/dev/dri', '/srv/x', '/run/old-extra', '/run/frameleaf-host/private']);
+  // A container still running with an extra folder the saved settings no longer list, even next to Manager's own mounts.
+  assert.deepEqual(roots, ['/run/private', '/mnt/archive', '/srv/x', '/run/old-extra', '/run/frameleaf-host/private']);
   const out = redactPaths('open /run/private/alice/notes.txt failed; ffmpeg /dev/dri/renderD128; token /run/frameleaf/manager-token', roots);
   assert.ok(!out.includes('alice'), out);
   assert.match(out, /\/dev\/dri\/renderD128/);
