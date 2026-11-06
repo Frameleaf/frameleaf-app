@@ -12,8 +12,10 @@ Repository admission guards, immutable action pins, release ancestry checks,
 and container-cache publication restrictions remain in place. Only the fork
 `Frameleaf/frameleaf-app` is in scope.
 
-Playwright installs both Chromium and its OS dependencies, then launches the
-browser before E2E stack setup to provide early shared-library diagnostics.
+Playwright installs Chromium without `--with-deps`: the hosted images already
+carry its shared libraries, and the apt font download it added stalled for
+minutes on the Azure mirror (FL-1148). The job then launches the browser before
+E2E stack setup to provide early shared-library diagnostics.
 A preflight failure fails the job; existing explicit `!cancelled()` steps may
 still run afterward.
 

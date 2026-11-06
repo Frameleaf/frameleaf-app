@@ -126,7 +126,8 @@ const browserPreflight = webSteps.findIndex(
 const stackStart = webSteps.findIndex((step) => step.name === "Docker build");
 assert.match(
   webSteps[browserInstall]?.run ?? "",
-  /playwright install --with-deps chromium --only-shell/,
+  /playwright install chromium --only-shell$/,
+  "FL-1148: hosted images carry Chromium's libraries; --with-deps only adds a slow apt font download",
 );
 assert(
   browserPreflight > browserInstall && browserPreflight < stackStart,
