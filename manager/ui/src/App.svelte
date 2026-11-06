@@ -85,6 +85,7 @@
     account = $state('local');
   let logs = $state(''),
     logService = $state(''),
+    checks = $state<{ name: string; ok: boolean | null; detail: string }[] | null>(null),
     theme = $state('dark');
   let page = $state<HTMLElement>(),
     bootstrapped = false,
@@ -670,7 +671,7 @@
     newPassword = '';
     modal = '';
   }
-  async function download(path: string, filename: string, body: unknown) {
+  async function download(path: string, filename: string, body: unknown, done = 'Download complete. Keep recovery files private.') {
     const response = await fetch(`/manager-api/${path}`, {
       method: 'POST',
       credentials: 'same-origin',
@@ -685,7 +686,7 @@
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     closeModal();
-    notify('Download complete. Keep recovery files private.');
+    notify(done);
   }
   function downloadLogs() {
     const url = URL.createObjectURL(new Blob([logs], { type: 'text/plain' }));
@@ -982,6 +983,7 @@
         {:else if screen === 'services'}
           {@render heading('Services', 'Manager owns this stack. Your library runs independently of the Manager container.')}<div class="actions mb16"><button class="button" class:primary={!running} disabled={busy || !!activeOperation} onclick={() => running ? showModal('control', 'stop') : run(() => control('start'))}><Icon name={running ? 'stop' : 'play'}/>{running ? 'Stop stack' : 'Start stack'}</button><button class="button quiet" disabled={busy || !!activeOperation} onclick={() => showModal('control', 'restart')}><Icon name="update"/>Restart stack</button></div><section class="card"><div class="card-header"><h2>Frameleaf · {installation.project}</h2></div>{@render services()}</section>{@render advancedContainers()}
           <section class="card mt16"><div class="card-header"><h2>Recent server logs</h2><div class="actions"><button class="button quiet" disabled={busy || !logService} onclick={() => run(() => showLogs(logService))}>Refresh logs</button><button class="button quiet" disabled={!logs} onclick={downloadLogs}><Icon name="document"/>Download logs</button></div></div><div class="card-body">{#if logs}<pre class="log" {@attach (node) => { void logs; node.scrollTop = node.scrollHeight; }}>{logs}</pre>{:else}<p class="muted">Choose Logs on a managed service to load its sanitized output.</p>{/if}</div></section><p class="quiet-note"><Icon name="lock"/>Logs are sanitized before they reach this browser.</p>
+          <section class="card mt16"><div class="card-header"><h2>Troubleshooting</h2><div class="actions"><button class="button quiet" disabled={busy} onclick={() => run(async () => { checks = (await api('diagnostics', {})).checks; })}><Icon name="activity"/>{checks ? 'Check again' : 'Check connections'}</button><button class="button quiet" disabled={busy} onclick={() => run(() => download('diagnostics-report', `frameleaf-troubleshooting-${new Date().toISOString().slice(0, 10)}.txt`, {}, 'Report downloaded. Read it before you post it.'))}><Icon name="document"/>Download report</button></div></div>{#if checks}{#each checks as check}<div class="list-row"><Icon name={check.ok === false ? 'warning' : check.ok ? 'check' : 'info'}/><div><strong>{check.name}</strong><p>{check.detail}</p></div><span class="badge" class:good={check.ok === true} class:warning={check.ok === false}>{check.ok === true ? 'OK' : check.ok === false ? 'Problem' : 'Note'}</span></div>{/each}{:else}<div class="card-body"><p class="muted">Check that Docker, the database, machine learning, network discovery, the internet and your drives all answer. The report adds the last day of logs from every service and points out known problems, ready to share on the community.</p></div>{/if}</section><p class="quiet-note"><Icon name="lock"/>The report leaves out passwords, keys, folder paths, file names and e-mail addresses.</p>
         {:else if screen === 'storage'}
           {@render heading('Storage', 'The exact paths your library uses, and available space on mounted storage.')}<div class="stack">{#each storage as disk}<section class="card"><div class="card-header"><h2><code>{disk.path}</code></h2><span class="badge" class:warning={disk.availableBytes == null}>{disk.availableBytes == null ? 'Unavailable' : 'Mounted'}</span></div><div class="card-body">{#if disk.totalBytes != null}<div class="spread"><strong>{formatBytes(disk.totalBytes - disk.freeBytes)} used of {formatBytes(disk.totalBytes)}</strong><span class="muted">{formatBytes(disk.availableBytes)} available</span></div><progress class="meter mt16" aria-label={disk.path + ' storage used'} value={disk.totalBytes - disk.freeBytes} max={disk.totalBytes}></progress>{:else}<p class="muted">Manager cannot read capacity for this mounted location.</p>{/if}</div></section>{/each}</div><section class="card mt16"><div class="card-header"><h2>Media mappings</h2><span class="badge">Exact access modes</span></div>{@render mappings(installation.mounts)}</section><section class="card mt16"><div class="card-header"><h2>Separate Frameleaf database</h2></div><div class="card-body"><code>{installation.databasePath}</code><p class="meta mt16">PostgreSQL uses a dedicated folder on the host disk. The source database and earlier recovery folders are retained.</p></div></section>
           <MoveLibrary roots={dashboard?.storageRoots ?? []} disabled={busy || !!activeOperation} {api} started={(id) => { selectedOperation = id; void run(() => go('progress')); }}/>

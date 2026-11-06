@@ -196,6 +196,15 @@ await page.route('**/manager-api/**', async (route) => {
     value = { services: containerSettings };
   else if (path === 'logs')
     value = { logs: [...Array.from({ length: 200 }, (_, i) => `Mapped route ${i}`), 'Application ready\npassword=[redacted]'].join('\n') };
+  else if (path === 'diagnostics')
+    value = {
+      checks: [
+        { name: 'Docker', ok: true, detail: 'Docker 27.3.1, Compose 2.29.7, linux/amd64 (41 ms)' },
+        { name: 'Server → database', ok: true, detail: 'PostgreSQL accepts connections.' },
+        { name: 'Server → machine learning', ok: false, detail: 'Machine learning no answer (ECONNREFUSED)' },
+        { name: 'Network discovery', ok: null, detail: 'Stopped: phones on the network will not find this library automatically.' },
+      ],
+    };
   else if (path === 'review-move')
     value = { available: true, id: '019aa111-1111-7111-8111-111111111111', root: body.root, files: 2, bytes: 4096 };
   else if (path === 'move-library') {
@@ -358,6 +367,11 @@ try {
       const log = document.querySelector('pre.log');
       return log.scrollHeight > log.clientHeight && log.scrollTop + log.clientHeight >= log.scrollHeight - 2;
     });
+    await page.getByRole('button', { name: 'Check connections' }).click();
+    await page.getByText('Machine learning no answer (ECONNREFUSED)', { exact: true }).waitFor();
+    assert.equal(await page.getByText('Problem', { exact: true }).count(), 1);
+    await page.getByRole('button', { name: 'Check again' }).waitFor();
+    await screenshot('services-troubleshooting');
     await mainButton('Stop stack').click();
     assert.equal(await page.locator('dialog').isVisible(), true);
     await button('Cancel').click();

@@ -111,6 +111,8 @@ export type CommandOptions = {
   inputFile?: string;
   /** The reader may stop once it has what it needs (pg_restore --list reads only the table of contents). */
   inputMayCloseEarly?: boolean;
+  /** Keep stderr in the result too (`docker logs` replays a container's stderr on its own stderr). */
+  mergeStderr?: boolean;
   outputFile?: string;
   timeout?: number;
   cwd?: string;
@@ -159,13 +161,16 @@ export async function command(
     transfers.push(
       pipeline(child.stdout, createWriteStream(`${options.outputFile}.partial`, { flags: 'wx', mode: 0o600 })),
     );
-  else
-    child.stdout.on('data', (chunk: Buffer) => {
+  else {
+    const keep = (chunk: Buffer) => {
       if (result.length + chunk.length > 8 * 1024 * 1024) {
         tooLarge = true;
         child.kill('SIGKILL');
       } else result = Buffer.concat([result, chunk]);
-    });
+    };
+    child.stdout.on('data', keep);
+    if (options.mergeStderr) child.stderr.on('data', (chunk: string) => keep(Buffer.from(chunk)));
+  }
   if (options.reply) {
     const reply = options.reply;
     const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
@@ -977,8 +982,18 @@ export class Docker {
       { cwd: directory, timeout: 7_200_000 },
     );
   }
-  async logs(id: string): Promise<string> {
+  /** stdout and stderr together, in time order (Docker timestamps every line; they are stripped again). */
+  async logs(id: string, { tail = 200, since = '1h' } = {}): Promise<string> {
     containerId.parse(id);
-    return this.execute('docker', ['logs', '--tail', '200', '--since', '1h', id]);
+    const text = await this.execute('docker', ['logs', '--timestamps', '--tail', String(tail), '--since', since, id], {
+      mergeStderr: true,
+    });
+    return text
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => [line.slice(0, line.indexOf(' ')), line.slice(line.indexOf(' ') + 1)])
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([, line]) => line)
+      .join('\n');
   }
 }
