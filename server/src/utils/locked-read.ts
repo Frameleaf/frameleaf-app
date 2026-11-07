@@ -292,22 +292,24 @@ const ownersOf = async (keyIds: Buffer[]): Promise<string[]> => {
   const hex = keyIds.map((id) => id.toString('hex'));
   const unknown = () => hex.filter((id) => !keyOwners.has(id));
   const due = (id: string) => Date.now() - (missingAt.get(id) ?? 0) > KEY_OWNERS_REFRESH_MS;
-  // FL-1265: jobs fail together when a session locks. Each waits for the read already in progress, or
-  // it would defer with no owner and no unlock would ever wake it; ids that read wasn't started for (a
-  // key made after it listed the files) get one more read before they count as missing.
-  const inProgress = unknown().length > 0 ? refreshingOwners : undefined;
-  if (inProgress) {
-    await inProgress.done;
-  }
-  const left = unknown().filter((id) => !inProgress?.ids.has(id));
-  if (left.length > 0) {
-    const current = refreshingOwners;
-    if (current && left.every((id) => current.ids.has(id))) {
-      await current.done;
-    } else {
-      const stale = left.filter((id) => due(id));
-      if (stale.length > 0) await refreshOwners(stale);
+  // FL-1265: jobs fail together when a session locks, and each must learn the owner, or it defers with
+  // no owner and no unlock ever wakes it. So wait for any read in progress and look again; only ids no
+  // awaited read was started for (a key made after it listed the files) get a read of their own.
+  // Bounded, so a stream of other lookups' reads can't hold this one forever.
+  const covered = new Set<string>();
+  for (let round = 0; round < 4; round++) {
+    const pending = unknown();
+    if (pending.length === 0) break;
+    const scan = refreshingOwners;
+    if (scan) {
+      await scan.done;
+      for (const id of scan.ids) covered.add(id);
+      continue;
     }
+    const stale = pending.filter((id) => !covered.has(id) && due(id));
+    if (stale.length === 0) break;
+    await refreshOwners(stale);
+    for (const id of stale) covered.add(id);
   }
   return [...new Set(hex.map((id) => keyOwners.get(id)).filter((id): id is string => !!id))];
 };
