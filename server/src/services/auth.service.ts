@@ -98,6 +98,12 @@ const TWO_FACTOR_EXPIRED = 'This sign-in expired. Enter your password again.';
 type TwoFactorChallenge = { sub: string; rem: boolean; exp: number };
 type TwoFactorTrust = { sub: string; en: number; exp: number };
 const epochSeconds = (date: Date) => Math.floor(date.getTime() / 1000);
+/** Exactly one of an authenticator code or a recovery code. */
+const requireOneSecondFactor = (dto: { code?: string; recoveryCode?: string }) => {
+  if (Boolean(dto.code) === Boolean(dto.recoveryCode)) {
+    throw new BadRequestException('Enter either the code from your authenticator app or a recovery code');
+  }
+};
 
 export interface LoginDetails {
   isSecure: boolean;
@@ -283,9 +289,7 @@ export class AuthService extends BaseService {
     details: LoginDetails,
   ): Promise<{ response: LoginResponseDto; rememberMe: boolean; trustToken?: string }> {
     await this.requirePasswordLogin(details);
-    if (!dto.code && !dto.recoveryCode) {
-      throw new BadRequestException('Enter the code from your authenticator app or a recovery code');
-    }
+    requireOneSecondFactor(dto);
 
     const now = new Date();
     const userId = peekToken<{ sub?: unknown }>(dto.twoFactorToken)?.sub;
@@ -358,9 +362,7 @@ export class AuthService extends BaseService {
     if (!row?.enabledAt) {
       throw new BadRequestException('Two-step sign-in is not on');
     }
-    if (!dto.code && !dto.recoveryCode) {
-      throw new BadRequestException('Enter the code from your authenticator app or a recovery code');
-    }
+    requireOneSecondFactor(dto);
     if (!(await this.checkSecondFactor(auth.user.id, row.secret, dto, new Date()))) {
       throw new BadRequestException(dto.code ? TWO_FACTOR_WRONG_CODE : TWO_FACTOR_WRONG_RECOVERY_CODE);
     }

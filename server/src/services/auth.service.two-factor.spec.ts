@@ -67,6 +67,15 @@ describe('AuthService two-step sign-in (FL-793)', () => {
     expect(mocks.session.create).not.toHaveBeenCalled();
   });
 
+  it('wants exactly one of a code or a recovery code', async () => {
+    const twoFactorToken = await challenge();
+    await expect(
+      sut.loginTwoFactor({ twoFactorToken, code: currentCode(), recoveryCode: 'abcde-fghjk' }, loginDetails),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(sut.loginTwoFactor({ twoFactorToken }, loginDetails)).rejects.toBeInstanceOf(BadRequestException);
+    expect(mocks.user.useRecoveryCode).not.toHaveBeenCalled();
+  });
+
   it('spends a recovery code', async () => {
     const twoFactorToken = await challenge();
     mocks.user.useRecoveryCode.mockResolvedValueOnce(true).mockResolvedValueOnce(false);

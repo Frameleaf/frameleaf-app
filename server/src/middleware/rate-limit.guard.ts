@@ -97,6 +97,17 @@ export const RATE_LIMITS = Object.freeze({
     principalLimit: 5,
     principalCounts: 'failures',
   },
+  /**
+   * FL-793: setting up, turning off and renewing two-step sign-in (`auth/two-factor/*`), which take the
+   * password or a code: 30 per address and 10 per session (or API key), from any address, in ten minutes.
+   */
+  twoFactorChange: {
+    bucket: 'two-factor-change',
+    limit: 30,
+    windowSeconds: 10 * MINUTE,
+    principal: 'credential',
+    principalLimit: 10,
+  },
   /** The administrator's own provider: `POST oauth/callback` and `POST oauth/link`. */
   oauthCallback: {
     bucket: 'oauth-callback',

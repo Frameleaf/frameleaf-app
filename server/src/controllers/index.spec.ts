@@ -203,10 +203,10 @@ const RATE_LIMITED_ROUTES: Record<string, RateLimitRule> = {
   'DELETE auth/pin-code': RATE_LIMITS.login,
   // FL-793: the code step after a right password, and two-step sign-in changes (password proof)
   'POST auth/login/two-factor': RATE_LIMITS.twoFactorLogin,
-  'POST auth/two-factor/setup': RATE_LIMITS.login,
-  'POST auth/two-factor/enable': RATE_LIMITS.login,
-  'DELETE auth/two-factor': RATE_LIMITS.login,
-  'POST auth/two-factor/recovery-codes': RATE_LIMITS.login,
+  'POST auth/two-factor/setup': RATE_LIMITS.twoFactorChange,
+  'POST auth/two-factor/enable': RATE_LIMITS.twoFactorChange,
+  'DELETE auth/two-factor': RATE_LIMITS.twoFactorChange,
+  'POST auth/two-factor/recovery-codes': RATE_LIMITS.twoFactorChange,
   // FL-538: a choose-a-password link is checked and used without signing in, bounded like a sign-in.
   'POST auth/password-link/check': RATE_LIMITS.login,
   'POST auth/password-link': RATE_LIMITS.login,

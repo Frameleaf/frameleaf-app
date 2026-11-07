@@ -97,7 +97,7 @@ export class AuthController {
   }
 
   @Post('two-factor/setup')
-  @RateLimited(RATE_LIMITS.login)
+  @RateLimited(RATE_LIMITS.twoFactorChange)
   @Authenticated({ permission: Permission.AuthChangePassword })
   @Endpoint({
     summary: 'Start setting up two-step sign-in',
@@ -110,7 +110,7 @@ export class AuthController {
   }
 
   @Post('two-factor/enable')
-  @RateLimited(RATE_LIMITS.login)
+  @RateLimited(RATE_LIMITS.twoFactorChange)
   @Authenticated({ permission: Permission.AuthChangePassword })
   @Endpoint({
     summary: 'Turn on two-step sign-in',
@@ -122,7 +122,7 @@ export class AuthController {
   }
 
   @Delete('two-factor')
-  @RateLimited(RATE_LIMITS.login)
+  @RateLimited(RATE_LIMITS.twoFactorChange)
   @Authenticated({ permission: Permission.AuthChangePassword })
   @HttpCode(HttpStatus.NO_CONTENT)
   @Endpoint({
@@ -135,7 +135,7 @@ export class AuthController {
   }
 
   @Post('two-factor/recovery-codes')
-  @RateLimited(RATE_LIMITS.login)
+  @RateLimited(RATE_LIMITS.twoFactorChange)
   @Authenticated({ permission: Permission.AuthChangePassword })
   @Endpoint({
     summary: 'Make new recovery codes',

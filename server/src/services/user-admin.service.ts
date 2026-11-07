@@ -389,11 +389,14 @@ export class UserAdminService extends BaseService {
 
   /**
    * FL-793: turn off an account's two-step sign-in for someone who lost their phone and recovery codes.
-   * Recorded in the account's history only when it was on.
+   * Every session of the account is signed out too: the lost phone may still be signed in, and a reset
+   * may follow a suspected break-in. Recorded in the account's history only when it was on.
    */
   async resetTwoFactor(auth: AuthDto, id: string): Promise<void> {
     const user = await this.findOrFail(id, { withDeleted: true });
     if (await this.userRepository.deleteTwoFactor(id)) {
+      // the password-change handler is what signs an account out everywhere (and drops Locked access)
+      await this.eventRepository.emit('AuthChangePassword', { userId: id, invalidateSessions: true });
       await this.recordAdminEvents([
         accountEvent(auth, user, AdminAuditAction.AccountUpdated, TWO_FACTOR_RESET_DETAIL),
       ]);

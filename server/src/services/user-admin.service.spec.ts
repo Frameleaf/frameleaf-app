@@ -1071,6 +1071,10 @@ describe(UserAdminService.name, () => {
       await sut.resetTwoFactor(authStub.admin, user.id);
 
       expect(mocks.user.deleteTwoFactor).toHaveBeenCalledWith(user.id);
+      expect(mocks.event.emit).toHaveBeenCalledWith('AuthChangePassword', {
+        userId: user.id,
+        invalidateSessions: true,
+      });
       expect(mocks.adminAudit.create).toHaveBeenCalledWith([
         expect.objectContaining({
           userId: user.id,
@@ -1088,6 +1092,7 @@ describe(UserAdminService.name, () => {
       await sut.resetTwoFactor(authStub.admin, 'user-1');
 
       expect(mocks.adminAudit.create).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalled();
     });
   });
 });
