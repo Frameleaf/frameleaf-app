@@ -23,13 +23,18 @@ export function coalescedTask(action: () => Promise<void>): () => Promise<void> 
  * times as long as it took, so a costly read cannot keep the database busy however often it is polled; a cheaper one
  * is never reused, so a page refreshed after an action, or a test, always sees the change. Activity's run counts recount an unfinished run's whole ledger: 3.5M rows took 12 s and spilled 2.2 GB of
  * temporary files per read, and every open tab polled it every 2.5 s.
- * `clear()` forgets every reuse; a read still in flight when it is called is not kept either.
+ * `reusable` can turn a result down (an idle queue, which new work would not show in). `clear()` forgets every reuse; a read still in flight when it is called is not kept either.
  * ponytail: per-process memo, so each server process reads at most once per window; incremental counts for live
  * runs would remove the recount itself.
  */
 export function costReusedRead<K, T>(
   load: (key: K) => Promise<T>,
-  { factor = 10, minCostMs = 1000, now = () => Date.now() } = {},
+  {
+    factor = 10,
+    minCostMs = 1000,
+    now = () => Date.now(),
+    reusable = () => true,
+  }: { factor?: number; minCostMs?: number; now?: () => number; reusable?: (value: T) => boolean } = {},
 ) {
   const reads = new Map<string, { value: Promise<T>; reusableUntil: number }>();
   const read = (key: K): Promise<T> => {
@@ -41,9 +46,9 @@ export function costReusedRead<K, T>(
     const entry = { value: load(key), reusableUntil: Infinity };
     reads.set(id, entry);
     entry.value
-      .then(() => {
+      .then((value) => {
         const cost = now() - started;
-        if (cost >= minCostMs) entry.reusableUntil = now() + factor * cost;
+        if (cost >= minCostMs && reusable(value)) entry.reusableUntil = now() + factor * cost;
         else if (reads.get(id) === entry) reads.delete(id);
       })
       .catch(() => reads.get(id) === entry && reads.delete(id));

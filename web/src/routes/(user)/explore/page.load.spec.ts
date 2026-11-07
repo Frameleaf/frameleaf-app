@@ -6,6 +6,7 @@ import {
   getAssetStatistics,
   getBestPhotos,
   getTimeBuckets,
+  getVisitedLandmarks,
   searchAssets,
   searchAssetStatistics,
   searchFacets,
@@ -165,7 +166,6 @@ describe('the Explore loader', () => {
     expect(data.failed).toEqual({
       people: true,
       places: true,
-      landmarks: false,
       memories: false,
       albums: true,
       recents: false,
@@ -174,6 +174,18 @@ describe('the Explore loader', () => {
     expect(data.albums).toEqual([]);
     expect(data.libraryTotal).toBeNull();
     expect(data.shortcutCounts.favorites).toBe(5);
+  });
+
+  it('opens without waiting for landmarks, which report their own failure', async () => {
+    let finish!: (value: never[]) => void;
+    vi.mocked(getVisitedLandmarks).mockReturnValueOnce(new Promise((resolve) => (finish = resolve)) as never);
+
+    const data = await open();
+    finish([]);
+    await expect(data.landmarkSection).resolves.toEqual({ cards: [], albumSuggestion: null, failed: false });
+
+    vi.mocked(getVisitedLandmarks).mockRejectedValueOnce(new Error('offline'));
+    await expect((await open()).landmarkSection).resolves.toMatchObject({ cards: [], failed: true });
   });
 
   it('takes recent captures with Timeline visibility and makes no per-card cover search', async () => {

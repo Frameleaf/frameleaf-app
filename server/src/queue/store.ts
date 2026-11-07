@@ -902,8 +902,11 @@ export class SqlQueueStore {
     return this.runReads({ take, skip });
   }
 
+  /** A run's page polls this; an unfinished run is recounted from its jobs, so it is shared like `listRuns`. */
+  private readonly singleRunReads = costReusedRead((runId: string) => getRun(this.db, runId));
+
   getRun(runId: string) {
-    return getRun(this.db, runId);
+    return this.singleRunReads(runId);
   }
 
   /**
@@ -912,14 +915,26 @@ export class SqlQueueStore {
    */
   forgetRunReads() {
     this.runReads.clear();
+    this.singleRunReads.clear();
+    this.queueRunReads.clear();
   }
 
   listRunItems(runId: string, take: number, skip: number) {
     return listRunItems(this.db, runId, take, skip);
   }
 
+  /**
+   * The running-jobs summary reads every queue each time any tab polls it; on a large backlog one queue took
+   * 0.3-1.7 s and spilled to disk. A read over 250 ms is reused for ten times as long as it took.
+   */
+  private readonly queueRunReads = costReusedRead((name: string) => observeQueueRun(this.db, name), {
+    minCostMs: 250,
+    // an idle queue is never kept: the summary leaves idle queues out, so work started next would stay hidden
+    reusable: (run) => run.active + run.waiting > 0,
+  });
+
   observeQueueRun(name: string) {
-    return observeQueueRun(this.db, name);
+    return this.queueRunReads(name);
   }
 
   /** Tasks per stage of a run, and how many of them ended. */
