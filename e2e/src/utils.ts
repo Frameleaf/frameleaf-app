@@ -299,9 +299,9 @@ export const utils = {
     try {
       await ownedWait(
         'Resetting test database',
-        8000,
+        20_000,
         async (total) => {
-          const cleanupDeadline = performance.now() + 8000;
+          const cleanupDeadline = performance.now() + 20_000;
           const cleanupBudget = () => {
             const remaining = Math.floor(cleanupDeadline - performance.now());
             if (remaining <= 0) {
@@ -412,7 +412,8 @@ export const utils = {
             const drain = () =>
               withDeadline(
                 'Quiescing test database',
-                Math.min(6000, total.remaining()),
+                // ponytail: arm CI runners under load need more than 6 s to clear a busy queue (FL-1281)
+                Math.min(15_000, total.remaining()),
                 async (context) => {
                   phase = 'request active-job cancellation';
                   let lastCancellationContention: unknown;
