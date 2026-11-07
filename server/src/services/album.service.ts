@@ -79,6 +79,8 @@ export const ALBUM_MOVE_OWNER_ONLY =
 
 /** When each person's album covers were last repaired; see `refreshCoversInBackground`. */
 const coverRefreshAt = new Map<string, number>();
+/** People whose cover repair is still running: a slow one never overlaps the next. */
+const coverRefreshRunning = new Set<string>();
 const COVER_REFRESH_INTERVAL_MS = 60_000;
 
 @Injectable()
@@ -91,11 +93,18 @@ export class AlbumService extends BaseService {
    */
   private refreshCoversInBackground(userId: string) {
     const now = Date.now();
-    if (now - (coverRefreshAt.get(userId) ?? 0) < COVER_REFRESH_INTERVAL_MS) {
+    if (coverRefreshRunning.has(userId) || now - (coverRefreshAt.get(userId) ?? 0) < COVER_REFRESH_INTERVAL_MS) {
       return;
     }
     coverRefreshAt.set(userId, now);
-    const refresh = async () => this.albumRepository.updateThumbnails({ userId });
+    coverRefreshRunning.add(userId);
+    const refresh = async () => {
+      try {
+        await this.albumRepository.updateThumbnails({ userId });
+      } finally {
+        coverRefreshRunning.delete(userId);
+      }
+    };
     handlePromiseError(refresh(), this.logger);
   }
 

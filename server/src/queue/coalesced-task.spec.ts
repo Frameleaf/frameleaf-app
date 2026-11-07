@@ -66,6 +66,18 @@ describe('cost-reused reads', () => {
     expect(load).toHaveBeenCalledTimes(2);
   });
 
+  it('never reuses a result that `reusable` turns down, however slow', async () => {
+    let clock = 0;
+    const load = vi.fn(() => {
+      clock += 5000;
+      return Promise.resolve({ active: 0, waiting: 0 });
+    });
+    const read = costReusedRead(load, { now: () => clock, reusable: (run) => run.active + run.waiting > 0 });
+    await read('metadata');
+    await read('metadata');
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+
   it('keeps reads for different keys apart and never reuses a failed read', async () => {
     const load = vi.fn().mockRejectedValueOnce(new Error('lock timeout')).mockResolvedValue('ok');
     const read = costReusedRead(load, { now: () => 0 });

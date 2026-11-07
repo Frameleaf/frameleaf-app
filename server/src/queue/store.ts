@@ -929,6 +929,8 @@ export class SqlQueueStore {
    */
   private readonly queueRunReads = costReusedRead((name: string) => observeQueueRun(this.db, name), {
     minCostMs: 250,
+    // an idle queue is never kept: the summary leaves idle queues out, so work started next would stay hidden
+    reusable: (run) => run.active + run.waiting > 0,
   });
 
   observeQueueRun(name: string) {
