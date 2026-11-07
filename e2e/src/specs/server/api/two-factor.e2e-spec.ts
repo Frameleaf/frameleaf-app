@@ -126,7 +126,7 @@ describe('/auth/two-factor', () => {
       .get(`/admin/users/${user.userId}/history`)
       .set('Authorization', bearer(admin.accessToken));
     expect(history.body.events).toEqual(
-      expect.arrayContaining([expect.objectContaining({ action: 'two-factor-reset' })]),
+      expect.arrayContaining([expect.objectContaining({ action: 'account-updated', detail: 'two-factor-reset' })]),
     );
 
     const { body } = await signIn();

@@ -46,6 +46,8 @@ const accountEvent = (
 ) => ({ userId: user.id, actorId: auth.user.id, action, subject: user.name, detail });
 
 type AccountEvent = ReturnType<typeof accountEvent>;
+/** FL-793: the `account-updated` detail for an administrator's two-step sign-in reset. */
+export const TWO_FACTOR_RESET_DETAIL = 'two-factor-reset';
 type Preferences = ReturnType<typeof getPreferences>;
 
 /** The default page size of an account's history (FL-76). */
@@ -392,7 +394,9 @@ export class UserAdminService extends BaseService {
   async resetTwoFactor(auth: AuthDto, id: string): Promise<void> {
     const user = await this.findOrFail(id, { withDeleted: true });
     if (await this.userRepository.deleteTwoFactor(id)) {
-      await this.recordAdminEvents([accountEvent(auth, user, AdminAuditAction.TwoFactorReset, null)]);
+      await this.recordAdminEvents([
+        accountEvent(auth, user, AdminAuditAction.AccountUpdated, TWO_FACTOR_RESET_DETAIL),
+      ]);
     }
   }
 

@@ -3068,7 +3068,11 @@ export enum AdminAuditAction {
    * claimed from its home network; otherwise null.
    */
   AccountCreated = 'account-created',
-  /** Name, email, avatar colour or the require-password-change flag. */
+  /**
+   * Name, email, avatar colour or the require-password-change flag. FL-793: `detail` is
+   * `two-factor-reset` when an administrator turned off the account's two-step sign-in (a new enum
+   * value would break the apps' strict decoders).
+   */
   AccountUpdated = 'account-updated',
   AdminGranted = 'admin-granted',
   AdminRevoked = 'admin-revoked',
@@ -3118,8 +3122,6 @@ export enum AdminAuditAction {
   FrameleafAccountLinked = 'frameleaf-account-linked',
   /** FL-158: the account's Frameleaf account link was removed. */
   FrameleafAccountUnlinked = 'frameleaf-account-unlinked',
-  /** FL-793: an administrator turned off the account's two-step sign-in (a lost phone). */
-  TwoFactorReset = 'two-factor-reset',
 }
 
 export const AdminAuditActionSchema = z

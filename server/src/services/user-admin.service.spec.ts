@@ -1072,7 +1072,12 @@ describe(UserAdminService.name, () => {
 
       expect(mocks.user.deleteTwoFactor).toHaveBeenCalledWith(user.id);
       expect(mocks.adminAudit.create).toHaveBeenCalledWith([
-        expect.objectContaining({ userId: user.id, action: AdminAuditAction.TwoFactorReset, subject: user.name }),
+        expect.objectContaining({
+          userId: user.id,
+          action: AdminAuditAction.AccountUpdated,
+          subject: user.name,
+          detail: 'two-factor-reset',
+        }),
       ]);
     });
 
