@@ -157,15 +157,15 @@ describe(AlbumService.name, () => {
       mocks.album.getAll.mockResolvedValue([getForAlbum(album), getForAlbum(own)]);
       mocks.album.getByAssetId.mockResolvedValue([getForAlbum(album), getForAlbum(own)]);
       mocks.album.getMetadataForIds.mockResolvedValue([]);
-      mocks.partnerOrigin.getOriginLabels.mockResolvedValue(
-        new Map([[album.id, { rootOwnerId: newUuid(), rootOwnerName: 'Jamie' }]]),
-      );
+      mocks.partnerOrigin.getPartnerAlbumIds.mockResolvedValue([album.id]);
       mocks.user.getMetadata.mockResolvedValue([
         { key: UserMetadataKey.Preferences, value: { albums: { showPartnerAlbums: false } } },
       ]);
 
-      const list = await sut.getAll(AuthFactory.create(owner), {});
+      const list = await sut.getAll(AuthFactory.create(owner), { take: 20 });
       expect(list.map(({ id }) => id)).toEqual([own.id]);
+      // left out in the query, so `take` counts only the albums the list shows
+      expect(mocks.album.getAll).toHaveBeenCalledWith(owner.id, expect.objectContaining({ excludeIds: [album.id] }));
 
       const forItem = await sut.getAll(AuthFactory.create(owner), { assetId: newUuid() });
       expect(forItem.map(({ id }) => id)).toEqual([album.id, own.id]);
