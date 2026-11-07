@@ -77,8 +77,37 @@ import { getSupporters } from 'src/utils/supporter.js';
 export const ALBUM_MOVE_OWNER_ONLY =
   'Only the album owner can move it. Editors can change what is in the album, but not where it is kept.';
 
+/** When each person's album covers were last repaired; see `refreshCoversInBackground`. */
+const coverRefreshAt = new Map<string, number>();
+/** People whose cover repair is still running: a slow one never overlaps the next. */
+const coverRefreshRunning = new Set<string>();
+const COVER_REFRESH_INTERVAL_MS = 60_000;
+
 @Injectable()
 export class AlbumService extends BaseService {
+  /**
+   * Repairs this person's album covers (gone, trashed or Locked items; "newest item" covers) without
+   * holding up the album list. On a large library the repair rewrites every album and took seconds,
+   * so a list may show a stale cover until the next load.
+   * ponytail: in-process map, one entry per user; a write-time repair would make this unnecessary.
+   */
+  private refreshCoversInBackground(userId: string) {
+    const now = Date.now();
+    if (coverRefreshRunning.has(userId) || now - (coverRefreshAt.get(userId) ?? 0) < COVER_REFRESH_INTERVAL_MS) {
+      return;
+    }
+    coverRefreshAt.set(userId, now);
+    coverRefreshRunning.add(userId);
+    const refresh = async () => {
+      try {
+        await this.albumRepository.updateThumbnails({ userId });
+      } finally {
+        coverRefreshRunning.delete(userId);
+      }
+    };
+    handlePromiseError(refresh(), this.logger);
+  }
+
   async getStatistics(auth: AuthDto): Promise<AlbumStatisticsResponseDto> {
     const [owned, shared, notShared] = await Promise.all([
       this.albumRepository.getAll(auth.user.id, { isOwned: true, libraryScope: LibraryScope.Personal }),
@@ -98,8 +127,7 @@ export class AlbumService extends BaseService {
   }
 
   async getAll(auth: AuthDto, { assetId, suppressedOnly, ...rest }: GetAlbumsDto): Promise<AlbumResponseDto[]> {
-    // only the albums this list can show, not every album on the server, on each request
-    await this.albumRepository.updateThumbnails({ userId: auth.user.id });
+    this.refreshCoversInBackground(auth.user.id);
 
     const ownerId = auth.user.id;
     const privacyOptions = this.nsfwOptions(auth, suppressedOnly);
@@ -201,7 +229,7 @@ export class AlbumService extends BaseService {
    * link rules are unchanged (neither grants album listing).
    */
   async getTree(auth: AuthDto, dto: AlbumViewDto = {}): Promise<AlbumTreeResponseDto> {
-    await this.albumRepository.updateThumbnails({ userId: auth.user.id });
+    this.refreshCoversInBackground(auth.user.id);
 
     const privacyOptions = this.nsfwOptions(auth);
     let albums: MapAlbumDto[] = await this.albumRepository.getAll(auth.user.id, {

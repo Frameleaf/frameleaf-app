@@ -97,6 +97,39 @@ describe(AlbumService.name, () => {
       );
     });
 
+    it('does not wait for the cover repair, and repairs at most once a minute per person', async () => {
+      const auth = AuthFactory.create();
+      mocks.album.getAll.mockResolvedValue([]);
+      mocks.album.updateThumbnails.mockReturnValue(new Promise(() => {}));
+
+      await sut.getAll(auth, {});
+      await sut.getAll(auth, {});
+
+      expect(mocks.album.updateThumbnails).toHaveBeenCalledTimes(1);
+    });
+
+    it('never starts a second cover repair while one is still running, even after a minute', async () => {
+      vi.useFakeTimers();
+      try {
+        const auth = AuthFactory.create();
+        mocks.album.getAll.mockResolvedValue([]);
+        let finish!: () => void;
+        mocks.album.updateThumbnails.mockReturnValueOnce(new Promise((resolve) => (finish = () => resolve(0))));
+
+        await sut.getAll(auth, {});
+        vi.advanceTimersByTime(120_000);
+        await sut.getAll(auth, {});
+        expect(mocks.album.updateThumbnails).toHaveBeenCalledTimes(1);
+
+        finish();
+        await vi.waitFor(() =>
+          sut.getAll(auth, {}).then(() => expect(mocks.album.updateThumbnails).toHaveBeenCalledTimes(2)),
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("labels the viewer's own albums copied from a partner with the original owner (FL-326)", async () => {
       const album = AlbumFactory.from().albumUser().build();
       const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;

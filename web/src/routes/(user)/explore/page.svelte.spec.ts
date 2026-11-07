@@ -46,15 +46,14 @@ const data = (recentCaptures: AssetResponseDto[] = []) =>
     peopleCards: [],
     places: [],
     things: [],
-    landmarks: [],
-    landmarkAlbumSuggestion: null,
+    landmarkSection: Promise.resolve({ cards: [], albumSuggestion: null, failed: false }),
     memories: [],
     albums: [],
     recentCaptures,
     libraryTotal: 0,
     shortcutCounts: { favorites: 0, photos: 0, videos: 0, withoutPeople: 0 },
     bestPhotosPreview: { total: 0, cover: null },
-    failed: { people: false, places: false, memories: false, albums: false, recents: false, landmarks: false },
+    failed: { people: false, places: false, memories: false, albums: false, recents: false },
     meta: { title: 'Explore' },
   }) as PageData;
 

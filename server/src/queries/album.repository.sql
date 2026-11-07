@@ -196,13 +196,6 @@ select
     ("asset"."localDateTime" AT TIME ZONE 'UTC'::text)::date
   ) as "endDate",
   max("asset"."updatedAt") as "lastModifiedAssetTimestamp",
-  (
-    array_agg(
-      "asset"."id"
-      order by
-        "asset"."fileCreatedAt" desc
-    )
-  ) [1] as "thumbnailAssetId",
   count("asset"."id")::int as "assetCount"
 from
   "asset"

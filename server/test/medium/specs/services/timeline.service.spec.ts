@@ -452,6 +452,17 @@ describe(TimelineService.name, () => {
       await expect(sut.getTimeBuckets(elevated, { visibility: AssetVisibility.Timeline })).resolves.toEqual([
         { count: 2, timeBucket: '1970-02-01' },
       ]);
+      // Favorites sends no visibility: an unlocked session still sees its favourite revealed locks there
+      await ctx.database
+        .updateTable('asset')
+        .set({ isFavorite: true })
+        .where('id', 'in', [plain.id, moved.id])
+        .execute();
+      expect((await bucket(ordinary, { isFavorite: true })).id).toEqual([plain.id]);
+      expect(new Set((await bucket(elevated, { isFavorite: true })).id)).toEqual(new Set([plain.id, moved.id]));
+      await expect(sut.getTimeBuckets(elevated, { isFavorite: true })).resolves.toEqual([
+        { count: 2, timeBucket: '1970-02-01' },
+      ]);
       // never to anybody else, whatever their own session (FL-326: nor is the timeline readable at all)
       await expect(bucket(otherElevated, { userId: owner.id, visibility: AssetVisibility.Timeline })).rejects.toThrow(
         'Not found or no timeline.read access',

@@ -2514,7 +2514,13 @@ export class AssetRepository {
           return withBoundingBox(withBoundingCircle, bbox);
         })
         .$if(!!options.imageEnrichment, (qb) => withImageEnrichmentFilter(qb, options.imageEnrichment!))
-        .$if(options.visibility === undefined, (qb) => withAlbumVisibility(qb, options.lockedOwnerId))
+        .$if(options.visibility === undefined, (qb) =>
+          // an album shows the viewer's own Locked members; any other view (Favorites) shows the owner's
+          // revealed locks in an unlocked session, as the Timeline and Archive do (FL-195)
+          options.lockedOwnerId
+            ? withAlbumVisibility(qb, options.lockedOwnerId)
+            : withDefaultVisibility(qb, options.revealLockedOwnerId),
+        )
         .$if(!!options.visibility, (qb) => qb.where(timelineVisibility(options)))
         .$if(options.visibility === AssetVisibility.Locked && !!options.lockReasons, (qb) =>
           qb.where(lockedForReason(options.lockReasons!, 'asset')),
@@ -2959,7 +2965,13 @@ export class AssetRepository {
           .$if(withPlaces, (qb) => qb.select(['asset_exif.city', 'asset_exif.country']))
           .$if(!!options.withCoordinates, (qb) => qb.select(['asset_exif.latitude', 'asset_exif.longitude']))
           .where('asset.deletedAt', options.isTrashed ? 'is not' : 'is', null)
-          .$if(options.visibility === undefined, (qb) => withAlbumVisibility(qb, options.lockedOwnerId))
+          .$if(options.visibility === undefined, (qb) =>
+            // an album shows the viewer's own Locked members; any other view (Favorites) shows the owner's
+            // revealed locks in an unlocked session, as the Timeline and Archive do (FL-195)
+            options.lockedOwnerId
+              ? withAlbumVisibility(qb, options.lockedOwnerId)
+              : withDefaultVisibility(qb, options.revealLockedOwnerId),
+          )
           .$if(!!options.visibility, (qb) => qb.where(timelineVisibility(options)))
           .$if(options.visibility === AssetVisibility.Locked && !!options.lockReasons, (qb) =>
             qb.where(lockedForReason(options.lockReasons!, 'asset')),

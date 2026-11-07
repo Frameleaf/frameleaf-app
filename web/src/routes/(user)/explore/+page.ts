@@ -73,6 +73,26 @@ const loadMemories = async () => {
   return memoryManager.memories;
 };
 
+export type ExploreLandmarkSection = {
+  cards: ReturnType<typeof buildLandmarkCards>;
+  albumSuggestion: Awaited<ReturnType<typeof suggestLandmarkAlbum>> | null;
+  failed: boolean;
+};
+
+/**
+ * FL-354: the landmarks and attractions the account has photos at, most photographed first, with
+ * FL-357's one visit worth an album. Not awaited by the loader: on a large library the landmark count
+ * took 30 s, and the page must not wait for one section.
+ */
+const loadLandmarks = async (): Promise<ExploreLandmarkSection> => {
+  try {
+    const cards = buildLandmarkCards(await getVisitedLandmarks(), EXPLORE_LANDMARK_LIMIT);
+    return { cards, albumSuggestion: await suggestLandmarkAlbum(cards).catch(() => null), failed: false };
+  } catch {
+    return { cards: [], albumSuggestion: null, failed: true };
+  }
+};
+
 export const load = (async ({ url }) => {
   await authenticate(url);
 
@@ -87,7 +107,6 @@ export const load = (async ({ url }) => {
     bestPhotos,
     facets,
     recentCaptures,
-    landmarks,
   ] = await Promise.all([
     // Every section loads on its own: a request that fails leaves `null`, the page still opens, and
     // only that section says it could not load (`failed` below) instead of the whole page erroring.
@@ -123,11 +142,8 @@ export const load = (async ({ url }) => {
     })
       .then(({ assets }) => assets.items)
       .catch(() => null),
-    // FL-354: the landmarks and attractions the account has photos at, most photographed first.
-    getVisitedLandmarks().catch(() => null),
   ]);
   const $t = await getFormatter();
-  const landmarkCards = buildLandmarkCards(landmarks ?? [], EXPLORE_LANDMARK_LIMIT);
 
   const shortcutCounts: ExploreShortcutCounts = {
     favorites: favoriteCount,
@@ -160,14 +176,11 @@ export const load = (async ({ url }) => {
       memories: memories === null,
       albums: albums === null,
       recents: recentCaptures === null,
-      landmarks: landmarks === null,
     },
     peopleCards: buildExplorePeople(facetCounts(facets?.facets, SearchFacetField.People), people?.people ?? []),
     places: buildExplorePlaces(facetCounts(facets?.facets, SearchFacetField.City)),
     things,
-    landmarks: landmarkCards,
-    // FL-357: one visit worth an album, when there is one. The section is no worse off without it.
-    landmarkAlbumSuggestion: await suggestLandmarkAlbum(landmarkCards).catch(() => null),
+    landmarkSection: loadLandmarks(),
     libraryTotal: facets ? facets.total : null,
     recentCaptures: recentCaptures ?? [],
     albums: albums ? previewAlbums(albums) : [],
