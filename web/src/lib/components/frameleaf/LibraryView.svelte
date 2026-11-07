@@ -166,6 +166,9 @@
      * and selects everything in the view, exactly as the legacy select bar's Select All did.
      */
     selectAll?: 'matching' | 'loaded';
+    /** The View menu's partner photos switch (the library timeline); undefined draws none. */
+    partnerPhotos?: boolean;
+    onTogglePartnerPhotos?: () => void;
     /** Shortcuts this component does not act on itself (favorite, edit, tag, delete, ...). */
     onShortcut?: (shortcut: LibraryShortcut) => void;
     loading?: boolean;
@@ -272,6 +275,8 @@
     onShowMore,
     onShortcut,
     selectAll = 'matching',
+    partnerPhotos,
+    onTogglePartnerPhotos,
     loading = false,
     enableRouting = false,
     bulkContext,
@@ -1924,6 +1929,8 @@
                   onSlideshow={canSlideshow ? () => void startSlideshow() : undefined}
                   inspectorOpen={canShowInfoPanel ? inspectorOpen : undefined}
                   onToggleInspector={() => (inspectorOpen = !inspectorOpen)}
+                  {partnerPhotos}
+                  {onTogglePartnerPhotos}
                   {sorts}
                   sort={shownSort}
                   onSortChange={albumSortId || ownSort ? changeAlbumSort : undefined}

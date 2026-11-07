@@ -1113,6 +1113,9 @@
       "desc"
     ]
   },
+  "preferences.albums.showPartnerAlbums": {
+    "type": "boolean"
+  },
   "preferences.avatar.color": {
     "type": "string",
     "enum": [

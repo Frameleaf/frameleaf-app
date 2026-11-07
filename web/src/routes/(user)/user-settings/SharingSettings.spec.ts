@@ -41,8 +41,8 @@ vi.mock('$lib/managers/server-config-manager.svelte', () => ({
 
 // ACCOUNT-P2: the page's two account switches go through the account's own preferences draft.
 const sharingPrefs = vi.hoisted(() => ({
-  draft: { 'people.suggestInSpaces': false },
-  baseline: { 'people.suggestInSpaces': false },
+  draft: { 'people.suggestInSpaces': false, 'albums.showPartnerAlbums': true },
+  baseline: { 'people.suggestInSpaces': false, 'albums.showPartnerAlbums': true },
   dirty: false,
   stale: false,
   loading: false,
@@ -107,9 +107,10 @@ describe('SharingSettings: People & sharing in plain words (FL-368)', () => {
     expect(await screen.findByText(/^Nobody yet\./)).toBeInTheDocument();
     expect(await screen.findByText(/^No groups yet\./, { selector: '.hint' })).toBeInTheDocument();
     // Alone in the group there is nothing to leave, and only an administrator sees the server block.
-    // The one account switch is the Spaces suggestion; partners have no timeline switch (FL-326).
+    // The account switches: partner albums in the album list, and the Spaces suggestion.
     expect(screen.queryByRole('button', { name: 'Leave' })).toBeNull();
     expect(screen.getAllByRole('switch').map((item) => item.getAttribute('aria-label'))).toEqual([
+      'Show partner albums',
       'Suggest matching people in shared Spaces',
     ]);
     expect(screen.queryByText(/arrives in your library as your own copies/)).toBeNull();

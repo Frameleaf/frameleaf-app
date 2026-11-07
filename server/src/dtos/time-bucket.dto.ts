@@ -44,6 +44,11 @@ const TimeBucketQueryBaseSchema = z
     isFavorite: stringToBool
       .optional()
       .describe('Filter by favorite status (true for favorites only, false for non-favorites only)'),
+    withPartners: stringToBool
+      .optional()
+      .describe(
+        'Include partner-shared copies. Defaults to true; false hides them, except copies in an album the partner made, which always show',
+      ),
     isTrashed: stringToBool
       .optional()
       .describe('Filter by trash status (true for trashed assets only, false for non-trashed only)'),

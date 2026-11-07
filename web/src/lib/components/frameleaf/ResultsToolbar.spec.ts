@@ -1,5 +1,5 @@
 import { ImageEnrichmentFilter } from '@frameleaf/sdk';
-import { render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
@@ -117,5 +117,29 @@ describe('ResultsToolbar chip wording', () => {
   it('draws a chip for the Text & descriptions and Sensitivity review choices', () => {
     expect(chipText({}, ImageEnrichmentFilter.MissingImageDescription)).toEqual(['Description: No description']);
     expect(chipText({}, ImageEnrichmentFilter.NsfwReview)).toEqual(['Review status: Needs review']);
+  });
+});
+
+/** Partner sharing: the View menu turns partner photos on and off, with or without the info panel. */
+describe('ResultsToolbar partner photos', () => {
+  beforeAll(async () => {
+    await init({ fallbackLocale: 'en-US' });
+    register('en-US', () => import('$i18n/en.json'));
+    await waitLocale('en-US');
+  });
+
+  it('draws the Partner photos switch in the View menu and reports a change', async () => {
+    const onTogglePartnerPhotos = vi.fn();
+    render(ResultsToolbar, {
+      session: new LibrarySessionStore({ storage: null }),
+      partnerPhotos: true,
+      onTogglePartnerPhotos,
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: /View/ }));
+    const toggle = screen.getByRole('switch', { name: 'Partner photos' });
+    expect(toggle).toBeChecked();
+    await fireEvent.click(toggle);
+    expect(onTogglePartnerPhotos).toHaveBeenCalledOnce();
   });
 });

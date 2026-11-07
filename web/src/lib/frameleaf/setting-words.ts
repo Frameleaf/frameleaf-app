@@ -198,6 +198,7 @@ export const PREFERENCE_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   // FL-556: Look & playback › Safety.
   'trash.reuploadUntil': { label: 'frameleaf_prefs_look_reupload' },
   'people.suggestInSpaces': { label: 'frameleaf_sharing_suggest_spaces' },
+  'albums.showPartnerAlbums': { label: 'frameleaf_sharing_partner_albums' },
   'emailNotifications.enabled': { label: 'frameleaf_notify_yours_send' },
   'emailNotifications.albumInvite': { label: 'frameleaf_notify_yours_shares' },
   'emailNotifications.albumUpdate': { label: 'frameleaf_notify_yours_updates' },

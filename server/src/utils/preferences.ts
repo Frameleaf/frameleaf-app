@@ -131,6 +131,7 @@ const getDefaultPreferences = (): FrameleafUserPreferences => {
     notifications: { locale: 'en', devices: [] },
     albums: {
       defaultAssetOrder: AssetOrder.Desc,
+      showPartnerAlbums: true,
     },
     folders: {
       enabled: true,

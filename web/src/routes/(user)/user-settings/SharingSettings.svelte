@@ -12,8 +12,8 @@
    *
    * ACCOUNT-P2 added the prototype's "Suggest matching people in shared Spaces" (an account
    * preference, with the Save bar) and, once a partner shares with you, the line saying their photos
-   * arrive as your own copies. There is no partner timeline switch: partner sharing v2 (FL-326)
-   * retired it, as what a partner shares is in your own library.
+   * arrive as your own copies. The library's View menu shows or hides those copies on the timeline,
+   * and "Show partner albums" here keeps the albums a partner shared in the album list or out of it.
    *
    * Left out because the app cannot do it yet: removing someone else from a recognition group.
    */
@@ -110,7 +110,7 @@
   const canLeave = $derived(members.length > 1);
 
   // ACCOUNT-P2: the page's account switch, saved with the Save bar.
-  const sharingPreferences = createOwnPreferencesDraft(['people.suggestInSpaces']);
+  const sharingPreferences = createOwnPreferencesDraft(['people.suggestInSpaces', 'albums.showPartnerAlbums']);
 
   const inviteChoices = $derived(
     accounts.filter(
@@ -652,10 +652,17 @@
       <p class="hint">{$t('frameleaf_sharing_partners_empty')}</p>
     {/if}
     <!-- ACCOUNT-P2: once someone shares with you, where their photos go (partner sharing v2, FL-326:
-         your own copies, so there is no timeline switch). As the prototype's partner card. -->
+         your own copies). As the prototype's partner card. -->
     {#if theirs.length > 0}
       <p class="hint">{$t('frameleaf_sharing_partner_copies_note')}</p>
     {/if}
+    <Row label={$t('frameleaf_sharing_partner_albums')} help={$t('frameleaf_sharing_partner_albums_help')}>
+      <Switch
+        label={$t('frameleaf_sharing_partner_albums')}
+        checked={sharingPreferences.draft['albums.showPartnerAlbums']}
+        onChange={(value) => sharingPreferences.set('albums.showPartnerAlbums', value)}
+      />
+    </Row>
   </Section>
 
   <Section title={$t('frameleaf_sharing_family_title')} description={$t('frameleaf_sharing_family_description')}>

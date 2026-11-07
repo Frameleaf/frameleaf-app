@@ -1682,6 +1682,12 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
     evidence: 'people.sidebarWeb',
   },
   {
+    pattern: 'albums.showPartnerAlbums',
+    kind: 'control',
+    file: 'src/routes/(user)/user-settings/SharingSettings.svelte',
+    evidence: 'albums.showPartnerAlbums',
+  },
+  {
     pattern: 'people.suggestInSpaces',
     kind: 'control',
     file: 'src/routes/(user)/user-settings/SharingSettings.svelte',

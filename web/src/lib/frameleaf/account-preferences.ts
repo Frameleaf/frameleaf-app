@@ -23,6 +23,8 @@ export const REMINDER_ALLOWED_NOW = new Date(0).toISOString();
 
 export type AccountPreferencesDraft = {
   'albums.defaultAssetOrder': AssetOrder;
+  /** Partner sharing: albums a partner shared appear in the album list. */
+  'albums.showPartnerAlbums': boolean;
   'folders.enabled': boolean;
   'folders.sidebarWeb': boolean;
   /** Clients (photography studios) is opt-in; on, it sits in the top bar. */
@@ -135,6 +137,7 @@ const RESET_EXCLUDED_KEYS: ReadonlySet<AccountPreferenceKey> = new Set(['cast.ad
 /** The server's defaults (`server/src/utils/preferences.ts`), as the template's `createAccountPreferences`. */
 export const createDefaultDraft = (): AccountPreferencesDraft => ({
   'albums.defaultAssetOrder': AssetOrder.Desc,
+  'albums.showPartnerAlbums': true,
   // FL-146 (2026-09-27): what the prototype rail and tab bar show is on by default.
   'folders.enabled': true,
   'folders.sidebarWeb': true,
@@ -169,6 +172,7 @@ export const createDefaultDraft = (): AccountPreferencesDraft => ({
 
 export const draftFromPreferences = (preferences: UserPreferencesResponseDto): AccountPreferencesDraft => ({
   'albums.defaultAssetOrder': preferences.albums.defaultAssetOrder,
+  'albums.showPartnerAlbums': preferences.albums.showPartnerAlbums ?? true,
   'folders.enabled': preferences.folders.enabled,
   'folders.sidebarWeb': preferences.folders.sidebarWeb,
   'clients.enabled': preferences.clients?.enabled ?? false,

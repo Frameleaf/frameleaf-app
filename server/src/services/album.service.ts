@@ -117,6 +117,22 @@ export class AlbumService extends BaseService {
       albums = albums.filter((album) => !hidden.has(album.id));
     }
 
+    // FL-326: the viewer's own albums copied from a partner name the library they came from
+    const origins = await this.partnerOriginRepository.getOriginLabels(
+      'album',
+      albums.map((album) => album.id),
+      ownerId,
+    );
+    // Partner sharing: the album list leaves out partner albums when the account turned them off. The
+    // albums an item belongs to (`assetId`) always list them.
+    // ponytail: filtered after the query, so a `take` limit can return fewer; move into the query if that matters
+    if (!assetId && origins.size > 0) {
+      const { showPartnerAlbums } = getPreferences(await this.userRepository.getMetadata(ownerId)).albums;
+      if (!showPartnerAlbums) {
+        albums = albums.filter((album) => !origins.has(album.id));
+      }
+    }
+
     if (albums.length === 0) {
       return [];
     }
@@ -133,12 +149,6 @@ export class AlbumService extends BaseService {
     albums = await this.hideNsfwAlbumThumbnails(auth, albums, privacyOptions, albumMetadata);
 
     const readable = await this.readableParents(auth, albums);
-    // FL-326: the viewer's own albums copied from a partner name the library they came from
-    const origins = await this.partnerOriginRepository.getOriginLabels(
-      'album',
-      albums.map((album) => album.id),
-      ownerId,
-    );
     return this.withSupporters(
       auth,
       albums.map((album) => {

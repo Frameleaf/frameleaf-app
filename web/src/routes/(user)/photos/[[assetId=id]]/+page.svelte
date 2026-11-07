@@ -14,6 +14,7 @@
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import { Route } from '$lib/route';
+  import { showPartnerPhotos } from '$lib/stores/preferences.store';
   import { navigate } from '$lib/utils/navigation';
   import { AssetVisibility } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
@@ -36,13 +37,15 @@
   /**
    * The Map screen's "Search this area" lands here (prototype `MapView` onQuery → Library titled
    * "Map area"): the library narrowed to the area's bounds through the timeline's own `bbox`.
-   * The session's server-side "select everything matching" knows nothing of the area, so the bar
-   * offers the loaded selection instead while an area is shown.
+   * The session's server-side "select everything matching" knows nothing of the area (or of hidden
+   * partner photos), so the bar offers the loaded selection instead while either applies.
    */
   const area = $derived(parseMapArea(page.url.searchParams.get('area')));
   const options = $derived({
     visibility: AssetVisibility.Timeline,
     withStacked: true,
+    // Partner sharing: copies in an album the partner made still show (the server keeps them)
+    ...(!$showPartnerPhotos && { withPartners: false }),
     ...(area && { bbox: formatMapArea(area) }),
   });
 </script>
@@ -54,7 +57,9 @@
     title={area ? undefined : $t('library')}
     destination={{ kind: 'library' }}
     downloadFileName={brandedArchiveName($t('frameleaf_archive_name_photos'))}
-    selectAll={area ? 'loaded' : 'matching'}
+    selectAll={area || !$showPartnerPhotos ? 'loaded' : 'matching'}
+    partnerPhotos={$showPartnerPhotos}
+    onTogglePartnerPhotos={() => showPartnerPhotos.set(!$showPartnerPhotos)}
     enableRouting
     onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
   >

@@ -68,6 +68,9 @@
     /** Whether the information panel is shown; undefined draws no toggle. */
     inspectorOpen?: boolean;
     onToggleInspector?: () => void;
+    /** Whether partner-shared photos are shown (the library timeline); undefined draws no switch. */
+    partnerPhotos?: boolean;
+    onTogglePartnerPhotos?: () => void;
     /**
      * The sorts this view's source can apply. The toolbar lists the prototype's five; the ones the
      * source cannot order by are shown but not offered. Undefined draws no Sort control.
@@ -112,6 +115,8 @@
     onSlideshow,
     inspectorOpen,
     onToggleInspector,
+    partnerPhotos,
+    onTogglePartnerPhotos,
     sorts,
     sort,
     onSortChange,
@@ -237,11 +242,14 @@
     }),
   );
 
-  /** FL-707 item 10: the View menu (Information panel). */
+  /** FL-707 item 10: the View menu (Information panel, partner photos). */
+  const showInspectorSwitch = $derived(inspectorOpen !== undefined && !!onToggleInspector);
+  const showPartnerSwitch = $derived(partnerPhotos !== undefined && !!onTogglePartnerPhotos);
   let viewMenuOpen = $state(false);
   let viewControl = $state<HTMLElement>();
   let viewButton = $state<HTMLButtonElement>();
   let viewSwitch = $state<HTMLInputElement>();
+  let partnerSwitch = $state<HTMLInputElement>();
   const closeViewMenu = (focus = true) => {
     viewMenuOpen = false;
     if (focus) {
@@ -265,7 +273,7 @@
     if (!viewMenuOpen) {
       return;
     }
-    viewSwitch?.focus();
+    (viewSwitch ?? partnerSwitch)?.focus();
     const onPointerDown = (event: PointerEvent) => {
       if (!viewControl?.contains(event.target as Node)) {
         closeViewMenu(false);
@@ -489,7 +497,7 @@
       </button>
     {/if}
 
-    {#if inspectorOpen !== undefined && onToggleInspector}
+    {#if showInspectorSwitch || showPartnerSwitch}
       <!--
         FL-707 item 10: a labelled "View" menu in place of the unlabelled sliders icon, holding the
         Information panel switch. Thumbnail size stays in the floating bar (owner, 2026-10-30).
@@ -514,17 +522,31 @@
           {#if viewMenuOpen}
             <!-- Escape closes the menu and returns to View, as the filter menu does. -->
             <div class="fl-view-menu fl-pop" role="group" aria-label={$t('frameleaf_library_view_menu')} out:pop>
-              <label class="fl-view-row">
-                <span>{$t('frameleaf_library_information_panel')}</span>
-                <input
-                  bind:this={viewSwitch}
-                  type="checkbox"
-                  role="switch"
-                  aria-label={$t(inspectorOpen ? 'frameleaf_work_inspector_hide' : 'frameleaf_work_inspector_show')}
-                  checked={inspectorOpen}
-                  onchange={onToggleInspector}
-                />
-              </label>
+              {#if showInspectorSwitch}
+                <label class="fl-view-row">
+                  <span>{$t('frameleaf_library_information_panel')}</span>
+                  <input
+                    bind:this={viewSwitch}
+                    type="checkbox"
+                    role="switch"
+                    aria-label={$t(inspectorOpen ? 'frameleaf_work_inspector_hide' : 'frameleaf_work_inspector_show')}
+                    checked={inspectorOpen}
+                    onchange={onToggleInspector}
+                  />
+                </label>
+              {/if}
+              {#if showPartnerSwitch}
+                <label class="fl-view-row">
+                  <span>{$t('frameleaf_library_partner_photos')}</span>
+                  <input
+                    bind:this={partnerSwitch}
+                    type="checkbox"
+                    role="switch"
+                    checked={partnerPhotos}
+                    onchange={onTogglePartnerPhotos}
+                  />
+                </label>
+              {/if}
             </div>
           {/if}
         </span>

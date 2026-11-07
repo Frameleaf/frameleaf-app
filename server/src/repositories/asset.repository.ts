@@ -294,6 +294,8 @@ export interface TimeBucketOptions extends AssetBuilderOptions {
   order?: AssetOrder;
   /** DISCOVERY-P4: with `tagId`, false matches only that tag itself, not the tags inside it */
   withChildTags?: boolean;
+  /** Partner sharing: false hides partner copies, except those in an album the partner made */
+  withPartners?: boolean;
   /** LIB-P3: only this owner's own Best Photos; set by the service for the caller only */
   bestPhotos?: TimelineBestPhotos;
   /**
@@ -463,6 +465,13 @@ const timelineVisibility = (options: AssetBuilderOptions) => {
  */
 const widensToSharedAlbums = (options: TimeBucketOptions) =>
   (!!options.personId || filterNamesPeople(options.filter)) && options.visibility !== AssetVisibility.Locked;
+/**
+ * Partner sharing: a partner copy (`asset_origin`) the viewer hid from the timeline. A copy that sits in
+ * an album the partner made (an `album_origin` copy) is never hidden.
+ */
+const isHiddenPartnerCopy = sql<boolean>`(exists (select 1 from public.asset_origin origin where origin."assetId" = asset.id)
+  and not exists (select 1 from album_asset join public.album_origin album_origin on album_origin."albumId" = album_asset."albumId"
+    where album_asset."assetId" = asset.id))`;
 /**
  * LIB-P3: the owner's own Best Photos, scoped as `BestPhotosRepository.getBestPhotos` scopes them: their
  * own images and videos with a score row of theirs at `minScore` or higher. The owner test stands on its
@@ -2546,6 +2555,7 @@ export class AssetRepository {
         )
         .$if(!!options.tagId, (qb) => withTagId(qb, options.tagId!, options.withChildTags))
         .$if(!!options.bestPhotos, (qb) => qb.where((eb) => isBestPhotoOf(eb, options.bestPhotos!)))
+        .$if(options.withPartners === false, (qb) => qb.where((eb) => eb.not(isHiddenPartnerCopy)))
     );
   }
   private timelineBucketDate(options: TimeBucketOptions, size: 'MONTH' | 'YEAR' = 'MONTH') {
@@ -3035,6 +3045,7 @@ export class AssetRepository {
           .$if(!!options.isTrashed, (qb) => qb.where('asset.status', '!=', AssetStatus.Deleted))
           .$if(!!options.tagId, (qb) => withTagId(qb, options.tagId!, options.withChildTags))
           .$if(!!options.bestPhotos, (qb) => qb.where((eb) => isBestPhotoOf(eb, options.bestPhotos!)))
+          .$if(options.withPartners === false, (qb) => qb.where((eb) => eb.not(isHiddenPartnerCopy)))
           .$if(!page, (qb) =>
             qb
               .orderBy(orderDate, calendarOrder)
