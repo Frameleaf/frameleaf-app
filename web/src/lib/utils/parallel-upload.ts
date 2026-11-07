@@ -237,7 +237,17 @@ async function sendParts(
   // Every part is in; the request that finalized the file may have been another one.
   for (let wait = 1000, polls = 0; !result; wait = Math.min(wait * 2, 10_000), polls++) {
     signal.throwIfAborted();
-    const response = await fetch(`${url}/result`, { signal });
+    let response: Response;
+    try {
+      response = await fetch(`${url}/result`, { signal });
+    } catch (error) {
+      // A dropped connection after every part is in: keep asking, within the same poll budget.
+      if (signal.aborted || polls >= MAX_RESULT_POLLS) {
+        throw error;
+      }
+      await sleep(wait);
+      continue;
+    }
     const body = response.status === 202 ? '' : await response.text();
     if (response.status === 200) {
       result = JSON.parse(body) as PartsResult;

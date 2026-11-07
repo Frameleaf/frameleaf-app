@@ -536,7 +536,8 @@ export class AssetUploadResourceService {
         const timeout = setTimeout(() => input.destroy(new Error('Upload part timed out')), 10 * 60 * 1000);
         let part: Awaited<ReturnType<typeof writeAssetUploadPart>> | undefined;
         let attempted = false;
-        let refused = false;
+        // True once the manifest callback returned: only then can a failure (the COMMIT) leave its outcome unknown.
+        let returned = false;
         try {
           const { available } = await this.storage.checkDiskUsage(StorageCore.getBaseFolder(StorageFolder.Upload));
           if (expectedSize * 2 - Number(initial.offset) > available) {
@@ -555,19 +556,8 @@ export class AssetUploadResourceService {
           const written = part;
           attempted = true;
           const outcome = await this.lockedRetrying(id, auth.user.id, async (tx, row) => {
-            // Refused before the insert: the transaction rolls back, so this part is certainly not committed.
-            const refuse = (error: Error) => {
-              refused = true;
-              return error;
-            };
-            await check(tx).catch((error: Error) => {
-              throw refuse(error);
-            });
-            try {
-              receiving(row);
-            } catch (error) {
-              throw refuse(error as Error);
-            }
+            await check(tx);
+            receiving(row);
             const overlapping = await tx
               .selectFrom('asset_upload_part')
               .select(['offset', 'size'])
@@ -576,9 +566,10 @@ export class AssetUploadResourceService {
               .where(sql<boolean>`"offset" + "size" > ${offset}`)
               .execute();
             if (overlapping.some((other) => Number(other.offset) !== offset || Number(other.size) !== length)) {
-              throw refuse(new ConflictException('Part overlaps a different received part'));
+              throw new ConflictException('Part overlaps a different received part');
             }
             if (overlapping.length > 0) {
+              returned = true;
               return { resource: row, repeated: true };
             }
             await tx
@@ -601,6 +592,7 @@ export class AssetUploadResourceService {
               .where('expiresAt', '>', new Date())
               .returningAll()
               .executeTakeFirstOrThrow();
+            returned = true;
             return { resource, repeated: false };
           });
           if (outcome.repeated) {
@@ -615,7 +607,8 @@ export class AssetUploadResourceService {
         } finally {
           clearTimeout(timeout);
           // Once the manifest commit was attempted, a lost response may hide a committed part: the sweep owns it.
-          if (part && (!attempted || refused)) {
+          // A callback that threw rolled its transaction back, so its part is certainly not in the manifest.
+          if (part && (!attempted || !returned)) {
             await rm(part.path, { force: true });
           }
         }

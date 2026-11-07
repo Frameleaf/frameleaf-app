@@ -169,6 +169,24 @@ describe('parallel upload', () => {
     expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(false);
   });
 
+  it('keeps asking for the result through a dropped connection', async () => {
+    const fetchMock = stubServer({ 'Upload-Limit': 'max-append-size=33554432', 'Upload-Parts': 'max-parallel=1' });
+    const answer = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation((url: string, init?: RequestInit) =>
+      url.endsWith('/result') && fetchMock.mock.calls.filter(([called]) => called.endsWith('/result')).length === 1
+        ? Promise.reject(new TypeError('Failed to fetch'))
+        : answer(url, init),
+    );
+    upload.mockResolvedValue({ status: 204, data: null as never });
+    const outcome = await uploadInParts({
+      file: bigFile(32 * MiB),
+      sha256,
+      metadata: {},
+      signal: new AbortController().signal,
+    });
+    expect(outcome).toEqual(result);
+  });
+
   it('sends the file in one request when the account has too many unfinished uploads', async () => {
     const fetchMock = vi.fn((_url: string, init?: RequestInit) =>
       Promise.resolve(
