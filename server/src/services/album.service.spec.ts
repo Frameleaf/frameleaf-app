@@ -2131,6 +2131,23 @@ describe(AlbumService.name, () => {
       expect(mocks.asset.lock).not.toHaveBeenCalled();
     });
 
+    it('locks a very large album in batches', async () => {
+      const owner = UserFactory.create();
+      const album = AlbumFactory.from().owner(owner).build();
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.album.update.mockResolvedValue(getForAlbum(album));
+      mocks.album.getUnlockedItemsInLockedAlbums.mockResolvedValue(
+        Array.from({ length: 20_001 }, (_, i) => ({ assetId: `a${i}`, ownerId: owner.id })),
+      );
+      mocks.asset.findLockGroupIds.mockResolvedValue([]);
+      mocks.asset.lock.mockResolvedValue([]);
+
+      await sut.update(AuthFactory.create(owner), album.id, { isLocked: true });
+
+      expect(mocks.asset.lock.mock.calls.map(([ids]) => ids.length)).toEqual([10_000, 10_000, 1]);
+    });
+
     it('looks up very large adds in chunks', async () => {
       const ids = Array.from({ length: 20_001 }, (_, i) => `a${i}`);
       await (sut as any).lockAlbumItems({ albumId: 'album-1', assetIds: ids });

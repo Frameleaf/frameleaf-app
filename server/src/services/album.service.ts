@@ -595,7 +595,16 @@ export class AlbumService extends BaseService {
           )
         ).flat()
       : await this.albumRepository.getUnlockedItemsInLockedAlbums(filter);
-    await this.lockItems(items);
+    // Locking reads every id back (lock groups, partner origins): batch it too, trying each batch.
+    let firstError: unknown;
+    for (const batch of chunk(items, 10_000)) {
+      try {
+        await this.lockItems(batch);
+      } catch (error) {
+        firstError ??= error;
+      }
+    }
+    if (firstError) throw firstError;
   }
 
   /** Every owner is tried; one owner's failure (a lock group changing meanwhile) doesn't hold back the rest. */
