@@ -719,14 +719,15 @@ describe('Locked encryption acceptance (FL-721, spec §15)', () => {
         return rows.length > 0;
       });
 
-      const { rows: unlockClock } = await db.query(`SELECT now() "unlockedAt"`);
-      const { unlockedAt } = unlockClock[0];
       await unlockSession(pinOwner.accessToken, pinCodes.pinOwner);
       expect(await keyLoaded(pinOwner.accessToken)).toBe(true);
+      // read once the key is back: a job claimed later has it and never defers
+      const { rows: unlockClock } = await db.query(`SELECT now() "unlockedAt"`);
+      const { unlockedAt } = unlockClock[0];
       await settle(admin.accessToken, QueueName.ThumbnailGeneration, 120_000);
       // every job the lock deferred, in any queue (an edited photo's editor job too) and whenever it
-      // deferred, ran to an end once woken; so did every job claimed while locked, which may not have
-      // written its deferral yet; a failed RAW stays allowed
+      // deferred, ran to an end once woken; so did every job claimed before the key was back, which may
+      // not have written its deferral yet; a failed RAW stays allowed
       await waitFor('every job that waited for the key to run', async () => {
         const { rows } = await db.query(
           `SELECT j.id FROM job j WHERE j.data->>'id' = ANY($1::text[])
