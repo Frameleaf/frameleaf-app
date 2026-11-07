@@ -34,11 +34,26 @@ describe('AuthService two-step sign-in (FL-793)', () => {
   });
 
   const challenge = async (trustToken?: string) => {
-    const response = await sut.login({ email: user.email, password: 'password' }, loginDetails, trustToken);
+    const response = await sut.login(
+      { email: user.email, password: 'password', twoFactor: true },
+      loginDetails,
+      trustToken,
+    );
     expect(response).toMatchObject({ twoFactorRequired: true, accessToken: '' });
     return response.twoFactorToken!;
   };
   const currentCode = () => totpCode(secret, totpStep(new Date()));
+
+  it('refuses a client that cannot show the code step, with a clear 403 and no session', async () => {
+    await expect(sut.login({ email: user.email, password: 'password' }, loginDetails)).rejects.toMatchObject({
+      status: 403,
+      response: { code: 'two_factor_required' },
+    });
+    await expect(sut.login({ email: user.email, password: 'wrong' }, loginDetails)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+    expect(mocks.session.create).not.toHaveBeenCalled();
+  });
 
   it('asks for a code after the right password and creates no session', async () => {
     await challenge();
@@ -115,7 +130,11 @@ describe('AuthService two-step sign-in (FL-793)', () => {
     );
     expect(trustToken).toBeDefined();
 
-    const trusted = await sut.login({ email: user.email, password: 'password' }, loginDetails, trustToken);
+    const trusted = await sut.login(
+      { email: user.email, password: 'password', twoFactor: true },
+      loginDetails,
+      trustToken,
+    );
     expect(trusted.twoFactorRequired).toBeUndefined();
     expect(trusted.accessToken).not.toBe('');
 

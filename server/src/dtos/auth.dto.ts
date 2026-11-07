@@ -47,6 +47,12 @@ const LoginCredentialSchema = z
       .boolean()
       .optional()
       .describe('Persist authentication cookies across browser sessions (default true)'),
+    twoFactor: z
+      .boolean()
+      .optional()
+      .describe(
+        'FL-793: this client can show the two-step code step. Without it, an account with two-step sign-in is refused (403, code two_factor_required) instead of answered with twoFactorRequired.',
+      ),
   })
   .meta({ id: 'LoginCredentialDto' });
 
@@ -143,7 +149,7 @@ const LogoutResponseSchema = z
   })
   .meta({ id: 'LogoutResponseDto' });
 
-const SignUpSchema = LoginCredentialSchema.omit({ rememberMe: true })
+const SignUpSchema = LoginCredentialSchema.omit({ rememberMe: true, twoFactor: true })
   .extend({
     name: z.string().describe('User name').meta({ example: 'Admin' }),
   })

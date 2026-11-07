@@ -152,6 +152,10 @@ export type ValidateRequest = {
 export const FRAMELEAF_SIGN_IN_REQUIRED = 'frameleaf_sign_in_required';
 export const FRAMELEAF_SIGN_IN_REQUIRED_MESSAGE =
   'Away from home, sign in with your Frameleaf account to use this server';
+/** FL-793: a password sign-in from a client that cannot show the two-step code step. */
+export const TWO_FACTOR_REQUIRED = 'two_factor_required';
+export const TWO_FACTOR_REQUIRED_MESSAGE =
+  'This account uses two-step sign-in. Update the Frameleaf app, or sign in with your Frameleaf account.';
 /** FL-161: the error code of an original, archive or database backup refused over the relay. */
 export const RELAY_ORIGINALS_REFUSED = 'frameleaf_relay_originals_refused';
 export const RELAY_ORIGINALS_REFUSED_MESSAGE =
@@ -250,12 +254,22 @@ export class AuthService extends BaseService {
       twoFactor?.enabledAt &&
       !(await this.isTrustedBrowser(user.id, user.password, twoFactor.enabledAt, trustToken))
     ) {
+      // FL-793: a client that can't show the code step gets a clear refusal, never an empty session
+      // (403, not 401: today's apps read 401 as a wrong password)
+      if (!dto.twoFactor) {
+        throw new ForbiddenException({
+          message: TWO_FACTOR_REQUIRED_MESSAGE,
+          error: 'Forbidden',
+          statusCode: 403,
+          code: TWO_FACTOR_REQUIRED,
+        });
+      }
       const challenge: TwoFactorChallenge = {
         sub: user.id,
         rem: dto.rememberMe ?? true,
         exp: epochSeconds(new Date()) + TWO_FACTOR_CHALLENGE_SECONDS,
       };
-      // FL-793: no session yet; an older client that ignores twoFactorRequired gets an empty token
+      // FL-793: no session yet, until the code step
       return {
         ...mapLoginResponse(user, ''),
         twoFactorRequired: true,

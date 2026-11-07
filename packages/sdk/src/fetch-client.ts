@@ -6489,6 +6489,8 @@ export type LoginCredentialDto = {
     password: string;
     /** Persist authentication cookies across browser sessions (default true) */
     rememberMe?: boolean;
+    /** FL-793: this client can show the two-step code step. Without it, an account with two-step sign-in is refused (403, code two_factor_required) instead of answered with twoFactorRequired. */
+    twoFactor?: boolean;
 };
 export type LoginResponseDto = {
     /** Access token */

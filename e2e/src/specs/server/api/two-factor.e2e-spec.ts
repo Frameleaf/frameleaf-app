@@ -23,7 +23,7 @@ const totp = (secret: string, offsetSteps = 0) => {
 const email = 'two-step@example.com';
 const password = 'two-step-password';
 const bearer = (token: string) => `Bearer ${token}`;
-const signIn = () => request(app).post('/auth/login').send({ email, password });
+const signIn = () => request(app).post('/auth/login').send({ email, password, twoFactor: true });
 
 // FL-793: two-step sign-in at the API boundary
 describe('/auth/two-factor', () => {
@@ -63,6 +63,12 @@ describe('/auth/two-factor', () => {
 
     const status = await request(app).get('/auth/status').set('Authorization', bearer(user.accessToken));
     expect(status.body).toMatchObject({ twoFactorEnabled: true, recoveryCodesRemaining: 10 });
+  });
+
+  it('refuses a client that cannot show the code step with a clear 403', async () => {
+    const { status, body } = await request(app).post('/auth/login').send({ email, password });
+    expect(status).toBe(403);
+    expect(body).toMatchObject({ code: 'two_factor_required' });
   });
 
   it('gives no session for the password alone', async () => {
