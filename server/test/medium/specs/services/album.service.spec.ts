@@ -8,8 +8,8 @@ import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ClassificationRepository } from 'src/repositories/classification.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
-import { JobRepository } from 'src/repositories/job.repository.js';
 import { FrameleafUserLicenseRepository } from 'src/repositories/frameleaf-user-license.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MapRepository } from 'src/repositories/map.repository.js';
 import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
@@ -411,6 +411,14 @@ describe(AlbumService.name, () => {
           .toSorted()
           .map((assetId) => ({ assetId, reason: AssetLockReason.Marked, lockedBy: user.id })),
       );
+
+      // a writer that bypasses the album's add actions (smart-album rules, iCloud sync, capture)
+      const { asset: direct } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.database.insertInto('album_asset').values({ albumId: album.id, assetId: direct.id }).execute();
+      await sut.lockStrayAlbumItems();
+      await expect(
+        ctx.database.selectFrom('asset_lock').select('assetId').where('assetId', '=', direct.id).execute(),
+      ).resolves.toHaveLength(1);
 
       await sut.update(auth, album.id, { isLocked: false });
       await expect(locks()).resolves.toHaveLength(2);

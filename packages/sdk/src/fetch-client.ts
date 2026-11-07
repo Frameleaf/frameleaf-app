@@ -4314,7 +4314,7 @@ export type AlbumResponseDto = {
     id: string;
     /** Activity feed enabled */
     isActivityEnabled: boolean;
-    /** Locked album: the owner's items in it are locked */
+    /** Locked album: the owner's photos and videos in it are locked */
     isLocked?: boolean;
     /** True when the album is filled by smart album rules. Populated by GET /albums/tree and GET /albums/{id}. */
     isSmart?: boolean;
@@ -4453,7 +4453,7 @@ export type UpdateAlbumDto = {
     icon?: string | null;
     /** Enable activity feed */
     isActivityEnabled?: boolean;
-    /** Lock the album: the owner's items in it are locked now, and so is every item of theirs added later. Unlocking the album leaves its items locked. */
+    /** Lock the album: the owner's photos and videos in it are locked now. Theirs added later through the album's add actions lock at once; any that arrive another way (smart-album rules, iCloud sync, capture) lock within the hour. Other members' items and links are not locked. Unlocking the album leaves its items locked. */
     isLocked?: boolean;
     libraryScope?: LibraryScope;
     order?: AssetOrder;

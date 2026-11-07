@@ -527,17 +527,35 @@ export class AlbumRepository {
    * @param assetIds Optional list of asset IDs to filter on.
    * @returns Set of Asset IDs for the given album ID.
    */
-  /** The items in the album that `ownerId` owns, trashed ones included: what locking the album locks. */
-  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
-  async getOwnedAssetIds(albumId: string, ownerId: string): Promise<string[]> {
-    const rows = await this.db
-      .selectFrom('album_asset')
-      .innerJoin('asset', 'asset.id', 'album_asset.assetId')
-      .select('album_asset.assetId')
-      .where('album_asset.albumId', '=', albumId)
-      .where('asset.ownerId', '=', ownerId)
+  /**
+   * Items in locked albums that the album's owner owns and that are not locked yet, trashed ones included:
+   * what a locked album still has to lock. Reads the lock state as it is now, so a caller that has just
+   * added items sees a lock turned on meanwhile. Narrowed to one album and to some items when given.
+   */
+  @GenerateSql({ params: [{ albumId: DummyValue.UUID, assetIds: [DummyValue.UUID], limit: 1000 }] })
+  getUnlockedItemsInLockedAlbums({
+    albumId,
+    assetIds,
+    limit,
+  }: { albumId?: string; assetIds?: string[]; limit?: number } = {}): Promise<{ assetId: string; ownerId: string }[]> {
+    return this.db
+      .selectFrom('album')
+      .innerJoin('album_user', (join) =>
+        join.onRef('album_user.albumId', '=', 'album.id').on('album_user.role', '=', AlbumUserRole.Owner),
+      )
+      .innerJoin('album_asset', 'album_asset.albumId', 'album.id')
+      .innerJoin('asset', (join) =>
+        join.onRef('asset.id', '=', 'album_asset.assetId').onRef('asset.ownerId', '=', 'album_user.userId'),
+      )
+      .select(['album_asset.assetId', 'asset.ownerId'])
+      .distinct()
+      .where('album.isLocked', '=', true)
+      .where('album.deletedAt', 'is', null)
+      .where(isNotLocked())
+      .$if(albumId !== undefined, (qb) => qb.where('album.id', '=', albumId!))
+      .$if(assetIds !== undefined, (qb) => qb.where('album_asset.assetId', 'in', assetIds!))
+      .$if(limit !== undefined, (qb) => qb.limit(limit!))
       .execute();
-    return rows.map(({ assetId }) => assetId);
   }
 
   @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID]] })

@@ -11,6 +11,7 @@ import type { SmartAlbumBuiltInKind } from 'src/dtos/system-config.dto.js';
 import type { AlbumMapMarkerSearchOptions } from 'src/repositories/map.repository.js';
 import type { DB } from 'src/schema/index.js';
 import { ALBUM_ICON_GROUPS, MDI_ICON_CATALOGUE_VERSION, MDI_ICON_NAMES } from 'src/constants/album-icons.js';
+import { OnEvent } from 'src/decorators.js';
 import {
   AddUsersDto,
   AlbumDescendantCountResponseDto,
@@ -38,6 +39,7 @@ import { AlbumMapMarkerDto, MapMarkerResponseDto } from 'src/dtos/map.dto.js';
 import {
   AlbumKind,
   AlbumUserRole,
+  FrameleafWorker,
   LibraryScope,
   Permission,
   PushEventType,
@@ -65,6 +67,7 @@ import {
 import { scopeMatches } from 'src/utils/library-scope.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { isLockedRow } from 'src/utils/locked.js';
+import { handlePromiseError } from 'src/utils/misc.js';
 import { getPreferences } from 'src/utils/preferences.js';
 import { isSharedSpace, requireInvitableRole, requireSpaceOwner, spaceOwnerId } from 'src/utils/shared-space.js';
 import { getSupporters } from 'src/utils/supporter.js';
@@ -552,7 +555,7 @@ export class AlbumService extends BaseService {
 
     // Unlocking the album only stops new items locking; what it locked stays locked (unlock items in Locked).
     if (dto.isLocked) {
-      await this.lockAlbumItems(album.id, auth.user.id);
+      await this.lockAlbumItems({ albumId: album.id });
     }
 
     // Members' open pages re-read the album (its shared order, name, cover); no email for an edit.
@@ -574,24 +577,49 @@ export class AlbumService extends BaseService {
   }
 
   /**
-   * A locked album locks its owner's items in it (all of them, or just `assetIds` when given), as the owner's
-   * own lock, so they are sealed too when the owner's Locked encryption is on. Other people's items in a
-   * shared album are theirs to lock and stay as they are.
+   * A locked album locks its owner's photos and videos in it, as the owner's own lock, so they are sealed too
+   * when the owner's Locked encryption is on. Other people's items in a shared album are theirs to lock and stay
+   * as they are. Narrowed to one album and to some items when given. Returns how many items it found to lock.
    */
-  private async lockAlbumItems(albumId: string, ownerId: string | undefined, assetIds?: string[]): Promise<void> {
-    if (!ownerId) return;
-    // ponytail: reads every owned item of the album per add; filter in SQL if adds to huge locked albums get slow
-    const owned = await this.albumRepository.getOwnedAssetIds(albumId, ownerId);
-    const wanted = assetIds ? new Set(assetIds) : undefined;
-    const ids = wanted ? owned.filter((id) => wanted.has(id)) : owned;
-    if (ids.length === 0) return;
-    const visibilityIds = await this.lockAssetsAs(ownerId, ids);
-    await recordAssetEdit(
-      { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
-      ownerId,
-      visibilityIds,
-      [AssetOriginField.Visibility],
-    );
+  private async lockAlbumItems(filter: { albumId?: string; assetIds?: string[]; limit?: number }): Promise<number> {
+    if (filter.assetIds?.length === 0) return 0;
+    const items = await this.albumRepository.getUnlockedItemsInLockedAlbums(filter);
+    const byOwner = Map.groupBy(items, ({ ownerId }) => ownerId);
+    for (const [ownerId, owned] of byOwner) {
+      const visibilityIds = await this.lockAssetsAs(
+        ownerId,
+        owned.map(({ assetId }) => assetId),
+      );
+      await recordAssetEdit(
+        { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
+        ownerId,
+        visibilityIds,
+        [AssetOriginField.Visibility],
+      );
+    }
+    return items.length;
+  }
+
+  /**
+   * Hourly: locks what a locked album still holds unlocked. Items reach albums in ways that don't lock
+   * them at once (smart-album rules, iCloud album sync, capture), and an add whose lock failed leaves
+   * its items in the album; this catches them all.
+   */
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
+  onBootstrapLockedAlbums(): void {
+    this.cronRepository.create({
+      name: 'lockedAlbumSweep',
+      expression: '23 * * * *',
+      onTick: () => handlePromiseError(this.lockStrayAlbumItems(), this.logger),
+      start: true,
+    });
+  }
+
+  async lockStrayAlbumItems(): Promise<void> {
+    // ponytail: batches of 1000, at most 100 per pass; whatever is left waits for the next hour
+    for (let pass = 0; pass < 100; pass++) {
+      if ((await this.lockAlbumItems({ limit: 1000 })) < 1000) return;
+    }
   }
 
   async getDescendantCount(auth: AuthDto, id: string): Promise<AlbumDescendantCountResponseDto> {
@@ -725,9 +753,8 @@ export class AlbumService extends BaseService {
     );
 
     const newAssetIds = results.filter(({ success }) => success).map(({ id }) => id);
-    if (album.isLocked && newAssetIds.length > 0) {
-      await this.lockAlbumItems(id, spaceOwnerId(album), newAssetIds);
-    }
+    // Reads the lock as it is after the write, so an add racing a lock still locks its items.
+    await this.lockAlbumItems({ albumId: id, assetIds: newAssetIds });
     await this.emitAssetsChanged(newAssetIds);
     // Putting an item in a rule's smart album by hand is a decision the rule keeps (FL-60).
     await this.classificationRepository.recordAlbumAdditions(id, newAssetIds, auth.user.id);
@@ -790,7 +817,6 @@ export class AlbumService extends BaseService {
     const albumAssetValues: { albumId: string; assetId: string }[] = [];
     const events: { id: string; userIds: string[]; recipientIds: string[] }[] = [];
     const spaceEvents: { album: MapAlbumDto; assetIds: string[] }[] = [];
-    const lockedAlbums: { id: string; ownerId: string | undefined; assetIds: string[] }[] = [];
     await this.partnerOriginRepository.withOriginEdit('album', [...allowedAlbumIds], [], async () => {
       for (const albumId of allowedAlbumIds) {
         const existingAssetIds = await this.albumRepository.getAssetIds(albumId, [...allowedAssetIds]);
@@ -820,8 +846,6 @@ export class AlbumService extends BaseService {
         }
         events.push(this.albumUpdateEvent(album, auth, shown.length > 0));
         spaceEvents.push({ album, assetIds: notPresentAssetIds });
-        if (album.isLocked)
-          lockedAlbums.push({ id: albumId, ownerId: spaceOwnerId(album), assetIds: notPresentAssetIds });
       }
 
       await this.albumRepository.addAssetIdsToAlbums(albumAssetValues);
@@ -834,11 +858,9 @@ export class AlbumService extends BaseService {
     if (events.length > 0) {
       await this.albumRepository.updateNewestCovers(events.map(({ id }) => id));
     }
-    for (const locked of lockedAlbums) {
-      await this.lockAlbumItems(locked.id, locked.ownerId, locked.assetIds);
-    }
     for (const albumId of allowedAlbumIds) {
       const added = albumAssetValues.filter((value) => value.albumId === albumId).map(({ assetId }) => assetId);
+      await this.lockAlbumItems({ albumId, assetIds: added });
       await this.classificationRepository.recordAlbumAdditions(albumId, added, auth.user.id);
     }
     await this.emitAssetsChanged(albumAssetValues.map((item) => item.assetId));
