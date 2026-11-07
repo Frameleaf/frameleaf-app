@@ -151,10 +151,10 @@ describe('fileUploader error handling', () => {
       .mockRejectedValueOnce(mockError)
       .mockResolvedValue({ status: 201, data: mockUploadResponse });
     await fileUploadHandler({ files: [mockFile], libraryScope: LibraryScope.Design });
-    expect(upload.mock.calls[0][0].data.get('libraryScope')).toBe('design');
+    expect((upload.mock.calls[0][0].data as FormData).get('libraryScope')).toBe('design');
     expect(get(uploadAssetsStore)[0].libraryScope).toBe('design');
     await retryFailedUploads();
-    expect(upload.mock.calls[1][0].data.get('libraryScope')).toBe('design');
+    expect((upload.mock.calls[1][0].data as FormData).get('libraryScope')).toBe('design');
   });
 
   it('adds an eligible personal duplicate to both workspaces without uploading another original', async () => {
