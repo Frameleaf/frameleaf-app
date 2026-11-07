@@ -704,8 +704,6 @@ describe('Locked encryption acceptance (FL-721, spec §15)', () => {
       await waitFor('the key to drop', async () => !(await keyLoaded(pinOwner.accessToken)));
 
       const db = await utils.connectDatabase();
-      const { rows: clock } = await db.query(`SELECT now() "lockedAt"`);
-      const { lockedAt } = clock[0];
       await utils.queueCommand(admin.accessToken, QueueName.ThumbnailGeneration, {
         command: QueueCommand.Start,
         force: true,
@@ -721,24 +719,16 @@ describe('Locked encryption acceptance (FL-721, spec §15)', () => {
 
       await unlockSession(pinOwner.accessToken, pinCodes.pinOwner);
       expect(await keyLoaded(pinOwner.accessToken)).toBe(true);
-      // read once the key is back: a job claimed later has it and never defers
-      const { rows: unlockClock } = await db.query(`SELECT now() "unlockedAt"`);
-      const { unlockedAt } = unlockClock[0];
-      await settle(admin.accessToken, QueueName.ThumbnailGeneration, 120_000);
-      // every job the lock deferred, in any queue (an edited photo's editor job too) and whenever it
-      // deferred, ran to an end once woken; so did every job claimed before the key was back, which may
-      // not have written its deferral yet; a failed RAW stays allowed
-      await waitFor('every job that waited for the key to run', async () => {
-        const { rows } = await db.query(
-          `SELECT j.id FROM job j WHERE j.data->>'id' = ANY($1::text[])
-             AND (j."dependencyReason" = 'locked-key-unavailable'
-               OR (j.state IN ('pending', 'waiting', 'active') AND EXISTS (SELECT 1 FROM job_attempt a
-                 WHERE a."jobId" = j.id AND ((a."startedAt" >= $2 AND a."startedAt" < $3)
-                   OR (a.outcome = 'deferred' AND a.error = 'locked-key-unavailable' AND a."finishedAt" >= $2)))))`,
-          [pinIds, lockedAt, unlockedAt],
-        );
-        return rows.length === 0;
-      });
+      // the lock also defers the edited photo's editor job: both queues run every job they hold to an
+      // end (a job still waiting for the key keeps its queue unfinished), then none waits for the key
+      for (const queue of [QueueName.ThumbnailGeneration, QueueName.Editor, QueueName.ThumbnailGeneration]) {
+        await settle(admin.accessToken, queue, 120_000);
+      }
+      const { rows } = await db.query(
+        `SELECT id FROM job WHERE "dependencyReason" = 'locked-key-unavailable' AND data->>'id' = ANY($1::text[])`,
+        [pinIds],
+      );
+      expect(rows).toEqual([]);
       await waitSealed(pinIds);
     }, 300_000);
 
