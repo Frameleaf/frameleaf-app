@@ -226,7 +226,13 @@ describe('capture application boundary', () => {
   it('uses the local server/account identity without a paid entitlement dependency', async () => {
     captures.assertActor.mockResolvedValue(`key:${auth.apiKey.id}`);
     system.get.mockResolvedValue({ id: 'local-server', createdAt: new Date().toISOString() } as never);
-    uploads.limits.mockResolvedValue({ maxSize: 1024, maxAppendSize: 1024, maxAge: 86_400, maxActive: 4 });
+    uploads.limits.mockResolvedValue({
+      maxSize: 1024,
+      maxAppendSize: 1024,
+      maxAge: 86_400,
+      maxActive: 4,
+      maxParallelParts: 6,
+    });
     expect(await service.capabilities(auth)).toEqual({
       version: 1,
       serverId: 'local-server',

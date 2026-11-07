@@ -42,6 +42,15 @@ describe('resumable asset byte commit boundaries', () => {
     } as AssetUploadResource;
     const inserts: unknown[] = [];
     const tx = {
+      // No parallel parts recorded (FL-1268 PATCH guard).
+      selectFrom: () => {
+        const query = {
+          select: () => query,
+          where: () => query,
+          executeTakeFirst: () => Promise.resolve(undefined),
+        };
+        return query;
+      },
       insertInto: () => ({
         values: (value: unknown) => ({
           execute: () => {

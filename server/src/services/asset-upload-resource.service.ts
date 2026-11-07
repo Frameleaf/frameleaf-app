@@ -6,10 +6,10 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { type Transaction, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { readdir, rm, rmdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { Transaction } from 'kysely';
 import type { IncomingHttpHeaders } from 'node:http';
 import type { Readable } from 'node:stream';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
@@ -287,6 +287,7 @@ export class AssetUploadResourceService {
     auth: AuthDto,
     id: string,
     operation: (check: UploadAdmissionCheck) => Promise<T>,
+    key = id,
   ) {
     await this.owner(auth);
     const resource = await this.uploads.get(id, auth.user.id);
@@ -296,7 +297,7 @@ export class AssetUploadResourceService {
     const token = randomUUID();
     let acquired: boolean;
     try {
-      acquired = await this.rateLimits.claimUploadStream(id, token);
+      acquired = await this.rateLimits.claimUploadStream(key, token);
     } catch {
       throw new ServiceUnavailableException('Upload admission unavailable');
     }
@@ -309,7 +310,7 @@ export class AssetUploadResourceService {
         await this.captures.assertNotCancelled(auth, resource.metadata.captureId!, tx);
       let current: boolean;
       try {
-        current = await this.rateLimits.isUploadStreamCurrent(id, token);
+        current = await this.rateLimits.isUploadStreamCurrent(key, token);
       } catch {
         throw new ServiceUnavailableException('Upload admission unavailable');
       }
@@ -321,8 +322,8 @@ export class AssetUploadResourceService {
       return await operation(check);
     } finally {
       await this.rateLimits
-        .releaseUploadStream(id, token)
-        .catch(() => this.logger.warn(`Upload ${id} admission release failed; expiry retains its bound`));
+        .releaseUploadStream(key, token)
+        .catch(() => this.logger.warn(`Upload ${key} admission release failed; expiry retains its bound`));
     }
   }
 
@@ -405,6 +406,10 @@ export class AssetUploadResourceService {
         if (row.expectedSize !== initial.expectedSize) {
           throw new ConflictException('Upload length changed during append');
         }
+        // FL-1268: parallel parts beyond the contiguous offset would be overwritten by a sequential append.
+        if (part.size > 0 && (await this.partsBeyond(tx, id, offset))) {
+          throw new ConflictException('Upload is receiving parallel parts; send the missing parts instead');
+        }
         if (part.size > 0) {
           await tx
             .insertInto('asset_upload_part')
@@ -454,6 +459,175 @@ export class AssetUploadResourceService {
       throw error;
     } finally {
       clearTimeout(timeout);
+    }
+  }
+
+  private async partsBeyond(tx: Transaction<DB>, id: string, offset: number) {
+    const row = await tx
+      .selectFrom('asset_upload_part')
+      .select('id')
+      .where('resourceId', '=', id)
+      .where('offset', '>=', offset)
+      .executeTakeFirst();
+    return !!row;
+  }
+
+  /** FL-1268: the received byte ranges, so a client resuming a parallel upload sends only what is missing. */
+  async parts(auth: AuthDto, id: string) {
+    const resource = await this.head(auth, id);
+    const parts = await this.uploads.parts(undefined, id);
+    return { resource, parts: parts.map(({ offset, size }) => ({ offset: Number(offset), size: Number(size) })) };
+  }
+
+  /**
+   * FL-1268: one part of a parallel upload, at any offset, alongside up to `maxParallelParts` others.
+   * A part is all or nothing: an interrupted part is discarded and sent again. `offset` on the resource stays
+   * the contiguous received prefix, and the part that completes the file finalizes it like the last PATCH.
+   */
+  async putPart(auth: AuthDto, id: string, headers: IncomingHttpHeaders, input: Readable) {
+    await this.owner(auth);
+    const offsetHeader = headers['upload-offset'];
+    const lengthHeader = headers['content-length'];
+    if (
+      headers['content-type'] !== 'application/octet-stream' ||
+      (headers['content-encoding'] && headers['content-encoding'] !== 'identity') ||
+      typeof offsetHeader !== 'string' ||
+      !/^(0|[1-9][0-9]*)$/.test(offsetHeader) ||
+      !Number.isSafeInteger(Number(offsetHeader)) ||
+      typeof lengthHeader !== 'string' ||
+      !/^[1-9][0-9]*$/.test(lengthHeader) ||
+      !Number.isSafeInteger(Number(lengthHeader))
+    ) {
+      throw new BadRequestException('A part needs Upload-Offset, Content-Length and application/octet-stream');
+    }
+    const offset = Number(offsetHeader);
+    const length = Number(lengthHeader);
+    const initial = await this.head(auth, id);
+    const receiving = (row: AssetUploadResource) => {
+      if (row.state !== (row.metadata.publication === 'live-photo' ? 'pair-receiving' : 'receiving')) {
+        throw new ConflictException('Upload is no longer accepting bytes');
+      }
+      if (row.expectedSize === null) {
+        throw new BadRequestException('Parallel parts need Upload-Length at creation');
+      }
+      if (length > row.maxAppendSize || offset + length > row.expectedSize) {
+        throw new BadRequestException('Part is outside the upload');
+      }
+      return row.expectedSize;
+    };
+    const expectedSize = receiving(initial);
+    if ((await this.rateLimits.countUploadStreams(id)) >= ASSET_UPLOAD_LIMITS.maxParallelParts) {
+      // ponytail: count-then-claim can admit one or two extra parts under a race; the lease still bounds each.
+      throw new HttpException('Too many parts in flight', 429);
+    }
+    return this.withStreamAdmission(
+      auth,
+      id,
+      async (check) => {
+        const timeout = setTimeout(() => input.destroy(new Error('Upload part timed out')), 10 * 60 * 1000);
+        let part: Awaited<ReturnType<typeof writeAssetUploadPart>> | undefined;
+        let attempted = false;
+        try {
+          const { available } = await this.storage.checkDiskUsage(StorageCore.getBaseFolder(StorageFolder.Upload));
+          if (expectedSize * 2 - Number(initial.offset) > available) {
+            throw new HttpException('Insufficient upload storage', 507);
+          }
+          part = await writeAssetUploadPart(
+            this.folder(id),
+            input,
+            length,
+            initial.metadata.sourceIdentity?.kind === 'folder' ? check : undefined,
+          );
+          if (part.interrupted || part.size !== length) {
+            throw new BadRequestException('Part was incomplete; send it again');
+          }
+          await check();
+          const written = part;
+          attempted = true;
+          const outcome = await this.lockedRetrying(id, auth.user.id, async (tx, row) => {
+            await check(tx);
+            receiving(row);
+            const overlapping = await tx
+              .selectFrom('asset_upload_part')
+              .select(['offset', 'size'])
+              .where('resourceId', '=', id)
+              .where('offset', '<', offset + length)
+              .where(sql<boolean>`"offset" + "size" > ${offset}`)
+              .execute();
+            if (overlapping.some((other) => Number(other.offset) !== offset || Number(other.size) !== length)) {
+              throw new ConflictException('Part overlaps a different received part');
+            }
+            if (overlapping.length > 0) {
+              return { resource: row, repeated: true };
+            }
+            await tx
+              .insertInto('asset_upload_part')
+              .values({ resourceId: id, path: written.path, offset, size: length })
+              .execute();
+            let contiguous = Number(row.offset);
+            for (const next of await this.uploads.parts(tx, id)) {
+              if (Number(next.offset) === contiguous) contiguous += Number(next.size);
+            }
+            const finalizing = contiguous === row.expectedSize;
+            const live = row.metadata.publication === 'live-photo';
+            const resource = await tx
+              .updateTable('asset_upload_resource')
+              .set({
+                offset: contiguous,
+                state: finalizing ? (live ? 'pair-finalizing' : 'finalizing') : live ? 'pair-receiving' : 'receiving',
+              })
+              .where('id', '=', id)
+              .where('expiresAt', '>', new Date())
+              .returningAll()
+              .executeTakeFirstOrThrow();
+            return { resource, repeated: false };
+          });
+          if (outcome.repeated) {
+            await rm(written.path, { force: true });
+          }
+          return outcome.resource;
+        } catch (error) {
+          if (['ENOSPC', 'EDQUOT'].includes((error as NodeJS.ErrnoException)?.code ?? '')) {
+            throw new HttpException('Insufficient upload storage', 507);
+          }
+          throw error;
+        } finally {
+          clearTimeout(timeout);
+          // Once the manifest commit was attempted, a lost response may hide a committed part: the sweep owns it.
+          if (part && !attempted) {
+            await rm(part.path, { force: true });
+          }
+        }
+      },
+      `${id}:${offset}`,
+    ).then(async (resource) => {
+      if (!['finalizing', 'pair-finalizing'].includes(resource.state)) {
+        return { resource };
+      }
+      try {
+        return await this.result(auth, id);
+      } catch (error) {
+        // Another request is finalizing it; GET :id/result reports the outcome.
+        if (error instanceof ConflictException) return { resource };
+        throw error;
+      }
+    });
+  }
+
+  /** Parts finishing together contend for the resource lock; the manifest transaction is short, so wait for it. */
+  private async lockedRetrying<T>(
+    id: string,
+    ownerId: string,
+    callback: (tx: Transaction<DB>, resource: AssetUploadResource) => Promise<T>,
+  ) {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.uploads.locked(id, ownerId, callback);
+      } catch (error) {
+        const busy = error instanceof ConflictException && error.message === 'Upload has an active request';
+        if (!busy || attempt >= 50) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
     }
   }
 

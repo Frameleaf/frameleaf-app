@@ -32,3 +32,15 @@ export class LivePhotoUploadResultDto extends createZodDto(
     .object({ still: AssetUploadResultDto.schema, video: AssetUploadResultDto.schema })
     .meta({ id: 'LivePhotoUploadResultDto' }),
 ) {}
+
+export class AssetUploadPartsDto extends createZodDto(
+  z
+    .object({
+      offset: z.int().min(0).describe('Contiguous bytes received from the start of the file'),
+      size: z.int().min(1).nullable().describe('Declared length of the file, or null if not declared yet'),
+      parts: z
+        .array(z.object({ offset: z.int().min(0), size: z.int().min(1) }).meta({ id: 'AssetUploadPartDto' }))
+        .describe('Received parts in offset order; a resuming client sends only the gaps'),
+    })
+    .meta({ id: 'AssetUploadPartsDto' }),
+) {}

@@ -96,6 +96,15 @@ export class RateLimitRepository implements OnModuleInit, OnModuleDestroy {
     return rowCount === 1;
   }
 
+  /** FL-1268: live part streams of one upload (keys `<resourceId>:<offset>`). */
+  async countUploadStreams(resourceId: string): Promise<number> {
+    const { rows } = await this.getClient().query<{ count: string }>(
+      `SELECT count(*) AS count FROM public.frameleaf_upload_lease WHERE starts_with(key, $1) AND expires_at > clock_timestamp()`,
+      [`${resourceId}:`],
+    );
+    return Number(rows[0]?.count ?? 0);
+  }
+
   async isUploadStreamCurrent(resourceId: string, token: string): Promise<boolean> {
     const { rowCount } = await this.getClient().query(
       `SELECT 1 FROM public.frameleaf_upload_lease WHERE key = $1 AND token = $2 AND expires_at > clock_timestamp()`,

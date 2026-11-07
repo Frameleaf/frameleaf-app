@@ -10,6 +10,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Req,
   Res,
 } from '@nestjs/common';
@@ -20,6 +21,7 @@ import type { AssetUploadResource } from 'src/repositories/asset-upload-resource
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   AssetUploadDirectDescriptionDto,
+  AssetUploadPartsDto,
   AssetUploadResultDto,
   LivePhotoUploadCommitDto,
   LivePhotoUploadResultDto,
@@ -28,7 +30,6 @@ import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { AssetUploadDirectService } from 'src/services/asset-upload-direct.service.js';
 import { AssetUploadResourceService } from 'src/services/asset-upload-resource.service.js';
-import { ASSET_UPLOAD_LIMITS } from 'src/utils/asset-upload-resource.js';
 import { assetUploadRequestHeaders, writeAssetUploadHeaders } from 'src/utils/asset-upload-response.js';
 import { writeInformation } from 'src/utils/response.js';
 import { UUIDParamDto } from 'src/validation.js';
@@ -92,7 +93,7 @@ export class AssetUploadResourceController {
   @ApiHeader({
     name: 'Upload-Length',
     required: false,
-    schema: { type: 'integer', minimum: 1, maximum: ASSET_UPLOAD_LIMITS.maxSize },
+    schema: { type: 'integer', minimum: 1 },
   })
   @ApiHeader({
     name: 'Repr-Digest',
@@ -231,6 +232,59 @@ export class AssetUploadResourceController {
       }
       throw error;
     }
+  }
+
+  @Put(':id/parts')
+  @Authenticated({ permission: Permission.AssetUpload })
+  @ApiConsumes('application/octet-stream')
+  @ApiHeader({ name: 'Upload-Offset', required: true, schema: { type: 'integer', minimum: 0 } })
+  @ApiHeader({ name: 'Content-Length', required: true, schema: { type: 'integer', minimum: 1 } })
+  @ApiBody({ schema: { type: 'string', format: 'binary' } })
+  @ApiResponse({ status: 200, type: AssetUploadResultDto })
+  @ApiResponse({
+    status: 204,
+    description: 'Part durably received; Upload-Offset is the contiguous prefix received so far',
+    headers: { 'Upload-Offset': { schema: { type: 'integer', minimum: 0 } } },
+  })
+  @ApiResponse({ status: 202, description: 'File complete; ingestion pending, GET :id/result reports it' })
+  @ApiResponse({ status: 409, description: 'Part overlaps a different received part, or the upload is closed' })
+  @ApiResponse({ status: 429, description: 'Too many parts of this upload in flight' })
+  @Endpoint({
+    summary: 'Upload one part of a parallel upload',
+    description:
+      'Sends Content-Length bytes at Upload-Offset. Parts may arrive in any order and in parallel (Upload-Parts: max-parallel=N on OPTIONS). The upload must declare Upload-Length when created. A part is all or nothing; a repeated identical part is accepted. The part that completes the file returns the result like the final PATCH.',
+    history: new HistoryBuilder().added('v3.4.0').beta('v3.4.0'),
+  })
+  async putAssetUploadPart(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    writeAssetUploadHeaders(res);
+    const outcome = await this.service.putPart(auth, id, assetUploadRequestHeaders(req), req);
+    if (!res.destroyed) {
+      this.respond(res, outcome);
+    }
+  }
+
+  @Get(':id/parts')
+  @Authenticated({ permission: Permission.AssetUpload })
+  @ApiResponse({ status: 200, type: AssetUploadPartsDto })
+  @Endpoint({
+    summary: 'List the received parts of an upload',
+    history: new HistoryBuilder().added('v3.4.0').beta('v3.4.0'),
+  })
+  async getAssetUploadParts(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto, @Res() res: Response) {
+    writeAssetUploadHeaders(res);
+    const { resource, parts } = await this.service.parts(auth, id);
+    writeAssetUploadHeaders(res, resource);
+    const body: AssetUploadPartsDto = {
+      offset: Number(resource.offset),
+      size: resource.expectedSize === null ? null : Number(resource.expectedSize),
+      parts,
+    };
+    res.status(200).json(body);
   }
 
   @Get(':id/result')

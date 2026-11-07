@@ -5631,6 +5631,18 @@ export type AssetUploadDirectDescriptionDto = {
     sdp: string;
     version: number;
 };
+export type AssetUploadPartDto = {
+    offset: number;
+    size: number;
+};
+export type AssetUploadPartsDto = {
+    /** Contiguous bytes received from the start of the file */
+    offset: number;
+    /** Received parts in offset order; a resuming client sends only the gaps */
+    parts: AssetUploadPartDto[];
+    /** Declared length of the file, or null if not declared yet */
+    size: number | null;
+};
 export type UpdateAssetDto = {
     /** City name; kept over reverse geocoding until the item is moved again */
     city?: string | null;
@@ -24558,6 +24570,49 @@ export function negotiateAssetUploadDirect({ id, assetUploadDirectDescriptionDto
         method: "POST",
         body: assetUploadDirectDescriptionDto
     })));
+}
+/**
+ * List the received parts of an upload
+ */
+export function getAssetUploadParts({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetUploadPartsDto;
+    }>(`/assets/uploads/${encodeURIComponent(id)}/parts`, {
+        ...opts
+    }));
+}
+/**
+ * Upload one part of a parallel upload
+ */
+export function putAssetUploadPart({ contentLength, uploadOffset, id, body }: {
+    contentLength: number;
+    uploadOffset: number;
+    id: string;
+    body: Blob;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetUploadResultDto;
+    } | {
+        status: 202;
+    } | {
+        status: 204;
+    } | {
+        status: 409;
+    } | {
+        status: 429;
+    }>(`/assets/uploads/${encodeURIComponent(id)}/parts`, {
+        ...opts,
+        method: "PUT",
+        body,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "Content-Length": contentLength,
+            "Upload-Offset": uploadOffset
+        })
+    }));
 }
 /**
  * Recover a completed upload result

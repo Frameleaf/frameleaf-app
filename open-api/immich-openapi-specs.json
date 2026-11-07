@@ -14976,8 +14976,7 @@
             "required": false,
             "schema": {
               "type": "integer",
-              "minimum": 1,
-              "maximum": 2147483648
+              "minimum": 1
             }
           }
         ],
@@ -15417,6 +15416,166 @@
           },
           {
             "version": "v3.2.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Beta"
+      }
+    },
+    "/assets/uploads/{id}/parts": {
+      "get": {
+        "operationId": "getAssetUploadParts",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetUploadPartsDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List the received parts of an upload",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Beta"
+      },
+      "put": {
+        "description": "Sends Content-Length bytes at Upload-Offset. Parts may arrive in any order and in parallel (Upload-Parts: max-parallel=N on OPTIONS). The upload must declare Upload-Length when created. A part is all or nothing; a repeated identical part is accepted. The part that completes the file returns the result like the final PATCH.",
+        "operationId": "putAssetUploadPart",
+        "parameters": [
+          {
+            "name": "Content-Length",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "Upload-Offset",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetUploadResultDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "202": {
+            "description": "File complete; ingestion pending, GET :id/result reports it"
+          },
+          "204": {
+            "description": "Part durably received; Upload-Offset is the contiguous prefix received so far",
+            "headers": {
+              "Upload-Offset": {
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Part overlaps a different received part, or the upload is closed"
+          },
+          "429": {
+            "description": "Too many parts of this upload in flight"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Upload one part of a parallel upload",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
             "state": "Beta"
           }
         ],
@@ -76922,6 +77081,55 @@
         "required": [
           "sdp",
           "version"
+        ],
+        "type": "object"
+      },
+      "AssetUploadPartDto": {
+        "properties": {
+          "offset": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "size": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "offset",
+          "size"
+        ],
+        "type": "object"
+      },
+      "AssetUploadPartsDto": {
+        "properties": {
+          "offset": {
+            "description": "Contiguous bytes received from the start of the file",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "parts": {
+            "description": "Received parts in offset order; a resuming client sends only the gaps",
+            "items": {
+              "$ref": "#/components/schemas/AssetUploadPartDto"
+            },
+            "type": "array"
+          },
+          "size": {
+            "description": "Declared length of the file, or null if not declared yet",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "offset",
+          "parts",
+          "size"
         ],
         "type": "object"
       },
