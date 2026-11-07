@@ -720,11 +720,15 @@ describe('Locked encryption acceptance (FL-721, spec §15)', () => {
       await unlockSession(pinOwner.accessToken, pinCodes.pinOwner);
       expect(await keyLoaded(pinOwner.accessToken)).toBe(true);
       await settle(admin.accessToken, QueueName.ThumbnailGeneration, 120_000);
-      const { rows } = await db.query(
-        `SELECT id FROM job WHERE "dependencyReason" = 'locked-key-unavailable' AND data->>'id' = ANY($1::text[])`,
-        [pinIds],
-      );
-      expect(rows).toEqual([]);
+      // the lock also defers other queues' jobs for these items (an edited photo's editor job); woken by
+      // the unlock, each runs when its own queue claims it
+      await waitFor('every job waiting for the key to run', async () => {
+        const { rows } = await db.query(
+          `SELECT id FROM job WHERE "dependencyReason" = 'locked-key-unavailable' AND data->>'id' = ANY($1::text[])`,
+          [pinIds],
+        );
+        return rows.length === 0;
+      });
       await waitSealed(pinIds);
     }, 300_000);
 
