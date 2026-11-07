@@ -4,6 +4,7 @@ import { performance } from 'node:perf_hooks';
 import type { DB } from 'src/schema/index.js';
 import { JobName, MediaOperationKind, QueueName } from 'src/enum.js';
 import { costReusedRead } from 'src/queue/coalesced-task.js';
+import { QUEUE_CHANNEL } from 'src/queue/notifications.js';
 import { getRun, listRunItems, listRuns, observeQueueRun, reportedQueueJobs } from 'src/queue/run-query.js';
 import {
   JobDependencyReason,
@@ -50,6 +51,8 @@ const STARTED_BY_HAND = sql`'epoch'::timestamptz`;
 /** FL-1265: a held job (setup, a setup pause, a parked stage) waits with this `availableAt`; claims never reach it. */
 const HELD = sql`'infinity'::timestamptz`;
 const LIVE = sql`('pending','waiting','active')`;
+/** Coalesces queue wakes; long enough for the caller's transaction to commit first. */
+const WAKE_DELAY_MS = 50;
 /**
  * FL-1272: later steps of an item a queue has already started. Each finished first step adds one, so the
  * queue's waiting total stays flat while work progresses; `counts` reports them apart as `followUp`.
@@ -68,12 +71,58 @@ const availability = (runId: RawBuilder<unknown>, name: RawBuilder<unknown>, del
 const intentAvailability = (intent: QueueIntent) =>
   availability(sql`${intent.runId ?? null}::uuid`, sql`${intent.name}::text`, intent.options?.delay ?? 0);
 
+type WakeState = { timer?: NodeJS.Timeout; inFlight: boolean; again: boolean };
+/** One wake state per database pool: stores built per call on the same pool share it. */
+const wakeStates = new WeakMap<Kysely<DB>, WakeState>();
+
+/**
+ * Tells the claim loops new work may be ready. Never inside a caller's transaction: PostgreSQL serializes every
+ * NOTIFY commit on one cluster-wide lock, so a job write that notified could fail its COMMIT on lock_timeout and
+ * roll back. Instead at most one notification per pool per WAKE_DELAY_MS goes out on its own pooled connection,
+ * after the caller's commit in practice, and a stalled one holds a single connection: wakes asked for meanwhile
+ * collapse into one follow-up. A lost wake only costs latency; the five-second scan stays authoritative.
+ */
+const wakeClaimLoops = (db: Kysely<DB>) => {
+  let state = wakeStates.get(db);
+  if (!state) {
+    state = { inFlight: false, again: false };
+    wakeStates.set(db, state);
+  }
+  if (state.timer) {
+    return;
+  }
+  if (state.inFlight) {
+    state.again = true;
+    return;
+  }
+  const current = state;
+  current.timer = setTimeout(() => {
+    current.timer = undefined;
+    current.inFlight = true;
+    void sql`select pg_notify(${QUEUE_CHANNEL}, '')`
+      .execute(db)
+      .catch(() => {})
+      .finally(() => {
+        current.inFlight = false;
+        if (current.again) {
+          current.again = false;
+          wakeClaimLoops(db);
+        }
+      });
+  }, WAKE_DELAY_MS);
+  current.timer.unref();
+};
+
 /**
  * All methods own short transactions. No connection escapes to a handler or an enumerator.
  * Bind serialized JSON as text before casting: postgres.js otherwise JSON-encodes it a second time.
  */
 export class SqlQueueStore {
   constructor(readonly db: Kysely<DB>) {}
+
+  private wake() {
+    wakeClaimLoops(this.db);
+  }
 
   async initialize(queues: string[], workerId?: string) {
     // Preserve the Manager discriminator before recovery can lose the detailed marker.
@@ -176,7 +225,7 @@ export class SqlQueueStore {
       }
     }
     // Notifications only reduce latency; the independent five-second scan remains authoritative.
-    await sql`select pg_notify('frameleaf_jobs', '')`.execute(db);
+    this.wake();
     return inserted;
   }
 
@@ -285,7 +334,7 @@ export class SqlQueueStore {
         (select id::text from page order by id desc limit 1) last`.execute(tx);
     if (page.inserted > 0) {
       await sql`update job_run set "finishedAt" = null where id = ${intent.runId}::uuid`.execute(tx);
-      await sql`select pg_notify('frameleaf_jobs', '')`.execute(tx);
+      this.wake();
     }
     return { inserted: page.inserted, last: page.selected < limit ? null : page.last };
   }
@@ -384,7 +433,7 @@ export class SqlQueueStore {
         and ("parentId" is null or exists (select 1 from job p where p.id = j."parentId" and p.state = 'completed'))
       returning id`.execute(this.db);
     if (rows.length > 0) {
-      await sql`select pg_notify('frameleaf_jobs', '')`.execute(this.db);
+      this.wake();
     }
     this.forgetRunReads();
     return rows.length > 0;
@@ -485,7 +534,7 @@ export class SqlQueueStore {
       where id = any(${ids}::uuid[]) and state = 'pending' and "dependencyReason" = ${reason}
         and "availableAt" > now() and "availableAt" <> ${HELD} returning id`.execute(this.db);
     // claim loops run them now, not at their next scan
-    if (rows.length > 0) await sql`select pg_notify('frameleaf_jobs', '')`.execute(this.db);
+    if (rows.length > 0) this.wake();
     return rows.length;
   }
 
@@ -731,7 +780,7 @@ export class SqlQueueStore {
   async pause(name: string, paused: boolean) {
     await sql`insert into job_queue(name, paused) values (${name}, ${paused})
       on conflict (name) do update set paused = excluded.paused`.execute(this.db);
-    if (!paused) await sql`select pg_notify('frameleaf_jobs', '')`.execute(this.db);
+    if (!paused) this.wake();
     this.forgetRunReads();
   }
 
@@ -760,7 +809,7 @@ export class SqlQueueStore {
   async setSchedule(name: string, closedUntil: Date | null) {
     await sql`insert into job_queue(name, "closedUntil") values (${name}, ${closedUntil})
       on conflict (name) do update set "closedUntil" = excluded."closedUntil"`.execute(this.db);
-    if (!closedUntil) await sql`select pg_notify('frameleaf_jobs', '')`.execute(this.db);
+    if (!closedUntil) this.wake();
     this.forgetRunReads();
   }
 
@@ -914,7 +963,7 @@ export class SqlQueueStore {
         || jsonb_build_object('holds', ${JSON.stringify(next)}::text::jsonb, 'holdsDirty', true)
         ${reopen ? sql`, "finishedAt" = null` : sql``}
       where id = ${runId}::uuid`.execute(db);
-    await sql`select pg_notify('frameleaf_jobs', '')`.execute(db);
+    this.wake();
   }
 
   /** Release every hold of a run (Jobs → Release). An import is released only once its journal is activated. */
@@ -937,7 +986,7 @@ export class SqlQueueStore {
       await sql`update job_run set "finishedAt" = null, selection = (selection - 'holdsCursor' - 'authorityHeld')
           || jsonb_build_object('holds', '{}'::jsonb, 'holdsDirty', true, 'releasedAt', now())
         where id = ${runId}::uuid`.execute(tx);
-      await sql`select pg_notify('frameleaf_jobs', '')`.execute(tx);
+      this.wake();
       return 'released' as const;
     });
     this.forgetRunReads();
@@ -994,7 +1043,7 @@ export class SqlQueueStore {
       } where id = ${run.id}::uuid and coalesce(selection->'holds', '{}'::jsonb) = ${JSON.stringify(holds)}::text::jsonb`.execute(
         this.db,
       );
-      if (page.released > 0) await sql`select pg_notify('frameleaf_jobs', '')`.execute(this.db);
+      if (page.released > 0) this.wake();
     }
     if (changed > 0) this.forgetRunReads();
     return changed;
@@ -1059,7 +1108,7 @@ export class SqlQueueStore {
     }
     if (total > 0) {
       await sql`UPDATE job_run SET "finishedAt"=NULL WHERE id=${runId}::uuid`.execute(db);
-      await sql`select pg_notify('frameleaf_jobs', '')`.execute(db);
+      this.wake();
     }
     return total;
   }
@@ -1095,7 +1144,7 @@ export class SqlQueueStore {
         if (runIds.length > 0) {
           await sql`update job_run set "finishedAt" = null where id = any(${runIds}::uuid[])`.execute(tx);
         }
-        if (rows.length > 0) await sql`select pg_notify('frameleaf_jobs', '')`.execute(tx);
+        if (rows.length > 0) this.wake();
         return rows.length;
       });
       total += count;

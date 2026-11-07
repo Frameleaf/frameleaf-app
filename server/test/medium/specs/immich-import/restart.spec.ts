@@ -15,6 +15,14 @@ import { assertImmichImportActivated } from 'src/immich-import/state.js';
 import { ImportDatabase, ImportMediaPolicy, ImportRow, quote } from 'src/immich-import/types.js';
 import { getFrameleafSchema } from 'src/schema/frameleaf-schema.js';
 
+/** Frameleaf keyframe timestamps are bigint, which a raw pg connection returns as decimal text. */
+const asStoredKeyframe = ({ pts, accDuration, totalDuration, ...row }: Record<string, any>) => ({
+  ...row,
+  pts: pts.map(String),
+  accDuration: accDuration.map(String),
+  totalDuration: String(totalDuration),
+});
+
 // Hosted PG19 only: real pinned baseline, constraints/triggers, checkpoints and media verification.
 // Source transport/fingerprinting is deterministic here; source-schema/read-only tests cover admission.
 describe('Immich import into the canonical Frameleaf baseline', () => {
@@ -327,7 +335,11 @@ describe('Immich import into the canonical Frameleaf baseline', () => {
       for (const table of ['asset_audio', 'asset_video', 'asset_keyframe']) {
         expect(await connection.db.query(`SELECT * FROM public.${quote(table)}`)).toEqual(
           content[table].map((row) =>
-            table === 'asset_audio' ? { ...row, channels: null, channelLayout: null, sampleRate: null } : row,
+            table === 'asset_audio'
+              ? { ...row, channels: null, channelLayout: null, sampleRate: null }
+              : table === 'asset_keyframe'
+                ? asStoredKeyframe(row)
+                : row,
           ),
         );
       }

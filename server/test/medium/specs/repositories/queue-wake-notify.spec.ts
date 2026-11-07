@@ -48,10 +48,28 @@ describe('waking deferred jobs', () => {
     const [claim] = await store.claim(queue, worker);
     expect(await store.defer(claim, 'locked-key-unavailable')).toBe(true);
 
-    await drain();
+    // Wakes go out shortly after the call, outside its transaction: wait for each one to arrive.
+    const nextWake = async () => {
+      await vi.waitFor(() => expect(notes).toContain(''));
+      notes.length = 0;
+    };
+    await nextWake(); // the enqueue's
     expect(await store.wakeDeferred([claim.id], 'locked-key-unavailable')).toBe(1);
-    expect(await drain()).toEqual(['']);
+    await nextWake();
     expect(await store.wakeDeferred([claim.id], 'locked-key-unavailable')).toBe(0);
+    await new Promise((resolve) => setTimeout(resolve, 300)); // bounded window for a wake that must not come
     expect(await drain()).toEqual([]);
+  });
+
+  it('sends one wake for a burst of enqueues from separate stores on the same pool', async () => {
+    const queue = `wake-${randomUUID()}`;
+    await store.initialize([queue]);
+    await new Promise((resolve) => setTimeout(resolve, 300)); // let earlier wakes land
+    await drain();
+    const job = { queue, name: 'fixture', data: {}, safeToRetry: true, sensitive: false, deadlineMs: 600_000 };
+    await Promise.all([new SqlQueueStore(db).enqueue([job]), new SqlQueueStore(db).enqueue([job])]);
+    await vi.waitFor(() => expect(notes).toContain(''));
+    await new Promise((resolve) => setTimeout(resolve, 300)); // a second wake would arrive in this window
+    expect(await drain()).toEqual(['']);
   });
 });

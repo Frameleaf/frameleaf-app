@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "b1caa2686d7f1ed9ffa06c6a6d15ff8f656ab9c7",
+  "sourceCommit": "3d115ffb03f5c2869ff26dd91b777a37a63097b2",
   "sourceHashes": {
     "src/enum.ts": "a0e0554cdb88b8e965ed7fbee4b45a1c7e1dc71b694009dd255b2922740d51c3",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
@@ -24,7 +24,7 @@
     "src/schema/tables/api-key.table.ts": "e828609d4c58ca96edaf7eba013c4be8d7699d16ea83125660927bc6d0f2a4ca",
     "src/schema/tables/asset-annotation.table.ts": "320093d2204398a21ee6e8cd1b31200b27e847023566bfea92b40d372a6dde5f",
     "src/schema/tables/asset-audit.table.ts": "f2c3a79bf9d93b8d8bebd9f8867ff3c3182f29174f16360ad0f1e7da1da8effd",
-    "src/schema/tables/asset-av.table.ts": "8fc3c04c087336d778a4d70eef05057bae92b1a7c391b07a6fd9ab8d770a86bf",
+    "src/schema/tables/asset-av.table.ts": "1e73b4e916068d3590704144b21a4819eb875ff1047531fd19b2640c2791050f",
     "src/schema/tables/asset-backup-deletion.table.ts": "e294b543c4291a6d3b2a686b58b6145713de8addb463a22f196d35f18ad9d8ad",
     "src/schema/tables/asset-best-photo-score.table.ts": "246f80b09b16c84ac8e37d04c76a62f16e093066e1b03174a4616c9c458c6109",
     "src/schema/tables/asset-document-edit.table.ts": "e20786febdd8281b20ae86e9f27540db3c01c7df80610e25822a1f1cec2d4360",
@@ -159,6 +159,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "b57bd944096b45f516bb29a336033410d24b145e89b708575786aa09e1a6bfbf",
-  "dumpSha256": "e6e1c63b62bff401daa6e665334e4e1efe2f5ed9d990483745bbbfbe236439ed",
-  "rawMetadataSha256": "7944e72d13c14b6458747303b4f10064d32e54bb3e3cdb39dc44183f3a4f5350"
+  "dumpSha256": "7124088506737b82bf2e3f25fc5f11064f8a109bda4c401417095fef512016ca",
+  "rawMetadataSha256": "e1802cfe5b003160f7f378d1399bd4b5547d2162eb8a0529375258b63d4119ae"
 }
