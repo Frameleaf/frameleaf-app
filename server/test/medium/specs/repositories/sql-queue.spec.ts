@@ -66,6 +66,26 @@ describe('PostgreSQL queue', () => {
     await store.initialize([], workerB);
   });
 
+  it('counts photo-details follow-up steps apart from the photos still to read (FL-1272)', async () => {
+    const metadata = QueueName.MetadataExtraction;
+    await store.initialize([metadata]);
+    const before = await store.counts(metadata);
+    const ids = [randomUUID(), randomUUID(), randomUUID()];
+    await store.enqueue([
+      intent({ queue: metadata, name: JobName.AssetExtractMetadata, data: { id: ids[0] } }),
+      intent({ queue: metadata, name: JobName.AssetMetadataPostprocess, data: { id: ids[1] } }),
+      intent({ queue: metadata, name: JobName.AssetMetadataPostprocess, data: { id: ids[2] } }),
+    ]);
+    try {
+      const after = await store.counts(metadata);
+      expect(after.waiting - before.waiting).toBe(3);
+      expect((after.followUp ?? 0) - (before.followUp ?? 0)).toBe(2);
+      expect((await store.counts(queue)).followUp).toBeUndefined();
+    } finally {
+      await sql`delete from job where queue = ${metadata} and data->>'id' = any(${ids}::text[])`.execute(db);
+    }
+  });
+
   it('keeps repeated remote capacity deferrals at thirty seconds without spending failure retries', async () => {
     await store.enqueue([intent()]);
     for (let index = 0; index < 8; index++) {

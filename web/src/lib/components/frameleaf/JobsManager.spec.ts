@@ -201,6 +201,18 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
     expect(screen.getByText('4 of 4 tasks')).toBeInTheDocument();
   });
 
+  it('shows photo-details follow-up steps as their own count, so the photos still to read visibly fall (FL-1272)', () => {
+    queues.list = [queue(QueueName.MetadataExtraction, { active: 4, waiting: 608_111, followUp: 59_271 })];
+    render(JobsManager);
+
+    const waiting = screen.getByText('Waiting & scheduled', { selector: '.jm-metric span' }).parentElement!;
+    expect(waiting).toHaveTextContent('548,840');
+    expect(waiting).toHaveTextContent('+59,271 finishing up');
+    const [, row] = within(screen.getByRole('table')).getAllByRole('row');
+    expect(within(row).getByText('548,840')).toBeInTheDocument();
+    expect(within(row).getByText('+59,271 finishing up')).toBeInTheDocument();
+  });
+
   it("shows one feature's tasks, filters by status, and opens a task on its failed jobs", async () => {
     at('&view=advanced&feature=faces');
     const { unmount } = render(JobsManager);

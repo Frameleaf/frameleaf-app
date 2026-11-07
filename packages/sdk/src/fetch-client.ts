@@ -3570,6 +3570,8 @@ export type QueueStatisticsDto = {
     delayed: number;
     /** Number of failed jobs */
     failed: number;
+    /** Of the waiting, delayed and paused jobs, how many are later steps of items the queue already started. Only for queues with such steps */
+    followUp?: number;
     /** Number of paused jobs */
     paused: number;
     /** Number of waiting jobs */
@@ -14277,6 +14279,8 @@ export type QueueOwnerStatisticsResponseDto = {
     delayed: number;
     /** Number of failed jobs */
     failed: number;
+    /** Of the waiting, delayed and paused jobs, how many are later steps of items the queue already started. Only for queues with such steps */
+    followUp?: number;
     /** Number of paused jobs */
     paused: number;
     /** Whether a state had more jobs than were scanned, so its count is a lower bound */

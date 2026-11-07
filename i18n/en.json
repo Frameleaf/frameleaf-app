@@ -9017,6 +9017,8 @@
   "frameleaf_jobs_feature_off_short": "feature off",
   "frameleaf_jobs_feature_settings": "Feature settings",
   "frameleaf_jobs_fixed": "fixed",
+  "frameleaf_jobs_follow_up_hint": "Items already started, waiting for their last step. Each one finished on the first step adds one here.",
+  "frameleaf_jobs_follow_up_waiting": "+{count} finishing up",
   "frameleaf_jobs_force_reprocess": "Reprocess all",
   "frameleaf_jobs_force_reset": "Reset & reprocess",
   "frameleaf_jobs_force_synchronize": "Synchronize all",
