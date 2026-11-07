@@ -1933,7 +1933,13 @@
 </Dialog>
 
 {#if draft}
-  <JobsConcurrencyDialog bind:open={concurrencyOpen} store={draft} disabled={flags.configFile} {title} />
+  <JobsConcurrencyDialog
+    bind:open={concurrencyOpen}
+    store={draft}
+    disabled={flags.configFile}
+    capacity={flags.jobCapacity}
+    {title}
+  />
 {/if}
 <JobsCreateDialog
   bind:open={createOpen}

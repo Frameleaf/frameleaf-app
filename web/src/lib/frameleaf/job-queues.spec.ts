@@ -1,6 +1,7 @@
 import { JobName, ManualJobName, QueueName, type QueueResponseDto, type ServerFeaturesDto } from '@frameleaf/sdk';
 import en from '../../../../i18n/en.json';
 import {
+  jobsAtOnce,
   isValidConcurrency,
   jobNameKey,
   MANUAL_JOBS,
@@ -149,5 +150,19 @@ describe('Job manager queue catalogue (FL-71)', () => {
   it('accepts whole-number concurrency from 1 to 1,000', () => {
     expect([1, '1000', 250].every((value) => isValidConcurrency(value))).toBe(true);
     expect([0, 1001, '1.5', '', 'ten', null, -1].some((value) => isValidConcurrency(value))).toBe(false);
+  });
+});
+
+describe('jobsAtOnce', () => {
+  const running = { value: 8, fromEnvironment: false };
+  it('is the server setup, then the draft, then what runs now when Automatic stays Automatic', () => {
+    expect(jobsAtOnce(20, 0, { value: 4, fromEnvironment: true })).toBe(4);
+    expect(jobsAtOnce(20, 0, running)).toBe(20);
+    expect(jobsAtOnce(0, 0, running)).toBe(8);
+    expect(jobsAtOnce(12, 12, running)).toBe(12);
+  });
+  it('is unknown when the draft switches to Automatic or the server has not said', () => {
+    expect(jobsAtOnce(0, 12, running)).toBeUndefined();
+    expect(jobsAtOnce(0, 0, undefined)).toBeUndefined();
   });
 });
