@@ -371,6 +371,27 @@ export const isValidConcurrency = (value: unknown) =>
   Number(value) >= CONCURRENCY_MIN &&
   Number(value) <= CONCURRENCY_MAX;
 
+/** The most "Jobs at once" (`job.capacity`) takes: the server's JOB_CAPACITY_LIMIT. */
+export const JOBS_AT_ONCE_MOST = 32;
+
+/**
+ * How many jobs the server runs at once, across every task, once the draft is saved; undefined
+ * when that is not known here (the draft switches to Automatic, which the server works out).
+ */
+export const jobsAtOnce = (
+  draftCapacity: number | undefined,
+  savedCapacity: number | undefined,
+  running: { value: number; fromEnvironment: boolean } | undefined,
+) => {
+  if (running?.fromEnvironment) {
+    return running.value;
+  }
+  if (draftCapacity) {
+    return draftCapacity;
+  }
+  return savedCapacity ? undefined : running?.value;
+};
+
 /** How many failed records one "Remove failed records" clears (the server cleans at most 1,000 at a time). */
 export const FAILED_CLEAN_LIMIT = 1000;
 

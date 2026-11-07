@@ -99,4 +99,25 @@ describe('How many run at once (FL-71, ConcurrencyDialog in JobsManager.jsx; Bac
     expect(screen.getByLabelText('Text recognition simultaneous jobs')).toBeInTheDocument();
     expect(screen.queryByLabelText('Thumbnails simultaneous jobs')).toBeNull();
   });
+
+  it('warns when a task is set above Jobs at once, and raises Jobs at once in the draft', async () => {
+    const draft = store();
+    render(JobsConcurrencyDialog, { open: true, store: draft, title, capacity: { value: 8, fromEnvironment: false } });
+    expect(screen.queryByText('Only 8 jobs run at once')).toBeNull();
+
+    await fireEvent.input(screen.getByLabelText('Thumbnails simultaneous jobs'), { target: { value: '20' } });
+
+    expect(screen.getByText('Only 8 jobs run at once')).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Raise Jobs at once to 20' }));
+    expect((draft.draft.job as unknown as { capacity: number }).capacity).toBe(20);
+    expect(screen.queryByText(/jobs run at once/)).toBeNull();
+  });
+
+  it('only explains the limit when the server setup fixes Jobs at once', async () => {
+    render(JobsConcurrencyDialog, { open: true, store: store(), title, capacity: { value: 2, fromEnvironment: true } });
+
+    expect(screen.getByText('Only 2 jobs run at once')).toBeInTheDocument();
+    expect(screen.getByText(/FRAMELEAF_JOB_CAPACITY/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Raise Jobs at once/ })).toBeNull();
+  });
 });

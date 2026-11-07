@@ -76,8 +76,11 @@ const AT_ONCE: Record<TunableWork, readonly [number, number, number]> = {
 
 export const TUNABLE_WORK = Object.keys(AT_ONCE) as TunableWork[];
 
-/** The most the page offers for one kind. A number already saved above it is shown and kept. */
-export const AT_ONCE_MOST = 16;
+/**
+ * The most the page offers for one kind: the server's JOB_CAPACITY_LIMIT, since no more than that
+ * runs at once across every kind. A number already saved above it is shown and kept.
+ */
+export const AT_ONCE_MOST = 32;
 
 export type WorkNumbers = Record<string, { concurrency: number } | undefined>;
 

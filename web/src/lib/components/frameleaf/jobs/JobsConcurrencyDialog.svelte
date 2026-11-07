@@ -8,8 +8,17 @@
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
-  import { isValidConcurrency, JOB_QUEUES, searchTerms, type JobQueueDefinition } from '$lib/frameleaf/job-queues';
+  import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
+  import {
+    isValidConcurrency,
+    JOB_QUEUES,
+    JOBS_AT_ONCE_MOST,
+    jobsAtOnce,
+    searchTerms,
+    type JobQueueDefinition,
+  } from '$lib/frameleaf/job-queues';
   import { featureOfQueue } from '$lib/frameleaf/work-features';
+  import { locale } from '$lib/stores/preferences.store';
   import type { SystemConfigDraftStore } from '$lib/frameleaf/system-config-draft.svelte';
   import { Icon } from '@frameleaf/ui';
   import { mdiClockOutline, mdiMagnify } from '@mdi/js';
@@ -21,13 +30,28 @@
     /** True while a configuration file manages the settings. */
     disabled?: boolean;
     title: (definition: JobQueueDefinition) => string;
+    /** What the server runs at once now (`jobCapacity` in the server features). */
+    capacity?: { value: number; fromEnvironment: boolean };
   };
 
-  let { open = $bindable(false), store, disabled = false, title }: Props = $props();
+  let { open = $bindable(false), store, disabled = false, title, capacity }: Props = $props();
 
-  type JobConfig = Record<string, { concurrency: number } | undefined>;
+  type JobConfig = Record<string, { concurrency: number } | undefined> & { capacity?: number };
   const jobDraft = $derived(store.draft.job as unknown as JobConfig);
   const jobSaved = $derived(store.baseline.job as unknown as JobConfig);
+
+  /** Tasks set to run more at once than "Jobs at once" lets run across every task. */
+  const limit = $derived(jobsAtOnce(jobDraft?.capacity, jobSaved?.capacity, capacity));
+  const over = $derived(
+    limit === undefined ? [] : JOB_QUEUES.filter((definition) => !isFixed(definition) && current(definition) > limit),
+  );
+  const wanted = $derived(Math.min(JOBS_AT_ONCE_MOST, Math.max(0, ...over.map((definition) => current(definition)))));
+  const canRaise = $derived(!capacity?.fromEnvironment && limit !== undefined && wanted > limit && !disabled);
+  const raise = () => {
+    if (jobDraft && canRaise) {
+      jobDraft.capacity = wanted;
+    }
+  };
 
   let search = $state('');
   /** What was typed into a field that is not a valid limit yet; it is not written to the draft. */
@@ -137,6 +161,25 @@
         </label>
       {/each}
     </div>
+    {#if over.length > 0}
+      {@const values = {
+        names: new Intl.ListFormat($locale, { type: 'conjunction' }).format(
+          over.map((definition) => title(definition)),
+        ),
+        count: limit,
+        wanted,
+      }}
+      <Notice tone="warn" title={$t('frameleaf_jobs_concurrency_over_title', { values })}>
+        {capacity?.fromEnvironment
+          ? $t('frameleaf_jobs_concurrency_over_server', { values })
+          : $t('frameleaf_jobs_concurrency_over_body', { values })}
+        {#snippet action()}
+          {#if canRaise}
+            <Button onclick={raise}>{$t('frameleaf_jobs_concurrency_over_raise', { values })}</Button>
+          {/if}
+        {/snippet}
+      </Notice>
+    {/if}
     <p class="jm-muted">{$t('frameleaf_jobs_concurrency_footer')}</p>
     <footer>
       <Button onclick={() => (open = false)}>{$t('frameleaf_jobs_detail_done')}</Button>
