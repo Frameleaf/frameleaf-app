@@ -70,6 +70,8 @@ const intentAvailability = (intent: QueueIntent) =>
  */
 export class SqlQueueStore {
   private wakeTimer?: NodeJS.Timeout;
+  private wakeInFlight = false;
+  private wakeAgain = false;
 
   constructor(readonly db: Kysely<DB>) {}
 
@@ -83,9 +85,24 @@ export class SqlQueueStore {
     if (this.wakeTimer) {
       return;
     }
+    if (this.wakeInFlight) {
+      // A stalled NOTIFY holds one pooled connection at most; later wakes collapse into one follow-up.
+      this.wakeAgain = true;
+      return;
+    }
     this.wakeTimer = setTimeout(() => {
       this.wakeTimer = undefined;
-      sql`select pg_notify(${QUEUE_CHANNEL}, '')`.execute(this.db).catch(() => {});
+      this.wakeInFlight = true;
+      void sql`select pg_notify(${QUEUE_CHANNEL}, '')`
+        .execute(this.db)
+        .catch(() => {})
+        .finally(() => {
+          this.wakeInFlight = false;
+          if (this.wakeAgain) {
+            this.wakeAgain = false;
+            this.wake();
+          }
+        });
     }, WAKE_DELAY_MS);
     this.wakeTimer.unref();
   }
