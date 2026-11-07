@@ -1085,14 +1085,17 @@ describe(UserAdminService.name, () => {
       ]);
     });
 
-    it('records nothing when it was not on', async () => {
+    it('records nothing when it was not on, but still signs out (a retry after a failed sign-out)', async () => {
       mocks.user.get.mockResolvedValue(UserFactory.create());
       mocks.user.deleteTwoFactor.mockResolvedValue(false);
 
       await sut.resetTwoFactor(authStub.admin, 'user-1');
 
       expect(mocks.adminAudit.create).not.toHaveBeenCalled();
-      expect(mocks.event.emit).not.toHaveBeenCalled();
+      expect(mocks.event.emit).toHaveBeenCalledWith('AuthChangePassword', {
+        userId: 'user-1',
+        invalidateSessions: true,
+      });
     });
   });
 });
