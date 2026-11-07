@@ -1085,6 +1085,18 @@ describe(UserAdminService.name, () => {
       ]);
     });
 
+    it('records the reset even when the sign-out then fails', async () => {
+      const user = UserFactory.create();
+      mocks.user.get.mockResolvedValue(user);
+      mocks.user.deleteTwoFactor.mockResolvedValue(true);
+      mocks.event.emit.mockRejectedValue(new Error('sign-out failed'));
+
+      await expect(sut.resetTwoFactor(authStub.admin, user.id)).rejects.toThrow('sign-out failed');
+      expect(mocks.adminAudit.create).toHaveBeenCalledWith([
+        expect.objectContaining({ userId: user.id, detail: 'two-factor-reset' }),
+      ]);
+    });
+
     it('records nothing when it was not on, but still signs out (a retry after a failed sign-out)', async () => {
       mocks.user.get.mockResolvedValue(UserFactory.create());
       mocks.user.deleteTwoFactor.mockResolvedValue(false);

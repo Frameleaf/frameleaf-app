@@ -395,14 +395,14 @@ export class UserAdminService extends BaseService {
    */
   async resetTwoFactor(auth: AuthDto, id: string): Promise<void> {
     const user = await this.findOrFail(id, { withDeleted: true });
-    const wasOn = await this.userRepository.deleteTwoFactor(id);
-    // the password-change handler is what signs an account out everywhere (and drops Locked access)
-    await this.eventRepository.emit('AuthChangePassword', { userId: id, invalidateSessions: true });
-    if (wasOn) {
+    // recorded before the sign-out, which can fail: a retry finds two-step sign-in already off
+    if (await this.userRepository.deleteTwoFactor(id)) {
       await this.recordAdminEvents([
         accountEvent(auth, user, AdminAuditAction.AccountUpdated, TWO_FACTOR_RESET_DETAIL),
       ]);
     }
+    // the password-change handler is what signs an account out everywhere (and drops Locked access)
+    await this.eventRepository.emit('AuthChangePassword', { userId: id, invalidateSessions: true });
   }
 
   /**
