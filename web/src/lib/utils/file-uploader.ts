@@ -21,9 +21,11 @@ import { UploadState } from '$lib/types';
 import { AbortError, cancelUploadRequests, uploadRequest } from '$lib/utils';
 import { ExecutorQueue } from '$lib/utils/executor-queue';
 import { generateId } from '$lib/utils/generate-id';
+import { uploadInParts } from '$lib/utils/parallel-upload';
 import { asQueryString } from '$lib/utils/shared-links';
 import { handleError } from './handle-error';
 
+const PARALLEL_UPLOAD_THRESHOLD = 64 * 2 ** 20;
 export const uploadExecutionQueue = new ExecutorQueue({ concurrency: 2 });
 const activeUploads = new Set<AbortController>();
 type UploadContext = { current: () => boolean; owner: string | undefined; sharedLink: boolean; query: string };
@@ -293,6 +295,7 @@ async function fileUploader(
     uploadAssetsStore.markStarted(deviceAssetId);
     assertCurrent();
     let responseData: { id: string; status: AssetMediaStatus; isTrashed?: boolean } | undefined;
+    let fileSha256: string | undefined;
     if (!context.sharedLink) {
       uploadAssetsStore.updateItem(deviceAssetId, { message: $t('asset_hashing') });
       await tick();
@@ -301,6 +304,7 @@ async function fileUploader(
         // New rows store SHA-256 and rows adopted from Immich keep SHA-1, so check both (FL-529).
         const { sha256, sha1 } = checksums ?? (await hashUploadFile(assetFile, signal));
         assertCurrent();
+        fileSha256 = sha256;
 
         const { results } = await checkBulkUpload(
           {
@@ -330,6 +334,36 @@ async function fileUploader(
           throw error;
         }
         console.error(`Error calculating checksum file=${assetFile.name})`, error);
+      }
+    }
+
+    // FL-1268: large files go up as parallel parts (no size limit); shared links and Locked keep one request.
+    if (
+      !responseData &&
+      fileSha256 &&
+      assetFile.size > PARALLEL_UPLOAD_THRESHOLD &&
+      !context.sharedLink &&
+      !context.query &&
+      !isLockedAssets &&
+      /^(image|video|audio)\/[\w.+-]+$/.test(assetFile.type)
+    ) {
+      uploadAssetsStore.updateItem(deviceAssetId, { message: $t('asset_uploading') });
+      assertCurrent();
+      const result = await uploadInParts({
+        file: assetFile,
+        sha256: fileSha256,
+        metadata: {
+          filename: assetFile.name,
+          fileCreatedAt,
+          fileModifiedAt: fileCreatedAt,
+          isFavorite: false,
+          ...(libraryScope && { libraryScope }),
+        },
+        signal,
+        onProgress: (loaded, total) => uploadAssetsStore.updateProgress(deviceAssetId, loaded, total),
+      });
+      if (result) {
+        responseData = { id: result.id, status: result.status };
       }
     }
 
