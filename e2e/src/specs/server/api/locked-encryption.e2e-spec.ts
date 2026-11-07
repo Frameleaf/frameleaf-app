@@ -717,15 +717,23 @@ describe('Locked encryption acceptance (FL-721, spec §15)', () => {
         return rows.length > 0;
       });
 
+      // the lock also defers other queues' jobs for these items (an edited photo's editor job)
+      const { rows: waiting } = await db.query(
+        `SELECT id FROM job WHERE state = 'pending' AND "dependencyReason" = 'locked-key-unavailable'
+           AND data->>'id' = ANY($1::text[])`,
+        [pinIds],
+      );
+      const waitingIds = waiting.map(({ id }) => id as string);
+
       await unlockSession(pinOwner.accessToken, pinCodes.pinOwner);
       expect(await keyLoaded(pinOwner.accessToken)).toBe(true);
       await settle(admin.accessToken, QueueName.ThumbnailGeneration, 120_000);
-      // the lock also defers other queues' jobs for these items (an edited photo's editor job); woken by
-      // the unlock, each runs when its own queue claims it
-      await waitFor('every job waiting for the key to run', async () => {
+      // woken by the unlock, each ran to an end in its own queue, and none waits for the key again
+      await waitFor('every job that waited for the key to run', async () => {
         const { rows } = await db.query(
-          `SELECT id FROM job WHERE "dependencyReason" = 'locked-key-unavailable' AND data->>'id' = ANY($1::text[])`,
-          [pinIds],
+          `SELECT id FROM job WHERE (id = ANY($1::uuid[]) AND state IN ('pending', 'waiting', 'active'))
+             OR ("dependencyReason" = 'locked-key-unavailable' AND data->>'id' = ANY($2::text[]))`,
+          [waitingIds, pinIds],
         );
         return rows.length === 0;
       });
