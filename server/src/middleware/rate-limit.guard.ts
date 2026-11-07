@@ -223,17 +223,25 @@ const text = (value: unknown): string | undefined => {
   return typeof first === 'string' && first.length > 0 ? first : undefined;
 };
 
+/**
+ * The bearer token exactly as authentication reads it (`AuthService.getBearerToken`): the word after
+ * `Bearer `, so text appended after the token cannot make a fresh rate-limit key for the same session.
+ */
+const bearerToken = (authorization: string | undefined): string | undefined => {
+  const [type, token] = (authorization ?? '').split(' ', 2);
+  return type.toLowerCase() === 'bearer' ? token || undefined : undefined;
+};
+
 /** The session token or API key a request presents, from the same places authentication reads it. */
 const presentedCredential = (request: Request): string | undefined => {
   const headers = request.headers;
-  const bearer = text(headers.authorization);
   const cookies = (request.cookies ?? {}) as Record<string, unknown>;
   const query = (request.query ?? {}) as Record<string, unknown>;
   return (
     text(headers[RequestHeader.UserToken]) ??
     text(headers[RequestHeader.SessionToken]) ??
     text(query[RequestQuery.SessionKey]) ??
-    (bearer?.toLowerCase().startsWith('bearer ') ? bearer.slice(7).trim() || undefined : undefined) ??
+    bearerToken(text(headers.authorization)) ??
     text(cookies[AuthCookie.AccessToken]) ??
     text(headers[RequestHeader.ApiKey]) ??
     text(query[RequestQuery.ApiKey])
