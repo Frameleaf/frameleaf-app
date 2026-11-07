@@ -196,7 +196,17 @@ async function sendParts(
         }
         if (status === 409) {
           // The server already has some of these bytes (a part whose response was lost) or the upload is complete.
-          const gaps = await missingRanges(url, range, signal);
+          let gaps: Awaited<ReturnType<typeof missingRanges>>;
+          try {
+            gaps = await missingRanges(url, range, signal);
+          } catch (listError) {
+            // A dropped listing is retried like any failed attempt (the resend 409s again and relists).
+            if (listError instanceof AbortError || signal.aborted || attempt >= MAX_ATTEMPTS) {
+              throw listError;
+            }
+            await sleep(Math.min(30_000, 1000 * 2 ** attempt));
+            continue;
+          }
           if (gaps === 'complete') {
             closed = true;
             return;

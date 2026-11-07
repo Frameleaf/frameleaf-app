@@ -169,6 +169,31 @@ describe('parallel upload', () => {
     expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(false);
   });
 
+  it('retries a parts listing dropped while reconciling an overlap', async () => {
+    const fetchMock = stubServer({ 'Upload-Limit': 'max-append-size=33554432', 'Upload-Parts': 'max-parallel=1' });
+    listing = { offset: 32 * MiB, size: 32 * MiB, parts: [{ offset: 0, size: 32 * MiB }] };
+    const answer = fetchMock.getMockImplementation()!;
+    let dropped = false;
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (url.endsWith('/parts') && !dropped) {
+        dropped = true;
+        return Promise.reject(new TypeError('Failed to fetch'));
+      }
+      return answer(url, init);
+    });
+    upload.mockRejectedValue(
+      new ApiError('Conflict', 409, { message: 'Part overlaps a different received part' } as never),
+    );
+    const outcome = await uploadInParts({
+      file: bigFile(32 * MiB),
+      sha256,
+      metadata: {},
+      signal: new AbortController().signal,
+    });
+    expect(outcome).toEqual(result);
+    expect(upload).toHaveBeenCalledTimes(2);
+  });
+
   it('keeps asking for the result through a dropped connection', async () => {
     const fetchMock = stubServer({ 'Upload-Limit': 'max-append-size=33554432', 'Upload-Parts': 'max-parallel=1' });
     const answer = fetchMock.getMockImplementation()!;
