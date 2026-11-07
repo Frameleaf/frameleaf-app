@@ -10,6 +10,36 @@ const MiB = 2 ** 20;
 const MIN_PART = 8 * MiB;
 const MAX_ATTEMPTS = 6;
 const MAX_RESULT_POLLS = 120;
+/** 30 s apart, so a busy part waits out the server's 15-minute lease. */
+const MAX_BUSY_RETRIES = 32;
+
+/** The parts of `range` the server has not received, or 'complete' when the whole file is in. */
+const missingRanges = async (url: string, range: Range, signal: AbortSignal): Promise<Range[] | 'complete'> => {
+  const response = await fetch(`${url}/parts`, { signal });
+  if (!response.ok) {
+    throw new ApiError(response.statusText, response.status, await response.text());
+  }
+  const listing = (await response.json()) as { offset: number; size: number | null; parts: Range[] };
+  if (listing.size !== null && listing.offset >= listing.size) {
+    return 'complete';
+  }
+  const gaps: Range[] = [];
+  let at = range.offset;
+  const end = range.offset + range.size;
+  for (const part of listing.parts) {
+    if (part.offset + part.size <= at || part.offset >= end) {
+      continue;
+    }
+    if (part.offset > at) {
+      gaps.push({ offset: at, size: part.offset - at });
+    }
+    at = Math.max(at, part.offset + part.size);
+  }
+  if (at < end) {
+    gaps.push({ offset: at, size: end - at });
+  }
+  return gaps;
+};
 
 /** 409s that only mean another request holds the upload or this part for a moment. */
 const isTransientConflict = (error: unknown) => {
@@ -128,12 +158,11 @@ async function sendParts(
     onProgress?.(sum, file.size);
   };
   let result: PartsResult | undefined;
-  // A non-transient 409 means the upload stopped taking bytes, usually because a part whose response was lost
-  // completed it. Stop sending and let GET :id/result say how it ended.
+  // Set when the server already has the whole file (a part whose response was lost completed it).
   let closed = false;
 
   const sendPart = async (range: Range) => {
-    for (let attempt = 1; ; attempt++) {
+    for (let attempt = 1, busy = 0; ; attempt++) {
       signal.throwIfAborted();
       try {
         const response = await uploadRequest<PartsResult | null>({
@@ -156,11 +185,30 @@ async function sendParts(
         loaded.delete(range.offset);
         report();
         const status = error instanceof ApiError ? error.statusCode : 0;
-        if (status === 409 && !isTransientConflict(error)) {
-          closed = true;
+        if (status === 409 && isTransientConflict(error)) {
+          // An earlier attempt still holds this part on the server; its lease lasts up to 15 minutes.
+          if (++busy > MAX_BUSY_RETRIES) {
+            throw error;
+          }
+          attempt--;
+          await sleep(30_000);
+          continue;
+        }
+        if (status === 409) {
+          // The server already has some of these bytes (a part whose response was lost) or the upload is complete.
+          const gaps = await missingRanges(url, range, signal);
+          if (gaps === 'complete') {
+            closed = true;
+            return;
+          }
+          // Nothing of this range arrived, so the conflict is not about these bytes (the upload is closed).
+          if (gaps.length === 1 && gaps[0].offset === range.offset && gaps[0].size === range.size) {
+            throw error;
+          }
+          pending.unshift(...gaps);
           return;
         }
-        // Anything else is retried (a 409 here is a request still holding the part); a dropped part shrinks later ones.
+        // Anything else is retried; a dropped part shrinks later ones.
         if (error instanceof AbortError || status === 404 || attempt >= MAX_ATTEMPTS) {
           throw error;
         }

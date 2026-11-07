@@ -20,8 +20,12 @@ const result = { id: '00000000-0000-4000-8000-000000000001', status: AssetMediaS
 const respond = (status: number, headers: Record<string, string> = {}, body?: unknown) =>
   new Response(body === undefined ? null : JSON.stringify(body), { status, headers });
 
+let listing: unknown = { offset: 0, size: null, parts: [] };
 const stubServer = (optionsHeaders: Record<string, string>) => {
   const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+    if (url.endsWith('/parts')) {
+      return Promise.resolve(respond(200, {}, listing));
+    }
     if (init?.method === 'OPTIONS') {
       return Promise.resolve(respond(204, optionsHeaders));
     }
@@ -128,7 +132,26 @@ describe('parallel upload', () => {
     expect(sizes).toHaveLength(2);
   });
 
+  it('resends only the missing bytes when a lost response left part of a range on the server', async () => {
+    stubServer({ 'Upload-Limit': 'max-append-size=33554432', 'Upload-Parts': 'max-parallel=1' });
+    listing = { offset: 0, size: 32 * MiB, parts: [{ offset: 0, size: 16 * MiB }] };
+    upload
+      .mockRejectedValueOnce(
+        new ApiError('Conflict', 409, { message: 'Part overlaps a different received part' } as never),
+      )
+      .mockResolvedValue({ status: 200, data: result as never });
+    const outcome = await uploadInParts({
+      file: bigFile(32 * MiB),
+      sha256,
+      metadata: {},
+      signal: new AbortController().signal,
+    });
+    expect(outcome).toEqual(result);
+    expect(upload.mock.calls.map(([options]) => options.headers?.['Upload-Offset'])).toEqual(['0', String(16 * MiB)]);
+  });
+
   it('asks for the result when a part finds the upload already complete, and retries a busy part', async () => {
+    listing = { offset: 32 * MiB, size: 32 * MiB, parts: [{ offset: 0, size: 32 * MiB }] };
     const fetchMock = stubServer({ 'Upload-Limit': 'max-append-size=33554432', 'Upload-Parts': 'max-parallel=1' });
     upload
       .mockRejectedValueOnce(new ApiError('Conflict', 409, { message: 'Upload has an active request' } as never))

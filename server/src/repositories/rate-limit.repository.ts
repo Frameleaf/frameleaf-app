@@ -102,6 +102,8 @@ export class RateLimitRepository implements OnModuleInit, OnModuleDestroy {
    */
   async claimUploadPartStream(resourceId: string, offset: number, token: string, max: number) {
     const client = await this.getClient().connect();
+    // A client whose ROLLBACK failed may still hold the transaction and its lock: destroy it instead of reusing it.
+    let discard = false;
     try {
       await client.query('BEGIN');
       await client.query(`SELECT pg_advisory_xact_lock(-226, hashtext($1)::int)`, [resourceId]);
@@ -124,10 +126,12 @@ export class RateLimitRepository implements OnModuleInit, OnModuleDestroy {
       this.cleanExpired();
       return rowCount === 1 ? ('claimed' as const) : ('busy' as const);
     } catch (error) {
-      await client.query('ROLLBACK').catch(() => {});
+      await client.query('ROLLBACK').catch(() => {
+        discard = true;
+      });
       throw error;
     } finally {
-      client.release();
+      client.release(discard);
     }
   }
 
