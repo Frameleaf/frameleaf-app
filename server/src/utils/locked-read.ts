@@ -255,27 +255,29 @@ const KEY_OWNERS_REFRESH_MS = 60_000;
  */
 let refreshingOwners: { ids: Set<string>; done: Promise<void> } | undefined;
 
-/** Reads of the key files, numbered as they start: a read that finishes after a newer one is ignored. */
-let ownerReadsStarted = 0;
-let ownerReadApplied = 0;
+/**
+ * Clearing the lookup state starts a new generation; a read started before it is dropped. Reads only ever
+ * add owners (a key id is derived from its public key, so it always names the same person), so reads that
+ * overlap or finish in any order can't take away an owner another read found.
+ */
+let ownerGeneration = 0;
 
 const readKeyOwners = async () => {
-  const read = ++ownerReadsStarted;
+  const generation = ownerGeneration;
   try {
-    const next = new Map<string, string>();
+    const found = new Map<string, string>();
     // imported when first needed: file.ts (and so every controller) imports this module, and the
     // key repository's storage imports would make a cycle. The path is relative because the build
     // rewrites the `src/` alias of static imports only; `import('src/…')` fails in the built server.
     const { LockedKeyRepository } = await import('../repositories/locked-key.repository.js');
     for (const file of await new LockedKeyRepository().list()) {
-      next.set(toKeyId(Buffer.from(file.publicKey, 'base64')).toString('hex'), file.userId);
+      found.set(toKeyId(Buffer.from(file.publicKey, 'base64')).toString('hex'), file.userId);
     }
-    if (read < ownerReadApplied) {
-      return; // a newer listing is already in place; this older one must not take away what it found
+    if (generation !== ownerGeneration) {
+      return;
     }
-    ownerReadApplied = read;
-    keyOwners = next;
-    for (const id of next.keys()) {
+    for (const [id, userId] of found) {
+      keyOwners.set(id, userId);
       missingAt.delete(id);
     }
   } catch {
@@ -335,7 +337,7 @@ export const clearLockedKeyOwners = () => {
   keyOwners = new Map();
   missingAt.clear();
   refreshingOwners = undefined;
-  ownerReadApplied = ownerReadsStarted;
+  ownerGeneration++;
 };
 
 const unavailable = async (keyIds: Buffer[], viewerId: string | null = null) => {

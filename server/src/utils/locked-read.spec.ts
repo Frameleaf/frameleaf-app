@@ -394,6 +394,72 @@ describe('locked-read', () => {
     expect(spy).toHaveBeenCalledTimes(2);
   });
 
+  it('never takes away an owner a read found, whatever order the reads list the files in', async () => {
+    // a later listing that lacks VIEWER's key file (it listed first, or the file is mid-write) must not
+    // remove VIEWER: a key id always names the same person
+    const other = generateKeyPair();
+    await fs.writeFile(join(dir, 'other.src'), plain);
+    const otherSealed = join(dir, 'other.jpg');
+    await encryptFile(join(dir, 'other.src'), otherSealed, [{ publicKey: other.publicKey }], {
+      assetId: ASSET,
+      kind: 'original',
+      originalFileName: 'other.jpg',
+      mime: 'image/jpeg',
+    });
+    await fs.writeFile(
+      join(dir, 'locked-keys', `${VIEWER}.json`),
+      JSON.stringify({
+        format: 'frameleaf-locked-key/1',
+        userId: VIEWER,
+        publicKey: other.publicKey.toString('base64'),
+      }),
+    );
+    expect((await openLockedRead(otherSealed, null).catch((error_) => error_)).ownerIds).toEqual([VIEWER]);
+
+    const { LockedKeyRepository } = await import('src/repositories/locked-key.repository.js');
+    const list = LockedKeyRepository.prototype.list;
+    const spy = vi.spyOn(LockedKeyRepository.prototype, 'list').mockImplementation(async function (this: any) {
+      return (await list.call(this)).filter(({ userId }) => userId !== VIEWER);
+    });
+    // a lookup for a key nobody has reads the files again and gets the listing without VIEWER
+    const stranger = generateKeyPair();
+    await fs.writeFile(join(dir, 'stranger.src'), plain);
+    await encryptFile(join(dir, 'stranger.src'), join(dir, 'stranger.jpg'), [{ publicKey: stranger.publicKey }], {
+      assetId: ASSET,
+      kind: 'original',
+      originalFileName: 'stranger.jpg',
+      mime: 'image/jpeg',
+    });
+    await openLockedRead(join(dir, 'stranger.jpg'), null).catch(() => {});
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    expect((await openLockedRead(otherSealed, null).catch((error_) => error_)).ownerIds).toEqual([VIEWER]);
+  });
+
+  it('drops a read still in flight when the lookup state is cleared', async () => {
+    const { LockedKeyRepository } = await import('src/repositories/locked-key.repository.js');
+    const list = LockedKeyRepository.prototype.list;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const spy = vi
+      .spyOn(LockedKeyRepository.prototype, 'list')
+      .mockImplementationOnce(async function (this: any) {
+        const files = await list.call(this);
+        await held;
+        return files;
+      })
+      .mockImplementation(() => Promise.resolve([]));
+
+    const inFlight = openLockedRead(sealed, null).catch((error_) => error_);
+    await vi.waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    clearLockedKeyOwners();
+    release();
+    await inFlight;
+    // the dropped read didn't fill the cleared state: the next lookup reads again (and finds nothing)
+    expect((await openLockedRead(sealed, null).catch((error_) => error_)).ownerIds).toEqual([]);
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
   it('names a person who turned encryption on within a minute of the last key file read', async () => {
     // the first lookup reads the key files, which hold only OWNER's
     await openLockedRead(sealed, OWNER).catch(() => {});
