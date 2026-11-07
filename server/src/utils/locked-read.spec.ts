@@ -155,13 +155,73 @@ describe('locked-read', () => {
   });
 
   it('names the owner for every read that fails at once, not only the first', async () => {
-    // jobs fail together right after a session locks; the second must not skip the key file read
-    // the first one has started, or it is deferred with no owner and no unlock ever wakes it
-    const errors = await Promise.all([1, 2, 3].map(() => openLockedRead(sealed, null).catch((error_) => error_)));
-    for (const error of errors) {
+    // jobs fail together right after a session locks; the later ones must wait for the key file read
+    // the first one started, or they defer with no owner and no unlock ever wakes them. The listing is
+    // held open until every read has asked, so they overlap however fast the disk is.
+    const { LockedKeyRepository } = await import('src/repositories/locked-key.repository.js');
+    const list = LockedKeyRepository.prototype.list;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const spy = vi.spyOn(LockedKeyRepository.prototype, 'list').mockImplementation(async function (this: any) {
+      await held;
+      return list.call(this);
+    });
+
+    const reads = [1, 2, 3].map(() => openLockedRead(sealed, null).catch((error_) => error_));
+    await vi.waitFor(() => expect(spy).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    release();
+
+    for (const error of await Promise.all(reads)) {
       expect(error).toBeInstanceOf(LockedKeyUnavailableError);
       expect(error.ownerIds).toEqual([OWNER]);
     }
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads the key files again for a key the read in progress wasn't started for", async () => {
+    // a key made after the read in progress listed the files: one more read finds its owner
+    const other = generateKeyPair();
+    await fs.writeFile(join(dir, 'other.src'), plain);
+    const otherSealed = join(dir, 'other.jpg');
+    await encryptFile(join(dir, 'other.src'), otherSealed, [{ publicKey: other.publicKey }], {
+      assetId: ASSET,
+      kind: 'original',
+      originalFileName: 'other.jpg',
+      mime: 'image/jpeg',
+    });
+    const { LockedKeyRepository } = await import('src/repositories/locked-key.repository.js');
+    const list = LockedKeyRepository.prototype.list;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const spy = vi
+      .spyOn(LockedKeyRepository.prototype, 'list')
+      .mockImplementationOnce(async function (this: any) {
+        const files = await list.call(this); // listed before VIEWER's key file exists
+        await held;
+        return files;
+      })
+      .mockImplementation(function (this: any) {
+        return list.call(this);
+      });
+
+    const first = openLockedRead(sealed, null).catch((error_) => error_);
+    await vi.waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    await fs.writeFile(
+      join(dir, 'locked-keys', `${VIEWER}.json`),
+      JSON.stringify({
+        format: 'frameleaf-locked-key/1',
+        userId: VIEWER,
+        publicKey: other.publicKey.toString('base64'),
+      }),
+    );
+    const second = openLockedRead(otherSealed, null).catch((error_) => error_);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    release();
+
+    expect((await first).ownerIds).toEqual([OWNER]);
+    expect((await second).ownerIds).toEqual([VIEWER]);
+    expect(spy).toHaveBeenCalledTimes(2);
   });
 
   it('names a person who turned encryption on within a minute of the last key file read', async () => {

@@ -249,8 +249,11 @@ export const hasUsableLockedKey = async (keyIds: Buffer[], viewerId: string): Pr
 let keyOwners = new Map<string, string>();
 const missingAt = new Map<string, number>();
 const KEY_OWNERS_REFRESH_MS = 60_000;
-/** The key file read in progress: lookups that need it wait for it rather than answering without it. */
-let refreshingOwners: Promise<void> | undefined;
+/**
+ * The key file read in progress and the key ids it was started for: lookups that need it wait for it
+ * rather than answering without it, and ids it wasn't started for get a read of their own after it.
+ */
+let refreshingOwners: { ids: Set<string>; done: Promise<void> } | undefined;
 
 const readKeyOwners = async () => {
   try {
@@ -271,22 +274,40 @@ const readKeyOwners = async () => {
   }
 };
 
+/** Starts a key file read for `ids` (marking them looked for now), or joins the one in progress. */
+const refreshOwners = (ids: string[]) => {
+  const now = Date.now();
+  for (const id of ids) {
+    missingAt.set(id, now);
+  }
+  const scan = { ids: new Set(ids), done: Promise.resolve() };
+  scan.done = readKeyOwners().finally(() => {
+    if (refreshingOwners === scan) refreshingOwners = undefined;
+  });
+  refreshingOwners = scan;
+  return scan.done;
+};
+
 const ownersOf = async (keyIds: Buffer[]): Promise<string[]> => {
   const hex = keyIds.map((id) => id.toString('hex'));
-  const now = Date.now();
-  const unknown = hex.filter((id) => !keyOwners.has(id));
-  if (unknown.some((id) => now - (missingAt.get(id) ?? 0) > KEY_OWNERS_REFRESH_MS)) {
-    for (const id of unknown) {
-      missingAt.set(id, now);
-    }
-    refreshingOwners ??= readKeyOwners().finally(() => {
-      refreshingOwners = undefined;
-    });
+  const unknown = () => hex.filter((id) => !keyOwners.has(id));
+  const due = (id: string) => Date.now() - (missingAt.get(id) ?? 0) > KEY_OWNERS_REFRESH_MS;
+  // FL-1265: jobs fail together when a session locks. Each waits for the read already in progress, or
+  // it would defer with no owner and no unlock would ever wake it; ids that read wasn't started for (a
+  // key made after it listed the files) get one more read before they count as missing.
+  const inProgress = unknown().length > 0 ? refreshingOwners : undefined;
+  if (inProgress) {
+    await inProgress.done;
   }
-  // FL-1265: jobs fail together when a session locks; one marks the ids as just looked for and starts the
-  // read, and the others must wait for it, or they defer with no owner and no unlock ever wakes them.
-  if (unknown.length > 0 && refreshingOwners) {
-    await refreshingOwners;
+  const left = unknown().filter((id) => !inProgress?.ids.has(id));
+  if (left.length > 0) {
+    const current = refreshingOwners;
+    if (current && left.every((id) => current.ids.has(id))) {
+      await current.done;
+    } else {
+      const stale = left.filter((id) => due(id));
+      if (stale.length > 0) await refreshOwners(stale);
+    }
   }
   return [...new Set(hex.map((id) => keyOwners.get(id)).filter((id): id is string => !!id))];
 };
