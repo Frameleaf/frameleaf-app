@@ -12,6 +12,13 @@ describe('waking deferred jobs', () => {
   let store: SqlQueueStore;
   let listener: postgres.Sql;
   const notes: string[] = [];
+  /** The notifications sent so far: PostgreSQL delivers them in commit order, so a marker sent now arrives after them. */
+  const drain = async () => {
+    const marker = randomUUID();
+    await sql`select pg_notify(${QUEUE_CHANNEL}, ${marker})`.execute(db);
+    await vi.waitFor(() => expect(notes).toContain(marker));
+    return notes.splice(0).filter((note) => note !== marker);
+  };
 
   beforeAll(async () => {
     db = await getKyselyDB();
@@ -41,15 +48,10 @@ describe('waking deferred jobs', () => {
     const [claim] = await store.claim(queue, worker);
     expect(await store.defer(claim, 'locked-key-unavailable')).toBe(true);
 
-    // let the enqueue's own notifications arrive first
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    notes.length = 0;
+    await drain();
     expect(await store.wakeDeferred([claim.id], 'locked-key-unavailable')).toBe(1);
-    await vi.waitFor(() => expect(notes).toHaveLength(1));
-
-    notes.length = 0;
+    expect(await drain()).toEqual(['']);
     expect(await store.wakeDeferred([claim.id], 'locked-key-unavailable')).toBe(0);
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    expect(notes).toEqual([]);
+    expect(await drain()).toEqual([]);
   });
 });

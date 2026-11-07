@@ -704,6 +704,8 @@ describe('Locked encryption acceptance (FL-721, spec §15)', () => {
       await waitFor('the key to drop', async () => !(await keyLoaded(pinOwner.accessToken)));
 
       const db = await utils.connectDatabase();
+      const { rows: clock } = await db.query(`SELECT now() "lockedAt"`);
+      const { lockedAt } = clock[0];
       await utils.queueCommand(admin.accessToken, QueueName.ThumbnailGeneration, {
         command: QueueCommand.Start,
         force: true,
@@ -717,23 +719,19 @@ describe('Locked encryption acceptance (FL-721, spec §15)', () => {
         return rows.length > 0;
       });
 
-      // the lock also defers other queues' jobs for these items (an edited photo's editor job)
-      const { rows: waiting } = await db.query(
-        `SELECT id FROM job WHERE state = 'pending' AND "dependencyReason" = 'locked-key-unavailable'
-           AND data->>'id' = ANY($1::text[])`,
-        [pinIds],
-      );
-      const waitingIds = waiting.map(({ id }) => id as string);
-
       await unlockSession(pinOwner.accessToken, pinCodes.pinOwner);
       expect(await keyLoaded(pinOwner.accessToken)).toBe(true);
       await settle(admin.accessToken, QueueName.ThumbnailGeneration, 120_000);
-      // woken by the unlock, each ran to an end in its own queue, and none waits for the key again
+      // every job the lock deferred, in any queue (an edited photo's editor job too) and whenever it
+      // deferred, ran to an end once woken; a failed RAW stays allowed
       await waitFor('every job that waited for the key to run', async () => {
         const { rows } = await db.query(
-          `SELECT id FROM job WHERE (id = ANY($1::uuid[]) AND state IN ('pending', 'waiting', 'active'))
-             OR ("dependencyReason" = 'locked-key-unavailable' AND data->>'id' = ANY($2::text[]))`,
-          [waitingIds, pinIds],
+          `SELECT j.id FROM job j WHERE j.data->>'id' = ANY($1::text[])
+             AND (j."dependencyReason" = 'locked-key-unavailable'
+               OR (j.state IN ('pending', 'waiting', 'active') AND EXISTS (SELECT 1 FROM job_attempt a
+                 WHERE a."jobId" = j.id AND a.outcome = 'deferred' AND a.error = 'locked-key-unavailable'
+                   AND a."finishedAt" >= $2)))`,
+          [pinIds, lockedAt],
         );
         return rows.length === 0;
       });
