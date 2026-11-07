@@ -618,6 +618,19 @@ export class AlbumService extends BaseService {
   }
 
   /**
+   * An add never stops half-way because its lock failed: the items are already in the album, so the add's
+   * own follow-up (covers, notifications, other albums) still runs, from what is actually locked, and the
+   * hourly sweep locks what this missed.
+   */
+  private async lockAddedItems(albumId: string, assetIds: string[]): Promise<void> {
+    try {
+      await this.lockAlbumItems({ albumId, assetIds });
+    } catch (error) {
+      this.logger.warn(`Could not lock items added to locked album ${albumId}; the hourly sweep retries: ${error}`);
+    }
+  }
+
+  /**
    * Hourly: locks what a locked album still holds unlocked. Items reach albums in ways that don't lock
    * them at once (smart-album rules, iCloud album sync, capture), and an add whose lock failed leaves
    * its items in the album; this catches them all.
@@ -771,7 +784,7 @@ export class AlbumService extends BaseService {
 
     const newAssetIds = results.filter(({ success }) => success).map(({ id }) => id);
     // Reads the lock as it is after the write, so an add racing a lock still locks its items.
-    await this.lockAlbumItems({ albumId: id, assetIds: newAssetIds });
+    await this.lockAddedItems(id, newAssetIds);
     await this.emitAssetsChanged(newAssetIds);
     // Putting an item in a rule's smart album by hand is a decision the rule keeps (FL-60).
     await this.classificationRepository.recordAlbumAdditions(id, newAssetIds, auth.user.id);
@@ -862,7 +875,7 @@ export class AlbumService extends BaseService {
     // notifications only ever come from items still shown to them.
     const events: { id: string; userIds: string[]; recipientIds: string[] }[] = [];
     for (const { albumId, album, assetIds } of added) {
-      await this.lockAlbumItems({ albumId, assetIds });
+      await this.lockAddedItems(albumId, assetIds);
       const shown = await this.shownToMembers(assetIds);
       if (shown.length > 0) {
         await this.albumRepository.update(

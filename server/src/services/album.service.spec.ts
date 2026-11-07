@@ -2087,6 +2087,36 @@ describe(AlbumService.name, () => {
       );
     });
 
+    it.each(['add', 'bulk-add'] as const)(
+      'finishes the add when its lock fails, for every album (%s)',
+      async (action) => {
+        const owner = UserFactory.create();
+        const [album1, album2] = [
+          AlbumFactory.from({ isLocked: true }).owner(owner).build(),
+          AlbumFactory.from().owner(owner).build(),
+        ];
+        const asset = AssetFactory.create({ ownerId: owner.id });
+        mocks.access.album.checkOwnerAccess.mockImplementation((_userId, ids) => Promise.resolve(new Set(ids)));
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.album.getById.mockImplementation((id) =>
+          Promise.resolve(getForAlbum(id === album1.id ? album1 : album2)),
+        );
+        mocks.album.getAssetIds.mockResolvedValue(new Set());
+        mocks.album.getUnlockedItemsInLockedAlbums.mockRejectedValueOnce(new Error('database busy'));
+
+        const auth = AuthFactory.create(owner);
+        await (action === 'add'
+          ? sut.addAssets(auth, album1.id, { ids: [asset.id] })
+          : sut.addAssetsToAlbums(auth, { albumIds: [album1.id, album2.id], assetIds: [asset.id] }));
+
+        const updated = mocks.event.emit.mock.calls
+          .filter(([name]) => name === 'AlbumUpdate')
+          .map(([, event]) => (event as { id: string }).id);
+        expect(updated).toEqual(action === 'add' ? [album1.id] : [album1.id, album2.id]);
+        expect(mocks.classification.recordAlbumAdditions).toHaveBeenCalledWith(album1.id, [asset.id], owner.id);
+      },
+    );
+
     it('does not lock items added to an unlocked album', async () => {
       const owner = UserFactory.create();
       const album = AlbumFactory.from().owner(owner).build();
