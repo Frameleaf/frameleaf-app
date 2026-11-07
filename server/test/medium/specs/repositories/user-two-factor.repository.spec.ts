@@ -41,11 +41,11 @@ it('replaces an unfinished setup but never one that is on', async () => {
 it('accepts each time step once, and only steps after the last one', async () => {
   const { sut, userId } = await setup();
   await sut.setPendingTwoFactor(userId, 'sealed');
-  await sut.enableTwoFactor(userId, 1_000, []);
+  await sut.enableTwoFactor(userId, 1000, []);
 
-  await expect(sut.useTwoFactorStep(userId, 1_000)).resolves.toBe(false);
+  await expect(sut.useTwoFactorStep(userId, 1000)).resolves.toBe(false);
   await expect(sut.useTwoFactorStep(userId, 999)).resolves.toBe(false);
-  const results = await Promise.all([sut.useTwoFactorStep(userId, 1_001), sut.useTwoFactorStep(userId, 1_001)]);
+  const results = await Promise.all([sut.useTwoFactorStep(userId, 1001), sut.useTwoFactorStep(userId, 1001)]);
   expect(results.filter(Boolean)).toHaveLength(1);
 });
 
