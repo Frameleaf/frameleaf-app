@@ -262,7 +262,7 @@ export class AssetUploadResourceService {
       !Number.isSafeInteger(Number(offset)) ||
       (complete !== '?0' && complete !== '?1') ||
       (length !== undefined &&
-        (typeof length !== 'string' || !/^(0|[1-9][0-9]*)$/.test(length) || !Number.isSafeInteger(Number(length))))
+        (typeof length !== 'string' || !/^[1-9][0-9]*$/.test(length) || !Number.isSafeInteger(Number(length))))
     ) {
       throw new BadRequestException('Invalid upload offset, completion or length');
     }
@@ -287,8 +287,9 @@ export class AssetUploadResourceService {
     auth: AuthDto,
     id: string,
     operation: (check: UploadAdmissionCheck) => Promise<T>,
-    key = id,
+    part?: { offset: number },
   ) {
+    const key = part ? `${id}:${part.offset}` : id;
     await this.owner(auth);
     const resource = await this.uploads.get(id, auth.user.id);
     await this.sourceAdmission(auth, resource);
@@ -297,8 +298,20 @@ export class AssetUploadResourceService {
     const token = randomUUID();
     let acquired: boolean;
     try {
-      acquired = await this.rateLimits.claimUploadStream(key, token);
-    } catch {
+      if (part) {
+        const claim = await this.rateLimits.claimUploadPartStream(
+          id,
+          part.offset,
+          token,
+          ASSET_UPLOAD_LIMITS.maxParallelParts,
+        );
+        if (claim === 'full') throw new HttpException('Too many parts in flight', 429);
+        acquired = claim === 'claimed';
+      } else {
+        acquired = await this.rateLimits.claimUploadStream(key, token);
+      }
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
       throw new ServiceUnavailableException('Upload admission unavailable');
     }
     if (!acquired) {
@@ -516,10 +529,6 @@ export class AssetUploadResourceService {
       return row.expectedSize;
     };
     const expectedSize = receiving(initial);
-    if ((await this.rateLimits.countUploadStreams(id)) >= ASSET_UPLOAD_LIMITS.maxParallelParts) {
-      // ponytail: count-then-claim can admit one or two extra parts under a race; the lease still bounds each.
-      throw new HttpException('Too many parts in flight', 429);
-    }
     return this.withStreamAdmission(
       auth,
       id,
@@ -599,7 +608,7 @@ export class AssetUploadResourceService {
           }
         }
       },
-      `${id}:${offset}`,
+      { offset },
     ).then(async (resource) => {
       if (!['finalizing', 'pair-finalizing'].includes(resource.state)) {
         return { resource };

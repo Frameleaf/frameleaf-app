@@ -126,13 +126,42 @@ describe('parallel upload', () => {
       String(16 * MiB),
     ]);
     expect(sizes).toHaveLength(2);
+  });
 
-    upload.mockReset();
-    upload.mockRejectedValue(new ApiError('Conflict', 409, ''));
-    const fetchMock = stubServer({ 'Upload-Limit': 'max-append-size=33554432', 'Upload-Parts': 'max-parallel=2' });
-    await expect(
-      uploadInParts({ file: bigFile(32 * MiB), sha256, metadata: {}, signal: new AbortController().signal }),
-    ).rejects.toBeInstanceOf(ApiError);
-    expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(true);
+  it('asks for the result when a part finds the upload already complete, and retries a busy part', async () => {
+    const fetchMock = stubServer({ 'Upload-Limit': 'max-append-size=33554432', 'Upload-Parts': 'max-parallel=1' });
+    upload
+      .mockRejectedValueOnce(new ApiError('Conflict', 409, { message: 'Upload has an active request' } as never))
+      .mockRejectedValueOnce(
+        new ApiError('Conflict', 409, { message: 'Upload is no longer accepting bytes' } as never),
+      );
+    const outcome = await uploadInParts({
+      file: bigFile(32 * MiB),
+      sha256,
+      metadata: {},
+      signal: new AbortController().signal,
+    });
+    expect(outcome).toEqual(result);
+    expect(upload).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(false);
+  });
+
+  it('sends the file in one request when the account has too many unfinished uploads', async () => {
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) =>
+      Promise.resolve(
+        init?.method === 'OPTIONS'
+          ? respond(204, { 'Upload-Limit': 'max-append-size=33554432', 'Upload-Parts': 'max-parallel=2' })
+          : respond(429),
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const outcome = await uploadInParts({
+      file: bigFile(32 * MiB),
+      sha256,
+      metadata: {},
+      signal: new AbortController().signal,
+    });
+    expect(outcome).toBeUndefined();
+    expect(upload).not.toHaveBeenCalled();
   });
 });

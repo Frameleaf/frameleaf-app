@@ -9,6 +9,14 @@ import { AbortError, ApiError, sleep, uploadRequest } from '$lib/utils';
 const MiB = 2 ** 20;
 const MIN_PART = 8 * MiB;
 const MAX_ATTEMPTS = 6;
+const MAX_RESULT_POLLS = 120;
+
+/** 409s that only mean another request holds the upload or this part for a moment. */
+const isTransientConflict = (error: unknown) => {
+  const details = error instanceof ApiError ? (error.details as unknown) : undefined;
+  const message = typeof details === 'string' ? details : JSON.stringify(details ?? '');
+  return /active request|admission expired/i.test(message);
+};
 
 type Connection = { type?: string; saveData?: boolean };
 type PartsResult = { id: string; status: AssetMediaStatus };
@@ -83,6 +91,10 @@ export async function uploadInParts({ file, sha256, metadata, signal, onProgress
       'Asset-Metadata': base64Url(JSON.stringify(metadata)),
     },
   });
+  // Too many unfinished uploads on this account (other devices count too): send this one in a single request.
+  if (created.status === 429) {
+    return;
+  }
   const location = created.headers.get('Location');
   if (created.status !== 201 || !location) {
     throw new ApiError(created.statusText, created.status, await created.text());
@@ -116,6 +128,9 @@ async function sendParts(
     onProgress?.(sum, file.size);
   };
   let result: PartsResult | undefined;
+  // A non-transient 409 means the upload stopped taking bytes, usually because a part whose response was lost
+  // completed it. Stop sending and let GET :id/result say how it ended.
+  let closed = false;
 
   const sendPart = async (range: Range) => {
     for (let attempt = 1; ; attempt++) {
@@ -141,8 +156,12 @@ async function sendParts(
         loaded.delete(range.offset);
         report();
         const status = error instanceof ApiError ? error.statusCode : 0;
-        // 409 is final (overlap or closed upload); anything else is retried, and a dropped part shrinks later ones.
-        if (error instanceof AbortError || status === 409 || attempt >= MAX_ATTEMPTS) {
+        if (status === 409 && !isTransientConflict(error)) {
+          closed = true;
+          return;
+        }
+        // Anything else is retried (a 409 here is a request still holding the part); a dropped part shrinks later ones.
+        if (error instanceof AbortError || status === 404 || attempt >= MAX_ATTEMPTS) {
           throw error;
         }
         if (status === 0 && range.size > MIN_PART) {
@@ -156,7 +175,7 @@ async function sendParts(
   };
 
   const worker = async () => {
-    for (let range = pending.shift(); range; range = pending.shift()) {
+    for (let range = pending.shift(); range && !closed; range = pending.shift()) {
       if (range.size > partSize) {
         const [first, ...rest] = splitRange(range, partSize);
         pending.unshift(...rest);
@@ -168,15 +187,19 @@ async function sendParts(
   await Promise.all(Array.from({ length: parallel }, worker));
 
   // Every part is in; the request that finalized the file may have been another one.
-  for (let wait = 1000; !result; wait = Math.min(wait * 2, 10_000)) {
+  for (let wait = 1000, polls = 0; !result; wait = Math.min(wait * 2, 10_000), polls++) {
     signal.throwIfAborted();
     const response = await fetch(`${url}/result`, { signal });
+    const body = response.status === 202 ? '' : await response.text();
     if (response.status === 200) {
-      result = (await response.json()) as PartsResult;
-    } else if (response.status === 202) {
+      result = JSON.parse(body) as PartsResult;
+    } else if (
+      polls < MAX_RESULT_POLLS &&
+      (response.status === 202 || (response.status === 409 && isTransientConflict(new ApiError('', 409, body))))
+    ) {
       await sleep(wait);
     } else {
-      throw new ApiError(response.statusText, response.status, await response.text());
+      throw new ApiError(response.statusText, response.status, body);
     }
   }
   return result;
