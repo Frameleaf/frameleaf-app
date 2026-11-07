@@ -1068,7 +1068,8 @@ export class MediaHealthService {
    * reviewer approves it by its checksum and `repair` makes exactly that file the original.
    */
   async previewRepair(auth: AuthDto, dto: MediaHealthRepairPreviewDto): Promise<MediaHealthRepairPreviewResponseDto> {
-    const { finding, asset } = await this.repairTarget(auth, dto.findingId);
+    const findingId = dto.findingId ?? (await this.damageFindingFor(auth, dto.assetId!));
+    const { finding, asset } = await this.repairTarget(auth, findingId);
     return this.withRepair(asset, async ({ output, preview, method, width, height, metadataKept }) => {
       const digests = await this.cryptoRepository.hashFileDigests(output);
       const bytes = await this.storageRepository.readFile(preview);
@@ -1143,6 +1144,66 @@ export class MediaHealthService {
     return { findingId: finding.id, assetId: asset.id, method };
   }
 
+  /**
+   * The photo viewer's way in: check the photo now and record what is wrong with it, so a photo that
+   * only failed when its thumbnail was made can be repaired without waiting for a scan.
+   */
+  private async damageFindingFor(auth: AuthDto, assetId: string): Promise<string> {
+    const [asset] = await this.mediaHealthRepository.getAssets([assetId]);
+    if (!asset || asset.deletedAt) {
+      throw new BadRequestException('The photo is gone or in the trash');
+    }
+    this.requireRepairable(auth, asset);
+    if (await this.isEncryptedOriginal(asset)) {
+      throw new BadRequestException('The original is encrypted in Locked');
+    }
+    const result = await this.validateAssetIntegrity(asset);
+    if (result?.status === MediaHealthStatus.Missing) {
+      throw new BadRequestException('The original file is missing');
+    }
+    if (result?.status !== MediaHealthStatus.CorruptConfirmed && result?.status !== MediaHealthStatus.CorruptSuspect) {
+      throw new BadRequestException('This photo isn’t damaged, so there is nothing to repair');
+    }
+    const finding = await this.mediaHealthRepository.upsertFinding({
+      runId: null,
+      assetId: asset.id,
+      expectedUpdateId: asset.updateId,
+      category: MediaHealthCategory.Corrupt,
+      status: result.status,
+      severity:
+        result.status === MediaHealthStatus.CorruptConfirmed
+          ? MediaHealthSeverity.Critical
+          : MediaHealthSeverity.Warning,
+      originalPath: asset.originalPath,
+      originalFileName: asset.originalFileName,
+      evidence: result.evidence,
+      resolution: result.resolution,
+      checkedAt: new Date(),
+      dismissedAt: null,
+      resolvedAt: null,
+    });
+    if (!finding) {
+      throw new ConflictException('The photo changed while it was being checked; try again');
+    }
+    return finding.id;
+  }
+
+  /** Who may repair which photo; the same rules for a finding and for the photo viewer. */
+  private requireRepairable(auth: AuthDto, asset: MediaHealthAsset) {
+    // Only the owner: a repair is approved by looking at it, and Library Care never shows anyone
+    // another account's pictures. Even a lossless repair may have picked a different picture joined
+    // to the file, so an administrator cannot approve one unseen.
+    if (asset.ownerId !== auth.user.id) {
+      throw new ForbiddenException('Only the photo’s owner can repair it');
+    }
+    if (!JPEG_REPAIR_EXTENSIONS.has(path.extname(asset.originalFileName).toLowerCase())) {
+      throw new BadRequestException('Only JPEG photos can be repaired');
+    }
+    if (asset.isExternal) {
+      throw new BadRequestException('Photos in an external library are repaired in their own folder');
+    }
+  }
+
   /** The damaged JPEG a repair may touch, held to the rules a recovery is held to. */
   private async repairTarget(auth: AuthDto, findingId: string) {
     const [finding] = await this.findingsFor(auth, [findingId]);
@@ -1157,18 +1218,7 @@ export class MediaHealthService {
     if (!asset || asset.deletedAt) {
       throw new BadRequestException('The photo is gone or in the trash');
     }
-    // Only the owner: a repair is approved by looking at it, and Library Care never shows anyone
-    // another account's pictures. Even a lossless repair may have picked a different picture joined
-    // to the file, so an administrator cannot approve one unseen.
-    if (asset.ownerId !== auth.user.id) {
-      throw new ForbiddenException('Only the photo’s owner can repair it');
-    }
-    if (!JPEG_REPAIR_EXTENSIONS.has(path.extname(asset.originalFileName).toLowerCase())) {
-      throw new BadRequestException('Only JPEG photos can be repaired');
-    }
-    if (asset.isExternal) {
-      throw new BadRequestException('Photos in an external library are repaired in their own folder');
-    }
+    this.requireRepairable(auth, asset);
     if (await this.isEncryptedOriginal(asset)) {
       throw new BadRequestException('The original is encrypted in Locked');
     }
@@ -1195,6 +1245,14 @@ export class MediaHealthService {
       } catch (error) {
         this.logger.warn(`JPEG repair of ${asset.id} failed: ${getErrorMessage(error)}`);
         throw new BadRequestException('This photo could not be repaired');
+      }
+      // the file already decodes as it is: replacing it would only accept a changed file as the original
+      const [repaired, original] = await Promise.all([
+        this.cryptoRepository.hashFileDigests(output),
+        this.cryptoRepository.hashFileDigests(asset.originalPath),
+      ]);
+      if (repaired.sha1.equals(original.sha1)) {
+        throw new BadRequestException('This photo isn’t damaged, so there is nothing to repair');
       }
       const { metadataLost, ...outcome } = result;
       let metadataKept = true;

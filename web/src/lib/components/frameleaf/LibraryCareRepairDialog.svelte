@@ -3,10 +3,13 @@
    * Repair a damaged JPEG: the damaged original beside the repaired picture, and nothing changes until
    * the reviewer approves. The server repairs the file again on approval and replaces the original only
    * when the result is the very one shown here (its checksum); the damaged file is kept.
+   *
+   * Opened from Library Care with the finding, or from the photo viewer with just the photo, which the
+   * server checks on the spot. Shown by `modalManager` it closes through `onClose`.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
-  import { formatBytes, type LibraryCareRow } from '$lib/frameleaf/library-care';
+  import { formatBytes } from '$lib/frameleaf/library-care';
   import { getAssetMediaUrl } from '$lib/utils';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import {
@@ -22,14 +25,27 @@
   import { t, type Translations } from 'svelte-i18n';
 
   let {
-    open = $bindable(false),
-    row,
+    open = $bindable(true),
+    findingId,
+    assetId,
+    name,
     onRepaired,
+    onClose,
   }: {
     open?: boolean;
-    row: LibraryCareRow;
+    /** The damage finding, when known (Library Care); otherwise the server checks the photo now. */
+    findingId?: string;
+    assetId: string;
+    name: string;
     onRepaired: () => void;
+    onClose?: () => void;
   } = $props();
+
+  $effect(() => {
+    if (!open) {
+      onClose?.();
+    }
+  });
 
   const METHOD_TEXT: Record<MediaHealthRepairMethod, Translations> = {
     [MediaHealthRepairMethod.Lossless]: 'library_care_repair_lossless',
@@ -47,7 +63,7 @@
 
   onMount(async () => {
     try {
-      result = await previewRepair({ mediaHealthRepairPreviewDto: { findingId: row.id } });
+      result = await previewRepair({ mediaHealthRepairPreviewDto: findingId ? { findingId } : { assetId } });
     } catch (error) {
       message = describe(error);
     } finally {
@@ -61,7 +77,7 @@
     }
     working = true;
     try {
-      await repair({ mediaHealthRepairDto: { findingId: row.id, checksum: result.checksum } });
+      await repair({ mediaHealthRepairDto: { findingId: result.findingId, checksum: result.checksum } });
       open = false;
       onRepaired();
     } catch (error) {
@@ -72,14 +88,14 @@
   };
 </script>
 
-<Dialog title={$t('library_care_repair_title', { values: { name: row.name } })} closeLabel={$t('cancel')} bind:open>
+<Dialog title={$t('library_care_repair_title', { values: { name } })} closeLabel={$t('cancel')} bind:open>
   <div class="repair">
     <div class="compare">
       <figure>
         <span class="frame">
           {#if !originalFailed}
             <img
-              src={getAssetMediaUrl({ id: row.assetId, size: AssetMediaSize.Original, edited: false })}
+              src={getAssetMediaUrl({ id: assetId, size: AssetMediaSize.Original, edited: false })}
               alt={$t('library_care_repair_damaged')}
               onerror={() => (originalFailed = true)}
             />

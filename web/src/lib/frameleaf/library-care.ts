@@ -188,10 +188,10 @@ export const canRecover = (rows: readonly LibraryCareRow[]) =>
   rows.length > 0 && rows.every((row) => row.status === MediaHealthStatus.CorruptConfirmed);
 
 /** A damaged JPEG can be repaired from its own file (Library Care: Repair). */
-const JPEG_EXTENSION = /\.(jpe?g|jpe|jfif)$/i;
+export const isJpegName = (name: string) => /\.(jpe?g|jpe|jfif)$/i.test(name);
 export const canRepair = (row: LibraryCareRow) =>
   (row.status === MediaHealthStatus.CorruptConfirmed || row.status === MediaHealthStatus.CorruptSuspect) &&
-  JPEG_EXTENSION.test(row.name);
+  isJpegName(row.name);
 
 /** Rows the trash action may take: confirmed damage, or damage still queued from a cancelled job. */
 export const trashable = (rows: readonly LibraryCareRow[]) =>

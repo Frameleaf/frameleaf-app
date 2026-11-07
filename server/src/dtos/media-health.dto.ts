@@ -179,7 +179,16 @@ const MediaHealthRecoverSchema = z
 
 /** Repair a damaged JPEG: preview the result first, then replace the original with exactly that result. */
 const MediaHealthRepairPreviewSchema = z
-  .object({ findingId: z.uuidv4().describe('Damaged media finding ID') })
+  .object({
+    findingId: z.uuidv4().optional().describe('Damaged media finding ID'),
+    assetId: z
+      .uuidv4()
+      .optional()
+      .describe('A photo to check now and repair, when no finding is known (the photo viewer)'),
+  })
+  .refine(({ findingId, assetId }) => (findingId === undefined) !== (assetId === undefined), {
+    message: 'Give a findingId or an assetId',
+  })
   .meta({ id: 'MediaHealthRepairPreviewDto' });
 
 const MediaHealthRepairSchema = z
@@ -211,7 +220,7 @@ const MediaHealthRepairPreviewResponseSchema = z
     metadataKept: z
       .boolean()
       .describe(
-        'Each EXIF, XMP and IPTC section found in the original is in the repaired file, kept or copied back; sections are checked, not individual tags',
+        'The repaired file carries each kind of metadata (EXIF, XMP, IPTC) the original carried, kept or copied back; only the presence of each kind is checked, not its sections or tags',
       ),
   })
   .meta({ id: 'MediaHealthRepairPreviewResponseDto' });

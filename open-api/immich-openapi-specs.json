@@ -104643,6 +104643,12 @@
       },
       "MediaHealthRepairPreviewDto": {
         "properties": {
+          "assetId": {
+            "description": "A photo to check now and repair, when no finding is known (the photo viewer)",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
           "findingId": {
             "description": "Damaged media finding ID",
             "format": "uuid",
@@ -104650,9 +104656,6 @@
             "type": "string"
           }
         },
-        "required": [
-          "findingId"
-        ],
         "type": "object"
       },
       "MediaHealthRepairPreviewResponseDto": {
@@ -104673,7 +104676,7 @@
             "type": "integer"
           },
           "metadataKept": {
-            "description": "Each EXIF, XMP and IPTC section found in the original is in the repaired file, kept or copied back; sections are checked, not individual tags",
+            "description": "The repaired file carries each kind of metadata (EXIF, XMP, IPTC) the original carried, kept or copied back; only the presence of each kind is checked, not its sections or tags",
             "type": "boolean"
           },
           "method": {

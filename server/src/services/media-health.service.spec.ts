@@ -3569,6 +3569,65 @@ describe(MediaHealthService.name, () => {
       });
     });
 
+    describe('from the photo viewer', () => {
+      it('checks the photo now, records the damage and previews the repair', async () => {
+        vi.spyOn(
+          sut as unknown as { validateAssetIntegrity: () => Promise<unknown> },
+          'validateAssetIntegrity',
+        ).mockResolvedValue({
+          status: MediaHealthStatus.CorruptSuspect,
+          score: null,
+          evidence: { reason: 'decode_failed' },
+          resolution: {},
+        });
+        vi.mocked(mediaHealthRepository.upsertFinding).mockResolvedValue({ id: 'health-1' } as never);
+
+        await expect(sut.previewRepair(owner, { assetId: 'asset-1' })).resolves.toMatchObject({
+          findingId: 'health-1',
+          method: 'lossless',
+        });
+        expect(mediaHealthRepository.upsertFinding).toHaveBeenCalledWith(
+          expect.objectContaining({
+            assetId: 'asset-1',
+            category: MediaHealthCategory.Corrupt,
+            status: MediaHealthStatus.CorruptSuspect,
+            dismissedAt: null,
+            resolvedAt: null,
+          }),
+        );
+      });
+
+      it('says there is nothing to repair when the photo is not damaged', async () => {
+        vi.spyOn(
+          sut as unknown as { validateAssetIntegrity: () => Promise<unknown> },
+          'validateAssetIntegrity',
+        ).mockResolvedValue(null);
+        await expect(sut.previewRepair(owner, { assetId: 'asset-1' })).rejects.toThrow('nothing to repair');
+        expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
+      });
+
+      it('never checks another account’s photo', async () => {
+        const validate = vi.spyOn(
+          sut as unknown as { validateAssetIntegrity: () => Promise<unknown> },
+          'validateAssetIntegrity',
+        );
+        await expect(sut.previewRepair(authStub.admin, { assetId: 'asset-1' })).rejects.toThrow(
+          'Only the photo’s owner can repair it',
+        );
+        expect(validate).not.toHaveBeenCalled();
+      });
+    });
+
+    it('refuses to replace a photo whose file already decodes as it is', async () => {
+      await writeFile(
+        damaged,
+        await sharp({ create: { width: 64, height: 48, channels: 3, background: 'teal' } })
+          .jpeg()
+          .toBuffer(),
+      );
+      await expect(sut.previewRepair(owner, { findingId: 'health-1' })).rejects.toThrow('nothing to repair');
+    });
+
     it('lets only the photo’s owner repair it, administrators included', async () => {
       await expect(sut.previewRepair(authStub.admin, { findingId: 'health-1' })).rejects.toThrow(
         'Only the photo’s owner can repair it',

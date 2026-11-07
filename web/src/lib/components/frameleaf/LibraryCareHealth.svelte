@@ -993,7 +993,9 @@
 {#if repairing && repairOpen}
   <LibraryCareRepairDialog
     bind:open={repairOpen}
-    row={repairing}
+    findingId={repairing.id}
+    assetId={repairing.assetId}
+    name={repairing.name}
     onRepaired={() => {
       announce($t('library_care_repair_done', { values: { name: repairing?.name ?? '' } }));
       void refresh();

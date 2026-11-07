@@ -9922,8 +9922,10 @@ export type MediaHealthRepairResponseDto = {
     method: MediaHealthRepairMethod;
 };
 export type MediaHealthRepairPreviewDto = {
+    /** A photo to check now and repair, when no finding is known (the photo viewer) */
+    assetId?: string;
     /** Damaged media finding ID */
-    findingId: string;
+    findingId?: string;
 };
 export type MediaHealthRepairPreviewResponseDto = {
     /** SHA1 of the repaired file, as lowercase hex */
@@ -9931,7 +9933,7 @@ export type MediaHealthRepairPreviewResponseDto = {
     findingId: string;
     /** Height of the repaired picture */
     height: number;
-    /** Each EXIF, XMP and IPTC section found in the original is in the repaired file, kept or copied back; sections are checked, not individual tags */
+    /** The repaired file carries each kind of metadata (EXIF, XMP, IPTC) the original carried, kept or copied back; only the presence of each kind is checked, not its sections or tags */
     metadataKept: boolean;
     method: MediaHealthRepairMethod;
     /** A reduced JPEG of the repaired picture, as a data URL */
