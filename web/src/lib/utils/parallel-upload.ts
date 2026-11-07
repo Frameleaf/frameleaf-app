@@ -238,17 +238,18 @@ async function sendParts(
   for (let wait = 1000, polls = 0; !result; wait = Math.min(wait * 2, 10_000), polls++) {
     signal.throwIfAborted();
     let response: Response;
+    let body: string;
     try {
       response = await fetch(`${url}/result`, { signal });
+      body = response.status === 202 ? '' : await response.text();
     } catch (error) {
-      // A dropped connection after every part is in: keep asking, within the same poll budget.
+      // A dropped connection (request or body) after every part is in: keep asking, within the same poll budget.
       if (signal.aborted || polls >= MAX_RESULT_POLLS) {
         throw error;
       }
       await sleep(wait);
       continue;
     }
-    const body = response.status === 202 ? '' : await response.text();
     if (response.status === 200) {
       result = JSON.parse(body) as PartsResult;
     } else if (
