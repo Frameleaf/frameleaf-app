@@ -131,7 +131,7 @@ describe('/asset', () => {
       personGroupId: person1.id,
     });
   };
-  beforeAll(setupTests, 30_000);
+  beforeAll(setupTests, 60_000);
 
   afterAll(() => {
     utils.disconnectWebsocket(websocket);
@@ -836,7 +836,7 @@ describe('/asset', () => {
   });
 
   describe('POST /assets', () => {
-    beforeAll(setupTests, 30_000);
+    beforeAll(setupTests, 60_000);
 
     const tests = [
       {

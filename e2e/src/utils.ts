@@ -412,8 +412,9 @@ export const utils = {
             const drain = () =>
               withDeadline(
                 'Quiescing test database',
-                // ponytail: arm CI runners under load need more than 6 s to clear a busy queue (FL-1281)
-                Math.min(15_000, total.remaining()),
+                // ponytail: arm CI runners under load need more than 6 s to clear a busy queue (FL-1281).
+                // Leave up to 4 s (restore + session cleanup, 2 s each) of the reset for cleanup.
+                Math.min(15_000, total.remaining() - Math.min(4000, Math.floor(total.remaining() / 4))),
                 async (context) => {
                   phase = 'request active-job cancellation';
                   let lastCancellationContention: unknown;
