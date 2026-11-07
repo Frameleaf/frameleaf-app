@@ -91,16 +91,16 @@ export class AssetKeyframeTable {
   @ForeignKeyColumn(() => AssetTable, { onDelete: 'CASCADE', primary: true })
   assetId!: string;
 
-  @Column({ type: 'integer', array: true })
+  @Column({ type: 'bigint', array: true })
   pts!: number[];
 
-  @Column({ type: 'integer', array: true })
+  @Column({ type: 'bigint', array: true })
   accDuration!: number[];
 
   @Column({ type: 'integer', array: true })
   ownDuration!: number[];
 
-  @Column({ type: 'integer' })
+  @Column({ type: 'bigint' })
   totalDuration!: number;
 
   @Column({ type: 'integer' })

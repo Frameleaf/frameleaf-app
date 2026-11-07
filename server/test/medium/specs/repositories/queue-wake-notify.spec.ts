@@ -48,10 +48,15 @@ describe('waking deferred jobs', () => {
     const [claim] = await store.claim(queue, worker);
     expect(await store.defer(claim, 'locked-key-unavailable')).toBe(true);
 
+    // Wakes go out shortly after the call, outside its transaction, so wait past the coalescing delay.
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 200));
+    await settle();
     await drain();
     expect(await store.wakeDeferred([claim.id], 'locked-key-unavailable')).toBe(1);
+    await settle();
     expect(await drain()).toEqual(['']);
     expect(await store.wakeDeferred([claim.id], 'locked-key-unavailable')).toBe(0);
+    await settle();
     expect(await drain()).toEqual([]);
   });
 });

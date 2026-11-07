@@ -120,6 +120,17 @@ describe('video streaming query contracts', () => {
     });
   });
 
+  it('reads keyframe timestamps past 2^31 ticks back as numbers', async () => {
+    const { asset } = await seed();
+    const long = { pts: [0, 2_866_040_000], accDuration: [3003, 2_866_043_657], totalDuration: 2_866_043_657 };
+    await db.updateTable('asset_keyframe').set(long).where('assetId', '=', asset.id).execute();
+    expect((await sut.getForMainPlaylist(asset.id))?.packets).toMatchObject({
+      keyframePts: long.pts,
+      keyframeAccDuration: long.accDuration,
+      totalDuration: long.totalDuration,
+    });
+  });
+
   it.each(['asset_exif', 'asset_video', 'asset_keyframe'] as const)(
     'requires %s metadata for all three queries',
     async (table) => {
