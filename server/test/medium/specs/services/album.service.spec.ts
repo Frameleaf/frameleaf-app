@@ -2,20 +2,24 @@ import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Kysely } from 'kysely';
 import type { HiddenContentFilter } from 'src/utils/hidden-content.js';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
-import { AlbumKind, AlbumUserRole, AssetMetadataKey, AssetVisibility } from 'src/enum.js';
+import { AlbumKind, AlbumUserRole, AssetLockReason, AssetMetadataKey, AssetVisibility } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ClassificationRepository } from 'src/repositories/classification.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { FrameleafUserLicenseRepository } from 'src/repositories/frameleaf-user-license.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MapRepository } from 'src/repositories/map.repository.js';
+import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
+import { PersonRepository } from 'src/repositories/person.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { TagRepository } from 'src/repositories/tag.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
+import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { upsertTags } from 'src/utils/tag.js';
@@ -34,7 +38,9 @@ const setup = (db?: Kysely<DB>) => {
       AssetRepository,
       ClassificationRepository,
       MapRepository,
+      PartnerOriginRepository,
       PartnerRepository,
+      PersonRepository,
       SmartAlbumRepository,
       TagRepository,
       UserRepository,
@@ -42,7 +48,7 @@ const setup = (db?: Kysely<DB>) => {
       FrameleafUserLicenseRepository,
       SystemMetadataRepository,
     ],
-    mock: [EventRepository, LoggingRepository],
+    mock: [EventRepository, JobRepository, LoggingRepository, WebsocketRepository],
   });
   services.ctx.getMock(EventRepository).emit.mockResolvedValue();
   return services;
@@ -373,6 +379,49 @@ describe(AlbumService.name, () => {
       await expect(
         sut.getMapMarkers(auth, album.id, { withPartners: false, withSharedAlbums: false }).then(ids),
       ).resolves.toEqual([own.id]);
+    });
+  });
+
+  describe('locked album', () => {
+    it("locks the owner's items now and the ones added later, never another member's", async () => {
+      const { sut, ctx } = setup(await getKyselyDB());
+      const { user } = await ctx.newUser();
+      const { user: editor } = await ctx.newUser();
+      const { asset: before } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: theirs } = await ctx.newAsset({ ownerId: editor.id });
+      const { asset: after } = await ctx.newAsset({ ownerId: user.id });
+      const { album } = await ctx.newAlbum({ ownerId: user.id }, [before.id, theirs.id]);
+      const auth = factory.auth({ user: { id: user.id } });
+      const locks = () =>
+        ctx.database
+          .selectFrom('asset_lock')
+          .select(['assetId', 'reason', 'lockedBy'])
+          .where('assetId', 'in', [before.id, theirs.id, after.id])
+          .orderBy('assetId')
+          .execute();
+
+      await expect(sut.update(auth, album.id, { isLocked: true })).resolves.toMatchObject({ isLocked: true });
+      await expect(locks()).resolves.toEqual([
+        { assetId: before.id, reason: AssetLockReason.Marked, lockedBy: user.id },
+      ]);
+
+      await sut.addAssets(auth, album.id, { ids: [after.id] });
+      await expect(locks()).resolves.toEqual(
+        [before.id, after.id]
+          .toSorted()
+          .map((assetId) => ({ assetId, reason: AssetLockReason.Marked, lockedBy: user.id })),
+      );
+
+      // a writer that bypasses the album's add actions (smart-album rules, iCloud sync, capture)
+      const { asset: direct } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.database.insertInto('album_asset').values({ albumId: album.id, assetId: direct.id }).execute();
+      await sut.lockStrayAlbumItems();
+      await expect(
+        ctx.database.selectFrom('asset_lock').select('assetId').where('assetId', '=', direct.id).execute(),
+      ).resolves.toHaveLength(1);
+
+      await sut.update(auth, album.id, { isLocked: false });
+      await expect(locks()).resolves.toHaveLength(2);
     });
   });
 

@@ -154,7 +154,8 @@ describe('SingleJobRecord migration', () => {
         .rows[0].node;
     const before = await relfile();
 
-    expect((await migrator().migrateToLatest()).error).toBeUndefined();
+    // Stop at this migration: the down check below is about it, not whatever migration comes last.
+    expect((await migrator().migrateTo('1793940000000-SingleJobRecord')).error).toBeUndefined();
 
     const { rows: kept } = await sql<{ key: string | null }>`SELECT "itemKey" key FROM job
       WHERE "itemKey" IS NULL OR "itemKey" NOT IN ('a','b','c','f','g') ORDER BY "itemKey" NULLS FIRST`.execute(db);

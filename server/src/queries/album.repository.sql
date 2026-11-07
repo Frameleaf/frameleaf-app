@@ -351,6 +351,36 @@ returning
   "assetId"
 commit
 
+-- AlbumRepository.getUnlockedItemsInLockedAlbums
+select distinct
+  "album_asset"."assetId",
+  "asset"."ownerId"
+from
+  "album"
+  inner join "album_user" on "album_user"."albumId" = "album"."id"
+  and "album_user"."role" = $1
+  inner join "album_asset" on "album_asset"."albumId" = "album"."id"
+  inner join "asset" on "asset"."id" = "album_asset"."assetId"
+  and "asset"."ownerId" = "album_user"."userId"
+where
+  "album"."isLocked" = $2
+  and "album"."deletedAt" is null
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
+  and "album"."id" = $3
+  and "album_asset"."assetId" in ($4)
+  and "album_asset"."assetId" > $5
+order by
+  "album_asset"."assetId"
+limit
+  $6
+
 -- AlbumRepository.getAssetIds
 select
   *

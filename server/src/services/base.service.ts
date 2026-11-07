@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { Insertable } from 'kysely';
 import { cloneDeep } from 'lodash-es';
 import sanitize from 'sanitize-filename';
@@ -12,6 +12,7 @@ import { UserAdmin } from 'src/database.js';
 import { AssetResponseDto, mapAsset } from 'src/dtos/asset-response.dto.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
 import {
+  AssetLockReason,
   DatabaseLock,
   JobName,
   LibraryScope,
@@ -71,7 +72,7 @@ import { MoveRepository } from 'src/repositories/move.repository.js';
 import { NotificationRepository } from 'src/repositories/notification.repository.js';
 import { OAuthRepository } from 'src/repositories/oauth.repository.js';
 import { OcrRepository } from 'src/repositories/ocr.repository.js';
-import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
+import { AssetOriginField, PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { PhysicalFileTrashRepository } from 'src/repositories/physical-file-trash.repository.js';
@@ -649,6 +650,55 @@ export class BaseService {
   protected async selectClipTextDestination(request: Omit<MlSelectionRequest, 'destinationId' | 'workload'> = {}) {
     const destinationId = await clipTextDestinationId(this.mlDestinationRepository);
     return this.selectMlDestination({ ...request, workload: MlWorkload.Clip, destinationId, homeOnly: true });
+  }
+
+  /**
+   * Lock (FL-34): `userId`'s own lock on `ids`, recorded as `marked`, with their stacks and live photos.
+   * `recordEdit` gets the ids whose visibility changed, for the caller's `recordAssetEdit` (FL-326); it runs
+   * right after the lock commits; it and the post-lock follow-up each run even if the other fails.
+   * The caller has checked that `userId` may update `ids`.
+   */
+  protected async lockAssetsAs(
+    userId: string,
+    ids: string[],
+    recordEdit: (visibilityIds: string[]) => Promise<void>,
+  ): Promise<void> {
+    const originIds = await this.assetRepository.findLockGroupIds(ids);
+    const admitted = new Set(originIds);
+    const { locked, visibilityIds } = await this.partnerOriginRepository.withOriginEdit(
+      'asset',
+      originIds,
+      [],
+      async () => {
+        const locked = await this.assetRepository.lock(ids, AssetLockReason.Marked, userId);
+        const visibilityIds = await this.assetRepository.findLockGroupIds(ids);
+        if (visibilityIds.some((id) => !admitted.has(id)))
+          throw new ConflictException('Lock group changed; retry the update');
+        await this.partnerOriginRepository.markOverridden(
+          'asset',
+          visibilityIds,
+          [AssetOriginField.Visibility],
+          userId,
+        );
+        return { locked, visibilityIds };
+      },
+    );
+    // Both run whatever the other does: the lock is committed, and each has work nothing else retries.
+    let failure: unknown;
+    try {
+      await recordEdit(visibilityIds);
+    } catch (error) {
+      failure = error;
+    }
+    if (locked.length > 0) {
+      try {
+        await this.afterAssetsLocked(locked);
+        await this.notifyAssetsUpdated(locked, userId);
+      } catch (error) {
+        failure ??= error;
+      }
+    }
+    if (failure) throw failure;
   }
 
   /**
