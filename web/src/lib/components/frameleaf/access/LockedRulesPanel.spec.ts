@@ -40,6 +40,8 @@ const authStatus = (overrides: Partial<AuthStatusResponseDto> = {}): AuthStatusR
   isElevated: true,
   password: true,
   pinCode: true,
+  twoFactorEnabled: false,
+  recoveryCodesRemaining: 0,
   ...overrides,
 });
 

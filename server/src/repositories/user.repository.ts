@@ -451,6 +451,9 @@ export class UserRepository {
 
   async replaceRecoveryCodes(userId: string, codeHashes: Buffer[], db: Kysely<DB> = this.db) {
     await db.deleteFrom('user_recovery_code').where('userId', '=', userId).execute();
+    if (codeHashes.length === 0) {
+      return;
+    }
     await db
       .insertInto('user_recovery_code')
       .values(codeHashes.map((codeHash) => ({ userId, codeHash })))

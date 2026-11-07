@@ -168,6 +168,64 @@ where
   "user"."id" = $1
   and "user"."deletedAt" is null
 
+-- UserRepository.getTwoFactor
+select
+  "userId",
+  "secret",
+  "enabledAt"
+from
+  "user_two_factor"
+where
+  "userId" = $1
+
+-- UserRepository.setPendingTwoFactor
+insert into
+  "user_two_factor" ("userId", "secret")
+values
+  ($1, $2)
+on conflict ("userId") do update
+set
+  "secret" = $3,
+  "lastUsedStep" = $4,
+  "createdAt" = now()
+where
+  "user_two_factor"."enabledAt" is null
+returning
+  "userId"
+
+-- UserRepository.useTwoFactorStep
+update "user_two_factor"
+set
+  "lastUsedStep" = $1
+where
+  "userId" = $2
+  and (
+    "lastUsedStep" is null
+    or "lastUsedStep" < $3
+  )
+returning
+  "userId"
+
+-- UserRepository.useRecoveryCode
+update "user_recovery_code"
+set
+  "usedAt" = now()
+where
+  "userId" = $1
+  and "codeHash" = $2
+  and "usedAt" is null
+returning
+  "id"
+
+-- UserRepository.countRecoveryCodes
+select
+  count(*) as "count"
+from
+  "user_recovery_code"
+where
+  "userId" = $1
+  and "usedAt" is null
+
 -- UserRepository.getByPasswordLink
 select
   "id",

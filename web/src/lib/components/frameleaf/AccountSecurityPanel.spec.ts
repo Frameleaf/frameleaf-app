@@ -55,7 +55,7 @@ beforeEach(async () => {
   addMessages('dev', en);
   const { deleteUserSessionAdmin, getUserPinCodeStateAdmin } = await import('@frameleaf/sdk');
   vi.mocked(deleteUserSessionAdmin).mockResolvedValue(undefined as never);
-  vi.mocked(getUserPinCodeStateAdmin).mockResolvedValue({ pinCode: false });
+  vi.mocked(getUserPinCodeStateAdmin).mockResolvedValue({ pinCode: false, twoFactorEnabled: false });
 });
 
 describe('AccountSecurityPanel (FL-76)', () => {
@@ -157,7 +157,7 @@ describe('AccountSecurityPanel (FL-76)', () => {
     it('offers Change PIN and Reset PIN once a PIN is set, and rereads the state after either', async () => {
       const { modalManager } = await import('@frameleaf/ui');
       const { getUserPinCodeStateAdmin } = await import('@frameleaf/sdk');
-      vi.mocked(getUserPinCodeStateAdmin).mockResolvedValue({ pinCode: true });
+      vi.mocked(getUserPinCodeStateAdmin).mockResolvedValue({ pinCode: true, twoFactorEnabled: false });
       vi.mocked(modalManager.show).mockResolvedValue(undefined as never);
       render(AccountSecurityPanel, { user, sessions: [] });
 
@@ -171,7 +171,7 @@ describe('AccountSecurityPanel (FL-76)', () => {
 
     it('the admin page disables Clear their PIN for a user with lockedEncryption (FL-721)', async () => {
       const { getUserPinCodeStateAdmin } = await import('@frameleaf/sdk');
-      vi.mocked(getUserPinCodeStateAdmin).mockResolvedValue({ pinCode: true });
+      vi.mocked(getUserPinCodeStateAdmin).mockResolvedValue({ pinCode: true, twoFactorEnabled: false });
       const encrypted = userAdminFactory.build({ id: 'morgan-id', name: 'Morgan', lockedEncryption: true });
       render(AccountSecurityPanel, { user: encrypted, sessions: [] });
 

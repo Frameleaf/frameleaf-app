@@ -3757,6 +3757,8 @@ export type UserAdminHistoryResponseDto = {
 export type UserAdminPinCodeStateResponseDto = {
     /** Whether the account has a PIN set */
     pinCode: boolean;
+    /** FL-793: whether the account has two-step sign-in on */
+    twoFactorEnabled: boolean;
 };
 export type AlbumsResponse = {
     defaultAssetOrder: AssetOrder;
@@ -6501,10 +6503,24 @@ export type LoginResponseDto = {
     profileImagePath: string;
     /** Should change password */
     shouldChangePassword: boolean;
+    /** FL-793: the password was right and the account uses two-step sign-in. No session was created and accessToken is empty: send the code to POST /auth/login/two-factor with twoFactorToken. */
+    twoFactorRequired?: boolean;
+    /** FL-793: proves the password step for five minutes; send it with the code */
+    twoFactorToken?: string;
     /** User email */
     userEmail: string;
     /** User ID */
     userId: string;
+};
+export type LoginTwoFactorDto = {
+    /** The 6-digit code from the authenticator app */
+    code?: string;
+    /** One of the recovery codes, as written down */
+    recoveryCode?: string;
+    /** Skip the code step in this browser for 30 days */
+    trustDevice?: boolean;
+    /** twoFactorToken from POST /auth/login */
+    twoFactorToken: string;
 };
 export type LogoutResponseDto = {
     /** Redirect URI */
@@ -6563,6 +6579,36 @@ export type AuthStatusResponseDto = {
     pinCode: boolean;
     /** PIN expiration date */
     pinExpiresAt?: string;
+    /** FL-793: unused recovery codes (0 when two-step sign-in is off) */
+    recoveryCodesRemaining: number;
+    /** FL-793: two-step sign-in is on */
+    twoFactorEnabled: boolean;
+};
+export type TwoFactorDisableDto = {
+    /** The 6-digit code from the authenticator app */
+    code?: string;
+    /** The account password */
+    password: string;
+    /** One of the recovery codes, as written down */
+    recoveryCode?: string;
+};
+export type TwoFactorEnableDto = {
+    /** The 6-digit code from the authenticator app */
+    code: string;
+};
+export type TwoFactorRecoveryCodesResponseDto = {
+    /** Ten one-time recovery codes, shown only now */
+    recoveryCodes: string[];
+};
+export type TwoFactorPasswordDto = {
+    /** The account password */
+    password: string;
+};
+export type TwoFactorSetupResponseDto = {
+    /** otpauth:// address to show as a QR code */
+    otpauthUri: string;
+    /** The key to type into an authenticator app (base32) */
+    secret: string;
 };
 export type ValidateAccessTokenResponseDto = {
     /** Authentication status */
@@ -23516,6 +23562,17 @@ export function getUserStatisticsAdmin({ id, isFavorite, isTrashed, libraryScope
     }));
 }
 /**
+ * Turn off two-step sign-in for a user
+ */
+export function resetUserTwoFactorAdmin({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/admin/users/${encodeURIComponent(id)}/two-factor`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
  * Get the worker inventory
  */
 export function getWorkerInventory(opts?: Oazapfts.RequestOpts) {
@@ -25663,6 +25720,21 @@ export function login({ loginCredentialDto }: {
     })));
 }
 /**
+ * Finish a two-step sign-in
+ */
+export function loginTwoFactor({ loginTwoFactorDto }: {
+    loginTwoFactorDto: LoginTwoFactorDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LoginResponseDto;
+    }>("/auth/login/two-factor", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: loginTwoFactorDto
+    })));
+}
+/**
  * Logout
  */
 export function logout(opts?: Oazapfts.RequestOpts) {
@@ -25768,6 +25840,63 @@ export function getAuthStatus(opts?: Oazapfts.RequestOpts) {
     }>("/auth/status", {
         ...opts
     }));
+}
+/**
+ * Turn off two-step sign-in
+ */
+export function disableTwoFactor({ twoFactorDisableDto }: {
+    twoFactorDisableDto: TwoFactorDisableDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/auth/two-factor", oazapfts.json({
+        ...opts,
+        method: "DELETE",
+        body: twoFactorDisableDto
+    })));
+}
+/**
+ * Turn on two-step sign-in
+ */
+export function enableTwoFactor({ twoFactorEnableDto }: {
+    twoFactorEnableDto: TwoFactorEnableDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: TwoFactorRecoveryCodesResponseDto;
+    }>("/auth/two-factor/enable", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: twoFactorEnableDto
+    })));
+}
+/**
+ * Make new recovery codes
+ */
+export function regenerateRecoveryCodes({ twoFactorPasswordDto }: {
+    twoFactorPasswordDto: TwoFactorPasswordDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: TwoFactorRecoveryCodesResponseDto;
+    }>("/auth/two-factor/recovery-codes", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: twoFactorPasswordDto
+    })));
+}
+/**
+ * Start setting up two-step sign-in
+ */
+export function setupTwoFactor({ twoFactorPasswordDto }: {
+    twoFactorPasswordDto: TwoFactorPasswordDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: TwoFactorSetupResponseDto;
+    }>("/auth/two-factor/setup", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: twoFactorPasswordDto
+    })));
 }
 /**
  * Validate access token
@@ -37738,7 +37867,8 @@ export enum AdminAuditAction {
     LicenseActivated = "license-activated",
     LicenseRemoved = "license-removed",
     FrameleafAccountLinked = "frameleaf-account-linked",
-    FrameleafAccountUnlinked = "frameleaf-account-unlinked"
+    FrameleafAccountUnlinked = "frameleaf-account-unlinked",
+    TwoFactorReset = "two-factor-reset"
 }
 export enum AssetOrder {
     Asc = "asc",
