@@ -282,7 +282,7 @@ export class AssetUploadResourceController {
     const body: AssetUploadPartsDto = {
       offset: Number(resource.offset),
       // A pre-FL-1268 PATCH could store Upload-Length 0 on an upload that never completes; report it as undeclared.
-      size: resource.expectedSize ? Number(resource.expectedSize) : null,
+      size: Number(resource.expectedSize ?? 0) || null,
       parts,
     };
     res.status(200).json(body);
