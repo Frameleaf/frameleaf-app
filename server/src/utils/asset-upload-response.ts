@@ -13,6 +13,7 @@ export const assetUploadRequestHeaders = (req: Pick<Request, 'rawHeaders' | 'hea
     'upload-length',
     'repr-digest',
     'asset-metadata',
+    'content-length',
   ]);
   const seen = new Set<string>();
   for (let index = 0; index < req.rawHeaders.length; index += 2) {
@@ -38,6 +39,8 @@ export const writeAssetUploadHeaders = (
       'Upload-Limit',
       `max-size=${capacity.maxSize}, max-append-size=${capacity.maxAppendSize}, max-age=${ASSET_UPLOAD_LIMITS.maxAge}, min-size=1`,
     );
+  // FL-1268: servers that accept parallel parts (PUT :id/parts) say so; clients without it fall back to PATCH.
+  if (capacity) res.setHeader('Upload-Parts', `max-parallel=${ASSET_UPLOAD_LIMITS.maxParallelParts}`);
   if (row) {
     res.setHeader('Upload-Offset', row.offset);
     res.setHeader('Upload-Complete', row.state === 'published' && row.ingested ? '?1' : '?0');

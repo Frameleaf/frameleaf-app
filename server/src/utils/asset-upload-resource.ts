@@ -48,7 +48,17 @@ export type AssetUploadMetadata = AssetMediaCreateDto & {
   sourceIdentity?: UploadSourceIdentity;
 };
 
-export const ASSET_UPLOAD_LIMITS = { maxSize: 2 ** 31, maxAppendSize: 64 * 2 ** 20, maxAge: 86_400, maxActive: 4 };
+/**
+ * FL-1268: no per-file ceiling; free disk space (see AssetUploadResourceService.limits) is the only bound.
+ * Parts go up to 1 GiB so clients on Wi-Fi can send large ones; clients pick the size they send.
+ */
+export const ASSET_UPLOAD_LIMITS = {
+  maxSize: Number.MAX_SAFE_INTEGER,
+  maxAppendSize: 2 ** 30,
+  maxAge: 86_400,
+  maxActive: 4,
+  maxParallelParts: 6,
+};
 export type AssetUploadPart = { path: string; size: number; interrupted: boolean };
 
 export function parseAssetUploadHeaders(headers: IncomingHttpHeaders) {

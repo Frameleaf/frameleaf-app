@@ -450,10 +450,11 @@ describe('FL-225 actual API over relay and 1xx-stripping proxy', () => {
       );
     });
 
-    it(`${route}: accepts exactly the advertised 64MiB part without a transport cap`, async () => {
+    it(`${route}: accepts a 64MiB part (advertised max 1GiB) without a transport cap`, async () => {
       const limits = await through(route, '/assets/uploads', ownerToken, 'OPTIONS');
       expect(limits.status).toBe(204);
-      expect(limits.headers['upload-limit']).toContain('max-append-size=67108864');
+      // FL-1268: parts may be up to 1 GiB; 64 MiB keeps this relay case affordable in CI.
+      expect(limits.headers['upload-limit']).toContain('max-append-size=1073741824');
       const bytes = Buffer.alloc(64 * 1024 * 1024);
       png.copy(bytes);
       Buffer.from(randomUUID()).copy(bytes, bytes.length - 36);

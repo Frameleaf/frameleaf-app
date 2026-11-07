@@ -60,7 +60,8 @@ export const initLanguage = async () => {
 interface UploadRequestOptions {
   url: string;
   method?: 'POST' | 'PUT';
-  data: FormData;
+  data: FormData | Blob;
+  headers?: Record<string, string>;
   onUploadProgress?: (event: ProgressEvent<XMLHttpRequestEventTarget>) => void;
 }
 
@@ -68,7 +69,7 @@ export class AbortError extends Error {
   override name = 'AbortError';
 }
 
-class ApiError extends Error {
+export class ApiError extends Error {
   override name = 'ApiError';
 
   constructor(
@@ -133,6 +134,9 @@ export const uploadRequest = async <T>(options: UploadRequestOptions): Promise<{
 
     try {
       xhr.open(options.method || 'POST', url);
+      for (const [name, value] of Object.entries(options.headers ?? {})) {
+        xhr.setRequestHeader(name, value);
+      }
       xhr.responseType = 'json';
       xhr.send(data);
     } catch (error) {

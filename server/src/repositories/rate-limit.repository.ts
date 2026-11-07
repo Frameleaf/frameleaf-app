@@ -96,6 +96,45 @@ export class RateLimitRepository implements OnModuleInit, OnModuleDestroy {
     return rowCount === 1;
   }
 
+  /**
+   * FL-1268: claims the lease of one part (`<resourceId>:<offset>`) only while fewer than `max` parts of that
+   * upload hold one. The count and the claim share a per-upload advisory lock, so parallel requests cannot overshoot.
+   */
+  async claimUploadPartStream(resourceId: string, offset: number, token: string, max: number) {
+    const client = await this.getClient().connect();
+    // A client whose ROLLBACK failed may still hold the transaction and its lock: destroy it instead of reusing it.
+    let discard = false;
+    try {
+      await client.query('BEGIN');
+      await client.query(`SELECT pg_advisory_xact_lock(-226, hashtext($1)::int)`, [resourceId]);
+      const { rows } = await client.query<{ count: string }>(
+        `SELECT count(*) AS count FROM public.frameleaf_upload_lease WHERE starts_with(key, $1) AND expires_at > clock_timestamp()`,
+        [`${resourceId}:`],
+      );
+      if (Number(rows[0]?.count ?? 0) >= max) {
+        await client.query('ROLLBACK');
+        return 'full' as const;
+      }
+      const { rowCount } = await client.query(
+        `INSERT INTO public.frameleaf_upload_lease AS lease (key, token, expires_at)
+         VALUES ($1, $2, clock_timestamp() + interval '900 seconds')
+         ON CONFLICT (key) DO UPDATE SET token = EXCLUDED.token, expires_at = clock_timestamp() + interval '900 seconds'
+         WHERE lease.expires_at <= clock_timestamp() RETURNING key`,
+        [`${resourceId}:${offset}`, token],
+      );
+      await client.query('COMMIT');
+      this.cleanExpired();
+      return rowCount === 1 ? ('claimed' as const) : ('busy' as const);
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {
+        discard = true;
+      });
+      throw error;
+    } finally {
+      client.release(discard);
+    }
+  }
+
   async isUploadStreamCurrent(resourceId: string, token: string): Promise<boolean> {
     const { rowCount } = await this.getClient().query(
       `SELECT 1 FROM public.frameleaf_upload_lease WHERE key = $1 AND token = $2 AND expires_at > clock_timestamp()`,
