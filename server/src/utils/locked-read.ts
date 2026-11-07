@@ -255,7 +255,12 @@ const KEY_OWNERS_REFRESH_MS = 60_000;
  */
 let refreshingOwners: { ids: Set<string>; done: Promise<void> } | undefined;
 
+/** Reads of the key files, numbered as they start: a read that finishes after a newer one is ignored. */
+let ownerReadsStarted = 0;
+let ownerReadApplied = 0;
+
 const readKeyOwners = async () => {
+  const read = ++ownerReadsStarted;
   try {
     const next = new Map<string, string>();
     // imported when first needed: file.ts (and so every controller) imports this module, and the
@@ -265,6 +270,10 @@ const readKeyOwners = async () => {
     for (const file of await new LockedKeyRepository().list()) {
       next.set(toKeyId(Buffer.from(file.publicKey, 'base64')).toString('hex'), file.userId);
     }
+    if (read < ownerReadApplied) {
+      return; // a newer listing is already in place; this older one must not take away what it found
+    }
+    ownerReadApplied = read;
     keyOwners = next;
     for (const id of next.keys()) {
       missingAt.delete(id);
@@ -326,6 +335,7 @@ export const clearLockedKeyOwners = () => {
   keyOwners = new Map();
   missingAt.clear();
   refreshingOwners = undefined;
+  ownerReadApplied = ownerReadsStarted;
 };
 
 const unavailable = async (keyIds: Buffer[], viewerId: string | null = null) => {

@@ -348,6 +348,52 @@ describe('locked-read', () => {
     expect(spy.mock.calls.length).toBeGreaterThanOrEqual(5);
   });
 
+  it('keeps a newer key file listing when an older read finishes after it', async () => {
+    // an older read (listed before VIEWER's key file existed) finishing last must not take VIEWER away
+    const other = generateKeyPair();
+    await fs.writeFile(join(dir, 'other.src'), plain);
+    const otherSealed = join(dir, 'other.jpg');
+    await encryptFile(join(dir, 'other.src'), otherSealed, [{ publicKey: other.publicKey }], {
+      assetId: ASSET,
+      kind: 'original',
+      originalFileName: 'other.jpg',
+      mime: 'image/jpeg',
+    });
+    const { LockedKeyRepository } = await import('src/repositories/locked-key.repository.js');
+    const list = LockedKeyRepository.prototype.list;
+    let releaseOld!: () => void;
+    const old = new Promise<void>((resolve) => (releaseOld = resolve));
+    const spy = vi
+      .spyOn(LockedKeyRepository.prototype, 'list')
+      .mockImplementationOnce(async function (this: any) {
+        const files = await list.call(this); // before VIEWER's key file exists
+        await old;
+        return files;
+      })
+      .mockImplementation(function (this: any) {
+        return list.call(this);
+      });
+
+    const waiting = openLockedRead(otherSealed, null).catch((error_) => error_);
+    await vi.waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    await fs.writeFile(
+      join(dir, 'locked-keys', `${VIEWER}.json`),
+      JSON.stringify({
+        format: 'frameleaf-locked-key/1',
+        userId: VIEWER,
+        publicKey: other.publicKey.toString('base64'),
+      }),
+    );
+    // a newer read starts while the old one is still listing (here: the lookup state is cleared under it)
+    clearLockedKeyOwners();
+    expect((await openLockedRead(otherSealed, null).catch((error_) => error_)).ownerIds).toEqual([VIEWER]);
+    releaseOld();
+
+    expect((await waiting).ownerIds).toEqual([VIEWER]);
+    expect((await openLockedRead(otherSealed, null).catch((error_) => error_)).ownerIds).toEqual([VIEWER]);
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
   it('names a person who turned encryption on within a minute of the last key file read', async () => {
     // the first lookup reads the key files, which hold only OWNER's
     await openLockedRead(sealed, OWNER).catch(() => {});
