@@ -249,31 +249,85 @@ export const hasUsableLockedKey = async (keyIds: Buffer[], viewerId: string): Pr
 let keyOwners = new Map<string, string>();
 const missingAt = new Map<string, number>();
 const KEY_OWNERS_REFRESH_MS = 60_000;
+/**
+ * The key file read in progress and the key ids it was started for: lookups that need it wait for it
+ * rather than answering without it, and ids it wasn't started for get a read of their own after it.
+ */
+let refreshingOwners: { ids: Set<string>; done: Promise<void> } | undefined;
+
+/**
+ * Clearing the lookup state starts a new generation; a read started before it is dropped. Reads only ever
+ * add owners (a key id is derived from its public key, so it always names the same person), so reads that
+ * overlap or finish in any order can't take away an owner another read found.
+ */
+let ownerGeneration = 0;
+
+const readKeyOwners = async () => {
+  const generation = ownerGeneration;
+  try {
+    const found = new Map<string, string>();
+    // imported when first needed: file.ts (and so every controller) imports this module, and the
+    // key repository's storage imports would make a cycle. The path is relative because the build
+    // rewrites the `src/` alias of static imports only; `import('src/…')` fails in the built server.
+    const { LockedKeyRepository } = await import('../repositories/locked-key.repository.js');
+    for (const file of await new LockedKeyRepository().list()) {
+      found.set(toKeyId(Buffer.from(file.publicKey, 'base64')).toString('hex'), file.userId);
+    }
+    if (generation !== ownerGeneration) {
+      return;
+    }
+    for (const [id, userId] of found) {
+      keyOwners.set(id, userId);
+      missingAt.delete(id);
+    }
+  } catch {
+    // the owners only make the error more useful; the error stands without them
+  }
+};
+
+/** Starts a key file read for `ids` (marking them looked for now), or joins the one in progress. */
+const refreshOwners = (ids: string[]) => {
+  const now = Date.now();
+  for (const id of ids) {
+    missingAt.set(id, now);
+  }
+  const scan = { ids: new Set(ids), done: Promise.resolve() };
+  scan.done = readKeyOwners().finally(() => {
+    if (refreshingOwners === scan) refreshingOwners = undefined;
+  });
+  refreshingOwners = scan;
+  return scan.done;
+};
 
 const ownersOf = async (keyIds: Buffer[]): Promise<string[]> => {
   const hex = keyIds.map((id) => id.toString('hex'));
-  const now = Date.now();
-  const unknown = hex.filter((id) => !keyOwners.has(id));
-  if (unknown.some((id) => now - (missingAt.get(id) ?? 0) > KEY_OWNERS_REFRESH_MS)) {
-    for (const id of unknown) {
-      missingAt.set(id, now);
+  const unknown = () => hex.filter((id) => !keyOwners.has(id));
+  const due = (id: string) => Date.now() - (missingAt.get(id) ?? 0) > KEY_OWNERS_REFRESH_MS;
+  // FL-1265: jobs fail together when a session locks, and each must learn the owner, or it defers with
+  // no owner and no unlock ever wakes it. So wait for any read in progress and look again; only ids no
+  // awaited read was started for (a key made after it listed the files) get a read of their own.
+  // Waiting on other lookups' reads is bounded, so a stream of them can't hold this one forever.
+  const covered = new Set<string>();
+  let waits = 0;
+  for (;;) {
+    const pending = unknown();
+    if (pending.length === 0) break;
+    const scan = refreshingOwners;
+    // a read for one of its own unresolved ids is always waited for (each such wait settles a new id);
+    // reads for other ids only up to four times
+    const ownRead = !!scan && pending.some((id) => scan.ids.has(id) && !covered.has(id));
+    if (scan && (ownRead || waits < 4)) {
+      if (!ownRead) waits++;
+      await scan.done;
+      for (const id of scan.ids) covered.add(id);
+      continue;
     }
-    try {
-      const next = new Map<string, string>();
-      // imported when first needed: file.ts (and so every controller) imports this module, and the
-      // key repository's storage imports would make a cycle. The path is relative because the build
-      // rewrites the `src/` alias of static imports only; `import('src/…')` fails in the built server.
-      const { LockedKeyRepository } = await import('../repositories/locked-key.repository.js');
-      for (const file of await new LockedKeyRepository().list()) {
-        next.set(toKeyId(Buffer.from(file.publicKey, 'base64')).toString('hex'), file.userId);
-      }
-      keyOwners = next;
-      for (const id of next.keys()) {
-        missingAt.delete(id);
-      }
-    } catch {
-      // the owners only make the error more useful; the error stands without them
-    }
+    // its own read always happens for ids nothing covered, however many other reads it waited out;
+    // each such read covers new ids, so this ends
+    const stale = pending.filter((id) => !covered.has(id) && due(id));
+    if (stale.length === 0) break;
+    await refreshOwners(stale);
+    for (const id of stale) covered.add(id);
   }
   return [...new Set(hex.map((id) => keyOwners.get(id)).filter((id): id is string => !!id))];
 };
@@ -282,6 +336,8 @@ const ownersOf = async (keyIds: Buffer[]): Promise<string[]> => {
 export const clearLockedKeyOwners = () => {
   keyOwners = new Map();
   missingAt.clear();
+  refreshingOwners = undefined;
+  ownerGeneration++;
 };
 
 const unavailable = async (keyIds: Buffer[], viewerId: string | null = null) => {

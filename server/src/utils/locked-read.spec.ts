@@ -154,6 +154,312 @@ describe('locked-read', () => {
     expect(error.code).toBe('locked_key_unavailable');
   });
 
+  it('names the owner for every read that fails at once, not only the first', async () => {
+    // jobs fail together right after a session locks; the later ones must wait for the key file read
+    // the first one started, or they defer with no owner and no unlock ever wakes them. The listing is
+    // held open until every read has asked, so they overlap however fast the disk is.
+    const { LockedKeyRepository } = await import('src/repositories/locked-key.repository.js');
+    const list = LockedKeyRepository.prototype.list;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const spy = vi.spyOn(LockedKeyRepository.prototype, 'list').mockImplementation(async function (this: any) {
+      await held;
+      return list.call(this);
+    });
+
+    const reads = [1, 2, 3].map(() => openLockedRead(sealed, null).catch((error_) => error_));
+    await vi.waitFor(() => expect(spy).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    release();
+
+    for (const error of await Promise.all(reads)) {
+      expect(error).toBeInstanceOf(LockedKeyUnavailableError);
+      expect(error.ownerIds).toEqual([OWNER]);
+    }
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads the key files again for a key the read in progress wasn't started for", async () => {
+    // a key made after the read in progress listed the files: one more read finds its owner
+    const other = generateKeyPair();
+    await fs.writeFile(join(dir, 'other.src'), plain);
+    const otherSealed = join(dir, 'other.jpg');
+    await encryptFile(join(dir, 'other.src'), otherSealed, [{ publicKey: other.publicKey }], {
+      assetId: ASSET,
+      kind: 'original',
+      originalFileName: 'other.jpg',
+      mime: 'image/jpeg',
+    });
+    const { LockedKeyRepository } = await import('src/repositories/locked-key.repository.js');
+    const list = LockedKeyRepository.prototype.list;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const spy = vi
+      .spyOn(LockedKeyRepository.prototype, 'list')
+      .mockImplementationOnce(async function (this: any) {
+        const files = await list.call(this); // listed before VIEWER's key file exists
+        await held;
+        return files;
+      })
+      .mockImplementation(function (this: any) {
+        return list.call(this);
+      });
+
+    const first = openLockedRead(sealed, null).catch((error_) => error_);
+    await vi.waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    await fs.writeFile(
+      join(dir, 'locked-keys', `${VIEWER}.json`),
+      JSON.stringify({
+        format: 'frameleaf-locked-key/1',
+        userId: VIEWER,
+        publicKey: other.publicKey.toString('base64'),
+      }),
+    );
+    const second = openLockedRead(otherSealed, null).catch((error_) => error_);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    release();
+
+    expect((await first).ownerIds).toEqual([OWNER]);
+    expect((await second).ownerIds).toEqual([VIEWER]);
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
+  it('waits for the read in progress for one of its keys even when its own read for the others fails', async () => {
+    // lookups for [B] and [B, C] both wait out a first read; one starts a read for B, the other must wait
+    // for it rather than only start its own for C, or a failed read for C leaves it without B's owner
+    const keyB = generateKeyPair();
+    const keyC = generateKeyPair();
+    const seal = async (name: string, keys: ReturnType<typeof generateKeyPair>[]) => {
+      await fs.writeFile(join(dir, `${name}.src`), plain);
+      await encryptFile(
+        join(dir, `${name}.src`),
+        join(dir, name),
+        keys.map(({ publicKey }) => ({ publicKey })),
+        {
+          assetId: ASSET,
+          kind: 'original',
+          originalFileName: name,
+          mime: 'image/jpeg',
+        },
+      );
+      return join(dir, name);
+    };
+    const onlyB = await seal('b.jpg', [keyB]);
+    const bAndC = await seal('bc.jpg', [keyB, keyC]);
+    const { LockedKeyRepository } = await import('src/repositories/locked-key.repository.js');
+    const list = LockedKeyRepository.prototype.list;
+    let releaseFirst!: () => void;
+    const first = new Promise<void>((resolve) => (releaseFirst = resolve));
+    let releaseB!: () => void;
+    const forB = new Promise<void>((resolve) => (releaseB = resolve));
+    const spy = vi
+      .spyOn(LockedKeyRepository.prototype, 'list')
+      .mockImplementationOnce(async function (this: any) {
+        const files = await list.call(this); // before B's key file exists
+        await first;
+        return files;
+      })
+      .mockImplementationOnce(async function (this: any) {
+        await forB;
+        return list.call(this);
+      })
+      .mockImplementation(() => Promise.reject(new Error('key folder unreadable')));
+
+    const owner = openLockedRead(sealed, null).catch((error_) => error_);
+    await vi.waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    await fs.writeFile(
+      join(dir, 'locked-keys', `${VIEWER}.json`),
+      JSON.stringify({
+        format: 'frameleaf-locked-key/1',
+        userId: VIEWER,
+        publicKey: keyB.publicKey.toString('base64'),
+      }),
+    );
+    const b = openLockedRead(onlyB, null).catch((error_) => error_);
+    const bc = openLockedRead(bAndC, null).catch((error_) => error_);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    releaseFirst();
+    await vi.waitFor(() => expect(spy.mock.calls.length).toBeGreaterThanOrEqual(2));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    releaseB();
+
+    expect((await owner).ownerIds).toEqual([OWNER]);
+    expect((await b).ownerIds).toEqual([VIEWER]);
+    expect((await bc).ownerIds).toEqual([VIEWER]);
+  });
+
+  it('still reads for its own key after waiting out four other reads', async () => {
+    // a stale first listing, then three reads started by other lookups that fail: the lookup for B must
+    // still read the key files for B itself instead of giving up after waiting for the others
+    const keyB = generateKeyPair();
+    const seal = async (name: string, key: ReturnType<typeof generateKeyPair>) => {
+      await fs.writeFile(join(dir, `${name}.src`), plain);
+      await encryptFile(join(dir, `${name}.src`), join(dir, name), [{ publicKey: key.publicKey }], {
+        assetId: ASSET,
+        kind: 'original',
+        originalFileName: name,
+        mime: 'image/jpeg',
+      });
+      return join(dir, name);
+    };
+    const onlyB = await seal('b.jpg', keyB);
+    const strangers = await Promise.all(['d1.jpg', 'd2.jpg', 'd3.jpg'].map((name) => seal(name, generateKeyPair())));
+    const { LockedKeyRepository } = await import('src/repositories/locked-key.repository.js');
+    const list = LockedKeyRepository.prototype.list;
+    let releaseFirst!: () => void;
+    const first = new Promise<void>((resolve) => (releaseFirst = resolve));
+    const spy = vi
+      .spyOn(LockedKeyRepository.prototype, 'list')
+      .mockImplementationOnce(async function (this: any) {
+        const files = await list.call(this); // before B's key file exists
+        await first;
+        return files;
+      })
+      .mockRejectedValueOnce(new Error('key folder unreadable'))
+      .mockRejectedValueOnce(new Error('key folder unreadable'))
+      .mockRejectedValueOnce(new Error('key folder unreadable'))
+      .mockImplementation(function (this: any) {
+        return list.call(this);
+      });
+
+    const owner = openLockedRead(sealed, null).catch((error_) => error_);
+    await vi.waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    await fs.writeFile(
+      join(dir, 'locked-keys', `${VIEWER}.json`),
+      JSON.stringify({
+        format: 'frameleaf-locked-key/1',
+        userId: VIEWER,
+        publicKey: keyB.publicKey.toString('base64'),
+      }),
+    );
+    // the other lookups queue behind the first read before B's does, so each starts a read B's waits for
+    const others: Promise<unknown>[] = [];
+    for (const path of strangers) {
+      others.push(openLockedRead(path, null).catch((error_) => error_));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    const b = openLockedRead(onlyB, null).catch((error_) => error_);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    releaseFirst();
+
+    expect((await owner).ownerIds).toEqual([OWNER]);
+    expect((await b).ownerIds).toEqual([VIEWER]);
+    await Promise.all(others);
+    expect(spy.mock.calls.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it('keeps a newer key file listing when an older read finishes after it', async () => {
+    // an older read (listed before VIEWER's key file existed) finishing last must not take VIEWER away
+    const other = generateKeyPair();
+    await fs.writeFile(join(dir, 'other.src'), plain);
+    const otherSealed = join(dir, 'other.jpg');
+    await encryptFile(join(dir, 'other.src'), otherSealed, [{ publicKey: other.publicKey }], {
+      assetId: ASSET,
+      kind: 'original',
+      originalFileName: 'other.jpg',
+      mime: 'image/jpeg',
+    });
+    const { LockedKeyRepository } = await import('src/repositories/locked-key.repository.js');
+    const list = LockedKeyRepository.prototype.list;
+    let releaseOld!: () => void;
+    const old = new Promise<void>((resolve) => (releaseOld = resolve));
+    const spy = vi
+      .spyOn(LockedKeyRepository.prototype, 'list')
+      .mockImplementationOnce(async function (this: any) {
+        const files = await list.call(this); // before VIEWER's key file exists
+        await old;
+        return files;
+      })
+      .mockImplementation(function (this: any) {
+        return list.call(this);
+      });
+
+    const waiting = openLockedRead(otherSealed, null).catch((error_) => error_);
+    await vi.waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    await fs.writeFile(
+      join(dir, 'locked-keys', `${VIEWER}.json`),
+      JSON.stringify({
+        format: 'frameleaf-locked-key/1',
+        userId: VIEWER,
+        publicKey: other.publicKey.toString('base64'),
+      }),
+    );
+    // a newer read starts while the old one is still listing (here: the lookup state is cleared under it)
+    clearLockedKeyOwners();
+    expect((await openLockedRead(otherSealed, null).catch((error_) => error_)).ownerIds).toEqual([VIEWER]);
+    releaseOld();
+
+    expect((await waiting).ownerIds).toEqual([VIEWER]);
+    expect((await openLockedRead(otherSealed, null).catch((error_) => error_)).ownerIds).toEqual([VIEWER]);
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
+  it('never takes away an owner a read found, whatever order the reads list the files in', async () => {
+    // a later listing that lacks VIEWER's key file (it listed first, or the file is mid-write) must not
+    // remove VIEWER: a key id always names the same person
+    const other = generateKeyPair();
+    await fs.writeFile(join(dir, 'other.src'), plain);
+    const otherSealed = join(dir, 'other.jpg');
+    await encryptFile(join(dir, 'other.src'), otherSealed, [{ publicKey: other.publicKey }], {
+      assetId: ASSET,
+      kind: 'original',
+      originalFileName: 'other.jpg',
+      mime: 'image/jpeg',
+    });
+    await fs.writeFile(
+      join(dir, 'locked-keys', `${VIEWER}.json`),
+      JSON.stringify({
+        format: 'frameleaf-locked-key/1',
+        userId: VIEWER,
+        publicKey: other.publicKey.toString('base64'),
+      }),
+    );
+    expect((await openLockedRead(otherSealed, null).catch((error_) => error_)).ownerIds).toEqual([VIEWER]);
+
+    const { LockedKeyRepository } = await import('src/repositories/locked-key.repository.js');
+    const list = LockedKeyRepository.prototype.list;
+    const spy = vi.spyOn(LockedKeyRepository.prototype, 'list').mockImplementation(async function (this: any) {
+      return (await list.call(this)).filter(({ userId }) => userId !== VIEWER);
+    });
+    // a lookup for a key nobody has reads the files again and gets the listing without VIEWER
+    const stranger = generateKeyPair();
+    await fs.writeFile(join(dir, 'stranger.src'), plain);
+    await encryptFile(join(dir, 'stranger.src'), join(dir, 'stranger.jpg'), [{ publicKey: stranger.publicKey }], {
+      assetId: ASSET,
+      kind: 'original',
+      originalFileName: 'stranger.jpg',
+      mime: 'image/jpeg',
+    });
+    await openLockedRead(join(dir, 'stranger.jpg'), null).catch(() => {});
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    expect((await openLockedRead(otherSealed, null).catch((error_) => error_)).ownerIds).toEqual([VIEWER]);
+  });
+
+  it('drops a read still in flight when the lookup state is cleared', async () => {
+    const { LockedKeyRepository } = await import('src/repositories/locked-key.repository.js');
+    const list = LockedKeyRepository.prototype.list;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const spy = vi
+      .spyOn(LockedKeyRepository.prototype, 'list')
+      .mockImplementationOnce(async function (this: any) {
+        const files = await list.call(this);
+        await held;
+        return files;
+      })
+      .mockImplementation(() => Promise.resolve([]));
+
+    const inFlight = openLockedRead(sealed, null).catch((error_) => error_);
+    await vi.waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    clearLockedKeyOwners();
+    release();
+    await inFlight;
+    // the dropped read didn't fill the cleared state: the next lookup reads again (and finds nothing)
+    expect((await openLockedRead(sealed, null).catch((error_) => error_)).ownerIds).toEqual([]);
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
   it('names a person who turned encryption on within a minute of the last key file read', async () => {
     // the first lookup reads the key files, which hold only OWNER's
     await openLockedRead(sealed, OWNER).catch(() => {});
