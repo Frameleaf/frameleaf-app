@@ -65711,8 +65711,7 @@
           "license-activated",
           "license-removed",
           "frameleaf-account-linked",
-          "frameleaf-account-unlinked",
-          "two-factor-reset"
+          "frameleaf-account-unlinked"
         ],
         "type": "string"
       },
