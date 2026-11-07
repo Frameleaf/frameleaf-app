@@ -719,19 +719,22 @@ describe('Locked encryption acceptance (FL-721, spec §15)', () => {
         return rows.length > 0;
       });
 
+      const { rows: unlockClock } = await db.query(`SELECT now() "unlockedAt"`);
+      const { unlockedAt } = unlockClock[0];
       await unlockSession(pinOwner.accessToken, pinCodes.pinOwner);
       expect(await keyLoaded(pinOwner.accessToken)).toBe(true);
       await settle(admin.accessToken, QueueName.ThumbnailGeneration, 120_000);
       // every job the lock deferred, in any queue (an edited photo's editor job too) and whenever it
-      // deferred, ran to an end once woken; a failed RAW stays allowed
+      // deferred, ran to an end once woken; so did every job claimed while locked, which may not have
+      // written its deferral yet; a failed RAW stays allowed
       await waitFor('every job that waited for the key to run', async () => {
         const { rows } = await db.query(
           `SELECT j.id FROM job j WHERE j.data->>'id' = ANY($1::text[])
              AND (j."dependencyReason" = 'locked-key-unavailable'
                OR (j.state IN ('pending', 'waiting', 'active') AND EXISTS (SELECT 1 FROM job_attempt a
-                 WHERE a."jobId" = j.id AND a.outcome = 'deferred' AND a.error = 'locked-key-unavailable'
-                   AND a."finishedAt" >= $2)))`,
-          [pinIds, lockedAt],
+                 WHERE a."jobId" = j.id AND ((a."startedAt" >= $2 AND a."startedAt" < $3)
+                   OR (a.outcome = 'deferred' AND a.error = 'locked-key-unavailable' AND a."finishedAt" >= $2)))))`,
+          [pinIds, lockedAt, unlockedAt],
         );
         return rows.length === 0;
       });
