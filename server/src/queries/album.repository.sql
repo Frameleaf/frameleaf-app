@@ -351,6 +351,16 @@ returning
   "assetId"
 commit
 
+-- AlbumRepository.getOwnedAssetIds
+select
+  "album_asset"."assetId"
+from
+  "album_asset"
+  inner join "asset" on "asset"."id" = "album_asset"."assetId"
+where
+  "album_asset"."albumId" = $1
+  and "asset"."ownerId" = $2
+
 -- AlbumRepository.getAssetIds
 select
   *

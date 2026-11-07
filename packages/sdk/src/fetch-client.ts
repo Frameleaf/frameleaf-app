@@ -4314,6 +4314,8 @@ export type AlbumResponseDto = {
     id: string;
     /** Activity feed enabled */
     isActivityEnabled: boolean;
+    /** Locked album: the owner's items in it are locked */
+    isLocked?: boolean;
     /** True when the album is filled by smart album rules. Populated by GET /albums/tree and GET /albums/{id}. */
     isSmart?: boolean;
     kind: AlbumKind;
@@ -4451,6 +4453,8 @@ export type UpdateAlbumDto = {
     icon?: string | null;
     /** Enable activity feed */
     isActivityEnabled?: boolean;
+    /** Lock the album: the owner's items in it are locked now, and so is every item of theirs added later. Unlocking the album leaves its items locked. */
+    isLocked?: boolean;
     libraryScope?: LibraryScope;
     order?: AssetOrder;
     /** Parent album or collection (null = move to top-level, omit = no change) */

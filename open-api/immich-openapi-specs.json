@@ -68204,6 +68204,10 @@
             "description": "Activity feed enabled",
             "type": "boolean"
           },
+          "isLocked": {
+            "description": "Locked album: the owner's items in it are locked",
+            "type": "boolean"
+          },
           "isSmart": {
             "description": "True when the album is filled by smart album rules. Populated by GET /albums/tree and GET /albums/{id}.",
             "type": "boolean"
@@ -153637,6 +153641,10 @@
           },
           "isActivityEnabled": {
             "description": "Enable activity feed",
+            "type": "boolean"
+          },
+          "isLocked": {
+            "description": "Lock the album: the owner's items in it are locked now, and so is every item of theirs added later. Unlocking the album leaves its items locked.",
             "type": "boolean"
           },
           "libraryScope": {

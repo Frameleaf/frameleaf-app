@@ -31,6 +31,7 @@ export class AlbumFactory {
       deletedAt: null,
       description: 'Album description',
       isActivityEnabled: false,
+      isLocked: false,
       order: AssetOrder.Desc,
       parentId: null,
       icon: null,

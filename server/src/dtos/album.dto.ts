@@ -139,6 +139,12 @@ const UpdateAlbumSchema = z
         'Always use the newest item as the cover (true), or keep the current cover from now on (false). Cannot be true together with albumThumbnailAssetId.',
       ),
     isActivityEnabled: z.boolean().optional().describe('Enable activity feed'),
+    isLocked: z
+      .boolean()
+      .optional()
+      .describe(
+        "Lock the album: the owner's items in it are locked now, and so is every item of theirs added later. Unlocking the album leaves its items locked.",
+      ),
     order: AssetOrderSchema.optional(),
     parentId: z
       .uuidv4()
@@ -272,6 +278,7 @@ export const AlbumResponseSchema = z
     // TODO: use `isoDatetimeToDate` when using `ZodSerializerDto` on the controllers.
     endDate: z.string().meta({ format: 'date-time' }).optional().describe('End date (latest asset)'),
     isActivityEnabled: z.boolean().describe('Activity feed enabled'),
+    isLocked: z.boolean().optional().describe("Locked album: the owner's items in it are locked"),
     order: AssetOrderSchema.optional(),
     contributorCounts: z.array(ContributorCountResponseSchema).optional(),
     parentId: z.string().nullable().describe('Parent album or collection (null = top-level)'),
@@ -464,6 +471,7 @@ export type MapAlbumDto = {
   updatedAt: Date;
   id: string;
   isActivityEnabled: boolean;
+  isLocked?: boolean;
   order: AssetOrder;
   parentId: string | null;
   icon: string | null;
@@ -518,6 +526,7 @@ export const mapAlbum = (entity: MaybeDehydrated<MapAlbumDto>): AlbumResponseDto
     endDate: asDateTimeString(endDate),
     assetCount: entity.assets?.length || 0,
     isActivityEnabled: entity.isActivityEnabled,
+    isLocked: entity.isLocked ?? false,
     order: entity.order,
     parentId: entity.parentId,
     icon: entity.icon,

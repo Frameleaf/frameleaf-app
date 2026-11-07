@@ -734,30 +734,7 @@ export class AssetService extends BaseService {
    */
   async lock(auth: AuthDto, dto: BulkIdsDto): Promise<void> {
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: dto.ids });
-    const originIds = await this.assetRepository.findLockGroupIds(dto.ids);
-    const admitted = new Set(originIds);
-    const { locked, visibilityIds } = await this.partnerOriginRepository.withOriginEdit(
-      'asset',
-      originIds,
-      [],
-      async () => {
-        const locked = await this.assetRepository.lock(dto.ids, AssetLockReason.Marked, auth.user.id);
-        const visibilityIds = await this.assetRepository.findLockGroupIds(dto.ids);
-        if (visibilityIds.some((id) => !admitted.has(id)))
-          throw new ConflictException('Lock group changed; retry the update');
-        await this.partnerOriginRepository.markOverridden(
-          'asset',
-          visibilityIds,
-          [AssetOriginField.Visibility],
-          auth.user.id,
-        );
-        return { locked, visibilityIds };
-      },
-    );
-    if (locked.length > 0) {
-      await this.afterAssetsLocked(locked);
-      await this.notifyAssetsUpdated(locked, auth.user.id);
-    }
+    const visibilityIds = await this.lockAssetsAs(auth.user.id, dto.ids);
     // FL-326: locking a partner copy makes its visibility the owner's; copies of these items follow it
     await recordAssetEdit(
       { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },

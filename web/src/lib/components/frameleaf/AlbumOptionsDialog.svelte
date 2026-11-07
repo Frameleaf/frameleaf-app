@@ -1,5 +1,7 @@
 <script lang="ts">
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import { isOwner } from '$lib/frameleaf/album-directory';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { handleUpdateAlbumInfo } from '$lib/services/album.service';
   import { AssetOrder, type AlbumResponseDto } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
@@ -8,7 +10,8 @@
    * Album, collection and shared space options (FL-53), ported from `OptionsDialog` in
    * `design/frameleaf/template/src/CollectionHeader.jsx`: display order, and whether
    * members may like and comment. Both are fields of `PATCH /albums/{id}` (`order`,
-   * `isActivityEnabled`); nothing here is a local preference.
+   * `isActivityEnabled`); nothing here is a local preference. The owner can also lock the album
+   * (`isLocked`): their items in it, and every item of theirs added later, go into Locked.
    */
   interface Props {
     album: AlbumResponseDto;
@@ -22,6 +25,8 @@
 
   let order = $state<AssetOrder>(album.order ?? AssetOrder.Desc);
   let activityEnabled = $state(album.isActivityEnabled);
+  let locked = $state(album.isLocked ?? false);
+  const owner = $derived(isOwner(album, authManager.user.id));
   let saving = $state(false);
 
   $effect(() => {
@@ -31,6 +36,7 @@
 
     order = album.order ?? AssetOrder.Desc;
     activityEnabled = album.isActivityEnabled;
+    locked = album.isLocked ?? false;
   });
 
   const save = async () => {
@@ -38,7 +44,12 @@
     try {
       const updated = await handleUpdateAlbumInfo(
         album.id,
-        { order, isActivityEnabled: activityEnabled },
+        {
+          order,
+          isActivityEnabled: activityEnabled,
+          // Only the owner may send it; unchanged it stays out so editors can still save.
+          ...(locked !== (album.isLocked ?? false) && { isLocked: locked }),
+        },
         { message: $t('frameleaf_album_options_saved') },
       );
       if (updated) {
@@ -72,6 +83,16 @@
         <small>{$t('frameleaf_album_options_activity_description')}</small>
       </span>
     </label>
+
+    {#if owner}
+      <label class="switch">
+        <input type="checkbox" role="switch" bind:checked={locked} />
+        <span class="switch-text">
+          <strong>{$t('frameleaf_album_options_locked')}</strong>
+          <small>{$t('frameleaf_album_options_locked_description')}</small>
+        </span>
+      </label>
+    {/if}
 
     <div class="buttons">
       <button type="button" disabled={saving} onclick={() => (open = false)}>{$t('cancel')}</button>

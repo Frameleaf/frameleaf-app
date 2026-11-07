@@ -110,6 +110,10 @@ export class AlbumTable {
   @Column({ type: 'boolean', default: true })
   isActivityEnabled!: Generated<boolean>;
 
+  /** A locked album locks its owner's items in it, and every item of theirs added later (migration 1793950000000). */
+  @Column({ type: 'boolean', default: false })
+  isLocked!: Generated<boolean>;
+
   @Column({ default: AssetOrder.Desc })
   order!: Generated<AssetOrder>;
 

@@ -5,6 +5,7 @@ import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
 import {
   AlbumKind,
   AlbumUserRole,
+  AssetLockReason,
   AssetOrder,
   AssetVisibility,
   LibraryScope,
@@ -580,6 +581,49 @@ describe(AlbumService.name, () => {
       );
       expect(mocks.album.update).not.toHaveBeenCalled();
     });
+    it('refuses an editor locking the album', async () => {
+      const album = AlbumFactory.from()
+        .albumUser({ userId: authStub.admin.user.id, role: AlbumUserRole.Editor })
+        .build();
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set());
+      mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      await expect(sut.update(authStub.admin, album.id, { isLocked: true })).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mocks.album.update).not.toHaveBeenCalled();
+      expect(mocks.asset.lock).not.toHaveBeenCalled();
+    });
+
+    it("locks the owner's items when the album is locked", async () => {
+      const album = AlbumFactory.from().build();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.album.update.mockResolvedValue(getForAlbum(album));
+      mocks.album.getOwnedAssetIds.mockResolvedValue(['asset-1', 'asset-2']);
+      mocks.asset.findLockGroupIds.mockResolvedValue(['asset-1', 'asset-2']);
+      mocks.asset.lock.mockResolvedValue(['asset-1', 'asset-2']);
+
+      await sut.update(AuthFactory.create(owner), album.id, { isLocked: true });
+
+      expect(mocks.album.update).toHaveBeenCalledWith(album.id, expect.objectContaining({ isLocked: true }), owner.id);
+      expect(mocks.album.getOwnedAssetIds).toHaveBeenCalledWith(album.id, owner.id);
+      expect(mocks.asset.lock).toHaveBeenCalledWith(['asset-1', 'asset-2'], AssetLockReason.Marked, owner.id);
+    });
+
+    it('leaves items locked when the album is unlocked', async () => {
+      const album = AlbumFactory.from({ isLocked: true }).build();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.album.update.mockResolvedValue(getForAlbum(album));
+
+      await sut.update(AuthFactory.create(owner), album.id, { isLocked: false });
+
+      expect(mocks.album.update).toHaveBeenCalledWith(album.id, expect.objectContaining({ isLocked: false }), owner.id);
+      expect(mocks.asset.lock).not.toHaveBeenCalled();
+      expect(mocks.asset.unlock).not.toHaveBeenCalled();
+    });
+
     it('keeps album writes and notifications behind origin edit admission', async () => {
       const album = AlbumFactory.from().albumUser().build();
       const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
@@ -1985,6 +2029,38 @@ describe(AlbumService.name, () => {
         expect(mocks.event.emit).not.toHaveBeenCalled();
       },
     );
+
+    it("locks the owner's items added to a locked album, and nobody else's", async () => {
+      const owner = UserFactory.create();
+      const album = AlbumFactory.from({ isLocked: true }).owner(owner).build();
+      const [mine, theirs] = [AssetFactory.create({ ownerId: owner.id }), AssetFactory.create()];
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([mine.id, theirs.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.album.getAssetIds.mockResolvedValueOnce(new Set());
+      mocks.album.getOwnedAssetIds.mockResolvedValue(['already-in-album', mine.id]);
+      mocks.asset.findLockGroupIds.mockResolvedValue([mine.id]);
+      mocks.asset.lock.mockResolvedValue([mine.id]);
+
+      await sut.addAssets(AuthFactory.create(owner), album.id, { ids: [mine.id, theirs.id] });
+
+      expect(mocks.asset.lock).toHaveBeenCalledTimes(1);
+      expect(mocks.asset.lock).toHaveBeenCalledWith([mine.id], AssetLockReason.Marked, owner.id);
+    });
+
+    it('does not lock items added to an unlocked album', async () => {
+      const owner = UserFactory.create();
+      const album = AlbumFactory.from().owner(owner).build();
+      const asset = AssetFactory.create({ ownerId: owner.id });
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.album.getAssetIds.mockResolvedValueOnce(new Set());
+
+      await sut.addAssets(AuthFactory.create(owner), album.id, { ids: [asset.id] });
+
+      expect(mocks.asset.lock).not.toHaveBeenCalled();
+    });
 
     it('should allow the owner to add assets', async () => {
       const owner = UserFactory.create({ isAdmin: true });

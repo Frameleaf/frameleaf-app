@@ -527,6 +527,19 @@ export class AlbumRepository {
    * @param assetIds Optional list of asset IDs to filter on.
    * @returns Set of Asset IDs for the given album ID.
    */
+  /** The items in the album that `ownerId` owns, trashed ones included: what locking the album locks. */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
+  async getOwnedAssetIds(albumId: string, ownerId: string): Promise<string[]> {
+    const rows = await this.db
+      .selectFrom('album_asset')
+      .innerJoin('asset', 'asset.id', 'album_asset.assetId')
+      .select('album_asset.assetId')
+      .where('album_asset.albumId', '=', albumId)
+      .where('asset.ownerId', '=', ownerId)
+      .execute();
+    return rows.map(({ assetId }) => assetId);
+  }
+
   @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID]] })
   @ChunkedSet({ paramIndex: 1 })
   async getAssetIds(albumId: string, assetIds: string[]): Promise<Set<string>> {
