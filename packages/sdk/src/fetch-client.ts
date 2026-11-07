@@ -3760,6 +3760,8 @@ export type UserAdminPinCodeStateResponseDto = {
 };
 export type AlbumsResponse = {
     defaultAssetOrder: AssetOrder;
+    /** Whether albums a partner shared appear in the album list */
+    showPartnerAlbums: boolean;
 };
 export type CastResponse = {
     /** Whether an administrator has turned casting off for this user */
@@ -3904,6 +3906,8 @@ export type UserPreferencesResponseDto = {
 };
 export type AlbumsUpdate = {
     defaultAssetOrder?: AssetOrder;
+    /** Whether albums a partner shared appear in the album list */
+    showPartnerAlbums?: boolean;
 };
 export type AvatarUpdate = {
     color?: UserAvatarColor;
@@ -20643,6 +20647,8 @@ export type TimeBucketAssetDto = {
     withChildTags?: boolean;
     /** Include location data in the response */
     withCoordinates?: boolean;
+    /** Include partner-shared copies. Defaults to true; false hides them, except copies in an album the partner made, which always show */
+    withPartners?: boolean;
     /** Include stacked assets in the response. When true, only primary assets from stacks are returned. */
     withStacked?: boolean;
 };
@@ -20695,6 +20701,8 @@ export type TimeBucketDto = {
     withChildTags?: boolean;
     /** Include location data in the response */
     withCoordinates?: boolean;
+    /** Include partner-shared copies. Defaults to true; false hides them, except copies in an album the partner made, which always show */
+    withPartners?: boolean;
     /** Include stacked assets in the response. When true, only primary assets from stacks are returned. */
     withStacked?: boolean;
 };
@@ -20744,6 +20752,8 @@ export type TimelineHighlightsDto = {
     withChildTags?: boolean;
     /** Include location data in the response */
     withCoordinates?: boolean;
+    /** Include partner-shared copies. Defaults to true; false hides them, except copies in an album the partner made, which always show */
+    withPartners?: boolean;
     /** Include stacked assets in the response. When true, only primary assets from stacks are returned. */
     withStacked?: boolean;
 };
@@ -20799,6 +20809,8 @@ export type TimelineOrderedDto = {
     withChildTags?: boolean;
     /** Include location data in the response */
     withCoordinates?: boolean;
+    /** Include partner-shared copies. Defaults to true; false hides them, except copies in an album the partner made, which always show */
+    withPartners?: boolean;
     /** Include stacked assets in the response. When true, only primary assets from stacks are returned. */
     withStacked?: boolean;
 };
@@ -35279,7 +35291,7 @@ export function scanTakeoutImport({ id }: {
 /**
  * Get time bucket
  */
-export function getTimeBucket({ after, albumId, assetType, bbox, before, bestPhotos, dateType, filter, firstAssetId, imageEnrichment, isFavorite, isTrashed, key, lastAssetId, libraryScope, lockReason, membershipAlbumId, order, orderBy, personId, petId, slug, suppressedOnly, tagId, take, timeBucket, userId, visibility, withChildTags, withCoordinates, withStacked }: {
+export function getTimeBucket({ after, albumId, assetType, bbox, before, bestPhotos, dateType, filter, firstAssetId, imageEnrichment, isFavorite, isTrashed, key, lastAssetId, libraryScope, lockReason, membershipAlbumId, order, orderBy, personId, petId, slug, suppressedOnly, tagId, take, timeBucket, userId, visibility, withChildTags, withCoordinates, withPartners, withStacked }: {
     after?: string;
     albumId?: string;
     assetType?: AssetTypeEnum;
@@ -35310,6 +35322,7 @@ export function getTimeBucket({ after, albumId, assetType, bbox, before, bestPho
     visibility?: AssetVisibility;
     withChildTags?: boolean;
     withCoordinates?: boolean;
+    withPartners?: boolean;
     withStacked?: boolean;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -35346,6 +35359,7 @@ export function getTimeBucket({ after, albumId, assetType, bbox, before, bestPho
         visibility,
         withChildTags,
         withCoordinates,
+        withPartners,
         withStacked
     }))}`, {
         ...opts
@@ -35354,7 +35368,7 @@ export function getTimeBucket({ after, albumId, assetType, bbox, before, bestPho
 /**
  * Get time buckets
  */
-export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType, filter, imageEnrichment, isFavorite, isTrashed, key, libraryScope, locateAssetId, lockReason, order, orderBy, pageSize, personId, petId, slug, sort, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withStacked }: {
+export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType, filter, imageEnrichment, isFavorite, isTrashed, key, libraryScope, locateAssetId, lockReason, order, orderBy, pageSize, personId, petId, slug, sort, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withPartners, withStacked }: {
     albumId?: string;
     assetType?: AssetTypeEnum;
     bbox?: string;
@@ -35381,6 +35395,7 @@ export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType,
     visibility?: AssetVisibility;
     withChildTags?: boolean;
     withCoordinates?: boolean;
+    withPartners?: boolean;
     withStacked?: boolean;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -35413,6 +35428,7 @@ export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType,
         visibility,
         withChildTags,
         withCoordinates,
+        withPartners,
         withStacked
     }))}`, {
         ...opts
@@ -35421,7 +35437,7 @@ export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType,
 /**
  * Get timeline highlights
  */
-export function getTimelineHighlights({ albumId, assetType, bbox, bestPhotos, dateType, filter, grouping, highlightCount, imageEnrichment, isFavorite, isTrashed, key, libraryScope, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withStacked }: {
+export function getTimelineHighlights({ albumId, assetType, bbox, bestPhotos, dateType, filter, grouping, highlightCount, imageEnrichment, isFavorite, isTrashed, key, libraryScope, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withPartners, withStacked }: {
     albumId?: string;
     assetType?: AssetTypeEnum;
     bbox?: string;
@@ -35447,6 +35463,7 @@ export function getTimelineHighlights({ albumId, assetType, bbox, bestPhotos, da
     visibility?: AssetVisibility;
     withChildTags?: boolean;
     withCoordinates?: boolean;
+    withPartners?: boolean;
     withStacked?: boolean;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -35478,6 +35495,7 @@ export function getTimelineHighlights({ albumId, assetType, bbox, bestPhotos, da
         visibility,
         withChildTags,
         withCoordinates,
+        withPartners,
         withStacked
     }))}`, {
         ...opts
@@ -35486,7 +35504,7 @@ export function getTimelineHighlights({ albumId, assetType, bbox, bestPhotos, da
 /**
  * Get the timeline in a flat order
  */
-export function getTimelineOrdered({ after, albumId, assetType, bbox, before, bestPhotos, dateType, filter, imageEnrichment, isFavorite, isTrashed, key, libraryScope, lockReason, order, orderBy, personId, petId, skip, slug, sort, suppressedOnly, tagId, take, userId, visibility, withChildTags, withCoordinates, withStacked }: {
+export function getTimelineOrdered({ after, albumId, assetType, bbox, before, bestPhotos, dateType, filter, imageEnrichment, isFavorite, isTrashed, key, libraryScope, lockReason, order, orderBy, personId, petId, skip, slug, sort, suppressedOnly, tagId, take, userId, visibility, withChildTags, withCoordinates, withPartners, withStacked }: {
     after?: string;
     albumId?: string;
     assetType?: AssetTypeEnum;
@@ -35515,6 +35533,7 @@ export function getTimelineOrdered({ after, albumId, assetType, bbox, before, be
     visibility?: AssetVisibility;
     withChildTags?: boolean;
     withCoordinates?: boolean;
+    withPartners?: boolean;
     withStacked?: boolean;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -35549,6 +35568,7 @@ export function getTimelineOrdered({ after, albumId, assetType, bbox, before, be
         visibility,
         withChildTags,
         withCoordinates,
+        withPartners,
         withStacked
     }))}`, {
         ...opts

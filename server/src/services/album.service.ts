@@ -133,17 +133,31 @@ export class AlbumService extends BaseService {
     const privacyOptions = this.nsfwOptions(auth, suppressedOnly);
     // FL-522: a smart album the person hid stays out of their own album list (it keeps filling).
     // FL-647: left out in the query too, so a `take` limit counts only albums this list shows.
-    const hidden: Set<string> | undefined = await this.smartAlbumRepository.getHiddenAlbumIds(ownerId);
+    const hidden = new Set(await this.smartAlbumRepository.getHiddenAlbumIds(ownerId));
+    // Partner sharing: the album list leaves out partner albums when the account turned them off, in the
+    // query so `take` counts only shown albums. The albums an item belongs to (`assetId`) always list them.
+    if (!assetId && !getPreferences(await this.userRepository.getMetadata(ownerId)).albums.showPartnerAlbums) {
+      for (const id of await this.partnerOriginRepository.getPartnerAlbumIds(ownerId)) {
+        hidden.add(id);
+      }
+    }
     let albums: MapAlbumDto[] = assetId
       ? await this.albumRepository.getByAssetId(ownerId, assetId, privacyOptions)
       : await this.albumRepository.getAll(ownerId, {
           libraryScope: LibraryScope.Personal,
           ...rest,
-          ...(hidden && hidden.size > 0 ? { excludeIds: [...hidden] } : {}),
+          ...(hidden.size > 0 ? { excludeIds: [...hidden] } : {}),
         });
-    if (hidden && hidden.size > 0) {
+    if (hidden.size > 0) {
       albums = albums.filter((album) => !hidden.has(album.id));
     }
+
+    // FL-326: the viewer's own albums copied from a partner name the library they came from
+    const origins = await this.partnerOriginRepository.getOriginLabels(
+      'album',
+      albums.map((album) => album.id),
+      ownerId,
+    );
 
     if (albums.length === 0) {
       return [];
@@ -161,12 +175,6 @@ export class AlbumService extends BaseService {
     albums = await this.hideNsfwAlbumThumbnails(auth, albums, privacyOptions, albumMetadata);
 
     const readable = await this.readableParents(auth, albums);
-    // FL-326: the viewer's own albums copied from a partner name the library they came from
-    const origins = await this.partnerOriginRepository.getOriginLabels(
-      'album',
-      albums.map((album) => album.id),
-      ownerId,
-    );
     return this.withSupporters(
       auth,
       albums.map((album) => {

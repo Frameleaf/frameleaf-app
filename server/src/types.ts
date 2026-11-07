@@ -1638,6 +1638,7 @@ export type UserPreferences = {
   notifications?: import('src/utils/notification-locale.js').NotificationLocalePreferences;
   albums: {
     defaultAssetOrder: AssetOrder;
+    showPartnerAlbums: boolean;
   };
   folders: {
     enabled: boolean;

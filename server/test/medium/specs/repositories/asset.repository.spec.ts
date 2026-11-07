@@ -160,6 +160,39 @@ describe(AssetRepository.name, () => {
   );
 
   describe('getTimeBucket', () => {
+    it('hides partner copies with withPartners false, except those in a partner album', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { user: partner } = await ctx.newUser();
+      const auth = factory.auth({ user: { id: user.id } });
+      const at = { fileCreatedAt: new Date('2026-04-02T12:00:00Z'), localDateTime: new Date('2026-04-02T12:00:00Z') };
+      const [{ asset: own }, { asset: copy }, { asset: albumCopy }] = await Promise.all([
+        ctx.newAsset({ ownerId: user.id, ...at }),
+        ctx.newAsset({ ownerId: user.id, ...at }),
+        ctx.newAsset({ ownerId: user.id, ...at }),
+      ]);
+      await Promise.all([own, copy, albumCopy].map(({ id }) => ctx.newExif({ assetId: id, timeZone: 'UTC' })));
+      const { album } = await ctx.newAlbum({ ownerId: user.id }, [albumCopy.id]);
+      const db = ctx.database;
+      for (const id of [copy.id, albumCopy.id]) {
+        await sql`INSERT INTO public.asset_origin ("assetId", "ownerId", "rootOwnerId", "partnerSharedById")
+          VALUES (${id}, ${user.id}, ${partner.id}, ${partner.id})`.execute(db);
+      }
+      await sql`INSERT INTO public.album_origin ("albumId", "ownerId", "rootOwnerId", "partnerSharedById")
+        VALUES (${album.id}, ${user.id}, ${partner.id}, ${partner.id})`.execute(db);
+
+      const ids = async (withPartners?: boolean) => {
+        const bucket = await sut.getTimeBucket(
+          '2026-04-01',
+          { userIds: [user.id], visibility: AssetVisibility.Timeline, withPartners },
+          auth,
+        );
+        return (JSON.parse(bucket.assets).id as string[]).toSorted();
+      };
+      expect(await ids()).toEqual([own.id, copy.id, albumCopy.id].toSorted());
+      expect(await ids(false)).toEqual([own.id, albumCopy.id].toSorted());
+    });
+
     it('should order assets by local day first and fileCreatedAt within each day', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();

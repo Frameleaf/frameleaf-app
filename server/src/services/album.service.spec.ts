@@ -38,6 +38,7 @@ describe(AlbumService.name, () => {
       write(undefined!, mocks.album as unknown as AlbumRepository),
     );
     mocks.partnerOrigin.getOriginLabels.mockResolvedValue(new Map());
+    mocks.user.getMetadata.mockResolvedValue([]);
     mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => write());
   });
 
@@ -147,6 +148,27 @@ describe(AlbumService.name, () => {
       expect(mocks.partnerOrigin.getOriginLabels).toHaveBeenCalledWith('album', [album.id, other.id], owner.id);
       expect(result[0].origin).toEqual({ rootOwnerId, rootOwnerName: 'Jamie' });
       expect(result[1]).not.toHaveProperty('origin');
+    });
+
+    it('leaves out partner albums when the person turned them off, but not for an item', async () => {
+      const album = AlbumFactory.from().albumUser().build();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      const own = AlbumFactory.from().owner(owner).build();
+      mocks.album.getAll.mockResolvedValue([getForAlbum(album), getForAlbum(own)]);
+      mocks.album.getByAssetId.mockResolvedValue([getForAlbum(album), getForAlbum(own)]);
+      mocks.album.getMetadataForIds.mockResolvedValue([]);
+      mocks.partnerOrigin.getPartnerAlbumIds.mockResolvedValue([album.id]);
+      mocks.user.getMetadata.mockResolvedValue([
+        { key: UserMetadataKey.Preferences, value: { albums: { showPartnerAlbums: false } } },
+      ]);
+
+      const list = await sut.getAll(AuthFactory.create(owner), { take: 20 });
+      expect(list.map(({ id }) => id)).toEqual([own.id]);
+      // left out in the query, so `take` counts only the albums the list shows
+      expect(mocks.album.getAll).toHaveBeenCalledWith(owner.id, expect.objectContaining({ excludeIds: [album.id] }));
+
+      const forItem = await sut.getAll(AuthFactory.create(owner), { assetId: newUuid() });
+      expect(forItem.map(({ id }) => id)).toEqual([album.id, own.id]);
     });
 
     it('leaves out the smart albums the person hid from their library (FL-522)', async () => {

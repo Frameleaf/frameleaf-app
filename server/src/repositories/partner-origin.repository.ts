@@ -1113,6 +1113,15 @@ export class PartnerOriginRepository {
    * FL-326 (spec §5.2, partner-people-locked): the "From {owner}'s library" label of `ownerId`'s own copies
    * among `ids`: the original uploader's id and current name. Copies of other owners are never labelled.
    */
+  /** `ownerId`'s albums copied from a partner, including ones whose original owner's account is gone. */
+  async getPartnerAlbumIds(ownerId: string): Promise<string[]> {
+    const { rows } = await sql<{ id: string }>`
+      SELECT origin."albumId" AS id
+      FROM public.album_origin origin
+      WHERE origin."ownerId" = ${ownerId}::uuid
+    `.execute(this.db);
+    return rows.map(({ id }) => id);
+  }
   async getOriginLabels(
     kind: OriginKind,
     ids: string[],

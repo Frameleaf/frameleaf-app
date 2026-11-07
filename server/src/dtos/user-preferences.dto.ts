@@ -12,6 +12,7 @@ import {
 const AlbumsUpdateSchema = z
   .object({
     defaultAssetOrder: AssetOrderSchema.optional(),
+    showPartnerAlbums: z.boolean().optional().describe('Whether albums a partner shared appear in the album list'),
   })
   .optional()
   .describe('Album preferences')
@@ -279,6 +280,7 @@ const UserPreferencesUpdateSchema = z
 const AlbumsResponseSchema = z
   .object({
     defaultAssetOrder: AssetOrderSchema,
+    showPartnerAlbums: z.boolean().describe('Whether albums a partner shared appear in the album list'),
   })
   .meta({ id: 'AlbumsResponse' });
 

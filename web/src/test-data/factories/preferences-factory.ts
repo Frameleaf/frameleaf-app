@@ -4,6 +4,7 @@ import { Sync } from 'factory.ts';
 export const preferencesFactory = Sync.makeFactory<UserPreferencesResponseDto>({
   albums: {
     defaultAssetOrder: AssetOrder.Desc,
+    showPartnerAlbums: true,
   },
   cast: {
     adminDisabled: false,
