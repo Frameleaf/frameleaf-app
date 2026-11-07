@@ -2153,6 +2153,24 @@ describe(AlbumService.name, () => {
       ]);
     });
 
+    it('still runs the post-lock follow-up when telling partner copies fails', async () => {
+      const owner = UserFactory.create();
+      const album = AlbumFactory.from().owner(owner).build();
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.album.update.mockResolvedValue(getForAlbum(album));
+      mocks.album.getUnlockedItemsInLockedAlbums.mockResolvedValue([{ assetId: 'a1', ownerId: owner.id }]);
+      mocks.asset.findLockGroupIds.mockResolvedValue(['a1']);
+      mocks.asset.lock.mockResolvedValue(['a1']);
+      mocks.partnerOrigin.getIdsWithFollowers.mockRejectedValue(new Error('origin down'));
+      mocks.asset.getLockedEncryptionItems.mockResolvedValue([]);
+
+      await expect(sut.update(AuthFactory.create(owner), album.id, { isLocked: true })).rejects.toThrow('origin down');
+
+      expect(mocks.asset.getLockedEncryptionItems).toHaveBeenCalledWith(['a1']);
+      expect(mocks.event.emit).toHaveBeenCalledWith('AssetLocked', { assetIds: ['a1'] });
+    });
+
     it('locks a very large album in batches', async () => {
       const owner = UserFactory.create();
       const album = AlbumFactory.from().owner(owner).build();

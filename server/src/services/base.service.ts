@@ -655,7 +655,7 @@ export class BaseService {
   /**
    * Lock (FL-34): `userId`'s own lock on `ids`, recorded as `marked`, with their stacks and live photos.
    * `recordEdit` gets the ids whose visibility changed, for the caller's `recordAssetEdit` (FL-326); it runs
-   * right after the lock commits, before the post-lock follow-up, so partner copies follow even if that fails.
+   * right after the lock commits; it and the post-lock follow-up each run even if the other fails.
    * The caller has checked that `userId` may update `ids`.
    */
   protected async lockAssetsAs(
@@ -683,11 +683,22 @@ export class BaseService {
         return { locked, visibilityIds };
       },
     );
-    await recordEdit(visibilityIds);
-    if (locked.length > 0) {
-      await this.afterAssetsLocked(locked);
-      await this.notifyAssetsUpdated(locked, userId);
+    // Both run whatever the other does: the lock is committed, and each has work nothing else retries.
+    let failure: unknown;
+    try {
+      await recordEdit(visibilityIds);
+    } catch (error) {
+      failure = error;
     }
+    if (locked.length > 0) {
+      try {
+        await this.afterAssetsLocked(locked);
+        await this.notifyAssetsUpdated(locked, userId);
+      } catch (error) {
+        failure ??= error;
+      }
+    }
+    if (failure) throw failure;
   }
 
   /**
