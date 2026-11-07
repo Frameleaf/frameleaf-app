@@ -302,8 +302,11 @@ const ownersOf = async (keyIds: Buffer[]): Promise<string[]> => {
     const pending = unknown();
     if (pending.length === 0) break;
     const scan = refreshingOwners;
-    if (scan && waits < 4) {
-      waits++;
+    // a read for one of its own unresolved ids is always waited for (each such wait settles a new id);
+    // reads for other ids only up to four times
+    const ownRead = !!scan && pending.some((id) => scan.ids.has(id) && !covered.has(id));
+    if (scan && (ownRead || waits < 4)) {
+      if (!ownRead) waits++;
       await scan.done;
       for (const id of scan.ids) covered.add(id);
       continue;
