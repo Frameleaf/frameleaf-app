@@ -249,6 +249,27 @@ export const hasUsableLockedKey = async (keyIds: Buffer[], viewerId: string): Pr
 let keyOwners = new Map<string, string>();
 const missingAt = new Map<string, number>();
 const KEY_OWNERS_REFRESH_MS = 60_000;
+/** The key file read in progress: lookups that need it wait for it rather than answering without it. */
+let refreshingOwners: Promise<void> | undefined;
+
+const readKeyOwners = async () => {
+  try {
+    const next = new Map<string, string>();
+    // imported when first needed: file.ts (and so every controller) imports this module, and the
+    // key repository's storage imports would make a cycle. The path is relative because the build
+    // rewrites the `src/` alias of static imports only; `import('src/…')` fails in the built server.
+    const { LockedKeyRepository } = await import('../repositories/locked-key.repository.js');
+    for (const file of await new LockedKeyRepository().list()) {
+      next.set(toKeyId(Buffer.from(file.publicKey, 'base64')).toString('hex'), file.userId);
+    }
+    keyOwners = next;
+    for (const id of next.keys()) {
+      missingAt.delete(id);
+    }
+  } catch {
+    // the owners only make the error more useful; the error stands without them
+  }
+};
 
 const ownersOf = async (keyIds: Buffer[]): Promise<string[]> => {
   const hex = keyIds.map((id) => id.toString('hex'));
@@ -258,22 +279,14 @@ const ownersOf = async (keyIds: Buffer[]): Promise<string[]> => {
     for (const id of unknown) {
       missingAt.set(id, now);
     }
-    try {
-      const next = new Map<string, string>();
-      // imported when first needed: file.ts (and so every controller) imports this module, and the
-      // key repository's storage imports would make a cycle. The path is relative because the build
-      // rewrites the `src/` alias of static imports only; `import('src/…')` fails in the built server.
-      const { LockedKeyRepository } = await import('../repositories/locked-key.repository.js');
-      for (const file of await new LockedKeyRepository().list()) {
-        next.set(toKeyId(Buffer.from(file.publicKey, 'base64')).toString('hex'), file.userId);
-      }
-      keyOwners = next;
-      for (const id of next.keys()) {
-        missingAt.delete(id);
-      }
-    } catch {
-      // the owners only make the error more useful; the error stands without them
-    }
+    refreshingOwners ??= readKeyOwners().finally(() => {
+      refreshingOwners = undefined;
+    });
+  }
+  // FL-1265: jobs fail together when a session locks; one marks the ids as just looked for and starts the
+  // read, and the others must wait for it, or they defer with no owner and no unlock ever wakes them.
+  if (unknown.length > 0 && refreshingOwners) {
+    await refreshingOwners;
   }
   return [...new Set(hex.map((id) => keyOwners.get(id)).filter((id): id is string => !!id))];
 };
@@ -282,6 +295,7 @@ const ownersOf = async (keyIds: Buffer[]): Promise<string[]> => {
 export const clearLockedKeyOwners = () => {
   keyOwners = new Map();
   missingAt.clear();
+  refreshingOwners = undefined;
 };
 
 const unavailable = async (keyIds: Buffer[], viewerId: string | null = null) => {

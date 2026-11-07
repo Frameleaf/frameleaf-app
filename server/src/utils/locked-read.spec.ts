@@ -154,6 +154,16 @@ describe('locked-read', () => {
     expect(error.code).toBe('locked_key_unavailable');
   });
 
+  it('names the owner for every read that fails at once, not only the first', async () => {
+    // jobs fail together right after a session locks; the second must not skip the key file read
+    // the first one has started, or it is deferred with no owner and no unlock ever wakes it
+    const errors = await Promise.all([1, 2, 3].map(() => openLockedRead(sealed, null).catch((error_) => error_)));
+    for (const error of errors) {
+      expect(error).toBeInstanceOf(LockedKeyUnavailableError);
+      expect(error.ownerIds).toEqual([OWNER]);
+    }
+  });
+
   it('names a person who turned encryption on within a minute of the last key file read', async () => {
     // the first lookup reads the key files, which hold only OWNER's
     await openLockedRead(sealed, OWNER).catch(() => {});
