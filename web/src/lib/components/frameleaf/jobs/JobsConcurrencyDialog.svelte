@@ -172,7 +172,9 @@
       <Notice tone="warn" title={$t('frameleaf_jobs_concurrency_over_title', { values })}>
         {capacity?.fromEnvironment
           ? $t('frameleaf_jobs_concurrency_over_server', { values })
-          : $t('frameleaf_jobs_concurrency_over_body', { values })}
+          : wanted > (limit ?? 0)
+            ? $t('frameleaf_jobs_concurrency_over_body', { values })
+            : $t('frameleaf_jobs_concurrency_over_most', { values })}
         {#snippet action()}
           {#if canRaise}
             <Button onclick={raise}>{$t('frameleaf_jobs_concurrency_over_raise', { values })}</Button>

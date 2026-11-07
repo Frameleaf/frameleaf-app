@@ -120,4 +120,19 @@ describe('How many run at once (FL-71, ConcurrencyDialog in JobsManager.jsx; Bac
     expect(screen.getByText(/FRAMELEAF_JOB_CAPACITY/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Raise Jobs at once/ })).toBeNull();
   });
+
+  it('says a task above the most any server runs gains nothing, with nothing to raise', async () => {
+    const draft = store();
+    (draft.draft.job as unknown as { capacity: number }).capacity = 32;
+    render(JobsConcurrencyDialog, { open: true, store: draft, title, capacity: { value: 8, fromEnvironment: false } });
+
+    await fireEvent.input(screen.getByLabelText('Thumbnails simultaneous jobs'), { target: { value: '40' } });
+
+    expect(screen.getByText('Only 32 jobs run at once')).toBeInTheDocument();
+    expect(screen.getByText(/No server runs more than 32 jobs at once/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Raise Jobs at once/ })).toBeNull();
+    expect(
+      (draft.draft.job as unknown as Record<string, { concurrency: number }>).thumbnailGeneration.concurrency,
+    ).toBe(40);
+  });
 });
