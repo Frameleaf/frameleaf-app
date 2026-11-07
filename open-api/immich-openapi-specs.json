@@ -10868,6 +10868,57 @@
         "x-immich-state": "Stable"
       }
     },
+    "/admin/users/{id}/two-factor": {
+      "delete": {
+        "description": "Turn off two-step sign-in for someone who lost their authenticator and recovery codes. Recorded in the account history.",
+        "operationId": "resetUserTwoFactorAdmin",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Turn off two-step sign-in for a user",
+        "tags": [
+          "Users (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "adminUser.update",
+        "x-immich-state": "Beta"
+      }
+    },
     "/admin/workers": {
       "get": {
         "description": "Every machine-learning, restoration and render endpoint with its last known state, acceleration, allowed and served workloads, library routes, per-workload admission and load, plus the server processes running restorations. Read-only; nothing is contacted.",
@@ -19979,6 +20030,50 @@
         "x-immich-state": "Stable"
       }
     },
+    "/auth/login/two-factor": {
+      "post": {
+        "description": "Send the authenticator code (or a recovery code) for a password sign-in that answered twoFactorRequired, and receive the session token.",
+        "operationId": "loginTwoFactor",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginTwoFactorDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Finish a two-step sign-in",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-state": "Beta"
+      }
+    },
     "/auth/logout": {
       "post": {
         "description": "Logout the current user and invalidate the session token.",
@@ -20395,6 +20490,328 @@
           }
         ],
         "x-immich-state": "Stable"
+      }
+    },
+    "/auth/two-factor": {
+      "delete": {
+        "description": "Turn off two-step sign-in with the password and an authenticator or recovery code.",
+        "operationId": "disableTwoFactor",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TwoFactorProofDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Turn off two-step sign-in",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "auth.changePassword",
+        "x-immich-state": "Beta"
+      }
+    },
+    "/auth/two-factor/enable": {
+      "post": {
+        "description": "Confirm the new authenticator key with a code. Returns ten recovery codes, shown only this once.",
+        "operationId": "enableTwoFactor",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TwoFactorCodeDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TwoFactorRecoveryCodesResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Turn on two-step sign-in",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "auth.changePassword",
+        "x-immich-state": "Beta"
+      }
+    },
+    "/auth/two-factor/move": {
+      "post": {
+        "description": "Check the password and a code from the old phone (or a recovery code) and create the new phone’s key. The old phone works until the move is confirmed.",
+        "operationId": "startTwoFactorMove",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TwoFactorProofDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TwoFactorSetupResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Start moving two-step sign-in to a new phone",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "auth.changePassword",
+        "x-immich-state": "Beta"
+      }
+    },
+    "/auth/two-factor/move/confirm": {
+      "post": {
+        "description": "Confirm the new phone with a code from it. Recovery codes and trusted browsers stay.",
+        "operationId": "confirmTwoFactorMove",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TwoFactorCodeDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Finish moving two-step sign-in to a new phone",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "auth.changePassword",
+        "x-immich-state": "Beta"
+      }
+    },
+    "/auth/two-factor/recovery-codes": {
+      "post": {
+        "description": "Replace every recovery code with ten new ones, shown only this once.",
+        "operationId": "regenerateRecoveryCodes",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TwoFactorPasswordDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TwoFactorRecoveryCodesResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Make new recovery codes",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "auth.changePassword",
+        "x-immich-state": "Beta"
+      }
+    },
+    "/auth/two-factor/setup": {
+      "post": {
+        "description": "Check the password and create a new authenticator key. Two-step sign-in turns on once a code from it is confirmed.",
+        "operationId": "setupTwoFactor",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TwoFactorPasswordDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TwoFactorSetupResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Start setting up two-step sign-in",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "auth.changePassword",
+        "x-immich-state": "Beta"
       }
     },
     "/auth/validateToken": {
@@ -77788,12 +78205,24 @@
           "pinExpiresAt": {
             "description": "PIN expiration date",
             "type": "string"
+          },
+          "recoveryCodesRemaining": {
+            "description": "FL-793: unused recovery codes (0 when two-step sign-in is off)",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "twoFactorEnabled": {
+            "description": "FL-793: two-step sign-in is on",
+            "type": "boolean"
           }
         },
         "required": [
           "isElevated",
           "password",
-          "pinCode"
+          "pinCode",
+          "recoveryCodesRemaining",
+          "twoFactorEnabled"
         ],
         "type": "object"
       },
@@ -102795,6 +103224,10 @@
           "rememberMe": {
             "description": "Persist authentication cookies across browser sessions (default true)",
             "type": "boolean"
+          },
+          "twoFactor": {
+            "description": "FL-793: this client can show the two-step code step. Without it, an account with two-step sign-in is refused (403, code two_factor_required) instead of answered with twoFactorRequired.",
+            "type": "boolean"
           }
         },
         "required": [
@@ -102837,6 +103270,14 @@
             "description": "Should change password",
             "type": "boolean"
           },
+          "twoFactorRequired": {
+            "description": "FL-793: the password was right and the account uses two-step sign-in. No session was created and accessToken is empty: send the code to POST /auth/login/two-factor with twoFactorToken.",
+            "type": "boolean"
+          },
+          "twoFactorToken": {
+            "description": "FL-793: proves the password step for five minutes; send it with the code",
+            "type": "string"
+          },
           "userEmail": {
             "description": "User email",
             "format": "email",
@@ -102859,6 +103300,35 @@
           "shouldChangePassword",
           "userEmail",
           "userId"
+        ],
+        "type": "object"
+      },
+      "LoginTwoFactorDto": {
+        "properties": {
+          "code": {
+            "description": "The 6-digit code from the authenticator app",
+            "pattern": "^\\d{6}$",
+            "type": "string"
+          },
+          "recoveryCode": {
+            "description": "One of the recovery codes, as written down",
+            "maxLength": 32,
+            "minLength": 1,
+            "type": "string"
+          },
+          "trustDevice": {
+            "description": "Skip the code step in this browser for 30 days",
+            "type": "boolean"
+          },
+          "twoFactorToken": {
+            "description": "twoFactorToken from POST /auth/login",
+            "maxLength": 1000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "twoFactorToken"
         ],
         "type": "object"
       },
@@ -154110,6 +154580,86 @@
         ],
         "type": "object"
       },
+      "TwoFactorCodeDto": {
+        "properties": {
+          "code": {
+            "description": "The 6-digit code from the authenticator app",
+            "pattern": "^\\d{6}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      },
+      "TwoFactorPasswordDto": {
+        "properties": {
+          "password": {
+            "description": "The account password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "password"
+        ],
+        "type": "object"
+      },
+      "TwoFactorProofDto": {
+        "properties": {
+          "code": {
+            "description": "The 6-digit code from the authenticator app",
+            "pattern": "^\\d{6}$",
+            "type": "string"
+          },
+          "password": {
+            "description": "The account password",
+            "type": "string"
+          },
+          "recoveryCode": {
+            "description": "One of the recovery codes, as written down",
+            "maxLength": 32,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "password"
+        ],
+        "type": "object"
+      },
+      "TwoFactorRecoveryCodesResponseDto": {
+        "properties": {
+          "recoveryCodes": {
+            "description": "Ten one-time recovery codes, shown only now",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "recoveryCodes"
+        ],
+        "type": "object"
+      },
+      "TwoFactorSetupResponseDto": {
+        "properties": {
+          "otpauthUri": {
+            "description": "otpauth:// address to show as a QR code",
+            "type": "string"
+          },
+          "secret": {
+            "description": "The key to type into an authenticator app (base32)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "otpauthUri",
+          "secret"
+        ],
+        "type": "object"
+      },
       "UpdateAlbumDto": {
         "properties": {
           "albumName": {
@@ -154548,10 +155098,15 @@
           "pinCode": {
             "description": "Whether the account has a PIN set",
             "type": "boolean"
+          },
+          "twoFactorEnabled": {
+            "description": "FL-793: whether the account has two-step sign-in on",
+            "type": "boolean"
           }
         },
         "required": [
-          "pinCode"
+          "pinCode",
+          "twoFactorEnabled"
         ],
         "type": "object"
       },

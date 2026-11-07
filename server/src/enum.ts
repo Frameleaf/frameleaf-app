@@ -25,6 +25,8 @@ export enum AuthCookie {
   SharedLinkToken = 'immich_shared_link_token',
   OAuthState = 'immich_oauth_state',
   OAuthCodeVerifier = 'immich_oauth_code_verifier',
+  /** FL-793: "Trust this browser" after two-step sign-in, signed and bound to the account's password. */
+  TwoFactorTrust = 'frameleaf_2fa_trust',
 }
 
 export enum RequestHeader {
@@ -3066,7 +3068,11 @@ export enum AdminAuditAction {
    * claimed from its home network; otherwise null.
    */
   AccountCreated = 'account-created',
-  /** Name, email, avatar colour or the require-password-change flag. */
+  /**
+   * Name, email, avatar colour or the require-password-change flag. FL-793: `detail` is
+   * `two-factor-reset` when an administrator turned off the account's two-step sign-in (a new enum
+   * value would break the apps' strict decoders).
+   */
   AccountUpdated = 'account-updated',
   AdminGranted = 'admin-granted',
   AdminRevoked = 'admin-revoked',

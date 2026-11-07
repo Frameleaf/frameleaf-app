@@ -193,6 +193,19 @@ export class UserAdminController {
     return this.service.getPinCodeState(auth, id);
   }
 
+  @Delete(':id/two-factor')
+  @Authenticated({ permission: Permission.AdminUserUpdate, admin: true })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Turn off two-step sign-in for a user',
+    description:
+      'Turn off two-step sign-in for someone who lost their authenticator and recovery codes. Recorded in the account history.',
+    history: new HistoryBuilder().added('v3.4.0').beta('v3.4.0'),
+  })
+  resetUserTwoFactorAdmin(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
+    return this.service.resetTwoFactor(auth, id);
+  }
+
   @Get(':id/statistics')
   @Authenticated({ permission: Permission.AdminUserRead, admin: true })
   @Endpoint({

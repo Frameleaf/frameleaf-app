@@ -27,6 +27,8 @@ const status = (active: boolean) => ({
   isElevated: active,
   pinCode: true,
   password: true,
+  twoFactorEnabled: false,
+  recoveryCodesRemaining: 0,
   pinExpiresAt: active ? new Date(Date.now() + 10_000).toISOString() : undefined,
 });
 

@@ -150,6 +150,7 @@ describe(AuthController.name, () => {
       expect(service.login).toHaveBeenCalledWith(
         expect.objectContaining({ email: 'admin@immich.app' }),
         expect.anything(),
+        undefined,
       );
     });
 
@@ -161,7 +162,29 @@ describe(AuthController.name, () => {
         .send({ name: 'admin', email: 'admin@local', password: 'password' });
 
       expect(status).toEqual(201);
-      expect(service.login).toHaveBeenCalledWith(expect.objectContaining({ email: 'admin@local' }), expect.anything());
+      expect(service.login).toHaveBeenCalledWith(
+        expect.objectContaining({ email: 'admin@local' }),
+        expect.anything(),
+        undefined,
+      );
+    });
+
+    it('sets no cookie while a two-step code is still needed and passes the trust cookie on (FL-793)', async () => {
+      service.login.mockResolvedValue({
+        ...mediumFactory.loginResponse(),
+        accessToken: '',
+        twoFactorRequired: true,
+        twoFactorToken: 'challenge',
+      });
+      const { status, body, headers } = await request(ctx.getHttpServer())
+        .post('/auth/login')
+        .set('Cookie', 'frameleaf_2fa_trust=trusted')
+        .send({ email: 'admin@local', password: 'password' });
+
+      expect(status).toBe(201);
+      expect(body).toMatchObject({ twoFactorRequired: true, twoFactorToken: 'challenge', accessToken: '' });
+      expect(headers['set-cookie']).toBeUndefined();
+      expect(service.login).toHaveBeenCalledWith(expect.anything(), expect.anything(), 'trusted');
     });
 
     it('rejects a non-boolean cookie preference before authentication', async () => {
@@ -226,6 +249,32 @@ describe(AuthController.name, () => {
       ]);
       // FL-137: the next person signed in on this browser is never answered from an earlier cache
       expect(headers['clear-site-data']).toBe('"cache"');
+    });
+  });
+
+  describe('POST /auth/login/two-factor (FL-793)', () => {
+    it('needs a token', async () => {
+      const { status } = await request(ctx.getHttpServer()).post('/auth/login/two-factor').send({ code: '123456' });
+      expect(status).toBe(400);
+      expect(service.loginTwoFactor).not.toHaveBeenCalled();
+    });
+
+    it('sets the session cookies, and the 30-day trust cookie when asked for', async () => {
+      service.loginTwoFactor.mockResolvedValue({
+        response: mediumFactory.loginResponse(),
+        rememberMe: true,
+        trustToken: 'trust-token',
+      });
+      const { status, headers } = await request(ctx.getHttpServer())
+        .post('/auth/login/two-factor')
+        .send({ twoFactorToken: 'challenge', code: '123456', trustDevice: true });
+
+      expect(status).toBe(200);
+      const cookies = headers['set-cookie'] as unknown as string[];
+      expect(cookies).toHaveLength(4);
+      const trust = cookies.find((cookie) => cookie.startsWith('frameleaf_2fa_trust=trust-token'));
+      expect(trust).toContain('Max-Age=2592000');
+      expect(trust).toContain('HttpOnly');
     });
   });
 

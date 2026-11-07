@@ -29,6 +29,8 @@ describe('suppressed album page load', () => {
     isElevated: true,
     password: false,
     pinCode: true,
+    twoFactorEnabled: false,
+    recoveryCodesRemaining: 0,
     ...overrides,
   });
 

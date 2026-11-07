@@ -33,6 +33,8 @@ describe('Locked page load (FL-34)', () => {
     isElevated: true,
     password: false,
     pinCode: true,
+    twoFactorEnabled: false,
+    recoveryCodesRemaining: 0,
     ...overrides,
   });
 

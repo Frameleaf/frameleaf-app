@@ -47,6 +47,12 @@ const LoginCredentialSchema = z
       .boolean()
       .optional()
       .describe('Persist authentication cookies across browser sessions (default true)'),
+    twoFactor: z
+      .boolean()
+      .optional()
+      .describe(
+        'FL-793: this client can show the two-step code step. Without it, an account with two-step sign-in is refused (403, code two_factor_required) instead of answered with twoFactorRequired.',
+      ),
   })
   .meta({ id: 'LoginCredentialDto' });
 
@@ -60,6 +66,16 @@ const LoginResponseSchema = z
     isAdmin: z.boolean().describe('Is admin user'),
     shouldChangePassword: z.boolean().describe('Should change password'),
     isOnboarded: z.boolean().describe('Is onboarded'),
+    twoFactorRequired: z
+      .boolean()
+      .optional()
+      .describe(
+        'FL-793: the password was right and the account uses two-step sign-in. No session was created and accessToken is empty: send the code to POST /auth/login/two-factor with twoFactorToken.',
+      ),
+    twoFactorToken: z
+      .string()
+      .optional()
+      .describe('FL-793: proves the password step for five minutes; send it with the code'),
   })
   .meta({ id: 'LoginResponseDto' });
 
@@ -80,6 +96,52 @@ export function mapLoginResponse(entity: UserAdmin, accessToken: string): LoginR
   };
 }
 
+const twoFactorCode = z.string().regex(pinCodeRegex).describe('The 6-digit code from the authenticator app');
+const recoveryCode = z.string().min(1).max(32).describe('One of the recovery codes, as written down');
+
+/** FL-793: the second step of a password sign-in for an account with two-step sign-in. */
+const LoginTwoFactorSchema = z
+  .object({
+    twoFactorToken: z.string().min(1).max(1000).describe('twoFactorToken from POST /auth/login'),
+    code: twoFactorCode.optional(),
+    recoveryCode: recoveryCode.optional(),
+    trustDevice: z.boolean().optional().describe('Skip the code step in this browser for 30 days'),
+  })
+  .meta({ id: 'LoginTwoFactorDto' });
+
+const TwoFactorPasswordSchema = z
+  .object({ password: z.string().describe('The account password') })
+  .meta({ id: 'TwoFactorPasswordDto' });
+
+const TwoFactorSetupResponseSchema = z
+  .object({
+    secret: z.string().describe('The key to type into an authenticator app (base32)'),
+    otpauthUri: z.string().describe('otpauth:// address to show as a QR code'),
+  })
+  .meta({ id: 'TwoFactorSetupResponseDto' });
+
+const TwoFactorCodeSchema = z.object({ code: twoFactorCode }).meta({ id: 'TwoFactorCodeDto' });
+
+const TwoFactorRecoveryCodesResponseSchema = z
+  .object({ recoveryCodes: z.array(z.string()).describe('Ten one-time recovery codes, shown only now') })
+  .meta({ id: 'TwoFactorRecoveryCodesResponseDto' });
+
+/** FL-793: the password and a code (or recovery code): turning off, or starting a move to a new phone. */
+const TwoFactorProofSchema = z
+  .object({
+    password: z.string().describe('The account password'),
+    code: twoFactorCode.optional(),
+    recoveryCode: recoveryCode.optional(),
+  })
+  .meta({ id: 'TwoFactorProofDto' });
+
+export class LoginTwoFactorDto extends createZodDto(LoginTwoFactorSchema) {}
+export class TwoFactorPasswordDto extends createZodDto(TwoFactorPasswordSchema) {}
+export class TwoFactorSetupResponseDto extends createZodDto(TwoFactorSetupResponseSchema) {}
+export class TwoFactorCodeDto extends createZodDto(TwoFactorCodeSchema) {}
+export class TwoFactorRecoveryCodesResponseDto extends createZodDto(TwoFactorRecoveryCodesResponseSchema) {}
+export class TwoFactorProofDto extends createZodDto(TwoFactorProofSchema) {}
+
 const LogoutResponseSchema = z
   .object({
     successful: z.boolean().describe('Logout successful'),
@@ -87,7 +149,7 @@ const LogoutResponseSchema = z
   })
   .meta({ id: 'LogoutResponseDto' });
 
-const SignUpSchema = LoginCredentialSchema.omit({ rememberMe: true })
+const SignUpSchema = LoginCredentialSchema.omit({ rememberMe: true, twoFactor: true })
   .extend({
     name: z.string().describe('User name').meta({ example: 'Admin' }),
   })
@@ -192,6 +254,8 @@ const AuthStatusResponseSchema = z
     isElevated: z.boolean().describe('Is elevated session'),
     expiresAt: z.string().optional().describe('Session expiration date'),
     pinExpiresAt: z.string().optional().describe('PIN expiration date'),
+    twoFactorEnabled: z.boolean().describe('FL-793: two-step sign-in is on'),
+    recoveryCodesRemaining: z.int().min(0).describe('FL-793: unused recovery codes (0 when two-step sign-in is off)'),
   })
   .meta({ id: 'AuthStatusResponseDto' });
 

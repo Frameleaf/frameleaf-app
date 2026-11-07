@@ -56,7 +56,7 @@ import { isRemoteVia } from 'src/utils/frameleaf-sign-in.js';
  * of times from one address); the remote-access ceiling always is.
  */
 
-export type RateLimitPrincipal = 'email' | 'shared-link' | 'credential';
+export type RateLimitPrincipal = 'email' | 'shared-link' | 'credential' | 'two-factor-token';
 
 export type RateLimitRule = {
   /** Name of the counter; routes with the same bucket share it. */
@@ -70,6 +70,12 @@ export type RateLimitRule = {
   principalLimit?: number;
   /** `failures`: the principal counts only attempts that failed with 401. Defaults to every request. */
   principalCounts?: 'requests' | 'failures';
+  /**
+   * Failures are counted per principal *and* address by default, so strangers elsewhere never lock an
+   * owner out. `true` counts them per principal from every address: only for a principal that belongs to
+   * one sign-in (a two-step token), where a lockout costs the owner nothing but a fresh sign-in.
+   */
+  principalAcrossAddresses?: boolean;
 };
 
 const MINUTE = 60;
@@ -84,6 +90,30 @@ export const RATE_LIMITS = Object.freeze({
     principal: 'email',
     principalLimit: 10,
     principalCounts: 'failures',
+  },
+  /**
+   * FL-793: `POST auth/login/two-factor`, the code step after a right password: 10 tries per address and
+   * 5 wrong codes per sign-in (its token) from any address in ten minutes.
+   */
+  twoFactorLogin: {
+    bucket: 'two-factor-login',
+    limit: 10,
+    windowSeconds: 10 * MINUTE,
+    principal: 'two-factor-token',
+    principalLimit: 5,
+    principalCounts: 'failures',
+    principalAcrossAddresses: true,
+  },
+  /**
+   * FL-793: setting up, turning off and renewing two-step sign-in (`auth/two-factor/*`), which take the
+   * password or a code: 30 per address and 10 per session (or API key), from any address, in ten minutes.
+   */
+  twoFactorChange: {
+    bucket: 'two-factor-change',
+    limit: 30,
+    windowSeconds: 10 * MINUTE,
+    principal: 'credential',
+    principalLimit: 10,
   },
   /** The administrator's own provider: `POST oauth/callback` and `POST oauth/link`. */
   oauthCallback: {
@@ -200,17 +230,25 @@ const text = (value: unknown): string | undefined => {
   return typeof first === 'string' && first.length > 0 ? first : undefined;
 };
 
+/**
+ * The bearer token exactly as authentication reads it (`AuthService.getBearerToken`): the word after
+ * `Bearer `, so text appended after the token cannot make a fresh rate-limit key for the same session.
+ */
+const bearerToken = (authorization: string | undefined): string | undefined => {
+  const [type, token] = (authorization ?? '').split(' ', 2);
+  return type.toLowerCase() === 'bearer' ? token || undefined : undefined;
+};
+
 /** The session token or API key a request presents, from the same places authentication reads it. */
 const presentedCredential = (request: Request): string | undefined => {
   const headers = request.headers;
-  const bearer = text(headers.authorization);
   const cookies = (request.cookies ?? {}) as Record<string, unknown>;
   const query = (request.query ?? {}) as Record<string, unknown>;
   return (
     text(headers[RequestHeader.UserToken]) ??
     text(headers[RequestHeader.SessionToken]) ??
     text(query[RequestQuery.SessionKey]) ??
-    (bearer?.toLowerCase().startsWith('bearer ') ? bearer.slice(7).trim() || undefined : undefined) ??
+    bearerToken(text(headers.authorization)) ??
     text(cookies[AuthCookie.AccessToken]) ??
     text(headers[RequestHeader.ApiKey]) ??
     text(query[RequestQuery.ApiKey])
@@ -236,6 +274,10 @@ export const rateLimitPrincipal = (request: Request, principal: RateLimitPrincip
     case 'credential': {
       const credential = presentedCredential(request);
       return credential ? `credential:${credential}` : undefined;
+    }
+    case 'two-factor-token': {
+      const token = text((request.body as Record<string, unknown> | undefined)?.twoFactorToken);
+      return token ? `two-factor:${token}` : undefined;
     }
   }
 };
@@ -282,7 +324,7 @@ export const rateLimitChecks = async (
   if (principal && rule.principalLimit) {
     const counts = rule.principalCounts ?? 'requests';
     // failures are counted per principal and address, so nobody elsewhere can use them up
-    const counted = counts === 'failures' ? `${principal}\0${address}` : principal;
+    const counted = counts === 'failures' && !rule.principalAcrossAddresses ? `${principal}\0${address}` : principal;
     checks.push({
       key: `${RATE_LIMIT_KEY_PREFIX}:${rule.bucket}:principal:${await options.keyOf(counted)}`,
       limit: rule.principalLimit,

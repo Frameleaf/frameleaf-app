@@ -46,6 +46,8 @@ const accountEvent = (
 ) => ({ userId: user.id, actorId: auth.user.id, action, subject: user.name, detail });
 
 type AccountEvent = ReturnType<typeof accountEvent>;
+/** FL-793: the `account-updated` detail for an administrator's two-step sign-in reset. */
+export const TWO_FACTOR_RESET_DETAIL = 'two-factor-reset';
 type Preferences = ReturnType<typeof getPreferences>;
 
 /** The default page size of an account's history (FL-76). */
@@ -386,6 +388,24 @@ export class UserAdminService extends BaseService {
   }
 
   /**
+   * FL-793: turn off an account's two-step sign-in for someone who lost their phone and recovery codes.
+   * Every session of the account is signed out too: the lost phone may still be signed in, and a reset
+   * may follow a suspected break-in. The sign-out runs on every call, so if it fails after the reset an
+   * administrator's retry still signs the account out. Recorded in the account's history only when it was on.
+   */
+  async resetTwoFactor(auth: AuthDto, id: string): Promise<void> {
+    const user = await this.findOrFail(id, { withDeleted: true });
+    // recorded before the sign-out, which can fail: a retry finds two-step sign-in already off
+    if (await this.userRepository.deleteTwoFactor(id)) {
+      await this.recordAdminEvents([
+        accountEvent(auth, user, AdminAuditAction.AccountUpdated, TWO_FACTOR_RESET_DETAIL),
+      ]);
+    }
+    // the password-change handler is what signs an account out everywhere (and drops Locked access)
+    await this.eventRepository.emit('AuthChangePassword', { userId: id, invalidateSessions: true });
+  }
+
+  /**
    * FL-76: the account's administrator history, newest first, for the account detail's Activity
    * tab. Admin-only (`AdminUserRead`). It names what was changed, never a password, PIN or photo.
    */
@@ -419,7 +439,7 @@ export class UserAdminService extends BaseService {
     if (pinCode === undefined) {
       throw new NotFoundException('User not found');
     }
-    return { pinCode };
+    return { pinCode, twoFactorEnabled: !!(await this.userRepository.getTwoFactor(id))?.enabledAt };
   }
 
   async getStatistics(auth: AuthDto, id: string, dto: AssetStatsDto): Promise<AssetStatsResponseDto> {

@@ -36,6 +36,9 @@ class TestController {
   @RateLimited(RATE_LIMITS.linkStart)
   linkStart() {}
 
+  @RateLimited(RATE_LIMITS.twoFactorLogin)
+  twoFactorLogin() {}
+
   @RemoteMediaCeiling()
   thumbnail() {}
 
@@ -213,6 +216,36 @@ describe(RateLimitGuard.name, () => {
 
     expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(RATE_LIMITS.login.principalLimit);
     expect(results.filter(({ status }) => status === 'rejected')).toHaveLength(5);
+  });
+
+  it('counts a session by the token authentication reads, whatever follows it and from any address', async () => {
+    for (const [ip, authorization] of [
+      ['198.51.100.7', 'Bearer token-1'],
+      ['203.0.113.9', 'Bearer token-1 first'],
+      ['192.0.2.44', 'bearer token-1 second'],
+    ]) {
+      await sut.canActivate(
+        contextFor(TestController.prototype.linkStart, makeRequest({ ip, headers: { authorization } })),
+      );
+      expect(store.hit).toHaveBeenLastCalledWith(
+        `frameleaf:rate-limit:link-start:principal:${keyed('credential:token-1')}`,
+        RATE_LIMITS.linkStart.windowSeconds,
+      );
+    }
+  });
+
+  it('counts wrong two-step codes per sign-in token from any address (FL-793)', async () => {
+    for (const ip of ['198.51.100.7', '203.0.113.9']) {
+      const request = makeRequest({ ip, body: { twoFactorToken: 'challenge-1', code: '123456' } });
+      await sut.canActivate(contextFor(TestController.prototype.twoFactorLogin, request));
+      expect(store.hit).toHaveBeenLastCalledWith(
+        `frameleaf:rate-limit:two-factor-login:principal:${keyed('two-factor:challenge-1')}`,
+        600,
+      );
+    }
+    const request = makeRequest({ body: { twoFactorToken: 'challenge-1', code: '123456' } });
+    await sut.canActivate(contextFor(TestController.prototype.twoFactorLogin, request));
+    expect(request.frameleafRateLimitFailures).toEqual([expect.objectContaining({ limit: 5, counts: 'failures' })]);
   });
 
   it('counts a shared link by its key and address and an admin action by the credential presented', async () => {

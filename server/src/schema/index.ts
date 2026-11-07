@@ -253,6 +253,7 @@ import {
 import { UserAuditTable } from 'src/schema/tables/user-audit.table.js';
 import { UserMetadataAuditTable } from 'src/schema/tables/user-metadata-audit.table.js';
 import { UserMetadataTable } from 'src/schema/tables/user-metadata.table.js';
+import { UserRecoveryCodeTable, UserTwoFactorTable } from 'src/schema/tables/user-two-factor.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { VersionHistoryTable } from 'src/schema/tables/version-history.table.js';
 import {
@@ -476,6 +477,8 @@ export class ImmichDatabase {
     UserMetadataTable,
     UserMetadataAuditTable,
     UserTable,
+    UserTwoFactorTable,
+    UserRecoveryCodeTable,
     VersionHistoryTable,
     VideoMomentIndexTable,
     VideoMomentFrameTable,
@@ -774,6 +777,8 @@ export interface DB extends QueueDatabase {
   user_audit: UserAuditTable;
   user_metadata: UserMetadataTable;
   user_metadata_audit: UserMetadataAuditTable;
+  user_recovery_code: UserRecoveryCodeTable;
+  user_two_factor: UserTwoFactorTable;
 
   version_history: VersionHistoryTable;
 
