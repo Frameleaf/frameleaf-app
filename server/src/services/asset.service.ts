@@ -734,13 +734,14 @@ export class AssetService extends BaseService {
    */
   async lock(auth: AuthDto, dto: BulkIdsDto): Promise<void> {
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: dto.ids });
-    const visibilityIds = await this.lockAssetsAs(auth.user.id, dto.ids);
     // FL-326: locking a partner copy makes its visibility the owner's; copies of these items follow it
-    await recordAssetEdit(
-      { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
-      auth.user.id,
-      visibilityIds,
-      [AssetOriginField.Visibility],
+    await this.lockAssetsAs(auth.user.id, dto.ids, (visibilityIds) =>
+      recordAssetEdit(
+        { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
+        auth.user.id,
+        visibilityIds,
+        [AssetOriginField.Visibility],
+      ),
     );
   }
 

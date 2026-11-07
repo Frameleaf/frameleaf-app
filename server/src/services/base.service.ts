@@ -654,10 +654,15 @@ export class BaseService {
 
   /**
    * Lock (FL-34): `userId`'s own lock on `ids`, recorded as `marked`, with their stacks and live photos.
-   * Returns the ids whose visibility changed, for the caller's `recordAssetEdit` (FL-326). The caller has
-   * checked that `userId` may update `ids`.
+   * `recordEdit` gets the ids whose visibility changed, for the caller's `recordAssetEdit` (FL-326); it runs
+   * right after the lock commits, before the post-lock follow-up, so partner copies follow even if that fails.
+   * The caller has checked that `userId` may update `ids`.
    */
-  protected async lockAssetsAs(userId: string, ids: string[]): Promise<string[]> {
+  protected async lockAssetsAs(
+    userId: string,
+    ids: string[],
+    recordEdit: (visibilityIds: string[]) => Promise<void>,
+  ): Promise<void> {
     const originIds = await this.assetRepository.findLockGroupIds(ids);
     const admitted = new Set(originIds);
     const { locked, visibilityIds } = await this.partnerOriginRepository.withOriginEdit(
@@ -678,11 +683,11 @@ export class BaseService {
         return { locked, visibilityIds };
       },
     );
+    await recordEdit(visibilityIds);
     if (locked.length > 0) {
       await this.afterAssetsLocked(locked);
       await this.notifyAssetsUpdated(locked, userId);
     }
-    return visibilityIds;
   }
 
   /**

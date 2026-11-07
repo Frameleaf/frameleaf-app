@@ -8,6 +8,7 @@ import {
   AssetLockReason,
   AssetOrder,
   AssetVisibility,
+  JobName,
   LibraryScope,
   PushEventType,
   UserMetadataKey,
@@ -2129,6 +2130,27 @@ describe(AlbumService.name, () => {
       await sut.addAssets(AuthFactory.create(owner), album.id, { ids: [asset.id] });
 
       expect(mocks.asset.lock).not.toHaveBeenCalled();
+    });
+
+    it('tells partner copies about the lock even when the follow-up after it fails', async () => {
+      const owner = UserFactory.create();
+      const album = AlbumFactory.from().owner(owner).build();
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.album.update.mockResolvedValue(getForAlbum(album));
+      mocks.album.getUnlockedItemsInLockedAlbums.mockResolvedValue([{ assetId: 'a1', ownerId: owner.id }]);
+      mocks.asset.findLockGroupIds.mockResolvedValue(['a1']);
+      mocks.asset.lock.mockResolvedValue(['a1']);
+      mocks.partnerOrigin.getIdsWithFollowers.mockResolvedValue(['a1']);
+      mocks.asset.getLockedEncryptionItems.mockRejectedValue(new Error('seal queue down'));
+
+      await expect(sut.update(AuthFactory.create(owner), album.id, { isLocked: true })).rejects.toThrow(
+        'seal queue down',
+      );
+
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        expect.objectContaining({ name: JobName.PartnerPropagate, data: expect.objectContaining({ sourceId: 'a1' }) }),
+      ]);
     });
 
     it('locks a very large album in batches', async () => {

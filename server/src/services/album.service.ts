@@ -613,15 +613,16 @@ export class AlbumService extends BaseService {
     const failures: unknown[] = [];
     for (const [ownerId, owned] of Map.groupBy(items, ({ ownerId }) => ownerId)) {
       try {
-        const visibilityIds = await this.lockAssetsAs(
+        await this.lockAssetsAs(
           ownerId,
           owned.map(({ assetId }) => assetId),
-        );
-        await recordAssetEdit(
-          { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
-          ownerId,
-          visibilityIds,
-          [AssetOriginField.Visibility],
+          (visibilityIds) =>
+            recordAssetEdit(
+              { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
+              ownerId,
+              visibilityIds,
+              [AssetOriginField.Visibility],
+            ),
         );
       } catch (error) {
         failures.push(error);
@@ -639,7 +640,8 @@ export class AlbumService extends BaseService {
     try {
       await this.lockAlbumItems({ albumId, assetIds });
     } catch (error) {
-      this.logger.warn(`Could not lock items added to locked album ${albumId}; the hourly sweep retries: ${error}`);
+      // The sweep retries items left unlocked; a failure after the lock committed already recorded the edit.
+      this.logger.warn(`Could not finish locking items added to locked album ${albumId}: ${error}`);
     }
   }
 
