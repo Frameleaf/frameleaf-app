@@ -554,7 +554,8 @@ export class AlbumService extends BaseService {
     // FL-326: an album copy's edited fields are its own from now on; copies of this album follow it
     await recordAlbumEdit({ partnerOrigin: this.partnerOriginRepository, job: this.jobRepository }, [album.id], fields);
 
-    // Unlocking the album only stops new items locking; what it locked stays locked (unlock items in Locked).
+    // Unlocking the album only stops new items locking; what it locked stays locked. While the album is
+    // locked, the hourly sweep re-locks an item unlocked on its own (owner decision default, FL-1269).
     if (dto.isLocked) {
       await this.lockAlbumItems({ albumId: album.id });
     }
