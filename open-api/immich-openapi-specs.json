@@ -104673,15 +104673,14 @@
             "type": "integer"
           },
           "metadataKept": {
-            "description": "Every EXIF, XMP and IPTC detail the original carried is in the repaired file",
+            "description": "Each EXIF, XMP and IPTC section found in the original is in the repaired file, kept or copied back; sections are checked, not individual tags",
             "type": "boolean"
           },
           "method": {
             "$ref": "#/components/schemas/MediaHealthRepairMethod"
           },
           "preview": {
-            "description": "A reduced JPEG of the repaired picture, as a data URL; null for anyone but the owner",
-            "nullable": true,
+            "description": "A reduced JPEG of the repaired picture, as a data URL",
             "type": "string"
           },
           "sizeInBytes": {

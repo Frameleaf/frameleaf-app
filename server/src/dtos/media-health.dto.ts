@@ -207,11 +207,12 @@ const MediaHealthRepairPreviewResponseSchema = z
     height: z.int().describe('Height of the repaired picture'),
     sizeInBytes: z.int().describe('Size of the repaired file'),
     checksum: z.string().describe('SHA1 of the repaired file, as lowercase hex'),
-    preview: z
-      .string()
-      .nullable()
-      .describe('A reduced JPEG of the repaired picture, as a data URL; null for anyone but the owner'),
-    metadataKept: z.boolean().describe('Every EXIF, XMP and IPTC detail the original carried is in the repaired file'),
+    preview: z.string().describe('A reduced JPEG of the repaired picture, as a data URL'),
+    metadataKept: z
+      .boolean()
+      .describe(
+        'Each EXIF, XMP and IPTC section found in the original is in the repaired file, kept or copied back; sections are checked, not individual tags',
+      ),
   })
   .meta({ id: 'MediaHealthRepairPreviewResponseDto' });
 

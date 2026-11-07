@@ -974,7 +974,7 @@
       </dl>
     </div>
     <footer>
-      {#if canRepair(row)}
+      {#if canRepair(row) && row.ownerId === selfId}
         <Button
           onclick={() => {
             repairing = row;
@@ -994,7 +994,6 @@
   <LibraryCareRepairDialog
     bind:open={repairOpen}
     row={repairing}
-    showOriginal={repairing.ownerId === selfId}
     onRepaired={() => {
       announce($t('library_care_repair_done', { values: { name: repairing?.name ?? '' } }));
       void refresh();

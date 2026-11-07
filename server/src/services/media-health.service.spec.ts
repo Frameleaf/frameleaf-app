@@ -3569,24 +3569,14 @@ describe(MediaHealthService.name, () => {
       });
     });
 
-    it('never shows another account’s photo to an administrator', async () => {
-      const preview = await sut.previewRepair(authStub.admin, { findingId: 'health-1' });
-      expect(preview).toMatchObject({ method: 'lossless', preview: null });
-      // a lossless repair leaves the picture untouched, so it can be approved without seeing it
-      await expect(
-        sut.repair(authStub.admin, { findingId: 'health-1', checksum: preview.checksum }),
-      ).resolves.toMatchObject({ method: 'lossless' });
-    });
-
-    it('lets only the owner approve a repair that changes the picture', async () => {
-      vi.mocked(mocks.media.repairJpeg).mockImplementation(async (input, output, preview) => {
-        await operations.repairJpeg(input, output, preview, join(root, 'unused.jpg'));
-        return { method: 'rebuilt', width: 64, height: 48, metadataLost: [] };
-      });
-      const { checksum } = await sut.previewRepair(authStub.admin, { findingId: 'health-1' });
-      await expect(sut.repair(authStub.admin, { findingId: 'health-1', checksum })).rejects.toThrow(
-        'Only the owner can review this repair',
+    it('lets only the photo’s owner repair it, administrators included', async () => {
+      await expect(sut.previewRepair(authStub.admin, { findingId: 'health-1' })).rejects.toThrow(
+        'Only the photo’s owner can repair it',
       );
+      await expect(sut.repair(authStub.admin, { findingId: 'health-1', checksum: 'a'.repeat(40) })).rejects.toThrow(
+        'Only the photo’s owner can repair it',
+      );
+      expect(mocks.media.repairJpeg).not.toHaveBeenCalled();
       expect(mediaHealthRepository.replaceRepairedOriginal).not.toHaveBeenCalled();
     });
 

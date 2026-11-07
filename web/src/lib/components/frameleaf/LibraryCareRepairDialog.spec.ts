@@ -39,7 +39,7 @@ describe('LibraryCareRepairDialog', () => {
     vi.mocked(previewRepair).mockResolvedValue(preview);
     vi.mocked(repair).mockResolvedValue({ findingId: 'health-1', assetId: 'asset-1', method: preview.method });
     const onRepaired = vi.fn();
-    render(LibraryCareRepairDialog, { open: true, row, showOriginal: true, onRepaired });
+    render(LibraryCareRepairDialog, { open: true, row, onRepaired });
 
     expect(screen.getByRole('img', { name: 'Damaged original' })).toBeInTheDocument();
     expect(await screen.findByRole('img', { name: 'Repaired' })).toHaveAttribute('src', preview.preview);
@@ -61,7 +61,7 @@ describe('LibraryCareRepairDialog', () => {
       height: 120,
       metadataKept: false,
     });
-    render(LibraryCareRepairDialog, { open: true, row, showOriginal: true, onRepaired: vi.fn() });
+    render(LibraryCareRepairDialog, { open: true, row, onRepaired: vi.fn() });
 
     expect(
       await screen.findByText(/Only the small preview stored inside the file could be saved \(160 × 120\)/),
@@ -69,18 +69,9 @@ describe('LibraryCareRepairDialog', () => {
     expect(screen.getByText(/couldn’t be read from the damaged file/)).toBeInTheDocument();
   });
 
-  it('shows another account’s repair without its picture, and blocks a change it cannot review', async () => {
-    vi.mocked(previewRepair).mockResolvedValue({ ...preview, method: MediaHealthRepairMethod.Rebuilt, preview: null });
-    render(LibraryCareRepairDialog, { open: true, row, showOriginal: false, onRepaired: vi.fn() });
-
-    expect(await screen.findByText(/only the photo’s owner can review and approve it/)).toBeInTheDocument();
-    expect(screen.queryByRole('img', { name: 'Repaired' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Replace with repaired photo' })).toBeDisabled();
-  });
-
   it('says when nothing could be recovered and offers no replacement', async () => {
     vi.mocked(previewRepair).mockRejectedValue(new Error('no'));
-    render(LibraryCareRepairDialog, { open: true, row, showOriginal: false, onRepaired: vi.fn() });
+    render(LibraryCareRepairDialog, { open: true, row, onRepaired: vi.fn() });
 
     expect(await screen.findByRole('alert')).toHaveTextContent('This photo could not be repaired.');
     expect(screen.getByRole('button', { name: 'Replace with repaired photo' })).toBeDisabled();

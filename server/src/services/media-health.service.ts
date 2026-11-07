@@ -1071,9 +1071,7 @@ export class MediaHealthService {
     const { finding, asset } = await this.repairTarget(auth, dto.findingId);
     return this.withRepair(asset, async ({ output, preview, method, width, height, metadataKept }) => {
       const digests = await this.cryptoRepository.hashFileDigests(output);
-      // Library Care never shows another account's pictures, so neither does a repair
-      const owner = asset.ownerId === auth.user.id;
-      const bytes = owner ? await this.storageRepository.readFile(preview) : undefined;
+      const bytes = await this.storageRepository.readFile(preview);
       return {
         findingId: finding.id,
         method,
@@ -1081,7 +1079,7 @@ export class MediaHealthService {
         height,
         sizeInBytes: digests.sizeInBytes,
         checksum: digests.sha1.toString('hex'),
-        preview: bytes ? `data:image/jpeg;base64,${bytes.toString('base64')}` : null,
+        preview: `data:image/jpeg;base64,${bytes.toString('base64')}`,
         metadataKept,
       };
     });
@@ -1098,10 +1096,6 @@ export class MediaHealthService {
       const digests = await this.cryptoRepository.hashFileDigests(output);
       if (digests.sha1.toString('hex') !== dto.checksum) {
         throw new ConflictException('The repair changed since it was reviewed; preview it again');
-      }
-      // an administrator cannot see another account's photo, so approves only a repair that leaves it untouched
-      if (asset.ownerId !== auth.user.id && method !== 'lossless') {
-        throw new ForbiddenException('Only the owner can review this repair');
       }
       const destination = path.join(
         path.dirname(StorageCore.getNestedPath(StorageFolder.Upload, asset.ownerId, asset.id)),
@@ -1163,8 +1157,11 @@ export class MediaHealthService {
     if (!asset || asset.deletedAt) {
       throw new BadRequestException('The photo is gone or in the trash');
     }
-    if (asset.ownerId !== auth.user.id && (!auth.user.isAdmin || asset.isLocked)) {
-      throw new ForbiddenException('Not allowed to repair this photo');
+    // Only the owner: a repair is approved by looking at it, and Library Care never shows anyone
+    // another account's pictures. Even a lossless repair may have picked a different picture joined
+    // to the file, so an administrator cannot approve one unseen.
+    if (asset.ownerId !== auth.user.id) {
+      throw new ForbiddenException('Only the photo’s owner can repair it');
     }
     if (!JPEG_REPAIR_EXTENSIONS.has(path.extname(asset.originalFileName).toLowerCase())) {
       throw new BadRequestException('Only JPEG photos can be repaired');

@@ -9931,11 +9931,11 @@ export type MediaHealthRepairPreviewResponseDto = {
     findingId: string;
     /** Height of the repaired picture */
     height: number;
-    /** Every EXIF, XMP and IPTC detail the original carried is in the repaired file */
+    /** Each EXIF, XMP and IPTC section found in the original is in the repaired file, kept or copied back; sections are checked, not individual tags */
     metadataKept: boolean;
     method: MediaHealthRepairMethod;
-    /** A reduced JPEG of the repaired picture, as a data URL; null for anyone but the owner */
-    preview: string | null;
+    /** A reduced JPEG of the repaired picture, as a data URL */
+    preview: string;
     /** Size of the repaired file */
     sizeInBytes: number;
     /** Width of the repaired picture */

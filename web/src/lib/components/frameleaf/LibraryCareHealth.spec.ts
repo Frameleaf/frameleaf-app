@@ -217,6 +217,33 @@ describe('Library Care health tool (FL-69)', () => {
     await waitFor(() => expect(state.sdk.cancelMediaOperation).toHaveBeenCalledWith({ id: 'op-1' }));
   });
 
+  it('offers Repair on the reader’s own damaged JPEG only', async () => {
+    const damaged = (id: string, ownerId: string) =>
+      item({
+        id,
+        assetId: `asset-${id}`,
+        category: MediaHealthCategory.Corrupt,
+        status: MediaHealthStatus.CorruptConfirmed,
+        asset: { ownerId, thumbhash: null, exifInfo: null },
+      } as unknown as Partial<MediaHealthItemDto>);
+    render(LibraryCareHealth, {
+      category: MediaHealthCategory.Corrupt,
+      initial: list([damaged('own', 'admin'), damaged('other', 'jamie')]),
+      initialSummary: summary(),
+      roots: [],
+      users,
+      initialOwner: 'all',
+    });
+    const [own, other] = screen.getAllByRole('button', { name: 'Inspect' });
+
+    await userEvent.click(own);
+    expect(within(screen.getByRole('dialog')).getByRole('button', { name: 'Repair' })).toBeInTheDocument();
+    await userEvent.click(within(screen.getByRole('dialog')).getAllByRole('button', { name: 'Done' })[0]);
+
+    await userEvent.click(other);
+    expect(within(screen.getByRole('dialog')).queryByRole('button', { name: 'Repair' })).not.toBeInTheDocument();
+  });
+
   it('shows the recorded checksums, candidate checksums and who repaired an original', async () => {
     const relinked = item({
       status: MediaHealthStatus.Relinked,
