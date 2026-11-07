@@ -2057,6 +2057,36 @@ describe(AlbumService.name, () => {
       expect(mocks.asset.lock).toHaveBeenCalledWith([mine.id], AssetLockReason.Marked, owner.id);
     });
 
+    it.each(['add', 'bulk-add'] as const)('never makes an item it just locked the cover (%s)', async (action) => {
+      const owner = UserFactory.create();
+      const album = AlbumFactory.from({ isLocked: true }).owner(owner).build();
+      const [mine, theirs] = [AssetFactory.create({ ownerId: owner.id }), AssetFactory.create()];
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([mine.id, theirs.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.album.getAssetIds.mockResolvedValue(new Set());
+      mocks.album.getUnlockedItemsInLockedAlbums.mockResolvedValue([{ assetId: mine.id, ownerId: owner.id }]);
+      mocks.asset.findLockGroupIds.mockResolvedValue([mine.id]);
+      const lockedNow = new Set<string>();
+      mocks.asset.lock.mockImplementation((ids) => {
+        for (const id of ids) lockedNow.add(id);
+        return Promise.resolve(ids);
+      });
+      mocks.asset.getLockedAssetIds.mockImplementation(() => Promise.resolve(new Set(lockedNow)));
+      mocks.asset.getHiddenContentAssetIds.mockResolvedValue(new Set());
+
+      const auth = AuthFactory.create(owner);
+      await (action === 'add'
+        ? sut.addAssets(auth, album.id, { ids: [mine.id, theirs.id] })
+        : sut.addAssetsToAlbums(auth, { albumIds: [album.id], assetIds: [mine.id, theirs.id] }));
+
+      expect(mocks.album.update).toHaveBeenCalledWith(
+        album.id,
+        expect.objectContaining({ albumThumbnailAssetId: theirs.id }),
+        owner.id,
+      );
+    });
+
     it('does not lock items added to an unlocked album', async () => {
       const owner = UserFactory.create();
       const album = AlbumFactory.from().owner(owner).build();

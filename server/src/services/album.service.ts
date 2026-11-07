@@ -783,7 +783,7 @@ export class AlbumService extends BaseService {
           {
             id,
             updatedAt: new Date(),
-            albumThumbnailAssetId: album.albumThumbnailAssetId ?? (await this.firstCoverCandidate(auth, newAssetIds)),
+            albumThumbnailAssetId: album.albumThumbnailAssetId ?? (await this.firstCoverCandidate(auth, shown)),
           },
           auth.user.id,
         );
@@ -832,8 +832,7 @@ export class AlbumService extends BaseService {
     }
 
     const albumAssetValues: { albumId: string; assetId: string }[] = [];
-    const events: { id: string; userIds: string[]; recipientIds: string[] }[] = [];
-    const spaceEvents: { album: MapAlbumDto; assetIds: string[] }[] = [];
+    const added: { albumId: string; album: Awaited<ReturnType<AlbumService['findOrFail']>>; assetIds: string[] }[] = [];
     await this.partnerOriginRepository.withOriginEdit('album', [...allowedAlbumIds], [], async () => {
       for (const albumId of allowedAlbumIds) {
         const existingAssetIds = await this.albumRepository.getAssetIds(albumId, [...allowedAssetIds]);
@@ -848,43 +847,47 @@ export class AlbumService extends BaseService {
         for (const assetId of notPresentAssetIds) {
           albumAssetValues.push({ albumId, assetId });
         }
-        const shown = await this.shownToMembers(notPresentAssetIds);
-        if (shown.length > 0) {
-          await this.albumRepository.update(
-            albumId,
-            {
-              id: albumId,
-              updatedAt: new Date(),
-              albumThumbnailAssetId:
-                album.albumThumbnailAssetId ?? (await this.firstCoverCandidate(auth, notPresentAssetIds)),
-            },
-            auth.user.id,
-          );
-        }
-        events.push(this.albumUpdateEvent(album, auth, shown.length > 0));
-        spaceEvents.push({ album, assetIds: notPresentAssetIds });
+        added.push({ albumId, album, assetIds: notPresentAssetIds });
       }
 
       await this.albumRepository.addAssetIdsToAlbums(albumAssetValues);
       await this.partnerOriginRepository.markOverridden(
         'album',
-        events.map(({ id }) => id),
+        added.map(({ albumId }) => albumId),
         [AlbumOriginField.Membership],
       );
     });
+
+    // A locked album locks what it was given before anything decides what members see: covers and
+    // notifications only ever come from items still shown to them.
+    const events: { id: string; userIds: string[]; recipientIds: string[] }[] = [];
+    for (const { albumId, album, assetIds } of added) {
+      await this.lockAlbumItems({ albumId, assetIds });
+      const shown = await this.shownToMembers(assetIds);
+      if (shown.length > 0) {
+        await this.albumRepository.update(
+          albumId,
+          {
+            id: albumId,
+            updatedAt: new Date(),
+            albumThumbnailAssetId: album.albumThumbnailAssetId ?? (await this.firstCoverCandidate(auth, shown)),
+          },
+          auth.user.id,
+        );
+      }
+      events.push(this.albumUpdateEvent(album, auth, shown.length > 0));
+    }
     if (events.length > 0) {
       await this.albumRepository.updateNewestCovers(events.map(({ id }) => id));
     }
-    for (const albumId of allowedAlbumIds) {
-      const added = albumAssetValues.filter((value) => value.albumId === albumId).map(({ assetId }) => assetId);
-      await this.lockAlbumItems({ albumId, assetIds: added });
-      await this.classificationRepository.recordAlbumAdditions(albumId, added, auth.user.id);
+    for (const { albumId, assetIds } of added) {
+      await this.classificationRepository.recordAlbumAdditions(albumId, assetIds, auth.user.id);
     }
     await this.emitAssetsChanged(albumAssetValues.map((item) => item.assetId));
     for (const event of events) {
       await this.eventRepository.emit('AlbumUpdate', event);
     }
-    for (const { album, assetIds } of spaceEvents) {
+    for (const { album, assetIds } of added) {
       await this.recordSpaceAssets(album, auth, SharedSpaceEventType.AssetsAdded, assetIds);
     }
     // FL-326 (spec §4.4): membership changed by hand stops a copy following; copies of these albums follow
@@ -1247,9 +1250,10 @@ export class AlbumService extends BaseService {
   }
 
   /**
-   * The first of `assetIds` that may become the album cover. Only an elevated session can bring Locked
-   * media into an album (see `Permission.AssetShare`), so only then can the first asset be unfit and
-   * the choice needs the database; every other session keeps the first asset, as before.
+   * The first of `assetIds` that may become the album cover. Callers pass only items shown to members
+   * (`shownToMembers`, read after a locked album has locked its additions). Only an elevated session can
+   * bring other Locked media into an album (see `Permission.AssetShare`), so only then does the choice
+   * still need the database; every other session keeps the first asset, as before.
    */
   private async firstCoverCandidate(auth: AuthDto, assetIds: string[]): Promise<string | undefined> {
     if (assetIds.length === 0) {

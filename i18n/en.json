@@ -2776,7 +2776,7 @@
   "frameleaf_album_options_activity": "Likes and comments",
   "frameleaf_album_options_activity_description": "Members can react to this and to the items in it.",
   "frameleaf_album_options_locked": "Lock album",
-  "frameleaf_album_options_locked_description": "Your photos and videos in this album go into Locked, and so do yours added later. Other members’ items and links aren’t locked. Turning this off leaves locked items locked.",
+  "frameleaf_album_options_locked_description": "Your items in this album go into Locked, with the rest of their stacks and Live Photo videos, even those outside the album. So do yours added later. Other members’ items and links aren’t locked. Turning this off stops new items locking and leaves locked items locked.",
   "frameleaf_album_options_saved": "Options saved",
   "frameleaf_album_options_title": "Options",
   "frameleaf_album_owner_badges": "Owner badges",

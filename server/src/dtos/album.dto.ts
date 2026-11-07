@@ -143,7 +143,7 @@ const UpdateAlbumSchema = z
       .boolean()
       .optional()
       .describe(
-        "Lock the album: the owner's photos and videos in it are locked now, together with the rest of their stacks and Live Photo videos, even those outside the album. Theirs added later through the album's add actions lock at once; any that arrive another way (smart-album rules, iCloud sync, capture) are locked by an hourly check, which can take more than one run for a very large backlog. Other members' items and links are not locked. Unlocking the album leaves its items locked. Only the album owner may send this field; other members must leave it out, or the whole update is refused (403).",
+        "Lock the album: the owner's items in it (photos, videos and any other files) are locked now, together with the rest of their stacks and Live Photo videos, even those outside the album. Theirs added later through the album's add actions lock at once; any that arrive another way (smart-album rules, iCloud sync, capture) are locked by an hourly check, which can take more than one run for a very large backlog. Other members' items and links are not locked. Unlocking the album stops locking new items and leaves the locked ones locked. Only the album owner may send this field; other members must leave it out, or the whole update is refused (403).",
       ),
     order: AssetOrderSchema.optional(),
     parentId: z
@@ -282,7 +282,7 @@ export const AlbumResponseSchema = z
       .boolean()
       .optional()
       .describe(
-        'The owner chose to lock this album: their photos and videos in it are locked as they are added, or by the hourly check. It does not prove that every item is locked yet.',
+        'The owner chose to lock this album: their items in it are locked as they are added, or by the hourly check. Unlocking stops that; items already locked stay locked. It does not prove that every item is locked yet.',
       ),
     order: AssetOrderSchema.optional(),
     contributorCounts: z.array(ContributorCountResponseSchema).optional(),
