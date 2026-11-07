@@ -29,12 +29,14 @@
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import LibraryCareRecoveryDialog from '$lib/components/frameleaf/LibraryCareRecoveryDialog.svelte';
+  import LibraryCareRepairDialog from '$lib/components/frameleaf/LibraryCareRepairDialog.svelte';
   import TileJobState from '$lib/components/frameleaf/TileJobState.svelte';
   import { durableItemStates } from '$lib/frameleaf/bulk-operations';
   import {
     accountOptions,
     canRecover,
     canRelink,
+    canRepair,
     evidenceKey,
     filterRows,
     formatBytes,
@@ -145,6 +147,8 @@
 
   let inspect = $state<LibraryCareRow | null>(null);
   let inspectOpen = $state(false);
+  let repairing = $state<LibraryCareRow | null>(null);
+  let repairOpen = $state(false);
 
   type ReviewAction = 'relink' | 'dismiss' | 'trash';
   let review = $state<{ action: ReviewAction; rows: LibraryCareRow[] } | null>(null);
@@ -970,9 +974,33 @@
       </dl>
     </div>
     <footer>
+      {#if canRepair(row) && row.ownerId === selfId}
+        <Button
+          onclick={() => {
+            repairing = row;
+            repairOpen = true;
+            inspectOpen = false;
+          }}
+        >
+          {$t('library_care_repair')}
+        </Button>
+      {/if}
       <Button onclick={() => (inspectOpen = false)}>{$t('done')}</Button>
     </footer>
   </Dialog>
+{/if}
+
+{#if repairing && repairOpen}
+  <LibraryCareRepairDialog
+    bind:open={repairOpen}
+    findingId={repairing.id}
+    assetId={repairing.assetId}
+    name={repairing.name}
+    onRepaired={() => {
+      announce($t('library_care_repair_done', { values: { name: repairing?.name ?? '' } }));
+      void refresh();
+    }}
+  />
 {/if}
 
 {#if review}

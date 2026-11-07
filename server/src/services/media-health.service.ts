@@ -30,6 +30,10 @@ import {
   MediaHealthLocateDto,
   MediaHealthOperationDto,
   MediaHealthRecoverDto,
+  MediaHealthRepairDto,
+  MediaHealthRepairPreviewDto,
+  MediaHealthRepairPreviewResponseDto,
+  MediaHealthRepairResponseDto,
   MediaHealthRootResponse,
   MediaHealthRootsResponseDto,
   MediaHealthRunResponseDto,
@@ -88,6 +92,7 @@ import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { fileIdentity } from 'src/utils/file-trash.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { JPEG_REPAIR_EXTENSIONS, type JpegRepairResult } from 'src/utils/jpeg-repair.js';
 import { isLockedPath } from 'src/utils/locked-read.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import {
@@ -123,6 +128,8 @@ const MANAGED_LOOKUP_MAX_BYTES = 10 * 1024 ** 3;
  * crawler never adopts a copy that is not committed yet.
  */
 const RECOVERY_FOLDER = '.library-care';
+/** A repair as the reviewer sees it: whether every detail the original carried is in the result. */
+type RepairOutcome = Omit<JpegRepairResult, 'metadataLost'> & { metadataKept: boolean };
 /** The cron that starts every account's scheduled incremental health scan (Library care settings). */
 export const LIBRARY_CARE_HEALTH_SCAN_CRON = 'libraryCareHealthScan';
 
@@ -255,7 +262,7 @@ export class MediaHealthService {
     private jobRepository: JobRepository,
     private libraryRepository: LibraryRepository,
     private mediaHealthRepository: MediaHealthRepository,
-    _mediaRepository: MediaRepository,
+    private mediaRepository: MediaRepository,
     private physicalFileRepository: PhysicalFileRepository,
     private storageRepository: StorageRepository,
     private userRepository: UserRepository,
@@ -1054,6 +1061,213 @@ export class MediaHealthService {
 
     const operationId = await this.submitBulk(auth, MediaOperationBulkAction.RecoverDamagedMedia, entries);
     return { results, operationId };
+  }
+
+  /**
+   * Repair a damaged JPEG and show the result, changing nothing. The repair is deterministic, so the
+   * reviewer approves it by its checksum and `repair` makes exactly that file the original.
+   */
+  async previewRepair(auth: AuthDto, dto: MediaHealthRepairPreviewDto): Promise<MediaHealthRepairPreviewResponseDto> {
+    const findingId = dto.findingId ?? (await this.damageFindingFor(auth, dto.assetId!));
+    const { finding, asset } = await this.repairTarget(auth, findingId);
+    return this.withRepair(asset, async ({ output, preview, method, width, height, metadataKept }) => {
+      const digests = await this.cryptoRepository.hashFileDigests(output);
+      const bytes = await this.storageRepository.readFile(preview);
+      return {
+        findingId: finding.id,
+        method,
+        width,
+        height,
+        sizeInBytes: digests.sizeInBytes,
+        checksum: digests.sha1.toString('hex'),
+        preview: `data:image/jpeg;base64,${bytes.toString('base64')}`,
+        metadataKept,
+      };
+    });
+  }
+
+  /**
+   * Replace a damaged JPEG with the repair its reviewer saw. The repair runs again from the damaged
+   * file and must give the same checksum; it is published into the hidden Library Care folder, the
+   * asset points at it, and the damaged file is kept there too (as a recovery keeps it).
+   */
+  async repair(auth: AuthDto, dto: MediaHealthRepairDto): Promise<MediaHealthRepairResponseDto> {
+    const { finding, asset } = await this.repairTarget(auth, dto.findingId);
+    const method = await this.withRepair(asset, async ({ output, method }) => {
+      const digests = await this.cryptoRepository.hashFileDigests(output);
+      if (digests.sha1.toString('hex') !== dto.checksum) {
+        throw new ConflictException('The repair changed since it was reviewed; preview it again');
+      }
+      const destination = path.join(
+        path.dirname(StorageCore.getNestedPath(StorageFolder.Upload, asset.ownerId, asset.id)),
+        RECOVERY_FOLDER,
+        `${asset.id}-${finding.id}-${dto.checksum.slice(0, 8)}.jpg`,
+      );
+      await publishVerifiedCopy({
+        source: output,
+        destination,
+        expected: digests,
+        hash: (filePath) => this.cryptoRepository.hashFileDigests(filePath),
+      });
+      const stat = await this.storageRepository.stat(destination);
+      let committed: boolean;
+      try {
+        committed = await this.mediaHealthRepository.replaceRepairedOriginal({
+          assetId: asset.id,
+          ownerId: asset.ownerId,
+          healthId: finding.id,
+          expectedUpdateId: asset.updateId,
+          expectedChecksumAlgorithm: asset.checksumAlgorithm,
+          expectedOriginalPath: asset.originalPath,
+          expectedChecksum: asset.checksum,
+          originalPath: destination,
+          originalFileName: asset.originalFileName,
+          ...digests,
+          fileModifiedAt: stat.mtime,
+          provenance: { recoveredBy: auth.user.id, repairMethod: method, recoveredAt: new Date().toISOString() },
+          verifyCandidate: () => this.cryptoRepository.hashFileDigests(destination).catch((): undefined => {}),
+        });
+      } catch (error) {
+        if (isAssetChecksumConstraint(error)) {
+          throw new ConflictException('This library already has a photo identical to the repaired one');
+        }
+        throw error;
+      }
+      if (!committed) {
+        // left unreferenced in the hidden folder; the same repair reuses it
+        throw new ConflictException('The photo changed while it was being repaired');
+      }
+      return method;
+    });
+    await this.retainDamagedOriginal(finding.id);
+    await this.queueRelinkJobs(asset.id);
+    return { findingId: finding.id, assetId: asset.id, method };
+  }
+
+  /**
+   * The photo viewer's way in: check the photo now and record what is wrong with it, so a photo that
+   * only failed when its thumbnail was made can be repaired without waiting for a scan.
+   */
+  private async damageFindingFor(auth: AuthDto, assetId: string): Promise<string> {
+    const [asset] = await this.mediaHealthRepository.getAssets([assetId]);
+    if (!asset || asset.deletedAt) {
+      throw new BadRequestException('The photo is gone or in the trash');
+    }
+    this.requireRepairable(auth, asset);
+    if (await this.isEncryptedOriginal(asset)) {
+      throw new BadRequestException('The original is encrypted in Locked');
+    }
+    const result = await this.validateAssetIntegrity(asset);
+    if (result?.status === MediaHealthStatus.Missing) {
+      throw new BadRequestException('The original file is missing');
+    }
+    if (result?.status !== MediaHealthStatus.CorruptConfirmed && result?.status !== MediaHealthStatus.CorruptSuspect) {
+      throw new BadRequestException('This photo isn’t damaged, so there is nothing to repair');
+    }
+    const finding = await this.mediaHealthRepository.upsertFinding({
+      runId: null,
+      assetId: asset.id,
+      expectedUpdateId: asset.updateId,
+      category: MediaHealthCategory.Corrupt,
+      status: result.status,
+      severity:
+        result.status === MediaHealthStatus.CorruptConfirmed
+          ? MediaHealthSeverity.Critical
+          : MediaHealthSeverity.Warning,
+      originalPath: asset.originalPath,
+      originalFileName: asset.originalFileName,
+      evidence: result.evidence,
+      resolution: result.resolution,
+      checkedAt: new Date(),
+      dismissedAt: null,
+      resolvedAt: null,
+    });
+    if (!finding) {
+      throw new ConflictException('The photo changed while it was being checked; try again');
+    }
+    return finding.id;
+  }
+
+  /** Who may repair which photo; the same rules for a finding and for the photo viewer. */
+  private requireRepairable(auth: AuthDto, asset: MediaHealthAsset) {
+    // Only the owner: a repair is approved by looking at it, and Library Care never shows anyone
+    // another account's pictures. Even a lossless repair may have picked a different picture joined
+    // to the file, so an administrator cannot approve one unseen.
+    if (asset.ownerId !== auth.user.id) {
+      throw new ForbiddenException('Only the photo’s owner can repair it');
+    }
+    if (!JPEG_REPAIR_EXTENSIONS.has(path.extname(asset.originalFileName).toLowerCase())) {
+      throw new BadRequestException('Only JPEG photos can be repaired');
+    }
+    if (asset.isExternal) {
+      throw new BadRequestException('Photos in an external library are repaired in their own folder');
+    }
+  }
+
+  /** The damaged JPEG a repair may touch, held to the rules a recovery is held to. */
+  private async repairTarget(auth: AuthDto, findingId: string) {
+    const [finding] = await this.findingsFor(auth, [findingId]);
+    if (
+      !finding ||
+      finding.category !== MediaHealthCategory.Corrupt ||
+      (finding.status !== MediaHealthStatus.CorruptConfirmed && finding.status !== MediaHealthStatus.CorruptSuspect)
+    ) {
+      throw new BadRequestException('Only damaged media can be repaired');
+    }
+    const [asset] = await this.mediaHealthRepository.getAssets([finding.assetId]);
+    if (!asset || asset.deletedAt) {
+      throw new BadRequestException('The photo is gone or in the trash');
+    }
+    this.requireRepairable(auth, asset);
+    if (await this.isEncryptedOriginal(asset)) {
+      throw new BadRequestException('The original is encrypted in Locked');
+    }
+    return { finding, asset };
+  }
+
+  /**
+   * Run the repair in the image worker into a temporary folder, removed afterwards. A repair that lost
+   * the photo's details gets them back from the original where ExifTool can read them, so the date,
+   * camera and place survive the metadata extraction that follows a replacement.
+   */
+  private async withRepair<T>(
+    asset: MediaHealthAsset,
+    use: (result: RepairOutcome & { output: string; preview: string }) => Promise<T>,
+  ): Promise<T> {
+    const folder = await this.storageRepository.mkdtemp('frameleaf-repair-');
+    try {
+      const output = path.join(folder, 'repaired.jpg');
+      const preview = path.join(folder, 'preview.jpg');
+      const metadataSource = path.join(folder, 'header.jpg');
+      let result: JpegRepairResult;
+      try {
+        result = await this.mediaRepository.repairJpeg(asset.originalPath, output, preview, metadataSource);
+      } catch (error) {
+        this.logger.warn(`JPEG repair of ${asset.id} failed: ${getErrorMessage(error)}`);
+        throw new BadRequestException('This photo could not be repaired');
+      }
+      // the file already decodes as it is: replacing it would only accept a changed file as the original
+      const [repaired, original] = await Promise.all([
+        this.cryptoRepository.hashFileDigests(output),
+        this.cryptoRepository.hashFileDigests(asset.originalPath),
+      ]);
+      if (repaired.sha1.equals(original.sha1)) {
+        throw new BadRequestException('This photo isn’t damaged, so there is nothing to repair');
+      }
+      const { metadataLost, ...outcome } = result;
+      let metadataKept = true;
+      if (metadataLost.length > 0) {
+        const source = (await this.storageRepository.checkFileExists(metadataSource))
+          ? metadataSource
+          : asset.originalPath;
+        for (const group of metadataLost) {
+          metadataKept = (await this.mediaRepository.copyTagGroup(group, source, output)) && metadataKept;
+        }
+      }
+      return await use({ ...outcome, metadataKept, output, preview });
+    } finally {
+      await this.storageRepository.unlinkDir(folder, { recursive: true, force: true });
+    }
   }
 
   /**

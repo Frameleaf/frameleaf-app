@@ -36,6 +36,7 @@ const baseContext = (overrides: Partial<ViewerMenuContext> = {}): ViewerMenuCont
   canShowFilmstrip: true,
   filmstripShown: false,
   slideshowPlaying: false,
+  canRepair: false,
   ...overrides,
 });
 
@@ -276,6 +277,12 @@ describe('viewerMenuGroups', () => {
       expect(video).toContain('transcode');
       expect(still).not.toContain('transcode');
       expect(video).not.toContain('refresh-faces');
+    });
+
+    it('offers Repair photo for the owner’s own JPEG only', () => {
+      expect(idsOf(baseContext({ canRepair: true }))).toContain('repair-photo');
+      expect(idsOf(baseContext())).not.toContain('repair-photo');
+      expect(viewerMenuLabelKey('repair-photo', baseContext())).toBe('frameleaf_viewer_menu_repair_photo');
     });
 
     it('is dropped entirely for a non-owner', () => {

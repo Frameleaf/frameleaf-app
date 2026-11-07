@@ -14,6 +14,7 @@ import {
   watch,
 } from 'node:fs';
 import fs from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { PassThrough, Readable, Writable } from 'node:stream';
 import { createGunzip, createGzip } from 'node:zlib';
@@ -287,6 +288,11 @@ export class StorageRepository {
         throw error;
       }
     }
+  }
+
+  /** A new, empty folder under the system temporary folder. */
+  mkdtemp(prefix: string): Promise<string> {
+    return fs.mkdtemp(path.join(tmpdir(), prefix));
   }
 
   async unlinkDir(folder: string, options: { recursive?: boolean; force?: boolean }) {

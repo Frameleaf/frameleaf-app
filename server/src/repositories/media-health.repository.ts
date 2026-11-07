@@ -125,6 +125,12 @@ export type RelinkManagedAsset = {
 export type RelinkExternalAsset = RelinkManagedAsset & {
   expectedLibraryId: string;
 };
+/**
+ * A damaged JPEG's repaired file, approved by its reviewer. Unlike a recovery its content is new, so
+ * there is no checksum to match and no candidate: the asset must still be the damaged file that was
+ * repaired (`expectedChecksum`, `expectedUpdateId`), and the damaged file is kept as `retainedPath`.
+ */
+export type ReplaceRepairedOriginal = Omit<RelinkManagedAsset, 'candidateId' | 'category' | 'candidatePath'>;
 @Injectable()
 export class MediaHealthRepository {
   constructor(
@@ -951,7 +957,10 @@ export class MediaHealthRepository {
   async relinkExternalAsset(input: RelinkExternalAsset): Promise<boolean> {
     return this.commitRelink(input);
   }
-  private async commitRelink(input: RelinkManagedAsset | RelinkExternalAsset): Promise<boolean> {
+  async replaceRepairedOriginal(input: ReplaceRepairedOriginal): Promise<boolean> {
+    return this.commitRelink({ ...input, candidateId: '', category: MediaHealthCategory.Corrupt }, true);
+  }
+  private async commitRelink(input: RelinkManagedAsset | RelinkExternalAsset, repaired = false): Promise<boolean> {
     const recoveredPath = path.normalize(input.originalPath);
     const external = 'expectedLibraryId' in input;
     return this.db.transaction().execute(async (trx) => {
@@ -1002,7 +1011,8 @@ export class MediaHealthRepository {
             ? input.sha1.equals(asset.checksum)
             : !!sidecars.rows[0]?.sha1.equals(input.sha1) && !!sidecars.rows[0]?.sha256.equals(input.sha256);
       if (
-        !contentMatches ||
+        // a repair's content is new by design; everything else must be the very same file
+        (!contentMatches && !repaired) ||
         input.sha1.length !== 20 ||
         input.sha256.length !== 32 ||
         !Number.isSafeInteger(input.sizeInBytes) ||
@@ -1024,8 +1034,12 @@ export class MediaHealthRepository {
         !health ||
         health.assetId !== asset.id ||
         health.category !== category ||
-        health.status !==
-          (category === MediaHealthCategory.Missing ? MediaHealthStatus.Found : MediaHealthStatus.CorruptConfirmed) ||
+        !(
+          health.status ===
+            (category === MediaHealthCategory.Missing ? MediaHealthStatus.Found : MediaHealthStatus.CorruptConfirmed) ||
+          // a JPEG the decoder only suspects is damaged can be repaired too: its reviewer saw the result
+          (repaired && health.status === MediaHealthStatus.CorruptSuspect)
+        ) ||
         health.resolvedAt ||
         health.dismissedAt ||
         health.originalPath !== asset.originalPath ||
@@ -1044,10 +1058,11 @@ export class MediaHealthRepository {
       // One verified candidate relinks by itself; among several, only the one the reviewer chose.
       const candidate = candidates.find(({ id }) => id === input.candidateId);
       if (
-        !candidate ||
-        (candidates.length !== 1 && !chosen) ||
-        path.normalize(candidate.candidatePath) !== path.normalize(input.candidatePath ?? input.originalPath) ||
-        candidate.resolution?.autoRelinkable !== true
+        !repaired &&
+        (!candidate ||
+          (candidates.length !== 1 && !chosen) ||
+          path.normalize(candidate.candidatePath) !== path.normalize(input.candidatePath ?? input.originalPath) ||
+          candidate.resolution?.autoRelinkable !== true)
       ) {
         return false;
       }
@@ -1179,13 +1194,19 @@ export class MediaHealthRepository {
           originalPath: recoveredPath,
           originalFileName: input.originalFileName,
           evidence: {
-            reason: category === MediaHealthCategory.Missing ? 'candidate_relinked' : 'recovered_from_verified_copy',
+            reason: repaired
+              ? 'repaired_damaged_file'
+              : category === MediaHealthCategory.Missing
+                ? 'candidate_relinked'
+                : 'recovered_from_verified_copy',
             previousPath: asset.originalPath,
             ...(category === MediaHealthCategory.Corrupt && { retainedPath: asset.originalPath }),
             ...(input.candidatePath && { candidatePath: path.normalize(input.candidatePath) }),
             ...(input.provenance && { provenance: input.provenance }),
           },
-          resolution: { healthId: input.healthId, candidateId: input.candidateId },
+          resolution: repaired
+            ? { healthId: input.healthId, repaired: true }
+            : { healthId: input.healthId, candidateId: input.candidateId },
           checkedAt,
           resolvedAt: checkedAt,
         })

@@ -54,6 +54,7 @@ export const VIEWER_ACTIONS = [
   'refresh-faces',
   'refresh-metadata',
   'refresh-thumbnails',
+  'repair-photo',
   'refresh-encoded',
   'transcode',
   'tag-people',
@@ -124,6 +125,8 @@ export interface ViewerMenuContext {
   filmstripShown: boolean;
   /** Whether a slideshow is playing now, for the Play/Pause label. */
   slideshowPlaying: boolean;
+  /** The user's own JPEG, which Library Care can check and repair from the viewer (FL-1273). */
+  canRepair: boolean;
 }
 
 const compact = (items: (ViewerActionId | false | null | undefined)[]): ViewerActionId[] =>
@@ -244,6 +247,7 @@ export function viewerMenuGroups(context: ViewerMenuContext): ViewerMenuGroup[] 
           isOwner && isImage && 'refresh-faces',
           isOwner && 'refresh-metadata',
           isOwner && 'refresh-thumbnails',
+          context.canRepair && 'repair-photo',
           isOwner && isVideo && 'refresh-encoded',
           isOwner && isVideo && 'transcode',
         ]),
@@ -369,6 +373,9 @@ export function viewerMenuLabelKey(id: ViewerActionId, context: ViewerMenuContex
     }
     case 'refresh-thumbnails': {
       return 'refresh_thumbnails';
+    }
+    case 'repair-photo': {
+      return 'frameleaf_viewer_menu_repair_photo';
     }
     case 'refresh-encoded': {
       return 'frameleaf_viewer_menu_refresh_encoded';

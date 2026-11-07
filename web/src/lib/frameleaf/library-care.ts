@@ -119,6 +119,7 @@ export const EVIDENCE_REASON_KEY: Readonly<Record<string, Translations>> = {
   decode_unverified: 'library_care_evidence_unverified',
   candidate_relinked: 'library_care_evidence_relinked',
   recovered_from_verified_copy: 'library_care_evidence_recovered',
+  repaired_damaged_file: 'library_care_evidence_repaired',
   revalidation_passed: 'library_care_evidence_revalidated',
   trash_revalidation_passed: 'library_care_evidence_revalidated',
 };
@@ -185,6 +186,12 @@ export const isRecoveryCandidate = (candidate: MediaHealthCandidateDto) =>
 /** "Recover from a verified copy" is only for confirmed damage (never RAW or suspected damage). */
 export const canRecover = (rows: readonly LibraryCareRow[]) =>
   rows.length > 0 && rows.every((row) => row.status === MediaHealthStatus.CorruptConfirmed);
+
+/** A damaged JPEG can be repaired from its own file (Library Care: Repair). */
+export const isJpegName = (name: string) => /\.(jpe?g|jpe|jfif)$/i.test(name);
+export const canRepair = (row: LibraryCareRow) =>
+  (row.status === MediaHealthStatus.CorruptConfirmed || row.status === MediaHealthStatus.CorruptSuspect) &&
+  isJpegName(row.name);
 
 /** Rows the trash action may take: confirmed damage, or damage still queued from a cancelled job. */
 export const trashable = (rows: readonly LibraryCareRow[]) =>

@@ -25,11 +25,13 @@
   import SetStackPrimaryAsset from '$lib/components/asset-viewer/actions/SetStackPrimaryAsset.svelte';
   import SetVisibilityAction from '$lib/components/asset-viewer/actions/SetVisibilityAction.svelte';
   import UnstackAction from '$lib/components/asset-viewer/actions/UnstackAction.svelte';
+  import LibraryCareRepairDialog from '$lib/components/frameleaf/LibraryCareRepairDialog.svelte';
   import ViewerChooserDialog, { type ViewerChooserPick } from '$lib/components/frameleaf/ViewerChooserDialog.svelte';
   import ViewerMenuGroupLabel from '$lib/components/frameleaf/ViewerMenuGroupLabel.svelte';
   import MenuOption from '$lib/components/shared-components/context-menu/MenuOption.svelte';
   import { AssetAction } from '$lib/constants';
   import { canSendCopies, sendCopyPermitted } from '$lib/frameleaf/send-copy';
+  import { isJpegName } from '$lib/frameleaf/library-care';
   import { folderOf } from '$lib/frameleaf/viewer-headline';
   import { isImageAsset, isVideoAsset } from '$lib/frameleaf/viewer-media';
   import {
@@ -71,6 +73,7 @@
     mdiDeleteForeverOutline,
     mdiDeleteRestore,
     mdiImageAlbum,
+    mdiImageBrokenVariant,
     mdiMovieOpenOutline,
     mdiPause,
     mdiPlayCircleOutline,
@@ -185,7 +188,17 @@
     canShowFilmstrip,
     filmstripShown: $showFilmstrip,
     slideshowPlaying: $slideshowState === SlideshowState.PlaySlideshow,
+    // the server checks the file when asked; the owner's own JPEGs only (FL-1273)
+    canRepair: isOwner && isImageAsset(asset) && !asset.isTrashed && isJpegName(asset.originalFileName),
   });
+
+  const repairPhoto = (source: AssetResponseDto) =>
+    modalManager.show(LibraryCareRepairDialog, {
+      assetId: source.id,
+      name: source.originalFileName,
+      onRepaired: () =>
+        toastManager.primary($t('library_care_repair_done', { values: { name: source.originalFileName } })),
+    });
 
   const stillExportFormats = $derived(
     isImageAsset(asset) &&
@@ -412,6 +425,9 @@
       text={label('refresh-thumbnails')}
       onClick={() => run(Actions.RegenerateThumbnailJob)}
     />
+  {/if}
+  {#if has(group, 'repair-photo')}
+    <MenuOption icon={mdiImageBrokenVariant} text={label('repair-photo')} onClick={() => repairPhoto(asset)} />
   {/if}
   {#if has(group, 'refresh-encoded')}
     <MenuOption

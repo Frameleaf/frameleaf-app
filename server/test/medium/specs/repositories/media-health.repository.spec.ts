@@ -523,6 +523,55 @@ describe(MediaHealthRepository.name, () => {
       ]);
     });
 
+    it('replaces a damaged original with its repaired file, keeping the damaged path', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const damagedSha1 = Buffer.alloc(20, 7);
+      const { result: asset } = await ctx.newAsset({ ownerId: user.id, checksum: damagedSha1 });
+      const finding = await sut.upsertFinding({
+        ...findingDto(asset.id, asset.originalPath, null),
+        category: MediaHealthCategory.Corrupt,
+        status: MediaHealthStatus.CorruptSuspect,
+      });
+      assert.isDefined(finding);
+      const repairedPath = `/data/upload/${user.id}/.library-care/${asset.id}-repaired.jpg`;
+      const sha1 = Buffer.alloc(20, 8);
+      const sha256 = Buffer.alloc(32, 9);
+      const input = {
+        expectedUpdateId: asset.updateId,
+        expectedChecksumAlgorithm: asset.checksumAlgorithm,
+        verifyCandidate: () => Promise.resolve({ sha1, sha256, sizeInBytes: 50 }),
+        assetId: asset.id,
+        ownerId: user.id,
+        healthId: finding.id,
+        expectedOriginalPath: asset.originalPath,
+        originalPath: repairedPath,
+        originalFileName: asset.originalFileName,
+        sha1,
+        sha256,
+        sizeInBytes: 50,
+        fileModifiedAt: new Date(),
+      };
+
+      // the asset is no longer the damaged file that was repaired
+      await expect(sut.replaceRepairedOriginal({ ...input, expectedChecksum: Buffer.alloc(20, 1) })).resolves.toBe(
+        false,
+      );
+      await expect(sut.replaceRepairedOriginal({ ...input, expectedChecksum: damagedSha1 })).resolves.toBe(true);
+
+      const rows = await sql<{ originalPath: string; checksum: Buffer }>`
+        SELECT "originalPath", checksum FROM public.asset WHERE id = ${asset.id}::uuid`.execute(defaultDatabase);
+      expect(rows.rows[0]).toEqual({ originalPath: repairedPath, checksum: sha256 });
+      await expect(sut.getByIds([finding.id])).resolves.toEqual([
+        expect.objectContaining({
+          status: MediaHealthStatus.Resolved,
+          originalPath: repairedPath,
+          evidence: expect.objectContaining({ reason: 'repaired_damaged_file', retainedPath: asset.originalPath }),
+          resolution: { healthId: finding.id, repaired: true },
+        }),
+      ]);
+    });
+
     it('markResolved moves the finding to resolved/info and stamps resolvedAt', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
