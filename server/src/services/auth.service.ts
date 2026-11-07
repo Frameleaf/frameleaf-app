@@ -30,9 +30,9 @@ import {
   PinCodeSetupDto,
   SessionUnlockDto,
   SignUpDto,
-  TwoFactorDisableDto,
-  TwoFactorEnableDto,
+  TwoFactorCodeDto,
   TwoFactorPasswordDto,
+  TwoFactorProofDto,
   TwoFactorRecoveryCodesResponseDto,
   TwoFactorSetupResponseDto,
   mapLoginResponse,
@@ -332,7 +332,7 @@ export class AuthService extends BaseService {
   }
 
   /** FL-793: confirm the authenticator with its first code; the recovery codes are returned only now. */
-  async enableTwoFactor(auth: AuthDto, dto: TwoFactorEnableDto): Promise<TwoFactorRecoveryCodesResponseDto> {
+  async enableTwoFactor(auth: AuthDto, dto: TwoFactorCodeDto): Promise<TwoFactorRecoveryCodesResponseDto> {
     const row = await this.userRepository.getTwoFactor(auth.user.id);
     if (!row || row.enabledAt) {
       throw new BadRequestException(row ? 'Two-step sign-in is already on' : 'Start setting up two-step sign-in first');
@@ -356,17 +356,64 @@ export class AuthService extends BaseService {
   }
 
   /** FL-793: turn two-step sign-in off with the password and a code (or a recovery code). */
-  async disableTwoFactor(auth: AuthDto, dto: TwoFactorDisableDto): Promise<void> {
-    await this.requireAccountPassword(auth.user.id, dto.password);
+  async disableTwoFactor(auth: AuthDto, dto: TwoFactorProofDto): Promise<void> {
+    await this.requireTwoFactorProof(auth.user.id, dto);
+    await this.userRepository.deleteTwoFactor(auth.user.id);
+  }
+
+  /**
+   * FL-793: start moving to a new phone with the password and a code from the old one (or a recovery code
+   * when it is gone). Returns the new phone's key; the old phone keeps working until it is confirmed.
+   */
+  async startTwoFactorMove(auth: AuthDto, dto: TwoFactorProofDto): Promise<TwoFactorSetupResponseDto> {
+    await this.requireTwoFactorProof(auth.user.id, dto);
+    const secret = newTotpSecret();
+    const sealed = sealMailSecret(await this.twoFactorSealKey(), `two-factor:${auth.user.id}`, secret);
+    if (!(await this.userRepository.setPendingTwoFactorMove(auth.user.id, sealed))) {
+      throw new BadRequestException('Two-step sign-in is not on');
+    }
+    return { secret, otpauthUri: otpauthUri('Frameleaf', auth.user.email, secret) };
+  }
+
+  /**
+   * FL-793: finish the move with a code from the new phone. Recovery codes and trusted browsers stay;
+   * the account's history notes it as `account-updated` with detail `two-factor-moved`.
+   */
+  async confirmTwoFactorMove(auth: AuthDto, dto: TwoFactorCodeDto): Promise<void> {
     const row = await this.userRepository.getTwoFactor(auth.user.id);
+    if (!row?.enabledAt || !row.pendingSecret) {
+      throw new BadRequestException('Start moving to a new phone first');
+    }
+    const secret = await this.openTwoFactorSecret(auth.user.id, row.pendingSecret);
+    const step = secret ? matchTotp(secret, dto.code, new Date()) : null;
+    if (step === null) {
+      throw new BadRequestException(TWO_FACTOR_WRONG_CODE);
+    }
+    if (!(await this.userRepository.confirmTwoFactorMove(auth.user.id, step, row.pendingSecret))) {
+      throw new BadRequestException('The move to a new phone was started again; scan the newest code');
+    }
+    await this.recordAdminEvents([
+      {
+        userId: auth.user.id,
+        actorId: auth.user.id,
+        action: AdminAuditAction.AccountUpdated,
+        subject: auth.user.name,
+        detail: 'two-factor-moved',
+      },
+    ]);
+  }
+
+  /** The password, two-step sign-in on, and exactly one right second factor (a recovery code is spent). */
+  private async requireTwoFactorProof(userId: string, dto: TwoFactorProofDto) {
+    await this.requireAccountPassword(userId, dto.password);
+    const row = await this.userRepository.getTwoFactor(userId);
     if (!row?.enabledAt) {
       throw new BadRequestException('Two-step sign-in is not on');
     }
     requireOneSecondFactor(dto);
-    if (!(await this.checkSecondFactor(auth.user.id, row.secret, dto, new Date()))) {
+    if (!(await this.checkSecondFactor(userId, row.secret, dto, new Date()))) {
       throw new BadRequestException(dto.code ? TWO_FACTOR_WRONG_CODE : TWO_FACTOR_WRONG_RECOVERY_CODE);
     }
-    await this.userRepository.deleteTwoFactor(auth.user.id);
   }
 
   /** FL-793: replace every recovery code with ten new ones, shown once. */

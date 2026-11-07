@@ -381,7 +381,7 @@ export class UserRepository {
   getTwoFactor(userId: string) {
     return this.db
       .selectFrom('user_two_factor')
-      .select(['userId', 'secret', 'enabledAt'])
+      .select(['userId', 'secret', 'enabledAt', 'pendingSecret'])
       .where('userId', '=', userId)
       .executeTakeFirst();
   }
@@ -395,7 +395,7 @@ export class UserRepository {
       .onConflict((oc) =>
         oc
           .column('userId')
-          .doUpdateSet({ secret, lastUsedStep: null, createdAt: sql`now()` })
+          .doUpdateSet({ secret, pendingSecret: null, lastUsedStep: null, createdAt: sql`now()` })
           .where('user_two_factor.enabledAt', 'is', null),
       )
       .returning('userId')
@@ -413,6 +413,37 @@ export class UserRepository {
       .set({ lastUsedStep: String(step) })
       .where('userId', '=', userId)
       .where((eb) => eb.or([eb('lastUsedStep', 'is', null), eb('lastUsedStep', '<', String(step))]))
+      .returning('userId')
+      .executeTakeFirst();
+    return !!row;
+  }
+
+  /** FL-793: a new phone's key while the account moves to it; only while two-step sign-in is on. */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.STRING] })
+  async setPendingTwoFactorMove(userId: string, pendingSecret: string): Promise<boolean> {
+    const row = await this.db
+      .updateTable('user_two_factor')
+      .set({ pendingSecret })
+      .where('userId', '=', userId)
+      .where('enabledAt', 'is not', null)
+      .returning('userId')
+      .executeTakeFirst();
+    return !!row;
+  }
+
+  /**
+   * FL-793: switch to the new phone's key, confirmed by its code's `step`. Only the pending key that was
+   * checked (`expected`) is swapped in, so a move started again meanwhile is not confirmed by an older code.
+   * `enabledAt` stays, so recovery codes and trusted browsers keep working.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.NUMBER, DummyValue.STRING] })
+  async confirmTwoFactorMove(userId: string, step: number, expected: string): Promise<boolean> {
+    const row = await this.db
+      .updateTable('user_two_factor')
+      .set({ secret: expected, pendingSecret: null, lastUsedStep: String(step) })
+      .where('userId', '=', userId)
+      .where('enabledAt', 'is not', null)
+      .where('pendingSecret', '=', expected)
       .returning('userId')
       .executeTakeFirst();
     return !!row;

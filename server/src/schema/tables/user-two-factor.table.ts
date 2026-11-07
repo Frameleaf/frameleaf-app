@@ -8,7 +8,9 @@ import { UserTable } from 'src/schema/tables/user.table.js';
  *
  * `secret` is sealed (AES-256-GCM) under a key derived from the server's own key file, never stored in
  * clear. The row exists from setup; two-step sign-in is on only once `enabledAt` is set (the first code
- * was confirmed). `lastUsedStep` is the newest TOTP step accepted, so a code works once.
+ * was confirmed). `lastUsedStep` is the newest TOTP step accepted, so a code works once. `pendingSecret`
+ * (sealed the same way) is a new phone's key while the account moves to it; the old key works until the
+ * new one is confirmed.
  */
 @Table({ name: 'user_two_factor' })
 export class UserTwoFactorTable {
@@ -20,6 +22,9 @@ export class UserTwoFactorTable {
 
   @Column({ type: 'timestamp with time zone', nullable: true })
   enabledAt!: Timestamp | null;
+
+  @Column({ type: 'text', nullable: true })
+  pendingSecret!: string | null;
 
   @Column({ type: 'bigint', nullable: true })
   lastUsedStep!: string | null;

@@ -111,6 +111,26 @@ describe('/auth/two-factor', () => {
     expect(again.status).toBe(401);
   });
 
+  it('moves to a new phone (old phone gone: a recovery code), keeping the other recovery codes', async () => {
+    const start = await request(app)
+      .post('/auth/two-factor/move')
+      .set('Authorization', bearer(user.accessToken))
+      .send({ password, recoveryCode: recoveryCodes[1] });
+    expect(start.status).toBe(201);
+    const newSecret: string = start.body.secret;
+    expect(newSecret).not.toBe(secret);
+
+    const confirm = await request(app)
+      .post('/auth/two-factor/move/confirm')
+      .set('Authorization', bearer(user.accessToken))
+      .send({ code: totp(newSecret) });
+    expect(confirm.status).toBe(204);
+    secret = newSecret;
+
+    const status = await request(app).get('/auth/status').set('Authorization', bearer(user.accessToken));
+    expect(status.body).toMatchObject({ twoFactorEnabled: true, recoveryCodesRemaining: 8 });
+  });
+
   it('lets an administrator turn it off for a lost phone, and records it', async () => {
     const pinState = await request(app)
       .get(`/admin/users/${user.userId}/pin-code`)

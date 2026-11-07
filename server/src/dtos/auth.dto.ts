@@ -114,26 +114,27 @@ const TwoFactorSetupResponseSchema = z
   })
   .meta({ id: 'TwoFactorSetupResponseDto' });
 
-const TwoFactorEnableSchema = z.object({ code: twoFactorCode }).meta({ id: 'TwoFactorEnableDto' });
+const TwoFactorCodeSchema = z.object({ code: twoFactorCode }).meta({ id: 'TwoFactorCodeDto' });
 
 const TwoFactorRecoveryCodesResponseSchema = z
   .object({ recoveryCodes: z.array(z.string()).describe('Ten one-time recovery codes, shown only now') })
   .meta({ id: 'TwoFactorRecoveryCodesResponseDto' });
 
-const TwoFactorDisableSchema = z
+/** FL-793: the password and a code (or recovery code): turning off, or starting a move to a new phone. */
+const TwoFactorProofSchema = z
   .object({
     password: z.string().describe('The account password'),
     code: twoFactorCode.optional(),
     recoveryCode: recoveryCode.optional(),
   })
-  .meta({ id: 'TwoFactorDisableDto' });
+  .meta({ id: 'TwoFactorProofDto' });
 
 export class LoginTwoFactorDto extends createZodDto(LoginTwoFactorSchema) {}
 export class TwoFactorPasswordDto extends createZodDto(TwoFactorPasswordSchema) {}
 export class TwoFactorSetupResponseDto extends createZodDto(TwoFactorSetupResponseSchema) {}
-export class TwoFactorEnableDto extends createZodDto(TwoFactorEnableSchema) {}
+export class TwoFactorCodeDto extends createZodDto(TwoFactorCodeSchema) {}
 export class TwoFactorRecoveryCodesResponseDto extends createZodDto(TwoFactorRecoveryCodesResponseSchema) {}
-export class TwoFactorDisableDto extends createZodDto(TwoFactorDisableSchema) {}
+export class TwoFactorProofDto extends createZodDto(TwoFactorProofSchema) {}
 
 const LogoutResponseSchema = z
   .object({

@@ -19,9 +19,9 @@ import {
   PinCodeSetupDto,
   SessionUnlockDto,
   SignUpDto,
-  TwoFactorDisableDto,
-  TwoFactorEnableDto,
+  TwoFactorCodeDto,
   TwoFactorPasswordDto,
+  TwoFactorProofDto,
   TwoFactorRecoveryCodesResponseDto,
   TwoFactorSetupResponseDto,
   ValidateAccessTokenResponseDto,
@@ -117,7 +117,7 @@ export class AuthController {
     description: 'Confirm the new authenticator key with a code. Returns ten recovery codes, shown only this once.',
     history: new HistoryBuilder().added('v3.4.0').beta('v3.4.0'),
   })
-  enableTwoFactor(@Auth() auth: AuthDto, @Body() dto: TwoFactorEnableDto): Promise<TwoFactorRecoveryCodesResponseDto> {
+  enableTwoFactor(@Auth() auth: AuthDto, @Body() dto: TwoFactorCodeDto): Promise<TwoFactorRecoveryCodesResponseDto> {
     return this.service.enableTwoFactor(auth, dto);
   }
 
@@ -130,8 +130,34 @@ export class AuthController {
     description: 'Turn off two-step sign-in with the password and an authenticator or recovery code.',
     history: new HistoryBuilder().added('v3.4.0').beta('v3.4.0'),
   })
-  disableTwoFactor(@Auth() auth: AuthDto, @Body() dto: TwoFactorDisableDto): Promise<void> {
+  disableTwoFactor(@Auth() auth: AuthDto, @Body() dto: TwoFactorProofDto): Promise<void> {
     return this.service.disableTwoFactor(auth, dto);
+  }
+
+  @Post('two-factor/move')
+  @RateLimited(RATE_LIMITS.twoFactorChange)
+  @Authenticated({ permission: Permission.AuthChangePassword })
+  @Endpoint({
+    summary: 'Start moving two-step sign-in to a new phone',
+    description:
+      'Check the password and a code from the old phone (or a recovery code) and create the new phone’s key. The old phone works until the move is confirmed.',
+    history: new HistoryBuilder().added('v3.4.0').beta('v3.4.0'),
+  })
+  startTwoFactorMove(@Auth() auth: AuthDto, @Body() dto: TwoFactorProofDto): Promise<TwoFactorSetupResponseDto> {
+    return this.service.startTwoFactorMove(auth, dto);
+  }
+
+  @Post('two-factor/move/confirm')
+  @RateLimited(RATE_LIMITS.twoFactorChange)
+  @Authenticated({ permission: Permission.AuthChangePassword })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Finish moving two-step sign-in to a new phone',
+    description: 'Confirm the new phone with a code from it. Recovery codes and trusted browsers stay.',
+    history: new HistoryBuilder().added('v3.4.0').beta('v3.4.0'),
+  })
+  confirmTwoFactorMove(@Auth() auth: AuthDto, @Body() dto: TwoFactorCodeDto): Promise<void> {
+    return this.service.confirmTwoFactorMove(auth, dto);
   }
 
   @Post('two-factor/recovery-codes')

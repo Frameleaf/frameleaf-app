@@ -23,7 +23,12 @@ it('replaces an unfinished setup but never one that is on', async () => {
   const { sut, userId } = await setup();
   await expect(sut.setPendingTwoFactor(userId, 'sealed-1')).resolves.toEqual({ userId });
   await expect(sut.setPendingTwoFactor(userId, 'sealed-2')).resolves.toEqual({ userId });
-  await expect(sut.getTwoFactor(userId)).resolves.toEqual({ userId, secret: 'sealed-2', enabledAt: null });
+  await expect(sut.getTwoFactor(userId)).resolves.toEqual({
+    userId,
+    secret: 'sealed-2',
+    enabledAt: null,
+    pendingSecret: null,
+  });
 
   await expect(sut.enableTwoFactor(userId, 100, [hashRecoveryCode('a')])).resolves.toBe(true);
   await expect(sut.enableTwoFactor(userId, 101, [])).resolves.toBe(false);
@@ -47,7 +52,11 @@ it('accepts each time step once, and only steps after the last one', async () =>
 it('spends a recovery code once, counts what is left, and drops everything when turned off', async () => {
   const { sut, userId } = await setup();
   await sut.setPendingTwoFactor(userId, 'sealed');
-  await sut.enableTwoFactor(userId, 1, ['a', 'b', 'c'].map((code) => hashRecoveryCode(code)));
+  await sut.enableTwoFactor(
+    userId,
+    1,
+    ['a', 'b', 'c'].map((code) => hashRecoveryCode(code)),
+  );
   await expect(sut.countRecoveryCodes(userId)).resolves.toBe(3);
 
   await expect(sut.useRecoveryCode(userId, hashRecoveryCode('b'))).resolves.toBe(true);
@@ -63,4 +72,24 @@ it('spends a recovery code once, counts what is left, and drops everything when 
   await expect(sut.getTwoFactor(userId)).resolves.toBeUndefined();
   await expect(sut.countRecoveryCodes(userId)).resolves.toBe(0);
   await expect(sut.deleteTwoFactor(userId)).resolves.toBe(false);
+});
+
+it('moves to a new key only while on, and only the pending key that was checked', async () => {
+  const { sut, userId } = await setup();
+  await sut.setPendingTwoFactor(userId, 'old');
+  await expect(sut.setPendingTwoFactorMove(userId, 'new-1')).resolves.toBe(false);
+  await sut.enableTwoFactor(userId, 10, [hashRecoveryCode('kept')]);
+
+  await expect(sut.setPendingTwoFactorMove(userId, 'new-1')).resolves.toBe(true);
+  await expect(sut.setPendingTwoFactorMove(userId, 'new-2')).resolves.toBe(true);
+  await expect(sut.confirmTwoFactorMove(userId, 20, 'new-1')).resolves.toBe(false);
+  await expect(sut.getTwoFactor(userId)).resolves.toMatchObject({ secret: 'old', pendingSecret: 'new-2' });
+
+  const before = (await sut.getTwoFactor(userId))?.enabledAt;
+  await expect(sut.confirmTwoFactorMove(userId, 20, 'new-2')).resolves.toBe(true);
+  const after = await sut.getTwoFactor(userId);
+  expect(after).toMatchObject({ secret: 'new-2', pendingSecret: null });
+  expect(after?.enabledAt).toEqual(before);
+  await expect(sut.useTwoFactorStep(userId, 20)).resolves.toBe(false);
+  await expect(sut.countRecoveryCodes(userId)).resolves.toBe(1);
 });

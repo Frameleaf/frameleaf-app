@@ -2,13 +2,15 @@ import { Kysely, sql } from 'kysely';
 
 /**
  * FL-793: two-step sign-in. `user_two_factor` holds an account's sealed authenticator secret (on once
- * `enabledAt` is set); `user_recovery_code` its one-time recovery codes as SHA-256 hashes.
+ * `enabledAt` is set) and, while it moves to a new phone, the new phone's sealed key; `user_recovery_code`
+ * its one-time recovery codes as SHA-256 hashes.
  */
 export async function up(db: Kysely<any>): Promise<void> {
   await sql`CREATE TABLE public.user_two_factor (
     "userId" uuid NOT NULL,
     secret text NOT NULL,
     "enabledAt" timestamp with time zone,
+    "pendingSecret" text,
     "lastUsedStep" bigint,
     "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT user_two_factor_pkey PRIMARY KEY ("userId"),

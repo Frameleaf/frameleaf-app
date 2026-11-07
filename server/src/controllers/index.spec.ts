@@ -207,6 +207,8 @@ const RATE_LIMITED_ROUTES: Record<string, RateLimitRule> = {
   'POST auth/two-factor/enable': RATE_LIMITS.twoFactorChange,
   'DELETE auth/two-factor': RATE_LIMITS.twoFactorChange,
   'POST auth/two-factor/recovery-codes': RATE_LIMITS.twoFactorChange,
+  'POST auth/two-factor/move': RATE_LIMITS.twoFactorChange,
+  'POST auth/two-factor/move/confirm': RATE_LIMITS.twoFactorChange,
   // FL-538: a choose-a-password link is checked and used without signing in, bounded like a sign-in.
   'POST auth/password-link/check': RATE_LIMITS.login,
   'POST auth/password-link': RATE_LIMITS.login,

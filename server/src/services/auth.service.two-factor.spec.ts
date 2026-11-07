@@ -29,7 +29,7 @@ describe('AuthService two-step sign-in (FL-793)', () => {
     mocks.user.setPendingTwoFactor.mockResolvedValue({ userId: user.id });
     ({ secret } = await sut.setupTwoFactor(AuthFactory.create(user), { password: 'password' }));
     sealed = mocks.user.setPendingTwoFactor.mock.calls[0][1];
-    mocks.user.getTwoFactor.mockResolvedValue({ userId: user.id, secret: sealed, enabledAt });
+    mocks.user.getTwoFactor.mockResolvedValue({ userId: user.id, secret: sealed, enabledAt, pendingSecret: null });
     mocks.user.useTwoFactorStep.mockResolvedValue(true);
   });
 
@@ -119,12 +119,22 @@ describe('AuthService two-step sign-in (FL-793)', () => {
     expect(trusted.twoFactorRequired).toBeUndefined();
     expect(trusted.accessToken).not.toBe('');
 
-    mocks.user.getTwoFactor.mockResolvedValue({ userId: user.id, secret: sealed, enabledAt: new Date() });
+    mocks.user.getTwoFactor.mockResolvedValue({
+      userId: user.id,
+      secret: sealed,
+      enabledAt: new Date(),
+      pendingSecret: null,
+    });
     await challenge(trustToken);
   });
 
   it('turns on with a right code and returns ten recovery codes stored as hashes', async () => {
-    mocks.user.getTwoFactor.mockResolvedValue({ userId: user.id, secret: sealed, enabledAt: null });
+    mocks.user.getTwoFactor.mockResolvedValue({
+      userId: user.id,
+      secret: sealed,
+      enabledAt: null,
+      pendingSecret: null,
+    });
     await expect(sut.enableTwoFactor(AuthFactory.create(user), { code: '000000' })).rejects.toBeInstanceOf(
       currentCode() === '000000' ? Error : BadRequestException,
     );
@@ -147,6 +157,42 @@ describe('AuthService two-step sign-in (FL-793)', () => {
 
     await sut.disableTwoFactor(AuthFactory.create(user), { password: 'password', code: currentCode() });
     expect(mocks.user.deleteTwoFactor).toHaveBeenCalledWith(user.id);
+  });
+
+  it('moves to a new phone: proof with the old one, confirm with the new one, history noted', async () => {
+    mocks.user.setPendingTwoFactorMove.mockResolvedValue(true);
+    const moved = await sut.startTwoFactorMove(AuthFactory.create(user), { password: 'password', code: currentCode() });
+    const pending = mocks.user.setPendingTwoFactorMove.mock.calls[0][1];
+    expect(pending).not.toBe(sealed);
+    expect(moved.otpauthUri).toContain(moved.secret);
+
+    mocks.user.getTwoFactor.mockResolvedValue({ userId: user.id, secret: sealed, enabledAt, pendingSecret: pending });
+    // a code from the old phone does not confirm the new one
+    await expect(sut.confirmTwoFactorMove(AuthFactory.create(user), { code: currentCode() })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+
+    mocks.user.confirmTwoFactorMove.mockResolvedValue(true);
+    const newCode = totpCode(moved.secret, totpStep(new Date()));
+    await sut.confirmTwoFactorMove(AuthFactory.create(user), { code: newCode });
+    expect(mocks.user.confirmTwoFactorMove).toHaveBeenCalledWith(user.id, totpStep(new Date()), pending);
+    expect(mocks.adminAudit.create).toHaveBeenCalledWith([
+      expect.objectContaining({ userId: user.id, actorId: user.id, detail: 'two-factor-moved' }),
+    ]);
+  });
+
+  it('needs the password and an old-phone code (or recovery code) to start a move, and a started move to confirm', async () => {
+    await expect(
+      sut.startTwoFactorMove(AuthFactory.create(user), { password: 'wrong', code: currentCode() }),
+    ).rejects.toThrow('Wrong password');
+    await expect(sut.startTwoFactorMove(AuthFactory.create(user), { password: 'password' })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(mocks.user.setPendingTwoFactorMove).not.toHaveBeenCalled();
+
+    await expect(sut.confirmTwoFactorMove(AuthFactory.create(user), { code: currentCode() })).rejects.toThrow(
+      'Start moving to a new phone first',
+    );
   });
 
   it('reports two-step sign-in and the recovery codes left in the auth status', async () => {

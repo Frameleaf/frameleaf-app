@@ -1056,7 +1056,12 @@ describe(UserAdminService.name, () => {
 
     it('says whether two-step sign-in is on (FL-793)', async () => {
       mocks.user.hasPinCode.mockResolvedValue(false);
-      mocks.user.getTwoFactor.mockResolvedValue({ userId: 'user-1', secret: 'sealed', enabledAt: new Date() });
+      mocks.user.getTwoFactor.mockResolvedValue({
+        userId: 'user-1',
+        secret: 'sealed',
+        enabledAt: new Date(),
+        pendingSecret: null,
+      });
 
       await expect(sut.getPinCodeState(authStub.admin, 'user-1')).resolves.toMatchObject({ twoFactorEnabled: true });
     });
