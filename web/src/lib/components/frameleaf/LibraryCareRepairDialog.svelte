@@ -42,6 +42,8 @@
   };
 
   let result = $state<MediaHealthRepairPreviewResponseDto>();
+  /** Another account's photo is never shown; only a repair that leaves the picture untouched can be approved unseen. */
+  const blocked = $derived(!!result && !result.preview && result.method !== MediaHealthRepairMethod.Lossless);
   let message = $state<string>();
   let working = $state(true);
   let originalFailed = $state(false);
@@ -97,8 +99,13 @@
       </figure>
       <figure>
         <span class="frame">
-          {#if result}
+          {#if result?.preview}
             <img src={result.preview} alt={$t('library_care_repair_repaired')} />
+          {:else if result}
+            <span class="none">
+              <Icon icon={mdiImageBrokenVariant} size="2rem" aria-hidden={true} />
+              {$t('library_care_repair_cannot_show')}
+            </span>
           {:else if working}
             <span class="none">{$t('library_care_repair_working')}</span>
           {:else}
@@ -122,6 +129,9 @@
       {#if !result.metadataKept}
         <p class="warn">{$t('library_care_repair_metadata_lost')}</p>
       {/if}
+      {#if blocked}
+        <p class="warn">{$t('library_care_repair_owner_only')}</p>
+      {/if}
     {/if}
     {#if message}
       <p class="error" role="alert">{message}</p>
@@ -130,7 +140,7 @@
 
     <footer>
       <Button onclick={() => (open = false)}>{$t('cancel')}</Button>
-      <Button variant="primary" disabled={!result || working} onclick={approve}>
+      <Button variant="primary" disabled={!result || blocked || working} onclick={approve}>
         {$t('library_care_repair_approve')}
       </Button>
     </footer>

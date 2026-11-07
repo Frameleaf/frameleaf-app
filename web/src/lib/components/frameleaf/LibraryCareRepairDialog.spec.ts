@@ -69,6 +69,15 @@ describe('LibraryCareRepairDialog', () => {
     expect(screen.getByText(/couldn’t be read from the damaged file/)).toBeInTheDocument();
   });
 
+  it('shows another account’s repair without its picture, and blocks a change it cannot review', async () => {
+    vi.mocked(previewRepair).mockResolvedValue({ ...preview, method: MediaHealthRepairMethod.Rebuilt, preview: null });
+    render(LibraryCareRepairDialog, { open: true, row, showOriginal: false, onRepaired: vi.fn() });
+
+    expect(await screen.findByText(/only the photo’s owner can review and approve it/)).toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: 'Repaired' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Replace with repaired photo' })).toBeDisabled();
+  });
+
   it('says when nothing could be recovered and offers no replacement', async () => {
     vi.mocked(previewRepair).mockRejectedValue(new Error('no'));
     render(LibraryCareRepairDialog, { open: true, row, showOriginal: false, onRepaired: vi.fn() });

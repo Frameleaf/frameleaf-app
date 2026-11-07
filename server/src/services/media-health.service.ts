@@ -128,6 +128,8 @@ const MANAGED_LOOKUP_MAX_BYTES = 10 * 1024 ** 3;
  * crawler never adopts a copy that is not committed yet.
  */
 const RECOVERY_FOLDER = '.library-care';
+/** A repair as the reviewer sees it: whether every detail the original carried is in the result. */
+type RepairOutcome = Omit<JpegRepairResult, 'metadataLost'> & { metadataKept: boolean };
 /** The cron that starts every account's scheduled incremental health scan (Library care settings). */
 export const LIBRARY_CARE_HEALTH_SCAN_CRON = 'libraryCareHealthScan';
 
@@ -1069,7 +1071,9 @@ export class MediaHealthService {
     const { finding, asset } = await this.repairTarget(auth, dto.findingId);
     return this.withRepair(asset, async ({ output, preview, method, width, height, metadataKept }) => {
       const digests = await this.cryptoRepository.hashFileDigests(output);
-      const bytes = await this.storageRepository.readFile(preview);
+      // Library Care never shows another account's pictures, so neither does a repair
+      const owner = asset.ownerId === auth.user.id;
+      const bytes = owner ? await this.storageRepository.readFile(preview) : undefined;
       return {
         findingId: finding.id,
         method,
@@ -1077,7 +1081,7 @@ export class MediaHealthService {
         height,
         sizeInBytes: digests.sizeInBytes,
         checksum: digests.sha1.toString('hex'),
-        preview: `data:image/jpeg;base64,${bytes.toString('base64')}`,
+        preview: bytes ? `data:image/jpeg;base64,${bytes.toString('base64')}` : null,
         metadataKept,
       };
     });
@@ -1094,6 +1098,10 @@ export class MediaHealthService {
       const digests = await this.cryptoRepository.hashFileDigests(output);
       if (digests.sha1.toString('hex') !== dto.checksum) {
         throw new ConflictException('The repair changed since it was reviewed; preview it again');
+      }
+      // an administrator cannot see another account's photo, so approves only a repair that leaves it untouched
+      if (asset.ownerId !== auth.user.id && method !== 'lossless') {
+        throw new ForbiddenException('Only the owner can review this repair');
       }
       const destination = path.join(
         path.dirname(StorageCore.getNestedPath(StorageFolder.Upload, asset.ownerId, asset.id)),
@@ -1177,7 +1185,7 @@ export class MediaHealthService {
    */
   private async withRepair<T>(
     asset: MediaHealthAsset,
-    use: (result: JpegRepairResult & { output: string; preview: string }) => Promise<T>,
+    use: (result: RepairOutcome & { output: string; preview: string }) => Promise<T>,
   ): Promise<T> {
     const folder = await this.storageRepository.mkdtemp('frameleaf-repair-');
     try {
@@ -1191,18 +1199,17 @@ export class MediaHealthService {
         this.logger.warn(`JPEG repair of ${asset.id} failed: ${getErrorMessage(error)}`);
         throw new BadRequestException('This photo could not be repaired');
       }
-      if (!result.metadataKept) {
+      const { metadataLost, ...outcome } = result;
+      let metadataKept = true;
+      if (metadataLost.length > 0) {
         const source = (await this.storageRepository.checkFileExists(metadataSource))
           ? metadataSource
           : asset.originalPath;
-        const copied = await this.mediaRepository.copyTagGroup('EXIF', source, output);
-        if (copied) {
-          await this.mediaRepository.copyTagGroup('XMP', source, output);
-          await this.mediaRepository.copyTagGroup('IPTC', source, output);
+        for (const group of metadataLost) {
+          metadataKept = (await this.mediaRepository.copyTagGroup(group, source, output)) && metadataKept;
         }
-        result = { ...result, metadataKept: copied };
       }
-      return await use({ ...result, output, preview });
+      return await use({ ...outcome, metadataKept, output, preview });
     } finally {
       await this.storageRepository.unlinkDir(folder, { recursive: true, force: true });
     }

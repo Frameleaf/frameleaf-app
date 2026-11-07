@@ -13,7 +13,7 @@ const exif = segment(0xe1, ...Buffer.from('Exif\0\0data'));
 describe('jpegRepairCandidates', () => {
   it('keeps a whole file as it is, first', () => {
     const file = jpeg(dht, frame);
-    expect(jpegRepairCandidates(file)).toEqual({ candidates: [file], width: 16, height: 8, hasExif: false });
+    expect(jpegRepairCandidates(file)).toEqual({ candidates: [file], width: 16, height: 8, metadata: [] });
   });
 
   it('drops a header before the start of the image', () => {
@@ -46,8 +46,10 @@ describe('jpegRepairCandidates', () => {
     expect(jpegRepairCandidates(Buffer.concat([first, second])).candidates).toContainEqual(second);
   });
 
-  it('notes EXIF, and finds nothing in a file with no picture', () => {
-    expect(jpegRepairCandidates(jpeg(exif, dht, frame)).hasExif).toBe(true);
+  it('notes the metadata it carries, and finds nothing in a file with no picture', () => {
+    // eslint-disable-next-line unicorn/prefer-https
+    const xmp = segment(0xe1, ...Buffer.from('http://ns.adobe.com/xap/1.0/\0<x/>'));
+    expect(jpegRepairCandidates(jpeg(exif, xmp, dht, frame)).metadata).toEqual(['EXIF', 'XMP']);
     expect(jpegRepairCandidates(Buffer.from('not a jpeg')).candidates).toEqual([]);
   });
 });

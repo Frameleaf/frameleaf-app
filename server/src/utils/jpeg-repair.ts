@@ -46,9 +46,19 @@ export type JpegRepairResult = {
   method: JpegRepairMethod;
   width: number;
   height: number;
-  /** False when the original had EXIF and the repaired file has none. */
-  metadataKept: boolean;
+  /** Metadata the original carries that the repaired file does not. */
+  metadataLost: JpegMetadataGroup[];
 };
+
+export type JpegMetadataGroup = 'EXIF' | 'XMP' | 'IPTC';
+/** How each group's segment announces itself: APP1 Exif, APP1 XMP, APP13 Photoshop (IPTC). */
+const METADATA_SIGNATURES: Array<[JpegMetadataGroup, string]> = [
+  ['EXIF', 'Exif\0\0'],
+  // the XMP namespace is a fixed identifier, not a link to follow
+  // eslint-disable-next-line unicorn/prefer-https
+  ['XMP', 'http://ns.adobe.com/xap/1.0/\0'],
+  ['IPTC', 'Photoshop 3.0\0'],
+];
 
 export const JPEG_REPAIR_EXTENSIONS: ReadonlySet<string> = new Set(['.jpg', '.jpeg', '.jpe', '.jfif']);
 
@@ -271,8 +281,8 @@ export type JpegRepairCandidates = {
   /** The main picture's size from its header, when it could be read: tells a thumbnail rescue apart. */
   width?: number;
   height?: number;
-  /** The file carries EXIF: a repair without it has lost the photo's date and camera details. */
-  hasExif: boolean;
+  /** Metadata the file carries: a repair without one of these has lost the photo's details. */
+  metadata: JpegMetadataGroup[];
 };
 
 export const jpegRepairCandidates = (bytes: Buffer): JpegRepairCandidates => {
@@ -293,5 +303,6 @@ export const jpegRepairCandidates = (bytes: Buffer): JpegRepairCandidates => {
     add(header.rebuilt);
     add(rebuildHeader(body, { stripMetadata: true }).rebuilt);
   }
-  return { candidates, ...size, hasExif: bytes.includes('Exif\0\0') };
+  const metadata = METADATA_SIGNATURES.filter(([, signature]) => bytes.includes(signature)).map(([group]) => group);
+  return { candidates, ...size, metadata };
 };

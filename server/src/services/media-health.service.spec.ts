@@ -3543,7 +3543,7 @@ describe(MediaHealthService.name, () => {
     it('copies the photo’s details back when the repair lost them', async () => {
       vi.mocked(mocks.media.repairJpeg).mockImplementation(async (input, output, preview) => {
         await operations.repairJpeg(input, output, preview, join(root, 'unused.jpg'));
-        return { method: 'lossless', width: 64, height: 48, metadataKept: false };
+        return { method: 'lossless', width: 64, height: 48, metadataLost: ['EXIF', 'XMP', 'IPTC'] };
       });
       vi.mocked(mocks.media.copyTagGroup).mockResolvedValue(true);
 
@@ -3558,14 +3558,36 @@ describe(MediaHealthService.name, () => {
     it('says when the details could not be copied back', async () => {
       vi.mocked(mocks.media.repairJpeg).mockImplementation(async (input, output, preview) => {
         await operations.repairJpeg(input, output, preview, join(root, 'unused.jpg'));
-        return { method: 'rebuilt', width: 64, height: 48, metadataKept: false };
+        return { method: 'rebuilt', width: 64, height: 48, metadataLost: ['EXIF', 'XMP'] };
       });
-      vi.mocked(mocks.media.copyTagGroup).mockResolvedValue(false);
+      // the EXIF comes back but the XMP does not: the result still says details were lost
+      vi.mocked(mocks.media.copyTagGroup).mockImplementation((group) => Promise.resolve(group === 'EXIF'));
 
       await expect(sut.previewRepair(owner, { findingId: 'health-1' })).resolves.toMatchObject({
         method: 'rebuilt',
         metadataKept: false,
       });
+    });
+
+    it('never shows another account’s photo to an administrator', async () => {
+      const preview = await sut.previewRepair(authStub.admin, { findingId: 'health-1' });
+      expect(preview).toMatchObject({ method: 'lossless', preview: null });
+      // a lossless repair leaves the picture untouched, so it can be approved without seeing it
+      await expect(
+        sut.repair(authStub.admin, { findingId: 'health-1', checksum: preview.checksum }),
+      ).resolves.toMatchObject({ method: 'lossless' });
+    });
+
+    it('lets only the owner approve a repair that changes the picture', async () => {
+      vi.mocked(mocks.media.repairJpeg).mockImplementation(async (input, output, preview) => {
+        await operations.repairJpeg(input, output, preview, join(root, 'unused.jpg'));
+        return { method: 'rebuilt', width: 64, height: 48, metadataLost: [] };
+      });
+      const { checksum } = await sut.previewRepair(authStub.admin, { findingId: 'health-1' });
+      await expect(sut.repair(authStub.admin, { findingId: 'health-1', checksum })).rejects.toThrow(
+        'Only the owner can review this repair',
+      );
+      expect(mediaHealthRepository.replaceRepairedOriginal).not.toHaveBeenCalled();
     });
 
     it('refuses a repair that is not the one reviewed', async () => {

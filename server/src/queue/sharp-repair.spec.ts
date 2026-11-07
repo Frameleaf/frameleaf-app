@@ -81,7 +81,7 @@ describe('SharpOperations.repairJpeg', () => {
     // the same failure as "improper image header … ReadTGAImage": no JPEG marker at the start
     await expect(sharp(Buffer.concat([Buffer.alloc(128), good])).metadata()).rejects.toThrow();
     const { result, output } = await repair(Buffer.concat([Buffer.alloc(128), good]));
-    expect(result).toEqual({ method: 'lossless', width: 320, height: 240, metadataKept: true });
+    expect(result).toEqual({ method: 'lossless', width: 320, height: 240, metadataLost: [] });
     expect(output.equals(good)).toBe(true);
   });
 
@@ -126,10 +126,23 @@ describe('SharpOperations.repairJpeg', () => {
     // a length running past the next marker: "Bogus marker length"
     broken.writeUInt16BE(app1.length + 40, tagged.indexOf(app1) + 2);
     const { result, output } = await repair(broken);
-    expect(result).toEqual({ method: 'lossless', width: 320, height: 240, metadataKept: false });
+    expect(result).toEqual({ method: 'lossless', width: 320, height: 240, metadataLost: ['EXIF'] });
     await expect(pixels(output)).resolves.toEqual(await pixels(tagged));
     // the original's header is handed over so the details can be copied back
     await expect(access(join(directory, 'header.jpg'))).resolves.toBeUndefined();
+  });
+
+  it('reports lost XMP even when the photo carries no EXIF', async () => {
+    const tagged = await sharp(good)
+      .withXmp(
+        '<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"/></x:xmpmeta>',
+      )
+      .toBuffer();
+    const app1 = segments(tagged).found.find(([marker]) => marker === 0xe1)![1];
+    const broken = Buffer.from(tagged);
+    broken.writeUInt16BE(app1.length + 40, tagged.indexOf(app1) + 2);
+    const { result } = await repair(broken);
+    expect(result).toMatchObject({ method: 'lossless', metadataLost: ['XMP'] });
   });
 
   it('adds the standard Huffman tables a Motion-JPEG frame leaves out', async () => {

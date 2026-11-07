@@ -22,10 +22,10 @@ import { type LinearHdrImage, type PairedHdrImage, imageHdrInput, imageHdrOperat
 
 import { SharpDecodeError, SharpResourceLimitError, sharpPayloadBytes } from './sharp-protocol.js';
 import { extractPalette } from '../utils/asset-palette.js';
-import { JPEG_EOI, type JpegRepairResult, jpegRepairCandidates } from '../utils/jpeg-repair.js';
 import { applyDevelopCleanup } from '../utils/develop-cleanup.js';
 import { perspectiveFor, warpPerspective } from '../utils/develop-perspective.js';
 import { developRenderArtifacts, isActiveMask, planDevelopGeometry } from '../utils/develop-recipe.js';
+import { JPEG_EOI, type JpegRepairResult, jpegRepairCandidates } from '../utils/jpeg-repair.js';
 import { HASH_GRID } from '../utils/video-fingerprint.js';
 
 import type { KnownAssetDevelopRecipe } from 'src/dtos/asset-develop.dto.js';
@@ -519,7 +519,7 @@ export class SharpOperations {
         await image.clone().resize(256, 256, { fit: 'inside' }).raw().toBuffer();
         return width && height ? { bytes: candidate, strict, width, height } : undefined;
       } catch {
-        return undefined;
+        return;
       }
     };
     type Decoded = NonNullable<Awaited<ReturnType<typeof decode>>>;
@@ -579,9 +579,10 @@ export class SharpOperations {
       .resize(1440, 1440, { fit: 'inside', withoutEnlargement: true })
       .jpeg({ quality: 80 })
       .toFile(preview);
-    const { exif } = await sharp(output).metadata();
-    const metadataKept = !found.hasExif || !!exif;
-    if (!metadataKept && found.candidates.length > 0) {
+    const { exif, xmp, iptc } = await sharp(output).metadata();
+    const kept = { EXIF: !!exif, XMP: !!xmp, IPTC: !!iptc };
+    const metadataLost = found.metadata.filter((group) => !kept[group]);
+    if (metadataLost.length > 0 && found.candidates.length > 0) {
       // the original's own header, readable by ExifTool, to copy the lost details from
       await writeFile(metadataSource, found.candidates[0], { flag: 'wx' });
     }
@@ -589,7 +590,7 @@ export class SharpOperations {
       method: converted ? 'converted' : small(best) ? 'preview' : lossless ? 'lossless' : 'rebuilt',
       width: best.width,
       height: best.height,
-      metadataKept,
+      metadataLost,
     };
   }
 
