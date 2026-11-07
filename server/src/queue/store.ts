@@ -53,6 +53,13 @@ const HELD = sql`'infinity'::timestamptz`;
 const LIVE = sql`('pending','waiting','active')`;
 /** Coalesces queue wakes; long enough for the caller's transaction to commit first. */
 const WAKE_DELAY_MS = 50;
+/**
+ * FL-1272: later steps of an item a queue has already started. Each finished first step adds one, so the
+ * queue's waiting total stays flat while work progresses; `counts` reports them apart as `followUp`.
+ */
+const FOLLOW_UP_STEPS: Partial<Record<string, string[]>> = {
+  [QueueName.MetadataExtraction]: [JobName.AssetMetadataPostprocess],
+};
 /** Pages of the coordinator's hold reconciliation, one statement each. */
 const HOLD_PAGE = 2000;
 
@@ -64,47 +71,57 @@ const availability = (runId: RawBuilder<unknown>, name: RawBuilder<unknown>, del
 const intentAvailability = (intent: QueueIntent) =>
   availability(sql`${intent.runId ?? null}::uuid`, sql`${intent.name}::text`, intent.options?.delay ?? 0);
 
+type WakeState = { timer?: NodeJS.Timeout; inFlight: boolean; again: boolean };
+/** One wake state per database pool: stores built per call on the same pool share it. */
+const wakeStates = new WeakMap<Kysely<DB>, WakeState>();
+
+/**
+ * Tells the claim loops new work may be ready. Never inside a caller's transaction: PostgreSQL serializes every
+ * NOTIFY commit on one cluster-wide lock, so a job write that notified could fail its COMMIT on lock_timeout and
+ * roll back. Instead at most one notification per pool per WAKE_DELAY_MS goes out on its own pooled connection,
+ * after the caller's commit in practice, and a stalled one holds a single connection: wakes asked for meanwhile
+ * collapse into one follow-up. A lost wake only costs latency; the five-second scan stays authoritative.
+ */
+const wakeClaimLoops = (db: Kysely<DB>) => {
+  let state = wakeStates.get(db);
+  if (!state) {
+    state = { inFlight: false, again: false };
+    wakeStates.set(db, state);
+  }
+  if (state.timer) {
+    return;
+  }
+  if (state.inFlight) {
+    state.again = true;
+    return;
+  }
+  const current = state;
+  current.timer = setTimeout(() => {
+    current.timer = undefined;
+    current.inFlight = true;
+    void sql`select pg_notify(${QUEUE_CHANNEL}, '')`
+      .execute(db)
+      .catch(() => {})
+      .finally(() => {
+        current.inFlight = false;
+        if (current.again) {
+          current.again = false;
+          wakeClaimLoops(db);
+        }
+      });
+  }, WAKE_DELAY_MS);
+  current.timer.unref();
+};
+
 /**
  * All methods own short transactions. No connection escapes to a handler or an enumerator.
  * Bind serialized JSON as text before casting: postgres.js otherwise JSON-encodes it a second time.
  */
 export class SqlQueueStore {
-  private wakeTimer?: NodeJS.Timeout;
-  private wakeInFlight = false;
-  private wakeAgain = false;
-
   constructor(readonly db: Kysely<DB>) {}
 
-  /**
-   * Tells the claim loops new work may be ready. Never inside a caller's transaction: PostgreSQL serializes every
-   * NOTIFY commit on one cluster-wide lock, so a job write that notified could fail its COMMIT on lock_timeout and
-   * roll back. Instead one notification per store per WAKE_DELAY_MS goes out on its own pooled connection, after
-   * the caller's commit in practice; a lost one only costs latency, since the five-second scan stays authoritative.
-   */
   private wake() {
-    if (this.wakeTimer) {
-      return;
-    }
-    if (this.wakeInFlight) {
-      // A stalled NOTIFY holds one pooled connection at most; later wakes collapse into one follow-up.
-      this.wakeAgain = true;
-      return;
-    }
-    this.wakeTimer = setTimeout(() => {
-      this.wakeTimer = undefined;
-      this.wakeInFlight = true;
-      void sql`select pg_notify(${QUEUE_CHANNEL}, '')`
-        .execute(this.db)
-        .catch(() => {})
-        .finally(() => {
-          this.wakeInFlight = false;
-          if (this.wakeAgain) {
-            this.wakeAgain = false;
-            this.wake();
-          }
-        });
-    }, WAKE_DELAY_MS);
-    this.wakeTimer.unref();
+    wakeClaimLoops(this.db);
   }
 
   async initialize(queues: string[], workerId?: string) {
@@ -803,6 +820,7 @@ export class SqlQueueStore {
   }
 
   async counts(name: string) {
+    const steps = FOLLOW_UP_STEPS[name];
     const {
       rows: [row],
     } = await sql<{
@@ -812,7 +830,9 @@ export class SqlQueueStore {
       delayed: number;
       waiting: number;
       paused: number;
-    }>`select count(*) filter (where state = 'active')::int active,
+      followUp?: number;
+    }>`select ${steps ? sql`count(*) filter (where state in ('pending','waiting') and j.name = any(${steps}::text[]))::int "followUp",` : sql``}
+      count(*) filter (where state = 'active')::int active,
       count(*) filter (where state = 'completed')::int completed,
       count(*) filter (where state in ('failed','needs_attention','blocked'))::int failed,
       count(*) filter (where state in ('pending','waiting') and "availableAt" > now() and "availableAt" <> ${HELD}

@@ -60,4 +60,16 @@ describe('waking deferred jobs', () => {
     await new Promise((resolve) => setTimeout(resolve, 300)); // bounded window for a wake that must not come
     expect(await drain()).toEqual([]);
   });
+
+  it('sends one wake for a burst of enqueues from separate stores on the same pool', async () => {
+    const queue = `wake-${randomUUID()}`;
+    await store.initialize([queue]);
+    await new Promise((resolve) => setTimeout(resolve, 300)); // let earlier wakes land
+    await drain();
+    const job = { queue, name: 'fixture', data: {}, safeToRetry: true, sensitive: false, deadlineMs: 600_000 };
+    await Promise.all([new SqlQueueStore(db).enqueue([job]), new SqlQueueStore(db).enqueue([job])]);
+    await vi.waitFor(() => expect(notes).toContain(''));
+    await new Promise((resolve) => setTimeout(resolve, 300)); // a second wake would arrive in this window
+    expect(await drain()).toEqual(['']);
+  });
 });

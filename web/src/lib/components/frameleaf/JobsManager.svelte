@@ -281,6 +281,19 @@
         : sumJobCounts(queues.map((queue) => ({ ...queue, statistics: statsOf(queue) ?? NO_STATS }))),
   );
 
+  /**
+   * FL-1272: of the waiting jobs, the later steps of items already started (Reading photo details queues one per
+   * photo it reads). Shown apart so the first step's count visibly falls. Account counts don't split them.
+   */
+  const followUp = $derived(
+    owner !== 'all'
+      ? 0
+      : selected
+        ? (selected.queue.statistics.followUp ?? 0)
+        : queues.reduce((sum, queue) => sum + (queue.statistics.followUp ?? 0), 0),
+  );
+  const followUpOf = (queue: QueueResponseDto) => (owner === 'all' ? (queue.statistics.followUp ?? 0) : 0);
+
   // Strings, so a stats tick (new row objects, same queues) doesn't refetch the counts below.
   const rowNames = $derived(rows.map((row) => row.definition.name).join(','));
   const selectedQueue = $derived(selected?.definition.name);
@@ -344,7 +357,13 @@
   });
   const metrics = $derived([
     { label: $t('frameleaf_jobs_metric_processing'), value: counts.active, icon: mdiPlay, warning: false },
-    { label: $t('frameleaf_jobs_metric_waiting'), value: counts.pending, icon: mdiClockOutline, warning: false },
+    {
+      label: $t('frameleaf_jobs_metric_waiting'),
+      value: counts.pending - followUp,
+      followUp,
+      icon: mdiClockOutline,
+      warning: false,
+    },
     {
       label: $t('frameleaf_jobs_metric_failed'),
       value: counts.failed,
@@ -1330,6 +1349,9 @@
             <div>
               <span>{metric.label}</span>
               <strong>{@render changing(count(metric.value))}</strong>
+              {#if 'followUp' in metric && metric.followUp}
+                {@render followUpCount(metric.followUp)}
+              {/if}
             </div>
           </div>
         {/each}
@@ -1400,6 +1422,7 @@
               {#each visibleRows as row (row.definition.name)}
                 {@const { definition, queue } = row}
                 {@const rowCounts = jobCounts(statsOf(queue) ?? NO_STATS)}
+                {@const rowFollowUp = followUpOf(queue)}
                 {@const name = title(definition)}
                 <tr class="jm-row" onclick={(event) => openFromRow(event, definition.name)}>
                   <th scope="row">
@@ -1417,7 +1440,12 @@
                   </th>
                   <td>{@render queueStatus(jobQueueStatus(queue))}</td>
                   <td>{@render changing(count(rowCounts.active, definition.name))}</td>
-                  <td>{@render changing(count(rowCounts.pending, definition.name))}</td>
+                  <td>
+                    {@render changing(count(rowCounts.pending - rowFollowUp, definition.name))}
+                    {#if rowFollowUp}
+                      {@render followUpCount(rowFollowUp)}
+                    {/if}
+                  </td>
                   <td>
                     <button
                       type="button"
@@ -1764,6 +1792,12 @@
 <!-- A live figure: when it changes, the new value fades in so the change is seen (finding 78). -->
 {#snippet changing(value: string)}
   {#key value}<span class="jm-changing" in:reveal>{value}</span>{/key}
+{/snippet}
+
+{#snippet followUpCount(value: number)}
+  <small class="jm-follow-up" title={$t('frameleaf_jobs_follow_up_hint')}>
+    {$t('frameleaf_jobs_follow_up_waiting', { values: { count: number(value) } })}
+  </small>
 {/snippet}
 
 <Dialog title={review?.title ?? ''} closeLabel={$t('close')} bind:open={reviewOpen}>
@@ -2174,6 +2208,13 @@
     gap: var(--fl-space-3);
     min-width: 205px;
     font-weight: 550;
+  }
+  .jm-follow-up {
+    display: block;
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--fl-muted);
+    margin-top: 2px;
   }
   .jm-queue-name small {
     display: block;
