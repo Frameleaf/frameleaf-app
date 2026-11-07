@@ -9,6 +9,8 @@ const { verifyBundle } = require('../.github/verify-release-bundle.cjs');
   parentPort.postMessage({ release, nas });
 })().catch((error) => {
   // The UI shows one generic refusal; the log keeps the reason (old verifier, cosign/registry or GitHub unreachable).
-  console.error(`Release ${workerData.tag} verification failed: ${error?.message ?? error}`);
+  // fetch() reports DNS/TLS/socket failures as "fetch failed" with the detail in error.cause.
+  const cause = error?.cause ? ` (${error.cause.code ?? error.cause.message ?? error.cause})` : '';
+  console.error(`Release ${workerData.tag} verification failed: ${error?.message ?? error}${cause}`);
   parentPort.postMessage({ error: 'release_verification_failed' });
 });
