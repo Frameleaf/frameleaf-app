@@ -274,8 +274,13 @@ export class AlbumRepository {
         .select((eb) => eb.fn.max(sql<Date>`("asset"."localDateTime" AT TIME ZONE 'UTC'::text)::date`).as('endDate'))
         // lastModifiedAssetTimestamp is only used in mobile app, please remove if not need
         .select((eb) => eb.fn.max('asset.updatedAt').as('lastModifiedAssetTimestamp'))
-        .select(
-          sql<string | null>`(array_agg("asset"."id" order by "asset"."fileCreatedAt" desc))[1]`.as('thumbnailAssetId'),
+        // only the hidden-content view reads it; sorting every album's items for it took seconds on big libraries
+        .$if(!!options.onlyHiddenContent, (qb) =>
+          qb.select(
+            sql<string | null>`(array_agg("asset"."id" order by "asset"."fileCreatedAt" desc))[1]`.as(
+              'thumbnailAssetId',
+            ),
+          ),
         )
         .select((eb) => sql<number>`${eb.fn.count('asset.id')}::int`.as('assetCount'))
         .where('album_asset.albumId', 'in', ids)

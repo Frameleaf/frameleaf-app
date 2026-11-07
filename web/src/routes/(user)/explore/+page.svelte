@@ -23,6 +23,7 @@
   import { getAssetInfo, type AssetResponseDto } from '@frameleaf/sdk';
   import { invalidateAll } from '$app/navigation';
   import Portal from '$lib/elements/Portal.svelte';
+  import type { ExploreLandmarkSection } from './+page';
   import type { PageData } from './$types';
   import type { Snapshot } from '@sveltejs/kit';
 
@@ -31,6 +32,21 @@
   }
 
   let { data }: Props = $props();
+
+  // The landmarks section arrives after the page opens (see `loadLandmarks`); until then it is empty.
+  let landmarkSection = $state<ExploreLandmarkSection>({ cards: [], albumSuggestion: null, failed: false });
+  $effect(() => {
+    const pending = data.landmarkSection;
+    let current = true;
+    void pending.then((section) => {
+      if (current) {
+        landmarkSection = section;
+      }
+    });
+    return () => {
+      current = false;
+    };
+  });
 
   // Follows the loader (so "Try again" fills in a section that failed) and can be replaced in
   // place: a thumbnail-ready event bumps a person's `updatedAt` so the avatar picks up the freshly
@@ -144,15 +160,15 @@
     people={peopleCards}
     places={data.places}
     things={data.things}
-    landmarks={data.landmarks}
-    albumSuggestion={data.landmarkAlbumSuggestion}
+    landmarks={landmarkSection.cards}
+    albumSuggestion={landmarkSection.albumSuggestion}
     recents={data.recentCaptures}
     libraryTotal={data.libraryTotal}
     {memories}
     albums={data.albums}
     bestPhotos={data.bestPhotosPreview}
     shortcutCounts={data.shortcutCounts}
-    failed={data.failed}
+    failed={{ ...data.failed, landmarks: landmarkSection.failed }}
     {onRetry}
     {retrying}
     {onViewAsset}

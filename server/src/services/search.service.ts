@@ -41,6 +41,7 @@ import {
   mapPlaces,
 } from 'src/dtos/search.dto.js';
 import { AssetOrder, AssetType, AssetVisibility, CacheControl, Permission } from 'src/enum.js';
+import { costReusedRead } from 'src/queue/coalesced-task.js';
 import { BaseService } from 'src/services/base.service.js';
 import { isGranted, requireElevatedPermission } from 'src/utils/access.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
@@ -430,13 +431,22 @@ export class SearchService extends BaseService {
     return rows.map(({ city, count }) => ({ city, count: Number(count) }));
   }
 
+  /**
+   * Explore and Places read the visited landmarks on every visit; on a 900k library one count took 30 s. A read
+   * over a second is reused for ten times as long as it took (`costReusedRead`), per owner set and privacy scope.
+   */
+  private readonly landmarkReads = costReusedRead(
+    ({ userIds, options }: { userIds: string[]; options: ReturnType<typeof getHiddenContentQueryOptions> }) =>
+      this.searchRepository.getVisitedLandmarks(userIds, options),
+  );
+
   async getVisitedLandmarks(auth: AuthDto): Promise<SearchLandmarkResponseDto[]> {
     const { reverseGeocoding } = await this.getConfig({ withCache: true });
     if (!reverseGeocoding.enabled) {
       return [];
     }
     const userIds = this.getUserIdsToSearch(auth);
-    const rows = await this.searchRepository.getVisitedLandmarks(userIds, getHiddenContentQueryOptions(auth));
+    const rows = await this.landmarkReads({ userIds, options: getHiddenContentQueryOptions(auth) });
     const icons = this.mapRepository.getLandmarkIcons();
     return rows.map((row) => ({
       ...row,
