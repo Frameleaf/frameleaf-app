@@ -58,6 +58,8 @@
   let message = $state<string>();
   let working = $state(true);
   let originalFailed = $state(false);
+  /** The original as it is now, never a copy the browser kept from before (it may have changed since). */
+  const openedAt = String(Date.now());
 
   const describe = (cause: unknown) => getServerErrorMessage(cause) ?? $t('library_care_repair_failed');
 
@@ -95,7 +97,7 @@
         <span class="frame">
           {#if !originalFailed}
             <img
-              src={getAssetMediaUrl({ id: assetId, size: AssetMediaSize.Original, edited: false })}
+              src={getAssetMediaUrl({ id: assetId, size: AssetMediaSize.Original, edited: false, cacheKey: openedAt })}
               alt={$t('library_care_repair_damaged')}
               onerror={() => (originalFailed = true)}
             />
