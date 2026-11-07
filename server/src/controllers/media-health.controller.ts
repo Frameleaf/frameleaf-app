@@ -11,6 +11,10 @@ import {
   MediaHealthListResponseDto,
   MediaHealthLocateDto,
   MediaHealthRecoverDto,
+  MediaHealthRepairDto,
+  MediaHealthRepairPreviewDto,
+  MediaHealthRepairPreviewResponseDto,
+  MediaHealthRepairResponseDto,
   MediaHealthRootsResponseDto,
   MediaHealthScanDto,
   MediaHealthScanResponseDto,
@@ -151,6 +155,33 @@ export class MediaHealthController {
   })
   recoverDamaged(@Auth() auth: AuthDto, @Body() dto: MediaHealthRecoverDto): Promise<MediaHealthBulkResponseDto> {
     return this.service.recoverDamaged(auth, dto);
+  }
+
+  @Post('corrupt/repair/preview')
+  @Authenticated()
+  @Endpoint({
+    summary: 'Preview a repair of a damaged JPEG',
+    description:
+      'Repair a damaged JPEG without changing anything, and return the result to review before it replaces the original.',
+    history: new HistoryBuilder().added('v3.4.0').alpha('v3.4.0'),
+  })
+  previewRepair(
+    @Auth() auth: AuthDto,
+    @Body() dto: MediaHealthRepairPreviewDto,
+  ): Promise<MediaHealthRepairPreviewResponseDto> {
+    return this.service.previewRepair(auth, dto);
+  }
+
+  @Post('corrupt/repair')
+  @Authenticated()
+  @Endpoint({
+    summary: 'Replace a damaged JPEG with its reviewed repair',
+    description:
+      'Repair the damaged JPEG again and, when the result is exactly the one reviewed, make it the original while keeping the damaged file.',
+    history: new HistoryBuilder().added('v3.4.0').alpha('v3.4.0'),
+  })
+  repair(@Auth() auth: AuthDto, @Body() dto: MediaHealthRepairDto): Promise<MediaHealthRepairResponseDto> {
+    return this.service.repair(auth, dto);
   }
 
   @Post('dismiss')

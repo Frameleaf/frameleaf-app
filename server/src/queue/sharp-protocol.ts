@@ -13,6 +13,7 @@ export const SHARP_OPERATIONS = [
   'generateThumbnail',
   'writeCloudUpload',
   'writeStrippedStill',
+  'repairJpeg',
   'composeImageGrid',
   'composeFilmstrip',
   'filmstripFrameGrids',

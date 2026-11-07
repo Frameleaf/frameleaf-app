@@ -31170,6 +31170,116 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/media-health/corrupt/repair": {
+      "post": {
+        "description": "Repair the damaged JPEG again and, when the result is exactly the one reviewed, make it the original while keeping the damaged file.",
+        "operationId": "repair",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaHealthRepairDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaHealthRepairResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Replace a damaged JPEG with its reviewed repair",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/media-health/corrupt/repair/preview": {
+      "post": {
+        "description": "Repair a damaged JPEG without changing anything, and return the result to review before it replaces the original.",
+        "operationId": "previewRepair",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaHealthRepairPreviewDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaHealthRepairPreviewResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Preview a repair of a damaged JPEG",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/media-health/corrupt/scan": {
       "post": {
         "description": "Queue an explicit scan that validates source media integrity.",
@@ -104498,6 +104608,126 @@
         "required": [
           "choices",
           "confirmed"
+        ],
+        "type": "object"
+      },
+      "MediaHealthRepairDto": {
+        "properties": {
+          "checksum": {
+            "description": "SHA1 of the previewed repair: the original is replaced only with exactly what was reviewed",
+            "pattern": "^[0-9a-f]{40}$",
+            "type": "string"
+          },
+          "findingId": {
+            "description": "Damaged media finding ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "checksum",
+          "findingId"
+        ],
+        "type": "object"
+      },
+      "MediaHealthRepairMethod": {
+        "description": "lossless: the picture is untouched; rebuilt: rewritten from what decoded; preview: only the small picture embedded in the file could be saved; converted: the file held another image format",
+        "enum": [
+          "lossless",
+          "rebuilt",
+          "preview",
+          "converted"
+        ],
+        "type": "string"
+      },
+      "MediaHealthRepairPreviewDto": {
+        "properties": {
+          "findingId": {
+            "description": "Damaged media finding ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "findingId"
+        ],
+        "type": "object"
+      },
+      "MediaHealthRepairPreviewResponseDto": {
+        "properties": {
+          "checksum": {
+            "description": "SHA1 of the repaired file, as lowercase hex",
+            "type": "string"
+          },
+          "findingId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "height": {
+            "description": "Height of the repaired picture",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "metadataKept": {
+            "description": "The date, camera and location details are in the repaired file",
+            "type": "boolean"
+          },
+          "method": {
+            "$ref": "#/components/schemas/MediaHealthRepairMethod"
+          },
+          "preview": {
+            "description": "A reduced JPEG of the repaired picture, as a data URL",
+            "type": "string"
+          },
+          "sizeInBytes": {
+            "description": "Size of the repaired file",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "width": {
+            "description": "Width of the repaired picture",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "checksum",
+          "findingId",
+          "height",
+          "metadataKept",
+          "method",
+          "preview",
+          "sizeInBytes",
+          "width"
+        ],
+        "type": "object"
+      },
+      "MediaHealthRepairResponseDto": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "findingId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "method": {
+            "$ref": "#/components/schemas/MediaHealthRepairMethod"
+          }
+        },
+        "required": [
+          "assetId",
+          "findingId",
+          "method"
         ],
         "type": "object"
       },

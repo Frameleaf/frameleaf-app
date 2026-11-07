@@ -1,7 +1,7 @@
 /* Relative imports keep the isolated worker free of application alias loaders. */
 /* eslint-disable no-restricted-imports */
 import { createHash } from 'node:crypto';
-import { open, rm } from 'node:fs/promises';
+import { open, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import sharp, { type Sharp } from 'sharp';
 import { compose, flipX, flipY, identity, rotate } from 'transformation-matrix';
@@ -22,6 +22,7 @@ import { type LinearHdrImage, type PairedHdrImage, imageHdrInput, imageHdrOperat
 
 import { SharpDecodeError, SharpResourceLimitError, sharpPayloadBytes } from './sharp-protocol.js';
 import { extractPalette } from '../utils/asset-palette.js';
+import { JPEG_EOI, type JpegRepairResult, jpegRepairCandidates } from '../utils/jpeg-repair.js';
 import { applyDevelopCleanup } from '../utils/develop-cleanup.js';
 import { perspectiveFor, warpPerspective } from '../utils/develop-perspective.js';
 import { developRenderArtifacts, isActiveMask, planDevelopGeometry } from '../utils/develop-recipe.js';
@@ -494,6 +495,102 @@ export class SharpOperations {
       .withIccProfile('srgb')
       .jpeg({ quality: 90, chromaSubsampling: '4:4:4', progressive: false })
       .toFile(output);
+  }
+
+  /**
+   * Library Care: repair a damaged JPEG into `output`, with a small `preview` to show before it is used.
+   *
+   * Every candidate from `jpegRepairCandidates` is decoded strictly first, where its bytes are kept as
+   * they are (`lossless`: the picture is untouched, only bytes around it changed); otherwise leniently,
+   * where whatever decodes is written again as a JPEG with the original's metadata (`rebuilt`: a lost
+   * part shows grey). A candidate that still fails is cut short before its damage and tried again.
+   * The largest picture wins; at the same size a strict decode, then the earlier candidate. When only a
+   * much smaller picture decodes, it is the embedded preview (`preview`). A file with no JPEG in it that
+   * decodes as another format is converted (`converted`).
+   */
+  async repairJpeg(input: string, output: string, preview: string, metadataSource: string): Promise<JpegRepairResult> {
+    const bytes = await imageHdrInput(input, this.maxBytes);
+    const found = jpegRepairCandidates(bytes);
+    const decode = async (candidate: Buffer, strict: boolean) => {
+      try {
+        const image = sharp(candidate, { failOn: strict ? 'warning' : 'none', limitInputPixels: this.maxPixels });
+        const { width, height } = await image.metadata();
+        // metadata reads the header only; the pixels must decode too (small, so memory stays low)
+        await image.clone().resize(256, 256, { fit: 'inside' }).raw().toBuffer();
+        return width && height ? { bytes: candidate, strict, width, height } : undefined;
+      } catch {
+        return undefined;
+      }
+    };
+    type Decoded = NonNullable<Awaited<ReturnType<typeof decode>>>;
+    let best: Decoded | undefined;
+    const consider = (decoded?: Decoded) => {
+      const area = (item: Decoded) => item.width * item.height;
+      if (
+        decoded &&
+        (!best || area(decoded) > area(best) || (area(decoded) === area(best) && decoded.strict && !best.strict))
+      ) {
+        best = decoded;
+      }
+      return !!decoded;
+    };
+
+    const failed: Buffer[] = [];
+    for (const candidate of found.candidates) {
+      if (!consider((await decode(candidate, true)) ?? (await decode(candidate, false)))) {
+        failed.push(candidate);
+      }
+      this.progress();
+    }
+    const mainArea = found.width && found.height ? found.width * found.height : undefined;
+    const small = (item?: Decoded) => !item || (mainArea !== undefined && item.width * item.height * 4 < mainArea);
+    // damage the decoder cannot read past: cut the picture short before it and decode what is left
+    for (const candidate of small(best) ? failed : []) {
+      for (const share of [0.9, 0.75, 0.5, 0.25]) {
+        const cut = Buffer.concat([candidate.subarray(0, Math.floor(candidate.length * share)), JPEG_EOI]);
+        if (consider(await decode(cut, false))) {
+          break;
+        }
+      }
+      this.progress();
+    }
+
+    let converted = false;
+    if (!best) {
+      // no JPEG in it at all: it may be another format under a .jpg name
+      best = await decode(bytes, false);
+      converted = !!best;
+    }
+    if (!best) {
+      throw new Error('JPEG_NOT_REPAIRABLE');
+    }
+
+    const lossless = best.strict && !converted;
+    if (lossless) {
+      await writeFile(output, best.bytes, { flag: 'wx' });
+    } else {
+      await sharp(best.bytes, { failOn: 'none', limitInputPixels: this.maxPixels })
+        .keepMetadata()
+        .jpeg({ quality: 95, chromaSubsampling: '4:4:4' })
+        .toFile(output);
+    }
+    await sharp(output, { failOn: 'none', limitInputPixels: this.maxPixels })
+      .rotate()
+      .resize(1440, 1440, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 80 })
+      .toFile(preview);
+    const { exif } = await sharp(output).metadata();
+    const metadataKept = !found.hasExif || !!exif;
+    if (!metadataKept && found.candidates.length > 0) {
+      // the original's own header, readable by ExifTool, to copy the lost details from
+      await writeFile(metadataSource, found.candidates[0], { flag: 'wx' });
+    }
+    return {
+      method: converted ? 'converted' : small(best) ? 'preview' : lossless ? 'lossless' : 'rebuilt',
+      width: best.width,
+      height: best.height,
+      metadataKept,
+    };
   }
 
   /**

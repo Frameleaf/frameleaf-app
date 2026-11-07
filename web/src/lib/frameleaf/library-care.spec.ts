@@ -15,6 +15,7 @@ import { describe, expect, it } from 'vitest';
 import {
   accountOptions,
   canRecover,
+  canRepair,
   canRelink,
   candidatesIn,
   evidenceKey,
@@ -148,6 +149,16 @@ describe('the actions the page offers', () => {
     expect(canRelink([row()])).toBe(true);
     expect(canRelink([row(), row({ id: 'health-2', status: MediaHealthStatus.Missing, candidates: [] })])).toBe(false);
     expect(canRelink([])).toBe(false);
+  });
+
+  it('offers repair for damaged JPEGs only', () => {
+    const damaged = (status: MediaHealthStatus, originalFileName = 'IMG_0001.JPG') =>
+      row({ status, originalFileName, candidates: [] });
+    expect(canRepair(damaged(MediaHealthStatus.CorruptConfirmed))).toBe(true);
+    expect(canRepair(damaged(MediaHealthStatus.CorruptSuspect, 'scan.jpeg'))).toBe(true);
+    expect(canRepair(damaged(MediaHealthStatus.UnsupportedRaw, 'Forest trail.ARW'))).toBe(false);
+    expect(canRepair(damaged(MediaHealthStatus.CorruptConfirmed, 'clip.heic'))).toBe(false);
+    expect(canRepair(damaged(MediaHealthStatus.Resolved))).toBe(false);
   });
 
   it('keeps unsupported RAW and suspected damage apart from confirmed damage', () => {

@@ -8,6 +8,7 @@ import {
   MediaHealthStatusSchema,
   MediaOperationStatusSchema,
 } from 'src/enum.js';
+import { JPEG_REPAIR_METHODS } from 'src/utils/jpeg-repair.js';
 import { stringToBool } from 'src/validation.js';
 
 const JsonObjectSchema = z.record(z.string(), z.unknown());
@@ -176,6 +177,45 @@ const MediaHealthRecoverSchema = z
   })
   .meta({ id: 'MediaHealthRecoverDto' });
 
+/** Repair a damaged JPEG: preview the result first, then replace the original with exactly that result. */
+const MediaHealthRepairPreviewSchema = z
+  .object({ findingId: z.uuidv4().describe('Damaged media finding ID') })
+  .meta({ id: 'MediaHealthRepairPreviewDto' });
+
+const MediaHealthRepairSchema = z
+  .object({
+    findingId: z.uuidv4().describe('Damaged media finding ID'),
+    checksum: z
+      .string()
+      .regex(/^[0-9a-f]{40}$/)
+      .describe('SHA1 of the previewed repair: the original is replaced only with exactly what was reviewed'),
+  })
+  .meta({ id: 'MediaHealthRepairDto' });
+
+const MediaHealthRepairMethodSchema = z
+  .enum(JPEG_REPAIR_METHODS)
+  .describe(
+    'lossless: the picture is untouched; rebuilt: rewritten from what decoded; preview: only the small picture embedded in the file could be saved; converted: the file held another image format',
+  )
+  .meta({ id: 'MediaHealthRepairMethod' });
+
+const MediaHealthRepairPreviewResponseSchema = z
+  .object({
+    findingId: z.uuidv4(),
+    method: MediaHealthRepairMethodSchema,
+    width: z.int().describe('Width of the repaired picture'),
+    height: z.int().describe('Height of the repaired picture'),
+    sizeInBytes: z.int().describe('Size of the repaired file'),
+    checksum: z.string().describe('SHA1 of the repaired file, as lowercase hex'),
+    preview: z.string().describe('A reduced JPEG of the repaired picture, as a data URL'),
+    metadataKept: z.boolean().describe('The date, camera and location details are in the repaired file'),
+  })
+  .meta({ id: 'MediaHealthRepairPreviewResponseDto' });
+
+const MediaHealthRepairResponseSchema = z
+  .object({ findingId: z.uuidv4(), assetId: z.uuidv4(), method: MediaHealthRepairMethodSchema })
+  .meta({ id: 'MediaHealthRepairResponseDto' });
+
 /** FL-737: a scan of chosen photos only, such as the ones File checks found. */
 const MediaHealthScanSchema = z
   .object({
@@ -314,6 +354,10 @@ export class MediaHealthLocateDto extends createZodDto(MediaHealthLocateSchema) 
 export class MediaHealthChooseCandidatesDto extends createZodDto(MediaHealthChooseCandidatesSchema) {}
 export class MediaHealthRecoverDto extends createZodDto(MediaHealthRecoverSchema) {}
 export class MediaHealthScanDto extends createZodDto(MediaHealthScanSchema) {}
+export class MediaHealthRepairPreviewDto extends createZodDto(MediaHealthRepairPreviewSchema) {}
+export class MediaHealthRepairDto extends createZodDto(MediaHealthRepairSchema) {}
+export class MediaHealthRepairPreviewResponseDto extends createZodDto(MediaHealthRepairPreviewResponseSchema) {}
+export class MediaHealthRepairResponseDto extends createZodDto(MediaHealthRepairResponseSchema) {}
 export class MediaHealthScanResponseDto extends createZodDto(MediaHealthScanResponseSchema) {}
 export class MediaHealthBulkResponseDto extends createZodDto(MediaHealthBulkResponseSchema) {}
 export class MediaHealthRootsResponseDto extends createZodDto(MediaHealthRootsResponseSchema) {}

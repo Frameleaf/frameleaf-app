@@ -19,6 +19,7 @@ import {
   MediaOperationKind,
   MediaOperationStatus,
 } from 'src/enum.js';
+import { SharpOperations } from 'src/queue/sharp-operations.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
@@ -3453,6 +3454,140 @@ describe(MediaHealthService.name, () => {
         [MediaHealthCategory.Missing, MediaHealthCategory.Corrupt],
         [asset],
       );
+    });
+  });
+
+  describe('JPEG repair', () => {
+    let root: string;
+    let damaged: string;
+    let nestedPath: { mockRestore: () => void };
+    const operations = new SharpOperations();
+    const owner = { ...authStub.user1, user: { ...authStub.user1.user, id: 'user-id' } } as never;
+
+    beforeEach(async () => {
+      root = await mkdtemp(join(tmpdir(), 'library-care-repair-'));
+      damaged = join(root, 'damaged.jpg');
+      const good = await sharp({ create: { width: 64, height: 48, channels: 3, background: 'teal' } })
+        .jpeg()
+        .toBuffer();
+      // a 128-byte header before the picture: "improper image header … ReadTGAImage"
+      await writeFile(damaged, Buffer.concat([Buffer.alloc(128), good]));
+      const crypto = new CryptoRepository();
+      vi.mocked(mocks.crypto.hashFileDigests).mockImplementation((path) => crypto.hashFileDigests(path));
+      vi.mocked(mocks.storage.stat).mockImplementation((path) => stat(path) as never);
+      vi.mocked(mocks.media.repairJpeg).mockImplementation((input, output, preview, metadataSource) =>
+        operations.repairJpeg(input, output, preview, metadataSource),
+      );
+      nestedPath = vi
+        .spyOn(StorageCore, 'getNestedPath')
+        .mockReturnValue(join(root, 'upload', 'user-id', 'as', 'se', 'asset-1'));
+      vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([
+        {
+          id: 'health-1',
+          assetId: 'asset-1',
+          category: MediaHealthCategory.Corrupt,
+          status: MediaHealthStatus.CorruptSuspect,
+          originalPath: damaged,
+          evidence: {},
+        },
+      ] as never);
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([
+        {
+          id: 'asset-1',
+          ownerId: 'user-id',
+          updateId: 'update-1',
+          checksum: Buffer.alloc(20),
+          checksumAlgorithm: ChecksumAlgorithm.sha1File,
+          originalPath: damaged,
+          originalFileName: 'IMG_0001.JPG',
+          type: AssetType.Image,
+          isExternal: false,
+          libraryId: null,
+          deletedAt: null,
+        },
+      ] as never);
+      (mediaHealthRepository as unknown as Record<string, unknown>).replaceRepairedOriginal = vi
+        .fn()
+        .mockResolvedValue(true);
+    });
+
+    afterEach(async () => {
+      nestedPath.mockRestore();
+      await rm(root, { recursive: true, force: true });
+    });
+
+    it('previews the repaired picture and changes nothing', async () => {
+      const preview = await sut.previewRepair(owner, { findingId: 'health-1' });
+      expect(preview).toMatchObject({ findingId: 'health-1', method: 'lossless', width: 64, height: 48 });
+      expect(preview.preview).toMatch(/^data:image\/jpeg;base64,/);
+      expect(mediaHealthRepository.replaceRepairedOriginal).not.toHaveBeenCalled();
+    });
+
+    it('replaces the original with exactly the reviewed repair and keeps the damaged file', async () => {
+      const { checksum } = await sut.previewRepair(owner, { findingId: 'health-1' });
+      await expect(sut.repair(owner, { findingId: 'health-1', checksum })).resolves.toEqual({
+        findingId: 'health-1',
+        assetId: 'asset-1',
+        method: 'lossless',
+      });
+      const input = vi.mocked(mediaHealthRepository.replaceRepairedOriginal).mock.calls[0][0];
+      expect(input.originalPath).toContain('.library-care');
+      expect(input.sha1.toString('hex')).toBe(checksum);
+      expect(input.expectedOriginalPath).toBe(damaged);
+      expect(mocks.job.queueAll).toHaveBeenCalled();
+    });
+
+    it('copies the photo’s details back when the repair lost them', async () => {
+      vi.mocked(mocks.media.repairJpeg).mockImplementation(async (input, output, preview) => {
+        await operations.repairJpeg(input, output, preview, join(root, 'unused.jpg'));
+        return { method: 'lossless', width: 64, height: 48, metadataKept: false };
+      });
+      vi.mocked(mocks.media.copyTagGroup).mockResolvedValue(true);
+
+      await expect(sut.previewRepair(owner, { findingId: 'health-1' })).resolves.toMatchObject({ metadataKept: true });
+      expect(vi.mocked(mocks.media.copyTagGroup).mock.calls.map(([group, source]) => [group, source])).toEqual([
+        ['EXIF', damaged],
+        ['XMP', damaged],
+        ['IPTC', damaged],
+      ]);
+    });
+
+    it('says when the details could not be copied back', async () => {
+      vi.mocked(mocks.media.repairJpeg).mockImplementation(async (input, output, preview) => {
+        await operations.repairJpeg(input, output, preview, join(root, 'unused.jpg'));
+        return { method: 'rebuilt', width: 64, height: 48, metadataKept: false };
+      });
+      vi.mocked(mocks.media.copyTagGroup).mockResolvedValue(false);
+
+      await expect(sut.previewRepair(owner, { findingId: 'health-1' })).resolves.toMatchObject({
+        method: 'rebuilt',
+        metadataKept: false,
+      });
+    });
+
+    it('refuses a repair that is not the one reviewed', async () => {
+      await expect(sut.repair(owner, { findingId: 'health-1', checksum: '0'.repeat(40) })).rejects.toThrow(
+        'The repair changed since it was reviewed',
+      );
+      expect(mediaHealthRepository.replaceRepairedOriginal).not.toHaveBeenCalled();
+    });
+
+    it('only repairs JPEG photos', async () => {
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([
+        {
+          id: 'asset-1',
+          ownerId: 'user-id',
+          originalPath: damaged,
+          originalFileName: 'IMG_0001.HEIC',
+          deletedAt: null,
+        },
+      ] as never);
+      await expect(sut.previewRepair(owner, { findingId: 'health-1' })).rejects.toThrow('Only JPEG photos');
+    });
+
+    it('says when a file has no picture to recover', async () => {
+      await writeFile(damaged, 'not a picture at all');
+      await expect(sut.previewRepair(owner, { findingId: 'health-1' })).rejects.toThrow('could not be repaired');
     });
   });
 });

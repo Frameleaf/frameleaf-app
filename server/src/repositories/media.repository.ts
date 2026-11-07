@@ -320,6 +320,10 @@ export class MediaRepository {
     return sharpProcessPool.run('writeStrippedStill', [input, output, format, colorspace], signal);
   }
 
+  async repairJpeg(input: string, output: string, preview: string, metadataSource: string) {
+    return sharpProcessPool.run('repairJpeg', [input, output, preview, metadataSource]);
+  }
+
   async composeImageGrid(
     inputs: string[],
     options: { cols: number; rows: number; cellSize: number; output: string },

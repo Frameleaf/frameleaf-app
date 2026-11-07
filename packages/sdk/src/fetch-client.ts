@@ -9910,6 +9910,37 @@ export type MediaHealthRecoverDto = {
     /** Must be true: the reviewer checked the checksum and decode evidence and keeps the damaged source */
     confirmed: boolean;
 };
+export type MediaHealthRepairDto = {
+    /** SHA1 of the previewed repair: the original is replaced only with exactly what was reviewed */
+    checksum: string;
+    /** Damaged media finding ID */
+    findingId: string;
+};
+export type MediaHealthRepairResponseDto = {
+    assetId: string;
+    findingId: string;
+    method: MediaHealthRepairMethod;
+};
+export type MediaHealthRepairPreviewDto = {
+    /** Damaged media finding ID */
+    findingId: string;
+};
+export type MediaHealthRepairPreviewResponseDto = {
+    /** SHA1 of the repaired file, as lowercase hex */
+    checksum: string;
+    findingId: string;
+    /** Height of the repaired picture */
+    height: number;
+    /** The date, camera and location details are in the repaired file */
+    metadataKept: boolean;
+    method: MediaHealthRepairMethod;
+    /** A reduced JPEG of the repaired picture, as a data URL */
+    preview: string;
+    /** Size of the repaired file */
+    sizeInBytes: number;
+    /** Width of the repaired picture */
+    width: number;
+};
 export type MediaHealthScanResponseDto = {
     /** The durable job doing the work, in Activity */
     operationId?: string | null;
@@ -28418,6 +28449,36 @@ export function recoverDamaged({ mediaHealthRecoverDto }: {
     })));
 }
 /**
+ * Replace a damaged JPEG with its reviewed repair
+ */
+export function repair({ mediaHealthRepairDto }: {
+    mediaHealthRepairDto: MediaHealthRepairDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: MediaHealthRepairResponseDto;
+    }>("/media-health/corrupt/repair", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: mediaHealthRepairDto
+    })));
+}
+/**
+ * Preview a repair of a damaged JPEG
+ */
+export function previewRepair({ mediaHealthRepairPreviewDto }: {
+    mediaHealthRepairPreviewDto: MediaHealthRepairPreviewDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: MediaHealthRepairPreviewResponseDto;
+    }>("/media-health/corrupt/repair/preview", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: mediaHealthRepairPreviewDto
+    })));
+}
+/**
  * Start corrupt media scan
  */
 export function startCorruptScan(opts?: Oazapfts.RequestOpts) {
@@ -39170,6 +39231,12 @@ export enum MediaHealthSeverity {
     Info = "info",
     Warning = "warning",
     Critical = "critical"
+}
+export enum MediaHealthRepairMethod {
+    Lossless = "lossless",
+    Rebuilt = "rebuilt",
+    Preview = "preview",
+    Converted = "converted"
 }
 export enum RawSupportSource {
     Sensor = "sensor",
