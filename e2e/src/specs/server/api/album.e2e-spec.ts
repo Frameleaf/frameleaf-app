@@ -515,6 +515,7 @@ describe('/albums', () => {
         hasSharedLink: false,
         assetCount: 0,
         isActivityEnabled: true,
+        isLocked: false,
         order: AssetOrder.Desc,
         kind: AlbumKind.Album,
         parentId: null,
