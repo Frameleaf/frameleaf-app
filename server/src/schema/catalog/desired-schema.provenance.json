@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "f54a199b9e7e5a2b4e8c0c18c9f88d2987d33ea5",
+  "sourceCommit": "8aa84354d4f2a0d2dba202049c77482dd0f99efb",
   "sourceHashes": {
     "src/enum.ts": "3e13c4b50a90b150285d6b96791b512a2fd30b5440d633aa707ddfc3aaa7b780",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
@@ -145,7 +145,7 @@
     "src/schema/tables/user-audit.table.ts": "e77746133031ba867764186197785e51b89b684845aae299c5fb4c7c63d30c35",
     "src/schema/tables/user-metadata-audit.table.ts": "53dced62c8cd992050eea9b01fbd13ff042f97b9af9d3930bc2bb13dd2b13782",
     "src/schema/tables/user-metadata.table.ts": "fc46a9e43c9bf85e49a9e030082770ea76775add99343917389fce833910f910",
-    "src/schema/tables/user-two-factor.table.ts": "ca62fbd3d9cdb3fab601e467c6965a7f72095827c4318a4048954910d0d7f9aa",
+    "src/schema/tables/user-two-factor.table.ts": "396e2527ce44444f64e820aa4c68993ec6bca94358310df7db0f50bcd3ecb30a",
     "src/schema/tables/user.table.ts": "c99d8a57334420c61d9dc96d1d4ce1566bc273e7a60f98261b44cee194f1ea0a",
     "src/schema/tables/version-history.table.ts": "b290931697aea4e4e917927e1e547d894d40a1b768dc0e51c8d9325704bdc91f",
     "src/schema/tables/video-moment.table.ts": "bb202390870bb23b50a161d0637d713335cf413e1d9e40d2df87a1a2d665a1cd",
@@ -160,6 +160,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "b57bd944096b45f516bb29a336033410d24b145e89b708575786aa09e1a6bfbf",
-  "dumpSha256": "5e20fcf08d7694989c4e44f8fd329834b3d8c1c2f3d9cfc1ba929bba4b372f2d",
+  "dumpSha256": "f5428271f4082e1252bed3ae9a3a90740ac9ff94de21927e23a281e7fc7762b4",
   "rawMetadataSha256": "e087a9cdeb65c2ee6adbee35112d19250caa021d89869b37fa4592325431e759"
 }

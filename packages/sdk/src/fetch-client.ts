@@ -6584,7 +6584,7 @@ export type AuthStatusResponseDto = {
     /** FL-793: two-step sign-in is on */
     twoFactorEnabled: boolean;
 };
-export type TwoFactorDisableDto = {
+export type TwoFactorProofDto = {
     /** The 6-digit code from the authenticator app */
     code?: string;
     /** The account password */
@@ -6592,7 +6592,7 @@ export type TwoFactorDisableDto = {
     /** One of the recovery codes, as written down */
     recoveryCode?: string;
 };
-export type TwoFactorEnableDto = {
+export type TwoFactorCodeDto = {
     /** The 6-digit code from the authenticator app */
     code: string;
 };
@@ -6600,15 +6600,15 @@ export type TwoFactorRecoveryCodesResponseDto = {
     /** Ten one-time recovery codes, shown only now */
     recoveryCodes: string[];
 };
-export type TwoFactorPasswordDto = {
-    /** The account password */
-    password: string;
-};
 export type TwoFactorSetupResponseDto = {
     /** otpauth:// address to show as a QR code */
     otpauthUri: string;
     /** The key to type into an authenticator app (base32) */
     secret: string;
+};
+export type TwoFactorPasswordDto = {
+    /** The account password */
+    password: string;
 };
 export type ValidateAccessTokenResponseDto = {
     /** Authentication status */
@@ -25844,20 +25844,20 @@ export function getAuthStatus(opts?: Oazapfts.RequestOpts) {
 /**
  * Turn off two-step sign-in
  */
-export function disableTwoFactor({ twoFactorDisableDto }: {
-    twoFactorDisableDto: TwoFactorDisableDto;
+export function disableTwoFactor({ twoFactorProofDto }: {
+    twoFactorProofDto: TwoFactorProofDto;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchText("/auth/two-factor", oazapfts.json({
         ...opts,
         method: "DELETE",
-        body: twoFactorDisableDto
+        body: twoFactorProofDto
     })));
 }
 /**
  * Turn on two-step sign-in
  */
-export function enableTwoFactor({ twoFactorEnableDto }: {
-    twoFactorEnableDto: TwoFactorEnableDto;
+export function enableTwoFactor({ twoFactorCodeDto }: {
+    twoFactorCodeDto: TwoFactorCodeDto;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 201;
@@ -25865,7 +25865,34 @@ export function enableTwoFactor({ twoFactorEnableDto }: {
     }>("/auth/two-factor/enable", oazapfts.json({
         ...opts,
         method: "POST",
-        body: twoFactorEnableDto
+        body: twoFactorCodeDto
+    })));
+}
+/**
+ * Start moving two-step sign-in to a new phone
+ */
+export function startTwoFactorMove({ twoFactorProofDto }: {
+    twoFactorProofDto: TwoFactorProofDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: TwoFactorSetupResponseDto;
+    }>("/auth/two-factor/move", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: twoFactorProofDto
+    })));
+}
+/**
+ * Finish moving two-step sign-in to a new phone
+ */
+export function confirmTwoFactorMove({ twoFactorCodeDto }: {
+    twoFactorCodeDto: TwoFactorCodeDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/auth/two-factor/move/confirm", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: twoFactorCodeDto
     })));
 }
 /**

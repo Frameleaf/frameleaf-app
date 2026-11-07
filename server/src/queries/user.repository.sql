@@ -172,7 +172,8 @@ where
 select
   "userId",
   "secret",
-  "enabledAt"
+  "enabledAt",
+  "pendingSecret"
 from
   "user_two_factor"
 where
@@ -186,7 +187,8 @@ values
 on conflict ("userId") do update
 set
   "secret" = $3,
-  "lastUsedStep" = $4,
+  "pendingSecret" = $4,
+  "lastUsedStep" = $5,
   "createdAt" = now()
 where
   "user_two_factor"."enabledAt" is null
@@ -203,6 +205,29 @@ where
     "lastUsedStep" is null
     or "lastUsedStep" < $3
   )
+returning
+  "userId"
+
+-- UserRepository.setPendingTwoFactorMove
+update "user_two_factor"
+set
+  "pendingSecret" = $1
+where
+  "userId" = $2
+  and "enabledAt" is not null
+returning
+  "userId"
+
+-- UserRepository.confirmTwoFactorMove
+update "user_two_factor"
+set
+  "secret" = $1,
+  "pendingSecret" = $2,
+  "lastUsedStep" = $3
+where
+  "userId" = $4
+  and "enabledAt" is not null
+  and "pendingSecret" = $5
 returning
   "userId"
 

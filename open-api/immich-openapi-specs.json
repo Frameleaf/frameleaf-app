@@ -20501,7 +20501,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/TwoFactorDisableDto"
+                "$ref": "#/components/schemas/TwoFactorProofDto"
               }
             }
           },
@@ -20550,7 +20550,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/TwoFactorEnableDto"
+                "$ref": "#/components/schemas/TwoFactorCodeDto"
               }
             }
           },
@@ -20580,6 +20580,111 @@
           }
         ],
         "summary": "Turn on two-step sign-in",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "auth.changePassword",
+        "x-immich-state": "Beta"
+      }
+    },
+    "/auth/two-factor/move": {
+      "post": {
+        "description": "Check the password and a code from the old phone (or a recovery code) and create the new phone’s key. The old phone works until the move is confirmed.",
+        "operationId": "startTwoFactorMove",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TwoFactorProofDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TwoFactorSetupResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Start moving two-step sign-in to a new phone",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "auth.changePassword",
+        "x-immich-state": "Beta"
+      }
+    },
+    "/auth/two-factor/move/confirm": {
+      "post": {
+        "description": "Confirm the new phone with a code from it. Recovery codes and trusted browsers stay.",
+        "operationId": "confirmTwoFactorMove",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TwoFactorCodeDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Finish moving two-step sign-in to a new phone",
         "tags": [
           "Authentication"
         ],
@@ -154410,30 +154515,7 @@
         ],
         "type": "object"
       },
-      "TwoFactorDisableDto": {
-        "properties": {
-          "code": {
-            "description": "The 6-digit code from the authenticator app",
-            "pattern": "^\\d{6}$",
-            "type": "string"
-          },
-          "password": {
-            "description": "The account password",
-            "type": "string"
-          },
-          "recoveryCode": {
-            "description": "One of the recovery codes, as written down",
-            "maxLength": 32,
-            "minLength": 1,
-            "type": "string"
-          }
-        },
-        "required": [
-          "password"
-        ],
-        "type": "object"
-      },
-      "TwoFactorEnableDto": {
+      "TwoFactorCodeDto": {
         "properties": {
           "code": {
             "description": "The 6-digit code from the authenticator app",
@@ -154450,6 +154532,29 @@
         "properties": {
           "password": {
             "description": "The account password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "password"
+        ],
+        "type": "object"
+      },
+      "TwoFactorProofDto": {
+        "properties": {
+          "code": {
+            "description": "The 6-digit code from the authenticator app",
+            "pattern": "^\\d{6}$",
+            "type": "string"
+          },
+          "password": {
+            "description": "The account password",
+            "type": "string"
+          },
+          "recoveryCode": {
+            "description": "One of the recovery codes, as written down",
+            "maxLength": 32,
+            "minLength": 1,
             "type": "string"
           }
         },
