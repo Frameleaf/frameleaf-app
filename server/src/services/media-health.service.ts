@@ -7,8 +7,6 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { constants } from 'node:fs';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
@@ -1071,7 +1069,7 @@ export class MediaHealthService {
     const { finding, asset } = await this.repairTarget(auth, dto.findingId);
     return this.withRepair(asset, async ({ output, preview, method, width, height, metadataKept }) => {
       const digests = await this.cryptoRepository.hashFileDigests(output);
-      const bytes = await readFile(preview);
+      const bytes = await this.storageRepository.readFile(preview);
       return {
         findingId: finding.id,
         method,
@@ -1181,7 +1179,7 @@ export class MediaHealthService {
     asset: MediaHealthAsset,
     use: (result: JpegRepairResult & { output: string; preview: string }) => Promise<T>,
   ): Promise<T> {
-    const folder = await mkdtemp(path.join(tmpdir(), 'frameleaf-repair-'));
+    const folder = await this.storageRepository.mkdtemp('frameleaf-repair-');
     try {
       const output = path.join(folder, 'repaired.jpg');
       const preview = path.join(folder, 'preview.jpg');
@@ -1206,7 +1204,7 @@ export class MediaHealthService {
       }
       return await use({ ...result, output, preview });
     } finally {
-      await rm(folder, { recursive: true, force: true });
+      await this.storageRepository.unlinkDir(folder, { recursive: true, force: true });
     }
   }
 

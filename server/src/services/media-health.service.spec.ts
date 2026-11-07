@@ -3475,6 +3475,9 @@ describe(MediaHealthService.name, () => {
       const crypto = new CryptoRepository();
       vi.mocked(mocks.crypto.hashFileDigests).mockImplementation((path) => crypto.hashFileDigests(path));
       vi.mocked(mocks.storage.stat).mockImplementation((path) => stat(path) as never);
+      vi.mocked(mocks.storage.mkdtemp).mockImplementation((prefix) => mkdtemp(join(root, prefix)));
+      vi.mocked(mocks.storage.readFile).mockImplementation((path) => readFile(path));
+      vi.mocked(mocks.storage.unlinkDir).mockImplementation((folder, options) => rm(folder, options));
       vi.mocked(mocks.media.repairJpeg).mockImplementation((input, output, preview, metadataSource) =>
         operations.repairJpeg(input, output, preview, metadataSource),
       );
