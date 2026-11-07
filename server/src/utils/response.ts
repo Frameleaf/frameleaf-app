@@ -3,6 +3,7 @@ import { OutgoingHttpHeaders, STATUS_CODES, ServerResponse, validateHeaderName, 
 import { Writable } from 'node:stream';
 import { CookieResponse } from 'src/dtos/auth.dto.js';
 import { AuthCookie } from 'src/enum.js';
+import { TWO_FACTOR_TRUST_DAYS } from 'src/utils/two-factor.js';
 
 const DAY_IN_MILLISECONDS = 24 * 60 * 60 * 1000;
 const AUTH_COOKIE_MAX_AGE = 400 * DAY_IN_MILLISECONDS;
@@ -87,6 +88,7 @@ export const respondWithCookie = <T>(res: Response, body: T, { isSecure, values,
     // no httpOnly so that the client can know the auth state
     [AuthCookie.IsAuthenticated]: { ...authentication, httpOnly: false },
     [AuthCookie.SharedLinkToken]: { ...defaults, maxAge: DAY_IN_MILLISECONDS },
+    [AuthCookie.TwoFactorTrust]: { ...defaults, maxAge: TWO_FACTOR_TRUST_DAYS * DAY_IN_MILLISECONDS },
   };
 
   for (const { key, value } of values) {

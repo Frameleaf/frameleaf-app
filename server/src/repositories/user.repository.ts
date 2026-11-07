@@ -376,6 +376,112 @@ export class UserRepository {
       .executeTakeFirstOrThrow();
   }
 
+  /** FL-793: the account's authenticator row (set up or on), if any. */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  getTwoFactor(userId: string) {
+    return this.db
+      .selectFrom('user_two_factor')
+      .select(['userId', 'secret', 'enabledAt'])
+      .where('userId', '=', userId)
+      .executeTakeFirst();
+  }
+
+  /** FL-793: a new, not yet confirmed, authenticator secret; refused (undefined) while one is on. */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.STRING] })
+  setPendingTwoFactor(userId: string, secret: string) {
+    return this.db
+      .insertInto('user_two_factor')
+      .values({ userId, secret })
+      .onConflict((oc) =>
+        oc
+          .column('userId')
+          .doUpdateSet({ secret, lastUsedStep: null, createdAt: sql`now()` })
+          .where('user_two_factor.enabledAt', 'is', null),
+      )
+      .returning('userId')
+      .executeTakeFirst();
+  }
+
+  /**
+   * FL-793: record `step` as used, only when it is newer than the last one, so a code works once even
+   * when two sign-ins race. False: the step was already used.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.NUMBER] })
+  async useTwoFactorStep(userId: string, step: number): Promise<boolean> {
+    const row = await this.db
+      .updateTable('user_two_factor')
+      .set({ lastUsedStep: String(step) })
+      .where('userId', '=', userId)
+      .where((eb) => eb.or([eb('lastUsedStep', 'is', null), eb('lastUsedStep', '<', String(step))]))
+      .returning('userId')
+      .executeTakeFirst();
+    return !!row;
+  }
+
+  /** FL-793: turn on two-step sign-in with its first code's step and fresh recovery codes. */
+  async enableTwoFactor(userId: string, step: number, codeHashes: Buffer[]): Promise<boolean> {
+    return this.db.transaction().execute(async (trx) => {
+      const row = await trx
+        .updateTable('user_two_factor')
+        .set({ enabledAt: sql`now()`, lastUsedStep: String(step) })
+        .where('userId', '=', userId)
+        .where('enabledAt', 'is', null)
+        .returning('userId')
+        .executeTakeFirst();
+      if (!row) {
+        return false;
+      }
+      await this.replaceRecoveryCodes(userId, codeHashes, trx);
+      return true;
+    });
+  }
+
+  /** FL-793: turn two-step sign-in off (or drop an unfinished setup) and its recovery codes. */
+  async deleteTwoFactor(userId: string): Promise<boolean> {
+    return this.db.transaction().execute(async (trx) => {
+      await trx.deleteFrom('user_recovery_code').where('userId', '=', userId).execute();
+      const row = await trx
+        .deleteFrom('user_two_factor')
+        .where('userId', '=', userId)
+        .returning('enabledAt')
+        .executeTakeFirst();
+      return !!row?.enabledAt;
+    });
+  }
+
+  async replaceRecoveryCodes(userId: string, codeHashes: Buffer[], db: Kysely<DB> = this.db) {
+    await db.deleteFrom('user_recovery_code').where('userId', '=', userId).execute();
+    await db
+      .insertInto('user_recovery_code')
+      .values(codeHashes.map((codeHash) => ({ userId, codeHash })))
+      .execute();
+  }
+
+  /** FL-793: spend a recovery code; false when it is wrong or already used. */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.BUFFER] })
+  async useRecoveryCode(userId: string, codeHash: Buffer): Promise<boolean> {
+    const row = await this.db
+      .updateTable('user_recovery_code')
+      .set({ usedAt: sql`now()` })
+      .where('userId', '=', userId)
+      .where('codeHash', '=', codeHash)
+      .where('usedAt', 'is', null)
+      .returning('id')
+      .executeTakeFirst();
+    return !!row;
+  }
+
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async countRecoveryCodes(userId: string): Promise<number> {
+    const row = await this.db
+      .selectFrom('user_recovery_code')
+      .select((eb) => eb.fn.countAll<number>().as('count'))
+      .where('userId', '=', userId)
+      .where('usedAt', 'is', null)
+      .executeTakeFirstOrThrow();
+    return Number(row.count);
+  }
+
   /** FL-538: who a still-usable "choose a password" link belongs to, by the link's SHA-256. */
   @GenerateSql({ params: [DummyValue.BUFFER] })
   async getByPasswordLink(hash: Buffer) {

@@ -25,6 +25,8 @@ export enum AuthCookie {
   SharedLinkToken = 'immich_shared_link_token',
   OAuthState = 'immich_oauth_state',
   OAuthCodeVerifier = 'immich_oauth_code_verifier',
+  /** FL-793: "Trust this browser" after two-step sign-in, signed and bound to the account's password. */
+  TwoFactorTrust = 'frameleaf_2fa_trust',
 }
 
 export enum RequestHeader {
@@ -3116,6 +3118,8 @@ export enum AdminAuditAction {
   FrameleafAccountLinked = 'frameleaf-account-linked',
   /** FL-158: the account's Frameleaf account link was removed. */
   FrameleafAccountUnlinked = 'frameleaf-account-unlinked',
+  /** FL-793: an administrator turned off the account's two-step sign-in (a lost phone). */
+  TwoFactorReset = 'two-factor-reset',
 }
 
 export const AdminAuditActionSchema = z

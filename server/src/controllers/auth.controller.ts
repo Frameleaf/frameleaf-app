@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Post, Put, Req, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import { parseCookie } from 'cookie';
 import type { Request, Response } from 'express';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
@@ -8,6 +9,7 @@ import {
   ChangePasswordDto,
   LoginCredentialDto,
   LoginResponseDto,
+  LoginTwoFactorDto,
   LogoutResponseDto,
   PasswordLinkCheckDto,
   PasswordLinkCheckResponseDto,
@@ -17,6 +19,11 @@ import {
   PinCodeSetupDto,
   SessionUnlockDto,
   SignUpDto,
+  TwoFactorDisableDto,
+  TwoFactorEnableDto,
+  TwoFactorPasswordDto,
+  TwoFactorRecoveryCodesResponseDto,
+  TwoFactorSetupResponseDto,
   ValidateAccessTokenResponseDto,
 } from 'src/dtos/auth.dto.js';
 import { UserAdminResponseDto } from 'src/dtos/user.dto.js';
@@ -40,11 +47,16 @@ export class AuthController {
   @Authenticated({ public: true })
   @RateLimited(RATE_LIMITS.login)
   async login(
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
     @Body() loginCredential: LoginCredentialDto,
     @GetLoginDetails() loginDetails: LoginDetails,
   ): Promise<LoginResponseDto> {
-    const body = await this.service.login(loginCredential, loginDetails);
+    const trustToken = parseCookie(req.headers.cookie || '')[AuthCookie.TwoFactorTrust];
+    const body = await this.service.login(loginCredential, loginDetails, trustToken);
+    if (body.twoFactorRequired) {
+      return body;
+    }
     return respondWithCookie(res, body, {
       isSecure: loginDetails.isSecure,
       rememberMe: loginCredential.rememberMe,
@@ -54,6 +66,87 @@ export class AuthController {
         { key: AuthCookie.IsAuthenticated, value: 'true' },
       ],
     });
+  }
+
+  @Post('login/two-factor')
+  @Endpoint({
+    summary: 'Finish a two-step sign-in',
+    description:
+      'Send the authenticator code (or a recovery code) for a password sign-in that answered twoFactorRequired, and receive the session token.',
+    history: new HistoryBuilder().added('v3.4.0').beta('v3.4.0'),
+  })
+  @Authenticated({ public: true })
+  @RateLimited(RATE_LIMITS.twoFactorLogin)
+  @HttpCode(HttpStatus.OK)
+  async loginTwoFactor(
+    @Res({ passthrough: true }) res: Response,
+    @Body() dto: LoginTwoFactorDto,
+    @GetLoginDetails() loginDetails: LoginDetails,
+  ): Promise<LoginResponseDto> {
+    const { response, rememberMe, trustToken } = await this.service.loginTwoFactor(dto, loginDetails);
+    return respondWithCookie(res, response, {
+      isSecure: loginDetails.isSecure,
+      rememberMe,
+      values: [
+        { key: AuthCookie.AccessToken, value: response.accessToken },
+        { key: AuthCookie.AuthType, value: AuthType.Password },
+        { key: AuthCookie.IsAuthenticated, value: 'true' },
+        ...(trustToken ? [{ key: AuthCookie.TwoFactorTrust, value: trustToken }] : []),
+      ],
+    });
+  }
+
+  @Post('two-factor/setup')
+  @RateLimited(RATE_LIMITS.login)
+  @Authenticated({ permission: Permission.AuthChangePassword })
+  @Endpoint({
+    summary: 'Start setting up two-step sign-in',
+    description:
+      'Check the password and create a new authenticator key. Two-step sign-in turns on once a code from it is confirmed.',
+    history: new HistoryBuilder().added('v3.4.0').beta('v3.4.0'),
+  })
+  setupTwoFactor(@Auth() auth: AuthDto, @Body() dto: TwoFactorPasswordDto): Promise<TwoFactorSetupResponseDto> {
+    return this.service.setupTwoFactor(auth, dto);
+  }
+
+  @Post('two-factor/enable')
+  @RateLimited(RATE_LIMITS.login)
+  @Authenticated({ permission: Permission.AuthChangePassword })
+  @Endpoint({
+    summary: 'Turn on two-step sign-in',
+    description: 'Confirm the new authenticator key with a code. Returns ten recovery codes, shown only this once.',
+    history: new HistoryBuilder().added('v3.4.0').beta('v3.4.0'),
+  })
+  enableTwoFactor(@Auth() auth: AuthDto, @Body() dto: TwoFactorEnableDto): Promise<TwoFactorRecoveryCodesResponseDto> {
+    return this.service.enableTwoFactor(auth, dto);
+  }
+
+  @Delete('two-factor')
+  @RateLimited(RATE_LIMITS.login)
+  @Authenticated({ permission: Permission.AuthChangePassword })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Turn off two-step sign-in',
+    description: 'Turn off two-step sign-in with the password and an authenticator or recovery code.',
+    history: new HistoryBuilder().added('v3.4.0').beta('v3.4.0'),
+  })
+  disableTwoFactor(@Auth() auth: AuthDto, @Body() dto: TwoFactorDisableDto): Promise<void> {
+    return this.service.disableTwoFactor(auth, dto);
+  }
+
+  @Post('two-factor/recovery-codes')
+  @RateLimited(RATE_LIMITS.login)
+  @Authenticated({ permission: Permission.AuthChangePassword })
+  @Endpoint({
+    summary: 'Make new recovery codes',
+    description: 'Replace every recovery code with ten new ones, shown only this once.',
+    history: new HistoryBuilder().added('v3.4.0').beta('v3.4.0'),
+  })
+  regenerateRecoveryCodes(
+    @Auth() auth: AuthDto,
+    @Body() dto: TwoFactorPasswordDto,
+  ): Promise<TwoFactorRecoveryCodesResponseDto> {
+    return this.service.regenerateRecoveryCodes(auth, dto);
   }
 
   @Post('admin-sign-up')

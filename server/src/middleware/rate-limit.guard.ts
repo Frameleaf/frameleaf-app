@@ -56,7 +56,7 @@ import { isRemoteVia } from 'src/utils/frameleaf-sign-in.js';
  * of times from one address); the remote-access ceiling always is.
  */
 
-export type RateLimitPrincipal = 'email' | 'shared-link' | 'credential';
+export type RateLimitPrincipal = 'email' | 'shared-link' | 'credential' | 'two-factor-token';
 
 export type RateLimitRule = {
   /** Name of the counter; routes with the same bucket share it. */
@@ -83,6 +83,18 @@ export const RATE_LIMITS = Object.freeze({
     windowSeconds: 10 * MINUTE,
     principal: 'email',
     principalLimit: 10,
+    principalCounts: 'failures',
+  },
+  /**
+   * FL-793: `POST auth/login/two-factor`, the code step after a right password: 10 tries per address and
+   * 5 wrong codes per sign-in (its token) and address in ten minutes.
+   */
+  twoFactorLogin: {
+    bucket: 'two-factor-login',
+    limit: 10,
+    windowSeconds: 10 * MINUTE,
+    principal: 'two-factor-token',
+    principalLimit: 5,
     principalCounts: 'failures',
   },
   /** The administrator's own provider: `POST oauth/callback` and `POST oauth/link`. */
@@ -236,6 +248,10 @@ export const rateLimitPrincipal = (request: Request, principal: RateLimitPrincip
     case 'credential': {
       const credential = presentedCredential(request);
       return credential ? `credential:${credential}` : undefined;
+    }
+    case 'two-factor-token': {
+      const token = text((request.body as Record<string, unknown> | undefined)?.twoFactorToken);
+      return token ? `two-factor:${token}` : undefined;
     }
   }
 };

@@ -36,6 +36,9 @@ class TestController {
   @RateLimited(RATE_LIMITS.linkStart)
   linkStart() {}
 
+  @RateLimited(RATE_LIMITS.twoFactorLogin)
+  twoFactorLogin() {}
+
   @RemoteMediaCeiling()
   thumbnail() {}
 
@@ -213,6 +216,17 @@ describe(RateLimitGuard.name, () => {
 
     expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(RATE_LIMITS.login.principalLimit);
     expect(results.filter(({ status }) => status === 'rejected')).toHaveLength(5);
+  });
+
+  it('counts wrong two-step codes per sign-in token and address (FL-793)', async () => {
+    const request = makeRequest({ body: { twoFactorToken: 'challenge-1', code: '123456' } });
+    await sut.canActivate(contextFor(TestController.prototype.twoFactorLogin, request));
+    expect(store.hit).toHaveBeenNthCalledWith(1, 'frameleaf:rate-limit:two-factor-login:ip:198.51.100.7', 600);
+    expect(store.hit).toHaveBeenLastCalledWith(
+      `frameleaf:rate-limit:two-factor-login:principal:${keyed('two-factor:challenge-1\u{0}198.51.100.7')}`,
+      600,
+    );
+    expect(request.frameleafRateLimitFailures).toEqual([expect.objectContaining({ limit: 5, counts: 'failures' })]);
   });
 
   it('counts a shared link by its key and address and an admin action by the credential presented', async () => {

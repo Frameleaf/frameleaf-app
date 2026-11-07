@@ -386,6 +386,17 @@ export class UserAdminService extends BaseService {
   }
 
   /**
+   * FL-793: turn off an account's two-step sign-in for someone who lost their phone and recovery codes.
+   * Recorded in the account's history only when it was on.
+   */
+  async resetTwoFactor(auth: AuthDto, id: string): Promise<void> {
+    const user = await this.findOrFail(id, { withDeleted: true });
+    if (await this.userRepository.deleteTwoFactor(id)) {
+      await this.recordAdminEvents([accountEvent(auth, user, AdminAuditAction.TwoFactorReset, null)]);
+    }
+  }
+
+  /**
    * FL-76: the account's administrator history, newest first, for the account detail's Activity
    * tab. Admin-only (`AdminUserRead`). It names what was changed, never a password, PIN or photo.
    */
@@ -419,7 +430,7 @@ export class UserAdminService extends BaseService {
     if (pinCode === undefined) {
       throw new NotFoundException('User not found');
     }
-    return { pinCode };
+    return { pinCode, twoFactorEnabled: !!(await this.userRepository.getTwoFactor(id))?.enabledAt };
   }
 
   async getStatistics(auth: AuthDto, id: string, dto: AssetStatsDto): Promise<AssetStatsResponseDto> {

@@ -1031,7 +1031,10 @@ describe(UserAdminService.name, () => {
     it('says whether the account has a PIN, and nothing else', async () => {
       mocks.user.hasPinCode.mockResolvedValue(true);
 
-      await expect(sut.getPinCodeState(authStub.admin, 'user-1')).resolves.toStrictEqual({ pinCode: true });
+      await expect(sut.getPinCodeState(authStub.admin, 'user-1')).resolves.toStrictEqual({
+        pinCode: true,
+        twoFactorEnabled: false,
+      });
       expect(mocks.user.hasPinCode).toHaveBeenCalledWith('user-1');
       expect(mocks.user.getForPinCode).not.toHaveBeenCalled();
     });
@@ -1039,13 +1042,47 @@ describe(UserAdminService.name, () => {
     it('says so when the account has no PIN', async () => {
       mocks.user.hasPinCode.mockResolvedValue(false);
 
-      await expect(sut.getPinCodeState(authStub.admin, 'user-1')).resolves.toStrictEqual({ pinCode: false });
+      await expect(sut.getPinCodeState(authStub.admin, 'user-1')).resolves.toStrictEqual({
+        pinCode: false,
+        twoFactorEnabled: false,
+      });
     });
 
     it('throws for an unknown account', async () => {
       mocks.user.hasPinCode.mockResolvedValue(undefined);
 
       await expect(sut.getPinCodeState(authStub.admin, 'user-1')).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('says whether two-step sign-in is on (FL-793)', async () => {
+      mocks.user.hasPinCode.mockResolvedValue(false);
+      mocks.user.getTwoFactor.mockResolvedValue({ userId: 'user-1', secret: 'sealed', enabledAt: new Date() });
+
+      await expect(sut.getPinCodeState(authStub.admin, 'user-1')).resolves.toMatchObject({ twoFactorEnabled: true });
+    });
+  });
+
+  describe('resetTwoFactor (FL-793)', () => {
+    it('turns two-step sign-in off and records it in the account history', async () => {
+      const user = UserFactory.create();
+      mocks.user.get.mockResolvedValue(user);
+      mocks.user.deleteTwoFactor.mockResolvedValue(true);
+
+      await sut.resetTwoFactor(authStub.admin, user.id);
+
+      expect(mocks.user.deleteTwoFactor).toHaveBeenCalledWith(user.id);
+      expect(mocks.adminAudit.create).toHaveBeenCalledWith([
+        expect.objectContaining({ userId: user.id, action: AdminAuditAction.TwoFactorReset, subject: user.name }),
+      ]);
+    });
+
+    it('records nothing when it was not on', async () => {
+      mocks.user.get.mockResolvedValue(UserFactory.create());
+      mocks.user.deleteTwoFactor.mockResolvedValue(false);
+
+      await sut.resetTwoFactor(authStub.admin, 'user-1');
+
+      expect(mocks.adminAudit.create).not.toHaveBeenCalled();
     });
   });
 });

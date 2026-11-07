@@ -43,6 +43,7 @@ describe('respondWithCookie', () => {
       [AuthCookie.OAuthCodeVerifier]: 34_560_000_000,
       [AuthCookie.MaintenanceToken]: 86_400_000,
       [AuthCookie.SharedLinkToken]: 86_400_000,
+      [AuthCookie.TwoFactorTrust]: 2_592_000_000,
     };
     expect(events).toEqual([
       ...values.map(({ key, value }) => [

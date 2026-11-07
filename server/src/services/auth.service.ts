@@ -16,6 +16,8 @@ import {
   AuthStatusResponseDto,
   ChangePasswordDto,
   LoginCredentialDto,
+  LoginResponseDto,
+  LoginTwoFactorDto,
   LogoutResponseDto,
   OAuthBackchannelLogoutDto,
   OAuthCallbackDto,
@@ -28,6 +30,12 @@ import {
   PinCodeSetupDto,
   SessionUnlockDto,
   SignUpDto,
+  TwoFactorDisableDto,
+  TwoFactorEnableDto,
+  TwoFactorPasswordDto,
+  TwoFactorRecoveryCodesResponseDto,
+  TwoFactorSetupResponseDto,
+  mapLoginResponse,
 } from 'src/dtos/auth.dto.js';
 import { UserAdminResponseDto, mapUserAdmin } from 'src/dtos/user.dto.js';
 import {
@@ -46,6 +54,7 @@ import { LockedEncryptionService } from 'src/services/locked-encryption.service.
 import { isGranted } from 'src/utils/access.js';
 import { DecimalSize } from 'src/utils/bytes.js';
 import { identityDirectory, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
+import { mailSealKey, openMailSecret, sealMailSecret } from 'src/utils/frameleaf-mail.js';
 import { type SetupClient, whileClaimable } from 'src/utils/frameleaf-setup-gate.js';
 import {
   FRAMELEAF_EXCHANGE_CLOCK_TOLERANCE_SECONDS,
@@ -66,7 +75,29 @@ import { getUserAgentDetails } from 'src/utils/request.js';
 import { checkSecret } from 'src/utils/secret-attempts.js';
 import { createSession } from 'src/utils/session.js';
 import { requireSharedLinkUnlocked } from 'src/utils/shared-link.js';
+import {
+  type ServerMac,
+  TWO_FACTOR_CHALLENGE_SECONDS,
+  TWO_FACTOR_TRUST_DAYS,
+  hashRecoveryCode,
+  matchTotp,
+  newRecoveryCodes,
+  newTotpSecret,
+  otpauthUri,
+  peekToken,
+  signToken,
+  verifyToken,
+} from 'src/utils/two-factor.js';
 import { allowedOrigins, requestHosts, websocketOriginAllowed } from 'src/utils/websocket-origin.js';
+
+const UUID_PATTERN = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
+const TWO_FACTOR_WRONG_CODE = 'That code didn’t work. Check your authenticator app and try again.';
+const TWO_FACTOR_WRONG_RECOVERY_CODE = 'That recovery code didn’t work, or it was already used.';
+const TWO_FACTOR_EXPIRED = 'This sign-in expired. Enter your password again.';
+
+type TwoFactorChallenge = { sub: string; rem: boolean; exp: number };
+type TwoFactorTrust = { sub: string; en: number; exp: number };
+const epochSeconds = (date: Date) => Math.floor(date.getTime() / 1000);
 
 export interface LoginDetails {
   isSecure: boolean;
@@ -191,18 +222,12 @@ export class AuthService extends BaseService {
   @Inject(LockedEncryptionService)
   private lockedEncryption!: LockedEncryptionService;
 
-  async login(dto: LoginCredentialDto, details: LoginDetails) {
-    const config = await this.getConfig({ withCache: false });
-    if (!config.passwordLogin.enabled) {
-      throw new UnauthorizedException('Password login has been disabled');
-    }
-
-    // FL-161: away from home a password is refused before any account is looked up, unless an
-    // administrator allowed it
-    if (isRemoteVia(details.via) && !config.frameleafCloud.remoteAccess.allowPasswordOverRelay) {
-      this.logger.warn(`Refused password sign-in over remote access (${details.via}) from ${details.clientIp}`);
-      throw frameleafSignInRequired();
-    }
+  /**
+   * `trustToken` is the browser's "Trust this browser" cookie (FL-793). For an account with two-step
+   * sign-in the response then carries `twoFactorRequired` and no session, unless the browser is trusted.
+   */
+  async login(dto: LoginCredentialDto, details: LoginDetails, trustToken?: string): Promise<LoginResponseDto> {
+    await this.requirePasswordLogin(details);
 
     const user = await this.userRepository.getByEmail(dto.email, { withPassword: true });
     // Always run bcrypt so response time is constant regardless of whether the email
@@ -214,7 +239,206 @@ export class AuthService extends BaseService {
       throw new UnauthorizedException('Incorrect email or password');
     }
 
+    const twoFactor = await this.userRepository.getTwoFactor(user.id);
+    if (
+      twoFactor?.enabledAt &&
+      !(await this.isTrustedBrowser(user.id, user.password, twoFactor.enabledAt, trustToken))
+    ) {
+      const challenge: TwoFactorChallenge = {
+        sub: user.id,
+        rem: dto.rememberMe ?? true,
+        exp: epochSeconds(new Date()) + TWO_FACTOR_CHALLENGE_SECONDS,
+      };
+      // FL-793: no session yet; an older client that ignores twoFactorRequired gets an empty token
+      return {
+        ...mapLoginResponse(user, ''),
+        twoFactorRequired: true,
+        twoFactorToken: await signToken(this.twoFactorMac('challenge'), challenge, user.password),
+      };
+    }
+
     return this.createLoginResponse(user, details, { passwordHash: user.password });
+  }
+
+  private async requirePasswordLogin(details: LoginDetails) {
+    const config = await this.getConfig({ withCache: false });
+    if (!config.passwordLogin.enabled) {
+      throw new UnauthorizedException('Password login has been disabled');
+    }
+
+    // FL-161: away from home a password is refused before any account is looked up, unless an
+    // administrator allowed it
+    if (isRemoteVia(details.via) && !config.frameleafCloud.remoteAccess.allowPasswordOverRelay) {
+      this.logger.warn(`Refused password sign-in over remote access (${details.via}) from ${details.clientIp}`);
+      throw frameleafSignInRequired();
+    }
+  }
+
+  /**
+   * FL-793: the code step of a password sign-in. Wrong codes answer 401 so the sign-in rate limit counts
+   * them. Returns the session, whether to remember it, and a "Trust this browser" token when asked for.
+   */
+  async loginTwoFactor(
+    dto: LoginTwoFactorDto,
+    details: LoginDetails,
+  ): Promise<{ response: LoginResponseDto; rememberMe: boolean; trustToken?: string }> {
+    await this.requirePasswordLogin(details);
+    if (!dto.code && !dto.recoveryCode) {
+      throw new BadRequestException('Enter the code from your authenticator app or a recovery code');
+    }
+
+    const now = new Date();
+    const userId = peekToken<{ sub?: unknown }>(dto.twoFactorToken)?.sub;
+    const user =
+      typeof userId === 'string' && UUID_PATTERN.test(userId) ? await this.userRepository.get(userId, {}) : undefined;
+    const { password } = user ? await this.userRepository.getForChangePassword(user.id) : { password: null };
+    const challenge =
+      user && password
+        ? await verifyToken<TwoFactorChallenge>(this.twoFactorMac('challenge'), dto.twoFactorToken, password, now)
+        : null;
+    const twoFactor = challenge ? await this.userRepository.getTwoFactor(challenge.sub) : undefined;
+    if (!user || !password || !challenge || !twoFactor?.enabledAt) {
+      throw new UnauthorizedException(TWO_FACTOR_EXPIRED);
+    }
+
+    if (!(await this.checkSecondFactor(user.id, twoFactor.secret, dto, now))) {
+      this.logger.warn(`Failed two-step sign-in for user ${user.email} from ip address ${details.clientIp}`);
+      throw new UnauthorizedException(dto.code ? TWO_FACTOR_WRONG_CODE : TWO_FACTOR_WRONG_RECOVERY_CODE);
+    }
+
+    const response = await this.createLoginResponse(user, details, { passwordHash: password });
+    const trust: TwoFactorTrust = {
+      sub: user.id,
+      en: twoFactor.enabledAt.getTime(),
+      exp: epochSeconds(now) + TWO_FACTOR_TRUST_DAYS * 24 * 60 * 60,
+    };
+    const trustToken = dto.trustDevice ? await signToken(this.twoFactorMac('trust'), trust, password) : undefined;
+    return { response, rememberMe: challenge.rem, trustToken };
+  }
+
+  /** FL-793: start setting up two-step sign-in; the new key is confirmed with `enableTwoFactor`. */
+  async setupTwoFactor(auth: AuthDto, dto: TwoFactorPasswordDto): Promise<TwoFactorSetupResponseDto> {
+    await this.requireAccountPassword(auth.user.id, dto.password);
+    const secret = newTotpSecret();
+    const sealed = sealMailSecret(await this.twoFactorSealKey(), `two-factor:${auth.user.id}`, secret);
+    if (!(await this.userRepository.setPendingTwoFactor(auth.user.id, sealed))) {
+      throw new BadRequestException('Two-step sign-in is already on');
+    }
+    return { secret, otpauthUri: otpauthUri('Frameleaf', auth.user.email, secret) };
+  }
+
+  /** FL-793: confirm the authenticator with its first code; the recovery codes are returned only now. */
+  async enableTwoFactor(auth: AuthDto, dto: TwoFactorEnableDto): Promise<TwoFactorRecoveryCodesResponseDto> {
+    const row = await this.userRepository.getTwoFactor(auth.user.id);
+    if (!row || row.enabledAt) {
+      throw new BadRequestException(row ? 'Two-step sign-in is already on' : 'Start setting up two-step sign-in first');
+    }
+    const secret = await this.openTwoFactorSecret(auth.user.id, row.secret);
+    const step = secret ? matchTotp(secret, dto.code, new Date()) : null;
+    if (step === null) {
+      throw new BadRequestException(TWO_FACTOR_WRONG_CODE);
+    }
+    const recoveryCodes = newRecoveryCodes();
+    if (
+      !(await this.userRepository.enableTwoFactor(
+        auth.user.id,
+        step,
+        recoveryCodes.map((code) => hashRecoveryCode(code)),
+      ))
+    ) {
+      throw new BadRequestException('Two-step sign-in is already on');
+    }
+    return { recoveryCodes };
+  }
+
+  /** FL-793: turn two-step sign-in off with the password and a code (or a recovery code). */
+  async disableTwoFactor(auth: AuthDto, dto: TwoFactorDisableDto): Promise<void> {
+    await this.requireAccountPassword(auth.user.id, dto.password);
+    const row = await this.userRepository.getTwoFactor(auth.user.id);
+    if (!row?.enabledAt) {
+      throw new BadRequestException('Two-step sign-in is not on');
+    }
+    if (!dto.code && !dto.recoveryCode) {
+      throw new BadRequestException('Enter the code from your authenticator app or a recovery code');
+    }
+    if (!(await this.checkSecondFactor(auth.user.id, row.secret, dto, new Date()))) {
+      throw new BadRequestException(dto.code ? TWO_FACTOR_WRONG_CODE : TWO_FACTOR_WRONG_RECOVERY_CODE);
+    }
+    await this.userRepository.deleteTwoFactor(auth.user.id);
+  }
+
+  /** FL-793: replace every recovery code with ten new ones, shown once. */
+  async regenerateRecoveryCodes(auth: AuthDto, dto: TwoFactorPasswordDto): Promise<TwoFactorRecoveryCodesResponseDto> {
+    await this.requireAccountPassword(auth.user.id, dto.password);
+    const row = await this.userRepository.getTwoFactor(auth.user.id);
+    if (!row?.enabledAt) {
+      throw new BadRequestException('Two-step sign-in is not on');
+    }
+    const recoveryCodes = newRecoveryCodes();
+    await this.userRepository.replaceRecoveryCodes(
+      auth.user.id,
+      recoveryCodes.map((code) => hashRecoveryCode(code)),
+    );
+    return { recoveryCodes };
+  }
+
+  private async requireAccountPassword(userId: string, password: string) {
+    const user = await this.userRepository.getForChangePassword(userId);
+    if (!user.password) {
+      throw new BadRequestException('Two-step sign-in protects signing in with a password; this account has none');
+    }
+    if (!(await this.validateSecret(password, user.password))) {
+      throw new BadRequestException('Wrong password');
+    }
+  }
+
+  /** A right authenticator code (each time step once) or an unused recovery code, which is spent. */
+  private async checkSecondFactor(
+    userId: string,
+    sealedSecret: string,
+    dto: { code?: string; recoveryCode?: string },
+    now: Date,
+  ): Promise<boolean> {
+    if (dto.code) {
+      const secret = await this.openTwoFactorSecret(userId, sealedSecret);
+      const step = secret ? matchTotp(secret, dto.code, now) : null;
+      return step !== null && (await this.userRepository.useTwoFactorStep(userId, step));
+    }
+    return (
+      !!dto.recoveryCode && (await this.userRepository.useRecoveryCode(userId, hashRecoveryCode(dto.recoveryCode)))
+    );
+  }
+
+  private async isTrustedBrowser(userId: string, passwordHash: string, enabledAt: Date, token?: string) {
+    if (!token) {
+      return false;
+    }
+    const trust = await verifyToken<TwoFactorTrust>(this.twoFactorMac('trust'), token, passwordHash, new Date());
+    // bound to the password (in the MAC) and to this switch-on: turning it off and on again forgets every browser
+    return trust?.sub === userId && trust.en === enabledAt.getTime();
+  }
+
+  /** HMACs for two-step sign-in tokens, under the server's own key file (never in the database). */
+  private twoFactorMac(purpose: 'challenge' | 'trust'): ServerMac {
+    const directory = identityDirectory(this.configRepository);
+    return (value) => this.cryptoRepository.serverKeyedHash(directory, `two-factor-${purpose}`, value);
+  }
+
+  /**
+   * The key authenticator secrets are sealed with, derived from the server's own key file.
+   * ponytail: reuses the mail secret sealing (AES-256-GCM, record-bound); only the key purpose differs.
+   */
+  private async twoFactorSealKey() {
+    const directory = identityDirectory(this.configRepository);
+    return mailSealKey(await this.cryptoRepository.serverKeyedHash(directory, 'two-factor-secret', 'seal-key'));
+  }
+
+  private async openTwoFactorSecret(userId: string, sealed: string) {
+    const secret = openMailSecret<string>(await this.twoFactorSealKey(), `two-factor:${userId}`, sealed);
+    if (secret === null) {
+      this.logger.error(`The two-step sign-in key of user ${userId} could not be opened; the server key file changed`);
+    }
+    return secret;
   }
 
   async logout(auth: AuthDto, authType: AuthType): Promise<LogoutResponseDto> {
@@ -1230,8 +1454,11 @@ export class AuthService extends BaseService {
     }
 
     const session = auth.session ? await this.sessionRepository.get(auth.session.id) : undefined;
+    const twoFactorEnabled = !!(await this.userRepository.getTwoFactor(auth.user.id))?.enabledAt;
 
     return {
+      twoFactorEnabled,
+      recoveryCodesRemaining: twoFactorEnabled ? await this.userRepository.countRecoveryCodes(auth.user.id) : 0,
       pinCode: !!user.pinCode,
       password: !!user.password,
       isElevated: !!auth.session?.hasElevatedPermission,
