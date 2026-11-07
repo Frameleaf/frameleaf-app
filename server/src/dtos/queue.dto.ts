@@ -114,6 +114,12 @@ export const QueueStatisticsSchema = z
     delayed: z.int().describe('Number of delayed jobs'),
     waiting: z.int().describe('Number of waiting jobs'),
     paused: z.int().describe('Number of paused jobs'),
+    followUp: z
+      .int()
+      .optional()
+      .describe(
+        'Of the waiting, delayed and paused jobs, how many are later steps of items the queue already started. Only for queues with such steps',
+      ),
   })
   .meta({ id: 'QueueStatisticsDto' });
 

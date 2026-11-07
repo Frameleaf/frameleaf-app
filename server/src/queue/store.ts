@@ -50,6 +50,13 @@ const STARTED_BY_HAND = sql`'epoch'::timestamptz`;
 /** FL-1265: a held job (setup, a setup pause, a parked stage) waits with this `availableAt`; claims never reach it. */
 const HELD = sql`'infinity'::timestamptz`;
 const LIVE = sql`('pending','waiting','active')`;
+/**
+ * FL-1272: later steps of an item a queue has already started. Each finished first step adds one, so the
+ * queue's waiting total stays flat while work progresses; `counts` reports them apart as `followUp`.
+ */
+const FOLLOW_UP_STEPS: Partial<Record<string, string[]>> = {
+  [QueueName.MetadataExtraction]: [JobName.AssetMetadataPostprocess],
+};
 /** Pages of the coordinator's hold reconciliation, one statement each. */
 const HOLD_PAGE = 2000;
 
@@ -764,6 +771,7 @@ export class SqlQueueStore {
   }
 
   async counts(name: string) {
+    const steps = FOLLOW_UP_STEPS[name];
     const {
       rows: [row],
     } = await sql<{
@@ -773,7 +781,9 @@ export class SqlQueueStore {
       delayed: number;
       waiting: number;
       paused: number;
-    }>`select count(*) filter (where state = 'active')::int active,
+      followUp?: number;
+    }>`select ${steps ? sql`count(*) filter (where state in ('pending','waiting') and j.name = any(${steps}::text[]))::int "followUp",` : sql``}
+      count(*) filter (where state = 'active')::int active,
       count(*) filter (where state = 'completed')::int completed,
       count(*) filter (where state in ('failed','needs_attention','blocked'))::int failed,
       count(*) filter (where state in ('pending','waiting') and "availableAt" > now() and "availableAt" <> ${HELD}

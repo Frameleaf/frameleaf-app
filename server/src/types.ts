@@ -529,6 +529,8 @@ export interface JobCounts {
   delayed: number;
   waiting: number;
   paused: number;
+  /** FL-1272: of the waiting, delayed and paused jobs, the later steps of items already started (some queues only). */
+  followUp?: number;
 }
 
 export type JobItem =

@@ -130268,6 +130268,12 @@
             "minimum": -9007199254740991,
             "type": "integer"
           },
+          "followUp": {
+            "description": "Of the waiting, delayed and paused jobs, how many are later steps of items the queue already started. Only for queues with such steps",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
           "paused": {
             "description": "Number of paused jobs",
             "maximum": 9007199254740991,
@@ -130502,6 +130508,12 @@
           },
           "failed": {
             "description": "Number of failed jobs",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "followUp": {
+            "description": "Of the waiting, delayed and paused jobs, how many are later steps of items the queue already started. Only for queues with such steps",
             "maximum": 9007199254740991,
             "minimum": -9007199254740991,
             "type": "integer"
