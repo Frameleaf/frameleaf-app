@@ -453,8 +453,11 @@ export class AssetUploadResourceService {
           .executeTakeFirstOrThrow();
       });
       // The superseded parts left the manifest in that commit; their files are now unreferenced.
+      // A failed removal never fails the committed append; the sweep removes unreferenced files later.
       for (const path of superseded) {
-        await rm(path, { force: true });
+        await rm(path, { force: true }).catch((error: unknown) =>
+          this.logger.warn(`Upload ${id} superseded part ${path} remains for the sweep: ${String(error)}`),
+        );
       }
       // Do not unlink a potentially committed part on a lost commit response. Recovery sweeps scratch.
       if (part.size === 0) {
