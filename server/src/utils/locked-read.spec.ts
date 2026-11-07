@@ -288,6 +288,66 @@ describe('locked-read', () => {
     expect((await bc).ownerIds).toEqual([VIEWER]);
   });
 
+  it('still reads for its own key after waiting out four other reads', async () => {
+    // a stale first listing, then three reads started by other lookups that fail: the lookup for B must
+    // still read the key files for B itself instead of giving up after waiting for the others
+    const keyB = generateKeyPair();
+    const seal = async (name: string, key: ReturnType<typeof generateKeyPair>) => {
+      await fs.writeFile(join(dir, `${name}.src`), plain);
+      await encryptFile(join(dir, `${name}.src`), join(dir, name), [{ publicKey: key.publicKey }], {
+        assetId: ASSET,
+        kind: 'original',
+        originalFileName: name,
+        mime: 'image/jpeg',
+      });
+      return join(dir, name);
+    };
+    const onlyB = await seal('b.jpg', keyB);
+    const strangers = await Promise.all(['d1.jpg', 'd2.jpg', 'd3.jpg'].map((name) => seal(name, generateKeyPair())));
+    const { LockedKeyRepository } = await import('src/repositories/locked-key.repository.js');
+    const list = LockedKeyRepository.prototype.list;
+    let releaseFirst!: () => void;
+    const first = new Promise<void>((resolve) => (releaseFirst = resolve));
+    const spy = vi
+      .spyOn(LockedKeyRepository.prototype, 'list')
+      .mockImplementationOnce(async function (this: any) {
+        const files = await list.call(this); // before B's key file exists
+        await first;
+        return files;
+      })
+      .mockRejectedValueOnce(new Error('key folder unreadable'))
+      .mockRejectedValueOnce(new Error('key folder unreadable'))
+      .mockRejectedValueOnce(new Error('key folder unreadable'))
+      .mockImplementation(function (this: any) {
+        return list.call(this);
+      });
+
+    const owner = openLockedRead(sealed, null).catch((error_) => error_);
+    await vi.waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    await fs.writeFile(
+      join(dir, 'locked-keys', `${VIEWER}.json`),
+      JSON.stringify({
+        format: 'frameleaf-locked-key/1',
+        userId: VIEWER,
+        publicKey: keyB.publicKey.toString('base64'),
+      }),
+    );
+    // the other lookups queue behind the first read before B's does, so each starts a read B's waits for
+    const others: Promise<unknown>[] = [];
+    for (const path of strangers) {
+      others.push(openLockedRead(path, null).catch((error_) => error_));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    const b = openLockedRead(onlyB, null).catch((error_) => error_);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    releaseFirst();
+
+    expect((await owner).ownerIds).toEqual([OWNER]);
+    expect((await b).ownerIds).toEqual([VIEWER]);
+    await Promise.all(others);
+    expect(spy.mock.calls.length).toBeGreaterThanOrEqual(5);
+  });
+
   it('names a person who turned encryption on within a minute of the last key file read', async () => {
     // the first lookup reads the key files, which hold only OWNER's
     await openLockedRead(sealed, OWNER).catch(() => {});

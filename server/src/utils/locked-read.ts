@@ -295,17 +295,21 @@ const ownersOf = async (keyIds: Buffer[]): Promise<string[]> => {
   // FL-1265: jobs fail together when a session locks, and each must learn the owner, or it defers with
   // no owner and no unlock ever wakes it. So wait for any read in progress and look again; only ids no
   // awaited read was started for (a key made after it listed the files) get a read of their own.
-  // Bounded, so a stream of other lookups' reads can't hold this one forever.
+  // Waiting on other lookups' reads is bounded, so a stream of them can't hold this one forever.
   const covered = new Set<string>();
-  for (let round = 0; round < 4; round++) {
+  let waits = 0;
+  for (;;) {
     const pending = unknown();
     if (pending.length === 0) break;
     const scan = refreshingOwners;
-    if (scan) {
+    if (scan && waits < 4) {
+      waits++;
       await scan.done;
       for (const id of scan.ids) covered.add(id);
       continue;
     }
+    // its own read always happens for ids nothing covered, however many other reads it waited out;
+    // each such read covers new ids, so this ends
     const stale = pending.filter((id) => !covered.has(id) && due(id));
     if (stale.length === 0) break;
     await refreshOwners(stale);
