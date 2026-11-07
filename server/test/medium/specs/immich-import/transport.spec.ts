@@ -7,6 +7,14 @@ import { ImportDatabase, quote } from 'src/immich-import/types.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { PostgresImportFixture } from 'test/medium/specs/immich-import/postgres-transport.fixture.js';
 
+/** Frameleaf keyframe timestamps are bigint, which a raw pg connection returns as decimal text. */
+const asStoredKeyframe = ({ pts, accDuration, totalDuration, ...row }: Record<string, any>) => ({
+  ...row,
+  pts: pts.map(String),
+  accDuration: accDuration.map(String),
+  totalDuration: String(totalDuration),
+});
+
 // Both sides use real PostgreSQL transport. No source preflight, schema, fingerprint or batches are mocked.
 describe('offline Immich import over PostgreSQL source and destination connections', () => {
   let fixture: PostgresImportFixture | undefined;
@@ -428,7 +436,11 @@ describe('offline Immich import over PostgreSQL source and destination connectio
         expect(rows).toHaveLength(1);
         expect(await f.destination.db.query(`SELECT * FROM public.${quote(table)}`)).toEqual(
           rows.map((row) =>
-            table === 'asset_audio' ? { ...row, channels: null, channelLayout: null, sampleRate: null } : row,
+            table === 'asset_audio'
+              ? { ...row, channels: null, channelLayout: null, sampleRate: null }
+              : table === 'asset_keyframe'
+                ? asStoredKeyframe(row)
+                : row,
           ),
         );
       }
