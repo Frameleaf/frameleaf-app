@@ -143,7 +143,7 @@ const UpdateAlbumSchema = z
       .boolean()
       .optional()
       .describe(
-        "Lock the album: the owner's photos and videos in it are locked now, together with the rest of their stacks and Live Photo videos, even those outside the album. Theirs added later through the album's add actions lock at once; any that arrive another way (smart-album rules, iCloud sync, capture) are locked by an hourly check, which can take more than one run for a very large backlog. Other members' items and links are not locked. Unlocking the album leaves its items locked.",
+        "Lock the album: the owner's photos and videos in it are locked now, together with the rest of their stacks and Live Photo videos, even those outside the album. Theirs added later through the album's add actions lock at once; any that arrive another way (smart-album rules, iCloud sync, capture) are locked by an hourly check, which can take more than one run for a very large backlog. Other members' items and links are not locked. Unlocking the album leaves its items locked. Only the album owner may send this field; other members must leave it out, or the whole update is refused (403).",
       ),
     order: AssetOrderSchema.optional(),
     parentId: z
