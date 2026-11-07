@@ -234,14 +234,17 @@ describe(RateLimitGuard.name, () => {
     }
   });
 
-  it('counts wrong two-step codes per sign-in token and address (FL-793)', async () => {
+  it('counts wrong two-step codes per sign-in token from any address (FL-793)', async () => {
+    for (const ip of ['198.51.100.7', '203.0.113.9']) {
+      const request = makeRequest({ ip, body: { twoFactorToken: 'challenge-1', code: '123456' } });
+      await sut.canActivate(contextFor(TestController.prototype.twoFactorLogin, request));
+      expect(store.hit).toHaveBeenLastCalledWith(
+        `frameleaf:rate-limit:two-factor-login:principal:${keyed('two-factor:challenge-1')}`,
+        600,
+      );
+    }
     const request = makeRequest({ body: { twoFactorToken: 'challenge-1', code: '123456' } });
     await sut.canActivate(contextFor(TestController.prototype.twoFactorLogin, request));
-    expect(store.hit).toHaveBeenNthCalledWith(1, 'frameleaf:rate-limit:two-factor-login:ip:198.51.100.7', 600);
-    expect(store.hit).toHaveBeenLastCalledWith(
-      `frameleaf:rate-limit:two-factor-login:principal:${keyed('two-factor:challenge-1\u{0}198.51.100.7')}`,
-      600,
-    );
     expect(request.frameleafRateLimitFailures).toEqual([expect.objectContaining({ limit: 5, counts: 'failures' })]);
   });
 

@@ -70,6 +70,12 @@ export type RateLimitRule = {
   principalLimit?: number;
   /** `failures`: the principal counts only attempts that failed with 401. Defaults to every request. */
   principalCounts?: 'requests' | 'failures';
+  /**
+   * Failures are counted per principal *and* address by default, so strangers elsewhere never lock an
+   * owner out. `true` counts them per principal from every address: only for a principal that belongs to
+   * one sign-in (a two-step token), where a lockout costs the owner nothing but a fresh sign-in.
+   */
+  principalAcrossAddresses?: boolean;
 };
 
 const MINUTE = 60;
@@ -87,7 +93,7 @@ export const RATE_LIMITS = Object.freeze({
   },
   /**
    * FL-793: `POST auth/login/two-factor`, the code step after a right password: 10 tries per address and
-   * 5 wrong codes per sign-in (its token) and address in ten minutes.
+   * 5 wrong codes per sign-in (its token) from any address in ten minutes.
    */
   twoFactorLogin: {
     bucket: 'two-factor-login',
@@ -96,6 +102,7 @@ export const RATE_LIMITS = Object.freeze({
     principal: 'two-factor-token',
     principalLimit: 5,
     principalCounts: 'failures',
+    principalAcrossAddresses: true,
   },
   /**
    * FL-793: setting up, turning off and renewing two-step sign-in (`auth/two-factor/*`), which take the
@@ -317,7 +324,7 @@ export const rateLimitChecks = async (
   if (principal && rule.principalLimit) {
     const counts = rule.principalCounts ?? 'requests';
     // failures are counted per principal and address, so nobody elsewhere can use them up
-    const counted = counts === 'failures' ? `${principal}\0${address}` : principal;
+    const counted = counts === 'failures' && !rule.principalAcrossAddresses ? `${principal}\0${address}` : principal;
     checks.push({
       key: `${RATE_LIMIT_KEY_PREFIX}:${rule.bucket}:principal:${await options.keyOf(counted)}`,
       limit: rule.principalLimit,
