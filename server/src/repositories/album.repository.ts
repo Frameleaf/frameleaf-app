@@ -530,14 +530,20 @@ export class AlbumRepository {
   /**
    * Items in locked albums that the album's owner owns and that are not locked yet, trashed ones included:
    * what a locked album still has to lock. Reads the lock state as it is now, so a caller that has just
-   * added items sees a lock turned on meanwhile. Narrowed to one album and to some items when given.
+   * added items sees a lock turned on meanwhile. Narrowed to one album and to some items when given; in
+   * item order, after `afterAssetId` when given, so a sweep can page past items it could not lock.
    */
-  @GenerateSql({ params: [{ albumId: DummyValue.UUID, assetIds: [DummyValue.UUID], limit: 1000 }] })
+  @GenerateSql({
+    params: [{ albumId: DummyValue.UUID, assetIds: [DummyValue.UUID], afterAssetId: DummyValue.UUID, limit: 1000 }],
+  })
   getUnlockedItemsInLockedAlbums({
     albumId,
     assetIds,
+    afterAssetId,
     limit,
-  }: { albumId?: string; assetIds?: string[]; limit?: number } = {}): Promise<{ assetId: string; ownerId: string }[]> {
+  }: { albumId?: string; assetIds?: string[]; afterAssetId?: string; limit?: number } = {}): Promise<
+    { assetId: string; ownerId: string }[]
+  > {
     return this.db
       .selectFrom('album')
       .innerJoin('album_user', (join) =>
@@ -554,6 +560,8 @@ export class AlbumRepository {
       .where(isNotLocked())
       .$if(albumId !== undefined, (qb) => qb.where('album.id', '=', albumId!))
       .$if(assetIds !== undefined, (qb) => qb.where('album_asset.assetId', 'in', assetIds!))
+      .$if(afterAssetId !== undefined, (qb) => qb.where('album_asset.assetId', '>', afterAssetId!))
+      .orderBy('album_asset.assetId')
       .$if(limit !== undefined, (qb) => qb.limit(limit!))
       .execute();
   }

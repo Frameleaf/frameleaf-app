@@ -375,8 +375,11 @@ where
   )
   and "album"."id" = $3
   and "album_asset"."assetId" in ($4)
+  and "album_asset"."assetId" > $5
+order by
+  "album_asset"."assetId"
 limit
-  $5
+  $6
 
 -- AlbumRepository.getAssetIds
 select

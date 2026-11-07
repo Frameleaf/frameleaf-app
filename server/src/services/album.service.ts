@@ -580,11 +580,11 @@ export class AlbumService extends BaseService {
   /**
    * A locked album locks its owner's photos and videos in it, as the owner's own lock, so they are sealed too
    * when the owner's Locked encryption is on. Other people's items in a shared album are theirs to lock and stay
-   * as they are. Narrowed to one album and to some items when given. Returns how many items it found to lock.
+   * as they are. Narrowed to one album and to some items when given.
    */
-  private async lockAlbumItems(filter: { albumId?: string; assetIds?: string[]; limit?: number }): Promise<number> {
+  private async lockAlbumItems(filter: { albumId?: string; assetIds?: string[] }): Promise<void> {
     const { assetIds } = filter;
-    if (assetIds?.length === 0) return 0;
+    if (assetIds?.length === 0) return;
     // One bind parameter per id: stay far below PostgreSQL's 65,535 for very large adds.
     const items = assetIds
       ? (
@@ -595,7 +595,11 @@ export class AlbumService extends BaseService {
           )
         ).flat()
       : await this.albumRepository.getUnlockedItemsInLockedAlbums(filter);
-    // Every owner is tried; one owner's failure (a lock group changing meanwhile) doesn't hold back the rest.
+    await this.lockItems(items);
+  }
+
+  /** Every owner is tried; one owner's failure (a lock group changing meanwhile) doesn't hold back the rest. */
+  private async lockItems(items: { assetId: string; ownerId: string }[]): Promise<void> {
     const failures: unknown[] = [];
     for (const [ownerId, owned] of Map.groupBy(items, ({ ownerId }) => ownerId)) {
       try {
@@ -614,7 +618,6 @@ export class AlbumService extends BaseService {
       }
     }
     if (failures.length > 0) throw failures[0];
-    return items.length;
   }
 
   /**
@@ -647,9 +650,20 @@ export class AlbumService extends BaseService {
 
   async lockStrayAlbumItems(): Promise<void> {
     // ponytail: batches of 1000, at most 100 per pass; whatever is left waits for the next hour
+    // Pages by item id, so items that fail to lock never hold back the ones after them.
+    let afterAssetId: string | undefined;
+    let firstError: unknown;
     for (let pass = 0; pass < 100; pass++) {
-      if ((await this.lockAlbumItems({ limit: 1000 })) < 1000) return;
+      const batch = await this.albumRepository.getUnlockedItemsInLockedAlbums({ afterAssetId, limit: 1000 });
+      try {
+        await this.lockItems(batch);
+      } catch (error) {
+        firstError ??= error;
+      }
+      if (batch.length < 1000) break;
+      afterAssetId = batch.at(-1)!.assetId;
     }
+    if (firstError) throw firstError;
   }
 
   async getDescendantCount(auth: AuthDto, id: string): Promise<AlbumDescendantCountResponseDto> {
