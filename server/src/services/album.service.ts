@@ -5,6 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { chunk } from 'lodash-es';
 import type { Kysely } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { SmartAlbumBuiltInKind } from 'src/dtos/system-config.dto.js';
@@ -582,21 +583,37 @@ export class AlbumService extends BaseService {
    * as they are. Narrowed to one album and to some items when given. Returns how many items it found to lock.
    */
   private async lockAlbumItems(filter: { albumId?: string; assetIds?: string[]; limit?: number }): Promise<number> {
-    if (filter.assetIds?.length === 0) return 0;
-    const items = await this.albumRepository.getUnlockedItemsInLockedAlbums(filter);
-    const byOwner = Map.groupBy(items, ({ ownerId }) => ownerId);
-    for (const [ownerId, owned] of byOwner) {
-      const visibilityIds = await this.lockAssetsAs(
-        ownerId,
-        owned.map(({ assetId }) => assetId),
-      );
-      await recordAssetEdit(
-        { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
-        ownerId,
-        visibilityIds,
-        [AssetOriginField.Visibility],
-      );
+    const { assetIds } = filter;
+    if (assetIds?.length === 0) return 0;
+    // One bind parameter per id: stay far below PostgreSQL's 65,535 for very large adds.
+    const items = assetIds
+      ? (
+          await Promise.all(
+            chunk(assetIds, 10_000).map((ids) =>
+              this.albumRepository.getUnlockedItemsInLockedAlbums({ ...filter, assetIds: ids }),
+            ),
+          )
+        ).flat()
+      : await this.albumRepository.getUnlockedItemsInLockedAlbums(filter);
+    // Every owner is tried; one owner's failure (a lock group changing meanwhile) doesn't hold back the rest.
+    const failures: unknown[] = [];
+    for (const [ownerId, owned] of Map.groupBy(items, ({ ownerId }) => ownerId)) {
+      try {
+        const visibilityIds = await this.lockAssetsAs(
+          ownerId,
+          owned.map(({ assetId }) => assetId),
+        );
+        await recordAssetEdit(
+          { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
+          ownerId,
+          visibilityIds,
+          [AssetOriginField.Visibility],
+        );
+      } catch (error) {
+        failures.push(error);
+      }
     }
+    if (failures.length > 0) throw failures[0];
     return items.length;
   }
 

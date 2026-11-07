@@ -2071,6 +2071,27 @@ describe(AlbumService.name, () => {
       expect(mocks.asset.lock).not.toHaveBeenCalled();
     });
 
+    it('looks up very large adds in chunks', async () => {
+      const ids = Array.from({ length: 20_001 }, (_, i) => `a${i}`);
+      await (sut as any).lockAlbumItems({ albumId: 'album-1', assetIds: ids });
+      const calls = mocks.album.getUnlockedItemsInLockedAlbums.mock.calls.map(([filter]) => filter?.assetIds?.length);
+      expect(calls).toEqual([10_000, 10_000, 1]);
+    });
+
+    it("still locks other owners' items when one owner's lock fails, then reports the failure", async () => {
+      mocks.album.getUnlockedItemsInLockedAlbums.mockResolvedValue([
+        { assetId: 'a1', ownerId: 'u1' },
+        { assetId: 'a2', ownerId: 'u2' },
+      ]);
+      mocks.asset.findLockGroupIds.mockResolvedValue([]);
+      mocks.asset.lock.mockRejectedValueOnce(new Error('lock group changed')).mockResolvedValueOnce([]);
+
+      await expect(sut.lockStrayAlbumItems()).rejects.toThrow('lock group changed');
+
+      expect(mocks.asset.lock).toHaveBeenCalledTimes(2);
+      expect(mocks.asset.lock).toHaveBeenLastCalledWith(['a2'], AssetLockReason.Marked, 'u2');
+    });
+
     it('the hourly sweep locks stray items in locked albums, per owner, until none are left', async () => {
       const batch = Array.from({ length: 1000 }, (_, i) => ({ assetId: `a${i}`, ownerId: i % 2 ? 'u1' : 'u2' }));
       mocks.album.getUnlockedItemsInLockedAlbums

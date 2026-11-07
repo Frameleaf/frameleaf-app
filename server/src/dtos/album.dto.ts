@@ -143,7 +143,7 @@ const UpdateAlbumSchema = z
       .boolean()
       .optional()
       .describe(
-        "Lock the album: the owner's photos and videos in it are locked now. Theirs added later through the album's add actions lock at once; any that arrive another way (smart-album rules, iCloud sync, capture) lock within the hour. Other members' items and links are not locked. Unlocking the album leaves its items locked.",
+        "Lock the album: the owner's photos and videos in it are locked now, together with the rest of their stacks and Live Photo videos, even those outside the album. Theirs added later through the album's add actions lock at once; any that arrive another way (smart-album rules, iCloud sync, capture) are locked by an hourly check, which can take more than one run for a very large backlog. Other members' items and links are not locked. Unlocking the album leaves its items locked.",
       ),
     order: AssetOrderSchema.optional(),
     parentId: z
@@ -278,7 +278,12 @@ export const AlbumResponseSchema = z
     // TODO: use `isoDatetimeToDate` when using `ZodSerializerDto` on the controllers.
     endDate: z.string().meta({ format: 'date-time' }).optional().describe('End date (latest asset)'),
     isActivityEnabled: z.boolean().describe('Activity feed enabled'),
-    isLocked: z.boolean().optional().describe("Locked album: the owner's photos and videos in it are locked"),
+    isLocked: z
+      .boolean()
+      .optional()
+      .describe(
+        'The owner chose to lock this album: their photos and videos in it are locked as they are added, or by the hourly check. It does not prove that every item is locked yet.',
+      ),
     order: AssetOrderSchema.optional(),
     contributorCounts: z.array(ContributorCountResponseSchema).optional(),
     parentId: z.string().nullable().describe('Parent album or collection (null = top-level)'),

@@ -68205,7 +68205,7 @@
             "type": "boolean"
           },
           "isLocked": {
-            "description": "Locked album: the owner's photos and videos in it are locked",
+            "description": "The owner chose to lock this album: their photos and videos in it are locked as they are added, or by the hourly check. It does not prove that every item is locked yet.",
             "type": "boolean"
           },
           "isSmart": {
@@ -153644,7 +153644,7 @@
             "type": "boolean"
           },
           "isLocked": {
-            "description": "Lock the album: the owner's photos and videos in it are locked now. Theirs added later through the album's add actions lock at once; any that arrive another way (smart-album rules, iCloud sync, capture) lock within the hour. Other members' items and links are not locked. Unlocking the album leaves its items locked.",
+            "description": "Lock the album: the owner's photos and videos in it are locked now, together with the rest of their stacks and Live Photo videos, even those outside the album. Theirs added later through the album's add actions lock at once; any that arrive another way (smart-album rules, iCloud sync, capture) are locked by an hourly check, which can take more than one run for a very large backlog. Other members' items and links are not locked. Unlocking the album leaves its items locked.",
             "type": "boolean"
           },
           "libraryScope": {
