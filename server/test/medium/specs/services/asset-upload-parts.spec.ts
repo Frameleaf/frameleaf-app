@@ -154,21 +154,35 @@ it('assembles parts sent out of order and in parallel into one verified asset', 
   expect(await readFile(row.finalPath!)).toEqual(bytes);
 });
 
-it('refuses a sequential append over parallel parts', async () => {
-  const bytes = randomBytes(20);
+// FL-1270: the Relay direct channel and older apps append sequentially; they must finish an upload begun as parts.
+it('lets a sequential append supersede parallel parts and finish the upload', async () => {
+  const bytes = randomBytes(40);
   const f = await setup(bytes);
   await f.put(10, 10);
-  await expect(
+  await f.put(30, 10);
+  const held = await db.selectFrom('asset_upload_part').select('path').where('resourceId', '=', f.id).execute();
+  const append = (offset: number, end: number) =>
     f.service.append(
       f.auth,
       f.id,
       {
         'upload-draft-interop-version': '9',
-        'upload-complete': '?1',
+        'upload-complete': end === bytes.length ? '?1' : '?0',
         'content-type': 'application/partial-upload',
-        'upload-offset': '0',
+        'upload-offset': String(offset),
       },
-      Readable.from([bytes]),
-    ),
-  ).rejects.toBeInstanceOf(ConflictException);
+      Readable.from([bytes.subarray(offset, end)]),
+    );
+
+  // The acknowledged offset is exactly what was sent, as the direct channel's receipt requires.
+  const first = await append(0, 20);
+  expect(Number(first.resource.offset)).toBe(20);
+  expect((await f.service.parts(f.auth, f.id)).parts).toEqual([{ offset: 0, size: 20 }]);
+  await expect(Promise.all(held.map(({ path }) => readFile(path)))).rejects.toThrow();
+
+  const last = await append(20, 40);
+  expect(last.result?.sha256).toBe(f.checksum.toString('hex'));
+  const row = await db.selectFrom('asset_upload_resource').selectAll().where('id', '=', f.id).executeTakeFirstOrThrow();
+  expect(row.state).toBe('published');
+  expect(await readFile(row.finalPath!)).toEqual(bytes);
 });
