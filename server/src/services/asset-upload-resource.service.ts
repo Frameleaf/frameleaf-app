@@ -413,16 +413,17 @@ export class AssetUploadResourceService {
       );
       // An attempt owns only this unique scratch file until the manifest transaction commits.
       await check();
+      let superseded: string[] = [];
       const resource = await this.uploads.locked(id, auth.user.id, async (tx, row) => {
         await check(tx);
         validate(row);
         if (row.expectedSize !== initial.expectedSize) {
           throw new ConflictException('Upload length changed during append');
         }
-        // FL-1268: parallel parts beyond the contiguous offset would be overwritten by a sequential append.
-        if (part.size > 0 && (await this.partsBeyond(tx, id, offset))) {
-          throw new ConflictException('Upload is receiving parallel parts; send the missing parts instead');
-        }
+        // FL-1270: a sequential append (the Relay direct channel, an older app) supersedes parallel parts at or past
+        // its offset, so the upload continues sequentially and the acknowledged offset stays exactly offset + size,
+        // which strict clients require. Those bytes are sent again; the final SHA-256 still checks the whole file.
+        superseded = part.size > 0 ? await this.supersedeParts(tx, id, offset) : [];
         if (part.size > 0) {
           await tx
             .insertInto('asset_upload_part')
@@ -451,6 +452,10 @@ export class AssetUploadResourceService {
           .returningAll()
           .executeTakeFirstOrThrow();
       });
+      // The superseded parts left the manifest in that commit; their files are now unreferenced.
+      for (const path of superseded) {
+        await rm(path, { force: true });
+      }
       // Do not unlink a potentially committed part on a lost commit response. Recovery sweeps scratch.
       if (part.size === 0) {
         await rm(part.path, { force: true });
@@ -475,14 +480,15 @@ export class AssetUploadResourceService {
     }
   }
 
-  private async partsBeyond(tx: Transaction<DB>, id: string, offset: number) {
-    const row = await tx
-      .selectFrom('asset_upload_part')
-      .select('id')
+  /** Drops the parallel parts at or past `offset` from the manifest and returns their files. */
+  private async supersedeParts(tx: Transaction<DB>, id: string, offset: number) {
+    const rows = await tx
+      .deleteFrom('asset_upload_part')
       .where('resourceId', '=', id)
       .where('offset', '>=', offset)
-      .executeTakeFirst();
-    return !!row;
+      .returning('path')
+      .execute();
+    return rows.map(({ path }) => path);
   }
 
   /** FL-1268: the received byte ranges, so a client resuming a parallel upload sends only what is missing. */
