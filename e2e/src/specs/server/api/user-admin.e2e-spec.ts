@@ -183,7 +183,7 @@ describe('/admin/users', () => {
         .get(`/admin/users/${nonAdmin.userId}/pin-code`)
         .set('Authorization', `Bearer ${admin.accessToken}`);
       expect(before.status).toBe(200);
-      expect(before.body).toEqual({ pinCode: false });
+      expect(before.body).toEqual({ pinCode: false, twoFactorEnabled: false });
 
       await request(app)
         .put(`/admin/users/${nonAdmin.userId}`)
@@ -193,7 +193,7 @@ describe('/admin/users', () => {
       const after = await request(app)
         .get(`/admin/users/${nonAdmin.userId}/pin-code`)
         .set('Authorization', `Bearer ${admin.accessToken}`);
-      expect(after.body).toEqual({ pinCode: true });
+      expect(after.body).toEqual({ pinCode: true, twoFactorEnabled: false });
 
       await request(app)
         .put(`/admin/users/${nonAdmin.userId}`)
@@ -346,7 +346,7 @@ describe('/admin/users', () => {
       const state = await request(app)
         .get(`/admin/users/${created.body.id}/pin-code`)
         .set('Authorization', `Bearer ${admin.accessToken}`);
-      expect(state.body).toEqual({ pinCode: true });
+      expect(state.body).toEqual({ pinCode: true, twoFactorEnabled: false });
 
       const { accessToken } = await login({ loginCredentialDto: { email: dto.email, password: dto.password } });
 
