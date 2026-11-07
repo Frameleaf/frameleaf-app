@@ -295,12 +295,21 @@
     if (busy) return;
     busy = true;
     error = '';
+    // Show a spinner on the button that started this work. run() is always called while its click or
+    // submit is dispatching, so window.event is that event. Buttons that draw their own spinner manage aria-busy.
+    const trigger = window.event;
+    const source = trigger instanceof SubmitEvent ? trigger.submitter : trigger?.target instanceof Element ? trigger.target.closest('button') : null;
+    const button = source instanceof HTMLButtonElement && !source.hasAttribute('aria-busy') ? source : null;
+    button?.classList.add('working');
+    button?.setAttribute('aria-busy', 'true');
     try {
       await work();
     } catch (e) {
       error = e instanceof Error ? readable(e.message, (e as { detail?: string }).detail) : 'Could not complete this request';
     } finally {
       busy = false;
+      button?.classList.remove('working');
+      button?.removeAttribute('aria-busy');
     }
   }
   async function go(value: string) {
