@@ -477,6 +477,8 @@ export class SqlQueueStore {
     const { rows } = await sql`update job set "availableAt" = now()
       where id = any(${ids}::uuid[]) and state = 'pending' and "dependencyReason" = ${reason}
         and "availableAt" > now() and "availableAt" <> ${HELD} returning id`.execute(this.db);
+    // claim loops run them now, not at their next scan
+    if (rows.length > 0) await sql`select pg_notify('frameleaf_jobs', '')`.execute(this.db);
     return rows.length;
   }
 

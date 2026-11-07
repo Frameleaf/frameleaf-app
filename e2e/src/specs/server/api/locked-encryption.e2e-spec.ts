@@ -719,7 +719,11 @@ describe('Locked encryption acceptance (FL-721, spec §15)', () => {
 
       await unlockSession(pinOwner.accessToken, pinCodes.pinOwner);
       expect(await keyLoaded(pinOwner.accessToken)).toBe(true);
-      await settle(admin.accessToken, QueueName.ThumbnailGeneration, 120_000);
+      // the lock also defers the edited photo's editor job: both queues run every job they hold to an
+      // end (a job still waiting for the key keeps its queue unfinished), then none waits for the key
+      for (const queue of [QueueName.ThumbnailGeneration, QueueName.Editor, QueueName.ThumbnailGeneration]) {
+        await settle(admin.accessToken, queue, 120_000);
+      }
       const { rows } = await db.query(
         `SELECT id FROM job WHERE "dependencyReason" = 'locked-key-unavailable' AND data->>'id' = ANY($1::text[])`,
         [pinIds],
