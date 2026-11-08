@@ -1154,6 +1154,16 @@ export class SearchRepository {
       [SearchFacetField.Model, exifFacet(SearchFacetField.Model, 'e.model')],
       [SearchFacetField.LensModel, exifFacet(SearchFacetField.LensModel, 'e.lensModel')],
       [
+        SearchFacetField.MediaKinds,
+        // FL-1284: an asset counts once under each capture kind it has
+        sql`select ${SearchFacetField.MediaKinds}::text as field, k.kind::text as value, null::text as label,
+            count(*) as count, ${cover} as cover
+          from matched m
+          inner join asset_exif e on e."assetId" = m.id
+          cross join lateral unnest(e."mediaKinds") as k(kind)
+          group by 2`,
+      ],
+      [
         SearchFacetField.People,
         sql`select ${SearchFacetField.People}::text as field, f."personGroupId"::text as value,
             max(nullif(p.name, '')) as label, count(distinct m.id) as count, ${cover} as cover

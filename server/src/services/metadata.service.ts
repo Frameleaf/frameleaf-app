@@ -44,6 +44,7 @@ import { BaseService } from 'src/services/base.service.js';
 import { getAssetFiles } from 'src/utils/asset.util.js';
 import { resolveCameraIdentification } from 'src/utils/camera-identification.js';
 import { captureDetails } from 'src/utils/capture-details.js';
+import { detectMediaKinds } from 'src/utils/media-kinds.js';
 import { mergeTimeZone } from 'src/utils/date.js';
 import { rewriteThroughPlainCopy, withPlainCopy } from 'src/utils/locked-read.js';
 import { isLockedRow } from 'src/utils/locked.js';
@@ -467,6 +468,15 @@ export class MetadataService extends BaseService {
       // FL-1196: altitude, shutter count and the other details cameras record
       ...captureDetails(exifTags as Record<string, unknown>),
     };
+    // FL-1284: slow motion, panorama, burst, portrait … as the file's own metadata records them
+    exifData.mediaKinds = detectMediaKinds(exifTags as Record<string, unknown>, {
+      type: asset.type,
+      originalFileName: asset.originalFileName,
+      width: exifData.exifImageWidth,
+      height: exifData.exifImageHeight,
+      fps: exifData.fps,
+      projectionType: exifData.projectionType,
+    });
 
     const audioData =
       format && audio?.codecName
@@ -600,6 +610,58 @@ export class MetadataService extends BaseService {
         });
       }
     });
+
+    // FL-1284: a burst shows as one tile, as the camera app shows it. Only the first time the scan learns
+    // the file is a burst frame, so a burst the owner has unstacked or rearranged is left as they made it.
+    const firstKindScan = previous?.mediaKinds === null || previous?.mediaKinds === undefined;
+    if (
+      firstKindScan &&
+      exifData.autoStackId &&
+      exifData.mediaKinds?.includes('burst') &&
+      !(await this.jobRepository.isImportedMetadataJob())
+    ) {
+      try {
+        await this.groupBurst(asset, exifData.autoStackId);
+      } catch (error) {
+        // grouping is a convenience: the frame is in the library either way
+        this.logger.warn(`Burst grouping skipped for ${asset.id}: ${error instanceof Error ? error.message : error}`);
+      }
+    }
+  }
+
+  /**
+   * FL-1284: stacks this frame with the rest of its burst (same owner, same camera burst id), earliest
+   * frame on top. A frame already in a stack, a Locked frame, or a burst the owner split over several
+   * stacks is left alone: joining a stack that holds a Locked photo would lock this one too (FL-53).
+   */
+  private async groupBurst(asset: { id: string; ownerId: string }, autoStackId: string) {
+    const frames = await this.assetRepository.getBurstFrames(asset.ownerId, autoStackId);
+    const self = frames.find((frame) => frame.id === asset.id);
+    if (!self || self.stackId || self.isLocked || frames.some((frame) => frame.stackId && frame.isLocked)) {
+      return;
+    }
+    const stacks = new Map(
+      frames.filter((frame) => frame.stackId).map((frame) => [frame.stackId!, frame.stackPrimaryAssetId]),
+    );
+    if (stacks.size > 1) {
+      return;
+    }
+    const [existingPrimary] = [...stacks.values()];
+    const assetIds = existingPrimary
+      ? [existingPrimary, asset.id]
+      : frames.filter((frame) => !frame.stackId && !frame.isLocked).map((frame) => frame.id);
+    if (assetIds.length < 2) {
+      return;
+    }
+    let sequenced = false;
+    const stack = await this.stackRepository.create({ ownerId: asset.ownerId }, assetIds, undefined, (value) => {
+      sequenced = value;
+    });
+    if (sequenced) {
+      await this.stackRepository.enqueueLocalEffects();
+    } else {
+      await this.eventRepository.emit('StackCreate', { stackId: stack.id, userId: asset.ownerId });
+    }
   }
 
   @OnJob({ name: JobName.AssetMetadataPostprocess, queue: QueueName.MetadataExtraction })

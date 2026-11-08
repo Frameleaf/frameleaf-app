@@ -3,6 +3,7 @@ import {
   AssetVisibility,
   ImageEnrichmentFilter,
   LibraryViewScope,
+  MediaKind,
   type MetadataSearchDto,
   type SearchFilter,
   type SmartSearchDto,
@@ -157,6 +158,7 @@ const enumOf =
 const ASSET_TYPES: readonly string[] = Object.values(AssetTypeEnum);
 const VISIBILITIES: readonly string[] = Object.values(AssetVisibility);
 const ENRICHMENT_VALUES: readonly string[] = Object.values(ImageEnrichmentFilter);
+const MEDIA_KIND_VALUES: readonly string[] = Object.values(MediaKind);
 
 const enumOperators = (values: readonly string[]) => ({
   eq: enumOf(values),
@@ -246,6 +248,12 @@ const FIELD_OPERATORS: Readonly<Record<string, Readonly<Record<string, Check>>>>
   albumIds: { any: list(idValue), all: list(idValue), none: list(idValue) },
   // FL-353: taken at any of (or none of) these landmarks; a photo is at several, so there is no `all`
   landmarkIds: { any: list(idValue), none: list(idValue) },
+  // FL-1284: capture kinds (slow motion, panoramas, bursts …)
+  mediaKinds: {
+    any: list(enumOf(MEDIA_KIND_VALUES)),
+    all: list(enumOf(MEDIA_KIND_VALUES)),
+    none: list(enumOf(MEDIA_KIND_VALUES)),
+  },
   checksum: { eq: anyString, ne: anyString, in: list(anyString), notIn: list(anyString) },
   encodedVideoPath: { eq: anyString, ne: anyString, in: list(anyString), notIn: list(anyString) },
 };
@@ -987,6 +995,7 @@ const SECTION_FIELDS: Record<Exclude<DiscoveryFilterSection, 'all'>, readonly st
     'aspectRatio',
     'durationMs',
     'type',
+    'mediaKinds',
     'visibility',
     'rating',
     'isFavorite',

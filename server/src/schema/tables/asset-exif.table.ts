@@ -21,6 +21,8 @@ import { AssetTable } from 'src/schema/tables/asset.table.js';
   using: 'gist',
   expression: 'll_to_earth_public(latitude, longitude)',
 })
+// FL-1284: the media-kind filter and Explore's counts look kinds up by containment
+@Index({ name: 'asset_exif_mediaKinds_idx', using: 'gin', columns: ['mediaKinds'] })
 @Index({
   name: 'idx_asset_exif_description_trigram',
   using: 'gin',
@@ -140,6 +142,13 @@ export class AssetExifTable {
 
   @Column({ type: 'character varying', array: true, nullable: true })
   tags!: string[] | null;
+
+  /**
+   * FL-1284: slow motion, panorama, burst, portrait and the other kinds of capture the file's metadata
+   * shows (`src/utils/media-kinds.ts`); null until the metadata scan reads them.
+   */
+  @Column({ type: 'character varying', array: true, nullable: true })
+  mediaKinds!: string[] | null;
 
   // FL-1196 (2026-11-04): more of what cameras record, read by the metadata scan. Kept for the
   // library's own use (analytics today); none of it is in API responses, as serial numbers identify a camera.

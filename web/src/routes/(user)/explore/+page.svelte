@@ -160,6 +160,7 @@
     people={peopleCards}
     places={data.places}
     things={data.things}
+    mediaKinds={data.mediaKinds}
     landmarks={landmarkSection.cards}
     albumSuggestion={landmarkSection.albumSuggestion}
     recents={data.recentCaptures}

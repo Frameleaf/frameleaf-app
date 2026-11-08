@@ -638,6 +638,7 @@ export const columns = {
     'asset_exif.longitude',
     'asset_exif.gpsAccuracyM',
     'asset_exif.make',
+    'asset_exif.mediaKinds',
     'asset_exif.model',
     'asset_exif.modifyDate',
     'asset_exif.orientation',

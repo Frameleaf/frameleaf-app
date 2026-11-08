@@ -67,6 +67,8 @@
     /** FL-357: one visit to a landmark worth an album, offered under the landmarks. */
     albumSuggestion?: LandmarkAlbumSuggestion | null;
     things: ExploreCoverCard[];
+    /** FL-1284: the capture kinds the library has (slow motion, panoramas, bursts …). */
+    mediaKinds?: ExploreCoverCard[];
     /** Newest captures first (not uploads). */
     recents: AssetResponseDto[];
     memories: ExploreMemoryCard[];
@@ -88,6 +90,7 @@
     landmarks = [],
     albumSuggestion = null,
     things,
+    mediaKinds = [],
     recents,
     memories,
     albums,
@@ -135,6 +138,7 @@
           places.length > 0 ||
           landmarks.length > 0 ||
           things.length > 0 ||
+          mediaKinds.length > 0 ||
           recents.length > 0 ||
           memories.length > 0 ||
           albums.length > 0
@@ -386,6 +390,25 @@
                 <small>{countLabel(thing.count)}</small>
               </span>
               <Icon icon={mdiChevronRight} size="16" aria-hidden="true" />
+            </a>
+          {/each}
+        </div>
+      </section>
+    {/if}
+
+    <!-- FL-1284: the media types the library has, from the same facet request as Places -->
+    {#if !failed.places && mediaKinds.length > 0}
+      <section class="el-section el-rise" style="--i: 4" aria-labelledby="explore-media-kinds-heading">
+        {@render heading('explore-media-kinds-heading', $t('frameleaf_explore_media_types'))}
+        <div class="el-places">
+          {#each mediaKinds as kind (kind.id)}
+            <a href={kind.href} class="el-place fl-continuous-corners">
+              {@render cover(kind.coverAssetId)}
+              <span class="el-cover-shade"></span>
+              <span>
+                <strong>{kind.label}</strong>
+                <small>{countLabel(kind.count)}</small>
+              </span>
             </a>
           {/each}
         </div>

@@ -86,7 +86,7 @@ const makeFaceTags = (
 });
 
 /** The stored location and place an asset's exif row has when nothing set them. */
-const noPlace = { latitude: null, longitude: null, city: null, state: null, country: null };
+const noPlace = { latitude: null, longitude: null, city: null, state: null, country: null, mediaKinds: null };
 
 const emptyPackets = {
   totalDuration: 0,
@@ -1949,6 +1949,8 @@ describe(MetadataService.name, () => {
             copyright: null,
             imageDirection: null,
             gpsSpeed: null,
+            // FL-1284: the equirectangular projection makes it a 360° photo
+            mediaKinds: ['spherical'],
           },
           lockedPropertiesBehavior: 'skip',
         }),
@@ -1961,6 +1963,111 @@ describe(MetadataService.name, () => {
           localDateTime: DateTime.fromISO('1970-01-01T00:00:00.000Z').toJSDate(),
         }),
       );
+    });
+
+    describe('capture kinds (FL-1284)', () => {
+      const burstFrame = (
+        id: string,
+        extra: Partial<{ stackId: string; stackPrimaryAssetId: string; isLocked: boolean }> = {},
+      ) => ({
+        id,
+        stackId: extra.stackId ?? null,
+        stackPrimaryAssetId: extra.stackPrimaryAssetId ?? null,
+        isLocked: extra.isLocked ?? false,
+      });
+
+      it('saves the kinds the file records', async () => {
+        const asset = AssetFactory.create();
+        mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+        mockReadTags({ CustomRendered: 8, LensModel: 'iPhone 15 front camera 2.69mm f/1.9' });
+
+        await sut.handleMetadataExtraction({ id: asset.id });
+
+        expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+          expect.objectContaining({ exif: expect.objectContaining({ mediaKinds: ['portrait', 'selfie'] }) }),
+        );
+      });
+
+      it('stacks a new burst frame with the rest of its burst, earliest first', async () => {
+        const asset = AssetFactory.create();
+        mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+        mockReadTags({ BurstUUID: 'burst-1' });
+        mocks.asset.getBurstFrames.mockResolvedValue([burstFrame('earlier'), burstFrame(asset.id)]);
+        mocks.stack.create.mockResolvedValue({ id: 'stack-1' } as never);
+
+        await sut.handleMetadataExtraction({ id: asset.id });
+
+        expect(mocks.asset.getBurstFrames).toHaveBeenCalledWith(asset.ownerId, 'burst-1');
+        expect(mocks.stack.create).toHaveBeenCalledWith(
+          { ownerId: asset.ownerId },
+          ['earlier', asset.id],
+          undefined,
+          expect.any(Function),
+        );
+      });
+
+      it('joins the stack the burst already has', async () => {
+        const asset = AssetFactory.create();
+        mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+        mockReadTags({ BurstUUID: 'burst-1' });
+        mocks.asset.getBurstFrames.mockResolvedValue([
+          burstFrame('first', { stackId: 'stack-1', stackPrimaryAssetId: 'first' }),
+          burstFrame('second', { stackId: 'stack-1', stackPrimaryAssetId: 'first' }),
+          burstFrame(asset.id),
+        ]);
+        mocks.stack.create.mockResolvedValue({ id: 'stack-1' } as never);
+
+        await sut.handleMetadataExtraction({ id: asset.id });
+
+        expect(mocks.stack.create).toHaveBeenCalledWith(
+          { ownerId: asset.ownerId },
+          ['first', asset.id],
+          undefined,
+          expect.any(Function),
+        );
+      });
+
+      it.each([
+        [
+          'a Locked frame is in a stack',
+          [burstFrame('locked', { stackId: 's', stackPrimaryAssetId: 'locked', isLocked: true })],
+        ],
+        ['the only other frame is Locked', [burstFrame('locked', { isLocked: true })]],
+        [
+          'the owner split the burst',
+          [
+            burstFrame('a', { stackId: 's1', stackPrimaryAssetId: 'a' }),
+            burstFrame('b', { stackId: 's2', stackPrimaryAssetId: 'b' }),
+          ],
+        ],
+      ])('leaves a burst alone when %s', async (_, others) => {
+        const asset = AssetFactory.create();
+        mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+        mockReadTags({ BurstUUID: 'burst-1' });
+        mocks.asset.getBurstFrames.mockResolvedValue([...others, burstFrame(asset.id)]);
+
+        await sut.handleMetadataExtraction({ id: asset.id });
+
+        expect(mocks.stack.create).not.toHaveBeenCalled();
+      });
+
+      it('does not regroup a frame scanned before, so an unstacked burst stays unstacked', async () => {
+        const asset = AssetFactory.create();
+        mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+        mockReadTags({ BurstUUID: 'burst-1' });
+        mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+          ...noPlace,
+          tags: null,
+          timeZone: null,
+          updateId: 'revision',
+          mediaKinds: ['burst'],
+        });
+
+        await sut.handleMetadataExtraction({ id: asset.id });
+
+        expect(mocks.asset.getBurstFrames).not.toHaveBeenCalled();
+        expect(mocks.stack.create).not.toHaveBeenCalled();
+      });
     });
 
     // LIB-02: a zone picked in Edit date and time came back as the zone the GPS position is in (America/Vancouver

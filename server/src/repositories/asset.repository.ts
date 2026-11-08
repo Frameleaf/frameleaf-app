@@ -629,6 +629,8 @@ export class AssetRepository {
                   rating: ref('rating'),
                   fps: ref('fps'),
                   tags: ref('tags'),
+                  // FL-1284: what the file shows, never locked
+                  mediaKinds: eb.ref('excluded.mediaKinds'),
                   lockedProperties:
                     lockedPropertiesBehavior === 'append'
                       ? distinctLocked(eb, exif.lockedProperties ?? null)
@@ -3678,12 +3680,35 @@ export class AssetRepository {
       ])
       .executeTakeFirst();
   }
+  /**
+   * FL-1284: the frames of one camera burst (same owner, same burst id), earliest first, with the stack
+   * each is in and whether it is Locked, for grouping the burst into one stack.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.STRING] })
+  getBurstFrames(ownerId: string, autoStackId: string) {
+    return this.db
+      .selectFrom('asset')
+      .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+      .leftJoin('stack', 'stack.id', 'asset.stackId')
+      .select(['asset.id', 'asset.stackId', 'stack.primaryAssetId as stackPrimaryAssetId'])
+      .select(isLocked('asset').as('isLocked'))
+      .where('asset.ownerId', '=', ownerId)
+      .where('asset_exif.autoStackId', '=', autoStackId)
+      .where('asset.type', '=', AssetType.Image)
+      .where('asset.deletedAt', 'is', null)
+      .orderBy('asset.fileCreatedAt')
+      .orderBy('asset.id')
+      .limit(500)
+      .execute();
+  }
+
   @GenerateSql({ params: [DummyValue.UUID] })
   async getForMetadataExtractionTags(id: string) {
     return this.db
       .selectFrom('asset_exif')
       .select([
         'asset_exif.tags',
+        'asset_exif.mediaKinds',
         'asset_exif.updateId',
         'asset_exif.timeZone',
         'asset_exif.latitude',

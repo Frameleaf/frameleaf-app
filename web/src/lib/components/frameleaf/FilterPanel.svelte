@@ -4,6 +4,7 @@
   import ColorFilter from '$lib/components/frameleaf/ColorFilter.svelte';
   import DimensionFilters from '$lib/components/frameleaf/DimensionFilters.svelte';
   import FilterMultiSelect from '$lib/components/frameleaf/FilterMultiSelect.svelte';
+  import { MEDIA_KINDS } from '$lib/frameleaf/media-kinds';
   import Picker from '$lib/components/frameleaf/Picker.svelte';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
   import type { ComboBoxOption } from '$lib/components/shared-components/Combobox.svelte';
@@ -251,6 +252,7 @@
   const dateField = $derived(filter.takenAt && !filter.localDateTime ? 'takenAt' : 'localDateTime');
 
   const typeCounts = $derived(countsFor(SearchFacetField.Type));
+  const mediaKindCounts = $derived(countsFor(SearchFacetField.MediaKinds));
   const peopleCounts = $derived(countsFor(SearchFacetField.People));
   const tagCounts = $derived(countsFor(SearchFacetField.Tags));
   const petCounts = $derived(countsFor(SearchFacetField.Pets));
@@ -407,6 +409,20 @@
         onSelect={onFlag('isFavorite')}
       />
     </section>
+
+    <!-- FL-1284: slow motion, panoramas, bursts … as each file records them -->
+    <FilterMultiSelect
+      field="mediaKinds"
+      anchor="media"
+      label={$t('frameleaf_media_kinds_filter')}
+      options={MEDIA_KINDS.map(({ kind, labelKey }) => ({
+        value: kind,
+        label: $t(labelKey),
+        count: mediaKindCounts.get(kind),
+      }))}
+      condition={filter.mediaKinds as SetCondition}
+      onChange={setCondition}
+    />
 
     <FilterMultiSelect
       field="tagIds"
