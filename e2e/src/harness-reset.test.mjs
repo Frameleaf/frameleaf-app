@@ -355,6 +355,7 @@ test('configuration reset authenticates without existing work, then drains admit
     makeDrain()(async () => assert.fail('unfinished queue reset mutated data'), undefined, true),
     /lastUnfinished=true; lastUnfinishedQueues=metadata/,
   );
+  assert.equal(clock, 21_000, 'the work deadline expires on the seventh queue read');
   assert.deepEqual(order, ['owned-admin', 'cleaned-admin', 'restored', 'closed']);
   assert.equal(paused, false);
 });
