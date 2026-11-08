@@ -31,6 +31,10 @@ const revision = "be8d6044eacb843b74d335db0c5fbe09222031fe"
 const maxBody = 2 << 20
 const maxMetadata = 16 << 20
 
+// Apple's iCloud.com web sign-in key (rclone's iclouddrive default). Apple's idmsa endpoint rejects
+// any other value at the federate step with -24000 "Invalid client" (issue #914).
+const appleClientID = "d39ba9916b7251055b22c7f910e2ea796ee65e98b2ddecea8f5dde8d9d1a815d"
+
 const (
 	// Credential actions (login, two-factor, device approval) an account may attempt per window.
 	authAccountLimit = 10
@@ -182,6 +186,8 @@ func restore(raw json.RawMessage) (*envelope, error) {
 	if len(raw) == 0 || json.Unmarshal(raw, e) != nil || e.Version != 1 || e.Upstream == nil || len(e.AppleID) > 320 || e.AppleID == "" {
 		return nil, bad()
 	}
+	// Sessions saved by older bridges carry a random client ID that Apple rejects on any idmsa call.
+	e.Upstream.ClientID = appleClientID
 	// Cookies the upstream has expired by date are never replayed from a stored session.
 	pruneCookies(e.Upstream, time.Now())
 	return e, nil
@@ -258,8 +264,7 @@ func (b *bridge) auth(w http.ResponseWriter, r *http.Request, q *request) error 
 	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 	defer cancel()
 	if login {
-		// Rclone expects a stable client identifier for the authentication flow.
-		e.Upstream.ClientID = e.Upstream.FrameID
+		e.Upstream.ClientID = appleClientID
 		err = e.Upstream.SignIn(ctx, e.AppleID, q.Password)
 		q.Password = ""
 		if err == nil && e.Upstream.Requires2FA() {
