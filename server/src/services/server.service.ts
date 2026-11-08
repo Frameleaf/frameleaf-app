@@ -441,11 +441,12 @@ export class ServerService extends BaseService {
       usage.quotaSizeInBytes = user.quotaSizeInBytes;
       usage.lastActiveAt = user.lastActiveAt ?? null;
 
-      serverStats.photos += usage.photos;
-      serverStats.videos += usage.videos;
-      serverStats.usage += usage.usage;
-      serverStats.usagePhotos += usage.usagePhotos;
-      serverStats.usageVideos += usage.usageVideos;
+      // a partner copy shows in its account's row but counts once in the totals
+      serverStats.photos += usage.photos - user.copyPhotos;
+      serverStats.videos += usage.videos - user.copyVideos;
+      serverStats.usage += usage.usage - user.copyUsage;
+      serverStats.usagePhotos += usage.usagePhotos - user.copyUsagePhotos;
+      serverStats.usageVideos += usage.usageVideos - user.copyUsageVideos;
 
       serverStats.usageByUser.push(usage);
     }

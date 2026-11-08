@@ -559,6 +559,8 @@ export class AssetJobRepository {
         .leftJoin('asset_audio', 'asset_audio.assetId', 'asset.id')
         // `checksum` identifies the exact original an edited master was rendered from (FL-39 lineage).
         .select(['asset.id', 'asset.ownerId', 'asset.originalPath', 'asset.checksum'])
+        // FL-968: a raw 360° layout is stitched on the way to the playback copy
+        .select(['asset_exif.projectionType', 'asset_exif.make', 'asset_exif.model'])
         .select(withFiles)
         .select((eb) => withAudioStream(eb).as('audioStream'))
         .select((eb) => withVideoStream(eb).$notNull().as('videoStream'))

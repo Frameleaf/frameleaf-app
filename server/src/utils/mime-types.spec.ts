@@ -139,8 +139,11 @@ describe('mimeTypes', () => {
     { mimetype: 'video/mp2t', extension: '.mts' },
     { mimetype: 'video/mp2t', extension: '.tod' },
     { mimetype: 'video/mp2t', extension: '.ts' },
+    { mimetype: 'video/mp4', extension: '.360' },
     { mimetype: 'video/mp4', extension: '.f4v' },
+    { mimetype: 'video/mp4', extension: '.insv' },
     { mimetype: 'video/mp4', extension: '.mp4' },
+    { mimetype: 'video/mp4', extension: '.osv' },
     { mimetype: 'video/mpeg', extension: '.mod' },
     { mimetype: 'video/mpeg', extension: '.mpe' },
     { mimetype: 'video/mpeg', extension: '.mpeg' },
@@ -295,6 +298,27 @@ describe('mimeTypes', () => {
     for (const [extension, v] of Object.entries(mimeTypes.video)) {
       it(`should lookup ${extension}`, () => {
         expect(mimeTypes.lookup(`test.${extension}`)).toEqual(v[0]);
+      });
+    }
+  });
+
+  describe('360° cameras (FL-968)', () => {
+    for (const filename of ['VID_20250101_120000_00_001.insv', 'CAM_20250801120000_0001_D.OSV', 'GS010001.360']) {
+      it(`should treat ${filename} as an MP4 video`, () => {
+        expect(mimeTypes.isVideo(filename)).toBe(true);
+        expect(mimeTypes.isAsset(filename)).toBe(true);
+        expect(mimeTypes.lookup(filename)).toBe('video/mp4');
+        expect(mimeTypes.assetType(filename)).toBe(AssetType.Video);
+      });
+    }
+
+    // Proxies and telemetry the cameras write next to the real recording must never import as assets.
+    for (const filename of ['DJI_0001.LRF', 'GL010001.LRV', 'GS010001.THM', 'GX010001.thm', 'DJI_0001.SRT']) {
+      it(`should not import ${filename}`, () => {
+        expect(mimeTypes.isAsset(filename)).toBe(false);
+        expect(mimeTypes.isSidecar(filename)).toBe(false);
+        expect(mimeTypes.assetType(filename)).toBe(AssetType.Other);
+        expect(mimeTypes.getSupportedFileExtensions()).not.toContain(filename.slice(-4).toLowerCase());
       });
     }
   });
