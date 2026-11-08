@@ -5,7 +5,7 @@ import { get } from 'svelte/store';
 
 /** Before iCloud Photos is turned off: warns when syncs are unfinished. Resolves false to keep it on. */
 export const confirmICloudOff = async (): Promise<boolean> => {
-  let running = 0;
+  let running: number;
   try {
     ({ running } = await getICloudSyncActivity());
   } catch {
