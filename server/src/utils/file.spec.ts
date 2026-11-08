@@ -11,6 +11,7 @@ import type { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { CacheControl } from 'src/enum.js';
 import {
   FileDownloadResponse,
+  SVG_CONTENT_SECURITY_POLICY,
   getFileNameWithoutExtension,
   getFilenameExtension,
   getLivePhotoMotionFilename,
@@ -75,6 +76,24 @@ describe('file delivery', () => {
       expect(f.release.mock.contexts).toEqual([file]);
       expect(f.next).not.toHaveBeenCalled();
     }
+  });
+
+  it('sends nosniff on every file and a sandboxing CSP on SVGs only', async () => {
+    const cases: [Partial<FileDownloadResponse>, boolean][] = [
+      [{}, false],
+      [{ path: '/media/drawing.svg', contentType: 'image/svg' }, true],
+      [{ path: '/media/drawing.svg', contentType: 'image/svg+xml' }, true],
+      [{ path: '/media/DRAWING.SVG', contentType: 'application/octet-stream' }, true],
+      [{ path: '/media/blob', contentType: 'IMAGE/SVG+XML' }, true],
+    ];
+    for (const [overrides, svg] of cases) {
+      const f = fixture();
+      await sendFile(f.res, f.next, () => new FileDownloadResponse({ ...f.file, ...overrides }), f.log);
+      expect(f.response.header).toHaveBeenCalledWith('X-Content-Type-Options', 'nosniff');
+      const csp = f.response.header.mock.calls.filter(([name]) => name === 'Content-Security-Policy');
+      expect(csp).toEqual(svg ? [['Content-Security-Policy', SVG_CONTENT_SECURITY_POLICY]] : []);
+    }
+    expect(SVG_CONTENT_SECURITY_POLICY).toBe("sandbox; default-src 'none'; style-src 'unsafe-inline'");
   });
 
   it('releases a temporary file only after its asynchronous transfer finishes', async () => {

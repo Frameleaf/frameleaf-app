@@ -78,6 +78,8 @@ const cacheControlHeaders: Record<CacheControl, string | null> = {
   [CacheControl.None]: null, // falsy value to prevent adding Cache-Control header
 };
 
+export const SVG_CONTENT_SECURITY_POLICY = "sandbox; default-src 'none'; style-src 'unsafe-inline'";
+
 export const sendFile = async (
   res: Response,
   next: NextFunction,
@@ -97,6 +99,12 @@ export const sendFile = async (
     }
 
     res.header('Content-Type', file.contentType);
+    // Stored files are user content: never let the browser sniff them into something it would run,
+    // and if an SVG is opened as a document, keep its scripts and external loads switched off.
+    res.header('X-Content-Type-Options', 'nosniff');
+    if (/^image\/svg/i.test(file.contentType) || extname(file.path).toLowerCase() === '.svg') {
+      res.header('Content-Security-Policy', SVG_CONTENT_SECURITY_POLICY);
+    }
     if (file.fileName) {
       res.header('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(file.fileName)}`);
     }
