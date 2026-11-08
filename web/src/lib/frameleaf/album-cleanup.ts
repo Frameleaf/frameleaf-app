@@ -68,7 +68,7 @@ const MONTH_NAMES = [
 /** Private-use characters that can't be in a name, so a masked date can't collide with what is around it. */
 const MASK_OPEN = String.fromCodePoint(0xe0_00);
 const MASK_CLOSE = String.fromCodePoint(0xe0_01);
-const MASKED_DATE = new RegExp(`${MASK_OPEN}(\\d+)${MASK_CLOSE}`, 'g');
+const MASKED_DATE = new RegExp(String.raw`${MASK_OPEN}(\d+)${MASK_CLOSE}`, 'g');
 
 const cleanName = (name: string) => name.trim().replaceAll(/\s+/g, ' ');
 export const albumNameKey = (name: string) => cleanName(name).toLowerCase();
