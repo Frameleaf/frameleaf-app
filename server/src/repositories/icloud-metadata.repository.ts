@@ -7,11 +7,14 @@ import { AssetLockReason, AssetVisibility } from 'src/enum.js';
 import { AssetLocalEffectRepository } from 'src/repositories/asset-local-effect.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DB } from 'src/schema/index.js';
+import { sortMediaKinds } from 'src/utils/media-kinds.js';
 
 type Values = {
   isFavorite?: boolean;
   isHidden?: boolean;
   fileCreatedAt?: string;
+  /** FL-1289: kinds from iCloud's smart albums, added to the file's own (never removing any). */
+  mediaKinds?: string[];
 };
 type Baseline = {
   signature: string;
@@ -38,6 +41,7 @@ type Target = {
   fileCreatedAt: Date;
   timeZone: string | null;
   lockedProperties: string[] | null;
+  mediaKinds: string[] | null;
 };
 @Injectable()
 export class ICloudMetadataRepository {
@@ -49,7 +53,7 @@ export class ICloudMetadataRepository {
     return sql<Candidate>`SELECT DISTINCT ON (r."assetId") r.id,r."assetId",version.signature,baseline.previous
       FROM public.icloud_resource r JOIN asset a ON a.id=r."assetId"
       JOIN asset_job_status jobs ON jobs."assetId"=a.id AND jobs."metadataExtractedAt" IS NOT NULL
-      CROSS JOIN LATERAL (SELECT md5(coalesce(string_agg(jsonb_build_object('id',s.id,'favorite',s.source->'isFavorite','hidden',s.source->'isHidden','date',s.source->'fileCreatedAt')::text,',' ORDER BY s.id),'') || jobs."metadataExtractedAt"::text) signature
+      CROSS JOIN LATERAL (SELECT md5(coalesce(string_agg(jsonb_build_object('id',s.id,'favorite',s.source->'isFavorite','hidden',s.source->'isHidden','date',s.source->'fileCreatedAt','kinds',s.source->'mediaKinds')::text,',' ORDER BY s.id),'') || jobs."metadataExtractedAt"::text) signature
         FROM public.icloud_resource s WHERE s."auditRequestId" IS NULL AND s."ownerId"=${ownerId}::uuid AND s."assetId"=r."assetId"
         AND coalesce((s.source->>'current')::boolean,true) AND s.role<>'motion' AND s.status IN ('committed','finalized','reused')) version
       LEFT JOIN LATERAL (SELECT s.source#>'{_sync,metadata}' previous FROM public.icloud_resource s
@@ -90,7 +94,7 @@ export class ICloudMetadataRepository {
         return true;
       }
       const target =
-        await sql<Target>`SELECT a."isFavorite",a.visibility,a."fileCreatedAt",e."timeZone",e."lockedProperties" FROM asset a
+        await sql<Target>`SELECT a."isFavorite",a.visibility,a."fileCreatedAt",e."timeZone",e."lockedProperties",e."mediaKinds" FROM asset a
         LEFT JOIN asset_exif e ON e."assetId"=a.id WHERE a.id=${candidate.assetId}::uuid AND a."ownerId"=${ownerId}::uuid AND a."deletedAt" IS NULL FOR UPDATE OF a`
           .execute(db)
           .then(({ rows }) => rows[0]);
@@ -124,6 +128,19 @@ export class ICloudMetadataRepository {
             state.overridden.push(key);
           } else if (values.length > 0) {
             Object.assign(state.source, { [key]: values[0] });
+          }
+        }
+        // Extraction rewrites mediaKinds from the file and bumps the signature, so this runs again after it.
+        const smartKinds = sortMediaKinds(resources.flatMap(({ source }) => source.mediaKinds ?? []));
+        if (smartKinds.length > 0) {
+          state.source.mediaKinds = smartKinds;
+          const current = target.mediaKinds ?? [];
+          if (smartKinds.some((kind) => !current.includes(kind))) {
+            await db
+              .updateTable('asset_exif')
+              .set({ mediaKinds: sortMediaKinds([...current, ...smartKinds]) })
+              .where('assetId', '=', candidate.assetId)
+              .execute();
           }
         }
         const favorite = state.source.isFavorite;

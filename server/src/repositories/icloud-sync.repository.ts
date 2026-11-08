@@ -11,6 +11,7 @@ import { ICloudScheduledStagingRepository } from 'src/repositories/icloud-schedu
 import { DB } from 'src/schema/index.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { parseICloudAlbum, resourcesForICloudAsset, sanitizeICloudFields } from 'src/utils/icloud-records.js';
+import { ICLOUD_SMART_ALBUM_KINDS, type ICloudSmartAlbum, sortMediaKinds } from 'src/utils/media-kinds.js';
 import { ACTIVE_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
 
 export type ICloudLibrary = {
@@ -944,9 +945,12 @@ export class ICloudSyncRepository {
           recordChangeTag: string;
           fields: Record<string, unknown>;
         } | null;
+        smartAlbums: string[] | null;
       }>`
         SELECT a."recordId" AS "recordName", a."recordType", a.revision AS "recordChangeTag", a.fields,
-          CASE WHEN m."recordId" IS NULL THEN NULL ELSE jsonb_build_object('recordName',m."recordId",'recordType',m."recordType",'recordChangeTag',m.revision,'fields',m.fields) END AS master
+          CASE WHEN m."recordId" IS NULL THEN NULL ELSE jsonb_build_object('recordName',m."recordId",'recordType',m."recordType",'recordChangeTag',m.revision,'fields',m.fields) END AS master,
+          (SELECT array_agg(substr(s."sourceAlbumId",7)) FROM public.icloud_membership s WHERE s."connectionId"=a."connectionId"
+            AND s."libraryKey"=a."libraryKey" AND s."sourceAssetId"=a."recordId" AND s."sourceAlbumId" LIKE 'smart:%' AND s."sourcePresent") AS "smartAlbums"
         FROM (
           SELECT * FROM public.icloud_record
           WHERE "connectionId" = ${connection.id}::uuid AND "libraryKey" = ${libraryKey} AND "recordType" = 'CPLAsset'
@@ -961,6 +965,10 @@ export class ICloudSyncRepository {
           db,
         );
         const normalized = resourcesForICloudAsset(row, row.master ?? undefined);
+        // FL-1289: the kinds iCloud's smart albums give this photo, for the metadata reconciler to add
+        const mediaKinds = sortMediaKinds(
+          (row.smartAlbums ?? []).map((album) => ICLOUD_SMART_ALBUM_KINDS[album as ICloudSmartAlbum]),
+        );
         if (normalized.length === 0) {
           await sql`UPDATE public.icloud_record SET fields=fields || '{"__icloudUnsupported":"no_original_or_render_descriptor"}'::jsonb
             WHERE "connectionId"=${connection.id}::uuid AND "libraryKey"=${libraryKey} AND "recordId"=${row.recordName}`.execute(
@@ -987,7 +995,7 @@ export class ICloudSyncRepository {
           }
           await sql`INSERT INTO public.icloud_resource ("connectionId","ownerId","libraryKey",library,"sourceAssetId","recordId","resourceKey",role,fingerprint,source,"expectedSize")
             VALUES (${connection.id}::uuid,${connection.ownerId}::uuid,${libraryKey},${library}::jsonb,
-              ${resource.sourceAssetId},${resource.recordId},${resource.resourceKey},${resource.role},${resource.fingerprint},${{ ...resource.source, current: true }}::jsonb,${resource.expectedSize})
+              ${resource.sourceAssetId},${resource.recordId},${resource.resourceKey},${resource.role},${resource.fingerprint},${{ ...resource.source, ...(mediaKinds.length > 0 && { mediaKinds }), current: true }}::jsonb,${resource.expectedSize})
             ON CONFLICT ("connectionId","libraryKey","sourceAssetId","resourceKey",fingerprint) WHERE "auditRequestId" IS NULL
             DO UPDATE SET source = excluded.source || CASE WHEN public.icloud_resource.source ? '_sync' THEN jsonb_build_object('_sync',public.icloud_resource.source->'_sync') ELSE '{}'::jsonb END, "updatedAt" = now()`.execute(
             db,

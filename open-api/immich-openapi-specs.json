@@ -105521,7 +105521,8 @@
           "portrait",
           "selfie",
           "screenshot",
-          "screen-recording"
+          "screen-recording",
+          "long-exposure"
         ],
         "type": "string"
       },
@@ -105531,7 +105532,7 @@
             "items": {
               "$ref": "#/components/schemas/MediaKind"
             },
-            "maxItems": 9,
+            "maxItems": 10,
             "minItems": 1,
             "type": "array"
           },
@@ -105539,7 +105540,7 @@
             "items": {
               "$ref": "#/components/schemas/MediaKind"
             },
-            "maxItems": 9,
+            "maxItems": 10,
             "minItems": 1,
             "type": "array"
           },
@@ -105547,7 +105548,7 @@
             "items": {
               "$ref": "#/components/schemas/MediaKind"
             },
-            "maxItems": 9,
+            "maxItems": 10,
             "minItems": 1,
             "type": "array"
           }

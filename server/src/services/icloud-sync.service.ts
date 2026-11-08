@@ -61,6 +61,7 @@ import { checkAccess, requireElevatedPermission } from 'src/utils/access.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { maskAppleAccount } from 'src/utils/icloud-identity.js';
 import { hasWeeklyAuthorityInput, isPrivateICloudOperation } from 'src/utils/icloud-weekly.js';
+import { ICLOUD_SMART_ALBUM_KINDS, type ICloudSmartAlbum } from 'src/utils/media-kinds.js';
 import { isActiveMediaOperation } from 'src/utils/media-operation.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
 
@@ -936,21 +937,39 @@ export class ICloudSyncService {
         libraryKey: string,
         library?: ICloudLibrary,
         albumId?: string,
+        smartAlbum?: ICloudSmartAlbum,
       ): Promise<boolean> => {
         const checkpoint = await this.repository.checkpoint(current.id, scope, db);
         if (checkpoint?.complete) {
           return true;
         }
-        const response: ICloudPage = await this.transport.inventory({
-          session: await this.transport.decodeSession(current.id, encryptedSession),
-          kind,
-          library,
-          albumId,
-          cursor: checkpoint?.cursor,
-        });
+        let response: ICloudPage;
+        try {
+          response = await this.transport.inventory({
+            session: await this.transport.decodeSession(current.id, encryptedSession),
+            kind,
+            library,
+            albumId,
+            smartAlbum,
+            cursor: checkpoint?.cursor,
+          });
+        } catch (error) {
+          // ponytail: kinds are an extra, so Apple refusing a smart album (or the bridge failing on one)
+          // skips it for this run instead of failing the sync; the next run asks again.
+          if (!smartAlbum || !(error instanceof ICloudTransportError && error.code === 'icloud_transport_failed')) {
+            throw error;
+          }
+          await this.repository.savePage(current.id, scope, libraryKey, [], null, true, db);
+          return false;
+        }
         encryptedSession = await this.transport.encodeSession(current.id, response.session);
+        // A bridge from before smart albums ignores the field and lists the whole library: never use that.
+        if (smartAlbum && response.capabilities?.smartAlbums !== true) {
+          await this.repository.savePage(current.id, scope, libraryKey, [], null, true, db);
+          return false;
+        }
         let records = response.records;
-        switch (kind) {
+        switch (smartAlbum ? 'memberships' : kind) {
           case 'libraries': {
             records = records.map((raw) => {
               const zone = raw as unknown as ICloudLibrary;
@@ -986,12 +1005,17 @@ export class ICloudSyncService {
             await this.repository.saveMembershipPage(
               current.id,
               libraryKey,
-              albumId!,
+              smartAlbum ? `smart:${smartAlbum}` : albumId!,
               records,
               snapshotId,
               response.complete,
               db,
             );
+            // A smart album page carries full CPLAsset/CPLMaster records; only its memberships are kept,
+            // so it never overwrites the library inventory's own copies.
+            if (smartAlbum) {
+              records = [];
+            }
 
             break;
           }
@@ -1024,6 +1048,15 @@ export class ICloudSyncService {
         }
         if (!(await page('changes', `changes:${libraryKey}`, libraryKey, library))) {
           return { value: false, encryptedSession };
+        }
+        // FL-1289: iCloud's Media Types smart albums, recorded as memberships of a reserved `smart:` album
+        // (no icloud_album row, so album reconciliation never sees them) and added to the photo's kinds.
+        for (const smartAlbum of Object.keys(ICLOUD_SMART_ALBUM_KINDS) as ICloudSmartAlbum[]) {
+          if (
+            !(await page('assets', `smart:${libraryKey}:${smartAlbum}`, libraryKey, library, undefined, smartAlbum))
+          ) {
+            return { value: false, encryptedSession };
+          }
         }
         for (const album of inventory.albums) {
           if (album.libraryId !== libraryKey) {
