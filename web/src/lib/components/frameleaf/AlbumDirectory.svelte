@@ -251,8 +251,8 @@
     // An album that has only just started waiting gets the full wait.
     if (pendingStatIds.some((id) => !polledFor.has(id))) {
       statsPolls = 0;
-      polledFor = new Set(pendingStatIds);
     }
+    polledFor = new Set(pendingStatIds);
     if (statsPolls >= STATS_POLL_LIMIT) {
       return;
     }
