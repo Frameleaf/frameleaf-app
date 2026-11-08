@@ -336,14 +336,14 @@ test('configuration reset authenticates without existing work, then drains admit
   );
   assert.equal(joinedSignal.aborted, true);
   assert.deepEqual(order, ['owned-admin', 'cleaned-admin', 'restored', 'closed']);
-  // A virtual clock that advances 3 s per queue read passes the 20 s work deadline on the seventh read (21 s),
-  // inside the 24 s owner deadline, so the cleanup reserve holds regardless of runner speed. Real timers keep
-  // their full budgets.
+  // A virtual clock that advances 4 s per queue read reaches the 20 s work budget (24 s owner deadline minus the
+  // 4 s cleanup reserve) on the fifth read; without the reserve the quiesce deadline would run to 24 s. Real
+  // timers keep their full budgets.
   let clock = 0;
   t.mock.method(performance, 'now', () => clock);
   const readQueues = bindings.readQueues;
   bindings.readQueues = async () => {
-    clock += 3000;
+    clock += 4000;
     return readQueues();
   };
   bindings.utils.resetAdminConfig = async () => {
@@ -355,7 +355,7 @@ test('configuration reset authenticates without existing work, then drains admit
     makeDrain()(async () => assert.fail('unfinished queue reset mutated data'), undefined, true),
     /lastUnfinished=true; lastUnfinishedQueues=metadata/,
   );
-  assert.equal(clock, 21_000, 'the work deadline expires on the seventh queue read');
+  assert.equal(clock, 20_000, 'the work budget limits the second drain on the fifth queue read');
   assert.deepEqual(order, ['owned-admin', 'cleaned-admin', 'restored', 'closed']);
   assert.equal(paused, false);
 });
