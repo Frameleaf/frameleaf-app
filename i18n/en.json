@@ -2772,7 +2772,7 @@
   "frameleaf_album_links_edit": "Edit link {address}",
   "frameleaf_album_links_list": "Public links",
   "frameleaf_album_links_unavailable": "Could not check this album’s saved links. Try again.",
-  "frameleaf_album_lock_body": "Your photos in this album move to Locked and need your PIN to view. Anything you add to it later is locked too.",
+  "frameleaf_album_lock_body": "Your items in this album move to Locked and need your PIN to view, along with the rest of their stacks and Live Photo videos, even those outside the album. Anything you add later is locked too. Unlocking the album stops new items locking and leaves these items locked.",
   "frameleaf_album_lock_title": "Lock “{name}”?",
   "frameleaf_album_more_actions": "More actions",
   "frameleaf_album_options_activity": "Likes and comments",
