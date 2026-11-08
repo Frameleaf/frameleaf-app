@@ -58,6 +58,8 @@
       .map((id) => getAssetMediaUrl({ id, size: AssetMediaSize.Thumbnail })),
   );
   const others = $derived(othersOf(collection, currentUserId));
+  // FL-1297: a total is only shown once every album in it has been counted.
+  const statsPending = $derived(!!collection.statsPending || shelf.all.some((album) => album.statsPending));
 
   const onDragOver = (event: DragEvent) => {
     if (!(acceptsDrop && isAlbumDrag(event))) {
@@ -140,7 +142,9 @@
         </h2>
         <small>
           {$t('frameleaf_albums_count', { values: { count: shelf.albumCount } })}
-          · {$t('frameleaf_albums_items', { values: { count: shelf.assetCount } })}
+          {#if !statsPending}
+            · {$t('frameleaf_albums_items', { values: { count: shelf.assetCount } })}
+          {/if}
           {#if collection.description}
             · {collection.description}
           {/if}

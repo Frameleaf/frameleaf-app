@@ -10,7 +10,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { init, register, t, waitLocale } from 'svelte-i18n';
 import { get } from 'svelte/store';
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { afterNavigate } from '$app/navigation';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { defaultAlbumDirectoryView } from '$lib/frameleaf/album-directory';
@@ -106,6 +106,8 @@ describe('AlbumDirectory', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Most tests are about the tiles themselves: with no observer every tile is built straight away.
+    vi.stubGlobal('IntersectionObserver', undefined);
     app.page.url = new URL('http://localhost/albums');
     app.routerStarted = true;
     localStorage.clear();
@@ -833,5 +835,180 @@ describe('AlbumDirectory', () => {
     renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
     expect(screen.getByRole('article', { name: 'Trail camera' })).toHaveAttribute('draggable', 'false');
     expect(screen.getByRole('article', { name: 'Summer in the Rockies' })).toHaveAttribute('draggable', 'true');
+  });
+
+  describe('thousands of albums (FL-1297)', () => {
+    type Callback = (entries: Partial<IntersectionObserverEntry>[]) => void;
+    let notify: Callback;
+    const observers: { options?: IntersectionObserverInit }[] = [];
+
+    const useObserver = () => {
+      observers.length = 0;
+      vi.stubGlobal(
+        'IntersectionObserver',
+        vi.fn(function (callback: Callback, options?: IntersectionObserverInit) {
+          notify = callback;
+          observers.push({ options });
+          return { observe: vi.fn(), unobserve: vi.fn(), disconnect: vi.fn() };
+        }),
+      );
+    };
+    const cell = (id: string) =>
+      [...document.querySelectorAll<HTMLElement>('[data-album-id]')].find(
+        (element) => element.dataset.albumId === id && !element.classList.contains('shelf-tint'),
+      )!;
+    const placeholderIn = (id: string) => cell(id).querySelector('[data-testid="album-placeholder"]');
+    const nearView = async (id: string, isIntersecting = true) => {
+      notify([{ target: cell(id), isIntersecting }]);
+      await tick();
+    };
+    const flatTree = (...albums: ReturnType<typeof owned>[]): AlbumTreeResponseDto => ({
+      collections: [],
+      albums,
+      spaces: [],
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+    });
+
+    it.each(['grid', 'list'] as const)('builds a %s tile and its menu only once it nears the view', async (mode) => {
+      useObserver();
+      albumDirectoryView.set({ ...defaultAlbumDirectoryView, view: mode });
+      const near = owned({ id: 'near', albumName: 'Near' });
+      const far = owned({ id: 'far', albumName: 'Far' });
+      renderWithTooltips(AlbumDirectory, { tree: flatTree(near, far), onRefresh: vi.fn() });
+
+      expect(observers).toHaveLength(1);
+      expect(screen.queryByRole('article')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Actions for Near' })).toBeNull();
+      expect(placeholderIn('near')).not.toBeNull();
+
+      await nearView('near');
+
+      expect(screen.getByRole('article', { name: 'Near' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Actions for Near' })).toBeInTheDocument();
+      expect(screen.queryByRole('article', { name: 'Far' })).toBeNull();
+      expect(placeholderIn('far')).not.toBeNull();
+    });
+
+    it('keeps a tile built after it has scrolled away', async () => {
+      useObserver();
+      const album = owned({ id: 'kept', albumName: 'Kept' });
+      renderWithTooltips(AlbumDirectory, { tree: flatTree(album), onRefresh: vi.fn() });
+
+      await nearView('kept');
+      await nearView('kept', false);
+
+      expect(screen.getByRole('article', { name: 'Kept' })).toBeInTheDocument();
+    });
+
+    it('still lists every album by its cell while tiles are waiting', () => {
+      useObserver();
+      const albums = Array.from({ length: 50 }, (_, index) => owned({ id: `album-${index}` }));
+      renderWithTooltips(AlbumDirectory, { tree: flatTree(...albums), onRefresh: vi.fn() });
+
+      expect(document.querySelectorAll('[data-testid="album-placeholder"]')).toHaveLength(50);
+    });
+
+    /** `renderWithTooltips` mounts a wrapper, so a new tree goes through the wrapper's own props. */
+    const wrapped = (next: AlbumTreeResponseDto, onRefresh: () => void) =>
+      ({ component: AlbumDirectory, componentProps: { tree: next, onRefresh } }) as never;
+
+    const pendingAlbum = owned({ id: 'pending', albumName: 'Pending', assetCount: 0, statsPending: true });
+    const counted = owned({ id: 'counted', albumName: 'Counted', assetCount: 3 });
+
+    it('asks again every 3 seconds while an album is waiting for its numbers', async () => {
+      vi.useFakeTimers();
+      const onRefresh = vi.fn();
+      const { rerender } = renderWithTooltips(AlbumDirectory, { tree: flatTree(pendingAlbum), onRefresh });
+      await tick();
+
+      await vi.advanceTimersByTimeAsync(2999);
+      expect(onRefresh).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(onRefresh).toHaveBeenCalledTimes(1);
+
+      await rerender(wrapped(flatTree(pendingAlbum), onRefresh));
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(onRefresh).toHaveBeenCalledTimes(2);
+    });
+
+    it('stops asking once the numbers have arrived', async () => {
+      vi.useFakeTimers();
+      const onRefresh = vi.fn();
+      const { rerender } = renderWithTooltips(AlbumDirectory, { tree: flatTree(pendingAlbum), onRefresh });
+      await tick();
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(onRefresh).toHaveBeenCalledTimes(1);
+
+      await rerender(wrapped(flatTree(counted), onRefresh));
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      expect(onRefresh).toHaveBeenCalledTimes(1);
+    });
+
+    it('gives up after 20 tries', async () => {
+      vi.useFakeTimers();
+      const onRefresh = vi.fn();
+      const { rerender } = renderWithTooltips(AlbumDirectory, { tree: flatTree(pendingAlbum), onRefresh });
+      await tick();
+
+      for (let attempt = 0; attempt < 25; attempt++) {
+        await vi.advanceTimersByTimeAsync(3000);
+        await rerender(wrapped(flatTree(pendingAlbum), onRefresh));
+      }
+
+      expect(onRefresh).toHaveBeenCalledTimes(20);
+    });
+
+    it('never asks when nothing is waiting', async () => {
+      vi.useFakeTimers();
+      const onRefresh = vi.fn();
+      renderWithTooltips(AlbumDirectory, { tree: flatTree(counted), onRefresh });
+      await tick();
+
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      expect(onRefresh).not.toHaveBeenCalled();
+    });
+
+    it('stops asking when the page is left', async () => {
+      vi.useFakeTimers();
+      const onRefresh = vi.fn();
+      const { unmount } = renderWithTooltips(AlbumDirectory, { tree: flatTree(pendingAlbum), onRefresh });
+      await tick();
+
+      unmount();
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      expect(onRefresh).not.toHaveBeenCalled();
+    });
+
+    it('still offers Download for an album whose count has not arrived', async () => {
+      renderWithTooltips(AlbumDirectory, { tree: flatTree(pendingAlbum), onRefresh: vi.fn() });
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Actions for Pending' }));
+      const menu = within(await screen.findByRole('menu', { name: 'Actions for Pending' }));
+
+      expect(menu.getByRole('menuitem', { name: 'Download' })).toBeEnabled();
+    });
+
+    it('leaves out a shelf’s total until every album in it has been counted', () => {
+      const shelfAlbum = owned({ id: 'inside', parentId: 'family', assetCount: 0, statsPending: true });
+      renderWithTooltips(AlbumDirectory, {
+        tree: {
+          collections: [{ collection: family, albums: [shelfAlbum], albumCount: 1, assetCount: 0 }],
+          albums: [],
+          spaces: [],
+        },
+        onRefresh: vi.fn(),
+      });
+
+      const shelf = screen.getByRole('region', { name: 'Family' });
+      expect(shelf).toHaveTextContent('1 album');
+      expect(shelf).not.toHaveTextContent('Empty');
+    });
   });
 });

@@ -16,7 +16,8 @@
   import {
     albumDirectoryFilters,
     albumDirectorySorts,
-    albumAncestors,
+    albumAncestorsIn,
+    albumsById,
     directoryAlbums,
     arrangeAlbumDirectory,
     canDropOnCollection,
@@ -33,6 +34,7 @@
     type AlbumDirectoryViewMode,
   } from '$lib/frameleaf/album-directory';
   import { albumColorStyle } from '$lib/frameleaf/album-tree';
+  import { canRevealNearby, createNearbyReveal } from '$lib/frameleaf/reveal-near';
   import { toastUndo } from '$lib/frameleaf/toast';
   import { ICON_SIZE } from '$lib/frameleaf/tokens';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -73,8 +75,9 @@
     mdiViewListOutline,
   } from '@mdi/js';
   import { hasRouterStarted } from '$lib/utils/router-started';
-  import { onMount, untrack } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
+  import { SvelteSet } from 'svelte/reactivity';
 
   /**
    * The Albums page (FL-52). Collections are shelves with their albums beneath;
@@ -101,6 +104,10 @@
    * What an action did is said in a toast at the foot of the page, with Undo for a move and a
    * reorder. The line under the filters is kept for what stays true until the next action: the drag
    * hint and "your albums changed since this page loaded".
+   *
+   * A library can hold thousands of albums (FL-1297). Each cell is a plain placeholder of the tile's
+   * size until it nears the view; then its tile and menu are built and stay built. While the server is
+   * still working out some albums' numbers, the page asks again every few seconds.
    */
   interface Props {
     tree: AlbumTreeResponseDto;
@@ -137,11 +144,20 @@
   let actions: AlbumActions | undefined = $state();
   const headingId = albumDirectoryHeadingId;
 
+  /** The albums whose tile has been built. */
+  const revealed = new SvelteSet<string>();
+  const nearby = createNearbyReveal((id) => revealed.add(id));
+  const watchNear = nearby.watch;
+  const revealsAll = !canRevealNearby();
+  onDestroy(() => nearby.disconnect());
+
   const arrangement = $derived(
     arrangeAlbumDirectory(tree, { filter: view.filter, sort: view.sort, search, userId: currentUserId }),
   );
   const everything = $derived(directoryAlbums(tree));
-  const find = (id: string) => everything.find((album) => album.id === id);
+  /** A tile asks for its path on every update: with thousands of albums, one lookup table for them all. */
+  const byId = $derived(albumsById(tree));
+  const find = (id: string) => byId.get(id);
 
   /**
    * The spaces shelf shows whenever it has spaces to show, and — so there is always a way to one
@@ -211,6 +227,28 @@
   const refresh = async () => {
     await onRefresh();
   };
+
+  /** New albums, and a library's first load, get their numbers in the background: ask again until they arrive. */
+  const STATS_POLL_MS = 3000;
+  const STATS_POLL_LIMIT = 20;
+  let statsPolls = 0;
+  const anyStatsPending = $derived(everything.some((album) => album.statsPending));
+  $effect(() => {
+    // Every new tree restarts the wait, so a slow answer never overlaps the next question.
+    void tree;
+    if (!anyStatsPending) {
+      statsPolls = 0;
+      return;
+    }
+    if (statsPolls >= STATS_POLL_LIMIT) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      statsPolls += 1;
+      void refresh();
+    }, STATS_POLL_MS);
+    return () => clearTimeout(timer);
+  });
 
   onMount(() =>
     eventManager.on({
@@ -335,7 +373,7 @@
     !target.isSmart &&
     dragged.id !== target.id &&
     canDropOnCollection(dragged, target, currentUserId) &&
-    albumAncestors(tree, target).every(({ id }) => id !== dragged?.id);
+    albumAncestorsIn(byId, target).every(({ id }) => id !== dragged?.id);
   /** In custom order everything can be dragged to arrange it; otherwise only an owner's album, to move it. */
   const canDrag = (album: AlbumResponseDto) =>
     reorderable || (album.kind !== AlbumKind.Space && isOwner(album, currentUserId));
@@ -508,7 +546,7 @@
         <Icon icon={mdiLinkVariant} size="18" aria-hidden={true} />{$t('frameleaf_albums_create_link')}
       </MenuItem>
     {/if}
-    <MenuItem disabled={album.assetCount === 0} onSelect={() => handleDownloadAlbum(album)}>
+    <MenuItem disabled={album.assetCount === 0 && !album.statsPending} onSelect={() => handleDownloadAlbum(album)}>
       <Icon icon={mdiDownloadOutline} size="18" aria-hidden={true} />{$t('download')}
     </MenuItem>
     {#if owner && isAlbum}
@@ -530,6 +568,37 @@
   </Menu>
 {/snippet}
 
+{#snippet tile(album: AlbumResponseDto, layout: 'grid' | 'list')}
+  {#if revealsAll || revealed.has(album.id)}
+    {#if album.parentId}
+      <small class="album-path"
+        >{albumAncestorsIn(byId, album)
+          .map(({ albumName }) => albumName)
+          .join(' / ')}</small
+      >
+    {/if}
+    <AlbumTile
+      {album}
+      {currentUserId}
+      {layout}
+      draggable={canDrag(album)}
+      dragging={dragged?.id === album.id}
+      acceptsReorder={acceptsReorder(album)}
+      acceptsNest={acceptsNest(album)}
+      moved={movedId === album.id}
+      onDragStart={startDrag}
+      onDragEnd={endDrag}
+      onReorderDrop={(albumId) => dropBefore(albumId, album)}
+      onNestDrop={(albumId) => void dropOnCollection(albumId, album)}
+    >
+      {#snippet actions()}{@render menu(album)}{/snippet}
+    </AlbumTile>
+  {:else}
+    {#if album.parentId}<small class="album-path" aria-hidden="true">&nbsp;</small>{/if}
+    <div class="tile-placeholder {layout}" data-testid="album-placeholder" aria-hidden="true"></div>
+  {/if}
+{/snippet}
+
 {#snippet albums(list: AlbumResponseDto[], emptyText: string)}
   {#if view.view === 'grid'}
     <div class="grid">
@@ -539,32 +608,12 @@
           data-album-id={album.id}
           class:tile-tinted={!!albumColorStyle(album.color)}
           style={albumColorStyle(album.color)}
+          use:watchNear={album.id}
           animate:listFlip={{ count: list.length }}
           in:listEnter={{ count: list.length }}
           out:listLeave={{ count: list.length }}
         >
-          {#if album.parentId}
-            <small class="album-path"
-              >{albumAncestors(tree, album)
-                .map(({ albumName }) => albumName)
-                .join(' / ')}</small
-            >
-          {/if}
-          <AlbumTile
-            {album}
-            {currentUserId}
-            draggable={canDrag(album)}
-            dragging={dragged?.id === album.id}
-            acceptsReorder={acceptsReorder(album)}
-            acceptsNest={acceptsNest(album)}
-            moved={movedId === album.id}
-            onDragStart={startDrag}
-            onDragEnd={endDrag}
-            onReorderDrop={(albumId) => dropBefore(albumId, album)}
-            onNestDrop={(albumId) => void dropOnCollection(albumId, album)}
-          >
-            {#snippet actions()}{@render menu(album)}{/snippet}
-          </AlbumTile>
+          {@render tile(album, 'grid')}
         </div>
       {/each}
       {#if list.length === 0 && emptyText}
@@ -579,33 +628,12 @@
           data-album-id={album.id}
           class:tile-tinted={!!albumColorStyle(album.color)}
           style={albumColorStyle(album.color)}
+          use:watchNear={album.id}
           animate:listFlip={{ count: list.length }}
           in:listEnter={{ count: list.length }}
           out:listLeave={{ count: list.length }}
         >
-          {#if album.parentId}
-            <small class="album-path"
-              >{albumAncestors(tree, album)
-                .map(({ albumName }) => albumName)
-                .join(' / ')}</small
-            >
-          {/if}
-          <AlbumTile
-            {album}
-            {currentUserId}
-            layout="list"
-            draggable={canDrag(album)}
-            dragging={dragged?.id === album.id}
-            acceptsReorder={acceptsReorder(album)}
-            acceptsNest={acceptsNest(album)}
-            moved={movedId === album.id}
-            onDragStart={startDrag}
-            onDragEnd={endDrag}
-            onReorderDrop={(albumId) => dropBefore(albumId, album)}
-            onNestDrop={(albumId) => void dropOnCollection(albumId, album)}
-          >
-            {#snippet actions()}{@render menu(album)}{/snippet}
-          </AlbumTile>
+          {@render tile(album, 'list')}
         </div>
       {/each}
       {#if list.length === 0 && emptyText}
@@ -863,6 +891,18 @@
   .cell {
     position: relative;
     min-width: 0;
+  }
+  /* Exactly a tile's height (AlbumTile: cover, 8px, name, gap, the 28px meta row), so the scrollbar never jumps. */
+  .tile-placeholder.grid {
+    aspect-ratio: 1;
+    margin-block-end: calc(8px + 1.3 * var(--fl-font-size) + var(--fl-space-1) + 28px);
+    border-radius: var(--fl-radius-card);
+    background: var(--fl-raised);
+  }
+  .tile-placeholder.list {
+    height: calc(max(3rem, 1.3 * var(--fl-font-size) + var(--fl-space-1) + 28px) + 0.75rem + 1px);
+    border-bottom: 1px solid var(--fl-border);
+    box-sizing: border-box;
   }
   .albums > :global(*) {
     max-width: 1400px;

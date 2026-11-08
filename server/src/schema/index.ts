@@ -48,6 +48,7 @@ import {
   AlbumSuggestionDismissalTable,
   AssetFaceOutfitTable,
 } from 'src/schema/tables/album-suggestion.table.js';
+import { AlbumSummaryTable } from 'src/schema/tables/album-summary.table.js';
 import { AlbumUserAuditTable } from 'src/schema/tables/album-user-audit.table.js';
 import { AlbumUserTable } from 'src/schema/tables/album-user.table.js';
 import { AlbumTable } from 'src/schema/tables/album.table.js';
@@ -338,6 +339,7 @@ export class ImmichDatabase {
     AdminAuditEventTable,
     AlbumAssetTable,
     AlbumAssetAuditTable,
+    AlbumSummaryTable,
     AlbumAuditTable,
     AlbumClosureTable,
     AlbumUserAuditTable,
@@ -580,6 +582,7 @@ export interface DB extends QueueDatabase {
   album_audit: AlbumAuditTable;
   album_asset: AlbumAssetTable;
   album_asset_audit: AlbumAssetAuditTable;
+  album_summary: AlbumSummaryTable;
   album_closure: AlbumClosureTable;
   album_user: AlbumUserTable;
   album_user_audit: AlbumUserAuditTable;

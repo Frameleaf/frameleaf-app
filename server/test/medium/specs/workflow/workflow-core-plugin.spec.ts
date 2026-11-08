@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { PluginManifestDto } from 'src/dtos/plugin-manifest.dto.js';
 import { AssetType, AssetVisibility, JobStatus, LogLevel } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
+import { AlbumSummaryRepository } from 'src/repositories/album-summary.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ClassificationRepository } from 'src/repositories/classification.repository.js';
@@ -42,6 +43,8 @@ class WorkflowTestContext extends MediumTestContext<typeof WorkflowExecutionServ
       real: [
         AccessRepository,
         AlbumRepository,
+        // the plugin's album search reads the stored counts (FL-1297)
+        AlbumSummaryRepository,
         AssetRepository,
         ClassificationRepository,
         CryptoRepository,
