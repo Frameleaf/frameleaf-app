@@ -145,6 +145,17 @@ const albumService = () => {
   return { albums: sut, albumCtx: ctx };
 };
 
+/** MediaService over the same database: thumbnail jobs, with rendering mocked so a render shows up as a call. */
+const mediaService = () => {
+  const media = newMediumService(MediaService, {
+    database: db,
+    real: [AssetJobRepository, AssetRepository, ConfigRepository, PartnerOriginRepository, SystemMetadataRepository],
+    mock: [JobRepository, LoggingRepository, MediaRepository, StorageRepository],
+  });
+  media.ctx.getMock(JobRepository).queue.mockResolvedValue();
+  return media;
+};
+
 const albumAssetIds = async (albumId: string) =>
   (await db.selectFrom('album_asset').select('assetId').where('albumId', '=', albumId).execute())
     .map(({ assetId }) => assetId)
@@ -321,18 +332,7 @@ describe(PartnerCopyService.name, () => {
       }
       expect(jobs.queue).not.toHaveBeenCalled();
 
-      const media = newMediumService(MediaService, {
-        database: db,
-        real: [
-          AssetJobRepository,
-          AssetRepository,
-          ConfigRepository,
-          PartnerOriginRepository,
-          SystemMetadataRepository,
-        ],
-        mock: [JobRepository, LoggingRepository, MediaRepository, StorageRepository],
-      });
-      media.ctx.getMock(JobRepository).queue.mockResolvedValue();
+      const media = mediaService();
       // a "Missing" scan queues the copy; its job neither renders nor fails while the source has nothing yet
       await expect(media.sut.handleGenerateThumbnails({ id: copyId })).resolves.toBe(JobStatus.Skipped);
       expect(media.ctx.getMock(MediaRepository).generateThumbnail).not.toHaveBeenCalled();
@@ -397,6 +397,59 @@ describe(PartnerCopyService.name, () => {
       expect((await forced()).toSorted()).toEqual([copyId]);
       await expect(origins.getLiveSourceId(copyId)).resolves.toBeUndefined();
       await expect(origins.getLiveSourceId(onwardId)).resolves.toBe(copyId);
+    });
+
+    it('cleans up thumbnails a copy rendered for itself before FL-1287 on the nightly "Missing" scan', async () => {
+      const { sut, ctx, origins } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      const thumbhash = Buffer.from('source thumbhash');
+      const source = await newSourceAsset(ctx, alice.id);
+      const orphan = await newSourceAsset(ctx, alice.id);
+      for (const asset of [source, orphan]) {
+        await db.updateTable('asset').set({ thumbhash }).where('id', '=', asset.id).execute();
+        await ctx.newJobStatus({ assetId: asset.id, metadataExtractedAt: new Date() });
+      }
+      const copyId = (await sut.copyAsset(source.id, bob.id, alice.id))!;
+      const orphanCopyId = (await sut.copyAsset(orphan.id, bob.id, alice.id))!;
+      // the old behaviour: each copy rendered its own; only `source` has thumbnails of its own since
+      for (const [type, ext] of [
+        [AssetFileType.Thumbnail, 'webp'],
+        [AssetFileType.Preview, 'jpeg'],
+      ] as const) {
+        await ctx.newAssetFile({ assetId: source.id, type, path: `/thumbs/${source.id}.${ext}` });
+        await ctx.newAssetFile({ assetId: copyId, type, path: `/thumbs/bob/${copyId}.${ext}` });
+        await ctx.newAssetFile({ assetId: orphanCopyId, type, path: `/thumbs/bob/${orphanCopyId}.${ext}` });
+      }
+      const missing = async () =>
+        (
+          await ctx
+            .get(AssetJobRepository)
+            .selectionForThumbnailJob({ force: false, fullsizeEnabled: false })
+            // `orphan` itself has nothing yet, so it is (rightly) queued; the copies are what this is about
+            .where('asset.id', 'in', [source.id, copyId, orphanCopyId])
+            .execute()
+        ).map(({ id }) => id);
+      // a copy whose source has no thumbnails keeps its own and is not queued every night
+      expect(await missing()).toEqual([copyId]);
+
+      const media = mediaService();
+      await expect(media.sut.handleGenerateThumbnails({ id: copyId })).resolves.toBe(JobStatus.Skipped);
+
+      expect(media.ctx.getMock(MediaRepository).generateThumbnail).not.toHaveBeenCalled();
+      expect(media.ctx.getMock(JobRepository).queue).toHaveBeenCalledExactlyOnceWith({
+        name: JobName.FileDelete,
+        data: { files: expect.arrayContaining([`/thumbs/bob/${copyId}.webp`, `/thumbs/bob/${copyId}.jpeg`]) },
+      });
+      await expect(
+        db.selectFrom('asset_file').select(['type', 'path']).where('assetId', '=', copyId).orderBy('type').execute(),
+      ).resolves.toEqual([
+        { type: AssetFileType.Preview, path: `/thumbs/${source.id}.jpeg` },
+        { type: AssetFileType.Thumbnail, path: `/thumbs/${source.id}.webp` },
+      ]);
+      expect(await missing()).toEqual([]);
+      await expect(origins.shareGeneratedFiles(source.id)).resolves.toEqual([]);
     });
 
     it('creates the recipient their own asset linked to the same stored files, with no analysis queued', async () => {
