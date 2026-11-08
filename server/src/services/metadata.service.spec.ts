@@ -2206,6 +2206,27 @@ describe(MetadataService.name, () => {
       expect(mocks.asset.update).toHaveBeenCalledWith(expect.objectContaining({ duration: 123_000 }));
     });
 
+    it('should store no duration for an animated image that loops forever', async () => {
+      // ExifTool's reading of an AVIF sequence whose movie header records an indefinite duration
+      const asset = AssetFactory.create({ originalFileName: 'loop.avifs' });
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mockReadTags({ Duration: 4_611_686_018_427_390_000 }, {});
+
+      await sut.handleMetadataExtraction({ id: asset.id });
+
+      expect(mocks.asset.update).toHaveBeenCalledWith(expect.objectContaining({ duration: null }));
+    });
+
+    it('should keep the duration of an animated HEIF sequence', async () => {
+      const asset = AssetFactory.create({ originalFileName: 'burst.heics' });
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mockReadTags({ Duration: 0.5 }, {});
+
+      await sut.handleMetadataExtraction({ id: asset.id });
+
+      expect(mocks.asset.update).toHaveBeenCalledWith(expect.objectContaining({ duration: 500 }));
+    });
+
     it('should prefer Duration from exif over sidecar', async () => {
       const asset = AssetFactory.from({ originalFileName: 'file.webp' }).file({ type: AssetFileType.Sidecar }).build();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
@@ -2245,6 +2266,154 @@ describe(MetadataService.name, () => {
 
       expect(mocks.metadata.readTags).toHaveBeenCalledTimes(1);
       expect(mocks.asset.update).toHaveBeenCalledWith(expect.objectContaining({ duration: 456_000 }));
+    });
+
+    describe('360° video (FL-968)', () => {
+      const stream = videoInfoStub.videoStreamH264.videoStreams[0];
+      const probeWith = (
+        videoStreams: Array<{ index: number; width: number; height: number; projection?: string }>,
+        dataStreams: Array<{ index: number; codecTag: string | null; handlerName: string | null }> = [],
+      ) =>
+        mocks.media.probe.mockResolvedValue({
+          ...videoInfoStub.videoStreamH264,
+          videoStreams: videoStreams.map((dimensions) => ({ ...stream, ...dimensions })),
+          dataStreams,
+        });
+      const extract = async (originalFileName: string, tags: Partial<ImmichTags> = {}) => {
+        const asset = AssetFactory.create({
+          type: AssetType.Video,
+          originalFileName,
+          originalPath: `/library/${originalFileName}`,
+        });
+        mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+        mockReadTags(tags);
+        await sut.handleMetadataExtraction({ id: asset.id });
+        return asset;
+      };
+      const expectStored = (projectionType: string | null, size?: { width: number; height: number }) => {
+        expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+          expect.objectContaining({ exif: expect.objectContaining({ projectionType }) }),
+        );
+        if (size) {
+          expect(mocks.asset.update).toHaveBeenCalledWith(expect.objectContaining(size));
+        }
+      };
+
+      it('detects an Insta360 side-by-side recording and sizes it as its equirectangular picture', async () => {
+        probeWith([{ index: 0, width: 5760, height: 2880 }]);
+        await extract('VID_20250101_120000_00_001.insv', { Make: 'Insta360', Model: 'Insta360 X3' });
+        expectStored('DUAL_FISHEYE', { width: 5760, height: 2880 });
+      });
+
+      it('detects a DJI Osmo 360 recording with one track per lens, keeping the track size in exif', async () => {
+        probeWith([
+          { index: 0, width: 3840, height: 3840 },
+          { index: 1, width: 3840, height: 3840 },
+        ]);
+        await extract('CAM_20250801120000_0001_D.OSV', { Make: 'DJI', Model: 'Osmo360' });
+        expectStored('DUAL_FISHEYE', { width: 7680, height: 3840 });
+        expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+          expect.objectContaining({ exif: expect.objectContaining({ exifImageWidth: 3840, exifImageHeight: 3840 }) }),
+        );
+      });
+
+      it('detects a GoPro MAX recording from its two cubemap tracks', async () => {
+        probeWith(
+          [
+            { index: 0, width: 4096, height: 1344 },
+            { index: 5, width: 4096, height: 1344 },
+          ],
+          [{ index: 3, codecTag: 'gpmd', handlerName: 'GoPro MET' }],
+        );
+        await extract('GS010001.360', { Make: 'GoPro', Model: 'GoPro Max' });
+        expectStored('EQUIANGULAR_CUBEMAP', { width: 5376, height: 2688 });
+      });
+
+      it('keeps a flat recording in a 360° container an ordinary video', async () => {
+        probeWith([{ index: 0, width: 3840, height: 2160 }]);
+        await extract('VID_20250101_120000_00_003.insv');
+        expectStored(null, { width: 3840, height: 2160 });
+      });
+
+      it('prefers the layout the tracks prove over a projection tag the camera also writes', async () => {
+        probeWith([{ index: 0, width: 5760, height: 2880 }]);
+        await extract('VID_20250101_120000_00_001.insv', { ProjectionType: 'equirectangular' });
+        expectStored('DUAL_FISHEYE');
+      });
+
+      it('keeps the projection tag of an ordinary equirectangular MP4', async () => {
+        probeWith([{ index: 0, width: 3840, height: 1920 }]);
+        await extract('export.mp4', { ProjectionType: 'equirectangular' });
+        expectStored('EQUIRECTANGULAR', { width: 3840, height: 1920 });
+      });
+
+      it('reads an equirectangular sv3d box when the file has no projection tag', async () => {
+        probeWith([{ index: 0, width: 3840, height: 1920, projection: 'equirectangular' }]);
+        await extract('export.mp4');
+        expectStored('EQUIRECTANGULAR');
+      });
+
+      it('leaves an ordinary MP4 unchanged', async () => {
+        probeWith([{ index: 0, width: 1920, height: 1080 }]);
+        await extract('IMG_0001.MP4');
+        expectStored(null, { width: 1920, height: 1080 });
+      });
+    });
+
+    describe('DJI telemetry (FL-968)', () => {
+      const srt = '1\n00:00:00,000 --> 00:00:00,033\n[latitude: 47.376887] [longitude: 8.541694] [rel_alt: 1.2]\n';
+      beforeEach(() => {
+        mocks.systemMetadata.get.mockResolvedValue({ reverseGeocoding: { enabled: false } });
+        mocks.media.probe.mockResolvedValue(videoInfoStub.videoStreamH264);
+        mocks.storage.readFile.mockResolvedValue(Buffer.from(srt));
+      });
+      const extract = async (originalFileName: string, tags: Partial<ImmichTags> = {}) => {
+        const asset = AssetFactory.create({
+          type: AssetType.Video,
+          originalFileName,
+          originalPath: `/library/${originalFileName}`,
+        });
+        mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+        mockReadTags(tags);
+        await sut.handleMetadataExtraction({ id: asset.id });
+      };
+
+      it('takes the location of a DJI video without GPS from its .SRT file', async () => {
+        mocks.storage.checkFileExists.mockImplementation((path) => Promise.resolve(path === '/library/DJI_0001.SRT'));
+        await extract('DJI_0001.MP4', { Make: 'DJI' });
+        expect(mocks.storage.readFile).toHaveBeenCalledWith(
+          '/library/DJI_0001.SRT',
+          expect.objectContaining({ position: 0 }),
+        );
+        expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+          expect.objectContaining({ exif: expect.objectContaining({ latitude: 47.376887, longitude: 8.541694 }) }),
+        );
+      });
+
+      it('keeps the GPS a DJI video already has', async () => {
+        mocks.storage.checkFileExists.mockResolvedValue(true);
+        await extract('DJI_0001.MP4', { Make: 'DJI', GPSLatitude: 10, GPSLongitude: 20 });
+        expect(mocks.storage.readFile).not.toHaveBeenCalled();
+        expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+          expect.objectContaining({ exif: expect.objectContaining({ latitude: 10, longitude: 20 }) }),
+        );
+      });
+
+      it('does not look for telemetry next to other cameras’ videos', async () => {
+        mocks.storage.checkFileExists.mockResolvedValue(true);
+        await extract('IMG_0001.MOV', { Make: 'Apple' });
+        expect(mocks.storage.checkFileExists).not.toHaveBeenCalledWith('/library/IMG_0001.SRT', expect.anything());
+        expect(mocks.storage.readFile).not.toHaveBeenCalled();
+      });
+
+      it('leaves the location empty when the .SRT has no fix', async () => {
+        mocks.storage.checkFileExists.mockResolvedValue(true);
+        mocks.storage.readFile.mockResolvedValue(Buffer.from('[latitude: 0.0] [longitude: 0.0]'));
+        await extract('DJI_0002.MP4');
+        expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+          expect.objectContaining({ exif: expect.objectContaining({ latitude: null, longitude: null }) }),
+        );
+      });
     });
 
     it('should trim whitespace from description', async () => {

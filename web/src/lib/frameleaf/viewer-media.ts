@@ -21,6 +21,17 @@ export const isPanorama = (asset: Pick<AssetResponseDto, 'type' | 'exifInfo' | '
   (asset.exifInfo?.projectionType === ProjectionType.EQUIRECTANGULAR ||
     (asset.originalPath ?? '').toLowerCase().endsWith('.insp'));
 
+/**
+ * FL-968: raw 360° video layouts. The server stitches them into an equirectangular playback copy,
+ * so they play in the panorama viewer, but their original file is not itself equirectangular.
+ */
+export const isStitchedVideoProjection = (projectionType: string | null | undefined): boolean =>
+  projectionType === ProjectionType.DUAL_FISHEYE || projectionType === ProjectionType.EQUIANGULAR_CUBEMAP;
+
+/** A video the panorama viewer can look around: equirectangular, or a raw 360° layout played stitched. */
+export const isPanoramaVideoProjection = (projectionType: string | null | undefined): boolean =>
+  projectionType === ProjectionType.EQUIRECTANGULAR || isStitchedVideoProjection(projectionType);
+
 /** A still with a paired motion clip the viewer can play in place. */
 export const isLivePhoto = (asset: Pick<AssetResponseDto, 'livePhotoVideoId'>): boolean => !!asset.livePhotoVideoId;
 

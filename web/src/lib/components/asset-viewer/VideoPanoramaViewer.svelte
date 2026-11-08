@@ -4,12 +4,20 @@
   import { LoadingSpinner } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
   import { motionFade } from '$lib/frameleaf/motion';
+  import { isStitchedVideoProjection } from '$lib/frameleaf/viewer-media';
 
   interface Props {
     asset: AssetResponseDto;
+    projectionType?: string | null;
   }
 
-  const { asset }: Props = $props();
+  const { asset, projectionType = asset.exifInfo?.projectionType }: Props = $props();
+
+  // FL-968: a raw 360° original (two fisheye circles, a GoPro cubemap) only looks right stitched, so
+  // the playback copy is the only resolution offered; zooming in must not swap to the raw file.
+  const originalPanorama = $derived(
+    isStitchedVideoProjection(projectionType) ? undefined : { source: getAssetUrl({ asset, forceOriginal: true })! },
+  );
 
   const modules = Promise.all([
     import('./PhotoSphereViewerAdapter.svelte').then((module) => module.default),
@@ -25,7 +33,7 @@
   {:then [PhotoSphereViewer, adapter, videoPlugin]}
     <PhotoSphereViewer
       panorama={{ source: getAssetPlaybackUrl({ id: asset.id }) }}
-      originalPanorama={{ source: getAssetUrl({ asset, forceOriginal: true })! }}
+      {originalPanorama}
       plugins={[videoPlugin]}
       {adapter}
       navbar

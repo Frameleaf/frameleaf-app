@@ -89,6 +89,8 @@ const OTHER_MAKERS: Readonly<Record<string, string>> = {
   k25: 'Kodak',
   kdc: 'Kodak',
   erf: 'Epson',
+  mef: 'Mamiya',
+  mos: 'Leaf',
   mrw: 'Minolta',
   pef: 'Pentax',
   rwl: 'Leica',

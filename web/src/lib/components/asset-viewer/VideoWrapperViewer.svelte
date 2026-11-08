@@ -1,7 +1,7 @@
 <script lang="ts">
   import VideoNativeViewer from '$lib/components/asset-viewer/VideoNativeViewer.svelte';
   import VideoPanoramaViewer from '$lib/components/asset-viewer/VideoPanoramaViewer.svelte';
-  import { ProjectionType } from '$lib/constants';
+  import { isPanoramaVideoProjection } from '$lib/frameleaf/viewer-media';
   import type { AssetResponseDto } from '@frameleaf/sdk';
 
   interface Props {
@@ -39,8 +39,8 @@
   const effectiveAssetId = $derived(assetId ?? asset.id);
 </script>
 
-{#if projectionType === ProjectionType.EQUIRECTANGULAR}
-  <VideoPanoramaViewer {asset} />
+{#if isPanoramaVideoProjection(projectionType)}
+  <VideoPanoramaViewer {asset} {projectionType} />
 {:else}
   <VideoNativeViewer
     {loopVideo}
