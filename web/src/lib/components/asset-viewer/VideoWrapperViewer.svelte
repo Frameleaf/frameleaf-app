@@ -1,7 +1,7 @@
 <script lang="ts">
   import VideoNativeViewer from '$lib/components/asset-viewer/VideoNativeViewer.svelte';
   import VideoPanoramaViewer from '$lib/components/asset-viewer/VideoPanoramaViewer.svelte';
-  import { isPanoramaVideoProjection } from '$lib/frameleaf/viewer-media';
+  import { isPanoramaVideoProjection, isStitchedVideoProjection } from '$lib/frameleaf/viewer-media';
   import type { AssetResponseDto } from '@frameleaf/sdk';
 
   interface Props {
@@ -37,9 +37,15 @@
   }: Props = $props();
 
   const effectiveAssetId = $derived(assetId ?? asset.id);
+  // A raw dual-fisheye or cubemap original isn't equirectangular: it plays as 360° only once the
+  // server has made the stitched playback copy; until then the ordinary player shows it as recorded.
+  const lookAround = $derived(
+    isPanoramaVideoProjection(projectionType) &&
+      (!isStitchedVideoProjection(projectionType) || asset.playbackCopy === true),
+  );
 </script>
 
-{#if isPanoramaVideoProjection(projectionType)}
+{#if lookAround}
   <VideoPanoramaViewer {asset} {projectionType} />
 {:else}
   <VideoNativeViewer

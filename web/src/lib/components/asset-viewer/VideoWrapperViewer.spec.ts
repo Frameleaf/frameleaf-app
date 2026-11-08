@@ -14,9 +14,13 @@ vi.mock('@photo-sphere-viewer/equirectangular-video-adapter', () => ({ Equirecta
 vi.mock('@photo-sphere-viewer/video-plugin', () => ({ VideoPlugin: class {} }));
 vi.mock('@photo-sphere-viewer/video-plugin/index.css', () => ({}));
 
-const renderVideo = (projectionType: string | null) =>
+const renderVideo = (projectionType: string | null, playbackCopy: boolean | 'unknown' = true) =>
   render(VideoWrapperViewer, {
-    asset: assetFactory.build({ type: AssetTypeEnum.Video, exifInfo: { projectionType } }),
+    asset: assetFactory.build({
+      type: AssetTypeEnum.Video,
+      exifInfo: { projectionType },
+      playbackCopy: playbackCopy === 'unknown' ? undefined : playbackCopy,
+    }),
     projectionType,
     cacheKey: null,
     loopVideo: false,
@@ -34,6 +38,15 @@ describe('VideoWrapperViewer (FL-968)', () => {
       expect(screen.queryByTestId('video-source')).toBeNull();
     },
   );
+
+  it.each([
+    [ProjectionType.DUAL_FISHEYE, false],
+    [ProjectionType.EQUIANGULAR_CUBEMAP, 'unknown' as const],
+  ])('plays %s video in the ordinary player until the stitched copy exists', (projectionType, playbackCopy) => {
+    renderVideo(projectionType, playbackCopy);
+    expect(screen.getByTestId('video-source')).toBeTruthy();
+    expect(screen.queryByTestId('panorama')).toBeNull();
+  });
 
   it('keeps the original resolution for an equirectangular video', async () => {
     renderVideo(ProjectionType.EQUIRECTANGULAR);
