@@ -33,7 +33,7 @@
     isEnabled,
   } from '$lib/utils';
   import { filmstripToVtt, PLAYER_FILMSTRIP } from '$lib/utils/scrub-previews';
-  import { AssetMediaSize, AssetVisibility, getAssetFilmstrip, type AssetResponseDto } from '@frameleaf/sdk';
+  import { AssetMediaSize, AssetVisibility, getAssetFilmstrip, MediaKind, type AssetResponseDto } from '@frameleaf/sdk';
   import { Icon, LoadingSpinner, shortcuts } from '@frameleaf/ui';
   import {
     mdiCheck,
@@ -76,6 +76,7 @@
   import { useSwipe, type SwipeCustomEvent } from 'svelte-gestures';
   import { t } from 'svelte-i18n';
   import { motionFade } from '$lib/frameleaf/motion';
+  import { hasMediaKind, slowMotionRateAt } from '$lib/frameleaf/media-kinds';
   import './frameleaf-time-range';
 
   interface Props {
@@ -110,6 +111,51 @@
   }: Props = $props();
 
   let videoPlayer: HTMLVideoElement | undefined = $state();
+
+  /**
+   * FL-1284: a slow-motion clip plays as the camera app plays it, at real speed for the opening and
+   * closing moments and slowed in between. Choosing a speed in the player hands control back to the
+   * viewer for the rest of the clip.
+   */
+  const slowMotionFps = $derived(
+    assetId === asset.id && hasMediaKind(asset, MediaKind.SlowMotion) ? (asset.exifInfo?.fps ?? null) : null,
+  );
+  $effect(() => {
+    const player = videoPlayer;
+    const fps = slowMotionFps;
+    if (!player || !fps) {
+      return;
+    }
+    let applied = player.playbackRate;
+    let viewerChose = false;
+    const follow = () => {
+      if (viewerChose) {
+        return;
+      }
+      const rate = slowMotionRateAt(player.currentTime, player.duration, fps);
+      if (rate !== player.playbackRate) {
+        applied = rate;
+        player.playbackRate = rate;
+      }
+    };
+    const onRateChange = () => {
+      if (player.playbackRate !== applied) {
+        viewerChose = true;
+      }
+    };
+    player.addEventListener('timeupdate', follow);
+    player.addEventListener('seeked', follow);
+    player.addEventListener('ratechange', onRateChange);
+    follow();
+    return () => {
+      player.removeEventListener('timeupdate', follow);
+      player.removeEventListener('seeked', follow);
+      player.removeEventListener('ratechange', onRateChange);
+      if (!viewerChose) {
+        player.playbackRate = 1;
+      }
+    };
+  });
   let isLoading = $state(true);
   let hasLoadedMetadata = $state(false);
   let metadataSource = $state('');

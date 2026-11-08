@@ -92115,6 +92115,13 @@
             "nullable": true,
             "type": "string"
           },
+          "mediaKinds": {
+            "description": "Kinds of capture the file records: slow-motion, time-lapse, panorama, spherical, burst, portrait, selfie, screenshot, screen-recording. More may be added; ignore values you do not know. Absent until the metadata scan reads them",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "model": {
             "default": null,
             "description": "Camera model",
@@ -105502,6 +105509,51 @@
           "recoveryAvailable",
           "runs"
         ],
+        "type": "object"
+      },
+      "MediaKind": {
+        "enum": [
+          "slow-motion",
+          "time-lapse",
+          "panorama",
+          "spherical",
+          "burst",
+          "portrait",
+          "selfie",
+          "screenshot",
+          "screen-recording",
+          "long-exposure"
+        ],
+        "type": "string"
+      },
+      "MediaKindsFilter": {
+        "additionalProperties": false,
+        "properties": {
+          "all": {
+            "items": {
+              "$ref": "#/components/schemas/MediaKind"
+            },
+            "maxItems": 10,
+            "minItems": 1,
+            "type": "array"
+          },
+          "any": {
+            "items": {
+              "$ref": "#/components/schemas/MediaKind"
+            },
+            "maxItems": 10,
+            "minItems": 1,
+            "type": "array"
+          },
+          "none": {
+            "items": {
+              "$ref": "#/components/schemas/MediaKind"
+            },
+            "maxItems": 10,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
         "type": "object"
       },
       "MediaOperationAggregateDto": {
@@ -136387,7 +136439,8 @@
           "rating",
           "isFavorite",
           "tags",
-          "pets"
+          "pets",
+          "mediaKinds"
         ],
         "type": "string"
       },
@@ -136566,7 +136619,7 @@
             "items": {
               "$ref": "#/components/schemas/SearchFacetField"
             },
-            "maxItems": 11,
+            "maxItems": 12,
             "minItems": 1,
             "type": "array"
           },
@@ -137218,6 +137271,9 @@
           "make": {
             "$ref": "#/components/schemas/StringPatternFilter"
           },
+          "mediaKinds": {
+            "$ref": "#/components/schemas/MediaKindsFilter"
+          },
           "model": {
             "$ref": "#/components/schemas/StringPatternFilter"
           },
@@ -137372,6 +137428,9 @@
           },
           "make": {
             "$ref": "#/components/schemas/StringPatternFilter"
+          },
+          "mediaKinds": {
+            "$ref": "#/components/schemas/MediaKindsFilter"
           },
           "model": {
             "$ref": "#/components/schemas/StringPatternFilter"

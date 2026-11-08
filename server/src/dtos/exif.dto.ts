@@ -3,6 +3,7 @@ import z from 'zod';
 import type { MaybeDehydrated } from 'src/types.js';
 import { Exif } from 'src/database.js';
 import { asDateTimeString } from 'src/utils/date.js';
+import { isMediaKind } from 'src/utils/media-kinds.js';
 
 export const ExifResponseSchema = z
   .object({
@@ -42,6 +43,12 @@ export const ExifResponseSchema = z
     rating: z.int().min(1).max(5).nullish().default(null).describe('Rating'),
     isRejected: z.boolean().nullish().default(null).describe('Whether the stored rating is rejected'),
     fps: z.number().meta({ format: 'double' }).nullish().default(null).describe('Video frame rate (frames per second)'),
+    mediaKinds: z
+      .array(z.string())
+      .optional()
+      .describe(
+        'Kinds of capture the file records: slow-motion, time-lapse, panorama, spherical, burst, portrait, selfie, screenshot, screen-recording. More may be added; ignore values you do not know. Absent until the metadata scan reads them',
+      ),
   })
   .describe('EXIF response')
   .meta({ id: 'ExifResponseDto' });
@@ -79,5 +86,6 @@ export function mapExif(entity: MaybeDehydrated<Exif>): ExifResponseDto {
     rating: entity.rating === -1 || entity.rating === 0 ? null : entity.rating,
     isRejected: entity.rating === -1,
     fps: entity.fps ?? null,
+    ...(entity.mediaKinds && { mediaKinds: entity.mediaKinds.filter((kind) => isMediaKind(kind)) }),
   };
 }

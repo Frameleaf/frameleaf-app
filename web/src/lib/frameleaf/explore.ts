@@ -9,6 +9,7 @@ import {
 } from '@frameleaf/sdk';
 import { mdiCameraOutline, mdiHeartOutline, mdiImageSearchOutline, mdiMovieOpenOutline } from '@mdi/js';
 import type { Translations } from 'svelte-i18n';
+import { MEDIA_KINDS, mediaKindSearchHref } from '$lib/frameleaf/media-kinds';
 import { Route } from '$lib/route';
 
 /**
@@ -110,7 +111,13 @@ export const buildExploreShortcuts = (counts: ExploreShortcutCounts): ExploreSho
 /** Enough values that the People row can skip unnamed people and still fill its twelve cards. */
 export const EXPLORE_FACET_LIMIT = 30;
 
-export const EXPLORE_FACETS = [SearchFacetField.People, SearchFacetField.City, SearchFacetField.Tags];
+export const EXPLORE_FACETS = [
+  SearchFacetField.People,
+  SearchFacetField.City,
+  SearchFacetField.Tags,
+  // FL-1284: slow motion, panoramas, bursts … with a cover each
+  SearchFacetField.MediaKinds,
+];
 
 /**
  * T-12: the one `POST /search/facets` body Explore counts and covers its People, Places and "Things
@@ -196,6 +203,31 @@ export const buildExplorePlaces = (counts: ExploreFacetCount[], limit = EXPLORE_
     href: Route.search({ city: value }),
     coverAssetId: coverAssetId ?? null,
   }));
+
+/**
+ * FL-1284: "Media types", the capture kinds the library has (slow motion, panoramas, bursts …) in the
+ * camera app's order, each opening the search for that kind. Kinds this build cannot label are left out.
+ */
+export const buildExploreMediaKinds = (
+  counts: ExploreFacetCount[],
+  label: (kind: (typeof MEDIA_KINDS)[number]) => string,
+): ExploreCoverCard[] => {
+  const byValue = new Map(counts.map((count) => [count.value, count]));
+  return MEDIA_KINDS.flatMap((entry) => {
+    const count = byValue.get(entry.kind);
+    return count && count.count > 0
+      ? [
+          {
+            id: entry.kind,
+            label: label(entry),
+            count: count.count,
+            href: mediaKindSearchHref(entry.kind),
+            coverAssetId: count.coverAssetId ?? null,
+          },
+        ]
+      : [];
+  });
+};
 
 /*
  * FL-707 item 15 (explore-timeline.mjs `isThingKeyword`): "Things in your photos" lists things, not

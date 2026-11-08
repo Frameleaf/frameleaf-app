@@ -4524,6 +4524,8 @@ export type ExifResponseDto = {
     longitude?: number | null;
     /** Camera make */
     make?: string | null;
+    /** Kinds of capture the file records: slow-motion, time-lapse, panorama, spherical, burst, portrait, selfie, screenshot, screen-recording. More may be added; ignore values you do not know. Absent until the metadata scan reads them */
+    mediaKinds?: string[];
     /** Camera model */
     model?: string | null;
     /** Modification date/time */
@@ -6982,6 +6984,11 @@ export type IdFilterNullable = {
     eq?: string | null;
     ne?: string | null;
 };
+export type MediaKindsFilter = {
+    all?: MediaKind[];
+    "any"?: MediaKind[];
+    none?: MediaKind[];
+};
 export type StringSimilarityFilter = {
     matches: string;
 };
@@ -7044,6 +7051,7 @@ export type SearchFilterBranch = {
     libraryId?: IdFilterNullable;
     localDateTime?: DateFilter;
     make?: StringPatternFilter;
+    mediaKinds?: MediaKindsFilter;
     model?: StringPatternFilter;
     ocr?: StringSimilarityFilter;
     originalFileName?: StringPatternFilter;
@@ -7097,6 +7105,7 @@ export type SearchFilter = {
     libraryScope?: LibraryViewScope;
     localDateTime?: DateFilter;
     make?: StringPatternFilter;
+    mediaKinds?: MediaKindsFilter;
     model?: StringPatternFilter;
     ocr?: StringSimilarityFilter;
     or?: SearchFilterBranch[];
@@ -38897,6 +38906,18 @@ export enum ColorTolerance {
     Normal = "normal",
     Broad = "broad"
 }
+export enum MediaKind {
+    SlowMotion = "slow-motion",
+    TimeLapse = "time-lapse",
+    Panorama = "panorama",
+    Spherical = "spherical",
+    Burst = "burst",
+    Portrait = "portrait",
+    Selfie = "selfie",
+    Screenshot = "screenshot",
+    ScreenRecording = "screen-recording",
+    LongExposure = "long-exposure"
+}
 export enum ClassificationMediaType {
     Any = "any",
     Photo = "photo",
@@ -40530,7 +40551,8 @@ export enum SearchFacetField {
     Rating = "rating",
     IsFavorite = "isFavorite",
     Tags = "tags",
-    Pets = "pets"
+    Pets = "pets",
+    MediaKinds = "mediaKinds"
 }
 export enum SearchHistogramGranularity {
     Day = "day",

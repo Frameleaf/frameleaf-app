@@ -17,6 +17,7 @@ import {
 import {
   BEST_PHOTOS_PREVIEW_LIMIT,
   BEST_PHOTOS_QUALITY_MIN_SCORE,
+  buildExploreMediaKinds,
   buildExplorePeople,
   buildExplorePlaces,
   buildExploreThings,
@@ -180,6 +181,9 @@ export const load = (async ({ url }) => {
     peopleCards: buildExplorePeople(facetCounts(facets?.facets, SearchFacetField.People), people?.people ?? []),
     places: buildExplorePlaces(facetCounts(facets?.facets, SearchFacetField.City)),
     things,
+    mediaKinds: buildExploreMediaKinds(facetCounts(facets?.facets, SearchFacetField.MediaKinds), (entry) =>
+      $t(entry.labelKey),
+    ),
     landmarkSection: loadLandmarks(),
     libraryTotal: facets ? facets.total : null,
     recentCaptures: recentCaptures ?? [],

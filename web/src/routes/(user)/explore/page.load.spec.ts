@@ -84,13 +84,13 @@ describe('the Explore loader', () => {
     expect(data.things.map(({ label }) => label)).toEqual(['beach']);
   });
 
-  it('counts and covers People, Places and Things with Timeline visibility, in one request', async () => {
+  it('counts and covers People, Places, Things and Media types with Timeline visibility, in one request', async () => {
     const data = await open();
 
     expect(searchFacets).toHaveBeenCalledOnce();
     expect(vi.mocked(searchFacets).mock.calls[0][0].searchFacetsDto).toMatchObject({
       visibility: AssetVisibility.Timeline,
-      facets: [SearchFacetField.People, SearchFacetField.City, SearchFacetField.Tags],
+      facets: [SearchFacetField.People, SearchFacetField.City, SearchFacetField.Tags, SearchFacetField.MediaKinds],
       facetCovers: true,
     });
     expect(data.places).toEqual([expect.objectContaining({ label: 'Paris', count: 2, coverAssetId: 'newest' })]);

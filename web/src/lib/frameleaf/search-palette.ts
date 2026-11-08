@@ -3,6 +3,7 @@ import {
   AssetVisibility,
   LibraryViewScope,
   ImageEnrichmentFilter,
+  MediaKind,
   type ClassificationRuleCreateDto,
   SearchFacetField,
   type SavedSearch,
@@ -20,6 +21,7 @@ import {
   type DiscoverySearchDto,
   type DiscoveryTextField,
 } from '$lib/components/discovery/query';
+import { mediaKindInfo } from '$lib/frameleaf/media-kinds';
 import type { FilterPanelOptions } from '$lib/frameleaf/search-options';
 
 /**
@@ -46,6 +48,33 @@ import type { FilterPanelOptions } from '$lib/frameleaf/search-options';
 /* -------------------------------------------------------------------------- */
 /* Modes                                                                        */
 /* -------------------------------------------------------------------------- */
+
+/** FL-1284: the words `is:` takes for a capture kind, in English and as the kinds are named in the API. */
+const MEDIA_KIND_WORDS: Readonly<Record<string, MediaKind>> = {
+  slomo: MediaKind.SlowMotion,
+  slowmo: MediaKind.SlowMotion,
+  slowmotion: MediaKind.SlowMotion,
+  timelapse: MediaKind.TimeLapse,
+  pano: MediaKind.Panorama,
+  panorama: MediaKind.Panorama,
+  panoramas: MediaKind.Panorama,
+  '360': MediaKind.Spherical,
+  spherical: MediaKind.Spherical,
+  burst: MediaKind.Burst,
+  bursts: MediaKind.Burst,
+  portrait: MediaKind.Portrait,
+  portraits: MediaKind.Portrait,
+  selfie: MediaKind.Selfie,
+  selfies: MediaKind.Selfie,
+  screenshot: MediaKind.Screenshot,
+  screenshots: MediaKind.Screenshot,
+  screenrecording: MediaKind.ScreenRecording,
+  screenrecordings: MediaKind.ScreenRecording,
+  longexposure: MediaKind.LongExposure,
+  longexposures: MediaKind.LongExposure,
+};
+const mediaKindForWord = (word: string): MediaKind | undefined =>
+  MEDIA_KIND_WORDS[word.toLowerCase().replaceAll(/[\s_-]/g, '')];
 
 /** The palette's search modes: smart search, "All text" (every text field) or one text field. */
 export type PaletteMode = 'speech' | 'smart' | 'all' | DiscoveryTextField;
@@ -476,6 +505,14 @@ const resolveToken = (
       return { display: value, fields: ['rating'] };
     }
     case 'is': {
+      // FL-1284: is:slomo, is:panorama, is:burst … name a capture kind
+      const kind = mediaKindForWord(value);
+      if (kind) {
+        const current = (filter.mediaKinds ?? {}) as { any?: MediaKind[]; none?: MediaKind[] };
+        const group = exclude ? 'none' : 'any';
+        filter.mediaKinds = { ...current, [group]: [...new Set([...(current[group] ?? []), kind])] };
+        return { display: value, fields: ['mediaKinds'] };
+      }
       if (!/^(fav|favou?rites?)$/i.test(value)) {
         return null;
       }
@@ -536,7 +573,8 @@ export const tokenLabel = ($t: MessageFormatter, token: Pick<PaletteToken, 'key'
       break;
     }
     case 'is': {
-      label = $t('favorites');
+      const kind = mediaKindForWord(value);
+      label = kind ? $t(mediaKindInfo(kind)!.labelKey) : $t('favorites');
       break;
     }
     case 'after': {

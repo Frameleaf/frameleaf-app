@@ -46,6 +46,7 @@ const data = (recentCaptures: AssetResponseDto[] = []) =>
     peopleCards: [],
     places: [],
     things: [],
+    mediaKinds: [],
     landmarkSection: Promise.resolve({ cards: [], albumSuggestion: null, failed: false }),
     memories: [],
     albums: [],

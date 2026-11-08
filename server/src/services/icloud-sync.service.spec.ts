@@ -85,8 +85,18 @@ describe(ICloudSyncService.name, () => {
     disconnect: vi.fn(),
     reviewItems: vi.fn(),
     receipts: vi.fn(),
+    initializeCheckpoint: vi.fn(),
+    saveMembershipPage: vi.fn(),
+    materialize: vi.fn(),
   };
-  const transport = { decodeSession: vi.fn(), encodeSession: vi.fn(), authenticate: vi.fn(), enabled: vi.fn() };
+  const transport = {
+    decodeSession: vi.fn(),
+    encodeSession: vi.fn(),
+    authenticate: vi.fn(),
+    enabled: vi.fn(),
+    inventory: vi.fn(),
+    capabilities: vi.fn().mockResolvedValue({ smartAlbums: true }),
+  };
   const staging = { download: vi.fn(), cleanup: vi.fn(), root: vi.fn() };
   const identities = { claimForSync: vi.fn() };
   const recovery = { verifyMapped: vi.fn(), reconcile: vi.fn() };
@@ -191,6 +201,117 @@ describe(ICloudSyncService.name, () => {
       } as never,
       weeklySchedule as never,
     );
+  });
+
+  it('lists each iCloud smart album as memberships of a reserved album, never as inventory records (FL-1289)', async () => {
+    const library = { area: 'private', zoneID: { zoneName: 'PrimarySync' } };
+    const records = [
+      { recordName: 'asset', recordType: 'CPLAsset', fields: {} },
+      { recordName: 'master', recordType: 'CPLMaster', fields: {} },
+    ];
+    const open = new Set(['smart:lib:TIMELAPSE', 'smart:lib:DEPTH']);
+    repository.inventory.mockResolvedValue({ libraries: [{ id: 'lib', fields: library }], albums: [] });
+    repository.checkpoint.mockImplementation((_id: string, scope: string) =>
+      Promise.resolve(open.has(scope) ? undefined : { complete: true }),
+    );
+    repository.materialize.mockResolvedValue(true);
+    transport.inventory.mockResolvedValue({
+      session: {},
+      records,
+      nextCursor: 'next',
+      complete: false,
+      capabilities: { smartAlbums: true },
+    });
+    const enumerate = (sut as unknown as { enumerate(c: typeof connection): Promise<boolean> }).enumerate.bind(sut);
+
+    await expect(enumerate(connection)).resolves.toBe(false);
+    expect(transport.inventory).toHaveBeenCalledTimes(1);
+    expect(transport.inventory).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'assets', library, smartAlbum: 'TIMELAPSE', cursor: undefined }),
+    );
+    expect(repository.saveMembershipPage).toHaveBeenCalledWith(
+      'connection',
+      'lib',
+      'smart:TIMELAPSE',
+      records,
+      expect.any(String),
+      false,
+      undefined,
+    );
+    // the library inventory's own CPLAsset/CPLMaster copies are left alone
+    expect(repository.savePage).toHaveBeenCalledWith(
+      'connection',
+      'smart:lib:TIMELAPSE',
+      'lib',
+      [],
+      'next',
+      false,
+      undefined,
+    );
+    expect(repository.materialize).not.toHaveBeenCalled();
+
+    // once every smart album is done, materialization (which reads the memberships) follows
+    open.clear();
+    await expect(enumerate(connection)).resolves.toBe(true);
+    expect(repository.materialize).toHaveBeenCalled();
+  });
+
+  it('never trusts a smart album page from a bridge without smart albums, and skips one Apple refuses (FL-1289)', async () => {
+    const library = { area: 'private', zoneID: { zoneName: 'PrimarySync' } };
+    repository.inventory.mockResolvedValue({ libraries: [{ id: 'lib', fields: library }], albums: [] });
+    repository.checkpoint.mockImplementation((_id: string, scope: string) =>
+      Promise.resolve(scope === 'smart:lib:SLOMO' ? undefined : { complete: true }),
+    );
+    const enumerate = (sut as unknown as { enumerate(c: typeof connection): Promise<boolean> }).enumerate.bind(sut);
+    const skipped = () =>
+      expect(repository.savePage).toHaveBeenCalledWith(
+        'connection',
+        'smart:lib:SLOMO',
+        'lib',
+        [],
+        null,
+        true,
+        undefined,
+      );
+
+    // an older bridge ignores the field and lists the whole library
+    transport.inventory.mockResolvedValueOnce({
+      session: {},
+      records: [{ recordName: 'asset', recordType: 'CPLAsset', fields: {} }],
+      complete: true,
+      capabilities: {},
+    });
+    await expect(enumerate(connection)).resolves.toBe(false);
+    expect(repository.saveMembershipPage).not.toHaveBeenCalled();
+    skipped();
+
+    repository.savePage.mockClear();
+    transport.inventory.mockRejectedValueOnce(new ICloudTransportError('icloud_transport_failed'));
+    await expect(enumerate(connection)).resolves.toBe(false);
+    skipped();
+
+    transport.inventory.mockRejectedValueOnce(new ICloudTransportError('reauthentication_required'));
+    await expect(enumerate(connection)).rejects.toThrow('reauthentication_required');
+  });
+
+  it('asks the bridge first and skips smart albums on one from before them (FL-1289)', async () => {
+    const library = { area: 'private', zoneID: { zoneName: 'PrimarySync' } };
+    repository.inventory.mockResolvedValue({ libraries: [{ id: 'lib', fields: library }], albums: [] });
+    repository.checkpoint.mockImplementation((_id: string, scope: string) =>
+      Promise.resolve(scope === 'smart:lib:SLOMO' ? undefined : { complete: true }),
+    );
+    const enumerate = (sut as unknown as { enumerate(c: typeof connection): Promise<boolean> }).enumerate.bind(sut);
+
+    // an older bridge: never sent the field it would refuse
+    transport.capabilities.mockResolvedValueOnce({});
+    await expect(enumerate(connection)).resolves.toBe(false);
+    expect(transport.inventory).not.toHaveBeenCalled();
+    expect(repository.savePage).toHaveBeenCalledWith('connection', 'smart:lib:SLOMO', 'lib', [], null, true, undefined);
+
+    // a bridge with smart albums: invalid_request (a bad session or cursor) stays a failure
+    transport.capabilities.mockResolvedValueOnce({ smartAlbums: true });
+    transport.inventory.mockRejectedValueOnce(new ICloudTransportError('invalid_request'));
+    await expect(enumerate(connection)).rejects.toThrow('invalid_request');
   });
 
   it('drives weekly production from the existing schedule before nudging the worker', async () => {

@@ -15,6 +15,7 @@ import {
   SearchOrderField,
   SearchOrderFieldSchema,
 } from 'src/enum.js';
+import { MEDIA_KINDS } from 'src/utils/media-kinds.js';
 import { isoDatetimeToDate, nonEmptyPartial, stringToBool } from 'src/validation.js';
 
 const ADDED_V3_2 = new HistoryBuilder().added('v3.2.0').getExtensions();
@@ -214,6 +215,19 @@ const LandmarkIdsFilterSchema = nonEmptyPartial({ any: landmarkIds, none: landma
   id: 'LandmarkIdsFilter',
 });
 
+// FL-1284: the capture kinds `asset_exif.mediaKinds` holds (`src/utils/media-kinds.ts`); a request enum only,
+// responses carry kinds as plain strings
+const MediaKindSchema = z.enum(MEDIA_KINDS).meta({ id: 'MediaKind' });
+const mediaKindList = z.array(MediaKindSchema).min(1).max(MEDIA_KINDS.length);
+// strict, so a misspelt group is refused rather than dropped (which would widen the filter)
+const MediaKindsFilterSchema = z
+  .strictObject({ any: mediaKindList, all: mediaKindList, none: mediaKindList })
+  .partial()
+  .refine((data) => Object.values(data).some((value) => value !== undefined), {
+    message: 'At least one of the following fields is required: any, all, none',
+  })
+  .meta({ id: 'MediaKindsFilter' });
+
 const stringListShape = {
   in: z.array(z.string()).min(1),
   notIn: z.array(z.string()).min(1),
@@ -382,6 +396,8 @@ const searchFilterBranchShape = {
   tagIds: IdsFilterSchema,
   // FL-353: photos and videos taken at any of (or none of) these landmarks
   landmarkIds: LandmarkIdsFilterSchema,
+  // FL-1284: slow motion, panoramas, bursts, portraits … as the file's metadata records them
+  mediaKinds: MediaKindsFilterSchema,
   albumIds: IdsFilterSchema,
   checksum: StringFilterSchema,
   encodedVideoPath: StringFilterSchema,
@@ -408,6 +424,7 @@ export type IdFilter = z.infer<typeof IdFilterSchema>;
 export type IdFilterNullable = z.infer<typeof IdFilterNullableSchema>;
 export type IdsFilter = z.infer<typeof IdsFilterSchema>;
 export type LandmarkIdsFilter = z.infer<typeof LandmarkIdsFilterSchema>;
+export type MediaKindsFilter = z.infer<typeof MediaKindsFilterSchema>;
 export type StringFilter = z.infer<typeof StringFilterSchema>;
 export type StringFilterNullable = z.infer<typeof StringFilterNullableSchema>;
 export type StringPatternFilter = z.infer<typeof StringPatternFilterSchema>;
@@ -613,6 +630,8 @@ export enum SearchFacetField {
   IsFavorite = 'isFavorite',
   Tags = 'tags',
   Pets = 'pets',
+  /** FL-1284: capture kinds (slow-motion, panorama, burst …); counts assets that have the kind */
+  MediaKinds = 'mediaKinds',
 }
 
 export const SearchFacetFieldSchema = z.enum(SearchFacetField).meta({ id: 'SearchFacetField' });

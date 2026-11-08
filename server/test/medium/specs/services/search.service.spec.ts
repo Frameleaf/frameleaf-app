@@ -1,6 +1,6 @@
 import { Kysely } from 'kysely';
 import type { HiddenContentFilter } from 'src/utils/hidden-content.js';
-import { SearchSuggestionType } from 'src/dtos/search.dto.js';
+import { SearchFacetField, SearchSuggestionType } from 'src/dtos/search.dto.js';
 import {
   AlbumUserRole,
   AssetLockReason,
@@ -917,6 +917,48 @@ describe(SearchService.name, () => {
       await expect(ids({ or: [{ isPanorama: { eq: true } }, { isScreenshot: { eq: true } }] })).resolves.toEqual(
         [sphere, sweep, insta, android, mac, ios].sort(),
       );
+    });
+
+    it('filters and counts capture kinds (FL-1284)', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const item = async (mediaKinds: string[] | null, originalFileName = 'IMG_0001.HEIC') => {
+        const { asset } = await ctx.newAsset({ ownerId: user.id, originalFileName });
+        await ctx.newExif({ assetId: asset.id, mediaKinds });
+        return asset.id;
+      };
+      const slowMo = await item(['slow-motion']);
+      const portraitSelfie = await item(['portrait', 'selfie']);
+      const pano = await item(['panorama']);
+      const screenshot = await item(['screenshot'], 'IMG_0002.HEIC');
+      const plain = await item([]);
+      const unscanned = await item(null);
+      const auth = factory.auth({ user });
+      const ids = async (filter: object) =>
+        (await sut.searchMetadata(auth, { filter })).assets.items.map(({ id }) => id).sort();
+
+      await expect(ids({ mediaKinds: { any: ['portrait', 'slow-motion'] } })).resolves.toEqual(
+        [slowMo, portraitSelfie].sort(),
+      );
+      await expect(ids({ mediaKinds: { all: ['portrait', 'selfie'] } })).resolves.toEqual([portraitSelfie]);
+      await expect(ids({ mediaKinds: { none: ['slow-motion', 'panorama', 'screenshot'] } })).resolves.toEqual(
+        [portraitSelfie, plain, unscanned].sort(),
+      );
+      // the panorama and screenshot filters also take what the metadata scan read
+      await expect(ids({ isPanorama: { eq: true } })).resolves.toEqual([pano]);
+      await expect(ids({ isScreenshot: { eq: true } })).resolves.toEqual([screenshot]);
+
+      const facets = await sut.searchFacets(auth, { facets: [SearchFacetField.MediaKinds] });
+      expect(facets.facets[0].counts).toEqual(
+        expect.arrayContaining([
+          { value: 'slow-motion', count: 1 },
+          { value: 'portrait', count: 1 },
+          { value: 'selfie', count: 1 },
+          { value: 'panorama', count: 1 },
+          { value: 'screenshot', count: 1 },
+        ]),
+      );
+      expect(facets.facets[0].counts).toHaveLength(5);
     });
 
     it('narrows by the local capture date, which is what the histogram buckets by', async () => {

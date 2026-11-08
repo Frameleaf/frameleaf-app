@@ -5726,6 +5726,27 @@ with
     union all
     select
       $15::text as field,
+      k.kind::text as value,
+      null::text as label,
+      count(*) as count,
+      right(
+        max(
+          to_char(
+            m."fileCreatedAt" at time zone 'UTC',
+            'YYYYMMDDHH24MISSUS'
+          ) || m.id::text collate "C"
+        ),
+        36
+      ) as cover
+    from
+      matched m
+      inner join asset_exif e on e."assetId" = m.id
+      cross join lateral unnest(e."mediaKinds") as k (kind)
+    group by
+      2
+    union all
+    select
+      $16::text as field,
       f."personGroupId"::text as value,
       max(nullif(p.name, '')) as label,
       count(distinct m.id) as count,
@@ -5744,15 +5765,15 @@ with
       and f."deletedAt" is null
       and f."isVisible" is true
       inner join person p on p."personGroupId" = f."personGroupId"
-      and p."ownerId" = $16::uuid
+      and p."ownerId" = $17::uuid
       and not p."isHidden"
     where
-      not (f."personGroupId" = any ($17::uuid[]))
+      not (f."personGroupId" = any ($18::uuid[]))
     group by
       f."personGroupId"
     union all
     select
-      $18::text as field,
+      $19::text as field,
       t.id::text as value,
       max(t.value) as label,
       count(distinct m.id) as count,
@@ -5770,7 +5791,7 @@ with
       inner join tag_asset ta on ta."assetId" = m.id
       inner join tag_closure tc on tc.id_descendant = ta."tagId"
       inner join tag t on t.id = tc.id_ancestor
-      and t."userId" = $19::uuid
+      and t."userId" = $20::uuid
     where
       not exists (
         select
@@ -5779,13 +5800,13 @@ with
           tag_closure
         where
           tag_closure.id_descendant = "t"."id"
-          and tag_closure.id_ancestor = any ($20::uuid[])
+          and tag_closure.id_ancestor = any ($21::uuid[])
       )
     group by
       t.id
     union all
     select
-      $21::text as field,
+      $22::text as field,
       pet.id::text as value,
       max(nullif(pet.name, '')) as label,
       count(distinct m.id) as count,
@@ -5801,12 +5822,12 @@ with
     from
       matched m
       inner join pet_observation po on po."assetId" = m.id
-      and po.state = $22
+      and po.state = $23
       inner join pet on pet.id = po."petId"
-      and pet."ownerId" = $23::uuid
+      and pet."ownerId" = $24::uuid
       and not pet."isHidden"
     where
-      not (pet.id = any ($24::uuid[]))
+      not (pet.id = any ($25::uuid[]))
     group by
       pet.id
     union all
@@ -5841,7 +5862,7 @@ select
 from
   ranked
 where
-  rank <= $25
+  rank <= $26
 order by
   field,
   rank
@@ -6071,6 +6092,27 @@ with
     union all
     select
       $17::text as field,
+      k.kind::text as value,
+      null::text as label,
+      count(*) as count,
+      right(
+        max(
+          to_char(
+            m."fileCreatedAt" at time zone 'UTC',
+            'YYYYMMDDHH24MISSUS'
+          ) || m.id::text collate "C"
+        ),
+        36
+      ) as cover
+    from
+      matched m
+      inner join asset_exif e on e."assetId" = m.id
+      cross join lateral unnest(e."mediaKinds") as k (kind)
+    group by
+      2
+    union all
+    select
+      $18::text as field,
       f."personGroupId"::text as value,
       max(nullif(p.name, '')) as label,
       count(distinct m.id) as count,
@@ -6089,15 +6131,15 @@ with
       and f."deletedAt" is null
       and f."isVisible" is true
       inner join person p on p."personGroupId" = f."personGroupId"
-      and p."ownerId" = $18::uuid
+      and p."ownerId" = $19::uuid
       and not p."isHidden"
     where
-      not (f."personGroupId" = any ($19::uuid[]))
+      not (f."personGroupId" = any ($20::uuid[]))
     group by
       f."personGroupId"
     union all
     select
-      $20::text as field,
+      $21::text as field,
       t.id::text as value,
       max(t.value) as label,
       count(distinct m.id) as count,
@@ -6115,7 +6157,7 @@ with
       inner join tag_asset ta on ta."assetId" = m.id
       inner join tag_closure tc on tc.id_descendant = ta."tagId"
       inner join tag t on t.id = tc.id_ancestor
-      and t."userId" = $21::uuid
+      and t."userId" = $22::uuid
     where
       not exists (
         select
@@ -6124,13 +6166,13 @@ with
           tag_closure
         where
           tag_closure.id_descendant = "t"."id"
-          and tag_closure.id_ancestor = any ($22::uuid[])
+          and tag_closure.id_ancestor = any ($23::uuid[])
       )
     group by
       t.id
     union all
     select
-      $23::text as field,
+      $24::text as field,
       pet.id::text as value,
       max(nullif(pet.name, '')) as label,
       count(distinct m.id) as count,
@@ -6146,12 +6188,12 @@ with
     from
       matched m
       inner join pet_observation po on po."assetId" = m.id
-      and po.state = $24
+      and po.state = $25
       inner join pet on pet.id = po."petId"
-      and pet."ownerId" = $25::uuid
+      and pet."ownerId" = $26::uuid
       and not pet."isHidden"
     where
-      not (pet.id = any ($26::uuid[]))
+      not (pet.id = any ($27::uuid[]))
     group by
       pet.id
     union all
@@ -6186,7 +6228,7 @@ select
 from
   ranked
 where
-  rank <= $27
+  rank <= $28
 order by
   field,
   rank

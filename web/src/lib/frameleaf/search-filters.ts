@@ -1,6 +1,7 @@
 import { AssetTypeEnum, AssetVisibility, ImageEnrichmentFilter } from '@frameleaf/sdk';
 import type { MessageFormatter, Translations } from 'svelte-i18n';
 import { activeFilterFields, ENRICHMENT_FIELD, type DiscoveryQuery } from '$lib/components/discovery/query';
+import { mediaKindInfo } from '$lib/frameleaf/media-kinds';
 
 /**
  * Filter-panel control state for the Frameleaf search dialog (FL-49).
@@ -256,6 +257,7 @@ const FIELD_LABEL_KEYS: Record<string, Translations> = {
   albumIds: 'albums',
   landmarkIds: 'frameleaf_landmarks_title',
   type: 'media_type',
+  mediaKinds: 'frameleaf_media_kinds_filter',
   takenAt: 'frameleaf_search_field_taken_at',
   localDateTime: 'frameleaf_search_field_taken_at',
   createdAt: 'frameleaf_search_field_created_at',
@@ -348,6 +350,13 @@ const valueLabel = ($t: MessageFormatter, field: string, value: unknown, options
     }
     case 'rating': {
       return value === null ? $t('frameleaf_search_unrated') : String(value);
+    }
+    case 'mediaKinds': {
+      const kind = typeof value === 'string' ? mediaKindInfo(value) : undefined;
+      if (kind) {
+        return $t(kind.labelKey);
+      }
+      break;
     }
   }
   if (field === ENRICHMENT_FIELD) {

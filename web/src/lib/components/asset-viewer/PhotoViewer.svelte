@@ -21,7 +21,8 @@
   import { handleError } from '$lib/utils/handle-error';
   import { getOcrBoundingBoxes } from '$lib/utils/ocr-utils';
   import { getBoundingBox, type BoundingBox } from '$lib/utils/people-utils';
-  import { type SharedLinkResponseDto } from '@frameleaf/sdk';
+  import { MediaKind, type SharedLinkResponseDto } from '@frameleaf/sdk';
+  import { hasMediaKind } from '$lib/frameleaf/media-kinds';
   import { toastManager } from '@frameleaf/ui';
   import { onDestroy, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -43,6 +44,8 @@
   const asset = $derived(cursor.current);
 
   let visibleImageReady: boolean = $state(false);
+  /** A very long panorama still opens no more than this far in. */
+  const PANORAMA_MAX_FILL_ZOOM = 6;
 
   let previousAssetId: string | undefined;
   $effect.pre(() => {
@@ -70,6 +73,32 @@
     width: containerWidth,
     height: containerHeight,
   });
+
+  /**
+   * FL-1284: a panorama opens filling the screen's height, so it can be dragged across the way the
+   * camera app shows it, instead of a thin strip; zooming out shows it whole. Not in a slideshow.
+   */
+  const panToFill = () => {
+    if (
+      $slideshowState !== SlideshowState.None ||
+      !assetViewerManager.imgRef ||
+      !hasMediaKind(asset, MediaKind.Panorama)
+    ) {
+      return;
+    }
+    const natural = getNaturalSize(assetViewerManager.imgRef);
+    const fitted = scaleToFit(natural, { width: containerWidth, height: containerHeight });
+    if (fitted.width <= 0 || fitted.height <= 0) {
+      return;
+    }
+    const zoom = Math.min(
+      PANORAMA_MAX_FILL_ZOOM,
+      Math.max(containerWidth / fitted.width, containerHeight / fitted.height),
+    );
+    if (zoom > 1.2) {
+      assetViewerManager.animatedZoom(zoom);
+    }
+  };
 
   const overlaySize = $derived.by((): Size => {
     if (!assetViewerManager.imgRef || !visibleImageReady) {
@@ -269,6 +298,7 @@
     {onUrlChange}
     onImageReady={() => {
       visibleImageReady = true;
+      panToFill();
       onReady?.();
     }}
     onError={() => {

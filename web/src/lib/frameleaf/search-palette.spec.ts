@@ -2,6 +2,7 @@ import {
   AssetTypeEnum,
   AssetVisibility,
   ImageEnrichmentFilter,
+  MediaKind,
   SearchFacetField,
   LibraryViewScope,
   ColorTolerance,
@@ -80,6 +81,21 @@ const translate = ((key: string, options?: { values?: Record<string, unknown> })
   options?.values ? `${key}(${JSON.stringify(options.values)})` : key) as never;
 
 describe('parseSearchInput', () => {
+  it('reads is: capture kinds into the mediaKinds filter (FL-1284)', () => {
+    const { text, filter } = parseSearchInput('beach is:slomo is:Panorama -is:screenshot is:360', catalog);
+    expect(text).toBe('beach');
+    expect(filter).toEqual({
+      mediaKinds: {
+        any: [MediaKind.SlowMotion, MediaKind.Panorama, MediaKind.Spherical],
+        none: [MediaKind.Screenshot],
+      },
+    });
+    expect(parseSearchInput('is:time-lapse', catalog).filter).toEqual({
+      mediaKinds: { any: [MediaKind.TimeLapse] },
+    });
+    expect(parseSearchInput('is:nonsense', catalog).filter).toEqual({});
+  });
+
   it('compiles every operator to the structured search filter', () => {
     const { text, filter, tokens } = parseSearchInput(
       'hiking person:Jamie -person:"Robin Lee" tag:water place:Banff type:video camera:sony lens:24-70 ' +

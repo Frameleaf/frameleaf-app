@@ -28,6 +28,7 @@ import {
   DEFAULT_SEARCH_ORDER,
   IdsFilter,
   LandmarkIdsFilter,
+  MediaKindsFilter,
   SearchFilter,
   SearchFilterBranch,
   SearchOrder,
@@ -904,6 +905,18 @@ function landmarkIdsPredicates(eb: AssetExpressionBuilder, filter?: LandmarkIdsF
     );
   return [...(any ? [at(any)] : []), ...(none ? [eb.not(at(none))] : [])];
 }
+/** FL-1284: capture kinds by array overlap (any), containment (all) and no overlap (none); GIN-indexed */
+function mediaKindsPredicates(filter?: MediaKindsFilter): Expression<SqlBool>[] {
+  if (filter === undefined) {
+    return [];
+  }
+  const kinds = (values: string[]) => sql`${values}::character varying[]`;
+  return [
+    ...(filter.any ? [sql<SqlBool>`"asset_exif"."mediaKinds" && ${kinds(filter.any)}`] : []),
+    ...(filter.all ? [sql<SqlBool>`"asset_exif"."mediaKinds" @> ${kinds(filter.all)}`] : []),
+    ...(filter.none ? [sql<SqlBool>`not coalesce("asset_exif"."mediaKinds" && ${kinds(filter.none)}, false)`] : []),
+  ];
+}
 function tagIdsPredicates(eb: AssetExpressionBuilder, filter?: IdsFilter) {
   if (filter === undefined) {
     return [];
@@ -1070,6 +1083,8 @@ export const isPanoramaAsset = sql<SqlBool>`(
   and (
     coalesce("asset_exif"."projectionType", '') in ('EQUIRECTANGULAR', 'CYLINDRICAL')
     or lower("asset"."originalFileName") like '%.insp'
+    -- FL-1284: what the file's own metadata says (iPhone panorama code, very wide stills, Pixel)
+    or coalesce("asset_exif"."mediaKinds" && '{panorama,spherical}'::character varying[], false)
   )
 )`;
 /** FL-349: how screenshots are named, matched case-insensitively anywhere in the file name. */
@@ -1079,13 +1094,15 @@ const SCREENSHOT_FILE_NAME_PATTERN =
  * FL-349: a screenshot is a still named the way phones and computers name screenshots (Android
  * `Screenshot_…`, macOS and Windows `Screenshot …` / `Screen Shot …`, and the common localised names),
  * or a PNG that carries no camera make and no camera model, which is how iOS saves them (as
- * `IMG_….PNG`). No stored field records the iOS "Screenshot" user comment, so this is the signal
- * available without re-reading every file.
+ * `IMG_….PNG`). FL-1284: the metadata scan also reads the iOS "Screenshot" user comment into
+ * `mediaKinds`, which files scanned before that change lack; the name and PNG signals cover those.
  */
 export const isScreenshotAsset = sql<SqlBool>`(
   "asset"."type" = ${sql.lit(AssetType.Image)}
   and (
     "asset"."originalFileName" ~* ${SCREENSHOT_FILE_NAME_PATTERN}
+    -- FL-1284: the iOS "Screenshot" user comment, read by the metadata scan
+    or coalesce("asset_exif"."mediaKinds" && '{screenshot}'::character varying[], false)
     or (
       lower("asset"."originalFileName") like '%.png'
       and nullif("asset_exif"."make", '') is null
@@ -1183,6 +1200,7 @@ function branchPredicates(
     ...petIdsPredicates(eb, branch.petIds, viewerId),
     ...tagIdsPredicates(eb, branch.tagIds),
     ...landmarkIdsPredicates(eb, branch.landmarkIds),
+    ...mediaKindsPredicates(branch.mediaKinds),
     ...checksumPredicates(eb, branch.checksum),
     ...(encodedVideoPath
       ? [

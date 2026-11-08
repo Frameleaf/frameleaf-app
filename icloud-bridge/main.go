@@ -51,7 +51,7 @@ var downloadIdleTimeout = 2 * time.Minute
 
 var capabilities = map[string]any{
 	"protocolVersion": 1, "rcloneVersion": fs.VersionTag, "rcloneCommit": revision,
-	"rawRecords": true, "pagedInventory": true, "originals": true, "livePhotos": true, "rawAlternatives": true, "renderedEdits": true,
+	"rawRecords": true, "pagedInventory": true, "smartAlbums": true, "originals": true, "livePhotos": true, "rawAlternatives": true, "renderedEdits": true,
 	"sharedLibraries": true, "sharedAlbums": false, "adjustmentRendering": false, "editedLivePhotoPairing": false, "smsTwoFactor": false, "cloudWrites": false,
 	"fingerprintAlgorithm": "sha256-descriptor-v1",
 }
@@ -75,6 +75,7 @@ type request struct {
 	Kind                string          `json:"kind,omitempty"`
 	Library             *library        `json:"library,omitempty"`
 	AlbumID             string          `json:"albumId,omitempty"`
+	SmartAlbum          string          `json:"smartAlbum,omitempty"`
 	Cursor              string          `json:"cursor,omitempty"`
 	Limit               int             `json:"limit,omitempty"`
 	RecordID            string          `json:"recordId,omitempty"`
@@ -519,8 +520,18 @@ func (b *bridge) cloud(ctx context.Context, e *envelope, area, path string, body
 	}
 	return b.post(ctx, e, target, body, out)
 }
+
+// iCloud's Media Types smart albums an assets inventory may list, as icloud.com names them in its
+// CPLAssetAndMasterInSmartAlbumByAssetDate query. DEPTH is Portrait and EXPOSURE is Long Exposure.
+var smartAlbums = map[string]bool{"TIMELAPSE": true, "SLOMO": true, "PANORAMA": true, "SCREENSHOT": true, "DEPTH": true, "EXPOSURE": true}
+
 func scope(q *request) string {
-	raw, _ := json.Marshal([]any{q.Kind, q.Library, q.AlbumID, q.Limit})
+	parts := []any{q.Kind, q.Library, q.AlbumID, q.Limit}
+	// Appended only when set, so cursors issued before smart albums existed stay valid.
+	if q.SmartAlbum != "" {
+		parts = append(parts, q.SmartAlbum)
+	}
+	raw, _ := json.Marshal(parts)
 	hash := sha256.Sum256(raw)
 	return hex.EncodeToString(hash[:])
 }
@@ -559,7 +570,7 @@ func (b *bridge) inventory(w http.ResponseWriter, r *http.Request, q *request) e
 	if q.Kind != "libraries" && !validLibrary(q.Library) {
 		return bad()
 	}
-	if len(q.AlbumID) > 512 {
+	if len(q.AlbumID) > 512 || (q.SmartAlbum != "" && (q.Kind != "assets" || !smartAlbums[q.SmartAlbum])) {
 		return bad()
 	}
 	c, err := decodeCursor(q)
@@ -645,6 +656,13 @@ func (b *bridge) inventory(w http.ResponseWriter, r *http.Request, q *request) e
 				typ = "CPLContainerRelationLiveByAssetDate"
 				filters = append(filters, field("parentId", "STRING", q.AlbumID))
 			}
+			if q.SmartAlbum != "" {
+				if c.Phase != 0 {
+					return bad()
+				}
+				typ = "CPLAssetAndMasterInSmartAlbumByAssetDate"
+				filters = append(filters, field("smartAlbum", "STRING", q.SmartAlbum))
+			}
 			query["recordType"] = typ
 			query["filterBy"] = filters
 			body["resultsLimit"] = 2 * q.Limit
@@ -679,7 +697,7 @@ func (b *bridge) inventory(w http.ResponseWriter, r *http.Request, q *request) e
 			}
 			complete = assets == 0
 			c.Rank += assets
-			if complete && q.Kind == "assets" && c.Phase == 0 {
+			if complete && q.Kind == "assets" && q.SmartAlbum == "" && c.Phase == 0 {
 				c.Phase = 1
 				c.Rank = 0
 				complete = false

@@ -86,8 +86,13 @@ describe('explore', () => {
       expect(facetCounts(null, SearchFacetField.City)).toEqual([]);
     });
 
-    it('asks only for the people, places and tags Explore counts, with covers, in the Timeline scope', () => {
-      expect(EXPLORE_FACETS).toEqual([SearchFacetField.People, SearchFacetField.City, SearchFacetField.Tags]);
+    it('asks only for the people, places, tags and media types Explore counts, with covers, in the Timeline scope', () => {
+      expect(EXPLORE_FACETS).toEqual([
+        SearchFacetField.People,
+        SearchFacetField.City,
+        SearchFacetField.Tags,
+        SearchFacetField.MediaKinds,
+      ]);
       expect(exploreFacetsBody).toMatchObject({
         visibility: AssetVisibility.Timeline,
         facets: EXPLORE_FACETS,

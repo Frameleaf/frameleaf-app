@@ -36,6 +36,7 @@ export class AssetExifFactory {
       gpsAccuracyM: null,
       lensModel: null,
       livePhotoCID: null,
+      mediaKinds: null,
       make: 'Google',
       model: 'Pixel 7',
       // FL-1196: nothing else recorded

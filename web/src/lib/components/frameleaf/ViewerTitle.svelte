@@ -11,6 +11,7 @@
    * then the kind (Video, Live, Panorama). Phones leave the position to the footer
    * (media-viewer.css:2039-2041).
    */
+  import { knownMediaKinds, mediaKindInfo } from '$lib/frameleaf/media-kinds';
   import { viewerHeadlineText } from '$lib/frameleaf/viewer-headline';
   import { isLivePhoto, isPanorama, isVideoAsset } from '$lib/frameleaf/viewer-media';
   import type { ViewerPosition } from '$lib/frameleaf/viewer-position';
@@ -26,6 +27,11 @@
 
   const headline = $derived(viewerHeadlineText(asset));
   const kind = $derived.by(() => {
+    // FL-1284: the kind of shot the file records (Slo-mo, Portrait, Burst …) says the most
+    const [mediaKind] = knownMediaKinds(asset);
+    if (mediaKind) {
+      return $t(mediaKindInfo(mediaKind)!.viewerKey);
+    }
     if (isVideoAsset(asset)) {
       return $t('video');
     }

@@ -10,6 +10,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { CAPTURE_NUMERIC_TAGS } from 'src/utils/capture-details.js';
 import { LOCATION_DELETE_ARGS, LOCATION_TAG_SELECTORS, SAMSUNG_TRAILER_DELETE_ARGS } from 'src/utils/location-tags.js';
 import { LOG_VIDEO_TAG_NAMES, LogVideoTags } from 'src/utils/log-video.js';
+import { MEDIA_KIND_NUMERIC_TAGS } from 'src/utils/media-kinds.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
 interface ExifDuration {
@@ -29,11 +30,15 @@ type TagsWithWrongTypes =
   | 'Keywords'
   | 'HierarchicalSubject'
   | 'ISO'
-  | 'LensModel';
+  | 'LensModel'
+  | 'CustomRendered';
 
 export interface ImmichTags extends Omit<Tags, TagsWithWrongTypes> {
   JPEGDigest?: string;
   ContentIdentifier?: string;
+  // FL-1284: read numerically (`MEDIA_KIND_NUMERIC_TAGS`): iPhone writes 6 panorama, 7/8 portrait
+  CustomRendered?: number | string;
+  FullFrameRatePlaybackIntent?: number;
   MotionPhoto?: number;
   MotionPhotoVersion?: number;
   MotionPhotoPresentationTimestampUs?: number;
@@ -184,6 +189,7 @@ export class MetadataRepository {
       'FileSize',
       'Rotation',
       ...CAPTURE_NUMERIC_TAGS,
+      ...MEDIA_KIND_NUMERIC_TAGS,
     ],
     /* eslint unicorn/no-array-callback-reference: off, unicorn/no-array-method-this-argument: off */
     // eslint-disable-next-line import-x/no-named-as-default-member
