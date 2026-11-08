@@ -212,6 +212,33 @@ export const cueTextsOf = (
   return groups.map((words) => ({ start: words[0].start, end: words.at(-1)!.end, text: joined(words), words }));
 };
 
+const vttSeconds = (stamp: string) => {
+  const match = /^(\d{2,}):(\d{2}):(\d{2})\.(\d{3})$/.exec(stamp);
+  if (!match) {
+    throw new Error(`Not a WebVTT time: ${stamp}`);
+  }
+  return Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]) + Number(match[4]) / 1000;
+};
+
+/** Cues of a WebVTT caption file from Frameleaf Cloud (FC-48), as worker segments without word times. */
+export const segmentsOfVtt = (vtt: string): WorkerSegment[] =>
+  vtt
+    .replaceAll('\r\n', '\n')
+    .split(/\n{2,}/)
+    .flatMap((block) => {
+      const lines = block.split('\n');
+      const timing = lines.findIndex((line) => line.includes('-->'));
+      if (timing === -1) {
+        return [];
+      }
+      const [start, end] = lines[timing].split('-->').map((stamp) => vttSeconds(stamp.trim().split(/\s+/, 1)[0]));
+      const text = lines
+        .slice(timing + 1)
+        .join(' ')
+        .trim();
+      return text ? [{ start, end, text, words: [] }] : [];
+    });
+
 /** The frame a time falls on as section 3.3 rounds it (nearest, halves up). */
 const frameOf = (time: Rational, cadence: Rational) => roundToInteger(multiply(time, cadence), 'nearest');
 

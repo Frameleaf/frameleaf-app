@@ -39,12 +39,15 @@ import {
   FrameleafCloudError,
   catalogSchema,
   errorEnvelopeSchema,
+  estimateRequestSchema,
   estimateResponseSchema,
   jobAdmittedSchema,
+  jobCreateRequestSchema,
   jobViewSchema,
 } from 'src/utils/frameleaf-cloud.js';
 import { stripsVideoMetadata } from 'src/utils/media-privacy.js';
 import { tryPromise } from 'src/utils/promise.js';
+import { transcriptionClipOf } from 'src/utils/studio-transcription.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 import { ServiceMocks, getMocks } from 'test/utils.js';
@@ -247,6 +250,7 @@ describe(CloudMlJobService.name, () => {
                     restoration,
                     interpolation: 'both',
                     upscale: 'both',
+                    studio: 'both',
                   },
                   spenders,
                 },
@@ -2546,6 +2550,231 @@ describe(CloudMlJobService.name, () => {
         { error: expect.stringMatching(/not 2× the photo/), errorCode: 'cloud_ml_output_invalid' },
         { retry: false },
       );
+    });
+  });
+
+  describe('Studio captions on Frameleaf Cloud (FL-1304)', () => {
+    const studioCatalog = catalogSchema.parse(cloudContractFixture('ml/catalog-studio.json'));
+    const WHISPER = 'ms_XA8A84VQ';
+    const whisper = studioCatalog.models.find((model) => model.sku === WHISPER)!;
+    const REVISION_ID = '0195e2a0-0000-7000-8000-00000000b162';
+    const clip = transcriptionClipOf(
+      {
+        metadata: { fps: 30 },
+        timeline: {
+          items: [
+            {
+              id: 'clip',
+              type: 'video',
+              mediaId: 'b7c1f6a2-1111-4222-8333-444455556666',
+              from: 0,
+              durationInFrames: 300,
+              sourceStart: 0,
+              sourceFps: 30,
+            },
+          ],
+        },
+      },
+      'clip',
+    );
+    const audio = '/data/exports/owner-1/studio-transcription/estimate/audio.wav';
+    const estimateCaptions = () =>
+      sut.estimateCaptions(
+        owner,
+        {
+          destinationId: cloud.id,
+          language: null,
+          audioPath: audio,
+          workDir: '/data/exports/owner-1/studio-transcription/estimate',
+          durationSeconds: 10,
+          assetId: null,
+          revisionId: REVISION_ID,
+          studio: { projectId: 'project-1', revision: 4, clipId: 'clip', language: 'auto', clip },
+        },
+        now,
+      );
+    const confirmCaptions = async () => {
+      const estimate = await estimateCaptions();
+      await sut.create(
+        owner,
+        { estimateId: estimate.estimateId, consentVersion: estimate.consent.version, acknowledgeDataLeaves: true },
+        now,
+      );
+      return estimate;
+    };
+    /** The published result document, for this job's one input. */
+    const resultDocument = (overrides = {}) => {
+      const document = cloudContractFixture('ml/transcription/result.json');
+      return {
+        ...document,
+        model: { ...document.model, sku: WHISPER },
+        items: [{ ...document.items[0], ...overrides }],
+      };
+    };
+    const VTT = 'WEBVTT\n\n1\n00:00:00.520 --> 00:00:03.900\nWelcome back to the workshop,\neveryone.\n\n';
+    const completed = () =>
+      view('job-completed.json', {
+        result: {
+          outputs: [
+            { ...output('a1'), contentType: 'text/vtt' },
+            { ...output('result'), contentType: 'application/json' },
+          ],
+          headers: {},
+          expiresAt: '2026-09-26T04:30:00.000Z',
+          modelSku: WHISPER,
+          modelRev: whisper.rev,
+        },
+      });
+
+    beforeEach(() => {
+      const facts2 = {
+        ...facts,
+        modelIds: [...facts.modelIds, WHISPER],
+        modelWorkloads: { ...facts.modelWorkloads, [WHISPER]: MlWorkload.StudioAi },
+        defaultModels: { ...facts.defaultModels, transcription: WHISPER },
+        modelGroups: { ...facts.modelGroups, [WHISPER]: 'transcription' },
+      };
+      const studioWorkloads = [...workloads, MlWorkload.StudioAi];
+      const studioCloud = {
+        ...cloud,
+        workloads: studioWorkloads,
+        lastProbeWorkloads: studioWorkloads,
+        lastProbeCloud: facts2,
+      };
+      mocks.mlDestination.getAll.mockResolvedValue([studioCloud]);
+      mocks.mlDestination.getById.mockResolvedValue(studioCloud);
+      mocks.machineLearning.probe.mockResolvedValue({
+        ...mlProbeStub.frameleafCloud,
+        workloads: studioWorkloads,
+        cloud: facts2,
+      });
+      mocks.frameleafCloudMl.getCatalog.mockResolvedValue({ ...catalog, models: [...catalog.models, whisper] });
+      mocks.frameleafCloudMl.createEstimate.mockResolvedValue({ ...sealed, modelSku: WHISPER, modelRev: whisper.rev });
+      mocks.frameleafCloudMl.createJob.mockResolvedValue({ ...admitted, modelSku: WHISPER, modelRev: whisper.rev });
+      mocks.frameleafCloudMl.getUploads.mockResolvedValue([target({ inputId: 'a1', contentType: 'audio/wav' })]);
+      mocks.storage.readFile.mockImplementation((file) =>
+        Promise.resolve(Buffer.from(file.includes('result') ? JSON.stringify(resultDocument()) : VTT)),
+      );
+    });
+
+    it('shows the price before anything is sent, sealed for exactly this audio', async () => {
+      const estimate = await estimateCaptions();
+
+      const body = mocks.frameleafCloudMl.createEstimate.mock.calls[0][1];
+      expect(estimateRequestSchema.safeParse(body).success).toBe(true);
+      expect(body).toEqual({
+        workload: 'transcription',
+        modelSku: WHISPER,
+        inputs: [{ inputId: 'a1', contentType: 'audio/wav', bytes: BYTES, sha256: SHA }],
+        request: { language: 'auto', items: [{ inputId: 'a1', durationSec: 10, captions: { format: 'vtt' } }] },
+      });
+      expect(estimate).toMatchObject({ p50Usd: expect.any(Number), holdUsd: expect.any(Number), refusal: null });
+      expect(mocks.frameleafCloudMl.createJob).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.uploadInput).not.toHaveBeenCalled();
+    });
+
+    it('sends nothing without the consent the estimate was shown with', async () => {
+      const estimate = await estimateCaptions();
+
+      await expect(
+        sut.create(
+          owner,
+          { estimateId: estimate.estimateId, consentVersion: 'older', acknowledgeDataLeaves: true },
+          now,
+        ),
+      ).rejects.toThrow(ConflictException);
+      expect(created).toBeUndefined();
+    });
+
+    it('keeps to the spending limit of whoever confirms', async () => {
+      configure({ spenders: [] });
+      const estimate = await estimateCaptions();
+      expect(estimate.permission.canConfirm).toBe(false);
+
+      await expect(
+        sut.create(
+          owner,
+          { estimateId: estimate.estimateId, consentVersion: estimate.consent.version, acknowledgeDataLeaves: true },
+          now,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+      expect(created).toBeUndefined();
+    });
+
+    it('runs a confirmed job to cues on the sequence, then releases it', async () => {
+      await confirmCaptions();
+      expect(created).toMatchObject({
+        kind: MediaOperationKind.CloudMlJob,
+        destination: MediaOperationDestination.FrameleafCloud,
+        label: 'Captions',
+        assetId: null,
+        projectId: 'project-1',
+        revisionId: REVISION_ID,
+      });
+
+      await sut.step(claimed(), 'claim', now);
+      const job = mocks.frameleafCloudMl.createJob.mock.calls[0][1];
+      expect(jobCreateRequestSchema.safeParse(job).success).toBe(true);
+      expect(job).toMatchObject({ workload: 'transcription', modelSku: WHISPER });
+      expect(mocks.frameleafCloudMl.uploadInput).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ inputId: 'a1' }),
+        audio,
+        expect.anything(),
+      );
+
+      mocks.frameleafCloudMl.getJobView.mockResolvedValue({
+        notModified: false,
+        data: completed(),
+        etag: '"e2"',
+        retryAfterSeconds: null,
+      });
+      await sut.step(following(), 'claim', now);
+
+      expect(restorations.transition).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.publishValidated).toHaveBeenCalledOnce();
+      expect(mocks.frameleafCloudMl.deleteJob).toHaveBeenCalledWith(expect.anything(), JOB_ID);
+      const finished = mocks.mediaOperation.setFinishedResult.mock.calls.at(-1)![1] as unknown as CloudMlJobResult;
+      expect(finished.transcript).toMatchObject({
+        language: 'en',
+        model: whisper.label,
+        cues: [{ text: 'Welcome back to the workshop, everyone.' }],
+        words: [],
+      });
+    });
+
+    it('publishes nothing from a result naming another model', async () => {
+      await confirmCaptions();
+      mocks.storage.readFile.mockImplementation((file) =>
+        Promise.resolve(
+          Buffer.from(
+            file.includes('result')
+              ? JSON.stringify({ ...resultDocument(), model: { ...resultDocument().model, sku: 'ms_FDFPANX3' } })
+              : VTT,
+          ),
+        ),
+      );
+      mocks.frameleafCloudMl.getJobView.mockResolvedValue({
+        notModified: false,
+        data: completed(),
+        etag: '"e2"',
+        retryAfterSeconds: null,
+      });
+
+      await sut.step(following(), 'claim', now);
+
+      expect(mocks.mediaOperation.publishValidated).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.fail).toHaveBeenCalledWith(
+        OPERATION_ID,
+        'claim',
+        expect.objectContaining({ errorCode: 'cloud_ml_output_invalid' }),
+        { retry: false },
+      );
+    });
+
+    it('keeps the Activity purpose to values the native apps decode', async () => {
+      await confirmCaptions();
+      expect(cloudMlJobActivity(claimed())?.purpose).toBe('restoration');
     });
   });
 

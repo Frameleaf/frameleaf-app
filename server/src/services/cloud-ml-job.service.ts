@@ -33,6 +33,7 @@ import {
   CloudMlJobUpgradeDto,
   CloudMlJobUpgradeEstimateDto,
 } from 'src/dtos/cloud-ml-job.dto.js';
+import { StudioTranscriptionResultSchema } from 'src/dtos/studio-transcription.dto.js';
 import {
   AssetType,
   Colorspace,
@@ -98,6 +99,7 @@ import {
   CloudMlJobPhase,
   CloudMlJobResult,
   CloudMlJobSnapshot,
+  CloudMlJobStudioCaptions,
   CloudMlJobUpgradeRecord,
   CloudMlJobUpscale,
   CloudMlJobWorkload,
@@ -125,6 +127,7 @@ import { CloudConnectionState, CloudMlGatewayDeps, resolveCloudGateway } from 's
 import { CloudJobInputError, FrameleafCloudJobClient } from 'src/utils/frameleaf-cloud-job-client.js';
 import {
   CLOUD_RESULT_OUTPUT_ID,
+  CLOUD_TRANSCRIPTION_RESULT_MAX_BYTES,
   CLOUD_UPSCALE_RESULT_MAX_BYTES,
   CloudCatalogEntry,
   CloudEstimate,
@@ -142,6 +145,7 @@ import {
   isNewWorkPaused,
   offeredCatalogModels,
   pausedException,
+  transcriptionResultSchema,
   upscaleResultSchema,
 } from 'src/utils/frameleaf-cloud.js';
 import { isLockedPath, withPlainCopy } from 'src/utils/locked-read.js';
@@ -176,6 +180,7 @@ import {
   restorationOutputPaths,
   resultExpiryAfterAbandon,
 } from 'src/utils/restoration.js';
+import { mapTranscript, segmentsOfVtt } from 'src/utils/studio-transcription.js';
 
 type CloudMlSettings = SystemConfig['frameleafCloud']['cloudMl'];
 
@@ -518,7 +523,142 @@ export class CloudMlJobService {
       throw error instanceof CloudMlJobFailure ? new BadRequestException(error.message) : error;
     }
 
-    const request = this.requestOf(workload, settings, prepared.size);
+    return this.quote(
+      auth,
+      gateway,
+      {
+        id,
+        ownerId: source.ownerId,
+        purpose: dto.purpose,
+        stage: dto.stage,
+        assetId: source.id,
+        restorationId: preview?.id ?? null,
+        sourceChecksumHex: Buffer.from(source.checksum).toString('hex'),
+        sourceType: video ? 'video' : 'image',
+        destinationId: destination.id,
+        workload,
+        appWorkload,
+        settings,
+        request: this.requestOf(workload, settings, prepared.size),
+        inputs: [prepared.input],
+        workDir,
+        beforePath: prepared.beforePath,
+        output: prepared.output,
+        durationSeconds: prepared.durationSeconds,
+      },
+      {
+        model,
+        offered,
+        quantity: video ? { unit: 'minute', value: (prepared.durationSeconds ?? 0) / 60 } : { unit: 'photo', value: 1 },
+        upscaleOf:
+          workload === 'upscale' ? (sealed) => this.upscaleQuote(sealed, settings.upscale, prepared.size) : undefined,
+        quoteOnly,
+      },
+      now,
+    );
+  }
+
+  /**
+   * FL-1304: what Studio captions would cost, before anything is sent. The clip's audio was extracted
+   * into `input.workDir` on this server; Frameleaf Cloud seals an estimate for exactly that audio.
+   */
+  async estimateCaptions(
+    auth: AuthDto,
+    input: {
+      destinationId: string;
+      modelSku?: string;
+      language: string | null;
+      audioPath: string;
+      workDir: string;
+      durationSeconds: number;
+      assetId: string | null;
+      revisionId: string;
+      studio: CloudMlJobStudioCaptions;
+    },
+    now = new Date(),
+  ): Promise<CloudMlJobEstimateResponseDto> {
+    try {
+      const gateway = await this.requireGateway();
+      const { model, offered } = await this.chooseModel(
+        gateway,
+        'transcription',
+        AssetRestorationMode.Faithful,
+        input.modelSku,
+      );
+      const destination = await this.requireCloudDestination(input.destinationId, MlWorkload.StudioAi, model);
+      const { sha256, sizeInBytes } = await this.cryptoRepository.hashFileDigests(input.audioPath);
+      return await this.quote(
+        auth,
+        gateway,
+        {
+          id: this.cryptoRepository.randomUUID(),
+          ownerId: auth.user.id,
+          purpose: 'transcription',
+          stage: 'full',
+          assetId: input.assetId ?? '',
+          restorationId: input.revisionId,
+          sourceChecksumHex: '',
+          sourceType: 'audio',
+          destinationId: destination.id,
+          workload: 'transcription',
+          appWorkload: MlWorkload.StudioAi,
+          settings: { mode: 'captions', upscale: 1, keepGrain: false, factor: null, region: null },
+          request: {
+            language: input.language ?? 'auto',
+            items: [{ inputId: 'a1', durationSec: input.durationSeconds, captions: { format: 'vtt' } }],
+          },
+          inputs: [
+            {
+              inputId: 'a1',
+              contentType: 'audio/wav',
+              bytes: sizeInBytes,
+              sha256: sha256.toString('hex'),
+              path: input.audioPath,
+            },
+          ],
+          workDir: input.workDir,
+          beforePath: null,
+          // ponytail: a caption job has no picture, and only restorations read this
+          output: { width: 1, height: 1 },
+          durationSeconds: input.durationSeconds,
+          studio: input.studio,
+        },
+        { model, offered, quantity: { unit: 'minute', value: input.durationSeconds / 60 }, quoteOnly: false },
+        now,
+      );
+    } catch (error) {
+      await this.removeWorkDir(input.workDir);
+      throw error instanceof CloudMlJobFailure ? new BadRequestException(error.message) : error;
+    }
+  }
+
+  /** Seal an estimate of a prepared job with Frameleaf Cloud, keep it, and answer it as the dialog shows it. */
+  private async quote(
+    auth: AuthDto,
+    gateway: CloudMlGateway,
+    draft: Omit<
+      CloudMlJobEstimateRecord,
+      | 'createdBy'
+      | 'createdAt'
+      | 'expiresAt'
+      | 'model'
+      | 'computeSku'
+      | 'sealed'
+      | 'approved'
+      | 'consent'
+      | 'operationId'
+    >,
+    options: {
+      model: CloudCatalogEntry;
+      offered: CloudCatalogEntry[];
+      quantity: { unit: 'minute' | 'photo'; value: number };
+      upscaleOf?: (sealed: CloudEstimate) => CloudMlJobUpscale;
+      quoteOnly: boolean;
+    },
+    now: Date,
+  ): Promise<CloudMlJobEstimateResponseDto> {
+    const { id, workDir, workload, appWorkload, request } = draft;
+    const { model, offered, quantity, upscaleOf, quoteOnly } = options;
     let sealed: CloudEstimate;
     let wallet: Awaited<ReturnType<FrameleafCloudMlRepository['getWallet']>>;
     let consent: Awaited<ReturnType<FrameleafCloudMlRepository['getConsent']>>;
@@ -526,7 +666,7 @@ export class CloudMlJobService {
       sealed = await this.frameleafCloudMlRepository.createEstimate(gateway, {
         workload,
         modelSku: model.sku,
-        inputs: [this.toCloudInput(prepared.input)],
+        inputs: draft.inputs.map((input) => this.toCloudInput(input)),
         request,
       } as Parameters<FrameleafCloudMlRepository['createEstimate']>[1]);
       if (sealed.modelSku !== model.sku || sealed.modelRev !== model.rev) {
@@ -543,7 +683,7 @@ export class CloudMlJobService {
 
     let upscale: CloudMlJobUpscale | undefined;
     try {
-      upscale = workload === 'upscale' ? this.upscaleQuote(sealed, settings.upscale, prepared.size) : undefined;
+      upscale = upscaleOf?.(sealed);
     } catch (error) {
       await this.removeWorkDir(workDir);
       throw error instanceof CloudMlJobFailure ? new BadRequestException(error.message) : error;
@@ -551,36 +691,17 @@ export class CloudMlJobService {
     // the version is the photo times the factor it really gets, never capped again here
     const output = upscale
       ? { width: upscale.input.width * upscale.appliedScale, height: upscale.input.height * upscale.appliedScale }
-      : prepared.output;
+      : draft.output;
     const workers = sealed.routing?.plannedWorkers ?? plannedWorkers(sealed, model.rate.startFeeUsd);
-    const quantity = video
-      ? { unit: 'minute' as const, value: (prepared.durationSeconds ?? 0) / 60 }
-      : { unit: 'photo' as const, value: 1 };
     const availableUsd = Math.max(0, wallet.balanceUsd - wallet.heldUsd);
     const record: CloudMlJobEstimateRecord = {
-      id,
-      ownerId: source.ownerId,
+      ...draft,
       createdBy: auth.user.id,
       createdAt: now.toISOString(),
       expiresAt: sealed.expiresAt,
-      purpose: dto.purpose,
-      stage: dto.stage,
-      assetId: source.id,
-      restorationId: preview?.id ?? null,
-      sourceChecksumHex: Buffer.from(source.checksum).toString('hex'),
-      sourceType: video ? 'video' : 'image',
-      destinationId: destination.id,
-      workload,
-      appWorkload,
-      settings,
       model: { sku: model.sku, rev: model.rev, label: model.label },
       computeSku: sealed.computeSku,
-      request,
-      inputs: [prepared.input],
-      workDir,
-      beforePath: prepared.beforePath,
       output,
-      durationSeconds: prepared.durationSeconds,
       ...(upscale && { upscale }),
       sealed: sealed.estimate,
       approved: {
@@ -858,6 +979,22 @@ export class CloudMlJobService {
         });
       }
 
+      if (record.studio) {
+        await this.requireSpendPermission(
+          auth,
+          record.approved.approvedMaximumUsd ?? record.approved.holdUsd,
+          now,
+          record.approved.approvedMaximumUsd !== undefined,
+        );
+        const destination = await this.requireCloudDestination(record.destinationId, record.appWorkload, record.model);
+        const restorationId = record.restorationId!;
+        const operation = await this.mediaOperationRepository.create(
+          this.jobOf(auth, record, destination, { label: 'Captions', restorationId }, dto, now),
+        );
+        await this.linkEstimate(store, record.id, operation.id, restorationId);
+        return { operationId: operation.id, restorationId, stage: record.stage };
+      }
+
       await requireAccess(this.accessRepository, {
         auth,
         permission: Permission.AssetEditCreate,
@@ -880,7 +1017,17 @@ export class CloudMlJobService {
       const { operation, value: restoration } = await this.mediaOperationRepository.createWithin(
         async (trx) => {
           const bound = await this.bindRestoration(auth, record, destination, source, now, trx);
-          return { operation: this.jobOf(auth, record, destination, source, bound, dto, now), value: bound };
+          return {
+            operation: this.jobOf(
+              auth,
+              record,
+              destination,
+              { label: source.originalFileName, restorationId: bound.id },
+              dto,
+              now,
+            ),
+            value: bound,
+          };
         },
         async (trx, created, bound) => {
           await this.restorationRepository.update(
@@ -916,8 +1063,7 @@ export class CloudMlJobService {
     auth: AuthDto,
     record: CloudMlJobEstimateRecord,
     destination: MlDestinationRow,
-    source: Source,
-    restoration: AssetRestoration,
+    bound: { label: string; restorationId: string },
     dto: CloudMlJobCreateDto,
     now: Date,
   ): Parameters<MediaOperationRepository['create']>[0] {
@@ -925,7 +1071,7 @@ export class CloudMlJobService {
       version: 1,
       purpose: record.purpose,
       stage: record.stage,
-      restorationId: restoration.id,
+      restorationId: bound.restorationId,
       assetId: record.assetId,
       ownerId: record.ownerId,
       sourceChecksumHex: record.sourceChecksumHex,
@@ -943,6 +1089,7 @@ export class CloudMlJobService {
       approved: record.approved,
       estimateId: record.id,
       ...(record.upscale && { upscale: record.upscale }),
+      ...(record.studio && { studio: record.studio }),
       consent: {
         version: record.consent.version,
         textSha256: record.consent.textSha256,
@@ -972,12 +1119,12 @@ export class CloudMlJobService {
       kind: MediaOperationKind.CloudMlJob,
       destination: MediaOperationDestination.FrameleafCloud,
       destinationDetail: destination.name,
-      label: source.originalFileName,
-      assetId: record.assetId,
+      label: bound.label,
+      assetId: record.assetId || null,
       resultAssetId: null,
       retryOfId: null,
-      projectId: null,
-      revisionId: restoration.id,
+      projectId: record.studio?.projectId ?? null,
+      revisionId: bound.restorationId,
       snapshot: snapshot as unknown as Record<string, unknown>,
       settings: this.settingsOf(record, destination.name),
       estimate: {
@@ -1182,11 +1329,14 @@ export class CloudMlJobService {
     const snapshot =
       operation?.kind === MediaOperationKind.CloudMlJob ? parseCloudMlJobSnapshot(operation.snapshot) : null;
     if (!operation || !snapshot) throw new NotFoundException('Frameleaf Cloud job not found');
-    await requireAccess(this.accessRepository, {
-      auth,
-      permission: Permission.AssetEditCreate,
-      ids: [snapshot.assetId],
-    });
+    // a Studio captions job has no version to edit: its owner, found above, is who may upgrade it
+    if (!snapshot.studio) {
+      await requireAccess(this.accessRepository, {
+        auth,
+        permission: Permission.AssetEditCreate,
+        ids: [snapshot.assetId],
+      });
+    }
     const { job } = parseCloudMlJobResult(operation.result);
     if (
       !job ||
@@ -1202,6 +1352,14 @@ export class CloudMlJobService {
 
   /** What Activity shows under the job title. Customer words, not enum values. */
   private settingsOf(record: CloudMlJobEstimateRecord, destinationName: string): Record<string, unknown> {
+    if (record.studio) {
+      return {
+        mode: 'Captions',
+        language: record.studio.language,
+        model: record.model.label,
+        destination: destinationName,
+      };
+    }
     const smooth = record.purpose === 'smooth-motion';
     return {
       mode: smooth ? 'Smooth motion' : this.modeLabel(record.settings.mode),
@@ -1539,6 +1697,10 @@ export class CloudMlJobService {
 
   /** Put the restoration row in its running state the first time a step runs. False: it was decided meanwhile. */
   private async markRunning(run: JobRun): Promise<boolean> {
+    // ponytail: Studio captions have no restoration row, so the transitions elsewhere in this file match nothing
+    if (run.snapshot.studio) {
+      return true;
+    }
     const statuses = STAGE_STATUSES[run.snapshot.stage];
     const row = await this.restorationRepository.get(run.snapshot.restorationId);
     if (!row) {
@@ -2004,10 +2166,13 @@ export class CloudMlJobService {
     if (!delivered || outputs.length === 0) {
       await this.acknowledge(run, client);
       await this.settleAccounting(run);
+      const unreadable = delivered && run.snapshot.workload === 'transcription';
       const reason =
         view.error?.code === 'runtime-cap'
           ? CLOUD_ML_JOB_RUNTIME_CAP_MESSAGE
-          : (view.error?.message ?? `Frameleaf Cloud ended this job (${view.status.replaceAll('_', ' ')}).`);
+          : unreadable
+            ? 'Frameleaf Cloud could not read this audio, so no captions were made.'
+            : (view.error?.message ?? `Frameleaf Cloud ended this job (${view.status.replaceAll('_', ' ')}).`);
       const code = `cloud_ml_job_${(view.error?.code ?? view.status).replaceAll('-', '_')}`;
       run.result = { ...run.result, phase: CloudMlJobPhase.Finished };
       await this.stop(run, new CloudMlJobFailure(code, reason, false));
@@ -2015,7 +2180,7 @@ export class CloudMlJobService {
     }
 
     // an upscale is written at the factor its result document says the photo really got (FC-46)
-    const document = run.snapshot.workload === 'upscale' ? (document_ ?? null) : null;
+    const document = ['upscale', 'transcription'].includes(run.snapshot.workload) ? (document_ ?? null) : null;
     let files: string[] | null;
     try {
       files = await client.download(view, document ? [...outputs, document] : outputs, run.snapshot.workDir, {
@@ -2050,10 +2215,19 @@ export class CloudMlJobService {
     if (!files) {
       return;
     }
-    if (document) {
+    if (document && run.snapshot.studio) {
+      run.result = { ...run.result, transcript: await this.readTranscript(run, files[0], files.at(-1)!) };
+      files = files.slice(0, -1);
+    } else if (document) {
       const upscaleScale = await this.readUpscaleResult(run, files.at(-1)!);
       files = files.slice(0, -1);
       run.result = { ...run.result, upscaleScale };
+    } else if (run.snapshot.studio) {
+      throw new CloudMlJobFailure(
+        'cloud_ml_output_invalid',
+        'Frameleaf Cloud did not describe this transcript, so no captions were made',
+        false,
+      );
     } else if (run.snapshot.workload === 'upscale' && run.snapshot.upscale) {
       throw new CloudMlJobFailure(
         'cloud_ml_output_invalid',
@@ -2132,6 +2306,19 @@ export class CloudMlJobService {
    */
   private async publish(run: JobRun, outputs: string[]): Promise<'completed' | 'rejected' | 'lost'> {
     const { snapshot, operation, claimToken } = run;
+    if (snapshot.studio) {
+      // the cues were saved with the result; the client applies them with `captions.set`
+      if (!(await this.mediaOperationRepository.beginValidation(operation.id, claimToken))) {
+        return 'lost';
+      }
+      const outcome = await this.mediaOperationRepository.publishValidated(operation.id, claimToken, () =>
+        Promise.resolve(true),
+      );
+      if (outcome === 'completed') {
+        await this.removeJobFiles(snapshot);
+      }
+      return outcome;
+    }
     const statuses = STAGE_STATUSES[snapshot.stage];
     const row = await this.restorationRepository.get(snapshot.restorationId);
     const source = await this.assetJobRepository.getForGenerateThumbnailJob(snapshot.assetId);
@@ -2319,6 +2506,46 @@ export class CloudMlJobService {
    * photo that was declared, and give it an output; each output is its input times its own item's
    * factor, never the document's requested one.
    */
+  /** FL-1304: the transcript of a Studio captions job, as cues on the sequence, from its caption file. */
+  private async readTranscript(run: JobRun, captionFile: string, documentFile: string) {
+    const { snapshot } = run;
+    const invalid = (detail: string) =>
+      new CloudMlJobFailure('cloud_ml_output_invalid', `The transcript from Frameleaf Cloud ${detail}`, false);
+    const body = await this.storageRepository.readFile(documentFile);
+    if (body.length > CLOUD_TRANSCRIPTION_RESULT_MAX_BYTES) {
+      throw invalid('is larger than the contract allows');
+    }
+    let parsed: ReturnType<typeof transcriptionResultSchema.safeParse>;
+    try {
+      parsed = transcriptionResultSchema.safeParse(JSON.parse(body.toString('utf8')));
+    } catch {
+      throw invalid('is not JSON');
+    }
+    if (!parsed.success) {
+      throw invalid('does not match the contract');
+    }
+    if (parsed.data.model.sku !== snapshot.model.sku) {
+      throw invalid('names another model');
+    }
+    const item = parsed.data.items.find((entry) => entry.inputId === snapshot.inputs[0]?.inputId);
+    if (!item?.captions || !item.language) {
+      throw invalid(`says the audio was not transcribed (${item?.warnings.join(', ') || 'no item'})`);
+    }
+    try {
+      const vtt = await this.storageRepository.readFile(captionFile);
+      const { cues, words } = mapTranscript(snapshot.studio!.clip, segmentsOfVtt(vtt.toString('utf8')));
+      return StudioTranscriptionResultSchema.parse({
+        language: item.language,
+        languageProbability: item.languageDetected ? item.confidence : 1,
+        model: snapshot.model.label,
+        cues,
+        words,
+      });
+    } catch {
+      throw invalid('has a caption file this server cannot read');
+    }
+  }
+
   private async readUpscaleResult(run: JobRun, file: string): Promise<2 | 4> {
     const { snapshot } = run;
     const invalid = (detail: string) =>
@@ -3044,20 +3271,23 @@ export class CloudMlJobService {
 
   /** The prepared inputs must still be what was estimated: the original unchanged, the copy's size the same. */
   private async checkInputs(run: JobRun) {
-    const source = await this.assetJobRepository.getForGenerateThumbnailJob(run.snapshot.assetId);
-    if (!source) {
-      throw new CloudMlJobFailure(
-        'cloud_ml_source_missing',
-        'The original is no longer available; nothing was sent',
-        false,
-      );
-    }
-    if (Buffer.from(source.checksum).toString('hex') !== run.snapshot.sourceChecksumHex) {
-      throw new CloudMlJobFailure(
-        'cloud_ml_source_changed',
-        'The original changed since the estimate; nothing was sent. Estimate it again.',
-        false,
-      );
+    // Studio captions upload the audio extracted at the estimate; the size check below covers it
+    if (!run.snapshot.studio) {
+      const source = await this.assetJobRepository.getForGenerateThumbnailJob(run.snapshot.assetId);
+      if (!source) {
+        throw new CloudMlJobFailure(
+          'cloud_ml_source_missing',
+          'The original is no longer available; nothing was sent',
+          false,
+        );
+      }
+      if (Buffer.from(source.checksum).toString('hex') !== run.snapshot.sourceChecksumHex) {
+        throw new CloudMlJobFailure(
+          'cloud_ml_source_changed',
+          'The original changed since the estimate; nothing was sent. Estimate it again.',
+          false,
+        );
+      }
     }
     for (const input of run.snapshot.inputs) {
       const stat = await this.storageRepository.stat(input.path).catch(() => null);
@@ -3097,6 +3327,9 @@ export class CloudMlJobService {
         return size
           ? { scale: settings.upscale, items: [{ inputId: 'v1', width: size.width, height: size.height }] }
           : { scale: settings.upscale };
+      }
+      case 'transcription': {
+        throw new BadRequestException('Estimate captions from their Studio clip');
       }
     }
   }
@@ -3235,6 +3468,9 @@ export class CloudMlJobService {
       case 'restoration': {
         return mode === AssetRestorationMode.Creative ? MlWorkload.RestorationCreative : MlWorkload.RestorationFaithful;
       }
+      case 'transcription': {
+        return MlWorkload.StudioAi;
+      }
     }
   }
 
@@ -3246,7 +3482,12 @@ export class CloudMlJobService {
    * The Frameleaf Cloud destination, admitted for this work now: processing on and the work allowed
    * there (never a silent move to the cloud), consent recorded, entitlement, budget and health.
    */
-  private async requireCloudDestination(destinationId: string, workload: MlWorkload): Promise<MlDestinationRow> {
+  private async requireCloudDestination(
+    destinationId: string,
+    workload: MlWorkload,
+    /** Set for Studio captions, whose model was chosen on the slider or from the catalogue default. */
+    captionsModel?: { sku: string },
+  ): Promise<MlDestinationRow> {
     const destination = await this.mlDestinationRepository.getById(destinationId);
     if (destination?.kind !== MlDestinationKind.FrameleafCloud) {
       throw new BadRequestException('Choose the Frameleaf Cloud destination for this work');
@@ -3261,7 +3502,11 @@ export class CloudMlJobService {
       );
     }
     try {
-      await this.admit({ destinationId, appWorkload: workload }, null, null);
+      await this.admit(
+        { destinationId, appWorkload: workload, studio: !!captionsModel, model: captionsModel },
+        null,
+        null,
+      );
     } catch (error) {
       throw this.clientError(error);
     }
@@ -3308,7 +3553,10 @@ export class CloudMlJobService {
   }
 
   private async admit(
-    target: Pick<CloudMlJobSnapshot, 'destinationId' | 'appWorkload'>,
+    target: Pick<CloudMlJobSnapshot, 'destinationId' | 'appWorkload'> & {
+      studio?: unknown;
+      model?: { sku: string };
+    },
     holdUsd: number | null,
     jobId: string | null,
     createdCloudJob = false,
@@ -3326,6 +3574,7 @@ export class CloudMlJobService {
         jobName: MediaOperationKind.CloudMlJob,
         holdUsd,
         createdCloudJob,
+        ...(target.studio ? { studioFeature: 'captions' as const, modelSku: target.model?.sku } : {}),
       },
     );
   }

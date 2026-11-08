@@ -17656,6 +17656,16 @@ export type StudioTranscriptionQueuedDto = {
     id: string;
     status: MediaOperationStatus;
 };
+export type StudioTranscriptionEstimateDto = {
+    /** A video or audio clip on the main timeline of the head revision */
+    clipId: string;
+    /** The Frameleaf Cloud processing destination, named explicitly */
+    destinationId: string;
+    /** A BCP 47 language tag such as `en` or `pt-BR`, or `auto` to detect the language */
+    language: string;
+    /** The model chosen on the slider; omitted, the chosen or recommended model for captions */
+    modelSku?: string;
+};
 export type StudioTranscriptionTime = {
     den: number;
     num: number;
@@ -35003,6 +35013,22 @@ export function createStudioTranscription({ id, studioTranscriptionCreateDto }: 
         ...opts,
         method: "POST",
         body: studioTranscriptionCreateDto
+    })));
+}
+/**
+ * Estimate a Studio clip transcription on Frameleaf Cloud
+ */
+export function estimateStudioTranscription({ id, studioTranscriptionEstimateDto }: {
+    id: string;
+    studioTranscriptionEstimateDto: StudioTranscriptionEstimateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudMlJobEstimateResponseDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/transcriptions/estimate`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioTranscriptionEstimateDto
     })));
 }
 /**

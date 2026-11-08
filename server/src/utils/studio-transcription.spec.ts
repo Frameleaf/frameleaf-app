@@ -4,6 +4,7 @@ import {
   CUE_MAX_CHARACTERS,
   cueTextsOf,
   mapTranscript,
+  segmentsOfVtt,
   transcriptionClipOf,
   transcriptionWindow,
   whisperLanguageOf,
@@ -105,6 +106,24 @@ describe('whisperLanguageOf', () => {
 });
 
 const word = (start: number, end: number, text: string) => ({ start, end, text });
+
+describe('segmentsOfVtt', () => {
+  it('reads timings and joins the lines of each cue', () => {
+    expect(
+      segmentsOfVtt(
+        'WEBVTT\n\n1\n00:00:00.520 --> 00:00:03.900\nWelcome back\neveryone.\n\n2\n01:00:04.100 --> 01:00:05.000\nBye.\n',
+      ),
+    ).toEqual([
+      { start: 0.52, end: 3.9, text: 'Welcome back everyone.', words: [] },
+      { start: 3604.1, end: 3605, text: 'Bye.', words: [] },
+    ]);
+  });
+
+  it('is empty for no speech and refuses a malformed time', () => {
+    expect(segmentsOfVtt('WEBVTT\n')).toEqual([]);
+    expect(() => segmentsOfVtt('WEBVTT\n\nnope --> 00:00:01.000\nHi\n')).toThrow();
+  });
+});
 
 describe('cueTextsOf', () => {
   it('keeps a short segment whole', () => {
