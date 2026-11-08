@@ -47,6 +47,7 @@ import {
   SharedSpaceEventType,
   SystemMetadataKey,
 } from 'src/enum.js';
+import type { AlbumSummary } from 'src/repositories/album-summary.repository.js';
 import { AlbumAssetCount, AlbumInfoOptions, AlbumReadOptions } from 'src/repositories/album.repository.js';
 import { AlbumOriginField, AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -57,6 +58,7 @@ import {
   recordAssetEdit,
 } from 'src/services/partner-copy.service.js';
 import { albumOrderGroup, buildAlbumHierarchy, buildAlbumTree, orderAlbumTree } from 'src/utils/album-tree.js';
+import { albumViewerKey } from 'src/utils/album-viewer-key.js';
 import { addAssets, removeAssets } from 'src/utils/asset.util.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import {
@@ -83,6 +85,22 @@ const coverRefreshAt = new Map<string, number>();
 const coverRefreshRunning = new Set<string>();
 const COVER_REFRESH_INTERVAL_MS = 60_000;
 
+/** FL-1297: when each viewer variant's stored album numbers were last refreshed. */
+const summaryRefreshAt = new Map<string, number>();
+/** Viewer variants being refreshed now: requests never queue a second run behind the first. */
+const summaryRefreshRunning = new Set<string>();
+let summarySweepAt = 0;
+const SUMMARY_REFRESH_INTERVAL_MS = 15_000;
+/** Albums recomputed per query. Small enough that no single read of a large library is slow. */
+const SUMMARY_REFRESH_CHUNK = 200;
+/** Recomputed even with no change seen, for hiding rules that change no item. */
+const SUMMARY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+/** A change committed after a read started can carry an earlier time; look back far enough to catch it. */
+const SUMMARY_CHANGE_MARGIN_MS = 2 * 60 * 1000;
+/** A variant in use is recomputed daily, so a row this old belongs to one nobody reads any more. */
+const SUMMARY_ABANDONED_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
+const millis = (value: Date | string) => new Date(value).getTime();
+
 @Injectable()
 export class AlbumService extends BaseService {
   /**
@@ -106,6 +124,86 @@ export class AlbumService extends BaseService {
       }
     };
     handlePromiseError(refresh(), this.logger);
+  }
+
+  /**
+   * FL-1297: the numbers an album list shows, read from the stored summaries of this viewer variant
+   * (`albumViewerKey`), so listing never aggregates. An album with no row yet is reported as pending
+   * and counted by the refresh this starts.
+   */
+  private async readStoredMetadata(albumIds: string[], options: AlbumReadOptions) {
+    const viewerKey = albumViewerKey(options);
+    const rows = await this.albumSummaryRepository.getByIds(viewerKey, albumIds);
+    const stored = new Map(rows.map((row) => [row.albumId, row]));
+    this.refreshSummariesInBackground(viewerKey, albumIds, options, stored);
+    const metadata: Record<string, AlbumAssetCount> = {};
+    for (const row of rows) {
+      metadata[row.albumId] = row as AlbumAssetCount;
+    }
+    return { metadata, pending: new Set(albumIds.filter((id) => !stored.has(id))) };
+  }
+
+  /**
+   * Recomputes only the summaries that need it, without holding up the list that noticed. The first
+   * read of a large library starts it at once and the rows appear chunk by chunk.
+   * ponytail: in-process maps, one entry per viewer variant; two API workers would only repeat the work.
+   */
+  private refreshSummariesInBackground(
+    viewerKey: string,
+    albumIds: string[],
+    options: AlbumReadOptions,
+    stored: Map<string, AlbumSummary>,
+  ) {
+    const now = Date.now();
+    const recentlyRefreshed = now - (summaryRefreshAt.get(viewerKey) ?? 0) < SUMMARY_REFRESH_INTERVAL_MS;
+    if (summaryRefreshRunning.has(viewerKey) || (stored.size === albumIds.length && recentlyRefreshed)) {
+      return;
+    }
+    summaryRefreshAt.set(viewerKey, now);
+    summaryRefreshRunning.add(viewerKey);
+    const refresh = async () => {
+      try {
+        for (const ids of chunk(await this.summariesToRefresh(albumIds, stored, now), SUMMARY_REFRESH_CHUNK)) {
+          // Taken before the read, so a change made while it runs still counts as newer than this row.
+          const computedAt = new Date();
+          const metadata = await this.albumRepository.getMetadataForIds(ids, options);
+          await this.albumSummaryRepository.upsert(viewerKey, computedAt, ids, metadata);
+        }
+        if (now - summarySweepAt > SUMMARY_MAX_AGE_MS) {
+          summarySweepAt = now;
+          await this.albumSummaryRepository.deleteComputedBefore(new Date(now - SUMMARY_ABANDONED_AFTER_MS));
+        }
+      } finally {
+        summaryRefreshRunning.delete(viewerKey);
+      }
+    };
+    handlePromiseError(refresh(), this.logger);
+  }
+
+  /** Albums with no row, a row older than a day, or a change since their row was computed. */
+  private async summariesToRefresh(albumIds: string[], stored: Map<string, AlbumSummary>, now: number) {
+    const computedAt = new Map<string, number>();
+    const due = new Set<string>();
+    for (const id of albumIds) {
+      const row = stored.get(id);
+      if (row && now - millis(row.computedAt) < SUMMARY_MAX_AGE_MS) {
+        computedAt.set(id, millis(row.computedAt));
+      } else {
+        due.add(id);
+      }
+    }
+    if (computedAt.size > 0) {
+      const since = new Date(Math.min(...computedAt.values()) - SUMMARY_CHANGE_MARGIN_MS);
+      for (const { albumId, changedAt } of await this.albumSummaryRepository.getChangedAt(
+        [...computedAt.keys()],
+        since,
+      )) {
+        if (millis(changedAt) >= computedAt.get(albumId)! - SUMMARY_CHANGE_MARGIN_MS) {
+          due.add(albumId);
+        }
+      }
+    }
+    return [...due];
   }
 
   async getStatistics(auth: AuthDto): Promise<AlbumStatisticsResponseDto> {
@@ -162,15 +260,16 @@ export class AlbumService extends BaseService {
     if (albums.length === 0) {
       return [];
     }
-    // Get asset count for each album. Then map the result to an object:
-    // { [albumId]: assetCount }
-    const results = await this.albumRepository.getMetadataForIds(
-      albums.map((album) => album.id),
-      privacyOptions,
-    );
-    const albumMetadata: Record<string, AlbumAssetCount> = {};
-    for (const metadata of results) {
-      albumMetadata[metadata.albumId] = metadata;
+    const albumIds = albums.map((album) => album.id);
+    let albumMetadata: Record<string, AlbumAssetCount> = {};
+    let pending = new Set<string>();
+    if (privacyOptions.onlyHiddenContent) {
+      // The hidden-content view needs a cover chosen from what it shows, which is not stored.
+      for (const metadata of await this.albumRepository.getMetadataForIds(albumIds, privacyOptions)) {
+        albumMetadata[metadata.albumId] = metadata;
+      }
+    } else {
+      ({ metadata: albumMetadata, pending } = await this.readStoredMetadata(albumIds, privacyOptions));
     }
     albums = await this.hideNsfwAlbumThumbnails(auth, albums, privacyOptions, albumMetadata);
 
@@ -178,7 +277,7 @@ export class AlbumService extends BaseService {
     return this.withSupporters(
       auth,
       albums.map((album) => {
-        const item = this.withReadableParent(this.toListItem(album, albumMetadata), readable);
+        const item = this.withReadableParent(this.toListItem(album, albumMetadata, pending), readable);
         const origin = origins.get(album.id);
         return origin ? { ...item, origin } : item;
       }),
@@ -227,6 +326,14 @@ export class AlbumService extends BaseService {
    * link rules are unchanged (neither grants album listing).
    */
   async getTree(auth: AuthDto, dto: AlbumViewDto = {}): Promise<AlbumTreeResponseDto> {
+    const { tree } = await this.loadDirectory(auth, dto);
+    return tree;
+  }
+
+  private async loadDirectory(
+    auth: AuthDto,
+    dto: AlbumViewDto,
+  ): Promise<{ tree: AlbumTreeResponseDto; positions: Map<string, number> }> {
     this.refreshCoversInBackground(auth.user.id);
 
     const privacyOptions = this.nsfwOptions(auth);
@@ -234,12 +341,12 @@ export class AlbumService extends BaseService {
       libraryScope: dto.libraryScope ?? LibraryScope.Personal,
     });
     if (albums.length === 0) {
-      return buildAlbumTree([]);
+      return { tree: buildAlbumTree([]), positions: new Map() };
     }
 
     const ids = albums.map((album) => album.id);
-    const [results, smartBackedIds, ruleAlbumIds, rules, positions, recovered, bookmarkCounts] = await Promise.all([
-      this.albumRepository.getMetadataForIds(ids, privacyOptions),
+    const [stored, smartBackedIds, ruleAlbumIds, rules, positions, recovered, bookmarkCounts] = await Promise.all([
+      this.readStoredMetadata(ids, privacyOptions),
       this.smartAlbumRepository.getSmartBackedAlbumKinds(ids),
       this.classificationRepository.getRuleAlbumIds(ids),
       this.classificationRepository.getRules(auth.user.id),
@@ -248,19 +355,16 @@ export class AlbumService extends BaseService {
       this.albumRepository.getBookmarkCounts(auth, ids),
     ]);
     const ruleByAlbum = new Map(rules.map((rule) => [rule.albumId, rule.id]));
-    const albumMetadata: Record<string, AlbumAssetCount> = {};
-    for (const metadata of results) {
-      albumMetadata[metadata.albumId] = metadata;
-    }
+    const { metadata: albumMetadata, pending } = stored;
     albums = await this.hideNsfwAlbumThumbnails(auth, albums, privacyOptions, albumMetadata);
 
     // Every group comes back in the person's own custom order (FL-52); the client's "Custom order"
     // sort shows it as is, the other sorts re-sort it.
     const readable = await this.readableParents(auth, albums);
-    return orderAlbumTree(
+    const tree = orderAlbumTree(
       buildAlbumTree(
         albums.map((album) => ({
-          ...this.withReadableParent(this.toListItem(album, albumMetadata), readable),
+          ...this.withReadableParent(this.toListItem(album, albumMetadata, pending), readable),
           bookmarkCount: bookmarkCounts.get(album.id) ?? 0,
           isSmart: smartBackedIds.has(album.id) || ruleAlbumIds.has(album.id),
           smartRuleId: ruleByAlbum.get(album.id) ?? null,
@@ -270,17 +374,18 @@ export class AlbumService extends BaseService {
       ),
       positions,
     );
+    return { tree, positions };
   }
 
   async getHierarchy(auth: AuthDto, dto: AlbumViewDto = {}): Promise<AlbumHierarchyResponseDto> {
-    const tree = await this.getTree(auth, dto);
+    const { tree, positions } = await this.loadDirectory(auth, dto);
     return buildAlbumHierarchy(
       [
         ...tree.collections.flatMap(({ collection, albums }) => [collection, ...albums]),
         ...tree.albums,
         ...tree.spaces,
       ],
-      await this.albumRepository.getPositions(auth.user.id),
+      positions,
     );
   }
 
@@ -333,7 +438,11 @@ export class AlbumService extends BaseService {
     };
   }
 
-  private toListItem(album: MapAlbumDto, albumMetadata: Record<string, AlbumAssetCount>): AlbumResponseDto {
+  private toListItem(
+    album: MapAlbumDto,
+    albumMetadata: Record<string, AlbumAssetCount>,
+    pending: Set<string>,
+  ): AlbumResponseDto {
     return {
       ...mapAlbum(album),
       startDate: asDateTimeString(albumMetadata[album.id]?.startDate ?? undefined),
@@ -341,6 +450,7 @@ export class AlbumService extends BaseService {
       assetCount: albumMetadata[album.id]?.assetCount ?? 0,
       // lastModifiedAssetTimestamp is only used in mobile app, please remove if not need
       lastModifiedAssetTimestamp: asDateTimeString(albumMetadata[album.id]?.lastModifiedAssetTimestamp ?? undefined),
+      ...(pending.has(album.id) && { statsPending: true }),
     };
   }
 

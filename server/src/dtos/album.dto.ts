@@ -328,6 +328,13 @@ export const AlbumResponseSchema = z
       .describe(
         'True for a Recovered Media album: files the imported library had lost track of, brought back after the import. Populated by GET /albums/tree and GET /albums/{id}.',
       ),
+    // FL-1297
+    statsPending: z
+      .boolean()
+      .optional()
+      .describe(
+        "True while this album's count and dates are still being worked out for this viewer; assetCount is 0 until then. Populated by GET /albums and GET /albums/tree.",
+      ),
     // FL-326
     origin: PartnerOriginSchema.optional().describe(
       'Present on your own album when partner sharing copied it from another library',

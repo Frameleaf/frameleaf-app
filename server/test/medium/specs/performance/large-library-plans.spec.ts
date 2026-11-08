@@ -1,10 +1,24 @@
 import { CompiledQuery, Kysely, sql } from 'kysely';
 import { SearchFacetField } from 'src/dtos/search.dto.js';
 import { AssetVisibility, TimeBucketDateType } from 'src/enum.js';
+import { AccessRepository } from 'src/repositories/access.repository.js';
+import { AlbumSummaryRepository } from 'src/repositories/album-summary.repository.js';
+import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { ClassificationRepository } from 'src/repositories/classification.repository.js';
+import { EventRepository } from 'src/repositories/event.repository.js';
+import { FrameleafUserLicenseRepository } from 'src/repositories/frameleaf-user-license.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
+import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { SearchRepository } from 'src/repositories/search.repository.js';
+import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
+import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { DB } from 'src/schema/index.js';
+import { AlbumService } from 'src/services/album.service.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getKyselyConfig } from 'src/utils/database.js';
 import { SCALE_ITEMS, scaleIt } from 'test/medium/scale.js';
@@ -295,5 +309,91 @@ describe('large-library query plans (FL-139)', () => {
     );
     // not one query per facet value or per item: a fixed number however large the library
     expect(captured.length).toBe(FACET_QUERIES);
+  });
+
+  /**
+   * FL-1297: the album list reads stored per-album numbers. Wall-clock targets are record-only on CI
+   * (FL-139), so the budget is the plan: no query the list path makes may read `album_asset`.
+   */
+  describe('album list (FL-1297)', () => {
+    const ALBUMS = 3500;
+
+    const albumService = () => {
+      const { sut, ctx } = newMediumService(AlbumService, {
+        database: logged,
+        real: [
+          AccessRepository,
+          AlbumRepository,
+          AlbumSummaryRepository,
+          AssetRepository,
+          ClassificationRepository,
+          PartnerOriginRepository,
+          PartnerRepository,
+          SmartAlbumRepository,
+          UserRepository,
+          FrameleafUserLicenseRepository,
+          SystemMetadataRepository,
+        ],
+        mock: [EventRepository, JobRepository, LoggingRepository, WebsocketRepository],
+      });
+      return { sut, ctx };
+    };
+
+    beforeAll(async () => {
+      await logged.transaction().execute(async (fixture) => {
+        await sql`SET LOCAL session_replication_role = replica`.execute(fixture);
+        await sql`
+          INSERT INTO album (id, "albumName", "albumThumbnailAssetId")
+          SELECT md5(${ownerId} || ':album:' || a)::uuid, 'Album ' || a, md5(${ownerId} || ':' || a)::uuid
+          FROM generate_series(1, ${ALBUMS}::integer) a
+        `.execute(fixture);
+        await sql`
+          INSERT INTO album_user ("albumId", "userId", role)
+          SELECT md5(${ownerId} || ':album:' || a)::uuid, ${ownerId}::uuid, 'owner'::album_user_role_enum
+          FROM generate_series(1, ${ALBUMS}::integer) a
+        `.execute(fixture);
+        await sql`
+          INSERT INTO album_asset ("albumId", "assetId")
+          SELECT md5(${ownerId} || ':album:' || (1 + g % ${ALBUMS}))::uuid, md5(${ownerId} || ':' || g)::uuid
+          FROM generate_series(1, ${LIBRARY_SIZE}::integer) g
+        `.execute(fixture);
+      });
+      await sql`ANALYZE`.execute(logged);
+    }, 600_000);
+
+    scaleIt('lists every album without reading album_asset (%i photos)', 1, async () => {
+      const { sut, ctx } = albumService();
+      // Neither background refresh is the path being measured: covers are repaired elsewhere, and the
+      // first read below only has to get the numbers stored before the second is planned.
+      vi.spyOn(ctx.get(AlbumRepository), 'updateThumbnails').mockResolvedValue(0);
+      const auth = factory.auth({ user: { id: ownerId } });
+
+      await sut.getTree(auth);
+
+      const tree = await vi.waitFor(
+        async () => {
+          const current = await sut.getTree(auth);
+          expect(current.albums.some((item) => item.statsPending)).toBe(false);
+          return current;
+        },
+        { timeout: 120_000, interval: 500 },
+      );
+      expect(tree.albums).toHaveLength(ALBUMS);
+      expect(tree.albums.reduce((total, item) => total + item.assetCount, 0)).toBe(LIBRARY_SIZE);
+
+      vi.spyOn(ctx.get(AlbumSummaryRepository), 'getChangedAt').mockResolvedValue([]);
+      captured.length = 0;
+      await sut.getTree(auth);
+
+      const queries = captured.filter((query) => /^(with|select)\b/i.test(query.sql.trimStart()));
+      expect(queries.length).toBeGreaterThan(0);
+      for (const query of queries) {
+        const explained = await logged.executeQuery<{ 'QUERY PLAN': [{ Plan: PlanNode }] }>(
+          CompiledQuery.raw(`EXPLAIN (ANALYZE, BUFFERS, TIMING OFF, FORMAT JSON) ${query.sql}`, [...query.parameters]),
+        );
+        const relations = nodes(explained.rows[0]['QUERY PLAN'][0].Plan).map((node) => node['Relation Name']);
+        expect(relations, query.sql).not.toContain('album_asset');
+      }
+    });
   });
 });

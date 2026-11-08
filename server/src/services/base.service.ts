@@ -29,6 +29,7 @@ import { ActivityRepository } from 'src/repositories/activity.repository.js';
 import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
 import { AlbumSourceRepository } from 'src/repositories/album-source.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
+import { AlbumSummaryRepository } from 'src/repositories/album-summary.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
 import { AppRepository } from 'src/repositories/app.repository.js';
@@ -135,6 +136,7 @@ export const BASE_SERVICE_DEPENDENCIES = [
   ActivityRepository,
   AdminAuditRepository,
   AlbumRepository,
+  AlbumSummaryRepository,
   AlbumUserRepository,
   ApiKeyRepository,
   AppRepository,
@@ -217,6 +219,7 @@ export class BaseService {
     protected activityRepository: ActivityRepository,
     protected adminAuditRepository: AdminAuditRepository,
     protected albumRepository: AlbumRepository,
+    protected albumSummaryRepository: AlbumSummaryRepository,
     protected albumUserRepository: AlbumUserRepository,
     protected apiKeyRepository: ApiKeyRepository,
     protected appRepository: AppRepository,
@@ -308,6 +311,7 @@ export class BaseService {
       ctx.activityRepository,
       ctx.adminAuditRepository,
       ctx.albumRepository,
+      ctx.albumSummaryRepository,
       ctx.albumUserRepository,
       ctx.apiKeyRepository,
       ctx.appRepository,

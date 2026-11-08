@@ -297,8 +297,16 @@ export const directoryAlbums = (tree: AlbumTreeResponseDto): AlbumResponseDto[] 
   ...tree.spaces,
 ];
 
-export const albumAncestors = (tree: AlbumTreeResponseDto, album: AlbumResponseDto): AlbumResponseDto[] => {
-  const visible = new Map(directoryAlbums(tree).map((item) => [item.id, item]));
+/** Every album of a directory by id. Build it once when asking about many albums (`albumAncestorsIn`). */
+export const albumsById = (tree: AlbumTreeResponseDto) => new Map(directoryAlbums(tree).map((item) => [item.id, item]));
+
+export const albumAncestors = (tree: AlbumTreeResponseDto, album: AlbumResponseDto): AlbumResponseDto[] =>
+  albumAncestorsIn(albumsById(tree), album);
+
+export const albumAncestorsIn = (
+  visible: Map<string, AlbumResponseDto>,
+  album: AlbumResponseDto,
+): AlbumResponseDto[] => {
   const ancestors: AlbumResponseDto[] = [];
   const visited = new Set([album.id]);
   let parent = album.parentId ? visible.get(album.parentId) : undefined;
@@ -354,6 +362,21 @@ export const moveTargets = (
 };
 
 /** "Aug 2026", "Jun – Aug 2026" or "2025 – 2026" for a run of capture dates. */
+const spanFormats = new Map<string | undefined, Record<'monthYear' | 'month' | 'year', Intl.DateTimeFormat>>();
+/** Making a formatter is slow enough to matter when thousands of tiles update together. */
+const spanFormatters = (locale?: string) => {
+  let formats = spanFormats.get(locale);
+  if (!formats) {
+    formats = {
+      monthYear: new Intl.DateTimeFormat(locale, { month: 'short', year: 'numeric', timeZone: 'UTC' }),
+      month: new Intl.DateTimeFormat(locale, { month: 'short', timeZone: 'UTC' }),
+      year: new Intl.DateTimeFormat(locale, { year: 'numeric', timeZone: 'UTC' }),
+    };
+    spanFormats.set(locale, formats);
+  }
+  return formats;
+};
+
 export const monthSpan = (earliest: string | undefined, latest: string | undefined, locale?: string): string => {
   if (!latest) {
     return '';
@@ -363,9 +386,7 @@ export const monthSpan = (earliest: string | undefined, latest: string | undefin
     return '';
   }
   const first = new Date(earliest || latest);
-  const monthYear = new Intl.DateTimeFormat(locale, { month: 'short', year: 'numeric', timeZone: 'UTC' });
-  const month = new Intl.DateTimeFormat(locale, { month: 'short', timeZone: 'UTC' });
-  const year = new Intl.DateTimeFormat(locale, { year: 'numeric', timeZone: 'UTC' });
+  const { monthYear, month, year } = spanFormatters(locale);
   if (Number.isNaN(first.getTime()) || monthYear.format(first) === monthYear.format(last)) {
     return monthYear.format(last);
   }

@@ -80,7 +80,8 @@
   const recoveredLabel = $derived(album.recovered ? $t('frameleaf_albums_recovered_mark') : undefined);
   const meta = $derived(
     [
-      $t('frameleaf_albums_items', { values: { count: album.assetCount } }),
+      // FL-1297: while its numbers are still being worked out, a tile shows its name and cover and no count.
+      album.statsPending ? undefined : $t('frameleaf_albums_items', { values: { count: album.assetCount } }),
       monthSpan(album.startDate, album.endDate, $locale ?? undefined),
       album.recovered ? $t('frameleaf_albums_recovered') : undefined,
     ]

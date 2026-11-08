@@ -100,6 +100,17 @@
 
   let albumName = $state('');
   let description = $state('');
+  /**
+   * FL-1297: this dialog is always on the Albums page, and the place list can hold thousands of albums,
+   * so the list is only built while the dialog is up. It goes when the dialog has finished closing.
+   */
+  let pickerMounted = $state(false);
+  $effect.pre(() => {
+    if (open) {
+      pickerMounted = true;
+    }
+  });
+
   /** Null keeps the default look for the kind; an icon is optional (prototype `NewCollectionDialog`). */
   let icon = $state<string | null>(null);
   let color = $state<AlbumColor | null>(null);
@@ -212,7 +223,7 @@
   };
 </script>
 
-<Dialog {title} closeLabel={$t('close')} wide={smartOn} bind:open>
+<Dialog {title} closeLabel={$t('close')} wide={smartOn} bind:open onClosed={() => (pickerMounted = false)}>
   <form class="create" class:smart={smartOn} onsubmit={submit}>
     {#if kind === AlbumKind.Space && !editing}
       <p class="hint">{$t('frameleaf_albums_space_description')}</p>
@@ -266,7 +277,7 @@
         </div>
       {/if}
     </div>
-    {#if showParent}
+    {#if showParent && pickerMounted}
       <div class="field">
         <span class="field-label" aria-hidden="true"
           >{boards ? $t('frameleaf_boards_inside') : $t('frameleaf_albums_in_collection')}</span
