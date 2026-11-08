@@ -9,7 +9,9 @@ set -euo pipefail
 log=$(mktemp)
 trap 'rm -f "$log"' EXIT
 
-apt-get update -o APT::Update::Error-Mode=any "$@" 2>&1 | tee "$log"
+# PDiffs=false: an incremental index (Packages.diff) caught mid-publish logs "Err:" even though apt then
+# fetches the full index, which failed builds on a mirror hiccup. Full indexes keep the check meaningful.
+apt-get update -o APT::Update::Error-Mode=any -o Acquire::PDiffs=false "$@" 2>&1 | tee "$log"
 if grep -qE '^Err:|Failed to fetch|Some index files failed to download' "$log"; then
   echo "apt-update-strict: at least one package index could not be fetched" >&2
   exit 1
