@@ -147,12 +147,23 @@ const moveRefusals: Record<string, string> = {
   media_copy_still_running: 'The copy helper is still running. Stop safely and wait for it to exit before recovery.',
 };
 const refusals: Record<string, string> = {
+  invalid_storage_path: 'That folder path can’t be used. Use a full path such as /mnt/user/photos, with no comma in it.',
+  storage_inaccessible: 'Manager can’t find this media folder inside its container. In your server’s settings for Frameleaf, map a folder to it, then try again.',
+  storage_outside_approved_roots: 'This folder isn’t one of Manager’s media folders. Choose one from the list, or add it to Media roots in your server’s settings for Frameleaf.',
+  storage_permissions: 'Manager can’t read and write this media folder. Check the folder’s permissions on your server, then try again.',
+  invalid_database_path: 'That database folder path can’t be used. Use a full path with no comma or colon in it.',
+  database_requires_host_bind: 'This database folder isn’t mapped from a folder on your server. In your server’s settings for Frameleaf, map a writable folder to it, then try again.',
+  database_directory_missing: 'Manager can’t find this database folder. Choose one listed in the field, or map a folder to it in your server’s settings for Frameleaf.',
+  database_permissions: 'Manager can’t read and write this database folder. Check the folder’s permissions on your server, then try again.',
+  database_storage_unavailable: 'This database folder is read-only or unavailable. Make it writable in your server’s settings for Frameleaf, then try again.',
+  database_in_docker_storage: 'This database folder is inside Docker’s own storage, where it could be lost. Choose a folder on a normal share or pool.',
+  database_requires_disk_storage: 'The database needs a folder on a local disk. Network shares, RAM disks and virtual disk images can’t be used, so choose another folder.',
   container_settings_invalid: 'Fix the advanced container settings marked below, then try again.',
   service_override_conflict: 'An extra folder would replace one Frameleaf manages. Choose another path inside the container.',
   service_override_unsafe_source:
     'That host folder is a system path (the Docker socket, /etc, /proc, /sys, /dev, /root, /boot, Docker’s data or Manager’s own state) and cannot be mounted into Frameleaf.',
   service_override_source_outside_roots:
-    'That host folder is outside the folders Manager may mount. Map it into Manager at the same path and add it to MANAGER_MOUNT_ROOTS, or choose a folder inside the media or database roots.',
+    'That host folder is outside the folders Manager may mount. Map it into Manager and add its Manager path to MANAGER_MOUNT_ROOTS, or choose a folder inside the media or database roots.',
   claim_proxied_address_unverified:
     'This connection reached Manager through a proxy, so Manager cannot tell it came from your home network. Open Manager directly on its LAN address, or set MANAGER_TRUSTED_PROXIES for the proxy. The Manager container log has the details.',
   update_failed_rolled_back:
@@ -199,7 +210,7 @@ const refusals: Record<string, string> = {
   unraid_autostart_unavailable:
     'Manager could not access Unraid’s autostart list automatically. Check that Unraid’s Docker service is running and its existing unraid-autostart file is available and writable, then try again.',
   database_path_not_mounted:
-    'Manager can only use a database folder inside one of its mapped database folders. Add the folder to Manager’s “Database parent” mapping and database roots, or choose one listed in the field.',
+    'This isn’t one of Manager’s database folders. Choose one listed in the field, or add it to Database roots in your server’s settings for Frameleaf.',
   source_version_unreachable:
     'Manager found this photo server but could not ask it for its version. Check that it is running and healthy; Manager uses its IMMICH_PORT and IMMICH_HOST settings.',
   database_connection_ambiguous:
