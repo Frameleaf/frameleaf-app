@@ -152,7 +152,7 @@ const refusals: Record<string, string> = {
   service_override_unsafe_source:
     'That host folder is a system path (the Docker socket, /etc, /proc, /sys, /dev, /root, /boot, Docker’s data or Manager’s own state) and cannot be mounted into Frameleaf.',
   service_override_source_outside_roots:
-    'That host folder is outside the folders Manager may mount. Map it into Manager at the same path and add it to MANAGER_MOUNT_ROOTS, or choose a folder inside the media or database roots.',
+    'That host folder is outside the folders Manager may mount. Map it into Manager and add its Manager path to MANAGER_MOUNT_ROOTS, or choose a folder inside the media or database roots.',
   claim_proxied_address_unverified:
     'This connection reached Manager through a proxy, so Manager cannot tell it came from your home network. Open Manager directly on its LAN address, or set MANAGER_TRUSTED_PROXIES for the proxy. The Manager container log has the details.',
   update_failed_rolled_back:

@@ -328,7 +328,7 @@ export function checkServiceOverrides(mediaTargets: string[], overrides: Service
         throw new Refusal(
           'service_override_source_outside_roots',
           409,
-          `${name}: ${mount.source} is outside the folders Manager may mount (${roots.join(', ')}). Map it into Manager at the same path and add it to MANAGER_MOUNT_ROOTS to allow it.`,
+          `${name}: ${mount.source} is outside the folders Manager may mount (${roots.join(', ')}). Map it into Manager and add its Manager path to MANAGER_MOUNT_ROOTS to allow it.`,
         );
 }
 

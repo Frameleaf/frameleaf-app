@@ -3,6 +3,7 @@ import { constants } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { Refusal, type Installation } from './contracts.js';
 import { environment, overlap, type Container, type Docker } from './docker.js';
+import { toHost } from './host-paths.js';
 
 const within = (path: string, parent: string) =>
   path === parent || path.startsWith(parent === '/' ? '/' : parent + '/');
@@ -76,7 +77,7 @@ export function databaseMount(
   if (!path.startsWith('/') || path !== resolve(path) || /[\x00-\x1f\x7f,:]/.test(path))
     throw new Refusal('invalid_database_path');
   if (!roots.some((root) => within(path, root))) throw new Refusal('database_path_not_mounted');
-  if (!dockerRoot.startsWith('/') || overlap(path, dockerRoot)) throw new Refusal('database_in_docker_storage');
+  if (!dockerRoot.startsWith('/') || overlap(toHost(path), dockerRoot)) throw new Refusal('database_in_docker_storage');
   const mapping = manager.Mounts.filter((m) => within(path, m.Destination)).sort(
     (a, b) => b.Destination.length - a.Destination.length,
   )[0];
@@ -91,7 +92,7 @@ export function databaseMount(
     if (!host) throw new Refusal('host_mount_information_required');
     return { device: host.device, path: resolve(host.root, relative(host.target, location)) };
   };
-  const hostDatabase = identity(path),
+  const hostDatabase = identity(toHost(path)),
     hostDocker = identity(dockerRoot);
   if (hostDatabase.device !== mount.device) throw new Refusal('host_database_mount_changed');
   if (hostDatabase.device === hostDocker.device && overlap(hostDatabase.path, hostDocker.path))
@@ -156,7 +157,10 @@ export class PostgresStorage {
       hostMounts,
       this.unraid,
     );
-    const writer = overlappingWriter(containers, path, controllers[0].Id, installationId, this.roots);
+    // Both views: a writer bound to a host folder above this mapping has no path inside Manager.
+    const writer =
+      overlappingWriter(containers, path, controllers[0].Id, installationId, this.roots) ??
+      overlappingWriter(containers, toHost(path), controllers[0].Id, installationId, this.roots.map(toHost));
     if (writer) {
       console.error(`manager: database folder ${path} is inside ${writer.source}, which container ${writer.container} can write to`);
       throw new Refusal(

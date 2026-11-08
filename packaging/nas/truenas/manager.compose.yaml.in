@@ -1,6 +1,6 @@
 # TrueNAS 24.10.2.2+ Custom App / Install via YAML. Set the five deployment values
 # before pasting into TrueNAS; its YAML editor does not supply an external .env.
-# Paths below are examples. Keep every host path identical to its container path.
+# Paths below are examples. Each variable holds the container path of a mapped folder.
 services:
   manager:
     image: ghcr.io/frameleaf/frameleaf-manager:latest

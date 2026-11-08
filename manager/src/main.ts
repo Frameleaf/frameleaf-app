@@ -25,6 +25,7 @@ import { Store } from './store.js';
 import { DesktopGrants } from './desktop-grants.js';
 import { desktopApi } from './desktop-api.js';
 import { Docker, command } from './docker.js';
+import { adoptOwnMounts, toHost } from './host-paths.js';
 import { Security, trustedProxyList } from './security.js';
 import { Backups } from './backups.js';
 import { Releases } from './releases.js';
@@ -61,13 +62,15 @@ if (runtime === 'native') {
     : bootstrapPipe.isFIFO() || bootstrapPipe.isSocket();
   if (!privatePipe) throw new Refusal('native_bootstrap_unavailable');
 }
+const docker = new Docker();
+// Before any location is read: a folder may be mapped to a different path inside this container.
+if (runtime === 'docker') adoptOwnMounts(await docker.inventory().catch(() => []), directory);
 const backupRoot = process.env.MANAGER_BACKUP_ROOT ?? (runtime === 'native' ? join(directory, 'backups') : undefined);
 if (!backupRoot || backupRoot !== resolve(backupRoot))
   throw new Error('MANAGER_BACKUP_ROOT must be an absolute mounted directory');
 const native = runtime === 'native'
   ? await createNativeService(store, process.stdin, origin!, join(backupRoot, 'frameleaf-database'))
   : null;
-const docker = new Docker();
 // Proxies named in MANAGER_TRUSTED_PROXIES may forward the client address; a loopback-only publish (launch.sh
 // default) means a connection from the bridge gateway can only be this host. Otherwise a gateway-sourced
 // claim is refused (review L1): Docker's userland proxy and NAS portal proxies hide the real client.
@@ -141,7 +144,7 @@ async function troubleshootingScope() {
       directory!,
       installation?.databaseRoot ?? '',
     ],
-    [...containers, ...(self ? [self] : [])].flatMap((c) => (c.Mounts ?? []).flatMap((m) => [m.Source, m.Destination])),
+    [...containers, ...(self ? [self] : [])].flatMap((c) => (c.Mounts ?? []).flatMap((m) => [m.Source, toHost(m.Source), m.Destination])),
   );
   const clean = (text: string) => redactPaths(redact(text, secrets), roots);
   return { installation, containers, self, clean };
