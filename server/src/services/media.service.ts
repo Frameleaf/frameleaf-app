@@ -77,11 +77,14 @@ import { HDR_RENDITION_RENDERER_VERSION, imageRenditionIdentity } from 'src/util
 import { isLockedKeyUnavailable, isLockedPath, withPlainCopy } from 'src/utils/locked-read.js';
 import { DJI_SRT_HEAD_BYTES, getDjiSrtCandidates, parseDjiSrtColorMode } from 'src/utils/log-video-srt.js';
 import {
+  VENDORED_LUTS,
   buildLogLut,
   detectLogVideo,
   getLogLutFileName,
   getLogProfileLabel,
+  getVendoredLutFileName,
   isHdrTransfer,
+  readVendoredLut,
 } from 'src/utils/log-video.js';
 import {
   type DecodeQualification,
@@ -3063,14 +3066,18 @@ export class MediaService extends BaseService {
         }
       }
       const inputRange = colorRange === 'pc' ? 'pc' : 'tv';
-      const lutPath = await this.mediaRepository.ensureColorLut(getLogLutFileName(detection.profile, inputRange), () =>
-        buildLogLut(detection.profile, inputRange),
-      );
+      const vendored = detection.vendoredLut;
+      // a maker LUT works on full-scale RGB, which ffmpeg hands lut3d for either input range
+      const lutPath = vendored
+        ? await this.mediaRepository.ensureColorLut(getVendoredLutFileName(vendored), () => readVendoredLut(vendored))
+        : await this.mediaRepository.ensureColorLut(getLogLutFileName(detection.profile, inputRange), () =>
+            buildLogLut(detection.profile, inputRange),
+          );
       if (!isSafeFilterPath(lutPath)) {
         this.logger.warn(`Not converting Log video ${path}: the LUT folder ${lutPath} cannot be used in ffmpeg`);
         return videoStream;
       }
-      const label = getLogProfileLabel(detection.profile);
+      const label = vendored ? VENDORED_LUTS[vendored].label : getLogProfileLabel(detection.profile);
       this.logger.log(
         `${path} is ${label} Log video (${detection.signal}, ${detection.confidence} confidence); converting to Rec.709`,
       );

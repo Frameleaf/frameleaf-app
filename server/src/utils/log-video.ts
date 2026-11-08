@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { ColorMatrix, ColorPrimaries, ColorTransfer } from 'src/enum.js';
 
 /**
@@ -382,8 +384,31 @@ export interface LogVideoEvidence {
 
 export type LogDetectionConfidence = 'high' | 'medium' | 'low';
 
+/** LUTs shipped as published by the camera maker, used where no formula exists (`resources/color-luts`). */
+export const VENDORED_LUTS = {
+  'dji-d-log-m': {
+    label: 'DJI D-Log M',
+    fileName: 'dji-d-log-m-to-rec709.cube',
+    sha256: 'b18162854ab47702068410c33afa98a8cb6eef159fc5a04ce0e65fad0fd8947e',
+  },
+} as const;
+export type VendoredLutId = keyof typeof VENDORED_LUTS;
+
+export const getVendoredLutPath = (id: VendoredLutId) =>
+  join(import.meta.dirname, '../../resources/color-luts', VENDORED_LUTS[id].fileName);
+
+/** The vendored file with `\n` line endings (DJI's uses CR and CRLF), for the server's LUT cache. */
+export const readVendoredLut = (id: VendoredLutId) =>
+  readFileSync(getVendoredLutPath(id), 'utf8').replaceAll(/\r\n?/g, '\n');
+
+/** The cache name of a vendored LUT; the SHA-256 prefix changes with the file. */
+export const getVendoredLutFileName = (id: VendoredLutId) =>
+  `frameleaf-vendored-${id}-${VENDORED_LUTS[id].sha256.slice(0, 12)}.cube`;
+
 export interface LogDetection {
   profile: LogProfile;
+  /** Convert with this maker LUT instead of one generated from {@link profile}. */
+  vendoredLut?: VendoredLutId;
   /** Which file field said so, for logs and review. */
   signal: string;
   confidence: LogDetectionConfidence;
@@ -452,8 +477,9 @@ const canonGamut = (value: unknown): LogGamutId => {
  * - DJI D-Log (low): DJI writes the colour mode only to the optional `.SRT` sidecar next to the clip
  *   (`[color_md : d_log]`), never into the video file. Low because the SRT naming is not documented
  *   by DJI and owners report some models writing a plain "d-log" for D-Log M.
- * - DJI D-Log M (`dlog_m`): detected but not converted. DJI has published no D-Log M formula, only a
- *   LUT whose licence is unclear, so there is nothing to generate a conversion from here.
+ * - DJI D-Log M (`dlog_m`, low): from the same sidecar. DJI has published no D-Log M formula, so it is
+ *   converted with DJI's own D-Log M → Rec.709 LUT, shipped in `resources/color-luts` (owner approved,
+ *   2026-11-07); `profile` is then only nominal.
  *
  * Not covered, because no published formula exists or the file carries no signal: GoPro Protune
  * Flat / GP-Log (no published curve), Sony S-Log2.
@@ -531,11 +557,20 @@ export const detectLogVideo = (evidence: LogVideoEvidence): LogDetection | null 
 
   // DJI's SRT sidecar comes after every marker inside the file, which always wins over it, and is
   // ignored when the file names another maker (a stale or mismatched sidecar). D-Log M ("dlog_m")
-  // has no published formula, so it is not converted.
+  // has no published formula, so it uses DJI's own LUT.
   const make = text(tags.Make);
   const dji = text(evidence.djiColorMode).replaceAll('-', '_');
-  if ((dji === 'd_log' || dji === 'dlog') && (!make || make.includes('dji'))) {
+  const isDjiOrUnknown = !make || make.includes('dji');
+  if ((dji === 'd_log' || dji === 'dlog') && isDjiOrUnknown) {
     return { profile: { curve: 'd-log', gamut: 'd-gamut' }, signal: 'DJI SRT color_md', confidence: 'low' };
+  }
+  if ((dji === 'dlog_m' || dji === 'd_log_m') && isDjiOrUnknown) {
+    return {
+      profile: { curve: 'd-log', gamut: 'd-gamut' },
+      vendoredLut: 'dji-d-log-m',
+      signal: 'DJI SRT color_md',
+      confidence: 'low',
+    };
   }
 
   if (
