@@ -397,7 +397,20 @@ describe('AlbumDirectory', () => {
       await fireEvent.click(await latestUndo());
 
       await waitFor(() => expect(sdkMock.undoLatestAlbumChangeRun).toHaveBeenCalled());
+      expect(sdkMock.undoLatestAlbumChangeRun.mock.calls[0][0]).toEqual({
+        albumChangeUndoDto: { runId: expect.any(String) },
+      });
       expect(await screen.findByText('Merge undone')).toBeInTheDocument();
+    });
+
+    it('says to undo the newer change first when this merge is no longer the latest', async () => {
+      sdkMock.isHttpError.mockReturnValue(true);
+      sdkMock.undoLatestAlbumChangeRun.mockRejectedValue(Object.assign(new Error('conflict'), { status: 409 }));
+      await merge();
+
+      await fireEvent.click(await latestUndo());
+
+      expect(await screen.findByText('Undo your newer change first, then this one.')).toBeInTheDocument();
     });
 
     it('says what Undo kept because it was changed after the merge', async () => {

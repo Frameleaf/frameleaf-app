@@ -4408,6 +4408,10 @@ export type AlbumChangeRunLatestResponseDto = {
     /** The newest run that can still be undone, if any */
     run: (AlbumChangeRunResponseDto) | null;
 };
+export type AlbumChangeUndoDto = {
+    /** Only undo if this is still the latest run; refused with 409 if it is not */
+    runId?: string;
+};
 export type AlbumChangeUndoResponseDto = {
     /** Changes taken back */
     reversed: number;
@@ -23821,14 +23825,17 @@ export function getLatestAlbumChangeRun(opts?: Oazapfts.RequestOpts) {
 /**
  * Undo the latest album change
  */
-export function undoLatestAlbumChangeRun(opts?: Oazapfts.RequestOpts) {
+export function undoLatestAlbumChangeRun({ albumChangeUndoDto }: {
+    albumChangeUndoDto: AlbumChangeUndoDto;
+}, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: AlbumChangeUndoResponseDto;
-    }>("/albums/change-runs/latest/undo", {
+    }>("/albums/change-runs/latest/undo", oazapfts.json({
         ...opts,
-        method: "POST"
-    }));
+        method: "POST",
+        body: albumChangeUndoDto
+    })));
 }
 /**
  * Retrieve the nested album directory

@@ -19,10 +19,12 @@ import { AlbumUserCreateDto, MapAlbumDto } from 'src/dtos/album.dto.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { AlbumUserRole, LibraryScope, type LibraryViewScope } from 'src/enum.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
+import { ALBUM_CHANGE_SOFT_DELETED } from 'src/repositories/album-change-run.repository.js';
 import { AlbumSuggestionRepository } from 'src/repositories/album-suggestion.repository.js';
 import { visible as bookmarkVisible } from 'src/repositories/bookmark.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { DB } from 'src/schema/index.js';
+import { AlbumChangeRunStatus } from 'src/schema/tables/album-change-run.table.js';
 import { AlbumTable } from 'src/schema/tables/album.table.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import { albumCoverCandidates } from 'src/utils/album-cover.js';
@@ -497,7 +499,24 @@ export class AlbumRepository {
     return rows.map((r) => r.id);
   }
   async restoreAll(userId: string): Promise<void> {
-    await this.db.updateTable('album').set({ deletedAt: null }).where(isAlbumOwned(userId)).execute();
+    await this.db
+      .updateTable('album')
+      .set({ deletedAt: null })
+      .where(isAlbumOwned(userId))
+      // FL-1298: a merged-away album stays gone until its merge is undone or purged.
+      .where(({ not, exists, selectFrom }) =>
+        not(
+          exists(
+            selectFrom('album_change')
+              .innerJoin('album_change_run', 'album_change_run.id', 'album_change.runId')
+              .select('album_change.runId')
+              .whereRef('album_change.albumId', '=', 'album.id')
+              .where('album_change.kind', '=', ALBUM_CHANGE_SOFT_DELETED)
+              .where('album_change_run.status', '!=', AlbumChangeRunStatus.Undone),
+          ),
+        ),
+      )
+      .execute();
   }
   async softDeleteAll(userId: string): Promise<void> {
     await this.db.transaction().execute(async (tx) => {

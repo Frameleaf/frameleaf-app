@@ -38,6 +38,16 @@
   /** Which pick the preview belongs to: a slower answer for an earlier pick must not replace it. */
   let requested = 0;
 
+  // The dialog stays mounted after it closes, so each opening starts at the picker.
+  $effect(() => {
+    if (!open) {
+      requested++;
+      other = null;
+      preview = null;
+      query = '';
+    }
+  });
+
   const unnamed = $derived($t('unnamed_album'));
   const nameOf = (item: AlbumResponseDto) => item.albumName || unnamed;
   const needle = $derived(query.trim().toLowerCase());

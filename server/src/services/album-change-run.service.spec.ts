@@ -64,6 +64,17 @@ describe(AlbumChangeRunService.name, () => {
   });
 
   describe('undoLatest', () => {
+    it('refuses when the run the person meant is no longer the latest', async () => {
+      mocks.albumChangeRun.getLatestForUpdate.mockResolvedValue(run());
+
+      await expect(sut.undoLatest(auth, { runId: '019a0000-0000-7000-8000-00000000dead' })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+
+      expect(mocks.albumChangeRun.getChanges).not.toHaveBeenCalled();
+      expect(mocks.albumChangeRun.markUndone).not.toHaveBeenCalled();
+    });
+
     it('walks changes newest first, grouping neighbours of one kind for their reverser', async () => {
       mocks.albumChangeRun.getLatestForUpdate.mockResolvedValue(run());
       mocks.albumChangeRun.getChanges

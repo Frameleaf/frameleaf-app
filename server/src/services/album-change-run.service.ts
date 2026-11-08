@@ -1,6 +1,10 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Kysely, Transaction } from 'kysely';
-import type { AlbumChangeRunResponseDto, AlbumChangeUndoResponseDto } from 'src/dtos/album-merge.dto.js';
+import type {
+  AlbumChangeRunResponseDto,
+  AlbumChangeUndoDto,
+  AlbumChangeUndoResponseDto,
+} from 'src/dtos/album-merge.dto.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type {
   AlbumChangeInput,
@@ -88,7 +92,7 @@ export class AlbumChangeRunService extends BaseService {
     };
   }
 
-  async undoLatest(auth: AuthDto): Promise<AlbumChangeUndoResponseDto> {
+  async undoLatest(auth: AuthDto, { runId }: AlbumChangeUndoDto = {}): Promise<AlbumChangeUndoResponseDto> {
     const touched = new Set<string>();
     const membership = new Set<string>();
     const outcome = await this.albumChangeRunRepository.transaction(async (tx) => {
@@ -97,6 +101,9 @@ export class AlbumChangeRunService extends BaseService {
       const run = await this.albumChangeRunRepository.getLatestForUpdate(tx, auth.user.id, this.undoFloor());
       if (!run) {
         throw new NotFoundException('There is nothing to undo');
+      }
+      if (runId && run.id !== runId) {
+        throw new ConflictException('A newer change has to be undone first');
       }
       if (run.status === AlbumChangeRunStatus.Running) {
         throw new ConflictException('This change is still being made');

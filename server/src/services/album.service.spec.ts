@@ -1595,9 +1595,14 @@ describe(AlbumService.name, () => {
       mocks.smartAlbum.getSmartBackedAlbumKinds.mockResolvedValue(new Map([[loose.id, 'food']]));
       mocks.album.getBookmarkCounts.mockResolvedValue(new Map([[loose.id, 3]]));
       mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([collection.id]));
+      const origin = { rootOwnerId: newUuid(), rootOwnerName: 'Jamie' };
+      mocks.partnerOrigin.getOriginLabels.mockResolvedValue(new Map([[inside.id, origin]]));
 
       const tree = await sut.getTree(auth);
 
+      // FL-1298: the directory has to know a partner's copy, because it can't be merged.
+      expect(tree.collections[0].albums[0].origin).toEqual(origin);
+      expect(tree.albums.find(({ id }) => id === loose.id)?.origin).toBeUndefined();
       expect(mocks.album.getAll).toHaveBeenCalledWith(owner.id, { libraryScope: LibraryScope.Personal });
       expect(tree.collections).toHaveLength(1);
       expect(tree.collections[0].collection.id).toBe(collection.id);

@@ -11634,6 +11634,16 @@
         "description": "Reverse your newest merge, cleanup or date healing, for up to 30 days. Anything changed since is left alone and reported in `skipped`.",
         "operationId": "undoLatestAlbumChangeRun",
         "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlbumChangeUndoDto"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
@@ -12738,7 +12748,7 @@
     },
     "/albums/{id}/merge": {
       "post": {
-        "description": "Merge two albums you own into the one with the most photos, counting Locked ones. No photos leave your library. The other album can be brought back with Undo for 30 days.",
+        "description": "Merge two albums you own into the one with the most photos, counting Locked ones; on a tie the older album stays. No photos leave your library. The other album can be brought back with Undo for 30 days.",
         "operationId": "mergeAlbum",
         "parameters": [
           {
@@ -68920,6 +68930,17 @@
           "undone"
         ],
         "type": "string"
+      },
+      "AlbumChangeUndoDto": {
+        "properties": {
+          "runId": {
+            "description": "Only undo if this is still the latest run; refused with 409 if it is not",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "type": "object"
       },
       "AlbumChangeUndoResponseDto": {
         "properties": {
