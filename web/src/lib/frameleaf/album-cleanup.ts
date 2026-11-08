@@ -868,6 +868,25 @@ export const buildPlan = (facts: AlbumCleanupFactsDto, options: PlanOptions = {}
     leftOutIds.add(id);
   }
 
+  // Anything an album left out had already taken in stays where it is too, and shows as unchanged.
+  const showUnchanged = (album: PlanAlbum) => {
+    leftOutIds.add(album.id);
+    untouched.push(leafFor(album, album.originalName));
+  };
+  const unmergedLosers = new Set(
+    [...similar, ...sameTrip].flatMap((pair) => (pair.merged && leftOutIds.has(pair.winner.id) ? [pair.loser] : [])),
+  );
+  for (const loser of unmergedLosers) {
+    showUnchanged(loser);
+  }
+  for (const group of duplicates) {
+    if (!group.skipped && leftOutIds.has(group.winner.id)) {
+      for (const other of group.others) {
+        showUnchanged(other);
+      }
+    }
+  }
+
   for (const [id, target] of moved) {
     if (id === target) {
       continue;
@@ -929,7 +948,7 @@ export const buildPlan = (facts: AlbumCleanupFactsDto, options: PlanOptions = {}
   const activeDuplicates = duplicates.filter((group) => !group.skipped && !leftOutIds.has(group.winner.id));
   const albumsMerged = activeDuplicates.reduce((sum, group) => sum + group.others.length, 0);
   const daysCombined = absorbedDays.size - combined.length;
-  const similarMerged = absorbedBySimilar.size;
+  const similarMerged = absorbedBySimilar.size - unmergedLosers.size;
   return {
     structure,
     untouched,

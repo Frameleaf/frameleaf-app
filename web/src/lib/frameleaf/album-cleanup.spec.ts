@@ -383,6 +383,17 @@ describe('albums the person left out', () => {
     expect(plan.summary.daysCombined).toBe(0);
   });
 
+  it('shows the duplicates of a day inside a run that was left out', () => {
+    const data = facts([
+      fact('carrier', 'Coquitlam, May 24, 2020', 20),
+      fact('day', 'Coquitlam, May 25, 2020', 10),
+      fact('copy', 'Coquitlam, May 25, 2020', 5),
+    ]);
+    const plan = buildPlan(data, { leftOut: new Set(['carrier']) });
+    expect(operationsFor(plan)).toEqual([]);
+    expect(new Set(plan.untouched.map(({ id }) => id))).toEqual(new Set(['carrier', 'day', 'copy']));
+  });
+
   it('shows every copy as unchanged when the winner of a group was left out', () => {
     const data = facts([fact('big', 'Friends', 20), fact('a', 'Friends', 10), fact('b', 'Friends', 5)]);
     const plan = buildPlan(data, { leftOut: new Set(['big']) });
