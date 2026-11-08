@@ -25,6 +25,16 @@ import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { effectiveVisibility, isLocked, isNotLocked } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
+/**
+ * FL-1287: a partner copy with a live source never renders its own thumbnails; it shares the source's, handed
+ * over by the source's job. Its own edits still render.
+ */
+const rendersOwnThumbnails = sql<boolean>`(asset."isEdited" OR NOT EXISTS (
+  SELECT 1 FROM public.asset_origin origin
+  JOIN asset source ON source.id = origin."sourceAssetId"
+  WHERE origin."assetId" = asset.id AND source."deletedAt" IS NULL AND source.status = ${sql.lit(AssetStatus.Active)}
+))`;
+
 @Injectable()
 export class AssetJobRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {
@@ -95,6 +105,7 @@ export class AssetJobRepository {
       .select(['asset.id', 'asset.isEdited'])
       .where('asset.deletedAt', 'is', null)
       .where('asset.visibility', '!=', sql.lit(AssetVisibility.Hidden))
+      .$if(!!options.force, (qb) => qb.where(rendersOwnThumbnails))
       .$if(!options.force, (qb) =>
         qb
           // If there aren't any entries, metadata extraction hasn't run yet which is required for thumbnails

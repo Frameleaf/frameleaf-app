@@ -101,6 +101,14 @@ const GENERATED_FILE_TYPES = [
   AssetFileType.FullSize,
   AssetFileType.EncodedVideo,
 ];
+/** What a thumbnail job renders; a copy with a live source shares these instead (FL-1287). */
+const THUMBNAIL_FILE_TYPES = [
+  AssetFileType.Thumbnail,
+  AssetFileType.Preview,
+  AssetFileType.FullSize,
+  AssetFileType.HdrPreview,
+  AssetFileType.HdrFullSize,
+];
 /** Copies form chains (A→B→C…); lineage walks stop here, far beyond any real chain, as a guard. */
 const MAX_LINEAGE_DEPTH = 64;
 const TAG_EDIT_LOCK_PREFIX = 'partner-tags:';
@@ -350,6 +358,84 @@ export class PartnerOriginRepository {
             AND source.visibility <> 'hidden'
         `.execute(trx);
       }
+    });
+  }
+  /** FL-1287: the live source a copy shares its generated files with. A copy whose source is gone or trashed has none. */
+  async getLiveSourceId(copyAssetId: string): Promise<string | undefined> {
+    const { rows } = await sql<{ id: string }>`
+      SELECT source.id FROM public.asset_origin origin
+      JOIN asset source ON source.id = origin."sourceAssetId"
+      WHERE origin."assetId" = ${copyAssetId}::uuid AND source."deletedAt" IS NULL AND source.status = ${AssetStatus.Active}
+    `.execute(this.db);
+    return rows[0]?.id;
+  }
+  /**
+   * FL-1287: hand `assetId`'s generated thumbnail files (same path and physical file, as `insertAssetCopy` links
+   * them) and thumbhash to every copy below it while each source on the way is live (A→B→C), so no copy renders
+   * its own. Returns the paths copies stopped naming, for a FileDelete (which keeps any path still named).
+   */
+  async shareGeneratedFiles(assetId: string): Promise<string[]> {
+    return this.db.transaction().execute(async (trx) => {
+      const files = await trx
+        .selectFrom('asset_file')
+        .select('path')
+        .where('assetId', '=', assetId)
+        .where('isEdited', '=', false)
+        .where('type', 'in', THUMBNAIL_FILE_TYPES)
+        .execute();
+      // the paths gain references: a concurrent FileDelete must not count them unreferenced in between
+      for (const path of [...new Set(files.map((file) => file.path))].toSorted()) {
+        await lockFilePath(trx, path);
+      }
+      const { rows } = await sql<{ path: string }>`
+        WITH RECURSIVE tree AS (
+          SELECT origin."assetId" AS id, 1 AS depth
+          FROM public.asset_origin origin
+          JOIN asset source ON source.id = origin."sourceAssetId"
+          WHERE origin."sourceAssetId" = ${assetId}::uuid
+            AND source."deletedAt" IS NULL AND source.status = ${AssetStatus.Active}
+          UNION ALL
+          SELECT origin."assetId", tree.depth + 1
+          FROM tree
+          JOIN asset parent ON parent.id = tree.id
+          JOIN public.asset_origin origin ON origin."sourceAssetId" = parent.id
+          WHERE parent."deletedAt" IS NULL AND parent.status = ${AssetStatus.Active} AND tree.depth < ${MAX_LINEAGE_DEPTH}
+        ),
+        source_file AS (
+          SELECT type, path, "physicalFileId", "isProgressive", "isTransparent", "renditionIdentity"
+          FROM asset_file
+          WHERE "assetId" = ${assetId}::uuid AND "isEdited" = false AND type = ANY(${THUMBNAIL_FILE_TYPES}::text[])
+        ),
+        previous AS (
+          SELECT DISTINCT copy_file.path
+          FROM asset_file copy_file
+          JOIN tree ON tree.id = copy_file."assetId"
+          JOIN source_file ON source_file.type = copy_file.type AND source_file.path <> copy_file.path
+          WHERE copy_file."isEdited" = false
+        ),
+        linked AS (
+          INSERT INTO asset_file ("assetId", type, path, "isEdited", "physicalFileId", "isProgressive",
+            "isTransparent", "renditionIdentity")
+          SELECT tree.id, source_file.type, source_file.path, false, source_file."physicalFileId",
+            source_file."isProgressive", source_file."isTransparent", source_file."renditionIdentity"
+          FROM tree CROSS JOIN source_file
+          ON CONFLICT ("assetId", type, "isEdited") DO UPDATE SET path = excluded.path,
+            "physicalFileId" = excluded."physicalFileId", "isProgressive" = excluded."isProgressive",
+            "isTransparent" = excluded."isTransparent", "renditionIdentity" = excluded."renditionIdentity"
+          WHERE (asset_file.path, asset_file."physicalFileId", asset_file."isProgressive", asset_file."isTransparent",
+              asset_file."renditionIdentity")
+            IS DISTINCT FROM (excluded.path, excluded."physicalFileId", excluded."isProgressive",
+              excluded."isTransparent", excluded."renditionIdentity")
+        ),
+        thumbhash AS (
+          UPDATE asset copy SET thumbhash = source.thumbhash
+          FROM asset source
+          WHERE source.id = ${assetId}::uuid AND source.thumbhash IS NOT NULL
+            AND copy.id IN (SELECT id FROM tree) AND copy.thumbhash IS DISTINCT FROM source.thumbhash
+        )
+        SELECT path FROM previous
+      `.execute(trx);
+      return rows.map(({ path }) => path);
     });
   }
   /** The copy `ownerId` holds of `sourceId`, if any (followed or not). */

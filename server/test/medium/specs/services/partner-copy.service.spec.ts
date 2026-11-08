@@ -12,8 +12,10 @@ import {
   AssetVisibility,
   FrameleafWorker,
   JobName,
+  JobStatus,
   LibraryScope,
   Permission,
+  PhysicalFileType,
   UserMetadataKey,
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
@@ -29,6 +31,7 @@ import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MapRepository } from 'src/repositories/map.repository.js';
+import { MediaRepository } from 'src/repositories/media.repository.js';
 import { OcrRepository } from 'src/repositories/ocr.repository.js';
 import {
   AlbumOriginField,
@@ -57,6 +60,7 @@ import { DB } from 'src/schema/index.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { BaseService } from 'src/services/base.service.js';
+import { MediaService } from 'src/services/media.service.js';
 import { PartnerCopyService, recordAssetEdit } from 'src/services/partner-copy.service.js';
 import { PartnerService } from 'src/services/partner.service.js';
 import { TagService } from 'src/services/tag.service.js';
@@ -298,51 +302,101 @@ describe(PartnerCopyService.name, () => {
         expect(await ctx.get(SearchRepository).getEmbedding(copyId!)).toMatchObject({ embedding, producerModelKey });
       }
     });
-    it('repairs thumbnail admission on replay of a copy made before source derivatives were published', async () => {
+    it('never renders a copy made before its source thumbnails: the source job hands them over (FL-1287)', async () => {
       const { sut, ctx, origins } = setup();
       const { user: alice } = await ctx.newUser();
       const { user: bob } = await ctx.newUser();
+      const { user: carol } = await ctx.newUser();
       await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      await ctx.newPartner({ sharedById: bob.id, sharedWithId: carol.id });
       const source = await newSourceAsset(ctx, alice.id);
       const jobs = ctx.getMock(JobRepository);
-      jobs.queue.mockRejectedValueOnce(new Error('Admission interrupted'));
 
-      await expect(sut.copyAsset(source.id, bob.id, alice.id)).rejects.toThrow('Admission interrupted');
-      const copyId = (await origins.getCopyId('asset', source.id, bob.id))!;
-      expect(copyId).toBeDefined();
-      const copy = await ctx.get(AssetRepository).getById(copyId, { files: true });
-      const original = await ctx.get(AssetRepository).getById(source.id, { files: true });
-      expect(copy).toMatchObject({
-        ownerId: bob.id,
-        originalPath: original!.originalPath,
-        physicalOriginalFileId: original!.physicalOriginalFileId,
-        files: [],
-      });
-      expect(jobs.queue.mock.calls).toEqual([[{ name: JobName.AssetGenerateThumbnails, data: { id: copyId } }]]);
-
-      jobs.queue.mockClear();
-      await expect(sut.copyAsset(source.id, bob.id, alice.id)).resolves.toBe(copyId);
-      expect(jobs.queue.mock.calls).toEqual([[{ name: JobName.AssetGenerateThumbnails, data: { id: copyId } }]]);
-
-      // A partial publication still needs the existing thumbnail job; a complete one does not.
-      await ctx.newAssetFile({ assetId: copyId, type: AssetFileType.Preview, path: '/thumbs/recipient.jpeg' });
-      jobs.queue.mockClear();
-      await sut.copyAsset(source.id, bob.id, alice.id);
-      expect(jobs.queue.mock.calls).toEqual([[{ name: JobName.AssetGenerateThumbnails, data: { id: copyId } }]]);
-      await ctx.newAssetFile({ assetId: copyId, type: AssetFileType.Thumbnail, path: '/thumbs/recipient.webp' });
-      jobs.queue.mockClear();
-      await sut.copyAsset(source.id, bob.id, alice.id);
+      // made on AssetMetadataExtracted, long before the source's thumbnail job runs (A→B→C)
+      const copyId = (await sut.copyAsset(source.id, bob.id, alice.id))!;
+      const onwardId = (await sut.copyAsset(copyId, carol.id, bob.id))!;
+      expect(onwardId).toBeDefined();
+      for (const id of [copyId, onwardId]) {
+        await expect(ctx.get(AssetRepository).getById(id, { files: true })).resolves.toMatchObject({ files: [] });
+      }
       expect(jobs.queue).not.toHaveBeenCalled();
-      expect(jobs.queueAll).not.toHaveBeenCalled();
-      await expect(
-        ctx.get(AssetRepository).getForThumbnail(copyId, AssetFileType.Preview, false),
-      ).resolves.toMatchObject({
-        path: '/thumbs/recipient.jpeg',
+
+      const media = newMediumService(MediaService, {
+        database: db,
+        real: [
+          AssetJobRepository,
+          AssetRepository,
+          ConfigRepository,
+          PartnerOriginRepository,
+          SystemMetadataRepository,
+        ],
+        mock: [JobRepository, LoggingRepository, MediaRepository, StorageRepository],
       });
-      await expect(ctx.get(AssetRepository).getById(source.id, { files: true })).resolves.toEqual(original);
-      expect(await db.selectFrom('asset').select('id').where('ownerId', '=', bob.id).execute()).toEqual([
-        { id: copyId },
-      ]);
+      media.ctx.getMock(JobRepository).queue.mockResolvedValue();
+      // a "Missing" scan queues the copy; its job neither renders nor fails while the source has nothing yet
+      await expect(media.sut.handleGenerateThumbnails({ id: copyId })).resolves.toBe(JobStatus.Skipped);
+      expect(media.ctx.getMock(MediaRepository).generateThumbnail).not.toHaveBeenCalled();
+
+      // the source's job publishes its files (as stageGeneratedFiles does), then hands them to the copies
+      const physical = ctx.get(PhysicalFileRepository);
+      const sourceFiles: Record<string, { path: string; physicalFileId: string }> = {};
+      for (const [type, path] of [
+        [AssetFileType.Thumbnail, `/thumbs/${source.id}.webp`],
+        [AssetFileType.Preview, `/thumbs/${source.id}.jpeg`],
+      ] as const) {
+        const file = await physical.upsertPhysicalFile({
+          canonicalAssetId: source.id,
+          checksum: createHash('sha1').update(path).digest(),
+          path,
+          sizeInBytes: 10,
+          type: type === AssetFileType.Thumbnail ? PhysicalFileType.Thumbnail : PhysicalFileType.Preview,
+        });
+        await ctx.newAssetFile({ assetId: source.id, type, path, physicalFileId: file.id });
+        sourceFiles[type] = { path, physicalFileId: file.id };
+      }
+      const thumbhash = Buffer.from('source thumbhash');
+      await db.updateTable('asset').set({ thumbhash }).where('id', '=', source.id).execute();
+      // a copy that rendered its own before FL-1287 gives that file up for deletion
+      await ctx.newAssetFile({ assetId: copyId, type: AssetFileType.Thumbnail, path: '/thumbs/bob-own.webp' });
+      await expect(origins.shareGeneratedFiles(source.id)).resolves.toEqual(['/thumbs/bob-own.webp']);
+      await expect(origins.shareGeneratedFiles(source.id)).resolves.toEqual([]);
+
+      for (const id of [copyId, onwardId]) {
+        const files = await db
+          .selectFrom('asset_file')
+          .select(['type', 'path', 'physicalFileId', 'isEdited'])
+          .where('assetId', '=', id)
+          .orderBy('type')
+          .execute();
+        expect(files).toEqual([
+          { type: AssetFileType.Preview, isEdited: false, ...sourceFiles[AssetFileType.Preview] },
+          { type: AssetFileType.Thumbnail, isEdited: false, ...sourceFiles[AssetFileType.Thumbnail] },
+        ]);
+        await expect(ctx.get(AssetRepository).getById(id)).resolves.toMatchObject({ thumbhash });
+      }
+      // the source still owns them: the files are shared, never moved or deleted by a copy
+      expect(
+        (await physical.getPhysicalFile(sourceFiles[AssetFileType.Preview].physicalFileId))?.canonicalAssetId,
+      ).toBe(source.id);
+
+      // a forced "All" leaves copies with a live source out; the copy's own job still renders nothing
+      const forced = async () =>
+        (
+          await ctx
+            .get(AssetJobRepository)
+            .selectionForThumbnailJob({ force: true, fullsizeEnabled: false })
+            .where('asset.id', 'in', [source.id, copyId, onwardId])
+            .execute()
+        ).map(({ id }) => id);
+      expect(await forced()).toEqual([source.id]);
+      await expect(media.sut.handleGenerateThumbnails({ id: onwardId })).resolves.toBe(JobStatus.Skipped);
+      expect(media.ctx.getMock(MediaRepository).generateThumbnail).not.toHaveBeenCalled();
+
+      // once the source is trashed, its copy renders its own again (and so does the copy below it, whose source is that copy)
+      await db.updateTable('asset').set({ deletedAt: new Date() }).where('id', '=', source.id).execute();
+      expect((await forced()).toSorted()).toEqual([copyId]);
+      await expect(origins.getLiveSourceId(copyId)).resolves.toBeUndefined();
+      await expect(origins.getLiveSourceId(onwardId)).resolves.toBe(copyId);
     });
 
     it('creates the recipient their own asset linked to the same stored files, with no analysis queued', async () => {
