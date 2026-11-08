@@ -6,7 +6,7 @@ import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { ICloudConnection, ICloudResource, ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
-import { ICloudTransportRepository } from 'src/repositories/icloud-transport.repository.js';
+import { ICloudTransportRepository, bundledICloudDirectory } from 'src/repositories/icloud-transport.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { getDiskUsageBigInt } from 'src/utils/disk-usage.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
@@ -22,10 +22,7 @@ export class ICloudStagingService {
 
   async root(): Promise<string> {
     const configured = readAliasedEnv('FRAMELEAF_ICLOUD_STAGING_PATH');
-    if (!configured) {
-      throw new Error('staging_not_configured');
-    }
-    const root = resolve(configured);
+    const root = configured ? resolve(configured) : join(bundledICloudDirectory(), 'staging');
     await mkdir(root, { recursive: true, mode: 0o700 });
     if ((await realpath(root)) !== root || !(await lstat(root).then((result) => result.isDirectory()))) {
       throw new Error('staging_symlink');
@@ -35,7 +32,8 @@ export class ICloudStagingService {
       throw new Error('staging_permissions_invalid');
     }
     const roots = [
-      StorageCore.getMediaLocation(),
+      // The default root is a private, server-owned folder inside the media location by design.
+      ...(configured ? [StorageCore.getMediaLocation()] : []),
       ...(await this.libraries.getAll().then((result) => result.flatMap(({ importPaths }) => importPaths))),
     ];
     for (const path of roots) {

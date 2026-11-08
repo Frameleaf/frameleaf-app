@@ -34,6 +34,7 @@ const config = (lanDiscovery: boolean, server: Partial<AdminConfigDto['server']>
       ...server,
     },
     help: { askEnabled: true },
+    icloud: { enabled: true },
   }) as AdminConfigDto;
 const open = (saved: AdminConfigDto) => {
   const store = new SystemConfigDraftStore(
@@ -175,4 +176,15 @@ it('sets the Public server URL on any server (OPS-14)', async () => {
     target: { value: ' https://photos.example.com ' },
   });
   expect(store.draft.server.externalDomain).toBe('https://photos.example.com');
+});
+
+it('turns iCloud Photos off with the server page', async () => {
+  const store = new SystemConfigDraftStore(
+    { config: config(true), revision: 'r1' },
+    { defaults: config(true), load: vi.fn(), save: vi.fn() },
+  );
+  draft.store = store;
+  render(ServerSettings);
+  await fireEvent.click(screen.getByRole('switch', { name: en.frameleaf_icloud_setting }));
+  expect(store.changes).toEqual([{ path: 'icloud.enabled', before: true, after: false }]);
 });

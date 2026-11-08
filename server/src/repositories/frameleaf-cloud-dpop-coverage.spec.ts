@@ -48,6 +48,8 @@ const RAW_FETCH = {
   // FL-379: the Gmail API and Microsoft Graph, at three fixed addresses, with the connected account's own
   // access token; never a Frameleaf Cloud call (the broker calls go through FrameleafCloudRepository, DPoP-signed)
   'repositories/email.repository.ts': 'Gmail API and Microsoft Graph send',
+  // FL-1294: the bundled iCloud bridge's health check, on loopback
+  'repositories/icloud-transport.repository.ts': 'local bridge health probe',
   // local and self-hosted ML workers
   'repositories/machine-learning.repository.ts': 'ML workers',
   // FL-355: fixed public icon pack, anonymous whole-pack download with a pinned checksum; no instance token.

@@ -322,6 +322,9 @@ const editingDefaults = {
 /** FL-488: in-app help. The help articles are always there; Ask Frameleaf can be turned off. */
 const helpDefaults = { askEnabled: true };
 
+/** iCloud Photos is built in and on by default; an administrator can switch it off. */
+const icloudDefaults = { enabled: true };
+
 const smartAlbumRulesDefaults = {
   visualCategories: true,
   defaultAction: ClassificationRuleAction.Review,
@@ -878,6 +881,12 @@ const AdminConfigHelpSchema = z
   })
   .meta({ id: 'AdminConfigHelpDto' });
 
+const AdminConfigICloudSchema = z
+  .object({
+    enabled: configBool.describe('iCloud Photos: people can connect their Apple accounts and bring in photos'),
+  })
+  .meta({ id: 'AdminConfigICloudDto' });
+
 const AdminConfigGeneratedImageSchema = z
   .object({
     format: ImageFormatSchema,
@@ -1408,6 +1417,7 @@ const AdminConfigSchemaWithVisibility = z
     libraryCare: AdminConfigLibraryCareSchema.default(libraryCareDefaults),
     editing: AdminConfigEditingSchema.default(editingDefaults),
     help: AdminConfigHelpSchema.default(helpDefaults),
+    icloud: AdminConfigICloudSchema.default(icloudDefaults),
   })
   .describe('Configuration properties that are visible to the admin')
   .meta({ id: 'AdminConfigDto' });
@@ -1944,4 +1954,5 @@ export const defaults = Object.freeze<SystemConfig>({
   libraryCare: libraryCareDefaults,
   editing: editingDefaults,
   help: helpDefaults,
+  icloud: icloudDefaults,
 });

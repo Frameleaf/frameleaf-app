@@ -64,6 +64,7 @@ export const SERVER_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   'server.lanDiscovery': { label: 'frameleaf_server_identity_lan' },
   // Server › Help (FL-489)
   'help.askEnabled': { label: 'frameleaf_help_ask_setting' },
+  'icloud.enabled': { label: 'frameleaf_icloud_setting' },
   // Server & updates › Updates
   'newVersionCheck.enabled': { label: 'frameleaf_server_updates_look' },
   'newVersionCheck.frequency': {

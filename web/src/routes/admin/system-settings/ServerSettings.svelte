@@ -46,6 +46,7 @@
   const server = $derived(settingsDraft.draft.server);
   // the server always returns the help group (FL-488); the SDK marks it optional because it has a default
   const help = $derived(settingsDraft.draft.help!);
+  const icloud = $derived(settingsDraft.draft.icloud!);
 
   /** The zone of the computer Frameleaf runs on, which "Same as this computer" means. */
   let computerZone = $state<string>();
@@ -180,6 +181,17 @@
           />
         </Row>
       </Section>
+
+      <Section title={$t('frameleaf_icloud_setting_title')}>
+        <Row label={$t('frameleaf_icloud_setting')} help={$t('frameleaf_icloud_setting_description')}>
+          <Switch
+            label={$t('frameleaf_icloud_setting')}
+            checked={icloud.enabled}
+            held={disabled}
+            onChange={(value) => (icloud.enabled = value)}
+          />
+        </Row>
+      </Section>
     </div>
 
     <aside class="preview fl-continuous-corners" aria-label={$t('frameleaf_server_identity_preview')}>
@@ -214,7 +226,7 @@
     </aside>
   </div>
 
-  <SettingActions keys={['server', 'help']} {disabled} />
+  <SettingActions keys={['server', 'help', 'icloud']} {disabled} />
 </KitPage>
 
 <style>

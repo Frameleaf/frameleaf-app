@@ -1,6 +1,29 @@
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import type { IncomingMessage } from 'node:http';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { ICloudTransportRepository } from 'src/repositories/icloud-transport.repository.js';
+
+const spawned = vi.hoisted(() => [] as Array<{ kill: ReturnType<typeof vi.fn>; emit: (event: string) => boolean }>);
+vi.mock('node:child_process', async () => {
+  const { EventEmitter } = await import('node:events');
+  return {
+    spawn: () => {
+      const child = Object.assign(new EventEmitter(), { kill: vi.fn() });
+      spawned.push(child);
+      return child;
+    },
+  };
+});
+vi.mock('node:fs', async (original) => {
+  const actual = await original<typeof import('node:fs')>();
+  return {
+    ...actual,
+    existsSync: (path: string) => path === '/usr/local/bin/icloud-bridge' || actual.existsSync(path),
+  };
+});
 
 // Fixtures exercise actual JSON parsing and stream disposal; only the internal HTTPS send seam is replaced.
 describe(ICloudTransportRepository.name, () => {
@@ -16,6 +39,53 @@ describe(ICloudTransportRepository.name, () => {
   beforeEach(() => {
     sut = new ICloudTransportRepository();
   });
+  it('reports disabled and refuses the bridge while switched off', async () => {
+    vi.stubEnv('FRAMELEAF_ICLOUD_BRIDGE_URL', 'https://bridge.test/');
+    expect(sut.enabled()).toBe(true);
+    sut.setSwitchedOn(false);
+    try {
+      expect(new ICloudTransportRepository().enabled()).toBe(false);
+      await expect(sut.capabilities()).rejects.toMatchObject({ code: 'icloud_disabled' });
+    } finally {
+      sut.setSwitchedOn(true);
+      vi.unstubAllEnvs();
+    }
+  });
+  describe('bundled bridge across the switch', () => {
+    const configuration = () => (sut as unknown as { configuration: () => Promise<unknown> }).configuration();
+
+    beforeEach(async () => {
+      spawned.length = 0;
+      vi.stubEnv('FRAMELEAF_ICLOUD_BRIDGE_URL', '');
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }));
+      StorageCore.setMediaLocation(await mkdtemp(join(tmpdir(), 'icloud-bridge-')));
+    });
+
+    afterEach(() => {
+      sut.setSwitchedOn(true);
+      vi.unstubAllEnvs();
+      vi.unstubAllGlobals();
+    });
+
+    it('starts nothing when switched off while starting up', async () => {
+      const pending = configuration();
+      sut.setSwitchedOn(false);
+      await expect(pending).rejects.toMatchObject({ code: 'icloud_disabled' });
+      expect(spawned).toHaveLength(0);
+    });
+
+    it('does not let a stopped bridge clear its replacement', async () => {
+      await configuration();
+      sut.setSwitchedOn(false);
+      expect(spawned[0].kill).toHaveBeenCalled();
+      sut.setSwitchedOn(true);
+      await configuration();
+      spawned[0].emit('exit');
+      await configuration();
+      expect(spawned).toHaveLength(2);
+    });
+  });
+
   it.each(['connected', 'awaiting-2fa', 'awaiting-device-approval', 'reauthentication-required'])(
     'accepts supported auth state %s',
     async (state) => {
