@@ -221,7 +221,7 @@ test('reset joins unsafe edits while preserving bounded refusals and cleanup', a
   }
 });
 
-test('configuration reset authenticates without existing work, then drains admitted jobs before mutation', async () => {
+test('configuration reset authenticates without existing work, then drains admitted jobs before mutation', async (t) => {
   const source = readFileSync(new URL('./utils.ts', import.meta.url), 'utf8');
   const expression = source
     .slice(source.indexOf('  drainQueues: async'), source.indexOf('\n\n  resetDatabase:'))
@@ -336,8 +336,16 @@ test('configuration reset authenticates without existing work, then drains admit
   );
   assert.equal(joinedSignal.aborted, true);
   assert.deepEqual(order, ['owned-admin', 'cleaned-admin', 'restored', 'closed']);
-  bindings.ownedWait = (description, timeout, run, signal) =>
-    withDeadline(description, Math.min(80, timeout), run, signal);
+  // A virtual clock that advances 3 s per queue read passes the 20 s work deadline on the seventh read (21 s),
+  // inside the 24 s owner deadline, so the cleanup reserve holds regardless of runner speed. Real timers keep
+  // their full budgets.
+  let clock = 0;
+  t.mock.method(performance, 'now', () => clock);
+  const readQueues = bindings.readQueues;
+  bindings.readQueues = async () => {
+    clock += 3000;
+    return readQueues();
+  };
   bindings.utils.resetAdminConfig = async () => {
     unfinished = true;
   };
@@ -740,7 +748,11 @@ test('active-job cancellation retries only confirmed statement-timeout row conte
     { name: 'cleanup failure preserves the cancellation failure', behavior: 'cleanup', error: contention },
   ];
   for (const { name, behavior, error } of cases) {
-    await t.test(name, async () => {
+    await t.test(name, async (st) => {
+      // Reset deadlines read performance.now(); a virtual clock that advances only per cancellation attempt
+      // makes the retry count independent of runner speed. Real timers keep their full 15-24 s budgets.
+      let clock = 0;
+      st.mock.method(performance, 'now', () => clock);
       const original = Object.assign(new Error(error.message), error);
       const cleanupError = new Error('owned restoration failed');
       const owner = new AbortController();
@@ -761,6 +773,8 @@ test('active-job cancellation retries only confirmed statement-timeout row conte
             async query(text, values) {
               if (text.startsWith('UPDATE job SET')) {
                 cancellationAttempts++;
+                // 6 s per attempt: the third attempt passes the 15 s quiesce deadline, inside the 20 s work budget.
+                clock += 6000;
                 order.push('cancel');
                 if (behavior !== 'transient' || cancellationAttempts === 1) {
                   if (behavior === 'abort') queueMicrotask(() => owner.abort(new Error('owner cancelled reset')));
@@ -784,10 +798,9 @@ test('active-job cancellation retries only confirmed statement-timeout row conte
           },
         },
         dbUrl: 'synthetic-owned-reset',
-        // Shorten only this fake reset's owner deadline, leaving real query, poll and cleanup code intact.
         ownedWait: (description, timeout, operation, signal) => {
           assert.equal(timeout, 24_000);
-          return withDeadline(description, 300, operation, signal);
+          return withDeadline(description, timeout, operation, signal);
         },
         withDeadline,
         waitUntil: async (...arguments_) => {
@@ -835,16 +848,12 @@ test('active-job cancellation retries only confirmed statement-timeout row conte
         assert.equal(order.includes('stop-proof'), false);
         assert.deepEqual(order.slice(-2), ['restored', 'closed']);
         if (behavior === 'persistent') {
-          assert.ok(cancellationAttempts >= 2 && cancellationAttempts <= 3);
+          assert.equal(cancellationAttempts, 3);
           assert.ok(failure.cause instanceof AggregateError);
           assert.equal(failure.cause.cause, caughtWaitError);
           assert.deepEqual(failure.cause.errors, [caughtWaitError, original]);
         } else {
-          if (behavior === 'cleanup') {
-            assert.ok(cancellationAttempts >= 2 && cancellationAttempts <= 3);
-          } else {
-            assert.equal(cancellationAttempts, 1);
-          }
+          assert.equal(cancellationAttempts, behavior === 'cleanup' ? 3 : 1);
           if (behavior === 'abort') {
             assert.equal(caughtWaitError, owner.signal.reason);
             assert.equal(failure.cause.cause, caughtWaitError);
