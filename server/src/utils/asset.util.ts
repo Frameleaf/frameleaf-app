@@ -10,6 +10,7 @@ import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { FrameleafFile, IBulkAsset, UploadFile, UploadRequest } from 'src/types.js';
 import { checkAccess } from 'src/utils/access.js';
+import { VideoProjection, isStitchedVideoProjection } from 'src/utils/video-360.js';
 
 export const getAssetFile = (files: AssetFile[], type: AssetFileType, { isEdited }: { isEdited: boolean }) => {
   return files.find((file) => file.type === type && file.isEdited === isEdited);
@@ -272,5 +273,10 @@ export const getDimensions = ({
 };
 
 export const isPanorama = (asset: { projectionType: string | null; originalFileName: string }) => {
-  return asset.projectionType === 'EQUIRECTANGULAR' || asset.originalFileName.toLowerCase().endsWith('.insp');
+  return (
+    asset.projectionType === VideoProjection.Equirectangular ||
+    // FL-968: raw 360° video, played from its stitched equirectangular copy
+    isStitchedVideoProjection(asset.projectionType) ||
+    asset.originalFileName.toLowerCase().endsWith('.insp')
+  );
 };

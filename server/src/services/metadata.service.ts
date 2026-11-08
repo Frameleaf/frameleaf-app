@@ -45,12 +45,14 @@ import { getAssetFiles } from 'src/utils/asset.util.js';
 import { resolveCameraIdentification } from 'src/utils/camera-identification.js';
 import { captureDetails } from 'src/utils/capture-details.js';
 import { mergeTimeZone } from 'src/utils/date.js';
+import { DJI_SRT_READ_BYTES, getDjiSrtCandidates, parseDjiSrtLocation } from 'src/utils/dji-srt.js';
 import { rewriteThroughPlainCopy, withPlainCopy } from 'src/utils/locked-read.js';
 import { isLockedRow } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { isFaceImportEnabled } from 'src/utils/misc.js';
 import { photoGpsAccuracy } from 'src/utils/photo-locations.js';
 import { normalizeTagValue, upsertTags } from 'src/utils/tag.js';
+import { detectVideoProjection, isStitchedVideoProjection, planVideoStitch } from 'src/utils/video-360.js';
 
 const POSTGRES_INT_MAX = 2_147_483_647;
 const POSTGRES_INT_MIN = -2_147_483_648;
@@ -344,7 +346,17 @@ export class MetadataService extends BaseService {
       // carries the stored file's mtime; motion-photo offsets and fileSizeInByte depend on it
       this.storageRepository.stat(plainOriginal),
     ]);
-    const { tags: exifTags, originalTags, cameraEvidence, audio, video, packets, format } = exifResult;
+    const {
+      tags: exifTags,
+      originalTags,
+      cameraEvidence,
+      audio,
+      video,
+      packets,
+      format,
+      videoStreams,
+      dataStreams,
+    } = exifResult;
     this.logger.verbose('Exif Tags', exifTags);
 
     // FL-51: coordinates the owner set or removed are locked; the place names then stay as stored
@@ -357,6 +369,9 @@ export class MetadataService extends BaseService {
 
     const { width, height } = this.getImageDimensions(exifTags);
     const locationLocked = lockedProperties.includes('latitude');
+    if (asset.type === AssetType.Video && !locationLocked && !this.hasGeo(exifTags)) {
+      await this.applyDjiSrtLocation(asset, exifTags);
+    }
     // Persisted locks can include camera fields beyond the public editable-property union.
     const cameraLocked = lockedProperties.some((property: string) => property === 'make' || property === 'model');
     if (
@@ -396,6 +411,29 @@ export class MetadataService extends BaseService {
     const named = !!(geo.country || geo.state || geo.city);
 
     const tags = this.getTagList(exifTags);
+
+    // FL-968: a raw 360° recording is recognised from its container and track layout; the layout the
+    // geometry proves wins over a tag the camera may also write, since only it plays correctly
+    const detectedProjection =
+      asset.type === AssetType.Video
+        ? detectVideoProjection({
+            fileName: asset.originalFileName,
+            videoStreams,
+            dataStreams,
+            containerProjection: video?.projection,
+          })
+        : null;
+    const projectionType = isStitchedVideoProjection(detectedProjection)
+      ? detectedProjection
+      : exifTags.ProjectionType
+        ? exifTags.ProjectionType.toUpperCase()
+        : detectedProjection;
+    const stitchPlan = planVideoStitch({
+      projectionType,
+      make: exifTags.Make,
+      model: exifTags.Model,
+      videoStreams,
+    });
 
     let imageEncoding;
     if (asset.type === AssetType.Image && !mimeTypes.isRaw(asset.originalFileName)) {
@@ -438,7 +476,7 @@ export class MetadataService extends BaseService {
       exifImageHeight: validate(height),
       exifImageWidth: validate(width),
       orientation: validate(exifTags.Orientation)?.toString() ?? null,
-      projectionType: exifTags.ProjectionType ? exifTags.ProjectionType.toUpperCase() : null,
+      projectionType,
       bitsPerSample: this.getBitsPerSample(exifTags),
       colorspace: exifTags.ColorSpace === undefined ? null : String(exifTags.ColorSpace),
 
@@ -520,8 +558,9 @@ export class MetadataService extends BaseService {
         : undefined;
 
     const isSidewards = exifTags.Orientation && this.isOrientationSidewards(exifTags.Orientation);
-    const assetWidth = validate(isSidewards ? height : width);
-    const assetHeight = validate(isSidewards ? width : height);
+    // FL-968: a stitched 360° video is shown, and thumbnailed, as its 2:1 equirectangular picture
+    const assetWidth = stitchPlan ? stitchPlan.width : validate(isSidewards ? height : width);
+    const assetHeight = stitchPlan ? stitchPlan.height : validate(isSidewards ? width : height);
 
     if (this.isMotionPhoto(asset, exifTags) && !(await this.jobRepository.isImportedMetadataJob())) {
       await this.applyMotionPhotos(source, exifTags, dates, stats);
@@ -960,7 +999,40 @@ export class MetadataService extends BaseService {
       video: videoResult?.video,
       packets: videoResult?.packets,
       format: videoResult?.format ?? null,
+      videoStreams: videoResult?.videoStreams ?? [],
+      dataStreams: videoResult?.dataStreams ?? [],
     };
+  }
+
+  /**
+   * FL-968: a DJI drone video without GPS of its own takes the first position from the `.SRT`
+   * telemetry file the drone writes next to it, found the way `.xmp` sidecars are (same name).
+   */
+  private async applyDjiSrtLocation(asset: { originalPath: string; originalFileName: string }, exifTags: ImmichTags) {
+    const isDji = /dji/i.test(exifTags.Make ?? '') || /^dji_/i.test(asset.originalFileName);
+    if (!isDji) {
+      return;
+    }
+    for (const candidate of getDjiSrtCandidates(asset.originalPath)) {
+      if (!(await this.storageRepository.checkFileExists(candidate, constants.R_OK))) {
+        continue;
+      }
+      try {
+        const buffer = await this.storageRepository.readFile(candidate, {
+          buffer: Buffer.alloc(DJI_SRT_READ_BYTES),
+          position: 0,
+          length: DJI_SRT_READ_BYTES,
+        });
+        const location = parseDjiSrtLocation(buffer.toString('utf8'));
+        if (location) {
+          exifTags.GPSLatitude = location.latitude;
+          exifTags.GPSLongitude = location.longitude;
+        }
+      } catch (error) {
+        this.logger.warn(`Unable to read DJI telemetry ${candidate}: ${error}`);
+      }
+      return;
+    }
   }
 
   private getTagList(exifTags: ImmichTags): string[] {
@@ -1438,7 +1510,7 @@ export class MetadataService extends BaseService {
   }
 
   private async getVideoTags(originalPath: string) {
-    const { videoStreams, audioStreams, format } = await this.mediaRepository.probe(originalPath);
+    const { videoStreams, audioStreams, format, dataStreams = [] } = await this.mediaRepository.probe(originalPath);
     const video = videoStreams[0];
     const audio = audioStreams[0];
     let packets = null;
@@ -1488,7 +1560,7 @@ export class MetadataService extends BaseService {
       tags.Duration = format.duration;
     }
 
-    return { tags, audio, video, packets, format };
+    return { tags, audio, video, packets, format, videoStreams, dataStreams };
   }
 
   private getHeifOrientation(exifTags: ImmichTags): ExifOrientation | null {

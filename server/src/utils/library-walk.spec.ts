@@ -37,6 +37,16 @@ describe('bounded library source walk', () => {
     expect(await collect({ pathsToCrawl: [root], take: 1 })).toEqual([path.join(root, 'a.jpg')]);
   });
 
+  it('imports 360° recordings but not the proxies and telemetry cameras write beside them (FL-968)', async () => {
+    const recordings = ['DCIM/GS010001.360', 'DCIM/VID_0001_00_001.insv', 'DCIM/CAM_0001_D.OSV', 'DCIM/DJI_0001.MP4'];
+    const sidecars = ['DCIM/GL010001.LRV', 'DCIM/GS010001.THM', 'DCIM/DJI_0001.LRF', 'DCIM/DJI_0001.SRT'];
+    for (const file of [...recordings, ...sidecars]) {
+      await write(path.join(root, file));
+    }
+    const found = await collect({ ...options([root]), take: 100 });
+    expect(found.toSorted()).toEqual(recordings.map((file) => path.join(root, file)).toSorted());
+  });
+
   it.each(['absolute-brace', 'glob-brace', 'numeric-brace', 'duplicate-slashes', 'negative-ignore'])(
     'preserves fast-glob ignore preprocessing for %s',
     async (kind) => {

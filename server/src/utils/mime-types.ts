@@ -96,6 +96,8 @@ const profile: Record<string, string[]> = Object.fromEntries(
 );
 
 const video: Record<string, string[]> = {
+  // FL-968: GoPro MAX 360° recordings (two cubemap tracks in an MP4 container)
+  '.360': ['video/mp4'],
   '.3gp': ['video/3gpp'],
   '.3gpp': ['video/3gpp'],
   '.avi': ['video/avi', 'video/msvideo', 'video/vnd.avi', 'video/x-msvideo'],
@@ -112,6 +114,8 @@ const video: Record<string, string[]> = {
   '.mpg': ['video/mpeg'],
   '.mts': ['video/mp2t'],
   '.mxf': ['application/mxf'],
+  // FL-968: DJI Osmo 360 recordings (dual fisheye in an MP4 container)
+  '.osv': ['video/mp4'],
   '.ts': ['video/mp2t'],
   '.vob': ['video/mpeg'],
   '.webm': ['video/webm'],
