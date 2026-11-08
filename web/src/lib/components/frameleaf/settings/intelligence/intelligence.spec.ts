@@ -194,7 +194,8 @@ describe('Visual search', () => {
     const store = useDraft();
     render(VisualSearch);
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Most accurate' }));
+    expect(screen.getByText('Changing the search model reads your whole library again')).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('radio', { name: /^SigLIP 2 SO400M 384/ }));
     expect(store.draft.machineLearning.clip.modelName).toBe('ViT-SO400M-16-SigLIP2-384__webli');
     expect(screen.getByText('Saving this means reading all photos and videos again')).toBeInTheDocument();
 
@@ -212,7 +213,7 @@ describe('Visual search', () => {
     sdkMock.redoLibraryWork.mockResolvedValue({ tonight: [] });
     render(VisualSearch);
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Most accurate' }));
+    await fireEvent.click(screen.getByRole('radio', { name: /^SigLIP 2 SO400M 384/ }));
     expect(
       await screen.findByText('Saving this reads all 4,000 photos and videos again, about 2 hours'),
     ).toBeInTheDocument();
@@ -223,12 +224,13 @@ describe('Visual search', () => {
     expect(await screen.findByText(/Saved. Reading has started/)).toBeInTheDocument();
   });
 
-  it('shows a model outside the three choices as Custom', async () => {
+  it('says back a model outside the published ones and selects no stop', async () => {
     const store = useDraft();
     store.draft.machineLearning.clip.modelName = 'my-model';
     render(VisualSearch);
 
-    expect(screen.getByRole('button', { name: 'Custom' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText(/my-model/, { selector: '.ms-readout span' })).toBeInTheDocument();
+    expect(screen.getAllByRole('radio').filter((radio) => (radio as HTMLInputElement).checked)).toHaveLength(0);
   });
 });
 
@@ -247,6 +249,26 @@ describe('Faces & identity', () => {
 
     await fireEvent.click(screen.getByRole('switch', { name: 'Use people tags saved by other apps' }));
     expect(store.draft.metadata.faces.import).toBe(true);
+  });
+
+  it('warns that a new face model finds every face again, and starts that from the save', async () => {
+    const store = useDraft();
+    const saveKeys = vi.spyOn(store, 'saveKeys').mockResolvedValue(true);
+    render(Faces);
+
+    expect(screen.getByText('Changing the face model reads your whole library again')).toBeInTheDocument();
+
+    await fireEvent.click(screen.getByRole('radio', { name: /^buffalo_s/ }));
+    expect(store.draft.machineLearning.facialRecognition.modelName).toBe('buffalo_s');
+    expect(screen.getByText('Saving this means reading all photos and videos again to find faces')).toBeInTheDocument();
+    expect(screen.queryByText('Changing the face model reads your whole library again')).not.toBeInTheDocument();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Save and start now' }));
+    expect(saveKeys).toHaveBeenCalledWith(['machineLearning']);
+    expect(sdkMock.runQueueCommandLegacy).toHaveBeenCalledWith({
+      name: 'faceDetection',
+      queueCommandDto: { command: 'start', force: true },
+    });
   });
 });
 

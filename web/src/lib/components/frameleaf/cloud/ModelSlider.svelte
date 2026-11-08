@@ -21,6 +21,7 @@
     modelLicenceNoteKey,
     modelNoteKey,
     workloadUnitKey,
+    workloadUnits,
     type Band,
     type Benchmark,
     type DetectedGpu,
@@ -48,6 +49,8 @@
     localDisabledReason?: string;
     /** FL-455: the Frameleaf Cloud workloads that run this server's own model now (search and faces). */
     cloudMatched?: CloudMatched;
+    /** Said in place of "nothing can run this" when the saved model is simply not one of the stops. */
+    customNote?: string;
     onChange?: (id: string, state: PositionState) => void;
   };
 
@@ -63,6 +66,7 @@
     disabled = false,
     localDisabledReason = '',
     cloudMatched = [],
+    customNote,
     onChange,
   }: Props = $props();
 
@@ -96,11 +100,13 @@
   /** "Your GPU · ~3 s per photo", "CPU · slow · ~20 s per photo", "Cloud · 122B · about $0.013 per 100 photos". */
   const stopLabel = (entry: PositionState) => {
     if (entry.band === 'gpu' || entry.band === 'cpu') {
+      // Under a second a photo reads as "0 sec", so these are quoted per batch.
+      const per = (entry.seconds ?? 1) < 0.5 ? workloadUnits[workload].per : 1;
       return $t(entry.band === 'gpu' ? 'frameleaf_model_label_gpu' : 'frameleaf_model_label_cpu', {
         values: {
           slow: entry.speedClass === 'slow' ? 'yes' : 'no',
-          time: formatDuration(entry.seconds, $locale),
-          unit: unit(1),
+          time: formatDuration(entry.seconds === null ? null : entry.seconds * per, $locale),
+          unit: unit(per),
         },
       });
     }
@@ -191,6 +197,8 @@
         </small>
       </span>
     </p>
+  {:else if customNote}
+    <p class="ms-readout" role="status"><span>{customNote}</span></p>
   {:else}
     <p class="ms-readout is-none" role="status">
       <Icon icon={mdiCancel} size="16" aria-hidden={true} />

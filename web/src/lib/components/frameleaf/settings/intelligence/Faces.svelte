@@ -27,6 +27,7 @@
   import Explain from '$lib/components/frameleaf/settings/intelligence/Explain.svelte';
   import Figure from '$lib/components/frameleaf/settings/intelligence/Figure.svelte';
   import MasterOff from '$lib/components/frameleaf/settings/intelligence/MasterOff.svelte';
+  import ServerModelSlider from '$lib/components/frameleaf/settings/intelligence/ServerModelSlider.svelte';
   import {
     applyChoice,
     choiceOf,
@@ -45,6 +46,9 @@
     LibraryProgressFeature,
     LibraryRedoQueue,
     LibraryRedoWhen,
+    QueueCommand,
+    QueueName,
+    runQueueCommandLegacy,
     type LibraryProgressResponseDto,
   } from '@frameleaf/sdk';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -105,6 +109,31 @@
           when === LibraryRedoWhen.Now
             ? $t('frameleaf_intel_faces_redo_said_now')
             : $t('frameleaf_intel_faces_redo_said_tonight');
+      }
+    } catch (error) {
+      handleError(error, failedSave());
+    }
+  };
+
+  // A new face model is only used by finding every face again: the server does nothing when it is
+  // saved, and grouping again would only re-sort what the old model found. Face detection isn't one
+  // of the redo queues, so there is no "tonight" here.
+  const modelChanged = $derived(faces.modelName !== saved.modelName);
+  const modelRereadTitle = $derived(
+    facesProgress && regroupTime
+      ? $t('frameleaf_intel_faces_model_reread_estimate', {
+          values: { count: facesProgress.total, time: about(regroupTime) },
+        })
+      : $t('frameleaf_intel_faces_model_reread_title'),
+  );
+  const saveAndFindFaces = async () => {
+    try {
+      if (await settingsDraft.saveKeys(['machineLearning'])) {
+        await runQueueCommandLegacy({
+          name: QueueName.FaceDetection,
+          queueCommandDto: { command: QueueCommand.Start, force: true },
+        });
+        said = $t('frameleaf_intel_redo_said_now');
       }
     } catch (error) {
       handleError(error, failedSave());
@@ -216,6 +245,29 @@
           ]}
           onUndo={undoGrouping}
         />
+      {/if}
+      <ServerModelSlider
+        workload="faces"
+        value={faces.modelName}
+        label={$t('frameleaf_intel_faces_model')}
+        {disabled}
+        customNote={(FACE_MODELS as readonly string[]).includes(faces.modelName)
+          ? undefined
+          : $t('frameleaf_intel_custom_model_help', { values: { model: faces.modelName } })}
+        onChange={(model) => (settingsDraft.draft.machineLearning.facialRecognition.modelName = model)}
+      />
+      {#if modelChanged}
+        <Reread
+          title={modelRereadTitle}
+          body={$t('frameleaf_intel_faces_model_reread_body')}
+          {disabled}
+          choices={[{ label: $t('frameleaf_intel_save_now'), run: saveAndFindFaces }]}
+          onUndo={() => (settingsDraft.draft.machineLearning.facialRecognition.modelName = saved.modelName)}
+        />
+      {:else}
+        <Notice tone="warn" title={$t('frameleaf_intel_faces_model_warning')}>
+          {$t('frameleaf_intel_faces_model_warning_body')}
+        </Notice>
       {/if}
       <Row label={$t('frameleaf_intel_faces_import')} help={$t('frameleaf_intel_faces_import_help')}>
         <Switch
