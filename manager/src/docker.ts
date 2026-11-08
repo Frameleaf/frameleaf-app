@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { isAbsolute, join, resolve } from 'node:path';
 import { Refusal, containerId, imageDigest, redact, type Database, type Mount } from './contracts.js';
 import { publishFile } from './files.js';
+import { containerView, dockerArguments, toHost } from './host-paths.js';
 import { completeCommonImport } from './common-import-lifecycle.js';
 import { COMMON_IMPORT_CONFIG, IMPORT_PREPARATION_TARGET, writeCommonImportCompose } from './common-import-runtime.js';
 import { DOCKERMAN_TEMPLATES, saveDockermanTemplates } from './dockerman.js';
@@ -134,6 +135,7 @@ export async function command(
     throw new Refusal('command_dialogue_invalid');
   // An incomplete transfer is never a receipt; the operation lock makes its retry exclusive.
   if (options.outputFile) await rm(`${options.outputFile}.partial`, { force: true });
+  if (binary === 'docker') args = await dockerArguments(args, options.cwd);
   const child = spawn(options.executable ?? binary, args, {
     shell: false,
     cwd: options.cwd,
@@ -302,7 +304,8 @@ export function sharesMedia(c: Container, media: Mount[], all: Container[] = [])
         if (a.type === 'volume' && b.type === 'volume' && a.source === b.source) return true;
         const left = backing(a),
           right = backing(b);
-        return !!left && !!right && overlap(left, right);
+        // Host paths: another container may bind a parent folder that Manager has no container path for.
+        return !!left && !!right && overlap(toHost(left), toHost(right));
       }),
   );
 }
@@ -312,11 +315,11 @@ export class Docker {
     const ids = (await this.execute('docker', ['ps', '-aq', '--no-trunc'])).trim().split('\n').filter(Boolean);
     if (!ids.length) return [];
     ids.forEach((id) => containerId.parse(id));
-    return JSON.parse(await this.execute('docker', ['inspect', ...ids]));
+    return (JSON.parse(await this.execute('docker', ['inspect', ...ids])) as Container[]).map(containerView);
   }
   async inspect(id: string): Promise<Container> {
     containerId.parse(id);
-    return JSON.parse(await this.execute('docker', ['inspect', id]))[0];
+    return containerView(JSON.parse(await this.execute('docker', ['inspect', id]))[0] as Container);
   }
   async compatibility(): Promise<{
     platform: string;

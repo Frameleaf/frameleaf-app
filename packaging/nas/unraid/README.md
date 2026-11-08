@@ -81,29 +81,19 @@ library from Manager to generate the service templates.
 
 ## Manager setup
 
-1. Create the state, media, database parent and backup folders on the intended
-   storage **before** installing. Use Unraid's configured appdata share or your
-   chosen pool; do not assume a pool named `cache`. Database storage must be on
-   supported local disk storage outside Docker's data root and `docker.img`.
+1. Click **Apply** to install with the suggested folders under
+   `/mnt/user/appdata/`, or change any folder's path first. Database storage must
+   be on supported local disk storage outside Docker's data root and `docker.img`.
 2. Leave **Manager origin** blank and open Manager from the WebUI link
    (`https://<NAS IP>:2282` or `https://tower.local:2282`). Only if you reach
    Manager through a custom DNS name, set **Manager origin** to that exact
    address, for example `https://nas.example:2282`, and set **Advanced View →
    WebUI** to match; other hostnames are then refused with HTTP 403.
-3. Keep each storage mapping's **Host Path and Container Path identical**. When
-   changing a folder, also update its corresponding advanced variable:
-
-   | Storage mapping | Matching variable |
-   | --- | --- |
-   | Manager state | `MANAGER_DATA` |
-   | Media | `MANAGER_STORAGE_ROOTS` |
-   | Database parent | `MANAGER_DATABASE_ROOTS` and `MANAGER_APPDATA_ROOT` |
-   | Database backups | `MANAGER_BACKUP_ROOT` |
-
-   For example, a custom state folder `/mnt/fastpool/appdata/frameleaf-manager`
-   must be that same path in all three fields: Host Path, Container Path and
-   `MANAGER_DATA`. Multiple approved media/database roots use colon-separated
-   variables and an identical host/container mapping for each folder. Never
+3. To store something elsewhere, change only that folder's path. Leave the
+   **Container Path** and the advanced variables as they are; Manager reads the
+   mapping from Docker. To add more media or database folders, add a mapping
+   for each and put its **Container Path** in `MANAGER_STORAGE_ROOTS` or
+   `MANAGER_DATABASE_ROOTS`, separated by colons. Never
    expose the whole host filesystem to make additional folders selectable.
 4. Apply the container configuration and open the WebUI. Manager initially
    generates a self-signed certificate, so expect a browser warning. For a
@@ -116,8 +106,7 @@ library from Manager to generate the service templates.
 
 ## Importing an existing library
 
-Add each approved source media or database folder as an identical host/container
-mapping before import. Retain the original stopped source and its recovery point.
+Add each approved source media or database folder as a mapping before import. Retain the original stopped source and its recovery point.
 Do not attach Frameleaf PostgreSQL to the source database's physical directory.
 
 Manager configures Unraid autostart access automatically, using Docker's actual

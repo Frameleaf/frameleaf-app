@@ -3,12 +3,48 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, realpath, mkdir, rm, writeFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { adoptOwnMounts } from '../src/host-paths.js';
 import { appdataDefaults, configuredAppdata } from '../src/appdata.js';
 import { databaseMount, filesystemMounts, PostgresStorage } from '../src/postgres-storage.js';
-import { renderCompose } from '../src/compose.js';
+import { renderCompose, storagePath } from '../src/compose.js';
+import type { Refusal } from '../src/contracts.js';
 import type { Container } from '../src/docker.js';
 import type { Installation } from '../src/contracts.js';
 import type { VerifiedRelease } from '../src/releases.js';
+
+test('a refused folder names the path and the folders Manager can use', async () => {
+  await assert.rejects(storagePath('/nowhere/photos', ['/mnt/media'], 0), (error: Refusal) => {
+    assert.equal(error.code, 'storage_inaccessible');
+    assert.match(error.detail!, /\/nowhere\/photos.*\/mnt\/media/);
+    return true;
+  });
+});
+
+test('a detected appdata host path is compared where Manager sees it', () => {
+  const controller = (Mounts: { Type: string; Source: string; Destination: string }[]) => ({
+    Id: 'a'.repeat(12),
+    State: { Running: true },
+    Config: { Env: ['MANAGER_DATA=/state'], Labels: { 'app.frameleaf.manager.role': 'controller' } },
+    Mounts,
+  });
+  const bind = (Source: string, Destination: string) => ({ Type: 'bind', Source, Destination });
+  adoptOwnMounts([controller([bind('/state', '/state'), bind('/host/fast', '/db2')])], '/state', {});
+  try {
+    assert.equal(
+      appdataDefaults({ MANAGER_DATABASE_ROOTS: '/db1:/db2' }, 'DOCKER_APP_CONFIG_PATH="/host/fast/"').suggestedPath,
+      '/db2',
+    );
+  } finally {
+    adoptOwnMounts([controller([bind('/state', '/state')])], '/state', {});
+  }
+});
+
+test('the suggested database folder is always one setup will accept', () => {
+  const roots = { MANAGER_DATABASE_ROOTS: '/mnt/pool/databases' };
+  assert.equal(appdataDefaults({ ...roots, MANAGER_APPDATA_ROOT: '/mnt/user/appdata/frameleaf-databases' }, '').suggestedPath, '/mnt/pool/databases');
+  assert.equal(appdataDefaults(roots, 'DOCKER_APP_CONFIG_PATH="/mnt/user/appdata/"').suggestedPath, '/mnt/pool/databases');
+  assert.equal(appdataDefaults({ ...roots, MANAGER_APPDATA_ROOT: '/mnt/pool/databases/one' }, '').suggestedPath, '/mnt/pool/databases/one');
+});
 
 test('Unraid defaults honor its actual setting and explicit administrator overrides', () => {
   assert.equal(configuredAppdata('DOCKER_APP_CONFIG_PATH="/mnt/user/appdata/"\n'), '/mnt/user/appdata');

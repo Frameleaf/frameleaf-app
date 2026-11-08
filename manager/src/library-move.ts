@@ -3,6 +3,7 @@ import { mkdir, readFile, realpath, stat } from 'node:fs/promises';
 import { join, resolve, relative } from 'node:path';
 import { Refusal, digest, type Installation, type Mount, type Operation } from './contracts.js';
 import { command, environment, overlap, type Docker } from './docker.js';
+import { toHost } from './host-paths.js';
 import { atomicJson } from './files.js';
 import type { Store } from './store.js';
 import type { Fencing } from './fencing.js';
@@ -84,7 +85,7 @@ export class LibraryMove {
   }
   private async physicalPaths(current: Installation, root: string): Promise<void> {
     const mounts = filesystemMounts(await readFile('/run/frameleaf-host/mountinfo', 'utf8'));
-    const location = (path: string) => LibraryMove.backing(path, mounts);
+    const location = (path: string) => LibraryMove.backing(toHost(path), mounts);
     const destination = location(root);
     const autostart = await this.fencing.readAutostart();
     const names = new Set(autostart.split('\n').map((line) => line.trim().split(/\s+/)[0]));
