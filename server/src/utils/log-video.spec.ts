@@ -31,6 +31,7 @@ const PROFILES: LogProfile[] = [
   { curve: 'f-log', gamut: 'rec2020' },
   { curve: 'f-log2', gamut: 'rec2020' },
   { curve: 'n-log', gamut: 'rec2020' },
+  { curve: 'd-log', gamut: 'd-gamut' },
 ];
 
 const parseLut = (text: string) => {
@@ -72,6 +73,8 @@ describe('Log curves (published white-paper values)', () => {
     ['f-log', 0.9, 705, 0.5],
     // Fujifilm F-Log2 data sheet: 0% = 95
     ['f-log2', 0, 95, 0.5],
+    // DJI D-Log white paper: black encodes to 0.0929 (code 95)
+    ['d-log', 0, 95, 0.1],
     // Nikon N-Log specification: 650 * (0.18 + 0.0075)^(1/3) = 372
     ['n-log', 0.18, 372, 0.5],
   ])('%s encodes %f linear to 10-bit code %f', (curve, linear, code, tolerance) => {
@@ -86,6 +89,8 @@ describe('Log curves (published white-paper values)', () => {
     ['canon-log', 0.18, 0.343389],
     ['canon-log3', 0.18, 0.343389],
     ['canon-log2', 0.18, 0.398254],
+    // DJI D-Log white paper: log10(0.18 * 0.9892 + 0.0108) * 0.256663 + 0.584555
+    ['d-log', 0.18, 0.39876],
     // Canon Log 3 black sits on its linear segment at 12.51%
     ['canon-log3', 0, 0.12512219],
   ])('%s encodes %f linear to signal %f', (curve, linear, signal) => {
@@ -344,6 +349,22 @@ describe('detectLogVideo', () => {
     ['no tags at all', {}],
   ])('ignores %s', (_, tags) => {
     expect(detectLogVideo(evidence({ tags }))).toBeNull();
+  });
+
+  it.each(['d_log', 'dlog', 'D-Log'])('finds DJI D-Log from the SRT colour mode %s', (djiColorMode) => {
+    expect(detectLogVideo(evidence({ djiColorMode }))).toEqual({
+      profile: { curve: 'd-log', gamut: 'd-gamut' },
+      signal: 'DJI SRT color_md',
+      confidence: 'low',
+    });
+  });
+
+  it.each(['dlog_m', 'd_log_m', 'default', 'hlg', null])('does not convert DJI colour mode %s', (djiColorMode) => {
+    expect(detectLogVideo(evidence({ djiColorMode }))).toBeNull();
+  });
+
+  it('never takes a DJI HLG clip for D-Log, whatever the SRT says', () => {
+    expect(detectLogVideo(evidence({ colorTransfer: ColorTransfer.AribStdB67, djiColorMode: 'd_log' }))).toBeNull();
   });
 
   it.each([ColorTransfer.Smpte2084, ColorTransfer.AribStdB67])('never calls HDR (transfer %s) Log', (colorTransfer) => {

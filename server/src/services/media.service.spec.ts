@@ -5027,6 +5027,9 @@ describe(MediaService.name, () => {
         mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { transcode: TranscodePolicy.Disabled } });
         await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Skipped);
         expect(mocks.media.transcode).not.toHaveBeenCalled();
+        // nothing will be encoded, so the file is not read for Log
+        expect(mocks.media.readContainerLogSignals).not.toHaveBeenCalled();
+        expect(mocks.metadata.readLogVideoTags).not.toHaveBeenCalled();
       });
 
       it('passes an ordinary clip through as before', async () => {
@@ -5043,6 +5046,40 @@ describe(MediaService.name, () => {
         expect(mocks.media.readContainerLogSignals).not.toHaveBeenCalled();
         expect(filtersOf(0)).toContain('tonemapx=');
         expect(filtersOf(0)).not.toContain('lut3d');
+      });
+
+      describe('DJI SRT sidecar', () => {
+        const srt = (colorMode: string) =>
+          Buffer.from(`1\n00:00:00,000 --> 00:00:00,033\n[iso : 100] [color_md : ${colorMode}] [focal_len : 24.00]\n`);
+        const sidecar = (colorMode: string | null) => {
+          mocks.storage.readFile.mockImplementation((path: string) =>
+            colorMode !== null && path === '/original/path.srt'
+              ? Promise.resolve(srt(colorMode))
+              : Promise.reject(Object.assign(new Error('ENOENT'), { code: 'ENOENT' })),
+          );
+        };
+
+        it('converts D-Log named in the SRT beside the original', async () => {
+          sidecar('d_log');
+          await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+          expect(mocks.storage.readFile).toHaveBeenCalledWith('/original/path.SRT', expect.anything());
+          expect(mocks.storage.readFile).toHaveBeenCalledWith('/original/path.srt', expect.anything());
+          expect(mocks.media.ensureColorLut).toHaveBeenCalledWith(
+            'frameleaf-log-v1-d-log-d-gamut-tv-33.cube',
+            expect.any(Function),
+          );
+          expect(filtersOf(0)).toContain(
+            'lut3d=file=/tmp/frameleaf-color-luts/frameleaf-log-v1-d-log-d-gamut-tv-33.cube',
+          );
+        });
+
+        it.each([['dlog_m'], ['default'], [null]])('passes through with SRT colour mode %s', async (colorMode) => {
+          sidecar(colorMode);
+          await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Skipped);
+          expect(mocks.media.transcode).not.toHaveBeenCalled();
+          expect(mocks.media.ensureColorLut).not.toHaveBeenCalled();
+        });
       });
 
       it('carries on without conversion when the Log check fails', async () => {

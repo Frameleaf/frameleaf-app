@@ -75,6 +75,7 @@ import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { executionSignal } from 'src/utils/execution-signal.js';
 import { HDR_RENDITION_RENDERER_VERSION, imageRenditionIdentity } from 'src/utils/image-rendition.js';
 import { isLockedKeyUnavailable, isLockedPath, withPlainCopy } from 'src/utils/locked-read.js';
+import { DJI_SRT_HEAD_BYTES, getDjiSrtCandidates, parseDjiSrtColorMode } from 'src/utils/log-video-srt.js';
 import {
   buildLogLut,
   detectLogVideo,
@@ -1082,7 +1083,12 @@ export class MediaService extends BaseService {
     assertDecodeQualified(qualifySourceDecode(asset.videoStream, ffmpeg));
 
     // FL-1285: Log footage gets its thumbnail and preview in normal Rec.709 colour.
-    const videoStream = await this.attachLogConversion(sourcePath, asset.videoStream);
+    // A DJI .SRT sidecar describes the original only, never an edited render made from it.
+    const videoStream = await this.attachLogConversion(
+      sourcePath,
+      asset.videoStream,
+      sourcePath === asset.originalPath ? asset.originalPath : null,
+    );
 
     this.storageCore.ensureFolders(previewFile.path);
 
@@ -1315,8 +1321,12 @@ export class MediaService extends BaseService {
     // FL-1285: a Log clip is re-encoded into normal Rec.709 colour even when its codec could be
     // played as it is. A sealed (Locked) original is checked on its plain copy inside the encode
     // below, so that it is not decrypted twice; it is converted whenever it is re-encoded anyway.
+    // With playback copies switched off nothing is encoded, so the file is not read for Log at all.
     const lockedOriginal = await isLockedPath(asset.originalPath);
-    let stream = lockedOriginal ? videoStream : await this.attachLogConversion(asset.originalPath, videoStream);
+    let stream =
+      lockedOriginal || ffmpeg.transcode === TranscodePolicy.Disabled
+        ? videoStream
+        : await this.attachLogConversion(asset.originalPath, videoStream);
     if (stream.logConversion) {
       ffmpeg = this.withSoftwareDecodeForLog(ffmpeg, asset.id);
     }
@@ -1350,7 +1360,7 @@ export class MediaService extends BaseService {
     // FL-721 (spec §8.2): a sealed original is read from a plain copy for the whole encode
     const encoded = await withPlainCopy(asset.originalPath, async (input) => {
       if (lockedOriginal && [TranscodeTarget.All, TranscodeTarget.Video].includes(target)) {
-        stream = await this.attachLogConversion(input, stream);
+        stream = await this.attachLogConversion(input, stream, asset.originalPath);
         if (stream.logConversion) {
           ffmpeg = this.withSoftwareDecodeForLog(ffmpeg, asset.id);
           command = BaseConfig.create(ffmpeg, this.videoInterfaces).getCommand(target, stream, audioStream);
@@ -2923,7 +2933,12 @@ export class MediaService extends BaseService {
    * (see `detectLogVideo`). Best effort: a file that cannot be read for this is left as it is, and
    * the job carries on exactly as before.
    */
-  private async attachLogConversion(path: string, videoStream: VideoStreamInfo): Promise<VideoStreamInfo> {
+  private async attachLogConversion(
+    path: string,
+    videoStream: VideoStreamInfo,
+    /** The library original whose `.SRT` sidecar may name the DJI colour mode; null when `path` is not it. */
+    sidecarOriginal: string | null = path,
+  ): Promise<VideoStreamInfo> {
     if (videoStream.logConversion || isHdrTransfer(videoStream.colorTransfer)) {
       return videoStream;
     }
@@ -2936,12 +2951,17 @@ export class MediaService extends BaseService {
           return null;
         }
       };
-      const [container, tags] = await Promise.all([this.mediaRepository.readContainerLogSignals(path), readTags()]);
+      const [container, tags, djiColorMode] = await Promise.all([
+        this.mediaRepository.readContainerLogSignals(path),
+        readTags(),
+        sidecarOriginal ? this.readDjiColorMode(sidecarOriginal) : null,
+      ]);
       const detection = detectLogVideo({
         colorPrimaries: videoStream.colorPrimaries,
         colorTransfer: videoStream.colorTransfer,
         colorMatrix: videoStream.colorMatrix,
         ...container,
+        djiColorMode,
         tags,
       });
       if (!detection) {
@@ -2984,6 +3004,25 @@ export class MediaService extends BaseService {
       this.logger.warn(`Could not check whether ${path} is Log video: ${error}`);
       return videoStream;
     }
+  }
+
+  /** FL-1285: the `color_md` of a DJI `.SRT` sidecar beside the original, when there is one. */
+  private async readDjiColorMode(originalPath: string): Promise<string | null> {
+    for (const candidate of getDjiSrtCandidates(originalPath)) {
+      try {
+        const head = await this.storageRepository.readFile(candidate, {
+          buffer: Buffer.alloc(DJI_SRT_HEAD_BYTES),
+          length: DJI_SRT_HEAD_BYTES,
+          position: 0,
+        });
+        if (Buffer.isBuffer(head)) {
+          return parseDjiSrtColorMode(head.toString('utf8'));
+        }
+      } catch {
+        // no sidecar under this name
+      }
+    }
+    return null;
   }
 
   /**

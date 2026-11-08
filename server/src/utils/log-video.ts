@@ -33,9 +33,9 @@ type SignalConvention =
   | 'video-level';
 
 export type LogCurveId =
-  'apple-log' | 's-log3' | 'v-log' | 'canon-log' | 'canon-log2' | 'canon-log3' | 'f-log' | 'f-log2' | 'n-log';
+  'apple-log' | 's-log3' | 'v-log' | 'canon-log' | 'canon-log2' | 'canon-log3' | 'f-log' | 'f-log2' | 'n-log' | 'd-log';
 
-export type LogGamutId = 'rec709' | 'rec2020' | 's-gamut3' | 's-gamut3-cine' | 'v-gamut' | 'cinema-gamut';
+export type LogGamutId = 'rec709' | 'rec2020' | 's-gamut3' | 's-gamut3-cine' | 'v-gamut' | 'cinema-gamut' | 'd-gamut';
 
 export interface LogProfile {
   curve: LogCurveId;
@@ -78,6 +78,11 @@ const FLOG2 = { a: 5.555556, b: 0.064829, c: 0.245281, d: 0.384316, e: 8.799461,
 // N-Log (Nikon, "N-Log Specification Document"): stated in 10-bit code values.
 const NLOG_CUT_LINEAR = 0.328;
 const NLOG_CUT_CODE = 452;
+
+// D-Log (DJI, "White Paper on D-Log and D-Gamut of DJI Cinema Color System", 2017). Black encodes to
+// 0.0929 = 95/1023, the same code value as S-Log3 and F-Log, so the formula is read in code values.
+const DLOG = { cut1: 0.0078, slope: 6.025, offset: 0.0929, a: 0.9892, b: 0.0108, c: 0.256663, d: 0.584555 };
+const DLOG_CUT2 = DLOG.slope * DLOG.cut1 + DLOG.offset;
 
 /** Canon's formulas take linear divided by 0.9 (the "reflection" input of the Canon Log white papers). */
 const CANON_REFLECTION = 0.9;
@@ -172,6 +177,13 @@ export const LOG_CURVES: Record<LogCurveId, LogCurve> = {
   }),
   'f-log': { label: 'F-Log', convention: 'code-value', encode: fFlog(FLOG), decode: fFlogInverse(FLOG) },
   'f-log2': { label: 'F-Log2', convention: 'code-value', encode: fFlog(FLOG2), decode: fFlogInverse(FLOG2) },
+  'd-log': {
+    label: 'D-Log',
+    convention: 'code-value',
+    encode: (x) => (x <= DLOG.cut1 ? DLOG.slope * x + DLOG.offset : DLOG.c * Math.log10(DLOG.a * x + DLOG.b) + DLOG.d),
+    decode: (y) =>
+      y <= DLOG_CUT2 ? (y - DLOG.offset) / DLOG.slope : (10 ** ((y - DLOG.d) / DLOG.c) - DLOG.b) / DLOG.a,
+  },
   'n-log': {
     label: 'N-Log',
     convention: 'code-value',
@@ -202,6 +214,7 @@ export const LOG_GAMUTS: Record<LogGamutId, Gamut> = {
   's-gamut3-cine': { label: 'S-Gamut3.Cine', red: [0.766, 0.275], green: [0.225, 0.8], blue: [0.089, -0.087] },
   'v-gamut': { label: 'V-Gamut', red: [0.73, 0.28], green: [0.165, 0.84], blue: [0.1, -0.03] },
   'cinema-gamut': { label: 'Cinema Gamut', red: [0.74, 0.27], green: [0.17, 1.14], blue: [0.08, -0.1] },
+  'd-gamut': { label: 'D-Gamut', red: [0.71, 0.31], green: [0.21, 0.88], blue: [0.09, -0.08] },
 };
 
 type Matrix3 = [[number, number, number], [number, number, number], [number, number, number]];
@@ -362,6 +375,8 @@ export interface LogVideoEvidence {
   sonyCaptureGamma?: string | null;
   /** Sony NonRealTimeMeta XML: `CaptureColorPrimaries` (e.g. "S-Gamut3.Cine-SLog3"). */
   sonyCaptureGamut?: string | null;
+  /** DJI `.SRT` sidecar `color_md` value (e.g. "d_log", "dlog_m", "default"), see log-video-srt.ts. */
+  djiColorMode?: string | null;
   tags?: LogVideoTags | null;
 }
 
@@ -434,10 +449,14 @@ const canonGamut = (value: unknown): LogGamutId => {
  * - Canon Log / Log 2 / Log 3 (medium; Log 2 low, exiftool marks its value unconfirmed): MakerNotes
  *   LogInfo `CanonLogVersion`, with `ColorSpace2` for the gamut.
  * - Nikon N-Log (low): `MovieToneMap` = "N-Log" from the Nikon menu settings, when present.
+ * - DJI D-Log (low): DJI writes the colour mode only to the optional `.SRT` sidecar next to the clip
+ *   (`[color_md : d_log]`), never into the video file. Low because the SRT naming is not documented
+ *   by DJI and owners report some models writing a plain "d-log" for D-Log M.
+ * - DJI D-Log M (`dlog_m`): detected but not converted. DJI has published no D-Log M formula, only a
+ *   LUT whose licence is unclear, so there is nothing to generate a conversion from here.
  *
- * Not covered, because no published formula exists or the file carries no signal: DJI D-Log M
- * (no published curve) and D-Log (published, but DJI files carry no field that says D-Log), GoPro
- * Protune Flat / GP-Log (no published curve), Sony S-Log2.
+ * Not covered, because no published formula exists or the file carries no signal: GoPro Protune
+ * Flat / GP-Log (no published curve), Sony S-Log2.
  */
 export const detectLogVideo = (evidence: LogVideoEvidence): LogDetection | null => {
   if (isHdrTransfer(evidence.colorTransfer)) {
@@ -461,6 +480,15 @@ export const detectLogVideo = (evidence: LogVideoEvidence): LogDetection | null 
       signal: 'Sony XML CaptureGammaEquation',
       confidence: 'high',
     };
+  }
+
+  const dji = text(evidence.djiColorMode).replaceAll('-', '_');
+  if (dji === 'dlog_m' || dji === 'd_log_m') {
+    // D-Log M: no published formula to convert with.
+    return null;
+  }
+  if (dji === 'd_log' || dji === 'dlog') {
+    return { profile: { curve: 'd-log', gamut: 'd-gamut' }, signal: 'DJI SRT color_md', confidence: 'low' };
   }
 
   const pictureProfile = text(tags.PictureProfile);
