@@ -11,6 +11,7 @@ export default defineConfig({
     retry: process.env.CI ? 2 : 0,
     include: ['src/specs/cloud/**/*.e2e-spec.ts'],
     testTimeout: 60_000,
+    hookTimeout: 60_000,
     pool: 'threads',
     maxWorkers: 1,
     isolate: false,

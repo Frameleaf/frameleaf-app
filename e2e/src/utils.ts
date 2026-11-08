@@ -299,9 +299,28 @@ export const utils = {
     try {
       await ownedWait(
         'Resetting test database',
-        8000,
-        async (total) => {
-          const cleanupDeadline = performance.now() + 8000;
+        24_000,
+        async (outer) => {
+          // FL-1281: reset work stops a cleanup reserve (restore + session removal, 2 s each) before the
+          // owner deadline, so queue pauses are still restored when the work itself times out.
+          const budget = outer.remaining();
+          const cleanupDeadline = performance.now() + budget;
+          const workTimeout = budget - Math.min(4000, Math.floor(budget / 4));
+          const workDeadline = performance.now() + workTimeout;
+          const work = new AbortController();
+          const workExpired = new Error('Resetting test database timed out');
+          outer.signal.addEventListener('abort', () => work.abort(outer.signal.reason), { once: true });
+          setTimeout(() => work.abort(workExpired), workTimeout).unref();
+          const total: WaitContext = {
+            signal: work.signal,
+            remaining: () => {
+              if (performance.now() >= workDeadline) {
+                work.abort(workExpired);
+              }
+              work.signal.throwIfAborted();
+              return Math.max(1, Math.ceil(workDeadline - performance.now()));
+            },
+          };
           const cleanupBudget = () => {
             const remaining = Math.floor(cleanupDeadline - performance.now());
             if (remaining <= 0) {
@@ -412,7 +431,8 @@ export const utils = {
             const drain = () =>
               withDeadline(
                 'Quiescing test database',
-                Math.min(6000, total.remaining()),
+                // ponytail: arm CI runners under load need more than 6 s to clear a busy queue (FL-1281)
+                Math.min(15_000, total.remaining()),
                 async (context) => {
                   phase = 'request active-job cancellation';
                   let lastCancellationContention: unknown;

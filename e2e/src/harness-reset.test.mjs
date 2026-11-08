@@ -786,7 +786,7 @@ test('active-job cancellation retries only confirmed statement-timeout row conte
         dbUrl: 'synthetic-owned-reset',
         // Shorten only this fake reset's owner deadline, leaving real query, poll and cleanup code intact.
         ownedWait: (description, timeout, operation, signal) => {
-          assert.equal(timeout, 8000);
+          assert.equal(timeout, 24_000);
           return withDeadline(description, 300, operation, signal);
         },
         withDeadline,

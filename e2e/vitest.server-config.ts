@@ -19,6 +19,7 @@ export const serverTestConfig = async (name: string, include: string) => {
       include: [include],
       globalSetup,
       testTimeout: 15_000,
+      hookTimeout: 60_000,
       pool: 'threads',
       maxWorkers: 1,
       isolate: false,

@@ -29,7 +29,7 @@ describe(`immich login`, () => {
     expect(exitCode).toBe(1);
   });
 
-  it('should clear unclaimed periodic work without retaining a reset administrator', async () => {
+  it('should clear unclaimed periodic work without retaining a reset administrator', { timeout: 60_000 }, async () => {
     const db = await utils.connectDatabase();
     const identityCounts = `SELECT
       (SELECT count(*)::int FROM "user") AS users,
