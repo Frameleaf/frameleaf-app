@@ -70,6 +70,8 @@ const MEDIA_KIND_WORDS: Readonly<Record<string, MediaKind>> = {
   screenshots: MediaKind.Screenshot,
   screenrecording: MediaKind.ScreenRecording,
   screenrecordings: MediaKind.ScreenRecording,
+  longexposure: MediaKind.LongExposure,
+  longexposures: MediaKind.LongExposure,
 };
 const mediaKindForWord = (word: string): MediaKind | undefined =>
   MEDIA_KIND_WORDS[word.toLowerCase().replaceAll(/[\s_-]/g, '')];

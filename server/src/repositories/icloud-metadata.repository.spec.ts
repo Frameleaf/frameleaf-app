@@ -106,3 +106,49 @@ describe('iCloud metadata lock effect transaction', () => {
     }
   });
 });
+
+describe('iCloud smart album kinds (FL-1289)', () => {
+  const run = async (current: string[] | null, sources: Array<Record<string, unknown>>) => {
+    let pending = true;
+    const { db, queries } = scriptedKysely((query) => {
+      if (query.sql.includes('from "user"')) return { rows: [{ id: 'owner' }] };
+      if (query.sql.includes('FROM public.icloud_connection')) return { rows: [{ id: 'connection' }] };
+      if (query.sql.startsWith('SELECT DISTINCT ON'))
+        return { rows: pending ? [{ id: 'resource', assetId: 'asset', signature: 'new' }] : [] };
+      if (query.sql.startsWith('SELECT a."isFavorite"'))
+        return {
+          rows: [
+            {
+              isFavorite: false,
+              visibility: AssetVisibility.Timeline,
+              fileCreatedAt: new Date(0),
+              timeZone: null,
+              lockedProperties: [],
+              mediaKinds: current,
+            },
+          ],
+        };
+      if (query.sql.startsWith('SELECT source FROM')) return { rows: sources.map((source) => ({ source })) };
+      if (query.sql.startsWith('UPDATE public.icloud_resource SET source=')) pending = false;
+      return { rows: [] };
+    });
+    try {
+      await new ICloudMetadataRepository(db).reconcile('connection', 'owner');
+      return queries.filter((query) => query.sql.startsWith('update "asset_exif"'));
+    } finally {
+      await db.destroy();
+    }
+  };
+
+  it("adds every resource's smart album kinds to the file's own, in kind order", async () => {
+    const updates = await run(['slow-motion'], [{ mediaKinds: ['time-lapse'] }, { mediaKinds: ['portrait'] }, {}]);
+    expect(updates).toHaveLength(1);
+    expect(updates[0].sql).toContain('"mediaKinds"');
+    expect(updates[0].parameters).toContainEqual(['slow-motion', 'time-lapse', 'portrait']);
+  });
+
+  it('writes nothing when the file already shows them or iCloud gives none', async () => {
+    await expect(run(['panorama'], [{ mediaKinds: ['panorama'] }])).resolves.toEqual([]);
+    await expect(run(null, [{ isFavorite: true }])).resolves.toEqual([]);
+  });
+});
