@@ -1,10 +1,11 @@
 // Unraid's Community Applications rewrites only the host side of a template to a custom appdata location.
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { adoptOwnMounts, containerView, dockerArguments, toHost } from '../src/host-paths.js';
+import { storagePath } from '../src/compose.js';
+import { adoptOwnMounts, containerView, dockerArguments, tidyLocations, toHost } from '../src/host-paths.js';
 
 const manager = (env: string[], binds: [string, string][]) => ({
   State: { Running: true },
@@ -52,6 +53,16 @@ test('a folder mapped to another container path reaches Docker by its host path'
   assert.equal(written.services.database.volumes[0].source, `${HOST}/frameleaf-manager/db`);
   assert.equal(written.services.database.volumes[1].source, 'cache');
   assert.equal(await readFile(join(cwd, 'compose.json'), 'utf8'), original);
+});
+
+test('a trailing slash from the Unraid folder picker no longer makes a location invalid', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'host-paths-')));
+  await assert.rejects(storagePath(`${root}/`, [root], 0), /invalid_storage_path/);
+  const env: Record<string, string | undefined> = { MANAGER_STORAGE_ROOTS: `${root}/:/other//place/`, MANAGER_BACKUP_ROOT: '/backups/' };
+  tidyLocations(env);
+  assert.equal(env.MANAGER_STORAGE_ROOTS, `${root}:/other/place`);
+  assert.equal(env.MANAGER_BACKUP_ROOT, '/backups');
+  assert.equal(await storagePath(env.MANAGER_STORAGE_ROOTS!.split(':')[0], [root], 0), root);
 });
 
 test('one host folder mapped to two container paths keeps each path', () => {

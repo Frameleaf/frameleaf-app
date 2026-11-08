@@ -1,5 +1,5 @@
 import { readFile, writeFile } from 'node:fs/promises';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 
 /**
  * Manager works in the paths it sees inside its own container; Docker needs the host's. These two views differ when
@@ -50,6 +50,15 @@ const LOCATION_VARIABLES = [
   'MANAGER_APPDATA_ROOT',
   'MANAGER_MOUNT_ROOTS',
 ];
+
+/** Unraid's folder picker adds a trailing slash, which the exact path checks would otherwise refuse. */
+export function tidyLocations(env: Record<string, string | undefined> = process.env): void {
+  for (const name of LOCATION_VARIABLES) {
+    if (env[name]) {
+      env[name] = env[name]!.split(':').filter(Boolean).map((p) => (isAbsolute(p) ? resolve(p) : p)).join(':');
+    }
+  }
+}
 
 /** Learn this Manager's mappings. A location given by its host path is corrected to where the container sees it. */
 export function adoptOwnMounts(

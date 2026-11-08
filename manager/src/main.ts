@@ -26,7 +26,7 @@ import { Store } from './store.js';
 import { DesktopGrants } from './desktop-grants.js';
 import { desktopApi } from './desktop-api.js';
 import { Docker, command } from './docker.js';
-import { adoptOwnMounts, toHost } from './host-paths.js';
+import { adoptOwnMounts, tidyLocations, toHost } from './host-paths.js';
 import { Security, trustedProxyList } from './security.js';
 import { Backups } from './backups.js';
 import { Releases } from './releases.js';
@@ -63,6 +63,7 @@ if (runtime === 'native') {
     : bootstrapPipe.isFIFO() || bootstrapPipe.isSocket();
   if (!privatePipe) throw new Refusal('native_bootstrap_unavailable');
 }
+tidyLocations();
 const docker = new Docker();
 // Before any location is read: a folder may be mapped to a different path inside this container.
 // Failing here beats running with untranslated paths; the container's restart policy tries again.

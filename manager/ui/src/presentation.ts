@@ -147,6 +147,7 @@ const moveRefusals: Record<string, string> = {
   media_copy_still_running: 'The copy helper is still running. Stop safely and wait for it to exit before recovery.',
 };
 const refusals: Record<string, string> = {
+  invalid_storage_path: 'That folder path can’t be used. Use a full path such as /mnt/user/photos, with no comma in it.',
   container_settings_invalid: 'Fix the advanced container settings marked below, then try again.',
   service_override_conflict: 'An extra folder would replace one Frameleaf manages. Choose another path inside the container.',
   service_override_unsafe_source:
