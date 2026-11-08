@@ -16,8 +16,31 @@ export const MEDIA_KINDS = [
   'selfie',
   'screenshot',
   'screen-recording',
+  // FL-1289: a Live Photo effect; the file never shows it, only iCloud's Long Exposure smart album does
+  'long-exposure',
 ] as const;
 export type MediaKind = (typeof MEDIA_KINDS)[number];
+
+/**
+ * FL-1289: the iCloud Media Types smart albums the sync lists (the bridge's allowlist), and the kind each
+ * one means. Time-lapse and long exposure never show in an iPhone file; the rest confirm what it shows.
+ * iCloud's web API has no Cinematic or Spatial smart album, and bursts come from the file's BurstUUID.
+ */
+export const ICLOUD_SMART_ALBUM_KINDS = {
+  TIMELAPSE: 'time-lapse',
+  SLOMO: 'slow-motion',
+  PANORAMA: 'panorama',
+  SCREENSHOT: 'screenshot',
+  DEPTH: 'portrait',
+  EXPOSURE: 'long-exposure',
+} as const satisfies Record<string, MediaKind>;
+export type ICloudSmartAlbum = keyof typeof ICLOUD_SMART_ALBUM_KINDS;
+
+/** `MEDIA_KINDS` order, duplicates and anything unknown dropped. */
+export const sortMediaKinds = (kinds: Iterable<unknown>): MediaKind[] => {
+  const set = new Set(kinds);
+  return MEDIA_KINDS.filter((kind) => set.has(kind));
+};
 
 /** Tags read as numbers rather than exiftool's printed labels, so the checks below compare codes. */
 export const MEDIA_KIND_NUMERIC_TAGS = ['CustomRendered', 'AndroidCaptureFPS', 'FullFrameRatePlaybackIntent'] as const;

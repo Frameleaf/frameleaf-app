@@ -1,6 +1,7 @@
 import { AssetVisibility, MediaKind, type AssetResponseDto } from '@frameleaf/sdk';
 import {
   mdiAccountBoxOutline,
+  mdiBlurLinear,
   mdiCameraBurst,
   mdiCameraFrontVariant,
   mdiCellphoneScreenshot,
@@ -79,6 +80,13 @@ export const MEDIA_KINDS: readonly {
     icon: mdiRecord,
     labelKey: 'frameleaf_media_kind_screen_recording',
     viewerKey: 'frameleaf_viewer_kind_screen_recording',
+  },
+  {
+    // FL-1289: from iCloud's Long Exposure smart album; no file shows it
+    kind: MediaKind.LongExposure,
+    icon: mdiBlurLinear,
+    labelKey: 'frameleaf_media_kind_long_exposure',
+    viewerKey: 'frameleaf_viewer_kind_long_exposure',
   },
 ];
 

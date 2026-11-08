@@ -38915,7 +38915,8 @@ export enum MediaKind {
     Portrait = "portrait",
     Selfie = "selfie",
     Screenshot = "screenshot",
-    ScreenRecording = "screen-recording"
+    ScreenRecording = "screen-recording",
+    LongExposure = "long-exposure"
 }
 export enum ClassificationMediaType {
     Any = "any",

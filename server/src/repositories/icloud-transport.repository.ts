@@ -5,6 +5,7 @@ import { request } from 'node:https';
 import type { IncomingMessage } from 'node:http';
 import type { ICloudAuthDto } from 'src/dtos/icloud-sync.dto.js';
 import type { ICloudLibrary, ICloudRecord } from 'src/repositories/icloud-sync.repository.js';
+import type { ICloudSmartAlbum } from 'src/utils/media-kinds.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { decryptICloudSession, encryptICloudSession } from 'src/utils/icloud-sync.js';
 
@@ -186,6 +187,8 @@ export class ICloudTransportRepository {
     kind: 'libraries' | 'albums' | 'assets' | 'changes' | 'memberships';
     library?: ICloudLibrary;
     albumId?: string;
+    /** FL-1289: with kind `assets`, one of iCloud's Media Types smart albums instead of the library. */
+    smartAlbum?: ICloudSmartAlbum;
     cursor?: unknown;
   }): Promise<ICloudPage> {
     const value = await this.readJson(await this.send('inventory', { ...input, limit: 100 }));

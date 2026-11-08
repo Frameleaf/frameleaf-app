@@ -189,6 +189,28 @@ describe(ICloudSyncRepository.name, () => {
     expect(await repository.get(connection.id, randomUUID())).toBeUndefined();
   });
 
+  it('gives a resource the kinds of the smart albums its photo is in, and drops one it left (FL-1289)', async () => {
+    await repository.savePage(connection.id, 'assets:library', 'library', [asset, master], null, true);
+    const snapshot = randomUUID();
+    await repository.saveMembershipPage(connection.id, 'library', 'smart:EXPOSURE', [asset], snapshot, true);
+    await repository.saveMembershipPage(connection.id, 'library', 'smart:TIMELAPSE', [asset], snapshot, true);
+    await repository.saveMembershipPage(connection.id, 'library', 'smart:DEPTH', [asset], randomUUID(), true);
+    // a later snapshot without the photo marks it absent from Portrait
+    await repository.saveMembershipPage(connection.id, 'library', 'smart:DEPTH', [], randomUUID(), true);
+    expect(await repository.materialize(connection, 'library', library)).toBe(true);
+    const kinds = () =>
+      sql<{ kinds: unknown }>`SELECT source->'mediaKinds' AS kinds FROM public.icloud_resource`
+        .execute(db)
+        .then(({ rows }) => rows.map((row) => row.kinds));
+    expect(await kinds()).toEqual([['time-lapse', 'long-exposure']]);
+
+    // no smart album membership leaves no key behind on the next materialization
+    await sql`UPDATE public.icloud_membership SET "sourcePresent"=false`.execute(db);
+    await sql`DELETE FROM public.icloud_checkpoint WHERE scope LIKE 'materialize:%'`.execute(db);
+    expect(await repository.materialize(connection, 'library', library)).toBe(true);
+    expect(await kinds()).toEqual([null]);
+  });
+
   it('commits page, scalar cursor and rotated session in one transaction and rolls back together', async () => {
     await repository.withSession(connection.id, connection.ownerId, async (_connection, transaction) => {
       await repository.savePage(

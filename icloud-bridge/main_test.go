@@ -558,6 +558,64 @@ func TestMembershipsPaginateByAssetRecords(t *testing.T) {
 	}
 }
 
+func TestSmartAlbumAssetsAreOnePhase(t *testing.T) {
+	b := newBridge([]byte(testToken))
+	calls := 0
+	b.http = &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		query := body["query"].(map[string]any)
+		if query["recordType"] != "CPLAssetAndMasterInSmartAlbumByAssetDate" {
+			t.Fatalf("wrong smart album query: %v", body)
+		}
+		album := ""
+		for _, raw := range query["filterBy"].([]any) {
+			filter := raw.(map[string]any)
+			if filter["fieldName"] == "smartAlbum" {
+				album = filter["fieldValue"].(map[string]any)["value"].(string)
+			}
+		}
+		if album != "TIMELAPSE" {
+			t.Fatalf("smart album filter missing: %v", body)
+		}
+		if calls == 1 {
+			return response(`{"records":[{"recordName":"a1","recordType":"CPLAsset"},{"recordName":"m1","recordType":"CPLMaster"}]}`), nil
+		}
+		return response(`{"records":[]}`), nil
+	})}
+	lib := &library{Area: "private", ZoneID: map[string]string{"zoneName": "PrimarySync"}}
+	q := request{Session: testSession(t), Kind: "assets", Library: lib, SmartAlbum: "TIMELAPSE", Limit: 10}
+	_, next, complete := inventoryPage(t, b, q)
+	if complete {
+		t.Fatal("a page with assets must not end the album")
+	}
+	q.Cursor = next
+	// No hidden phase follows: a smart album never lists Hidden photos.
+	if _, _, complete = inventoryPage(t, b, q); !complete {
+		t.Fatal("an empty page must end the smart album")
+	}
+	// The cursor is bound to its album, and only allowlisted albums on assets reach Apple.
+	for _, bad := range []request{
+		{Session: testSession(t), Kind: "assets", Library: lib, SmartAlbum: "SLOMO", Limit: 10, Cursor: next},
+		{Session: testSession(t), Kind: "assets", Library: lib, Limit: 10, Cursor: next},
+		{Session: testSession(t), Kind: "assets", Library: lib, SmartAlbum: "FAVORITE", Limit: 10},
+		{Session: testSession(t), Kind: "assets", Library: lib, SmartAlbum: "timelapse", Limit: 10},
+		{Session: testSession(t), Kind: "memberships", Library: lib, AlbumID: "x", SmartAlbum: "TIMELAPSE", Limit: 10},
+	} {
+		if w := call(t, b, "/v1/inventory", bad); w.Code != 400 {
+			t.Fatalf("smart album request accepted: %+v → %d", bad.SmartAlbum, w.Code)
+		}
+	}
+	if calls != 2 {
+		t.Fatalf("rejected smart album requests reached Apple: %d calls", calls)
+	}
+	// The server discards smart album pages from a bridge that does not advertise them.
+	if capabilities["smartAlbums"] != true {
+		t.Fatal("smartAlbums capability missing")
+	}
+}
+
 func TestCursorIsBoundToItsScope(t *testing.T) {
 	b := newBridge([]byte(testToken))
 	calls := 0

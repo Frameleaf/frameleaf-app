@@ -1,5 +1,5 @@
 import { AssetType } from 'src/enum.js';
-import { detectMediaKinds } from 'src/utils/media-kinds.js';
+import { ICLOUD_SMART_ALBUM_KINDS, detectMediaKinds, isMediaKind, sortMediaKinds } from 'src/utils/media-kinds.js';
 
 const image = { type: AssetType.Image, originalFileName: 'IMG_0001.HEIC', width: 4032, height: 3024 };
 const video = { type: AssetType.Video, originalFileName: 'IMG_0002.MOV', fps: 30 };
@@ -117,5 +117,14 @@ describe('detectMediaKinds', () => {
   it('accepts exiftool values given as strings or arrays', () => {
     expect(detectMediaKinds({ CustomRendered: '8' }, image)).toEqual(['portrait']);
     expect(detectMediaKinds({ AndroidCaptureFPS: ['240'] }, { ...video, fps: 30 })).toEqual(['slow-motion']);
+  });
+
+  it('maps every iCloud smart album to a kind and sorts kinds in list order (FL-1289)', () => {
+    expect(Object.values(ICLOUD_SMART_ALBUM_KINDS).every((kind) => isMediaKind(kind))).toBe(true);
+    expect(sortMediaKinds(['long-exposure', 'portrait', 'nonsense', 'portrait', 'slow-motion'])).toEqual([
+      'slow-motion',
+      'portrait',
+      'long-exposure',
+    ]);
   });
 });
