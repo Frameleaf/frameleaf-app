@@ -139,7 +139,7 @@ export class AssetJobRepository {
               conditions.push(
                 and([
                   not(exists(file(AssetFileType.FullSize))),
-                  eb(sql`f_unaccent(asset."originalFileName")`, 'like', sql`any(array[${isWebUnsupported}]::text[])`),
+                  eb(sql`f_unaccent(asset."originalFileName")`, 'ilike', sql`any(array[${isWebUnsupported}]::text[])`),
                 ]),
               );
             }

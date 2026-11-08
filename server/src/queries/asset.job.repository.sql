@@ -155,7 +155,7 @@ where
           "assetId" = "asset"."id"
           and "type" = 'fullsize'
       )
-      and f_unaccent (asset."originalFileName") like any (
+      and f_unaccent (asset."originalFileName") ilike any (
         array[
           '%.3fr',
           '%.ari',
