@@ -63,7 +63,8 @@ if (runtime === 'native') {
     : bootstrapPipe.isFIFO() || bootstrapPipe.isSocket();
   if (!privatePipe) throw new Refusal('native_bootstrap_unavailable');
 }
-tidyLocations();
+// Docker only: these are Linux paths, and a native Windows path has a colon of its own.
+if (runtime === 'docker') tidyLocations();
 const docker = new Docker();
 // Before any location is read: a folder may be mapped to a different path inside this container.
 // Failing here beats running with untranslated paths; the container's restart policy tries again.
