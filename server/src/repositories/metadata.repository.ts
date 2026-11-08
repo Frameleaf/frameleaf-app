@@ -8,8 +8,8 @@ import type { CameraIdentification } from 'src/utils/camera-identification.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { CAPTURE_NUMERIC_TAGS } from 'src/utils/capture-details.js';
-import { MEDIA_KIND_NUMERIC_TAGS } from 'src/utils/media-kinds.js';
 import { LOCATION_DELETE_ARGS, LOCATION_TAG_SELECTORS, SAMSUNG_TRAILER_DELETE_ARGS } from 'src/utils/location-tags.js';
+import { MEDIA_KIND_NUMERIC_TAGS } from 'src/utils/media-kinds.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
 interface ExifDuration {

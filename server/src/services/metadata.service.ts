@@ -44,19 +44,19 @@ import { BaseService } from 'src/services/base.service.js';
 import { getAssetFiles } from 'src/utils/asset.util.js';
 import { resolveCameraIdentification } from 'src/utils/camera-identification.js';
 import { captureDetails } from 'src/utils/capture-details.js';
-import { detectMediaKinds } from 'src/utils/media-kinds.js';
-
-/** FL-1284: videos the nightly capture-kind rescan reads per night. */
-const MEDIA_KIND_RESCAN_BATCH = 2000;
 import { mergeTimeZone } from 'src/utils/date.js';
 import { DJI_SRT_READ_BYTES, getDjiSrtCandidates, parseDjiSrtLocation } from 'src/utils/dji-srt.js';
 import { rewriteThroughPlainCopy, withPlainCopy } from 'src/utils/locked-read.js';
 import { isLockedRow } from 'src/utils/locked.js';
+import { detectMediaKinds } from 'src/utils/media-kinds.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { isFaceImportEnabled } from 'src/utils/misc.js';
 import { photoGpsAccuracy } from 'src/utils/photo-locations.js';
 import { normalizeTagValue, upsertTags } from 'src/utils/tag.js';
 import { detectVideoProjection, isStitchedVideoProjection, planVideoStitch } from 'src/utils/video-360.js';
+
+/** FL-1284: videos the nightly capture-kind rescan reads per night. */
+const MEDIA_KIND_RESCAN_BATCH = 2000;
 
 const POSTGRES_INT_MAX = 2_147_483_647;
 const POSTGRES_INT_MIN = -2_147_483_648;
@@ -702,7 +702,7 @@ export class MetadataService extends BaseService {
     if (stacks.size > 1) {
       return;
     }
-    const [existingPrimary] = [...stacks.values()];
+    const existingPrimary = stacks.values().next().value;
     const assetIds = existingPrimary
       ? [existingPrimary, asset.id]
       : frames.filter((frame) => !frame.stackId && !frame.isLocked).map((frame) => frame.id);

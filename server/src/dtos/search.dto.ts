@@ -1,5 +1,4 @@
 import { createZodDto } from 'nestjs-zod';
-import { MEDIA_KINDS } from 'src/utils/media-kinds.js';
 import z from 'zod';
 import { Place } from 'src/database.js';
 import { HistoryBuilder } from 'src/decorators.js';
@@ -16,6 +15,7 @@ import {
   SearchOrderField,
   SearchOrderFieldSchema,
 } from 'src/enum.js';
+import { MEDIA_KINDS } from 'src/utils/media-kinds.js';
 import { isoDatetimeToDate, nonEmptyPartial, stringToBool } from 'src/validation.js';
 
 const ADDED_V3_2 = new HistoryBuilder().added('v3.2.0').getExtensions();
