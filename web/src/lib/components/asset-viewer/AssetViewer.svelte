@@ -777,6 +777,7 @@
       return;
     }
     cursor = { ...cursor, current: assets[nextIndex] };
+    previewStackedAsset = undefined;
     notifyAssetUpdate?.(cursor.current);
   };
 

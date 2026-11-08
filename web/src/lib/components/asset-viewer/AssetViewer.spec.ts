@@ -463,6 +463,24 @@ describe('AssetViewer', () => {
     expect(screen.getByTestId('viewer-stack-strip').querySelectorAll('[aria-current="true"]')).toHaveLength(1);
   });
 
+  it('shows the stack member an arrow key selects, even while another is previewed', async () => {
+    const user = userAdminFactory.build();
+    authManager.setUser(user);
+    authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    const primary = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image });
+    const video = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Video });
+    primary.stack = { id: 'stack', primaryAssetId: primary.id, assetCount: 2 };
+    vi.mocked(getStack).mockResolvedValue({ id: 'stack', primaryAssetId: primary.id, assets: [primary, video] });
+    renderWithTooltips(AssetViewer, { cursor: { current: primary }, withStacked: true, showNavigation: false });
+    const strip = await screen.findByTestId('viewer-stack-strip');
+    await fireEvent.mouseEnter(strip.querySelector<HTMLElement>(`[data-asset="${CSS.escape(video.id)}"]`)!);
+    expect(await screen.findByTestId('video-source')).toBeInTheDocument();
+
+    await fireEvent.keyDown(document, { key: 'ArrowUp' });
+
+    await waitFor(() => expect(screen.queryByTestId('video-source')).not.toBeInTheDocument());
+  });
+
   it.each(['before', 'after'])(
     'keeps a featured-photo refresh owned when navigation occurs %s the lookup',
     async (change) => {
