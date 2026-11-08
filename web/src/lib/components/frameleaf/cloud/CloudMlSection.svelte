@@ -677,8 +677,12 @@
     {/if}
 
     {#if linked}
-      <!-- Nothing here can change until the server is linked, so there is nothing to reset before then. -->
-      <SettingActions keys={['frameleafCloud.cloudMl']} disabled={configDisabled} />
+      <!-- Nothing here can change until the server is linked, so there is nothing to reset before then. The
+           Descriptions slider also sets this server's description model, so the page reset covers it too. -->
+      <SettingActions
+        keys={['frameleafCloud.cloudMl', 'machineLearning.imageDescription.modelName']}
+        disabled={configDisabled}
+      />
     {/if}
   </div>
 </KitPage>

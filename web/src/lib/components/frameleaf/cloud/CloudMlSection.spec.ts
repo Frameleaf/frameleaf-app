@@ -461,6 +461,20 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
     expect(screen.queryByRole('group', { name: 'Descriptions & tags' })).toBeNull();
   });
 
+  it("resets this server's description model with the page (FL-189)", async () => {
+    const store = new SystemConfigDraftStore(
+      { config: cloudConfig(true, 'Qwen/Qwen2.5-VL-7B-Instruct'), revision: 'r1' },
+      { defaults: cloudConfig(false, 'Qwen/Qwen2.5-VL-3B-Instruct'), load: vi.fn(), save: vi.fn() },
+    );
+    draftRef.current = store;
+    sdkMock.getCloudMlStatus.mockResolvedValue(status({ enabled: true, consent: consent('2026-10-01') }));
+    render(CloudMlSection);
+
+    await screen.findByRole('group', { name: 'Descriptions & tags' });
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_settings_draft_reset_page }));
+    expect(store.draft.machineLearning!.imageDescription!.modelName).toBe('Qwen/Qwen2.5-VL-3B-Instruct');
+  });
+
   it('lists recent cloud jobs with GPU time, workers, estimate and settled cost', async () => {
     useDraft(true);
     sdkMock.getCloudMlSettlements.mockResolvedValue({
