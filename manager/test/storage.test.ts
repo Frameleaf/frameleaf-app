@@ -10,6 +10,13 @@ import type { Container } from '../src/docker.js';
 import type { Installation } from '../src/contracts.js';
 import type { VerifiedRelease } from '../src/releases.js';
 
+test('the suggested database folder is always one setup will accept', () => {
+  const roots = { MANAGER_DATABASE_ROOTS: '/mnt/pool/databases' };
+  assert.equal(appdataDefaults({ ...roots, MANAGER_APPDATA_ROOT: '/mnt/user/appdata/frameleaf-databases' }, '').suggestedPath, '/mnt/pool/databases');
+  assert.equal(appdataDefaults(roots, 'DOCKER_APP_CONFIG_PATH="/mnt/user/appdata/"').suggestedPath, '/mnt/pool/databases');
+  assert.equal(appdataDefaults({ ...roots, MANAGER_APPDATA_ROOT: '/mnt/pool/databases/one' }, '').suggestedPath, '/mnt/pool/databases/one');
+});
+
 test('Unraid defaults honor its actual setting and explicit administrator overrides', () => {
   assert.equal(configuredAppdata('DOCKER_APP_CONFIG_PATH="/mnt/user/appdata/"\n'), '/mnt/user/appdata');
   assert.equal(
