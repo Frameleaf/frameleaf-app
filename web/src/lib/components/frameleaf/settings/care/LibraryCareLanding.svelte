@@ -208,7 +208,7 @@
   const undoCleanup = async () => {
     undoingCleanup = true;
     try {
-      const { skipped } = await undoLatestAlbumChangeRun();
+      const { skipped } = await undoLatestAlbumChangeRun({ albumChangeUndoDto: { runId: lastCleanup?.id } });
       said =
         skipped.length > 0
           ? $t('frameleaf_album_cleanup_care_undone_skipped', { values: { count: skipped.length } })

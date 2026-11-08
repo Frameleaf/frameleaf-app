@@ -354,7 +354,7 @@
   const undo = async () => {
     undoing = true;
     try {
-      const { skipped } = await undoLatestAlbumChangeRun();
+      const { skipped } = await undoLatestAlbumChangeRun({ albumChangeUndoDto: { runId } });
       toastManager.primary(
         skipped.length > 0
           ? $t('frameleaf_album_cleanup_undone_skipped', { values: { count: skipped.length } })
