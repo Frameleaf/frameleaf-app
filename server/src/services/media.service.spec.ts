@@ -540,6 +540,37 @@ describe(MediaService.name, () => {
       expect(mocks.asset.update).not.toHaveBeenCalled();
     });
 
+    it('never renders a partner copy with a live source: it takes the source files instead (FL-1287)', async () => {
+      const asset = AssetFactory.from().exif().build();
+      const sourceId = newUuid();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      mocks.partnerOrigin.getLiveSourceId.mockResolvedValue(sourceId);
+      mocks.partnerOrigin.shareGeneratedFiles.mockResolvedValue(['/thumbs/copy-own.webp']);
+
+      expect(await sut.handleGenerateThumbnails({ id: asset.id })).toEqual(JobStatus.Skipped);
+
+      expect(mocks.partnerOrigin.getLiveSourceId).toHaveBeenCalledWith(asset.id);
+      expect(mocks.partnerOrigin.shareGeneratedFiles).toHaveBeenCalledExactlyOnceWith(sourceId);
+      expect(mocks.job.queue).toHaveBeenCalledExactlyOnceWith({
+        name: JobName.FileDelete,
+        data: { files: ['/thumbs/copy-own.webp'] },
+      });
+      expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
+      expect(mocks.media.generateImageThumbnails).not.toHaveBeenCalled();
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+    });
+
+    it('hands freshly rendered files to the partner copies made before them (FL-1287)', async () => {
+      const asset = AssetFactory.from().exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+
+      expect(await sut.handleGenerateThumbnails({ id: asset.id })).toEqual(JobStatus.Success);
+
+      expect(mocks.media.generateImageThumbnails).toHaveBeenCalled();
+      expect(mocks.partnerOrigin.shareGeneratedFiles).toHaveBeenCalledExactlyOnceWith(asset.id);
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.FileDelete }));
+    });
+
     it('should delete previous preview if different path', async () => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Preview }).exif().build();
       mocks.systemMetadata.get.mockResolvedValue({ image: { thumbnail: { format: ImageFormat.Webp } } });
