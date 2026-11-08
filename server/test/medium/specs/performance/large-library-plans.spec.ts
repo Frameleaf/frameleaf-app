@@ -366,6 +366,7 @@ describe('large-library query plans (FL-139)', () => {
       // Neither background refresh is the path being measured: covers are repaired elsewhere, and the
       // first read below only has to get the numbers stored before the second is planned.
       vi.spyOn(ctx.get(AlbumRepository), 'updateThumbnails').mockResolvedValue(0);
+      vi.spyOn(ctx.get(AlbumSummaryRepository), 'getChangedAt').mockResolvedValue([]);
       const auth = factory.auth({ user: { id: ownerId } });
 
       await sut.getTree(auth);
@@ -381,7 +382,6 @@ describe('large-library query plans (FL-139)', () => {
       expect(tree.albums).toHaveLength(ALBUMS);
       expect(tree.albums.reduce((total, item) => total + item.assetCount, 0)).toBe(LIBRARY_SIZE);
 
-      vi.spyOn(ctx.get(AlbumSummaryRepository), 'getChangedAt').mockResolvedValue([]);
       captured.length = 0;
       await sut.getTree(auth);
 
