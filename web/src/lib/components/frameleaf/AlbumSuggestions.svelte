@@ -81,16 +81,22 @@
     }
   };
 
+  let loadRequested = 0;
+  let loadApplied = 0;
+
   /**
    * `afterFailure`: a refresh after a failed save keeps the person's choices for what is still
    * suggested, and keeps what is shown if the refresh fails too, so Try again still has it.
    */
   const load = async (id: string, afterFailure = false) => {
+    const request = ++loadRequested;
     try {
       const result = await getAlbumSuggestions({ id });
-      if (id !== albumId) {
+      // Requests can answer out of order: an older one never replaces what a newer one showed.
+      if (id !== albumId || request < loadApplied) {
         return;
       }
+      loadApplied = request;
       // A list that never loaded left nothing to choose from, so there are no choices to keep.
       const keepChoices = afterFailure && suggestions !== null;
       suggestions = result;
@@ -105,7 +111,7 @@
       turnOffFailed = false;
     } catch {
       // Suggestions are optional: an album that can't be read for them simply shows none.
-      if (!afterFailure) {
+      if (!afterFailure && request === loadRequested) {
         suggestions = null;
       }
     }

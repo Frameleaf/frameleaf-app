@@ -429,6 +429,24 @@ describe('AlbumSuggestions', () => {
       expect(sdkMock.setAlbumSuggestionAutoAdd).not.toHaveBeenCalled();
     });
 
+    it('keeps a refreshed list when the first request fails after it', async () => {
+      let fail: (reason: Error) => void = () => {};
+      sdkMock.getAlbumSuggestions.mockReturnValueOnce(new Promise((_, reject) => (fail = reject)));
+      sdkMock.getAlbumLostDates.mockResolvedValue(structuredClone(lost));
+      render(AlbumSuggestions, { albumId: 'album', albumName: 'Summer', onChanged: vi.fn() });
+      await fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
+      sdkMock.healAlbumLostDates.mockRejectedValueOnce(new Error('no'));
+      sdkMock.getAlbumSuggestions.mockResolvedValue({ ...suggestions, fromTrip: [] });
+      sdkMock.getAlbumLostDates.mockResolvedValue({ ...lost, suggestions: [] });
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Heal all 2' }));
+      await screen.findByRole('tab', { name: 'Need a date · 1' });
+      fail(new Error('offline'));
+      await new Promise((resolve) => setTimeout(resolve));
+
+      expect(screen.getByRole('tab', { name: 'Need a date · 1' })).toBeTruthy();
+    });
+
     it('leaves the review with a message when a failed heal finds nothing left', async () => {
       await openLost();
       sdkMock.healAlbumLostDates.mockRejectedValueOnce(new Error('no'));
