@@ -26,6 +26,10 @@ const AssetMediaOptionsSchema = z
         .getExtensions(),
     ),
     edited: stringToBool.default(false).optional().describe('Return edited asset if available'),
+    c: z
+      .string()
+      .optional()
+      .describe("Cache version: the asset's current thumbhash. A matching thumbnail is served as immutable."),
     faceSource: stringToBool.optional().describe('Return the ordinary edited preview used for face coordinates'),
     dynamicRange: z
       .enum(['auto', 'sdr', 'hdr'])

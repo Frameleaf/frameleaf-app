@@ -19134,6 +19134,15 @@
         "operationId": "viewAsset",
         "parameters": [
           {
+            "name": "c",
+            "required": false,
+            "in": "query",
+            "description": "Cache version: the asset's current thumbhash. A matching thumbnail is served as immutable.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "dynamicRange",
             "required": false,
             "in": "query",
@@ -75999,6 +76008,10 @@
       },
       "AssetMediaOptionsDto": {
         "properties": {
+          "c": {
+            "description": "Cache version: the asset's current thumbhash. A matching thumbnail is served as immutable.",
+            "type": "string"
+          },
           "dynamicRange": {
             "description": "Defaults to compatible SDR. Auto prefers an available HDR derivative; explicit HDR fails when unavailable.",
             "enum": [
@@ -149428,6 +149441,12 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
+          "partnerOriginOwnerId": {
+            "description": "Only on your own copy of a partner's album: the account it originally came from. Rows synced before this field existed need a full re-sync to carry it.",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
           "sortOrder": {
             "format": "double",
             "nullable": true,
@@ -150356,6 +150375,12 @@
             "description": "Owner ID",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "partnerOriginOwnerId": {
+            "description": "Only on your own copy of a partner's photo: the account it originally came from. Rows synced before this field existed need a full re-sync to carry it.",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
           "stackId": {

@@ -1,4 +1,4 @@
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import { AlbumKind, AlbumUserRole, SyncEntityType, SyncRequestType } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { SyncTestContext } from 'test/medium.factory.js';
@@ -50,6 +50,20 @@ it('bootstraps tree and trash metadata newest first with exact microsecond resum
   );
   await ctx.syncAckAll(auth, next);
   await ctx.assertSyncIsComplete(auth, [request]);
+});
+
+it("names the origin on the viewer's own partner copies, and leaves every other row as it was", async () => {
+  const ctx = new SyncTestContext(db);
+  const { auth } = await ctx.newSyncAuthUser();
+  const { user: partner } = await ctx.newUser();
+  const { album: copy } = await ctx.newAlbum({ ownerId: auth.user.id });
+  const { album: own } = await ctx.newAlbum({ ownerId: auth.user.id });
+  await sql`insert into public.album_origin ("albumId", "ownerId", "partnerSharedById", "rootOwnerId")
+    values (${copy.id}::uuid, ${auth.user.id}::uuid, ${partner.id}::uuid, ${partner.id}::uuid)`.execute(db);
+
+  const response = rows(await ctx.syncStream(auth, [request]));
+  expect(response.find(({ data }) => data.id === copy.id)!.data.partnerOriginOwnerId).toBe(partner.id);
+  expect(response.find(({ data }) => data.id === own.id)!.data).not.toHaveProperty('partnerOriginOwnerId');
 });
 
 it('streams tree edits, trash and restore after acknowledgement', async () => {
