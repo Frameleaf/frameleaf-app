@@ -1,6 +1,14 @@
 import { AssetTypeEnum } from '@frameleaf/sdk';
 import { ProjectionType } from '$lib/constants';
-import { isImageAsset, isLivePhoto, isOffline, isPanorama, isVideoAsset } from '$lib/frameleaf/viewer-media';
+import {
+  isImageAsset,
+  isLivePhoto,
+  isOffline,
+  isPanorama,
+  isPanoramaVideoProjection,
+  isStitchedVideoProjection,
+  isVideoAsset,
+} from '$lib/frameleaf/viewer-media';
 import { assetFactory } from '@test-data/factories/asset-factory';
 
 describe('viewer media classification', () => {
@@ -38,6 +46,21 @@ describe('viewer media classification', () => {
           }),
         ),
       ).toBe(false);
+    });
+  });
+
+  describe('360° video (FL-968)', () => {
+    it.each([
+      [ProjectionType.EQUIRECTANGULAR, true, false],
+      [ProjectionType.DUAL_FISHEYE, true, true],
+      [ProjectionType.EQUIANGULAR_CUBEMAP, true, true],
+      [ProjectionType.CUBEMAP, false, false],
+      [ProjectionType.NONE, false, false],
+      [null, false, false],
+      [undefined, false, false],
+    ])('classifies %s', (projectionType, panorama, stitched) => {
+      expect(isPanoramaVideoProjection(projectionType)).toBe(panorama);
+      expect(isStitchedVideoProjection(projectionType)).toBe(stitched);
     });
   });
 

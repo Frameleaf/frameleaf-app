@@ -159,6 +159,17 @@ describe('Log video commands (FL-1285)', () => {
     );
   });
 
+  it('runs after the 360° stitch, in place of its scale and format steps (FL-968)', () => {
+    const stitch = { prefix: '[0:0]', assemble: [], projection: 'v360=input=dfisheye:output=equirect' };
+    const command = BaseConfig.createStitched({ ...defaults.ffmpeg, targetResolution: '720' }, stitch).getCommand(
+      TranscodeTarget.Video,
+      log,
+    );
+    expect(command.outputOptions[command.outputOptions.indexOf('-filter_complex') + 1]).toBe(
+      `[0:0]v360=input=dfisheye:output=equirect,scale=-2:720:in_color_matrix=bt709:in_range=tv,${logChain('tv')}[stitched]`,
+    );
+  });
+
   it('refuses a LUT path that would need escaping in the filter graph', () => {
     const config = BaseConfig.create(defaults.ffmpeg, interfaces);
     const unsafe = { ...log, logConversion: { ...log.logConversion, lutPath: "/tmp/a:b,c'.cube" } };

@@ -662,6 +662,76 @@ select
     ),
     0
   ) as "usageVideos",
+  count(*) filter (
+    where
+      (
+        "copy"."assetId" is not null
+        and "asset"."type" = 'IMAGE'
+        and "asset"."visibility" != 'hidden'
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
+  ) as "copyPhotos",
+  count(*) filter (
+    where
+      (
+        "copy"."assetId" is not null
+        and "asset"."type" = 'VIDEO'
+        and "asset"."visibility" != 'hidden'
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
+  ) as "copyVideos",
+  coalesce(
+    sum(
+      COALESCE(asset_exif."fileSizeInByte", 0) + COALESCE(original.bytes, 0)
+    ) filter (
+      where
+        (
+          "asset"."libraryId" is null
+          and "copy"."assetId" is not null
+        )
+    ),
+    0
+  ) as "copyUsage",
+  coalesce(
+    sum(
+      COALESCE(asset_exif."fileSizeInByte", 0) + COALESCE(original.bytes, 0)
+    ) filter (
+      where
+        (
+          "asset"."libraryId" is null
+          and "asset"."type" = 'IMAGE'
+          and "copy"."assetId" is not null
+        )
+    ),
+    0
+  ) as "copyUsagePhotos",
+  coalesce(
+    sum(
+      COALESCE(asset_exif."fileSizeInByte", 0) + COALESCE(original.bytes, 0)
+    ) filter (
+      where
+        (
+          "asset"."libraryId" is null
+          and "asset"."type" = 'VIDEO'
+          and "copy"."assetId" is not null
+        )
+    ),
+    0
+  ) as "copyUsageVideos",
   (
     select
       max("session"."updatedAt") as "lastActiveAt"
@@ -687,6 +757,14 @@ from
     group by
       "original"."assetId"
   ) as "original" on "original"."assetId" = "asset"."id"
+  left join (
+    SELECT
+      origin."assetId"
+    FROM
+      public.asset_origin origin
+      JOIN public.asset source ON source.id = origin."sourceAssetId"
+      AND source."deletedAt" IS NULL
+  ) as "copy" on "copy"."assetId" = "asset"."id"
 group by
   "user"."id"
 order by

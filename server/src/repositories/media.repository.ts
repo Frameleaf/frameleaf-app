@@ -463,6 +463,8 @@ export class MediaRepository {
             dvBlSignalCompatibilityId: this.parseOptionalInt(
               stream.dv_bl_signal_compatibility_id,
             ) as DvSignalCompatibility | null,
+            // FL-968: flattened from the "Spherical Mapping" side data of an sv3d box
+            projection: typeof stream.projection === 'string' ? stream.projection : null,
           };
         }),
       audioStreams: results.streams
@@ -481,6 +483,14 @@ export class MediaRepository {
           sampleRate: this.parseOptionalInt(stream.sample_rate),
           duration: this.parseStreamDuration(stream),
           startTime: this.parseStartTime(stream.start_time),
+        })),
+      // FL-968: GoPro writes its telemetry as a `gpmd` data track named "GoPro MET"
+      dataStreams: results.streams
+        .filter((stream) => stream.codec_type === 'data')
+        .map((stream) => ({
+          index: stream.index,
+          codecTag: typeof stream.codec_tag_string === 'string' ? stream.codec_tag_string : null,
+          handlerName: typeof stream.tags?.handler_name === 'string' ? stream.tags.handler_name : null,
         })),
     };
   }

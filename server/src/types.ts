@@ -137,6 +137,11 @@ export interface VideoStreamInfo {
   dvLevel: number | null;
   dvBlSignalCompatibilityId: DvSignalCompatibility | null;
   /**
+   * FL-968: the projection a spherical-video (`sv3d`) box declares, as ffprobe names it
+   * (`equirectangular`, `cubemap`). Optional and additive: persisted metadata does not carry it.
+   */
+  projection?: string | null;
+  /**
    * FL-1285: set only by the playback-copy and thumbnail jobs, after they read the file's Log
    * markers: the generated LUT that turns this Log stream into Rec.709. Never persisted.
    */
@@ -153,6 +158,13 @@ export interface LogConversion {
   inputMatrix: 'bt709' | 'bt2020';
   /** The source's signal range, which the LUT was generated for. */
   inputRange: 'tv' | 'pc';
+}
+
+/** FL-968: a data track (telemetry, timecode), identified by its codec tag and handler name. */
+export interface DataStreamInfo {
+  index: number;
+  codecTag: string | null;
+  handlerName: string | null;
 }
 
 export interface AudioStreamInfo {
@@ -229,6 +241,8 @@ export interface VideoInfo {
   format: VideoFormat;
   videoStreams: VideoStreamInfo[];
   audioStreams: AudioStreamInfo[];
+  /** FL-968: data tracks, e.g. GoPro's GPMF telemetry. Optional and additive, like the fields above. */
+  dataStreams?: DataStreamInfo[];
 }
 
 export interface TranscodeCommand {

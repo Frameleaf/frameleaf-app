@@ -145,16 +145,17 @@ describe(SystemMetadataService.name, () => {
 
     it('totals the library across accounts', async () => {
       mocks.user.getUserStats.mockResolvedValue([
-        { userId: 'u1', photos: 10, videos: 2, usage: 1000 },
-        { userId: 'u2', photos: 5, videos: 0, usage: 500 },
+        { userId: 'u1', photos: 10, videos: 2, usage: 1000, copyPhotos: 0, copyVideos: 0, copyUsage: 0 },
+        // u2 holds partner copies of 3 of u1's photos, which count once
+        { userId: 'u2', photos: 5, videos: 0, usage: 500, copyPhotos: 3, copyVideos: 0, copyUsage: 300 },
       ] as never);
       mocks.person.getNumberOfPeople.mockResolvedValue({ total: 3, hidden: 0 });
       mocks.album.getAll.mockResolvedValue([{}, {}] as never);
       await expect(sut.getFrameleafSetupLibrary()).resolves.toEqual({
-        items: 17,
+        items: 14,
         people: 6,
         albums: 4,
-        bytes: 1500,
+        bytes: 1200,
         users: 2,
       });
     });
