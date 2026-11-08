@@ -2,14 +2,14 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import type { Kysely, Transaction } from 'kysely';
 import type { AlbumChangeRunResponseDto, AlbumChangeUndoResponseDto } from 'src/dtos/album-merge.dto.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type { DB } from 'src/schema/index.js';
 import type {
   AlbumChangeInput,
   AlbumChangeReversal,
   AlbumChangeRow,
 } from 'src/repositories/album-change-run.repository.js';
-import { AlbumOriginField } from 'src/repositories/partner-origin.repository.js';
+import type { DB } from 'src/schema/index.js';
 import { lockAlbumHierarchy } from 'src/repositories/album.repository.js';
+import { AlbumOriginField } from 'src/repositories/partner-origin.repository.js';
 import { AlbumChangeRunStatus } from 'src/schema/tables/album-change-run.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import { recordAlbumEdit } from 'src/services/partner-copy.service.js';
@@ -27,16 +27,23 @@ export type AlbumChangeReverser = (
 
 const reversers = new Map<string, AlbumChangeReverser>();
 
-/**
- * Undoes one kind of change. Parts of a run (merge, cleanup, date healing) register theirs when their
- * module loads, so a new kind needs nothing from the runner. Registered once per kind.
- */
+/** Sets the code that undoes one kind of change. Each kind has exactly one. */
 export const registerAlbumChangeReverser = (kind: string, reverser: AlbumChangeReverser): void => {
   if (reversers.has(kind)) {
     throw new Error(`Album change kind ${kind} already has a reverser`);
   }
   reversers.set(kind, reverser);
 };
+
+/**
+ * Marks a static method as the way to undo one kind of change, as `@OnJob` marks a job handler. Whatever writes
+ * a new kind (merge, cleanup, date healing) declares its reverser beside it and the runner needs no change.
+ */
+export const ReversesAlbumChange =
+  (kind: string) =>
+  <T extends AlbumChangeReverser>(_target: object, _key: string, descriptor: TypedPropertyDescriptor<T>): void => {
+    registerAlbumChangeReverser(kind, descriptor.value!);
+  };
 
 /** Consecutive changes of one kind, reversed together, in the order they will run. */
 const groupByKind = (changes: AlbumChangeRow[]): AlbumChangeRow[][] => {

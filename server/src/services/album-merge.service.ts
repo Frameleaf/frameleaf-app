@@ -2,17 +2,17 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import type { Transaction } from 'kysely';
 import type { AlbumMergeDto, AlbumMergePreviewResponseDto, AlbumMergeResponseDto } from 'src/dtos/album-merge.dto.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { AlbumChangeReversal, AlbumChangeRow } from 'src/repositories/album-change-run.repository.js';
 import type { DB } from 'src/schema/index.js';
 import { OnEvent } from 'src/decorators.js';
 import { asAlbumKind } from 'src/dtos/album.dto.js';
 import { AlbumKind, AlbumUserRole, FrameleafWorker, Permission } from 'src/enum.js';
-import type { AlbumChangeReversal } from 'src/repositories/album-change-run.repository.js';
 import { AlbumChangeKind, AlbumMergeRepository, type MergeAlbumRow } from 'src/repositories/album-merge.repository.js';
 import { AlbumSourceRepository } from 'src/repositories/album-source.repository.js';
 import { AlbumRepository, lockAlbumHierarchy } from 'src/repositories/album.repository.js';
 import { AlbumOriginField } from 'src/repositories/partner-origin.repository.js';
 import { AlbumChangeRunKind, AlbumChangeRunStatus } from 'src/schema/tables/album-change-run.table.js';
-import { AlbumChangeRunService, registerAlbumChangeReverser } from 'src/services/album-change-run.service.js';
+import { AlbumChangeRunService, ReversesAlbumChange } from 'src/services/album-change-run.service.js';
 import { BaseService } from 'src/services/base.service.js';
 import { recordAlbumEdit } from 'src/services/partner-copy.service.js';
 import { getHiddenContentQueryOptions, getOthersRulesQueryOptions } from 'src/utils/hidden-content.js';
@@ -38,93 +38,6 @@ const sharedWithOthers = (album: {
   sharedLinks: unknown[] | null | undefined;
 }) => album.albumUsers.some(({ role }) => role !== AlbumUserRole.Owner) || (album.sharedLinks?.length ?? 0) > 0;
 
-const parentReverser = async (
-  tx: Transaction<DB>,
-  changes: { albumId: string | null; before: unknown; after: unknown }[],
-) => {
-  let reversed = 0;
-  const skipped: string[] = [];
-  const repository = new AlbumRepository(tx);
-  for (const change of changes) {
-    if (!change.albumId) {
-      continue;
-    }
-    const album = await tx
-      .selectFrom('album')
-      .select(['albumName', 'parentId'])
-      .where('id', '=', change.albumId)
-      .where('deletedAt', 'is', null)
-      .forUpdate()
-      .executeTakeFirst();
-    if (!album) {
-      continue;
-    }
-    const { parentId: expected } = change.after as { parentId: string | null };
-    if (album.parentId !== expected) {
-      skipped.push(album.albumName);
-      continue;
-    }
-    const { parentId } = change.before as { parentId: string | null };
-    try {
-      await repository.reparentIn(tx, change.albumId, parentId);
-      reversed += 1;
-    } catch (error) {
-      // What it was moved back into no longer exists or now sits inside it.
-      if (!(error instanceof BadRequestException)) {
-        throw error;
-      }
-      skipped.push(album.albumName);
-    }
-  }
-  return { reversed, skipped } satisfies AlbumChangeReversal;
-};
-
-registerAlbumChangeReverser(AlbumChangeKind.ParentChanged, (tx, changes) => parentReverser(tx, changes));
-registerAlbumChangeReverser(AlbumChangeKind.AssetAdded, async (tx, changes) => ({
-  ...(await new AlbumMergeRepository(tx).reverseMemberships(changes)),
-  membershipAlbumIds: [...new Set(changes.flatMap(({ albumId }) => albumId ?? []))],
-}));
-registerAlbumChangeReverser(AlbumChangeKind.BookmarkAdded, (tx, changes) =>
-  new AlbumMergeRepository(tx).reverseBookmarks(changes),
-);
-registerAlbumChangeReverser(AlbumChangeKind.ActivityMoved, (tx, changes) =>
-  new AlbumMergeRepository(tx).reverseActivity(changes),
-);
-registerAlbumChangeReverser(AlbumChangeKind.ICloudAlbumMoved, (tx, changes) =>
-  new AlbumMergeRepository(tx).reverseICloudAlbums(changes),
-);
-registerAlbumChangeReverser(AlbumChangeKind.TakeoutFolderMoved, (tx, changes) =>
-  new AlbumMergeRepository(tx).reverseTakeoutFolders(changes),
-);
-registerAlbumChangeReverser(AlbumChangeKind.ChoiceMoved, (tx, changes) =>
-  new AlbumMergeRepository(tx).reverseChoices(changes),
-);
-registerAlbumChangeReverser(AlbumChangeKind.LockChanged, (tx, changes) =>
-  new AlbumMergeRepository(tx).reverseLock(changes),
-);
-registerAlbumChangeReverser(AlbumChangeKind.SoftDeleted, (tx, changes) =>
-  new AlbumMergeRepository(tx).reverseSoftDelete(changes),
-);
-registerAlbumChangeReverser(AlbumChangeKind.SourceLinkMoved, async (tx, changes) => {
-  const links = new AlbumSourceRepository(tx);
-  let reversed = 0;
-  const skipped: string[] = [];
-  for (const change of changes) {
-    const { linkId, name } = change.after as { linkId: string; name: string };
-    const { albumId: original } = change.before as { albumId: string };
-    if (!change.albumId) {
-      continue;
-    }
-    if (await links.moveBack(tx, linkId, change.albumId, original)) {
-      await links.restoreMemberships(tx, linkId, original);
-      reversed += 1;
-    } else {
-      skipped.push(name);
-    }
-  }
-  return { reversed, skipped } satisfies AlbumChangeReversal;
-});
-
 /**
  * FL-1298: "Merge with…". The server decides which album stays; the person sees which in the preview. Everything
  * happens in one transaction, so a restart half-way leaves neither a partial merge nor anything to resume, and
@@ -134,6 +47,109 @@ registerAlbumChangeReverser(AlbumChangeKind.SourceLinkMoved, async (tx, changes)
 export class AlbumMergeService extends BaseService {
   private get runs() {
     return BaseService.create(AlbumChangeRunService, this);
+  }
+
+  @ReversesAlbumChange(AlbumChangeKind.ParentChanged)
+  static async reverseParents(tx: Transaction<DB>, changes: AlbumChangeRow[]): Promise<AlbumChangeReversal> {
+    let reversed = 0;
+    const skipped: string[] = [];
+    const repository = new AlbumRepository(tx);
+    for (const change of changes) {
+      if (!change.albumId) {
+        continue;
+      }
+      const album = await tx
+        .selectFrom('album')
+        .select(['albumName', 'parentId'])
+        .where('id', '=', change.albumId)
+        .where('deletedAt', 'is', null)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!album) {
+        continue;
+      }
+      const { parentId: expected } = change.after as { parentId: string | null };
+      if (album.parentId !== expected) {
+        skipped.push(album.albumName);
+        continue;
+      }
+      const { parentId } = change.before as { parentId: string | null };
+      try {
+        await repository.reparentIn(tx, change.albumId, parentId);
+        reversed += 1;
+      } catch (error) {
+        // What it was moved back into no longer exists or now sits inside it.
+        if (!(error instanceof BadRequestException)) {
+          throw error;
+        }
+        skipped.push(album.albumName);
+      }
+    }
+    return { reversed, skipped };
+  }
+
+  @ReversesAlbumChange(AlbumChangeKind.AssetAdded)
+  static async reverseAssets(tx: Transaction<DB>, changes: AlbumChangeRow[]): Promise<AlbumChangeReversal> {
+    return {
+      ...(await new AlbumMergeRepository(tx).reverseMemberships(changes)),
+      membershipAlbumIds: [...new Set(changes.flatMap(({ albumId }) => albumId ?? []))],
+    };
+  }
+
+  @ReversesAlbumChange(AlbumChangeKind.BookmarkAdded)
+  static reverseBookmarks(tx: Transaction<DB>, changes: AlbumChangeRow[]): Promise<AlbumChangeReversal> {
+    return new AlbumMergeRepository(tx).reverseBookmarks(changes);
+  }
+
+  @ReversesAlbumChange(AlbumChangeKind.ActivityMoved)
+  static reverseActivity(tx: Transaction<DB>, changes: AlbumChangeRow[]): Promise<AlbumChangeReversal> {
+    return new AlbumMergeRepository(tx).reverseActivity(changes);
+  }
+
+  @ReversesAlbumChange(AlbumChangeKind.SourceLinkMoved)
+  static async reverseSourceLinks(tx: Transaction<DB>, changes: AlbumChangeRow[]): Promise<AlbumChangeReversal> {
+    const links = new AlbumSourceRepository(tx);
+    let reversed = 0;
+    const skipped: string[] = [];
+    for (const change of changes) {
+      if (!change.albumId) {
+        continue;
+      }
+      const { linkId, name } = change.after as { linkId: string; name: string };
+      const { albumId: original } = change.before as { albumId: string };
+      if (await links.moveBack(tx, linkId, change.albumId, original)) {
+        await links.restoreMemberships(tx, linkId, original);
+        reversed += 1;
+      } else {
+        skipped.push(name);
+      }
+    }
+    return { reversed, skipped };
+  }
+
+  @ReversesAlbumChange(AlbumChangeKind.ICloudAlbumMoved)
+  static reverseICloudAlbums(tx: Transaction<DB>, changes: AlbumChangeRow[]): Promise<AlbumChangeReversal> {
+    return new AlbumMergeRepository(tx).reverseICloudAlbums(changes);
+  }
+
+  @ReversesAlbumChange(AlbumChangeKind.TakeoutFolderMoved)
+  static reverseTakeoutFolders(tx: Transaction<DB>, changes: AlbumChangeRow[]): Promise<AlbumChangeReversal> {
+    return new AlbumMergeRepository(tx).reverseTakeoutFolders(changes);
+  }
+
+  @ReversesAlbumChange(AlbumChangeKind.ChoiceMoved)
+  static reverseChoices(tx: Transaction<DB>, changes: AlbumChangeRow[]): Promise<AlbumChangeReversal> {
+    return new AlbumMergeRepository(tx).reverseChoices(changes);
+  }
+
+  @ReversesAlbumChange(AlbumChangeKind.LockChanged)
+  static reverseLock(tx: Transaction<DB>, changes: AlbumChangeRow[]): Promise<AlbumChangeReversal> {
+    return new AlbumMergeRepository(tx).reverseLock(changes);
+  }
+
+  @ReversesAlbumChange(AlbumChangeKind.SoftDeleted)
+  static reverseSoftDelete(tx: Transaction<DB>, changes: AlbumChangeRow[]): Promise<AlbumChangeReversal> {
+    return new AlbumMergeRepository(tx).reverseSoftDelete(changes);
   }
 
   async getPreview(auth: AuthDto, id: string, otherId: string): Promise<AlbumMergePreviewResponseDto> {

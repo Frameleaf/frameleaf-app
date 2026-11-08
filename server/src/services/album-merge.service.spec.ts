@@ -2,7 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { AlbumKind, AlbumUserRole } from 'src/enum.js';
 import { AlbumMergeService, chooseMergeWinner } from 'src/services/album-merge.service.js';
 import { factory, newUuid } from 'test/small.factory.js';
-import { newTestService, ServiceMocks } from 'test/utils.js';
+import { ServiceMocks, newTestService } from 'test/utils.js';
 
 const older = { id: 'b-older', createdAt: new Date('2020-01-01T00:00:00Z') };
 const newer = { id: 'a-newer', createdAt: new Date('2024-01-01T00:00:00Z') };

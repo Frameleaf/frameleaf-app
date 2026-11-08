@@ -90,13 +90,6 @@ const newLink = async (ctx: Context, userId: string, albumId: string, sourceId =
   );
 };
 
-const claims = async (db: Kysely<DB>, linkId: string) =>
-  (
-    await sql<{ assetId: string; membershipUpdateId: string | null }>`
-      SELECT "assetId", "membershipUpdateId" FROM public.album_source_asset WHERE "linkId" = ${linkId}::uuid
-    `.execute(db)
-  ).rows;
-
 beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
 });

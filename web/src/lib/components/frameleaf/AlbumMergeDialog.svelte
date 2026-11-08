@@ -45,7 +45,7 @@
     albums
       .filter((item) => item.id !== album.id && (!needle || item.albumName.toLowerCase().includes(needle)))
       .map((item) => ({ item, same: sameAlbumName(item.albumName, album.albumName) }))
-      .toSorted((a, b) => Number(b.same) - Number(a.same) || a.item.albumName.localeCompare(b.item.albumName)),
+      .sort((a, b) => Number(b.same) - Number(a.same) || a.item.albumName.localeCompare(b.item.albumName)),
   );
   const shown = $derived(matches.slice(0, MAX_ROWS));
 

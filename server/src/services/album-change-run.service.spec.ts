@@ -3,7 +3,7 @@ import type { AlbumChangeRow, AlbumChangeRunRow } from 'src/repositories/album-c
 import { AlbumChangeRunKind, AlbumChangeRunStatus } from 'src/schema/tables/album-change-run.table.js';
 import { AlbumChangeRunService, registerAlbumChangeReverser } from 'src/services/album-change-run.service.js';
 import { factory } from 'test/small.factory.js';
-import { newTestService, ServiceMocks } from 'test/utils.js';
+import { ServiceMocks, newTestService } from 'test/utils.js';
 
 vi.mock('src/repositories/album.repository.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('src/repositories/album.repository.js')>()),
