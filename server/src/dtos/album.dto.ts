@@ -333,7 +333,7 @@ export const AlbumResponseSchema = z
       .boolean()
       .optional()
       .describe(
-        "True while this album's count and dates are still being worked out for this viewer; assetCount is 0 until then. Populated by GET /albums and GET /albums/tree.",
+        "True while this album's count and dates are still being worked out for this viewer; assetCount is 0 until then. Populated by the album lists: GET /albums, GET /albums/tree and GET /albums/hierarchy.",
       ),
     // FL-326
     origin: PartnerOriginSchema.optional().describe(

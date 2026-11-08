@@ -4347,7 +4347,7 @@ export type AlbumResponseDto = {
     sortOrder: number | null;
     /** Start date (earliest asset) */
     startDate?: string;
-    /** True while this album's count and dates are still being worked out for this viewer; assetCount is 0 until then. Populated by GET /albums and GET /albums/tree. */
+    /** True while this album's count and dates are still being worked out for this viewer; assetCount is 0 until then. Populated by the album lists: GET /albums, GET /albums/tree and GET /albums/hierarchy. */
     statsPending?: boolean;
     /** Last update date */
     updatedAt: string;

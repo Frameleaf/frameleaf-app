@@ -19,6 +19,7 @@ import {
   UserMetadataKey,
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
+import { AlbumSummaryRepository } from 'src/repositories/album-summary.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
@@ -81,6 +82,7 @@ afterAll(async () => {
 const real = [
   AccessRepository,
   AlbumRepository,
+  AlbumSummaryRepository,
   AssetRepository,
   ConfigRepository,
   PartnerOriginRepository,

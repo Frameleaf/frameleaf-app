@@ -5,6 +5,7 @@ import type { PersonService } from 'src/services/person.service.js';
 import type { PetService } from 'src/services/pet.service.js';
 import { AssetVisibility, SyncEntityType, SyncRequestType, UserMetadataKey } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
+import { AlbumSummaryRepository } from 'src/repositories/album-summary.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ClassificationRepository } from 'src/repositories/classification.repository.js';
@@ -37,6 +38,7 @@ const setup = async () => {
     real: [
       AccessRepository,
       AlbumRepository,
+      AlbumSummaryRepository,
       AssetRepository,
       ClassificationRepository,
       MapRepository,

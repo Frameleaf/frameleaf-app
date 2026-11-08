@@ -9,6 +9,7 @@ import { chunk } from 'lodash-es';
 import type { Kysely } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { SmartAlbumBuiltInKind } from 'src/dtos/system-config.dto.js';
+import type { AlbumSummary } from 'src/repositories/album-summary.repository.js';
 import type { AlbumMapMarkerSearchOptions } from 'src/repositories/map.repository.js';
 import type { DB } from 'src/schema/index.js';
 import { ALBUM_ICON_GROUPS, MDI_ICON_CATALOGUE_VERSION, MDI_ICON_NAMES } from 'src/constants/album-icons.js';
@@ -47,7 +48,6 @@ import {
   SharedSpaceEventType,
   SystemMetadataKey,
 } from 'src/enum.js';
-import type { AlbumSummary } from 'src/repositories/album-summary.repository.js';
 import { AlbumAssetCount, AlbumInfoOptions, AlbumReadOptions } from 'src/repositories/album.repository.js';
 import { AlbumOriginField, AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -193,9 +193,13 @@ export class AlbumService extends BaseService {
       }
     }
     if (computedAt.size > 0) {
-      const since = new Date(Math.min(...computedAt.values()) - SUMMARY_CHANGE_MARGIN_MS);
+      let oldest = now;
+      for (const time of computedAt.values()) {
+        oldest = Math.min(oldest, time);
+      }
+      const since = new Date(oldest - SUMMARY_CHANGE_MARGIN_MS);
       for (const { albumId, changedAt } of await this.albumSummaryRepository.getChangedAt(
-        [...computedAt.keys()],
+        computedAt.keys().toArray(),
         since,
       )) {
         if (millis(changedAt) >= computedAt.get(albumId)! - SUMMARY_CHANGE_MARGIN_MS) {

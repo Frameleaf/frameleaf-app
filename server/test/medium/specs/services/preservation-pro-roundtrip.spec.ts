@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AlbumKind, LibraryScope, UserMetadataKey } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
+import { AlbumSummaryRepository } from 'src/repositories/album-summary.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -72,6 +73,7 @@ it('round-trips Design originals, nested memberships, tag paths and sources thro
         AssetChecksumRepository,
         AccessRepository,
         AlbumRepository,
+        AlbumSummaryRepository,
         AssetRepository,
         SharedLinkRepository,
         UserRepository,

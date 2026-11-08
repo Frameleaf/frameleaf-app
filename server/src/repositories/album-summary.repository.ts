@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Selectable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { DummyValue, GenerateSql } from 'src/decorators.js';
 import type { AlbumAssetCount } from 'src/repositories/album.repository.js';
+import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { DB } from 'src/schema/index.js';
 import { AlbumSummaryTable } from 'src/schema/tables/album-summary.table.js';
 import { anyUuid } from 'src/utils/database.js';

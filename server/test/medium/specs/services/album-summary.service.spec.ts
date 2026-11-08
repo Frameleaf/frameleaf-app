@@ -93,7 +93,7 @@ describe('album summaries are kept per viewer (FL-1297)', () => {
     expect(seenByPlain.statsPending).toBeUndefined();
     expect((await firstAlbum(sut, elevated)).assetCount).toBe(2);
 
-    const counts = (await rowsOf(album.id)).map(({ assetCount }) => assetCount).toSorted();
+    const counts = (await rowsOf(album.id)).map(({ assetCount }) => assetCount).toSorted((a, b) => a - b);
     expect(counts).toEqual([1, 2]);
   });
 
@@ -149,6 +149,31 @@ describe('album summaries are stored and refreshed in the background (FL-1297)',
     const albums = (await sut.getTree(plain)).albums;
     expect(albums.map(({ assetCount }) => assetCount)).toEqual([0, 0]);
     expect(albums.every(({ statsPending }) => statsPending === undefined)).toBe(true);
+  });
+
+  it('stores the same dates the album page reads live', async () => {
+    const { ctx, sut } = setup();
+    const { user: owner } = await ctx.newUser();
+    const { asset: first } = await ctx.newAsset({
+      ownerId: owner.id,
+      localDateTime: new Date('2021-03-05T22:30:00.000Z'),
+    });
+    const { asset: last } = await ctx.newAsset({
+      ownerId: owner.id,
+      localDateTime: new Date('2021-07-09T01:15:00.000Z'),
+    });
+    const { album } = await ctx.newAlbum({ ownerId: owner.id }, [first.id, last.id]);
+    const { plain } = sessionsOf(owner.id);
+    await sut.getTree(plain);
+    await waitForRows(album.id, 1);
+
+    const listed = await firstAlbum(sut, plain);
+    const opened = await sut.get(plain, album.id);
+
+    expect(listed.startDate).toEqual(opened.startDate);
+    expect(listed.endDate).toEqual(opened.endDate);
+    expect(listed.lastModifiedAssetTimestamp).toEqual(opened.lastModifiedAssetTimestamp);
+    expect(listed.assetCount).toBe(2);
   });
 
   /** A row already stored for this person's plain session, as if a refresh had written it `age` ago. */

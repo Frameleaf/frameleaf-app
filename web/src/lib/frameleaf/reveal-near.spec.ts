@@ -28,8 +28,9 @@ describe(createNearbyReveal.name, () => {
     const { created, observe } = stubObserver();
     const scroller = document.createElement('div');
     scroller.style.overflowY = 'auto';
-    const first = scroller.appendChild(document.createElement('div'));
-    const second = scroller.appendChild(document.createElement('div'));
+    const first = document.createElement('div');
+    const second = document.createElement('div');
+    scroller.append(first, second);
     document.body.append(scroller);
 
     const { watch } = createNearbyReveal(vi.fn());

@@ -1640,9 +1640,10 @@ describe(AlbumService.name, () => {
       expect(mocks.albumSummary.upsert).not.toHaveBeenCalled();
       finish();
       await vi.waitFor(() => expect(mocks.albumSummary.upsert).toHaveBeenCalledTimes(3));
-      const stored = mocks.albumSummary.upsert.mock.calls.flatMap(([, , albumIds]) => albumIds);
+      const batches = mocks.albumSummary.upsert.mock.calls.map((call) => call[2]);
+      const stored = batches.flat();
       expect(stored.toSorted()).toEqual(ids.toSorted());
-      expect(mocks.albumSummary.upsert.mock.calls.every(([, , albumIds]) => albumIds.length <= 200)).toBe(true);
+      expect(batches.every((albumIds) => albumIds.length <= 200)).toBe(true);
     });
 
     it('never starts a second refresh of a viewer while one is running', async () => {

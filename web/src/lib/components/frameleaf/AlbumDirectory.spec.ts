@@ -691,7 +691,10 @@ describe('AlbumDirectory', () => {
         }),
       );
     };
-    const cell = (id: string) => document.querySelector<HTMLElement>(`[data-album-id="${id}"]:not(.shelf-tint)`)!;
+    const cell = (id: string) =>
+      [...document.querySelectorAll<HTMLElement>('[data-album-id]')].find(
+        (element) => element.dataset.albumId === id && !element.classList.contains('shelf-tint'),
+      )!;
     const placeholderIn = (id: string) => cell(id).querySelector('[data-testid="album-placeholder"]');
     const nearView = async (id: string, isIntersecting = true) => {
       notify([{ target: cell(id), isIntersecting }]);
