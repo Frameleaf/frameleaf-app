@@ -1,0 +1,576 @@
+import { BadRequestException, ConflictException } from '@nestjs/common';
+import { Kysely } from 'kysely';
+import type { AlbumCleanupOperation } from 'src/dtos/album-cleanup.dto.js';
+import { AlbumSourceKind, AlbumSourceOutcome } from 'src/dtos/album-source.dto.js';
+import { AlbumKind, AlbumUserRole, AssetLockReason, JobStatus, SharedLinkType } from 'src/enum.js';
+import { AccessRepository } from 'src/repositories/access.repository.js';
+import { AlbumChangeRunRepository } from 'src/repositories/album-change-run.repository.js';
+import { AlbumCleanupRepository } from 'src/repositories/album-cleanup.repository.js';
+import { AlbumSourceRepository } from 'src/repositories/album-source.repository.js';
+import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
+import { AlbumRepository } from 'src/repositories/album.repository.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { ClassificationRepository } from 'src/repositories/classification.repository.js';
+import { EventRepository } from 'src/repositories/event.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
+import { PartnerRepository } from 'src/repositories/partner.repository.js';
+import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
+import { DB } from 'src/schema/index.js';
+import { AlbumChangeRunStatus } from 'src/schema/tables/album-change-run.table.js';
+import { AlbumChangeRunService } from 'src/services/album-change-run.service.js';
+import { AlbumCleanupService } from 'src/services/album-cleanup.service.js';
+import { AlbumMergeService } from 'src/services/album-merge.service.js';
+import { AlbumSourceService } from 'src/services/album-source.service.js';
+import { BaseService } from 'src/services/base.service.js';
+import { newMediumService } from 'test/medium.factory.js';
+import { factory } from 'test/small.factory.js';
+import { getKyselyDB } from 'test/utils.js';
+
+let defaultDatabase: Kysely<DB>;
+
+const setup = (db?: Kysely<DB>) => {
+  const services = newMediumService(AlbumCleanupService, {
+    database: db || defaultDatabase,
+    real: [
+      AccessRepository,
+      AlbumChangeRunRepository,
+      AlbumCleanupRepository,
+      AlbumRepository,
+      AlbumSourceRepository,
+      AlbumUserRepository,
+      AssetRepository,
+      ClassificationRepository,
+      PartnerOriginRepository,
+      PartnerRepository,
+      SmartAlbumRepository,
+      UserRepository,
+    ],
+    mock: [EventRepository, JobRepository, LoggingRepository],
+  });
+  const jobs = services.ctx.getMock(JobRepository);
+  services.ctx.getMock(EventRepository).emit.mockResolvedValue();
+  jobs.queue.mockResolvedValue();
+  jobs.queueAll.mockResolvedValue();
+  jobs.queueInTransaction.mockResolvedValue();
+  return {
+    ...services,
+    runs: BaseService.create(AlbumChangeRunService, services.sut),
+    merges: BaseService.create(AlbumMergeService, services.sut),
+    sources: BaseService.create(AlbumSourceService, services.sut),
+    repository: services.ctx.get(AlbumCleanupRepository),
+    changeRuns: services.ctx.get(AlbumChangeRunRepository),
+  };
+};
+
+type Context = ReturnType<typeof setup>['ctx'];
+
+const elevated = (user: { id: string }) => factory.auth({ user: { id: user.id }, session: { hasElevatedPermission: true } });
+const plain = (user: { id: string }) => factory.auth({ user: { id: user.id } });
+
+const albumOf = async (ctx: Context, ownerId: string, albumName: string, count: number, dto: { createdAt?: Date } = {}) => {
+  const assets = await Promise.all(Array.from({ length: count }, () => ctx.newAsset({ ownerId })));
+  const assetIds = assets.map(({ asset }) => asset.id);
+  const { album } = await ctx.newAlbum({ ownerId, albumName, ...dto }, assetIds);
+  return { album, assetIds };
+};
+
+const lock = (ctx: Context, assetIds: string[], lockedBy: string) =>
+  ctx.database
+    .insertInto('asset_lock')
+    .values(assetIds.map((assetId) => ({ assetId, reason: AssetLockReason.Marked, lockedBy })))
+    .execute();
+
+const albumRow = (db: Kysely<DB>, id: string) =>
+  db.selectFrom('album').selectAll().where('id', '=', id).executeTakeFirstOrThrow();
+
+const members = async (db: Kysely<DB>, albumId: string) =>
+  (await db.selectFrom('album_asset').select('assetId').where('albumId', '=', albumId).execute())
+    .map(({ assetId }) => assetId)
+    .toSorted();
+
+/** Applies and runs the job the apply queued, as the worker would. */
+const applyNow = async (
+  sut: AlbumCleanupService,
+  auth: ReturnType<typeof plain>,
+  operations: AlbumCleanupOperation[],
+) => {
+  const { runId } = await sut.apply(auth, { operations });
+  await expect(sut.handleApply({ runId })).resolves.toBe(JobStatus.Success);
+  return runId;
+};
+
+const newLink = async (ctx: Context, userId: string, albumId: string, sourceId = 'phone-album') => {
+  const links = ctx.get(AlbumSourceRepository);
+  return links.write((tx) =>
+    links.create(tx, { userId, albumId, kind: AlbumSourceKind.IosPhotos, sourceId, deviceKey: null, name: sourceId }),
+  );
+};
+
+const collectionsOf = (db: Kysely<DB>, userId: string) =>
+  db
+    .selectFrom('album')
+    .innerJoin('album_user', 'album_user.albumId', 'album.id')
+    .select('album.id')
+    .where('album_user.userId', '=', userId)
+    .where('album.kind', '=', AlbumKind.Collection)
+    .where('album.deletedAt', 'is', null)
+    .execute();
+
+const runRow = (db: Kysely<DB>, id: string) =>
+  db.selectFrom('album_change_run').selectAll().where('id', '=', id).executeTakeFirstOrThrow();
+
+beforeAll(async () => {
+  defaultDatabase = await getKyselyDB();
+});
+
+describe(AlbumCleanupService.name, () => {
+  describe('scan', () => {
+    it('gives a session without the PIN nothing computed from Locked photos', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const open = await albumOf(ctx, user.id, 'Holiday', 2);
+      const mostlyLocked = await albumOf(ctx, user.id, 'Holiday', 5);
+      await lock(ctx, mostlyLocked.assetIds.slice(1), user.id);
+      await ctx.newExif({ assetId: mostlyLocked.assetIds[1], latitude: 20.8, longitude: -156.3, city: 'Lahaina' });
+      await ctx.newExif({ assetId: open.assetIds[0], latitude: 49.3, longitude: -122.8, city: 'Coquitlam' });
+
+      await sut.handleScan({ userId: user.id });
+
+      const { facts: ordinary } = await sut.getSnapshot(plain(user));
+      const { facts: full } = await sut.getSnapshot(elevated(user));
+
+      const ordinaryLocked = ordinary!.albums.find(({ id }) => id === mostlyLocked.album.id)!;
+      expect(ordinaryLocked).toMatchObject({ count: 1, gps: null });
+      expect(full!.albums.find(({ id }) => id === mostlyLocked.album.id)).toMatchObject({
+        count: 5,
+        gps: { city: 'Lahaina' },
+      });
+      expect(ordinary!.homeAreas.map(({ city }) => city)).toEqual(['Coquitlam']);
+      expect(full!.homeAreas.map(({ city }) => city).toSorted()).toEqual(['Coquitlam', 'Lahaina']);
+
+      // The winner comes from true counts in both, and is all a session without the PIN learns of them.
+      expect(ordinary!.sameName).toEqual([
+        expect.objectContaining({ winnerId: mostlyLocked.album.id, union: 3 }),
+      ]);
+      expect(full!.sameName).toEqual([expect.objectContaining({ winnerId: mostlyLocked.album.id, union: 7 })]);
+      expect(JSON.stringify(ordinary)).not.toContain('Lahaina');
+    });
+
+    it('leaves Locked photos out of the overlap a session without the PIN sees', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const first = await albumOf(ctx, user.id, 'First', 3);
+      const { album: second } = await ctx.newAlbum({ ownerId: user.id, albumName: 'Second' }, first.assetIds);
+      await lock(ctx, first.assetIds, user.id);
+
+      await sut.handleScan({ userId: user.id });
+
+      await expect(sut.getSnapshot(plain(user))).resolves.toMatchObject({ facts: { samePhotos: [] } });
+      await expect(sut.getSnapshot(elevated(user))).resolves.toMatchObject({
+        facts: { samePhotos: [expect.objectContaining({ union: 3, share: 1 })] },
+      });
+      expect(second.id).toBeDefined();
+    });
+
+    it('still gives a list for a person with no located photos and an empty album', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { album } = await ctx.newAlbum({ ownerId: user.id, albumName: 'Nothing here' }, []);
+
+      await sut.handleScan({ userId: user.id });
+
+      await expect(sut.getSnapshot(plain(user))).resolves.toMatchObject({
+        ready: true,
+        facts: {
+          albums: [{ id: album.id, count: 0, gps: null, span: null, coverAssetId: null }],
+          homeAreas: [],
+        },
+      });
+    });
+
+    it('reads only the top-level plain albums the person owns', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const { album: collection } = await ctx.newAlbum({ ownerId: user.id, albumName: 'Trips', kind: AlbumKind.Collection });
+      await ctx.newAlbum({ ownerId: user.id, albumName: 'Inside', parentId: collection.id });
+      await ctx.newAlbum({ ownerId: other.id, albumName: 'Theirs' });
+      const top = await albumOf(ctx, user.id, 'Mine', 1);
+
+      await sut.handleScan({ userId: user.id });
+
+      const { facts } = await sut.getSnapshot(plain(user));
+      expect(facts!.albums.map(({ id }) => id)).toEqual([top.album.id]);
+      expect(facts!.collections.map(({ id }) => id)).toEqual([collection.id]);
+    });
+
+    it('asks for a new scan when none has run, without blocking the answer', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      await expect(sut.getStatus(plain(user))).resolves.toMatchObject({ ready: false, apply: null });
+      expect(ctx.getMock(JobRepository).queue).toHaveBeenCalledWith({
+        name: 'AlbumCleanupScan',
+        data: { userId: user.id },
+      });
+    });
+  });
+
+  describe('validation', () => {
+    it('refuses an album that is not the person’s', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const theirs = await albumOf(ctx, other.id, 'Theirs', 1);
+      await expect(
+        sut.apply(plain(user), {
+          operations: [{ type: 'rename', albumId: theirs.album.id, name: 'Mine now' }],
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('merges a shared album only with the explicit flag', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { user: friend } = await ctx.newUser();
+      const a = await albumOf(ctx, user.id, 'Patrick', 2);
+      const b = await albumOf(ctx, user.id, 'Patrick', 1);
+      await ctx.newAlbumUser({ albumId: b.album.id, userId: friend.id, role: AlbumUserRole.Viewer });
+      const albumIds = [a.album.id, b.album.id];
+
+      await expect(
+        sut.apply(plain(user), { operations: [{ type: 'merge', albumIds }] }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      await expect(applyNow(sut, plain(user), [{ type: 'merge', albumIds, allowShared: true }])).resolves.toBeDefined();
+    });
+
+    it('refuses to remove a named or a shared album, and to combine a shared one', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const named = await albumOf(ctx, user.id, 'Holiday', 1);
+      const dated = await albumOf(ctx, user.id, 'May 24, 2020', 1);
+      const other = await albumOf(ctx, user.id, 'May 25, 2020', 1);
+      await ctx.database
+        .insertInto('shared_link')
+        .values({
+          userId: user.id,
+          albumId: dated.album.id,
+          key: Buffer.from('cleanup-link'),
+          type: SharedLinkType.Album,
+          allowUpload: false,
+        })
+        .execute();
+
+      for (const operation of [
+        { type: 'remove', albumId: named.album.id },
+        { type: 'remove', albumId: dated.album.id },
+        { type: 'combine', albumIds: [dated.album.id, other.album.id], name: 'Days' },
+      ] as AlbumCleanupOperation[]) {
+        await expect(sut.apply(plain(user), { operations: [operation] })).rejects.toBeInstanceOf(BadRequestException);
+      }
+    });
+
+    it('refuses a second cleanup while one is running', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const album = await albumOf(ctx, user.id, 'Holiday', 1);
+      const operations: AlbumCleanupOperation[] = [{ type: 'rename', albumId: album.album.id, name: 'One' }];
+      await sut.apply(plain(user), { operations });
+      await expect(sut.apply(plain(user), { operations })).rejects.toBeInstanceOf(ConflictException);
+    });
+  });
+
+  describe('apply', () => {
+    it('nests, renames, merges and combines, recording everything', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const big = await albumOf(ctx, user.id, 'Friends - Patrick', 3);
+      const small = await albumOf(ctx, user.id, 'Friends - Patrick', 1);
+      const dayOne = await albumOf(ctx, user.id, 'Coquitlam, May 24, 2020', 1);
+      const dayTwo = await albumOf(ctx, user.id, 'Coquitlam, May 25, 2020', 2);
+
+      const runId = await applyNow(sut, plain(user), [
+        { type: 'createCollection', tempId: 'friends', name: 'Friends', parentId: null },
+        { type: 'merge', albumIds: [small.album.id, big.album.id] },
+        { type: 'rename', albumId: big.album.id, name: 'Patrick' },
+        { type: 'move', albumId: big.album.id, parentTempId: 'friends' },
+        { type: 'combine', albumIds: [dayOne.album.id, dayTwo.album.id], name: 'Coquitlam, May 24–25, 2020' },
+      ]);
+
+      const parent = await albumRow(ctx.database, (await albumRow(ctx.database, big.album.id)).parentId!);
+      expect(parent).toMatchObject({ albumName: 'Friends', kind: AlbumKind.Collection });
+      await expect(albumRow(ctx.database, big.album.id)).resolves.toMatchObject({ albumName: 'Patrick' });
+      await expect(members(ctx.database, big.album.id)).resolves.toEqual(
+        [...big.assetIds, ...small.assetIds].toSorted(),
+      );
+      expect((await albumRow(ctx.database, small.album.id)).deletedAt).toBeInstanceOf(Date);
+      await expect(albumRow(ctx.database, dayTwo.album.id)).resolves.toMatchObject({
+        albumName: 'Coquitlam, May 24–25, 2020',
+      });
+      expect((await albumRow(ctx.database, dayOne.album.id)).deletedAt).toBeInstanceOf(Date);
+      await expect(runRow(ctx.database, runId)).resolves.toMatchObject({
+        status: AlbumChangeRunStatus.Done,
+        summary: { collections: 1, merged: 1, combined: 1, moved: 1, renamed: 2 },
+      });
+    });
+
+    it('reuses an existing collection of that name instead of making another', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { album: existing } = await ctx.newAlbum({
+        ownerId: user.id,
+        albumName: 'Trips',
+        kind: AlbumKind.Collection,
+      });
+      const album = await albumOf(ctx, user.id, 'Disney', 1);
+
+      await applyNow(sut, plain(user), [
+        { type: 'createCollection', tempId: 'trips', name: 'trips', parentId: null },
+        { type: 'move', albumId: album.album.id, parentTempId: 'trips' },
+      ]);
+
+      await expect(albumRow(ctx.database, album.album.id)).resolves.toMatchObject({ parentId: existing.id });
+      await expect(collectionsOf(ctx.database, user.id)).resolves.toHaveLength(1);
+    });
+
+    it('keeps the photos when an album is removed', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const dated = await albumOf(ctx, user.id, 'May 24, 2020', 2);
+      const runId = await applyNow(sut, plain(user), [{ type: 'remove', albumId: dated.album.id }]);
+
+      expect((await albumRow(ctx.database, dated.album.id)).deletedAt).toBeInstanceOf(Date);
+      for (const id of dated.assetIds) {
+        await expect(
+          ctx.database.selectFrom('asset').select('id').where('id', '=', id).where('deletedAt', 'is', null).execute(),
+        ).resolves.toHaveLength(1);
+      }
+      await expect(runRow(ctx.database, runId)).resolves.toMatchObject({ summary: { removed: 1 } });
+    });
+  });
+
+  describe('a run that stops partway (Review Focus 3)', () => {
+    it('keeps what it did, then resumes without repeating it', async () => {
+      const { sut, ctx, repository, changeRuns, runs } = setup();
+      const { user } = await ctx.newUser();
+      const first = await albumOf(ctx, user.id, 'First', 1);
+      const second = await albumOf(ctx, user.id, 'Second', 1);
+      const third = await albumOf(ctx, user.id, 'Third', 1);
+      const auth = plain(user);
+      const { runId } = await sut.apply(auth, {
+        operations: [
+          { type: 'rename', albumId: first.album.id, name: 'First renamed' },
+          { type: 'rename', albumId: second.album.id, name: 'Second renamed' },
+          { type: 'rename', albumId: third.album.id, name: 'Third renamed' },
+        ],
+      });
+
+      // The process dies after the first change commits: nothing gets to mark the run failed.
+      const original = repository.advanceApply.bind(repository);
+      const advance = vi
+        .spyOn(repository, 'advanceApply')
+        .mockImplementationOnce(original)
+        .mockImplementationOnce(() => Promise.reject(new Error('process died')));
+      const finish = vi.spyOn(changeRuns, 'finishRun').mockResolvedValue();
+      await expect(sut.handleApply({ runId })).rejects.toThrow('process died');
+      advance.mockRestore();
+      finish.mockRestore();
+
+      await expect(albumRow(ctx.database, first.album.id)).resolves.toMatchObject({ albumName: 'First renamed' });
+      await expect(albumRow(ctx.database, second.album.id)).resolves.toMatchObject({ albumName: 'Second' });
+      await expect(runRow(ctx.database, runId)).resolves.toMatchObject({ status: AlbumChangeRunStatus.Running });
+      await expect(runs.getLatest(auth)).resolves.toMatchObject({ run: { canUndo: false } });
+
+      await expect(sut.handleApply({ runId })).resolves.toBe(JobStatus.Success);
+
+      await expect(albumRow(ctx.database, second.album.id)).resolves.toMatchObject({ albumName: 'Second renamed' });
+      await expect(albumRow(ctx.database, third.album.id)).resolves.toMatchObject({ albumName: 'Third renamed' });
+      await expect(runRow(ctx.database, runId)).resolves.toMatchObject({
+        status: AlbumChangeRunStatus.Done,
+        summary: { renamed: 3 },
+      });
+      await expect(
+        ctx.database.selectFrom('album_change').select('seq').where('runId', '=', runId).execute(),
+      ).resolves.toHaveLength(3);
+
+      await runs.undoLatest(auth);
+      await expect(albumRow(ctx.database, first.album.id)).resolves.toMatchObject({ albumName: 'First' });
+      await expect(albumRow(ctx.database, third.album.id)).resolves.toMatchObject({ albumName: 'Third' });
+    });
+
+    it('stays undoable when the run fails', async () => {
+      const { sut, ctx, repository, runs } = setup();
+      const { user } = await ctx.newUser();
+      const first = await albumOf(ctx, user.id, 'First', 1);
+      const second = await albumOf(ctx, user.id, 'Second', 1);
+      const auth = plain(user);
+      const { runId } = await sut.apply(auth, {
+        operations: [
+          { type: 'rename', albumId: first.album.id, name: 'First renamed' },
+          { type: 'rename', albumId: second.album.id, name: 'Second renamed' },
+        ],
+      });
+
+      const original = repository.advanceApply.bind(repository);
+      const advance = vi
+        .spyOn(repository, 'advanceApply')
+        .mockImplementationOnce(original)
+        .mockImplementationOnce(() => Promise.reject(new Error('boom')));
+      await expect(sut.handleApply({ runId })).rejects.toThrow('boom');
+      advance.mockRestore();
+
+      await expect(runRow(ctx.database, runId)).resolves.toMatchObject({ status: AlbumChangeRunStatus.Failed });
+      await expect(runs.getLatest(auth)).resolves.toMatchObject({ run: { canUndo: true } });
+      await runs.undoLatest(auth);
+      await expect(albumRow(ctx.database, first.album.id)).resolves.toMatchObject({ albumName: 'First' });
+    });
+  });
+
+  describe('Undo after a later edit (Review Focus 4)', () => {
+    it('leaves the later rename alone, takes back the rest, and reports what it skipped', async () => {
+      const { sut, ctx, runs } = setup();
+      const { user } = await ctx.newUser();
+      const album = await albumOf(ctx, user.id, 'Friends - Patrick', 2);
+      const other = await albumOf(ctx, user.id, 'Friends - Sarah', 1);
+      const auth = plain(user);
+      await applyNow(sut, auth, [
+        { type: 'createCollection', tempId: 'friends', name: 'Friends', parentId: null },
+        { type: 'rename', albumId: album.album.id, name: 'Patrick' },
+        { type: 'move', albumId: album.album.id, parentTempId: 'friends' },
+        { type: 'rename', albumId: other.album.id, name: 'Sarah' },
+        { type: 'move', albumId: other.album.id, parentTempId: 'friends' },
+      ]);
+      await ctx.database
+        .updateTable('album')
+        .set({ albumName: 'Pat, my friend' })
+        .where('id', '=', album.album.id)
+        .execute();
+
+      const outcome = await runs.undoLatest(auth);
+
+      expect(outcome.skipped).toEqual(['Pat, my friend']);
+      await expect(albumRow(ctx.database, album.album.id)).resolves.toMatchObject({
+        albumName: 'Pat, my friend',
+        parentId: null,
+      });
+      await expect(albumRow(ctx.database, other.album.id)).resolves.toMatchObject({
+        albumName: 'Friends - Sarah',
+        parentId: null,
+      });
+      await expect(collectionsOf(ctx.database, user.id)).resolves.toHaveLength(0);
+    });
+
+    it('keeps a collection the person has since put something else in', async () => {
+      const { sut, ctx, runs } = setup();
+      const { user } = await ctx.newUser();
+      const album = await albumOf(ctx, user.id, 'Disney', 1);
+      const later = await albumOf(ctx, user.id, 'Added by hand', 1);
+      const auth = plain(user);
+      await applyNow(sut, auth, [
+        { type: 'createCollection', tempId: 'trips', name: 'Trips', parentId: null },
+        { type: 'move', albumId: album.album.id, parentTempId: 'trips' },
+      ]);
+      const { parentId } = await albumRow(ctx.database, album.album.id);
+      await ctx.get(AlbumRepository).reparent(later.album.id, parentId);
+
+      const outcome = await runs.undoLatest(auth);
+
+      expect(outcome.skipped).toEqual(['Trips']);
+      await expect(albumRow(ctx.database, parentId!)).resolves.toMatchObject({ deletedAt: null });
+    });
+  });
+
+  describe('a phone sync after a cleanup (Review Focus 5)', () => {
+    it('does not bring back a removed album, and answers the phone without an error', async () => {
+      const { sut, ctx, sources, runs } = setup();
+      const { user } = await ctx.newUser();
+      const dated = await albumOf(ctx, user.id, 'May 24, 2020', 1);
+      const linkId = await newLink(ctx, user.id, dated.album.id, 'May 24, 2020');
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const auth = plain(user);
+      const source = { kind: AlbumSourceKind.IosPhotos, sourceId: 'May 24, 2020', name: 'May 24, 2020' };
+
+      await applyNow(sut, auth, [{ type: 'remove', albumId: dated.album.id }]);
+
+      const { links } = await sources.resolve(auth, { sources: [source] });
+      expect(links).toEqual([expect.objectContaining({ id: linkId, outcome: AlbumSourceOutcome.Existing })]);
+      await expect(
+        ctx.database
+          .selectFrom('album')
+          .select('id')
+          .where('id', '!=', dated.album.id)
+          .where('albumName', '=', 'May 24, 2020')
+          .where('deletedAt', 'is', null)
+          .where(({ exists, selectFrom }) =>
+            exists(
+              selectFrom('album_user')
+                .select('album_user.albumId')
+                .whereRef('album_user.albumId', '=', 'album.id')
+                .where('album_user.userId', '=', user.id),
+            ),
+          )
+          .execute(),
+      ).resolves.toHaveLength(0);
+      await expect(sources.addAssets(auth, linkId, { ids: [asset.id] })).resolves.toEqual([
+        expect.objectContaining({ id: asset.id, success: false, error: 'duplicate' }),
+      ]);
+      await expect(members(ctx.database, dated.album.id)).resolves.toEqual(dated.assetIds);
+
+      await runs.undoLatest(auth);
+
+      await expect(albumRow(ctx.database, dated.album.id)).resolves.toMatchObject({ deletedAt: null });
+      await expect(sources.resolve(auth, { sources: [source] })).resolves.toMatchObject({
+        links: [{ id: linkId, albumId: dated.album.id, outcome: AlbumSourceOutcome.Existing }],
+      });
+      await expect(sources.addAssets(auth, linkId, { ids: [asset.id] })).resolves.toEqual([
+        expect.objectContaining({ id: asset.id, success: true }),
+      ]);
+    });
+
+    it('keeps the marker once the Undo window has passed, so the album still stays gone', async () => {
+      const { sut, ctx, sources, runs } = setup();
+      const { user } = await ctx.newUser();
+      const dated = await albumOf(ctx, user.id, 'Jun 2, 2020', 1);
+      const plainDated = await albumOf(ctx, user.id, 'Jun 3, 2020', 1);
+      const linkId = await newLink(ctx, user.id, dated.album.id, 'Jun 2');
+      const auth = plain(user);
+      const runId = await applyNow(sut, auth, [
+        { type: 'remove', albumId: dated.album.id },
+        { type: 'remove', albumId: plainDated.album.id },
+      ]);
+      await ctx.database
+        .updateTable('album_change_run')
+        .set({ createdAt: new Date(Date.now() - 31 * 86_400_000) })
+        .where('id', '=', runId)
+        .execute();
+
+      await runs.purgeExpiredRuns();
+
+      await expect(
+        ctx.database.selectFrom('album').select('id').where('id', '=', plainDated.album.id).execute(),
+      ).resolves.toHaveLength(0);
+      await expect(
+        sources.resolve(auth, { sources: [{ kind: AlbumSourceKind.IosPhotos, sourceId: 'Jun 2', name: 'Jun 2, 2020' }] }),
+      ).resolves.toMatchObject({ links: [{ id: linkId, outcome: AlbumSourceOutcome.Existing }] });
+    });
+
+    it('follows a merged-away album to the album that stayed', async () => {
+      const { sut, ctx, sources } = setup();
+      const { user } = await ctx.newUser();
+      const big = await albumOf(ctx, user.id, 'Summer', 2);
+      const small = await albumOf(ctx, user.id, 'Summer', 1);
+      const linkId = await newLink(ctx, user.id, small.album.id, 'phone-summer');
+      const auth = plain(user);
+
+      await applyNow(sut, auth, [{ type: 'merge', albumIds: [big.album.id, small.album.id] }]);
+
+      await expect(
+        sources.resolve(auth, {
+          sources: [{ kind: AlbumSourceKind.IosPhotos, sourceId: 'phone-summer', name: 'Summer' }],
+        }),
+      ).resolves.toMatchObject({ links: [{ id: linkId, albumId: big.album.id, outcome: AlbumSourceOutcome.Existing }] });
+    });
+  });
+});

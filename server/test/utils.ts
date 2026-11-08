@@ -24,6 +24,7 @@ import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
 import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
 import { AlbumChangeRunRepository } from 'src/repositories/album-change-run.repository.js';
+import { AlbumCleanupRepository } from 'src/repositories/album-cleanup.repository.js';
 import { AlbumSourceRepository } from 'src/repositories/album-source.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
@@ -342,6 +343,7 @@ export type ServiceOverrides = {
   itemShare: ItemShareRepository;
   albumSource: AlbumSourceRepository;
   albumChangeRun: AlbumChangeRunRepository;
+  albumCleanup: AlbumCleanupRepository;
   stack: StackRepository;
   storage: StorageRepository;
   sync: SyncRepository;
@@ -460,6 +462,7 @@ export const getMocks = () => {
     itemShare: automock(ItemShareRepository, { strict: false }),
     albumSource: automock(AlbumSourceRepository, { strict: false }),
     albumChangeRun: automock(AlbumChangeRunRepository, { strict: false }),
+    albumCleanup: automock(AlbumCleanupRepository, { strict: false }),
     stack: automock(StackRepository),
     storage: newStorageRepositoryMock(),
     sync: automock(SyncRepository),
@@ -622,6 +625,7 @@ export const newTestService = <T extends BaseService>(
     overrides.itemShare || (mocks.itemShare as As<ItemShareRepository>),
     overrides.albumSource || (mocks.albumSource as As<AlbumSourceRepository>),
     overrides.albumChangeRun || (mocks.albumChangeRun as As<AlbumChangeRunRepository>),
+    overrides.albumCleanup || (mocks.albumCleanup as As<AlbumCleanupRepository>),
     overrides.stack || (mocks.stack as As<StackRepository>),
     overrides.storage || (mocks.storage as As<StorageRepository>),
     overrides.sync || (mocks.sync as As<SyncRepository>),

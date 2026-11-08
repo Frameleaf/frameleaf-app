@@ -145,6 +145,7 @@ describe(TakeoutWorkerService.name, () => {
       retryFailedPairs: vi.fn().mockResolvedValue(0),
       getAssetState: vi.fn().mockResolvedValue(assetState()),
       getAlbumFor: vi.fn().mockResolvedValue(undefined),
+      isFolderAlbumRemoved: vi.fn().mockResolvedValue(false),
       setAlbumFor: vi.fn((_owner: string, _folder: string, id: string) => Promise.resolve(id)),
     };
     staging = {

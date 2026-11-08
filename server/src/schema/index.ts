@@ -41,6 +41,8 @@ import { AlbumAssetTable } from 'src/schema/tables/album-asset.table.js';
 import { AlbumAuditTable } from 'src/schema/tables/album-audit.table.js';
 import { AlbumBookmarkTable } from 'src/schema/tables/album-bookmark.table.js';
 import { AlbumChangeRunTable } from 'src/schema/tables/album-change-run.table.js';
+import { AlbumCleanupApplyTable } from 'src/schema/tables/album-cleanup-apply.table.js';
+import { AlbumCleanupSnapshotTable } from 'src/schema/tables/album-cleanup-snapshot.table.js';
 import { AlbumChangeTable } from 'src/schema/tables/album-change.table.js';
 import { AlbumClosureTable } from 'src/schema/tables/album-closure.table.js';
 import {
@@ -332,6 +334,8 @@ export class ImmichDatabase {
     AlbumBookmarkTable,
     AlbumChangeRunTable,
     AlbumChangeTable,
+    AlbumCleanupApplyTable,
+    AlbumCleanupSnapshotTable,
     BookmarkTagTable,
     AssetSourceTable,
     ActivityTable,
@@ -616,6 +620,8 @@ export interface DB extends QueueDatabase {
   album_bookmark: AlbumBookmarkTable;
   album_change_run: AlbumChangeRunTable;
   album_change: AlbumChangeTable;
+  album_cleanup_apply: AlbumCleanupApplyTable;
+  album_cleanup_snapshot: AlbumCleanupSnapshotTable;
   bookmark_tag: BookmarkTagTable;
   asset_source: AssetSourceTable;
   asset_lock: AssetLockTable;

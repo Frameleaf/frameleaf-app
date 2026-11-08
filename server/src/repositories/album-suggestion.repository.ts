@@ -25,7 +25,7 @@ const UNDATED_NEIGHBOURS = 20;
 export const MAX_HEAL_PHOTOS = 50_000;
 
 /** Names that show a photo was saved or received rather than taken: Facebook, WhatsApp, Messenger. */
-const SAVED_NAME = String.raw`^(FB_IMG_\d{13}|(IMG|VID)-\d{8}-WA\d+|received_\d+)`;
+export const SAVED_NAME = String.raw`^(FB_IMG_\d{13}|(IMG|VID)-\d{8}-WA\d+|received_\d+)`;
 
 /** Personal-library media on the timeline, not trashed, Locked or hidden by its owner's rules. */
 const suggestible = (alias: string) => sql<boolean>`(

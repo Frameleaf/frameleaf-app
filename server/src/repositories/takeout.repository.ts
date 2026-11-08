@@ -1026,6 +1026,16 @@ export class TakeoutRepository {
     `.execute(this.db);
     return rows[0]?.albumId;
   }
+  /** FL-1300: the album this folder became was removed on purpose by the person, so a later import leaves it gone. */
+  async isFolderAlbumRemoved(ownerId: string, folder: string): Promise<boolean> {
+    const { rows } = await sql`
+      select 1
+      from takeout_album mapping
+      inner join album on album.id = mapping."albumId" and album."deletedAt" is not null
+      where mapping."ownerId" = ${ownerId}::uuid and mapping.folder = ${folder}
+    `.execute(this.db);
+    return rows.length > 0;
+  }
   /**
    * Record the album a folder became, unless another run recorded a usable one first: the album that
    * is recorded is returned, and the caller removes its own when it lost. A mapping whose album was

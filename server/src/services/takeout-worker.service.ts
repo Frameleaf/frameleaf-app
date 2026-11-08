@@ -113,7 +113,7 @@ type TakeoutRun = {
   total: number | null;
   lastWrite: number;
   result: ImportResult;
-  albums: Map<string, string>;
+  albums: Map<string, string | null>;
   heartbeat?: Promise<void>;
 };
 
@@ -815,6 +815,9 @@ export class TakeoutWorkerService {
         continue;
       }
       const albumId = await this.albumFor(run, folder);
+      if (!albumId) {
+        continue;
+      }
       const [outcome] = await this.albums.addAssets(auth, albumId, { ids: [asset.id] });
       if (outcome && !outcome.success && outcome.error !== BulkIdErrorReason.DUPLICATE) {
         throw new TakeoutItemError(`Album membership for “${path.posix.basename(folder)}” could not be restored`);
@@ -931,14 +934,18 @@ export class TakeoutWorkerService {
     return update;
   }
 
-  /** The album a folder becomes: the one an earlier import made, or a new one. */
-  private async albumFor(run: TakeoutRun, folder: string): Promise<string> {
+  /** The album a folder becomes: the one an earlier import made, a new one, or nothing if the person removed it. */
+  private async albumFor(run: TakeoutRun, folder: string): Promise<string | null> {
     const cached = run.albums.get(folder);
-    if (cached) {
+    if (cached !== undefined) {
       return cached;
     }
     let albumId = await this.repository.getAlbumFor(run.row.ownerId, folder);
     if (!albumId) {
+      if (await this.repository.isFolderAlbumRemoved(run.row.ownerId, folder)) {
+        run.albums.set(folder, null);
+        return null;
+      }
       const album = await this.albums.create(run.auth, { albumName: path.posix.basename(folder).slice(0, 255) });
       albumId = await this.repository.setAlbumFor(run.row.ownerId, folder, album.id);
       if (albumId !== album.id) {

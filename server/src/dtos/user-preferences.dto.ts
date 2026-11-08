@@ -13,6 +13,7 @@ const AlbumsUpdateSchema = z
   .object({
     defaultAssetOrder: AssetOrderSchema.optional(),
     showPartnerAlbums: z.boolean().optional().describe('Whether albums a partner shared appear in the album list'),
+    cleanupBannerDismissed: z.boolean().optional().describe('The Magic Albums cleanup banner has been dismissed'),
   })
   .optional()
   .describe('Album preferences')
@@ -281,6 +282,7 @@ const AlbumsResponseSchema = z
   .object({
     defaultAssetOrder: AssetOrderSchema,
     showPartnerAlbums: z.boolean().describe('Whether albums a partner shared appear in the album list'),
+    cleanupBannerDismissed: z.boolean().describe('The Magic Albums cleanup banner has been dismissed'),
   })
   .meta({ id: 'AlbumsResponse' });
 

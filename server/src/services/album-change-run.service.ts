@@ -8,6 +8,7 @@ import type {
   AlbumChangeRow,
 } from 'src/repositories/album-change-run.repository.js';
 import type { DB } from 'src/schema/index.js';
+import { JobName } from 'src/enum.js';
 import { lockAlbumHierarchy } from 'src/repositories/album.repository.js';
 import { AlbumOriginField } from 'src/repositories/partner-origin.repository.js';
 import { AlbumChangeRunStatus } from 'src/schema/tables/album-change-run.table.js';
@@ -136,6 +137,8 @@ export class AlbumChangeRunService extends BaseService {
     });
 
     await this.afterUndo([...touched], [...membership]);
+    // The albums are back, so what the review would offer has changed.
+    await this.jobRepository.queue({ name: JobName.AlbumCleanupScan, data: { userId: auth.user.id } });
     return outcome;
   }
 
