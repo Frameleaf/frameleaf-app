@@ -216,6 +216,8 @@ const RAW_EXTENSIONS: ReadonlySet<string> = new Set([
   'iiq',
   'k25',
   'kdc',
+  'mef',
+  'mos',
   'mrw',
   'nef',
   'nrw',

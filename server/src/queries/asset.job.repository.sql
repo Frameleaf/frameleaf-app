@@ -173,7 +173,7 @@ where
           "assetId" = "asset"."id"
           and "type" = 'fullsize'
       )
-      and f_unaccent (asset."originalFileName") like any (
+      and f_unaccent (asset."originalFileName") ilike any (
         array[
           '%.3fr',
           '%.ari',
@@ -190,6 +190,8 @@ where
           '%.iiq',
           '%.k25',
           '%.kdc',
+          '%.mef',
+          '%.mos',
           '%.mrw',
           '%.nef',
           '%.nrw',
@@ -205,7 +207,9 @@ where
           '%.srf',
           '%.srw',
           '%.x3f',
+          '%.hdr',
           '%.heic',
+          '%.heics',
           '%.heif',
           '%.hif',
           '%.insp',
@@ -213,6 +217,11 @@ where
           '%.jpe',
           '%.jxl',
           '%.mpo',
+          '%.pbm',
+          '%.pfm',
+          '%.pgm',
+          '%.pnm',
+          '%.ppm',
           '%.svg',
           '%.tif',
           '%.tiff'

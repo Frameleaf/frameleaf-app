@@ -5,6 +5,8 @@ import {
   type AssetMediaResponseDto,
   type UserAdminResponseDto,
 } from '@frameleaf/sdk';
+import { toastManager } from '@frameleaf/ui';
+import { addMessages } from 'svelte-i18n';
 import { get } from 'svelte/store';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
@@ -16,6 +18,27 @@ import { UploadState } from '$lib/types';
 import * as utils from '$lib/utils';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { cancelRemainingUploads, fileUploadHandler, retryFailedUploads, uploadExecutionQueue } from './file-uploader';
+
+describe('unsupported files', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(uploadManager, 'getExtensions').mockReturnValue(['.jpg']);
+    uploadAssetsStore.reset();
+    addMessages('dev', { unsupported_file_type: '{file}|{type}' });
+  });
+
+  it('names the extension when the browser reports no file type', async () => {
+    const warning = vi.spyOn(toastManager, 'warning').mockImplementation(() => undefined as never);
+
+    await fileUploadHandler({
+      files: [new File(['x'], 'A001.braw'), new File(['x'], 'scan.tga', { type: 'image/x-tga' })],
+    });
+
+    expect(warning).toHaveBeenCalledWith('A001.braw|.braw', { timeout: 10_000 });
+    expect(warning).toHaveBeenCalledWith('scan.tga|image/x-tga', { timeout: 10_000 });
+    expect(get(uploadAssetsStore)).toHaveLength(0);
+  });
+});
 
 describe('fileUploader error handling', () => {
   const mockFile = new File(['content'], 'test.jpg', { type: 'image/jpeg' });
