@@ -188,7 +188,10 @@ export class ICloudTransportRepository {
 
     const url = new URL(`http://127.0.0.1:${port}/`);
     for (let attempt = 0; attempt < 50 && running; attempt++) {
-      const ready = await fetch(new URL('/health', url), { headers: { authorization: `Bearer ${token}` } })
+      const ready = await fetch(new URL('/health', url), {
+        headers: { authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(1000),
+      })
         .then((response) => response.ok)
         .catch(() => false);
       if (ready) {
