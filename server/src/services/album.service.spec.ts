@@ -1726,6 +1726,45 @@ describe(AlbumService.name, () => {
       expect(mocks.albumSummary.getByIds).not.toHaveBeenCalled();
     });
 
+    it('leaves out partner albums only when the account turned them off', async () => {
+      const auth = AuthFactory.create();
+      const partnerAlbum = newUuid();
+      mocks.album.getAll.mockResolvedValue([]);
+      mocks.partnerOrigin.getPartnerAlbumIds.mockResolvedValue([partnerAlbum]);
+
+      await sut.getTree(auth);
+      expect(mocks.album.getAll).toHaveBeenLastCalledWith(auth.user.id, { libraryScope: LibraryScope.Personal });
+
+      mocks.user.getMetadata.mockResolvedValue([
+        { key: UserMetadataKey.Preferences, value: { albums: { showPartnerAlbums: false } } },
+      ]);
+      await sut.getTree(auth);
+      expect(mocks.album.getAll).toHaveBeenLastCalledWith(auth.user.id, {
+        libraryScope: LibraryScope.Personal,
+        excludeIds: [partnerAlbum],
+      });
+    });
+
+    it('clears the parent of a visible album whose partner collection is turned off', async () => {
+      const hiddenCollection = newUuid();
+      const child = AlbumFactory.from({ parentId: hiddenCollection }).build();
+      const { user: owner } = child.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      mocks.album.getAll.mockResolvedValue([getForAlbum(child)]);
+      mocks.album.getMetadataForIds.mockResolvedValue([]);
+      mocks.smartAlbum.getSmartBackedAlbumKinds.mockResolvedValue(new Map());
+      mocks.album.getBookmarkCounts.mockResolvedValue(new Map());
+      mocks.album.getPositions.mockResolvedValue(new Map());
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([hiddenCollection]));
+      mocks.partnerOrigin.getPartnerAlbumIds.mockResolvedValue([hiddenCollection]);
+      mocks.user.getMetadata.mockResolvedValue([
+        { key: UserMetadataKey.Preferences, value: { albums: { showPartnerAlbums: false } } },
+      ]);
+
+      const tree = await sut.getTree(AuthFactory.create(owner));
+
+      expect(tree.albums.map(({ id, parentId }) => ({ id, parentId }))).toEqual([{ id: child.id, parentId: null }]);
+    });
+
     it('lists only what the user owns or is shared with, shaped as shelves, albums and spaces', async () => {
       const collection = AlbumFactory.from({ albumName: 'Family', kind: AlbumKind.Collection }).build();
       const { user: owner } = collection.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
@@ -1898,6 +1937,25 @@ describe(AlbumService.name, () => {
       expect(mocks.album.getPositions).toHaveBeenCalledWith(auth.user.id);
       expect(tree.collections[0].albums.map(({ id }) => id)).toEqual([second.id, first.id]);
       expect(tree.albums.map(({ id }) => id)).toEqual([sharedWithMe.id, loose.id]);
+    });
+
+    it('keeps a partner album the person turned off out of the group, so the order still saves', async () => {
+      const { auth, loose, sharedWithMe } = setup();
+      const partnerAlbum = newUuid();
+      mocks.partnerOrigin.getPartnerAlbumIds.mockResolvedValue([partnerAlbum]);
+      mocks.user.getMetadata.mockResolvedValue([
+        { key: UserMetadataKey.Preferences, value: { albums: { showPartnerAlbums: false } } },
+      ]);
+      const validate = mocks.album.setPositions.getMockImplementation()!;
+      mocks.album.setPositions.mockImplementation((userId, albumIds, check) =>
+        validate(userId, albumIds, (rows) =>
+          check?.([...rows, { id: partnerAlbum, kind: AlbumKind.Album, parentId: null }]),
+        ),
+      );
+
+      await expect(
+        sut.setOrder(auth, { parentId: null, albumIds: [sharedWithMe.id, loose.id] }),
+      ).resolves.toBeUndefined();
     });
 
     it('saves the order of the albums inside a collection for this person only', async () => {

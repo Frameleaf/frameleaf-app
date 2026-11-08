@@ -17,7 +17,7 @@ import { getHiddenContentQueryOptions, getOthersRulesQueryOptions } from 'src/ut
 
 import { withoutStoredLockedRuleIds } from 'src/utils/preferences.js';
 import { ClientDisconnectedError, waitForDrain } from 'src/utils/response.js';
-import { SerializeOptions, fromAck, mapSyncAssetV2, serialize, toAck } from 'src/utils/sync.js';
+import { SerializeOptions, fromAck, mapSyncAssetV2, serialize, toAck, withPartnerOrigin } from 'src/utils/sync.js';
 
 const parseAssetBootstrapAck = (ack: string, type = SyncEntityType.AssetBootstrapV1) => {
   const parts = ack.split('|');
@@ -681,7 +681,7 @@ export class SyncService extends BaseService {
           type: SyncEntityType.AlbumV3,
           ackType: bootstrapType,
           ids: [watermark, cursor],
-          data: { ...data, description: data.description ?? '' },
+          data: withPartnerOrigin({ ...data, description: data.description ?? '' }),
         });
       }
       await sendEntityBackfillCompleteAck(response, bootstrapType, watermark);
@@ -702,7 +702,7 @@ export class SyncService extends BaseService {
       await send(response, {
         type: upsertType,
         ids: [updateId, data.id],
-        data: { ...data, description: data.description ?? '' },
+        data: withPartnerOrigin({ ...data, description: data.description ?? '' }),
       });
     }
   }

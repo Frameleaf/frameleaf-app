@@ -34,13 +34,20 @@ export const serialize = <T extends keyof SyncItem, D extends SyncItem[T]>({
 }: SerializeOptions<T, D>) =>
   mapJsonLine({ type, data, ack: toAck({ type: ackType ?? type, updateId: ids[0], extraId: ids[1] }) });
 
-type AssetLike = Omit<SyncAssetV2, 'checksum' | 'thumbhash'> & {
+type AssetLike = Omit<SyncAssetV2, 'checksum' | 'thumbhash' | 'partnerOriginOwnerId'> & {
   checksum: Buffer<ArrayBufferLike>;
   thumbhash: Buffer<ArrayBufferLike> | null;
+  partnerOriginOwnerId?: string | null;
 };
 
+/** Only a partner copy carries the field, so every other row stays byte for byte what older clients know. */
+export const withPartnerOrigin = <T extends { partnerOriginOwnerId?: string | null }>({
+  partnerOriginOwnerId,
+  ...row
+}: T) => ({ ...row, ...(partnerOriginOwnerId ? { partnerOriginOwnerId } : {}) });
+
 export const mapSyncAssetV2 = ({ checksum, thumbhash, ...data }: AssetLike): SyncAssetV2 => ({
-  ...data,
+  ...withPartnerOrigin(data),
   checksum: hexOrBufferToBase64(checksum),
   thumbhash: thumbhash ? hexOrBufferToBase64(thumbhash) : null,
 });

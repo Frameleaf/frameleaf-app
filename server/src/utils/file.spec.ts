@@ -309,7 +309,7 @@ describe('sending an encrypted Locked file (FL-721)', () => {
           new FileDownloadResponse({
             path,
             contentType: 'image/jpeg',
-            cacheControl: CacheControl.PrivateWithoutCache,
+            cacheControl: CacheControl.PrivateWithCache,
             viewerId,
           }),
         logger,
@@ -341,6 +341,26 @@ describe('sending an encrypted Locked file (FL-721)', () => {
   afterEach(async () => {
     lockedKeys.clear();
     await rm(directory, { recursive: true, force: true });
+  });
+
+  it('never lets a decrypted file be stored, whatever the route asked for', async () => {
+    const whole = await request(app()).get('/file').expect(200);
+    expect(whole.headers['cache-control']).toBe('private, no-store');
+    const part = await request(app()).get('/file').set('Range', 'bytes=0-99').expect(206);
+    expect(part.headers['cache-control']).toBe('private, no-store');
+  });
+
+  it('never lets a temporary plain copy be stored, and leaves other files as the route asked', async () => {
+    path = join(directory, 'plain.jpg');
+    const ordinary = await request(app()).get('/file').expect(200);
+    expect(ordinary.headers['cache-control']).toContain('max-age=86400');
+    vi.stubEnv('FRAMELEAF_LOCKED_TMP', directory);
+    try {
+      const copy = await request(app()).get('/file').expect(200);
+      expect(copy.headers['cache-control']).toBe('private, no-store');
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('Range: bytes=100-199 gives 206, Content-Range and exactly those bytes', async () => {
