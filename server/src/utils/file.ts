@@ -14,6 +14,7 @@ import {
   RangeNotSatisfiableError,
   assertLockedReadable,
   isLockedPath,
+  isPlainCopyPath,
   lockedKeyHttpException,
   openLockedRead,
 } from 'src/utils/locked-read.js';
@@ -118,7 +119,12 @@ export const sendFile = async (
     }
 
     const path = file.path;
-    if (await isLockedPath(path)) {
+    const sealed = await isLockedPath(path);
+    if (sealed || isPlainCopyPath(path)) {
+      // Decrypted bytes (a sealed file, or a temporary file made from one) never go into a disk cache.
+      res.header('Cache-Control', 'private, no-store');
+    }
+    if (sealed) {
       return await sendLockedFile(res, path, file.viewerId === undefined ? requestViewer(res) : file.viewerId);
     }
     const options: SendFileOptions = { dotfiles: 'allow' };
