@@ -992,6 +992,25 @@ describe('AlbumDirectory', () => {
       expect(onRefresh).toHaveBeenCalledTimes(21);
     });
 
+    it('gives an album the full wait when it starts waiting again', async () => {
+      vi.useFakeTimers();
+      const onRefresh = vi.fn();
+      const another = owned({ id: 'another', albumName: 'Another', assetCount: 0, statsPending: true });
+      const { rerender } = renderWithTooltips(AlbumDirectory, { tree: flatTree(pendingAlbum, another), onRefresh });
+      await tick();
+      await rerender(wrapped(flatTree(pendingAlbum), onRefresh));
+      for (let attempt = 0; attempt < 25; attempt++) {
+        await vi.advanceTimersByTimeAsync(3000);
+        await rerender(wrapped(flatTree(pendingAlbum), onRefresh));
+      }
+      expect(onRefresh).toHaveBeenCalledTimes(20);
+
+      await rerender(wrapped(flatTree(pendingAlbum, another), onRefresh));
+      await vi.advanceTimersByTimeAsync(3000);
+
+      expect(onRefresh).toHaveBeenCalledTimes(21);
+    });
+
     it('never asks when nothing is waiting', async () => {
       vi.useFakeTimers();
       const onRefresh = vi.fn();
