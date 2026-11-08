@@ -449,7 +449,7 @@ dl.ac-stats {
   color: var(--fl-canvas);
 }
 .ac-tabs small {
-  margin-left: 4px;
+  margin-inline-start: 4px;
   font-size: var(--fl-font-small);
   opacity: 0.7;
 }
@@ -661,7 +661,7 @@ button.ac-chevron:hover {
   color: var(--fl-text);
 }
 .ac-subtabs small {
-  margin-left: 4px;
+  margin-inline-start: 4px;
   font-size: var(--fl-font-small);
   opacity: 0.7;
 }
@@ -809,7 +809,7 @@ button.ac-chevron:hover {
 .ac-done .ac-art {
   width: 100%;
   margin-bottom: 16px;
-  text-align: left;
+  text-align: start;
 }
 .ac-done h1 {
   margin: 0;
@@ -841,7 +841,7 @@ button.ac-chevron:hover {
   background: none;
   color: var(--fl-text);
   font: inherit;
-  text-align: left;
+  text-align: start;
   cursor: pointer;
 }
 .ac-picker button:hover {
@@ -962,7 +962,7 @@ button.ac-chevron:hover {
   }
   .ac-heal-dates {
     flex: 1 1 100%;
-    padding-left: 52px;
+    padding-inline-start: 52px;
   }
   .ac-section-head button {
     justify-content: center;
@@ -993,11 +993,10 @@ button.ac-chevron:hover {
     display: none;
   }
   .ac-row {
-    padding-left: calc(8px + var(--depth, 0) * 16px);
-    padding-right: 8px;
+    padding-inline: calc(8px + var(--depth, 0) * 16px) 8px;
   }
   .ac-more {
-    padding-left: calc(32px + var(--depth, 0) * 16px);
+    padding-inline-start: calc(32px + var(--depth, 0) * 16px);
   }
   /* The page area already stops above the floating tab bar; this sits just clear of it. */
   .ac-footer {

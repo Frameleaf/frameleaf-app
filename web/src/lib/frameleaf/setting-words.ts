@@ -200,6 +200,7 @@ export const PREFERENCE_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   'trash.reuploadUntil': { label: 'frameleaf_prefs_look_reupload' },
   'people.suggestInSpaces': { label: 'frameleaf_sharing_suggest_spaces' },
   'albums.showPartnerAlbums': { label: 'frameleaf_sharing_partner_albums' },
+  'albums.cleanupBannerDismissed': { label: 'frameleaf_album_cleanup_banner_setting' },
   'emailNotifications.enabled': { label: 'frameleaf_notify_yours_send' },
   'emailNotifications.albumInvite': { label: 'frameleaf_notify_yours_shares' },
   'emailNotifications.albumUpdate': { label: 'frameleaf_notify_yours_updates' },

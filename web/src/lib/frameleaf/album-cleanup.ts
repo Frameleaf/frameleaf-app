@@ -354,7 +354,9 @@ const refresh = (node: PlanNode): PlanNode => {
   if (node.kind === 'album') {
     return node;
   }
-  for (const child of node.children) {refresh(child);}
+  for (const child of node.children) {
+    refresh(child);
+  }
   node.children.sort((a, b) => (a.kind === b.kind ? byName(a, b) : a.kind === 'collection' ? -1 : 1));
   node.albumCount = node.children.reduce((sum, child) => sum + child.albumCount, 0);
   node.photoCount = node.children.reduce((sum, child) => sum + child.photoCount, 0);
@@ -561,7 +563,9 @@ export const buildPlan = (facts: AlbumCleanupFactsDto, options: PlanOptions = {}
     if (skipped) {
       return;
     }
-    for (const album of members) {inTrip.add(album.id);}
+    for (const album of members) {
+      inTrip.add(album.id);
+    }
     tripAlbums.push({
       ...largestOf(members),
       name,
@@ -625,7 +629,9 @@ export const buildPlan = (facts: AlbumCleanupFactsDto, options: PlanOptions = {}
     if (skipped) {
       return;
     }
-    for (const album of members) {absorbedDays.add(album.id);}
+    for (const album of members) {
+      absorbedDays.add(album.id);
+    }
     combined.push({
       ...largestOf(members),
       name,
@@ -836,10 +842,14 @@ export const buildPlan = (facts: AlbumCleanupFactsDto, options: PlanOptions = {}
     const match = existingUnder.get(`${parentId ?? ''}>${albumNameKey(node.name)}`)?.[0];
     node.existing = !!match;
     node.existingId = match?.id;
-    for (const child of node.children) {markExisting(child, match?.id ?? `new:${node.id}`);}
+    for (const child of node.children) {
+      markExisting(child, match?.id ?? `new:${node.id}`);
+    }
   };
   structure = structure.map((node) => refresh(node));
-  for (const node of structure) {markExisting(node, null);}
+  for (const node of structure) {
+    markExisting(node, null);
+  }
   structure = structure.sort((a, b) => b.albumCount - a.albumCount || byName(a, b));
   untouched = untouched.sort(byName);
 
@@ -968,8 +978,12 @@ export const operationsFor = (plan: CleanupPlan): AlbumCleanupOperationDto[] => 
       name: namedLeaves.get(carrier.id) ?? run.name,
     });
   };
-  for (const run of plan.dayRuns) {combineOf(run);}
-  for (const trip of plan.trips) {combineOf(trip);}
+  for (const run of plan.dayRuns) {
+    combineOf(run);
+  }
+  for (const trip of plan.trips) {
+    combineOf(trip);
+  }
 
   const place = (nodes: PlanNode[], parentTempId: string | undefined) => {
     for (const node of nodes) {

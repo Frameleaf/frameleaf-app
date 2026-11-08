@@ -623,7 +623,7 @@
         name={$t('frameleaf_album_cleanup_care_name')}
         detail={lastCleanup
           ? $t('frameleaf_album_cleanup_care_detail_done', {
-              values: { when: whenShort(new Date(lastCleanup.createdAt)) },
+              values: { when: when(new Date(lastCleanup.createdAt)) },
             })
           : $t('frameleaf_album_cleanup_care_detail')}
         tone={cleanup?.ready && cleanup.suggestionCount > 0 ? 'good' : 'off'}
@@ -636,12 +636,14 @@
           : undefined}
       >
         {#snippet action()}
-          {#if lastCleanup?.canUndo}
-            <Button disabled={undoingCleanup} onclick={undoCleanup}>{$t('frameleaf_album_cleanup_care_undo')}</Button>
-          {/if}
-          <Button label={openLabel('frameleaf_album_cleanup_care_name')} onclick={() => goto(Route.albumCleanup())}>
-            {$t('frameleaf_carehome_open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden />
-          </Button>
+          <span class="cleanup-actions">
+            {#if lastCleanup?.canUndo}
+              <Button disabled={undoingCleanup} onclick={undoCleanup}>{$t('frameleaf_album_cleanup_care_undo')}</Button>
+            {/if}
+            <Button label={openLabel('frameleaf_album_cleanup_care_name')} onclick={() => goto(Route.albumCleanup())}>
+              {$t('frameleaf_carehome_open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden />
+            </Button>
+          </span>
         {/snippet}
       </Item>
       {#if isAdmin}
@@ -688,3 +690,12 @@
     </Section>
   {/if}
 </KitPage>
+
+<style>
+  .cleanup-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--fl-space-2);
+    justify-content: flex-end;
+  }
+</style>

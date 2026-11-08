@@ -512,7 +512,9 @@
 >
   {#if tab !== 'lost'}
     <p class="lead">
-      {$t('frameleaf_album_suggestions_lead', { values: { album: albumName, span: tripSpan, places } })}
+      {places
+        ? $t('frameleaf_album_suggestions_lead', { values: { album: albumName, span: tripSpan, places } })
+        : $t('frameleaf_album_suggestions_lead_no_places', { values: { album: albumName, span: tripSpan } })}
     </p>
   {/if}
   {#if alert}

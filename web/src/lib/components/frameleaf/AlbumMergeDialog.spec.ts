@@ -138,7 +138,7 @@ describe('AlbumMergeDialog', () => {
 
     await pick(/Beach/);
 
-    expect(screen.getByText(/People “Friends - Patrick” is shared with lose access/)).toHaveTextContent(
+    expect(screen.getByText(/The people “Friends - Patrick” is shared with lose access/)).toHaveTextContent(
       'its public links stop working',
     );
   });

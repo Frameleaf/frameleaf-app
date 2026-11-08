@@ -2730,6 +2730,7 @@
   "frameleaf_album_cleanup_banner_body": "We found {combined} albums to combine, {filed} that can be filed by name or location, and {lost} photos that lost their date. You choose what changes, and you can undo it.",
   "frameleaf_album_cleanup_banner_dismiss_failed": "That couldn't be saved. Please try again.",
   "frameleaf_album_cleanup_banner_dismissed": "You can find these suggestions in Library Care.",
+  "frameleaf_album_cleanup_banner_setting": "Hide the Magic Albums cleanup banner on Albums",
   "frameleaf_album_cleanup_banner_title": "Turn {before} albums into {after} tidy places",
   "frameleaf_album_cleanup_care_detail": "Merge duplicates and nest albums by their names",
   "frameleaf_album_cleanup_care_detail_done": "Tidied {when}. New suggestions will show here.",
@@ -2933,6 +2934,7 @@
   "frameleaf_album_lost_dates_around": "Around {date}",
   "frameleaf_album_lost_dates_between": "Between {before} and {after}",
   "frameleaf_album_lost_dates_body": "Magic Albums can give them a date from the rest of this album.",
+  "frameleaf_album_lost_dates_dialog_title": "Photos that lost their date",
   "frameleaf_album_lost_dates_from_album": "From the album's other photos",
   "frameleaf_album_lost_dates_heal_all": "Heal all {count, number}",
   "frameleaf_album_lost_dates_heal_failed": "Couldn't heal these dates.",
@@ -2954,7 +2956,7 @@
   "frameleaf_album_merge_confirm_title": "Merge these albums?",
   "frameleaf_album_merge_keeps": "Keeps name and icon",
   "frameleaf_album_merge_locked": "The merged album won’t be locked, because only one of these is. Photos that are locked stay locked.",
-  "frameleaf_album_merge_loser_shared": "People “{loser}” is shared with lose access and aren’t added to “{winner}”, and its public links stop working.",
+  "frameleaf_album_merge_loser_shared": "The people “{loser}” is shared with lose access and aren’t added to “{winner}”, and its public links stop working.",
   "frameleaf_album_merge_more": "Showing the first {count}. Search to find the rest.",
   "frameleaf_album_merge_no_match": "No albums match.",
   "frameleaf_album_merge_photos": "{count, plural, one {# photo} other {# photos}}",
@@ -3022,6 +3024,7 @@
   "frameleaf_album_suggestions_file_date_saved": "(when it was saved or received, not when it was taken)",
   "frameleaf_album_suggestions_label": "Suggested photos",
   "frameleaf_album_suggestions_lead": "{album} covers {span} around {places}. These photos from your library aren't in the album yet. Nothing changes until you choose.",
+  "frameleaf_album_suggestions_lead_no_places": "{album} covers {span}. These photos from your library aren't in the album yet. Nothing changes until you choose.",
   "frameleaf_album_suggestions_likely": "Very likely",
   "frameleaf_album_suggestions_likely_hint": "Taken during the trip, at the trip's places.",
   "frameleaf_album_suggestions_likely_taken": "Likely taken",
@@ -19825,6 +19828,5 @@
   "zero_to_clear_rating": "press 0 to clear asset rating",
   "zoom_image": "Zoom Image",
   "zoom_in": "Zoom in",
-  "zoom_out": "Zoom out",
-  "frameleaf_album_lost_dates_dialog_title": "Photos that lost their date"
+  "zoom_out": "Zoom out"
 }

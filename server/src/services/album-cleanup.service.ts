@@ -583,9 +583,10 @@ export class AlbumCleanupService extends BaseService {
         throw new BadRequestException('Every parent must be one of your collections');
       }
     };
+    const merged = new Set<string>();
     const claim = (id: string) => {
-      if (claimed.has(id)) {
-        throw new BadRequestException('An album cannot be merged or removed twice');
+      if (merged.has(id) || claimed.has(id)) {
+        throw new BadRequestException('An album cannot be removed twice, or merged and removed');
       }
       claimed.add(id);
     };
@@ -626,8 +627,9 @@ export class AlbumCleanupService extends BaseService {
           if (operation.type === 'combine' && !operation.name) {
             throw new BadRequestException('Combined albums need a name');
           }
+          // Merges chain: an album merged by name can then be combined with its neighbours.
           for (const id of members) {
-            claim(id);
+            merged.add(id);
           }
           break;
         }
@@ -718,8 +720,10 @@ export class AlbumCleanupService extends BaseService {
   }
 
   private finish({ runId, tally }: ApplyContext, status: AlbumChangeRunStatus): Promise<void> {
+    // The summary can be read without the PIN. `lockedHealed` is how many Locked photos were touched, so it stays here.
+    const { lockedHealed: _lockedHealed, ...summary } = tally;
     return this.albumChangeRunRepository.transaction((tx) =>
-      this.albumChangeRunRepository.finishRun(tx, runId, status, { ...tally }),
+      this.albumChangeRunRepository.finishRun(tx, runId, status, summary),
     );
   }
 
@@ -795,9 +799,9 @@ export class AlbumCleanupService extends BaseService {
       albums: [{ albumId: operation.albumId!, assetIds: operation.assetIds ?? [] }],
     });
     const healed = await this.heals.healInto(tx, context.auth, context.runId, plan);
-    // The summary can be read without the PIN, so it counts only what such a session may know of.
-    add(context.tally, 'healed', healed.filter(({ isLocked }) => !isLocked).length);
-    add(context.tally, 'changes', healed.length);
+    const locked = healed.filter(({ isLocked }) => isLocked).length;
+    add(context.tally, 'healed', healed.length - locked);
+    add(context.tally, 'lockedHealed', locked);
   }
 
   private async applyCreateCollection(tx: Transaction<DB>, context: ApplyContext, operation: AlbumCleanupOperation) {

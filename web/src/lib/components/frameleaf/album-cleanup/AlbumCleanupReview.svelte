@@ -700,7 +700,7 @@
                   <small>{example}</small>
                 </label>
               {/each}
-              {#each delimiters.filter((token) => OFFERED_DELIMITERS.every((item) => item.token !== token)) as token (token)}
+              {#each delimiters.filter( (token) => OFFERED_DELIMITERS.every((item) => item.token !== token) ) as token (token)}
                 <label class="ac-delim on">
                   <input type="checkbox" checked onchange={() => toggleDelimiter(token)} />
                   <b>{token}</b>

@@ -325,6 +325,24 @@ describe(AlbumCleanupService.name, () => {
       });
     });
 
+    it('merges by name and then combines the result with the next day', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const first = await albumOf(ctx, user.id, 'Coquitlam, May 24, 2020', 3);
+      const copy = await albumOf(ctx, user.id, 'Coquitlam, May 24, 2020', 1);
+      const next = await albumOf(ctx, user.id, 'Coquitlam, May 25, 2020', 1);
+
+      await applyNow(sut, plain(user), [
+        { type: 'merge', albumIds: [first.album.id, copy.album.id] },
+        { type: 'combine', albumIds: [first.album.id, next.album.id], name: 'Coquitlam, May 24–25, 2020' },
+      ]);
+
+      await expect(albumRow(ctx.database, first.album.id)).resolves.toMatchObject({
+        albumName: 'Coquitlam, May 24–25, 2020',
+      });
+      await expect(members(ctx.database, first.album.id)).resolves.toHaveLength(5);
+    });
+
     it('reuses an existing collection of that name instead of making another', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();
@@ -386,7 +404,9 @@ describe(AlbumCleanupService.name, () => {
           .where('id', '=', lostPhoto.id)
           .executeTakeFirstOrThrow();
       expect((await taken()).fileCreatedAt.getUTCFullYear()).toBe(2019);
-      await expect(runRow(ctx.database, runId)).resolves.toMatchObject({ summary: { healed: 1, renamed: 1 } });
+      const { summary } = await runRow(ctx.database, runId);
+      expect(summary).toMatchObject({ healed: 1, renamed: 1 });
+      expect(summary).not.toHaveProperty('lockedHealed');
 
       await runs.undoLatest(auth);
       expect((await taken()).fileCreatedAt.getUTCFullYear()).toBe(2023);
