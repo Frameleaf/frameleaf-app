@@ -100,4 +100,21 @@ describe('CloudJobDialog: photo upscale under the 64 MP output cap (FC-46)', () 
     await screen.findByText('Upscale · Standard');
     expect(screen.queryByTestId('cloud-job-upscale')).toBeNull();
   });
+  it('prices through estimateWith, and says when the dialog closes with nothing sent (FL-1304)', async () => {
+    const estimateWith = vi.fn().mockResolvedValue(estimate(null));
+    const onDismissed = vi.fn();
+    const { rerender } = render(CloudJobDialog, {
+      open: true,
+      title: 'Captions on Frameleaf Cloud',
+      workName: 'Captions',
+      summary: 'Lake.mov',
+      estimateWith,
+      onDismissed,
+    });
+    expect(await screen.findByText(/Captions · Lake\.mov/)).toBeInTheDocument();
+    expect(estimateWith).toHaveBeenCalledWith(null);
+    expect(sdkMock.estimateCloudMlJob).not.toHaveBeenCalled();
+    await rerender({ open: false });
+    expect(onDismissed).toHaveBeenCalledOnce();
+  });
 });

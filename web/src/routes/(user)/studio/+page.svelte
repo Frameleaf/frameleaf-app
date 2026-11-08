@@ -102,6 +102,9 @@
     studioCaptionLanguageTracks,
     studioCaptionSidecarName,
   } from '$lib/frameleaf/studio/caption-languages';
+  import { createCloudCaptionServices, type StudioCloudCaptionRequest } from '$lib/frameleaf/studio/cloud-captions';
+  import CloudJobDialog from '$lib/components/frameleaf/cloud/CloudJobDialog.svelte';
+  import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
   import { createStudioLibraryServices } from '$lib/frameleaf/studio/library-search';
   import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
@@ -124,6 +127,10 @@
     isHttpError,
     StudioExportSubtitleMode,
     translateStudioCaptions,
+    estimateStudioTranscription,
+    getStudioTranscription,
+    listMlDestinations,
+    MlDestinationKind,
     type StudioRestoredVersionDto,
   } from '@frameleaf/sdk';
   import {
@@ -922,6 +929,40 @@
     },
     personThumbnailUrl: (id) => getPeopleThumbnailUrl({ id } as PersonResponseDto),
   });
+  /** The clip being priced for Frameleaf Cloud captions (FL-1304). */
+  let cloudCaptions = $state<{
+    request: StudioCloudCaptionRequest;
+    destinationId: string;
+    resolve: (id: string | null) => void;
+  } | null>(null);
+  let cloudCaptionsOpen = $state(false);
+
+  const confirmCloudCaptions = async (request: StudioCloudCaptionRequest) => {
+    const destination = (await listMlDestinations()).find((item) => item.kind === MlDestinationKind.FrameleafCloud);
+    if (!destination) {
+      getCloudManager.open('processing');
+      return null;
+    }
+    cloudCaptions?.resolve(null);
+    return new Promise<string | null>((resolve) => {
+      cloudCaptions = { request, destinationId: destination.id, resolve };
+      cloudCaptionsOpen = true;
+    });
+  };
+
+  const estimateCloudCaptions = (modelSku: string | null) => {
+    const { request, destinationId } = cloudCaptions!;
+    return estimateStudioTranscription({
+      id: project.id,
+      studioTranscriptionEstimateDto: {
+        clipId: request.clipId,
+        language: request.language,
+        destinationId,
+        ...(modelSku && { modelSku }),
+      },
+    });
+  };
+
   const services: StudioHostServices = {
     ...libraryServices,
     resolveStudioProjectSource: resolveSource,
@@ -1066,6 +1107,13 @@
       });
       return { lines };
     },
+    // FL-1304: captions on Frameleaf Cloud, with the price shown first.
+    ...createCloudCaptionServices({
+      projectId: project.id,
+      save: () => session.flush(),
+      confirm: confirmCloudCaptions,
+      read: (transcriptionId) => getStudioTranscription({ id: project.id, transcriptionId }),
+    }),
     // The editor's own Export control opens the same dialog as the header's (FL-106).
     requestExport: () => {
       if (canExportVideo) {
@@ -1679,6 +1727,18 @@
   `accessLost` also covers a project this account can no longer read, so the forbidden state is
   shown and the engine disposed.
 -->
+{#if cloudCaptions}
+  <CloudJobDialog
+    bind:open={cloudCaptionsOpen}
+    title={$t('frameleaf_studio_cloud_captions_title')}
+    workName={$t('frameleaf_cloud_job_work_captions')}
+    summary={cloudCaptions.request.name}
+    estimateWith={estimateCloudCaptions}
+    onSubmitted={(job) => cloudCaptions?.resolve(job.operationId)}
+    onDismissed={() => cloudCaptions?.resolve(null)}
+  />
+{/if}
+
 <StudioHost
   {project}
   {assets}

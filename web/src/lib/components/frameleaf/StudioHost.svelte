@@ -136,6 +136,7 @@
   import { captionStyleEngineStrings } from '$lib/frameleaf/studio/caption-style-strings';
   import { voiceCleanupEngineStrings } from '$lib/frameleaf/studio/voice-cleanup-strings';
   import { captionLanguageEngineStrings } from '$lib/frameleaf/studio/caption-language-strings';
+  import { cloudCaptionEngineStrings } from '$lib/frameleaf/studio/cloud-captions';
   import { libraryPanelStrings } from '$lib/frameleaf/studio/library-strings';
   import { idleStudioPreviewView, type StudioPreviewView } from '$lib/frameleaf/studio/preview';
   import { StudioRestoredVersionUnavailable, type StudioUnsupportedSourceDto } from '@frameleaf/sdk';
@@ -563,6 +564,7 @@
       ...captionStyleEngineStrings($t),
       ...voiceCleanupEngineStrings($t),
       ...captionLanguageEngineStrings($t),
+      ...cloudCaptionEngineStrings($t),
       ...libraryPanelStrings($t),
     },
   });

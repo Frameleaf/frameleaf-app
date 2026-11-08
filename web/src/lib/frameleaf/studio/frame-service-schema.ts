@@ -4,6 +4,13 @@ import {
   type StudioCaptionTranslationRequest,
   type StudioCaptionTranslationResult,
 } from './caption-languages';
+import {
+  isStudioCloudCaptionId,
+  isStudioCloudCaptionRequest,
+  type StudioCloudCaptionJob,
+  type StudioCloudCaptionRequest,
+  type StudioCloudCaptionState,
+} from './cloud-captions';
 import type { StudioCommandEnvelope, StudioCommandResult } from './commands';
 import {
   isStudioCutoutClipId,
@@ -164,6 +171,10 @@ export const STUDIO_FRAME_SERVICE_SCHEMA_V9 = Object.freeze({
   listCutoutSubjects: (args: unknown[]) => args.length === 1 && isStudioCutoutClipId(args[0]),
   startCutout: (args: unknown[]) => args.length === 1 && isStudioCutoutRequest(args[0]),
   readCutout: (args: unknown[]) => args.length === 1 && isStudioCutoutId(args[0]),
+  // FL-1304: captions on Frameleaf Cloud. Optional host services, priced and confirmed by the host.
+  startCloudCaptions: (args: unknown[]) => args.length === 1 && isStudioCloudCaptionRequest(args[0]),
+  readCloudCaptions: (args: unknown[]) => args.length === 1 && isStudioCloudCaptionId(args[0]),
+  pendingCloudCaptions: (args: unknown[]) => args.length === 0,
 });
 type ServiceBindings = Omit<StudioFrameServiceCallsV7, 'commitEditorDraft' | 'reloadProject'> & {
   translateCaptions: { args: [request: StudioCaptionTranslationRequest]; result: StudioCaptionTranslationResult };
@@ -186,6 +197,9 @@ type ServiceBindings = Omit<StudioFrameServiceCallsV7, 'commitEditorDraft' | 're
   listCutoutSubjects: { args: [clipId: string]; result: StudioCutoutSubjectRef[] };
   startCutout: { args: [request: StudioCutoutRequest]; result: StudioCutoutState };
   readCutout: { args: [cutoutId: string]; result: StudioCutoutState };
+  startCloudCaptions: { args: [request: StudioCloudCaptionRequest]; result: StudioCloudCaptionJob | null };
+  readCloudCaptions: { args: [id: string]; result: StudioCloudCaptionState };
+  pendingCloudCaptions: { args: []; result: StudioCloudCaptionJob[] };
 };
 export type StudioFrameServiceName = keyof typeof STUDIO_FRAME_SERVICE_SCHEMA_V9;
 export type StudioFrameServiceCalls = { [Name in StudioFrameServiceName]: ServiceBindings[Name] };

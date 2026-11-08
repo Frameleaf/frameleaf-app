@@ -31,6 +31,12 @@ import type { StudioRenderCandidateDto } from '@frameleaf/sdk';
 import type { CaptionLanguageEngineString } from './caption-language-strings';
 import type { StudioCaptionTranslationRequest, StudioCaptionTranslationResult } from './caption-languages';
 import type { CaptionStyleEngineString } from './caption-style-strings';
+import type {
+  CloudCaptionEngineString,
+  StudioCloudCaptionJob,
+  StudioCloudCaptionRequest,
+  StudioCloudCaptionState,
+} from './cloud-captions';
 import { studioCapabilityIds } from './commands';
 import type { StudioCapabilityId, StudioCommandEnvelope, StudioCommandResult, StudioDuration } from './commands';
 import type { StudioCutoutRequest, StudioCutoutState, StudioCutoutSubjectRef } from './cutout';
@@ -427,6 +433,7 @@ export type StudioAdapterString =
   | VoiceCleanupEngineString
   /** The captions Languages card's words (FL-641), the same way. */
   | CaptionLanguageEngineString
+  | CloudCaptionEngineString
   /** The bin's Library view (FL-636), drawn by the adapter. */
   | LibraryPanelString;
 
@@ -593,6 +600,15 @@ export interface StudioHostServices {
   startCutout?(request: StudioCutoutRequest): Promise<StudioCutoutState>;
   /** Where a cut-out is. A completed one's matte is already among `projectImports` when it answers. */
   readCutout?(cutoutId: string): Promise<StudioCutoutState>;
+  /**
+   * Captions on Frameleaf Cloud (FL-1304): show the price for one clip. Resolves with the job once it is
+   * confirmed, or null when nothing was sent. Optional: without it the editor offers this device only.
+   */
+  startCloudCaptions?(request: StudioCloudCaptionRequest): Promise<StudioCloudCaptionJob | null>;
+  /** Where a confirmed Cloud captions job is, with its lines once it has completed. */
+  readCloudCaptions?(id: string): Promise<StudioCloudCaptionState>;
+  /** Cloud captions jobs confirmed in this project whose lines have not been read yet. */
+  pendingCloudCaptions?(): Promise<StudioCloudCaptionJob[]>;
   /**
    * Captions in other languages (FL-641): translate caption lines, sent as text only, on the processing
    * order ("Where work runs"). One translation per line comes back, in order; the editor keeps the

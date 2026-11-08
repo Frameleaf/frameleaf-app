@@ -26,6 +26,10 @@ describe('FL-641 caption translation in protocol 9', () => {
       'listCutoutSubjects',
       'startCutout',
       'readCutout',
+      // FL-1304: captions on Frameleaf Cloud, optional host services.
+      'startCloudCaptions',
+      'readCloudCaptions',
+      'pendingCloudCaptions',
     ]);
     for (const name of [
       'searchLibrary',
