@@ -433,8 +433,10 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
     // Quality names each slider after its work, as in the prototype
     const picker = await screen.findByRole('group', { name: 'Descriptions & tags' });
     expect(within(picker).getByRole('radio', { name: /Descriptions · Standard/ })).toBeChecked();
-    // only work that may use the cloud has a slider here; upscale stays on this server
-    expect(screen.queryByRole('group', { name: 'Enhance & upscale' })).toBeNull();
+    // every kind of work keeps its slider, as in the prototype, even work set to this server; with no upscale model in
+    // this catalogue its slider says so instead of disappearing
+    const upscale = screen.getByRole('group', { name: 'Enhance & upscale' });
+    expect(within(upscale).getByRole('status')).toHaveTextContent('Frameleaf Cloud offers no model for this work');
 
     await fireEvent.click(within(picker).getByRole('radio', { name: /Descriptions · Best/ }));
     await vi.waitFor(() =>
