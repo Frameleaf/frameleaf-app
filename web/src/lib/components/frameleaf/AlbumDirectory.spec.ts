@@ -998,10 +998,12 @@ describe('AlbumDirectory', () => {
       const another = owned({ id: 'another', albumName: 'Another', assetCount: 0, statsPending: true });
       const { rerender } = renderWithTooltips(AlbumDirectory, { tree: flatTree(pendingAlbum, another), onRefresh });
       await tick();
-      await rerender(wrapped(flatTree(pendingAlbum), onRefresh));
+      // Still listed with its numbers, so no tile leaves the page and starts a leave animation.
+      const arrived = { ...another, statsPending: false };
+      await rerender(wrapped(flatTree(pendingAlbum, arrived), onRefresh));
       for (let attempt = 0; attempt < 25; attempt++) {
         await vi.advanceTimersByTimeAsync(3000);
-        await rerender(wrapped(flatTree(pendingAlbum), onRefresh));
+        await rerender(wrapped(flatTree(pendingAlbum, arrived), onRefresh));
       }
       expect(onRefresh).toHaveBeenCalledTimes(20);
 
