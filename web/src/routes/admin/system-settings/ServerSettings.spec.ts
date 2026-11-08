@@ -8,17 +8,10 @@ import ServerSettings from './ServerSettings.svelte';
 const draft = vi.hoisted(() => ({ store: undefined as unknown }));
 const flags = vi.hoisted(() => ({ configFile: false }));
 const about = vi.hoisted(() => vi.fn());
-const activity = vi.hoisted(() => vi.fn());
-const showDialog = vi.hoisted(() => vi.fn());
-vi.mock('@frameleaf/ui', async (original) => ({
-  ...(await original<object>()),
-  modalManager: { showDialog },
-}));
 vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({ featureFlagsManager: { value: flags } }));
 vi.mock('@frameleaf/sdk', async (original) => ({
   ...(await original<object>()),
   getAboutInfo: about,
-  getICloudSyncActivity: activity,
 }));
 vi.mock('$lib/frameleaf/system-config-draft.svelte', async (original) => ({
   ...(await original<object>()),
@@ -185,57 +178,13 @@ it('sets the Public server URL on any server (OPS-14)', async () => {
   expect(store.draft.server.externalDomain).toBe('https://photos.example.com');
 });
 
-describe('turning iCloud Photos off', () => {
-  const open = () => {
-    const store = new SystemConfigDraftStore(
-      { config: config(true), revision: 'r1' },
-      { defaults: config(true), load: vi.fn(), save: vi.fn() },
-    );
-    draft.store = store;
-    render(ServerSettings);
-    return store;
-  };
-  const click = () => fireEvent.click(screen.getByRole('switch', { name: en.frameleaf_icloud_setting }));
-  const off = [{ path: 'icloud.enabled', before: true, after: false }];
-
-  beforeEach(() => {
-    activity.mockReset();
-    showDialog.mockReset();
-  });
-
-  it('does not warn when no sync is running', async () => {
-    activity.mockResolvedValue({ running: 0 });
-    const store = open();
-    await click();
-    await vi.waitFor(() => expect(store.changes).toEqual(off));
-    expect(showDialog).not.toHaveBeenCalled();
-  });
-
-  it('stays on when the administrator backs out of the warning', async () => {
-    activity.mockResolvedValue({ running: 2 });
-    showDialog.mockResolvedValue(false);
-    const store = open();
-    await click();
-    await vi.waitFor(() => expect(showDialog).toHaveBeenCalledOnce());
-    await vi.waitFor(() =>
-      expect(screen.getByRole('switch', { name: en.frameleaf_icloud_setting })).toHaveAttribute('aria-checked', 'true'),
-    );
-    await vi.waitFor(() => expect(store.changes).toEqual([]));
-  });
-
-  it('turns off when the administrator accepts the warning', async () => {
-    activity.mockResolvedValue({ running: 1 });
-    showDialog.mockResolvedValue(true);
-    const store = open();
-    await click();
-    await vi.waitFor(() => expect(store.changes).toEqual(off));
-  });
-
-  it('still turns off when the running count cannot be read', async () => {
-    activity.mockRejectedValue(new Error('offline'));
-    const store = open();
-    await click();
-    await vi.waitFor(() => expect(store.changes).toEqual(off));
-    expect(showDialog).not.toHaveBeenCalled();
-  });
+it('turns iCloud Photos off with the server page', async () => {
+  const store = new SystemConfigDraftStore(
+    { config: config(true), revision: 'r1' },
+    { defaults: config(true), load: vi.fn(), save: vi.fn() },
+  );
+  draft.store = store;
+  render(ServerSettings);
+  await fireEvent.click(screen.getByRole('switch', { name: en.frameleaf_icloud_setting }));
+  expect(store.changes).toEqual([{ path: 'icloud.enabled', before: true, after: false }]);
 });

@@ -77,6 +77,8 @@ export class ICloudTransportRepository {
   private static switchedOn = true;
   private bundledBridge?: Promise<URL>;
   private bundledChild?: ChildProcess;
+  /** Bumped when switched off, so a startup already under way cannot leave a bridge running. */
+  private bridgeGeneration = 0;
   private readonly sessionCrypto = new AsyncLocalStorage<{ key: Buffer } | { error: unknown }>();
 
   /** Capture configuration before locks; retain failure only if this operation actually needs crypto. */
@@ -109,7 +111,10 @@ export class ICloudTransportRepository {
   setSwitchedOn(on: boolean): void {
     ICloudTransportRepository.switchedOn = on;
     if (!on) {
+      this.bridgeGeneration++;
       this.bundledChild?.kill();
+      this.bundledChild = undefined;
+      this.bundledBridge = undefined;
     }
   }
 
@@ -154,16 +159,29 @@ export class ICloudTransportRepository {
       readOrCreateSecret(tokenPath, 32, 'hex'),
     ]);
     const token = tokenFile.toString().trim();
-    const url = await (this.bundledBridge ??= this.startBundledBridge(tokenPath, token).catch((error) => {
-      this.bundledBridge = undefined;
-      throw error;
-    }));
+    if (!this.bundledBridge) {
+      const startup: Promise<URL> = this.startBundledBridge(tokenPath, token).catch((error) => {
+        if (this.bundledBridge === startup) {
+          this.bundledBridge = undefined;
+        }
+        throw error;
+      });
+      this.bundledBridge = startup;
+    }
+    const url = await this.bundledBridge;
     return { url, key: Buffer.from(keyFile.toString().trim(), 'base64'), token };
   }
 
   // ponytail: one bridge per server process; the bridge keeps no sync state, so API and worker need not share.
   private async startBundledBridge(tokenPath: string, token: string): Promise<URL> {
+    const generation = this.bridgeGeneration;
+    if (!ICloudTransportRepository.switchedOn) {
+      throw new ICloudTransportError('icloud_disabled');
+    }
     const port = await freeLoopbackPort();
+    if (generation !== this.bridgeGeneration) {
+      throw new ICloudTransportError('icloud_disabled');
+    }
     // Only these variables: the child must not inherit database or other server secrets.
     const child = spawn(BUNDLED_BRIDGE, [], {
       stdio: 'ignore',
@@ -179,22 +197,25 @@ export class ICloudTransportRepository {
     let running = true;
     const onGone = () => {
       running = false;
-      this.bundledBridge = undefined;
-      this.bundledChild = undefined;
+      // A bridge that was replaced must not clear its replacement.
+      if (this.bundledChild === child) {
+        this.bundledChild = undefined;
+        this.bundledBridge = undefined;
+      }
       process.removeListener('exit', stop);
     };
     child.once('error', onGone);
     child.once('exit', onGone);
 
     const url = new URL(`http://127.0.0.1:${port}/`);
-    for (let attempt = 0; attempt < 50 && running; attempt++) {
+    for (let attempt = 0; attempt < 50 && running && generation === this.bridgeGeneration; attempt++) {
       const ready = await fetch(new URL('/health', url), {
         headers: { authorization: `Bearer ${token}` },
         signal: AbortSignal.timeout(1000),
       })
         .then((response) => response.ok)
         .catch(() => false);
-      if (ready) {
+      if (ready && generation === this.bridgeGeneration) {
         return url;
       }
       await sleep(100);

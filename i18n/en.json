@@ -8270,7 +8270,7 @@
   "frameleaf_icloud_scope_libraries": "{count, plural, one {# photo library} other {# photo libraries}}",
   "frameleaf_icloud_setting": "Let people bring in photos from iCloud",
   "frameleaf_icloud_setting_description": "Each person signs in with their own Apple account. While this is off, nothing new comes in from iCloud. Photos already here and saved sign-ins are kept.",
-  "frameleaf_icloud_setting_running": "{count, plural, one {# iCloud sync hasn’t finished} other {# iCloud syncs haven’t finished}}. Turning off iCloud Photos stops {count, plural, one {it} other {them}} when you save. Photos already brought in stay, and the rest come in on the next sync after iCloud Photos is back on.",
+  "frameleaf_icloud_setting_running": "{count, plural, one {# iCloud sync hasn’t finished} other {# iCloud syncs haven’t finished}}. Turning off iCloud Photos stops {count, plural, one {it} other {them}}. Photos already brought in stay, and the rest come in on the next sync after iCloud Photos is back on.",
   "frameleaf_icloud_setting_running_confirm": "Turn off anyway",
   "frameleaf_icloud_setting_running_title": "iCloud is still syncing",
   "frameleaf_icloud_setting_title": "iCloud Photos",
