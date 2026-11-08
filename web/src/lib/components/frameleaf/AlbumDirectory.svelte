@@ -76,7 +76,7 @@
     mdiViewListOutline,
   } from '@mdi/js';
   import { hasRouterStarted } from '$lib/utils/router-started';
-  import { onDestroy, onMount, untrack } from 'svelte';
+  import { onDestroy, onMount, tick, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
   import { SvelteSet } from 'svelte/reactivity';
 
@@ -172,6 +172,12 @@
   const isSpace = (album: AlbumResponseDto) => album.kind === AlbumKind.Space;
   // Every kind opens in the library view; a shared space too (owner, 2026-11-05).
   const openRoute = (album: AlbumResponseDto) => Route.viewAlbum({ id: album.id });
+  /** Someone tabbing to a waiting album gets the real tile, with focus moved onto it. */
+  const revealFocused = async (id: string) => {
+    revealed.add(id);
+    await tick();
+    document.querySelector<HTMLElement>(`[data-album-id="${CSS.escape(id)}"] a[href]`)?.focus();
+  };
   const nameOf = (album: AlbumResponseDto | undefined) => album?.albumName || $t('unnamed_album');
 
   const filterLabels: Record<AlbumDirectoryFilter, () => string> = {
@@ -233,14 +239,21 @@
   const STATS_POLL_MS = 3000;
   const STATS_POLL_LIMIT = 20;
   let statsPolls = 0;
-  const anyStatsPending = $derived(everything.some((album) => album.statsPending));
+  let polledFor = new Set<string>();
+  const pendingStatIds = $derived(everything.filter((album) => album.statsPending).map((album) => album.id));
   $effect(() => {
     // Every new tree restarts the wait, so a slow answer never overlaps the next question.
     void tree;
-    if (!anyStatsPending) {
+    if (pendingStatIds.length === 0) {
       statsPolls = 0;
+      polledFor = new Set();
       return;
     }
+    // An album that has only just started waiting gets the full wait.
+    if (pendingStatIds.some((id) => !polledFor.has(id))) {
+      statsPolls = 0;
+    }
+    polledFor = new Set(pendingStatIds);
     if (statsPolls >= STATS_POLL_LIMIT) {
       return;
     }
@@ -596,7 +609,12 @@
     </AlbumTile>
   {:else}
     {#if album.parentId}<small class="album-path" aria-hidden="true">&nbsp;</small>{/if}
-    <div class="tile-placeholder {layout}" data-testid="album-placeholder" aria-hidden="true"></div>
+    <div class="tile-placeholder {layout}" data-testid="album-placeholder">
+      <!-- FL-1297: a waiting album stays in the screen reader's list and the tab order. -->
+      <a class="placeholder-link" href={openRoute(album)} onfocus={() => void revealFocused(album.id)}>
+        {nameOf(album)}
+      </a>
+    </div>
   {/if}
 {/snippet}
 
@@ -895,6 +913,14 @@
     min-width: 0;
   }
   /* Exactly a tile's height (AlbumTile: cover, 8px, name, gap, the 28px meta row), so the scrollbar never jumps. */
+  .placeholder-link {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
   .tile-placeholder.grid {
     aspect-ratio: 1;
     margin-block-end: calc(8px + 1.3 * var(--fl-font-size) + var(--fl-space-1) + 28px);
