@@ -396,6 +396,23 @@ describe('AlbumSuggestions', () => {
       expect(screen.getByRole('alert')).toHaveTextContent('heal these dates');
     });
 
+    it('leaves the review when suggestions never loaded and a failed heal finds nothing left', async () => {
+      sdkMock.getAlbumSuggestions.mockRejectedValue(new Error('offline'));
+      sdkMock.getAlbumLostDates.mockResolvedValue(structuredClone(lost));
+      render(AlbumSuggestions, { albumId: 'album', albumName: 'Summer', onChanged: vi.fn() });
+      await fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
+      sdkMock.healAlbumLostDates.mockRejectedValueOnce(new Error('no'));
+      sdkMock.getAlbumLostDates.mockResolvedValue({ ...lost, suggestions: [] });
+
+      const dialog = screen.getByRole('dialog');
+      await fireEvent.click(screen.getByRole('button', { name: 'Heal all 2' }));
+
+      await waitFor(() =>
+        expect(toastManager.primary).toHaveBeenCalledWith(expect.stringContaining('heal these dates')),
+      );
+      await waitFor(() => expect(dialog).not.toHaveAttribute('open'));
+    });
+
     it('leaves the review with a message when a failed heal finds nothing left', async () => {
       await openLost();
       sdkMock.healAlbumLostDates.mockRejectedValueOnce(new Error('no'));
