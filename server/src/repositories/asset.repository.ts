@@ -3444,6 +3444,7 @@ export class AssetRepository {
         'asset.isEdited',
         'asset.originalPath',
         'asset.originalFileName',
+        'asset.thumbhash',
         'asset_file.path as path',
         'asset_file.renditionIdentity',
         'asset_exif.imageEncoding',

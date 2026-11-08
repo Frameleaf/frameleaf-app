@@ -2086,6 +2086,7 @@ export enum RouteKey {
 export enum CacheControl {
   PrivateWithCache = 'private_with_cache',
   PrivateWithoutCache = 'private_without_cache',
+  PrivateImmutable = 'private_immutable',
   None = 'none',
 }
 
