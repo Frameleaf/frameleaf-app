@@ -351,6 +351,19 @@ describe('AlbumSuggestions', () => {
       expect(toast.undo).not.toHaveBeenCalled();
     });
 
+    it('leaves the review with a message when a failed heal finds nothing left', async () => {
+      await openLost();
+      sdkMock.healAlbumLostDates.mockRejectedValueOnce(new Error('no'));
+      sdkMock.getAlbumLostDates.mockResolvedValue({ ...lost, suggestions: [] });
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Heal all 2' }));
+
+      await waitFor(() =>
+        expect(toastManager.primary).toHaveBeenCalledWith(expect.stringContaining('heal these dates')),
+      );
+      expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+    });
+
     it('says a failed heal in the review and can try again', async () => {
       await openLost();
       sdkMock.healAlbumLostDates.mockRejectedValueOnce(new Error('no'));
