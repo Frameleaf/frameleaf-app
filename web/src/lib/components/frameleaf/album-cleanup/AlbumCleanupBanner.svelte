@@ -5,7 +5,7 @@
   import {
     buildPlan,
     CLEANUP_BANNER_MIN_SUGGESTIONS,
-    isDateOnly,
+    messyAlbumNames,
     type CleanupPlan,
   } from '$lib/frameleaf/album-cleanup';
   import '$lib/frameleaf/album-cleanup.css';
@@ -45,8 +45,7 @@
       return;
     }
     plan = buildPlan(facts);
-    const dated = facts.albums.filter(({ name }) => isDateOnly(name) || name.includes(' - ')).map(({ name }) => name);
-    names = (dated.length > 0 ? dated : facts.albums.map(({ name }) => name)).slice(0, 5);
+    names = messyAlbumNames(facts);
     covers = facts.albums.flatMap(({ coverAssetId }) => coverAssetId ?? []);
   };
 

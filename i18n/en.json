@@ -19825,5 +19825,6 @@
   "zero_to_clear_rating": "press 0 to clear asset rating",
   "zoom_image": "Zoom Image",
   "zoom_in": "Zoom in",
-  "zoom_out": "Zoom out"
+  "zoom_out": "Zoom out",
+  "frameleaf_album_lost_dates_dialog_title": "Photos that lost their date"
 }

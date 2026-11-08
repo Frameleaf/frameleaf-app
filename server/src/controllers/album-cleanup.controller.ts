@@ -24,7 +24,8 @@ export class AlbumCleanupController {
   @Authenticated({ permission: Permission.AlbumRead })
   @Endpoint({
     summary: 'Get the album cleanup status',
-    description: 'Whether the album cleanup scan has run, how much it found, and how far a cleanup in progress has got.',
+    description:
+      'Whether the album cleanup scan has run, how much it found, and how far a cleanup in progress has got.',
     history: history(),
   })
   getAlbumCleanupStatus(@Auth() auth: AuthDto): Promise<AlbumCleanupStatusResponseDto> {

@@ -1,9 +1,9 @@
-import { sdkMock } from '$lib/__mocks__/sdk.mock';
-import AlbumCleanupReview from '$lib/components/frameleaf/album-cleanup/AlbumCleanupReview.svelte';
-import { authManager } from '$lib/managers/auth-manager.svelte';
 import { AlbumChangeRunStatus, type AlbumCleanupFactsDto, type UserPreferencesResponseDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import AlbumCleanupReview from '$lib/components/frameleaf/album-cleanup/AlbumCleanupReview.svelte';
+import { authManager } from '$lib/managers/auth-manager.svelte';
 
 const fact = (id: string, name: string, count = 3) => ({
   id,

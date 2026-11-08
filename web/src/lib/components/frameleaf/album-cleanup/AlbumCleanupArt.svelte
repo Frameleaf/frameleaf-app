@@ -17,7 +17,9 @@
 
   let { plan, names, covers }: Props = $props();
 
-  const pile = $derived(names.slice(0, 5));
+  const PILE_CARDS = ['ac-pile-card c0', 'ac-pile-card c1', 'ac-pile-card c2', 'ac-pile-card c3', 'ac-pile-card c4'];
+
+  const pile = $derived(names.slice(0, PILE_CARDS.length));
   const cover = (index: number) => {
     const id = covers[index % Math.max(covers.length, 1)];
     return id ? getAssetMediaUrl({ id, size: AssetMediaSize.Thumbnail }) : undefined;
@@ -28,9 +30,9 @@
 <div class="ac-art" aria-hidden="true">
   <div class="ac-pile">
     {#each pile as name, index (`${name}-${index}`)}
-      <span class={`ac-pile-card c${index}`}>
+      <span class={PILE_CARDS[index]}>
         {#if cover(index + 12)}
-          <img src={cover(index + 12)} alt="" draggable="false" loading="lazy" />
+          <img src={cover(index + 12)} alt="" draggable="false" />
         {:else}
           <span class="ac-pile-blank"></span>
         {/if}
@@ -45,7 +47,7 @@
         <span class="ac-tidy-mosaic">
           {#each [0, 1, 2, 3] as tile (tile)}
             {#if cover(group * 4 + tile)}
-              <img src={cover(group * 4 + tile)} alt="" draggable="false" loading="lazy" />
+              <img src={cover(group * 4 + tile)} alt="" draggable="false" />
             {:else}
               <i></i>
             {/if}

@@ -37,10 +37,16 @@
     return out;
   });
   const needle = $derived(query.trim().toLowerCase());
-  const shown = $derived(options.filter(({ item }) => !needle || item.name.toLowerCase().includes(needle)).slice(0, MAX_ROWS));
+  const shown = $derived(
+    options.filter(({ item }) => !needle || item.name.toLowerCase().includes(needle)).slice(0, MAX_ROWS),
+  );
 </script>
 
-<Dialog title={$t('frameleaf_album_cleanup_move_title', { values: { name: node.name } })} closeLabel={$t('close')} bind:open>
+<Dialog
+  title={$t('frameleaf_album_cleanup_move_title', { values: { name: node.name } })}
+  closeLabel={$t('close')}
+  bind:open
+>
   <label class="ac-search wide">
     <Icon icon={mdiMagnify} size="17" aria-hidden={true} />
     <input

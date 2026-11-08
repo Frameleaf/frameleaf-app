@@ -67,10 +67,17 @@ const setup = (db?: Kysely<DB>) => {
 
 type Context = ReturnType<typeof setup>['ctx'];
 
-const elevated = (user: { id: string }) => factory.auth({ user: { id: user.id }, session: { hasElevatedPermission: true } });
+const elevated = (user: { id: string }) =>
+  factory.auth({ user: { id: user.id }, session: { hasElevatedPermission: true } });
 const plain = (user: { id: string }) => factory.auth({ user: { id: user.id } });
 
-const albumOf = async (ctx: Context, ownerId: string, albumName: string, count: number, dto: { createdAt?: Date } = {}) => {
+const albumOf = async (
+  ctx: Context,
+  ownerId: string,
+  albumName: string,
+  count: number,
+  dto: { createdAt?: Date } = {},
+) => {
   const assets = await Promise.all(Array.from({ length: count }, () => ctx.newAsset({ ownerId })));
   const assetIds = assets.map(({ asset }) => asset.id);
   const { album } = await ctx.newAlbum({ ownerId, albumName, ...dto }, assetIds);
@@ -149,12 +156,10 @@ describe(AlbumCleanupService.name, () => {
         gps: { city: 'Lahaina' },
       });
       expect(ordinary!.homeAreas.map(({ city }) => city)).toEqual(['Coquitlam']);
-      expect(full!.homeAreas.map(({ city }) => city).toSorted()).toEqual(['Coquitlam', 'Lahaina']);
+      expect(new Set(full!.homeAreas.map(({ city }) => city))).toEqual(new Set(['Coquitlam', 'Lahaina']));
 
       // The winner comes from true counts in both, and is all a session without the PIN learns of them.
-      expect(ordinary!.sameName).toEqual([
-        expect.objectContaining({ winnerId: mostlyLocked.album.id, union: 3 }),
-      ]);
+      expect(ordinary!.sameName).toEqual([expect.objectContaining({ winnerId: mostlyLocked.album.id, union: 3 })]);
       expect(full!.sameName).toEqual([expect.objectContaining({ winnerId: mostlyLocked.album.id, union: 7 })]);
       expect(JSON.stringify(ordinary)).not.toContain('Lahaina');
     });
@@ -195,7 +200,11 @@ describe(AlbumCleanupService.name, () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();
       const { user: other } = await ctx.newUser();
-      const { album: collection } = await ctx.newAlbum({ ownerId: user.id, albumName: 'Trips', kind: AlbumKind.Collection });
+      const { album: collection } = await ctx.newAlbum({
+        ownerId: user.id,
+        albumName: 'Trips',
+        kind: AlbumKind.Collection,
+      });
       await ctx.newAlbum({ ownerId: user.id, albumName: 'Inside', parentId: collection.id });
       await ctx.newAlbum({ ownerId: other.id, albumName: 'Theirs' });
       const top = await albumOf(ctx, user.id, 'Mine', 1);
@@ -240,9 +249,9 @@ describe(AlbumCleanupService.name, () => {
       await ctx.newAlbumUser({ albumId: b.album.id, userId: friend.id, role: AlbumUserRole.Viewer });
       const albumIds = [a.album.id, b.album.id];
 
-      await expect(
-        sut.apply(plain(user), { operations: [{ type: 'merge', albumIds }] }),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      await expect(sut.apply(plain(user), { operations: [{ type: 'merge', albumIds }] })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
       await expect(applyNow(sut, plain(user), [{ type: 'merge', albumIds, allowShared: true }])).resolves.toBeDefined();
     });
 
@@ -333,6 +342,55 @@ describe(AlbumCleanupService.name, () => {
 
       await expect(albumRow(ctx.database, album.album.id)).resolves.toMatchObject({ parentId: existing.id });
       await expect(collectionsOf(ctx.database, user.id)).resolves.toHaveLength(1);
+    });
+
+    it('heals approved dates first, in its own record, and Undo puts them back', async () => {
+      const { sut, ctx, runs } = setup();
+      const { user } = await ctx.newUser();
+      const dates = await Promise.all(
+        [0, 1, 2, 3, 4, 5].map(async (index) => {
+          const date = new Date(`2019-07-${String(3 + index).padStart(2, '0')}T12:00:00Z`);
+          const { asset } = await ctx.newAsset({
+            ownerId: user.id,
+            originalFileName: `IMG_${1000 + index * 2}.JPG`,
+            fileCreatedAt: date,
+            localDateTime: date,
+          });
+          await ctx.newExif({ assetId: asset.id, make: 'Apple', model: 'iPhone', dateTimeOriginal: date });
+          return asset.id;
+        }),
+      );
+      const lostOn = new Date('2023-02-14T10:00:00Z');
+      const { asset: lostPhoto } = await ctx.newAsset({
+        ownerId: user.id,
+        originalFileName: 'Takeout_9.jpg',
+        fileCreatedAt: lostOn,
+        localDateTime: lostOn,
+      });
+      await ctx.newExif({ assetId: lostPhoto.id, dateTimeOriginal: lostOn });
+      const { album } = await ctx.newAlbum({ ownerId: user.id, albumName: 'Trip' }, [...dates, lostPhoto.id]);
+      const auth = plain(user);
+      await sut.handleScan({ userId: user.id });
+      const { facts } = await sut.getSnapshot(auth);
+      expect(facts!.lostDates).toEqual([expect.objectContaining({ albumId: album.id })]);
+
+      const runId = await applyNow(sut, auth, [
+        { type: 'rename', albumId: album.id, name: 'Summer trip' },
+        { type: 'heal', albumId: album.id, assetIds: [lostPhoto.id] },
+      ]);
+
+      const taken = () =>
+        ctx.database
+          .selectFrom('asset')
+          .select('fileCreatedAt')
+          .where('id', '=', lostPhoto.id)
+          .executeTakeFirstOrThrow();
+      expect((await taken()).fileCreatedAt.getUTCFullYear()).toBe(2019);
+      await expect(runRow(ctx.database, runId)).resolves.toMatchObject({ summary: { healed: 1, renamed: 1 } });
+
+      await runs.undoLatest(auth);
+      expect((await taken()).fileCreatedAt.getUTCFullYear()).toBe(2023);
+      await expect(albumRow(ctx.database, album.id)).resolves.toMatchObject({ albumName: 'Trip' });
     });
 
     it('keeps the photos when an album is removed', async () => {
@@ -552,7 +610,9 @@ describe(AlbumCleanupService.name, () => {
         ctx.database.selectFrom('album').select('id').where('id', '=', plainDated.album.id).execute(),
       ).resolves.toHaveLength(0);
       await expect(
-        sources.resolve(auth, { sources: [{ kind: AlbumSourceKind.IosPhotos, sourceId: 'Jun 2', name: 'Jun 2, 2020' }] }),
+        sources.resolve(auth, {
+          sources: [{ kind: AlbumSourceKind.IosPhotos, sourceId: 'Jun 2', name: 'Jun 2, 2020' }],
+        }),
       ).resolves.toMatchObject({ links: [{ id: linkId, outcome: AlbumSourceOutcome.Existing }] });
     });
 
@@ -570,7 +630,9 @@ describe(AlbumCleanupService.name, () => {
         sources.resolve(auth, {
           sources: [{ kind: AlbumSourceKind.IosPhotos, sourceId: 'phone-summer', name: 'Summer' }],
         }),
-      ).resolves.toMatchObject({ links: [{ id: linkId, albumId: big.album.id, outcome: AlbumSourceOutcome.Existing }] });
+      ).resolves.toMatchObject({
+        links: [{ id: linkId, albumId: big.album.id, outcome: AlbumSourceOutcome.Existing }],
+      });
     });
   });
 });

@@ -42,13 +42,13 @@ export const NAME_MISMATCH_DAYS = 30;
 const MONTHS =
   'jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?';
 const DATE_SOURCE = [
-  `(?:${MONTHS})\\.?\\s+\\d{1,2}(?:st|nd|rd|th)?,?\\s+\\d{4}`,
-  `\\d{1,2}\\s+(?:${MONTHS})\\.?,?\\s+\\d{4}`,
+  String.raw`(?:${MONTHS})\.?\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4}`,
+  String.raw`\d{1,2}\s+(?:${MONTHS})\.?,?\s+\d{4}`,
   String.raw`\d{4}[-/]\d{1,2}[-/]\d{1,2}`,
   String.raw`\d{1,2}/\d{1,2}/\d{4}`,
-  `(?:${MONTHS})\\.?\\s+\\d{4}`,
+  String.raw`(?:${MONTHS})\.?\s+\d{4}`,
 ].join('|');
-const DATE_ANYWHERE = new RegExp(`\\b(?:${DATE_SOURCE})\\b`, 'gi');
+const DATE_ANYWHERE = new RegExp(String.raw`\b(?:${DATE_SOURCE})\b`, 'gi');
 const DATE_ONLY = new RegExp(`^(?:${DATE_SOURCE})$`, 'i');
 const MONTH_NAMES = [
   'January',
@@ -65,7 +65,12 @@ const MONTH_NAMES = [
   'December',
 ];
 
-const cleanName = (name: string) => String(name).trim().replaceAll(/\s+/g, ' ');
+/** Private-use characters that can't be in a name, so a masked date can't collide with what is around it. */
+const MASK_OPEN = String.fromCodePoint(0xe0_00);
+const MASK_CLOSE = String.fromCodePoint(0xe0_01);
+const MASKED_DATE = new RegExp(`${MASK_OPEN}(\\d+)${MASK_CLOSE}`, 'g');
+
+const cleanName = (name: string) => name.trim().replaceAll(/\s+/g, ' ');
 export const albumNameKey = (name: string) => cleanName(name).toLowerCase();
 const byName = (a: { name: string }, b: { name: string }) =>
   a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
@@ -87,16 +92,30 @@ export const splitName = (name: string, delimiters = DEFAULT_DELIMITERS): string
   const dates: string[] = [];
   const masked = cleanName(name).replaceAll(DATE_ANYWHERE, (match) => {
     dates.push(match);
-    return `\u0001${dates.length - 1}\u0002`;
+    return `${MASK_OPEN}${dates.length - 1}${MASK_CLOSE}`;
   });
   const active = delimiters.map((token) => token.trim()).filter(Boolean);
-  const parts = active.length > 0 ? masked.split(new RegExp(active.map((token) => delimiterSource(token)).join('|'))) : [masked];
+  const parts =
+    active.length > 0 ? masked.split(new RegExp(active.map((token) => delimiterSource(token)).join('|'))) : [masked];
   return parts
-    .map((part) => part.replaceAll(/\u0001(\d+)\u0002/g, (_, index: string) => dates[Number(index)]).trim())
+    .map((part) => part.replaceAll(MASKED_DATE, (_, index: string) => dates[Number(index)]).trim())
     .filter(Boolean);
 };
 
 export const isDateOnly = (name: string) => DATE_ONLY.test(cleanName(name));
+
+/** A few of the person's own messiest names for the banner's pile: duplicates, dates and long nested names. */
+export const messyAlbumNames = ({ albums, sameName }: AlbumCleanupFactsDto, limit = 5): string[] => {
+  const nameOf = (id: string) => albums.find((album) => album.id === id)?.name;
+  const picks = [
+    ...sameName.slice(0, 2).map((group) => nameOf(group.winnerId)),
+    albums.find(({ name }) => /, /.test(name) && !isDateOnly(name))?.name,
+    albums.find(({ name }) => isDateOnly(name))?.name,
+    albums.find(({ name }) => name.split(' - ').length > 2)?.name,
+    ...albums.map(({ name }) => name),
+  ];
+  return [...new Set(picks.filter((name): name is string => !!name))].slice(0, limit);
+};
 
 const monthIndex = (word: string) =>
   MONTH_NAMES.findIndex((month) => month.toLowerCase().startsWith(word.slice(0, 3).toLowerCase()));
@@ -105,7 +124,7 @@ const monthIndex = (word: string) =>
 export const dateParts = (name: string): { year: number; month: number } => {
   const text = cleanName(name);
   const year = Number(/\b(\d{4})\b/.exec(text)?.[1]);
-  const word = new RegExp(`\\b(${MONTHS})\\b`, 'i').exec(text)?.[1];
+  const word = new RegExp(String.raw`\b(${MONTHS})\b`, 'i').exec(text)?.[1];
   if (word) {
     return { year, month: monthIndex(word) };
   }
@@ -129,8 +148,8 @@ const fromSerial = (serial: number) => {
 /** A date that names one day, or null ("May 2020" names no day). */
 export const dayOf = (text: string): CleanupDay | null => {
   const clean = cleanName(text);
-  const named = new RegExp(`^(${MONTHS})\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})$`, 'i').exec(clean);
-  const dayFirst = new RegExp(`^(\\d{1,2})\\s+(${MONTHS})\\.?,?\\s+(\\d{4})$`, 'i').exec(clean);
+  const named = new RegExp(String.raw`^(${MONTHS})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})$`, 'i').exec(clean);
+  const dayFirst = new RegExp(String.raw`^(\d{1,2})\s+(${MONTHS})\.?,?\s+(\d{4})$`, 'i').exec(clean);
   const iso = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/.exec(clean);
   const slashed = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(clean);
   if (named) {
@@ -320,8 +339,8 @@ const leafFor = (album: PlanAlbum, name: string): PlanNode => ({
   currentName: album.originalName,
   albumCount: 1,
   photoCount: album.count,
-  locked: Boolean(album.locked),
-  shared: Boolean(album.shared),
+  locked: album.locked,
+  shared: album.shared,
   copies: album.copies || 1,
   days: album.days || 0,
   trip: Boolean(album.trip),
@@ -335,7 +354,7 @@ const refresh = (node: PlanNode): PlanNode => {
   if (node.kind === 'album') {
     return node;
   }
-  node.children.forEach((child) => refresh(child));
+  for (const child of node.children) {refresh(child);}
   node.children.sort((a, b) => (a.kind === b.kind ? byName(a, b) : a.kind === 'collection' ? -1 : 1));
   node.albumCount = node.children.reduce((sum, child) => sum + child.albumCount, 0);
   node.photoCount = node.children.reduce((sum, child) => sum + child.photoCount, 0);
@@ -357,7 +376,7 @@ const findNode = (list: PlanNode[], id: string): PlanNode | null => {
 
 const detach = (list: PlanNode[], id: string): PlanNode | null => {
   const index = list.findIndex((node) => node.id === id);
-  if (index >= 0) {
+  if (index !== -1) {
     return list.splice(index, 1)[0];
   }
   for (const node of list) {
@@ -542,7 +561,7 @@ export const buildPlan = (facts: AlbumCleanupFactsDto, options: PlanOptions = {}
     if (skipped) {
       return;
     }
-    members.forEach((album) => inTrip.add(album.id));
+    for (const album of members) {inTrip.add(album.id);}
     tripAlbums.push({
       ...largestOf(members),
       name,
@@ -606,7 +625,7 @@ export const buildPlan = (facts: AlbumCleanupFactsDto, options: PlanOptions = {}
     if (skipped) {
       return;
     }
-    members.forEach((album) => absorbedDays.add(album.id));
+    for (const album of members) {absorbedDays.add(album.id);}
     combined.push({
       ...largestOf(members),
       name,
@@ -662,7 +681,13 @@ export const buildPlan = (facts: AlbumCleanupFactsDto, options: PlanOptions = {}
     for (const segment of album.segments || splitName(album.name, delimiters)) {
       const key = segment.toLowerCase();
       if (!node.children.has(key)) {
-        node.children.set(key, { path: `${node.path}>${key}`, name: segment, children: new Map(), albums: [], total: 0 });
+        node.children.set(key, {
+          path: `${node.path}>${key}`,
+          name: segment,
+          children: new Map(),
+          albums: [],
+          total: 0,
+        });
       }
       node = node.children.get(key)!;
       // A found trip always goes under Trips, even when it's the only one.
@@ -673,7 +698,10 @@ export const buildPlan = (facts: AlbumCleanupFactsDto, options: PlanOptions = {}
     node.albums.push(album);
   }
   const total = (node: TrieNode): number => {
-    node.total = node.albums.length + [...node.children.values()].reduce((sum, child) => sum + total(child), 0);
+    node.total = node.albums.length;
+    for (const child of node.children.values()) {
+      node.total += total(child);
+    }
     return node.total;
   };
   total(root);
@@ -808,10 +836,10 @@ export const buildPlan = (facts: AlbumCleanupFactsDto, options: PlanOptions = {}
     const match = existingUnder.get(`${parentId ?? ''}>${albumNameKey(node.name)}`)?.[0];
     node.existing = !!match;
     node.existingId = match?.id;
-    node.children.forEach((child) => markExisting(child, match?.id ?? `new:${node.id}`));
+    for (const child of node.children) {markExisting(child, match?.id ?? `new:${node.id}`);}
   };
   structure = structure.map((node) => refresh(node));
-  structure.forEach((node) => markExisting(node, null));
+  for (const node of structure) {markExisting(node, null);}
   structure = structure.sort((a, b) => b.albumCount - a.albumCount || byName(a, b));
   untouched = untouched.sort(byName);
 
@@ -837,7 +865,7 @@ export const buildPlan = (facts: AlbumCleanupFactsDto, options: PlanOptions = {}
     list.reduce((sum, node) => sum + (node.existing ? 1 : 0) + countExisting(node.children), 0);
   const activeDuplicates = duplicates.filter((group) => !group.skipped && !leftOutIds.has(group.winner.id));
   const albumsMerged = activeDuplicates.reduce((sum, group) => sum + group.others.length, 0);
-  const daysCombined = [...absorbedDays].length - combined.length;
+  const daysCombined = absorbedDays.size - combined.length;
   const similarMerged = absorbedBySimilar.size;
   return {
     structure,
@@ -883,7 +911,11 @@ export const operationsFor = (plan: CleanupPlan): AlbumCleanupOperationDto[] => 
 
   for (const item of plan.lostDates) {
     if (item.healed && item.suggestions.length > 0) {
-      operations.push({ type: AlbumCleanupOperationType.Heal, albumId: item.key, assetIds: item.suggestions.map(({ assetId }) => assetId) });
+      operations.push({
+        type: AlbumCleanupOperationType.Heal,
+        albumId: item.key,
+        assetIds: item.suggestions.map(({ assetId }) => assetId),
+      });
     }
   }
 
@@ -915,7 +947,11 @@ export const operationsFor = (plan: CleanupPlan): AlbumCleanupOperationDto[] => 
   }
   for (const pair of [...plan.similar, ...plan.sameTrip]) {
     if (pair.merged && !excluded.has(pair.winner.id)) {
-      operations.push({ type: AlbumCleanupOperationType.Merge, albumIds: [pair.winner.id, pair.loser.id], allowShared: pair.shared });
+      operations.push({
+        type: AlbumCleanupOperationType.Merge,
+        albumIds: [pair.winner.id, pair.loser.id],
+        allowShared: pair.shared,
+      });
     }
   }
   const combineOf = (run: PlanDayRun) => {
@@ -932,8 +968,8 @@ export const operationsFor = (plan: CleanupPlan): AlbumCleanupOperationDto[] => 
       name: namedLeaves.get(carrier.id) ?? run.name,
     });
   };
-  plan.dayRuns.forEach((run) => combineOf(run));
-  plan.trips.forEach((trip) => combineOf(trip));
+  for (const run of plan.dayRuns) {combineOf(run);}
+  for (const trip of plan.trips) {combineOf(trip);}
 
   const place = (nodes: PlanNode[], parentTempId: string | undefined) => {
     for (const node of nodes) {

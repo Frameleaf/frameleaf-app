@@ -1,11 +1,13 @@
 import {
   createJob,
+  getAlbumCleanupStatus,
   getAnalyticsReport,
   getAssetStatistics,
   getIdenticalFilesStatus,
   getQueue,
   getIntegrityCheckRuns,
   getIntegrityOverview,
+  getLatestAlbumChangeRun,
   getLocationScanStatus,
   getServerStatistics,
   getSummary,
@@ -43,6 +45,9 @@ vi.mock('@frameleaf/sdk', async (original) => ({
   updateQueue: vi.fn(),
   getUtilitiesSummary: vi.fn(),
   getLocationScanStatus: vi.fn(),
+  getAlbumCleanupStatus: vi.fn(),
+  getLatestAlbumChangeRun: vi.fn(),
+  undoLatestAlbumChangeRun: vi.fn(),
 }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({
@@ -126,7 +131,45 @@ describe('Library care landing (FL-366)', () => {
     vi.mocked(getAnalyticsReport).mockResolvedValue({ summary: { savedBytes: 3_200_000_000 } } as never);
     vi.mocked(getUtilitiesSummary).mockResolvedValue({ unusedFiles: null, unusedBytes: null } as never);
     vi.mocked(getLocationScanStatus).mockResolvedValue({ enabled: false, available: false, scan: null });
+    vi.mocked(getAlbumCleanupStatus).mockResolvedValue({
+      ready: true,
+      computedAt: null,
+      suggestionCount: 0,
+      apply: null,
+    });
+    vi.mocked(getLatestAlbumChangeRun).mockResolvedValue({ run: null });
     unusedFilesAccess.reset();
+  });
+
+  it('offers the album cleanup review with what the last scan found', async () => {
+    user.isAdmin = false;
+    vi.mocked(getSummary).mockResolvedValue(summary() as never);
+    vi.mocked(getAlbumCleanupStatus).mockResolvedValue({
+      ready: true,
+      computedAt: null,
+      suggestionCount: 7,
+      apply: null,
+    });
+    render(LibraryCareLanding);
+    expect(await screen.findByText('Album cleanup')).toBeInTheDocument();
+    expect(await screen.findByText('7 albums have a suggestion')).toBeInTheDocument();
+  });
+
+  it('offers Undo beside the last cleanup', async () => {
+    user.isAdmin = false;
+    vi.mocked(getSummary).mockResolvedValue(summary() as never);
+    vi.mocked(getLatestAlbumChangeRun).mockResolvedValue({
+      run: {
+        id: '0194d6a5-7a6e-7c2a-9cb4-0a1c2d3e4f50',
+        kind: 'cleanup',
+        status: 'done',
+        createdAt: new Date().toISOString(),
+        canUndo: true,
+        summary: {},
+      },
+    } as never);
+    render(LibraryCareLanding);
+    expect(await screen.findByRole('button', { name: 'Undo last cleanup' })).toBeInTheDocument();
   });
 
   it('offers the optional paid photo location scan as one Place names row on the member’s landing page', async () => {

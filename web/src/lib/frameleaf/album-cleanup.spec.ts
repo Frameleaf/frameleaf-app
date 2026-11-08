@@ -1,11 +1,5 @@
-import {
-  buildPlan,
-  isDateOnly,
-  operationsFor,
-  splitName,
-  type PlanNode,
-} from '$lib/frameleaf/album-cleanup';
 import type { AlbumCleanupAlbumFactDto, AlbumCleanupFactsDto } from '@frameleaf/sdk';
+import { buildPlan, isDateOnly, operationsFor, splitName, type PlanNode } from '$lib/frameleaf/album-cleanup';
 
 const uuid = (id: string) => id;
 const fact = (id: string, name: string, count = 10, extra: Partial<AlbumCleanupAlbumFactDto> = {}) => ({
@@ -20,7 +14,10 @@ const fact = (id: string, name: string, count = 10, extra: Partial<AlbumCleanupA
   coverAssetId: null,
   ...extra,
 });
-const facts = (albums: AlbumCleanupAlbumFactDto[], extra: Partial<AlbumCleanupFactsDto> = {}): AlbumCleanupFactsDto => ({
+const facts = (
+  albums: AlbumCleanupAlbumFactDto[],
+  extra: Partial<AlbumCleanupFactsDto> = {},
+): AlbumCleanupFactsDto => ({
   albums,
   collections: [],
   sameName: [],
@@ -61,7 +58,12 @@ describe('isDateOnly', () => {
 describe('buildPlan', () => {
   it('merges duplicates before nesting and takes the winner from the snapshot', () => {
     const list = facts(
-      [fact('a', 'Friends - Patrick', 10), fact('b', 'friends - patrick ', 3), fact('c', 'Friends - Patrick', 40), fact('d', 'Friends - Sarah')],
+      [
+        fact('a', 'Friends - Patrick', 10),
+        fact('b', 'friends - patrick ', 3),
+        fact('c', 'Friends - Patrick', 40),
+        fact('d', 'Friends - Sarah'),
+      ],
       { sameName: [{ key: 'friends - patrick', albumIds: ['a', 'b', 'c'], winnerId: 'a', union: 44 }] },
     );
     const plan = buildPlan(list);
@@ -69,14 +71,14 @@ describe('buildPlan', () => {
     // Fewer visible photos than the largest, but the most by true count: the snapshot decided.
     expect(plan.duplicates[0].winner.id).toBe('a');
     expect(names(plan.structure[0].children)).toEqual(['Patrick', 'Sarah']);
-    expect(plan.structure[0].children[0].photoCount).toBe(44);
+    expect(plan.structure[0].children.at(0)!.photoCount).toBe(44);
   });
 
   it('makes a level only where two albums share it', () => {
     const plan = buildPlan(albums('Trips - 2016 - Disney - Family Trip', 'Trips - 2016 - Maui', 'Hello, World'));
     expect(names(plan.structure)).toEqual(['Trips']);
     expect(names(plan.structure[0].children)).toEqual(['2016']);
-    expect(names(plan.structure[0].children[0].children)).toEqual(['Disney - Family Trip', 'Maui']);
+    expect(names(plan.structure[0].children.at(0)!.children)).toEqual(['Disney - Family Trip', 'Maui']);
     expect(names(plan.untouched)).toEqual(['Hello, World']);
   });
 
@@ -112,14 +114,18 @@ describe('buildPlan', () => {
     expect(buildPlan(albums(...week)).dayRuns.map((run) => run.albums.length)).toEqual([7, 2]);
     expect(buildPlan(albums('May 24, 2020', 'May 25, 2020')).dayRuns).toHaveLength(0);
     expect(
-      buildPlan(albums('Coquitlam, May 24, 2020', 'Coquitlam, May 25, 2020'), { combineDays: false }).summary.daysCombined,
+      buildPlan(albums('Coquitlam, May 24, 2020', 'Coquitlam, May 25, 2020'), { combineDays: false }).summary
+        .daysCombined,
     ).toBe(0);
   });
 
   it('merges the same photos under another name only when chosen', () => {
-    const list = facts([fact('a', 'Trips - 2019 - Maui', 100), fact('b', 'Maui 2019', 90), fact('c', 'Trips - 2019 - Rome', 5)], {
-      samePhotos: [{ firstId: 'a', secondId: 'b', winnerId: 'a', share: 0.95, union: 105 }],
-    });
+    const list = facts(
+      [fact('a', 'Trips - 2019 - Maui', 100), fact('b', 'Maui 2019', 90), fact('c', 'Trips - 2019 - Rome', 5)],
+      {
+        samePhotos: [{ firstId: 'a', secondId: 'b', winnerId: 'a', share: 0.95, union: 105 }],
+      },
+    );
     const suggested = buildPlan(list);
     expect(suggested.similar).toHaveLength(1);
     expect(suggested.similar[0].winner.id).toBe('a');
@@ -128,7 +134,7 @@ describe('buildPlan', () => {
     const merged = buildPlan(list, { mergedSimilar: new Set(['a+b']) });
     expect(merged.summary.similarMerged).toBe(1);
     expect(merged.untouched).toHaveLength(0);
-    expect(merged.structure[0].children[0].children[0].photoCount).toBe(105);
+    expect(merged.structure[0].children.at(0)!.children.at(0)!.photoCount).toBe(105);
   });
 
   it('files a date-only album under the place its photos were taken', () => {
@@ -149,9 +155,15 @@ describe('buildPlan', () => {
     );
     expect(joined.dayRuns[0].name).toBe('Coquitlam, May 24–25, 2020');
     const apart = buildPlan(
-      facts([fact('a', 'Coquitlam, May 24, 2020', 5, place('Coquitlam')), fact('b', 'Coquitlam, May 25, 2020', 5, place('Squamish'))], {
-        homeAreas: [home],
-      }),
+      facts(
+        [
+          fact('a', 'Coquitlam, May 24, 2020', 5, place('Coquitlam')),
+          fact('b', 'Coquitlam, May 25, 2020', 5, place('Squamish')),
+        ],
+        {
+          homeAreas: [home],
+        },
+      ),
     );
     expect(apart.dayRuns).toHaveLength(0);
     expect(apart.keptApart).toBe(1);
@@ -162,11 +174,7 @@ describe('buildPlan', () => {
     const kauai = place('Kauai', 22.05, -159.5);
     const list = () =>
       facts(
-        [
-          fact('a', 'Jul 3, 2019', 5, maui),
-          fact('b', 'Jul 4, 2019', 9, maui),
-          fact('c', 'Jul 5, 2019', 5, kauai),
-        ],
+        [fact('a', 'Jul 3, 2019', 5, maui), fact('b', 'Jul 4, 2019', 9, maui), fact('c', 'Jul 5, 2019', 5, kauai)],
         { homeAreas: [home, { city: 'Maui', lat: 20.8, lon: -156.33, photoCount: 20 }] },
       );
 
@@ -235,12 +243,14 @@ describe('buildPlan', () => {
     });
     const plan = buildPlan(list);
     expect(plan.structure[0]).toMatchObject({ existing: true, existingId: 'trips' });
-    expect(plan.structure[0].children[0]).toMatchObject({ existing: true, existingId: 'y2016' });
+    expect(plan.structure[0].children.at(0)!).toMatchObject({ existing: true, existingId: 'y2016' });
     expect(plan.summary.collections).toBe(0);
   });
 
   it('keeps a person with no photos or no located photos working, with no division by zero', () => {
-    const plan = buildPlan(facts([fact('a', 'May 24, 2020', 0), fact('b', 'Empty - One', 0), fact('c', 'Empty - Two', 0)]));
+    const plan = buildPlan(
+      facts([fact('a', 'May 24, 2020', 0), fact('b', 'Empty - One', 0), fact('c', 'Empty - Two', 0)]),
+    );
     expect(plan.summary.lostPhotos).toBe(0);
     expect(names(plan.structure)).toContain('Empty');
     expect(Number.isFinite(plan.summary.topLevelAfter)).toBe(true);
@@ -287,7 +297,12 @@ describe('operationsFor', () => {
     expect(operations[0]).toEqual({ type: 'heal', albumId: 'f', assetIds: ['photo'] });
     expect(operations).toContainEqual({ type: 'merge', albumIds: ['a', 'b'], allowShared: false });
     expect(operations).toContainEqual({ type: 'combine', albumIds: ['d', 'e'], name: 'May 24–25, 2020' });
-    expect(operations).toContainEqual({ type: 'createCollection', tempId: '>friends', name: 'Friends', parentId: null });
+    expect(operations).toContainEqual({
+      type: 'createCollection',
+      tempId: '>friends',
+      name: 'Friends',
+      parentId: null,
+    });
     expect(operations).toContainEqual({ type: 'rename', albumId: 'a', name: 'Patrick' });
     expect(operations).toContainEqual({ type: 'move', albumId: 'a', parentTempId: '>friends' });
     expect(operations).toContainEqual({ type: 'move', albumId: 'e', parentTempId: '>coquitlam' });
@@ -314,9 +329,12 @@ describe('operationsFor', () => {
   });
 
   it('leaves an album left out exactly as it is', () => {
-    const list = facts([fact('a', 'Friends - Patrick'), fact('b', 'Friends - Patrick', 2), fact('c', 'Friends - Sarah')], {
-      sameName: [{ key: 'friends - patrick', albumIds: ['a', 'b'], winnerId: 'a', union: 12 }],
-    });
+    const list = facts(
+      [fact('a', 'Friends - Patrick'), fact('b', 'Friends - Patrick', 2), fact('c', 'Friends - Sarah')],
+      {
+        sameName: [{ key: 'friends - patrick', albumIds: ['a', 'b'], winnerId: 'a', union: 12 }],
+      },
+    );
     const operations = operationsFor(buildPlan(list, { leftOut: new Set(['>friends']) }));
     expect(operations.filter(({ type }) => type === 'merge')).toEqual([]);
     expect(operations.filter(({ type }) => type === 'move')).toEqual([]);

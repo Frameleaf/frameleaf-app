@@ -1,10 +1,10 @@
-import { sdkMock } from '$lib/__mocks__/sdk.mock';
-import AlbumCleanupBanner from '$lib/components/frameleaf/album-cleanup/AlbumCleanupBanner.svelte';
-import { authManager } from '$lib/managers/auth-manager.svelte';
 import type { AlbumCleanupFactsDto, UserPreferencesResponseDto } from '@frameleaf/sdk';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import { flushSync } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import AlbumCleanupBanner from '$lib/components/frameleaf/album-cleanup/AlbumCleanupBanner.svelte';
+import { authManager } from '$lib/managers/auth-manager.svelte';
 
 const facts = (count: number): AlbumCleanupFactsDto => ({
   albums: Array.from({ length: count }, (_, index) => ({
@@ -51,7 +51,9 @@ describe(AlbumCleanupBanner.name, () => {
 
   it('shows live numbers when the scan found enough to mention', async () => {
     render(AlbumCleanupBanner);
-    expect(await screen.findByRole('complementary', { name: 'frameleaf_album_cleanup_magic_albums' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('complementary', { name: 'frameleaf_album_cleanup_magic_albums' }),
+    ).toBeInTheDocument();
     expect(screen.getByText('frameleaf_album_cleanup_review_suggestions')).toBeInTheDocument();
     expect(sdkMock.getAlbumCleanupSnapshot).toHaveBeenCalledOnce();
   });

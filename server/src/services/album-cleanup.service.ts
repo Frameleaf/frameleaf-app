@@ -32,6 +32,7 @@ import {
   CLEANUP_APPLY_STALLED_MINUTES,
   CLEANUP_MAX_LOST_DATES_PER_ALBUM,
   CLEANUP_SCAN_STALE_HOURS,
+  SAME_PHOTOS_MIN_SHARED,
   SAME_PHOTOS_SHARE,
   albumNameKey,
   countCleanupSuggestions,
@@ -74,6 +75,15 @@ type ApplyContext = {
   collections: CleanupCollectionRow[];
   targets: Record<string, string>;
   tally: Record<string, number>;
+};
+
+/** Who keeps their name and icon in a group of albums: the same rule as a two-way merge, applied in turn. */
+const largestByTrueCount = (albums: CleanupAlbumRow[], counts: Map<string, number>): CleanupAlbumRow => {
+  let best = albums[0];
+  for (const album of albums.slice(1)) {
+    best = chooseMergeWinner(best, album, counts).winner;
+  }
+  return best;
 };
 
 const add = (tally: Record<string, number>, key: string, amount = 1) => {
@@ -137,10 +147,7 @@ export class AlbumCleanupService extends BaseService {
 
   /** A collection the run made goes only if the run's albums were all that was in it. */
   @ReversesAlbumChange(AlbumCleanupChangeKind.CollectionCreated)
-  static async reverseCreatedCollections(
-    tx: Transaction<DB>,
-    changes: AlbumChangeRow[],
-  ): Promise<AlbumChangeReversal> {
+  static async reverseCreatedCollections(tx: Transaction<DB>, changes: AlbumChangeRow[]): Promise<AlbumChangeReversal> {
     const repository = new AlbumRepository(tx);
     let reversed = 0;
     const skipped: string[] = [];
@@ -384,8 +391,7 @@ export class AlbumCleanupService extends BaseService {
     });
     const factById = new Map(facts.map((fact) => [fact.id, fact]));
     const nameOf = (id: string) => albumNameKey(factById.get(id)!.name);
-    const winner = (group: CleanupAlbumRow[]) =>
-      group.reduce((best, album) => chooseMergeWinner(best, album, trueCounts).winner);
+    const winner = (group: CleanupAlbumRow[]) => largestByTrueCount(group, trueCounts);
 
     // Rule 5: exact-name duplicates.
     const byName = Map.groupBy(albums, ({ name }) => albumNameKey(name));
@@ -409,7 +415,12 @@ export class AlbumCleanupService extends BaseService {
       const first = factById.get(firstId)!;
       const second = factById.get(secondId)!;
       const smaller = Math.min(first.count, second.count);
-      if (smaller === 0 || shared / smaller < SAME_PHOTOS_SHARE || nameOf(firstId) === nameOf(secondId)) {
+      if (
+        smaller === 0 ||
+        shared < SAME_PHOTOS_MIN_SHARED ||
+        shared / smaller < SAME_PHOTOS_SHARE ||
+        nameOf(firstId) === nameOf(secondId)
+      ) {
         return [];
       }
       return [
@@ -426,22 +437,27 @@ export class AlbumCleanupService extends BaseService {
     // Rule 14: same dates in the same place, with no photos in common.
     const located = facts.filter((fact) => fact.gps && fact.span);
     const byTrip = Map.groupBy(located, (fact) => `${fact.span!.from}|${fact.span!.to}|${fact.gps!.city}`);
-    const sameTrip = [...byTrip.values()].flatMap((group) => {
-      if (group.length < 2) {
-        return [];
-      }
-      const lead = winner(group.map(({ id }) => album(id)));
-      return group.flatMap((other) => {
-        if (other.id === lead.id || nameOf(other.id) === nameOf(lead.id)) {
+    const sameTrip = byTrip
+      .values()
+      .flatMap((group) => {
+        if (group.length < 2) {
           return [];
         }
-        const [firstId, secondId] = lead.id < other.id ? [lead.id, other.id] : [other.id, lead.id];
-        if (overlapOf.get(`${firstId}+${secondId}`)) {
-          return [];
-        }
-        return [{ firstId, secondId, winnerId: lead.id, share: 0, union: factById.get(lead.id)!.count + other.count }];
-      });
-    });
+        const lead = winner(group.map(({ id }) => album(id)));
+        return group.flatMap((other) => {
+          if (other.id === lead.id || nameOf(other.id) === nameOf(lead.id)) {
+            return [];
+          }
+          const [firstId, secondId] = lead.id < other.id ? [lead.id, other.id] : [other.id, lead.id];
+          if (overlapOf.get(`${firstId}+${secondId}`)) {
+            return [];
+          }
+          return [
+            { firstId, secondId, winnerId: lead.id, share: 0, union: factById.get(lead.id)!.count + other.count },
+          ];
+        });
+      })
+      .toArray();
 
     // Lost dates: read only the albums holding a photo that may need it.
     const lostDates: AlbumCleanupFacts['lostDates'] = [];
@@ -512,9 +528,15 @@ export class AlbumCleanupService extends BaseService {
       this.loadCandidates(auth.user.id),
       this.albumCleanupRepository.getCollections(auth.user.id),
     ]);
-    const operations = this.validated(dto.operations, new Map(candidates.map((album) => [album.id, album])), collections);
+    const operations = this.validated(
+      dto.operations,
+      new Map(candidates.map((album) => [album.id, album])),
+      collections,
+    );
 
     const runId = await this.albumChangeRunRepository.transaction(async (tx) => {
+      // Two clicks at once must queue here, not both find nothing running.
+      await lockAlbumHierarchy(tx);
       if (await this.albumCleanupRepository.isApplying(tx, auth.user.id)) {
         throw new ConflictException('A cleanup is already being applied');
       }
@@ -593,7 +615,7 @@ export class AlbumCleanupService extends BaseService {
         }
         case 'merge':
         case 'combine': {
-          const members = [...new Set(operation.albumIds ?? [])];
+          const members = [...new Set(operation.albumIds)];
           if (members.length < 2) {
             throw new BadRequestException('A merge needs at least two albums');
           }
@@ -604,11 +626,14 @@ export class AlbumCleanupService extends BaseService {
           if (operation.type === 'combine' && !operation.name) {
             throw new BadRequestException('Combined albums need a name');
           }
-          members.forEach((id) => claim(id));
+          for (const id of members) {
+            claim(id);
+          }
           break;
         }
         case 'heal': {
-          if (!operation.albumId || !operation.assetIds?.length) {
+          album(operation.albumId);
+          if (!operation.assetIds?.length) {
             throw new BadRequestException('Healing needs an album and its photos');
           }
           break;
@@ -705,7 +730,7 @@ export class AlbumCleanupService extends BaseService {
     write: (tx: Transaction<DB>) => Promise<void>,
   ): Promise<void> {
     if (operation.type === 'heal') {
-      const ids = [...new Set(operation.assetIds ?? [])].sort();
+      const ids = [...new Set(operation.assetIds)].toSorted();
       return this.partnerOriginRepository.withOriginEdit('asset', ids, [], (tx) => write(tx!));
     }
     return this.albumChangeRunRepository.transaction(write);
@@ -776,9 +801,7 @@ export class AlbumCleanupService extends BaseService {
   }
 
   private async applyCreateCollection(tx: Transaction<DB>, context: ApplyContext, operation: AlbumCleanupOperation) {
-    const parentId = operation.parentTempId
-      ? context.targets[operation.parentTempId]
-      : (operation.parentId ?? null);
+    const parentId = operation.parentTempId ? context.targets[operation.parentTempId] : (operation.parentId ?? null);
     if (operation.parentTempId && !parentId) {
       throw new BadRequestException('The collection it belongs in was not created');
     }
@@ -824,8 +847,9 @@ export class AlbumCleanupService extends BaseService {
       throw new BadRequestException('Shared albums are merged only when you choose to');
     }
     const counts = await new AlbumRepository(tx).getOwnerAssetCounts(ids, context.auth.user.id);
-    let base = rows.reduce((best, album) => chooseMergeWinner(best, album, counts).winner);
-    for (const other of rows.filter(({ id }) => id !== base.id)) {
+    let base = largestByTrueCount(rows, counts);
+    const others = rows.filter(({ id }) => id !== base.id);
+    for (const other of others) {
       const { winner, loser } = await this.merges.mergeInto(tx, context.auth, context.runId, base.id, other.id);
       context.targets[loser.id] = winner.id;
       context.candidates.delete(loser.id);

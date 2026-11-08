@@ -189,12 +189,15 @@
   let undoingCleanup = $state(false);
 
   const readCleanup = async () => {
-    const [status, latest] = await Promise.all([
-      getAlbumCleanupStatus().catch(() => undefined),
-      getLatestAlbumChangeRun().catch(() => undefined),
-    ]);
-    cleanup = status;
-    lastRun = latest?.run ?? null;
+    try {
+      const [status, latest] = await Promise.all([getAlbumCleanupStatus(), getLatestAlbumChangeRun()]);
+      cleanup = status;
+      lastRun = latest?.run ?? null;
+    } catch {
+      // A card that can't be worked out is just not filled in.
+      cleanup = undefined;
+      lastRun = null;
+    }
   };
   $effect(() => {
     if (authManager.authenticated && !authManager.isSharedLink) {
@@ -636,10 +639,7 @@
           {#if lastCleanup?.canUndo}
             <Button disabled={undoingCleanup} onclick={undoCleanup}>{$t('frameleaf_album_cleanup_care_undo')}</Button>
           {/if}
-          <Button
-            label={openLabel('frameleaf_album_cleanup_care_name')}
-            onclick={() => goto(Route.albumCleanup())}
-          >
+          <Button label={openLabel('frameleaf_album_cleanup_care_name')} onclick={() => goto(Route.albumCleanup())}>
             {$t('frameleaf_carehome_open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden />
           </Button>
         {/snippet}

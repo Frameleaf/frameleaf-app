@@ -1,6 +1,6 @@
 /* Magic Albums cleanup (FL-1300), from the prototype's album-cleanup.css. Page gutters come from .ac-page. */
 .ac-page {
-  padding: 18px var(--fl-page-inline, var(--fl-space-4)) 64px;
+  padding: 18px var(--fl-page-inline, var(--fl-space-4)) 0;
   color: var(--fl-text);
 }
 .ac-page > * {
@@ -220,12 +220,11 @@
 }
 .ac-head h1 {
   margin: 0;
-  font-size: var(--fl-font-display);
+  font-size: 32px;
   font-weight: 600;
 }
 .ac-head p:last-child {
   margin: 0;
-  max-width: 78ch;
   color: var(--fl-muted);
 }
 dl.ac-stats {
@@ -254,6 +253,7 @@ dl.ac-stats {
   align-items: center;
   gap: 12px;
   margin: 0;
+  color: var(--fl-muted);
   font-size: 24px;
   font-weight: 600;
 }
@@ -281,6 +281,7 @@ dl.ac-stats {
   background: var(--fl-panel);
 }
 .ac-rules-panel summary {
+  min-height: 0;
   font-size: 15px;
   font-weight: 600;
   cursor: pointer;
@@ -582,7 +583,22 @@ button.ac-chevron:hover {
   color: var(--fl-accent-strong, var(--fl-accent));
 }
 .ac-row-lock {
+  display: inline-flex;
   color: var(--fl-muted);
+}
+.ac-row-menu {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+/* Quiet until wanted, so a long list reads as names rather than a column of boxes. */
+.ac-row-menu button:not(:hover):not(:focus-visible):not([aria-expanded='true']) {
+  border-color: transparent;
+  background: transparent;
+}
+.ac-row-menu button {
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
 }
 .ac-more {
   padding: 8px 12px 8px calc(48px + var(--depth, 0) * 24px);
@@ -698,6 +714,10 @@ button.ac-chevron:hover {
   font-size: var(--fl-font-callout);
 }
 .ac-heal-dates s,
+.ac-heal-dates b {
+  white-space: nowrap;
+}
+.ac-heal-dates s,
 .ac-heal-dates svg {
   color: var(--fl-muted);
 }
@@ -793,7 +813,7 @@ button.ac-chevron:hover {
 }
 .ac-done h1 {
   margin: 0;
-  font-size: var(--fl-font-display);
+  font-size: 32px;
   font-weight: 600;
 }
 .ac-done > p {
@@ -840,6 +860,12 @@ button.ac-chevron:hover {
   font-size: var(--fl-font-small);
 }
 
+@media (min-width: 701px) {
+  /* The page area has an 8px gutter below it; the action bar goes to the window's edge. */
+  .ac-footer {
+    bottom: -8px;
+  }
+}
 @media (min-width: 1101px) {
   .ac-rules {
     position: sticky;
@@ -952,6 +978,17 @@ button.ac-chevron:hover {
     flex: 1 1 100%;
     width: auto;
   }
+  .ac-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    margin-inline: -16px;
+    padding-inline: 16px;
+  }
+  .ac-tabs button {
+    flex: 0 0 auto;
+    min-height: 44px;
+  }
   .ac-row .ac-tag {
     display: none;
   }
@@ -962,9 +999,9 @@ button.ac-chevron:hover {
   .ac-more {
     padding-left: calc(32px + var(--depth, 0) * 16px);
   }
-  /* The floating tab bar covers the bottom of the window. */
+  /* The page area already stops above the floating tab bar; this sits just clear of it. */
   .ac-footer {
-    bottom: var(--fl-tabbar-space, 0px);
+    bottom: -14px;
   }
   .ac-footer p:not([role='status']) {
     display: none;

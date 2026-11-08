@@ -10,7 +10,7 @@
     buildPlan,
     DEFAULT_DELIMITERS,
     DEFAULT_MIN_GROUP,
-    isDateOnly,
+    messyAlbumNames,
     OFFERED_DELIMITERS,
     operationsFor,
     type CleanupPlan,
@@ -204,10 +204,16 @@
 
   const visibleStructure = $derived(plan ? (searching ? matchTree(plan.structure, needle) : plan.structure) : []);
   const visibleUntouched = $derived(
-    plan ? (searching ? plan.untouched.filter((item) => item.name.toLowerCase().includes(needle)) : plan.untouched) : [],
+    plan
+      ? searching
+        ? plan.untouched.filter((item) => item.name.toLowerCase().includes(needle))
+        : plan.untouched
+      : [],
   );
   const dupes = $derived(plan ? plan.duplicates.filter((group) => matches(group.key)) : []);
-  const similar = $derived(plan ? plan.similar.filter((pair) => matches(`${pair.winner.name} ${pair.loser.name}`)) : []);
+  const similar = $derived(
+    plan ? plan.similar.filter((pair) => matches(`${pair.winner.name} ${pair.loser.name}`)) : [],
+  );
   const sameTrip = $derived(
     plan ? plan.sameTrip.filter((pair) => matches(`${pair.winner.name} ${pair.loser.name}`)) : [],
   );
@@ -369,14 +375,7 @@
   };
 
   /* ---- what the art shows ---- */
-  const pileNames = $derived(
-    facts
-      ? (() => {
-          const messy = facts.albums.filter(({ name }) => isDateOnly(name) || name.includes(' - ')).map(({ name }) => name);
-          return (messy.length > 0 ? messy : facts.albums.map(({ name }) => name)).slice(0, 5);
-        })()
-      : [],
-  );
+  const pileNames = $derived(facts ? messyAlbumNames(facts) : []);
   const covers = $derived(facts ? facts.albums.flatMap(({ coverAssetId }) => coverAssetId ?? []) : []);
 
   /* ---- tabs ---- */
@@ -394,7 +393,11 @@
             label: $t('frameleaf_album_cleanup_tab_days'),
             count: plan.trips.length + plan.dayRuns.length + plan.placed.length,
           },
-          { id: 'dates', label: $t('frameleaf_album_cleanup_tab_dates'), count: summary.lostPhotos + plan.mismatches.length },
+          {
+            id: 'dates',
+            label: $t('frameleaf_album_cleanup_tab_dates'),
+            count: summary.lostPhotos + plan.mismatches.length,
+          },
           { id: 'untouched', label: $t('frameleaf_album_cleanup_tab_unchanged'), count: plan.untouched.length },
         ]
       : [],
@@ -421,7 +424,6 @@
   );
   const activeSub = $derived(sub[tab]);
   const photos = (count: number) => $t('frameleaf_album_cleanup_photo_count', { values: { count } });
-  const albumsLabel = (count: number) => $t('frameleaf_album_cleanup_album_count', { values: { count } });
   const homeLabel = (city: string | null | undefined) =>
     city ? $t('frameleaf_album_cleanup_home_area', { values: { city } }) : $t('frameleaf_album_cleanup_home_unknown');
   const formatDay = (day: string) =>
@@ -476,8 +478,7 @@
             onkeydown={(event) => {
               if (event.key === 'Enter') {
                 event.currentTarget.blur();
-              }
-              if (event.key === 'Escape') {
+              } else if (event.key === 'Escape') {
                 editing = null;
               }
             }}
@@ -515,26 +516,32 @@
           <Icon icon={mdiLockOutline} size="15" aria-hidden={true} />
         </span>
       {/if}
-      <Menu label={$t('frameleaf_album_cleanup_actions_for', { values: { name: node.name } })} align="end">
-        {#snippet trigger()}<Icon icon={mdiDotsHorizontal} size="18" aria-hidden={true} />{/snippet}
-        {#if group}
-          <MenuItem onSelect={() => onRowMenu.rename(node)}>
-            <Icon icon={mdiPencilOutline} size="18" aria-hidden={true} />{$t('rename')}
+      <span class="ac-row-menu">
+        <Menu label={$t('frameleaf_album_cleanup_actions_for', { values: { name: node.name } })} align="end">
+          {#snippet trigger()}<Icon icon={mdiDotsHorizontal} size="18" aria-hidden={true} />{/snippet}
+          {#if group}
+            <MenuItem onSelect={() => onRowMenu.rename(node)}>
+              <Icon icon={mdiPencilOutline} size="18" aria-hidden={true} />{$t('rename')}
+            </MenuItem>
+          {/if}
+          {#if group && node.flattenable}
+            <MenuItem onSelect={() => onRowMenu.flatten(node)}>
+              <Icon icon={mdiFormatListGroup} size="18" aria-hidden={true} />{$t(
+                'frameleaf_album_cleanup_remove_level',
+              )}
+            </MenuItem>
+          {/if}
+          <MenuItem onSelect={() => onRowMenu.move(node)}>
+            <Icon icon={mdiFolderMoveOutline} size="18" aria-hidden={true} />{$t('frameleaf_album_cleanup_move_into')}
           </MenuItem>
-        {/if}
-        {#if group && node.flattenable}
-          <MenuItem onSelect={() => onRowMenu.flatten(node)}>
-            <Icon icon={mdiFormatListGroup} size="18" aria-hidden={true} />{$t('frameleaf_album_cleanup_remove_level')}
+          <div class="ac-menu-separator" role="separator"></div>
+          <MenuItem onSelect={() => onRowMenu.leaveOut(node)}>
+            <Icon icon={mdiCloseCircleOutline} size="18" aria-hidden={true} />{$t(
+              'frameleaf_album_cleanup_leave_as_is',
+            )}
           </MenuItem>
-        {/if}
-        <MenuItem onSelect={() => onRowMenu.move(node)}>
-          <Icon icon={mdiFolderMoveOutline} size="18" aria-hidden={true} />{$t('frameleaf_album_cleanup_move_into')}
-        </MenuItem>
-        <div class="ac-menu-separator" role="separator"></div>
-        <MenuItem onSelect={() => onRowMenu.leaveOut(node)}>
-          <Icon icon={mdiCloseCircleOutline} size="18" aria-hidden={true} />{$t('frameleaf_album_cleanup_leave_as_is')}
-        </MenuItem>
-      </Menu>
+        </Menu>
+      </span>
     </li>
     {#if open}
       {@render rows(node.children.slice(0, shown), depth + 1, undefined)}
@@ -693,7 +700,7 @@
                   <small>{example}</small>
                 </label>
               {/each}
-              {#each delimiters.filter((token) => !OFFERED_DELIMITERS.some((item) => item.token === token)) as token (token)}
+              {#each delimiters.filter((token) => OFFERED_DELIMITERS.every((item) => item.token !== token)) as token (token)}
                 <label class="ac-delim on">
                   <input type="checkbox" checked onchange={() => toggleDelimiter(token)} />
                   <b>{token}</b>
@@ -715,14 +722,26 @@
           <section>
             <h2>{$t('frameleaf_album_cleanup_date_albums')}</h2>
             <div class="ac-choices">
-              {@render choice('year', $t('frameleaf_album_cleanup_date_year'), $t('frameleaf_album_cleanup_date_year_detail'))}
+              {@render choice(
+                'year',
+                $t('frameleaf_album_cleanup_date_year'),
+                $t('frameleaf_album_cleanup_date_year_detail'),
+              )}
               {@render choice(
                 'year-month',
                 $t('frameleaf_album_cleanup_date_month'),
                 $t('frameleaf_album_cleanup_date_month_detail'),
               )}
-              {@render choice('leave', $t('frameleaf_album_cleanup_date_leave'), $t('frameleaf_album_cleanup_date_leave_detail'))}
-              {@render choice('remove', $t('frameleaf_album_cleanup_date_remove'), $t('frameleaf_album_cleanup_date_remove_detail'))}
+              {@render choice(
+                'leave',
+                $t('frameleaf_album_cleanup_date_leave'),
+                $t('frameleaf_album_cleanup_date_leave_detail'),
+              )}
+              {@render choice(
+                'remove',
+                $t('frameleaf_album_cleanup_date_remove'),
+                $t('frameleaf_album_cleanup_date_remove_detail'),
+              )}
             </div>
           </section>
           <section>
@@ -829,14 +848,18 @@
                   </span>
                   {#if group.shared}
                     <Button onclick={() => (forcedDuplicates = toggled(forcedDuplicates, group.key))}>
-                      {group.skipped ? $t('frameleaf_album_cleanup_merge_anyway') : $t('frameleaf_album_cleanup_dont_merge')}
+                      {group.skipped
+                        ? $t('frameleaf_album_cleanup_merge_anyway')
+                        : $t('frameleaf_album_cleanup_dont_merge')}
                     </Button>
                   {:else}
                     <Button
                       disabled={!mergeDuplicates}
                       onclick={() => (skippedDuplicates = toggled(skippedDuplicates, group.key))}
                     >
-                      {group.skipped ? $t('frameleaf_album_cleanup_merge') : $t('frameleaf_album_cleanup_keep_separate')}
+                      {group.skipped
+                        ? $t('frameleaf_album_cleanup_merge')
+                        : $t('frameleaf_album_cleanup_keep_separate')}
                     </Button>
                   {/if}
                 </div>
@@ -888,7 +911,9 @@
               )}
             {:else}
               <li class="ac-empty">
-                {usePhotoData ? $t('frameleaf_album_cleanup_no_albums') : $t('frameleaf_album_cleanup_turn_on_photo_data')}
+                {usePhotoData
+                  ? $t('frameleaf_album_cleanup_no_albums')
+                  : $t('frameleaf_album_cleanup_turn_on_photo_data')}
               </li>
             {/each}
           </ul>
@@ -908,7 +933,9 @@
                       {$t('frameleaf_album_cleanup_trip_detail', {
                         values: { albums: trip.albums.length, photos: number(trip.count), year: trip.year },
                       })}{trip.cities.length > 1
-                        ? $t('frameleaf_album_cleanup_trip_also', { values: { cities: trip.cities.slice(1).join(', ') } })
+                        ? $t('frameleaf_album_cleanup_trip_also', {
+                            values: { cities: trip.cities.slice(1).join(', ') },
+                          })
                         : ''}
                     </small>
                   </span>
@@ -924,7 +951,9 @@
               </li>
             {:else}
               <li class="ac-empty">
-                {usePhotoData ? $t('frameleaf_album_cleanup_no_trips') : $t('frameleaf_album_cleanup_turn_on_photo_data')}
+                {usePhotoData
+                  ? $t('frameleaf_album_cleanup_no_trips')
+                  : $t('frameleaf_album_cleanup_turn_on_photo_data')}
               </li>
             {/each}
             {@render moreNote(LIST_LIMIT, plan.trips.length, $t('frameleaf_album_cleanup_noun_trip'))}
@@ -984,7 +1013,9 @@
               </li>
             {:else}
               <li class="ac-empty">
-                {usePhotoData ? $t('frameleaf_album_cleanup_no_albums') : $t('frameleaf_album_cleanup_turn_on_photo_data')}
+                {usePhotoData
+                  ? $t('frameleaf_album_cleanup_no_albums')
+                  : $t('frameleaf_album_cleanup_turn_on_photo_data')}
               </li>
             {/each}
             {@render moreNote(TREE_LIMIT, plan.placed.length, $t('frameleaf_album_cleanup_noun_album'))}
@@ -1080,13 +1111,18 @@
                       : $t('frameleaf_album_cleanup_photos_from', { values: { day: item.photoLabel } })}
                   </small>
                 </span>
-                <Button pressed={item.renamed} onclick={() => (renamedToPhotoDate = toggled(renamedToPhotoDate, item.key))}>
+                <Button
+                  pressed={item.renamed}
+                  onclick={() => (renamedToPhotoDate = toggled(renamedToPhotoDate, item.key))}
+                >
                   {item.renamed ? $t('frameleaf_album_cleanup_renaming') : $t('frameleaf_album_cleanup_use_photo_date')}
                 </Button>
               </li>
             {:else}
               <li class="ac-empty">
-                {usePhotoData ? $t('frameleaf_album_cleanup_no_albums') : $t('frameleaf_album_cleanup_turn_on_photo_data')}
+                {usePhotoData
+                  ? $t('frameleaf_album_cleanup_no_albums')
+                  : $t('frameleaf_album_cleanup_turn_on_photo_data')}
               </li>
             {/each}
             {@render moreNote(TREE_LIMIT, plan.mismatches.length, $t('frameleaf_album_cleanup_noun_album'))}

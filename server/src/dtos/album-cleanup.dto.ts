@@ -137,8 +137,17 @@ const AlbumCleanupOperationSchema = z
     albumId: z.uuidv4().optional().describe('move, rename, heal, remove: the album'),
     albumIds: z.array(z.uuidv4()).min(2).optional().describe('merge, combine: the albums'),
     name: z.string().trim().min(1).max(255).optional().describe('createCollection, rename, combine: the name'),
-    parentId: z.uuidv4().nullable().optional().describe('createCollection, move: an existing collection, or the top level'),
-    parentTempId: z.string().min(1).max(2048).optional().describe('createCollection, move: a collection this run creates'),
+    parentId: z
+      .uuidv4()
+      .nullable()
+      .optional()
+      .describe('createCollection, move: an existing collection, or the top level'),
+    parentTempId: z
+      .string()
+      .min(1)
+      .max(2048)
+      .optional()
+      .describe('createCollection, move: a collection this run creates'),
     allowShared: z.boolean().optional().describe('merge: the person chose to merge albums that are shared'),
     assetIds: z.array(z.uuidv4()).optional().describe('heal: the photos approved'),
   })

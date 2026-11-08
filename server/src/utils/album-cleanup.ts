@@ -5,6 +5,8 @@
 
 /** Rule 7: two albums hold "the same photos" at this share of the smaller one. */
 export const SAME_PHOTOS_SHARE = 0.9;
+/** A photo or two in common is a favourite album, not a copy; below this it isn't worth asking about. */
+export const SAME_PHOTOS_MIN_SHARED = 3;
 /** Rule 12: home is everything this far from the centre of the densest GPS cluster. */
 export const HOME_RADIUS_KM = 100;
 /** The review's picker lists this many of the largest clusters. */
@@ -19,14 +21,14 @@ export const CLEANUP_APPLY_STALLED_MINUTES = 30;
 const MONTHS =
   'jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?';
 const DATE_SOURCE = [
-  `(?:${MONTHS})\\.?\\s+\\d{1,2}(?:st|nd|rd|th)?,?\\s+\\d{4}`,
-  `\\d{1,2}\\s+(?:${MONTHS})\\.?,?\\s+\\d{4}`,
+  String.raw`(?:${MONTHS})\.?\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4}`,
+  String.raw`\d{1,2}\s+(?:${MONTHS})\.?,?\s+\d{4}`,
   String.raw`\d{4}[-/]\d{1,2}[-/]\d{1,2}`,
   String.raw`\d{1,2}/\d{1,2}/\d{4}`,
-  `(?:${MONTHS})\\.?\\s+\\d{4}`,
+  String.raw`(?:${MONTHS})\.?\s+\d{4}`,
 ].join('|');
 const DATE_ONLY = new RegExp(`^(?:${DATE_SOURCE})$`, 'i');
-const DATE_ANYWHERE = new RegExp(`\\b(?:${DATE_SOURCE})\\b`, 'gi');
+const DATE_ANYWHERE = new RegExp(String.raw`\b(?:${DATE_SOURCE})\b`, 'gi');
 /** The default delimiters of the review, read the same way it reads them: dates whole, then "-", "," and ":". */
 const DEFAULT_SPLIT = /\s+[-–—]\s+|\s*,\s+|\s*:\s+/;
 
@@ -95,8 +97,7 @@ export const distanceKm = (a: { lat: number; lon: number }, b: { lat: number; lo
   const radians = Math.PI / 180;
   const dLat = (b.lat - a.lat) * radians;
   const dLon = (b.lon - a.lon) * radians;
-  const h =
-    Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * radians) * Math.cos(b.lat * radians) * Math.sin(dLon / 2) ** 2;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * radians) * Math.cos(b.lat * radians) * Math.sin(dLon / 2) ** 2;
   return 2 * 6371 * Math.asin(Math.sqrt(h));
 };
 
