@@ -136,8 +136,8 @@ export class AlbumService extends BaseService {
     const hidden = new Set(await this.smartAlbumRepository.getHiddenAlbumIds(ownerId));
     // Partner sharing: the album list leaves out partner albums when the account turned them off, in the
     // query so `take` counts only shown albums. The albums an item belongs to (`assetId`) always list them.
-    if (!assetId && !getPreferences(await this.userRepository.getMetadata(ownerId)).albums.showPartnerAlbums) {
-      for (const id of await this.partnerOriginRepository.getPartnerAlbumIds(ownerId)) {
+    if (!assetId) {
+      for (const id of await this.hiddenPartnerAlbumIds(ownerId)) {
         hidden.add(id);
       }
     }
@@ -185,6 +185,13 @@ export class AlbumService extends BaseService {
     );
   }
 
+  /** The partner albums this account turned off (`albums.showPartnerAlbums`): not listed in its album directory. */
+  private async hiddenPartnerAlbumIds(ownerId: string): Promise<string[]> {
+    return getPreferences(await this.userRepository.getMetadata(ownerId)).albums.showPartnerAlbums
+      ? []
+      : this.partnerOriginRepository.getPartnerAlbumIds(ownerId);
+  }
+
   /** Supporter option (b): mark the members who are supporters. A shared-link visitor is not told. */
   private async withSupporters(auth: AuthDto, albums: AlbumResponseDto[]): Promise<AlbumResponseDto[]> {
     if (auth.sharedLink || albums.length === 0) {
@@ -230,8 +237,10 @@ export class AlbumService extends BaseService {
     this.refreshCoversInBackground(auth.user.id);
 
     const privacyOptions = this.nsfwOptions(auth);
+    const hiddenPartnerAlbums = await this.hiddenPartnerAlbumIds(auth.user.id);
     let albums: MapAlbumDto[] = await this.albumRepository.getAll(auth.user.id, {
       libraryScope: dto.libraryScope ?? LibraryScope.Personal,
+      ...(hiddenPartnerAlbums.length > 0 ? { excludeIds: hiddenPartnerAlbums } : {}),
     });
     if (albums.length === 0) {
       return buildAlbumTree([]);
@@ -298,14 +307,17 @@ export class AlbumService extends BaseService {
     if (new Set(albumIds).size !== albumIds.length) {
       throw new BadRequestException('Each album may appear only once');
     }
+    // Albums the directory doesn't list aren't part of the order the client sends.
+    const hiddenPartnerAlbums = new Set(await this.hiddenPartnerAlbumIds(auth.user.id));
     // The group is read and the order written in one transaction, with the albums locked against a
     // concurrent move, so an order can never be saved for a group that changed in between.
     await this.albumRepository.setPositions(auth.user.id, albumIds, (rows) => {
       const view = dto.libraryScope ?? LibraryScope.Personal;
       const visible = rows.filter(
-        ({ libraryScope, role }) =>
-          scopeMatches(libraryScope ?? LibraryScope.Personal, view) ||
-          (view === LibraryScope.Personal && role !== undefined && role !== AlbumUserRole.Owner),
+        ({ id, libraryScope, role }) =>
+          !hiddenPartnerAlbums.has(id) &&
+          (scopeMatches(libraryScope ?? LibraryScope.Personal, view) ||
+            (view === LibraryScope.Personal && role !== undefined && role !== AlbumUserRole.Owner)),
       );
       const group = albumOrderGroup(visible, dto.parentId, albumIds[0], dto.hierarchy);
       if (!group) {
