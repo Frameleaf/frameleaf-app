@@ -4,7 +4,10 @@ import ffmpeg, { FfprobeData, FfprobeStream } from 'fluent-ffmpeg';
 import { camelCase, upperFirst } from 'lodash-es';
 import { Duration } from 'luxon';
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Writable } from 'node:stream';
 import { parentPort } from 'node:worker_threads';
 import type { HdrCodecCapabilities } from 'src/queue/image-hdr.js';
@@ -42,6 +45,7 @@ import { SharpOperationError, imageWorkerDiagnostics, sharpProcessPool } from 's
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { executionSignal } from 'src/utils/execution-signal.js';
 import { LOCATION_DELETE_ARGS } from 'src/utils/location-tags.js';
+import { ContainerLogSignals, readContainerLogSignals } from 'src/utils/log-video-container.js';
 import { parseFfprobeColorRange } from 'src/utils/media-policy.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { tryParseRational } from 'src/utils/rational-time.js';
@@ -369,6 +373,51 @@ export class MediaRepository {
 
   async generateThumbhash(input: string | Buffer, options: GenerateThumbhashOptions): Promise<Buffer> {
     return sharpProcessPool.run('generateThumbhash', [input, options]);
+  }
+
+  /** FL-1285: the Log markers stored in the MP4/MOV box structure (Apple `logs`, Sony XML). */
+  async readContainerLogSignals(input: string): Promise<ContainerLogSignals> {
+    const handle = await fs.open(input, 'r');
+    try {
+      const { size } = await handle.stat();
+      return await readContainerLogSignals(async (position, length) => {
+        const buffer = Buffer.alloc(length);
+        const { bytesRead } = await handle.read(buffer, 0, length, position);
+        return buffer.subarray(0, bytesRead);
+      }, size);
+    } finally {
+      await handle.close();
+    }
+  }
+
+  /**
+   * FL-1285: a generated colour LUT, kept in a server-owned folder under the system temp directory
+   * and named after what it contains, so it is built once per profile and reused by every job. A
+   * missing file (a cleaned temp folder) is simply built again. Written to a temporary name and
+   * renamed, so ffmpeg never reads a half-written LUT.
+   */
+  async ensureColorLut(fileName: string, build: () => string): Promise<string> {
+    if (!/^[\w.-]+$/.test(fileName)) {
+      throw new Error(`Invalid colour LUT file name: ${fileName}`);
+    }
+    const folder = join(tmpdir(), 'frameleaf-color-luts');
+    const target = join(folder, fileName);
+    try {
+      await fs.access(target);
+      return target;
+    } catch {
+      // not built yet
+    }
+    await fs.mkdir(folder, { recursive: true });
+    const partial = `${target}.${process.pid}.${randomUUID()}.partial`;
+    try {
+      await fs.writeFile(partial, build());
+      await fs.rename(partial, target);
+    } catch (error) {
+      await fs.rm(partial, { force: true });
+      throw error;
+    }
+    return target;
   }
 
   async probe(input: string, options?: ProbeOptions): Promise<VideoInfo> {

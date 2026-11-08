@@ -31,6 +31,12 @@ export const newMediaRepositoryMock = (): Mocked<RepositoryInterface<MediaReposi
     decodeImage: vitest.fn().mockResolvedValue({ data: Buffer.from(''), info: {} }),
     extract: vitest.fn().mockResolvedValue(null),
     probe: vitest.fn(),
+    readContainerLogSignals: vitest
+      .fn()
+      .mockResolvedValue({ sampleEntryLogTag: null, sonyCaptureGamma: null, sonyCaptureGamut: null }),
+    ensureColorLut: vitest
+      .fn()
+      .mockImplementation((fileName: string) => Promise.resolve(`/tmp/frameleaf-color-luts/${fileName}`)),
     probeEmbeddedSubtitles: vitest.fn(),
     probeHdrMastering: vitest.fn().mockResolvedValue([]),
     probePackets: vitest.fn().mockResolvedValue({
