@@ -67,6 +67,16 @@ export const ownerOf = (album: AlbumResponseDto): UserResponseDto | undefined =>
 
 export const isOwner = (album: AlbumResponseDto, userId: string) => roleOf(album, userId) === AlbumUserRole.Owner;
 
+/** "Merge with…" is for plain albums the person owns: not smart albums, collections, spaces or partner copies. */
+export const canMerge = (album: AlbumResponseDto, userId: string) =>
+  album.kind === AlbumKind.Album && !album.isSmart && !album.origin && isOwner(album, userId);
+
+/** The same name once spaces and case are set aside, which is what makes two albums look like duplicates. */
+export const sameAlbumName = (a: string, b: string) => {
+  const normal = (name: string) => name.trim().replaceAll(/\s+/g, ' ').toLowerCase();
+  return normal(a) === normal(b);
+};
+
 /** Owners and editors may change an album or add to a collection. */
 export const canEdit = (album: AlbumResponseDto, userId: string) => {
   const role = roleOf(album, userId);

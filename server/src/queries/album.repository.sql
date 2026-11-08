@@ -217,6 +217,75 @@ where
 group by
   "album_asset"."albumId"
 
+-- AlbumRepository.getOwnerAssetCounts
+select
+  "album_asset"."albumId",
+  count(*)::int as "count"
+from
+  "asset"
+  inner join "album_asset" on "album_asset"."assetId" = "asset"."id"
+where
+  "asset"."visibility" in ('archive', 'timeline')
+  and (
+    not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+    or "asset"."ownerId" = $1::uuid
+  )
+  and "album_asset"."albumId" in ($2)
+  and "asset"."deletedAt" is null
+group by
+  "album_asset"."albumId"
+
+-- AlbumRepository.getMergeCounts
+select
+  count(*)::int as "total",
+  (
+    count(*) filter (
+      where
+        albums = 2
+    )
+  )::int as "inBoth"
+from
+  (
+    select
+      "asset"."id",
+      count(*) as "albums"
+    from
+      "asset"
+      inner join "album_asset" on "album_asset"."assetId" = "asset"."id"
+    where
+      "asset"."visibility" in ('archive', 'timeline')
+      and (
+        not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+        or "asset"."ownerId" = $1::uuid
+      )
+      and "album_asset"."albumId" in ($2, $3)
+      and "asset"."deletedAt" is null
+    group by
+      "asset"."id"
+  ) as "member"
+
+-- AlbumRepository.getLinkedToSpaceIds
+select distinct
+  "linkedAlbumId"
+from
+  "shared_space_album"
+where
+  "linkedAlbumId" in ($1)
+
 -- AlbumRepository.getAll
 select
   "album".*,

@@ -638,6 +638,7 @@ describe('LibraryRail right-click menu (approved design, 2026-11-04)', () => {
       'Icon and colour…',
       'Edit details',
       'Move to…',
+      'Merge with…',
       'Take out of “Family”',
       'Lock album…',
       'Upload photos',

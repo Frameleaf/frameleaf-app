@@ -4392,6 +4392,34 @@ export type AlbumsAddAssetsResponseDto = {
     /** Operation success */
     success: boolean;
 };
+export type AlbumChangeRunResponseDto = {
+    /** Undo is available now; false while the run is still in progress */
+    canUndo: boolean;
+    /** When the run started */
+    createdAt: string;
+    /** Run ID */
+    id: string;
+    kind: AlbumChangeRunKind;
+    status: AlbumChangeRunStatus;
+    /** What the run did: names and counts */
+    summary: {
+        [key: string]: any;
+    };
+};
+export type AlbumChangeRunLatestResponseDto = {
+    /** The newest run that can still be undone, if any */
+    run: (AlbumChangeRunResponseDto) | null;
+};
+export type AlbumChangeUndoDto = {
+    /** Only undo if this is still the latest run; refused with 409 if it is not */
+    runId?: string;
+};
+export type AlbumChangeUndoResponseDto = {
+    /** Changes taken back */
+    reversed: number;
+    /** Names of what was left alone because it was changed after the run; a later edit wins */
+    skipped: string[];
+};
 export type AlbumHierarchyNode = {
     album: AlbumResponseDto;
     children: AlbumHierarchyNode[];
@@ -4829,6 +4857,28 @@ export type MapMarkerResponseDto = {
     /** State/Province name */
     state: string | null;
     "type"?: AssetTypeEnum;
+};
+export type AlbumMergeDto = {
+    /** The album to merge with this one */
+    otherId: string;
+};
+export type AlbumMergeResponseDto = {
+    /** The merge, for undoing it */
+    runId: string;
+    /** The album that stayed */
+    winnerId: string;
+};
+export type AlbumMergePreviewResponseDto = {
+    /** Of those, how many are in both albums */
+    inBoth: number;
+    /** The album merged away is shared. Its people and public links lose access; they are not moved */
+    loserShared: boolean;
+    /** Photos the merged album will hold that this session may see, each counted once */
+    total: number;
+    /** The album that keeps its name and icon. The other is merged in and removed. */
+    winnerId: string;
+    /** The album that stays is shared, by people, a public link or a shared space, who will see both */
+    winnerShared: boolean;
 };
 export type AlbumSuggestionReasonDto = {
     /** The album photo it matches, for same-scene, near-identical and same-outfit */
@@ -23770,6 +23820,32 @@ export function addAssetsToAlbums({ albumsAddAssetsDto }: {
     })));
 }
 /**
+ * Get the latest undoable album change
+ */
+export function getLatestAlbumChangeRun(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumChangeRunLatestResponseDto;
+    }>("/albums/change-runs/latest", {
+        ...opts
+    }));
+}
+/**
+ * Undo the latest album change
+ */
+export function undoLatestAlbumChangeRun({ albumChangeUndoDto }: {
+    albumChangeUndoDto: AlbumChangeUndoDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumChangeUndoResponseDto;
+    }>("/albums/change-runs/latest/undo", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: albumChangeUndoDto
+    })));
+}
+/**
  * Retrieve the nested album directory
  */
 export function getAlbumHierarchy({ libraryScope }: {
@@ -24024,6 +24100,36 @@ export function getAlbumMapMarkers({ fileCreatedAfter, fileCreatedBefore, id, is
         withPartners,
         withSharedAlbums
     }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Merge an album with another
+ */
+export function mergeAlbum({ id, albumMergeDto }: {
+    id: string;
+    albumMergeDto: AlbumMergeDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumMergeResponseDto;
+    }>(`/albums/${encodeURIComponent(id)}/merge`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: albumMergeDto
+    })));
+}
+/**
+ * Preview an album merge
+ */
+export function getAlbumMergePreview({ id, otherId }: {
+    id: string;
+    otherId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumMergePreviewResponseDto;
+    }>(`/albums/${encodeURIComponent(id)}/merge/${encodeURIComponent(otherId)}`, {
         ...opts
     }));
 }
@@ -38038,6 +38144,17 @@ export enum SmartAlbumBuiltInKind {
     Food = "food",
     Pets = "pets",
     Nature = "nature"
+}
+export enum AlbumChangeRunKind {
+    Merge = "merge",
+    Cleanup = "cleanup",
+    Heal = "heal"
+}
+export enum AlbumChangeRunStatus {
+    Running = "running",
+    Done = "done",
+    Failed = "failed",
+    Undone = "undone"
 }
 export enum LibraryItemKind {
     Asset = "asset",

@@ -27,6 +27,7 @@ import { JobDependencyUnavailable } from 'src/queue/dependency.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
 import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
+import { AlbumChangeRunRepository } from 'src/repositories/album-change-run.repository.js';
 import { AlbumSourceRepository } from 'src/repositories/album-source.repository.js';
 import { AlbumSummaryRepository } from 'src/repositories/album-summary.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
@@ -194,6 +195,7 @@ export const BASE_SERVICE_DEPENDENCIES = [
   SharedLinkAssetRepository,
   ItemShareRepository,
   AlbumSourceRepository,
+  AlbumChangeRunRepository,
   StackRepository,
   StorageRepository,
   SyncRepository,
@@ -277,6 +279,7 @@ export class BaseService {
     protected sharedLinkAssetRepository: SharedLinkAssetRepository,
     protected itemShareRepository: ItemShareRepository,
     protected albumSourceRepository: AlbumSourceRepository,
+    protected albumChangeRunRepository: AlbumChangeRunRepository,
     protected stackRepository: StackRepository,
     protected storageRepository: StorageRepository,
     protected syncRepository: SyncRepository,
@@ -369,6 +372,7 @@ export class BaseService {
       ctx.sharedLinkAssetRepository,
       ctx.itemShareRepository,
       ctx.albumSourceRepository,
+      ctx.albumChangeRunRepository,
       ctx.stackRepository,
       ctx.storageRepository,
       ctx.syncRepository,
