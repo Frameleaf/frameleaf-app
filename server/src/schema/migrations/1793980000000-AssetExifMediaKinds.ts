@@ -29,7 +29,7 @@ export async function up(db: Kysely<any>): Promise<void> {
     WHERE e."assetId" = kinds.id AND cardinality(kinds.value) > 0
       -- high frame rate video stays unread: whether it is slow motion or a real-time clip (iPhone 4K120,
       -- Action mode) is only in the file, so the nightly rescan reads it (MetadataService)
-      AND NOT (e.fps >= 100 AND EXISTS (SELECT 1 FROM public.asset v WHERE v.id = e."assetId" AND v.type = 'VIDEO'))
+      AND NOT (coalesce(e.fps, 0) >= 100 AND EXISTS (SELECT 1 FROM public.asset v WHERE v.id = e."assetId" AND v.type = 'VIDEO'))
   `.execute(db);
 }
 

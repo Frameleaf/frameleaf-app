@@ -1683,7 +1683,7 @@ where
   and "asset_exif"."fps" >= $2
   and "asset_job_status"."metadataExtractedAt" is not null
 order by
-  "asset"."id"
+  random()
 limit
   $3
 

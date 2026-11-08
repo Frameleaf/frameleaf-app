@@ -3682,23 +3682,26 @@ export class AssetRepository {
   }
   /**
    * FL-1284: high frame rate videos whose capture kinds were never read (scanned before kinds existed);
-   * the nightly rescan reads them a batch at a time, and each read sets `mediaKinds`, so none repeats.
+   * the nightly rescan reads them a batch at a time, and each successful read sets `mediaKinds`.
    */
   @GenerateSql({ params: [DummyValue.NUMBER] })
   getVideosAwaitingKindScan(limit: number) {
-    return this.db
-      .selectFrom('asset')
-      .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
-      .innerJoin('asset_job_status', 'asset_job_status.assetId', 'asset.id')
-      .select('asset.id')
-      .where('asset.type', '=', AssetType.Video)
-      .where('asset.deletedAt', 'is', null)
-      .where('asset_exif.mediaKinds', 'is', null)
-      .where('asset_exif.fps', '>=', 100)
-      .where('asset_job_status.metadataExtractedAt', 'is not', null)
-      .orderBy('asset.id')
-      .limit(limit)
-      .execute();
+    return (
+      this.db
+        .selectFrom('asset')
+        .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+        .innerJoin('asset_job_status', 'asset_job_status.assetId', 'asset.id')
+        .select('asset.id')
+        .where('asset.type', '=', AssetType.Video)
+        .where('asset.deletedAt', 'is', null)
+        .where('asset_exif.mediaKinds', 'is', null)
+        .where('asset_exif.fps', '>=', 100)
+        .where('asset_job_status.metadataExtractedAt', 'is not', null)
+        // a random batch, so a video whose read keeps failing is retried without holding back the rest
+        .orderBy(sql`random()`)
+        .limit(limit)
+        .execute()
+    );
   }
 
   /**
