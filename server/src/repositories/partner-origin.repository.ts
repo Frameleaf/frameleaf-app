@@ -428,9 +428,10 @@ export class PartnerOriginRepository {
               excluded."isTransparent", excluded."renditionIdentity")
         ),
         thumbhash AS (
+          -- a copy its owner edited keeps the thumbhash of its own edited render
           UPDATE asset copy SET thumbhash = source.thumbhash
           FROM asset source
-          WHERE source.id = ${assetId}::uuid AND source.thumbhash IS NOT NULL
+          WHERE source.id = ${assetId}::uuid AND source.thumbhash IS NOT NULL AND NOT copy."isEdited"
             AND copy.id IN (SELECT id FROM tree) AND copy.thumbhash IS DISTINCT FROM source.thumbhash
         )
         SELECT path FROM previous

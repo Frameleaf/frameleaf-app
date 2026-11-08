@@ -358,8 +358,18 @@ describe(PartnerCopyService.name, () => {
       await db.updateTable('asset').set({ thumbhash }).where('id', '=', source.id).execute();
       // a copy that rendered its own before FL-1287 gives that file up for deletion
       await ctx.newAssetFile({ assetId: copyId, type: AssetFileType.Thumbnail, path: '/thumbs/bob-own.webp' });
+      // a copy its owner edited still shares the unedited files but keeps its edited render's thumbhash
+      const editedThumbhash = Buffer.from('carol edit');
+      await db
+        .updateTable('asset')
+        .set({ isEdited: true, thumbhash: editedThumbhash })
+        .where('id', '=', onwardId)
+        .execute();
       await expect(origins.shareGeneratedFiles(source.id)).resolves.toEqual(['/thumbs/bob-own.webp']);
       await expect(origins.shareGeneratedFiles(source.id)).resolves.toEqual([]);
+      await expect(ctx.get(AssetRepository).getById(onwardId)).resolves.toMatchObject({ thumbhash: editedThumbhash });
+      await db.updateTable('asset').set({ isEdited: false }).where('id', '=', onwardId).execute();
+      await origins.shareGeneratedFiles(source.id);
 
       for (const id of [copyId, onwardId]) {
         const files = await db
