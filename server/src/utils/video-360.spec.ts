@@ -229,7 +229,7 @@ describe('360° stitch plans and commands (FL-968)', () => {
       const command = BaseConfig.createStitched(
         { ...defaults.ffmpeg, accel: TranscodeHardwareAcceleration.Nvenc, targetResolution: 'original' },
         getStitchGraph(sideBySide, size),
-      ).getCommand(TranscodeTarget.All, stitchedStream, probeStub.audioStreamAac.audioStream);
+      ).getCommand(TranscodeTarget.All, stitchedStream, probeStub.audioStreamAac.audioStream ?? undefined);
       const options = command.outputOptions;
       expect(options[options.indexOf('-c:v') + 1]).toBe('libx264');
       expect(options[options.indexOf('-map') + 1]).toBe(STITCHED_VIDEO_LABEL);
