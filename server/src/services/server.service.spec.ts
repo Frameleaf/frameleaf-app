@@ -700,7 +700,7 @@ describe(ServerService.name, () => {
   });
 
   describe('getStats', () => {
-    it('should total up usage by user', async () => {
+    it('should total up usage by user, counting a partner copy once', async () => {
       mocks.user.getUserStats.mockResolvedValue([
         {
           userId: 'user1',
@@ -710,6 +710,11 @@ describe(ServerService.name, () => {
           usage: 12_345,
           usagePhotos: 1,
           usageVideos: 11_345,
+          copyPhotos: 0,
+          copyVideos: 0,
+          copyUsage: 0,
+          copyUsagePhotos: 0,
+          copyUsageVideos: 0,
           quotaSizeInBytes: 0,
           lastActiveAt: new Date('2026-11-04T08:12:00.000Z'),
         },
@@ -721,6 +726,12 @@ describe(ServerService.name, () => {
           usage: 123_456,
           usagePhotos: 100,
           usageVideos: 23_456,
+          // a partner holds copies of 4 photos and 5 videos still in user1's library
+          copyPhotos: 4,
+          copyVideos: 5,
+          copyUsage: 3000,
+          copyUsagePhotos: 40,
+          copyUsageVideos: 2960,
           quotaSizeInBytes: 0,
           lastActiveAt: null,
         },
@@ -732,17 +743,23 @@ describe(ServerService.name, () => {
           usage: 987_654,
           usagePhotos: 900,
           usageVideos: 87_654,
+          copyPhotos: 0,
+          copyVideos: 0,
+          copyUsage: 0,
+          copyUsagePhotos: 0,
+          copyUsageVideos: 0,
           quotaSizeInBytes: 0,
           lastActiveAt: null,
         },
       ]);
 
       await expect(sut.getStatistics()).resolves.toEqual({
-        photos: 120,
-        videos: 31,
-        usage: 1_123_455,
-        usagePhotos: 1001,
-        usageVideos: 122_455,
+        // the totals count each partner copy once; each account's row still shows its copies
+        photos: 116,
+        videos: 26,
+        usage: 1_120_455,
+        usagePhotos: 961,
+        usageVideos: 119_495,
         usageByUser: [
           {
             photos: 10,

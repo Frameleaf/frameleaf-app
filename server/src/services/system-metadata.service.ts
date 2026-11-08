@@ -85,8 +85,9 @@ export class SystemMetadataService extends BaseService {
     let people = 0;
     let albums = 0;
     for (const user of users) {
-      items += Number(user.photos) + Number(user.videos);
-      bytes += Number(user.usage);
+      // a partner copy is the same item again, so it counts once
+      items += Number(user.photos) + Number(user.videos) - Number(user.copyPhotos) - Number(user.copyVideos);
+      bytes += Number(user.usage) - Number(user.copyUsage);
       const [peopleCount, userAlbums] = await Promise.all([
         this.personRepository.getNumberOfPeople(user.userId),
         this.albumRepository.getAll(user.userId, { isOwned: true }),
