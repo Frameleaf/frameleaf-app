@@ -683,7 +683,7 @@ export type JobItem =
   | { name: JobName.AlbumSuggestionAutoAdd; data: IEntityJob }
   | { name: JobName.AlbumSuggestionOutfit; data: IEntityJob }
   | { name: JobName.AlbumCleanupScan; data: { userId: string } }
-  | { name: JobName.AlbumCleanupApply; data: { runId: string } }
+  | { name: JobName.AlbumCleanupApply; data: { id: string } }
   | { name: JobName.MemoryExport; data: IEntityJob }
 
   // Filesystem

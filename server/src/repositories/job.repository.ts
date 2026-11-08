@@ -1238,7 +1238,7 @@ export class JobRepository {
         return { deduplication: { id: `${JobName.AlbumCleanupScan}:${item.data.userId}`, keepLastIfActive: true } };
       }
       case JobName.AlbumCleanupApply: {
-        return { deduplication: { id: `${JobName.AlbumCleanupApply}:${item.data.runId}` } };
+        return { deduplication: { id: `${JobName.AlbumCleanupApply}:${item.data.id}` } };
       }
       case JobName.ICloudSync: {
         return { deduplication: { id: `${JobName.ICloudSync}:${item.data.id}`, keepLastIfActive: true } };

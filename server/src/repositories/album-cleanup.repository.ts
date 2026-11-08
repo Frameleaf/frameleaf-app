@@ -315,6 +315,18 @@ export class AlbumCleanupRepository {
     return !!row;
   }
 
+  /** Whether a run is still going, held until the caller's transaction ends, as recording a change holds it. */
+  async holdIfRunning(db: Kysely<DB>, runId: string): Promise<boolean> {
+    const row = await db
+      .selectFrom('album_change_run')
+      .select('id')
+      .where('id', '=', runId)
+      .where('status', '=', AlbumChangeRunStatus.Running)
+      .forNoKeyUpdate()
+      .executeTakeFirst();
+    return !!row;
+  }
+
   @GenerateSql({ params: [DummyValue.UUID] })
   getApply(runId: string, db: Kysely<DB> = this.db): Promise<CleanupApplyRow | undefined> {
     return db

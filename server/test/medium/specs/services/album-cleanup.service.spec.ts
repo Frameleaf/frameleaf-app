@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Kysely } from 'kysely';
 import type { AlbumCleanupOperation } from 'src/dtos/album-cleanup.dto.js';
 import { AlbumSourceKind, AlbumSourceOutcome } from 'src/dtos/album-source.dto.js';
-import { AlbumKind, AlbumUserRole, AssetLockReason, JobStatus, SharedLinkType } from 'src/enum.js';
+import { AlbumKind, AlbumUserRole, AssetLockReason, JobName, JobStatus, QueueName, SharedLinkType } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumChangeRunRepository } from 'src/repositories/album-change-run.repository.js';
 import { AlbumCleanupRepository } from 'src/repositories/album-cleanup.repository.js';
@@ -105,7 +105,7 @@ const applyNow = async (
   operations: AlbumCleanupOperation[],
 ) => {
   const { runId } = await sut.apply(auth, { operations });
-  await expect(sut.handleApply({ runId })).resolves.toBe(JobStatus.Success);
+  await expect(sut.handleApply({ id: runId })).resolves.toBe(JobStatus.Success);
   return runId;
 };
 
@@ -430,6 +430,77 @@ describe(AlbumCleanupService.name, () => {
   });
 
   describe('a run that stops partway (Review Focus 3)', () => {
+    it('does not end a run whose job is still waiting to run', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { album } = await albumOf(ctx, user.id, 'First', 1);
+      const auth = plain(user);
+      const { runId } = await sut.apply(auth, {
+        operations: [{ type: 'rename', albumId: album.id, name: 'Renamed' }],
+      });
+      await ctx.database
+        .updateTable('album_cleanup_apply')
+        .set({ progressAt: new Date(0) })
+        .where('runId', '=', runId)
+        .execute();
+      const { findOpenJob } = ctx.getMock(JobRepository);
+
+      findOpenJob.mockResolvedValueOnce({ id: 'job', active: false });
+      await expect(sut.getStatus(auth)).resolves.toMatchObject({ apply: { status: AlbumChangeRunStatus.Running } });
+      expect(findOpenJob).toHaveBeenCalledWith(QueueName.BackgroundTask, JobName.AlbumCleanupApply, runId);
+
+      findOpenJob.mockResolvedValueOnce(undefined);
+      await expect(sut.getStatus(auth)).resolves.toMatchObject({ apply: { status: AlbumChangeRunStatus.Failed } });
+    });
+
+    it('takes back the operation in progress and keeps the outcome when the run has ended', async () => {
+      const { sut, ctx, repository } = setup();
+      const { user } = await ctx.newUser();
+      const { album } = await albumOf(ctx, user.id, 'First', 1);
+      const { runId } = await sut.apply(plain(user), {
+        operations: [{ type: 'rename', albumId: album.id, name: 'Renamed' }],
+      });
+      const getCollections = repository.getCollections.bind(repository);
+      vi.spyOn(repository, 'getCollections').mockImplementationOnce(async (...args) => {
+        await ctx.database
+          .updateTable('album_change_run')
+          .set({ status: AlbumChangeRunStatus.Undone })
+          .where('id', '=', runId)
+          .execute();
+        return getCollections(...args);
+      });
+
+      await expect(sut.handleApply({ id: runId })).resolves.toBe(JobStatus.Skipped);
+
+      await expect(albumRow(ctx.database, album.id)).resolves.toMatchObject({ albumName: 'First' });
+      await expect(runRow(ctx.database, runId)).resolves.toMatchObject({ status: AlbumChangeRunStatus.Undone });
+    });
+
+    it('can still reach an album whose merge was skipped', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const base = await albumOf(ctx, user.id, 'Base', 3);
+      const one = await albumOf(ctx, user.id, 'One', 2);
+      const two = await albumOf(ctx, user.id, 'Two', 1);
+      const original = AlbumMergeService.prototype.mergeInto;
+      const mergeInto = vi
+        .spyOn(AlbumMergeService.prototype, 'mergeInto')
+        .mockImplementationOnce(original)
+        .mockRejectedValueOnce(new BadRequestException('changed'));
+
+      const runId = await applyNow(sut, plain(user), [
+        { type: 'merge', albumIds: [base.album.id, one.album.id, two.album.id] },
+        { type: 'rename', albumId: one.album.id, name: 'One renamed' },
+      ]);
+      mergeInto.mockRestore();
+
+      await expect(albumRow(ctx.database, one.album.id)).resolves.toMatchObject({
+        albumName: 'One renamed',
+        deletedAt: null,
+      });
+      await expect(runRow(ctx.database, runId)).resolves.toMatchObject({ summary: { renamed: 1, skipped: 1 } });
+    });
+
     it('keeps what it did, then resumes without repeating it', async () => {
       const { sut, ctx, repository, changeRuns, runs } = setup();
       const { user } = await ctx.newUser();
@@ -452,7 +523,7 @@ describe(AlbumCleanupService.name, () => {
         .mockImplementationOnce(original)
         .mockImplementationOnce(() => Promise.reject(new Error('process died')));
       const finish = vi.spyOn(changeRuns, 'finishRun').mockResolvedValue();
-      await expect(sut.handleApply({ runId })).rejects.toThrow('process died');
+      await expect(sut.handleApply({ id: runId })).rejects.toThrow('process died');
       advance.mockRestore();
       finish.mockRestore();
 
@@ -461,7 +532,7 @@ describe(AlbumCleanupService.name, () => {
       await expect(runRow(ctx.database, runId)).resolves.toMatchObject({ status: AlbumChangeRunStatus.Running });
       await expect(runs.getLatest(auth)).resolves.toMatchObject({ run: { canUndo: false } });
 
-      await expect(sut.handleApply({ runId })).resolves.toBe(JobStatus.Success);
+      await expect(sut.handleApply({ id: runId })).resolves.toBe(JobStatus.Success);
 
       await expect(albumRow(ctx.database, second.album.id)).resolves.toMatchObject({ albumName: 'Second renamed' });
       await expect(albumRow(ctx.database, third.album.id)).resolves.toMatchObject({ albumName: 'Third renamed' });
@@ -496,7 +567,7 @@ describe(AlbumCleanupService.name, () => {
         .spyOn(repository, 'advanceApply')
         .mockImplementationOnce(original)
         .mockImplementationOnce(() => Promise.reject(new Error('boom')));
-      await expect(sut.handleApply({ runId })).rejects.toThrow('boom');
+      await expect(sut.handleApply({ id: runId })).rejects.toThrow('boom');
       advance.mockRestore();
 
       await expect(runRow(ctx.database, runId)).resolves.toMatchObject({ status: AlbumChangeRunStatus.Failed });

@@ -65,7 +65,7 @@
    * The Magic Albums review (FL-1300, prototype `AlbumCleanupReview`): what the scan found, the rules that read it,
    * and tabs for each kind of suggestion. Every control re-runs the planner here; nothing changes until Apply.
    */
-  type Phase = 'loading' | 'unready' | 'review' | 'applying' | 'done';
+  type Phase = 'loading' | 'error' | 'unready' | 'review' | 'applying' | 'done';
 
   const CHILD_PAGE = 40;
   const TREE_LIMIT = 80;
@@ -123,7 +123,17 @@
       poll = undefined;
     }
   };
-  onDestroy(stop);
+  let destroyed = false;
+  onDestroy(() => {
+    destroyed = true;
+    stop();
+  });
+  /** A request can still be out when the page closes; what it schedules must not outlive the page. */
+  const schedule = (next: () => Promise<void>, ms: number) => {
+    if (!destroyed) {
+      poll = setTimeout(() => void next(), ms);
+    }
+  };
 
   const load = async () => {
     stop();
@@ -131,15 +141,23 @@
       const snapshot = await getAlbumCleanupSnapshot();
       if (!snapshot.ready || !snapshot.facts) {
         phase = 'unready';
-        poll = setTimeout(() => void load(), SCAN_POLL_MS);
+        schedule(load, SCAN_POLL_MS);
         return;
       }
       facts = snapshot.facts;
       phase = 'review';
       await resumeIfApplying();
     } catch (error) {
+      if (phase === 'loading' || phase === 'unready') {
+        phase = 'error';
+      }
       handleError(error, $t('frameleaf_album_cleanup_load_failed'));
     }
+  };
+
+  const retryLoad = () => {
+    phase = 'loading';
+    void load();
   };
 
   /** Someone left the page while a cleanup was running: pick up its progress rather than offering it again. */
@@ -149,7 +167,7 @@
       runId = apply.runId;
       progress = { done: apply.done, total: apply.total };
       phase = 'applying';
-      poll = setTimeout(() => void follow(), APPLY_POLL_MS);
+      schedule(follow, APPLY_POLL_MS);
     }
   };
 
@@ -319,14 +337,14 @@
       const { apply } = await getAlbumCleanupStatus();
       if (apply?.runId === runId && apply.status === AlbumChangeRunStatus.Running) {
         progress = { done: apply.done, total: apply.total };
-        poll = setTimeout(() => void follow(), APPLY_POLL_MS);
+        schedule(follow, APPLY_POLL_MS);
         return;
       }
       failed = apply?.runId === runId && apply.status === AlbumChangeRunStatus.Failed;
       phase = 'done';
       void setDismissed(true).catch(() => undefined);
     } catch {
-      poll = setTimeout(() => void follow(), APPLY_POLL_MS * 3);
+      schedule(follow, APPLY_POLL_MS * 3);
     }
   };
 
@@ -344,7 +362,7 @@
     progress = { done: 0, total: operations.length };
     try {
       ({ runId } = await applyAlbumCleanup({ albumCleanupApplyDto: { operations } }));
-      poll = setTimeout(() => void follow(), APPLY_POLL_MS);
+      schedule(follow, APPLY_POLL_MS);
     } catch (error) {
       phase = 'review';
       handleError(error, $t('frameleaf_album_cleanup_apply_failed'));
@@ -610,6 +628,16 @@
   <section class="ac-page">
     <Status message={$t('frameleaf_album_cleanup_loading')} />
   </section>
+{:else if phase === 'error'}
+  <section class="ac-page">
+    <div class="ac-head">
+      <h1>{$t('frameleaf_album_cleanup_title')}</h1>
+      <p role="alert">{$t('frameleaf_album_cleanup_load_failed')}</p>
+      <div class="ac-banner-actions">
+        <Button variant="primary" onclick={retryLoad}>{$t('frameleaf_album_cleanup_try_again')}</Button>
+      </div>
+    </div>
+  </section>
 {:else if phase === 'unready'}
   <section class="ac-page">
     <div class="ac-head">
@@ -631,9 +659,9 @@
           ? $t('frameleaf_album_cleanup_stopped_body')
           : $t('frameleaf_album_cleanup_done_body', {
               values: {
-                before: number(summary.albumsBefore),
-                after: number(summary.topLevelAfter),
-                combined: number(summary.albumsCombined),
+                before: summary.albumsBefore,
+                after: summary.topLevelAfter,
+                combined: summary.albumsCombined,
               },
             })}
       </p>
@@ -832,6 +860,7 @@
             {#if visibleStructure.length === 0}
               <li class="ac-empty">{$t('frameleaf_album_cleanup_no_groups')}</li>
             {/if}
+            {@render moreNote(TREE_LIMIT, visibleStructure.length, $t('frameleaf_album_cleanup_noun_album'))}
           </ul>
         {:else if tab === 'merge' && activeSub === 'name'}
           <ul class="ac-dupes">
@@ -1158,7 +1187,7 @@
           {$t('frameleaf_album_cleanup_footer', {
             values: {
               collections: summary.collections,
-              moved: number(summary.albumsMoved),
+              moved: summary.albumsMoved,
               combined: number(summary.albumsCombined),
             },
           })}{summary.datesHealed > 0

@@ -6,7 +6,7 @@
   import { mdiFolderMultipleOutline, mdiMagnify } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
-  /** "Move into…": pick a collection in the proposed structure. Searching finds any of them. */
+  /** "Move into…": pick a collection in the proposed structure. The top two levels are listed; searching finds any of them. */
   interface Props {
     node: PlanNode;
     structure: PlanNode[];
@@ -28,9 +28,7 @@
           continue;
         }
         out.push({ item, depth });
-        if (depth < 1) {
-          walk(item.children, depth + 1);
-        }
+        walk(item.children, depth + 1);
       }
     };
     walk(structure, 0);
@@ -38,7 +36,9 @@
   });
   const needle = $derived(query.trim().toLowerCase());
   const shown = $derived(
-    options.filter(({ item }) => !needle || item.name.toLowerCase().includes(needle)).slice(0, MAX_ROWS),
+    options
+      .filter(({ item, depth }) => (needle ? item.name.toLowerCase().includes(needle) : depth < 2))
+      .slice(0, MAX_ROWS),
   );
 </script>
 
@@ -61,7 +61,7 @@
   <ul class="ac-picker">
     {#each shown as { item, depth } (item.id)}
       <li>
-        <button type="button" style={`--depth: ${depth}`} onclick={() => onPick(item.id)}>
+        <button type="button" style={`--depth: ${Math.min(depth, 1)}`} onclick={() => onPick(item.id)}>
           <Icon icon={mdiFolderMultipleOutline} size="18" aria-hidden={true} />
           <span>{item.name}</span>
           <small>{$t('frameleaf_album_cleanup_album_count', { values: { count: item.albumCount } })}</small>

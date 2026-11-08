@@ -107,6 +107,32 @@ describe(AlbumCleanupReview.name, () => {
     expect(await screen.findByText('frameleaf_album_cleanup_scanning')).toBeInTheDocument();
   });
 
+  it('offers to try again when the suggestions cannot be read', async () => {
+    sdkMock.getAlbumCleanupSnapshot.mockRejectedValueOnce(new Error('offline'));
+    render(AlbumCleanupReview);
+    await fireEvent.click(await screen.findByRole('button', { name: 'frameleaf_album_cleanup_try_again' }));
+    await waitFor(() => expect(sdkMock.getAlbumCleanupSnapshot).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'frameleaf_album_cleanup_try_again' })).not.toBeInTheDocument(),
+    );
+  });
+
+  it('stops asking once the page has closed, even with a request still out', async () => {
+    let answer: (value: Awaited<ReturnType<typeof sdkMock.getAlbumCleanupSnapshot>>) => void = () => {};
+    sdkMock.getAlbumCleanupSnapshot.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
+    const { unmount } = render(AlbumCleanupReview);
+    await waitFor(() => expect(sdkMock.getAlbumCleanupSnapshot).toHaveBeenCalledTimes(1));
+    unmount();
+    vi.useFakeTimers();
+    try {
+      answer({ ready: false, computedAt: null, suggestionCount: 0, facts: null });
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(sdkMock.getAlbumCleanupSnapshot).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('renders for a person with no located photos', async () => {
     render(AlbumCleanupReview);
     await screen.findByText('frameleaf_album_cleanup_intro');

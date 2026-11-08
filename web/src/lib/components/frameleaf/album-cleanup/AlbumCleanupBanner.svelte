@@ -93,9 +93,9 @@
       <p>
         {$t('frameleaf_album_cleanup_banner_body', {
           values: {
-            combined: number(plan.summary.albumsCombined),
+            combined: plan.summary.albumsCombined,
             filed: number(plan.summary.albumsMoved),
-            lost: number(plan.summary.lostPhotos),
+            lost: plan.summary.lostPhotos,
           },
         })}
       </p>

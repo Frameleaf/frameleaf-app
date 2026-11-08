@@ -91,6 +91,9 @@ const add = (tally: Record<string, number>, key: string, amount = 1) => {
 };
 
 /** A later change made this operation impossible, and only this operation: the rest of the cleanup carries on. */
+/** The run ended while its job was still working: an operation in progress is taken back and the job stops. */
+class ApplyStopped extends Error {}
+
 const isSkippable = (error: unknown) =>
   error instanceof BadRequestException || error instanceof ConflictException || error instanceof NotFoundException;
 
@@ -201,11 +204,7 @@ export class AlbumCleanupService extends BaseService {
     await this.scanWhenStale(auth.user.id, snapshot?.computedAt);
 
     let status = latest?.status;
-    if (latest && status === AlbumChangeRunStatus.Running && this.stalled(latest.progressAt)) {
-      // The job is gone (emptied, or never restarted). What it did stays done, and Undo has to be reachable.
-      await this.albumChangeRunRepository.transaction((tx) =>
-        this.albumChangeRunRepository.finishRun(tx, latest.runId, AlbumChangeRunStatus.Failed),
-      );
+    if (latest && status === AlbumChangeRunStatus.Running && (await this.failIfAbandoned(latest))) {
       status = AlbumChangeRunStatus.Failed;
     }
 
@@ -245,8 +244,24 @@ export class AlbumCleanupService extends BaseService {
     }
   }
 
-  private stalled(progressAt: Date): boolean {
-    return Date.now() - new Date(progressAt).getTime() > CLEANUP_APPLY_STALLED_MINUTES * 60_000;
+  /**
+   * A run with no recent progress and no job left to make any (the queue was emptied) has ended: what it did stays
+   * done, and Undo has to be reachable. A job still queued or running keeps its run, however long it takes.
+   */
+  private async failIfAbandoned({ runId, progressAt }: { runId: string; progressAt: Date }): Promise<boolean> {
+    if (Date.now() - new Date(progressAt).getTime() <= CLEANUP_APPLY_STALLED_MINUTES * 60_000) {
+      return false;
+    }
+    if (await this.jobRepository.findOpenJob(QueueName.BackgroundTask, JobName.AlbumCleanupApply, runId)) {
+      return false;
+    }
+    return this.albumChangeRunRepository.transaction(async (tx) => {
+      const running = await this.albumCleanupRepository.holdIfRunning(tx, runId);
+      if (running) {
+        await this.albumChangeRunRepository.finishRun(tx, runId, AlbumChangeRunStatus.Failed);
+      }
+      return running;
+    });
   }
 
   /** Top-level albums the cleanup may read: owned and plain, never smart albums or a partner's copy. */
@@ -549,7 +564,7 @@ export class AlbumCleanupService extends BaseService {
         operations,
         elevated: variantOf(auth) === AlbumCleanupVariant.Elevated,
       });
-      await this.jobRepository.queueInTransaction(tx, { name: JobName.AlbumCleanupApply, data: { runId: id } });
+      await this.jobRepository.queueInTransaction(tx, { name: JobName.AlbumCleanupApply, data: { id } });
       return id;
     });
     return { runId };
@@ -658,7 +673,7 @@ export class AlbumCleanupService extends BaseService {
    * partway keeps what it did, is still undoable, and resumes from the next operation when it runs again.
    */
   @OnJob({ name: JobName.AlbumCleanupApply, queue: QueueName.BackgroundTask })
-  async handleApply({ runId }: JobOf<JobName.AlbumCleanupApply>): Promise<JobStatus> {
+  async handleApply({ id: runId }: JobOf<JobName.AlbumCleanupApply>): Promise<JobStatus> {
     const state = await this.albumCleanupRepository.getApply(runId);
     if (!state || state.status !== AlbumChangeRunStatus.Running) {
       return JobStatus.Skipped;
@@ -683,7 +698,12 @@ export class AlbumCleanupService extends BaseService {
     try {
       for (let index = state.nextIndex; index < state.operations.length; index += 1) {
         const operation = state.operations[index];
-        const before = { targets: { ...context.targets }, tally: { ...context.tally } };
+        const before = {
+          targets: { ...context.targets },
+          tally: { ...context.tally },
+          candidates: new Map(context.candidates),
+          collections: [...context.collections],
+        };
         try {
           await this.inOperationTransaction(context, operation, async (tx) => {
             await this.applyOperation(tx, context, operation);
@@ -694,13 +714,17 @@ export class AlbumCleanupService extends BaseService {
             throw error;
           }
           this.logger.warn(`Cleanup ${runId}: operation ${index} skipped: ${error}`);
-          context.targets = before.targets;
-          context.tally = before.tally;
+          // The transaction rolled back, so what the operation noted here goes with it.
+          Object.assign(context, before);
           add(context.tally, 'skipped');
           await this.albumChangeRunRepository.transaction((tx) => this.advance(tx, context, index + 1));
         }
       }
     } catch (error) {
+      if (error instanceof ApplyStopped) {
+        this.logger.warn(`Cleanup ${runId}: stopped because the run has ended`);
+        return JobStatus.Skipped;
+      }
       // Anything else ends the run; what it did stays done and can be undone.
       await this.finish(context, AlbumChangeRunStatus.Failed);
       throw error;
@@ -715,16 +739,23 @@ export class AlbumCleanupService extends BaseService {
     return Object.entries(tally).some(([key, value]) => key !== 'skipped' && value > 0);
   }
 
-  private advance(tx: Kysely<DB>, { runId, targets, tally }: ApplyContext, nextIndex: number): Promise<void> {
-    return this.albumCleanupRepository.advanceApply(tx, runId, { nextIndex, targets, tally });
+  /** Last in each operation's transaction, so a run that has ended takes back the operation it was in. */
+  private async advance(tx: Kysely<DB>, { runId, targets, tally }: ApplyContext, nextIndex: number): Promise<void> {
+    if (!(await this.albumCleanupRepository.holdIfRunning(tx, runId))) {
+      throw new ApplyStopped();
+    }
+    await this.albumCleanupRepository.advanceApply(tx, runId, { nextIndex, targets, tally });
   }
 
   private finish({ runId, tally }: ApplyContext, status: AlbumChangeRunStatus): Promise<void> {
     // The summary can be read without the PIN. `lockedHealed` is how many Locked photos were touched, so it stays here.
     const { lockedHealed: _lockedHealed, ...summary } = tally;
-    return this.albumChangeRunRepository.transaction((tx) =>
-      this.albumChangeRunRepository.finishRun(tx, runId, status, summary),
-    );
+    return this.albumChangeRunRepository.transaction(async (tx) => {
+      // A run that has already ended keeps the outcome it ended with.
+      if (await this.albumCleanupRepository.holdIfRunning(tx, runId)) {
+        await this.albumChangeRunRepository.finishRun(tx, runId, status, summary);
+      }
+    });
   }
 
   /** Healing writes through the asset date update, which joins the partner-copy transaction it expects. */
