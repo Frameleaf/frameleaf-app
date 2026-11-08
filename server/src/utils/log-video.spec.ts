@@ -363,6 +363,31 @@ describe('detectLogVideo', () => {
     expect(detectLogVideo(evidence({ djiColorMode }))).toBeNull();
   });
 
+  it('takes D-Log from the SRT when the file names DJI', () => {
+    expect(detectLogVideo(evidence({ djiColorMode: 'd_log', tags: { Make: 'DJI' } }))?.profile).toEqual({
+      curve: 'd-log',
+      gamut: 'd-gamut',
+    });
+  });
+
+  it('ignores the SRT when the file names another maker', () => {
+    expect(detectLogVideo(evidence({ djiColorMode: 'd_log', tags: { Make: 'Panasonic' } }))).toBeNull();
+    expect(
+      detectLogVideo(evidence({ djiColorMode: 'd_log', tags: { Make: 'Apple', Model: 'iPhone 15 Pro' } })),
+    ).toBeNull();
+  });
+
+  it.each(['d_log', 'dlog_m'])('lets Log markers inside the file win over an SRT saying %s', (djiColorMode) => {
+    expect(
+      detectLogVideo(evidence({ djiColorMode, tags: { Make: 'SONY', PictureProfile: 'Gamma S-Log3 (PP8 or PP9)' } }))
+        ?.profile,
+    ).toEqual({ curve: 's-log3', gamut: 's-gamut3-cine' });
+    expect(detectLogVideo(evidence({ djiColorMode, sonyCaptureGamma: 's-log3' }))?.profile).toEqual({
+      curve: 's-log3',
+      gamut: 's-gamut3',
+    });
+  });
+
   it('never takes a DJI HLG clip for D-Log, whatever the SRT says', () => {
     expect(detectLogVideo(evidence({ colorTransfer: ColorTransfer.AribStdB67, djiColorMode: 'd_log' }))).toBeNull();
   });

@@ -482,15 +482,6 @@ export const detectLogVideo = (evidence: LogVideoEvidence): LogDetection | null 
     };
   }
 
-  const dji = text(evidence.djiColorMode).replaceAll('-', '_');
-  if (dji === 'dlog_m' || dji === 'd_log_m') {
-    // D-Log M: no published formula to convert with.
-    return null;
-  }
-  if (dji === 'd_log' || dji === 'dlog') {
-    return { profile: { curve: 'd-log', gamut: 'd-gamut' }, signal: 'DJI SRT color_md', confidence: 'low' };
-  }
-
   const pictureProfile = text(tags.PictureProfile);
   if (pictureProfile.includes('s-log3') || (makeIs(tags, 'sony') && isNumber(tags.PictureProfile, 31))) {
     return {
@@ -536,6 +527,15 @@ export const detectLogVideo = (evidence: LogVideoEvidence): LogDetection | null 
 
   if (text(tags.MovieToneMap) === 'n-log' || (makeIs(tags, 'nikon') && isNumber(tags.MovieToneMap, 2))) {
     return { profile: { curve: 'n-log', gamut: 'rec2020' }, signal: 'Nikon MovieToneMap', confidence: 'low' };
+  }
+
+  // DJI's SRT sidecar comes after every marker inside the file, which always wins over it, and is
+  // ignored when the file names another maker (a stale or mismatched sidecar). D-Log M ("dlog_m")
+  // has no published formula, so it is not converted.
+  const make = text(tags.Make);
+  const dji = text(evidence.djiColorMode).replaceAll('-', '_');
+  if ((dji === 'd_log' || dji === 'dlog') && (!make || make.includes('dji'))) {
+    return { profile: { curve: 'd-log', gamut: 'd-gamut' }, signal: 'DJI SRT color_md', confidence: 'low' };
   }
 
   if (
