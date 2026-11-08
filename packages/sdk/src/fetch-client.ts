@@ -19999,7 +19999,7 @@ export type SyncAssetV2 = {
     originalFileName: string;
     /** Owner ID */
     ownerId: string;
-    /** Only on your own copy of a partner's photo: the account it originally came from */
+    /** Only on your own copy of a partner's photo: the account it originally came from. Rows synced before this field existed need a full re-sync to carry it. */
     partnerOriginOwnerId?: string;
     /** Stack ID */
     stackId: string | null;
@@ -20115,7 +20115,7 @@ export type SyncAlbumV3 = {
     name: string;
     order: AssetOrder;
     parentId: string | null;
-    /** Only on your own copy of a partner's album: the account it originally came from */
+    /** Only on your own copy of a partner's album: the account it originally came from. Rows synced before this field existed need a full re-sync to carry it. */
     partnerOriginOwnerId?: string;
     sortOrder: number | null;
     /** Thumbnail asset ID */

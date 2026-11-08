@@ -149442,7 +149442,7 @@
             "type": "string"
           },
           "partnerOriginOwnerId": {
-            "description": "Only on your own copy of a partner's album: the account it originally came from",
+            "description": "Only on your own copy of a partner's album: the account it originally came from. Rows synced before this field existed need a full re-sync to carry it.",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
@@ -150378,7 +150378,7 @@
             "type": "string"
           },
           "partnerOriginOwnerId": {
-            "description": "Only on your own copy of a partner's photo: the account it originally came from",
+            "description": "Only on your own copy of a partner's photo: the account it originally came from. Rows synced before this field existed need a full re-sync to carry it.",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"

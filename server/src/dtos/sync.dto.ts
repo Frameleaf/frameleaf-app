@@ -116,7 +116,9 @@ const SyncAssetV2Schema = z
     partnerOriginOwnerId: z
       .uuid()
       .optional()
-      .describe("Only on your own copy of a partner's photo: the account it originally came from"),
+      .describe(
+        "Only on your own copy of a partner's photo: the account it originally came from. Rows synced before this field existed need a full re-sync to carry it.",
+      ),
   })
   .meta({ id: 'SyncAssetV2' });
 
@@ -269,7 +271,9 @@ const SyncAlbumV3Schema = SyncAlbumV2Schema.extend({
   partnerOriginOwnerId: z
     .uuid()
     .optional()
-    .describe("Only on your own copy of a partner's album: the account it originally came from"),
+    .describe(
+      "Only on your own copy of a partner's album: the account it originally came from. Rows synced before this field existed need a full re-sync to carry it.",
+    ),
 }).meta({ id: 'SyncAlbumV3' });
 
 const SyncAlbumToAssetV1Schema = z
