@@ -351,17 +351,47 @@ describe('AlbumSuggestions', () => {
       expect(toast.undo).not.toHaveBeenCalled();
     });
 
-    it('leaves the review with a message when a failed heal finds nothing left', async () => {
-      await openLost();
+    it('keeps the review and Try again when the refresh after a failed heal fails too', async () => {
+      const onChanged = await openLost();
+      sdkMock.healAlbumLostDates.mockRejectedValueOnce(new Error('no'));
+      sdkMock.getAlbumLostDates.mockRejectedValue(new Error('offline'));
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Heal all 2' }));
+
+      expect(await screen.findByRole('button', { name: 'Try again' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Heal all 2' })).toBeTruthy();
+      expect(onChanged).toHaveBeenCalled();
+    });
+
+    it('moves to the tab with suggestions when a failed heal takes away Lost dates', async () => {
+      sdkMock.getAlbumSuggestions.mockResolvedValue({ ...suggestions, fromTrip: [] });
+      sdkMock.getAlbumLostDates.mockResolvedValue(structuredClone(lost));
+      render(AlbumSuggestions, { albumId: 'album', albumName: 'Summer', onChanged: vi.fn() });
+      await fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
+      await fireEvent.click(await screen.findByRole('tab', { name: 'Lost dates · 2' }));
       sdkMock.healAlbumLostDates.mockRejectedValueOnce(new Error('no'));
       sdkMock.getAlbumLostDates.mockResolvedValue({ ...lost, suggestions: [] });
 
       await fireEvent.click(screen.getByRole('button', { name: 'Heal all 2' }));
 
       await waitFor(() =>
+        expect(screen.getByRole('tab', { name: 'Need a date · 1' })).toHaveAttribute('aria-selected', 'true'),
+      );
+    });
+
+    it('leaves the review with a message when a failed heal finds nothing left', async () => {
+      await openLost();
+      sdkMock.healAlbumLostDates.mockRejectedValueOnce(new Error('no'));
+      sdkMock.getAlbumLostDates.mockResolvedValue({ ...lost, suggestions: [] });
+
+      const dialog = screen.getByRole('dialog');
+      await fireEvent.click(screen.getByRole('button', { name: 'Heal all 2' }));
+
+      await waitFor(() =>
         expect(toastManager.primary).toHaveBeenCalledWith(expect.stringContaining('heal these dates')),
       );
       expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+      await waitFor(() => expect(dialog).not.toHaveAttribute('open'));
     });
 
     it('says a failed heal in the review and can try again', async () => {

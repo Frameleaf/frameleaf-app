@@ -109,7 +109,7 @@
     }
   };
 
-  const loadLostDates = async (id: string) => {
+  const loadLostDates = async (id: string, keepOnFailure = false) => {
     try {
       const result = await getAlbumLostDates({ id });
       if (id === albumId) {
@@ -117,7 +117,7 @@
       }
     } catch {
       // Optional like the suggestions: the album still opens without them.
-      if (id === albumId) {
+      if (id === albumId && !keepOnFailure) {
         lostDates = null;
       }
     }
@@ -395,7 +395,10 @@
       await loadLostDates(albumId);
     } catch (error) {
       console.error(error);
-      await loadLostDates(albumId);
+      // The request can fail after the heal committed, so read again everything those dates feed.
+      onChanged();
+      await load(albumId, true);
+      await loadLostDates(albumId, true);
       const message = $t('frameleaf_album_lost_dates_heal_failed');
       if (tabs.length === 0) {
         // Nothing is left to review, so the failure can't stay in the dialog.
@@ -410,7 +413,7 @@
   };
 
   const openReview = () => {
-    tab = fromTrip.length > 0 ? 'trip' : needDate.length > 0 ? 'dates' : 'lost';
+    tab = firstTab;
     autoAdd = suggestions?.autoAdd ?? false;
     alert = null;
     open = true;
@@ -420,8 +423,9 @@
     ...(count > 0 ? (['trip', 'dates'] as const) : []),
     ...(lostCount > 0 ? (['lost'] as const) : []),
   ]);
-  /** A refresh can take away the tab that was open; show the first one still there. */
-  const activeTab = $derived(tabs.includes(tab) ? tab : (tabs[0] ?? tab));
+  const firstTab = $derived(fromTrip.length > 0 ? 'trip' : needDate.length > 0 ? 'dates' : ('lost' as const));
+  /** A refresh can take away the tab that was open; show the first one with something in it. */
+  const activeTab = $derived(tabs.includes(tab) ? tab : firstTab);
   const tabButtons: Record<string, HTMLButtonElement | undefined> = {};
 
   /** Arrow keys, Home and End move between the tabs (prototype `SuggestionTabs`). */
@@ -650,6 +654,10 @@
 
   {#snippet actions()}
     {#if activeTab === 'lost'}
+      {#if suggestions && autoAdd !== suggestions.autoAdd}
+        <!-- A changed auto-add choice can still be saved after its own tab has gone. -->
+        <Button disabled={saving} onclick={() => void apply()}>{applyLabel}</Button>
+      {/if}
       <Button variant="primary" disabled={saving || lostCount === 0} onclick={() => void heal()}>
         {saving
           ? $t('frameleaf_album_lost_dates_healing')
