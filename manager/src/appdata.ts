@@ -1,4 +1,5 @@
 import { Refusal } from './contracts.js';
+import { toContainer } from './host-paths.js';
 
 /** Read one inert INI value. Never source/evaluate Unraid's configuration as shell code. */
 export function configuredAppdata(contents: string): string | null {
@@ -38,7 +39,7 @@ export function appdataDefaults(env: Record<string, string | undefined>, configu
   // A launch-time administrator override wins. Otherwise use Unraid's actual configured default.
   const preferred = env.MANAGER_APPDATA_ROOT
     ? appdataPath(env.MANAGER_APPDATA_ROOT)
-    : (detectedPath ?? roots[0] ?? '');
+    : ((detectedPath && toContainer(detectedPath)) ?? roots[0] ?? '');
   // Never pre-fill a folder setup would refuse: the default can be left behind when the approved roots are edited.
   const usable = roots.some((root) => preferred === root || preferred.startsWith(`${root}/`));
   const suggestedPath = roots.length && !usable ? roots[0] : preferred;
