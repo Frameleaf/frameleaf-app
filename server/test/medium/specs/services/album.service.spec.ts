@@ -4,6 +4,7 @@ import type { HiddenContentFilter } from 'src/utils/hidden-content.js';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
 import { AlbumKind, AlbumUserRole, AssetLockReason, AssetMetadataKey, AssetVisibility } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
+import { AlbumSummaryRepository } from 'src/repositories/album-summary.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ClassificationRepository } from 'src/repositories/classification.repository.js';
@@ -35,6 +36,7 @@ const setup = (db?: Kysely<DB>) => {
     real: [
       AccessRepository,
       AlbumRepository,
+      AlbumSummaryRepository,
       AssetRepository,
       ClassificationRepository,
       MapRepository,
@@ -65,6 +67,17 @@ const nsfwMetadata = (isNsfw: boolean, review?: { action: string; isNsfw: boolea
 beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
 });
+
+/** FL-1297: the first read of a list only starts its count; the numbers are there on a later one. */
+const listOnceCounted = (sut: AlbumService, ...args: Parameters<AlbumService['getAll']>) =>
+  vi.waitFor(
+    async () => {
+      const albums = await sut.getAll(...args);
+      expect(albums.filter(({ statsPending }) => statsPending)).toEqual([]);
+      return albums;
+    },
+    { timeout: 10_000, interval: 25 },
+  );
 
 describe(AlbumService.name, () => {
   describe('getAll', () => {
@@ -105,15 +118,15 @@ describe(AlbumService.name, () => {
       const hiddenAuth = { ...factory.auth({ user: { id: user.id } }), hideNsfwAssets: true };
       await expect(sut.getAll(hiddenAuth, { assetId: unreviewedNsfw.id })).resolves.toEqual([]);
       await expect(sut.getAll(hiddenAuth, { assetId: markedNsfw.id })).resolves.toEqual([]);
-      await expect(sut.getAll(hiddenAuth, { assetId: markedSafe.id })).resolves.toEqual([
+      await expect(listOnceCounted(sut, hiddenAuth, { assetId: markedSafe.id })).resolves.toEqual([
         expect.objectContaining({ id: markedSafeAlbum.id, assetCount: 1 }),
       ]);
-      await expect(sut.getAll(hiddenAuth, { assetId: tagOnly.id })).resolves.toEqual([
+      await expect(listOnceCounted(sut, hiddenAuth, { assetId: tagOnly.id })).resolves.toEqual([
         expect.objectContaining({ id: tagOnlyAlbum.id, assetCount: 1 }),
       ]);
 
       await expect(
-        sut.getAll(factory.auth({ user: { id: user.id } }), { assetId: unreviewedNsfw.id }),
+        listOnceCounted(sut, factory.auth({ user: { id: user.id } }), { assetId: unreviewedNsfw.id }),
       ).resolves.toEqual([expect.objectContaining({ id: unreviewedAlbum.id, assetCount: 1 })]);
 
       await expect(albumRepository.getAssetIds(markedNsfwAlbum.id, [markedNsfw.id])).resolves.toEqual(
@@ -185,7 +198,7 @@ describe(AlbumService.name, () => {
         suppressedContent,
       };
 
-      const hiddenAlbums = await sut.getAll(hiddenAuth, {});
+      const hiddenAlbums = await listOnceCounted(sut, hiddenAuth, {});
       expect(hiddenAlbums).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ id: mixedAlbum.id, assetCount: 1, albumThumbnailAssetId: visible.id }),

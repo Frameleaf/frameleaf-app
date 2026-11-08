@@ -337,6 +337,7 @@ describe('AlbumSuggestions', () => {
           'Dates put back. Your later changes to IMG_1003.JPG were kept.',
         ),
       );
+      expect(sdkMock.undoLatestAlbumChangeRun).toHaveBeenCalledWith({ albumChangeUndoDto: { runId: 'run' } });
       expect(sdkMock.updateAsset).not.toHaveBeenCalled();
     });
 

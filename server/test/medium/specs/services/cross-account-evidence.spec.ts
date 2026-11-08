@@ -2,6 +2,7 @@ import { Kysely } from 'kysely';
 import { SearchSuggestionType } from 'src/dtos/search.dto.js';
 import { AlbumUserRole, AssetVisibility } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
+import { AlbumSummaryRepository } from 'src/repositories/album-summary.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ClassificationRepository } from 'src/repositories/classification.repository.js';
@@ -44,6 +45,7 @@ const albums = () => {
     real: [
       AccessRepository,
       AlbumRepository,
+      AlbumSummaryRepository,
       AssetRepository,
       ClassificationRepository,
       MapRepository,
@@ -78,6 +80,17 @@ const search = () =>
 
 const elevated = { session: { id: factory.uuid(), hasElevatedPermission: true } };
 
+/** FL-1297: the first read of a list only starts its count; the numbers are there on a later one. */
+const listOnceCounted = (sut: AlbumService, ...args: Parameters<AlbumService['getAll']>) =>
+  vi.waitFor(
+    async () => {
+      const albums = await sut.getAll(...args);
+      expect(albums.filter(({ statsPending }) => statsPending)).toEqual([]);
+      return albums;
+    },
+    { timeout: 10_000, interval: 25 },
+  );
+
 describe('cross-account evidence of Locked items (FL-137)', () => {
   it("never dates a member's view of an album by the owner's Locked item", async () => {
     const { sut, ctx } = albums();
@@ -96,7 +109,7 @@ describe('cross-account evidence of Locked items (FL-137)', () => {
     await ctx.newAlbumUser({ albumId: album.id, userId: member.id, role: AlbumUserRole.Viewer });
 
     for (const auth of [factory.auth({ user: member }), factory.auth({ user: member, ...elevated })]) {
-      const listed = (await sut.getAll(auth, {})).find(({ id }) => id === album.id);
+      const listed = (await listOnceCounted(sut, auth, {})).find(({ id }) => id === album.id);
       expect(listed).toMatchObject({ assetCount: 1 });
       expect(listed?.startDate).toBe(new Date(early).toISOString());
       expect(listed?.endDate).toBe(new Date(early).toISOString());
@@ -104,7 +117,9 @@ describe('cross-account evidence of Locked items (FL-137)', () => {
       expect(JSON.stringify(listed)).not.toContain(locked.id);
     }
     // the owner's unlocked session does see it
-    const own = (await sut.getAll(factory.auth({ user: owner, ...elevated }), {})).find(({ id }) => id === album.id);
+    const own = (await listOnceCounted(sut, factory.auth({ user: owner, ...elevated }), {})).find(
+      ({ id }) => id === album.id,
+    );
     expect(own?.endDate).toBe(new Date(late).toISOString());
   });
 

@@ -25,6 +25,28 @@ describe('AlbumTile', () => {
     expect(mark.getAttribute('aria-label')).toBe("From Jamie's library");
   });
 
+  it('shows its name and cover but no count while its numbers are being worked out (FL-1297)', () => {
+    const album = albumFactory.build({
+      albumName: 'Hikes',
+      albumThumbnailAssetId: null,
+      assetCount: 0,
+      statsPending: true,
+      startDate: undefined,
+      endDate: undefined,
+    });
+    render(AlbumTile, { album, currentUserId: 'me' });
+
+    expect(screen.getByRole('article', { name: 'Hikes' })).toBeInTheDocument();
+    expect(screen.queryByText('Empty')).toBeNull();
+    expect(screen.queryByText(/items?$/)).toBeNull();
+  });
+
+  it('shows the count once it has arrived, even when it is zero', () => {
+    const album = albumFactory.build({ albumThumbnailAssetId: null, assetCount: 0, startDate: undefined });
+    render(AlbumTile, { album, currentUserId: 'me' });
+    expect(screen.getByText(/Empty/)).toBeInTheDocument();
+  });
+
   it('shows no mark on your own albums', () => {
     const album = albumFactory.build({ albumThumbnailAssetId: null });
     render(AlbumTile, { album, currentUserId: 'me' });

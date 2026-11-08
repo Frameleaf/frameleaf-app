@@ -4352,6 +4352,8 @@ export type AlbumResponseDto = {
     sortOrder: number | null;
     /** Start date (earliest asset) */
     startDate?: string;
+    /** True while this album's count and dates are still being worked out for this viewer; assetCount is 0 until then. Populated by the album lists: GET /albums, GET /albums/tree and GET /albums/hierarchy. */
+    statsPending?: boolean;
     /** Last update date */
     updatedAt: string;
 };
@@ -4408,6 +4410,10 @@ export type AlbumChangeRunLatestResponseDto = {
     /** The newest run that can still be undone, if any */
     run: (AlbumChangeRunResponseDto) | null;
 };
+export type AlbumChangeUndoDto = {
+    /** Only undo if this is still the latest run; refused with 409 if it is not */
+    runId?: string;
+};
 export type AlbumChangeUndoResponseDto = {
     /** Changes taken back */
     reversed: number;
@@ -4440,23 +4446,6 @@ export type AlbumIconCatalogueResponseDto = {
     suggested: AlbumIconGroupResponseDto[];
     /** Material Design Icons catalogue version the names come from */
     version: string;
-};
-export type AlbumLostDatesHealDto = {
-    /** The photos you approved, per album */
-    albums: {
-        /** Album the photos are healed from */
-        albumId: string;
-        /** Photos to heal; dates are decided by the server */
-        assetIds: string[];
-    }[];
-};
-export type AlbumLostDatesHealResponseDto = {
-    /** Photos whose date was healed */
-    healed: number;
-    /** The healing, for undoing it; null when nothing changed */
-    runId: string | null;
-    /** Photos left alone because they no longer qualify */
-    skipped: number;
 };
 export type AlbumOrderDto = {
     /** Every item of the group, in the order to show them. Must be exactly the group as it is now; a group that changed since the client loaded it is refused with 409. */
@@ -4538,8 +4527,6 @@ export type ExifResponseDto = {
     colorspace?: string | null;
     /** Country name */
     country?: string | null;
-    /** The capture date was estimated from the photos around it. Absent when it was not */
-    dateEstimated?: boolean;
     /** Original date/time */
     dateTimeOriginal?: string | null;
     /** Image description */
@@ -4849,39 +4836,6 @@ export type LibraryItemsResponseDto = {
         id: string;
         kind: LibraryItemKind;
     } | null;
-};
-export type AlbumLostDateSuggestionDto = {
-    /** The photo */
-    assetId: string;
-    /** The photos an exact date came from */
-    between: {
-        /** File name of the photo after it */
-        after: string;
-        /** File name of the photo before it */
-        before: string;
-    } | null;
-    /** The date offered: local time with offset */
-    dateTimeOriginal: string;
-    /** The local day offered (YYYY-MM-DD) */
-    day: string;
-    /** Its file name */
-    fileName: string;
-    /** exact (from the numbered photos on either side) or around (the middle of the album). May grow */
-    precision: string;
-    /** The local day it shows now (YYYY-MM-DD) */
-    shownDay: string;
-};
-export type AlbumLostDatesResponseDto = {
-    /** The album is tight enough to say when its photos were taken */
-    eligible: boolean;
-    /** First local day of the album (YYYY-MM-DD), when eligible */
-    "from": string | null;
-    /** Why it is not: few (too few photos with camera details), wide (they span too long). May grow */
-    reason: string | null;
-    /** Your own photos that lost their date */
-    suggestions: AlbumLostDateSuggestionDto[];
-    /** Last local day of the album (YYYY-MM-DD), when eligible */
-    to: string | null;
 };
 export type MapMarkerResponseDto = {
     /** City name */
@@ -19166,6 +19120,8 @@ export type AssetFilmstripSpriteOptionsDto = {
     version?: string;
 };
 export type AssetMediaOptionsDto = {
+    /** Cache version: the asset's current thumbhash. A matching thumbnail is served as immutable. */
+    c?: string;
     /** Defaults to compatible SDR. Auto prefers an available HDR derivative; explicit HDR fails when unavailable. */
     dynamicRange?: DynamicRange2;
     /** Return edited asset if available */
@@ -20095,6 +20051,8 @@ export type SyncAssetV2 = {
     originalFileName: string;
     /** Owner ID */
     ownerId: string;
+    /** Only on your own copy of a partner's photo: the account it originally came from. Rows synced before this field existed need a full re-sync to carry it. */
+    partnerOriginOwnerId?: string;
     /** Stack ID */
     stackId: string | null;
     /** Thumbhash */
@@ -20209,6 +20167,8 @@ export type SyncAlbumV3 = {
     name: string;
     order: AssetOrder;
     parentId: string | null;
+    /** Only on your own copy of a partner's album: the account it originally came from. Rows synced before this field existed need a full re-sync to carry it. */
+    partnerOriginOwnerId?: string;
     sortOrder: number | null;
     /** Thumbnail asset ID */
     thumbnailAssetId: string | null;
@@ -23873,14 +23833,17 @@ export function getLatestAlbumChangeRun(opts?: Oazapfts.RequestOpts) {
 /**
  * Undo the latest album change
  */
-export function undoLatestAlbumChangeRun(opts?: Oazapfts.RequestOpts) {
+export function undoLatestAlbumChangeRun({ albumChangeUndoDto }: {
+    albumChangeUndoDto: AlbumChangeUndoDto;
+}, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: AlbumChangeUndoResponseDto;
-    }>("/albums/change-runs/latest/undo", {
+    }>("/albums/change-runs/latest/undo", oazapfts.json({
         ...opts,
-        method: "POST"
-    }));
+        method: "POST",
+        body: albumChangeUndoDto
+    })));
 }
 /**
  * Retrieve the nested album directory
@@ -23907,21 +23870,6 @@ export function getAlbumIconCatalogue(opts?: Oazapfts.RequestOpts) {
     }>("/albums/icons", {
         ...opts
     }));
-}
-/**
- * Heal lost dates
- */
-export function healAlbumLostDates({ albumLostDatesHealDto }: {
-    albumLostDatesHealDto: AlbumLostDatesHealDto;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: AlbumLostDatesHealResponseDto;
-    }>("/albums/lost-dates/heal", oazapfts.json({
-        ...opts,
-        method: "POST",
-        body: albumLostDatesHealDto
-    })));
 }
 /**
  * Arrange a group of the album directory
@@ -24122,19 +24070,6 @@ export function getAlbumItems({ afterId, afterKind, id, key, limit, slug }: {
         limit,
         slug
     }))}`, {
-        ...opts
-    }));
-}
-/**
- * Find lost dates in an album
- */
-export function getAlbumLostDates({ id }: {
-    id: string;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: AlbumLostDatesResponseDto;
-    }>(`/albums/${encodeURIComponent(id)}/lost-dates`, {
         ...opts
     }));
 }
@@ -25723,7 +25658,8 @@ export function addImportedAssetSource({ id, assetSourceImportDto }: {
 /**
  * View asset thumbnail
  */
-export function viewAsset({ dynamicRange, edited, faceSource, id, key, size, slug }: {
+export function viewAsset({ c, dynamicRange, edited, faceSource, id, key, size, slug }: {
+    c?: string;
     dynamicRange?: "auto" | "sdr" | "hdr";
     edited?: boolean;
     faceSource?: boolean;
@@ -25736,6 +25672,7 @@ export function viewAsset({ dynamicRange, edited, faceSource, id, key, size, slu
         status: 200;
         data: Blob;
     }>(`/assets/${encodeURIComponent(id)}/thumbnail${QS.query(QS.explode({
+        c,
         dynamicRange,
         edited,
         faceSource,

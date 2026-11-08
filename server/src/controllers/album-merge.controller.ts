@@ -4,6 +4,7 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   AlbumChangeRunLatestResponseDto,
+  AlbumChangeUndoDto,
   AlbumChangeUndoResponseDto,
   AlbumMergeDto,
   AlbumMergePreviewParamDto,
@@ -47,8 +48,11 @@ export class AlbumMergeController {
       'Reverse your newest merge, cleanup or date healing, for up to 30 days. Anything changed since is left alone and reported in `skipped`.',
     history: history(),
   })
-  undoLatestAlbumChangeRun(@Auth() auth: AuthDto): Promise<AlbumChangeUndoResponseDto> {
-    return this.runs.undoLatest(auth);
+  undoLatestAlbumChangeRun(
+    @Auth() auth: AuthDto,
+    @Body() dto: AlbumChangeUndoDto,
+  ): Promise<AlbumChangeUndoResponseDto> {
+    return this.runs.undoLatest(auth, dto);
   }
 
   @Get(':id/merge/:otherId')
@@ -72,7 +76,7 @@ export class AlbumMergeController {
   @Endpoint({
     summary: 'Merge an album with another',
     description:
-      'Merge two albums you own into the one with the most photos, counting Locked ones. No photos leave your library. The other album can be brought back with Undo for 30 days.',
+      'Merge two albums you own into the one with the most photos, counting Locked ones; on a tie the older album stays. No photos leave your library. The other album can be brought back with Undo for 30 days.',
     history: history(),
   })
   mergeAlbum(

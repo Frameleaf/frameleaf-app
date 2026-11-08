@@ -4,6 +4,7 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { AlbumKind, AlbumUserRole, AssetFileType, AssetLockReason, AssetVisibility } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
+import { AlbumSummaryRepository } from 'src/repositories/album-summary.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -38,6 +39,7 @@ const options = () => ({
     AccessRepository,
     ActivityRepository,
     AlbumRepository,
+    AlbumSummaryRepository,
     AlbumUserRepository,
     AssetRepository,
     ClassificationRepository,

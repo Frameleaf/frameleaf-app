@@ -2940,6 +2940,7 @@
   "frameleaf_albums_members": "Members",
   "frameleaf_albums_merge_failed": "Couldn’t merge these albums",
   "frameleaf_albums_merge_undo_failed": "Couldn’t undo the merge",
+  "frameleaf_albums_merge_undo_newer": "Undo your newer change first, then this one.",
   "frameleaf_albums_merge_undone": "Merge undone",
   "frameleaf_albums_merge_undone_kept": "Merge undone. Your later changes to {names} were kept.",
   "frameleaf_albums_merge_with": "Merge with…",

@@ -19,6 +19,7 @@ import { FileUploadInterceptor } from 'src/middleware/file-upload.interceptor.js
 import { GlobalExceptionFilter } from 'src/middleware/global-exception.filter.js';
 import { LibraryMoveFenceGuard } from 'src/middleware/library-move-fence.guard.js';
 import { LoggingInterceptor } from 'src/middleware/logging.interceptor.js';
+import { PrivateJsonCacheInterceptor } from 'src/middleware/private-json-cache.interceptor.js';
 import { RateLimitFailureInterceptor, RateLimitGuard } from 'src/middleware/rate-limit.guard.js';
 import { ServedMarkerInterceptor } from 'src/middleware/served-marker.interceptor.js';
 import { AppRepository } from 'src/repositories/app.repository.js';
@@ -69,6 +70,7 @@ const apiMiddleware = [
   { provide: APP_INTERCEPTOR, useClass: RateLimitFailureInterceptor },
   // FL-1210: records that this release served a request, for Frameleaf Manager's update rollback
   { provide: APP_INTERCEPTOR, useClass: ServedMarkerInterceptor },
+  { provide: APP_INTERCEPTOR, useClass: PrivateJsonCacheInterceptor },
 ];
 
 const configRepository = new ConfigRepository();

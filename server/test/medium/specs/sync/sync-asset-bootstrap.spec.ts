@@ -24,6 +24,27 @@ it('paints the newest own asset first during a full sync', async () => {
   ]);
 });
 
+it('names the origin on partner copies, in the bootstrap and in later updates, and leaves other rows as they were', async () => {
+  const ctx = new SyncTestContext(db);
+  const { auth } = await ctx.newSyncAuthUser();
+  const { user: partner } = await ctx.newUser();
+  const { asset: copy } = await ctx.newAsset({ ownerId: auth.user.id });
+  const { asset: own } = await ctx.newAsset({ ownerId: auth.user.id });
+  await sql`insert into public.asset_origin ("assetId", "ownerId", "partnerSharedById", "rootOwnerId")
+    values (${copy.id}::uuid, ${auth.user.id}::uuid, ${partner.id}::uuid, ${partner.id}::uuid)`.execute(db);
+  const rowsOf = (response: Awaited<ReturnType<typeof ctx.syncStream>>) =>
+    response.filter((item) => item.type === SyncEntityType.AssetV3);
+
+  const first = await ctx.syncStream(auth, [SyncRequestType.AssetsV3]);
+  expect(rowsOf(first).find((item) => item.data.id === copy.id)!.data.partnerOriginOwnerId).toBe(partner.id);
+  expect(rowsOf(first).find((item) => item.data.id === own.id)!.data).not.toHaveProperty('partnerOriginOwnerId');
+
+  await ctx.syncAckAll(auth, first);
+  await ctx.get(AssetRepository).update({ id: copy.id, isFavorite: true });
+  const next = rowsOf(await ctx.syncStream(auth, [SyncRequestType.AssetsV3]));
+  expect(next.map((item) => item.data.partnerOriginOwnerId)).toEqual([partner.id]);
+});
+
 it('resumes a partial bootstrap with exact microsecond dates and UUID ties', async () => {
   const ctx = new SyncTestContext(db);
   const { auth } = await ctx.newSyncAuthUser();
