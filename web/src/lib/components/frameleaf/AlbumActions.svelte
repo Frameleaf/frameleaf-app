@@ -98,6 +98,7 @@
   let moveDialog = $state<{ open: boolean; album?: AlbumResponseDto }>({ open: false });
   let deleteDialog = $state<{ open: boolean; album?: AlbumResponseDto }>({ open: false });
   let leaveDialog = $state<{ open: boolean; album?: AlbumResponseDto }>({ open: false });
+  let lockDialog = $state<{ open: boolean; album?: AlbumResponseDto }>({ open: false });
   let linkDialog = $state<{ open: boolean; album?: AlbumResponseDto }>({ open: false });
   let editDialog = $state<{ open: boolean; album?: AlbumResponseDto }>({ open: false });
   let shareDialog = $state<{ open: boolean; album?: AlbumResponseDto }>({ open: false });
@@ -256,6 +257,23 @@
     await refresh();
   };
 
+  const setLocked = async (album: AlbumResponseDto, isLocked: boolean) => {
+    const message = $t(isLocked ? 'frameleaf_albums_locked' : 'frameleaf_albums_unlocked', {
+      values: { name: nameOf(album) },
+    });
+    if (await handleUpdateAlbumInfo(album.id, { isLocked }, { message })) {
+      await refresh();
+    }
+  };
+  /** FL-1296: locking moves the owner's items into Locked, so it asks first; unlocking moves nothing. */
+  export const toggleLock = (album: AlbumResponseDto) => {
+    if (album.isLocked) {
+      void setLocked(album, false);
+      return;
+    }
+    lockDialog = { open: true, album };
+  };
+
   /** Details (name, description, icon, colour, parent), or a smart album's rules (FL-60). */
   export const edit = async (album: AlbumResponseDto) => {
     if (album.smartRuleId) {
@@ -358,6 +376,17 @@
     confirmLabel={$t('frameleaf_album_leave', { values: { kind: kindOf(album) } })}
     bind:open={leaveDialog.open}
     onConfirm={confirmLeave}
+  />
+{/if}
+
+{#if lockDialog.album}
+  {@const album = lockDialog.album}
+  <AlbumConfirmDialog
+    title={$t('frameleaf_album_lock_title', { values: { name: nameOf(album) } })}
+    body={$t('frameleaf_album_lock_body')}
+    confirmLabel={$t('frameleaf_album_options_locked')}
+    bind:open={lockDialog.open}
+    onConfirm={() => setLocked(album, true)}
   />
 {/if}
 

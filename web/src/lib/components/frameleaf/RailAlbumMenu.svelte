@@ -19,6 +19,8 @@
     mdiFolderMultiplePlusOutline,
     mdiFolderPlusOutline,
     mdiLinkVariant,
+    mdiLockOpenVariantOutline,
+    mdiLockOutline,
     mdiLogoutVariant,
     mdiPaletteOutline,
     mdiPencilOutline,
@@ -146,6 +148,12 @@
           {$t('frameleaf_albums_take_out', { values: { name: nameOf(parent) } })}
         </MenuItem>
       {/if}
+    {/if}
+    {#if owner && album.kind === AlbumKind.Album}
+      <MenuItem onSelect={() => run((loaded) => loaded.toggleLock(album))}>
+        <Icon icon={album.isLocked ? mdiLockOpenVariantOutline : mdiLockOutline} size="18" aria-hidden={true} />
+        {album.isLocked ? $t('frameleaf_albums_unlock') : $t('frameleaf_albums_lock')}
+      </MenuItem>
     {/if}
     {#if editor && album.kind === AlbumKind.Album && !album.isSmart}
       <MenuItem onSelect={() => void openFileUploadDialog({ albumId: album.id })}>

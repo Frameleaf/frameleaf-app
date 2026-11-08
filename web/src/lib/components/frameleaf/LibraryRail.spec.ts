@@ -639,6 +639,7 @@ describe('LibraryRail right-click menu (approved design, 2026-11-04)', () => {
       'Edit details',
       'Move to…',
       'Take out of “Family”',
+      'Lock album…',
       'Upload photos',
       'Share',
       'Create link',
