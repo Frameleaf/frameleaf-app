@@ -382,6 +382,9 @@
   "help.askEnabled": {
     "type": "boolean"
   },
+  "icloud.enabled": {
+    "type": "boolean"
+  },
   "image.colorspace": {
     "type": "string",
     "enum": [

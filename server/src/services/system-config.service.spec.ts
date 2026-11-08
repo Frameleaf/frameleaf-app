@@ -501,6 +501,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
     restoration: { style: RestorationStyle.Faithful },
   },
   help: { askEnabled: true },
+  icloud: { enabled: true },
 });
 
 describe(SystemConfigService.name, () => {

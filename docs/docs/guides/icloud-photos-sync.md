@@ -6,7 +6,7 @@ This is a one-way import. It does not write changes back to Apple or delete Fram
 
 ## Before you start
 
-Your administrator must enable the connector using the [server setup guide](icloud-photos-server-setup.md). If the page says sync is not enabled, account sign-in alone cannot enable it. Use an HTTPS address for Frameleaf.
+iCloud Photos is built in and on by default, with nothing to set up on the server. Use an HTTPS address for Frameleaf.
 
 Have your Apple account password and a trusted Apple device available. Enable **Access iCloud Data on the Web** on that device. Advanced Data Protection may require you to approve web access again when it expires. This connector supports trusted-device verification codes; SMS verification is not supported.
 
@@ -117,7 +117,7 @@ The Frameleaf app for iPhone can back up the same iCloud photos the sync imports
 
 | What you see                                         | What to do                                                                                                                                                                   |
 | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Sync is not enabled                                  | Ask your administrator to complete [server setup](icloud-photos-server-setup.md).                                                                                            |
+| iCloud Photos is turned off                          | Ask your administrator to turn it on in **Settings**, under **Server & updates**.                                                                                                                 |
 | Device approval or sign-in required                  | Approve on your trusted device or sign in again. Use **Check saved session** to check access.                                                                                |
 | Waiting to retry or rate limited                     | Allow the retry delay. Do not create extra connections to bypass it.                                                                                                         |
 | Incomplete inventory                                 | Load the inventory again. Do not treat missing entries as deleted photos.                                                                                                    |

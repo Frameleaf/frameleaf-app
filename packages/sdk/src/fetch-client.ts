@@ -1601,6 +1601,10 @@ export type AdminConfigHelpDto = {
     /** Ask Frameleaf in the help panel: questions go from this server to frameleaf.app's Ask service */
     askEnabled: boolean;
 };
+export type AdminConfigICloudDto = {
+    /** iCloud Photos: people can connect their Apple accounts and bring in photos */
+    enabled: boolean;
+};
 export type AdminConfigEnhancedRawImageDto = {
     /** Enhanced RAW rendering */
     enabled: boolean;
@@ -2121,6 +2125,7 @@ export type AdminConfigDto = {
     ffmpeg: AdminConfigFFmpegDto;
     frameleafCloud?: AdminConfigFrameleafCloudDto;
     help?: AdminConfigHelpDto;
+    icloud?: AdminConfigICloudDto;
     image: AdminConfigImageDto;
     integrityChecks: AdminConfigIntegrityChecksDto;
     job: AdminConfigJobDto;
@@ -8976,6 +8981,10 @@ export type ICloudConnectionCreateDto = {
         stagingBytes?: number;
     };
     label: string;
+};
+export type ICloudSyncActivityResponseDto = {
+    /** Syncs on this server, for any account, that are running or queued */
+    running: number;
 };
 export type ICloudConnectionUpdateDto = {
     config?: {
@@ -27881,6 +27890,14 @@ export function createICloudConnection({ iCloudConnectionCreateDto }: {
         method: "POST",
         body: iCloudConnectionCreateDto
     })));
+}
+export function getICloudSyncActivity(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ICloudSyncActivityResponseDto;
+    }>("/icloud-sync/connections/activity", {
+        ...opts
+    }));
 }
 export function disconnectICloudConnection({ id }: {
     id: string;

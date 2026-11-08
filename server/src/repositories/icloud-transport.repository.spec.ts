@@ -16,6 +16,18 @@ describe(ICloudTransportRepository.name, () => {
   beforeEach(() => {
     sut = new ICloudTransportRepository();
   });
+  it('reports disabled and refuses the bridge while switched off', async () => {
+    vi.stubEnv('FRAMELEAF_ICLOUD_BRIDGE_URL', 'https://bridge.test/');
+    expect(sut.enabled()).toBe(true);
+    sut.setSwitchedOn(false);
+    try {
+      expect(new ICloudTransportRepository().enabled()).toBe(false);
+      await expect(sut.capabilities()).rejects.toMatchObject({ code: 'icloud_disabled' });
+    } finally {
+      sut.setSwitchedOn(true);
+      vi.unstubAllEnvs();
+    }
+  });
   it.each(['connected', 'awaiting-2fa', 'awaiting-device-approval', 'reauthentication-required'])(
     'accepts supported auth state %s',
     async (state) => {

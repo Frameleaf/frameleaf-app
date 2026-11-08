@@ -34,8 +34,8 @@
   import { timeZoneChoices, timeZoneLabel } from '$lib/frameleaf/time-zones';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
-  import { getAboutInfo, LoginPageMessageFormat } from '@frameleaf/sdk';
-  import { Icon } from '@frameleaf/ui';
+  import { getAboutInfo, getICloudSyncActivity, LoginPageMessageFormat } from '@frameleaf/sdk';
+  import { Icon, modalManager } from '@frameleaf/ui';
   import { mdiServerOutline } from '@mdi/js';
   import { DateTime } from 'luxon';
   import { onMount } from 'svelte';
@@ -46,6 +46,37 @@
   const server = $derived(settingsDraft.draft.server);
   // the server always returns the help group (FL-488); the SDK marks it optional because it has a default
   const help = $derived(settingsDraft.draft.help!);
+  const icloud = $derived(settingsDraft.draft.icloud!);
+
+  let checkingICloud = $state(false);
+  const runningICloudSyncs = async () => {
+    try {
+      return (await getICloudSyncActivity()).running;
+    } catch {
+      // The warning is a courtesy: being unable to count must not stop an administrator turning this off.
+      return 0;
+    }
+  };
+  // Toggle flips its own display on click, so the draft follows at once and is put back on a cancel.
+  const setICloudEnabled = async (value: boolean) => {
+    icloud.enabled = value;
+    if (value) {
+      return;
+    }
+    checkingICloud = true;
+    const running = await runningICloudSyncs();
+    checkingICloud = false;
+    if (
+      running > 0 &&
+      !(await modalManager.showDialog({
+        title: $t('frameleaf_icloud_setting_running_title'),
+        prompt: $t('frameleaf_icloud_setting_running', { values: { count: running } }),
+        confirmText: $t('frameleaf_icloud_setting_running_confirm'),
+      }))
+    ) {
+      icloud.enabled = true;
+    }
+  };
 
   /** The zone of the computer Frameleaf runs on, which "Same as this computer" means. */
   let computerZone = $state<string>();
@@ -180,6 +211,17 @@
           />
         </Row>
       </Section>
+
+      <Section title={$t('frameleaf_icloud_setting_title')}>
+        <Row label={$t('frameleaf_icloud_setting')} help={$t('frameleaf_icloud_setting_description')}>
+          <Switch
+            label={$t('frameleaf_icloud_setting')}
+            checked={icloud.enabled}
+            held={disabled || checkingICloud}
+            onChange={(value) => void setICloudEnabled(value)}
+          />
+        </Row>
+      </Section>
     </div>
 
     <aside class="preview fl-continuous-corners" aria-label={$t('frameleaf_server_identity_preview')}>
@@ -214,7 +256,7 @@
     </aside>
   </div>
 
-  <SettingActions keys={['server', 'help']} {disabled} />
+  <SettingActions keys={['server', 'help', 'icloud']} {disabled} />
 </KitPage>
 
 <style>

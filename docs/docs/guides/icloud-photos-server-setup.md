@@ -2,66 +2,13 @@
 
 This guide is for the administrator who installs and maintains iCloud Photos Sync. After setup, each user connects their own Apple account through the [iCloud Photos Sync user guide](icloud-photos-sync.md).
 
-iCloud Photos Sync needs a separate service, the iCloud bridge, which the server talks to over HTTPS on a private network. The feature stays off until you set it up as described here.
+There is nothing to install or configure. The iCloud bridge ships inside the Frameleaf server and starts by itself the first time someone uses iCloud Photos, listening only on the server's loopback interface. Each user connects their Apple account from the web app. An administrator can turn iCloud Photos on or off in **Settings**, under **Server & updates**; it is on by default, and turning it off stops the bridge without removing photos or saved sign-ins. The Frameleaf web application must be served over HTTPS for account authentication.
 
-## Deploy the bridge
+Frameleaf keeps the bridge's generated secrets and its temporary downloads in `.frameleaf-icloud` inside your data folder. Include this folder in backups and do not delete it: saved Apple sessions need its encryption key. If the encryption key is lost, users sign in to Apple again. The folder also holds verified recovery copies, which can't be recreated from it.
 
-Use the [Compose overlay](https://github.com/Frameleaf/frameleaf-app/blob/main/deployment/icloud-sync.compose.yml) with the Compose file for your installed Frameleaf release. The bridge imports Rclone **v1.75.2**, commit `be8d6044eacb843b74d335db0c5fbe09222031fe`; its Go modules and container base images are pinned. The original Rclone MIT copyright and permission notice is included at `icloud-bridge/licenses/rclone/COPYING` in the checkout and `/usr/share/licenses/icloud-bridge/rclone/COPYING` in the runtime image. The [protocol reference](https://github.com/Frameleaf/frameleaf-app/blob/main/icloud-bridge/api.md) records the transport contract and limitations.
+The bridge imports Rclone **v1.75.2**, commit `be8d6044eacb843b74d335db0c5fbe09222031fe`. The Rclone MIT copyright and permission notice is at `/licenses/icloud-bridge/rclone/COPYING` in the server image. The [protocol reference](https://github.com/Frameleaf/frameleaf-app/blob/main/icloud-bridge/api.md) records the transport contract and limitations.
 
-Prepare absolute paths in your deployment environment:
-
-```dotenv
-FRAMELEAF_SOURCE_ROOT=/opt/frameleaf-app
-FRAMELEAF_IMAGE=ghcr.io/frameleaf/frameleaf-server:latest
-FRAMELEAF_UID=1000
-FRAMELEAF_GID=1000
-ICLOUD_SECRETS_DIR=/srv/frameleaf-icloud/secrets
-ICLOUD_STAGING_DIR=/srv/frameleaf-icloud/staging
-```
-
-Set the UID/GID to the non-root identity that owns this installation's Frameleaf media files. Both services use that identity. Existing media directories must already be writable by it; this overlay does not recursively change their ownership. Do not set either ID to zero.
-
-Staging must be a private directory disjoint from Frameleaf's upload, library, thumbnail, profile, backup, and every external-library root. Do not place it inside a monitored media tree or expose it through a web server or file share. It holds partial downloads and verified recovery copies. Check available disk space as well as the configured staging byte limit.
-
-Generate secrets on the deployment host without printing their values:
-
-```sh
-umask 077
-mkdir -p "$ICLOUD_SECRETS_DIR" "$ICLOUD_STAGING_DIR"
-openssl rand -hex 32 > "$ICLOUD_SECRETS_DIR/bridge-token"
-openssl rand -base64 32 > "$ICLOUD_SECRETS_DIR/encryption-key"
-openssl req -x509 -newkey rsa:3072 -nodes -days 3650 \
-  -subj '/CN=Frameleaf iCloud private CA' \
-  -keyout "$ICLOUD_SECRETS_DIR/ca.key" -out "$ICLOUD_SECRETS_DIR/ca.crt"
-openssl req -newkey rsa:3072 -nodes -subj '/CN=icloud-bridge' \
-  -keyout "$ICLOUD_SECRETS_DIR/bridge.key" -out "$ICLOUD_SECRETS_DIR/bridge.csr"
-printf 'subjectAltName=DNS:icloud-bridge\nextendedKeyUsage=serverAuth\nbasicConstraints=CA:FALSE\n' > "$ICLOUD_SECRETS_DIR/bridge.ext"
-openssl x509 -req -days 365 -in "$ICLOUD_SECRETS_DIR/bridge.csr" \
-  -CA "$ICLOUD_SECRETS_DIR/ca.crt" -CAkey "$ICLOUD_SECRETS_DIR/ca.key" -CAcreateserial \
-  -extfile "$ICLOUD_SECRETS_DIR/bridge.ext" -out "$ICLOUD_SECRETS_DIR/bridge.crt"
-sudo chown -R "$FRAMELEAF_UID:$FRAMELEAF_GID" "$ICLOUD_SECRETS_DIR" "$ICLOUD_STAGING_DIR"
-chmod 700 "$ICLOUD_SECRETS_DIR" "$ICLOUD_STAGING_DIR"
-chmod 600 "$ICLOUD_SECRETS_DIR"/*
-```
-
-Run these once for a new installation. Do not regenerate the encryption key when updating containers: stored sessions need the original key. The server reads a **base64-encoded 32-byte key**, not a password or arbitrary text. Keep the CA signing key offline after issuing the bridge certificate. Renew the certificate before expiration.
-
-Compose file-backed secrets are bind mounts on many installations; host ownership and modes are authoritative. Apple passwords and verification codes belong only in the HTTPS web form, never `.env`, Compose, shell arguments, or support logs. The bridge receives only its bearer token and TLS files. The server receives the bearer token, CA certificate, and session encryption key.
-
-Validate and start from the checkout, using your release's base Compose path:
-
-```sh
-docker compose --env-file /absolute/path/to/frameleaf.env \
-  -f /absolute/path/to/docker-compose.yml \
-  -f "$FRAMELEAF_SOURCE_ROOT/deployment/icloud-sync.compose.yml" config --quiet
-docker compose --env-file /absolute/path/to/frameleaf.env \
-  -f /absolute/path/to/docker-compose.yml \
-  -f "$FRAMELEAF_SOURCE_ROOT/deployment/icloud-sync.compose.yml" up -d --build
-```
-
-The bridge has no published port or media mount. Its private Docker network permits outbound Apple HTTPS traffic. Do not add host networking or a public reverse-proxy route. The Frameleaf web application itself must be served over HTTPS for account authentication.
-
-The server configuration paths are `FRAMELEAF_ICLOUD_BRIDGE_URL`, `FRAMELEAF_ICLOUD_BRIDGE_TOKEN_FILE`, `FRAMELEAF_ICLOUD_KEY_FILE`, `FRAMELEAF_ICLOUD_CA_FILE`, and `FRAMELEAF_ICLOUD_STAGING_PATH`. They are set by the overlay. For split API/worker deployments, give each process the same transport/key configuration and consistent access to the private staging directory.
+Installations that already set up the earlier Compose overlay keep working unchanged, because `FRAMELEAF_ICLOUD_BRIDGE_URL` still takes precedence.
 
 The first time the server starts with iCloud sync, it builds an index over the sync's inventory. On a very large iCloud library that start takes longer.
 
@@ -69,28 +16,7 @@ The first time the server starts with iCloud sync, it builds an index over the s
 
 Two further options, `FRAMELEAF_ICLOUD_IDENTITY_ADOPTION` and `FRAMELEAF_ICLOUD_WEEKLY_AUDIT_EXECUTION`, are off by default. Leave them unset: with them off, the sync downloads each photo from iCloud and checks its contents before reusing a matching photo already on the server.
 
-### Check readiness and the pinned version
-
-From the server container, verify the bridge's HTTPS certificate and health response using Node's built-in client. Prefix `exec` with the same Compose files and environment used above:
-
-```sh
-docker compose exec frameleaf-server node --input-type=module -e '
-import https from "node:https";
-import fs from "node:fs";
-https.get(new URL("/health", process.env.FRAMELEAF_ICLOUD_BRIDGE_URL), {
-  ca: fs.readFileSync(process.env.FRAMELEAF_ICLOUD_CA_FILE)
-}, response => {
-  if (response.statusCode !== 200) process.exitCode = 1;
-  response.pipe(process.stdout);
-}).on("error", () => { console.error("Bridge TLS/readiness check failed"); process.exitCode = 1; });
-'
-```
-
-The response shows protocol version 1 and the Rclone version the bridge is built from. A healthy response means the server can reach the bridge; it does not sign in to Apple. Each user signs in from the web app.
-
 ## Capacity and long-video validation
-
-The staging directory must be owned by the server user and have mode `0700`. It must remain outside every managed or external media directory. Existing directories with broader permissions are rejected; correct the directory permissions before starting a run.
 
 Per-connection controls are limited to 1–4 concurrent downloads. The worker also applies server-wide limits:
 
@@ -119,6 +45,6 @@ A timeout is unresolved validation, not proof of corruption or successful repair
 
 **Disconnect account** removes its saved Apple session and stops new work. Existing imported Frameleaf assets remain. It does not delete the Apple account's photos or turn the connector into a mirror. Do not manually empty staging while a run is active or while it contains the only verified recovery copy.
 
-Back up the Frameleaf database, managed media, retained source resources, private staging state, and encryption key as one consistent checkpoint. Restrict backup access as tightly as production secrets. Stop/pause workers before taking an application-consistent snapshot. Keep the bearer token and TLS material separately recoverable; restore permissions before starting services. Restoring a database without its matching encryption key requires Apple reauthentication. Never attach session values, tokens, signed URLs, passwords, or keys to support reports.
+Back up the Frameleaf database, managed media, retained source resources, and the `.frameleaf-icloud` folder as one consistent checkpoint. Restrict backup access as tightly as production secrets. Stop/pause workers before taking an application-consistent snapshot. Restoring a database without its matching encryption key requires Apple reauthentication. Never attach session values, tokens, signed URLs, passwords, or keys to support reports.
 
 All connector state is in the canonical `public` schema. Back up the database together with the original connector encryption key and matching media files. A one-time offline Immich import uses a separate read-only source and never shares this database with another server implementation. See [Backup and restore](../administration/backup-and-restore.md).

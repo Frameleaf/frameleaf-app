@@ -129,6 +129,13 @@ export class ICloudSyncRepository {
   async active<T>(callback: (db: Kysely<DB>) => Promise<T>, transaction?: Kysely<DB>): Promise<T> {
     return transaction ? callback(transaction) : this.db.transaction().execute(callback);
   }
+  async countActiveRuns(): Promise<number> {
+    const { rows } = await sql<{
+      running: number;
+    }>`SELECT count(*)::int AS running FROM public.icloud_run WHERE status IN ('running', 'queued')`.execute(this.db);
+    return rows[0].running;
+  }
+
   async list(ownerId: string): Promise<ICloudConnection[]> {
     return await sql<ICloudConnection>`SELECT * FROM public.icloud_connection WHERE "ownerId" = ${ownerId}::uuid ORDER BY "createdAt"`
       .execute(this.db)

@@ -1,8 +1,10 @@
 import { UnauthorizedException } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { ICloudSyncController } from 'src/controllers/icloud-sync.controller.js';
 import { ICloudConfigSchema } from 'src/dtos/icloud-sync.dto.js';
+import { getAuthenticatedOptions } from 'src/middleware/auth.guard.js';
 import { ICloudSyncService } from 'src/services/icloud-sync.service.js';
 import { ControllerContext, controllerSetup } from 'test/utils.js';
 
@@ -67,6 +69,11 @@ describe('iCloud API authorization and input boundaries', () => {
     repository.get.mockImplementation((_id, owner) =>
       Promise.resolve(owner === ownerId ? { id, ownerId, config: ICloudConfigSchema.parse({}) } : undefined),
     );
+  });
+  it('keeps the server-wide running count for administrators', () => {
+    expect(
+      getAuthenticatedOptions(new Reflector(), ICloudSyncController.prototype.getICloudSyncActivity),
+    ).toMatchObject({ admin: true });
   });
   it('validates explicit weekly consent without accepting private bindings or API-key authority', async () => {
     const input = { enabled: true, includeProtected: false, requestKey: randomUUID() };
