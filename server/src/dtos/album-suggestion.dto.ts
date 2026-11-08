@@ -75,12 +75,71 @@ const AlbumSuggestionsResponseSchema = z
   })
   .meta({ id: 'AlbumSuggestionsResponseDto' });
 
+const AlbumLostDateSuggestionSchema = z
+  .object({
+    assetId: z.uuidv4().describe('The photo'),
+    fileName: z.string().describe('Its file name'),
+    shownDay: z.string().describe('The local day it shows now (YYYY-MM-DD)'),
+    day: z.string().describe('The local day offered (YYYY-MM-DD)'),
+    dateTimeOriginal: z.string().describe('The date offered: local time with offset'),
+    precision: z
+      .string()
+      .describe('exact (from the numbered photos on either side) or around (the middle of the album). May grow'),
+    between: z
+      .object({
+        before: z.string().describe('File name of the photo before it'),
+        after: z.string().describe('File name of the photo after it'),
+      })
+      .nullable()
+      .describe('The photos an exact date came from'),
+  })
+  .meta({ id: 'AlbumLostDateSuggestionDto' });
+
+const AlbumLostDatesResponseSchema = z
+  .object({
+    eligible: z.boolean().describe('The album is tight enough to say when its photos were taken'),
+    reason: z
+      .string()
+      .nullable()
+      .describe('Why it is not: few (too few photos with camera details), wide (they span too long). May grow'),
+    from: z.string().nullable().describe('First local day of the album (YYYY-MM-DD), when eligible'),
+    to: z.string().nullable().describe('Last local day of the album (YYYY-MM-DD), when eligible'),
+    suggestions: z.array(AlbumLostDateSuggestionSchema).describe('Your own photos that lost their date'),
+  })
+  .meta({ id: 'AlbumLostDatesResponseDto' });
+
+const AlbumLostDatesHealSchema = z
+  .object({
+    albums: z
+      .array(
+        z.object({
+          albumId: z.uuidv4().describe('Album the photos are healed from'),
+          assetIds: z.array(z.uuidv4()).min(1).max(10_000).describe('Photos to heal; dates are decided by the server'),
+        }),
+      )
+      .min(1)
+      .max(1000)
+      .describe('The photos you approved, per album'),
+  })
+  .meta({ id: 'AlbumLostDatesHealDto' });
+
+const AlbumLostDatesHealResponseSchema = z
+  .object({
+    runId: z.uuidv7().nullable().describe('The healing, for undoing it; null when nothing changed'),
+    healed: z.int().min(0).describe('Photos whose date was healed'),
+    skipped: z.int().min(0).describe('Photos left alone because they no longer qualify'),
+  })
+  .meta({ id: 'AlbumLostDatesHealResponseDto' });
+
 const AlbumSuggestionAutoAddSchema = z
   .object({ enabled: z.boolean().describe('Add new very likely photos from this trip automatically') })
   .meta({ id: 'AlbumSuggestionAutoAddDto' });
 
 export class AlbumSuggestionsResponseDto extends createZodDto(AlbumSuggestionsResponseSchema) {}
 export class AlbumSuggestionAutoAddDto extends createZodDto(AlbumSuggestionAutoAddSchema) {}
+export class AlbumLostDatesResponseDto extends createZodDto(AlbumLostDatesResponseSchema) {}
+export class AlbumLostDatesHealDto extends createZodDto(AlbumLostDatesHealSchema) {}
+export class AlbumLostDatesHealResponseDto extends createZodDto(AlbumLostDatesHealResponseSchema) {}
 export type AlbumSuggestionReason = z.infer<typeof AlbumSuggestionReasonSchema>;
 export type AlbumTripSuggestion = z.infer<typeof AlbumTripSuggestionSchema>;
 export type AlbumDateSuggestion = z.infer<typeof AlbumDateSuggestionSchema>;

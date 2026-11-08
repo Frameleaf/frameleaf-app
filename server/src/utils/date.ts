@@ -38,3 +38,15 @@ export const mergeTimeZone = (dateTimeOriginal?: string | null, timeZone?: strin
     ? DateTime.fromISO(dateTimeOriginal, { zone: 'UTC' }).setZone(timeZone ?? undefined)
     : undefined;
 };
+
+/** FL-1299: a capture date is estimated only while it is still the date healing set. */
+export const isDateEstimated = ({
+  dateTimeOriginal,
+  estimatedDateTimeOriginal,
+}: {
+  dateTimeOriginal?: Date | string | null;
+  estimatedDateTimeOriginal?: Date | string | null;
+}) =>
+  !!dateTimeOriginal &&
+  !!estimatedDateTimeOriginal &&
+  new Date(dateTimeOriginal).getTime() === new Date(estimatedDateTimeOriginal).getTime();

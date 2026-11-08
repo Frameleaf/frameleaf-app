@@ -135,6 +135,9 @@
         {#if timeZone}
           <p class="text-sm text-gray-500 dark:text-gray-400">{timeZone.replaceAll('_', ' ')}</p>
         {/if}
+        {#if asset.exifInfo?.dateEstimated}
+          <p class="text-sm text-gray-500 dark:text-gray-400">{$t('frameleaf_info_date_estimated')}</p>
+        {/if}
       </div>
     </div>
 

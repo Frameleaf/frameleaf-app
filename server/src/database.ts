@@ -623,6 +623,7 @@ export const columns = {
     'asset_exif.country',
     'asset_exif.dateTimeOriginal',
     'asset_exif.description',
+    'asset_exif.estimatedDateTimeOriginal',
     'asset_exif.exifImageHeight',
     'asset_exif.exifImageWidth',
     'asset_exif.exposureTime',

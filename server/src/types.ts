@@ -629,7 +629,11 @@ export type JobItem =
   // Sidecar Scanning
   | { name: JobName.SidecarQueueAll; data: IBaseJob }
   | { name: JobName.SidecarCheck; data: IEntityJob }
-  | { name: JobName.SidecarWrite; data: IEntityJob }
+  | {
+      name: JobName.SidecarWrite;
+      /** `releaseDateLock`: FL-1299's Undo. The date goes into the sidecar, then stops being locked. */
+      data: IEntityJob & { releaseDateLock?: boolean };
+    }
   | { name: JobName.DuplicateResolutionLifecycle; data: IDuplicateResolutionLifecycleJob }
 
   // Facial Recognition

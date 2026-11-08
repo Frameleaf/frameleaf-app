@@ -11776,6 +11776,62 @@
         "x-immich-permission": "album.read"
       }
     },
+    "/albums/lost-dates/heal": {
+      "post": {
+        "description": "Give the photos you approved the date their album suggests, marked as estimated. Dates are worked out again here, so the request names only the photos. Undo through the album change run.",
+        "operationId": "healAlbumLostDates",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlbumLostDatesHealDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumLostDatesHealResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Heal lost dates",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/albums/order": {
       "put": {
         "description": "Save the authenticated user's own custom order for one group of their album directory: the albums inside a collection, or at the top level the collections, the albums on their own, or the shared spaces. The order is personal and changes organization only; access and membership are untouched. The ids must be exactly the group as it is now, otherwise 409.",
@@ -12613,6 +12669,63 @@
           }
         ],
         "x-immich-permission": "album.read"
+      }
+    },
+    "/albums/{id}/lost-dates": {
+      "get": {
+        "description": "Your own photos in this album with no trustworthy date that sit far outside it, each with the date the rest of the album suggests. Nothing is changed.",
+        "operationId": "getAlbumLostDates",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumLostDatesResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Find lost dates in an album",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.read",
+        "x-immich-state": "Alpha"
       }
     },
     "/albums/{id}/map-markers": {
@@ -69178,6 +69291,172 @@
         ],
         "type": "string"
       },
+      "AlbumLostDateSuggestionDto": {
+        "properties": {
+          "assetId": {
+            "description": "The photo",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "between": {
+            "description": "The photos an exact date came from",
+            "nullable": true,
+            "properties": {
+              "after": {
+                "description": "File name of the photo after it",
+                "type": "string"
+              },
+              "before": {
+                "description": "File name of the photo before it",
+                "type": "string"
+              }
+            },
+            "required": [
+              "before",
+              "after"
+            ],
+            "type": "object"
+          },
+          "dateTimeOriginal": {
+            "description": "The date offered: local time with offset",
+            "type": "string"
+          },
+          "day": {
+            "description": "The local day offered (YYYY-MM-DD)",
+            "type": "string"
+          },
+          "fileName": {
+            "description": "Its file name",
+            "type": "string"
+          },
+          "precision": {
+            "description": "exact (from the numbered photos on either side) or around (the middle of the album). May grow",
+            "type": "string"
+          },
+          "shownDay": {
+            "description": "The local day it shows now (YYYY-MM-DD)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "between",
+          "dateTimeOriginal",
+          "day",
+          "fileName",
+          "precision",
+          "shownDay"
+        ],
+        "type": "object"
+      },
+      "AlbumLostDatesHealDto": {
+        "properties": {
+          "albums": {
+            "description": "The photos you approved, per album",
+            "items": {
+              "properties": {
+                "albumId": {
+                  "description": "Album the photos are healed from",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                },
+                "assetIds": {
+                  "description": "Photos to heal; dates are decided by the server",
+                  "items": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                    "type": "string"
+                  },
+                  "maxItems": 10000,
+                  "minItems": 1,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "albumId",
+                "assetIds"
+              ],
+              "type": "object"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "albums"
+        ],
+        "type": "object"
+      },
+      "AlbumLostDatesHealResponseDto": {
+        "properties": {
+          "healed": {
+            "description": "Photos whose date was healed",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "runId": {
+            "description": "The healing, for undoing it; null when nothing changed",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "skipped": {
+            "description": "Photos left alone because they no longer qualify",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "healed",
+          "runId",
+          "skipped"
+        ],
+        "type": "object"
+      },
+      "AlbumLostDatesResponseDto": {
+        "properties": {
+          "eligible": {
+            "description": "The album is tight enough to say when its photos were taken",
+            "type": "boolean"
+          },
+          "from": {
+            "description": "First local day of the album (YYYY-MM-DD), when eligible",
+            "nullable": true,
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why it is not: few (too few photos with camera details), wide (they span too long). May grow",
+            "nullable": true,
+            "type": "string"
+          },
+          "suggestions": {
+            "description": "Your own photos that lost their date",
+            "items": {
+              "$ref": "#/components/schemas/AlbumLostDateSuggestionDto"
+            },
+            "type": "array"
+          },
+          "to": {
+            "description": "Last local day of the album (YYYY-MM-DD), when eligible",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "eligible",
+          "from",
+          "reason",
+          "suggestions",
+          "to"
+        ],
+        "type": "object"
+      },
       "AlbumMapMarkerDto": {
         "properties": {
           "fileCreatedAfter": {
@@ -92497,6 +92776,10 @@
             "description": "Country name",
             "nullable": true,
             "type": "string"
+          },
+          "dateEstimated": {
+            "description": "The capture date was estimated from the photos around it. Absent when it was not",
+            "type": "boolean"
           },
           "dateTimeOriginal": {
             "default": null,

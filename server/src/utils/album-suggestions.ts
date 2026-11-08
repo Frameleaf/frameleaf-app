@@ -352,3 +352,133 @@ export const utcOffset = (takenAt: Date, localDateTime: Date) => {
   const absolute = Math.abs(minutes);
   return `${sign}${String(Math.floor(absolute / 60)).padStart(2, '0')}:${String(absolute % 60).padStart(2, '0')}`;
 };
+
+/**
+ * FL-1299: how tight an album must be before it can vouch for a photo's date. Judgment calls, kept as named
+ * constants to tune on real libraries.
+ */
+export const HEAL_MIN_DATED = 5;
+export const HEAL_WINDOW_DAYS = 14;
+export const HEAL_SHARE = 0.8;
+
+export type HealPhoto = {
+  id: string;
+  fileName: string;
+  takenAt: Date;
+  localDateTime: Date;
+  /** It has camera details and no saved-from-chat name, so `suspiciousDate` has no doubts about it. */
+  camera: boolean;
+  /** Healing set this date, so it says nothing about when the album's photos were taken. */
+  estimated: boolean;
+  /** Someone, or an earlier healing, set this date on purpose. It isn't lost. */
+  dateSet: boolean;
+  /** The viewer's own. Other members' photos are evidence, but are never changed. */
+  mine: boolean;
+};
+
+export type HealSuggestion = {
+  assetId: string;
+  fileName: string;
+  /** The local day it shows now. */
+  shownDay: string;
+  /** The local day offered. */
+  day: string;
+  /** Ready for an asset update: local time with offset. */
+  dateTimeOriginal: string;
+  precision: 'exact' | 'around';
+  /** The two photos an exact date came from. */
+  between: { before: string; after: string } | null;
+};
+
+export type HealResult = {
+  eligible: boolean;
+  reason?: 'few' | 'wide';
+  from?: string;
+  to?: string;
+  suggestions: HealSuggestion[];
+};
+
+const serialDay = (localDateTime: Date) => Math.floor(localDateTime.getTime() / DAY_MS);
+
+const sequenceOf = (name: string) => {
+  const match = /^(.*?)(\d+)\.[a-z0-9]+$/i.exec(name);
+  return match ? { stem: match[1].toLowerCase(), number: Number(match[2]) } : undefined;
+};
+
+const healedDate = ({ takenAt, localDateTime }: HealPhoto, time?: string) => {
+  const wall = time ? `${localDay(localDateTime)}T${time}` : localDateTime.toISOString().slice(0, 19);
+  return `${wall}${utcOffset(takenAt, localDateTime)}`;
+};
+
+/**
+ * Photos whose date was lost, in an album that tells us when it was taken. Only a photo with no camera details
+ * whose date sits more than a day outside the album's own stretch is offered, so a real throwback is left alone
+ * and a ten-year album is skipped. Nothing is written here: a healed date is always the person's choice.
+ */
+export const healDates = (photos: HealPhoto[]): HealResult => {
+  const dated = photos
+    .filter(({ camera, estimated }) => camera && !estimated)
+    .sort((a, b) => a.localDateTime.getTime() - b.localDateTime.getTime() || a.id.localeCompare(b.id));
+  if (dated.length < HEAL_MIN_DATED) {
+    return { eligible: false, reason: 'few', suggestions: [] };
+  }
+
+  const days = dated.map(({ localDateTime }) => serialDay(localDateTime));
+  let best = [0, 0];
+  for (let start = 0, end = 0; start < dated.length; start += 1) {
+    while (end + 1 < dated.length && days[end + 1] - days[start] <= HEAL_WINDOW_DAYS) {
+      end += 1;
+    }
+    if (end - start > best[1] - best[0]) {
+      best = [start, end];
+    }
+  }
+  const inWindow = dated.slice(best[0], best[1] + 1);
+  if (inWindow.length / dated.length < HEAL_SHARE) {
+    return { eligible: false, reason: 'wide', suggestions: [] };
+  }
+
+  const first = serialDay(inWindow[0].localDateTime);
+  const last = serialDay(inWindow.at(-1)!.localDateTime);
+  const middle = inWindow[inWindow.length >> 1];
+  const suggestions = photos
+    .filter(({ camera, dateSet, mine, localDateTime }) => {
+      const day = serialDay(localDateTime);
+      return !camera && !dateSet && mine && (day < first - 1 || day > last + 1);
+    })
+    .map((photo): HealSuggestion => {
+      const base = { assetId: photo.id, fileName: photo.fileName, shownDay: localDay(photo.localDateTime) };
+      const place = sequenceOf(photo.fileName);
+      const family = place
+        ? inWindow.flatMap((item) => {
+            const sequence = sequenceOf(item.fileName);
+            return sequence?.stem === place.stem ? [{ ...item, number: sequence.number }] : [];
+          })
+        : [];
+      const before = family.filter(({ number }) => number < place!.number).sort((a, b) => b.number - a.number)[0];
+      const after = family.filter(({ number }) => number > place!.number).sort((a, b) => a.number - b.number)[0];
+      if (before && after && Math.abs(serialDay(after.localDateTime) - serialDay(before.localDateTime)) <= 1) {
+        const earlier = after.localDateTime < before.localDateTime ? after : before;
+        return {
+          ...base,
+          day: localDay(earlier.localDateTime),
+          dateTimeOriginal: healedDate(earlier),
+          precision: 'exact',
+          between: { before: before.fileName, after: after.fileName },
+        };
+      }
+      return {
+        ...base,
+        day: localDay(middle.localDateTime),
+        dateTimeOriginal: healedDate(middle, '12:00:00'),
+        precision: 'around',
+        between: null,
+      };
+    });
+  return {
+    eligible: true,
+    from: localDay(inWindow[0].localDateTime),
+    to: localDay(inWindow.at(-1)!.localDateTime),
+    suggestions,
+  };
+};

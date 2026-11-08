@@ -3607,6 +3607,24 @@ describe(MetadataService.name, () => {
       );
     });
 
+    it('lets the date go once the sidecar holds it, when Undo asks (FL-1299)', async () => {
+      const date = '2023-11-21T22:56:12.196-06:00';
+      const asset = AssetFactory.from()
+        .file({ type: AssetFileType.Sidecar })
+        .exif({ dateTimeOriginal: new Date(date) })
+        .build();
+      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(['dateTimeOriginal', 'timeZone']);
+      mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(getForSidecarWrite(asset));
+
+      await expect(sut.handleSidecarWrite({ id: asset.id, releaseDateLock: true })).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.metadata.writeTags).toHaveBeenCalledWith(
+        asset.files[0].path,
+        expect.objectContaining({ DateTimeOriginal: expect.any(String) }),
+      );
+      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['dateTimeOriginal', 'timeZone'], undefined);
+    });
+
     it('writes one sidecar per asset at a time, on the lock connection (FL-195)', async () => {
       const asset = AssetFactory.from()
         .file({ type: AssetFileType.Sidecar })

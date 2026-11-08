@@ -2,7 +2,7 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import type { MaybeDehydrated } from 'src/types.js';
 import { Exif } from 'src/database.js';
-import { asDateTimeString } from 'src/utils/date.js';
+import { asDateTimeString, isDateEstimated } from 'src/utils/date.js';
 import { isMediaKind } from 'src/utils/media-kinds.js';
 
 export const ExifResponseSchema = z
@@ -49,6 +49,10 @@ export const ExifResponseSchema = z
       .describe(
         'Kinds of capture the file records: slow-motion, time-lapse, panorama, spherical, burst, portrait, selfie, screenshot, screen-recording. More may be added; ignore values you do not know. Absent until the metadata scan reads them',
       ),
+    dateEstimated: z
+      .boolean()
+      .optional()
+      .describe('The capture date was estimated from the photos around it. Absent when it was not'),
   })
   .describe('EXIF response')
   .meta({ id: 'ExifResponseDto' });
@@ -87,5 +91,6 @@ export function mapExif(entity: MaybeDehydrated<Exif>): ExifResponseDto {
     isRejected: entity.rating === -1,
     fps: entity.fps ?? null,
     ...(entity.mediaKinds && { mediaKinds: entity.mediaKinds.filter((kind) => isMediaKind(kind)) }),
+    ...(isDateEstimated(entity) && { dateEstimated: true }),
   };
 }

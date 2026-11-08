@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  type HealPhoto,
   type TripPhoto,
   cosineDistance,
   describeTrip,
   estimateDate,
+  healDates,
   matchOutfit,
   matchTripCandidate,
   suspiciousDate,
@@ -298,5 +300,183 @@ describe('utcOffset', () => {
   it('formats the local offset', () => {
     expect(utcOffset(at('2026-08-14T15:00:00Z'), at('2026-08-14T09:00:00Z'))).toBe('-06:00');
     expect(utcOffset(at('2026-08-14T15:00:00Z'), at('2026-08-15T00:30:00Z'))).toBe('+09:30');
+  });
+});
+
+/** FL-1299, ported from the mock's `healDates` tests (prototype `album-cleanup.test.mjs`). */
+describe('healDates', () => {
+  const start = '2019-07-03';
+  const lostOn = '2023-02-14';
+  const dayAfter = (from: string, days: number) =>
+    new Date(new Date(`${from}T12:00:00Z`).getTime() + days * 86_400_000).toISOString().slice(0, 10);
+
+  const heal = (fileName: string, day: string, overrides: Partial<HealPhoto> = {}): HealPhoto => ({
+    id: `id-${fileName}`,
+    fileName,
+    takenAt: new Date(`${day}T12:00:00Z`),
+    localDateTime: new Date(`${day}T12:00:00Z`),
+    camera: true,
+    estimated: false,
+    dateSet: false,
+    mine: true,
+    ...overrides,
+  });
+  /** `count` photos a day apart, numbered every `step`, so that lost photos can sit between them. */
+  const dated = (count: number, first = start, stem = 'IMG_', step = 2) =>
+    Array.from({ length: count }, (_, index) => heal(`${stem}${1000 + index * step}.JPG`, dayAfter(first, index)));
+  const lost = (fileName: string, day = lostOn, overrides: Partial<HealPhoto> = {}) =>
+    heal(fileName, day, { camera: false, ...overrides });
+
+  it('heals a lost date from the album around it', () => {
+    const { eligible, suggestions, from, to } = healDates([...dated(6), lost('IMG_1003.JPG'), lost('Takeout_9.jpg')]);
+    expect(eligible).toBe(true);
+    expect([from, to]).toEqual([start, dayAfter(start, 5)]);
+    expect(suggestions[0]).toMatchObject({
+      assetId: 'id-IMG_1003.JPG',
+      precision: 'exact',
+      day: dayAfter(start, 1),
+      shownDay: lostOn,
+      between: { before: 'IMG_1002.JPG', after: 'IMG_1004.JPG' },
+    });
+    expect(suggestions[1]).toMatchObject({ precision: 'around', between: null });
+  });
+
+  it('skips an album with too few dated photos', () => {
+    expect(healDates([...dated(3), lost('x.jpg')])).toEqual({ eligible: false, reason: 'few', suggestions: [] });
+    expect(healDates([])).toEqual({ eligible: false, reason: 'few', suggestions: [] });
+  });
+
+  it('skips a wide album, such as ten years of one friend', () => {
+    const wide = Array.from({ length: 8 }, (_, index) => heal(`a${index}.jpg`, dayAfter(start, index * 200)));
+    expect(healDates([...wide, lost('x.jpg')])).toEqual({ eligible: false, reason: 'wide', suggestions: [] });
+  });
+
+  it('leaves a real throwback with camera details alone', () => {
+    expect(healDates([...dated(8), heal('old.jpg', '2001-01-01')]).suggestions).toEqual([]);
+  });
+
+  it('leaves a photo already inside the album stretch alone, with a day either side', () => {
+    const photos = dated(8);
+    const [first, last] = [dayAfter(start, 0), dayAfter(start, 7)];
+    expect(
+      healDates([
+        ...photos,
+        lost('a.jpg', dayAfter(start, 2)),
+        lost('b.jpg', dayAfter(first, -1)),
+        lost('c.jpg', dayAfter(last, 1)),
+      ]).suggestions,
+    ).toEqual([]);
+    const outside = healDates([...photos, lost('d.jpg', dayAfter(first, -2)), lost('e.jpg', dayAfter(last, 2))]);
+    expect(outside.suggestions.map(({ fileName }) => fileName)).toEqual(['d.jpg', 'e.jpg']);
+  });
+
+  it('needs 80% of the dated photos inside one 14-day window', () => {
+    const exactlyEighty = [...dated(8), heal('stray1.jpg', '2010-01-01'), heal('stray2.jpg', '2011-01-01')];
+    expect(healDates([...exactlyEighty, lost('x.jpg')]).eligible).toBe(true);
+    const under = [...dated(7), heal('stray1.jpg', '2010-01-01'), heal('stray2.jpg', '2011-01-01')];
+    expect(healDates([...under, lost('x.jpg')])).toMatchObject({ eligible: false, reason: 'wide' });
+  });
+
+  it('never counts an estimated date as evidence, however much camera detail it has', () => {
+    const estimated = dated(4, '2015-01-01', 'OLD_').map((photo) => ({ ...photo, estimated: true }));
+    expect(healDates([...dated(4), ...estimated, lost('x.jpg')])).toMatchObject({ eligible: false, reason: 'few' });
+
+    const window = healDates([...dated(5), ...dated(5, '2015-01-01', 'OLD_').map((p) => ({ ...p, estimated: true }))]);
+    expect([window.from, window.to]).toEqual([start, dayAfter(start, 4)]);
+  });
+
+  it('does not offer a date someone set, or one already healed', () => {
+    const { suggestions } = healDates([
+      ...dated(6),
+      lost('scan.jpg', '1962-05-01', { dateSet: true }),
+      lost('healed.jpg', '2015-01-01', { dateSet: true, estimated: true }),
+    ]);
+    expect(suggestions).toEqual([]);
+  });
+
+  it('counts other members photos as evidence but never offers to change them', () => {
+    const others = dated(6).map((photo) => ({ ...photo, mine: false }));
+    const { eligible, suggestions } = healDates([
+      ...others,
+      lost('theirs.jpg', lostOn, { mine: false }),
+      lost('mine.jpg'),
+    ]);
+    expect(eligible).toBe(true);
+    expect(suggestions.map(({ fileName }) => fileName)).toEqual(['mine.jpg']);
+  });
+
+  describe('exact', () => {
+    it('needs both neighbours in the same numbered sequence', () => {
+      const photos = [...dated(3), ...dated(3, dayAfter(start, 3), 'DSC_', 2)];
+      expect(healDates([...photos, lost('DSC_1001.JPG')]).suggestions[0].precision).toBe('exact');
+      expect(healDates([...photos, lost('PXL_1001.JPG')]).suggestions[0].precision).toBe('around');
+    });
+
+    it('needs a dated photo on each side', () => {
+      expect(healDates([...dated(6), lost('IMG_0500.JPG')]).suggestions[0].precision).toBe('around');
+      expect(healDates([...dated(6), lost('IMG_2000.JPG')]).suggestions[0].precision).toBe('around');
+    });
+
+    it('needs the neighbours at most a day apart, whichever way the numbers run', () => {
+      const apart = [
+        heal('IMG_1000.JPG', dayAfter(start, 0)),
+        heal('IMG_1002.JPG', dayAfter(start, 2)),
+        heal('a.jpg', dayAfter(start, 1)),
+        heal('b.jpg', dayAfter(start, 1)),
+        heal('c.jpg', dayAfter(start, 1)),
+      ];
+      expect(healDates([...apart, lost('IMG_1001.JPG')]).suggestions[0].precision).toBe('around');
+
+      const backwards = [
+        heal('IMG_1000.JPG', dayAfter(start, 5)),
+        heal('IMG_1002.JPG', dayAfter(start, 0)),
+        heal('a.jpg', dayAfter(start, 1)),
+        heal('b.jpg', dayAfter(start, 1)),
+        heal('c.jpg', dayAfter(start, 1)),
+      ];
+      expect(healDates([...backwards, lost('IMG_1001.JPG')]).suggestions[0].precision).toBe('around');
+    });
+
+    it('takes the earlier neighbour, with its time of day and offset', () => {
+      const neighbours = [
+        heal('IMG_1002.JPG', start, {
+          takenAt: at('2019-07-03T15:20:10Z'),
+          localDateTime: at('2019-07-03T09:20:10Z'),
+        }),
+        heal('IMG_1004.JPG', start, {
+          takenAt: at('2019-07-03T15:40:00Z'),
+          localDateTime: at('2019-07-03T09:40:00Z'),
+        }),
+      ];
+      const { suggestions } = healDates([...neighbours, ...dated(4, dayAfter(start, 1), 'A_'), lost('IMG_1003.JPG')]);
+      expect(suggestions[0]).toMatchObject({ precision: 'exact', dateTimeOriginal: '2019-07-03T09:20:10-06:00' });
+    });
+
+    it('is not fooled by another run of numbers earlier in the name', () => {
+      const photos = [
+        heal('IMG_20190703_1002.jpg', start),
+        heal('IMG_20190703_1004.jpg', start),
+        heal('a.jpg', dayAfter(start, 1)),
+        heal('b.jpg', dayAfter(start, 1)),
+        heal('c.jpg', dayAfter(start, 1)),
+      ];
+      expect(healDates([...photos, lost('IMG_20190703_1003.jpg')]).suggestions[0].precision).toBe('exact');
+    });
+  });
+
+  it('dates an "around" photo at noon on the middle photo\'s day, in that photo\'s offset', () => {
+    const photos = Array.from({ length: 5 }, (_, index) => {
+      const day = dayAfter(start, index);
+      return heal(`${index}.jpg`, day, {
+        takenAt: at(`${day}T18:00:00Z`),
+        localDateTime: at(`${day}T11:00:00Z`),
+      });
+    });
+    const { suggestions } = healDates([...photos, lost('x.jpg')]);
+    expect(suggestions[0]).toMatchObject({
+      precision: 'around',
+      day: dayAfter(start, 2),
+      dateTimeOriginal: `${dayAfter(start, 2)}T12:00:00-07:00`,
+    });
   });
 });

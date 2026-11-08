@@ -71,6 +71,14 @@ export class AssetExifTable {
   @Column({ type: 'timestamp with time zone', nullable: true })
   dateTimeOriginal!: Timestamp | null;
 
+  /**
+   * FL-1299: the capture date healing estimated. The date is estimated only while `dateTimeOriginal` still
+   * equals it (`isDateEstimated`), so any later change of the date, by any path, ends the estimate without
+   * that path having to know.
+   */
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  estimatedDateTimeOriginal!: Timestamp | null;
+
   @Column({ type: 'timestamp with time zone', nullable: true })
   modifyDate!: Timestamp | null;
 
