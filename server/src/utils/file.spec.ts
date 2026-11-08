@@ -10,8 +10,8 @@ import request from 'supertest';
 import type { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { CacheControl } from 'src/enum.js';
 import {
+  DOCUMENT_CONTENT_SECURITY_POLICY,
   FileDownloadResponse,
-  SVG_CONTENT_SECURITY_POLICY,
   getFileNameWithoutExtension,
   getFilenameExtension,
   getLivePhotoMotionFilename,
@@ -78,22 +78,28 @@ describe('file delivery', () => {
     }
   });
 
-  it('sends nosniff on every file and a sandboxing CSP on SVGs only', async () => {
+  it('sends nosniff on every file and a sandboxing CSP on SVG, XML and HTML only', async () => {
     const cases: [Partial<FileDownloadResponse>, boolean][] = [
       [{}, false],
       [{ path: '/media/drawing.svg', contentType: 'image/svg' }, true],
       [{ path: '/media/drawing.svg', contentType: 'image/svg+xml' }, true],
       [{ path: '/media/DRAWING.SVG', contentType: 'application/octet-stream' }, true],
       [{ path: '/media/blob', contentType: 'IMAGE/SVG+XML' }, true],
+      [{ path: '/media/photo.jpg.xmp', contentType: 'application/xml' }, true],
+      [{ path: '/media/blob', contentType: 'text/xml' }, true],
+      [{ path: '/media/page.html', contentType: 'text/html' }, true],
+      [{ path: '/media/clip.mp4', contentType: 'video/mp4' }, false],
     ];
     for (const [overrides, svg] of cases) {
       const f = fixture();
       await sendFile(f.res, f.next, () => new FileDownloadResponse({ ...f.file, ...overrides }), f.log);
       expect(f.response.header).toHaveBeenCalledWith('X-Content-Type-Options', 'nosniff');
       const csp = f.response.header.mock.calls.filter(([name]) => name === 'Content-Security-Policy');
-      expect(csp).toEqual(svg ? [['Content-Security-Policy', SVG_CONTENT_SECURITY_POLICY]] : []);
+      expect(csp).toEqual(svg ? [['Content-Security-Policy', DOCUMENT_CONTENT_SECURITY_POLICY]] : []);
     }
-    expect(SVG_CONTENT_SECURITY_POLICY).toBe("sandbox; default-src 'none'; style-src 'unsafe-inline'");
+    expect(DOCUMENT_CONTENT_SECURITY_POLICY).toBe(
+      "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:",
+    );
   });
 
   it('releases a temporary file only after its asynchronous transfer finishes', async () => {
