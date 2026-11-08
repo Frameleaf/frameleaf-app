@@ -1,9 +1,10 @@
+import { AssetType } from 'src/enum.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
 describe('mimeTypes', () => {
   it('classifies supported extensions consistently across filename forms', () => {
-    const animated = new Set(['.avif', '.gif', '.heic', '.heif', '.jxl', '.png', '.webp']);
-    const heif = new Set(['.avif', '.heic', '.heif', '.hif']);
+    const animated = new Set(['.apng', '.avif', '.avifs', '.gif', '.heic', '.heics', '.heif', '.jxl', '.png', '.webp']);
+    const heif = new Set(['.avif', '.avifs', '.heic', '.heics', '.heif', '.hif']);
     for (const extension of [...mimeTypes.getSupportedFileExtensions(), '.xmp', '.unknown']) {
       for (const filename of [extension, `photo${extension.toUpperCase()}`, `/media.with.dots/photo${extension}`]) {
         expect(mimeTypes.isAsset(filename)).toBe(
@@ -38,8 +39,10 @@ describe('mimeTypes', () => {
     // Please ensure this list is sorted.
     { mimetype: 'image/3fr', extension: '.3fr' },
     { mimetype: 'image/ari', extension: '.ari' },
+    { mimetype: 'image/apng', extension: '.apng' },
     { mimetype: 'image/arw', extension: '.arw' },
     { mimetype: 'image/avif', extension: '.avif' },
+    { mimetype: 'image/avif', extension: '.avifs' },
     { mimetype: 'image/bmp', extension: '.bmp' },
     { mimetype: 'image/cap', extension: '.cap' },
     { mimetype: 'image/cin', extension: '.cin' },
@@ -52,17 +55,23 @@ describe('mimeTypes', () => {
     { mimetype: 'image/fff', extension: '.fff' },
     { mimetype: 'image/gif', extension: '.gif' },
     { mimetype: 'image/heic', extension: '.heic' },
+    { mimetype: 'image/heic-sequence', extension: '.heics' },
     { mimetype: 'image/heif', extension: '.heif' },
     { mimetype: 'image/hif', extension: '.hif' },
     { mimetype: 'image/iiq', extension: '.iiq' },
     { mimetype: 'image/jp2', extension: '.jp2' },
     { mimetype: 'image/jpeg', extension: '.jpe' },
     { mimetype: 'image/jpeg', extension: '.jpeg' },
+    { mimetype: 'image/jpeg', extension: '.jfif' },
     { mimetype: 'image/jpeg', extension: '.jpg' },
     { mimetype: 'image/jpeg', extension: '.mpo' },
+    { mimetype: 'image/jpeg', extension: '.pjp' },
+    { mimetype: 'image/jpeg', extension: '.pjpeg' },
     { mimetype: 'image/jxl', extension: '.jxl' },
     { mimetype: 'image/k25', extension: '.k25' },
     { mimetype: 'image/kdc', extension: '.kdc' },
+    { mimetype: 'image/mef', extension: '.mef' },
+    { mimetype: 'image/mos', extension: '.mos' },
     { mimetype: 'image/mrw', extension: '.mrw' },
     { mimetype: 'image/nef', extension: '.nef' },
     { mimetype: 'image/nrw', extension: '.nrw' },
@@ -80,6 +89,7 @@ describe('mimeTypes', () => {
     { mimetype: 'image/svg', extension: '.svg' },
     { mimetype: 'image/tiff', extension: '.tif' },
     { mimetype: 'image/tiff', extension: '.tiff' },
+    { mimetype: 'image/vnd.radiance', extension: '.hdr' },
     { mimetype: 'image/webp', extension: '.webp' },
     { mimetype: 'image/vnd.adobe.photoshop', extension: '.psd' },
     { mimetype: 'image/x-adobe-dng', extension: '.dng' },
@@ -94,7 +104,9 @@ describe('mimeTypes', () => {
     { mimetype: 'image/x-kodak-dcr', extension: '.dcr' },
     { mimetype: 'image/x-kodak-k25', extension: '.k25' },
     { mimetype: 'image/x-kodak-kdc', extension: '.kdc' },
+    { mimetype: 'image/x-leaf-mos', extension: '.mos' },
     { mimetype: 'image/x-leica-rwl', extension: '.rwl' },
+    { mimetype: 'image/x-mamiya-mef', extension: '.mef' },
     { mimetype: 'image/x-minolta-mrw', extension: '.mrw' },
     { mimetype: 'image/x-nikon-nef', extension: '.nef' },
     { mimetype: 'image/x-olympus-orf', extension: '.orf' },
@@ -104,6 +116,11 @@ describe('mimeTypes', () => {
     { mimetype: 'image/x-phantom-cin', extension: '.cin' },
     { mimetype: 'image/x-phaseone-cap', extension: '.cap' },
     { mimetype: 'image/x-phaseone-iiq', extension: '.iiq' },
+    { mimetype: 'image/x-portable-anymap', extension: '.pnm' },
+    { mimetype: 'image/x-portable-bitmap', extension: '.pbm' },
+    { mimetype: 'image/x-portable-floatmap', extension: '.pfm' },
+    { mimetype: 'image/x-portable-graymap', extension: '.pgm' },
+    { mimetype: 'image/x-portable-pixmap', extension: '.ppm' },
     { mimetype: 'image/x-samsung-srw', extension: '.srw' },
     { mimetype: 'image/x-sigma-x3f', extension: '.x3f' },
     { mimetype: 'image/x-sony-arw', extension: '.arw' },
@@ -113,24 +130,42 @@ describe('mimeTypes', () => {
     { mimetype: 'application/mxf', extension: '.mxf' },
     { mimetype: 'video/3gpp', extension: '.3gp' },
     { mimetype: 'video/3gpp', extension: '.3gpp' },
+    { mimetype: 'video/3gpp2', extension: '.3g2' },
     { mimetype: 'video/avi', extension: '.avi' },
+    { mimetype: 'video/divx', extension: '.divx' },
+    { mimetype: 'video/dv', extension: '.dv' },
     { mimetype: 'video/mp2t', extension: '.m2t' },
     { mimetype: 'video/mp2t', extension: '.m2ts' },
     { mimetype: 'video/mp2t', extension: '.mts' },
+    { mimetype: 'video/mp2t', extension: '.tod' },
     { mimetype: 'video/mp2t', extension: '.ts' },
+    { mimetype: 'video/mp4', extension: '.360' },
+    { mimetype: 'video/mp4', extension: '.f4v' },
+    { mimetype: 'video/mp4', extension: '.insv' },
     { mimetype: 'video/mp4', extension: '.mp4' },
+    { mimetype: 'video/mp4', extension: '.osv' },
+    { mimetype: 'video/mpeg', extension: '.mod' },
     { mimetype: 'video/mpeg', extension: '.mpe' },
     { mimetype: 'video/mpeg', extension: '.mpeg' },
     { mimetype: 'video/mpeg', extension: '.mpg' },
     { mimetype: 'video/msvideo', extension: '.avi' },
+    { mimetype: 'video/ogg', extension: '.ogv' },
     { mimetype: 'video/quicktime', extension: '.mov' },
+    { mimetype: 'video/quicktime', extension: '.qt' },
+    { mimetype: 'video/vnd.rn-realvideo', extension: '.rm' },
+    { mimetype: 'video/vnd.rn-realvideo', extension: '.rmvb' },
     { mimetype: 'video/vnd.avi', extension: '.avi' },
     { mimetype: 'video/webm', extension: '.webm' },
+    { mimetype: 'video/x-dv', extension: '.dv' },
+    { mimetype: 'video/x-f4v', extension: '.f4v' },
     { mimetype: 'video/x-flv', extension: '.flv' },
+    { mimetype: 'video/x-matroska', extension: '.mk3d' },
     { mimetype: 'video/x-matroska', extension: '.mkv' },
+    { mimetype: 'video/x-ms-asf', extension: '.asf' },
     { mimetype: 'video/x-ms-wmv', extension: '.wmv' },
     { mimetype: 'video/x-msvideo', extension: '.avi' },
     { mimetype: 'video/mpeg', extension: '.vob' },
+    { mimetype: 'video/mpeg', extension: '.vro' },
   ]) {
     it(`should map ${extension} to ${mimetype}`, () => {
       expect({ ...mimeTypes.image, ...mimeTypes.video }[extension]).toContain(mimetype);
@@ -176,10 +211,13 @@ describe('mimeTypes', () => {
 
   describe('canBeTransparent', () => {
     for (const img of [
+      'a.apng',
       'a.avif',
+      'a.avifs',
       'a.bmp',
       'a.gif',
       'a.heic',
+      'a.heics',
       'a.heif',
       'a.hif',
       'a.jxl',
@@ -194,7 +232,22 @@ describe('mimeTypes', () => {
       });
     }
 
-    for (const img of ['a.jpg', 'a.jpeg', 'a.jpe', 'a.insp', 'a.jp2', 'a.cr3', 'a.dng', 'a.nef', 'a.arw']) {
+    for (const img of [
+      'a.jpg',
+      'a.jpeg',
+      'a.jpe',
+      'a.jfif',
+      'a.insp',
+      'a.jp2',
+      'a.hdr',
+      'a.pfm',
+      'a.cr3',
+      'a.dng',
+      'a.mef',
+      'a.mos',
+      'a.nef',
+      'a.arw',
+    ]) {
       it(`should return false for ${img}`, () => {
         expect(mimeTypes.canBeTransparent(img)).toBe(false);
       });
@@ -202,13 +255,13 @@ describe('mimeTypes', () => {
   });
 
   describe('animated image', () => {
-    for (const img of ['a.avif', 'a.gif', 'a.webp']) {
+    for (const img of ['a.apng', 'a.avif', 'a.avifs', 'a.gif', 'a.heics', 'a.webp']) {
       it('should identify animated image mime types as such', () => {
         expect(mimeTypes.isPossiblyAnimatedImage(img)).toBeTruthy();
       });
     }
 
-    for (const img of ['a.cr3', 'a.jpg', 'a.tiff']) {
+    for (const img of ['a.cr3', 'a.hdr', 'a.jfif', 'a.jpg', 'a.pbm', 'a.tiff']) {
       it('should identify static image mime types as such', () => {
         expect(mimeTypes.isPossiblyAnimatedImage(img)).toBeFalsy();
       });
@@ -249,6 +302,27 @@ describe('mimeTypes', () => {
     }
   });
 
+  describe('360° cameras (FL-968)', () => {
+    for (const filename of ['VID_20250101_120000_00_001.insv', 'CAM_20250801120000_0001_D.OSV', 'GS010001.360']) {
+      it(`should treat ${filename} as an MP4 video`, () => {
+        expect(mimeTypes.isVideo(filename)).toBe(true);
+        expect(mimeTypes.isAsset(filename)).toBe(true);
+        expect(mimeTypes.lookup(filename)).toBe('video/mp4');
+        expect(mimeTypes.assetType(filename)).toBe(AssetType.Video);
+      });
+    }
+
+    // Proxies and telemetry the cameras write next to the real recording must never import as assets.
+    for (const filename of ['DJI_0001.LRF', 'GL010001.LRV', 'GS010001.THM', 'GX010001.thm', 'DJI_0001.SRT']) {
+      it(`should not import ${filename}`, () => {
+        expect(mimeTypes.isAsset(filename)).toBe(false);
+        expect(mimeTypes.isSidecar(filename)).toBe(false);
+        expect(mimeTypes.assetType(filename)).toBe(AssetType.Other);
+        expect(mimeTypes.getSupportedFileExtensions()).not.toContain(filename.slice(-4).toLowerCase());
+      });
+    }
+  });
+
   describe('sidecar', () => {
     it('should contain only lowercase mime types', () => {
       const keys = Object.keys(mimeTypes.sidecar);
@@ -272,6 +346,67 @@ describe('mimeTypes', () => {
         expect(mimeTypes.lookup(`it.${extension}`)).toEqual(v[0]);
       });
     }
+  });
+
+  describe('FL-1286 formats', () => {
+    it('serves JPEG, APNG and AVIF sequence originals to the browser', () => {
+      for (const filename of ['a.jfif', 'a.pjpeg', 'a.pjp', 'a.apng', 'a.avifs']) {
+        expect(mimeTypes.isWebSupportedImage(filename)).toBe(true);
+        expect(mimeTypes.assetType(filename)).toBe(AssetType.Image);
+      }
+    });
+
+    it('shows Radiance, portable anymap and HEIF sequence photos through a preview', () => {
+      for (const filename of ['a.hdr', 'a.heics', 'a.pbm', 'a.pfm', 'a.pgm', 'a.pnm', 'a.ppm']) {
+        expect(mimeTypes.isImage(filename)).toBe(true);
+        expect(mimeTypes.isWebSupportedImage(filename)).toBe(false);
+        expect(Object.hasOwn(mimeTypes.webUnsupportedImage, filename.slice(1))).toBe(true);
+        expect(mimeTypes.isRaw(filename)).toBe(false);
+      }
+      expect(mimeTypes.isHeic('a.heics')).toBe(true);
+    });
+
+    it('reads Mamiya and Leaf files as RAW', () => {
+      for (const filename of ['a.mef', 'a.MOS']) {
+        expect(mimeTypes.isRaw(filename)).toBe(true);
+        expect(mimeTypes.assetType(filename)).toBe(AssetType.Image);
+      }
+    });
+
+    it('imports camcorder, disc and older video containers as videos', () => {
+      for (const extension of ['.3g2', '.asf', '.divx', '.dv', '.f4v', '.mk3d', '.mod', '.ogv', '.qt', '.rm']) {
+        expect(mimeTypes.assetType(`clip${extension}`)).toBe(AssetType.Video);
+        expect(mimeTypes.isVideo(`clip${extension.toUpperCase()}`)).toBe(true);
+      }
+      for (const extension of ['.rmvb', '.tod', '.vro']) {
+        expect(mimeTypes.assetType(`clip${extension}`)).toBe(AssetType.Video);
+      }
+      expect(mimeTypes.getSupportedFileExtensions()).toEqual(
+        expect.arrayContaining(['.mod', '.tod', '.heics', '.mos']),
+      );
+    });
+
+    // Not decodable by the bundled libvips/ImageMagick/ExifTool/ffmpeg, so not offered (see the FL-1286 PR).
+    it.each([
+      'a.exr',
+      'a.j2k',
+      'a.jpf',
+      'a.jpx',
+      'a.jxr',
+      'a.tga',
+      'a.qoi',
+      'a.pam',
+      'a.gpr',
+      'a.braw',
+      'a.r3d',
+      'a.crm',
+      'a.ogg',
+      'a.mjpeg',
+      'a.y4m',
+    ])('does not accept %s', (filename) => {
+      expect(mimeTypes.isAsset(filename)).toBe(false);
+      expect(mimeTypes.assetType(filename)).toBe(AssetType.Other);
+    });
   });
 
   describe('raw', () => {

@@ -187,6 +187,8 @@ describe('the actions the page offers', () => {
     expect(locatable([jpeg, arw], { rawRecovery: true }).map(({ id }) => id)).toEqual(['jpeg', 'arw']);
     expect(isRawName('Summit.CR3')).toBe(true);
     expect(isRawName('scan.tiff')).toBe(false);
+    expect(isRawName('Aptus.MOS')).toBe(true);
+    expect(isRawName('ZD.mef')).toBe(true);
   });
 });
 

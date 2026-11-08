@@ -76,6 +76,17 @@ describe('raw-support', () => {
     expect(rows[1]).toMatchObject({ count: 0, tested: [] });
   });
 
+  it('names the maker of Mamiya and Leaf files (FL-1286)', () => {
+    const rows = formatRows([
+      { extension: 'mef', count: 1, ready: 1, attention: 0, tested: [] },
+      { extension: 'mos', count: 2, ready: 2, attention: 0, tested: [] },
+    ]);
+    expect(rows.slice(-2)).toMatchObject([
+      { label: 'MEF', maker: 'Mamiya', count: 1 },
+      { label: 'MOS', maker: 'Leaf', count: 2 },
+    ]);
+  });
+
   describe('repair progress', () => {
     const start = new Date('2026-10-16T10:00:00.000Z');
     const later = (ms: number) => new Date(start.getTime() + ms);

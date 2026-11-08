@@ -118,6 +118,9 @@ type FileUploadHandlerParams = Omit<FileUploaderParams, 'deviceAssetId' | 'asset
   checksums?: Map<File, UploadChecksums>;
 };
 
+/** Browsers report no type for camera formats they don't know (Blackmagic RAW, RED R3D); name the extension. */
+const fileExtension = (name: string) => (name.includes('.') ? `.${name.split('.').pop()}` : name);
+
 export const fileUploadHandler = async ({
   files,
   albumId,
@@ -156,9 +159,10 @@ export const fileUploadHandler = async ({
         ),
       );
     } else {
-      toastManager.warning(get(t)('unsupported_file_type', { values: { file: file.name, type: file.type } }), {
-        timeout: 10_000,
-      });
+      toastManager.warning(
+        get(t)('unsupported_file_type', { values: { file: file.name, type: file.type || fileExtension(name) } }),
+        { timeout: 10_000 },
+      );
     }
   }
 

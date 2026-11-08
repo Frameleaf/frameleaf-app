@@ -188,6 +188,26 @@ describe(AssetJobRepository.name, () => {
     ).toEqual([{ id: assets[0].id, isEdited: false }]);
   });
 
+  it('backfills full-size images for upper-case file extensions too', async () => {
+    const { ctx, sut } = setup(await isolatedDatabase());
+    const { user } = await ctx.newUser();
+    const ids: string[] = [];
+    for (const originalFileName of ['IMG_0001.HEIC', 'photo.MOS', 'IMG_0002.JPG']) {
+      const { asset } = await ctx.newAsset({ ownerId: user.id, originalFileName, thumbhash: Buffer.from('hash') });
+      ids.push(asset.id);
+      await ctx.newJobStatus({ assetId: asset.id, metadataExtractedAt: new Date() });
+      await ctx.newExif({ assetId: asset.id, make: 'Camera' });
+      for (const type of [AssetFileType.Thumbnail, AssetFileType.Preview]) {
+        await ctx.newAssetFile({ assetId: asset.id, type, path: `${asset.id}-${type}.jpg` });
+      }
+    }
+    const selected = await sut
+      .selectionForThumbnailJob({ force: false, fullsizeEnabled: true })
+      .where('asset.id', 'in', ids)
+      .execute();
+    expect(selected.map(({ id }) => id).sort()).toEqual([ids[0], ids[1]].sort());
+  });
+
   it('resumes a frozen HDR backfill in bounded pages without changing originals, SDR files or motion links', async () => {
     const db = await getKyselyDB();
     let child: ChildProcess | undefined;

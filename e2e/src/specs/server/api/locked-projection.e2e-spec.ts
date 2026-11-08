@@ -790,8 +790,10 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
       expect(status).toBeGreaterThanOrEqual(400);
     }
     const { body: server } = await request(app).get('/server/statistics').set(bearer(admin.accessToken)).expect(200);
-    // the owner's two visible items and the partner's copy of the plain one; every other copy is locked
-    expect(server.photos).toBe(3);
+    // the owner's two visible items; the partner's copy of the plain one is the same photo, so the
+    // total counts it once (FL-1283) while the partner's own row still shows it. Every other copy is locked.
+    expect(server.photos).toBe(2);
+    expect(server.usageByUser.find((row: { userId: string }) => row.userId === partner.userId)?.photos).toBe(1);
   }, 90_000);
 });
 

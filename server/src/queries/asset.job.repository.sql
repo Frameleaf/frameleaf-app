@@ -146,6 +146,24 @@ where
       )
     )
     or "asset"."thumbhash" is null
+    or EXISTS (
+      SELECT
+        1
+      FROM
+        public.asset_origin origin
+        JOIN asset source ON source.id = origin."sourceAssetId"
+        JOIN asset_file source_file ON source_file."assetId" = source.id
+        AND source_file."isEdited" = false
+        AND source_file.type IN ('thumbnail', 'preview')
+        JOIN asset_file copy_file ON copy_file."assetId" = asset.id
+        AND copy_file."isEdited" = false
+        AND copy_file.type = source_file.type
+      WHERE
+        origin."assetId" = asset.id
+        AND source."deletedAt" IS NULL
+        AND source.status = 'active'
+        AND copy_file.path <> source_file.path
+    )
     or (
       not exists (
         select
@@ -155,7 +173,7 @@ where
           "assetId" = "asset"."id"
           and "type" = 'fullsize'
       )
-      and f_unaccent (asset."originalFileName") like any (
+      and f_unaccent (asset."originalFileName") ilike any (
         array[
           '%.3fr',
           '%.ari',
@@ -172,6 +190,8 @@ where
           '%.iiq',
           '%.k25',
           '%.kdc',
+          '%.mef',
+          '%.mos',
           '%.mrw',
           '%.nef',
           '%.nrw',
@@ -187,7 +207,9 @@ where
           '%.srf',
           '%.srw',
           '%.x3f',
+          '%.hdr',
           '%.heic',
+          '%.heics',
           '%.heif',
           '%.hif',
           '%.insp',
@@ -195,6 +217,11 @@ where
           '%.jpe',
           '%.jxl',
           '%.mpo',
+          '%.pbm',
+          '%.pfm',
+          '%.pgm',
+          '%.pnm',
+          '%.ppm',
           '%.svg',
           '%.tif',
           '%.tiff'
@@ -867,6 +894,9 @@ select
   "asset"."ownerId",
   "asset"."originalPath",
   "asset"."checksum",
+  "asset_exif"."projectionType",
+  "asset_exif"."make",
+  "asset_exif"."model",
   (
     select
       coalesce(json_agg(agg), '[]')
