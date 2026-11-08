@@ -437,6 +437,14 @@ export class MediaService extends BaseService {
       return JobStatus.Skipped;
     }
 
+    // FL-1287: a partner copy shares its live source's files; the source's own job hands over any it lacks
+    const sourceId = await this.partnerOriginRepository.getLiveSourceId(id);
+    if (sourceId) {
+      this.logger.verbose(`Thumbnail generation skipped for asset ${id}: shares the files of ${sourceId}`);
+      await this.shareThumbnailsWithCopies(sourceId);
+      return JobStatus.Skipped;
+    }
+
     deferJobAdoption(async () => {
       await assertPublicationSource(asset.id, asset.checksum);
       const current = await this.assetJobRepository.getForGenerateThumbnailJob(asset.id);
@@ -456,8 +464,19 @@ export class MediaService extends BaseService {
     );
     if (status === JobStatus.Success) {
       await this.jobRepository.collectFollowups(() => this.queueLockedSeal([asset.id]));
+      await this.shareThumbnailsWithCopies(asset.id);
     }
     return status;
+  }
+
+  /** FL-1287: published with the job's own files, so partner copies made before them get them too. */
+  private shareThumbnailsWithCopies(assetId: string) {
+    return publishJobResult(async () => {
+      const files = await this.partnerOriginRepository.shareGeneratedFiles(assetId);
+      if (files.length > 0) {
+        await this.jobRepository.queue({ name: JobName.FileDelete, data: { files } });
+      }
+    });
   }
 
   private async generateThumbnailsFrom(

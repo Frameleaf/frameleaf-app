@@ -1506,7 +1506,13 @@ export class MetadataService extends BaseService {
     const duration = tags.Duration;
     // eslint-disable-next-line unicorn/prefer-number-coercion
     const seconds = typeof duration === 'number' ? duration : Number.parseFloat(duration as string);
-    return Number.isFinite(seconds) ? Math.round(Duration.fromObject({ seconds }).toMillis()) : null;
+    if (!Number.isFinite(seconds) || seconds < 0) {
+      return null;
+    }
+    const milliseconds = Math.round(Duration.fromObject({ seconds }).toMillis());
+    // An AVIF sequence that loops forever records an indefinite duration (ExifTool reads ~4.6e18 s).
+    // asset.duration is an integer column, so a value past its range is no running time at all.
+    return milliseconds <= POSTGRES_INT_MAX ? milliseconds : null;
   }
 
   private async getVideoTags(originalPath: string) {

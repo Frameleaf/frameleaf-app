@@ -2206,6 +2206,27 @@ describe(MetadataService.name, () => {
       expect(mocks.asset.update).toHaveBeenCalledWith(expect.objectContaining({ duration: 123_000 }));
     });
 
+    it('should store no duration for an animated image that loops forever', async () => {
+      // ExifTool's reading of an AVIF sequence whose movie header records an indefinite duration
+      const asset = AssetFactory.create({ originalFileName: 'loop.avifs' });
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mockReadTags({ Duration: 4_611_686_018_427_390_000 }, {});
+
+      await sut.handleMetadataExtraction({ id: asset.id });
+
+      expect(mocks.asset.update).toHaveBeenCalledWith(expect.objectContaining({ duration: null }));
+    });
+
+    it('should keep the duration of an animated HEIF sequence', async () => {
+      const asset = AssetFactory.create({ originalFileName: 'burst.heics' });
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mockReadTags({ Duration: 0.5 }, {});
+
+      await sut.handleMetadataExtraction({ id: asset.id });
+
+      expect(mocks.asset.update).toHaveBeenCalledWith(expect.objectContaining({ duration: 500 }));
+    });
+
     it('should prefer Duration from exif over sidecar', async () => {
       const asset = AssetFactory.from({ originalFileName: 'file.webp' }).file({ type: AssetFileType.Sidecar }).build();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
