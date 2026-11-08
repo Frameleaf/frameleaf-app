@@ -2,3 +2,6 @@ packages/sdk/fetch-client.ts -diff -merge
 packages/sdk/fetch-client.ts linguist-generated=true
 
 *.sh text eol=lf
+
+# FL-1285: vendored LUTs stay byte for byte as published (their SHA-256 is checked)
+server/resources/color-luts/*.cube -text -diff

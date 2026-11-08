@@ -1,3 +1,6 @@
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { ColorMatrix, ColorPrimaries, ColorTransfer } from 'src/enum.js';
 import {
   APPLE_LOG_2_TAG,
@@ -8,6 +11,7 @@ import {
   LogCurveId,
   LogProfile,
   LogVideoEvidence,
+  VENDORED_LUTS,
   bt709Oetf,
   buildLogLut,
   convertLogToRec709,
@@ -15,6 +19,8 @@ import {
   getGamutToRec709Matrix,
   getLogInputForLinear,
   getLogLutFileName,
+  getVendoredLutPath,
+  readVendoredLut,
   softClip,
 } from 'src/utils/log-video.js';
 
@@ -359,8 +365,34 @@ describe('detectLogVideo', () => {
     });
   });
 
-  it.each(['dlog_m', 'd_log_m', 'default', 'hlg', null])('does not convert DJI colour mode %s', (djiColorMode) => {
+  it.each(['default', 'hlg', null])('does not convert DJI colour mode %s', (djiColorMode) => {
     expect(detectLogVideo(evidence({ djiColorMode }))).toBeNull();
+  });
+
+  it.each(['dlog_m', 'd_log_m', 'D-Log-M'])("converts DJI D-Log M (%s) with DJI's own LUT", (djiColorMode) => {
+    expect(detectLogVideo(evidence({ djiColorMode }))).toEqual({
+      profile: { curve: 'd-log', gamut: 'd-gamut' },
+      vendoredLut: 'dji-d-log-m',
+      signal: 'DJI SRT color_md',
+      confidence: 'low',
+    });
+    expect(detectLogVideo(evidence({ djiColorMode, tags: { Make: 'Sony' } }))).toBeNull();
+  });
+
+  it("ships DJI's D-Log M LUT unchanged, as a complete 33³ cube within 0–1", () => {
+    const raw = readFileSync(getVendoredLutPath('dji-d-log-m'));
+    expect(createHash('sha256').update(raw).digest('hex')).toBe(VENDORED_LUTS['dji-d-log-m'].sha256);
+    const readme = readFileSync(join(dirname(getVendoredLutPath('dji-d-log-m')), 'README.md'), 'utf8');
+    expect(readme).toContain(VENDORED_LUTS['dji-d-log-m'].sha256);
+
+    const text = readVendoredLut('dji-d-log-m');
+    expect(text).not.toContain('\r');
+    expect(text).toMatch(/^LUT_3D_SIZE\s+33$/m);
+    const rows = text.split('\n').filter((line) => /^\s*[\d.-]/.test(line));
+    expect(rows).toHaveLength(33 ** 3);
+    const values = rows.flatMap((line) => line.trim().split(/\s+/).map(Number));
+    expect(values).toHaveLength(3 * 33 ** 3);
+    expect(values.every((value) => value >= 0 && value <= 1)).toBe(true);
   });
 
   it('takes D-Log from the SRT when the file names DJI', () => {

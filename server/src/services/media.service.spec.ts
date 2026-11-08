@@ -5213,7 +5213,24 @@ describe(MediaService.name, () => {
           );
         });
 
-        it.each([['dlog_m'], ['default'], [null]])('passes through with SRT colour mode %s', async (colorMode) => {
+        it("converts D-Log M named in the SRT with DJI's own LUT", async () => {
+          sidecar('dlog_m');
+          await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+          expect(mocks.media.ensureColorLut).toHaveBeenCalledWith(
+            'frameleaf-vendored-dji-d-log-m-b18162854ab4.cube',
+            expect.any(Function),
+          );
+          expect(filtersOf(0)).toContain(
+            'lut3d=file=/tmp/frameleaf-color-luts/frameleaf-vendored-dji-d-log-m-b18162854ab4.cube',
+          );
+          // the cached copy is DJI's LUT with plain line endings
+          const build = mocks.media.ensureColorLut.mock.calls[0][1] as () => string;
+          expect(build()).toMatch(/^LUT_3D_SIZE\s+33$/m);
+          expect(build()).not.toContain('\r');
+        });
+
+        it.each([['default'], [null]])('passes through with SRT colour mode %s', async (colorMode) => {
           sidecar(colorMode);
           await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Skipped);
           expect(mocks.media.transcode).not.toHaveBeenCalled();
