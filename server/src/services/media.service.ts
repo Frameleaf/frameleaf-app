@@ -36,6 +36,7 @@ import {
   AssetVisibility,
   AudioCodec,
   ChecksumAlgorithm,
+  ColorMatrix,
   Colorspace,
   FrameleafWorker,
   ImageFormat,
@@ -73,7 +74,15 @@ import { checkFaceVisibility, checkOcrVisibility } from 'src/utils/editor.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { executionSignal } from 'src/utils/execution-signal.js';
 import { HDR_RENDITION_RENDERER_VERSION, imageRenditionIdentity } from 'src/utils/image-rendition.js';
-import { isLockedKeyUnavailable, withPlainCopy } from 'src/utils/locked-read.js';
+import { isLockedKeyUnavailable, isLockedPath, withPlainCopy } from 'src/utils/locked-read.js';
+import { DJI_SRT_HEAD_BYTES, getDjiSrtCandidates, parseDjiSrtColorMode } from 'src/utils/log-video-srt.js';
+import {
+  buildLogLut,
+  detectLogVideo,
+  getLogLutFileName,
+  getLogProfileLabel,
+  isHdrTransfer,
+} from 'src/utils/log-video.js';
 import {
   type DecodeQualification,
   DecodeSupport,
@@ -111,7 +120,7 @@ import {
   validateFullClipMasterTiming,
   validateVideoMaster,
 } from 'src/utils/media-policy.js';
-import { BaseConfig, ThumbnailConfig } from 'src/utils/media.js';
+import { BaseConfig, ThumbnailConfig, isSafeFilterPath } from 'src/utils/media.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, clamp } from 'src/utils/misc.js';
 import { rational, toDisplaySeconds } from 'src/utils/rational-time.js';
@@ -451,7 +460,12 @@ export class MediaService extends BaseService {
 
     // FL-721 (spec §8.2): a sealed original is read from a plain copy; the new files are sealed after
     const status = await withPlainCopy(asset.originalPath, (originalPath) =>
-      this.generateThumbnailsFrom(originalPath === asset.originalPath ? asset : { ...asset, originalPath }, config),
+      this.generateThumbnailsFrom(
+        originalPath === asset.originalPath ? asset : { ...asset, originalPath },
+        config,
+        // FL-1285: the stored path, where a DJI sidecar sits; `originalPath` may be a plain copy
+        asset.originalPath,
+      ),
     );
     if (status === JobStatus.Success) {
       await this.jobRepository.collectFollowups(() => this.queueLockedSeal([asset.id]));
@@ -473,6 +487,8 @@ export class MediaService extends BaseService {
   private async generateThumbnailsFrom(
     asset: NonNullable<Awaited<ReturnType<AssetJobRepository['getForGenerateThumbnailJob']>>>,
     config: SystemConfig,
+    /** The original's stored library path, when `asset.originalPath` is a plain copy of it. */
+    storedOriginalPath = asset.originalPath,
   ): Promise<JobStatus> {
     const id = asset.id;
     let generated: Awaited<ReturnType<MediaService['generateImageThumbnails']>>;
@@ -524,6 +540,7 @@ export class MediaService extends BaseService {
         {
           coverSeconds: typeof asset.coverTimestampMs === 'number' ? asset.coverTimestampMs / 1000 : undefined,
           stitch,
+          sidecarOriginal: storedOriginalPath,
         },
       );
     } else if (asset.type === AssetType.Image) {
@@ -1080,6 +1097,12 @@ export class MediaService extends BaseService {
       coverSeconds?: number;
       /** FL-968: the original is a raw 360° recording, thumbnailed as its stitched picture. */
       stitch?: VideoStitchPlan;
+      /**
+       * FL-1285: the stored library original whose DJI `.SRT` sidecar describes the source, when the
+       * source is that original or its plain copy (a Locked original); null for an edited render.
+       * Defaults to `asset.originalPath` when the source is it.
+       */
+      sidecarOriginal?: string | null;
     } = {},
   ) {
     const sourcePath = options.sourcePath ?? asset.originalPath;
@@ -1116,8 +1139,20 @@ export class MediaService extends BaseService {
     // FL-968: stitched once at preview size; the thumbnail scales that picture down
     const stitchSize = options.stitch ? getStitchedSize(options.stitch, image.preview.size) : undefined;
     const stitchGraph = options.stitch && stitchSize ? getStitchGraph(options.stitch, stitchSize) : undefined;
-    const videoStream =
+    const stitchedStream =
       options.stitch && stitchSize ? toStitchedStream(sourceStream, options.stitch, stitchSize) : sourceStream;
+
+    // FL-1285: Log footage gets its thumbnail and preview in normal Rec.709 colour, after any stitch.
+    // A DJI .SRT sidecar describes the original only, never an edited render made from it.
+    const videoStream = await this.attachLogConversion(
+      sourcePath,
+      stitchedStream,
+      options.sidecarOriginal === undefined
+        ? sourcePath === asset.originalPath
+          ? asset.originalPath
+          : null
+        : options.sidecarOriginal,
+    );
 
     this.storageCore.ensureFolders(previewFile.path);
 
@@ -1357,9 +1392,23 @@ export class MediaService extends BaseService {
     if (stitched) {
       ffmpeg = { ...ffmpeg, accel: TranscodeHardwareAcceleration.Disabled, accelDecode: false };
     }
+
+    // FL-1285: a Log clip is re-encoded into normal Rec.709 colour even when its codec could be
+    // played as it is. A sealed (Locked) original is checked on its plain copy inside the encode
+    // below, so that it is not decrypted twice; it is converted whenever it is re-encoded anyway.
+    // With playback copies switched off nothing is encoded, so the file is not read for Log at all;
+    // a raw 360° original is always encoded (see above), and converted after its projection.
+    const checkLog = stitched || ffmpeg.transcode !== TranscodePolicy.Disabled;
+    const lockedOriginal = await isLockedPath(asset.originalPath);
+    let stream =
+      checkLog && !lockedOriginal ? await this.attachLogConversion(asset.originalPath, videoStream) : videoStream;
+    if (stream.logConversion) {
+      ffmpeg = this.withSoftwareDecodeForLog(ffmpeg, asset.id);
+    }
+
     const target = stitched
       ? this.getStitchedTranscodeTarget(ffmpeg, audioStream)
-      : this.getTranscodeTarget(ffmpeg, videoStream, audioStream);
+      : this.getTranscodeTarget(ffmpeg, stream, audioStream);
     if (target === TranscodeTarget.None && !this.isRemuxRequired(ffmpeg, format)) {
       const encodedVideo = getAssetFile(asset.files, AssetFileType.EncodedVideo, { isEdited: false });
       if (encodedVideo) {
@@ -1376,7 +1425,7 @@ export class MediaService extends BaseService {
     this.storageCore.ensureFolders(output);
 
     const getCommand = (config: ConfigFFmpegDto) =>
-      BaseConfig.create(config, this.videoInterfaces).getCommand(target, videoStream, audioStream);
+      BaseConfig.create(config, this.videoInterfaces).getCommand(target, stream, audioStream);
     if (stitched) {
       this.logger.log(`Stitching 360° video ${asset.id} to equirectangular without hardware acceleration`);
     } else if (ffmpeg.accel === TranscodeHardwareAcceleration.Disabled) {
@@ -1390,9 +1439,15 @@ export class MediaService extends BaseService {
     const accel = ffmpeg.accel;
     // FL-721 (spec §8.2): a sealed original is read from a plain copy for the whole encode
     const encoded = await withPlainCopy(asset.originalPath, async (input) => {
+      if (checkLog && lockedOriginal && [TranscodeTarget.All, TranscodeTarget.Video].includes(target)) {
+        stream = await this.attachLogConversion(input, stream, asset.originalPath);
+        if (stream.logConversion) {
+          ffmpeg = this.withSoftwareDecodeForLog(ffmpeg, asset.id);
+        }
+      }
       // FL-968: planned from the original's own tracks; tracks that no longer fit encode as ordinary video
       const command =
-        (stitched && (await this.getStitchedVideoCommand(input, asset, ffmpeg, target, videoStream, audioStream))) ||
+        (stitched && (await this.getStitchedVideoCommand(input, asset, ffmpeg, target, stream, audioStream))) ||
         getCommand(ffmpeg);
       try {
         await this.mediaRepository.transcode(input, output, command);
@@ -1596,7 +1651,10 @@ export class MediaService extends BaseService {
         return JobStatus.Skipped;
       }
       await this.syncFiles(editedFiles, []);
-      const generated = await this.generateVideoThumbnails(thumbnailAsset, config);
+      // FL-1285: thumbnailAsset names the plain copy; a DJI sidecar sits beside the stored original
+      const generated = await this.generateVideoThumbnails(thumbnailAsset, config, {
+        sidecarOriginal: asset.originalPath,
+      });
       await this.syncFiles(
         this.toExistingAssetFiles(asset.files.filter((file) => !file.isEdited && this.isVideoThumbnailFile(file.type))),
         generated.files,
@@ -2953,6 +3011,116 @@ export class MediaService extends BaseService {
     return Math.max(2, value - (value % 2));
   }
 
+  /**
+   * FL-1285: when the file says it was recorded in Log, return the stream with a Rec.709 conversion
+   * attached (a generated LUT); otherwise return it unchanged. Reads only the file's own markers
+   * (see `detectLogVideo`). Best effort: a file that cannot be read for this is left as it is, and
+   * the job carries on exactly as before.
+   */
+  private async attachLogConversion(
+    path: string,
+    videoStream: VideoStreamInfo,
+    /** The library original whose `.SRT` sidecar may name the DJI colour mode; null when `path` is not it. */
+    sidecarOriginal: string | null = path,
+  ): Promise<VideoStreamInfo> {
+    if (videoStream.logConversion || isHdrTransfer(videoStream.colorTransfer)) {
+      return videoStream;
+    }
+    try {
+      const readTags = async () => {
+        try {
+          return await this.metadataRepository.readLogVideoTags(path);
+        } catch (error) {
+          this.logger.debug(`Could not read camera tags of ${path} for Log detection: ${error}`);
+          return null;
+        }
+      };
+      const [container, tags, djiColorMode] = await Promise.all([
+        this.mediaRepository.readContainerLogSignals(path),
+        readTags(),
+        sidecarOriginal ? this.readDjiColorMode(sidecarOriginal) : null,
+      ]);
+      const detection = detectLogVideo({
+        colorPrimaries: videoStream.colorPrimaries,
+        colorTransfer: videoStream.colorTransfer,
+        colorMatrix: videoStream.colorMatrix,
+        ...container,
+        djiColorMode,
+        tags,
+      });
+      if (!detection) {
+        return videoStream;
+      }
+
+      // Persisted streams do not carry the range; Log is rare, so ask ffprobe only now.
+      let colorRange = videoStream.colorRange;
+      if (colorRange === undefined) {
+        try {
+          const probed = await this.mediaRepository.probe(path);
+          colorRange = probed?.videoStreams?.find((stream) => stream.index === videoStream.index)?.colorRange ?? null;
+        } catch {
+          colorRange = null;
+        }
+      }
+      const inputRange = colorRange === 'pc' ? 'pc' : 'tv';
+      const lutPath = await this.mediaRepository.ensureColorLut(getLogLutFileName(detection.profile, inputRange), () =>
+        buildLogLut(detection.profile, inputRange),
+      );
+      if (!isSafeFilterPath(lutPath)) {
+        this.logger.warn(`Not converting Log video ${path}: the LUT folder ${lutPath} cannot be used in ffmpeg`);
+        return videoStream;
+      }
+      const label = getLogProfileLabel(detection.profile);
+      this.logger.log(
+        `${path} is ${label} Log video (${detection.signal}, ${detection.confidence} confidence); converting to Rec.709`,
+      );
+      // The stream's own Y'CbCr matrix when it states one; otherwise BT.2020 for Apple Log (what
+      // iPhone writes) and BT.709 for every other camera.
+      let inputMatrix: 'bt709' | 'bt2020' = detection.profile.curve === 'apple-log' ? 'bt2020' : 'bt709';
+      if (videoStream.colorMatrix === ColorMatrix.Bt709) {
+        inputMatrix = 'bt709';
+      } else if (videoStream.colorMatrix === ColorMatrix.Bt2020Nc || videoStream.colorMatrix === ColorMatrix.Bt2020C) {
+        inputMatrix = 'bt2020';
+      }
+      return { ...videoStream, logConversion: { label, lutPath, inputMatrix, inputRange } };
+    } catch (error) {
+      executionSignal()?.throwIfAborted();
+      this.logger.warn(`Could not check whether ${path} is Log video: ${error}`);
+      return videoStream;
+    }
+  }
+
+  /** FL-1285: the `color_md` of a DJI `.SRT` sidecar beside the original, when there is one. */
+  private async readDjiColorMode(originalPath: string): Promise<string | null> {
+    for (const candidate of getDjiSrtCandidates(originalPath)) {
+      try {
+        const head = await this.storageRepository.readFile(candidate, {
+          buffer: Buffer.alloc(DJI_SRT_HEAD_BYTES),
+          length: DJI_SRT_HEAD_BYTES,
+          position: 0,
+        });
+        if (Buffer.isBuffer(head)) {
+          return parseDjiSrtColorMode(head.toString('utf8'));
+        }
+      } catch {
+        // no sidecar under this name
+      }
+    }
+    return null;
+  }
+
+  /**
+   * FL-1285: the Log conversion runs on the CPU, so a Log clip is decoded in software. Hardware
+   * encoding is kept: frames are uploaded after the conversion, as they are after `tonemapx`.
+   */
+  private withSoftwareDecodeForLog(ffmpeg: ConfigFFmpegDto, assetId: string): ConfigFFmpegDto {
+    if (!ffmpeg.accelDecode) {
+      return ffmpeg;
+    }
+    this.logger.debug(`Asset ${assetId}: decoding in software for the Log to Rec.709 conversion`);
+    return { ...ffmpeg, accelDecode: false };
+  }
+
   private getTranscodeTarget(
     config: ConfigFFmpegDto,
     videoStream: VideoStreamInfo,
@@ -3065,7 +3233,9 @@ export class MediaService extends BaseService {
     const isLargerThanTargetBitrate = maxBitrate > 0 && stream.bitrate > maxBitrate;
 
     const isTargetVideoCodec = ffmpegConfig.acceptedVideoCodecs.includes(stream.codecName as VideoCodec);
-    const isRequired = !isTargetVideoCodec || !stream.pixelFormat.endsWith('420p');
+    // FL-1285: Log footage played as it is looks flat and grey, so its playback copy is always made
+    // (unless playback copies are switched off altogether).
+    const isRequired = !isTargetVideoCodec || !stream.pixelFormat.endsWith('420p') || !!stream.logConversion;
 
     switch (ffmpegConfig.transcode) {
       case TranscodePolicy.Disabled: {

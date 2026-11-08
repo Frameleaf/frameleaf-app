@@ -267,6 +267,15 @@ func TestSafetyBoundaries(t *testing.T) {
 type fmtSecretError struct{}
 
 func (fmtSecretError) Error() string { return "SECRET signed URL token" }
+func TestRestoreUsesAppleClientID(t *testing.T) {
+	e := &envelope{Version: 1, AppleID: "test@example.com", Upstream: api.NewSession()}
+	e.Upstream.ClientID = e.Upstream.FrameID // what bridges before #914 stored
+	raw, _ := json.Marshal(e)
+	restored, err := restore(raw)
+	if err != nil || restored.Upstream.ClientID != appleClientID {
+		t.Fatal("restored session must sign in with Apple's web client ID")
+	}
+}
 func TestPendingSessionRestorationAndPCS(t *testing.T) {
 	raw := testSession(t)
 	e, err := restore(raw)

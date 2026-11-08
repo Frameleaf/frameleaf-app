@@ -9,6 +9,7 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { CAPTURE_NUMERIC_TAGS } from 'src/utils/capture-details.js';
 import { LOCATION_DELETE_ARGS, LOCATION_TAG_SELECTORS, SAMSUNG_TRAILER_DELETE_ARGS } from 'src/utils/location-tags.js';
+import { LOG_VIDEO_TAG_NAMES, LogVideoTags } from 'src/utils/log-video.js';
 import { MEDIA_KIND_NUMERIC_TAGS } from 'src/utils/media-kinds.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
@@ -253,6 +254,24 @@ export class MetadataRepository {
       this.logger.warn(`Error reading exif data (${path}): ${error}`);
       throw error;
     }
+  }
+
+  /**
+   * FL-1285: only the camera tags that can say a video was recorded in Log. A targeted read without
+   * `-ee`, so it never scans a long clip's timed metadata. `-u` because some of these come from
+   * maker-note tables exiftool lists as unknown.
+   */
+  async readLogVideoTags(path: string): Promise<LogVideoTags> {
+    const tags: Record<string, unknown> = await this.exiftool.readRaw(path, {
+      readArgs: ['-api', 'largefilesupport=1', '-u', ...LOG_VIDEO_TAG_NAMES.map((name) => `-${name}`)],
+    });
+    const found: LogVideoTags = {};
+    for (const name of LOG_VIDEO_TAG_NAMES) {
+      if (tags[name] !== undefined) {
+        found[name] = tags[name];
+      }
+    }
+    return found;
   }
 
   async readJpegSignature(path: string): Promise<CameraIdentification['suggestion']> {
