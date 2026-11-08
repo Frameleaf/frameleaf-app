@@ -219,7 +219,12 @@ export class PartnerOriginRepository {
     });
   }
   /** The recipient's value and override marker commit together, ordered against propagation. */
-  async withOriginEdit<T>(kind: OriginKind, ids: string[], fields: string[], write: () => Promise<T>): Promise<T> {
+  async withOriginEdit<T>(
+    kind: OriginKind,
+    ids: string[],
+    fields: string[],
+    write: (tx?: Transaction<DB>) => Promise<T>,
+  ): Promise<T> {
     if (ids.length === 0) return write();
     const { table, key } = TABLES[kind];
     return this.db.transaction().execute(async (tx) => {
@@ -239,7 +244,7 @@ export class PartnerOriginRepository {
         ORDER BY origin.${sql.id(key)} FOR UPDATE
       `.execute(tx);
       return publicationTransaction.run(tx, async () => {
-        const value = await write();
+        const value = await write(tx);
         await this.markOverridden(kind, ids, fields);
         return value;
       });

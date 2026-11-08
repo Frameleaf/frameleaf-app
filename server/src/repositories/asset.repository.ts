@@ -599,6 +599,8 @@ export class AssetRepository {
                   fileSizeInByte: ref('fileSizeInByte'),
                   orientation: ref('orientation'),
                   dateTimeOriginal: ref('dateTimeOriginal'),
+                  // FL-1299: which date was estimated, never locked and never read from a file
+                  estimatedDateTimeOriginal: eb.ref('excluded.estimatedDateTimeOriginal'),
                   modifyDate: ref('modifyDate'),
                   timeZone: ref('timeZone'),
                   latitude: ref('latitude'),
@@ -696,6 +698,24 @@ export class AssetRepository {
       }))
       .where('assetId', 'in', ids)
       .execute();
+  }
+  /** FL-1299: the date a manual edit would change, and what has been done to it, for a writer holding its locks. */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  getCaptureDate(id: string) {
+    return this.db
+      .selectFrom('asset')
+      .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+      .select([
+        'asset.ownerId',
+        'asset.deletedAt',
+        'asset.fileCreatedAt',
+        'asset.localDateTime',
+        'asset_exif.dateTimeOriginal',
+        'asset_exif.timeZone',
+        'asset_exif.lockedProperties',
+      ])
+      .where('asset.id', '=', asUuid(id))
+      .executeTakeFirst();
   }
   /**
    * FL-51: removes the location of these assets (the geolocation utility's "Remove location"): the

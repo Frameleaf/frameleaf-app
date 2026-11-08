@@ -4,10 +4,13 @@
    * a notice on an album the viewer can add to when photos from their library look like they are from
    * its trip, and a review with two tabs. "From the trip" lists photos taken during it; "Need a date"
    * lists photos with no trustworthy date and offers one. Adding and changing a date are separate
-   * choices, and nothing changes until the person presses the button.
+   * choices, and nothing changes until the person presses the button. FL-1299 adds a third tab: photos
+   * already in the album whose date was lost, healed from the album around them.
    */
+  import AlbumLostDates from '$lib/components/frameleaf/AlbumLostDates.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import { toastUndo } from '$lib/frameleaf/toast';
   import { locale } from '$lib/stores/preferences.store';
   import { getAssetMediaUrl } from '$lib/utils';
   import {
@@ -15,10 +18,14 @@
     BulkIdErrorReason,
     addAssetsToAlbum,
     dismissAlbumSuggestions,
+    getAlbumLostDates,
     getAlbumSuggestions,
+    healAlbumLostDates,
     setAlbumSuggestionAutoAdd,
+    undoLatestAlbumChangeRun,
     updateAsset,
     type AlbumDateSuggestionDto,
+    type AlbumLostDatesResponseDto,
     type AlbumSuggestionReasonDto,
     type AlbumSuggestionsResponseDto,
     type AlbumTripSuggestionDto,
@@ -51,20 +58,21 @@
   let suggestions = $state<AlbumSuggestionsResponseDto | null>(null);
   let hidden = $state(false);
   let open = $state(false);
-  let tab = $state<'trip' | 'dates'>('trip');
+  let lostDates = $state<AlbumLostDatesResponseDto | null>(null);
+  let tab = $state<'trip' | 'dates' | 'lost'>('trip');
   let dismissed = $state(new Set<string>());
   let picked = $state(new Set<string>());
   let fixDate = $state(new Set<string>());
   let autoAdd = $state(false);
   let saving = $state(false);
   /** A failed add, apply or dismiss, said in the review itself (prototype `.ma-alert`). */
-  let alert = $state<{ message: string; retry?: boolean } | null>(null);
+  let alert = $state<{ message: string; retry?: () => void } | null>(null);
   let turningOff = $state(false);
   let turnOffFailed = $state(false);
   const tabsId = $props.id();
 
   /** Said in the review while it is open; a toast once it has been closed, so it isn't lost. */
-  const report = (message: string, retry = false) => {
+  const report = (message: string, retry?: () => void) => {
     if (open) {
       alert = { message, retry };
     } else {
@@ -100,15 +108,32 @@
     }
   };
 
+  const loadLostDates = async (id: string) => {
+    try {
+      const result = await getAlbumLostDates({ id });
+      if (id === albumId) {
+        lostDates = result;
+      }
+    } catch {
+      // Optional like the suggestions: the album still opens without them.
+      if (id === albumId) {
+        lostDates = null;
+      }
+    }
+  };
+
   $effect(() => {
     hidden = false;
     suggestions = null;
+    lostDates = null;
     void load(albumId);
+    void loadLostDates(albumId);
   });
 
   const fromTrip = $derived((suggestions?.fromTrip ?? []).filter(({ assetId }) => !dismissed.has(assetId)));
   const needDate = $derived((suggestions?.needDate ?? []).filter(({ assetId }) => !dismissed.has(assetId)));
   const count = $derived(fromTrip.length + needDate.length);
+  const lostCount = $derived(lostDates?.suggestions.length ?? 0);
   const groups = $derived(
     [
       { likely: true, items: fromTrip.filter(({ likely }) => likely) },
@@ -291,7 +316,7 @@
       // Name the photos only when adding them failed; a date or the auto-add choice is a save.
       report(
         addingStarted ? $t('frameleaf_album_suggestions_apply_failed') : $t('frameleaf_album_suggestions_save_failed'),
-        true,
+        () => void apply(),
       );
       // Some of it may have been saved before the failure (an add can commit and still reject), so
       // the album and the suggestions are read again rather than trusted as they were.
@@ -325,34 +350,84 @@
     }
   };
 
+  /** Puts healed dates back. Anything changed since stays as it is, and the message says what was kept. */
+  const undoHeal = async () => {
+    try {
+      const { skipped } = await undoLatestAlbumChangeRun();
+      toastManager.primary(
+        skipped.length > 0
+          ? $t('frameleaf_album_lost_dates_undone_kept', { values: { names: skipped.join(', ') } })
+          : $t('frameleaf_album_lost_dates_undone'),
+      );
+      onChanged();
+      await loadLostDates(albumId);
+    } catch (error) {
+      console.error(error);
+      toastManager.danger($t('frameleaf_album_lost_dates_undo_failed'));
+    }
+  };
+
+  /** The person's approval, per album. The server decides each date again, so only the photos are sent. */
+  const heal = async () => {
+    if (saving || lostCount === 0) {
+      return;
+    }
+    saving = true;
+    alert = null;
+    try {
+      const { runId, healed } = await healAlbumLostDates({
+        albumLostDatesHealDto: {
+          albums: [{ albumId, assetIds: (lostDates?.suggestions ?? []).map(({ assetId }) => assetId) }],
+        },
+      });
+      if (runId) {
+        toastUndo($t('frameleaf_album_lost_dates_healed', { values: { count: healed } }), () => void undoHeal());
+      } else {
+        toastManager.primary($t('frameleaf_album_lost_dates_none_healed'));
+      }
+      open = false;
+      onChanged();
+      await loadLostDates(albumId);
+    } catch (error) {
+      console.error(error);
+      report($t('frameleaf_album_lost_dates_heal_failed'), () => void heal());
+      await loadLostDates(albumId);
+    } finally {
+      saving = false;
+    }
+  };
+
   const openReview = () => {
-    tab = fromTrip.length > 0 ? 'trip' : 'dates';
+    tab = fromTrip.length > 0 ? 'trip' : needDate.length > 0 ? 'dates' : 'lost';
     autoAdd = suggestions?.autoAdd ?? false;
     alert = null;
     open = true;
   };
 
-  const TABS = ['trip', 'dates'] as const;
+  const tabs = $derived([
+    ...(count > 0 ? (['trip', 'dates'] as const) : []),
+    ...(lostCount > 0 ? (['lost'] as const) : []),
+  ]);
   const tabButtons: Record<string, HTMLButtonElement | undefined> = {};
 
   /** Arrow keys, Home and End move between the tabs (prototype `SuggestionTabs`). */
   const onTabKey = (event: KeyboardEvent) => {
-    const index = TABS.indexOf(tab);
+    const index = tabs.indexOf(tab);
     const next =
       event.key === 'ArrowRight'
-        ? (index + 1) % TABS.length
+        ? (index + 1) % tabs.length
         : event.key === 'ArrowLeft'
-          ? (index - 1 + TABS.length) % TABS.length
+          ? (index - 1 + tabs.length) % tabs.length
           : event.key === 'Home'
             ? 0
             : event.key === 'End'
-              ? TABS.length - 1
+              ? tabs.length - 1
               : null;
     if (next === null) {
       return;
     }
     event.preventDefault();
-    tab = TABS[next];
+    tab = tabs[next];
     tabButtons[tab]?.focus();
   };
 
@@ -388,12 +463,21 @@
   </button>
 {/snippet}
 
-{#if !hidden && count > 0}
+{#if !hidden && count + lostCount > 0}
   <section class="pl-notice ma-notice" role="status" aria-label={$t('frameleaf_album_suggestions_label')}>
     <Icon icon={mdiAutoFix} size="18" aria-hidden />
     <p>
-      <strong>{$t('frameleaf_album_suggestions_title', { values: { count } })}</strong>
-      <span>{$t('frameleaf_album_suggestions_body')}</span>
+      {#if count > 0}
+        <strong>{$t('frameleaf_album_suggestions_title', { values: { count } })}</strong>
+        <span>
+          {lostCount > 0
+            ? $t('frameleaf_album_suggestions_body_with_lost', { values: { count: lostCount } })
+            : $t('frameleaf_album_suggestions_body')}
+        </span>
+      {:else}
+        <strong>{$t('frameleaf_album_lost_dates_title', { values: { count: lostCount } })}</strong>
+        <span>{$t('frameleaf_album_lost_dates_body')}</span>
+      {/if}
     </p>
     <Button variant="primary" onclick={openReview}>{$t('frameleaf_album_suggestions_review')}</Button>
     <Button onclick={() => (hidden = true)}>{$t('frameleaf_album_suggestions_not_now')}</Button>
@@ -419,15 +503,17 @@
 {/if}
 
 <Dialog title={$t('frameleaf_album_suggestions_dialog_title')} closeLabel={$t('close')} size="wide" bind:open>
-  <p class="lead">
-    {$t('frameleaf_album_suggestions_lead', { values: { album: albumName, span: tripSpan, places } })}
-  </p>
+  {#if tab !== 'lost'}
+    <p class="lead">
+      {$t('frameleaf_album_suggestions_lead', { values: { album: albumName, span: tripSpan, places } })}
+    </p>
+  {/if}
   {#if alert}
     <div class="alert" role="alert">
       <Icon icon={mdiAlertCircleOutline} size="18" aria-hidden />
       <p>{alert.message}</p>
       {#if alert.retry}
-        <Button disabled={saving} onclick={() => void apply()}>{$t('frameleaf_error_retry')}</Button>
+        <Button disabled={saving} onclick={alert.retry}>{$t('frameleaf_error_retry')}</Button>
       {/if}
     </div>
   {/if}
@@ -438,7 +524,7 @@
     tabindex="-1"
     onkeydown={onTabKey}
   >
-    {#each TABS as value (value)}
+    {#each tabs as value (value)}
       <button
         bind:this={tabButtons[value]}
         id="{tabsId}-tab-{value}"
@@ -451,13 +537,17 @@
       >
         {value === 'trip'
           ? $t('frameleaf_album_suggestions_tab_trip', { values: { count: fromTrip.length } })
-          : $t('frameleaf_album_suggestions_tab_dates', { values: { count: needDate.length } })}
+          : value === 'dates'
+            ? $t('frameleaf_album_suggestions_tab_dates', { values: { count: needDate.length } })
+            : $t('frameleaf_album_lost_dates_tab', { values: { count: lostCount } })}
       </button>
     {/each}
   </div>
 
   <div id="{tabsId}-panel" role="tabpanel" aria-labelledby="{tabsId}-tab-{tab}">
-    {#if tab === 'trip'}
+    {#if tab === 'lost' && lostDates}
+      <AlbumLostDates lost={lostDates} {formatDay} />
+    {:else if tab === 'trip'}
       {#each groups as group (group.likely)}
         <section class="group">
           <h3>
@@ -545,20 +635,28 @@
   </div>
 
   {#snippet actions()}
-    <label class="auto ma-auto">
-      <input type="checkbox" bind:checked={autoAdd} />
-      <span>
-        {$t('frameleaf_album_suggestions_auto_add')}
-        <small>{$t('frameleaf_album_suggestions_auto_add_hint')}</small>
-      </span>
-    </label>
-    <Button
-      variant="primary"
-      disabled={saving || (adding.length === 0 && fixing.length === 0 && autoAdd === suggestions?.autoAdd)}
-      onclick={() => void apply()}
-    >
-      {applyLabel}
-    </Button>
+    {#if tab === 'lost'}
+      <Button variant="primary" disabled={saving || lostCount === 0} onclick={() => void heal()}>
+        {saving
+          ? $t('frameleaf_album_lost_dates_healing')
+          : $t('frameleaf_album_lost_dates_heal_all', { values: { count: lostCount } })}
+      </Button>
+    {:else}
+      <label class="auto ma-auto">
+        <input type="checkbox" bind:checked={autoAdd} />
+        <span>
+          {$t('frameleaf_album_suggestions_auto_add')}
+          <small>{$t('frameleaf_album_suggestions_auto_add_hint')}</small>
+        </span>
+      </label>
+      <Button
+        variant="primary"
+        disabled={saving || (adding.length === 0 && fixing.length === 0 && autoAdd === suggestions?.autoAdd)}
+        onclick={() => void apply()}
+      >
+        {applyLabel}
+      </Button>
+    {/if}
   {/snippet}
 </Dialog>
 

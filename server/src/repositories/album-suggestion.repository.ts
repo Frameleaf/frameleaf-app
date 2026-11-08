@@ -1,7 +1,10 @@
 import { Kysely, sql } from 'kysely';
 import type { DB } from 'src/schema/index.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
-import { AssetVisibility, LibraryScope } from 'src/enum.js';
+import { AssetVisibility, JobName, LibraryScope, QueueName } from 'src/enum.js';
+import { SqlQueueStore } from 'src/queue/store.js';
+import { QUEUE_TIMING } from 'src/queue/types.js';
+import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { LOOKS_LIKE_DISTANCE, sample } from 'src/utils/album-suggestions.js';
 import {
   hiddenByOwnerRules,
@@ -10,7 +13,7 @@ import {
   withHiddenContentFilter,
 } from 'src/utils/database.js';
 import { libraryScopePredicate } from 'src/utils/library-scope.js';
-import { isNotLocked, isTimelineVisible } from 'src/utils/locked.js';
+import { isLocked, isNotLocked, isTimelineVisible, notLockedOrOwnedBy } from 'src/utils/locked.js';
 
 /** ponytail: caps keep one album's suggestions to a few bounded queries; page them if albums outgrow them. */
 const MAX_TRIP_PHOTOS = 5000;
@@ -18,6 +21,8 @@ const MAX_CANDIDATES = 1000;
 const MAX_VISUAL_REFERENCES = 100;
 const MAX_UNDATED_REFERENCES = 40;
 const UNDATED_NEIGHBOURS = 20;
+/** ponytail: an album past this is treated as too wide to heal rather than read in full. */
+export const MAX_HEAL_PHOTOS = 50_000;
 
 /** Names that show a photo was saved or received rather than taken: Facebook, WhatsApp, Messenger. */
 const SAVED_NAME = String.raw`^(FB_IMG_\d{13}|(IMG|VID)-\d{8}-WA\d+|received_\d+)`;
@@ -28,6 +33,10 @@ const suggestible = (alias: string) => sql<boolean>`(
   and ${sql.ref(`${alias}.deletedAt`)} is null
   and not ${hiddenByOwnerRules(alias)}
 )`;
+
+/** FL-1299: whether this row's date is still the one healing estimated, so it proves nothing. */
+const dateEstimated = (exifAlias: string) =>
+  sql<boolean>`coalesce(${sql.ref(`${exifAlias}.estimatedDateTimeOriginal`)} = ${sql.ref(`${exifAlias}.dateTimeOriginal`)}, false)`;
 
 /** A located photo's place: its recorded position, else a landmark it was matched to (recorded or inferred). */
 const landmark = (alias: string) => sql`(
@@ -52,6 +61,27 @@ export type TripPhotoRow = {
 };
 
 export type CandidateRow = Omit<TripPhotoRow, 'visibility'> & { originalFileName: string; hasCameraDetails: boolean };
+
+export type HealPhotoRow = {
+  id: string;
+  ownerId: string;
+  originalFileName: string;
+  takenAt: Date;
+  localDateTime: Date;
+  hasCameraDetails: boolean;
+  dateEstimated: boolean;
+  dateSet: boolean;
+  isLocked: boolean;
+};
+
+/** FL-1299: what a heal replaced and what it wrote, as a change's `before` and `after`. Dates are ISO strings. */
+export type HealedDateBefore = {
+  dateTimeOriginal: string | null;
+  timeZone: string | null;
+  fileCreatedAt: string;
+  localDateTime: string;
+};
+export type HealedDateAfter = { dateTimeOriginal: string; fileCreatedAt: string };
 
 export class AlbumSuggestionRepository {
   constructor(private db: Kysely<DB>) {}
@@ -80,6 +110,8 @@ export class AlbumSuggestionRepository {
         .where('photo.deletedAt', 'is', null)
         .where(isNotLocked('photo'))
         .where(sql<boolean>`not ${hiddenFromOthers(viewerId, 'photo')}`)
+        // FL-1299: an estimated date is no evidence of when the trip was.
+        .where(sql<boolean>`not ${dateEstimated('photo_exif')}`)
         // The session's own filter too: a session that isn't unlocked doesn't see its own Locked-rule matches.
         .$call((qb) => withHiddenContentFilter(qb, options, 'photo'))
         .select([
@@ -97,15 +129,130 @@ export class AlbumSuggestionRepository {
     );
   }
 
+  /**
+   * FL-1299: the album's photos as date healing weighs them, for one session. Locked photos are present only in
+   * their owner's elevated session; without one, nothing here can be computed from them. Unlike the trip's
+   * photos this reads every photo, because the ones it heals are exactly those that sort far away.
+   */
+  getHealPhotos(
+    albumId: string,
+    viewerId: string,
+    lockedOwnerId: string | undefined,
+    options?: HiddenContentQueryOptions,
+  ): Promise<HealPhotoRow[]> {
+    return this.db
+      .selectFrom('album_asset')
+      .innerJoin('asset as photo', 'photo.id', 'album_asset.assetId')
+      .leftJoin('asset_exif as photo_exif', 'photo_exif.assetId', 'photo.id')
+      .where('album_asset.albumId', '=', albumId)
+      .where('photo.deletedAt', 'is', null)
+      .where('photo.visibility', '!=', AssetVisibility.Hidden)
+      .where(notLockedOrOwnedBy(lockedOwnerId, 'photo'))
+      .where(sql<boolean>`not ${hiddenFromOthers(viewerId, 'photo')}`)
+      .$call((qb) => withHiddenContentFilter(qb, options, 'photo'))
+      .select([
+        'photo.id',
+        'photo.ownerId',
+        'photo.originalFileName',
+        'photo.fileCreatedAt as takenAt',
+        'photo.localDateTime',
+        sql<boolean>`(photo_exif.make is not null or photo_exif.model is not null
+          or photo_exif."timeZone" is not null)`.as('hasCameraDetails'),
+        dateEstimated('photo_exif').as('dateEstimated'),
+        // Whatever locked the date set it on purpose.
+        sql<boolean>`coalesce(photo_exif."lockedProperties" && array['dateTimeOriginal', 'timeZone']::varchar[], false)`.as(
+          'dateSet',
+        ),
+        isLocked('photo').as('isLocked'),
+      ])
+      .orderBy('photo.fileCreatedAt')
+      .orderBy('photo.id')
+      .limit(MAX_HEAL_PHOTOS + 1)
+      .execute();
+  }
+
+  /**
+   * FL-1299: puts a healed date back, only if it is still the date healing set: a later edit wins. The locks
+   * healing took stay until the sidecar has been rewritten; see `queueSidecarRestores`.
+   */
+  async restoreHealedDate(
+    assetId: string,
+    before: HealedDateBefore,
+    after: HealedDateAfter,
+  ): Promise<{ outcome: 'restored' | 'changed'; fileName: string; isLocked: boolean } | undefined> {
+    const row = await this.db
+      .selectFrom('asset')
+      .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+      .select([
+        'asset.originalFileName',
+        'asset.fileCreatedAt',
+        'asset_exif.dateTimeOriginal',
+        isLocked('asset').as('isLocked'),
+      ])
+      .where('asset.id', '=', assetId)
+      .forUpdate()
+      .executeTakeFirst();
+    if (!row) {
+      return;
+    }
+    const base = { fileName: row.originalFileName, isLocked: row.isLocked };
+    const unchanged =
+      row.dateTimeOriginal !== null &&
+      new Date(row.dateTimeOriginal).getTime() === new Date(after.dateTimeOriginal).getTime() &&
+      new Date(row.fileCreatedAt).getTime() === new Date(after.fileCreatedAt).getTime();
+    if (!unchanged) {
+      return { ...base, outcome: 'changed' };
+    }
+    await this.db
+      .updateTable('asset_exif')
+      .set({
+        dateTimeOriginal: before.dateTimeOriginal,
+        timeZone: before.timeZone,
+        estimatedDateTimeOriginal: null,
+      })
+      .where('assetId', '=', assetId)
+      .execute();
+    await this.db
+      .updateTable('asset')
+      .set({ fileCreatedAt: before.fileCreatedAt, localDateTime: before.localDateTime })
+      .where('id', '=', assetId)
+      .execute();
+    return { ...base, outcome: 'restored' };
+  }
+
+  /**
+   * The work a restored date sets off, in the transaction that restored it: the sidecars rewritten with the
+   * restored dates, and any partner copies following these photos brought back into line.
+   */
+  async queueAfterRestore(ids: string[], partnerSourceIds: string[]): Promise<void> {
+    const timing = { safeToRetry: false, sensitive: false, deadlineMs: QUEUE_TIMING.opaqueDeadline };
+    await new SqlQueueStore(this.db).enqueue([
+      ...ids.map((id) => ({
+        name: JobName.SidecarWrite,
+        queue: QueueName.Sidecar,
+        data: { id, releaseDateLock: true },
+        ...timing,
+      })),
+      ...partnerSourceIds.map((sourceId) => ({
+        name: JobName.PartnerPropagate,
+        queue: QueueName.BackgroundTask,
+        data: { kind: 'asset', sourceId, fields: [AssetOriginField.DateTimeOriginal] },
+        ...timing,
+      })),
+    ]);
+  }
+
   /** When the album's photos (not Locked) were taken, for a cheap check before reading them all. */
   async getTimeSpan(albumId: string, viewerId: string): Promise<{ from: Date; to: Date } | undefined> {
     const row = await this.db
       .selectFrom('album_asset')
       .innerJoin('asset as photo', 'photo.id', 'album_asset.assetId')
+      .leftJoin('asset_exif as photo_exif', 'photo_exif.assetId', 'photo.id')
       .where('album_asset.albumId', '=', albumId)
       .where('photo.deletedAt', 'is', null)
       .where(isNotLocked('photo'))
       .where(sql<boolean>`not ${hiddenFromOthers(viewerId, 'photo')}`)
+      .where(sql<boolean>`not ${dateEstimated('photo_exif')}`)
       .select([
         sql<Date | null>`min(photo."fileCreatedAt")`.as('from'),
         sql<Date | null>`max(photo."fileCreatedAt")`.as('to'),
@@ -118,6 +265,7 @@ export class AlbumSuggestionRepository {
   getTripCandidates(ownerId: string, albumId: string, windows: { from: Date; to: Date }[]): Promise<CandidateRow[]> {
     if (windows.length === 0) return Promise.resolve([]);
     return this.candidates(ownerId, albumId)
+      .where(sql<boolean>`not ${dateEstimated('candidate_exif')}`)
       .where((eb) =>
         eb.or(
           windows.map(({ from, to }) =>
@@ -168,8 +316,9 @@ export class AlbumSuggestionRepository {
         'candidate.originalFileName',
         'candidate_exif.make',
         'candidate_exif.model',
-        sql<boolean>`(candidate_exif.make is not null or candidate_exif.model is not null
-          or candidate_exif."timeZone" is not null)`.as('hasCameraDetails'),
+        // A healed date brought a time zone with it, which must not read as camera details.
+        sql<boolean>`((candidate_exif.make is not null or candidate_exif.model is not null
+          or candidate_exif."timeZone" is not null) and not ${dateEstimated('candidate_exif')})`.as('hasCameraDetails'),
         ...this.located('candidate'),
       ]);
   }
@@ -222,7 +371,8 @@ export class AlbumSuggestionRepository {
           .where(suggestible('candidate'))
           .where(
             sql<boolean>`(candidate."originalFileName" ~* ${SAVED_NAME} or (candidate_exif.make is null
-              and candidate_exif.model is null and candidate_exif."timeZone" is null))`,
+              and candidate_exif.model is null and candidate_exif."timeZone" is null)
+              or ${dateEstimated('candidate_exif')})`,
           )
           .where(({ not, exists, selectFrom }) =>
             not(

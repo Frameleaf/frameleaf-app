@@ -4441,6 +4441,23 @@ export type AlbumIconCatalogueResponseDto = {
     /** Material Design Icons catalogue version the names come from */
     version: string;
 };
+export type AlbumLostDatesHealDto = {
+    /** The photos you approved, per album */
+    albums: {
+        /** Album the photos are healed from */
+        albumId: string;
+        /** Photos to heal; dates are decided by the server */
+        assetIds: string[];
+    }[];
+};
+export type AlbumLostDatesHealResponseDto = {
+    /** Photos whose date was healed */
+    healed: number;
+    /** The healing, for undoing it; null when nothing changed */
+    runId: string | null;
+    /** Photos left alone because they no longer qualify */
+    skipped: number;
+};
 export type AlbumOrderDto = {
     /** Every item of the group, in the order to show them. Must be exactly the group as it is now; a group that changed since the client loaded it is refused with 409. */
     albumIds: string[];
@@ -4521,6 +4538,8 @@ export type ExifResponseDto = {
     colorspace?: string | null;
     /** Country name */
     country?: string | null;
+    /** The capture date was estimated from the photos around it. Absent when it was not */
+    dateEstimated?: boolean;
     /** Original date/time */
     dateTimeOriginal?: string | null;
     /** Image description */
@@ -4830,6 +4849,39 @@ export type LibraryItemsResponseDto = {
         id: string;
         kind: LibraryItemKind;
     } | null;
+};
+export type AlbumLostDateSuggestionDto = {
+    /** The photo */
+    assetId: string;
+    /** The photos an exact date came from */
+    between: {
+        /** File name of the photo after it */
+        after: string;
+        /** File name of the photo before it */
+        before: string;
+    } | null;
+    /** The date offered: local time with offset */
+    dateTimeOriginal: string;
+    /** The local day offered (YYYY-MM-DD) */
+    day: string;
+    /** Its file name */
+    fileName: string;
+    /** exact (from the numbered photos on either side) or around (the middle of the album). May grow */
+    precision: string;
+    /** The local day it shows now (YYYY-MM-DD) */
+    shownDay: string;
+};
+export type AlbumLostDatesResponseDto = {
+    /** The album is tight enough to say when its photos were taken */
+    eligible: boolean;
+    /** First local day of the album (YYYY-MM-DD), when eligible */
+    "from": string | null;
+    /** Why it is not: few (too few photos with camera details), wide (they span too long). May grow */
+    reason: string | null;
+    /** Your own photos that lost their date */
+    suggestions: AlbumLostDateSuggestionDto[];
+    /** Last local day of the album (YYYY-MM-DD), when eligible */
+    to: string | null;
 };
 export type MapMarkerResponseDto = {
     /** City name */
@@ -23857,6 +23909,21 @@ export function getAlbumIconCatalogue(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Heal lost dates
+ */
+export function healAlbumLostDates({ albumLostDatesHealDto }: {
+    albumLostDatesHealDto: AlbumLostDatesHealDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumLostDatesHealResponseDto;
+    }>("/albums/lost-dates/heal", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: albumLostDatesHealDto
+    })));
+}
+/**
  * Arrange a group of the album directory
  */
 export function setAlbumOrder({ albumOrderDto }: {
@@ -24055,6 +24122,19 @@ export function getAlbumItems({ afterId, afterKind, id, key, limit, slug }: {
         limit,
         slug
     }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Find lost dates in an album
+ */
+export function getAlbumLostDates({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumLostDatesResponseDto;
+    }>(`/albums/${encodeURIComponent(id)}/lost-dates`, {
         ...opts
     }));
 }

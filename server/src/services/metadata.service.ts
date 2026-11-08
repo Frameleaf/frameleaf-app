@@ -892,11 +892,12 @@ export class MetadataService extends BaseService {
     // LIB-02: so does a time zone set in Frameleaf: the sidecar holds only an offset, and the next read would
     // take the zone of the GPS position instead.
     // Capture edits stay authoritative: sidecars lose source precision and may not carry the original zone.
+    // FL-1299: undoing a healed date writes the restored date here, so the sidecar can't bring the healed
+    // one back, and then lets it go: nobody chose this date, and the photo can be healed again.
     const keptLocked = new Set<string>([
       ...placeProperties,
       'tags',
-      'timeZone',
-      'dateTimeOriginal',
+      ...(job.releaseDateLock ? [] : ['timeZone', 'dateTimeOriginal']),
       ...(locationRemoved ? ['latitude', 'longitude'] : []),
     ]);
     await this.assetRepository.unlockProperties(

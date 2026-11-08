@@ -93,6 +93,14 @@ it.each(['current', 'replace', 'return', 'close', 'session'])(
   },
 );
 
+it('says when the date was estimated, and only then (FL-1299)', async () => {
+  const asset = owned();
+  const view = render(DetailPanelDate, { asset });
+  expect(screen.queryByText(/estimated/i)).toBeNull();
+  await view.rerender({ asset: { ...asset, exifInfo: { ...asset.exifInfo, dateEstimated: true } } });
+  expect(screen.getByText(/estimated/i)).toBeTruthy();
+});
+
 it.each(['current', 'replace', 'return', 'session'])(
   'keeps date dialog failure callbacks with their view: %s',
   async (change) => {

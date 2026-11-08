@@ -1,3 +1,4 @@
+import { toastManager } from '@frameleaf/ui';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
@@ -7,6 +8,8 @@ vi.mock('@frameleaf/ui', async () => {
   const actual = await vi.importActual<typeof import('@frameleaf/ui')>('@frameleaf/ui');
   return { ...actual, toastManager: { primary: vi.fn(), danger: vi.fn() } };
 });
+const toast = vi.hoisted(() => ({ undo: vi.fn() }));
+vi.mock('$lib/frameleaf/toast', () => ({ TOAST_ACTION_TIMEOUT_MS: 8000, toastUndo: toast.undo }));
 
 const suggestions = {
   autoAdd: false,
@@ -248,5 +251,124 @@ describe('AlbumSuggestions', () => {
       expect(sdkMock.dismissAlbumSuggestions).toHaveBeenCalledWith({ id: 'album', bulkIdsDto: { ids: ['trip-1'] } }),
     );
     expect(screen.getByText('No more photos from the trip.')).toBeTruthy();
+  });
+
+  /** FL-1299, the mock's Lost dates tab (prototype AlbumCleanup.jsx). */
+  describe('lost dates', () => {
+    const lost = {
+      eligible: true,
+      reason: null,
+      from: '2019-07-03',
+      to: '2019-07-09',
+      suggestions: [
+        {
+          assetId: 'lost-1',
+          fileName: 'IMG_1003.JPG',
+          shownDay: '2023-02-14',
+          day: '2019-07-04',
+          dateTimeOriginal: '2019-07-04T09:20:10-06:00',
+          precision: 'exact',
+          between: { before: 'IMG_1002.JPG', after: 'IMG_1004.JPG' },
+        },
+        {
+          assetId: 'lost-2',
+          fileName: 'Takeout_9.jpg',
+          shownDay: '2023-02-14',
+          day: '2019-07-06',
+          dateTimeOriginal: '2019-07-06T12:00:00-06:00',
+          precision: 'around',
+          between: null,
+        },
+      ],
+    };
+    const noOtherSuggestions = { ...suggestions, tripStart: null, tripEnd: null, fromTrip: [], needDate: [] };
+
+    const openLost = async (onChanged = vi.fn()) => {
+      sdkMock.getAlbumSuggestions.mockResolvedValue(structuredClone(noOtherSuggestions));
+      sdkMock.getAlbumLostDates.mockResolvedValue(structuredClone(lost));
+      render(AlbumSuggestions, { albumId: 'album', albumName: 'Summer', onChanged });
+      await fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
+      return onChanged;
+    };
+
+    it('shows nothing when no photo in the album lost its date', async () => {
+      sdkMock.getAlbumSuggestions.mockResolvedValue(structuredClone(noOtherSuggestions));
+      sdkMock.getAlbumLostDates.mockResolvedValue({ ...lost, suggestions: [] });
+      render(AlbumSuggestions, { albumId: 'album', albumName: 'Summer', onChanged: vi.fn() });
+      await waitFor(() => expect(sdkMock.getAlbumLostDates).toHaveBeenCalledWith({ id: 'album' }));
+      expect(screen.queryByRole('status')).toBeNull();
+    });
+
+    it('still shows trip suggestions when lost dates cannot be read', async () => {
+      sdkMock.getAlbumLostDates.mockRejectedValue(new Error('no'));
+      render(AlbumSuggestions, { albumId: 'album', albumName: 'Summer', onChanged: vi.fn() });
+      expect(await screen.findByText("2 more photos look like they're from this trip.")).toBeTruthy();
+    });
+
+    it('lists each photo with what it shows and what the album suggests, changing nothing yet', async () => {
+      await openLost();
+      expect(screen.getByRole('tab', { name: 'Lost dates · 2' })).toHaveAttribute('aria-selected', 'true');
+      expect(screen.queryByRole('tab', { name: /From the trip/ })).toBeNull();
+      expect(screen.getByText(/Healed dates are marked as estimated/)).toBeTruthy();
+      expect(screen.getByText('IMG_1003.JPG')).toBeTruthy();
+      expect(screen.getByText('Between IMG_1002.JPG and IMG_1004.JPG')).toBeTruthy();
+      expect(screen.getByText("From the album's other photos")).toBeTruthy();
+      expect(screen.getByText(/Around .*2019/)).toBeTruthy();
+      expect(sdkMock.healAlbumLostDates).not.toHaveBeenCalled();
+    });
+
+    it('sends only the photos, then offers Undo', async () => {
+      const onChanged = await openLost();
+      sdkMock.healAlbumLostDates.mockResolvedValue({ runId: 'run', healed: 2, skipped: 0 });
+      sdkMock.getAlbumLostDates.mockResolvedValue({ ...lost, suggestions: [] });
+      await fireEvent.click(screen.getByRole('button', { name: 'Heal all 2' }));
+      await waitFor(() =>
+        expect(sdkMock.healAlbumLostDates).toHaveBeenCalledWith({
+          albumLostDatesHealDto: { albums: [{ albumId: 'album', assetIds: ['lost-1', 'lost-2'] }] },
+        }),
+      );
+      await waitFor(() => expect(toast.undo).toHaveBeenCalledWith('Healed 2 dates.', expect.any(Function)));
+      await waitFor(() => expect(onChanged).toHaveBeenCalled());
+
+      sdkMock.undoLatestAlbumChangeRun.mockResolvedValue({ reversed: 1, skipped: ['IMG_1003.JPG'] });
+      (toast.undo.mock.calls[0][1] as () => void)();
+      await waitFor(() =>
+        expect(toastManager.primary).toHaveBeenCalledWith(
+          'Dates put back. Your later changes to IMG_1003.JPG were kept.',
+        ),
+      );
+      expect(sdkMock.updateAsset).not.toHaveBeenCalled();
+    });
+
+    it('says so when nothing was healed', async () => {
+      await openLost();
+      sdkMock.healAlbumLostDates.mockResolvedValue({ runId: null, healed: 0, skipped: 2 });
+      await fireEvent.click(screen.getByRole('button', { name: 'Heal all 2' }));
+      await waitFor(() =>
+        expect(toastManager.primary).toHaveBeenCalledWith('These photos have changed since, so nothing was healed.'),
+      );
+      expect(toast.undo).not.toHaveBeenCalled();
+    });
+
+    it('says a failed heal in the review and can try again', async () => {
+      await openLost();
+      sdkMock.healAlbumLostDates.mockRejectedValueOnce(new Error('no'));
+      await fireEvent.click(screen.getByRole('button', { name: 'Heal all 2' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't heal these dates.");
+
+      sdkMock.healAlbumLostDates.mockResolvedValue({ runId: 'run', healed: 2, skipped: 0 });
+      await fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+      await waitFor(() => expect(sdkMock.healAlbumLostDates).toHaveBeenCalledTimes(2));
+    });
+
+    it("tells the album's two kinds of news apart when both are there", async () => {
+      sdkMock.getAlbumLostDates.mockResolvedValue(structuredClone(lost));
+      render(AlbumSuggestions, { albumId: 'album', albumName: 'Summer', onChanged: vi.fn() });
+      expect(await screen.findByText('2 photos in this album also lost their date.')).toBeTruthy();
+      await fireEvent.click(screen.getByRole('button', { name: 'Review' }));
+      await fireEvent.click(screen.getByRole('tab', { name: 'Lost dates · 2' }));
+      expect(screen.getByRole('button', { name: 'Heal all 2' })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: /Add 2 photos/ })).toBeNull();
+    });
   });
 });

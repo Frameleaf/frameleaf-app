@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Inject, Injectable, NotFoundExc
 import { isNumber, isUndefined, omitBy } from 'lodash-es';
 import { DateTime, Duration } from 'luxon';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { HealedDateAfter, HealedDateBefore } from 'src/repositories/album-suggestion.repository.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobItem, JobOf } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -435,6 +436,59 @@ export class AssetService extends BaseService {
       await this.notifyAssetsUpdated([id, ...siblingIds], auth.user.id);
     }
     return true;
+  }
+
+  /**
+   * FL-1299: a date the person approved but did not type, written the way `update` writes one: the date with
+   * its time zone and locks, the sidecar, and partner copies following the photo. Joins the caller's
+   * transaction. Nothing happens if the photo is no longer theirs, its date moved since it was read, or
+   * someone has since set its date; the row locks are held from that check to the write.
+   */
+  async writeEstimatedDate(
+    auth: AuthDto,
+    { id, dateTimeOriginal, expectedTakenAt }: { id: string; dateTimeOriginal: string; expectedTakenAt: Date },
+  ): Promise<{ before: HealedDateBefore; after: HealedDateAfter } | undefined> {
+    return this.assetRepository.withMetadataUpdate(id, async (assets, access, tx) => {
+      const current = await assets.getCaptureDate(id);
+      if (
+        !current ||
+        current.ownerId !== auth.user.id ||
+        current.deletedAt ||
+        current.fileCreatedAt.getTime() !== expectedTakenAt.getTime() ||
+        current.lockedProperties?.some((property) => property === 'dateTimeOriginal' || property === 'timeZone')
+      ) {
+        return;
+      }
+      await requireAccess(access, { auth, permission: Permission.AssetUpdate, ids: [id] });
+      const sidecarIds = await this.updateExif({ id, dateTimeOriginal, dateEstimated: true }, assets);
+      const asset = await assets.update({ id, ...getAssetDateTimeUpdates(dateTimeOriginal) });
+      if (!asset) {
+        throw new BadRequestException('Asset not found');
+      }
+      const fields = getAssetEditFields({ dateTimeOriginal });
+      await this.partnerOriginRepository.markOverridden('asset', [id], fields, auth.user.id, tx);
+      for (const sourceId of await this.partnerOriginRepository.getIdsWithFollowers('asset', [id])) {
+        await this.jobRepository.queueInTransaction(tx, {
+          name: JobName.PartnerPropagate,
+          data: { kind: 'asset', sourceId, fields },
+        });
+      }
+      for (const sidecarId of sidecarIds) {
+        await this.jobRepository.queueInTransaction(tx, { name: JobName.SidecarWrite, data: { id: sidecarId } });
+      }
+      return {
+        before: {
+          dateTimeOriginal: current.dateTimeOriginal ? new Date(current.dateTimeOriginal).toISOString() : null,
+          timeZone: current.timeZone,
+          fileCreatedAt: current.fileCreatedAt.toISOString(),
+          localDateTime: current.localDateTime.toISOString(),
+        },
+        after: {
+          dateTimeOriginal: asset.fileCreatedAt.toISOString(),
+          fileCreatedAt: asset.fileCreatedAt.toISOString(),
+        },
+      };
+    });
   }
 
   private async updateLivePhoto(auth: AuthDto, id: string, dto: UpdateAssetDto & { livePhotoVideoId: string | null }) {
@@ -1380,6 +1434,8 @@ export class AssetService extends BaseService {
       city?: string | null;
       state?: string | null;
       country?: string | null;
+      /** FL-1299: this date was estimated, and is marked so. Any later date change ends the estimate. */
+      dateEstimated?: boolean;
     },
     assets = this.assetRepository,
     motionIds?: string[],
@@ -1404,6 +1460,7 @@ export class AssetService extends BaseService {
       {
         description,
         dateTimeOriginal: withDateTimeOffset(dateTimeOriginal),
+        estimatedDateTimeOriginal: dto.dateEstimated ? withDateTimeOffset(dateTimeOriginal) : undefined,
         timeZone: extractTimeZone(dateTimeOriginal)?.name,
         latitude: clearLocation ? undefined : (latitude ?? undefined),
         longitude: clearLocation ? undefined : (longitude ?? undefined),
