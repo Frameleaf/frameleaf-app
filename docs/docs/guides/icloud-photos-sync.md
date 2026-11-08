@@ -117,7 +117,7 @@ The Frameleaf app for iPhone can back up the same iCloud photos the sync imports
 
 | What you see                                         | What to do                                                                                                                                                                   |
 | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| iCloud Photos is turned off                          | Ask your administrator to turn it on in **Settings**, under **Server & updates**.                                                                                                                 |
+| iCloud Photos is turned off                          | Ask your administrator to turn it on in **Settings**, under **Server & updates**.                                                                                            |
 | Device approval or sign-in required                  | Approve on your trusted device or sign in again. Use **Check saved session** to check access.                                                                                |
 | Waiting to retry or rate limited                     | Allow the retry delay. Do not create extra connections to bypass it.                                                                                                         |
 | Incomplete inventory                                 | Load the inventory again. Do not treat missing entries as deleted photos.                                                                                                    |
