@@ -88,12 +88,14 @@ export class ICloudTransportRepository {
   }
 
   private async send(
-    endpoint: 'auth' | 'inventory' | 'download',
-    body: unknown,
+    endpoint: 'auth' | 'inventory' | 'download' | 'capabilities',
+    body?: unknown,
     signal?: AbortSignal,
   ): Promise<IncomingMessage> {
     const { url, token, ca } = await this.configuration();
-    const data = Buffer.from(JSON.stringify(body));
+    // capabilities is the one read without a body
+    const method = endpoint === 'capabilities' ? 'GET' : 'POST';
+    const data = Buffer.from(method === 'GET' ? '' : JSON.stringify(body));
     if (data.length > 2 * 1024 ** 2) {
       throw new ICloudTransportError('icloud_request_too_large');
     }
@@ -101,7 +103,7 @@ export class ICloudTransportRepository {
       const req = request(
         new URL(`/v1/${endpoint}`, url),
         {
-          method: 'POST',
+          method,
           ca,
           signal,
           maxHeaderSize: 1024 ** 2,
@@ -180,6 +182,16 @@ export class ICloudTransportRepository {
       throw new ICloudTransportError('icloud_response_invalid');
     }
     return { state: value.state, session: value.session };
+  }
+
+  /** FL-1289: what the bridge supports (`GET /v1/capabilities`), e.g. `smartAlbums`. */
+  async capabilities(): Promise<Record<string, unknown>> {
+    const value = await this.readJson(await this.send('capabilities'));
+    const capabilities = value && typeof value === 'object' ? (value as { capabilities?: unknown }).capabilities : null;
+    if (!capabilities || typeof capabilities !== 'object') {
+      throw new ICloudTransportError('icloud_response_invalid');
+    }
+    return capabilities as Record<string, unknown>;
   }
 
   async inventory(input: {

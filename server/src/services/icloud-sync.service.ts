@@ -943,6 +943,11 @@ export class ICloudSyncService {
         if (checkpoint?.complete) {
           return true;
         }
+        // FL-1289: a bridge from before smart albums refuses the field, so it is asked what it supports first
+        if (smartAlbum && (await this.transport.capabilities()).smartAlbums !== true) {
+          await this.repository.savePage(current.id, scope, libraryKey, [], null, true, db);
+          return false;
+        }
         let response: ICloudPage;
         try {
           response = await this.transport.inventory({
@@ -956,6 +961,7 @@ export class ICloudSyncService {
         } catch (error) {
           // ponytail: kinds are an extra, so Apple refusing a smart album (or the bridge failing on one)
           // skips it for this run instead of failing the sync; the next run asks again.
+          // the bridge supports smart albums here, so invalid_request (session, cursor) stays visible
           if (!smartAlbum || !(error instanceof ICloudTransportError && error.code === 'icloud_transport_failed')) {
             throw error;
           }
@@ -963,7 +969,7 @@ export class ICloudSyncService {
           return false;
         }
         encryptedSession = await this.transport.encodeSession(current.id, response.session);
-        // A bridge from before smart albums ignores the field and lists the whole library: never use that.
+        // Never use a smart album page from a bridge that doesn't say it lists them.
         if (smartAlbum && response.capabilities?.smartAlbums !== true) {
           await this.repository.savePage(current.id, scope, libraryKey, [], null, true, db);
           return false;
