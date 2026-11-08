@@ -40,6 +40,8 @@ import { AlbumAssetAuditTable } from 'src/schema/tables/album-asset-audit.table.
 import { AlbumAssetTable } from 'src/schema/tables/album-asset.table.js';
 import { AlbumAuditTable } from 'src/schema/tables/album-audit.table.js';
 import { AlbumBookmarkTable } from 'src/schema/tables/album-bookmark.table.js';
+import { AlbumChangeRunTable } from 'src/schema/tables/album-change-run.table.js';
+import { AlbumChangeTable } from 'src/schema/tables/album-change.table.js';
 import { AlbumClosureTable } from 'src/schema/tables/album-closure.table.js';
 import {
   AlbumSuggestionAutoAddTable,
@@ -328,6 +330,8 @@ export class ImmichDatabase {
     BrowserExtensionAccessTable,
     BookmarkTable,
     AlbumBookmarkTable,
+    AlbumChangeRunTable,
+    AlbumChangeTable,
     BookmarkTagTable,
     AssetSourceTable,
     ActivityTable,
@@ -610,6 +614,8 @@ export interface DB extends QueueDatabase {
   browser_extension_access: BrowserExtensionAccessTable;
   bookmark: BookmarkTable;
   album_bookmark: AlbumBookmarkTable;
+  album_change_run: AlbumChangeRunTable;
+  album_change: AlbumChangeTable;
   bookmark_tag: BookmarkTagTable;
   asset_source: AssetSourceTable;
   asset_lock: AssetLockTable;

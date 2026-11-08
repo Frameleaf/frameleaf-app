@@ -3,7 +3,7 @@
   import type AlbumActions from '$lib/components/frameleaf/AlbumActions.svelte';
   import Menu from '$lib/components/frameleaf/Menu.svelte';
   import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
-  import { canEdit, isOwner } from '$lib/frameleaf/album-directory';
+  import { canEdit, canMerge, isOwner } from '$lib/frameleaf/album-directory';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
@@ -14,6 +14,7 @@
     mdiAccountPlusOutline,
     mdiArrowCollapseUp,
     mdiAutoFix,
+    mdiCallMerge,
     mdiDeleteOutline,
     mdiFolderMoveOutline,
     mdiFolderMultiplePlusOutline,
@@ -142,6 +143,11 @@
       <MenuItem onSelect={() => run((loaded) => loaded.openMove(album))}>
         <Icon icon={mdiFolderMoveOutline} size="18" aria-hidden={true} />{$t('frameleaf_albums_move_to')}
       </MenuItem>
+      {#if canMerge(album, currentUserId)}
+        <MenuItem onSelect={() => run((loaded) => loaded.openMerge(album))}>
+          <Icon icon={mdiCallMerge} size="18" aria-hidden={true} />{$t('frameleaf_albums_merge_with')}
+        </MenuItem>
+      {/if}
       {#if parent}
         <MenuItem onSelect={() => run((loaded) => loaded.move(album, null))}>
           <Icon icon={mdiArrowCollapseUp} size="18" aria-hidden={true} />

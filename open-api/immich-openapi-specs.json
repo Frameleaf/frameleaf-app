@@ -11583,6 +11583,108 @@
         "x-immich-state": "Stable"
       }
     },
+    "/albums/change-runs/latest": {
+      "get": {
+        "description": "The newest merge, cleanup or date healing you have not undone, while it can still be undone.",
+        "operationId": "getLatestAlbumChangeRun",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumChangeRunLatestResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the latest undoable album change",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/albums/change-runs/latest/undo": {
+      "post": {
+        "description": "Reverse your newest merge, cleanup or date healing, for up to 30 days. Anything changed since is left alone and reported in `skipped`.",
+        "operationId": "undoLatestAlbumChangeRun",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlbumChangeUndoDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumChangeUndoResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Undo the latest album change",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/albums/hierarchy": {
       "get": {
         "description": "Albums and collections with their visible descendants. Shared spaces remain at the top level.",
@@ -12642,6 +12744,142 @@
           }
         ],
         "x-immich-permission": "album.read"
+      }
+    },
+    "/albums/{id}/merge": {
+      "post": {
+        "description": "Merge two albums you own into the one with the most photos, counting Locked ones; on a tie the older album stays. No photos leave your library. The other album can be brought back with Undo for 30 days.",
+        "operationId": "mergeAlbum",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlbumMergeDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumMergeResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Merge an album with another",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.delete",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/albums/{id}/merge/{otherId}": {
+      "get": {
+        "description": "Which album will keep its name and icon, how many photos the merged album will hold that this session may see, and whether either is shared.",
+        "operationId": "getAlbumMergePreview",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Album ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "otherId",
+            "required": true,
+            "in": "path",
+            "description": "The album to merge with this one",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumMergePreviewResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Preview an album merge",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.delete",
+        "x-immich-state": "Alpha"
       }
     },
     "/albums/{id}/suggestions": {
@@ -68628,6 +68866,113 @@
         ],
         "type": "object"
       },
+      "AlbumChangeRunKind": {
+        "description": "What the run did",
+        "enum": [
+          "merge",
+          "cleanup",
+          "heal"
+        ],
+        "type": "string"
+      },
+      "AlbumChangeRunLatestResponseDto": {
+        "properties": {
+          "run": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AlbumChangeRunResponseDto"
+              }
+            ],
+            "description": "The newest run that can still be undone, if any",
+            "nullable": true
+          }
+        },
+        "required": [
+          "run"
+        ],
+        "type": "object"
+      },
+      "AlbumChangeRunResponseDto": {
+        "properties": {
+          "canUndo": {
+            "description": "Undo is available now; false while the run is still in progress",
+            "type": "boolean"
+          },
+          "createdAt": {
+            "description": "When the run started",
+            "type": "string"
+          },
+          "id": {
+            "description": "Run ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AlbumChangeRunKind"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AlbumChangeRunStatus"
+          },
+          "summary": {
+            "additionalProperties": {},
+            "description": "What the run did: names and counts",
+            "type": "object"
+          }
+        },
+        "required": [
+          "canUndo",
+          "createdAt",
+          "id",
+          "kind",
+          "status",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "AlbumChangeRunStatus": {
+        "description": "Where the run has got to",
+        "enum": [
+          "running",
+          "done",
+          "failed",
+          "undone"
+        ],
+        "type": "string"
+      },
+      "AlbumChangeUndoDto": {
+        "properties": {
+          "runId": {
+            "description": "Only undo if this is still the latest run; refused with 409 if it is not",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AlbumChangeUndoResponseDto": {
+        "properties": {
+          "reversed": {
+            "description": "Changes taken back",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "skipped": {
+            "description": "Names of what was left alone because it was changed after the run; a later edit wins",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "reversed",
+          "skipped"
+        ],
+        "type": "object"
+      },
       "AlbumCollectionResponseDto": {
         "properties": {
           "albumCount": {
@@ -68866,6 +69211,79 @@
             "type": "boolean"
           }
         },
+        "type": "object"
+      },
+      "AlbumMergeDto": {
+        "properties": {
+          "otherId": {
+            "description": "The album to merge with this one",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "otherId"
+        ],
+        "type": "object"
+      },
+      "AlbumMergePreviewResponseDto": {
+        "properties": {
+          "inBoth": {
+            "description": "Of those, how many are in both albums",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "loserShared": {
+            "description": "The album merged away is shared. Its people and public links lose access; they are not moved",
+            "type": "boolean"
+          },
+          "total": {
+            "description": "Photos the merged album will hold that this session may see, each counted once",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "winnerId": {
+            "description": "The album that keeps its name and icon. The other is merged in and removed.",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "winnerShared": {
+            "description": "The album that stays is shared, by people, a public link or a shared space, who will see both",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "inBoth",
+          "loserShared",
+          "total",
+          "winnerId",
+          "winnerShared"
+        ],
+        "type": "object"
+      },
+      "AlbumMergeResponseDto": {
+        "properties": {
+          "runId": {
+            "description": "The merge, for undoing it",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "winnerId": {
+            "description": "The album that stayed",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "runId",
+          "winnerId"
+        ],
         "type": "object"
       },
       "AlbumOrderDto": {

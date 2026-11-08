@@ -346,8 +346,16 @@ class AlbumSync extends BaseSync {
       .orderBy('createId', 'asc')
       .execute();
   }
-  @GenerateSql({ params: [dummyQueryOptions], stream: true })
-  getDeletes(options: SyncQueryOptions) {
+  /**
+   * `includeTrashed` (FL-1298) is for the streams without a trash state of their own: a soft-deleted album,
+   * merged away or removed, is gone as far as those clients know. AlbumsV3 sends it with `deletedAt` instead.
+   * Restoring it changes `updateId`, so the client gets it back as an upsert.
+   */
+  @GenerateSql(
+    { params: [dummyQueryOptions], stream: true },
+    { name: 'trashed', params: [dummyQueryOptions, true], stream: true },
+  )
+  getDeletes(options: SyncQueryOptions, includeTrashed = false) {
     const scopedOut = this.upsertQuery('album', options)
       .clearOrderBy()
       .innerJoin('album_user', 'album_user.albumId', 'album.id')
@@ -355,11 +363,18 @@ class AlbumSync extends BaseSync {
       .where('album_user.role', '=', AlbumUserRole.Owner)
       .where('album.libraryScope', '=', LibraryScope.Design)
       .select(['album.updateId as id', 'album.id as albumId']);
+    const trashed = this.upsertQuery('album', options)
+      .clearOrderBy()
+      .innerJoin('album_user', 'album_user.albumId', 'album.id')
+      .where('album_user.userId', '=', options.userId)
+      .where('album.deletedAt', 'is not', null)
+      .select(['album.updateId as id', 'album.id as albumId']);
     return this.auditQuery('album_audit', options)
       .clearOrderBy()
       .select(['id', 'albumId'])
       .where('userId', '=', options.userId)
       .unionAll(scopedOut)
+      .$if(includeTrashed, (qb) => qb.unionAll(trashed))
       .orderBy('id', 'asc')
       .stream();
   }
@@ -372,34 +387,38 @@ class AlbumSync extends BaseSync {
   )
   getUpserts(options: SyncQueryOptions, includeOwner = false) {
     const userId = options.userId;
-    return this.upsertQuery('album', options)
-      .distinctOn(['album.id', 'album.updateId'])
-      .leftJoin('album_user as album_users', 'album.id', 'album_users.albumId')
-      .where('album_users.userId', '=', userId)
-      .where(personalAlbumScopePredicate(userId, sql.ref('album.id')))
-      .select([
-        'album.id',
-        'album.albumName as name',
-        'album.description',
-        'album.createdAt',
-        'album.updatedAt',
-        albumThumbnailAssetId(options),
-        'album.isActivityEnabled',
-        'album.order',
-        'album.updateId',
-      ])
-      .$if(includeOwner, (qb) =>
-        qb.select((eb) =>
-          eb
-            .selectFrom('album_user as album_owner')
-            .select('album_owner.userId')
-            .whereRef('album_owner.albumId', '=', 'album.id')
-            .where('album_owner.role', '=', AlbumUserRole.Owner)
-            .limit(1)
-            .as('ownerId'),
-        ),
-      )
-      .stream();
+    return (
+      this.upsertQuery('album', options)
+        .distinctOn(['album.id', 'album.updateId'])
+        .leftJoin('album_user as album_users', 'album.id', 'album_users.albumId')
+        .where('album_users.userId', '=', userId)
+        .where(personalAlbumScopePredicate(userId, sql.ref('album.id')))
+        // A soft-deleted album is sent as a delete by getDeletes; an upsert after it would bring it back.
+        .where('album.deletedAt', 'is', null)
+        .select([
+          'album.id',
+          'album.albumName as name',
+          'album.description',
+          'album.createdAt',
+          'album.updatedAt',
+          albumThumbnailAssetId(options),
+          'album.isActivityEnabled',
+          'album.order',
+          'album.updateId',
+        ])
+        .$if(includeOwner, (qb) =>
+          qb.select((eb) =>
+            eb
+              .selectFrom('album_user as album_owner')
+              .select('album_owner.userId')
+              .whereRef('album_owner.albumId', '=', 'album.id')
+              .where('album_owner.role', '=', AlbumUserRole.Owner)
+              .limit(1)
+              .as('ownerId'),
+          ),
+        )
+        .stream()
+    );
   }
 }
 class AlbumAssetSync extends BaseSync {

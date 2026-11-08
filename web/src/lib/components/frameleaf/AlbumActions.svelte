@@ -3,6 +3,7 @@
   import { page } from '$app/state';
   import AlbumConfirmDialog from '$lib/components/frameleaf/AlbumConfirmDialog.svelte';
   import AlbumCreateDialog from '$lib/components/frameleaf/AlbumCreateDialog.svelte';
+  import AlbumMergeDialog from '$lib/components/frameleaf/AlbumMergeDialog.svelte';
   import AlbumMoveDialog from '$lib/components/frameleaf/AlbumMoveDialog.svelte';
   import AlbumShareDialog from '$lib/components/frameleaf/AlbumShareDialog.svelte';
   import SharedLinkForm from '$lib/components/frameleaf/SharedLinkForm.svelte';
@@ -10,6 +11,7 @@
   import SmartAlbumRuleDialog from '$lib/components/frameleaf/SmartAlbumRuleDialog.svelte';
   import {
     canEdit,
+    canMerge,
     directoryAlbums,
     isOwner,
     moveTargets,
@@ -36,7 +38,10 @@
     LibraryViewScope,
     SharedLinkType,
     createClassificationRule,
+    isHttpError,
     getClassificationRule,
+    mergeAlbum,
+    undoLatestAlbumChangeRun,
     type AlbumResponseDto,
     type AlbumTreeResponseDto,
     type ClassificationRuleCreateDto,
@@ -77,6 +82,7 @@
   );
   /** Where "Move to…" may put an album: every album or collection the user can edit. */
   const moveCandidates = $derived(editableCollections);
+  const mergeCandidates = $derived(everything.filter((album) => canMerge(album, currentUserId)));
   const find = (id: string) => everything.find((album) => album.id === id);
   const isSpace = (album: AlbumResponseDto) => album.kind === AlbumKind.Space;
   const nameOf = (album: AlbumResponseDto | undefined) => album?.albumName || $t('unnamed_album');
@@ -96,6 +102,7 @@
     smart: false,
   });
   let moveDialog = $state<{ open: boolean; album?: AlbumResponseDto }>({ open: false });
+  let mergeDialog = $state<{ open: boolean; album?: AlbumResponseDto }>({ open: false });
   let deleteDialog = $state<{ open: boolean; album?: AlbumResponseDto }>({ open: false });
   let leaveDialog = $state<{ open: boolean; album?: AlbumResponseDto }>({ open: false });
   let lockDialog = $state<{ open: boolean; album?: AlbumResponseDto }>({ open: false });
@@ -219,6 +226,51 @@
 
   export const openMove = (album: AlbumResponseDto) => {
     moveDialog = { open: true, album };
+  };
+
+  export const openMerge = (album: AlbumResponseDto) => {
+    mergeDialog = { open: true, album };
+  };
+
+  /** Puts a merge back. Anything changed since stays as it is, and the message says what was kept. */
+  const undoMerge = async (runId: string) => {
+    try {
+      const { skipped } = await undoLatestAlbumChangeRun({ albumChangeUndoDto: { runId } });
+      announce(
+        skipped.length > 0
+          ? $t('frameleaf_albums_merge_undone_kept', { values: { names: skipped.join(', ') } })
+          : $t('frameleaf_albums_merge_undone'),
+      );
+      await refresh();
+    } catch (error) {
+      if (isHttpError(error) && error.status === 409) {
+        announce($t('frameleaf_albums_merge_undo_newer'));
+        return;
+      }
+      handleError(error, $t('frameleaf_albums_merge_undo_failed'));
+    }
+  };
+
+  /** The server decides which album stays, again, in case the albums changed since the preview. */
+  const merge = async (album: AlbumResponseDto, other: AlbumResponseDto) => {
+    busy = true;
+    try {
+      const { winnerId, runId } = await mergeAlbum({ id: album.id, albumMergeDto: { otherId: other.id } });
+      const [winner, loser] = winnerId === album.id ? [album, other] : [other, album];
+      announce(
+        $t('frameleaf_albums_merged', { values: { loser: nameOf(loser), winner: nameOf(winner) } }),
+        () => void undoMerge(runId),
+      );
+      mergeDialog = { open: false };
+      if (page.url.pathname.includes(loser.id)) {
+        await goto(Route.viewAlbum({ id: winner.id }));
+      }
+      await refresh();
+    } catch (error) {
+      handleError(error, $t('frameleaf_albums_merge_failed'));
+    } finally {
+      busy = false;
+    }
   };
 
   /** Delete and Leave confirm in the Frameleaf dialog (AlbumConfirmDialog), as the album header does. */
@@ -347,6 +399,17 @@
     albums={moveCandidates}
     {busy}
     onMove={(parentId) => moveDialog.album && void move(moveDialog.album, parentId)}
+  />
+{/if}
+
+{#if mergeDialog.album}
+  {@const album = mergeDialog.album}
+  <AlbumMergeDialog
+    bind:open={mergeDialog.open}
+    {album}
+    albums={mergeCandidates}
+    {busy}
+    onMerge={(other) => merge(album, other)}
   />
 {/if}
 
