@@ -534,6 +534,11 @@ COPY --from=plugins /usr/src/app/packages/plugin-core/manifest.json ./packages/p
 WORKDIR /usr/src/app/server
 CMD ["bash", "-ec", "docker version --format '{{.Client.Version}} {{.Server.Version}}'; node -e 'console.log(require(\"/usr/local/lib/frameleaf/image-hdr.node\").capabilities())'; pnpm run test:medium --run --shard=${FRAMELEAF_MEDIUM_SHARD:-1/1}"]
 
+FROM golang:1.27.3-alpine@sha256:f2c872bcee949b7be9c490efd02b48a8a2fbf947cdf533f1c58525ec9d8170fd AS icloud-bridge
+WORKDIR /src
+COPY icloud-bridge/go.mod icloud-bridge/go.sum icloud-bridge/main.go ./
+RUN go mod download && CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /icloud-bridge .
+
 FROM base-server-prod AS prod
 
 WORKDIR /usr/src/app
@@ -550,6 +555,8 @@ COPY --from=plugins /usr/src/app/packages/plugin-core/dist /build/plugins/immich
 COPY --from=plugins /usr/src/app/packages/plugin-core/manifest.json /build/plugins/immich-plugin-core/manifest.json
 # FL-294: `frameleaf` is the CLI; `immich` stays on PATH as its deprecated alias
 RUN ln -s ../../cli/bin/frameleaf server/bin/frameleaf && ln -s ../../cli/bin/immich server/bin/immich
+COPY --from=icloud-bridge /icloud-bridge /usr/local/bin/icloud-bridge
+COPY icloud-bridge/licenses/ /licenses/icloud-bridge/
 COPY LICENSE /licenses/LICENSE.txt
 COPY LICENSE /LICENSE
 # Third-party notices (FL-86): every acknowledgement with its licence text, and the Studio engine's

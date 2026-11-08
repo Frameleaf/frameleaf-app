@@ -196,4 +196,12 @@ describe(ICloudStagingService.name, () => {
     });
     await expect(sut.download(connection, resource)).rejects.toThrow('source_identity_changed');
   });
+
+  it('defaults to a private server-owned folder inside the media location', async () => {
+    vi.stubEnv('FRAMELEAF_ICLOUD_STAGING_PATH', '');
+    libraries.getAll.mockResolvedValue([]);
+    await mkdir(join(directory, 'managed'));
+
+    await expect(sut.root()).resolves.toBe(join(directory, 'managed', '.frameleaf-icloud', 'staging'));
+  });
 });

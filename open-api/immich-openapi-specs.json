@@ -28399,6 +28399,50 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/icloud-sync/connections/activity": {
+      "get": {
+        "operationId": "getICloudSyncActivity",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ICloudSyncActivityResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "ICloud Sync"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/icloud-sync/connections/{id}": {
       "delete": {
         "operationId": "disconnectICloudConnection",
@@ -66028,6 +66072,9 @@
           "help": {
             "$ref": "#/components/schemas/AdminConfigHelpDto"
           },
+          "icloud": {
+            "$ref": "#/components/schemas/AdminConfigICloudDto"
+          },
           "image": {
             "$ref": "#/components/schemas/AdminConfigImageDto"
           },
@@ -66926,6 +66973,18 @@
         },
         "required": [
           "askEnabled"
+        ],
+        "type": "object"
+      },
+      "AdminConfigICloudDto": {
+        "properties": {
+          "enabled": {
+            "description": "iCloud Photos: people can connect their Apple accounts and bring in photos",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
         ],
         "type": "object"
       },
@@ -97203,6 +97262,20 @@
           "source-removed"
         ],
         "type": "string"
+      },
+      "ICloudSyncActivityResponseDto": {
+        "properties": {
+          "running": {
+            "description": "Syncs on this server, for any account, that are running or queued",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "running"
+        ],
+        "type": "object"
       },
       "ICloudSyncRunDto": {
         "properties": {

@@ -1,5 +1,14 @@
+import { Reflector } from '@nestjs/core';
 import { ICloudConfigSchema, ICloudConnectionUpdateDto } from 'src/dtos/icloud-sync.dto.js';
-import { AssetType, JobName, MediaOperationKind, MediaOperationStatus, NotificationLevel } from 'src/enum.js';
+import {
+  AssetType,
+  FrameleafWorker,
+  JobName,
+  MediaOperationKind,
+  MediaOperationStatus,
+  MetadataKey,
+  NotificationLevel,
+} from 'src/enum.js';
 import { ICloudTransportError } from 'src/repositories/icloud-transport.repository.js';
 import {
   ICLOUD_IDLE_WAIT_MS,
@@ -90,6 +99,7 @@ describe(ICloudSyncService.name, () => {
     materialize: vi.fn(),
   };
   const transport = {
+    setSwitchedOn: vi.fn(),
     decodeSession: vi.fn(),
     encodeSession: vi.fn(),
     authenticate: vi.fn(),
@@ -201,6 +211,19 @@ describe(ICloudSyncService.name, () => {
       } as never,
       weeklySchedule as never,
     );
+  });
+
+  it.each(['onConfigInit', 'onConfigUpdate'] as const)('%s applies the saved switch in API and worker', (name) => {
+    const config = { icloud: { enabled: false } } as never;
+    sut[name]({ newConfig: config, oldConfig: config } as never);
+    expect(transport.setSwitchedOn).toHaveBeenCalledWith(false);
+    expect(new Reflector().get(MetadataKey.EventConfig, ICloudSyncService.prototype[name]).workers).toEqual([
+      FrameleafWorker.Api,
+      FrameleafWorker.Microservices,
+    ]);
+  });
+  it('hears a switch change made in another process', () => {
+    expect(new Reflector().get(MetadataKey.EventConfig, ICloudSyncService.prototype.onConfigUpdate).server).toBe(true);
   });
 
   it('lists each iCloud smart album as memberships of a reserved album, never as inventory records (FL-1289)', async () => {

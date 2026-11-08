@@ -162,6 +162,11 @@ export class ICloudConnectionsResponseDto extends createZodDto(
     })
     .meta({ id: 'ICloudConnectionsResponseDto' }),
 ) {}
+export class ICloudSyncActivityResponseDto extends createZodDto(
+  z
+    .object({ running: z.int().min(0).describe('Syncs on this server, for any account, that are running or queued') })
+    .meta({ id: 'ICloudSyncActivityResponseDto' }),
+) {}
 export class ICloudInventoryResponseDto extends createZodDto(
   z
     .object({

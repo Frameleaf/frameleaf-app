@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { IEntityJob } from 'src/types.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
@@ -13,6 +14,7 @@ import {
   ICloudIdentityReuseAuthorityDto,
   ICloudIdentityReuseAuthorityStatusDto,
   ICloudInventoryResponseDto,
+  ICloudSyncActivityResponseDto,
 } from 'src/dtos/icloud-sync.dto.js';
 import {
   AssetType,
@@ -272,6 +274,11 @@ export class ICloudSyncService {
       enabled: this.transport.enabled(),
       connections: await Promise.all(connections.map((row) => this.response(row))),
     };
+  }
+
+  /** Server-wide, for the administrator's warning before turning iCloud Photos off. */
+  async activity(): Promise<ICloudSyncActivityResponseDto> {
+    return { running: await this.repository.countActiveRuns() };
   }
 
   async setIdentityReuseAuthority(
@@ -551,21 +558,30 @@ export class ICloudSyncService {
   /* Schedule and worker                                                 */
   /* ------------------------------------------------------------------ */
 
+  @OnEvent({ name: 'ConfigInit', workers: [FrameleafWorker.Api, FrameleafWorker.Microservices] })
+  onConfigInit({ newConfig }: ArgOf<'ConfigInit'>): void {
+    this.transport.setSwitchedOn(newConfig.icloud.enabled);
+  }
+
+  @OnEvent({ name: 'ConfigUpdate', workers: [FrameleafWorker.Api, FrameleafWorker.Microservices], server: true })
+  onConfigUpdate({ newConfig }: ArgOf<'ConfigUpdate'>): void {
+    this.transport.setSwitchedOn(newConfig.icloud.enabled);
+  }
+
   @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   async onBootstrap(): Promise<void> {
     this.stopping = false;
     // The worker runs even when the connector is switched off, so a queued run ends honestly.
     this.tickHandle ??= setInterval(() => this.tick(), ICLOUD_TICK_MS);
-    if (this.transport.enabled()) {
-      await this.schedule().catch((error) => this.logger.warn(`iCloud schedule failed: ${message(error)}`));
-      this.cron.create({
-        name: 'icloud-sync',
-        expression: '*/5 * * * *',
-        onTick: () => {
-          void this.schedule().catch(() => {});
-        },
-      });
-    }
+    // Always registered: the administrator can turn iCloud Photos on without a restart.
+    await this.schedule().catch((error) => this.logger.warn(`iCloud schedule failed: ${message(error)}`));
+    this.cron.create({
+      name: 'icloud-sync',
+      expression: '*/5 * * * *',
+      onTick: () => {
+        void this.schedule().catch(() => {});
+      },
+    });
     this.tick();
   }
 
@@ -585,6 +601,9 @@ export class ICloudSyncService {
    * schedule keeps the weekly identity audits and nudges the worker.
    */
   private async schedule(): Promise<void> {
+    if (!this.transport.enabled()) {
+      return;
+    }
     await this.weeklySchedule.schedule();
     this.tick();
   }

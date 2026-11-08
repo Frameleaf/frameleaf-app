@@ -344,6 +344,12 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'help.askEnabled = value',
   },
   {
+    pattern: 'icloud.enabled',
+    kind: 'control',
+    file: 'src/routes/admin/system-settings/ServerSettings.svelte',
+    evidence: 'icloud.enabled = value',
+  },
+  {
     pattern: 'ffmpeg.accel',
     kind: 'control',
     file: 'src/routes/admin/system-settings/FFmpegSettings.svelte',

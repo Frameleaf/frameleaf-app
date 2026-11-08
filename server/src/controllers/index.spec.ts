@@ -33,6 +33,8 @@ const ADMIN_ROUTES = new Set([
   'POST libraries/:id/removal',
   'GET desktop/accounts/:id/approval',
   'GET enrichment/options',
+  // FL-1294: how many syncs are unfinished across every account, for the warning before turning iCloud Photos off.
+  'GET icloud-sync/connections/activity',
   'POST enrichment/preview',
   'DELETE ml-destinations/:id',
   'DELETE ml-destinations/:id/consent',

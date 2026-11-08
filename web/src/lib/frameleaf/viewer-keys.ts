@@ -1,17 +1,18 @@
 /**
  * Which keyboard targets keep their own keys in the viewer (MediaViewer.jsx:749-754, 781): a field,
- * a video, a slider or a combobox takes every key, and Space on a button or link presses it rather
- * than playing the slideshow.
+ * a slider or a combobox takes every key, and Space on a button or link presses it rather than
+ * playing the slideshow. A video is not one of them: it has no native controls here and takes focus
+ * as soon as it plays, so counting it would strand the viewer's keys on every video.
  */
 export const VIEWER_TYPING_SELECTOR =
-  'input, select, textarea, [contenteditable="true"], [contenteditable=""], video, [role="slider"], [role="combobox"]';
+  'input, select, textarea, [contenteditable="true"], [contenteditable=""], [role="slider"], [role="combobox"]';
 
 export const VIEWER_CONTROL_SELECTOR = 'button, a[href], [role="button"], [role="menuitem"], [role="option"]';
 
 const closest = (target: EventTarget | null, selector: string): boolean =>
   typeof Element !== 'undefined' && target instanceof Element && !!target.closest(selector);
 
-/** A key pressed in a field, a video, a slider or a combobox belongs to it, not to the viewer. */
+/** A key pressed in a field, a slider or a combobox belongs to it, not to the viewer. */
 export const isTypingTarget = (target: EventTarget | null): boolean => closest(target, VIEWER_TYPING_SELECTOR);
 
 /** Space on a focused control presses that control. */

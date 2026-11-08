@@ -13,6 +13,7 @@ import {
   ICloudIdentityReuseAuthorityDto,
   ICloudIdentityReuseAuthorityStatusDto,
   ICloudInventoryResponseDto,
+  ICloudSyncActivityResponseDto,
 } from 'src/dtos/icloud-sync.dto.js';
 import { Auth, Authenticated, GetLoginDetails } from 'src/middleware/auth.guard.js';
 import { ICloudSyncService } from 'src/services/icloud-sync.service.js';
@@ -39,6 +40,13 @@ export class ICloudSyncController {
   @Endpoint({ history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0') })
   listICloudConnections(@Auth() auth: AuthDto): Promise<ICloudConnectionsResponseDto> {
     return this.service.list(auth);
+  }
+
+  @Get('activity')
+  @Authenticated({ admin: true })
+  @Endpoint({ history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0') })
+  getICloudSyncActivity(): Promise<ICloudSyncActivityResponseDto> {
+    return this.service.activity();
   }
 
   @Post()

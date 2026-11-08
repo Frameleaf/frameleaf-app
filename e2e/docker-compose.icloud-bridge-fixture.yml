@@ -2,7 +2,7 @@
 # protocol v1 (icloud-bridge/api.md) over HTTPS with a test-only CA. Used only by `pnpm test:web:icloud`;
 # the default stack never sees it and stays "iCloud Photos is unavailable".
 #
-# The server gets exactly the configuration deployment/icloud-sync.compose.yml gives it: the bridge URL,
+# The server gets the external-bridge override configuration: the bridge URL,
 # the bearer token, the session encryption key and the CA, all mounted read-only, and a private staging
 # directory outside every media root. FRAMELEAF_TRUSTED_PROXIES stands in for the HTTPS reverse proxy the
 # feature requires in front of the web app: the spec's browser sends `X-Forwarded-Proto: https`, which the

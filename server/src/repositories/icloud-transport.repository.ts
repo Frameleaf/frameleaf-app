@@ -1,11 +1,18 @@
 import { Injectable } from '@nestjs/common';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { readFile } from 'node:fs/promises';
-import { request } from 'node:https';
-import type { IncomingMessage } from 'node:http';
+import { type ChildProcess, spawn } from 'node:child_process';
+import { randomBytes, randomUUID } from 'node:crypto';
+import { existsSync, realpathSync } from 'node:fs';
+import { link, mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
+import { type IncomingMessage, request as httpRequest } from 'node:http';
+import { request as httpsRequest } from 'node:https';
+import { createServer } from 'node:net';
+import { join, resolve } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 import type { ICloudAuthDto } from 'src/dtos/icloud-sync.dto.js';
 import type { ICloudLibrary, ICloudRecord } from 'src/repositories/icloud-sync.repository.js';
 import type { ICloudSmartAlbum } from 'src/utils/media-kinds.js';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { decryptICloudSession, encryptICloudSession } from 'src/utils/icloud-sync.js';
 
@@ -23,8 +30,55 @@ export class ICloudTransportError extends Error {
   }
 }
 
+const BUNDLED_BRIDGE = '/usr/local/bin/icloud-bridge';
+
+/** Server-owned home for the bundled bridge's secrets and staging; nothing here is user-configured. */
+export const bundledICloudDirectory = () => {
+  const media = resolve(StorageCore.getMediaLocation());
+  return join(existsSync(media) ? realpathSync(media) : media, '.frameleaf-icloud');
+};
+
+/** Reads a generated secret, creating it atomically so API and worker processes agree on one value. */
+const readOrCreateSecret = async (path: string, bytes: number, encoding: 'base64' | 'hex') => {
+  try {
+    return await readFile(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw error;
+    }
+  }
+  const temporary = `${path}.${randomUUID()}`;
+  await writeFile(temporary, randomBytes(bytes).toString(encoding), { mode: 0o600 });
+  try {
+    await link(temporary, path).catch((error) => {
+      if (error.code !== 'EEXIST') {
+        throw error;
+      }
+    });
+  } finally {
+    await unlink(temporary).catch(() => {});
+  }
+  return readFile(path);
+};
+
+const freeLoopbackPort = () =>
+  new Promise<number>((resolvePort, reject) => {
+    const server = createServer();
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address() as { port: number };
+      server.close(() => resolvePort(port));
+    });
+  });
+
 @Injectable()
 export class ICloudTransportRepository {
+  // Static: weeklyIdentityAdoptionActive builds its own instance and must see the same answer.
+  private static switchedOn = true;
+  private bundledBridge?: Promise<URL>;
+  private bundledChild?: ChildProcess;
+  /** Bumped when switched off, so a startup already under way cannot leave a bridge running. */
+  private bridgeGeneration = 0;
   private readonly sessionCrypto = new AsyncLocalStorage<{ key: Buffer } | { error: unknown }>();
 
   /** Capture configuration before locks; retain failure only if this operation actually needs crypto. */
@@ -47,13 +101,30 @@ export class ICloudTransportRepository {
   }
 
   enabled(): boolean {
-    return !!readAliasedEnv('FRAMELEAF_ICLOUD_BRIDGE_URL');
+    return (
+      ICloudTransportRepository.switchedOn &&
+      (!!readAliasedEnv('FRAMELEAF_ICLOUD_BRIDGE_URL') || existsSync(BUNDLED_BRIDGE))
+    );
+  }
+
+  /** The administrator's iCloud Photos switch. Off stops this process's bridge; it restarts on next use once on. */
+  setSwitchedOn(on: boolean): void {
+    ICloudTransportRepository.switchedOn = on;
+    if (!on) {
+      this.bridgeGeneration++;
+      this.bundledChild?.kill();
+      this.bundledChild = undefined;
+      this.bundledBridge = undefined;
+    }
   }
 
   private async configuration() {
+    if (!ICloudTransportRepository.switchedOn) {
+      throw new ICloudTransportError('icloud_disabled');
+    }
     const raw = readAliasedEnv('FRAMELEAF_ICLOUD_BRIDGE_URL');
     if (!raw) {
-      throw new ICloudTransportError('icloud_disabled');
+      return this.bundledConfiguration();
     }
     const url = new URL(raw);
     if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.pathname !== '/') {
@@ -76,6 +147,83 @@ export class ICloudTransportRepository {
     return { url, key, token, ca };
   }
 
+  private async bundledConfiguration() {
+    if (!existsSync(BUNDLED_BRIDGE)) {
+      throw new ICloudTransportError('icloud_disabled');
+    }
+    const directory = bundledICloudDirectory();
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    const tokenPath = join(directory, 'bridge-token');
+    const [keyFile, tokenFile] = await Promise.all([
+      readOrCreateSecret(join(directory, 'encryption-key'), 32, 'base64'),
+      readOrCreateSecret(tokenPath, 32, 'hex'),
+    ]);
+    const token = tokenFile.toString().trim();
+    if (!this.bundledBridge) {
+      const startup: Promise<URL> = this.startBundledBridge(tokenPath, token).catch((error) => {
+        if (this.bundledBridge === startup) {
+          this.bundledBridge = undefined;
+        }
+        throw error;
+      });
+      this.bundledBridge = startup;
+    }
+    const url = await this.bundledBridge;
+    return { url, key: Buffer.from(keyFile.toString().trim(), 'base64'), token };
+  }
+
+  // ponytail: one bridge per server process; the bridge keeps no sync state, so API and worker need not share.
+  private async startBundledBridge(tokenPath: string, token: string): Promise<URL> {
+    const generation = this.bridgeGeneration;
+    if (!ICloudTransportRepository.switchedOn) {
+      throw new ICloudTransportError('icloud_disabled');
+    }
+    const port = await freeLoopbackPort();
+    if (generation !== this.bridgeGeneration) {
+      throw new ICloudTransportError('icloud_disabled');
+    }
+    // Only these variables: the child must not inherit database or other server secrets.
+    const child = spawn(BUNDLED_BRIDGE, [], {
+      stdio: 'ignore',
+      env: {
+        ICLOUD_BRIDGE_LISTEN: `127.0.0.1:${port}`,
+        ICLOUD_BRIDGE_TOKEN_FILE: tokenPath,
+        ICLOUD_BRIDGE_ALLOW_LOOPBACK_HTTP: 'true',
+      },
+    });
+    this.bundledChild = child;
+    const stop = () => child.kill();
+    process.once('exit', stop);
+    let running = true;
+    const onGone = () => {
+      running = false;
+      // A bridge that was replaced must not clear its replacement.
+      if (this.bundledChild === child) {
+        this.bundledChild = undefined;
+        this.bundledBridge = undefined;
+      }
+      process.removeListener('exit', stop);
+    };
+    child.once('error', onGone);
+    child.once('exit', onGone);
+
+    const url = new URL(`http://127.0.0.1:${port}/`);
+    for (let attempt = 0; attempt < 50 && running && generation === this.bridgeGeneration; attempt++) {
+      const ready = await fetch(new URL('/health', url), {
+        headers: { authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(1000),
+      })
+        .then((response) => response.ok)
+        .catch(() => false);
+      if (ready && generation === this.bridgeGeneration) {
+        return url;
+      }
+      await sleep(100);
+    }
+    child.kill();
+    throw new ICloudTransportError('icloud_transport_failed');
+  }
+
   async encodeSession(connectionId: string, session: unknown): Promise<string> {
     return encryptICloudSession(await this.sessionKey(), connectionId, session);
   }
@@ -92,7 +240,10 @@ export class ICloudTransportRepository {
     body?: unknown,
     signal?: AbortSignal,
   ): Promise<IncomingMessage> {
-    const { url, token, ca } = await this.configuration();
+    const configuration = await this.configuration();
+    const { url, token } = configuration;
+    const ca = 'ca' in configuration ? configuration.ca : undefined;
+    const request = url.protocol === 'https:' ? httpsRequest : httpRequest;
     // capabilities is the one read without a body
     const method = endpoint === 'capabilities' ? 'GET' : 'POST';
     const data = Buffer.from(method === 'GET' ? '' : JSON.stringify(body));

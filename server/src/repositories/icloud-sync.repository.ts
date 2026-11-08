@@ -129,6 +129,14 @@ export class ICloudSyncRepository {
   async active<T>(callback: (db: Kysely<DB>) => Promise<T>, transaction?: Kysely<DB>): Promise<T> {
     return transaction ? callback(transaction) : this.db.transaction().execute(callback);
   }
+  async countActiveRuns(): Promise<number> {
+    const { rows } = await sql<{ running: number }>`SELECT count(*)::int AS running FROM media_operation o
+      WHERE o.kind = ${MediaOperationKind.ICloudSync}
+        AND o.snapshot->>'task' IS DISTINCT FROM 'identity-audit' AND o.snapshot->>'task' IS DISTINCT FROM 'identity-audit-weekly'
+        AND o.status = ANY(${[...ACTIVE_MEDIA_OPERATION_STATUSES]}::text[])`.execute(this.db);
+    return rows[0]?.running ?? 0;
+  }
+
   async list(ownerId: string): Promise<ICloudConnection[]> {
     return await sql<ICloudConnection>`SELECT * FROM public.icloud_connection WHERE "ownerId" = ${ownerId}::uuid ORDER BY "createdAt"`
       .execute(this.db)

@@ -43,6 +43,7 @@
   import ConfigurationTransferSection from '$lib/components/frameleaf/settings/ConfigurationTransferSection.svelte';
   import SettingsHost from '$lib/components/frameleaf/settings/SettingsHost.svelte';
   import { SETTINGS_SECTION_KEYWORDS } from '$lib/frameleaf/command-index';
+  import { confirmICloudOff } from '$lib/frameleaf/confirm-icloud-off';
   import { forConfigSave } from '$lib/frameleaf/credentials';
   import type { SettingsHostSection } from '$lib/frameleaf/settings-areas';
   import { cloneConfig, SYSTEM_CONFIG_JOURNAL_PREFIX } from '$lib/frameleaf/system-config-draft';
@@ -163,6 +164,10 @@
       }
       return Boolean(await modalManager.show(AuthDisableLoginConfirmModal));
     },
+  });
+  settingsDraft.registerGuard({
+    keys: ['icloud'],
+    beforeSave: () => settingsDraft.draft.icloud?.enabled !== false || confirmICloudOff(),
   });
   settingsDraft.registerGuard({
     keys: ['machineLearning'],
