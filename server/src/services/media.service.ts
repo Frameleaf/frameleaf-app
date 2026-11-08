@@ -118,6 +118,15 @@ import { rational, toDisplaySeconds } from 'src/utils/rational-time.js';
 import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { getStudioHdrProxyCommand, planStudioHdrProxy } from 'src/utils/studio-hdr-proxy.js';
 import { getOutputDimensions } from 'src/utils/transform.js';
+import {
+  STITCHED_PLAYBACK_MAX_HEIGHT,
+  VideoStitchPlan,
+  getStitchGraph,
+  getStitchedSize,
+  isStitchedVideoProjection,
+  planVideoStitch,
+  toStitchedStream,
+} from 'src/utils/video-360.js';
 import { videoDevelopFilters } from 'src/utils/video-develop.js';
 
 /**
@@ -419,6 +428,14 @@ export class MediaService extends BaseService {
       return JobStatus.Skipped;
     }
 
+    // FL-1287: a partner copy shares its live source's files; the source's own job hands over any it lacks
+    const sourceId = await this.partnerOriginRepository.getLiveSourceId(id);
+    if (sourceId) {
+      this.logger.verbose(`Thumbnail generation skipped for asset ${id}: shares the files of ${sourceId}`);
+      await this.shareThumbnailsWithCopies(sourceId);
+      return JobStatus.Skipped;
+    }
+
     deferJobAdoption(async () => {
       await assertPublicationSource(asset.id, asset.checksum);
       const current = await this.assetJobRepository.getForGenerateThumbnailJob(asset.id);
@@ -438,8 +455,19 @@ export class MediaService extends BaseService {
     );
     if (status === JobStatus.Success) {
       await this.jobRepository.collectFollowups(() => this.queueLockedSeal([asset.id]));
+      await this.shareThumbnailsWithCopies(asset.id);
     }
     return status;
+  }
+
+  /** FL-1287: published with the job's own files, so partner copies made before them get them too. */
+  private shareThumbnailsWithCopies(assetId: string) {
+    return publishJobResult(async () => {
+      const files = await this.partnerOriginRepository.shareGeneratedFiles(assetId);
+      if (files.length > 0) {
+        await this.jobRepository.queue({ name: JobName.FileDelete, data: { files } });
+      }
+    });
   }
 
   private async generateThumbnailsFrom(
@@ -475,6 +503,13 @@ export class MediaService extends BaseService {
       if (!videoStream || !format || !videoStream.timeBase) {
         throw new Error(`Missing video metadata for asset ${asset.id}`);
       }
+      // FL-968: a raw 360° original is thumbnailed from its stitched, equirectangular picture
+      const stitch = await this.planVideoStitch(asset.originalPath, {
+        id: asset.id,
+        projectionType: asset.exifInfo.projectionType,
+        make: asset.exifInfo.make,
+        model: asset.exifInfo.model,
+      });
       generated = await this.generateVideoThumbnails(
         {
           id: asset.id,
@@ -486,7 +521,10 @@ export class MediaService extends BaseService {
         },
         config,
         // FL-59: a cover the owner chose from the video's moments is where its thumbnail is cut.
-        { coverSeconds: typeof asset.coverTimestampMs === 'number' ? asset.coverTimestampMs / 1000 : undefined },
+        {
+          coverSeconds: typeof asset.coverTimestampMs === 'number' ? asset.coverTimestampMs / 1000 : undefined,
+          stitch,
+        },
       );
     } else if (asset.type === AssetType.Image) {
       this.logger.verbose(`Thumbnail generation for image ${id} ${asset.originalPath}`);
@@ -1040,6 +1078,8 @@ export class MediaService extends BaseService {
       candidates?: string[];
       /** FL-59: the owner's chosen cover, in seconds; the automatic pick is skipped. */
       coverSeconds?: number;
+      /** FL-968: the original is a raw 360° recording, thumbnailed as its stitched picture. */
+      stitch?: VideoStitchPlan;
     } = {},
   ) {
     const sourcePath = options.sourcePath ?? asset.originalPath;
@@ -1064,14 +1104,20 @@ export class MediaService extends BaseService {
         file.path = path.join(parsed.dir, `${parsed.name}_${options.pathSuffix}${parsed.ext}`);
       }
     }
-    const { videoStream, format } = asset;
-    if (!videoStream || !format) {
+    const { videoStream: sourceStream, format } = asset;
+    if (!sourceStream || !format) {
       throw new Error(`Missing video metadata for asset ${asset.id}`);
     }
 
     // FL-101: qualify the source before anything is created on disk. A refused source must not
     // reach the point where an existing, valid preview has already been cleared out of the way.
-    assertDecodeQualified(qualifySourceDecode(videoStream, ffmpeg));
+    assertDecodeQualified(qualifySourceDecode(sourceStream, ffmpeg));
+
+    // FL-968: stitched once at preview size; the thumbnail scales that picture down
+    const stitchSize = options.stitch ? getStitchedSize(options.stitch, image.preview.size) : undefined;
+    const stitchGraph = options.stitch && stitchSize ? getStitchGraph(options.stitch, stitchSize) : undefined;
+    const videoStream =
+      options.stitch && stitchSize ? toStitchedStream(sourceStream, options.stitch, stitchSize) : sourceStream;
 
     this.storageCore.ensureFolders(previewFile.path);
 
@@ -1084,20 +1130,20 @@ export class MediaService extends BaseService {
     const startTime =
       cover ??
       (await this.pickVideoThumbnailStartTime(sourcePath, previewFile.path, videoStream, format, (timestamp) =>
-        ThumbnailConfig.create(previewConfig, timestamp).getCommand(
+        new ThumbnailConfig(previewConfig, timestamp, stitchGraph).getCommand(
           TranscodeTarget.Video,
           videoStream,
           undefined,
           format,
         ),
       ));
-    const previewOptions = ThumbnailConfig.create(previewConfig, startTime).getCommand(
+    const previewOptions = new ThumbnailConfig(previewConfig, startTime, stitchGraph).getCommand(
       TranscodeTarget.Video,
       videoStream,
       undefined,
       format,
     );
-    const thumbnailOptions = ThumbnailConfig.create(thumbConfig, startTime).getCommand(
+    const thumbnailOptions = new ThumbnailConfig(thumbConfig, startTime, stitchGraph).getCommand(
       TranscodeTarget.Video,
       videoStream,
       undefined,
@@ -1132,7 +1178,11 @@ export class MediaService extends BaseService {
     return {
       files: [previewFile, thumbnailFile],
       thumbhash,
-      fullsizeDimensions: options.fullsizeDimensions ?? { width: videoStream.width, height: videoStream.height },
+      fullsizeDimensions:
+        options.fullsizeDimensions ??
+        (options.stitch
+          ? { width: options.stitch.width, height: options.stitch.height }
+          : { width: videoStream.width, height: videoStream.height }),
     };
   }
 
@@ -1301,7 +1351,15 @@ export class MediaService extends BaseService {
     }
     ffmpeg = decodeAcceleration.config;
 
-    const target = this.getTranscodeTarget(ffmpeg, videoStream, audioStream);
+    // FL-968: a raw 360° original always gets a stitched playback copy, whatever the policy says,
+    // since only that copy plays as 360°. `v360` runs in software, so the whole encode does.
+    const stitched = isStitchedVideoProjection(asset.projectionType);
+    if (stitched) {
+      ffmpeg = { ...ffmpeg, accel: TranscodeHardwareAcceleration.Disabled, accelDecode: false };
+    }
+    const target = stitched
+      ? this.getStitchedTranscodeTarget(ffmpeg, audioStream)
+      : this.getTranscodeTarget(ffmpeg, videoStream, audioStream);
     if (target === TranscodeTarget.None && !this.isRemuxRequired(ffmpeg, format)) {
       const encodedVideo = getAssetFile(asset.files, AssetFileType.EncodedVideo, { isEdited: false });
       if (encodedVideo) {
@@ -1317,8 +1375,11 @@ export class MediaService extends BaseService {
 
     this.storageCore.ensureFolders(output);
 
-    const command = BaseConfig.create(ffmpeg, this.videoInterfaces).getCommand(target, videoStream, audioStream);
-    if (ffmpeg.accel === TranscodeHardwareAcceleration.Disabled) {
+    const getCommand = (config: ConfigFFmpegDto) =>
+      BaseConfig.create(config, this.videoInterfaces).getCommand(target, videoStream, audioStream);
+    if (stitched) {
+      this.logger.log(`Stitching 360° video ${asset.id} to equirectangular without hardware acceleration`);
+    } else if (ffmpeg.accel === TranscodeHardwareAcceleration.Disabled) {
       this.logger.log(`Transcoding video ${asset.id} without hardware acceleration`);
     } else {
       this.logger.log(
@@ -1329,6 +1390,10 @@ export class MediaService extends BaseService {
     const accel = ffmpeg.accel;
     // FL-721 (spec §8.2): a sealed original is read from a plain copy for the whole encode
     const encoded = await withPlainCopy(asset.originalPath, async (input) => {
+      // FL-968: planned from the original's own tracks; tracks that no longer fit encode as ordinary video
+      const command =
+        (stitched && (await this.getStitchedVideoCommand(input, asset, ffmpeg, target, videoStream, audioStream))) ||
+        getCommand(ffmpeg);
       try {
         await this.mediaRepository.transcode(input, output, command);
         if (accel !== TranscodeHardwareAcceleration.Disabled) {
@@ -1345,12 +1410,7 @@ export class MediaService extends BaseService {
           try {
             this.logger.error(`Retrying with ${ffmpeg.accel.toUpperCase()}-accelerated encoding and software decoding`);
             ffmpeg = { ...ffmpeg, accelDecode: false };
-            const command = BaseConfig.create(ffmpeg, this.videoInterfaces).getCommand(
-              target,
-              videoStream,
-              audioStream,
-            );
-            await this.mediaRepository.transcode(input, output, command);
+            await this.mediaRepository.transcode(input, output, getCommand(ffmpeg));
             isPartialFallbackSuccess = true;
           } catch (error: any) {
             this.logger.error(`Error occurred during transcoding: ${error.message}`);
@@ -1362,8 +1422,7 @@ export class MediaService extends BaseService {
         } else {
           this.logger.error(`Retrying with ${ffmpeg.accel.toUpperCase()} acceleration disabled`);
           ffmpeg = { ...ffmpeg, accel: TranscodeHardwareAcceleration.Disabled };
-          const command = BaseConfig.create(ffmpeg, this.videoInterfaces).getCommand(target, videoStream, audioStream);
-          await this.mediaRepository.transcode(input, output, command);
+          await this.mediaRepository.transcode(input, output, getCommand(ffmpeg));
           // FL-537: the copy was made on the processor because the card failed; Video playback copies says so
           await this.noteVideoCard(false, accel);
         }
@@ -2915,6 +2974,64 @@ export class MediaService extends BaseService {
     }
 
     return TranscodeTarget.None;
+  }
+
+  /**
+   * FL-968: a stitched copy always re-encodes the picture; the sound is copied when the policy would
+   * keep it and the container can carry it, so even a disabled policy yields a playable file.
+   */
+  private getStitchedTranscodeTarget(config: ConfigFFmpegDto, audioStream?: AudioStreamInfo): TranscodeTarget {
+    const audioRequired =
+      !!audioStream &&
+      (this.isAudioTranscodeRequired(config, audioStream) ||
+        !config.acceptedAudioCodecs.includes(audioStream.codecName as AudioCodec));
+    return audioRequired ? TranscodeTarget.All : TranscodeTarget.Video;
+  }
+
+  /**
+   * FL-968: how a raw 360° original is stitched, from a fresh probe of every video track (the stored
+   * metadata keeps only the first). Undefined when the asset is not one or its tracks do not fit.
+   */
+  private async planVideoStitch(
+    input: string,
+    asset: { id: string; projectionType: string | null; make: string | null; model: string | null },
+  ): Promise<VideoStitchPlan | undefined> {
+    if (!isStitchedVideoProjection(asset.projectionType)) {
+      return;
+    }
+    const { videoStreams } = await this.mediaRepository.probe(input);
+    const plan = planVideoStitch({ ...asset, videoStreams });
+    if (!plan) {
+      this.logger.warn(
+        `Asset ${asset.id} is recorded as ${asset.projectionType} 360° video, but its video tracks do not match that layout`,
+      );
+      return;
+    }
+    return plan;
+  }
+
+  /** FL-968: the encode of a stitched playback copy, at most 3840×1920 unless the target is Original. */
+  private async getStitchedVideoCommand(
+    input: string,
+    asset: { id: string; projectionType: string | null; make: string | null; model: string | null },
+    ffmpeg: ConfigFFmpegDto,
+    target: TranscodeTarget,
+    videoStream: VideoStreamInfo,
+    audioStream?: AudioStreamInfo,
+  ): Promise<TranscodeCommand | undefined> {
+    const plan = await this.planVideoStitch(input, asset);
+    if (!plan) {
+      return;
+    }
+    const maxHeight =
+      ffmpeg.targetResolution === 'original'
+        ? undefined
+        : Math.max(STITCHED_PLAYBACK_MAX_HEIGHT, Number.parseInt(ffmpeg.targetResolution) || 0);
+    const size = getStitchedSize(plan, maxHeight);
+    return BaseConfig.createStitched(
+      { ...ffmpeg, targetResolution: 'original' },
+      getStitchGraph(plan, size),
+    ).getCommand(target, toStitchedStream(videoStream, plan, size), audioStream);
   }
 
   private isAudioTranscodeRequired(ffmpegConfig: ConfigFFmpegDto, stream?: AudioStreamInfo): boolean {

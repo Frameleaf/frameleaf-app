@@ -54,7 +54,7 @@ import { currentDevelopPlaybackRevision } from '$lib/frameleaf/playback-revision
 import { canSendCopies, isSendable, sendCopiesWithFeedback, sendCopyPermitted } from '$lib/frameleaf/send-copy';
 import { actsAsRegular } from '$lib/frameleaf/session-access.svelte';
 import { folderOf } from '$lib/frameleaf/viewer-headline';
-import { isPanorama } from '$lib/frameleaf/viewer-media';
+import { isPanorama, isStitchedVideoProjection } from '$lib/frameleaf/viewer-media';
 import { showFilmstrip } from '$lib/frameleaf/viewer-preferences';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -271,6 +271,8 @@ export const getAssetActions = (
   const isUnsupportedEditorMedia =
     (asset.type === AssetTypeEnum.Video && !!asset.livePhotoVideoId) ||
     asset.exifInfo?.projectionType === ProjectionType.EQUIRECTANGULAR ||
+    // FL-968: raw 360° video is not editable either
+    isStitchedVideoProjection(asset.exifInfo?.projectionType) ||
     originalPath.endsWith('.insp') ||
     originalPath.endsWith('.gif') ||
     originalPath.endsWith('.svg');

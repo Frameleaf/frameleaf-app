@@ -25,6 +25,30 @@ import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { effectiveVisibility, isLocked, isNotLocked } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
+/**
+ * FL-1287: a partner copy with a live source never renders its own thumbnails; it shares the source's, handed
+ * over by the source's job. Its own edits still render.
+ */
+const rendersOwnThumbnails = sql<boolean>`(asset."isEdited" OR NOT EXISTS (
+  SELECT 1 FROM public.asset_origin origin
+  JOIN asset source ON source.id = origin."sourceAssetId"
+  WHERE origin."assetId" = asset.id AND source."deletedAt" IS NULL AND source.status = ${sql.lit(AssetStatus.Active)}
+))`;
+/**
+ * FL-1287: a partner copy that rendered its own thumbnail or preview before copies shared them, while its live
+ * source has one at another path. Its job (the nightly "Missing" scan) links the source's and deletes its own.
+ */
+const keepsOwnCopyThumbnails = sql<boolean>`EXISTS (
+  SELECT 1 FROM public.asset_origin origin
+  JOIN asset source ON source.id = origin."sourceAssetId"
+  JOIN asset_file source_file ON source_file."assetId" = source.id AND source_file."isEdited" = false
+    AND source_file.type IN (${sql.lit(AssetFileType.Thumbnail)}, ${sql.lit(AssetFileType.Preview)})
+  JOIN asset_file copy_file ON copy_file."assetId" = asset.id AND copy_file."isEdited" = false
+    AND copy_file.type = source_file.type
+  WHERE origin."assetId" = asset.id AND source."deletedAt" IS NULL AND source.status = ${sql.lit(AssetStatus.Active)}
+    AND copy_file.path <> source_file.path
+)`;
+
 @Injectable()
 export class AssetJobRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {
@@ -95,6 +119,7 @@ export class AssetJobRepository {
       .select(['asset.id', 'asset.isEdited'])
       .where('asset.deletedAt', 'is', null)
       .where('asset.visibility', '!=', sql.lit(AssetVisibility.Hidden))
+      .$if(!!options.force, (qb) => qb.where(rendersOwnThumbnails))
       .$if(!options.force, (qb) =>
         qb
           // If there aren't any entries, metadata extraction hasn't run yet which is required for thumbnails
@@ -111,6 +136,7 @@ export class AssetJobRepository {
                 not(exists(file(AssetFileType.FullSize).where('asset_file.isEdited', '=', sql.lit(true)))),
               ]),
               eb('asset.thumbhash', 'is', null),
+              keepsOwnCopyThumbnails,
             ];
 
             if (options.hdrBackfill) {
@@ -139,7 +165,7 @@ export class AssetJobRepository {
               conditions.push(
                 and([
                   not(exists(file(AssetFileType.FullSize))),
-                  eb(sql`f_unaccent(asset."originalFileName")`, 'like', sql`any(array[${isWebUnsupported}]::text[])`),
+                  eb(sql`f_unaccent(asset."originalFileName")`, 'ilike', sql`any(array[${isWebUnsupported}]::text[])`),
                 ]),
               );
             }
@@ -559,6 +585,8 @@ export class AssetJobRepository {
         .leftJoin('asset_audio', 'asset_audio.assetId', 'asset.id')
         // `checksum` identifies the exact original an edited master was rendered from (FL-39 lineage).
         .select(['asset.id', 'asset.ownerId', 'asset.originalPath', 'asset.checksum'])
+        // FL-968: a raw 360° layout is stitched on the way to the playback copy
+        .select(['asset_exif.projectionType', 'asset_exif.make', 'asset_exif.model'])
         .select(withFiles)
         .select((eb) => withAudioStream(eb).as('audioStream'))
         .select((eb) => withVideoStream(eb).$notNull().as('videoStream'))

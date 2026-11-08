@@ -325,11 +325,16 @@ export class PartnerCopyService extends BaseService {
     for (const albumId of await this.partnerOriginRepository.getFollowingAlbumCopiesHolding(source.id, targetOwnerId)) {
       await this.albumRepository.addAssetIds(albumId, [copyId]);
     }
-    await this.ensureCopyThumbnails(copyId);
+    await this.ensureCopyThumbnails(source.id, copyId);
   }
 
-  /** Metadata can admit a copy before the source's derivatives have been published. */
-  private async ensureCopyThumbnails(copyId: string) {
+  /**
+   * Metadata can admit a copy before the source's derivatives have been published. The copy never renders
+   * its own (FL-1287): it takes the source's files if they exist by now, else the source's thumbnail job
+   * hands them over when it finishes. ponytail: a handover racing this check is caught by the "Missing"
+   * thumbnail scan, whose job for the copy links the source's files.
+   */
+  private async ensureCopyThumbnails(sourceAssetId: string, copyId: string) {
     const copy = await this.assetRepository.getById(copyId, { files: true });
     if (!copy || copy.deletedAt || copy.status !== AssetStatus.Active || copy.visibility === AssetVisibility.Hidden) {
       return;
@@ -339,7 +344,10 @@ export class PartnerCopyService extends BaseService {
         (type) => !copy.files?.some((file) => file.type === type && !file.isEdited),
       )
     ) {
-      await this.jobRepository.queue({ name: JobName.AssetGenerateThumbnails, data: { id: copyId } });
+      const files = await this.partnerOriginRepository.shareGeneratedFiles(sourceAssetId);
+      if (files.length > 0) {
+        await this.jobRepository.queue({ name: JobName.FileDelete, data: { files } });
+      }
     }
   }
 
