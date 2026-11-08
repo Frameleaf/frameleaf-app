@@ -1396,9 +1396,9 @@ export class MediaService extends BaseService {
     // FL-1285: a Log clip is re-encoded into normal Rec.709 colour even when its codec could be
     // played as it is. A sealed (Locked) original is checked on its plain copy inside the encode
     // below, so that it is not decrypted twice; it is converted whenever it is re-encoded anyway.
-    // With playback copies switched off nothing is encoded, so the file is not read for Log at all.
-    // A raw 360° original takes the stitch path, which builds its own command.
-    const checkLog = !stitched && ffmpeg.transcode !== TranscodePolicy.Disabled;
+    // With playback copies switched off nothing is encoded, so the file is not read for Log at all;
+    // a raw 360° original is always encoded (see above), and converted after its projection.
+    const checkLog = stitched || ffmpeg.transcode !== TranscodePolicy.Disabled;
     const lockedOriginal = await isLockedPath(asset.originalPath);
     let stream =
       checkLog && !lockedOriginal ? await this.attachLogConversion(asset.originalPath, videoStream) : videoStream;
@@ -1447,7 +1447,7 @@ export class MediaService extends BaseService {
       }
       // FL-968: planned from the original's own tracks; tracks that no longer fit encode as ordinary video
       const command =
-        (stitched && (await this.getStitchedVideoCommand(input, asset, ffmpeg, target, videoStream, audioStream))) ||
+        (stitched && (await this.getStitchedVideoCommand(input, asset, ffmpeg, target, stream, audioStream))) ||
         getCommand(ffmpeg);
       try {
         await this.mediaRepository.transcode(input, output, command);

@@ -5657,6 +5657,33 @@ describe(MediaService.name, () => {
         );
       });
 
+      it('converts a Log dual-fisheye original to Rec.709 after stitching it (FL-1285)', async () => {
+        mocks.assetJob.getForVideoConversion.mockResolvedValue({
+          ...asset,
+          projectionType: 'DUAL_FISHEYE',
+          make: 'DJI',
+          model: 'Osmo360',
+        });
+        mocks.media.probe.mockResolvedValue(lensTracks);
+        mocks.storage.readFile.mockImplementation((path: string) =>
+          path === '/original/path.SRT'
+            ? Promise.resolve(Buffer.from('1\n00:00:00,000 --> 00:00:00,033\n[iso : 100] [color_md : d_log]\n'))
+            : Promise.reject(Object.assign(new Error('ENOENT'), { code: 'ENOENT' })),
+        );
+
+        await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+        const command = lastCommand();
+        expect(option(command, '-map')).toBe('[stitched]');
+        expect(option(command, '-filter_complex')).toBe(
+          '[0:0][0:1]hstack=inputs=2,v360=input=dfisheye:output=equirect:ih_fov=190:iv_fov=190:w=3840:h=1920:interp=cubic,' +
+            'scale=in_color_matrix=bt709:in_range=tv,format=gbrp16le,' +
+            'lut3d=file=/tmp/frameleaf-color-luts/frameleaf-log-v1-d-log-d-gamut-tv-33.cube:interp=tetrahedral,' +
+            'scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,' +
+            'setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv[stitched]',
+        );
+      });
+
       it('stitches a GoPro MAX original from its cubemap tracks', async () => {
         mocks.assetJob.getForVideoConversion.mockResolvedValue({ ...asset, projectionType: 'EQUIANGULAR_CUBEMAP' });
         mocks.media.probe.mockResolvedValue(goProTracks);
