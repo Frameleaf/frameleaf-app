@@ -1669,9 +1669,38 @@ from
 where
   "asset"."id" = $1
 
+-- AssetRepository.getBurstFrames
+select
+  "asset"."id",
+  "asset"."stackId",
+  "stack"."primaryAssetId" as "stackPrimaryAssetId",
+  exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  ) as "isLocked"
+from
+  "asset"
+  inner join "asset_exif" on "asset_exif"."assetId" = "asset"."id"
+  left join "stack" on "stack"."id" = "asset"."stackId"
+where
+  "asset"."ownerId" = $1
+  and "asset_exif"."autoStackId" = $2
+  and "asset"."type" = $3
+  and "asset"."deletedAt" is null
+order by
+  "asset"."fileCreatedAt",
+  "asset"."id"
+limit
+  $4
+
 -- AssetRepository.getForMetadataExtractionTags
 select
   "asset_exif"."tags",
+  "asset_exif"."mediaKinds",
   "asset_exif"."updateId",
   "asset_exif"."timeZone",
   "asset_exif"."latitude",
