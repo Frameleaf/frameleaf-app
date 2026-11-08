@@ -13,7 +13,8 @@ import {
 } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import express, { type Request, type Response } from 'express';
-import { fstatSync } from 'node:fs';
+import { existsSync, fstatSync } from 'node:fs';
+import { setTimeout as delay } from 'node:timers/promises';
 import { createNativeService } from './runtime/native-service.js';
 import { chmod, mkdir, readFile, realpath, rm, stat, statfs } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
@@ -64,7 +65,18 @@ if (runtime === 'native') {
 }
 const docker = new Docker();
 // Before any location is read: a folder may be mapped to a different path inside this container.
-if (runtime === 'docker') adoptOwnMounts(await docker.inventory().catch(() => []), directory);
+// Failing here beats running with untranslated paths; the container's restart policy tries again.
+if (runtime === 'docker' && existsSync('/var/run/docker.sock')) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      adoptOwnMounts(await docker.inventory(), directory);
+      break;
+    } catch (error) {
+      if (attempt === 5 || (error instanceof Error && error.message.startsWith('MANAGER_DATA'))) throw error;
+      await delay(2000);
+    }
+  }
+}
 const backupRoot = process.env.MANAGER_BACKUP_ROOT ?? (runtime === 'native' ? join(directory, 'backups') : undefined);
 if (!backupRoot || backupRoot !== resolve(backupRoot))
   throw new Error('MANAGER_BACKUP_ROOT must be an absolute mounted directory');

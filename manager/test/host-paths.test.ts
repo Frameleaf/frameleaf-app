@@ -54,6 +54,19 @@ test('a folder mapped to another container path reaches Docker by its host path'
   assert.equal(await readFile(join(cwd, 'compose.json'), 'utf8'), original);
 });
 
+test('one host folder mapped to two container paths keeps each path', () => {
+  const twice: [string, string][] = [
+    [`${HOST}/frameleaf-manager`, STATE],
+    [`${HOST}/shared`, `${VIEW}/first`],
+    [`${HOST}/shared`, `${VIEW}/second`],
+  ];
+  adoptOwnMounts([manager([`MANAGER_DATA=${STATE}`], twice)], STATE, {});
+  assert.deepEqual(
+    containerView(manager([], twice)).Mounts.map((m) => m.Source),
+    [STATE, `${VIEW}/first`, `${VIEW}/second`],
+  );
+});
+
 test('state set to the host side of its mapping is refused with the path to use', () => {
   const state = `${HOST}/frameleaf-manager`;
   assert.throws(

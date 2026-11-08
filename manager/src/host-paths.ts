@@ -34,7 +34,12 @@ export function containerView<T extends { Mounts: MountView[] }>(container: T): 
   if (!mappings.length) return container;
   return {
     ...container,
-    Mounts: container.Mounts.map((m) => (m.Type === 'bind' ? { ...m, Source: toContainer(m.Source) } : m)),
+    Mounts: container.Mounts.map((m) => {
+      if (m.Type !== 'bind') return m;
+      // One host folder can be mapped to two container paths; each of Manager's own mounts keeps its own.
+      const own = mappings.some((x) => x.host === m.Source && x.container === m.Destination);
+      return { ...m, Source: own ? m.Destination : toContainer(m.Source) };
+    }),
   };
 }
 
