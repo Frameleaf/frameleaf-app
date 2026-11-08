@@ -1136,6 +1136,25 @@ describe('AssetViewer', () => {
       expect(onNavigateToAsset).not.toHaveBeenCalled();
     });
 
+    it('still moves to the next item while a playing video holds focus', async () => {
+      const { current, nextAsset } = buildAssets();
+      const onNavigateToAsset = vi.fn().mockResolvedValue(undefined);
+
+      renderWithTooltips(AssetViewer, {
+        cursor: { current, nextAsset },
+        showNavigation: true,
+        onNavigateToAsset,
+      });
+
+      const video = document.createElement('video');
+      document.body.append(video);
+      await fireEvent.keyDown(video, { key: 'ArrowRight' });
+      video.remove();
+      await Promise.resolve();
+
+      expect(onNavigateToAsset).toHaveBeenCalledTimes(1);
+    });
+
     it('leaves arrow keys to an open dialog', async () => {
       const { current, nextAsset } = buildAssets();
       const onNavigateToAsset = vi.fn().mockResolvedValue(undefined);
