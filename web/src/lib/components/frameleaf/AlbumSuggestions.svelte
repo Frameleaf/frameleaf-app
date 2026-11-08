@@ -81,35 +81,43 @@
     }
   };
 
+  let loadRequested = 0;
+  let loadApplied = 0;
+
   /**
    * `afterFailure`: a refresh after a failed save keeps the person's choices for what is still
    * suggested, and keeps what is shown if the refresh fails too, so Try again still has it.
    */
   const load = async (id: string, afterFailure = false) => {
+    const request = ++loadRequested;
     try {
       const result = await getAlbumSuggestions({ id });
-      if (id !== albumId) {
+      // Requests can answer out of order: an older one never replaces what a newer one showed.
+      if (id !== albumId || request < loadApplied) {
         return;
       }
+      loadApplied = request;
+      // A list that never loaded left nothing to choose from, so there are no choices to keep.
+      const keepChoices = afterFailure && suggestions !== null;
       suggestions = result;
       // After a failed save the person's pending auto-add choice stays, so Try again still sends it.
-      if (!afterFailure) {
+      if (!keepChoices) {
         autoAdd = result.autoAdd;
       }
       const ids = [...result.fromTrip, ...result.needDate].map(({ assetId }) => assetId);
-      picked = new Set(afterFailure ? ids.filter((assetId) => picked.has(assetId)) : ids);
-      fixDate = new Set(afterFailure ? ids.filter((assetId) => fixDate.has(assetId)) : []);
-      dismissed = afterFailure ? dismissed : new Set();
+      picked = new Set(keepChoices ? ids.filter((assetId) => picked.has(assetId)) : ids);
+      fixDate = new Set(keepChoices ? ids.filter((assetId) => fixDate.has(assetId)) : []);
+      dismissed = keepChoices ? dismissed : new Set();
       turnOffFailed = false;
     } catch {
       // Suggestions are optional: an album that can't be read for them simply shows none.
-      if (!afterFailure) {
+      if (!afterFailure && request === loadRequested) {
         suggestions = null;
       }
     }
   };
 
-  const loadLostDates = async (id: string) => {
+  const loadLostDates = async (id: string, keepOnFailure = false) => {
     try {
       const result = await getAlbumLostDates({ id });
       if (id === albumId) {
@@ -117,7 +125,7 @@
       }
     } catch {
       // Optional like the suggestions: the album still opens without them.
-      if (id === albumId) {
+      if (id === albumId && !keepOnFailure) {
         lostDates = null;
       }
     }
@@ -395,29 +403,42 @@
       await loadLostDates(albumId);
     } catch (error) {
       console.error(error);
-      report($t('frameleaf_album_lost_dates_heal_failed'), () => void heal());
-      await loadLostDates(albumId);
+      // The request can fail after the heal committed, so read again everything those dates feed.
+      onChanged();
+      await load(albumId, true);
+      await loadLostDates(albumId, true);
+      const message = $t('frameleaf_album_lost_dates_heal_failed');
+      if (tabs.length === 0 && (!suggestions || autoAdd === suggestions.autoAdd)) {
+        // Nothing is left to review or save, so the failure can't stay in the dialog.
+        open = false;
+        toastManager.primary(message);
+      } else {
+        report(message, lostCount > 0 ? () => void heal() : undefined);
+      }
     } finally {
       saving = false;
     }
   };
 
   const openReview = () => {
-    tab = fromTrip.length > 0 ? 'trip' : needDate.length > 0 ? 'dates' : 'lost';
+    tab = firstTab;
     autoAdd = suggestions?.autoAdd ?? false;
     alert = null;
     open = true;
   };
 
-  const tabs = $derived([
+  const tabs = $derived<('trip' | 'dates' | 'lost')[]>([
     ...(count > 0 ? (['trip', 'dates'] as const) : []),
     ...(lostCount > 0 ? (['lost'] as const) : []),
   ]);
+  const firstTab = $derived(fromTrip.length > 0 ? 'trip' : needDate.length > 0 ? 'dates' : ('lost' as const));
+  /** A refresh can take away the tab that was open; show the first one with something in it. */
+  const activeTab = $derived(tabs.includes(tab) ? tab : firstTab);
   const tabButtons: Record<string, HTMLButtonElement | undefined> = {};
 
   /** Arrow keys, Home and End move between the tabs (prototype `SuggestionTabs`). */
   const onTabKey = (event: KeyboardEvent) => {
-    const index = tabs.indexOf(tab);
+    const index = tabs.indexOf(activeTab);
     const next =
       event.key === 'ArrowRight'
         ? (index + 1) % tabs.length
@@ -508,7 +529,7 @@
 {/if}
 
 <Dialog title={$t('frameleaf_album_suggestions_dialog_title')} closeLabel={$t('close')} size="wide" bind:open>
-  {#if tab !== 'lost'}
+  {#if activeTab !== 'lost'}
     <p class="lead">
       {$t('frameleaf_album_suggestions_lead', { values: { album: albumName, span: tripSpan, places } })}
     </p>
@@ -535,9 +556,9 @@
         id="{tabsId}-tab-{value}"
         type="button"
         role="tab"
-        aria-selected={tab === value}
+        aria-selected={activeTab === value}
         aria-controls="{tabsId}-panel"
-        tabindex={tab === value ? 0 : -1}
+        tabindex={activeTab === value ? 0 : -1}
         onclick={() => (tab = value)}
       >
         {value === 'trip'
@@ -549,10 +570,10 @@
     {/each}
   </div>
 
-  <div id="{tabsId}-panel" role="tabpanel" aria-labelledby="{tabsId}-tab-{tab}">
-    {#if tab === 'lost' && lostDates}
+  <div id="{tabsId}-panel" role="tabpanel" aria-labelledby="{tabsId}-tab-{activeTab}">
+    {#if activeTab === 'lost' && lostDates}
       <AlbumLostDates lost={lostDates} {formatDay} />
-    {:else if tab === 'trip'}
+    {:else if activeTab === 'trip'}
       {#each groups as group (group.likely)}
         <section class="group">
           <h3>
@@ -640,7 +661,11 @@
   </div>
 
   {#snippet actions()}
-    {#if tab === 'lost'}
+    {#if activeTab === 'lost'}
+      {#if suggestions && autoAdd !== suggestions.autoAdd}
+        <!-- A changed auto-add choice can still be saved after its own tab has gone. -->
+        <Button disabled={saving} onclick={() => void apply()}>{applyLabel}</Button>
+      {/if}
       <Button variant="primary" disabled={saving || lostCount === 0} onclick={() => void heal()}>
         {saving
           ? $t('frameleaf_album_lost_dates_healing')
