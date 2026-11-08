@@ -794,7 +794,18 @@ export class AlbumCleanupService extends BaseService {
         break;
       }
       case 'merge': {
-        await this.applyMerge(tx, context, operation.albumIds ?? [], operation.allowShared === true, 'merged');
+        const reviewed = context.candidates.get(this.resolve(context, operation.albumIds?.[0] ?? ''));
+        const survivor = await this.applyMerge(
+          tx,
+          context,
+          operation.albumIds ?? [],
+          operation.allowShared === true,
+          'merged',
+        );
+        // An earlier merge can make a different album the largest by now. The person approved this name.
+        if (reviewed && survivor !== reviewed.id) {
+          await this.rename(tx, context, survivor, reviewed.name);
+        }
         break;
       }
       case 'combine': {

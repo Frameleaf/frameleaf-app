@@ -341,3 +341,66 @@ describe('operationsFor', () => {
     expect(operations.filter(({ type }) => type === 'rename')).toEqual([]);
   });
 });
+
+describe('albums the person left out', () => {
+  const opsTouching = (plan: ReturnType<typeof buildPlan>, id: string) =>
+    operationsFor(plan).filter((operation) => operation.albumId === id || operation.albumIds?.includes(id));
+
+  it('never merges away a copy that was left out', () => {
+    const data = facts([fact('big', 'Friends', 20), fact('mid', 'Friends', 10), fact('out', 'Friends', 5)]);
+    const plan = buildPlan(data, { leftOut: new Set(['out']) });
+    expect(opsTouching(plan, 'out')).toEqual([]);
+    expect(operationsFor(plan).find(({ type }) => type === 'merge')?.albumIds).toEqual(['big', 'mid']);
+    expect(names(plan.untouched)).toContain('Friends');
+  });
+
+  it('drops a suggested pair when either album was left out', () => {
+    const data = facts([fact('a', 'One', 20), fact('b', 'Two', 10)], {
+      samePhotos: [{ firstId: 'a', secondId: 'b', winnerId: 'a', share: 0.9, union: 21 }],
+    });
+    const plan = buildPlan(data, { leftOut: new Set(['b']), mergedSimilar: new Set(['a+b']) });
+    expect(plan.similar).toEqual([]);
+    expect(opsTouching(plan, 'b')).toEqual([]);
+  });
+
+  it('keeps a left-out day out of a run and combines the days either side of it', () => {
+    const data = facts([
+      fact('d1', 'Coquitlam, May 24, 2020', 20),
+      fact('d2', 'Coquitlam, May 25, 2020', 3),
+      fact('d3', 'Coquitlam, May 26, 2020', 15),
+      fact('d4', 'Coquitlam, May 27, 2020', 10),
+    ]);
+    const plan = buildPlan(data, { leftOut: new Set(['d2']) });
+    expect(opsTouching(plan, 'd2')).toEqual([]);
+    expect(operationsFor(plan).find(({ type }) => type === 'combine')?.albumIds).toEqual(['d3', 'd4']);
+  });
+
+  it('leaves the whole run alone when the album carrying it was left out', () => {
+    const data = facts([fact('d1', 'Coquitlam, May 24, 2020', 20), fact('d2', 'Coquitlam, May 25, 2020', 3)]);
+    const plan = buildPlan(data, { leftOut: new Set(['d1']) });
+    expect(operationsFor(plan).filter(({ type }) => type === 'combine')).toEqual([]);
+  });
+
+  it('does not remove a date-only album that was left out', () => {
+    const data = facts([fact('out', 'May 24, 2020'), fact('gone', 'May 25, 2020')]);
+    const plan = buildPlan(data, { dateOnly: 'remove', leftOut: new Set(['out']) });
+    expect(plan.removed.map(({ id }) => id)).toEqual(['gone']);
+    expect(opsTouching(plan, 'out')).toEqual([]);
+  });
+
+  it('does not heal an album that was left out', () => {
+    const data = facts([fact('a', 'Summer')], {
+      lostDates: [
+        {
+          albumId: 'a',
+          from: null,
+          to: null,
+          suggestions: [{ assetId: 'p', fileName: 'p.jpg', dateTimeOriginal: '2020-01-01T00:00:00.000Z' }],
+        },
+      ] as unknown as AlbumCleanupFactsDto['lostDates'],
+    });
+    const plan = buildPlan(data, { healedAlbums: new Set(['a']), leftOut: new Set(['a']) });
+    expect(operationsFor(plan).filter(({ type }) => type === 'heal')).toEqual([]);
+    expect(plan.summary.datesHealed).toBe(0);
+  });
+});

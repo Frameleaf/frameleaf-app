@@ -476,6 +476,20 @@ describe(AlbumCleanupService.name, () => {
       await expect(runRow(ctx.database, runId)).resolves.toMatchObject({ status: AlbumChangeRunStatus.Undone });
     });
 
+    it('keeps the reviewed name when a different album has become the largest', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const reviewed = await albumOf(ctx, user.id, 'Reviewed', 1);
+      const larger = await albumOf(ctx, user.id, 'Larger', 3);
+
+      await applyNow(sut, plain(user), [{ type: 'merge', albumIds: [reviewed.album.id, larger.album.id] }]);
+
+      await expect(albumRow(ctx.database, larger.album.id)).resolves.toMatchObject({
+        albumName: 'Reviewed',
+        deletedAt: null,
+      });
+    });
+
     it('can still reach an album whose merge was skipped', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();

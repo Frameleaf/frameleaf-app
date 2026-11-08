@@ -449,15 +449,19 @@ export const buildPlan = (facts: AlbumCleanupFactsDto, options: PlanOptions = {}
   }
   const duplicates: DuplicateGroup[] = [];
   const working: PlanAlbum[] = [];
-  for (const [key, copies] of sameName) {
+  for (const [key, all] of sameName) {
+    const fact = sameNameFact.get(key);
+    const winner = all.find(({ id }) => id === fact?.winnerId) ?? largestOf(all);
+    // A copy the person left out is never merged away. Leaving out the winner leaves out the whole group.
+    const copies = all.filter((album) => album.id === winner.id || !leftOut.has(album.id));
+    working.push(...all.filter((album) => !copies.includes(album)));
     if (copies.length === 1) {
       working.push(copies[0]);
       continue;
     }
-    const fact = sameNameFact.get(key);
-    const winner = copies.find(({ id }) => id === fact?.winnerId) ?? largestOf(copies);
     const others = copies.filter(({ id }) => id !== winner.id).sort((a, b) => b.count - a.count);
-    const count = fact?.union ?? winner.count + others.reduce((sum, album) => sum + album.count, 0);
+    const sum = winner.count + others.reduce((total, album) => total + album.count, 0);
+    const count = (copies.length === all.length ? fact?.union : undefined) ?? sum;
     const locked = copies.every((album) => album.locked);
     // Merging a shared album changes who sees which photos, so it is never automatic.
     const shared = copies.some((album) => album.shared);
@@ -481,7 +485,7 @@ export const buildPlan = (facts: AlbumCleanupFactsDto, options: PlanOptions = {}
     pairs.flatMap((fact): PlanPair[] => {
       const winner = present.get(fact.winnerId);
       const loser = present.get(fact.winnerId === fact.firstId ? fact.secondId : fact.firstId);
-      if (!winner || !loser) {
+      if (!winner || !loser || leftOut.has(winner.id) || leftOut.has(loser.id)) {
         return [];
       }
       const key = `${winner.id}+${loser.id}`;
@@ -540,12 +544,33 @@ export const buildPlan = (facts: AlbumCleanupFactsDto, options: PlanOptions = {}
     return { album, when, prefix };
   });
 
+  /** A run split around any day the person left out. Leaving out the album that carries a run keeps the whole run. */
+  const aroundLeftOut = (run: Entry[]): Entry[][] => {
+    const carrier = largestOf(run.map(({ album }) => album));
+    const parts: Entry[][] = [[]];
+    for (const entry of run) {
+      if (entry.album.id !== carrier.id && leftOut.has(entry.album.id)) {
+        parts.push([]);
+      } else {
+        parts.at(-1)!.push(entry);
+      }
+    }
+    return parts;
+  };
+
   // Days in a row away from home are one trip, wherever in the trip each day was.
   const trips: PlanTrip[] = [];
   const inTrip = new Set<string>();
   const tripAlbums: PlanAlbum[] = [];
   const closeTrip = (run: Entry[]) => {
     if (run.length < 2) {
+      return;
+    }
+    const parts = aroundLeftOut(run);
+    if (parts.length > 1) {
+      for (const part of parts) {
+        closeTrip(part);
+      }
       return;
     }
     const members = run.map((item) => item.album);
@@ -616,6 +641,13 @@ export const buildPlan = (facts: AlbumCleanupFactsDto, options: PlanOptions = {}
   const combined: PlanAlbum[] = [];
   const closeRun = (key: string, run: Entry[]) => {
     if (run.length < 2) {
+      return;
+    }
+    const parts = aroundLeftOut(run);
+    if (parts.length > 1) {
+      for (const part of parts) {
+        closeRun(key, part);
+      }
       return;
     }
     const [first, last] = [run[0], run.at(-1)!];
@@ -750,7 +782,7 @@ export const buildPlan = (facts: AlbumCleanupFactsDto, options: PlanOptions = {}
   for (const album of dates) {
     if (dateOnly === 'leave') {
       untouched.push(leafFor(album, album.name));
-    } else if (dateOnly === 'remove' && !album.shared) {
+    } else if (dateOnly === 'remove' && !album.shared && !leftOut.has(album.id)) {
       removed.push(album);
     } else {
       // A shared date-only album is never removed; it groups by year instead.
@@ -814,6 +846,10 @@ export const buildPlan = (facts: AlbumCleanupFactsDto, options: PlanOptions = {}
       return true;
     });
   structure = applyLeftOut(structure);
+  // An album can be left out and then land outside every collection, where the walk above never meets it.
+  for (const id of leftOut) {
+    leftOutIds.add(id);
+  }
 
   for (const [id, target] of moved) {
     if (id === target) {
@@ -863,7 +899,7 @@ export const buildPlan = (facts: AlbumCleanupFactsDto, options: PlanOptions = {}
             from: item.from,
             to: item.to,
             suggestions: item.suggestions,
-            healed: healedAlbums.has(item.albumId),
+            healed: healedAlbums.has(item.albumId) && !leftOutIds.has(item.albumId),
           },
         ]
       : [];
