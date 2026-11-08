@@ -19068,6 +19068,8 @@ export type AssetFilmstripSpriteOptionsDto = {
     version?: string;
 };
 export type AssetMediaOptionsDto = {
+    /** Cache version: the asset's current thumbhash. A matching thumbnail is served as immutable. */
+    c?: string;
     /** Defaults to compatible SDR. Auto prefers an available HDR derivative; explicit HDR fails when unavailable. */
     dynamicRange?: DynamicRange2;
     /** Return edited asset if available */
@@ -19997,6 +19999,8 @@ export type SyncAssetV2 = {
     originalFileName: string;
     /** Owner ID */
     ownerId: string;
+    /** Only on your own copy of a partner's photo: the account it originally came from */
+    partnerOriginOwnerId?: string;
     /** Stack ID */
     stackId: string | null;
     /** Thumbhash */
@@ -20111,6 +20115,8 @@ export type SyncAlbumV3 = {
     name: string;
     order: AssetOrder;
     parentId: string | null;
+    /** Only on your own copy of a partner's album: the account it originally came from */
+    partnerOriginOwnerId?: string;
     sortOrder: number | null;
     /** Thumbnail asset ID */
     thumbnailAssetId: string | null;
@@ -25544,7 +25550,8 @@ export function addImportedAssetSource({ id, assetSourceImportDto }: {
 /**
  * View asset thumbnail
  */
-export function viewAsset({ dynamicRange, edited, faceSource, id, key, size, slug }: {
+export function viewAsset({ c, dynamicRange, edited, faceSource, id, key, size, slug }: {
+    c?: string;
     dynamicRange?: "auto" | "sdr" | "hdr";
     edited?: boolean;
     faceSource?: boolean;
@@ -25557,6 +25564,7 @@ export function viewAsset({ dynamicRange, edited, faceSource, id, key, size, slu
         status: 200;
         data: Blob;
     }>(`/assets/${encodeURIComponent(id)}/thumbnail${QS.query(QS.explode({
+        c,
         dynamicRange,
         edited,
         faceSource,
