@@ -717,6 +717,12 @@ function installMediaRelink(state: Session) {
     start: (request) => call('startCloudCaptions', request),
     read: (id) => call('readCloudCaptions', id),
     pending: () => call('pendingCloudCaptions'),
+    ready: async () => {
+      while (!state.disposed && !state.mount.loaded) {
+        await new Promise((resolve) => setTimeout(resolve, 200))
+      }
+      return !state.disposed
+    },
   })
   registerCloudCaptionHost({ start: (request) => void cloudCaptions.start(request) })
   void cloudCaptions.resume()

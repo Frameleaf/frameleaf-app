@@ -24,7 +24,7 @@ const memory = () => {
 };
 const make = (overrides: Partial<Parameters<typeof createCloudCaptionServices>[0]> = {}) =>
   createCloudCaptionServices({
-    projectId: 'p1',
+    projectId: () => 'p1',
     save: () => Promise.resolve(),
     confirm: () => Promise.resolve(ID),
     read: () => Promise.resolve({ status: 'rendering', error: null, result: null }),
@@ -75,6 +75,31 @@ describe('Studio captions on Frameleaf Cloud', () => {
     status = 'cancelled';
     await expect(reloaded.readCloudCaptions(ID)).resolves.toMatchObject({ status: 'cancelled' });
     await expect(reloaded.pendingCloudCaptions()).resolves.toEqual([]);
+  });
+
+  it('files a job under the id the project has once it is saved, and reads it there after Save as copy', async () => {
+    const storage = memory();
+    let project = 'draft';
+    const read = vi.fn(() => Promise.resolve({ status: 'rendering', error: null, result: null }));
+    const services = make({
+      storage,
+      projectId: () => project,
+      read,
+      save: () => {
+        project = 'saved';
+        return Promise.resolve();
+      },
+    });
+    await services.startCloudCaptions(request);
+    expect(storage.getItem('frameleaf-studio-cloud-captions:draft')).toBeNull();
+    await expect(services.pendingCloudCaptions()).resolves.toHaveLength(1);
+
+    project = 'copy';
+    await services.readCloudCaptions(ID);
+    expect(read).toHaveBeenCalledWith('saved', ID);
+    await expect(services.pendingCloudCaptions()).resolves.toEqual([]);
+    project = 'saved';
+    await expect(services.pendingCloudCaptions()).resolves.toHaveLength(1);
   });
 
   it('turns exact cue times into seconds', async () => {

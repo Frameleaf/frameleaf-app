@@ -1109,10 +1109,10 @@
     },
     // FL-1304: captions on Frameleaf Cloud, with the price shown first.
     ...createCloudCaptionServices({
-      projectId: project.id,
+      projectId: () => project.id,
       save: () => session.flush(),
       confirm: confirmCloudCaptions,
-      read: (transcriptionId) => getStudioTranscription({ id: project.id, transcriptionId }),
+      read: (id, transcriptionId) => getStudioTranscription({ id, transcriptionId }),
     }),
     // The editor's own Export control opens the same dialog as the header's (FL-106).
     requestExport: () => {

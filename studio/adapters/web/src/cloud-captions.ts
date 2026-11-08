@@ -27,6 +27,8 @@ export interface CloudCaptionCalls {
   start(request: StudioCloudCaptionRequest): Promise<StudioCloudCaptionJob | null>
   read(id: string): Promise<StudioCloudCaptionState>
   pending(): Promise<StudioCloudCaptionJob[]>
+  /** Resolves once this editor's own timeline has loaded; false if the editor closed first. */
+  ready(): Promise<boolean>
 }
 
 const POLL_MS = 4000
@@ -142,7 +144,8 @@ export function createCloudCaptions(calls: CloudCaptionCalls, pollMs = POLL_MS) 
         continue
       }
       if (state.status === 'completed') {
-        await finish(job, state.cues).catch(() => failed(job))
+        // The project can be reloading under the job (a restored version, say).
+        if (await calls.ready()) await finish(job, state.cues).catch(() => failed(job))
         return
       }
       if (state.status === 'failed') {
@@ -175,6 +178,8 @@ export function createCloudCaptions(calls: CloudCaptionCalls, pollMs = POLL_MS) 
     /** Jobs confirmed before a reload still bring their captions back. */
     resume: async () => {
       const jobs = await calls.pending().catch(() => [])
+      // The host forgets a job once it reads as settled, so its clip has to be there by then.
+      if (jobs.length === 0 || !(await calls.ready())) return
       await Promise.all(jobs.map((job) => follow(job)))
     },
     stop: () => {

@@ -70,7 +70,12 @@ const subtitles = () =>
   useItemsStore.getState().items.filter((item): item is SubtitleSegmentItem => item.type === 'subtitle')
 const resumeWith = async (pendingJob: StudioCloudCaptionJob, state: StudioCloudCaptionState) => {
   const flow = createCloudCaptions(
-    { start: vi.fn(), read: () => Promise.resolve(state), pending: () => Promise.resolve([pendingJob]) },
+    {
+      start: vi.fn(),
+      read: () => Promise.resolve(state),
+      pending: () => Promise.resolve([pendingJob]),
+      ready: () => Promise.resolve(true),
+    },
     1,
   )
   await flow.resume()
@@ -152,6 +157,47 @@ describe('FL-1304 captions on Frameleaf Cloud', () => {
     expect(subtitles()).toEqual([])
   })
 
+  it('waits for the timeline before reading a resumed job, so its clip is there', async () => {
+    seed([])
+    let loaded!: (ready: boolean) => void
+    const read = vi.fn(() => Promise.resolve(done(1, 3)))
+    const flow = createCloudCaptions(
+      {
+        start: vi.fn(),
+        read,
+        pending: () => Promise.resolve([job('a', 0)]),
+        ready: () => new Promise((resolve) => (loaded = resolve)),
+      },
+      1,
+    )
+    const resumed = flow.resume()
+    await vi.waitFor(() => expect(loaded).toBeDefined())
+    expect(read).not.toHaveBeenCalled()
+    seed([clip('a', 0)])
+    loaded(true)
+    // Its second wait, before adding the lines, sees the same load.
+    await vi.waitFor(() => expect(read).toHaveBeenCalledOnce())
+    loaded(true)
+    await resumed
+    expect(subtitles()[0]?.cues[0]?.text).toBe('From the Cloud')
+    expect(toasts.toast.error).not.toHaveBeenCalled()
+  })
+
+  it('leaves a resumed job alone when the editor closes before the timeline loads', async () => {
+    seed([])
+    const read = vi.fn()
+    await createCloudCaptions(
+      {
+        start: vi.fn(),
+        read,
+        pending: () => Promise.resolve([job('a', 0)]),
+        ready: () => Promise.resolve(false),
+      },
+      1,
+    ).resume()
+    expect(read).not.toHaveBeenCalled()
+  })
+
   it('stays quiet about a job the person cancelled', async () => {
     seed([clip('a', 0)])
     await resumeWith(job('a', 0), { status: 'cancelled', error: null, cues: [] })
@@ -162,7 +208,10 @@ describe('FL-1304 captions on Frameleaf Cloud', () => {
     seed([clip('a', 0)])
     const start = vi.fn(() => Promise.resolve(null))
     const read = vi.fn()
-    await createCloudCaptions({ start, read, pending: () => Promise.resolve([]) }, 1).start({ clipId: 'a', language: '' })
+    await createCloudCaptions(
+      { start, read, pending: () => Promise.resolve([]), ready: () => Promise.resolve(true) },
+      1,
+    ).start({ clipId: 'a', language: '' })
     expect(start).toHaveBeenCalledWith(expect.objectContaining({ clipId: 'a', language: 'auto' }))
     expect(read).not.toHaveBeenCalled()
   })

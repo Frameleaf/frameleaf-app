@@ -1,5 +1,5 @@
 import { CloudMlJobPurpose, CloudMlJobStage, MlWorkload, type CloudMlJobEstimateResponseDto } from '@frameleaf/sdk';
-import { render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import messages from '$i18n/en.json';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import CloudJobDialog from './CloudJobDialog.svelte';
@@ -116,5 +116,45 @@ describe('CloudJobDialog: photo upscale under the 64 MP output cap (FC-46)', () 
     expect(sdkMock.estimateCloudMlJob).not.toHaveBeenCalled();
     await rerender({ open: false });
     expect(onDismissed).toHaveBeenCalledOnce();
+  });
+  const pressConfirm = async () => {
+    await fireEvent.click(await screen.findByRole('checkbox'));
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_cloud_job_submit' }));
+  };
+
+  it('does not call a confirmation on its way dismissed when the dialog closes (FL-1304)', async () => {
+    let admit!: (job: unknown) => void;
+    sdkMock.createCloudMlJob.mockReturnValue(new Promise((resolve) => (admit = resolve)) as never);
+    const onSubmitted = vi.fn();
+    const onDismissed = vi.fn();
+    const { rerender } = render(CloudJobDialog, {
+      open: true,
+      title: 'Captions',
+      estimateWith: () => Promise.resolve(estimate(null)),
+      onSubmitted,
+      onDismissed,
+    });
+    await pressConfirm();
+    await rerender({ open: false });
+    expect(onDismissed).not.toHaveBeenCalled();
+    admit({ operationId: 'operation-1' });
+    await vi.waitFor(() => expect(onSubmitted).toHaveBeenCalledOnce());
+    expect(onDismissed).not.toHaveBeenCalled();
+  });
+
+  it('settles a closed dialog when its confirmation is refused (FL-1304)', async () => {
+    let refuse!: (error: Error) => void;
+    sdkMock.createCloudMlJob.mockReturnValue(new Promise((_, reject) => (refuse = reject)) as never);
+    const onDismissed = vi.fn();
+    const { rerender } = render(CloudJobDialog, {
+      open: true,
+      title: 'Captions',
+      estimateWith: () => Promise.resolve(estimate(null)),
+      onDismissed,
+    });
+    await pressConfirm();
+    await rerender({ open: false });
+    refuse(new Error('no'));
+    await vi.waitFor(() => expect(onDismissed).toHaveBeenCalledOnce());
   });
 });

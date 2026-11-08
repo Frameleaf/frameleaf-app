@@ -73,19 +73,22 @@ export const createCloudCaptionServices = ({
   read,
   storage = localStorage,
 }: {
-  projectId: string;
+  /** Read on each use: a draft's first save and Save as copy both change it without a remount. */
+  projectId: () => string;
   /** The server prices the head revision, so unsaved edits must land first. */
   save: () => Promise<unknown>;
   /** Show the price. Resolves with the confirmed job's id, or null when nothing was sent. */
   confirm: (request: StudioCloudCaptionRequest) => Promise<string | null>;
-  read: (id: string) => Promise<Transcription>;
+  read: (projectId: string, id: string) => Promise<Transcription>;
   storage?: Storage;
 }) => {
-  const key = `frameleaf-studio-cloud-captions:${projectId}`;
+  const key = (project: string) => `frameleaf-studio-cloud-captions:${project}`;
+  /** The project each job was confirmed in; the server answers for a job only under that project. */
+  const owners = new Map<string, string>();
 
-  const pending = (): StudioCloudCaptionJob[] => {
+  const pending = (project: string): StudioCloudCaptionJob[] => {
     try {
-      const value: unknown = JSON.parse(storage.getItem(key) ?? '[]');
+      const value: unknown = JSON.parse(storage.getItem(key(project)) ?? '[]');
       return Array.isArray(value)
         ? value.filter(
             (job): job is StudioCloudCaptionJob =>
@@ -97,12 +100,12 @@ export const createCloudCaptionServices = ({
     }
   };
 
-  const remember = (jobs: StudioCloudCaptionJob[]) => {
+  const remember = (project: string, jobs: StudioCloudCaptionJob[]) => {
     try {
       if (jobs.length > 0) {
-        storage.setItem(key, JSON.stringify(jobs));
+        storage.setItem(key(project), JSON.stringify(jobs));
       } else {
-        storage.removeItem(key);
+        storage.removeItem(key(project));
       }
     } catch {
       // Blocked storage only costs resuming after a reload.
@@ -117,15 +120,22 @@ export const createCloudCaptionServices = ({
         return null;
       }
       const job = { ...request, id };
-      remember([...pending(), job]);
+      const project = projectId();
+      owners.set(id, project);
+      remember(project, [...pending(project), job]);
       return job;
     },
 
     readCloudCaptions: async (id: string): Promise<StudioCloudCaptionState> => {
-      const transcription = await read(id);
+      const project = owners.get(id) ?? projectId();
+      const transcription = await read(project, id);
       const status = SETTLED.find((value) => value === transcription.status) ?? 'running';
       if (status !== 'running') {
-        remember(pending().filter((job) => job.id !== id));
+        remember(
+          project,
+          pending(project).filter((job) => job.id !== id),
+        );
+        owners.delete(id);
       }
       // A completed job always carries its result; without one there is nothing to add.
       const cues = transcription.result?.cues ?? [];
@@ -142,7 +152,7 @@ export const createCloudCaptionServices = ({
           };
     },
 
-    pendingCloudCaptions: (): Promise<StudioCloudCaptionJob[]> => Promise.resolve(pending()),
+    pendingCloudCaptions: (): Promise<StudioCloudCaptionJob[]> => Promise.resolve(pending(projectId())),
   };
 };
 

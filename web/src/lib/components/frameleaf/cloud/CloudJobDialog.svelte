@@ -168,7 +168,8 @@
       } else if (!isOpen && wasOpen) {
         estimateTurn++;
         clearTimeout(retryTimer);
-        if (!job) {
+        // A confirmation still on its way may yet become a job; `submit` settles it.
+        if (!job && !submitting) {
           onDismissed?.();
         }
       }
@@ -228,6 +229,9 @@
       }
     } finally {
       submitting = false;
+      if (!open && !job) {
+        onDismissed?.();
+      }
     }
   };
 
