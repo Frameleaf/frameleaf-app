@@ -460,7 +460,12 @@ export class MediaService extends BaseService {
 
     // FL-721 (spec §8.2): a sealed original is read from a plain copy; the new files are sealed after
     const status = await withPlainCopy(asset.originalPath, (originalPath) =>
-      this.generateThumbnailsFrom(originalPath === asset.originalPath ? asset : { ...asset, originalPath }, config),
+      this.generateThumbnailsFrom(
+        originalPath === asset.originalPath ? asset : { ...asset, originalPath },
+        config,
+        // FL-1285: the stored path, where a DJI sidecar sits; `originalPath` may be a plain copy
+        asset.originalPath,
+      ),
     );
     if (status === JobStatus.Success) {
       await this.jobRepository.collectFollowups(() => this.queueLockedSeal([asset.id]));
@@ -482,6 +487,8 @@ export class MediaService extends BaseService {
   private async generateThumbnailsFrom(
     asset: NonNullable<Awaited<ReturnType<AssetJobRepository['getForGenerateThumbnailJob']>>>,
     config: SystemConfig,
+    /** The original's stored library path, when `asset.originalPath` is a plain copy of it. */
+    storedOriginalPath = asset.originalPath,
   ): Promise<JobStatus> {
     const id = asset.id;
     let generated: Awaited<ReturnType<MediaService['generateImageThumbnails']>>;
@@ -533,6 +540,7 @@ export class MediaService extends BaseService {
         {
           coverSeconds: typeof asset.coverTimestampMs === 'number' ? asset.coverTimestampMs / 1000 : undefined,
           stitch,
+          sidecarOriginal: storedOriginalPath,
         },
       );
     } else if (asset.type === AssetType.Image) {
@@ -1089,6 +1097,12 @@ export class MediaService extends BaseService {
       coverSeconds?: number;
       /** FL-968: the original is a raw 360° recording, thumbnailed as its stitched picture. */
       stitch?: VideoStitchPlan;
+      /**
+       * FL-1285: the stored library original whose DJI `.SRT` sidecar describes the source, when the
+       * source is that original or its plain copy (a Locked original); null for an edited render.
+       * Defaults to `asset.originalPath` when the source is it.
+       */
+      sidecarOriginal?: string | null;
     } = {},
   ) {
     const sourcePath = options.sourcePath ?? asset.originalPath;
@@ -1133,7 +1147,11 @@ export class MediaService extends BaseService {
     const videoStream = await this.attachLogConversion(
       sourcePath,
       stitchedStream,
-      sourcePath === asset.originalPath ? asset.originalPath : null,
+      options.sidecarOriginal === undefined
+        ? sourcePath === asset.originalPath
+          ? asset.originalPath
+          : null
+        : options.sidecarOriginal,
     );
 
     this.storageCore.ensureFolders(previewFile.path);
@@ -1633,7 +1651,10 @@ export class MediaService extends BaseService {
         return JobStatus.Skipped;
       }
       await this.syncFiles(editedFiles, []);
-      const generated = await this.generateVideoThumbnails(thumbnailAsset, config);
+      // FL-1285: thumbnailAsset names the plain copy; a DJI sidecar sits beside the stored original
+      const generated = await this.generateVideoThumbnails(thumbnailAsset, config, {
+        sidecarOriginal: asset.originalPath,
+      });
       await this.syncFiles(
         this.toExistingAssetFiles(asset.files.filter((file) => !file.isEdited && this.isVideoThumbnailFile(file.type))),
         generated.files,

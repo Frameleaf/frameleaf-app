@@ -8,7 +8,7 @@ import {
 } from 'kysely';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { OutputInfo } from 'sharp';
 import type { QueueExecution } from 'src/queue/types.js';
 import { Exif } from 'src/database.js';
@@ -620,6 +620,44 @@ describe(MediaService.name, () => {
         expect(mocks.asset.getLockedEncryptionItems).toHaveBeenCalledWith([asset.id]);
         expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.LockedSeal, data: { id: asset.id } }]);
         expect(mocks.job.collectFollowups).toHaveBeenCalledExactlyOnceWith(expect.any(Function));
+      } finally {
+        await locked.cleanup();
+      }
+    });
+
+    it('looks for the DJI sidecar of a sealed video beside its stored path, not its plain copy (FL-1285)', async () => {
+      const asset = AssetFactory.from({ type: AssetType.Video }).exif().build();
+      const locked = await lockedFixture(asset.ownerId);
+      try {
+        locked.loadKey();
+        const originalPath = await locked.seal('DJI_0001.MP4', 'video bytes', 'video/mp4');
+        const storedSidecar = join(dirname(originalPath), 'DJI_0001.SRT');
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+          ...getForGenerateThumbnail(asset),
+          ...probeStub.videoStreamH264,
+          originalPath,
+        });
+        mocks.asset.getLockedEncryptionItems.mockResolvedValue([
+          { id: asset.id, ownerId: asset.ownerId, pending: false, mode: 'pin' as const },
+        ]);
+        mocks.storage.readFile.mockImplementation((path: string) =>
+          path === storedSidecar
+            ? Promise.resolve(Buffer.from('1\n00:00:00,000 --> 00:00:00,033\n[iso : 100] [color_md : d_log]\n'))
+            : Promise.reject(Object.assign(new Error('ENOENT'), { code: 'ENOENT' })),
+        );
+
+        await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Success);
+
+        // the file itself is read from the plain copy...
+        const [readFrom] = mocks.media.readContainerLogSignals.mock.calls[0];
+        expect(readFrom.startsWith(locked.tmp)).toBe(true);
+        // ...and the sidecar beside the stored original
+        expect(mocks.storage.readFile).toHaveBeenCalledWith(storedSidecar, expect.anything());
+        expect(mocks.storage.readFile.mock.calls.every(([path]) => !path.startsWith(locked.tmp))).toBe(true);
+        expect(mocks.media.ensureColorLut).toHaveBeenCalledWith(
+          'frameleaf-log-v1-d-log-d-gamut-tv-33.cube',
+          expect.any(Function),
+        );
       } finally {
         await locked.cleanup();
       }
