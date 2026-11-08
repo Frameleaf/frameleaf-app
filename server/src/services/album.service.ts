@@ -89,6 +89,8 @@ const COVER_REFRESH_INTERVAL_MS = 60_000;
 const summaryRefreshAt = new Map<string, number>();
 /** Viewer variants being refreshed now: requests never queue a second run behind the first. */
 const summaryRefreshRunning = new Set<string>();
+/** The newest change a summary has already re-read, per viewer and album, so one inside the look-back counts once. */
+const summaryChangesRead = new Map<string, number>();
 let summarySweepAt = 0;
 const SUMMARY_REFRESH_INTERVAL_MS = 15_000;
 /** Albums recomputed per query. Small enough that no single read of a large library is slow. */
@@ -163,15 +165,26 @@ export class AlbumService extends BaseService {
     summaryRefreshRunning.add(viewerKey);
     const refresh = async () => {
       try {
-        for (const ids of chunk(await this.summariesToRefresh(albumIds, stored, now), SUMMARY_REFRESH_CHUNK)) {
+        const { due, changes } = await this.summariesToRefresh(viewerKey, albumIds, stored, now);
+        for (const ids of chunk(due, SUMMARY_REFRESH_CHUNK)) {
           // Taken before the read, so a change made while it runs still counts as newer than this row.
           const computedAt = new Date();
           const metadata = await this.albumRepository.getMetadataForIds(ids, options);
           await this.albumSummaryRepository.upsert(viewerKey, computedAt, ids, metadata);
+          for (const id of ids) {
+            if (changes.has(id)) {
+              summaryChangesRead.set(`${viewerKey}:${id}`, changes.get(id)!);
+            }
+          }
         }
         if (now - summarySweepAt > SUMMARY_MAX_AGE_MS) {
           summarySweepAt = now;
           await this.albumSummaryRepository.deleteComputedBefore(new Date(now - SUMMARY_ABANDONED_AFTER_MS));
+        }
+        for (const [key, time] of summaryChangesRead) {
+          if (now - time > 2 * SUMMARY_CHANGE_MARGIN_MS) {
+            summaryChangesRead.delete(key);
+          }
         }
       } finally {
         summaryRefreshRunning.delete(viewerKey);
@@ -181,9 +194,15 @@ export class AlbumService extends BaseService {
   }
 
   /** Albums with no row, a row older than a day, or a change since their row was computed. */
-  private async summariesToRefresh(albumIds: string[], stored: Map<string, AlbumSummary>, now: number) {
+  private async summariesToRefresh(
+    viewerKey: string,
+    albumIds: string[],
+    stored: Map<string, AlbumSummary>,
+    now: number,
+  ) {
     const computedAt = new Map<string, number>();
     const due = new Set<string>();
+    const changes = new Map<string, number>();
     for (const id of albumIds) {
       const row = stored.get(id);
       if (row && now - millis(row.computedAt) < SUMMARY_MAX_AGE_MS) {
@@ -202,12 +221,15 @@ export class AlbumService extends BaseService {
         computedAt.keys().toArray(),
         since,
       )) {
-        if (millis(changedAt) >= computedAt.get(albumId)! - SUMMARY_CHANGE_MARGIN_MS) {
+        const time = millis(changedAt);
+        const isNew = time > (summaryChangesRead.get(`${viewerKey}:${albumId}`) ?? -Infinity);
+        if (isNew && time >= computedAt.get(albumId)! - SUMMARY_CHANGE_MARGIN_MS) {
           due.add(albumId);
+          changes.set(albumId, time);
         }
       }
     }
-    return [...due];
+    return { due: [...due], changes };
   }
 
   async getStatistics(auth: AuthDto): Promise<AlbumStatisticsResponseDto> {

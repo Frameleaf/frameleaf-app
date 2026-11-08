@@ -1684,6 +1684,30 @@ describe(AlbumService.name, () => {
       });
     });
 
+    it('re-reads a change inside the look-back once, not on every later check', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        const { auth, ids } = albumsOf(1);
+        const computedAt = new Date(Date.now() - 60_000);
+        mocks.albumSummary.getByIds.mockResolvedValue([storedRow(ids[0], 1, computedAt)]);
+        mocks.albumSummary.getChangedAt.mockResolvedValue([
+          { albumId: ids[0], changedAt: new Date(computedAt.getTime() - 30_000) },
+        ]);
+
+        await sut.getTree(auth);
+        await vi.waitFor(() => expect(mocks.albumSummary.upsert).toHaveBeenCalledTimes(1));
+
+        vi.setSystemTime(Date.now() + 20_000);
+        await sut.getTree(auth);
+        await vi.waitFor(() => expect(mocks.albumSummary.getChangedAt).toHaveBeenCalledTimes(2));
+        await new Promise((resolve) => setImmediate(resolve));
+
+        expect(mocks.albumSummary.upsert).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('catches a change committed just before its row was read', async () => {
       const { auth, ids } = albumsOf(1);
       const computedAt = new Date(Date.now() - 60 * 60 * 1000);
