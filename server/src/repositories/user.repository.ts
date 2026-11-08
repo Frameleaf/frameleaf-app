@@ -29,6 +29,12 @@ export interface UserStatsQueryResponse {
   usage: number;
   usagePhotos: number;
   usageVideos: number;
+  /** The part of the counts above that is partner copies of photos still in their source library. */
+  copyPhotos: number;
+  copyVideos: number;
+  copyUsage: number;
+  copyUsagePhotos: number;
+  copyUsageVideos: number;
   quotaSizeInBytes: number | null;
   /** When one of the account's sessions was last used, or null when it has none. */
   lastActiveAt: Date | null;
@@ -970,60 +976,60 @@ export class UserRepository {
               .as('original'),
           (join) => join.onRef('original.assetId', '=', 'asset.id'),
         )
+        // A partner copy whose source is still live is the same photo again; it counts in its account,
+        // and the server totals subtract it (`copy*`) so a shared photo is counted once.
+        // ponytail: a copy whose visibility was overridden away from its source's still counts as a copy
+        .leftJoin(
+          sql<{ assetId: string }>`(SELECT origin."assetId" FROM public.asset_origin origin
+            JOIN public.asset source ON source.id = origin."sourceAssetId" AND source."deletedAt" IS NULL)`.as('copy'),
+          (join) => join.onRef('copy.assetId', '=', 'asset.id'),
+        )
         .select(['user.id as userId', 'user.name as userName', 'user.quotaSizeInBytes'])
-        .select((eb) => [
-          eb.fn
-            .countAll<number>()
-            .filterWhere((eb) =>
+        .select((eb) => {
+          const onlyCopies = (copies: boolean) => (copies ? [eb('copy.assetId', 'is not', null)] : []);
+          const count = (type: AssetType, copies = false) =>
+            eb.fn.countAll<number>().filterWhere(
               eb.and([
-                eb('asset.type', '=', sql.lit(AssetType.Image)),
+                // first, so the Locked lookup below only runs for copies
+                ...onlyCopies(copies),
+                eb('asset.type', '=', sql.lit(type)),
                 eb('asset.visibility', '!=', sql.lit(AssetVisibility.Hidden)),
                 // an administrator's per-user counts never include Locked media (FL-34)
                 isNotLockedAsset(eb),
               ]),
-            )
-            .as('photos'),
-          eb.fn
-            .countAll<number>()
-            .filterWhere((eb) =>
-              eb.and([
-                eb('asset.type', '=', sql.lit(AssetType.Video)),
-                eb('asset.visibility', '!=', sql.lit(AssetVisibility.Hidden)),
-                // an administrator's per-user counts never include Locked media (FL-34)
-                isNotLockedAsset(eb),
-              ]),
-            )
-            .as('videos'),
-          eb.fn
-            .coalesce(eb.fn.sum<number>(joinedOriginalBytes).filterWhere('asset.libraryId', 'is', null), eb.lit(0))
-            .as('usage'),
-          eb.fn
-            .coalesce(
+            );
+          const usage = (type?: AssetType, copies = false) =>
+            eb.fn.coalesce(
               eb.fn
                 .sum<number>(joinedOriginalBytes)
-                .filterWhere((eb) =>
-                  eb.and([eb('asset.libraryId', 'is', null), eb('asset.type', '=', sql.lit(AssetType.Image))]),
+                .filterWhere(
+                  eb.and([
+                    eb('asset.libraryId', 'is', null),
+                    ...(type ? [eb('asset.type', '=', sql.lit(type))] : []),
+                    ...onlyCopies(copies),
+                  ]),
                 ),
               eb.lit(0),
-            )
-            .as('usagePhotos'),
-          eb.fn
-            .coalesce(
-              eb.fn
-                .sum<number>(joinedOriginalBytes)
-                .filterWhere((eb) =>
-                  eb.and([eb('asset.libraryId', 'is', null), eb('asset.type', '=', sql.lit(AssetType.Video))]),
-                ),
-              eb.lit(0),
-            )
-            .as('usageVideos'),
-          // When a signed-in device of the account was last used, for "Last active …" on Users
-          eb
-            .selectFrom('session')
-            .select((eb) => eb.fn.max('session.updatedAt').as('lastActiveAt'))
-            .whereRef('session.userId', '=', 'user.id')
-            .as('lastActiveAt'),
-        ])
+            );
+          return [
+            count(AssetType.Image).as('photos'),
+            count(AssetType.Video).as('videos'),
+            usage().as('usage'),
+            usage(AssetType.Image).as('usagePhotos'),
+            usage(AssetType.Video).as('usageVideos'),
+            count(AssetType.Image, true).as('copyPhotos'),
+            count(AssetType.Video, true).as('copyVideos'),
+            usage(undefined, true).as('copyUsage'),
+            usage(AssetType.Image, true).as('copyUsagePhotos'),
+            usage(AssetType.Video, true).as('copyUsageVideos'),
+            // When a signed-in device of the account was last used, for "Last active …" on Users
+            eb
+              .selectFrom('session')
+              .select((eb) => eb.fn.max('session.updatedAt').as('lastActiveAt'))
+              .whereRef('session.userId', '=', 'user.id')
+              .as('lastActiveAt'),
+          ];
+        })
         .groupBy('user.id')
         .orderBy('user.createdAt', 'asc')
         .execute()
