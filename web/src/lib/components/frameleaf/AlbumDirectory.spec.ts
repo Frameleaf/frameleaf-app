@@ -416,6 +416,60 @@ describe('AlbumDirectory', () => {
     expect(sdkMock.moveAlbumToCollection).not.toHaveBeenCalled();
   });
 
+  it('locks an album from its menu only after asking (FL-1296)', async () => {
+    sdkMock.updateAlbumInfo.mockResolvedValue({ ...rockies, isLocked: true });
+    const onRefresh = vi.fn();
+    renderWithTooltips(AlbumDirectory, { tree, onRefresh });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Actions for Summer in the Rockies' }));
+    const menu = within(await screen.findByRole('menu', { name: 'Actions for Summer in the Rockies' }));
+    await fireEvent.click(menu.getByRole('menuitem', { name: 'Lock album…' }));
+
+    const dialog = within(await screen.findByRole('dialog', { name: 'Lock “Summer in the Rockies”?' }));
+    expect(sdkMock.updateAlbumInfo).not.toHaveBeenCalled();
+    await fireEvent.click(dialog.getByRole('button', { name: 'Lock album' }));
+
+    await waitFor(() =>
+      expect(sdkMock.updateAlbumInfo).toHaveBeenCalledWith({ id: 'rockies', updateAlbumDto: { isLocked: true } }),
+    );
+    await waitFor(() => expect(onRefresh).toHaveBeenCalled());
+  });
+
+  it('unlocks a locked album from its menu without asking (FL-1296)', async () => {
+    sdkMock.updateAlbumInfo.mockResolvedValue({ ...rockies, isLocked: false });
+    const locked = { ...rockies, isLocked: true };
+    const lockedTree = {
+      ...tree,
+      collections: tree.collections.map((shelf) => ({
+        ...shelf,
+        albums: shelf.albums.map((album) => (album.id === rockies.id ? locked : album)),
+      })),
+    };
+    renderWithTooltips(AlbumDirectory, { tree: lockedTree, onRefresh: vi.fn() });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Actions for Summer in the Rockies' }));
+    const menu = within(await screen.findByRole('menu', { name: 'Actions for Summer in the Rockies' }));
+    expect(menu.queryByRole('menuitem', { name: 'Lock album…' })).toBeNull();
+    await fireEvent.click(menu.getByRole('menuitem', { name: 'Unlock album' }));
+
+    await waitFor(() =>
+      expect(sdkMock.updateAlbumInfo).toHaveBeenCalledWith({ id: 'rockies', updateAlbumDto: { isLocked: false } }),
+    );
+  });
+
+  it('offers Lock only to the owner, and only on albums (FL-1296)', async () => {
+    renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Actions for Trail camera' }));
+    const shared = within(await screen.findByRole('menu', { name: 'Actions for Trail camera' }));
+    expect(shared.queryByRole('menuitem', { name: 'Lock album…' })).toBeNull();
+    await fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Actions for Family' }));
+    const collection = within(await screen.findByRole('menu', { name: 'Actions for Family' }));
+    expect(collection.queryByRole('menuitem', { name: 'Lock album…' })).toBeNull();
+  });
+
   it('re-evaluates a built-in smart album scoped to its own kind (AL-6)', async () => {
     const { authManager } = await import('$lib/managers/auth-manager.svelte');
     const { modalManager } = await import('@frameleaf/ui');

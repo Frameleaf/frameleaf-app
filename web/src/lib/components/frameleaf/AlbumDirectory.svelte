@@ -58,6 +58,8 @@
     mdiFolderOpenOutline,
     mdiImageAlbum,
     mdiLinkVariant,
+    mdiLockOpenVariantOutline,
+    mdiLockOutline,
     mdiLogoutVariant,
     mdiMagnify,
     mdiPencilOutline,
@@ -502,6 +504,12 @@
     <MenuItem disabled={album.assetCount === 0} onSelect={() => handleDownloadAlbum(album)}>
       <Icon icon={mdiDownloadOutline} size="18" aria-hidden={true} />{$t('download')}
     </MenuItem>
+    {#if owner && isAlbum}
+      <MenuItem onSelect={() => actions?.toggleLock(album)}>
+        <Icon icon={album.isLocked ? mdiLockOpenVariantOutline : mdiLockOutline} size="18" aria-hidden={true} />
+        {album.isLocked ? $t('frameleaf_albums_unlock') : $t('frameleaf_albums_lock')}
+      </MenuItem>
+    {/if}
     <div class="menu-separator" role="separator"></div>
     {#if owner}
       <MenuItem onSelect={() => actions?.remove(album)}>
