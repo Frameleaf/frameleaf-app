@@ -417,6 +417,44 @@ where
 order by
   "id" asc
 
+-- SyncRepository.album.getDeletes (trashed)
+select
+  "id",
+  "albumId"
+from
+  "album_audit" as "album_audit"
+where
+  "album_audit"."id" < $1
+  and "album_audit"."id" > $2
+  and "userId" = $3
+union all
+select
+  "album"."updateId" as "id",
+  "album"."id" as "albumId"
+from
+  "album" as "album"
+  inner join "album_user" on "album_user"."albumId" = "album"."id"
+where
+  "album"."updateId" < $4
+  and "album"."updateId" > $5
+  and "album_user"."userId" = $6
+  and "album_user"."role" = $7
+  and "album"."libraryScope" = $8
+union all
+select
+  "album"."updateId" as "id",
+  "album"."id" as "albumId"
+from
+  "album" as "album"
+  inner join "album_user" on "album_user"."albumId" = "album"."id"
+where
+  "album"."updateId" < $9
+  and "album"."updateId" > $10
+  and "album_user"."userId" = $11
+  and "album"."deletedAt" is not null
+order by
+  "id" asc
+
 -- SyncRepository.album.getUpserts
 select distinct
   on ("album"."id", "album"."updateId") "album"."id",
@@ -470,6 +508,7 @@ where
         or scope_member.role != $7
       )
   )
+  and "album"."deletedAt" is null
 order by
   "album"."updateId" asc
 
@@ -537,6 +576,7 @@ where
         or scope_member.role != $9
       )
   )
+  and "album"."deletedAt" is null
 order by
   "album"."updateId" asc
 
