@@ -78,6 +78,12 @@ const cacheControlHeaders: Record<CacheControl, string | null> = {
   [CacheControl.None]: null, // falsy value to prevent adding Cache-Control header
 };
 
+export const DOCUMENT_CONTENT_SECURITY_POLICY =
+  "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:";
+// Types a browser renders as an active document (SVG, XML such as .xmp sidecars, HTML).
+const ACTIVE_DOCUMENT_TYPE = /svg|xml|html/i;
+const ACTIVE_DOCUMENT_EXTENSIONS = new Set(['.svg', '.xmp', '.xml', '.html', '.htm', '.xhtml']);
+
 export const sendFile = async (
   res: Response,
   next: NextFunction,
@@ -97,6 +103,16 @@ export const sendFile = async (
     }
 
     res.header('Content-Type', file.contentType);
+    // Stored files are user content: never let the browser sniff them into something it would run,
+    // and if one that can be a document (SVG, XML, HTML) is opened, keep script and network loads off.
+    res.header('X-Content-Type-Options', 'nosniff');
+    if (
+      ACTIVE_DOCUMENT_TYPE.test(file.contentType) ||
+      ACTIVE_DOCUMENT_EXTENSIONS.has(extname(file.path).toLowerCase())
+    ) {
+      // append, not header: a Helmet CSP (frame-ancestors and the rest) stays in force alongside it.
+      res.append('Content-Security-Policy', DOCUMENT_CONTENT_SECURITY_POLICY);
+    }
     if (file.fileName) {
       res.header('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(file.fileName)}`);
     }
