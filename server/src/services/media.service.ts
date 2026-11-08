@@ -36,6 +36,7 @@ import {
   AssetVisibility,
   AudioCodec,
   ChecksumAlgorithm,
+  ColorMatrix,
   Colorspace,
   FrameleafWorker,
   ImageFormat,
@@ -73,7 +74,14 @@ import { checkFaceVisibility, checkOcrVisibility } from 'src/utils/editor.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { executionSignal } from 'src/utils/execution-signal.js';
 import { HDR_RENDITION_RENDERER_VERSION, imageRenditionIdentity } from 'src/utils/image-rendition.js';
-import { isLockedKeyUnavailable, withPlainCopy } from 'src/utils/locked-read.js';
+import { isLockedKeyUnavailable, isLockedPath, withPlainCopy } from 'src/utils/locked-read.js';
+import {
+  buildLogLut,
+  detectLogVideo,
+  getLogLutFileName,
+  getLogProfileLabel,
+  isHdrTransfer,
+} from 'src/utils/log-video.js';
 import {
   type DecodeQualification,
   DecodeSupport,
@@ -111,7 +119,7 @@ import {
   validateFullClipMasterTiming,
   validateVideoMaster,
 } from 'src/utils/media-policy.js';
-import { BaseConfig, ThumbnailConfig } from 'src/utils/media.js';
+import { BaseConfig, ThumbnailConfig, isSafeFilterPath } from 'src/utils/media.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, clamp } from 'src/utils/misc.js';
 import { rational, toDisplaySeconds } from 'src/utils/rational-time.js';
@@ -1064,14 +1072,17 @@ export class MediaService extends BaseService {
         file.path = path.join(parsed.dir, `${parsed.name}_${options.pathSuffix}${parsed.ext}`);
       }
     }
-    const { videoStream, format } = asset;
-    if (!videoStream || !format) {
+    const { format } = asset;
+    if (!asset.videoStream || !format) {
       throw new Error(`Missing video metadata for asset ${asset.id}`);
     }
 
     // FL-101: qualify the source before anything is created on disk. A refused source must not
     // reach the point where an existing, valid preview has already been cleared out of the way.
-    assertDecodeQualified(qualifySourceDecode(videoStream, ffmpeg));
+    assertDecodeQualified(qualifySourceDecode(asset.videoStream, ffmpeg));
+
+    // FL-1285: Log footage gets its thumbnail and preview in normal Rec.709 colour.
+    const videoStream = await this.attachLogConversion(sourcePath, asset.videoStream);
 
     this.storageCore.ensureFolders(previewFile.path);
 
@@ -1301,7 +1312,16 @@ export class MediaService extends BaseService {
     }
     ffmpeg = decodeAcceleration.config;
 
-    const target = this.getTranscodeTarget(ffmpeg, videoStream, audioStream);
+    // FL-1285: a Log clip is re-encoded into normal Rec.709 colour even when its codec could be
+    // played as it is. A sealed (Locked) original is checked on its plain copy inside the encode
+    // below, so that it is not decrypted twice; it is converted whenever it is re-encoded anyway.
+    const lockedOriginal = await isLockedPath(asset.originalPath);
+    let stream = lockedOriginal ? videoStream : await this.attachLogConversion(asset.originalPath, videoStream);
+    if (stream.logConversion) {
+      ffmpeg = this.withSoftwareDecodeForLog(ffmpeg, asset.id);
+    }
+
+    const target = this.getTranscodeTarget(ffmpeg, stream, audioStream);
     if (target === TranscodeTarget.None && !this.isRemuxRequired(ffmpeg, format)) {
       const encodedVideo = getAssetFile(asset.files, AssetFileType.EncodedVideo, { isEdited: false });
       if (encodedVideo) {
@@ -1317,7 +1337,7 @@ export class MediaService extends BaseService {
 
     this.storageCore.ensureFolders(output);
 
-    const command = BaseConfig.create(ffmpeg, this.videoInterfaces).getCommand(target, videoStream, audioStream);
+    let command = BaseConfig.create(ffmpeg, this.videoInterfaces).getCommand(target, stream, audioStream);
     if (ffmpeg.accel === TranscodeHardwareAcceleration.Disabled) {
       this.logger.log(`Transcoding video ${asset.id} without hardware acceleration`);
     } else {
@@ -1329,6 +1349,13 @@ export class MediaService extends BaseService {
     const accel = ffmpeg.accel;
     // FL-721 (spec §8.2): a sealed original is read from a plain copy for the whole encode
     const encoded = await withPlainCopy(asset.originalPath, async (input) => {
+      if (lockedOriginal && [TranscodeTarget.All, TranscodeTarget.Video].includes(target)) {
+        stream = await this.attachLogConversion(input, stream);
+        if (stream.logConversion) {
+          ffmpeg = this.withSoftwareDecodeForLog(ffmpeg, asset.id);
+          command = BaseConfig.create(ffmpeg, this.videoInterfaces).getCommand(target, stream, audioStream);
+        }
+      }
       try {
         await this.mediaRepository.transcode(input, output, command);
         if (accel !== TranscodeHardwareAcceleration.Disabled) {
@@ -1345,11 +1372,7 @@ export class MediaService extends BaseService {
           try {
             this.logger.error(`Retrying with ${ffmpeg.accel.toUpperCase()}-accelerated encoding and software decoding`);
             ffmpeg = { ...ffmpeg, accelDecode: false };
-            const command = BaseConfig.create(ffmpeg, this.videoInterfaces).getCommand(
-              target,
-              videoStream,
-              audioStream,
-            );
+            const command = BaseConfig.create(ffmpeg, this.videoInterfaces).getCommand(target, stream, audioStream);
             await this.mediaRepository.transcode(input, output, command);
             isPartialFallbackSuccess = true;
           } catch (error: any) {
@@ -1362,7 +1385,7 @@ export class MediaService extends BaseService {
         } else {
           this.logger.error(`Retrying with ${ffmpeg.accel.toUpperCase()} acceleration disabled`);
           ffmpeg = { ...ffmpeg, accel: TranscodeHardwareAcceleration.Disabled };
-          const command = BaseConfig.create(ffmpeg, this.videoInterfaces).getCommand(target, videoStream, audioStream);
+          const command = BaseConfig.create(ffmpeg, this.videoInterfaces).getCommand(target, stream, audioStream);
           await this.mediaRepository.transcode(input, output, command);
           // FL-537: the copy was made on the processor because the card failed; Video playback copies says so
           await this.noteVideoCard(false, accel);
@@ -2894,6 +2917,87 @@ export class MediaService extends BaseService {
     return Math.max(2, value - (value % 2));
   }
 
+  /**
+   * FL-1285: when the file says it was recorded in Log, return the stream with a Rec.709 conversion
+   * attached (a generated LUT); otherwise return it unchanged. Reads only the file's own markers
+   * (see `detectLogVideo`). Best effort: a file that cannot be read for this is left as it is, and
+   * the job carries on exactly as before.
+   */
+  private async attachLogConversion(path: string, videoStream: VideoStreamInfo): Promise<VideoStreamInfo> {
+    if (videoStream.logConversion || isHdrTransfer(videoStream.colorTransfer)) {
+      return videoStream;
+    }
+    try {
+      const readTags = async () => {
+        try {
+          return await this.metadataRepository.readLogVideoTags(path);
+        } catch (error) {
+          this.logger.debug(`Could not read camera tags of ${path} for Log detection: ${error}`);
+          return null;
+        }
+      };
+      const [container, tags] = await Promise.all([this.mediaRepository.readContainerLogSignals(path), readTags()]);
+      const detection = detectLogVideo({
+        colorPrimaries: videoStream.colorPrimaries,
+        colorTransfer: videoStream.colorTransfer,
+        colorMatrix: videoStream.colorMatrix,
+        ...container,
+        tags,
+      });
+      if (!detection) {
+        return videoStream;
+      }
+
+      // Persisted streams do not carry the range; Log is rare, so ask ffprobe only now.
+      let colorRange = videoStream.colorRange;
+      if (colorRange === undefined) {
+        try {
+          const probed = await this.mediaRepository.probe(path);
+          colorRange = probed?.videoStreams?.find((stream) => stream.index === videoStream.index)?.colorRange ?? null;
+        } catch {
+          colorRange = null;
+        }
+      }
+      const inputRange = colorRange === 'pc' ? 'pc' : 'tv';
+      const lutPath = await this.mediaRepository.ensureColorLut(getLogLutFileName(detection.profile, inputRange), () =>
+        buildLogLut(detection.profile, inputRange),
+      );
+      if (!isSafeFilterPath(lutPath)) {
+        this.logger.warn(`Not converting Log video ${path}: the LUT folder ${lutPath} cannot be used in ffmpeg`);
+        return videoStream;
+      }
+      const label = getLogProfileLabel(detection.profile);
+      this.logger.log(
+        `${path} is ${label} Log video (${detection.signal}, ${detection.confidence} confidence); converting to Rec.709`,
+      );
+      // The stream's own Y'CbCr matrix when it states one; otherwise BT.2020 for Apple Log (what
+      // iPhone writes) and BT.709 for every other camera.
+      let inputMatrix: 'bt709' | 'bt2020' = detection.profile.curve === 'apple-log' ? 'bt2020' : 'bt709';
+      if (videoStream.colorMatrix === ColorMatrix.Bt709) {
+        inputMatrix = 'bt709';
+      } else if (videoStream.colorMatrix === ColorMatrix.Bt2020Nc || videoStream.colorMatrix === ColorMatrix.Bt2020C) {
+        inputMatrix = 'bt2020';
+      }
+      return { ...videoStream, logConversion: { label, lutPath, inputMatrix, inputRange } };
+    } catch (error) {
+      executionSignal()?.throwIfAborted();
+      this.logger.warn(`Could not check whether ${path} is Log video: ${error}`);
+      return videoStream;
+    }
+  }
+
+  /**
+   * FL-1285: the Log conversion runs on the CPU, so a Log clip is decoded in software. Hardware
+   * encoding is kept: frames are uploaded after the conversion, as they are after `tonemapx`.
+   */
+  private withSoftwareDecodeForLog(ffmpeg: ConfigFFmpegDto, assetId: string): ConfigFFmpegDto {
+    if (!ffmpeg.accelDecode) {
+      return ffmpeg;
+    }
+    this.logger.debug(`Asset ${assetId}: decoding in software for the Log to Rec.709 conversion`);
+    return { ...ffmpeg, accelDecode: false };
+  }
+
   private getTranscodeTarget(
     config: ConfigFFmpegDto,
     videoStream: VideoStreamInfo,
@@ -2948,7 +3052,9 @@ export class MediaService extends BaseService {
     const isLargerThanTargetBitrate = maxBitrate > 0 && stream.bitrate > maxBitrate;
 
     const isTargetVideoCodec = ffmpegConfig.acceptedVideoCodecs.includes(stream.codecName as VideoCodec);
-    const isRequired = !isTargetVideoCodec || !stream.pixelFormat.endsWith('420p');
+    // FL-1285: Log footage played as it is looks flat and grey, so its playback copy is always made
+    // (unless playback copies are switched off altogether).
+    const isRequired = !isTargetVideoCodec || !stream.pixelFormat.endsWith('420p') || !!stream.logConversion;
 
     switch (ffmpegConfig.transcode) {
       case TranscodePolicy.Disabled: {

@@ -136,6 +136,23 @@ export interface VideoStreamInfo {
   dvProfile: DvProfile | null;
   dvLevel: number | null;
   dvBlSignalCompatibilityId: DvSignalCompatibility | null;
+  /**
+   * FL-1285: set only by the playback-copy and thumbnail jobs, after they read the file's Log
+   * markers: the generated LUT that turns this Log stream into Rec.709. Never persisted.
+   */
+  logConversion?: LogConversion | null;
+}
+
+/** FL-1285: how a Log stream is converted to Rec.709 in an ffmpeg filter chain. */
+export interface LogConversion {
+  /** For logs and the rendition identity, e.g. "S-Log3 / S-Gamut3.Cine". */
+  label: string;
+  /** Absolute path of the generated `.cube` LUT. */
+  lutPath: string;
+  /** The Y'CbCr matrix to decode the source with. */
+  inputMatrix: 'bt709' | 'bt2020';
+  /** The source's signal range, which the LUT was generated for. */
+  inputRange: 'tv' | 'pc';
 }
 
 export interface AudioStreamInfo {

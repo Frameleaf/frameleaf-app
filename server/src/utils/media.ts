@@ -28,7 +28,11 @@ import {
   TranscodeTarget,
   VideoCodec,
 } from 'src/enum.js';
+import { isHdrTransfer } from 'src/utils/log-video.js';
 import { AudioChannelPolicy, getDeliveryAudioChannelArgs } from 'src/utils/media-policy.js';
+
+/** A LUT path that needs no escaping inside an ffmpeg filter graph. */
+export const isSafeFilterPath = (path: string) => /^[\w./-]+$/.test(path);
 
 export const isVideoRotated = (videoStream: VideoStreamInfo): boolean => Math.abs(videoStream.rotation) === 90;
 
@@ -273,6 +277,11 @@ export class BaseConfig implements VideoCodecSWConfig {
   }
 
   getFilterOptions(videoStream: VideoStreamInfo) {
+    const logOptions = this.getLogConversion(videoStream);
+    if (logOptions.length > 0) {
+      return logOptions;
+    }
+
     const options = [];
     if (this.shouldScale(videoStream)) {
       options.push(`scale=${this.getScaling(videoStream)}`);
@@ -411,6 +420,48 @@ export class BaseConfig implements VideoCodecSWConfig {
     const { primaries, transfer, matrix } = this.getColors();
     const options = `tonemapx=tonemap=${this.config.tonemap}:desat=0:p=${primaries}:t=${transfer}:m=${matrix}:r=pc:peak=100:format=yuv420p`;
     return [options];
+  }
+
+  /** FL-1285: the range a Log conversion writes; playback copies are limited range. */
+  getLogOutputRange(): 'tv' | 'pc' {
+    return 'tv';
+  }
+
+  /**
+   * FL-1285: Log footage to Rec.709 on the CPU. The first `scale` decodes Y'CbCr with the source's
+   * matrix and range (and resizes, when asked, so the LUT runs on the smaller picture), `lut3d`
+   * applies the generated curve/gamut/tone conversion in 16-bit RGB, and the result is encoded back
+   * to BT.709 Y'CbCr and tagged BT.709 so players do not treat it as the camera's colour space.
+   *
+   * Hardware-accelerated encoders run this before uploading frames, the way they run `tonemapx`;
+   * hardware decoding is switched off for Log clips by the caller, since the frames must be on the
+   * CPU. PQ and HLG streams never take this path: they keep HDR tone mapping.
+   */
+  getLogConversion(
+    videoStream: VideoStreamInfo,
+    { scale = true, pixelFormat = 'yuv420p' }: { scale?: boolean; pixelFormat?: 'yuv420p' | 'nv12' } = {},
+  ): string[] {
+    const conversion = videoStream.logConversion;
+    if (!conversion || isHdrTransfer(videoStream.colorTransfer)) {
+      return [];
+    }
+    if (!isSafeFilterPath(conversion.lutPath)) {
+      throw new Error(`Unsupported characters in LUT path ${conversion.lutPath}`);
+    }
+    const input = [
+      ...(scale && this.shouldScale(videoStream) ? [this.getScaling(videoStream)] : []),
+      `in_color_matrix=${conversion.inputMatrix}`,
+      `in_range=${conversion.inputRange}`,
+    ];
+    const range = this.getLogOutputRange();
+    return [
+      `scale=${input.join(':')}`,
+      'format=gbrp16le',
+      `lut3d=file=${conversion.lutPath}:interp=tetrahedral`,
+      `scale=out_color_matrix=bt709:out_range=${range}`,
+      `format=${pixelFormat}`,
+      `setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=${range}`,
+    ];
   }
 
   getAudioEncoder(): string {
@@ -574,6 +625,11 @@ export class ThumbnailConfig extends BaseConfig {
   getScaling(videoStream: VideoStreamInfo) {
     return super.getScaling(videoStream) + ':flags=lanczos+accurate_rnd+full_chroma_int:out_range=pc';
   }
+
+  /** Stills are full range, like the scaled and tone-mapped thumbnails. */
+  getLogOutputRange(): 'tv' | 'pc' {
+    return 'pc';
+  }
 }
 
 export class H264Config extends BaseConfig {
@@ -709,7 +765,8 @@ export class NvencSwDecodeConfig extends BaseHWConfig {
   }
 
   getFilterOptions(videoStream: VideoStreamInfo) {
-    const options = this.getToneMapping(videoStream);
+    const logOptions = this.getLogConversion(videoStream, { scale: false, pixelFormat: 'nv12' });
+    const options = logOptions.length > 0 ? logOptions : this.getToneMapping(videoStream);
     options.push('hwupload_cuda');
     if (this.shouldScale(videoStream)) {
       options.push(`scale_cuda=${this.getScaling(videoStream)}:format=nv12`);
@@ -832,7 +889,8 @@ export class QsvSwDecodeConfig extends BaseHWConfig {
   }
 
   getFilterOptions(videoStream: VideoStreamInfo) {
-    const options = this.getToneMapping(videoStream);
+    const logOptions = this.getLogConversion(videoStream, { scale: false, pixelFormat: 'nv12' });
+    const options = logOptions.length > 0 ? logOptions : this.getToneMapping(videoStream);
     options.push('hwupload=extra_hw_frames=64');
     if (this.shouldScale(videoStream)) {
       options.push(`scale_qsv=${this.getScaling(videoStream)}:mode=hq:format=nv12`);
@@ -960,7 +1018,8 @@ export class VaapiSwDecodeConfig extends BaseHWConfig {
   }
 
   getFilterOptions(videoStream: VideoStreamInfo) {
-    const options = this.getToneMapping(videoStream);
+    const logOptions = this.getLogConversion(videoStream, { scale: false, pixelFormat: 'nv12' });
+    const options = logOptions.length > 0 ? logOptions : this.getToneMapping(videoStream);
     options.push('hwupload=extra_hw_frames=64');
     if (this.shouldScale(videoStream)) {
       options.push(`scale_vaapi=${this.getScaling(videoStream)}:mode=hq:out_range=pc:format=nv12`);

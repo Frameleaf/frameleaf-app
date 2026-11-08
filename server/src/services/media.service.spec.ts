@@ -21,6 +21,9 @@ import {
   AssetVisibility,
   AudioCodec,
   ChecksumAlgorithm,
+  ColorMatrix,
+  ColorPrimaries,
+  ColorTransfer,
   Colorspace,
   DvProfile,
   ExifOrientation,
@@ -1211,6 +1214,79 @@ describe(MediaService.name, () => {
       }
     });
 
+    it('converts the thumbnail and preview of a Log video to Rec.709 (FL-1285)', async () => {
+      const asset = AssetFactory.from({ type: AssetType.Video, originalPath: '/original/path.ext' }).exif().build();
+      const { videoStream } = probeStub.videoStreamH264;
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...getForGenerateThumbnail(asset),
+        ...probeStub.videoStreamH264,
+        videoStream: {
+          ...videoStream!,
+          colorPrimaries: ColorPrimaries.Bt2020,
+          colorMatrix: ColorMatrix.Bt2020Nc,
+          colorTransfer: ColorTransfer.Unknown,
+        },
+      });
+      mocks.media.readContainerLogSignals.mockResolvedValue({
+        sampleEntryLogTag: 'com.apple.rec2020.apple-log',
+        sonyCaptureGamma: null,
+        sonyCaptureGamut: null,
+      });
+      await sut.handleGenerateThumbnails({ id: asset.id });
+
+      expect(mocks.media.readContainerLogSignals).toHaveBeenCalledWith('/original/path.ext');
+      expect(mocks.metadata.readLogVideoTags).toHaveBeenCalledWith('/original/path.ext');
+      expect(mocks.media.ensureColorLut).toHaveBeenCalledWith(
+        'frameleaf-log-v1-apple-log-rec2020-tv-33.cube',
+        expect.any(Function),
+      );
+      const lut = '/tmp/frameleaf-color-luts/frameleaf-log-v1-apple-log-rec2020-tv-33.cube';
+      for (const size of [250, 1440]) {
+        expect(mocks.media.transcode).toHaveBeenCalledWith(
+          '/original/path.ext',
+          expect.any(String),
+          expect.objectContaining({
+            outputOptions: expect.arrayContaining([
+              '-vf',
+              String.raw`fps=12:start_time=0:eof_action=pass:round=down,thumbnail=12,select=gt(scene\,0.1)-eq(prev_selected_n\,n)+isnan(prev_selected_n)+gt(n\,20),trim=end_frame=2,reverse,` +
+                (size < 1080 ? `scale=-2:${size}:flags=lanczos+accurate_rnd+full_chroma_int:out_range=pc:` : 'scale=') +
+                `in_color_matrix=bt2020:in_range=tv,format=gbrp16le,lut3d=file=${lut}:interp=tetrahedral,` +
+                'scale=out_color_matrix=bt709:out_range=pc,format=yuv420p,' +
+                'setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=pc',
+            ]),
+          }),
+        );
+      }
+    });
+
+    it('leaves an ordinary video thumbnail alone when its camera tags say nothing about Log (FL-1285)', async () => {
+      const asset = AssetFactory.from({ type: AssetType.Video, originalPath: '/original/path.ext' }).exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...getForGenerateThumbnail(asset),
+        ...probeStub.videoStreamH264,
+      });
+      mocks.metadata.readLogVideoTags.mockResolvedValue({ Make: 'SONY', PictureProfile: 'Gamma Movie (PP1)' });
+      await sut.handleGenerateThumbnails({ id: asset.id });
+
+      expect(mocks.media.ensureColorLut).not.toHaveBeenCalled();
+      for (const call of mocks.media.transcode.mock.calls) {
+        expect((call[2] as { outputOptions: string[] }).outputOptions.join(' ')).not.toContain('lut3d');
+      }
+    });
+
+    it('still makes the thumbnail when the Log check cannot read the file (FL-1285)', async () => {
+      const asset = AssetFactory.from({ type: AssetType.Video, originalPath: '/original/path.ext' }).exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...getForGenerateThumbnail(asset),
+        ...probeStub.videoStreamH264,
+      });
+      mocks.media.readContainerLogSignals.mockRejectedValue(new Error('EACCES'));
+      await sut.handleGenerateThumbnails({ id: asset.id });
+
+      expect(mocks.media.transcode).toHaveBeenCalled();
+      expect(mocks.media.ensureColorLut).not.toHaveBeenCalled();
+    });
+
     it('should tonemap thumbnail for hdr video', async () => {
       const asset = AssetFactory.from({ type: AssetType.Video, originalPath: '/original/path.ext' }).exif().build();
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
@@ -1219,6 +1295,8 @@ describe(MediaService.name, () => {
       });
       await sut.handleGenerateThumbnails({ id: asset.id });
 
+      // FL-1285: HDR is never checked for Log
+      expect(mocks.media.readContainerLogSignals).not.toHaveBeenCalled();
       expect(mocks.storage.mkdirSync).toHaveBeenCalledWith(expect.any(String));
       expect(mocks.media.transcode).toHaveBeenNthCalledWith(
         5,
@@ -4877,6 +4955,102 @@ describe(MediaService.name, () => {
       };
       mocks.assetJob.getForVideoConversion.mockResolvedValue(asset);
       sut.videoInterfaces = { dri: ['renderD128'], mali: true };
+    });
+
+    describe('Log video (FL-1285)', () => {
+      const lut = '/tmp/frameleaf-color-luts/frameleaf-log-v1-s-log3-s-gamut3-cine-tv-33.cube';
+      const sonyLog = () => {
+        mocks.media.readContainerLogSignals.mockResolvedValue({
+          sampleEntryLogTag: null,
+          sonyCaptureGamma: 's-log3-cine',
+          sonyCaptureGamut: 'S-Gamut3.Cine-SLog3',
+        });
+      };
+      const filtersOf = (call: number) => {
+        const options = (mocks.media.transcode.mock.calls[call][2] as { outputOptions: string[] }).outputOptions;
+        return options[options.indexOf('-vf') + 1];
+      };
+
+      it('re-encodes a Log clip whose codec could otherwise be played as it is', async () => {
+        sonyLog();
+        await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+        expect(mocks.media.readContainerLogSignals).toHaveBeenCalledWith('/original/path.ext');
+        expect(mocks.media.transcode).toHaveBeenCalledTimes(1);
+        expect(mocks.media.transcode).toHaveBeenCalledWith(
+          '/original/path.ext',
+          expect.any(String),
+          expect.objectContaining({ outputOptions: expect.arrayContaining(['-c:v', 'libx264']) }),
+        );
+        expect(filtersOf(0)).toBe(
+          `scale=in_color_matrix=bt709:in_range=tv,format=gbrp16le,lut3d=file=${lut}:interp=tetrahedral,` +
+            'scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,' +
+            'setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv',
+        );
+      });
+
+      it('uses the range ffprobe reports when the stored stream does not carry it', async () => {
+        sonyLog();
+        mocks.media.probe.mockResolvedValue({
+          ...probeStub.videoStreamH264,
+          format: probeStub.videoStreamH264.format,
+          videoStreams: [{ ...probeStub.videoStreamH264.videoStream!, colorRange: 'pc' }],
+          audioStreams: [],
+        });
+        await sut.handleVideoConversion({ id: 'video-id' });
+
+        expect(mocks.media.ensureColorLut).toHaveBeenCalledWith(
+          'frameleaf-log-v1-s-log3-s-gamut3-cine-pc-33.cube',
+          expect.any(Function),
+        );
+        expect(filtersOf(0)).toContain('in_color_matrix=bt709:in_range=pc,');
+      });
+
+      it('decodes a Log clip in software and keeps hardware encoding', async () => {
+        sonyLog();
+        mocks.systemMetadata.get.mockResolvedValue({
+          ffmpeg: { accel: TranscodeHardwareAcceleration.Nvenc, accelDecode: true },
+        });
+        await sut.handleVideoConversion({ id: 'video-id' });
+
+        const command = mocks.media.transcode.mock.calls[0][2] as { inputOptions: string[]; outputOptions: string[] };
+        expect(command.inputOptions).not.toContain('-hwaccel');
+        expect(command.inputOptions).toEqual(['-init_hw_device', 'cuda=cuda:0', '-filter_hw_device', 'cuda']);
+        expect(command.outputOptions).toEqual(expect.arrayContaining(['-c:v', 'h264_nvenc']));
+        expect(filtersOf(0)).toContain(`lut3d=file=${lut}`);
+        expect(filtersOf(0)).toContain('format=nv12,setparams=');
+        expect(filtersOf(0).endsWith(',hwupload_cuda')).toBe(true);
+      });
+
+      it('respects playback copies being switched off', async () => {
+        sonyLog();
+        mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { transcode: TranscodePolicy.Disabled } });
+        await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Skipped);
+        expect(mocks.media.transcode).not.toHaveBeenCalled();
+      });
+
+      it('passes an ordinary clip through as before', async () => {
+        await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Skipped);
+        expect(mocks.media.readContainerLogSignals).toHaveBeenCalled();
+        expect(mocks.media.transcode).not.toHaveBeenCalled();
+        expect(mocks.media.ensureColorLut).not.toHaveBeenCalled();
+      });
+
+      it('keeps an HDR clip on tone mapping without checking it for Log', async () => {
+        mocks.assetJob.getForVideoConversion.mockResolvedValue({ ...asset, ...probeStub.videoStreamHDR });
+        await sut.handleVideoConversion({ id: 'video-id' });
+
+        expect(mocks.media.readContainerLogSignals).not.toHaveBeenCalled();
+        expect(filtersOf(0)).toContain('tonemapx=');
+        expect(filtersOf(0)).not.toContain('lut3d');
+      });
+
+      it('carries on without conversion when the Log check fails', async () => {
+        mocks.media.readContainerLogSignals.mockRejectedValue(new Error('EIO'));
+        mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { transcode: TranscodePolicy.All } });
+        await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+        expect(filtersOf(0)).not.toContain('lut3d');
+      });
     });
 
     it('should skip transcoding if asset not found', async () => {

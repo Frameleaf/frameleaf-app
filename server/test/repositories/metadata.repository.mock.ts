@@ -8,6 +8,7 @@ export const newMetadataRepositoryMock = (): Mocked<RepositoryInterface<Metadata
     teardown: vitest.fn(),
     readTags: vitest.fn(),
     readJpegSignature: vitest.fn(),
+    readLogVideoTags: vitest.fn().mockResolvedValue({}),
     writeTags: vitest.fn(),
     extractBinaryTag: vitest.fn(),
     inspectLocation: vitest.fn(),
