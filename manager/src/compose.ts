@@ -8,6 +8,7 @@ import { Refusal, imageDigest, type Installation, type Mount, type NasManifest, 
 import type { VerifiedRelease } from './releases.js';
 import { atomicJson, atomicSecret } from './files.js';
 import { command, environment, type Container } from './docker.js';
+import { folderDetail } from './host-paths.js';
 import { UNRAID_ICON } from './dockerman.js';
 
 export type Acceleration = 'cpu' | 'cuda' | 'rocm' | 'openvino';
@@ -335,14 +336,14 @@ export function checkServiceOverrides(mediaTargets: string[], overrides: Service
 /** Paths are explicitly mounted into Manager at the same absolute host path by the launcher. */
 export async function storagePath(path: string, roots: string[], bytes: number): Promise<string> {
   // A comma would split the `--mount` CSV the media-move helper and launcher build from this path (review L6).
-  if (!path.startsWith('/') || /[\n\0,]/.test(path) || path !== resolve(path)) throw new Refusal('invalid_storage_path');
+  if (!path.startsWith('/') || /[\n\0,]/.test(path) || path !== resolve(path)) throw new Refusal('invalid_storage_path', 409, folderDetail(path, roots));
   const actual = await realpath(path).catch(() => {
-    throw new Refusal('storage_inaccessible');
+    throw new Refusal('storage_inaccessible', 409, folderDetail(path, roots));
   });
   if (!roots.some((root) => actual === root || actual.startsWith(`${root}/`)) || actual !== path)
-    throw new Refusal('storage_outside_approved_roots');
+    throw new Refusal('storage_outside_approved_roots', 409, folderDetail(path, roots));
   await access(actual, constants.R_OK | constants.W_OK | constants.X_OK).catch(() => {
-    throw new Refusal('storage_permissions');
+    throw new Refusal('storage_permissions', 409, folderDetail(path, roots));
   });
   const space = await statfs(actual);
   if (space.bavail * space.bsize < bytes + 64 * 1024 * 1024) throw new Refusal('insufficient_disk_space');

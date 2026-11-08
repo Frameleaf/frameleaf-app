@@ -102,10 +102,33 @@ test('one host folder mapped to two container paths keeps each path', () => {
   );
 });
 
-test('state set to the host side of its mapping is refused with the path to use', () => {
-  const state = `${HOST}/frameleaf-manager`;
-  assert.throws(
-    () => adoptOwnMounts([manager([`MANAGER_DATA=${state}`], binds)], state, {}),
-    new RegExp(`Set it to ${STATE}`),
-  );
+test('the real Unraid shape: variables hold host paths, container paths were left at the template default', () => {
+  const H = '/mnt/shaganappi/appdata/frameleaf-manager-app-reviews';
+  const shaganappi: [string, string][] = [
+    [`${H}/frameleaf-media`, `${VIEW}/frameleaf-media`],
+    [`${H}/frameleaf-databases`, `${VIEW}/frameleaf-databases`],
+    [`${H}/frameleaf-backups`, `${VIEW}/frameleaf-backups`],
+    ['/var/run/docker.sock', '/var/run/docker.sock'],
+    ['/proc/1/mountinfo', '/run/frameleaf-host/mountinfo'],
+    [H, `${VIEW}/frameleaf-manager`],
+  ];
+  const env: Record<string, string | undefined> = {
+    MANAGER_DATA: H,
+    MANAGER_BACKUP_ROOT: `${H}/frameleaf-backups`,
+    MANAGER_STORAGE_ROOTS: `${H}/frameleaf-media`,
+    MANAGER_DATABASE_ROOTS: `${H}/frameleaf-databases`,
+    MANAGER_APPDATA_ROOT: `${H}/frameleaf-databases`,
+  };
+  const self = manager([`MANAGER_DATA=${H}`], shaganappi);
+  adoptOwnMounts([self], H, env);
+  assert.deepEqual(env, {
+    MANAGER_DATA: `${VIEW}/frameleaf-manager`,
+    MANAGER_BACKUP_ROOT: `${VIEW}/frameleaf-backups`,
+    MANAGER_STORAGE_ROOTS: `${VIEW}/frameleaf-media`,
+    MANAGER_DATABASE_ROOTS: `${VIEW}/frameleaf-databases`,
+    MANAGER_APPDATA_ROOT: `${VIEW}/frameleaf-databases`,
+  });
+  assert.equal(toHost(`${VIEW}/frameleaf-databases/pg`), `${H}/frameleaf-databases/pg`);
+  // Later checks find this Manager by its corrected state path.
+  assert.deepEqual(ownControllers([containerView(self)], `${VIEW}/frameleaf-manager`).length, 1);
 });

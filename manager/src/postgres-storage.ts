@@ -3,7 +3,7 @@ import { constants } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { Refusal, type Installation } from './contracts.js';
 import { overlap, type Container, type Docker } from './docker.js';
-import { ownControllers, toHost } from './host-paths.js';
+import { folderDetail, ownControllers, toHost } from './host-paths.js';
 
 const within = (path: string, parent: string) =>
   path === parent || path.startsWith(parent === '/' ? '/' : parent + '/');
@@ -75,16 +75,16 @@ export function databaseMount(
   unraid: boolean,
 ): FilesystemMount {
   if (!path.startsWith('/') || path !== resolve(path) || /[\x00-\x1f\x7f,:]/.test(path))
-    throw new Refusal('invalid_database_path');
-  if (!roots.some((root) => within(path, root))) throw new Refusal('database_path_not_mounted');
-  if (!dockerRoot.startsWith('/') || overlap(toHost(path), dockerRoot)) throw new Refusal('database_in_docker_storage');
+    throw new Refusal('invalid_database_path', 409, folderDetail(path, roots));
+  if (!roots.some((root) => within(path, root))) throw new Refusal('database_path_not_mounted', 409, folderDetail(path, roots));
+  if (!dockerRoot.startsWith('/') || overlap(toHost(path), dockerRoot)) throw new Refusal('database_in_docker_storage', 409, folderDetail(path));
   const mapping = manager.Mounts.filter((m) => within(path, m.Destination)).sort(
     (a, b) => b.Destination.length - a.Destination.length,
   )[0];
   if (!mapping || mapping.Type !== 'bind' || !mapping.RW || mapping.Source !== mapping.Destination)
-    throw new Refusal('database_requires_host_bind');
+    throw new Refusal('database_requires_host_bind', 409, folderDetail(path, roots));
   const mount = mounts.filter((m) => within(path, m.target)).sort((a, b) => b.target.length - a.target.length)[0];
-  if (!mount || mount.options.includes('ro')) throw new Refusal('database_storage_unavailable');
+  if (!mount || mount.options.includes('ro')) throw new Refusal('database_storage_unavailable', 409, folderDetail(path));
   const identity = (location: string) => {
     const host = hostMounts
       .filter((m) => within(location, m.target))
@@ -96,14 +96,14 @@ export function databaseMount(
     hostDocker = identity(dockerRoot);
   if (hostDatabase.device !== mount.device) throw new Refusal('host_database_mount_changed');
   if (hostDatabase.device === hostDocker.device && overlap(hostDatabase.path, hostDocker.path))
-    throw new Refusal('database_in_docker_storage');
+    throw new Refusal('database_in_docker_storage', 409, folderDetail(path));
   // shfs is Unraid's host share filesystem, outside docker.img. Do not rewrite its paths to /mnt/cache.
   const share = unraid && ['fuse.shfs', 'fuse.unraid'].includes(mount.type) && mount.source === 'shfs';
   const localDisk =
     ['ext4', 'xfs', 'btrfs', 'zfs'].includes(mount.type) &&
     (mount.source.startsWith('/dev/') || mount.type === 'zfs') &&
     !/^\/dev\/(?:loop|ram|zram)/.test(mount.source);
-  if (!localDisk && !share) throw new Refusal('database_requires_disk_storage');
+  if (!localDisk && !share) throw new Refusal('database_requires_disk_storage', 409, folderDetail(path));
   // Reject aliases of Docker's mounted image and bind paths into the Docker data root.
   if (
     mounts.some(
@@ -111,7 +111,7 @@ export function databaseMount(
         within(dockerRoot, m.target) && m.target !== '/' && m.device === mount.device && /^\/dev\/loop/.test(m.source),
     )
   ) {
-    throw new Refusal('database_in_docker_storage');
+    throw new Refusal('database_in_docker_storage', 409, folderDetail(path));
   }
   return mount;
 }
@@ -174,11 +174,11 @@ export class PostgresStorage {
     const mount = await this.evidence(path, installationId);
     // Resolve only the explicitly selected folder. Never enumerate a share or follow a path outside a mounted root.
     const actual = await realpath(path).catch(() => {
-      throw new Refusal('database_directory_missing');
+      throw new Refusal('database_directory_missing', 409, folderDetail(path, this.roots));
     });
     if (actual !== path) throw new Refusal('database_path_changed');
     await access(path, constants.R_OK | constants.W_OK | constants.X_OK).catch(() => {
-      throw new Refusal('database_permissions');
+      throw new Refusal('database_permissions', 409, folderDetail(path, this.roots));
     });
     const space = await statfs(path);
     if (bytes > 0 && space.bavail * space.bsize < bytes + 1024 ** 3) throw new Refusal('insufficient_database_space');

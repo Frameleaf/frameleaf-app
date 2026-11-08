@@ -6,10 +6,19 @@ import { tmpdir } from 'node:os';
 import { adoptOwnMounts } from '../src/host-paths.js';
 import { appdataDefaults, configuredAppdata } from '../src/appdata.js';
 import { databaseMount, filesystemMounts, PostgresStorage } from '../src/postgres-storage.js';
-import { renderCompose } from '../src/compose.js';
+import { renderCompose, storagePath } from '../src/compose.js';
+import type { Refusal } from '../src/contracts.js';
 import type { Container } from '../src/docker.js';
 import type { Installation } from '../src/contracts.js';
 import type { VerifiedRelease } from '../src/releases.js';
+
+test('a refused folder names the path and the folders Manager can use', async () => {
+  await assert.rejects(storagePath('/nowhere/photos', ['/mnt/media'], 0), (error: Refusal) => {
+    assert.equal(error.code, 'storage_inaccessible');
+    assert.match(error.detail!, /\/nowhere\/photos.*\/mnt\/media/);
+    return true;
+  });
+});
 
 test('a detected appdata host path is compared where Manager sees it', () => {
   const controller = (Mounts: { Type: string; Source: string; Destination: string }[]) => ({

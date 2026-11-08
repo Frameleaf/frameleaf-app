@@ -31,10 +31,22 @@ export const toHost = (path: string) => swap(path, 'container', 'host');
 export const toContainer = (path: string) => swap(path, 'host', 'container');
 
 /** A container as Manager's own filesystem sees it, so mount comparisons stay in one set of paths. */
-export function containerView<T extends { Mounts: MountView[] }>(container: T): T {
+export function containerView<T extends { Mounts: MountView[]; Config?: { Env: string[]; Labels: Record<string, string> } }>(
+  container: T,
+): T {
   if (!mappings.length) return container;
+  const controller = container.Config?.Labels?.['app.frameleaf.manager.role'] === 'controller';
   return {
     ...container,
+    // adoptOwnMounts may have corrected this Manager's own state path; comparisons must see the corrected value.
+    ...(controller && {
+      Config: {
+        ...container.Config!,
+        Env: container.Config!.Env.map((e) =>
+          e.startsWith('MANAGER_DATA=') ? `MANAGER_DATA=${corrected(e.slice('MANAGER_DATA='.length))}` : e,
+        ),
+      },
+    }),
     Mounts: container.Mounts.map((m) => {
       if (m.Type !== 'bind') return m;
       // One host folder can be mapped to two container paths; each of Manager's own mounts keeps its own.
@@ -43,6 +55,14 @@ export function containerView<T extends { Mounts: MountView[] }>(container: T): 
     }),
   };
 }
+
+const shown = (path: string) => (toHost(path) === path ? path : `${path} (${toHost(path)} on your server)`);
+/** Names the refused folder and the usable ones, so a refusal says what to change. */
+export const folderDetail = (path: string, roots: string[] = []) =>
+  `Folder: ${path ? shown(path) : 'none chosen'}.` + (roots.length ? ` Folders Manager can use: ${roots.map(shown).join(', ')}.` : '');
+
+/** A path Manager can already reach stays put, even if a host folder has the same name. */
+const corrected = (path: string) => (mappings.some((m) => inside(path, m.container)) ? path : toContainer(path));
 
 const LOCATION_VARIABLES = [
   'MANAGER_BACKUP_ROOT',
@@ -96,14 +116,17 @@ export function adoptOwnMounts(
     (m) => m.Type === 'bind' && m.Source.startsWith('/') && !inside(m.Destination, '/run/frameleaf-host'),
   ).map((m) => ({ host: m.Source, container: m.Destination }));
   mappings = binds.some((m) => m.host !== m.container) ? binds : [];
-  // The state store is already open by now, and a path that is only the host side would be lost with the container.
-  const misplaced = mappings.find((m) => inside(state, m.host));
-  if (misplaced && !self[0].Mounts.some((m) => inside(state, m.Destination)))
-    throw new Error(`MANAGER_DATA is ${state}, the host side of a folder mapping. Set it to ${toContainer(state)}.`);
+  // Runs before the state store opens: a host-side state path would otherwise be lost with the container.
+  if (toContainer(state) !== state && !self[0].Mounts.some((m) => inside(state, m.Destination)))
+    env.MANAGER_DATA = toContainer(state);
   for (const name of LOCATION_VARIABLES) {
     // A path Manager can already reach is a container path, even if a host folder has the same name.
     const reachable = (path: string) => self[0].Mounts.some((m) => inside(path, m.Destination));
-    if (env[name]) env[name] = env[name]!.split(':').map((p) => (reachable(p) ? p : toContainer(p))).join(':');
+    if (!env[name]) continue;
+    env[name] = env[name]!.split(':').map((p) => (reachable(p) ? p : toContainer(p))).join(':');
+    for (const path of env[name]!.split(':')) {
+      if (!reachable(path)) console.error(`manager: ${name} is ${path}, which is not mapped into this container; map a folder there`);
+    }
   }
 }
 

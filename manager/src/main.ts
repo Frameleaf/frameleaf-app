@@ -44,8 +44,24 @@ import { sharePortWithRedirect } from './http-redirect.js';
 import { log, print, renderBanner, requestLog } from './banner.js';
 import { connectionChecks, redactPaths, redactionRoots, renderReport } from './troubleshooting.js';
 
-const directory = process.env.MANAGER_DATA;
 const runtime = process.env.MANAGER_RUNTIME ?? 'docker';
+// Docker only: these are Linux paths, and a native Windows path has a colon of its own.
+if (runtime === 'docker') tidyLocations();
+const docker = new Docker();
+// Before any location is read: a folder may be mapped to a different path inside this container.
+// Failing here beats running with untranslated paths; the container's restart policy tries again.
+if (runtime === 'docker' && process.env.MANAGER_DATA && existsSync('/var/run/docker.sock')) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      adoptOwnMounts(await docker.inventory(), process.env.MANAGER_DATA);
+      break;
+    } catch (error) {
+      if (attempt === 5) throw error;
+      await delay(2000);
+    }
+  }
+}
+const directory = process.env.MANAGER_DATA;
 let acceleration: ReturnType<typeof detectAcceleration> | undefined;
 // Docker: optional; without it Manager answers on any IP, localhost, .local or single-label address.
 const origin = process.env.MANAGER_ORIGIN || undefined;
@@ -62,22 +78,6 @@ if (runtime === 'native') {
     ? (bootstrapPipe.mode & 0xf000) === 0x1000
     : bootstrapPipe.isFIFO() || bootstrapPipe.isSocket();
   if (!privatePipe) throw new Refusal('native_bootstrap_unavailable');
-}
-// Docker only: these are Linux paths, and a native Windows path has a colon of its own.
-if (runtime === 'docker') tidyLocations();
-const docker = new Docker();
-// Before any location is read: a folder may be mapped to a different path inside this container.
-// Failing here beats running with untranslated paths; the container's restart policy tries again.
-if (runtime === 'docker' && existsSync('/var/run/docker.sock')) {
-  for (let attempt = 1; ; attempt++) {
-    try {
-      adoptOwnMounts(await docker.inventory(), directory);
-      break;
-    } catch (error) {
-      if (attempt === 5 || (error instanceof Error && error.message.startsWith('MANAGER_DATA'))) throw error;
-      await delay(2000);
-    }
-  }
 }
 const backupRoot = process.env.MANAGER_BACKUP_ROOT ?? (runtime === 'native' ? join(directory, 'backups') : undefined);
 if (!backupRoot || backupRoot !== resolve(backupRoot))
