@@ -56283,6 +56283,72 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/studio/projects/{id}/transcriptions/estimate": {
+      "post": {
+        "description": "Owner only. Prices speech to text for one video or audio clip on the main timeline of the head revision. The audio is extracted on this server and nothing is sent until the answer is confirmed with `POST /cloud/ml/jobs`. Read the cues with `GET /studio/projects/{id}/transcriptions/{transcriptionId}`, using the confirmed `operationId`. Cues from Frameleaf Cloud carry no word timings.",
+        "operationId": "estimateStudioTranscription",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioTranscriptionEstimateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudMlJobEstimateResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Estimate a Studio clip transcription on Frameleaf Cloud",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/studio/projects/{id}/transcriptions/{transcriptionId}": {
       "get": {
         "description": "Owner only. The job status and progress, and once it has completed the cues (exact rational seconds on the sequence, ready for `captions.set`) and word timings.",
@@ -149826,6 +149892,38 @@
           "result",
           "revision",
           "status"
+        ],
+        "type": "object"
+      },
+      "StudioTranscriptionEstimateDto": {
+        "properties": {
+          "clipId": {
+            "description": "A video or audio clip on the main timeline of the head revision",
+            "pattern": "^[\\w-]{1,128}$",
+            "type": "string"
+          },
+          "destinationId": {
+            "description": "The Frameleaf Cloud processing destination, named explicitly",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "language": {
+            "description": "A BCP 47 language tag such as `en` or `pt-BR`, or `auto` to detect the language",
+            "maxLength": 35,
+            "minLength": 2,
+            "type": "string"
+          },
+          "modelSku": {
+            "description": "The model chosen on the slider; omitted, the chosen or recommended model for captions",
+            "pattern": "^ms_[\\dA-HJKMNP-TV-Z]{8}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "clipId",
+          "destinationId",
+          "language"
         ],
         "type": "object"
       },

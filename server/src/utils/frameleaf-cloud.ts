@@ -302,6 +302,9 @@ const modelSkuSchema = z.string().regex(MODEL_SKU_PATTERN);
 const computeSkuSchema = z.string().regex(COMPUTE_SKU_PATTERN);
 const voiceSkuSchema = z.string().regex(VOICE_SKU_PATTERN);
 
+/** FC-48 `TRANSCRIPTION_MAX_INPUT_SECONDS`: four hours per audio input. */
+export const CLOUD_TRANSCRIPTION_MAX_INPUT_SECONDS = 4 * 60 * 60;
+
 /** A language tag (ISO 639 with an optional region), never free text. */
 const languageTag = z.string().regex(/^[a-z]{2,3}(-[A-Z]{2})?$/);
 const modelRevSchema = z.string().regex(MODEL_REV_PATTERN);
@@ -841,7 +844,25 @@ export const CLOUD_WORKLOAD_REQUESTS = {
       },
     ),
   restoration: z.strictObject({ mode: z.enum(CLOUD_RESTORATION_MODES).optional(), scale: scale.optional() }),
-  transcription: z.strictObject({ language: languageTag.optional() }),
+  // FC-48 `TranscriptionRequest`: one item per audio input, priced by its length (never a video). No `diarize`.
+  transcription: z.strictObject({
+    language: z.union([z.literal('auto'), languageTag]).optional(),
+    items: z
+      .array(
+        z.strictObject({
+          inputId: z.string().regex(/^[\w-]{1,64}$/),
+          durationSec: z.number().positive().max(CLOUD_TRANSCRIPTION_MAX_INPUT_SECONDS),
+          captions: z
+            .strictObject({
+              format: z.enum(['vtt', 'srt']).optional(),
+              maxLineChars: z.int().min(16).max(64).optional(),
+            })
+            .optional(),
+        }),
+      )
+      .min(1)
+      .max(50),
+  }),
   // `text` is what is spoken, not an instruction: plain text, no control characters but line breaks.
   tts: z.strictObject({
     voice: voiceSkuSchema,
@@ -1781,6 +1802,31 @@ export const upscaleResultSchema = z
     }
   });
 export type CloudUpscaleResult = z.infer<typeof upscaleResultSchema>;
+
+/**
+ * FC-48 `TranscriptionResult` (`transcription-v1`), the job's result document (output `result`). Only
+ * what this server reads; the cues come from each item's caption file, which follows the caption rules.
+ */
+export const transcriptionResultSchema = z.object({
+  schema: z.literal('transcription-v1'),
+  model: z.object({ sku: modelSkuSchema, rev: modelRevSchema }),
+  items: z
+    .array(
+      z.object({
+        inputId: z.string().regex(/^[\w-]{1,64}$/),
+        language: languageTag.nullable(),
+        languageDetected: z.boolean(),
+        captions: z.object({ outputId: z.string(), format: z.enum(['vtt', 'srt']) }).nullable(),
+        confidence: z.number().min(0).max(1),
+        warnings: z.array(z.string()),
+      }),
+    )
+    .min(1),
+});
+export type CloudTranscriptionResult = z.infer<typeof transcriptionResultSchema>;
+
+/** The largest transcription result document this server reads (FC-48 `TRANSCRIPTION_RESULT_MAX_BYTES`). */
+export const CLOUD_TRANSCRIPTION_RESULT_MAX_BYTES = 8 * 1024 * 1024;
 
 /** The largest upscale result document this server reads (FC-46 `UPSCALE_RESULT_MAX_BYTES`). */
 export const CLOUD_UPSCALE_RESULT_MAX_BYTES = 1_048_576;

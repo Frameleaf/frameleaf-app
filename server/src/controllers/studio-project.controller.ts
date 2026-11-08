@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { CloudMlJobEstimateResponseDto } from 'src/dtos/cloud-ml-job.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { MediaOperationDto } from 'src/dtos/media-operation.dto.js';
 import { StudioBundleExportCreateDto } from 'src/dtos/studio-bundle.dto.js';
@@ -45,6 +46,7 @@ import {
 import {
   StudioTranscriptionCreateDto,
   StudioTranscriptionDto,
+  StudioTranscriptionEstimateDto,
   StudioTranscriptionParamDto,
   StudioTranscriptionQueuedDto,
 } from 'src/dtos/studio-transcription.dto.js';
@@ -260,6 +262,23 @@ export class StudioProjectController {
     @Body() dto: StudioTranscriptionCreateDto,
   ): Promise<StudioTranscriptionQueuedDto> {
     return this.transcriptions.create(auth, id, dto);
+  }
+
+  @Post(':id/transcriptions/estimate')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated()
+  @Endpoint({
+    summary: 'Estimate a Studio clip transcription on Frameleaf Cloud',
+    description:
+      'Owner only. Prices speech to text for one video or audio clip on the main timeline of the head revision. The audio is extracted on this server and nothing is sent until the answer is confirmed with `POST /cloud/ml/jobs`. Read the cues with `GET /studio/projects/{id}/transcriptions/{transcriptionId}`, using the confirmed `operationId`. Cues from Frameleaf Cloud carry no word timings.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  estimateStudioTranscription(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDv7ParamDto,
+    @Body() dto: StudioTranscriptionEstimateDto,
+  ): Promise<CloudMlJobEstimateResponseDto> {
+    return this.transcriptions.estimateCloud(auth, id, dto);
   }
 
   @Get(':id/transcriptions/:transcriptionId')

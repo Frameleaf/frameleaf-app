@@ -262,3 +262,8 @@ candidate, to be compared again with `origin/main` once FC-160 lands. One exchan
 published request, reads every published answer, and classifies every published refusal; only
 `error-grant-invalid.json` marks a connected account as needing sign-in. Every token, code and address in
 them is a fixture value (`FIXTURE-ONLY`); no real Google or Microsoft app exists for them.
+
+## FL-1304 transcription result fixture
+
+`ml/transcription/result.json` is byte-identical to `packages/contracts/fixtures/ml/transcription/result.json` on
+`Frameleaf/frameleaf-cloud` `origin/main` at `19226d12ab9e1a6f8270c43a1a3a0d004a46b45c` (`transcription-v1`, FC-48).

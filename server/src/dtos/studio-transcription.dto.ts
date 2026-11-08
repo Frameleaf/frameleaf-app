@@ -1,6 +1,7 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { MediaOperationStatusSchema } from 'src/enum.js';
+import { MODEL_SKU_PATTERN } from 'src/utils/frameleaf-cloud.js';
 
 const Identifier = z.string().regex(/^[\w-]{1,128}$/);
 const SafeInteger = z.int().min(-Number.MAX_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER);
@@ -21,6 +22,25 @@ export class StudioTranscriptionCreateDto extends createZodDto(
       destinationId: z.uuid().describe('The machine-learning destination to run on, named explicitly'),
     })
     .meta({ id: 'StudioTranscriptionCreateDto' }),
+) {}
+
+export class StudioTranscriptionEstimateDto extends createZodDto(
+  z
+    .object({
+      clipId: Identifier.describe('A video or audio clip on the main timeline of the head revision'),
+      language: z
+        .string()
+        .min(2)
+        .max(35)
+        .describe('A BCP 47 language tag such as `en` or `pt-BR`, or `auto` to detect the language'),
+      destinationId: z.uuid().describe('The Frameleaf Cloud processing destination, named explicitly'),
+      modelSku: z
+        .string()
+        .regex(MODEL_SKU_PATTERN)
+        .optional()
+        .describe('The model chosen on the slider; omitted, the chosen or recommended model for captions'),
+    })
+    .meta({ id: 'StudioTranscriptionEstimateDto' }),
 ) {}
 
 export class StudioTranscriptionParamDto extends createZodDto(
