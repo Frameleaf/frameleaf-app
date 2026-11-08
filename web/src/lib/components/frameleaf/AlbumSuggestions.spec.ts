@@ -413,6 +413,22 @@ describe('AlbumSuggestions', () => {
       await waitFor(() => expect(dialog).not.toHaveAttribute('open'));
     });
 
+    it('does not invent an auto-add choice when suggestions first load after a failed heal', async () => {
+      sdkMock.getAlbumSuggestions.mockRejectedValue(new Error('offline'));
+      sdkMock.getAlbumLostDates.mockResolvedValue(structuredClone(lost));
+      render(AlbumSuggestions, { albumId: 'album', albumName: 'Summer', onChanged: vi.fn() });
+      await fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
+      sdkMock.healAlbumLostDates.mockRejectedValueOnce(new Error('no'));
+      sdkMock.getAlbumSuggestions.mockResolvedValue({ ...noOtherSuggestions, autoAdd: true });
+      sdkMock.getAlbumLostDates.mockResolvedValue({ ...lost, suggestions: [] });
+
+      const dialog = screen.getByRole('dialog');
+      await fireEvent.click(screen.getByRole('button', { name: 'Heal all 2' }));
+
+      await waitFor(() => expect(dialog).not.toHaveAttribute('open'));
+      expect(sdkMock.setAlbumSuggestionAutoAdd).not.toHaveBeenCalled();
+    });
+
     it('leaves the review with a message when a failed heal finds nothing left', async () => {
       await openLost();
       sdkMock.healAlbumLostDates.mockRejectedValueOnce(new Error('no'));

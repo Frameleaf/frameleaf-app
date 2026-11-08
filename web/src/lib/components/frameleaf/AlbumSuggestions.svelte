@@ -91,15 +91,17 @@
       if (id !== albumId) {
         return;
       }
+      // A list that never loaded left nothing to choose from, so there are no choices to keep.
+      const keepChoices = afterFailure && suggestions !== null;
       suggestions = result;
       // After a failed save the person's pending auto-add choice stays, so Try again still sends it.
-      if (!afterFailure) {
+      if (!keepChoices) {
         autoAdd = result.autoAdd;
       }
       const ids = [...result.fromTrip, ...result.needDate].map(({ assetId }) => assetId);
-      picked = new Set(afterFailure ? ids.filter((assetId) => picked.has(assetId)) : ids);
-      fixDate = new Set(afterFailure ? ids.filter((assetId) => fixDate.has(assetId)) : []);
-      dismissed = afterFailure ? dismissed : new Set();
+      picked = new Set(keepChoices ? ids.filter((assetId) => picked.has(assetId)) : ids);
+      fixDate = new Set(keepChoices ? ids.filter((assetId) => fixDate.has(assetId)) : []);
+      dismissed = keepChoices ? dismissed : new Set();
       turnOffFailed = false;
     } catch {
       // Suggestions are optional: an album that can't be read for them simply shows none.
