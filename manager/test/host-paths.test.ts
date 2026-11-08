@@ -5,9 +5,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { storagePath } from '../src/compose.js';
-import { adoptOwnMounts, containerView, dockerArguments, tidyLocations, toHost } from '../src/host-paths.js';
+import { adoptOwnMounts, containerView, dockerArguments, ownControllers, tidyLocations, toHost } from '../src/host-paths.js';
 
-const manager = (env: string[], binds: [string, string][]) => ({
+const manager = (env: string[], binds: [string, string][], Id = 'abc123def456') => ({
+  Id,
   State: { Running: true },
   Config: { Env: env, Labels: { 'app.frameleaf.manager.role': 'controller' } },
   Mounts: binds.map(([Source, Destination]) => ({ Type: 'bind', Source, Destination })),
@@ -63,6 +64,29 @@ test('a trailing slash from the Unraid folder picker no longer makes a location 
   assert.equal(env.MANAGER_STORAGE_ROOTS, `${root}:/other/place`);
   assert.equal(env.MANAGER_BACKUP_ROOT, '/backups');
   assert.equal(await storagePath(env.MANAGER_STORAGE_ROOTS!.split(':')[0], [root], 0), root);
+});
+
+test('a nested same-path mount wins over a differing parent', () => {
+  const nested: [string, string][] = [[`${HOST}/frameleaf-manager`, STATE], ['/mnt', '/data'], ['/data/private', '/data/private']];
+  adoptOwnMounts([manager([`MANAGER_DATA=${STATE}`], nested)], STATE, {});
+  assert.equal(toHost('/data/private/library'), '/data/private/library');
+  assert.equal(toHost('/data/other'), '/mnt/other');
+});
+
+test('a container path is kept even when a host folder has the same name', () => {
+  const clash: [string, string][] = [[`${HOST}/frameleaf-manager`, STATE], ['/data', '/other'], ['/photos', '/data']];
+  const env: Record<string, string | undefined> = { MANAGER_STORAGE_ROOTS: '/data/media' };
+  adoptOwnMounts([manager([`MANAGER_DATA=${STATE}`], clash)], STATE, env);
+  assert.equal(env.MANAGER_STORAGE_ROOTS, '/data/media');
+});
+
+test('two Managers sharing a container path are told apart by hostname', () => {
+  const mine = manager([`MANAGER_DATA=${STATE}`], binds, 'aaaaaaaaaaaa1111');
+  const other = manager([`MANAGER_DATA=${STATE}`], [[`${HOST}/second`, STATE]], 'bbbbbbbbbbbb2222');
+  assert.deepEqual(ownControllers([mine, other], STATE, 'aaaaaaaaaaaa'), [mine]);
+  assert.equal(ownControllers([mine, other], STATE, undefined).length, 2);
+  adoptOwnMounts([mine, other], STATE, { HOSTNAME: 'aaaaaaaaaaaa' });
+  assert.equal(toHost(STATE), `${HOST}/frameleaf-manager`);
 });
 
 test('one host folder mapped to two container paths keeps each path', () => {

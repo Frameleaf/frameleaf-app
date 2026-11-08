@@ -157,8 +157,11 @@ async function troubleshootingScope() {
       backupRoot!,
       directory!,
       installation?.databaseRoot ?? '',
+      ...[...containers, ...(self ? [self] : [])].flatMap((c) =>
+        (c.Mounts ?? []).flatMap((m) => (toHost(m.Source) !== m.Source ? [toHost(m.Source)] : [])),
+      ),
     ],
-    [...containers, ...(self ? [self] : [])].flatMap((c) => (c.Mounts ?? []).flatMap((m) => [m.Source, toHost(m.Source), m.Destination])),
+    [...containers, ...(self ? [self] : [])].flatMap((c) => (c.Mounts ?? []).flatMap((m) => [m.Source, m.Destination])),
   );
   const clean = (text: string) => redactPaths(redact(text, secrets), roots);
   return { installation, containers, self, clean };

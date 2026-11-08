@@ -12,6 +12,7 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 type Mapping = { host: string; container: string };
 type MountView = { Type: string; Source: string; Destination: string };
 type ControllerView = {
+  Id: string;
   State: { Running: boolean };
   Config: { Env: string[]; Labels: Record<string, string> };
   Mounts: MountView[];
@@ -60,35 +61,49 @@ export function tidyLocations(env: Record<string, string | undefined> = process.
   }
 }
 
+/**
+ * The running Manager containers using this state path. Two Managers can share a container path once host and
+ * container paths may differ, so Docker's default hostname, the container's short id, picks out this one.
+ */
+export function ownControllers<T extends Pick<ControllerView, 'Id' | 'State' | 'Config'>>(
+  containers: T[],
+  state: string,
+  hostname = process.env.HOSTNAME,
+): T[] {
+  const matches = containers.filter(
+    (c) =>
+      c.State.Running &&
+      c.Config.Labels?.['app.frameleaf.manager.role'] === 'controller' &&
+      c.Config.Env?.includes(`MANAGER_DATA=${state}`),
+  );
+  const self = hostname ? matches.filter((c) => c.Id.startsWith(hostname)) : [];
+  return self.length === 1 ? self : matches;
+}
+
 /** Learn this Manager's mappings. A location given by its host path is corrected to where the container sees it. */
 export function adoptOwnMounts(
   containers: ControllerView[],
   state: string,
   env: Record<string, string | undefined> = process.env,
 ): void {
-  const self = containers.filter(
-    (c) =>
-      c.State.Running &&
-      c.Config.Labels?.['app.frameleaf.manager.role'] === 'controller' &&
-      c.Config.Env?.includes(`MANAGER_DATA=${state}`),
-  );
+  const self = ownControllers(containers, state, env.HOSTNAME);
   if (self.length !== 1) {
     console.error(`manager: found ${self.length} running Manager containers for ${state}; folder mappings were not read`);
     return;
   }
-  mappings = self[0].Mounts.filter(
-    (m) =>
-      m.Type === 'bind' &&
-      m.Source !== m.Destination &&
-      m.Source.startsWith('/') &&
-      !inside(m.Destination, '/run/frameleaf-host'),
+  // Identity binds stay in the table so a nested one wins over a differing parent; none differing means no translation.
+  const binds = self[0].Mounts.filter(
+    (m) => m.Type === 'bind' && m.Source.startsWith('/') && !inside(m.Destination, '/run/frameleaf-host'),
   ).map((m) => ({ host: m.Source, container: m.Destination }));
+  mappings = binds.some((m) => m.host !== m.container) ? binds : [];
   // The state store is already open by now, and a path that is only the host side would be lost with the container.
   const misplaced = mappings.find((m) => inside(state, m.host));
   if (misplaced && !self[0].Mounts.some((m) => inside(state, m.Destination)))
     throw new Error(`MANAGER_DATA is ${state}, the host side of a folder mapping. Set it to ${toContainer(state)}.`);
   for (const name of LOCATION_VARIABLES) {
-    if (env[name]) env[name] = env[name]!.split(':').map(toContainer).join(':');
+    // A path Manager can already reach is a container path, even if a host folder has the same name.
+    const reachable = (path: string) => self[0].Mounts.some((m) => inside(path, m.Destination));
+    if (env[name]) env[name] = env[name]!.split(':').map((p) => (reachable(p) ? p : toContainer(p))).join(':');
   }
 }
 

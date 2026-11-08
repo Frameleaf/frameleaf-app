@@ -2,8 +2,8 @@ import { chmod, access, lstat, mkdtemp, open, readFile, realpath, statfs } from 
 import { constants } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { Refusal, type Installation } from './contracts.js';
-import { environment, overlap, type Container, type Docker } from './docker.js';
-import { toHost } from './host-paths.js';
+import { overlap, type Container, type Docker } from './docker.js';
+import { ownControllers, toHost } from './host-paths.js';
 
 const within = (path: string, parent: string) =>
   path === parent || path.startsWith(parent === '/' ? '/' : parent + '/');
@@ -129,12 +129,7 @@ export class PostgresStorage {
       this.docker.compatibility(),
       readFile('/proc/self/mountinfo', 'utf8'),
     ]);
-    const controllers = containers.filter(
-      (c) =>
-        c.State.Running &&
-        c.Config.Labels?.['app.frameleaf.manager.role'] === 'controller' &&
-        environment(c).MANAGER_DATA === this.managerDirectory,
-    );
+    const controllers = ownControllers(containers, this.managerDirectory);
     if (controllers.length !== 1) throw new Refusal('manager_host_mounts_unverified');
     if (
       !controllers[0].Mounts.some(
