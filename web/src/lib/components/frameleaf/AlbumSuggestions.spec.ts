@@ -379,6 +379,23 @@ describe('AlbumSuggestions', () => {
       );
     });
 
+    it('stays open when a failed heal leaves only an unsaved auto-add choice', async () => {
+      sdkMock.getAlbumSuggestions.mockResolvedValue(structuredClone(suggestions));
+      sdkMock.getAlbumLostDates.mockResolvedValue(structuredClone(lost));
+      render(AlbumSuggestions, { albumId: 'album', albumName: 'Summer', onChanged: vi.fn() });
+      await fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
+      await fireEvent.click(await screen.findByRole('checkbox', { name: /Keep adding new photos/ }));
+      await fireEvent.click(await screen.findByRole('tab', { name: 'Lost dates · 2' }));
+      sdkMock.healAlbumLostDates.mockRejectedValueOnce(new Error('no'));
+      sdkMock.getAlbumSuggestions.mockResolvedValue(structuredClone(noOtherSuggestions));
+      sdkMock.getAlbumLostDates.mockResolvedValue({ ...lost, suggestions: [] });
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Heal all 2' }));
+
+      expect(await screen.findByRole('button', { name: 'Save' })).toBeTruthy();
+      expect(screen.getByRole('alert')).toHaveTextContent('heal these dates');
+    });
+
     it('leaves the review with a message when a failed heal finds nothing left', async () => {
       await openLost();
       sdkMock.healAlbumLostDates.mockRejectedValueOnce(new Error('no'));

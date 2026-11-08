@@ -400,8 +400,8 @@
       await load(albumId, true);
       await loadLostDates(albumId, true);
       const message = $t('frameleaf_album_lost_dates_heal_failed');
-      if (tabs.length === 0) {
-        // Nothing is left to review, so the failure can't stay in the dialog.
+      if (tabs.length === 0 && autoAdd === suggestions?.autoAdd) {
+        // Nothing is left to review or save, so the failure can't stay in the dialog.
         open = false;
         toastManager.primary(message);
       } else {
