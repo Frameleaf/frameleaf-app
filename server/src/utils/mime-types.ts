@@ -17,6 +17,8 @@ const raw = {
   '.iiq': ['image/iiq', 'image/x-phaseone-iiq'],
   '.k25': ['image/k25', 'image/x-kodak-k25'],
   '.kdc': ['image/kdc', 'image/x-kodak-kdc'],
+  '.mef': ['image/mef', 'image/x-mamiya-mef'],
+  '.mos': ['image/mos', 'image/x-leaf-mos'],
   '.mrw': ['image/mrw', 'image/x-minolta-mrw'],
   '.nef': ['image/nef', 'image/x-nikon-nef'],
   '.nrw': ['image/nrw', 'image/x-nikon-nrw'],
@@ -35,23 +37,31 @@ const raw = {
 };
 
 /**
- * list of supported image extensions from https://developer.mozilla.org/en-US/docs/Web/Media/Formats/Image_types excluding svg
+ * list of supported image extensions from https://developer.mozilla.org/en-US/docs/Web/Media/Formats/Image_types excluding svg,
+ * plus `.avifs` (an AVIF image sequence, served as `image/avif`)
  * @TODO share with the client
  * @see {@link web/src/lib/utils/asset-utils.ts#L329}
  **/
 const webSupportedImage = {
+  '.apng': ['image/apng'],
   '.avif': ['image/avif'],
+  '.avifs': ['image/avif'],
   '.bmp': ['image/bmp'],
   '.gif': ['image/gif'],
+  '.jfif': ['image/jpeg'],
   '.jpeg': ['image/jpeg'],
   '.jpg': ['image/jpeg'],
+  '.pjp': ['image/jpeg'],
+  '.pjpeg': ['image/jpeg'],
   '.png': ['image/png', 'image/apng'],
   '.webp': ['image/webp'],
 };
 
 const webUnsupportedImage = {
   ...raw,
+  '.hdr': ['image/vnd.radiance'],
   '.heic': ['image/heic'],
+  '.heics': ['image/heic-sequence'],
   '.heif': ['image/heif'],
   '.hif': ['image/hif'],
   '.insp': ['image/jpeg'],
@@ -59,6 +69,11 @@ const webUnsupportedImage = {
   '.jpe': ['image/jpeg'],
   '.jxl': ['image/jxl'],
   '.mpo': ['image/jpeg'],
+  '.pbm': ['image/x-portable-bitmap'],
+  '.pfm': ['image/x-portable-floatmap'],
+  '.pgm': ['image/x-portable-graymap'],
+  '.pnm': ['image/x-portable-anymap'],
+  '.ppm': ['image/x-portable-pixmap'],
   '.svg': ['image/svg'],
   '.tif': ['image/tiff'],
   '.tiff': ['image/tiff'],
@@ -69,15 +84,29 @@ const image: Record<string, string[]> = {
   ...webUnsupportedImage,
 };
 
-const possiblyAnimatedImageExtensions = new Set(['.avif', '.gif', '.heic', '.heif', '.jxl', '.png', '.webp']);
+const possiblyAnimatedImageExtensions = new Set([
+  '.apng',
+  '.avif',
+  '.avifs',
+  '.gif',
+  '.heic',
+  '.heics',
+  '.heif',
+  '.jxl',
+  '.png',
+  '.webp',
+]);
 
-const heifImageExtensions = new Set(['.avif', '.heic', '.heif', '.hif']);
+const heifImageExtensions = new Set(['.avif', '.avifs', '.heic', '.heics', '.heif', '.hif']);
 
 const transparentCapableExtensions = new Set([
+  '.apng',
   '.avif',
+  '.avifs',
   '.bmp',
   '.gif',
   '.heic',
+  '.heics',
   '.heif',
   '.hif',
   '.jxl',
@@ -88,7 +117,7 @@ const transparentCapableExtensions = new Set([
   '.webp',
 ]);
 
-const heicExtensions = new Set(['.heic', '.heif', '.hif']);
+const heicExtensions = new Set(['.heic', '.heics', '.heif', '.hif']);
 
 const profileExtensions = new Set(['.avif', '.dng', '.heic', '.heif', '.jpeg', '.jpg', '.png', '.webp', '.svg']);
 const profile: Record<string, string[]> = Object.fromEntries(
@@ -96,15 +125,22 @@ const profile: Record<string, string[]> = Object.fromEntries(
 );
 
 const video: Record<string, string[]> = {
+  '.3g2': ['video/3gpp2'],
   '.3gp': ['video/3gpp'],
   '.3gpp': ['video/3gpp'],
+  '.asf': ['video/x-ms-asf'],
   '.avi': ['video/avi', 'video/msvideo', 'video/vnd.avi', 'video/x-msvideo'],
+  '.divx': ['video/divx'],
+  '.dv': ['video/x-dv', 'video/dv'],
+  '.f4v': ['video/x-f4v', 'video/mp4'],
   '.flv': ['video/x-flv'],
   '.insv': ['video/mp4'],
   '.m2t': ['video/mp2t'],
   '.m2ts': ['video/mp2t'],
   '.m4v': ['video/x-m4v'],
+  '.mk3d': ['video/x-matroska'],
   '.mkv': ['video/x-matroska'],
+  '.mod': ['video/mpeg'],
   '.mov': ['video/quicktime'],
   '.mp4': ['video/mp4'],
   '.mpe': ['video/mpeg'],
@@ -112,8 +148,14 @@ const video: Record<string, string[]> = {
   '.mpg': ['video/mpeg'],
   '.mts': ['video/mp2t'],
   '.mxf': ['application/mxf'],
+  '.ogv': ['video/ogg'],
+  '.qt': ['video/quicktime'],
+  '.rm': ['video/vnd.rn-realvideo'],
+  '.rmvb': ['video/vnd.rn-realvideo'],
+  '.tod': ['video/mp2t'],
   '.ts': ['video/mp2t'],
   '.vob': ['video/mpeg'],
+  '.vro': ['video/mpeg'],
   '.webm': ['video/webm'],
   '.wmv': ['video/x-ms-wmv'],
 };
