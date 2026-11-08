@@ -63,7 +63,10 @@ export function adoptOwnMounts(
       c.Config.Labels?.['app.frameleaf.manager.role'] === 'controller' &&
       c.Config.Env?.includes(`MANAGER_DATA=${state}`),
   );
-  if (self.length !== 1) return;
+  if (self.length !== 1) {
+    console.error(`manager: found ${self.length} running Manager containers for ${state}; folder mappings were not read`);
+    return;
+  }
   mappings = self[0].Mounts.filter(
     (m) =>
       m.Type === 'bind' &&
