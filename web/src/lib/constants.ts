@@ -27,6 +27,10 @@ export enum ProjectionType {
   CUBESTRIP_STEREO = 'CUBESTRIP_STEREO',
   CYLINDER = 'CYLINDER',
   NONE = 'NONE',
+  /** FL-968: raw two-lens 360° video (Insta360, DJI Osmo 360); the server plays a stitched copy. */
+  DUAL_FISHEYE = 'DUAL_FISHEYE',
+  /** FL-968: raw GoPro MAX 360° video; the server plays a stitched copy. */
+  EQUIANGULAR_CUBEMAP = 'EQUIANGULAR_CUBEMAP',
 }
 
 export const dateFormats = {
