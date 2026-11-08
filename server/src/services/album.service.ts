@@ -225,7 +225,7 @@ export class AlbumService extends BaseService {
         const isNew = time > (summaryChangesRead.get(`${viewerKey}:${albumId}`) ?? -Infinity);
         if (isNew && time >= computedAt.get(albumId)! - SUMMARY_CHANGE_MARGIN_MS) {
           due.add(albumId);
-          changes.set(albumId, time);
+          changes.set(albumId, Math.max(changes.get(albumId) ?? -Infinity, time));
         }
       }
     }

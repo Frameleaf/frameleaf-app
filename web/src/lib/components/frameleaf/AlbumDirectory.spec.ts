@@ -873,6 +873,17 @@ describe('AlbumDirectory', () => {
       vi.useRealTimers();
     });
 
+    it('keeps a waiting album reachable by name and moves focus onto its tile when reached', async () => {
+      useObserver();
+      const far = owned({ id: 'far', albumName: 'Far' });
+      renderWithTooltips(AlbumDirectory, { tree: flatTree(far), onRefresh: vi.fn() });
+
+      screen.getByRole('link', { name: 'Far' }).focus();
+
+      await waitFor(() => expect(placeholderIn('far')).toBeNull());
+      expect(cell('far').contains(document.activeElement)).toBe(true);
+    });
+
     it.each(['grid', 'list'] as const)('builds a %s tile and its menu only once it nears the view', async (mode) => {
       useObserver();
       albumDirectoryView.set({ ...defaultAlbumDirectoryView, view: mode });
@@ -961,6 +972,24 @@ describe('AlbumDirectory', () => {
       }
 
       expect(onRefresh).toHaveBeenCalledTimes(20);
+    });
+
+    it('asks again for an album that starts waiting after it gave up', async () => {
+      vi.useFakeTimers();
+      const onRefresh = vi.fn();
+      const { rerender } = renderWithTooltips(AlbumDirectory, { tree: flatTree(pendingAlbum), onRefresh });
+      await tick();
+      for (let attempt = 0; attempt < 25; attempt++) {
+        await vi.advanceTimersByTimeAsync(3000);
+        await rerender(wrapped(flatTree(pendingAlbum), onRefresh));
+      }
+      expect(onRefresh).toHaveBeenCalledTimes(20);
+
+      const another = owned({ id: 'another', albumName: 'Another', assetCount: 0, statsPending: true });
+      await rerender(wrapped(flatTree(pendingAlbum, another), onRefresh));
+      await vi.advanceTimersByTimeAsync(3000);
+
+      expect(onRefresh).toHaveBeenCalledTimes(21);
     });
 
     it('never asks when nothing is waiting', async () => {
