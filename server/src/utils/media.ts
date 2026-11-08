@@ -29,6 +29,7 @@ import {
   VideoCodec,
 } from 'src/enum.js';
 import { AudioChannelPolicy, getDeliveryAudioChannelArgs } from 'src/utils/media-policy.js';
+import { STITCHED_VIDEO_LABEL, VideoStitchGraph, toFilterComplex } from 'src/utils/video-360.js';
 
 export const isVideoRotated = (videoStream: VideoStreamInfo): boolean => Math.abs(videoStream.rotation) === 90;
 
@@ -69,6 +70,9 @@ export const getCodecString = (codec: VideoCodec, width: number, height: number,
 
 export class BaseConfig implements VideoCodecSWConfig {
   readonly presets = ['veryslow', 'slower', 'slow', 'medium', 'fast', 'faster', 'veryfast', 'superfast', 'ultrafast'];
+  /** FL-968: a 360° original stitched to equirectangular on the way in (see utils/video-360.ts). */
+  protected stitch?: VideoStitchGraph;
+
   protected constructor(
     protected config: ConfigFFmpegDto,
     protected tune: VideoTuning = { strictGop: false, lowLatency: false },
@@ -79,6 +83,20 @@ export class BaseConfig implements VideoCodecSWConfig {
       return BaseConfig.getSWCodecConfig(config, tune);
     }
     return BaseConfig.getHWCodecConfig(config, interfaces, tune);
+  }
+
+  /**
+   * FL-968: an encoder for a 360° original that is stitched to equirectangular. `v360` is a software
+   * filter, so decoding and encoding stay in software too; the stream passed to `getCommand` describes
+   * the stitched picture, not the original's first track.
+   */
+  static createStitched(config: ConfigFFmpegDto, stitch: VideoStitchGraph, tune?: VideoTuning): VideoCodecSWConfig {
+    const handler = BaseConfig.getSWCodecConfig(
+      { ...config, accel: TranscodeHardwareAcceleration.Disabled, accelDecode: false },
+      tune,
+    ) as BaseConfig;
+    handler.stitch = stitch;
+    return handler;
   }
 
   private static getSWCodecConfig(config: ConfigFFmpegDto, tune?: VideoTuning): VideoCodecSWConfig {
@@ -162,7 +180,9 @@ export class BaseConfig implements VideoCodecSWConfig {
     } as TranscodeCommand;
     if ([TranscodeTarget.All, TranscodeTarget.Video].includes(target)) {
       const filters = this.getFilterOptions(video);
-      if (filters.length > 0) {
+      if (this.stitch) {
+        options.outputOptions.push('-filter_complex', toFilterComplex(this.stitch, filters));
+      } else if (filters.length > 0) {
         options.outputOptions.push('-vf', filters.join(','));
       }
     }
@@ -228,7 +248,8 @@ export class BaseConfig implements VideoCodecSWConfig {
     const videoCodec = [TranscodeTarget.All, TranscodeTarget.Video].includes(target) ? this.getVideoCodec() : 'copy';
     const audioCodec = [TranscodeTarget.All, TranscodeTarget.Audio].includes(target) ? this.getAudioEncoder() : 'copy';
 
-    const options = ['-c:v', videoCodec, '-c:a', audioCodec, '-map', `0:${videoStream.index}`, '-map_metadata', '-1'];
+    const videoMap = this.stitch && videoCodec !== 'copy' ? STITCHED_VIDEO_LABEL : `0:${videoStream.index}`;
+    const options = ['-c:v', videoCodec, '-c:a', audioCodec, '-map', videoMap, '-map_metadata', '-1'];
     if (audioStream) {
       options.push('-map', `0:${audioStream.index}`);
       // FL-102: the channel count, layout and sample rate are now probed and persisted, so a
@@ -274,6 +295,9 @@ export class BaseConfig implements VideoCodecSWConfig {
 
   getFilterOptions(videoStream: VideoStreamInfo) {
     const options = [];
+    if (this.stitch) {
+      options.push(this.stitch.projection);
+    }
     if (this.shouldScale(videoStream)) {
       options.push(`scale=${this.getScaling(videoStream)}`);
     }
@@ -503,8 +527,11 @@ export class ThumbnailConfig extends BaseConfig {
   constructor(
     config: ConfigFFmpegDto,
     private startTime = 0,
+    /** FL-968: thumbnail a raw 360° original from its stitched picture */
+    stitch?: VideoStitchGraph,
   ) {
     super(config);
+    this.stitch = stitch;
   }
 
   static create(config: ConfigFFmpegDto, interfacesOrStartTime: VideoInterfaces | number = 0): VideoCodecSWConfig {
@@ -545,7 +572,11 @@ export class ThumbnailConfig extends BaseConfig {
   }
 
   getBaseOutputOptions() {
-    return ['-fps_mode', 'vfr', '-frames:v', '1', '-update', '1'];
+    const options = ['-fps_mode', 'vfr', '-frames:v', '1', '-update', '1'];
+    if (this.stitch) {
+      options.unshift('-map', STITCHED_VIDEO_LABEL);
+    }
+    return options;
   }
 
   getFilterOptions(videoStream: VideoStreamInfo): string[] {

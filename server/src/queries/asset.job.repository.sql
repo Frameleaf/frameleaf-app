@@ -885,6 +885,9 @@ select
   "asset"."ownerId",
   "asset"."originalPath",
   "asset"."checksum",
+  "asset_exif"."projectionType",
+  "asset_exif"."make",
+  "asset_exif"."model",
   (
     select
       coalesce(json_agg(agg), '[]')

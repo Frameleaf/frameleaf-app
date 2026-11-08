@@ -783,6 +783,34 @@ describe(MediaService.name, () => {
       ]);
     });
 
+    it('should thumbnail a raw 360° video from its stitched equirectangular picture (FL-968)', async () => {
+      const asset = AssetFactory.from({ type: AssetType.Video, originalPath: '/original/path.insv' })
+        .exif({ projectionType: 'DUAL_FISHEYE', make: 'Insta360', model: 'Insta360 X3' })
+        .build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...getForGenerateThumbnail(asset),
+        ...probeStub.videoStream2160p,
+      });
+      mocks.media.probe.mockResolvedValue({
+        ...videoInfoStub.videoStreamH264,
+        videoStreams: [{ ...videoInfoStub.videoStreamH264.videoStreams[0], index: 0, width: 5760, height: 2880 }],
+      });
+
+      await sut.handleGenerateThumbnails({ id: asset.id });
+
+      expect(mocks.media.probe).toHaveBeenCalledWith('/original/path.insv');
+      const commands = mocks.media.transcode.mock.calls.map((call) => call[2].outputOptions);
+      expect(commands.length).toBeGreaterThan(0);
+      for (const options of commands) {
+        expect(options).not.toContain('-vf');
+        expect(options.slice(0, 2)).toEqual(['-map', '[stitched]']);
+        expect(options[options.indexOf('-filter_complex') + 1]).toContain(
+          'reverse,v360=input=dfisheye:output=equirect:ih_fov=200:iv_fov=200:w=2880:h=1440:interp=cubic',
+        );
+      }
+      expect(commands.at(-1)![commands.at(-1)!.indexOf('-filter_complex') + 1]).toContain('scale=-2:250');
+    });
+
     it('should probe video metadata when persisted video metadata is missing', async () => {
       const asset = AssetFactory.from({ type: AssetType.Video, originalPath: '/original/path.ext' }).exif().build();
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
@@ -3670,6 +3698,9 @@ describe(MediaService.name, () => {
     it('should retry edited video rendering with software acceleration when hardware rendering fails', async () => {
       const asset = {
         ...AssetFactory.create({ id: 'video-id', type: AssetType.Video, originalPath: '/original/path.ext' }),
+        projectionType: null,
+        make: null,
+        model: null,
         videoStream: probeStub.videoStreamH264.videoStream,
         audioStream: probeStub.audioStreamAac.audioStream,
         format: { ...probeStub.videoStreamH264.format, duration: 5 },
@@ -3729,6 +3760,9 @@ describe(MediaService.name, () => {
     describe('edited-master policy (FL-39, FL-16)', () => {
       const editedAsset = (overrides: Record<string, unknown> = {}) => ({
         ...AssetFactory.create({ id: 'video-id', type: AssetType.Video, originalPath: '/original/path.ext' }),
+        projectionType: null,
+        make: null,
+        model: null,
         checksum: Buffer.from('checksum'),
         videoStream: probeStub.videoStreamH264.videoStream,
         audioStream: probeStub.audioStreamAac.audioStream,
@@ -4111,6 +4145,9 @@ describe(MediaService.name, () => {
       const videoStream = { ...probeStub.videoStreamDolbyVision.videoStream, dvProfile: DvProfile.Dvhe05 };
       const asset = {
         ...AssetFactory.create({ type: AssetType.Video }),
+        projectionType: null,
+        make: null,
+        model: null,
         videoStream: probeStub.videoStreamH264.videoStream,
         audioStream: null,
         format: probeStub.videoStreamH264.format,
@@ -4137,6 +4174,9 @@ describe(MediaService.name, () => {
     it('queues the edited files a first versioned revert released from a pre-history edit', async () => {
       const asset = {
         ...AssetFactory.create({ type: AssetType.Video }),
+        projectionType: null,
+        make: null,
+        model: null,
         videoStream: probeStub.videoStreamH264.videoStream,
         audioStream: null,
         format: probeStub.videoStreamH264.format,
@@ -4258,6 +4298,9 @@ describe(MediaService.name, () => {
     it('defers version references and released-file intents until queue publication', async () => {
       const asset = {
         ...AssetFactory.create({ type: AssetType.Video }),
+        projectionType: null,
+        make: null,
+        model: null,
         videoStream: probeStub.videoStreamH264.videoStream,
         audioStream: null,
         format: probeStub.videoStreamH264.format,
@@ -4306,6 +4349,9 @@ describe(MediaService.name, () => {
       };
       const asset = {
         ...AssetFactory.create({ type: AssetType.Video }),
+        projectionType: null,
+        make: null,
+        model: null,
         videoStream,
         audioStream: null,
         format: probeStub.videoStreamH264.format,
@@ -4357,6 +4403,9 @@ describe(MediaService.name, () => {
         };
         const asset = {
           ...AssetFactory.create({ type: AssetType.Video }),
+          projectionType: null,
+          make: null,
+          model: null,
           videoStream,
           audioStream: null,
           format: probeStub.videoStreamH264.format,
@@ -4422,6 +4471,9 @@ describe(MediaService.name, () => {
         };
         const asset = {
           ...AssetFactory.create({ type: AssetType.Video }),
+          projectionType: null,
+          make: null,
+          model: null,
           videoStream,
           audioStream: surround,
           format: probeStub.videoStreamH264.format,
@@ -4482,6 +4534,9 @@ describe(MediaService.name, () => {
         };
         const asset = {
           ...AssetFactory.create({ type: AssetType.Video }),
+          projectionType: null,
+          make: null,
+          model: null,
           videoStream,
           audioStream: null,
           format: probeStub.videoStreamH264.format,
@@ -4575,6 +4630,9 @@ describe(MediaService.name, () => {
         const videoStream = probeStub.videoStreamH264.videoStream;
         const asset = {
           ...AssetFactory.create({ type: AssetType.Video }),
+          projectionType: null,
+          make: null,
+          model: null,
           videoStream,
           audioStream: probeStub.audioStreamAac.audioStream,
           format: probeStub.videoStreamH264.format,
@@ -4658,6 +4716,9 @@ describe(MediaService.name, () => {
         };
         const asset = {
           ...AssetFactory.create({ type: AssetType.Video }),
+          projectionType: null,
+          make: null,
+          model: null,
           videoStream,
           audioStream: null,
           format: probeStub.videoStreamH264.format,
@@ -4751,6 +4812,9 @@ describe(MediaService.name, () => {
     const fingerprint = Buffer.from('fingerprint');
     const hdrAsset = (videoStream: any = probeStub.videoStreamHDR10.videoStream, files: any[] = []) => ({
       ...AssetFactory.create({ id: 'video-id', type: AssetType.Video, originalPath: '/original/path.mov' }),
+      projectionType: null,
+      make: null,
+      model: null,
       checksum: Buffer.from('original-checksum'),
       files,
       videoStream,
@@ -4898,10 +4962,16 @@ describe(MediaService.name, () => {
       videoStream: VideoStreamInfo & { timeBase: number };
       audioStream: AudioStreamInfo | null;
       format: VideoFormat;
+      projectionType: string | null;
+      make: string | null;
+      model: string | null;
     };
     beforeEach(() => {
       asset = {
         ...AssetFactory.create({ id: 'video-id', type: AssetType.Video, originalPath: '/original/path.ext' }),
+        projectionType: null,
+        make: null,
+        model: null,
         videoStream: probeStub.videoStreamH264.videoStream,
         audioStream: null,
         format: probeStub.videoStreamH264.format,
@@ -5289,6 +5359,99 @@ describe(MediaService.name, () => {
       expect(mocks.media.transcode).not.toHaveBeenCalled();
     });
 
+    describe('360° video (FL-968)', () => {
+      const lensTracks = {
+        ...videoInfoStub.videoStreamH264,
+        videoStreams: [
+          { ...videoInfoStub.videoStreamH264.videoStreams[0], index: 0, width: 3840, height: 3840 },
+          { ...videoInfoStub.videoStreamH264.videoStreams[0], index: 1, width: 3840, height: 3840 },
+        ],
+      };
+      const goProTracks = {
+        ...videoInfoStub.videoStreamH264,
+        videoStreams: [
+          { ...videoInfoStub.videoStreamH264.videoStreams[0], index: 0, width: 4096, height: 1344 },
+          { ...videoInfoStub.videoStreamH264.videoStreams[0], index: 5, width: 4096, height: 1344 },
+        ],
+      };
+      const lastCommand = () => mocks.media.transcode.mock.calls.at(-1)![2];
+      const option = (command: { outputOptions: string[] }, name: string) =>
+        command.outputOptions[command.outputOptions.indexOf(name) + 1];
+
+      it('stitches a dual-fisheye original into a 3840×1920 equirectangular copy even when transcoding is disabled', async () => {
+        mocks.assetJob.getForVideoConversion.mockResolvedValue({
+          ...asset,
+          projectionType: 'DUAL_FISHEYE',
+          make: 'DJI',
+          model: 'Osmo360',
+        });
+        mocks.media.probe.mockResolvedValue(lensTracks);
+        mocks.systemMetadata.get.mockResolvedValue({
+          ffmpeg: {
+            transcode: TranscodePolicy.Disabled,
+            accel: TranscodeHardwareAcceleration.Nvenc,
+            accelDecode: true,
+          },
+        });
+
+        await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+        expect(mocks.media.probe).toHaveBeenCalledWith('/original/path.ext');
+        expect(mocks.media.transcode).toHaveBeenCalledTimes(1);
+        const command = lastCommand();
+        expect(mocks.media.transcode).toHaveBeenCalledWith('/original/path.ext', expect.any(String), command);
+        expect(option(command, '-c:v')).toBe('libx264');
+        expect(option(command, '-map')).toBe('[stitched]');
+        expect(command.outputOptions).not.toContain('-vf');
+        expect(option(command, '-filter_complex')).toBe(
+          '[0:0][0:1]hstack=inputs=2,v360=input=dfisheye:output=equirect:ih_fov=190:iv_fov=190:w=3840:h=1920:interp=cubic[stitched]',
+        );
+      });
+
+      it('stitches a GoPro MAX original from its cubemap tracks', async () => {
+        mocks.assetJob.getForVideoConversion.mockResolvedValue({ ...asset, projectionType: 'EQUIANGULAR_CUBEMAP' });
+        mocks.media.probe.mockResolvedValue(goProTracks);
+
+        await sut.handleVideoConversion({ id: 'video-id' });
+
+        const graph = option(lastCommand(), '-filter_complex');
+        expect(graph).toContain('[0:0]split=3');
+        expect(graph).toContain('[0:5]split=3');
+        expect(graph).toMatch(/vstack=inputs=2,v360=input=eac:output=equirect:w=3840:h=1920:interp=cubic\[stitched\]$/);
+      });
+
+      it('keeps the full stitched size when the target resolution is Original', async () => {
+        mocks.assetJob.getForVideoConversion.mockResolvedValue({ ...asset, projectionType: 'EQUIANGULAR_CUBEMAP' });
+        mocks.media.probe.mockResolvedValue(goProTracks);
+        mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { targetResolution: 'original' } });
+
+        await sut.handleVideoConversion({ id: 'video-id' });
+
+        expect(option(lastCommand(), '-filter_complex')).toContain('w=5376:h=2688');
+      });
+
+      it('encodes an original whose tracks no longer fit its layout as ordinary video', async () => {
+        mocks.assetJob.getForVideoConversion.mockResolvedValue({ ...asset, projectionType: 'DUAL_FISHEYE' });
+        mocks.media.probe.mockResolvedValue(videoInfoStub.videoStreamH264);
+        mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { transcode: TranscodePolicy.All } });
+
+        await sut.handleVideoConversion({ id: 'video-id' });
+
+        const command = lastCommand();
+        expect(command.outputOptions).not.toContain('-filter_complex');
+        expect(option(command, '-map')).toBe(`0:${asset.videoStream.index}`);
+      });
+
+      it('does not probe or stitch an ordinary video', async () => {
+        mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { transcode: TranscodePolicy.All } });
+
+        await sut.handleVideoConversion({ id: 'video-id' });
+
+        expect(mocks.media.probe).not.toHaveBeenCalled();
+        expect(lastCommand().outputOptions).not.toContain('-filter_complex');
+      });
+    });
+
     it('should not remux when input is not an accepted container and transcoding is disabled', async () => {
       mocks.assetJob.getForVideoConversion.mockResolvedValue({ ...asset, ...probeStub.matroskaContainer });
       mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { transcode: TranscodePolicy.Disabled } });
@@ -5308,7 +5471,13 @@ describe(MediaService.name, () => {
         .file({ type: AssetFileType.EncodedVideo, path: '/encoded/video/path.mp4' })
         .build();
       mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { transcode: TranscodePolicy.Disabled } });
-      mocks.assetJob.getForVideoConversion.mockResolvedValue({ ...localAsset, ...probeStub.videoStream2160p });
+      mocks.assetJob.getForVideoConversion.mockResolvedValue({
+        ...localAsset,
+        ...probeStub.videoStream2160p,
+        projectionType: null,
+        make: null,
+        model: null,
+      });
 
       await sut.handleVideoConversion({ id: localAsset.id });
 
