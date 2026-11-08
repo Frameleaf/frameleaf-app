@@ -266,6 +266,10 @@ export class AlbumService extends BaseService {
     // Every group comes back in the person's own custom order (FL-52); the client's "Custom order"
     // sort shows it as is, the other sorts re-sort it.
     const readable = await this.readableParents(auth, albums);
+    // A parent the directory doesn't list can't be named by its children.
+    for (const id of hiddenPartnerAlbums) {
+      readable.delete(id);
+    }
     return orderAlbumTree(
       buildAlbumTree(
         albums.map((album) => ({

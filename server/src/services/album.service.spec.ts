@@ -1595,6 +1595,26 @@ describe(AlbumService.name, () => {
       });
     });
 
+    it('clears the parent of a visible album whose partner collection is turned off', async () => {
+      const hiddenCollection = newUuid();
+      const child = AlbumFactory.from({ parentId: hiddenCollection }).build();
+      const { user: owner } = child.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      mocks.album.getAll.mockResolvedValue([getForAlbum(child)]);
+      mocks.album.getMetadataForIds.mockResolvedValue([]);
+      mocks.smartAlbum.getSmartBackedAlbumKinds.mockResolvedValue(new Map());
+      mocks.album.getBookmarkCounts.mockResolvedValue(new Map());
+      mocks.album.getPositions.mockResolvedValue(new Map());
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([hiddenCollection]));
+      mocks.partnerOrigin.getPartnerAlbumIds.mockResolvedValue([hiddenCollection]);
+      mocks.user.getMetadata.mockResolvedValue([
+        { key: UserMetadataKey.Preferences, value: { albums: { showPartnerAlbums: false } } },
+      ]);
+
+      const tree = await sut.getTree(AuthFactory.create(owner));
+
+      expect(tree.albums.map(({ id, parentId }) => ({ id, parentId }))).toEqual([{ id: child.id, parentId: null }]);
+    });
+
     it('lists only what the user owns or is shared with, shaped as shelves, albums and spaces', async () => {
       const collection = AlbumFactory.from({ albumName: 'Family', kind: AlbumKind.Collection }).build();
       const { user: owner } = collection.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
