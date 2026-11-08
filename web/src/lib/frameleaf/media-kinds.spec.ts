@@ -23,7 +23,7 @@ describe('media kinds (FL-1284)', () => {
     expect(slowMotionRateAt(0.5, 10, 240)).toBe(1);
     expect(slowMotionRateAt(5, 10, 240)).toBe(0.125);
     expect(slowMotionRateAt(9.5, 10, 240)).toBe(1);
-    expect(slowMotionRateAt(5, Number.NaN, 240)).toBe(1);
+    expect(slowMotionRateAt(5, NaN, 240)).toBe(1);
   });
 
   it('opens a search the discovery query accepts, narrowed to the Timeline like the count', () => {

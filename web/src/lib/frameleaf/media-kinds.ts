@@ -96,7 +96,7 @@ export const mediaKindInfo = (kind: string) => byKind.get(kind);
 
 /** The kinds an item has that this build can label, in `MEDIA_KINDS` order. */
 export const knownMediaKinds = (asset: Pick<AssetResponseDto, 'exifInfo'>): MediaKind[] => {
-  const kinds = new Set(asset.exifInfo?.mediaKinds ?? []);
+  const kinds = new Set(asset.exifInfo?.mediaKinds);
   return MEDIA_KINDS.filter(({ kind }) => kinds.has(kind)).map(({ kind }) => kind);
 };
 
