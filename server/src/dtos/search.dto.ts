@@ -219,9 +219,14 @@ const LandmarkIdsFilterSchema = nonEmptyPartial({ any: landmarkIds, none: landma
 // responses carry kinds as plain strings
 const MediaKindSchema = z.enum(MEDIA_KINDS).meta({ id: 'MediaKind' });
 const mediaKindList = z.array(MediaKindSchema).min(1).max(MEDIA_KINDS.length);
-const MediaKindsFilterSchema = nonEmptyPartial({ any: mediaKindList, all: mediaKindList, none: mediaKindList }).meta({
-  id: 'MediaKindsFilter',
-});
+// strict, so a misspelt group is refused rather than dropped (which would widen the filter)
+const MediaKindsFilterSchema = z
+  .strictObject({ any: mediaKindList, all: mediaKindList, none: mediaKindList })
+  .partial()
+  .refine((data) => Object.values(data).some((value) => value !== undefined), {
+    message: 'At least one of the following fields is required: any, all, none',
+  })
+  .meta({ id: 'MediaKindsFilter' });
 
 const stringListShape = {
   in: z.array(z.string()).min(1),

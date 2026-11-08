@@ -29,11 +29,15 @@ type TagsWithWrongTypes =
   | 'Keywords'
   | 'HierarchicalSubject'
   | 'ISO'
-  | 'LensModel';
+  | 'LensModel'
+  | 'CustomRendered';
 
 export interface ImmichTags extends Omit<Tags, TagsWithWrongTypes> {
   JPEGDigest?: string;
   ContentIdentifier?: string;
+  // FL-1284: read numerically (`MEDIA_KIND_NUMERIC_TAGS`): iPhone writes 6 panorama, 7/8 portrait
+  CustomRendered?: number | string;
+  FullFrameRatePlaybackIntent?: number;
   MotionPhoto?: number;
   MotionPhotoVersion?: number;
   MotionPhotoPresentationTimestampUs?: number;

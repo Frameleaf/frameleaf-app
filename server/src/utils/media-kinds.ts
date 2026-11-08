@@ -84,13 +84,21 @@ export const detectMediaKinds = (tags: Tags, input: MediaKindInput): MediaKind[]
       } else if (captureFps > 0 && captureFps <= fps / 1.5) {
         kinds.add('time-lapse');
       }
-    } else if (fps !== null && fps >= SLOW_MOTION_MIN_FPS && playbackIntent !== 1) {
+    } else if (
+      fps !== null &&
+      fps >= SLOW_MOTION_MIN_FPS &&
+      playbackIntent !== 1 &&
+      /^apple$/i.test(textOf(tags.Make))
+    ) {
+      // only iPhone: other cameras, drones and game captures record real-time 120/240 fps clips with no tag
       kinds.add('slow-motion');
     }
     if (SCREEN_RECORDING_NAME.test(fileName)) {
       kinds.add('screen-recording');
     }
   }
+
+  const screenshot = /^screenshot$/i.test(textOf(tags.UserComment)) || SCREENSHOT_NAME.test(fileName);
 
   if (projection === 'EQUIRECTANGULAR' || /\.(insp)$/i.test(fileName)) {
     kinds.add('spherical');
@@ -101,7 +109,13 @@ export const detectMediaKinds = (tags: Tags, input: MediaKindInput): MediaKind[]
       width !== null && height !== null && width > 0 && height > 0
         ? Math.max(width, height) / Math.min(width, height) >= PANORAMA_MIN_ASPECT
         : false;
-    if (customRendered === 6 || projection === 'CYLINDRICAL' || specialType.includes('PANORAMA') || wide) {
+    // a scrolling screenshot is long too, but it isn't a panorama
+    if (
+      customRendered === 6 ||
+      projection === 'CYLINDRICAL' ||
+      specialType.includes('PANORAMA') ||
+      (wide && !screenshot)
+    ) {
       kinds.add('panorama');
     }
   }
@@ -115,7 +129,7 @@ export const detectMediaKinds = (tags: Tags, input: MediaKindInput): MediaKind[]
       kinds.add('portrait');
     }
     // iOS and macOS write "Screenshot" in the user comment of every screenshot they save
-    if (/^screenshot$/i.test(textOf(tags.UserComment)) || SCREENSHOT_NAME.test(fileName)) {
+    if (screenshot) {
       kinds.add('screenshot');
     }
   }

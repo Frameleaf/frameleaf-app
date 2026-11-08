@@ -12,12 +12,19 @@ describe('detectMediaKinds', () => {
 
   describe('slow motion and time-lapse', () => {
     it('reads an iPhone 240 fps clip as slow motion', () => {
-      expect(detectMediaKinds({}, { ...video, fps: 240 })).toEqual(['slow-motion']);
-      expect(detectMediaKinds({ FullFrameRatePlaybackIntent: 0 }, { ...video, fps: 120 })).toEqual(['slow-motion']);
+      expect(detectMediaKinds({ Make: 'Apple' }, { ...video, fps: 240 })).toEqual(['slow-motion']);
+      expect(detectMediaKinds({ Make: 'Apple', FullFrameRatePlaybackIntent: 0 }, { ...video, fps: 120 })).toEqual([
+        'slow-motion',
+      ]);
+    });
+
+    it('leaves real-time high frame rate clips from other cameras alone', () => {
+      expect(detectMediaKinds({ Make: 'GoPro' }, { ...video, fps: 240 })).toEqual([]);
+      expect(detectMediaKinds({}, { ...video, fps: 120 })).toEqual([]);
     });
 
     it('leaves high frame rate clips meant to play in real time alone', () => {
-      expect(detectMediaKinds({ FullFrameRatePlaybackIntent: 1 }, { ...video, fps: 120 })).toEqual([]);
+      expect(detectMediaKinds({ Make: 'Apple', FullFrameRatePlaybackIntent: 1 }, { ...video, fps: 120 })).toEqual([]);
       expect(detectMediaKinds({}, { ...video, fps: 60 })).toEqual([]);
     });
 
@@ -48,6 +55,13 @@ describe('detectMediaKinds', () => {
       expect(detectMediaKinds({}, { ...image, width: 12_000, height: 3000 })).toEqual(['panorama']);
       expect(detectMediaKinds({}, { ...image, width: 3000, height: 9000 })).toEqual(['panorama']);
       expect(detectMediaKinds({}, { ...image, width: 4000, height: 2000 })).toEqual([]);
+      // a scrolling screenshot is long but not a panorama
+      expect(
+        detectMediaKinds(
+          { UserComment: 'Screenshot' },
+          { ...image, originalFileName: 'IMG_9.PNG', width: 1170, height: 9000 },
+        ),
+      ).toEqual(['screenshot']);
     });
 
     it('keeps 360° photos apart from flat panoramas', () => {
