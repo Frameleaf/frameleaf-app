@@ -21,6 +21,7 @@
     arrangeAlbumDirectory,
     canDropOnCollection,
     canEdit,
+    canMerge,
     canTakeOut,
     isOwner,
     moveInOrder,
@@ -50,6 +51,7 @@
     mdiArrowDown,
     mdiArrowUp,
     mdiAutoFix,
+    mdiCallMerge,
     mdiDeleteOutline,
     mdiDotsHorizontal,
     mdiDownloadOutline,
@@ -462,6 +464,11 @@
     {#if owner && !isSpace(album)}
       <MenuItem onSelect={() => actions?.openMove(album)}>
         <Icon icon={mdiFolderMoveOutline} size="18" aria-hidden={true} />{$t('frameleaf_albums_move_to')}
+      </MenuItem>
+    {/if}
+    {#if canMerge(album, currentUserId)}
+      <MenuItem onSelect={() => actions?.openMerge(album)}>
+        <Icon icon={mdiCallMerge} size="18" aria-hidden={true} />{$t('frameleaf_albums_merge_with')}
       </MenuItem>
     {/if}
     {#if reorderable && canStep(album, -1)}

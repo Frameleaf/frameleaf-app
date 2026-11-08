@@ -289,6 +289,69 @@ export class AlbumRepository {
         .execute()
     );
   }
+  /**
+   * FL-1298: how many photos each album holds for its owner, Locked ones included, whatever the session's PIN
+   * state. What decides a merge's winner, so it can never depend on who happens to be looking.
+   */
+  @GenerateSql({ params: [[DummyValue.UUID], DummyValue.UUID] })
+  async getOwnerAssetCounts(ids: string[], ownerId: string): Promise<Map<string, number>> {
+    if (ids.length === 0) {
+      return new Map();
+    }
+    const rows = await this.db
+      .selectFrom('asset')
+      .$call((qb) => withAlbumVisibility(qb, ownerId))
+      .innerJoin('album_asset', 'album_asset.assetId', 'asset.id')
+      .select('album_asset.albumId')
+      .select(sql<number>`count(*)::int`.as('count'))
+      .where('album_asset.albumId', 'in', ids)
+      .where('asset.deletedAt', 'is', null)
+      .groupBy('album_asset.albumId')
+      .execute();
+    return new Map(rows.map(({ albumId, count }) => [albumId, count]));
+  }
+
+  /** FL-1298: what a merge of two albums would hold, counting a photo in both once, as this session may see it. */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID, { lockedOwnerId: DummyValue.UUID }] })
+  async getMergeCounts(
+    firstId: string,
+    secondId: string,
+    options: AlbumReadOptions = {},
+  ): Promise<{ total: number; inBoth: number }> {
+    return this.db
+      .selectFrom((eb) =>
+        eb
+          .selectFrom('asset')
+          .$call((qb) => withAlbumVisibility(qb, options.lockedOwnerId))
+          .$call((qb) => withHiddenContentFilter(qb, options))
+          .innerJoin('album_asset', 'album_asset.assetId', 'asset.id')
+          .select('asset.id')
+          .select(sql<number>`count(*)`.as('albums'))
+          .where('album_asset.albumId', 'in', [firstId, secondId])
+          .where('asset.deletedAt', 'is', null)
+          .groupBy('asset.id')
+          .as('member'),
+      )
+      .select(sql<number>`count(*)::int`.as('total'))
+      .select(sql<number>`(count(*) filter (where albums = 2))::int`.as('inBoth'))
+      .executeTakeFirstOrThrow();
+  }
+
+  /** FL-1298: which of these albums are linked into a shared space. */
+  @GenerateSql({ params: [[DummyValue.UUID]] })
+  async getLinkedToSpaceIds(ids: string[]): Promise<Set<string>> {
+    if (ids.length === 0) {
+      return new Set();
+    }
+    const rows = await this.db
+      .selectFrom('shared_space_album')
+      .select('linkedAlbumId')
+      .distinct()
+      .where('linkedAlbumId', 'in', ids)
+      .execute();
+    return new Set(rows.map(({ linkedAlbumId }) => linkedAlbumId));
+  }
+
   /** Links in each album that this session may see, as an album's own page counts them. */
   async getBookmarkCounts(auth: AuthDto, ids: string[]): Promise<Map<string, number>> {
     if (ids.length === 0) {

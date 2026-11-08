@@ -626,7 +626,7 @@ export class SyncService extends BaseService {
 
   private async syncAlbumsV1(options: SyncQueryOptions, response: Writable, checkpointMap: CheckpointMap) {
     const deleteType = SyncEntityType.AlbumDeleteV1;
-    const deletes = this.syncRepository.album.getDeletes({ ...options, ack: checkpointMap[deleteType] });
+    const deletes = this.syncRepository.album.getDeletes({ ...options, ack: checkpointMap[deleteType] }, true);
     for await (const { id, ...data } of deletes) {
       await send(response, { type: deleteType, ids: [id], data });
     }
@@ -648,7 +648,7 @@ export class SyncService extends BaseService {
 
   private async syncAlbumsV2(options: SyncQueryOptions, response: Writable, checkpointMap: CheckpointMap) {
     const deleteType = SyncEntityType.AlbumDeleteV1;
-    const deletes = this.syncRepository.album.getDeletes({ ...options, ack: checkpointMap[deleteType] });
+    const deletes = this.syncRepository.album.getDeletes({ ...options, ack: checkpointMap[deleteType] }, true);
     for await (const { id, ...data } of deletes) {
       await send(response, { type: deleteType, ids: [id], data });
     }

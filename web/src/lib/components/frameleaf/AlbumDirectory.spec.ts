@@ -336,6 +336,101 @@ describe('AlbumDirectory', () => {
     expect(await screen.findByRole('menu', { name: 'Actions for Family' })).toBeInTheDocument();
   });
 
+  describe('Merge with…', () => {
+    const openMenu = async (name: string) => {
+      await fireEvent.click(screen.getByRole('button', { name: `Actions for ${name}` }));
+      return within(await screen.findByRole('menu', { name: `Actions for ${name}` }));
+    };
+    const preview = { winnerId: 'rockies', total: 12, inBoth: 0, winnerShared: false, loserShared: false };
+    // Toasts outlive the test that raised them, so earlier merges may still be on screen.
+    const latestUndo = async () => (await screen.findAllByRole('button', { name: 'Undo' })).at(-1)!;
+    const chooseWinter = async () => {
+      const dialog = await screen.findByRole('dialog', { name: 'Merge “Summer in the Rockies” with' });
+      await fireEvent.click(within(dialog).getByRole('button', { name: /Winter 2026/ }));
+    };
+
+    const merge = async (onRefresh = vi.fn()) => {
+      sdkMock.getAlbumMergePreview.mockResolvedValue(preview);
+      sdkMock.mergeAlbum.mockResolvedValue({ runId: 'run-1', winnerId: 'rockies' });
+      renderWithTooltips(AlbumDirectory, { tree, onRefresh });
+      const menu = await openMenu('Summer in the Rockies');
+      await fireEvent.click(menu.getByRole('menuitem', { name: 'Merge with…' }));
+      await chooseWinter();
+      await fireEvent.click(await screen.findByRole('button', { name: 'Merge albums' }));
+      await waitFor(() =>
+        expect(sdkMock.mergeAlbum).toHaveBeenCalledWith({ id: 'rockies', albumMergeDto: { otherId: 'winter' } }),
+      );
+      return onRefresh;
+    };
+
+    it('sits right after Move to… on an album the person owns', async () => {
+      renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
+
+      const labels = (await openMenu('Summer in the Rockies'))
+        .getAllByRole('menuitem')
+        .map((item) => item.textContent?.trim());
+
+      expect(labels[labels.indexOf('Move to…') + 1]).toBe('Merge with…');
+    });
+
+    it.each([
+      ['a collection', 'Family'],
+      ['a shared space', 'Family Space'],
+      ['someone else’s smart album', 'Trail camera'],
+    ])('is not offered on %s', async (_kind, name) => {
+      renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
+
+      expect((await openMenu(name)).queryByRole('menuitem', { name: 'Merge with…' })).toBeNull();
+    });
+
+    it('says which album stayed and refreshes', async () => {
+      const onRefresh = await merge();
+
+      expect(await screen.findByText('Merged “Winter 2026” into “Summer in the Rockies”')).toBeInTheDocument();
+      expect(onRefresh).toHaveBeenCalled();
+    });
+
+    it('takes the merge back from the message', async () => {
+      sdkMock.undoLatestAlbumChangeRun.mockResolvedValue({ reversed: 4, skipped: [] });
+      await merge();
+
+      await fireEvent.click(await latestUndo());
+
+      await waitFor(() => expect(sdkMock.undoLatestAlbumChangeRun).toHaveBeenCalled());
+      expect(await screen.findByText('Merge undone')).toBeInTheDocument();
+    });
+
+    it('says what Undo kept because it was changed after the merge', async () => {
+      sdkMock.undoLatestAlbumChangeRun.mockResolvedValue({ reversed: 4, skipped: ['Beach', 'Lake'] });
+      await merge();
+
+      await fireEvent.click(await latestUndo());
+
+      expect(await screen.findByText('Merge undone. Your later changes to Beach, Lake were kept.')).toBeInTheDocument();
+    });
+
+    it('leaves the page of an album that was merged away', async () => {
+      app.page.url = new URL('http://localhost/albums/winter');
+      await merge();
+
+      await waitFor(() => expect(app.goto).toHaveBeenCalledWith(expect.stringContaining('rockies')));
+    });
+
+    it('tells the person when the merge fails, and refreshes nothing', async () => {
+      sdkMock.getAlbumMergePreview.mockResolvedValue(preview);
+      sdkMock.mergeAlbum.mockRejectedValue(new Error('refused'));
+      const onRefresh = vi.fn();
+      renderWithTooltips(AlbumDirectory, { tree, onRefresh });
+      const menu = await openMenu('Summer in the Rockies');
+      await fireEvent.click(menu.getByRole('menuitem', { name: 'Merge with…' }));
+      await chooseWinter();
+      await fireEvent.click(await screen.findByRole('button', { name: 'Merge albums' }));
+
+      await waitFor(() => expect(sdkMock.mergeAlbum).toHaveBeenCalled());
+      expect(onRefresh).not.toHaveBeenCalled();
+    });
+  });
+
   it('deletes an owned album through the Frameleaf confirmation, keeping its items', async () => {
     const onRefresh = vi.fn();
     sdkMock.deleteAlbum.mockResolvedValue(undefined as never);

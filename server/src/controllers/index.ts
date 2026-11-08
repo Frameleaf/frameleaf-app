@@ -1,5 +1,6 @@
 import { ActivityController } from 'src/controllers/activity.controller.js';
 import { AlbumItemsController } from 'src/controllers/album-items.controller.js';
+import { AlbumMergeController } from 'src/controllers/album-merge.controller.js';
 import { AlbumSourceController } from 'src/controllers/album-source.controller.js';
 import { AlbumSuggestionController } from 'src/controllers/album-suggestion.controller.js';
 import { AlbumController } from 'src/controllers/album.controller.js';
@@ -255,6 +256,7 @@ export const controllers = [
   SmartAlbumController,
   ItemShareController,
   AlbumSourceController,
+  AlbumMergeController,
   SharedSpaceController,
   StackController,
   StorageMigrationAdminController,

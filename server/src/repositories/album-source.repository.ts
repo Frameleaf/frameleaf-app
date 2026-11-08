@@ -139,6 +139,57 @@ export class AlbumSourceRepository {
     await sql`DELETE FROM public.album_source_link WHERE id = ${id}::uuid`.execute(db ?? this.db);
   }
 
+  /** FL-1298: moves every link of `fromAlbumId` to `toAlbumId`, so the next sync finds the merged album. */
+  async moveToAlbum(db: Db, fromAlbumId: string, toAlbumId: string): Promise<{ id: string; lastSourceName: string }[]> {
+    const { rows } = await sql<{ id: string; lastSourceName: string }>`
+      UPDATE public.album_source_link
+      SET "albumId" = ${toAlbumId}::uuid, "updatedAt" = clock_timestamp()
+      WHERE "albumId" = ${fromAlbumId}::uuid
+      RETURNING id, "lastSourceName"
+    `.execute(db ?? this.db);
+    return rows;
+  }
+
+  /**
+   * After a merge, the memberships a link's sync added and the merge copied belong to the winner's copy, so the
+   * phone can still take them out. A photo the winner already held by hand stays out of the link's reach.
+   */
+  async followCopiedMemberships(db: Db, linkIds: string[], winnerId: string, runId: string): Promise<void> {
+    if (linkIds.length === 0) {
+      return;
+    }
+    await sql`
+      UPDATE public.album_source_asset provenance
+      SET "membershipUpdateId" = copy."updateId"
+      FROM public.album_asset copy, public.album_change change
+      WHERE provenance."linkId" = ANY(${linkIds}::uuid[])
+        AND change."runId" = ${runId}::uuid AND change."albumId" = ${winnerId}::uuid AND change."assetId" = provenance."assetId"
+        AND copy."albumId" = ${winnerId}::uuid AND copy."assetId" = provenance."assetId"
+    `.execute(db ?? this.db);
+  }
+
+  /** Undoes `moveToAlbum` for one link, unless it has been pointed elsewhere since. */
+  async moveBack(db: Db, linkId: string, fromAlbumId: string, toAlbumId: string): Promise<boolean> {
+    const { rows } = await sql<{ id: string }>`
+      UPDATE public.album_source_link
+      SET "albumId" = ${toAlbumId}::uuid, "updatedAt" = clock_timestamp()
+      WHERE id = ${linkId}::uuid AND "albumId" = ${fromAlbumId}::uuid
+      RETURNING id
+    `.execute(db ?? this.db);
+    return rows.length > 0;
+  }
+
+  /** The link's recorded memberships, back on the album it was moved back to. */
+  async restoreMemberships(db: Db, linkId: string, albumId: string): Promise<void> {
+    await sql`
+      UPDATE public.album_source_asset provenance
+      SET "membershipUpdateId" = member."updateId"
+      FROM public.album_asset member
+      WHERE provenance."linkId" = ${linkId}::uuid AND member."albumId" = ${albumId}::uuid
+        AND member."assetId" = provenance."assetId"
+    `.execute(db ?? this.db);
+  }
+
   /** Which of `assetIds` are memberships of `albumId` that any of the user's links recorded. */
   async getRecordedAssetIds(db: Db, albumId: string, assetIds: string[], linkId?: string): Promise<Set<string>> {
     if (assetIds.length === 0) {
