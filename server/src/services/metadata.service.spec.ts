@@ -1966,6 +1966,20 @@ describe(MetadataService.name, () => {
     });
 
     describe('capture kinds (FL-1284)', () => {
+      it('reads high frame rate videos scanned before kinds existed, a batch a night', async () => {
+        mocks.asset.getVideosAwaitingKindScan.mockResolvedValue([{ id: 'v1' }, { id: 'v2' }]);
+        await sut.onNightlyMediaKindRescan();
+        expect(mocks.job.queueAll).toHaveBeenCalledWith([
+          { name: JobName.AssetExtractMetadata, data: { id: 'v1' } },
+          { name: JobName.AssetExtractMetadata, data: { id: 'v2' } },
+        ]);
+
+        mocks.job.queueAll.mockClear();
+        mocks.asset.getVideosAwaitingKindScan.mockResolvedValue([]);
+        await sut.onNightlyMediaKindRescan();
+        expect(mocks.job.queueAll).not.toHaveBeenCalled();
+      });
+
       const burstFrame = (
         id: string,
         extra: Partial<{ stackId: string; stackPrimaryAssetId: string; isLocked: boolean }> = {},

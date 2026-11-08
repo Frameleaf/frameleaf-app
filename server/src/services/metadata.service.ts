@@ -45,6 +45,9 @@ import { getAssetFiles } from 'src/utils/asset.util.js';
 import { resolveCameraIdentification } from 'src/utils/camera-identification.js';
 import { captureDetails } from 'src/utils/capture-details.js';
 import { detectMediaKinds } from 'src/utils/media-kinds.js';
+
+/** FL-1284: videos the nightly capture-kind rescan reads per night. */
+const MEDIA_KIND_RESCAN_BATCH = 2000;
 import { mergeTimeZone } from 'src/utils/date.js';
 import { rewriteThroughPlainCopy, withPlainCopy } from 'src/utils/locked-read.js';
 import { isLockedRow } from 'src/utils/locked.js';
@@ -239,6 +242,20 @@ export class MetadataService extends BaseService {
   @OnEvent({ name: 'NightlyDatabaseCleanup', workers: [FrameleafWorker.Microservices] })
   async onNightlyLandmarkInference(): Promise<void> {
     await this.queueLandmarkInference();
+  }
+
+  /**
+   * FL-1284: high frame rate videos scanned before capture kinds existed are read again, a batch a
+   * night, so slow motion is told apart from real-time 120/240 fps clips by the file itself.
+   */
+  @OnEvent({ name: 'NightlyDatabaseCleanup', workers: [FrameleafWorker.Microservices] })
+  async onNightlyMediaKindRescan(): Promise<void> {
+    const pending = await this.assetRepository.getVideosAwaitingKindScan(MEDIA_KIND_RESCAN_BATCH);
+    if (pending.length > 0) {
+      await this.jobRepository.queueAll(
+        pending.map(({ id }) => ({ name: JobName.AssetExtractMetadata, data: { id } })),
+      );
+    }
   }
 
   @OnEvent({ name: 'AssetMetadataExtracted', workers: [FrameleafWorker.Microservices] })

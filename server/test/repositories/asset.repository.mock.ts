@@ -105,6 +105,7 @@ export const newAssetRepositoryMock = (): Mocked<RepositoryInterface<AssetReposi
     getForOcr: vitest.fn(),
     getForMetadataExtractionTags: vitest.fn(),
     getBurstFrames: vitest.fn().mockResolvedValue([]),
+    getVideosAwaitingKindScan: vitest.fn().mockResolvedValue([]),
     getForFaces: vitest.fn(),
     getForUpdateTags: vitest.fn(),
     updateTagsForAssets: vitest.fn(),

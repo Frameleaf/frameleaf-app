@@ -3,7 +3,8 @@ import { Kysely, sql } from 'kysely';
 /**
  * FL-1284: the kinds of capture a file's metadata shows (slow motion, panorama, burst, portrait …).
  * Existing rows get the kinds already readable from stored metadata; the rest arrive with the next
- * metadata scan of each file.
+ * metadata scan of each file. High frame rate videos are left for the nightly rescan, which reads the
+ * file's playback intent.
  */
 export async function up(db: Kysely<any>): Promise<void> {
   await sql`ALTER TABLE public.asset_exif ADD COLUMN "mediaKinds" character varying[]`.execute(db);
@@ -14,7 +15,6 @@ export async function up(db: Kysely<any>): Promise<void> {
     FROM (
       SELECT a.id,
         array_remove(ARRAY[
-          CASE WHEN a.type = 'VIDEO' AND x.fps >= 100 AND x.make ILIKE 'apple' THEN 'slow-motion' END,
           CASE WHEN upper(coalesce(x."projectionType", '')) = 'CYLINDRICAL' THEN 'panorama' END,
           CASE WHEN upper(coalesce(x."projectionType", '')) = 'EQUIRECTANGULAR'
             OR lower(a."originalFileName") LIKE '%.insp' THEN 'spherical' END,
@@ -27,6 +27,9 @@ export async function up(db: Kysely<any>): Promise<void> {
       JOIN public.asset_exif x ON x."assetId" = a.id
     ) kinds
     WHERE e."assetId" = kinds.id AND cardinality(kinds.value) > 0
+      -- high frame rate video stays unread: whether it is slow motion or a real-time clip (iPhone 4K120,
+      -- Action mode) is only in the file, so the nightly rescan reads it (MetadataService)
+      AND NOT (e.fps >= 100 AND EXISTS (SELECT 1 FROM public.asset v WHERE v.id = e."assetId" AND v.type = 'VIDEO'))
   `.execute(db);
 }
 

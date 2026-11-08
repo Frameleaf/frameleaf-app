@@ -1669,6 +1669,24 @@ from
 where
   "asset"."id" = $1
 
+-- AssetRepository.getVideosAwaitingKindScan
+select
+  "asset"."id"
+from
+  "asset"
+  inner join "asset_exif" on "asset_exif"."assetId" = "asset"."id"
+  inner join "asset_job_status" on "asset_job_status"."assetId" = "asset"."id"
+where
+  "asset"."type" = $1
+  and "asset"."deletedAt" is null
+  and "asset_exif"."mediaKinds" is null
+  and "asset_exif"."fps" >= $2
+  and "asset_job_status"."metadataExtractedAt" is not null
+order by
+  "asset"."id"
+limit
+  $3
+
 -- AssetRepository.getBurstFrames
 select
   "asset"."id",
