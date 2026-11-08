@@ -1,5 +1,6 @@
 import { ActivityService } from 'src/services/activity.service.js';
 import { AlbumChangeRunService } from 'src/services/album-change-run.service.js';
+import { AlbumCleanupService } from 'src/services/album-cleanup.service.js';
 import { AlbumDateHealService } from 'src/services/album-date-heal.service.js';
 import { AlbumItemsService } from 'src/services/album-items.service.js';
 import { AlbumMergeService } from 'src/services/album-merge.service.js';
@@ -356,6 +357,7 @@ export const services = [
   AlbumSourceService,
   AlbumChangeRunService,
   AlbumDateHealService,
+  AlbumCleanupService,
   AlbumMergeService,
   SharedSpaceService,
   SmartAlbumService,

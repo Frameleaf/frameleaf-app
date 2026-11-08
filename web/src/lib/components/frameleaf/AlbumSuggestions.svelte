@@ -528,10 +528,19 @@
   </section>
 {/if}
 
-<Dialog title={$t('frameleaf_album_suggestions_dialog_title')} closeLabel={$t('close')} size="wide" bind:open>
+<Dialog
+  title={count === 0 && lostCount > 0
+    ? $t('frameleaf_album_lost_dates_dialog_title')
+    : $t('frameleaf_album_suggestions_dialog_title')}
+  closeLabel={$t('close')}
+  size="wide"
+  bind:open
+>
   {#if activeTab !== 'lost'}
     <p class="lead">
-      {$t('frameleaf_album_suggestions_lead', { values: { album: albumName, span: tripSpan, places } })}
+      {places
+        ? $t('frameleaf_album_suggestions_lead', { values: { album: albumName, span: tripSpan, places } })
+        : $t('frameleaf_album_suggestions_lead_no_places', { values: { album: albumName, span: tripSpan } })}
     </p>
   {/if}
   {#if alert}

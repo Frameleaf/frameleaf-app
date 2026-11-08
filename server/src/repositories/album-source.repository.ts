@@ -8,10 +8,13 @@ import { DB } from 'src/schema/index.js';
 type Db = Kysely<DB> | Transaction<DB> | null;
 
 /** A stored link, with its album when that album still exists, is not deleted and is still the owner's. */
-export type StoredAlbumSourceLink = Omit<AlbumSourceLink, 'albumName'> & { albumName: string | null };
+export type StoredAlbumSourceLink = Omit<AlbumSourceLink, 'albumName'> & {
+  albumName: string | null;
+  stayRemoved: boolean;
+};
 
 const LINK_COLUMNS = sql`link.id, link."userId", link."albumId", link."sourceKind", link."sourceId", link."deviceKey",
-  link."lastSourceName", link."createdAt", link."updatedAt"`;
+  link."lastSourceName", link."createdAt", link."updatedAt", link."stayRemoved"`;
 
 /** The album is live and owned by the link's user. */
 const LIVE_ALBUM = sql`
@@ -137,6 +140,27 @@ export class AlbumSourceRepository {
   /** Deletes the link and, by cascade, the memberships its sync recorded. */
   async delete(db: Db, id: string): Promise<void> {
     await sql`DELETE FROM public.album_source_link WHERE id = ${id}::uuid`.execute(db ?? this.db);
+  }
+
+  /** FL-1300: stops the album's links bringing it back: the phone may keep the album, the server does not. */
+  async markStayRemoved(db: Db, albumId: string): Promise<string[]> {
+    const { rows } = await sql<{ id: string }>`
+      UPDATE public.album_source_link SET "stayRemoved" = true, "updatedAt" = clock_timestamp()
+      WHERE "albumId" = ${albumId}::uuid AND NOT "stayRemoved"
+      RETURNING id
+    `.execute(db ?? this.db);
+    return rows.map(({ id }) => id);
+  }
+
+  async clearStayRemoved(db: Db, linkIds: string[]): Promise<number> {
+    if (linkIds.length === 0) {
+      return 0;
+    }
+    const { numAffectedRows } = await sql`
+      UPDATE public.album_source_link SET "stayRemoved" = false, "updatedAt" = clock_timestamp()
+      WHERE id = ANY(${linkIds}::uuid[]) AND "stayRemoved"
+    `.execute(db ?? this.db);
+    return Number(numAffectedRows ?? 0);
   }
 
   /** FL-1298: moves every link of `fromAlbumId` to `toAlbumId`, so the next sync finds the merged album. */

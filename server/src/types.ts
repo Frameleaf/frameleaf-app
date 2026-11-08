@@ -682,6 +682,8 @@ export type JobItem =
   | { name: JobName.LandmarkInfer; data?: IBaseJob & { id?: string; trigger?: 'metadata' | 'embedding' } }
   | { name: JobName.AlbumSuggestionAutoAdd; data: IEntityJob }
   | { name: JobName.AlbumSuggestionOutfit; data: IEntityJob }
+  | { name: JobName.AlbumCleanupScan; data: { userId: string } }
+  | { name: JobName.AlbumCleanupApply; data: { id: string } }
   | { name: JobName.MemoryExport; data: IEntityJob }
 
   // Filesystem
@@ -1674,6 +1676,7 @@ export type UserPreferences = {
   albums: {
     defaultAssetOrder: AssetOrder;
     showPartnerAlbums: boolean;
+    cleanupBannerDismissed: boolean;
   };
   folders: {
     enabled: boolean;

@@ -1,4 +1,5 @@
 import { ActivityController } from 'src/controllers/activity.controller.js';
+import { AlbumCleanupController } from 'src/controllers/album-cleanup.controller.js';
 import { AlbumItemsController } from 'src/controllers/album-items.controller.js';
 import { AlbumMergeController } from 'src/controllers/album-merge.controller.js';
 import { AlbumSourceController } from 'src/controllers/album-source.controller.js';
@@ -256,6 +257,7 @@ export const controllers = [
   SmartAlbumController,
   ItemShareController,
   AlbumSourceController,
+  AlbumCleanupController,
   AlbumMergeController,
   SharedSpaceController,
   StackController,

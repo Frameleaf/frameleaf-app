@@ -2393,6 +2393,8 @@ export enum JobName {
   LandmarkInfer = 'LandmarkInfer',
   AlbumSuggestionAutoAdd = 'AlbumSuggestionAutoAdd',
   AlbumSuggestionOutfit = 'AlbumSuggestionOutfit',
+  AlbumCleanupScan = 'AlbumCleanupScan',
+  AlbumCleanupApply = 'AlbumCleanupApply',
   MemoryExport = 'MemoryExport',
 
   NotificationsCleanup = 'NotificationsCleanup',
@@ -2526,6 +2528,8 @@ export const JobNameSchema = z
     JobName.LandmarkInfer,
     JobName.AlbumSuggestionAutoAdd,
     JobName.AlbumSuggestionOutfit,
+    JobName.AlbumCleanupScan,
+    JobName.AlbumCleanupApply,
     JobName.LockedSeal,
     JobName.LockedUnseal,
     JobName.LockedRewrap,

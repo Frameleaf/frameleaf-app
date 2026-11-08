@@ -11,7 +11,7 @@ import {
   AlbumSourceUpdateResponseDto,
   mapAlbumSourceLink,
 } from 'src/dtos/album-source.dto.js';
-import { BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
+import { BulkIdErrorReason, BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import { Permission } from 'src/enum.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AlbumOriginField } from 'src/repositories/partner-origin.repository.js';
@@ -62,6 +62,13 @@ export class AlbumSourceService extends BaseService {
     const name = input.name.trim();
     return this.albumSourceRepository.withLocks([sourceLock(userId, source), nameLock(userId, name)], async (tx) => {
       const existing = await this.albumSourceRepository.getBySource(tx, userId, source);
+      if (existing?.stayRemoved) {
+        // FL-1300: the person removed this album on purpose. It must not come back, and old apps need an answer.
+        return {
+          ...mapAlbumSourceLink({ ...existing, albumName: existing.albumName ?? existing.lastSourceName }),
+          outcome: AlbumSourceOutcome.Existing,
+        };
+      }
       if (existing?.albumName !== null && existing) {
         return { ...mapAlbumSourceLink(existing as AlbumSourceLink), outcome: AlbumSourceOutcome.Existing };
       }
@@ -88,6 +95,14 @@ export class AlbumSourceService extends BaseService {
    * is reported as a duplicate and never recorded, so the sync can never take it out.
    */
   async addAssets(auth: AuthDto, id: string, dto: BulkIdsDto): Promise<BulkIdResponseDto[]> {
+    if (await this.stayRemovedLink(auth, id)) {
+      // Answered as photos already in the album, so the phone stops asking and adds them to nothing.
+      return [...new Set(dto.ids)].map((assetId) => ({
+        id: assetId,
+        success: false,
+        error: BulkIdErrorReason.DUPLICATE,
+      }));
+    }
     const link = await this.findLink(auth, id);
     return this.albums.addAssets(auth, link.albumId, { ids: [...new Set(dto.ids)] }, id);
   }
@@ -97,6 +112,13 @@ export class AlbumSourceService extends BaseService {
    * album (only this link's record goes). Never deletes, trashes or hides the asset itself.
    */
   async removeAssets(auth: AuthDto, id: string, dto: BulkIdsDto): Promise<BulkIdResponseDto[]> {
+    if (await this.stayRemovedLink(auth, id)) {
+      return [...new Set(dto.ids)].map((assetId) => ({
+        id: assetId,
+        success: false,
+        error: BulkIdErrorReason.NOT_FOUND,
+      }));
+    }
     const link = await this.findLink(auth, id);
     return this.albums.removeAssets(auth, link.albumId, { ids: [...new Set(dto.ids)] }, id);
   }
@@ -107,6 +129,16 @@ export class AlbumSourceService extends BaseService {
    * bucket); another link already holding it is a conflict.
    */
   async update(auth: AuthDto, id: string, dto: AlbumSourceUpdateDto): Promise<AlbumSourceUpdateResponseDto> {
+    const removed = await this.stayRemovedLink(auth, id);
+    if (removed) {
+      // The phone's name is remembered, and only that: there is no album to follow it.
+      const name = dto.name.trim();
+      await this.albumSourceRepository.update(null, id, { lastSourceName: name, sourceId: dto.sourceId });
+      return {
+        ...mapAlbumSourceLink({ ...removed, albumName: name, lastSourceName: name }),
+        renamed: false,
+      };
+    }
     const link = await this.findLink(auth, id);
     const name = dto.name.trim();
     const sourceId = dto.sourceId && dto.sourceId !== link.sourceId ? dto.sourceId : undefined;
@@ -167,6 +199,11 @@ export class AlbumSourceService extends BaseService {
       }
       await this.albumSourceRepository.delete(tx, id);
     });
+  }
+
+  private async stayRemovedLink(auth: AuthDto, id: string) {
+    const link = await this.albumSourceRepository.get(null, auth.user.id, id);
+    return link?.stayRemoved ? { ...link, albumName: link.albumName ?? link.lastSourceName } : undefined;
   }
 
   private async findLink(auth: AuthDto, id: string): Promise<AlbumSourceLink> {

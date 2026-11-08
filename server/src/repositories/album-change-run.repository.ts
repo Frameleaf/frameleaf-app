@@ -165,6 +165,11 @@ export class AlbumChangeRunRepository {
       .where('album_change_run.createdAt', '<', before)
       .where('album_change_run.status', '!=', AlbumChangeRunStatus.Undone)
       .where('album.deletedAt', 'is not', null)
+      // FL-1300: a removed album that a phone or a Takeout folder still names stays as the marker that keeps it gone.
+      .where(
+        sql<boolean>`not exists (select 1 from album_source_link link where link."albumId" = album.id and link."stayRemoved")`,
+      )
+      .where(sql<boolean>`not exists (select 1 from takeout_album mapping where mapping."albumId" = album.id)`)
       .select('album.id')
       .distinct()
       .execute();

@@ -75,7 +75,7 @@ const AlbumSuggestionsResponseSchema = z
   })
   .meta({ id: 'AlbumSuggestionsResponseDto' });
 
-const AlbumLostDateSuggestionSchema = z
+export const AlbumLostDateSuggestionSchema = z
   .object({
     assetId: z.uuidv4().describe('The photo'),
     fileName: z.string().describe('Its file name'),

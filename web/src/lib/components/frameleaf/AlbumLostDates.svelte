@@ -132,6 +132,10 @@
     gap: 8px;
     font-size: 13px;
   }
+  .dates s,
+  .dates b {
+    white-space: nowrap;
+  }
   .dates s {
     color: var(--fl-muted);
   }

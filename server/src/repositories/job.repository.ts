@@ -79,8 +79,20 @@ const PUBLICATION_FAILURE_REASONS = new Map([
   ['Edit operation lost its claim before publication', 'edit_operation_claim_lost'],
   ['Publication lease expired before commit', 'publication_lease_expired'],
 ]);
+/**
+ * Producers whose work must commit with the database change it follows, even from inside a queue job: a duplicate
+ * decision, and FL-1300's date healing from the cleanup apply job (the sidecar and partner copies of a healed photo).
+ */
+const COMMITTED_EFFECT_JOBS = new Set<JobName>([
+  JobName.DuplicateResolutionLifecycle,
+  JobName.SidecarWrite,
+  JobName.PartnerPropagate,
+]);
 // Explicitly audited repeatable jobs. Unclassified external effects fail closed after an ambiguous stop.
 const REPEATABLE_JOBS = new Set<JobName>([
+  // FL-1300: a scan rewrites its whole snapshot, and an apply resumes from the last change it committed.
+  JobName.AlbumCleanupScan,
+  JobName.AlbumCleanupApply,
   JobName.DuplicateResolutionLifecycle,
   JobName.DatabaseBackup,
   JobName.AssetGenerateThumbnails,
@@ -1079,7 +1091,7 @@ export class JobRepository {
   async queueInTransaction(tx: Transaction<DB>, item: JobItem, runId?: string): Promise<void> {
     if (runAdmission.getStore()) throw new Error('Run admission cannot use an independent transaction');
     const context = queueExecution.getStore();
-    const committedEffect = item.name === JobName.DuplicateResolutionLifecycle;
+    const committedEffect = COMMITTED_EFFECT_JOBS.has(item.name);
     if (context && !committedEffect) throw new Error('Queue-owned producers must use their completion transaction');
     if (context) {
       context.signal.throwIfAborted();
@@ -1220,6 +1232,13 @@ export class JobRepository {
       case JobName.AlbumSuggestionOutfit: {
         // every load of an album's suggestions asks again until the crops exist; one waiting job is enough
         return { deduplication: { id: `${JobName.AlbumSuggestionOutfit}:${item.data.id}`, keepLastIfActive: true } };
+      }
+      case JobName.AlbumCleanupScan: {
+        // One scan per person: opening Albums again while one is waiting asks for nothing new.
+        return { deduplication: { id: `${JobName.AlbumCleanupScan}:${item.data.userId}`, keepLastIfActive: true } };
+      }
+      case JobName.AlbumCleanupApply: {
+        return { deduplication: { id: `${JobName.AlbumCleanupApply}:${item.data.id}` } };
       }
       case JobName.ICloudSync: {
         return { deduplication: { id: `${JobName.ICloudSync}:${item.data.id}`, keepLastIfActive: true } };
