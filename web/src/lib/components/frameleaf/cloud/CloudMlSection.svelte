@@ -493,7 +493,9 @@
       <Section title={$t('frameleaf_cp_quality')} description={$t('frameleaf_cp_quality_description')}>
         {#if cloudMl}
           {#each ROUTED_WORKLOADS as workload (workload)}
-            {#if workloadRoute(cloudMl.routing, workload) !== 'local' && (models.catalog || models.catalogFailed || localModelsFor(workload).length > 0)}
+            <!-- every kind of work keeps its slider, as in the prototype's Models card; work set to this server
+                 shows its Frameleaf Cloud stops crossed out with the reason -->
+            {#if models.catalog || models.catalogFailed || localModelsFor(workload).length > 0}
               <div class="model-row">
                 <WorkloadModelPickers
                   row={workload}
