@@ -913,7 +913,7 @@ test("the server base is built in-repo and identical in the production and devel
   assert.doesNotMatch(server, /apt-get update/);
   assert.match(
     read("server/base-image/apt-update-strict.sh"),
-    /apt-get update -o APT::Update::Error-Mode=any/,
+    /apt-get update -o APT::Update::Error-Mode=any -o Acquire::PDiffs=false/,
   );
   assert.doesNotMatch(server, /apt-get remove[^\n]*ca-certificates/);
   // FL-281: the CLI is built alongside the pinned library; container stages execute ldd to

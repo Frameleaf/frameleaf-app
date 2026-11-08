@@ -110,7 +110,8 @@ export const sendFile = async (
       ACTIVE_DOCUMENT_TYPE.test(file.contentType) ||
       ACTIVE_DOCUMENT_EXTENSIONS.has(extname(file.path).toLowerCase())
     ) {
-      res.header('Content-Security-Policy', DOCUMENT_CONTENT_SECURITY_POLICY);
+      // append, not header: a Helmet CSP (frame-ancestors and the rest) stays in force alongside it.
+      res.append('Content-Security-Policy', DOCUMENT_CONTENT_SECURITY_POLICY);
     }
     if (file.fileName) {
       res.header('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(file.fileName)}`);

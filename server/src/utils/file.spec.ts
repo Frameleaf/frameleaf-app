@@ -30,6 +30,7 @@ const fixture = () => {
   const response = {
     headersSent: false,
     header: vi.fn(),
+    append: vi.fn(),
     sendFile: vi.fn((_path: string, _options: unknown, callback: (error?: Error) => void) => callback()),
   };
   const res = response as unknown as Response;
@@ -94,7 +95,7 @@ describe('file delivery', () => {
       const f = fixture();
       await sendFile(f.res, f.next, () => new FileDownloadResponse({ ...f.file, ...overrides }), f.log);
       expect(f.response.header).toHaveBeenCalledWith('X-Content-Type-Options', 'nosniff');
-      const csp = f.response.header.mock.calls.filter(([name]) => name === 'Content-Security-Policy');
+      const csp = f.response.append.mock.calls.filter(([name]) => name === 'Content-Security-Policy');
       expect(csp).toEqual(svg ? [['Content-Security-Policy', DOCUMENT_CONTENT_SECURITY_POLICY]] : []);
     }
     expect(DOCUMENT_CONTENT_SECURITY_POLICY).toBe(
@@ -237,6 +238,35 @@ describe('file delivery', () => {
       expect(result.headers['content-range']).toBe('bytes 1-3/6');
       expect(result.headers['cache-control']).toBe('private, no-cache, no-transform');
       expect(release).toHaveBeenCalledTimes(1);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps an existing (Helmet) CSP next to the document sandbox in real Express', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'frameleaf-file-send-'));
+    const path = join(directory, 'drawing.svg');
+    try {
+      await writeFile(path, '<svg xmlns="http://www.w3.org/2000/svg"/>');
+      const logger = { debug: vi.fn(), error: vi.fn() } as unknown as LoggingRepository;
+      const app = express();
+      app.use((_req, res, next) => {
+        res.header('Content-Security-Policy', "frame-ancestors 'none'");
+        next();
+      });
+      app.get('/file', (_req, res, next) =>
+        sendFile(
+          res,
+          next,
+          () => new FileDownloadResponse({ path, contentType: 'image/svg', cacheControl: CacheControl.None }),
+          logger,
+        ),
+      );
+      const result = await request(app).get('/file').expect(200);
+      expect(result.headers['x-content-type-options']).toBe('nosniff');
+      expect(result.headers['content-security-policy']).toBe(
+        `frame-ancestors 'none', ${DOCUMENT_CONTENT_SECURITY_POLICY}`,
+      );
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
