@@ -68,6 +68,8 @@ export const Route = {
 
   // albums
   albums: () => '/albums',
+  /** FL-1300: the Magic Albums cleanup review, opened from the banner and Library Care. */
+  albumCleanup: () => '/albums/cleanup',
   /**
    * The Albums page with its create dialog open, as the rail's "+" does (LibraryRail.jsx `onSave`,
    * `onNewSpace`). The page consumes the request and drops it from the address, so opening All

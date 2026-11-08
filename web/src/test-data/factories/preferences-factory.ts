@@ -5,6 +5,7 @@ export const preferencesFactory = Sync.makeFactory<UserPreferencesResponseDto>({
   albums: {
     defaultAssetOrder: AssetOrder.Desc,
     showPartnerAlbums: true,
+    cleanupBannerDismissed: false,
   },
   cast: {
     adminDisabled: false,
