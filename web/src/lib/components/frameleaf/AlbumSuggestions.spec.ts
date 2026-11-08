@@ -442,7 +442,7 @@ describe('AlbumSuggestions', () => {
       await fireEvent.click(screen.getByRole('button', { name: 'Heal all 2' }));
       await screen.findByRole('tab', { name: 'Need a date · 1' });
       fail(new Error('offline'));
-      await new Promise((resolve) => setTimeout(resolve));
+      await new Promise((resolve) => setTimeout(resolve, 0));
 
       expect(screen.getByRole('tab', { name: 'Need a date · 1' })).toBeTruthy();
     });
