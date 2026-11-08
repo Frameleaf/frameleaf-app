@@ -375,10 +375,20 @@ describe('albums the person left out', () => {
     expect(operationsFor(plan).find(({ type }) => type === 'combine')?.albumIds).toEqual(['d3', 'd4']);
   });
 
-  it('leaves the whole run alone when the album carrying it was left out', () => {
+  it('shows every day as unchanged when the album carrying a run was left out', () => {
     const data = facts([fact('d1', 'Coquitlam, May 24, 2020', 20), fact('d2', 'Coquitlam, May 25, 2020', 3)]);
     const plan = buildPlan(data, { leftOut: new Set(['d1']) });
-    expect(operationsFor(plan).filter(({ type }) => type === 'combine')).toEqual([]);
+    expect(operationsFor(plan)).toEqual([]);
+    expect(new Set(plan.untouched.map(({ id }) => id))).toEqual(new Set(['d1', 'd2']));
+    expect(plan.summary.daysCombined).toBe(0);
+  });
+
+  it('shows every copy as unchanged when the winner of a group was left out', () => {
+    const data = facts([fact('big', 'Friends', 20), fact('a', 'Friends', 10), fact('b', 'Friends', 5)]);
+    const plan = buildPlan(data, { leftOut: new Set(['big']) });
+    expect(operationsFor(plan)).toEqual([]);
+    expect(new Set(plan.untouched.map(({ id }) => id))).toEqual(new Set(['a', 'b', 'big']));
+    expect(plan.summary.albumsMerged).toBe(0);
   });
 
   it('does not remove a date-only album that was left out', () => {

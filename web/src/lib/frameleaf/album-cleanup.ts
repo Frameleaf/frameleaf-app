@@ -416,11 +416,14 @@ export const buildPlan = (facts: AlbumCleanupFactsDto, options: PlanOptions = {}
     keptTrips = new Set<string>(),
     renamedToPhotoDate = new Set<string>(),
     healedAlbums = new Set<string>(),
-    leftOut = new Set<string>(),
+    leftOut: chosenLeftOut = new Set<string>(),
     flattened = new Set<string>(),
     renamed = new Map<string, string>(),
     moved = new Map<string, string>(),
   } = options;
+
+  // Grows as the plan is built: leaving out a row that stands for several albums leaves all of them as they are.
+  const leftOut = new Set(chosenLeftOut);
 
   const albums: PlanAlbum[] = facts.albums.map((album) => ({
     id: album.id,
@@ -452,9 +455,17 @@ export const buildPlan = (facts: AlbumCleanupFactsDto, options: PlanOptions = {}
   for (const [key, all] of sameName) {
     const fact = sameNameFact.get(key);
     const winner = all.find(({ id }) => id === fact?.winnerId) ?? largestOf(all);
-    // A copy the person left out is never merged away. Leaving out the winner leaves out the whole group.
-    const copies = all.filter((album) => album.id === winner.id || !leftOut.has(album.id));
-    working.push(...all.filter((album) => !copies.includes(album)));
+    if (leftOut.has(winner.id)) {
+      for (const album of all) {
+        leftOut.add(album.id);
+      }
+    }
+    // A copy the person left out is never merged away.
+    const copies = all.filter((album) => !leftOut.has(album.id));
+    working.push(...all.filter((album) => leftOut.has(album.id)));
+    if (copies.length === 0) {
+      continue;
+    }
     if (copies.length === 1) {
       working.push(copies[0]);
       continue;
@@ -544,12 +555,17 @@ export const buildPlan = (facts: AlbumCleanupFactsDto, options: PlanOptions = {}
     return { album, when, prefix };
   });
 
-  /** A run split around any day the person left out. Leaving out the album that carries a run keeps the whole run. */
+  /** A run split around any day the person left out. Leaving out the album that carries it leaves every day as it is. */
   const aroundLeftOut = (run: Entry[]): Entry[][] => {
-    const carrier = largestOf(run.map(({ album }) => album));
+    if (leftOut.has(largestOf(run.map(({ album }) => album)).id)) {
+      for (const { album } of run) {
+        leftOut.add(album.id);
+      }
+      return [];
+    }
     const parts: Entry[][] = [[]];
     for (const entry of run) {
-      if (entry.album.id !== carrier.id && leftOut.has(entry.album.id)) {
+      if (leftOut.has(entry.album.id)) {
         parts.push([]);
       } else {
         parts.at(-1)!.push(entry);
@@ -567,7 +583,7 @@ export const buildPlan = (facts: AlbumCleanupFactsDto, options: PlanOptions = {}
       return;
     }
     const parts = aroundLeftOut(run);
-    if (parts.length > 1) {
+    if (parts.length !== 1) {
       for (const part of parts) {
         closeTrip(part);
       }
@@ -644,7 +660,7 @@ export const buildPlan = (facts: AlbumCleanupFactsDto, options: PlanOptions = {}
       return;
     }
     const parts = aroundLeftOut(run);
-    if (parts.length > 1) {
+    if (parts.length !== 1) {
       for (const part of parts) {
         closeRun(key, part);
       }
@@ -843,7 +859,8 @@ export const buildPlan = (facts: AlbumCleanupFactsDto, options: PlanOptions = {}
         return false;
       }
       node.children = applyLeftOut(node.children);
-      return true;
+      // Nothing left to put in it, so it isn't created.
+      return node.kind !== 'collection' || node.children.length > 0;
     });
   structure = applyLeftOut(structure);
   // An album can be left out and then land outside every collection, where the walk above never meets it.
