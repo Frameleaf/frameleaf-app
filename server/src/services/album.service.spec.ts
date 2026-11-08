@@ -14,6 +14,7 @@ import {
   UserMetadataKey,
 } from 'src/enum.js';
 import { ALBUM_MOVE_OWNER_ONLY, AlbumService } from 'src/services/album.service.js';
+import { albumViewerKey } from 'src/utils/album-viewer-key.js';
 import { AlbumUserFactory } from 'test/factories/album-user.factory.js';
 import { AlbumFactory } from 'test/factories/album.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
@@ -23,6 +24,15 @@ import { authStub } from 'test/fixtures/auth.stub.js';
 import { getForAlbum } from 'test/mappers.js';
 import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
+
+const storedRow = (albumId: string, assetCount: number, computedAt = new Date()) => ({
+  albumId,
+  assetCount,
+  startDate: null,
+  endDate: null,
+  lastModifiedAssetTimestamp: null,
+  computedAt,
+});
 
 describe(AlbumService.name, () => {
   let sut: AlbumService;
@@ -241,7 +251,7 @@ describe(AlbumService.name, () => {
       expect(result[0].albumThumbnailAssetId).toBeNull();
       const options = { excludeNsfw: true, othersRulesViewerId: owner.id };
       expect(mocks.asset.getHiddenContentAssetIds).toHaveBeenCalledWith([thumbnailAssetId], options);
-      expect(mocks.album.getMetadataForIds).toHaveBeenCalledWith([album.id], options);
+      expect(mocks.albumSummary.getByIds).toHaveBeenCalledWith(albumViewerKey(options), [album.id]);
     });
 
     it('should use suppressed album thumbnails when suppressedOnly is active', async () => {
@@ -278,6 +288,8 @@ describe(AlbumService.name, () => {
 
       expect(result[0].albumThumbnailAssetId).toEqual(suppressedThumbnailId);
       expect(mocks.asset.getHiddenContentAssetIds).not.toHaveBeenCalled();
+      // The hidden-content view picks its cover from what it shows, so it stays a live read.
+      expect(mocks.albumSummary.getByIds).not.toHaveBeenCalled();
       // An elevated session also sees its own Locked media, so it passes lockedOwnerId (FL-32).
       expect(mocks.album.getMetadataForIds).toHaveBeenCalledWith([album.id], {
         onlyHiddenContent: suppressedContent,
@@ -416,19 +428,21 @@ describe(AlbumService.name, () => {
     const album = AlbumFactory.create();
     const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
     mocks.album.getAll.mockResolvedValue([getForAlbum(album)]);
-    mocks.album.getMetadataForIds.mockResolvedValue([
+    mocks.albumSummary.getByIds.mockResolvedValue([
       {
         albumId: album.id,
         assetCount: 1,
         startDate: new Date('1970-01-01'),
         endDate: new Date('1970-01-01'),
         lastModifiedAssetTimestamp: new Date('1970-01-01'),
+        computedAt: new Date(),
       },
     ]);
 
     const result = await sut.getAll(AuthFactory.create(owner), {});
     expect(result).toHaveLength(1);
     expect(result[0].assetCount).toEqual(1);
+    expect(result[0].statsPending).toBeUndefined();
     expect(mocks.album.getAll).toHaveBeenCalledTimes(1);
   });
 
@@ -1569,11 +1583,210 @@ describe(AlbumService.name, () => {
     });
   });
 
+  describe('stored album summaries (FL-1297)', () => {
+    const albumsOf = (count: number) => {
+      const owner = UserFactory.create();
+      const albums = Array.from({ length: count }, () => AlbumFactory.from().owner(owner).build());
+      mocks.album.getAll.mockResolvedValue(albums.map((album) => getForAlbum(album)));
+      return { auth: AuthFactory.create(owner), albums, ids: albums.map(({ id }) => id) };
+    };
+
+    it('reads what it lists from the stored rows of this viewer, not from the assets', async () => {
+      const { auth, albums, ids } = albumsOf(1);
+      mocks.albumSummary.getByIds.mockResolvedValue([storedRow(ids[0], 7)]);
+
+      const tree = await sut.getTree(auth);
+
+      expect(mocks.albumSummary.getByIds).toHaveBeenCalledWith(
+        albumViewerKey({ othersRulesViewerId: auth.user.id }),
+        ids,
+      );
+      expect(tree.albums[0]).toMatchObject({ id: albums[0].id, assetCount: 7 });
+      expect(tree.albums[0].statsPending).toBeUndefined();
+    });
+
+    it('does not read a stored row with the key of a session that has its PIN', async () => {
+      const { ids } = albumsOf(1);
+      const owner = UserFactory.create();
+      const plain = AuthFactory.from(owner).session({ hasElevatedPermission: false }).build();
+      const elevated = AuthFactory.from(owner).session({ hasElevatedPermission: true }).build();
+
+      await sut.getTree(plain);
+      await sut.getTree(elevated);
+
+      const [plainKey, elevatedKey] = mocks.albumSummary.getByIds.mock.calls.map(([key]) => key);
+      expect(plainKey).not.toEqual(elevatedKey);
+      expect(mocks.albumSummary.getByIds.mock.calls[0][1]).toEqual(ids);
+    });
+
+    it('reports an album with no stored row as pending, with no count or dates', async () => {
+      const { auth } = albumsOf(1);
+
+      const tree = await sut.getTree(auth);
+
+      expect(tree.albums[0]).toMatchObject({ assetCount: 0, statsPending: true });
+      expect(tree.albums[0].startDate).toBeUndefined();
+      expect(tree.albums[0].endDate).toBeUndefined();
+    });
+
+    it('answers before the first computation has finished, then stores it in small chunks', async () => {
+      const { auth, ids } = albumsOf(450);
+      let finish!: () => void;
+      mocks.album.getMetadataForIds.mockReturnValueOnce(new Promise((resolve) => (finish = () => resolve([]))));
+
+      const tree = await sut.getTree(auth);
+
+      expect(tree.albums).toHaveLength(450);
+      expect(mocks.albumSummary.upsert).not.toHaveBeenCalled();
+      finish();
+      await vi.waitFor(() => expect(mocks.albumSummary.upsert).toHaveBeenCalledTimes(3));
+      const batches = mocks.albumSummary.upsert.mock.calls.map((call) => call[2]);
+      const stored = batches.flat();
+      expect(stored.toSorted()).toEqual(ids.toSorted());
+      expect(batches.every((albumIds) => albumIds.length <= 200)).toBe(true);
+    });
+
+    it('never starts a second refresh of a viewer while one is running', async () => {
+      const { auth } = albumsOf(1);
+      mocks.album.getMetadataForIds.mockReturnValue(new Promise(() => {}));
+
+      await sut.getTree(auth);
+      await sut.getTree(auth);
+      await sut.getTree(auth);
+
+      await vi.waitFor(() => expect(mocks.album.getMetadataForIds).toHaveBeenCalledTimes(1));
+    });
+
+    it('recomputes only albums changed since their row, or with a row older than a day', async () => {
+      const { auth, ids } = albumsOf(4);
+      const hour = 60 * 60 * 1000;
+      const now = Date.now();
+      mocks.albumSummary.getByIds.mockResolvedValue([
+        storedRow(ids[0], 1, new Date(now - hour)), // changed since
+        storedRow(ids[1], 1, new Date(now - hour)), // changed, but before the row was computed
+        storedRow(ids[2], 1, new Date(now - 25 * hour)), // too old
+        storedRow(ids[3], 1, new Date(now - hour)), // untouched
+      ]);
+      mocks.albumSummary.getChangedAt.mockResolvedValue([
+        { albumId: ids[0], changedAt: new Date(now - 60_000) },
+        { albumId: ids[1], changedAt: new Date(now - 3 * hour) },
+      ]);
+
+      await sut.getTree(auth);
+
+      await vi.waitFor(() => expect(mocks.albumSummary.upsert).toHaveBeenCalledTimes(1));
+      expect(mocks.albumSummary.getChangedAt).toHaveBeenCalledWith(
+        [ids[0], ids[1], ids[3]],
+        new Date(now - hour - 2 * 60 * 1000),
+      );
+      expect(mocks.album.getMetadataForIds).toHaveBeenCalledWith([ids[2], ids[0]], {
+        othersRulesViewerId: auth.user.id,
+      });
+    });
+
+    it('re-reads a change inside the look-back once, not on every later check', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        const { auth, ids } = albumsOf(1);
+        const computedAt = new Date(Date.now() - 60_000);
+        mocks.albumSummary.getByIds.mockResolvedValue([storedRow(ids[0], 1, computedAt)]);
+        mocks.albumSummary.getChangedAt.mockResolvedValue([
+          { albumId: ids[0], changedAt: new Date(computedAt.getTime() - 30_000) },
+        ]);
+
+        await sut.getTree(auth);
+        await vi.waitFor(() => expect(mocks.albumSummary.upsert).toHaveBeenCalledTimes(1));
+
+        vi.setSystemTime(Date.now() + 20_000);
+        await sut.getTree(auth);
+        await vi.waitFor(() => expect(mocks.albumSummary.getChangedAt).toHaveBeenCalledTimes(2));
+        await new Promise((resolve) => setImmediate(resolve));
+
+        expect(mocks.albumSummary.upsert).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('catches a change committed just before its row was read', async () => {
+      const { auth, ids } = albumsOf(1);
+      const computedAt = new Date(Date.now() - 60 * 60 * 1000);
+      mocks.albumSummary.getByIds.mockResolvedValue([storedRow(ids[0], 1, computedAt)]);
+      mocks.albumSummary.getChangedAt.mockResolvedValue([
+        { albumId: ids[0], changedAt: new Date(computedAt.getTime() - 60_000) },
+      ]);
+
+      await sut.getTree(auth);
+
+      await vi.waitFor(() => expect(mocks.albumSummary.upsert).toHaveBeenCalledTimes(1));
+    });
+
+    it('checks for changes at most every few seconds while every album has a row', async () => {
+      const { auth, ids } = albumsOf(1);
+      mocks.albumSummary.getByIds.mockResolvedValue([storedRow(ids[0], 1)]);
+
+      await sut.getTree(auth);
+      await vi.waitFor(() => expect(mocks.albumSummary.getChangedAt).toHaveBeenCalledTimes(1));
+      await sut.getTree(auth);
+      await sut.getAll(auth, {});
+
+      expect(mocks.albumSummary.getChangedAt).toHaveBeenCalledTimes(1);
+    });
+
+    it('asks for the custom order once when building the hierarchy', async () => {
+      const { auth } = albumsOf(2);
+
+      await sut.getHierarchy(auth);
+
+      expect(mocks.album.getPositions).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('getTree', () => {
     it('returns empty groups when the user has no albums', async () => {
       mocks.album.getAll.mockResolvedValue([]);
       await expect(sut.getTree(AuthFactory.create())).resolves.toEqual({ collections: [], albums: [], spaces: [] });
       expect(mocks.album.getMetadataForIds).not.toHaveBeenCalled();
+      expect(mocks.albumSummary.getByIds).not.toHaveBeenCalled();
+    });
+
+    it('leaves out partner albums only when the account turned them off', async () => {
+      const auth = AuthFactory.create();
+      const partnerAlbum = newUuid();
+      mocks.album.getAll.mockResolvedValue([]);
+      mocks.partnerOrigin.getPartnerAlbumIds.mockResolvedValue([partnerAlbum]);
+
+      await sut.getTree(auth);
+      expect(mocks.album.getAll).toHaveBeenLastCalledWith(auth.user.id, { libraryScope: LibraryScope.Personal });
+
+      mocks.user.getMetadata.mockResolvedValue([
+        { key: UserMetadataKey.Preferences, value: { albums: { showPartnerAlbums: false } } },
+      ]);
+      await sut.getTree(auth);
+      expect(mocks.album.getAll).toHaveBeenLastCalledWith(auth.user.id, {
+        libraryScope: LibraryScope.Personal,
+        excludeIds: [partnerAlbum],
+      });
+    });
+
+    it('clears the parent of a visible album whose partner collection is turned off', async () => {
+      const hiddenCollection = newUuid();
+      const child = AlbumFactory.from({ parentId: hiddenCollection }).build();
+      const { user: owner } = child.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      mocks.album.getAll.mockResolvedValue([getForAlbum(child)]);
+      mocks.album.getMetadataForIds.mockResolvedValue([]);
+      mocks.smartAlbum.getSmartBackedAlbumKinds.mockResolvedValue(new Map());
+      mocks.album.getBookmarkCounts.mockResolvedValue(new Map());
+      mocks.album.getPositions.mockResolvedValue(new Map());
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([hiddenCollection]));
+      mocks.partnerOrigin.getPartnerAlbumIds.mockResolvedValue([hiddenCollection]);
+      mocks.user.getMetadata.mockResolvedValue([
+        { key: UserMetadataKey.Preferences, value: { albums: { showPartnerAlbums: false } } },
+      ]);
+
+      const tree = await sut.getTree(AuthFactory.create(owner));
+
+      expect(tree.albums.map(({ id, parentId }) => ({ id, parentId }))).toEqual([{ id: child.id, parentId: null }]);
     });
 
     it('lists only what the user owns or is shared with, shaped as shelves, albums and spaces', async () => {
@@ -1587,17 +1800,22 @@ describe(AlbumService.name, () => {
       mocks.album.getAll.mockResolvedValue(
         [collection, inside, loose, sharedWithMe, space].map((item) => getForAlbum(item)),
       );
-      mocks.album.getMetadataForIds.mockResolvedValue([
-        { albumId: collection.id, assetCount: 1, startDate: null, endDate: null, lastModifiedAssetTimestamp: null },
-        { albumId: inside.id, assetCount: 4, startDate: null, endDate: null, lastModifiedAssetTimestamp: null },
-        { albumId: loose.id, assetCount: 2, startDate: null, endDate: null, lastModifiedAssetTimestamp: null },
+      mocks.albumSummary.getByIds.mockResolvedValue([
+        storedRow(collection.id, 1),
+        storedRow(inside.id, 4),
+        storedRow(loose.id, 2),
       ]);
       mocks.smartAlbum.getSmartBackedAlbumKinds.mockResolvedValue(new Map([[loose.id, 'food']]));
       mocks.album.getBookmarkCounts.mockResolvedValue(new Map([[loose.id, 3]]));
       mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([collection.id]));
+      const origin = { rootOwnerId: newUuid(), rootOwnerName: 'Jamie' };
+      mocks.partnerOrigin.getOriginLabels.mockResolvedValue(new Map([[inside.id, origin]]));
 
       const tree = await sut.getTree(auth);
 
+      // FL-1298: the directory has to know a partner's copy, because it can't be merged.
+      expect(tree.collections[0].albums[0].origin).toEqual(origin);
+      expect(tree.albums.find(({ id }) => id === loose.id)?.origin).toBeUndefined();
       expect(mocks.album.getAll).toHaveBeenCalledWith(owner.id, { libraryScope: LibraryScope.Personal });
       expect(tree.collections).toHaveLength(1);
       expect(tree.collections[0].collection.id).toBe(collection.id);
@@ -1748,6 +1966,25 @@ describe(AlbumService.name, () => {
       expect(mocks.album.getPositions).toHaveBeenCalledWith(auth.user.id);
       expect(tree.collections[0].albums.map(({ id }) => id)).toEqual([second.id, first.id]);
       expect(tree.albums.map(({ id }) => id)).toEqual([sharedWithMe.id, loose.id]);
+    });
+
+    it('keeps a partner album the person turned off out of the group, so the order still saves', async () => {
+      const { auth, loose, sharedWithMe } = setup();
+      const partnerAlbum = newUuid();
+      mocks.partnerOrigin.getPartnerAlbumIds.mockResolvedValue([partnerAlbum]);
+      mocks.user.getMetadata.mockResolvedValue([
+        { key: UserMetadataKey.Preferences, value: { albums: { showPartnerAlbums: false } } },
+      ]);
+      const validate = mocks.album.setPositions.getMockImplementation()!;
+      mocks.album.setPositions.mockImplementation((userId, albumIds, check) =>
+        validate(userId, albumIds, (rows) =>
+          check?.([...rows, { id: partnerAlbum, kind: AlbumKind.Album, parentId: null }]),
+        ),
+      );
+
+      await expect(
+        sut.setOrder(auth, { parentId: null, albumIds: [sharedWithMe.id, loose.id] }),
+      ).resolves.toBeUndefined();
     });
 
     it('saves the order of the albums inside a collection for this person only', async () => {

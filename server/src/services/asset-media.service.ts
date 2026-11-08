@@ -47,6 +47,7 @@ import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { BaseService } from 'src/services/base.service.js';
 import { requireUploadAccess, requireUploadsNotPaused } from 'src/utils/access.js';
 import { asUploadRequest } from 'src/utils/asset.util.js';
+import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { hasPublishedDevelopRendition } from 'src/utils/develop-envelope.js';
 import { moveFileWithin, storedCopyChecks } from 'src/utils/file-trash.js';
@@ -670,7 +671,7 @@ export class AssetMediaService extends BaseService {
     }
 
     const size = (dto.size ?? AssetMediaSize.THUMBNAIL) as unknown as AssetFileType;
-    const { ownerId, originalPath, originalFileName, path, imageEncoding, isEdited } =
+    const { ownerId, originalPath, originalFileName, path, imageEncoding, isEdited, thumbhash } =
       await this.assetRepository.getForThumbnail(id, size, dto.edited ?? false);
 
     // Develop revisions keep their own files; legacy asset_file edits do not point at them.
@@ -783,7 +784,11 @@ export class AssetMediaService extends BaseService {
       fileName,
       path,
       contentType: mimeTypes.lookup(path),
-      cacheControl: CacheControl.PrivateWithCache,
+      // ponytail: thumbnails only. Previews change with the owner's playback choice while the thumbhash stays (FL-115).
+      cacheControl:
+        size === AssetFileType.Thumbnail && thumbhash && dto.c === hexOrBufferToBase64(thumbhash)
+          ? CacheControl.PrivateImmutable
+          : CacheControl.PrivateWithCache,
       viewerId: lockedViewerOf(auth),
     });
 

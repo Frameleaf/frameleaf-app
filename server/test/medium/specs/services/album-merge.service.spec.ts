@@ -15,6 +15,7 @@ import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
+import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -42,6 +43,7 @@ const setup = (db?: Kysely<DB>) => {
       ClassificationRepository,
       PartnerOriginRepository,
       PartnerRepository,
+      SharedLinkRepository,
       SmartAlbumRepository,
       UserRepository,
     ],
@@ -494,15 +496,27 @@ describe(AlbumMergeService.name, () => {
       await expect(ctx.get(AlbumRepository).getMetadataForIds([winner.album.id])).resolves.toMatchObject([
         { assetCount: 3 },
       ]);
-      await expect(
-        ctx.database
-          .selectFrom('shared_link')
-          .innerJoin('album', 'album.id', 'shared_link.albumId')
-          .where('album.deletedAt', 'is', null)
-          .where('shared_link.albumId', '=', loser.album.id)
-          .select('shared_link.id')
-          .execute(),
-      ).resolves.toEqual([]);
+      await expect(ctx.get(SharedLinkRepository).getByKey(Buffer.from('merge-link'))).resolves.toBeUndefined();
+    });
+
+    it('keeps a merged-away album gone when its owner’s deleted account is restored, until Undo', async () => {
+      const { sut, ctx, runs } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user: { id: user.id } });
+      const winner = await albumWith(ctx, user.id, 2);
+      const loser = await albumWith(ctx, user.id, 1);
+      await sut.merge(auth, winner.album.id, { otherId: loser.album.id });
+      const deletedAt = (albumId: string) =>
+        ctx.database.selectFrom('album').select('deletedAt').where('id', '=', albumId).executeTakeFirstOrThrow();
+
+      await ctx.get(AlbumRepository).softDeleteAll(user.id);
+      await ctx.get(AlbumRepository).restoreAll(user.id);
+
+      await expect(deletedAt(winner.album.id)).resolves.toEqual({ deletedAt: null });
+      await expect(deletedAt(loser.album.id)).resolves.not.toEqual({ deletedAt: null });
+
+      await runs.undoLatest(auth);
+      await expect(deletedAt(loser.album.id)).resolves.toEqual({ deletedAt: null });
     });
 
     it('follows a merged-away import folder and a backup choice', async () => {

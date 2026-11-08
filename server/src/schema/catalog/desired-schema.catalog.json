@@ -46882,6 +46882,397 @@
       "synchronize": true
     },
     {
+      "name": "album_summary",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "albumId",
+          "tableName": "album_summary",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "viewerKey",
+          "tableName": "album_summary",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "assetCount",
+          "tableName": "album_summary",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "date",
+          "primary": false,
+          "name": "startDate",
+          "tableName": "album_summary",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "date",
+          "primary": false,
+          "name": "endDate",
+          "tableName": "album_summary",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "lastModifiedAssetTimestamp",
+          "tableName": "album_summary",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "computedAt",
+          "tableName": "album_summary",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "album_summary_pkey",
+          "definition": "PRIMARY KEY (\"albumId\", \"viewerKey\")",
+          "tableName": "album_summary",
+          "columnNames": [
+            "albumId",
+            "viewerKey"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "album_summary_albumId_fkey",
+          "definition": "FOREIGN KEY (\"albumId\") REFERENCES album(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "album_summary",
+          "columnNames": [
+            "albumId"
+          ],
+          "referenceTableName": "album",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "album_change_run",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "album_change_run",
+          "nullable": false,
+          "isArray": false,
+          "default": "immich_uuid_v7()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "userId",
+          "tableName": "album_change_run",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "kind",
+          "tableName": "album_change_run",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "status",
+          "tableName": "album_change_run",
+          "nullable": false,
+          "isArray": false,
+          "default": "'running'::text",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "album_change_run",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "undoneAt",
+          "tableName": "album_change_run",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "summary",
+          "tableName": "album_change_run",
+          "nullable": false,
+          "isArray": false,
+          "default": "'{}'::jsonb",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "album_change_run_userId_createdAt_idx",
+          "definition": "CREATE INDEX \"album_change_run_userId_createdAt_idx\" ON public.album_change_run USING btree (\"userId\", \"createdAt\")",
+          "tableName": "album_change_run",
+          "columnNames": [
+            "userId",
+            "createdAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "album_change_run_kind_check",
+          "definition": "CHECK ((kind = ANY (ARRAY['merge'::text, 'cleanup'::text, 'heal'::text])))",
+          "tableName": "album_change_run",
+          "expression": "((kind = ANY (ARRAY['merge'::text, 'cleanup'::text, 'heal'::text])))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "album_change_run_status_check",
+          "definition": "CHECK ((status = ANY (ARRAY['running'::text, 'done'::text, 'failed'::text, 'undone'::text])))",
+          "tableName": "album_change_run",
+          "expression": "((status = ANY (ARRAY['running'::text, 'done'::text, 'failed'::text, 'undone'::text])))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "album_change_run_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "album_change_run",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "album_change_run_userId_fkey",
+          "definition": "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "album_change_run",
+          "columnNames": [
+            "userId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "album_change",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "runId",
+          "tableName": "album_change",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "seq",
+          "tableName": "album_change",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "kind",
+          "tableName": "album_change",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "albumId",
+          "tableName": "album_change",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "album_change",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "before",
+          "tableName": "album_change",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "after",
+          "tableName": "album_change",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "album_change_assetId_idx",
+          "definition": "CREATE INDEX \"album_change_assetId_idx\" ON public.album_change USING btree (\"assetId\")",
+          "tableName": "album_change",
+          "columnNames": [
+            "assetId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "album_change_albumId_idx",
+          "definition": "CREATE INDEX \"album_change_albumId_idx\" ON public.album_change USING btree (\"albumId\")",
+          "tableName": "album_change",
+          "columnNames": [
+            "albumId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "album_change_pkey",
+          "definition": "PRIMARY KEY (\"runId\", seq)",
+          "tableName": "album_change",
+          "columnNames": [
+            "runId",
+            "seq"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "album_change_runId_fkey",
+          "definition": "FOREIGN KEY (\"runId\") REFERENCES album_change_run(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "album_change",
+          "columnNames": [
+            "runId"
+          ],
+          "referenceTableName": "album_change_run",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "album_change_albumId_fkey",
+          "definition": "FOREIGN KEY (\"albumId\") REFERENCES album(id) ON UPDATE CASCADE ON DELETE SET NULL",
+          "tableName": "album_change",
+          "columnNames": [
+            "albumId"
+          ],
+          "referenceTableName": "album",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "SET NULL",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "album_change_assetId_fkey",
+          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE SET NULL",
+          "tableName": "album_change",
+          "columnNames": [
+            "assetId"
+          ],
+          "referenceTableName": "asset",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "SET NULL",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
       "name": "asset_exif",
       "columns": [
         {
@@ -47397,6 +47788,15 @@
           "tableName": "asset_exif",
           "nullable": true,
           "isArray": true,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "estimatedDateTimeOriginal",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
           "synchronize": true
         }
       ],

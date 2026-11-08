@@ -124,8 +124,21 @@ const syncLivePhotoVideoId = (options: HiddenContentQueryOptions) => {
       end`.as('livePhotoVideoId')
     : sql<string | null>`asset."livePhotoVideoId"`.as('livePhotoVideoId');
 };
+/** Both asset streams read only the requester's own assets, so an origin row here is their own partner copy. */
+const syncAssetPartnerOrigin = () =>
+  sql<
+    string | null
+  >`(select origin."rootOwnerId" from public.asset_origin origin where origin."assetId" = asset.id)`.as(
+    'partnerOriginOwnerId',
+  );
 const syncAsset = (options: HiddenContentQueryOptions) =>
-  [...syncAssetColumns, syncChecksum(), syncLivePhotoVideoId(options), syncVisibility()] as const;
+  [
+    ...syncAssetColumns,
+    syncChecksum(),
+    syncLivePhotoVideoId(options),
+    syncVisibility(),
+    syncAssetPartnerOrigin(),
+  ] as const;
 const syncAlbumAssetColumns = columns.syncAlbumAsset.filter(
   (column) => column !== 'asset.checksum' && column !== 'asset.livePhotoVideoId' && column !== 'asset.visibility',
 );
@@ -269,6 +282,11 @@ class AlbumSync extends BaseSync {
           'album.deletedAt',
           eventId.as('updateId'),
           sql<string | null>`case when (${parentGrant}) is not null then album."parentId" else null end`.as('parentId'),
+          sql<
+            string | null
+          >`(select origin."rootOwnerId" from public.album_origin origin where origin."albumId" = album.id and origin."ownerId" = ${userId}::uuid)`.as(
+            'partnerOriginOwnerId',
+          ),
         ]),
     };
   }

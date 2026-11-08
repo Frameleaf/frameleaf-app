@@ -75,9 +75,19 @@ describe(AlbumMergeController.name, () => {
   it('POST /albums/change-runs/latest/undo answers 200 with what it did', async () => {
     runs.undoLatest.mockResolvedValue({ reversed: 3, skipped: ['Beach'] });
 
-    const { status, body } = await request(ctx.getHttpServer()).post('/albums/change-runs/latest/undo');
+    const { status, body } = await request(ctx.getHttpServer()).post('/albums/change-runs/latest/undo').send({});
 
     expect(status).toBe(200);
     expect(body).toEqual({ reversed: 3, skipped: ['Beach'] });
+  });
+
+  it('POST /albums/change-runs/latest/undo passes on which run was meant', async () => {
+    runs.undoLatest.mockResolvedValue({ reversed: 1, skipped: [] });
+    const runId = '019a0000-0000-7000-8000-000000000001';
+
+    const { status } = await request(ctx.getHttpServer()).post('/albums/change-runs/latest/undo').send({ runId });
+
+    expect(status).toBe(200);
+    expect(runs.undoLatest.mock.calls[0][1]).toEqual({ runId });
   });
 });

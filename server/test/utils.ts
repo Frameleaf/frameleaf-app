@@ -26,6 +26,7 @@ import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js
 import { AlbumChangeRunRepository } from 'src/repositories/album-change-run.repository.js';
 import { AlbumCleanupRepository } from 'src/repositories/album-cleanup.repository.js';
 import { AlbumSourceRepository } from 'src/repositories/album-source.repository.js';
+import { AlbumSummaryRepository } from 'src/repositories/album-summary.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
@@ -278,6 +279,7 @@ export type ServiceOverrides = {
   activity: ActivityRepository;
   adminAudit: AdminAuditRepository;
   album: AlbumRepository;
+  albumSummary: AlbumSummaryRepository;
   albumUser: AlbumUserRepository;
   apiKey: ApiKeyRepository;
   app: AppRepository;
@@ -401,6 +403,7 @@ export const getMocks = () => {
     // recording an administrator's change is incidental to most tests (FL-76)
     adminAudit: automock(AdminAuditRepository, { strict: false }),
     album: automock(AlbumRepository, { args: [database], strict: false }),
+    albumSummary: automock(AlbumSummaryRepository, { args: [database], strict: false }),
     albumUser: automock(AlbumUserRepository),
     asset: newAssetRepositoryMock(),
     assetDevelop: automock(AssetDevelopRepository, { args: [database], strict: false }),
@@ -490,6 +493,8 @@ export const getMocks = () => {
   mocks.clusterGroup.create.mockResolvedValue(ClusterGroupFactory.create());
 
   // no album is filled by smart album rules, and no classification rule exists, unless a test says so (FL-60)
+  mocks.albumSummary.getByIds.mockResolvedValue([]);
+  mocks.albumSummary.getChangedAt.mockResolvedValue([]);
   mocks.smartAlbum.getSmartBackedAlbumKinds.mockResolvedValue(new Map());
   mocks.smartAlbum.getHiddenAlbumIds.mockResolvedValue(new Set());
   mocks.classification.getRuleAlbumIds.mockResolvedValue(new Set());
@@ -567,6 +572,7 @@ export const newTestService = <T extends BaseService>(
     overrides.activity || (mocks.activity as As<ActivityRepository>),
     overrides.adminAudit || (mocks.adminAudit as As<AdminAuditRepository>),
     overrides.album || (mocks.album as As<AlbumRepository>),
+    overrides.albumSummary || (mocks.albumSummary as As<AlbumSummaryRepository>),
     overrides.albumUser || (mocks.albumUser as As<AlbumUserRepository>),
     overrides.apiKey || (mocks.apiKey as As<ApiKeyRepository>),
     overrides.app || (mocks.app as As<AppRepository>),

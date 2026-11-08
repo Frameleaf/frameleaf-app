@@ -113,6 +113,12 @@ const SyncAssetV2Schema = z
     width: z.int().nullable().describe('Asset width'),
     height: z.int().nullable().describe('Asset height'),
     isEdited: z.boolean().describe('Is edited'),
+    partnerOriginOwnerId: z
+      .uuid()
+      .optional()
+      .describe(
+        "Only on your own copy of a partner's photo: the account it originally came from. Rows synced before this field existed need a full re-sync to carry it.",
+      ),
   })
   .meta({ id: 'SyncAssetV2' });
 
@@ -262,6 +268,12 @@ const SyncAlbumV3Schema = SyncAlbumV2Schema.extend({
   icon: z.string().nullable(),
   sortOrder: z.number().meta({ format: 'double' }).nullable(),
   deletedAt: isoDatetimeToDate.nullable(),
+  partnerOriginOwnerId: z
+    .uuid()
+    .optional()
+    .describe(
+      "Only on your own copy of a partner's album: the account it originally came from. Rows synced before this field existed need a full re-sync to carry it.",
+    ),
 }).meta({ id: 'SyncAlbumV3' });
 
 const SyncAlbumToAssetV1Schema = z

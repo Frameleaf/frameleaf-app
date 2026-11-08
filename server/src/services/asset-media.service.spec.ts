@@ -13,7 +13,12 @@ import { vitest } from 'vitest';
 import { AssetFile } from 'src/database.js';
 import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
 import { AssetMediaStatus, AssetRejectReason, AssetUploadAction } from 'src/dtos/asset-media-response.dto.js';
-import { AssetMediaCreateDto, AssetMediaSize, UploadFieldName } from 'src/dtos/asset-media.dto.js';
+import {
+  AssetMediaCreateDto,
+  AssetMediaOptionsDto,
+  AssetMediaSize,
+  UploadFieldName,
+} from 'src/dtos/asset-media.dto.js';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
 import {
   AssetFileType,
@@ -1480,6 +1485,7 @@ describe(AssetMediaService.name, () => {
       const { auth, asset } = setup();
       mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([asset.id]));
       mocks.asset.getForThumbnail.mockResolvedValue({
+        thumbhash: null,
         imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false },
         renditionIdentity: null,
         ownerId: asset.ownerId,
@@ -1516,6 +1522,35 @@ describe(AssetMediaService.name, () => {
   });
 
   describe('viewThumbnail', () => {
+    it('serves a thumbnail as immutable only for its current thumbhash, and never a preview', async () => {
+      const asset = AssetFactory.create();
+      const thumbhash = Buffer.from('current');
+      const current = thumbhash.toString('base64');
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForThumbnail.mockResolvedValue({
+        imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false },
+        renditionIdentity: null,
+        ...asset,
+        thumbhash,
+        path: '/data/thumb.webp',
+      });
+      const cacheControl = async (dto: AssetMediaOptionsDto) => {
+        const response = await sut.viewThumbnail(authStub.admin, asset.id, dto);
+        return (response as FileDownloadResponse).cacheControl;
+      };
+
+      await expect(cacheControl({ size: AssetMediaSize.THUMBNAIL, c: current })).resolves.toBe(
+        CacheControl.PrivateImmutable,
+      );
+      await expect(cacheControl({ size: AssetMediaSize.THUMBNAIL, c: 'stale' })).resolves.toBe(
+        CacheControl.PrivateWithCache,
+      );
+      await expect(cacheControl({ size: AssetMediaSize.THUMBNAIL })).resolves.toBe(CacheControl.PrivateWithCache);
+      await expect(cacheControl({ size: AssetMediaSize.PREVIEW, c: current })).resolves.toBe(
+        CacheControl.PrivateWithCache,
+      );
+    });
+
     it('refuses explicit HDR when processing is disabled instead of returning SDR', async () => {
       const asset = AssetFactory.create();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));

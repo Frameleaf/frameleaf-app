@@ -65,6 +65,24 @@ describe('AlbumMergeDialog', () => {
     expect(rows()).toHaveLength(3);
   });
 
+  it('starts at the picker again after being closed at the confirmation', async () => {
+    sdkMock.getAlbumMergePreview.mockResolvedValue(preview({ winnerId: 'same', total: 11 }));
+    const { rerender } = render(AlbumMergeDialog, {
+      album: trip,
+      albums: [trip, ...others],
+      open: true,
+      onMerge: vi.fn(),
+    });
+    await pick(/Beach/);
+    expect(screen.getByRole('heading', { name: 'Merge these albums?' })).toBeInTheDocument();
+
+    await rerender({ open: false });
+    await rerender({ open: true });
+
+    expect(screen.queryByRole('heading', { name: 'Merge these albums?' })).toBeNull();
+    expect(rows()).toHaveLength(3);
+  });
+
   it('narrows the list as the person searches and says when nothing matches', async () => {
     renderDialog();
     const search = screen.getByRole('searchbox', { name: 'Search albums' });

@@ -38,6 +38,7 @@
     LibraryViewScope,
     SharedLinkType,
     createClassificationRule,
+    isHttpError,
     getClassificationRule,
     mergeAlbum,
     undoLatestAlbumChangeRun,
@@ -232,9 +233,9 @@
   };
 
   /** Puts a merge back. Anything changed since stays as it is, and the message says what was kept. */
-  const undoMerge = async () => {
+  const undoMerge = async (runId: string) => {
     try {
-      const { skipped } = await undoLatestAlbumChangeRun();
+      const { skipped } = await undoLatestAlbumChangeRun({ albumChangeUndoDto: { runId } });
       announce(
         skipped.length > 0
           ? $t('frameleaf_albums_merge_undone_kept', { values: { names: skipped.join(', ') } })
@@ -242,6 +243,10 @@
       );
       await refresh();
     } catch (error) {
+      if (isHttpError(error) && error.status === 409) {
+        announce($t('frameleaf_albums_merge_undo_newer'));
+        return;
+      }
       handleError(error, $t('frameleaf_albums_merge_undo_failed'));
     }
   };
@@ -250,11 +255,11 @@
   const merge = async (album: AlbumResponseDto, other: AlbumResponseDto) => {
     busy = true;
     try {
-      const { winnerId } = await mergeAlbum({ id: album.id, albumMergeDto: { otherId: other.id } });
+      const { winnerId, runId } = await mergeAlbum({ id: album.id, albumMergeDto: { otherId: other.id } });
       const [winner, loser] = winnerId === album.id ? [album, other] : [other, album];
       announce(
         $t('frameleaf_albums_merged', { values: { loser: nameOf(loser), winner: nameOf(winner) } }),
-        () => void undoMerge(),
+        () => void undoMerge(runId),
       );
       mergeDialog = { open: false };
       if (page.url.pathname.includes(loser.id)) {

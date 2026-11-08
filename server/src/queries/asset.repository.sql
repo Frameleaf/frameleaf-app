@@ -30,6 +30,21 @@ set
 where
   "assetId" in ($3)
 
+-- AssetRepository.getCaptureDate
+select
+  "asset"."ownerId",
+  "asset"."deletedAt",
+  "asset"."fileCreatedAt",
+  "asset"."localDateTime",
+  "asset_exif"."dateTimeOriginal",
+  "asset_exif"."timeZone",
+  "asset_exif"."lockedProperties"
+from
+  "asset"
+  left join "asset_exif" on "asset_exif"."assetId" = "asset"."id"
+where
+  "asset"."id" = $1::uuid
+
 -- AssetRepository.updateDateTimeOriginal
 update "asset_exif"
 set
@@ -1584,6 +1599,7 @@ select
   "asset"."isEdited",
   "asset"."originalPath",
   "asset"."originalFileName",
+  "asset"."thumbhash",
   "asset_file"."path" as "path",
   "asset_file"."renditionIdentity",
   "asset_exif"."imageEncoding"

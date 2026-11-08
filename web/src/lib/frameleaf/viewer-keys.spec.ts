@@ -12,7 +12,12 @@ describe('viewer keys', () => {
     document.body.replaceChildren();
   });
 
-  it('leaves fields, comboboxes, sliders and videos their own keys', () => {
+  it('does not treat a focused video as owning keys', () => {
+    expect(isTypingTarget(make('<video></video>'))).toBe(false);
+    expect(isControlTarget(make('<video></video>'))).toBe(false);
+  });
+
+  it('leaves fields, comboboxes and sliders their own keys', () => {
     expect(isTypingTarget(make('<input type="search" />'))).toBe(true);
     expect(isTypingTarget(make('<textarea></textarea>'))).toBe(true);
     expect(isTypingTarget(make('<div role="combobox"></div>'))).toBe(true);

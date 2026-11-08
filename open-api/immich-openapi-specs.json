@@ -11634,6 +11634,16 @@
         "description": "Reverse your newest merge, cleanup or date healing, for up to 30 days. Anything changed since is left alone and reported in `skipped`.",
         "operationId": "undoLatestAlbumChangeRun",
         "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlbumChangeUndoDto"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
@@ -11672,154 +11682,6 @@
           }
         ],
         "x-immich-permission": "album.update",
-        "x-immich-state": "Alpha"
-      }
-    },
-    "/albums/cleanup/apply": {
-      "post": {
-        "description": "Check a list of operations and apply them in the background. No photos leave your library. The result can be undone for 30 days.",
-        "operationId": "applyAlbumCleanup",
-        "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AlbumCleanupApplyDto"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AlbumCleanupApplyResponseDto"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ],
-        "summary": "Apply an album cleanup",
-        "tags": [
-          "Albums"
-        ],
-        "x-immich-history": [
-          {
-            "version": "v3.2.1",
-            "state": "Added"
-          },
-          {
-            "version": "v3.2.1",
-            "state": "Alpha"
-          }
-        ],
-        "x-immich-permission": "album.delete",
-        "x-immich-state": "Alpha"
-      }
-    },
-    "/albums/cleanup/snapshot": {
-      "get": {
-        "description": "What the scan found in your top-level albums. A session without the PIN receives nothing computed from Locked items.",
-        "operationId": "getAlbumCleanupSnapshot",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AlbumCleanupSnapshotResponseDto"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ],
-        "summary": "Get the album cleanup scan results",
-        "tags": [
-          "Albums"
-        ],
-        "x-immich-history": [
-          {
-            "version": "v3.2.1",
-            "state": "Added"
-          },
-          {
-            "version": "v3.2.1",
-            "state": "Alpha"
-          }
-        ],
-        "x-immich-permission": "album.read",
-        "x-immich-state": "Alpha"
-      }
-    },
-    "/albums/cleanup/status": {
-      "get": {
-        "description": "Whether the album cleanup scan has run, how much it found, and how far a cleanup in progress has got.",
-        "operationId": "getAlbumCleanupStatus",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AlbumCleanupStatusResponseDto"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ],
-        "summary": "Get the album cleanup status",
-        "tags": [
-          "Albums"
-        ],
-        "x-immich-history": [
-          {
-            "version": "v3.2.1",
-            "state": "Added"
-          },
-          {
-            "version": "v3.2.1",
-            "state": "Alpha"
-          }
-        ],
-        "x-immich-permission": "album.read",
         "x-immich-state": "Alpha"
       }
     },
@@ -12999,7 +12861,7 @@
     },
     "/albums/{id}/merge": {
       "post": {
-        "description": "Merge two albums you own into the one with the most photos, counting Locked ones. No photos leave your library. The other album can be brought back with Undo for 30 days.",
+        "description": "Merge two albums you own into the one with the most photos, counting Locked ones; on a tie the older album stays. No photos leave your library. The other album can be brought back with Undo for 30 days.",
         "operationId": "mergeAlbum",
         "parameters": [
           {
@@ -19622,6 +19484,15 @@
         "description": "Retrieve the thumbnail image for the specified asset. Viewing the fullsize thumbnail might redirect to downloadAsset, which requires a different permission.",
         "operationId": "viewAsset",
         "parameters": [
+          {
+            "name": "c",
+            "required": false,
+            "in": "query",
+            "description": "Cache version: the asset's current thumbhash. A matching thumbnail is served as immutable.",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "name": "dynamicRange",
             "required": false,
@@ -69182,6 +69053,17 @@
         ],
         "type": "string"
       },
+      "AlbumChangeUndoDto": {
+        "properties": {
+          "runId": {
+            "description": "Only undo if this is still the latest run; refused with 409 if it is not",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "AlbumChangeUndoResponseDto": {
         "properties": {
           "reversed": {
@@ -69201,577 +69083,6 @@
         "required": [
           "reversed",
           "skipped"
-        ],
-        "type": "object"
-      },
-      "AlbumCleanupAlbumFactDto": {
-        "properties": {
-          "count": {
-            "description": "Photos this session may see",
-            "maximum": 9007199254740991,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "coverAssetId": {
-            "description": "A cover this session may see",
-            "format": "uuid",
-            "nullable": true,
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-            "type": "string"
-          },
-          "createdAt": {
-            "description": "When the album was created",
-            "type": "string"
-          },
-          "gps": {
-            "description": "Where the photos were taken, when they say so",
-            "nullable": true,
-            "properties": {
-              "city": {
-                "description": "The city most located photos were taken in",
-                "type": "string"
-              },
-              "lat": {
-                "description": "Latitude of the centre of those photos",
-                "format": "double",
-                "type": "number"
-              },
-              "lon": {
-                "description": "Longitude of the centre of those photos",
-                "format": "double",
-                "type": "number"
-              },
-              "share": {
-                "description": "Its share of the located photos",
-                "format": "double",
-                "maximum": 1,
-                "minimum": 0,
-                "type": "number"
-              }
-            },
-            "required": [
-              "city",
-              "share",
-              "lat",
-              "lon"
-            ],
-            "type": "object"
-          },
-          "id": {
-            "description": "Album ID",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-            "type": "string"
-          },
-          "locked": {
-            "description": "The album is locked",
-            "type": "boolean"
-          },
-          "name": {
-            "description": "Album name",
-            "type": "string"
-          },
-          "shared": {
-            "description": "The album is shared with people, by a public link or through a shared space",
-            "type": "boolean"
-          },
-          "span": {
-            "description": "When the photos were taken, leaving out estimated dates",
-            "nullable": true,
-            "properties": {
-              "from": {
-                "description": "First day, as days since 1970-01-01",
-                "maximum": 9007199254740991,
-                "minimum": -9007199254740991,
-                "type": "integer"
-              },
-              "middle": {
-                "description": "The middle photo, as days since 1970-01-01",
-                "maximum": 9007199254740991,
-                "minimum": -9007199254740991,
-                "type": "integer"
-              },
-              "to": {
-                "description": "Last day, as days since 1970-01-01",
-                "maximum": 9007199254740991,
-                "minimum": -9007199254740991,
-                "type": "integer"
-              }
-            },
-            "required": [
-              "from",
-              "to",
-              "middle"
-            ],
-            "type": "object"
-          }
-        },
-        "required": [
-          "count",
-          "coverAssetId",
-          "createdAt",
-          "gps",
-          "id",
-          "locked",
-          "name",
-          "shared",
-          "span"
-        ],
-        "type": "object"
-      },
-      "AlbumCleanupApplyDto": {
-        "properties": {
-          "operations": {
-            "description": "What to change",
-            "items": {
-              "$ref": "#/components/schemas/AlbumCleanupOperationDto"
-            },
-            "maxItems": 50000,
-            "minItems": 1,
-            "type": "array"
-          }
-        },
-        "required": [
-          "operations"
-        ],
-        "type": "object"
-      },
-      "AlbumCleanupApplyProgressDto": {
-        "properties": {
-          "done": {
-            "description": "Operations finished",
-            "maximum": 9007199254740991,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "runId": {
-            "description": "The cleanup, for undoing it",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-            "type": "string"
-          },
-          "status": {
-            "$ref": "#/components/schemas/AlbumChangeRunStatus"
-          },
-          "total": {
-            "description": "Operations in all",
-            "maximum": 9007199254740991,
-            "minimum": 0,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "done",
-          "runId",
-          "status",
-          "total"
-        ],
-        "type": "object"
-      },
-      "AlbumCleanupApplyResponseDto": {
-        "properties": {
-          "runId": {
-            "description": "The cleanup, to follow its progress and undo it",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-            "type": "string"
-          }
-        },
-        "required": [
-          "runId"
-        ],
-        "type": "object"
-      },
-      "AlbumCleanupCollectionFactDto": {
-        "properties": {
-          "createdAt": {
-            "description": "When it was created; the older of two with one name is reused",
-            "type": "string"
-          },
-          "id": {
-            "description": "Collection ID",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-            "type": "string"
-          },
-          "name": {
-            "description": "Collection name",
-            "type": "string"
-          },
-          "parentId": {
-            "description": "The collection it sits in",
-            "format": "uuid",
-            "nullable": true,
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-            "type": "string"
-          }
-        },
-        "required": [
-          "createdAt",
-          "id",
-          "name",
-          "parentId"
-        ],
-        "type": "object"
-      },
-      "AlbumCleanupFactsDto": {
-        "properties": {
-          "albums": {
-            "description": "Your top-level albums",
-            "items": {
-              "$ref": "#/components/schemas/AlbumCleanupAlbumFactDto"
-            },
-            "type": "array"
-          },
-          "collections": {
-            "description": "Your existing collections, to reuse as structure",
-            "items": {
-              "$ref": "#/components/schemas/AlbumCleanupCollectionFactDto"
-            },
-            "type": "array"
-          },
-          "healSkipped": {
-            "description": "Albums skipped because their photos span too long",
-            "maximum": 9007199254740991,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "homeAreas": {
-            "description": "The largest photo clusters, densest first",
-            "items": {
-              "$ref": "#/components/schemas/AlbumCleanupHomeAreaDto"
-            },
-            "type": "array"
-          },
-          "lostDates": {
-            "description": "Albums with photos that lost their date",
-            "items": {
-              "$ref": "#/components/schemas/AlbumCleanupLostDatesDto"
-            },
-            "type": "array"
-          },
-          "sameName": {
-            "description": "Albums sharing a name",
-            "items": {
-              "$ref": "#/components/schemas/AlbumCleanupSameNameDto"
-            },
-            "type": "array"
-          },
-          "samePhotos": {
-            "description": "Albums holding nearly the same photos under different names",
-            "items": {
-              "$ref": "#/components/schemas/AlbumCleanupPairDto"
-            },
-            "type": "array"
-          },
-          "sameTrip": {
-            "description": "Albums from the same dates and place with no photos in common",
-            "items": {
-              "$ref": "#/components/schemas/AlbumCleanupPairDto"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "albums",
-          "collections",
-          "healSkipped",
-          "homeAreas",
-          "lostDates",
-          "sameName",
-          "samePhotos",
-          "sameTrip"
-        ],
-        "type": "object"
-      },
-      "AlbumCleanupHomeAreaDto": {
-        "properties": {
-          "city": {
-            "description": "The most common city in the area",
-            "nullable": true,
-            "type": "string"
-          },
-          "lat": {
-            "description": "Latitude of its centre",
-            "format": "double",
-            "type": "number"
-          },
-          "lon": {
-            "description": "Longitude of its centre",
-            "format": "double",
-            "type": "number"
-          },
-          "photoCount": {
-            "description": "Photos taken there",
-            "maximum": 9007199254740991,
-            "minimum": 0,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "city",
-          "lat",
-          "lon",
-          "photoCount"
-        ],
-        "type": "object"
-      },
-      "AlbumCleanupLostDatesDto": {
-        "properties": {
-          "albumId": {
-            "description": "The album",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-            "type": "string"
-          },
-          "from": {
-            "description": "First local day of the album (YYYY-MM-DD)",
-            "type": "string"
-          },
-          "suggestions": {
-            "description": "Your own photos that lost their date",
-            "items": {
-              "$ref": "#/components/schemas/AlbumLostDateSuggestionDto"
-            },
-            "type": "array"
-          },
-          "to": {
-            "description": "Last local day of the album (YYYY-MM-DD)",
-            "type": "string"
-          }
-        },
-        "required": [
-          "albumId",
-          "from",
-          "suggestions",
-          "to"
-        ],
-        "type": "object"
-      },
-      "AlbumCleanupOperationDto": {
-        "properties": {
-          "albumId": {
-            "description": "move, rename, heal, remove: the album",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-            "type": "string"
-          },
-          "albumIds": {
-            "description": "merge, combine: the albums",
-            "items": {
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-              "type": "string"
-            },
-            "minItems": 2,
-            "type": "array"
-          },
-          "allowShared": {
-            "description": "merge: the person chose to merge albums that are shared",
-            "type": "boolean"
-          },
-          "assetIds": {
-            "description": "heal: the photos approved",
-            "items": {
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "name": {
-            "description": "createCollection, rename, combine: the name",
-            "maxLength": 255,
-            "minLength": 1,
-            "type": "string"
-          },
-          "parentId": {
-            "description": "createCollection, move: an existing collection, or the top level",
-            "format": "uuid",
-            "nullable": true,
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-            "type": "string"
-          },
-          "parentTempId": {
-            "description": "createCollection, move: a collection this run creates",
-            "maxLength": 2048,
-            "minLength": 1,
-            "type": "string"
-          },
-          "tempId": {
-            "description": "createCollection: how later operations refer to it",
-            "maxLength": 2048,
-            "minLength": 1,
-            "type": "string"
-          },
-          "type": {
-            "$ref": "#/components/schemas/AlbumCleanupOperationType"
-          }
-        },
-        "required": [
-          "type"
-        ],
-        "type": "object"
-      },
-      "AlbumCleanupOperationType": {
-        "description": "What the operation does",
-        "enum": [
-          "createCollection",
-          "move",
-          "rename",
-          "merge",
-          "combine",
-          "heal",
-          "remove"
-        ],
-        "type": "string"
-      },
-      "AlbumCleanupPairDto": {
-        "properties": {
-          "firstId": {
-            "description": "One album",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-            "type": "string"
-          },
-          "secondId": {
-            "description": "The other album",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-            "type": "string"
-          },
-          "share": {
-            "description": "How much of the smaller album is in both; 0 for the same trip",
-            "format": "double",
-            "maximum": 1,
-            "minimum": 0,
-            "type": "number"
-          },
-          "union": {
-            "description": "Photos this session may see after merging, each counted once",
-            "maximum": 9007199254740991,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "winnerId": {
-            "description": "The album that would keep its name and icon, from true counts",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-            "type": "string"
-          }
-        },
-        "required": [
-          "firstId",
-          "secondId",
-          "share",
-          "union",
-          "winnerId"
-        ],
-        "type": "object"
-      },
-      "AlbumCleanupSameNameDto": {
-        "properties": {
-          "albumIds": {
-            "description": "Every album with this name",
-            "items": {
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "key": {
-            "description": "The name after trimming, collapsing spaces and ignoring case",
-            "type": "string"
-          },
-          "union": {
-            "description": "Photos this session may see after merging, each counted once",
-            "maximum": 9007199254740991,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "winnerId": {
-            "description": "The album that would keep its name and icon, from true counts",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-            "type": "string"
-          }
-        },
-        "required": [
-          "albumIds",
-          "key",
-          "union",
-          "winnerId"
-        ],
-        "type": "object"
-      },
-      "AlbumCleanupSnapshotResponseDto": {
-        "properties": {
-          "computedAt": {
-            "description": "When the scan ran",
-            "nullable": true,
-            "type": "string"
-          },
-          "facts": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/AlbumCleanupFactsDto"
-              }
-            ],
-            "description": "What the scan found, for this session",
-            "nullable": true
-          },
-          "ready": {
-            "description": "The first scan has finished",
-            "type": "boolean"
-          },
-          "suggestionCount": {
-            "description": "How many albums the review has something to offer",
-            "maximum": 9007199254740991,
-            "minimum": 0,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "computedAt",
-          "facts",
-          "ready",
-          "suggestionCount"
-        ],
-        "type": "object"
-      },
-      "AlbumCleanupStatusResponseDto": {
-        "properties": {
-          "apply": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/AlbumCleanupApplyProgressDto"
-              }
-            ],
-            "description": "The newest cleanup you have not undone",
-            "nullable": true
-          },
-          "computedAt": {
-            "description": "When the scan ran",
-            "nullable": true,
-            "type": "string"
-          },
-          "ready": {
-            "description": "The first scan has finished",
-            "type": "boolean"
-          },
-          "suggestionCount": {
-            "description": "How many albums the review has something to offer",
-            "maximum": 9007199254740991,
-            "minimum": 0,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "apply",
-          "computedAt",
-          "ready",
-          "suggestionCount"
         ],
         "type": "object"
       },
@@ -70444,6 +69755,10 @@
             "format": "date-time",
             "type": "string"
           },
+          "statsPending": {
+            "description": "True while this album's count and dates are still being worked out for this viewer; assetCount is 0 until then. Populated by the album lists: GET /albums, GET /albums/tree and GET /albums/hierarchy.",
+            "type": "boolean"
+          },
           "updatedAt": {
             "description": "Last update date",
             "format": "date-time",
@@ -71097,10 +70412,6 @@
       },
       "AlbumsResponse": {
         "properties": {
-          "cleanupBannerDismissed": {
-            "description": "The Magic Albums cleanup banner has been dismissed",
-            "type": "boolean"
-          },
           "defaultAssetOrder": {
             "$ref": "#/components/schemas/AssetOrder"
           },
@@ -71110,7 +70421,6 @@
           }
         },
         "required": [
-          "cleanupBannerDismissed",
           "defaultAssetOrder",
           "showPartnerAlbums"
         ],
@@ -71119,10 +70429,6 @@
       "AlbumsUpdate": {
         "description": "Album preferences",
         "properties": {
-          "cleanupBannerDismissed": {
-            "description": "The Magic Albums cleanup banner has been dismissed",
-            "type": "boolean"
-          },
           "defaultAssetOrder": {
             "$ref": "#/components/schemas/AssetOrder"
           },
@@ -77403,6 +76709,10 @@
       },
       "AssetMediaOptionsDto": {
         "properties": {
+          "c": {
+            "description": "Cache version: the asset's current thumbhash. A matching thumbnail is served as immutable.",
+            "type": "string"
+          },
           "dynamicRange": {
             "description": "Defaults to compatible SDR. Auto prefers an available HDR derivative; explicit HDR fails when unavailable.",
             "enum": [
@@ -150836,6 +150146,12 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
+          "partnerOriginOwnerId": {
+            "description": "Only on your own copy of a partner's album: the account it originally came from. Rows synced before this field existed need a full re-sync to carry it.",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
           "sortOrder": {
             "format": "double",
             "nullable": true,
@@ -151764,6 +151080,12 @@
             "description": "Owner ID",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "partnerOriginOwnerId": {
+            "description": "Only on your own copy of a partner's photo: the account it originally came from. Rows synced before this field existed need a full re-sync to carry it.",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
           "stackId": {

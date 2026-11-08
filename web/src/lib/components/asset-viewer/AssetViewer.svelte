@@ -777,6 +777,7 @@
       return;
     }
     cursor = { ...cursor, current: assets[nextIndex] };
+    previewStackedAsset = undefined;
     notifyAssetUpdate?.(cursor.current);
   };
 
@@ -790,9 +791,9 @@
    * above re-check it too, since a queued press can outlive the state it was made in.
    */
   /**
-   * An arrow key the viewer handles only when nothing else owns it: a slider, select, number field or
-   * video keeps its arrows, and so does an open dialog. The key is left un-prevented in those cases, so
-   * the control's own stepping still happens.
+   * An arrow key the viewer handles only when nothing else owns it: a slider, select or number field
+   * keeps its arrows, and so does an open dialog. The key is left un-prevented in those cases, so the
+   * control's own stepping still happens.
    */
   const arrowShortcut = (key: string, run: () => void) => ({
     shortcut: { key },

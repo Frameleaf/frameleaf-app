@@ -59,6 +59,28 @@ describe('AlbumCreateDialog smart album', () => {
     return { onCreate, onCreateSmart };
   };
 
+  it('builds its list of places only while it is open (FL-1297)', async () => {
+    const collection = {
+      id: 'family',
+      albumName: 'Family',
+      kind: AlbumKind.Collection,
+      parentId: null,
+    } as unknown as AlbumResponseDto;
+    const props = {
+      kind: AlbumKind.Album,
+      collections: [collection],
+      open: false,
+      onCreate: vi.fn(),
+      onCreateSmart: vi.fn(),
+    };
+    const { rerender } = render(AlbumCreateDialog, props);
+    expect(document.querySelector('ul.tree')).toBeNull();
+
+    await rerender({ ...props, open: true });
+
+    expect(document.querySelector('ul.tree')).not.toBeNull();
+  });
+
   it('does not create an archiving smart album until the person consents', async () => {
     const { onCreate, onCreateSmart } = setup();
     await fireEvent.input(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'Receipts' } });

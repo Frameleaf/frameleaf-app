@@ -1,14 +1,14 @@
 {
-  "sourceCommit": "12733525f6800a325920a26668531f03ce4ebe22",
+  "sourceCommit": "0f46ca74c4fd99e94b1a7e8176cbf02b34c22baf",
   "sourceHashes": {
-    "src/enum.ts": "3e13c4b50a90b150285d6b96791b512a2fd30b5440d633aa707ddfc3aaa7b780",
+    "src/enum.ts": "ebf0632ac0fbf4edf80dbd37a00f5d04fbf55abcda035987b2bddcace829888b",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
     "src/library-import/state-schema.ts": "b4d13d8e68b85c68a14257f56062df1f4efdd7a929918f21af225fa6b4998408",
     "src/queue/schema.ts": "1b014aa94847a4279801107b584c86d80e465c03be233c578fa202d75d23281a",
     "src/schema/enums.ts": "3c355b0611a7ee3413946504318563801b71f71de2e006e53d9603a6045f0e6c",
     "src/schema/frameleaf-feature-schema.ts": "ed828687c4ccd1aec6a8dc9b3881262f22eb0ba299475e0544f2dd07abd4974a",
     "src/schema/functions.ts": "73ec605fc1a3a7ab270e6ad8183b0c76a56f5d1c28c1b637b30ee1d084887db5",
-    "src/schema/index.ts": "9308a038284cf22741c5456e88bf5ea22a1c454149cba1de9b08a961b79ce6bc",
+    "src/schema/index.ts": "153382e1d79f1a3e3c51ac180a37e66381289b9ae1ebe1ccd6c0fd15b06a0ff3",
     "src/schema/shared-services-schema.ts": "080b0c250c7045cfc4ab07f7e044bb8f41efe5b739663c95cea14162f3b4a8a4",
     "src/schema/tables/activity.table.ts": "fdeae320fa3828799baa404f4f3548138b092fe911e1695109c585c37e58f939",
     "src/schema/tables/admin-audit-event.table.ts": "a7ffe5c6a193a88bd8f474a3436fcd24748f5d25b81b0ae35a5d60196809d8b8",
@@ -20,6 +20,7 @@
     "src/schema/tables/album-change.table.ts": "fa9ffb6c5112c3779546eff8ab5361fab9f2c278c59f80493070e0fe9531f30e",
     "src/schema/tables/album-closure.table.ts": "63d2d80854745a6343f6472c872b8bf42fd14974d17a1dff4b4c826257744291",
     "src/schema/tables/album-suggestion.table.ts": "749dc19c6e253f8da4517f8c360ded44c01069865c7e236ab25632069e683d6f",
+    "src/schema/tables/album-summary.table.ts": "1f9bb4714ec52253477de246f0e4b8c3485e0b0dfd76409284d136921a714acd",
     "src/schema/tables/album-user-audit.table.ts": "976d8cd2665af72b47fc07442e7b222633ea1d40e56045796a061f5cee16782e",
     "src/schema/tables/album-user.table.ts": "ab8f99553f854f0f63ee0c0de597281f7226bb28e772d1e928333369fc8e3513",
     "src/schema/tables/album.table.ts": "ec1627ec2e3faebb42462e1f9a7258acf9101c0baaa0a4efc50562a58ea75920",
@@ -32,7 +33,7 @@
     "src/schema/tables/asset-document-edit.table.ts": "e20786febdd8281b20ae86e9f27540db3c01c7df80610e25822a1f1cec2d4360",
     "src/schema/tables/asset-edit-audit.table.ts": "31ec7ccf506f1d905bab785218246acad68f402e67d98711d89e52500a2dcc2b",
     "src/schema/tables/asset-edit.table.ts": "c59e9f658a075d8945723dbf0401ddecbf5b64dc328e35239386efb768ec8a7a",
-    "src/schema/tables/asset-exif.table.ts": "e147c9e248d4236fdf51304607d8fd6d215103855ce0c3cb01dc3498adcc051f",
+    "src/schema/tables/asset-exif.table.ts": "264a91506e3e25c2ed9757f322ec78604a8fd209a58e1b1f9fd9f4889c335d8b",
     "src/schema/tables/asset-face-audit.table.ts": "b24df9a765cce0fd089496042f7c702c8c8b37b1eea134e4800abe03c46d3a1e",
     "src/schema/tables/asset-face.table.ts": "69c216f6f94873a74f53bd1ca80ec584188532d9c08af2306a70210a3e482c43",
     "src/schema/tables/asset-file.table.ts": "67d155381476c79d6d6a1b6f458baeea1216cbb891c73ec95bc9ac5ee7662cfe",
@@ -162,6 +163,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "b57bd944096b45f516bb29a336033410d24b145e89b708575786aa09e1a6bfbf",
-  "dumpSha256": "32223f5effa29f7ba50bb95b2d57d8ed58c95ed98fb5805d92054f701c06b124",
-  "rawMetadataSha256": "575e184bdb15c705d401863a349ee963f34b2218c945579ae8f0abae03c29471"
+  "dumpSha256": "1d87d9a2b8d5fce63af54d293ea3c5d7b6bd189fbdbebe840103c31f21c37f10",
+  "rawMetadataSha256": "e26717e74a53cd69f683ac1270b0d4dee31f63e5224a048513ea892451e39d65"
 }

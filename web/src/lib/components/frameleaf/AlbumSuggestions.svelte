@@ -21,6 +21,7 @@
     getAlbumLostDates,
     getAlbumSuggestions,
     healAlbumLostDates,
+    isHttpError,
     setAlbumSuggestionAutoAdd,
     undoLatestAlbumChangeRun,
     updateAsset,
@@ -351,9 +352,9 @@
   };
 
   /** Puts healed dates back. Anything changed since stays as it is, and the message says what was kept. */
-  const undoHeal = async () => {
+  const undoHeal = async (runId: string) => {
     try {
-      const { skipped } = await undoLatestAlbumChangeRun();
+      const { skipped } = await undoLatestAlbumChangeRun({ albumChangeUndoDto: { runId } });
       toastManager.primary(
         skipped.length > 0
           ? $t('frameleaf_album_lost_dates_undone_kept', { values: { names: skipped.join(', ') } })
@@ -362,6 +363,10 @@
       onChanged();
       await loadLostDates(albumId);
     } catch (error) {
+      if (isHttpError(error) && error.status === 409) {
+        toastManager.primary($t('frameleaf_albums_merge_undo_newer'));
+        return;
+      }
       console.error(error);
       toastManager.danger($t('frameleaf_album_lost_dates_undo_failed'));
     }
@@ -381,7 +386,7 @@
         },
       });
       if (runId) {
-        toastUndo($t('frameleaf_album_lost_dates_healed', { values: { count: healed } }), () => void undoHeal());
+        toastUndo($t('frameleaf_album_lost_dates_healed', { values: { count: healed } }), () => void undoHeal(runId));
       } else {
         toastManager.primary($t('frameleaf_album_lost_dates_none_healed'));
       }
@@ -502,14 +507,9 @@
   </section>
 {/if}
 
-<Dialog
-  title={count === 0 && lostCount > 0
+<Dialog title={count === 0 && lostCount > 0
     ? $t('frameleaf_album_lost_dates_dialog_title')
-    : $t('frameleaf_album_suggestions_dialog_title')}
-  closeLabel={$t('close')}
-  size="wide"
-  bind:open
->
+    : $t('frameleaf_album_suggestions_dialog_title')} closeLabel={$t('close')} size="wide" bind:open>
   {#if tab !== 'lost'}
     <p class="lead">
       {places

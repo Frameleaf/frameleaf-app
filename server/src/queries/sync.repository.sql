@@ -84,12 +84,21 @@ select
       )
     ) is not null then album."parentId"
     else null
-  end as "parentId"
+  end as "parentId",
+  (
+    select
+      origin."rootOwnerId"
+    from
+      public.album_origin origin
+    where
+      origin."albumId" = album.id
+      and origin."ownerId" = $5::uuid
+  ) as "partnerOriginOwnerId"
 from
   "album"
   inner join "album_user" as "album_users" on "album"."id" = "album_users"."albumId"
 where
-  "album_users"."userId" = $5
+  "album_users"."userId" = $6
   and exists (
     select
       1
@@ -98,10 +107,10 @@ where
       join album_user scope_member on scope_member."albumId" = scope_album.id
     where
       scope_album.id = "album"."id"
-      and scope_member."userId" = $6::uuid
+      and scope_member."userId" = $7::uuid
       and (
-        "scope_album"."libraryScope" in ($7, $8)
-        or scope_member.role != $9
+        "scope_album"."libraryScope" in ($8, $9)
+        or scope_member.role != $10
       )
   )
   and greatest(
@@ -116,7 +125,7 @@ where
             "album_user" as "parent_user"
           where
             "parent_user"."albumId" = "album"."parentId"
-            and "parent_user"."userId" = $10
+            and "parent_user"."userId" = $11
         )
       ),
       album."updateId"
@@ -130,16 +139,16 @@ where
             "album_audit" as "parent_audit"
           where
             "parent_audit"."albumId" = "album"."parentId"
-            and "parent_audit"."userId" = $11
+            and "parent_audit"."userId" = $12
           order by
             "parent_audit"."id" desc
           limit
-            $12
+            $13
         )
       ),
       album."updateId"
     )
-  ) < $13
+  ) < $14
   and greatest(
     album."updateId",
     album_users."createId",
@@ -152,7 +161,7 @@ where
             "album_user" as "parent_user"
           where
             "parent_user"."albumId" = "album"."parentId"
-            and "parent_user"."userId" = $14
+            and "parent_user"."userId" = $15
         )
       ),
       album."updateId"
@@ -166,16 +175,16 @@ where
             "album_audit" as "parent_audit"
           where
             "parent_audit"."albumId" = "album"."parentId"
-            and "parent_audit"."userId" = $15
+            and "parent_audit"."userId" = $16
           order by
             "parent_audit"."id" desc
           limit
-            $16
+            $17
         )
       ),
       album."updateId"
     )
-  ) > $17
+  ) > $18
 order by
   greatest(
     album."updateId",
@@ -189,7 +198,7 @@ order by
             "album_user" as "parent_user"
           where
             "parent_user"."albumId" = "album"."parentId"
-            and "parent_user"."userId" = $18
+            and "parent_user"."userId" = $19
         )
       ),
       album."updateId"
@@ -203,11 +212,11 @@ order by
             "album_audit" as "parent_audit"
           where
             "parent_audit"."albumId" = "album"."parentId"
-            and "parent_audit"."userId" = $19
+            and "parent_audit"."userId" = $20
           order by
             "parent_audit"."id" desc
           limit
-            $20
+            $21
         )
       ),
       album."updateId"
@@ -300,6 +309,15 @@ select
     ) is not null then album."parentId"
     else null
   end as "parentId",
+  (
+    select
+      origin."rootOwnerId"
+    from
+      public.album_origin origin
+    where
+      origin."albumId" = album.id
+      and origin."ownerId" = $5::uuid
+  ) as "partnerOriginOwnerId",
   to_char(
     album."createdAt" at time zone 'UTC',
     'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'
@@ -308,7 +326,7 @@ from
   "album"
   inner join "album_user" as "album_users" on "album"."id" = "album_users"."albumId"
 where
-  "album_users"."userId" = $5
+  "album_users"."userId" = $6
   and exists (
     select
       1
@@ -317,10 +335,10 @@ where
       join album_user scope_member on scope_member."albumId" = scope_album.id
     where
       scope_album.id = "album"."id"
-      and scope_member."userId" = $6::uuid
+      and scope_member."userId" = $7::uuid
       and (
-        "scope_album"."libraryScope" in ($7, $8)
-        or scope_member.role != $9
+        "scope_album"."libraryScope" in ($8, $9)
+        or scope_member.role != $10
       )
   )
   and greatest(
@@ -335,7 +353,7 @@ where
             "album_user" as "parent_user"
           where
             "parent_user"."albumId" = "album"."parentId"
-            and "parent_user"."userId" = $10
+            and "parent_user"."userId" = $11
         )
       ),
       album."updateId"
@@ -349,17 +367,17 @@ where
             "album_audit" as "parent_audit"
           where
             "parent_audit"."albumId" = "album"."parentId"
-            and "parent_audit"."userId" = $11
+            and "parent_audit"."userId" = $12
           order by
             "parent_audit"."id" desc
           limit
-            $12
+            $13
         )
       ),
       album."updateId"
     )
-  ) < $13
-  and (album."createdAt", album.id) < ($14::timestamptz, $15::uuid)
+  ) < $14
+  and (album."createdAt", album.id) < ($15::timestamptz, $16::uuid)
 order by
   "album"."createdAt" desc,
   "album"."id" desc
@@ -1477,6 +1495,14 @@ select
       else "asset"."visibility"
     end
   ) as "visibility",
+  (
+    select
+      origin."rootOwnerId"
+    from
+      public.asset_origin origin
+    where
+      origin."assetId" = asset.id
+  ) as "partnerOriginOwnerId",
   case
     when asset."localDateTime" is null then '-infinity'
     else to_char(
@@ -1635,6 +1661,14 @@ select
       else "asset"."visibility"
     end
   ) as "visibility",
+  (
+    select
+      origin."rootOwnerId"
+    from
+      public.asset_origin origin
+    where
+      origin."assetId" = asset.id
+  ) as "partnerOriginOwnerId",
   "asset"."updateId"
 from
   "asset" as "asset"
