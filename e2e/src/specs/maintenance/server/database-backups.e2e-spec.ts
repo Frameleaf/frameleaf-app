@@ -141,7 +141,7 @@ describe('/admin/database-backups', () => {
       expect(body).toEqual(errorDto.badRequest('Admin setup is not available'));
     });
 
-    it('should enter maintenance mode in "database restore mode"', { concurrent: false }, async () => {
+    it('should enter maintenance mode in "database restore mode"', { concurrent: false, timeout: 60_000 }, async () => {
       await utils.resetDatabase(); // reset database before running this test
 
       const { status, headers } = await request(app).post('/admin/database-backups/start-restore');

@@ -39,6 +39,8 @@ const config: PlaywrightTestConfig = {
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 4 : 0,
+  // FL-1281: hooks share this budget, and a database reset can take up to 24 s on a slow runner.
+  timeout: 60_000,
   reporter: 'html',
   use: {
     baseURL: playwriteBaseUrl,
