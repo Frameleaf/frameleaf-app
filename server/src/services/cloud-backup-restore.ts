@@ -10,7 +10,11 @@ import { StorageFolder } from 'src/enum.js';
 import { CloudBackupStoreError, CloudBackupStoreRepository } from 'src/repositories/cloud-backup-store.repository.js';
 import { CloudBackupBucket, CloudBackupCheckpoint } from 'src/services/cloud-backup-maintenance.js';
 import { flushBuddyDirectory } from 'src/utils/buddy-backup-vault.js';
-import { assertOwnerRestoreFile, captureOwnerRestoreFile } from 'src/utils/cloud-backup-owner-path.js';
+import {
+  assertOwnerRestoreFile,
+  assertOwnerRestorePublished,
+  captureOwnerRestoreFile,
+} from 'src/utils/cloud-backup-owner-path.js';
 import { CloudBackupManifest, manifestFileObjectKey } from 'src/utils/cloud-backup.js';
 import { compareCodeUnits } from 'src/utils/compare.js';
 import { isValidDatabaseBackupName } from 'src/utils/database-backups.js';
@@ -107,7 +111,22 @@ export type CloudBackupRestoreResult = {
   encryptedWithOlderKey: number;
   /** FL-721: backed-up key files kept in the replaced folder because a live key file was there. */
   lockedKeysKept: number;
+  /**
+   * FL-1333: the file an owner restore is publishing, saved before it publishes and dropped once the file is
+   * counted, with how that publication counts. A resumed restore that finds exactly the backed-up bytes at that
+   * file's target counts it this way rather than as skipped, so its item still gets new thumbnails.
+   */
+  publishing?: { fileKey: string; outcome: 'written' | 'replaced' };
 };
+
+/** What a restore records once a file is counted: no publication is under way. */
+const withoutPublishing = ({
+  publishing: _publishing,
+  ...result
+}: CloudBackupRestoreResult): CloudBackupRestoreResult => result;
+
+/** A checkpoint before an owner publication asked the restore to stop (pause or cancel): nothing was published. */
+class RestoreStopped extends Error {}
 
 /** One file a restore writes, verified against `sha256` before it lands at `target`. */
 export type CloudBackupRestoreFile = {
@@ -330,10 +349,25 @@ export class CloudBackupRestorer {
       for (let at = 0; at < pending.length; at += RESTORE_BATCH) {
         for (const planned of pending.slice(at, at + RESTORE_BATCH)) {
           const file = await this.keyFileTarget(planned, options);
-          const outcome = await this.restoreFile(bucket, manifestFileObjectKey(file), file, options);
+          const earlier = result.publishing?.fileKey === file.fileKey ? result.publishing.outcome : undefined;
+          let outcome: 'written' | 'skipped' | 'replaced';
+          try {
+            outcome = await this.restoreFile(bucket, manifestFileObjectKey(file), file, {
+              ...options,
+              publishedEarlier: earlier,
+              // FL-1333: saved before an owner publication, so a resume knows this restore put the file there
+              beforePublish: async (counts) => {
+                result = { ...withoutPublishing(result), publishing: { fileKey: file.fileKey, outcome: counts } };
+                if (!(await checkpoint(result))) throw new RestoreStopped();
+              },
+            });
+          } catch (error) {
+            if (error instanceof RestoreStopped) return null;
+            throw error;
+          }
           await options.completedFile?.(file, outcome);
           result = {
-            ...result,
+            ...withoutPublishing(result),
             lockedKeysKept: result.lockedKeysKept + (file === planned ? 0 : 1),
             cursor: file.fileKey,
             files: result.files + 1,
@@ -441,6 +475,10 @@ export class CloudBackupRestorer {
       publish?: OwnerRestorePublisher;
       read?: BackupObjectReader;
       stageBesideTarget?: boolean;
+      /** FL-1333: how an earlier attempt of this restore counted its publication of this file, if it began one. */
+      publishedEarlier?: 'written' | 'replaced';
+      /** FL-1333: saves an owner publication of this file before it begins; throws to stop the restore. */
+      beforePublish?: (outcome: 'written' | 'replaced') => Promise<void>;
     },
   ): Promise<'written' | 'skipped' | 'replaced'> {
     const download: BackupObjectReader =
@@ -466,15 +504,15 @@ export class CloudBackupRestorer {
         }
         // Preflight is not a file outcome and must never enter checkpoint/result accounting.
         await options.publish(file, staged, () => Promise.resolve('skipped'), 'inspect');
-        const evidence = await captureOwnerRestoreFile(file.target, async (target) =>
-          (await this.crypto.hashFile(target, 'sha256')).toString('hex'),
-        );
-        const stagedEvidence = await captureOwnerRestoreFile(staged, async (target) =>
-          (await this.crypto.hashFile(target, 'sha256')).toString('hex'),
-        );
+        const hash = async (target: string) => (await this.crypto.hashFile(target, 'sha256')).toString('hex');
+        const evidence = await captureOwnerRestoreFile(file.target, hash);
+        const stagedEvidence = await captureOwnerRestoreFile(staged, hash);
         if (stagedEvidence.sha256 !== file.sha256 || stagedEvidence.size !== BigInt(file.size))
           throw new Error('Owner restore staging size or checksum mismatch');
-        return await options.publish(
+        if (evidence.sha256 !== file.sha256) {
+          await options.beforePublish?.(evidence.sha256 === null ? 'written' : 'replaced');
+        }
+        const outcome = await options.publish(
           file,
           staged,
           async () => {
@@ -495,16 +533,22 @@ export class CloudBackupRestorer {
             await assertOwnerRestoreFile(file.target, null);
             await assertOwnerRestoreFile(staged, stagedEvidence.identity);
             // A file that appeared since the checks above is never replaced.
-            // ponytail: this assumes staging is on the target's drive and that drive can hard-link. Otherwise
-            // retainFile copies, and the dev:ino check below fails after placing; a retry finds the checked bytes
-            // there and skips the file.
             await retainFile(staged, file.target);
             if (options.stageBesideTarget) await flushBuddyDirectory(dirname(file.target));
-            await assertOwnerRestoreFile(file.target, stagedEvidence.identity, true);
+            // FL-1333: a hard link keeps the staged file's identity. A drive without hard links (or staging on
+            // another drive) gets a copy with its own identity, kept only as one file of the staged size holding
+            // exactly the checked bytes; anything else is refused. The published file's identity is the evidence
+            // from here on.
+            stagedEvidence.identity = await assertOwnerRestorePublished(file.target, stagedEvidence, file.sha256, hash);
             return present === null ? 'written' : 'replaced';
           },
           'publish',
         );
+        // FL-1333: an earlier attempt that published this file and stopped before counting it finds the checked
+        // bytes there now; it is counted as that publication, not as skipped
+        return outcome === 'skipped' && options.publishedEarlier && evidence.sha256 === file.sha256
+          ? options.publishedEarlier
+          : outcome;
       } finally {
         // A refused guard must never leave verified bytes at the public/current destination.
         if (await this.storage.checkFileExists(staged)) await this.storage.unlink(staged);
