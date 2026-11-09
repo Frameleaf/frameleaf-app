@@ -160,6 +160,8 @@ async function movingFixture(
     server: FakeServerPause,
     containers: any[],
   ) => Promise<void>,
+  /** FL-1320: thumbnails on their own drive, bind-mounted at /data/thumbs. */
+  thumbnails?: string,
 ) {
   const base = await realpath(await mkdtemp(join(tmpdir(), 'manager-move-runtime-')));
   const directory = join(base, 'state'),
@@ -168,12 +170,20 @@ async function movingFixture(
   await mkdir(source);
   await mkdir(root);
   await writeFile(join(source, 'photo'), 'unchanged-original');
+  const thumbnailMount = thumbnails && { type: 'bind' as const, source: join(base, thumbnails), target: '/data/thumbs', readOnly: false };
+  if (thumbnailMount) {
+    await mkdir(thumbnailMount.source);
+    await writeFile(join(thumbnailMount.source, 'thumb.webp'), 'thumbnail on the fast drive');
+    // What the photos folder still holds under the mount point: never what the server reads.
+    await mkdir(join(source, 'thumbs'));
+    await writeFile(join(source, 'thumbs', 'thumb.webp'), 'stale thumbnail');
+  }
   const store = new Store(directory);
   await mkdir(join(directory, 'stack'));
   const current = {
     id: 'a'.repeat(12),
     project: 'frameleaf-' + 'a'.repeat(12),
-    mounts: [{ type: 'bind', source, target: '/data', readOnly: false }],
+    mounts: [{ type: 'bind', source, target: '/data', readOnly: false }, ...(thumbnailMount ? [thumbnailMount] : [])],
     databaseRoot: join(base, 'database'),
     databasePath: join(base, 'database', 'pg'),
   } as Installation;
@@ -183,7 +193,7 @@ async function movingFixture(
     JSON.stringify({
       services: {
         'frameleaf-server': {
-          volumes: [{ type: 'bind', source, target: '/data', read_only: false }],
+          volumes: current.mounts.map((m) => ({ type: 'bind', source: m.source, target: m.target, read_only: false })),
         },
         database: { image: 'preserved' },
       },
@@ -212,13 +222,18 @@ async function movingFixture(
       HostConfig: {
         RestartPolicy: { Name: 'unless-stopped', MaximumRetryCount: 0 },
       },
-      Mounts: service === 'frameleaf-server' ? [{ Type: 'bind', Source: source, Destination: '/data', RW: true }] : [],
+      Mounts:
+        service === 'frameleaf-server'
+          ? current.mounts.map((m) => ({ Type: 'bind', Source: m.source, Destination: m.target, RW: true }))
+          : [],
     })),
   ];
   const docker: any = {
     inventory: async () => containers,
+    checked: [] as string[],
     node: async (id: string, script: string, args: string[]) => {
       const c = containers.find((c) => c.Id === id);
+      docker.checked.push(...JSON.parse(args[1]).map((entry: { path: string }) => entry.path));
       return execFileSync(process.execPath, ['-e', script, '--', c.Mounts[0].Source, args[1]], { encoding: 'utf8' });
     },
     restartPolicy: async (id: string, policy: string) => {
@@ -601,4 +616,54 @@ test('a copier receipt error survives a failed container cleanup', async () => {
     store.close();
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test('with thumbnails on their own drive, a move copies only the photos folder and keeps the thumbnail mount', async () => {
+  await movingFixture(async (move, store, root, source, step, checkpoint, _server, containers) => {
+    const before = store.get<Installation>('installation')!;
+    const thumbnails = before.mounts[1];
+    assert.equal(thumbnails.target, '/data/thumbs');
+    const review = await move.review(root);
+    const { operation } = move.start(review.id, 'request');
+    await move.run(operation, step(operation), checkpoint(operation.id), async () => ({
+      verificationPassed: true,
+      phase: 'complete',
+    }));
+    const next = store.get<Installation>('installation')!;
+    assert.notEqual(next.mounts[0].source, source);
+    assert.deepEqual(next.mounts[1], thumbnails, 'the thumbnail mount and its drive are unchanged');
+    assert.equal(next.mounts.length, 2);
+    const stack = JSON.parse(await readFile(join(root, '..', 'state', 'stack', 'compose.json'), 'utf8'));
+    assert.deepEqual(
+      stack.services['frameleaf-server'].volumes.map((v: any) => [v.source, v.target]),
+      [[next.mounts[0].source, '/data'], [thumbnails.source, '/data/thumbs']],
+    );
+    assert.equal(await readFile(join(thumbnails.source, 'thumb.webp'), 'utf8'), 'thumbnail on the fast drive');
+    assert.equal(await readFile(join(next.mounts[0].source, 'photo'), 'utf8'), 'unchanged-original');
+    const docker = (move as any).docker;
+    assert.ok(docker.checked.includes('photo'));
+    assert.equal(
+      docker.checked.some((path: string) => path.startsWith('thumbs/')),
+      false,
+      'the server reads /data/thumbs from the thumbnail drive, so the copied folder is not checked there',
+    );
+    // The server must still have its thumbnail mount after the move.
+    const server = containers.find((c) => c.Config.Labels['com.docker.compose.service'] === 'frameleaf-server');
+    assert.ok(server.Mounts.some((m: any) => m.Source === thumbnails.source && m.Destination === '/data/thumbs'));
+  }, 'fast-thumbs');
+});
+
+test('a move refuses a missing thumbnails drive and a destination inside the thumbnail folder before stopping anything', async () => {
+  await movingFixture(async (move, store, root, _source, _step, _checkpoint, server) => {
+    const thumbnails = store.get<Installation>('installation')!.mounts[1];
+    await assert.rejects(move.review(join(thumbnails.source)), /media_move_overlap/);
+    await rm(thumbnails.source, { recursive: true });
+    await assert.rejects(move.review(root), /thumbnail_folder_missing/);
+    assert.deepEqual(server.calls, []);
+    assert.equal(store.history().length, 0);
+    // A second thumbnail mount, or one before the library, is not a layout a move understands.
+    const current = store.get<Installation>('installation')!;
+    store.set('installation', { ...current, mounts: [current.mounts[1], current.mounts[0]] });
+    await assert.rejects(move.review(root), /unsupported_media_mappings/);
+  }, 'fast-thumbs');
 });

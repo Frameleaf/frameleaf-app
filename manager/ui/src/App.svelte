@@ -82,6 +82,8 @@
   let recoveryKey = $state(''),
     snapshot = $state(''),
     restoreReview = $state<any>(null),
+    /** FL-1320: why the thumbnails folder can't be used, offered as a fallback to the photos folder. */
+    restoreThumbnailsMissing = $state(''),
     updateReview = $state<any>(null);
   let firstName = $state(''),
     lastName = $state(''),
@@ -662,6 +664,7 @@
     step = 0;
     restoreAccepted = false;
     restoreReview = null;
+    restoreThumbnailsMissing = '';
     await loadBackups();
     await go('restore');
   }
@@ -674,8 +677,18 @@
       recoveryKey = '';
     }
   }
-  async function prepareRestore() {
-    restoreReview = await api('review-restore', { snapshot, databaseRoot });
+  async function prepareRestore(thumbnailFallback = false) {
+    try {
+      restoreReview = await api('review-restore', { snapshot, databaseRoot, ...(thumbnailFallback ? { thumbnailFallback } : {}) });
+    } catch (e) {
+      // The thumbnails drive is gone: offer the photos folder instead of a dead end.
+      if (!thumbnailFallback && e instanceof Error && e.message === 'thumbnail_folder_missing') {
+        restoreThumbnailsMissing = (e as { detail?: string }).detail ?? '';
+        return;
+      }
+      throw e;
+    }
+    restoreThumbnailsMissing = '';
     step = 2;
   }
   async function showModal(value: string, action = '') {
@@ -1019,8 +1032,8 @@
         {:else if screen === 'restore'}
           {@render steps(['Database backup', 'Recovery point', 'Restore'], step)}
           {#if step === 0}{@render heading('Restore your database', 'Connect an encrypted database backup and keep the existing media locations available.')}<section class="card"><div class="card-header"><h2>Database backup repository</h2></div><div class="card-body stack"><label class="field"><span>Mounted backup destination</span><input value={dashboard.backupRoot} readonly/></label>{#if !backupStatus.unlocked}<form class="stack" onsubmit={(event) => { event.preventDefault(); void run(unlockBackups); }}><label class="field"><span>Recovery key</span><input type="password" bind:value={recoveryKey} required autocomplete="off"/></label><button class="button primary" disabled={busy}>Unlock backups</button></form>{:else}<p class="meta">The existing recovery key unlocks {snapshots.length} canonical database snapshots.</p><button class="button primary" disabled={!snapshots.length} onclick={() => step = 1}>Choose a recovery point</button>{#if !snapshots.length}<p class="meta">This repository has no canonical Frameleaf recovery points. Create a database backup before using ordinary restore. Source application checkpoints are kept for separate source recovery.</p>{/if}{/if}</div></section><div class="mt16">{@render notice('Your media must already be available', 'Manager restores into a new empty PostgreSQL folder. Photos, videos and external-library files are not included.', '', 'database')}</div><div class="wizard-footer"><button class="button quiet" onclick={() => run(() => go(installation ? 'backups' : 'welcome'))}>Back</button></div>
-          {:else if step === 1}{@render heading('Choose a database recovery point', 'Database records return to the selected time. Media files are not restored.')}<form onsubmit={(event) => { event.preventDefault(); void run(prepareRestore); }}><div class="stack">{#each snapshots as item}<label class="radio-card"><input type="radio" bind:group={snapshot} value={item.id} required/><div><div class="spread"><strong>{new Date(item.time).toLocaleString()}</strong><span class="badge">Database only</span></div><p>{item.id.slice(0, 12)} · Encrypted recovery point</p></div></label>{/each}<label class="field"><span>PostgreSQL appdata location</span><input bind:value={databaseRoot} list="database-roots" required/><small>A separate empty database folder is allocated here. Existing files are retained.</small></label></div><div class="wizard-footer"><button type="button" class="button quiet" onclick={() => step = 0}>Back</button><button class="button primary" disabled={busy || !snapshot}>Review restore</button></div></form>
-          {:else}{@render heading('Review your database restore', 'Verify the database recovery point and reconnect existing library files.')}<section class="card"><div class="card-header"><h2>Recovery destination</h2><span class="badge good">Verified review</span></div><div class="list-row"><Icon name="database"/><div><strong>New, empty PostgreSQL database</strong><p><code>{restoreReview.databaseStorage.root}</code></p></div></div><div class="list-row"><Icon name="update"/><div><strong>Matching release</strong><p>{restoreReview.release}</p></div></div>{@render mappings(restoreReview.mounts)}</section><div class="mt16">{@render notice('This restore does not recover media files', 'Required files must already exist at these mappings. The current stack will be stopped and retained separately before restoring.', 'warning', 'warning')}</div><label class="check-row mt24"><input type="checkbox" bind:checked={restoreAccepted}/><span>I understand this restores database records and stops the current installation. Media is not restored.</span></label><div class="wizard-footer"><button class="button quiet" onclick={() => step = 1}>Back</button><button class="button primary" disabled={busy || !restoreAccepted || !!activeOperation} onclick={() => run(() => start('restore', { id: restoreReview.id }))}>Restore database</button></div>{/if}
+          {:else if step === 1}{@render heading('Choose a database recovery point', 'Database records return to the selected time. Media files are not restored.')}<form onsubmit={(event) => { event.preventDefault(); void run(prepareRestore); }}><div class="stack">{#each snapshots as item}<label class="radio-card"><input type="radio" bind:group={snapshot} value={item.id} required/><div><div class="spread"><strong>{new Date(item.time).toLocaleString()}</strong><span class="badge">Database only</span></div><p>{item.id.slice(0, 12)} · Encrypted recovery point</p></div></label>{/each}<label class="field"><span>PostgreSQL appdata location</span><input bind:value={databaseRoot} list="database-roots" required/><small>A separate empty database folder is allocated here. Existing files are retained.</small></label></div>{#if restoreThumbnailsMissing}<div class="mt16">{@render notice('The thumbnails folder is missing', restoreThumbnailsMissing, 'warning', 'warning')}</div><div class="actions mt16"><button type="button" class="button quiet" disabled={busy || !snapshot} onclick={() => run(() => prepareRestore(true))}>Keep thumbnails in the photos folder</button></div>{/if}<div class="wizard-footer"><button type="button" class="button quiet" onclick={() => step = 0}>Back</button><button class="button primary" disabled={busy || !snapshot}>Review restore</button></div></form>
+          {:else}{@render heading('Review your database restore', 'Verify the database recovery point and reconnect existing library files.')}<section class="card"><div class="card-header"><h2>Recovery destination</h2><span class="badge good">Verified review</span></div><div class="list-row"><Icon name="database"/><div><strong>New, empty PostgreSQL database</strong><p><code>{restoreReview.databaseStorage.root}</code></p></div></div><div class="list-row"><Icon name="update"/><div><strong>Matching release</strong><p>{restoreReview.release}</p></div></div>{@render mappings(restoreReview.mounts)}</section>{#if restoreReview.thumbnailFallback}<div class="mt16">{@render notice('Thumbnails go back in the photos folder', `${restoreReview.thumbnailFallback.missing} is not there, so thumbnails will be kept in ${restoreReview.thumbnailFallback.folder}. Thumbnails that are missing can be made again; your photos are untouched.`, 'warning', 'warning')}</div>{/if}<div class="mt16">{@render notice('This restore does not recover media files', 'Required files must already exist at these mappings. The current stack will be stopped and retained separately before restoring.', 'warning', 'warning')}</div><label class="check-row mt24"><input type="checkbox" bind:checked={restoreAccepted}/><span>I understand this restores database records and stops the current installation. Media is not restored.</span></label><div class="wizard-footer"><button class="button quiet" onclick={() => step = 1}>Back</button><button class="button primary" disabled={busy || !restoreAccepted || !!activeOperation} onclick={() => run(() => start('restore', { id: restoreReview.id }))}>Restore database</button></div>{/if}
         {:else if screen === 'updates'}
           {@render heading('Updates', 'Choose when to update. Manager prepares your database recovery point first.')}
           <section class="card mb16"><div class="list-row"><Icon name="update"/><div><strong>Automatic updates</strong><p>Manager checks every few hours and installs new releases one at a time, with a database recovery point first.</p>{#if dashboard.autoUpdateFailure}<p class="meta" role="status">The last check ({new Date(dashboard.autoUpdateFailure.at).toLocaleString()}) did not start an update: {readable(dashboard.autoUpdateFailure.code)}</p>{/if}</div><label class="toggle"><input type="checkbox" checked={dashboard.autoUpdate} disabled={busy} onchange={(event) => { const input = event.currentTarget, enabled = input.checked; void run(async () => { try { await api('auto-update', { enabled }); dashboard.autoUpdate = enabled; } finally { input.checked = dashboard.autoUpdate; } }); }}/><span class="toggle-track"></span><span>Enable</span></label></div></section>

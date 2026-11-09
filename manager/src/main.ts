@@ -477,11 +477,16 @@ class Api {
     response.type('application/octet-stream').send(key);
   }
   @Post('review-restore') reviewRestore(@Body() input: unknown, @Req() request: Request) {
-    const { snapshot, databaseRoot } = z
-      .object({ snapshot: z.string().regex(/^[a-f0-9]{64}$/), databaseRoot: ReviewInput.shape.databaseRoot })
+    const { snapshot, databaseRoot, thumbnailFallback } = z
+      .object({
+        snapshot: z.string().regex(/^[a-f0-9]{64}$/),
+        databaseRoot: ReviewInput.shape.databaseRoot,
+        /** FL-1320: keep thumbnails in the photos folder because their own folder is gone. */
+        thumbnailFallback: z.boolean().optional(),
+      })
       .strict()
       .parse(input);
-    return operations.reviewRestore(snapshot, databaseRoot, managerPort(request));
+    return operations.reviewRestore(snapshot, databaseRoot, managerPort(request), thumbnailFallback);
   }
   @Post('folders') folders(@Body() input: unknown) {
     if (!folderSetup()) throw new Refusal('folder_browsing_unavailable');
