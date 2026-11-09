@@ -1,3 +1,4 @@
+import { constants } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import type { VideoInterfaces } from 'src/types.js';
 import { StorageAsset } from 'src/database.js';
@@ -24,7 +25,6 @@ import { PersonRepository } from 'src/repositories/person.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { getAssetFile } from 'src/utils/asset.util.js';
-import { getConfig } from 'src/utils/config.js';
 
 export interface MoveRequest {
   entityId: string;
@@ -372,35 +372,90 @@ export class StorageCore {
     return result === 'moved';
   }
 
-  /** Renames in place; a move to another filesystem is reported rather than attempted. */
-  private async rename(from: string, to: string): Promise<'renamed' | 'cross-device' | 'failed'> {
+  /**
+   * Moves a file within one filesystem, never onto a file already at `to` (FL-1333): the file is linked at
+   * `to`, which fails when anything is there, and only then is its old name removed. `exists` and `failed`
+   * changed nothing; a move to another filesystem is reported rather than attempted.
+   */
+  private async rename(from: string, to: string): Promise<'renamed' | 'cross-device' | 'exists' | 'failed'> {
+    this.logger.debug(`Attempting to rename file: ${from} => ${to}`);
     try {
-      this.logger.debug(`Attempting to rename file: ${from} => ${to}`);
+      await this.storageRepository.link(from, to);
+    } catch (error: any) {
+      switch (error?.code) {
+        case 'EEXIST': {
+          this.logger.warn(`Unable to move ${from} to ${to}: another file is already there and is never replaced`);
+          return 'exists';
+        }
+        case 'EXDEV': {
+          return 'cross-device';
+        }
+        case 'EPERM':
+        case 'ENOTSUP':
+        case 'EOPNOTSUPP':
+        case 'ENOSYS': {
+          return this.renameWithoutLink(from, to);
+        }
+        default: {
+          this.logger.warn(
+            `Unable to complete move. Error linking file with code ${error?.code} and message: ${error?.message}`,
+          );
+          return 'failed';
+        }
+      }
+    }
+    try {
+      await this.storageRepository.unlink(from);
+      return 'renamed';
+    } catch (error: any) {
+      // the file was never anywhere but `from`: the new link is taken back
+      this.logger.warn(`Unable to complete move. Error removing ${from} once linked at ${to}: ${error}`);
+      try {
+        await this.storageRepository.unlink(to);
+      } catch (unlinkError: any) {
+        this.logger.error(
+          `Unable to remove ${to}, a second name of ${from}; the recorded move keeps both: ${unlinkError}`,
+        );
+      }
+      return 'failed';
+    }
+  }
+
+  private async renameWithoutLink(from: string, to: string): Promise<'renamed' | 'cross-device' | 'exists' | 'failed'> {
+    // ponytail: no hard links on this drive; the path lock (lockFilePath) serializes Frameleaf's own movers, an outside writer can still race the check
+    if (await this.storageRepository.checkFileExists(to)) {
+      this.logger.warn(`Unable to move ${from} to ${to}: another file is already there and is never replaced`);
+      return 'exists';
+    }
+    try {
       await this.storageRepository.rename(from, to);
       return 'renamed';
     } catch (error: any) {
-      if (error.code === 'EXDEV') {
+      if (error?.code === 'EXDEV') {
         return 'cross-device';
       }
       this.logger.warn(
-        `Unable to complete move. Error renaming file with code ${error.code} and message: ${error.message}`,
+        `Unable to complete move. Error renaming file with code ${error?.code} and message: ${error?.message}`,
       );
       return 'failed';
     }
   }
 
-  /** Puts a renamed file back where the rows still name it. Never throws. */
+  /**
+   * Puts a moved file back where the rows still name it, never onto another file there. Never throws: a
+   * file it cannot put back stays where it is, and the recorded move resolves it on the next run.
+   */
   private async undoRename(from: string, to: string) {
-    try {
-      await this.storageRepository.rename(from, to);
-    } catch (error: any) {
-      this.logger.warn(`Unable to move ${from} back to ${to}; the recorded move finishes it: ${error}`);
+    const result = await this.rename(from, to);
+    if (result !== 'renamed') {
+      this.logger.warn(`Unable to move ${from} back to ${to} (${result}); the recorded move finishes it`);
     }
   }
 
   /**
    * Copies a file to `staged`, beside its new path (so the final step is a rename on one filesystem),
-   * and verifies the copy. Returns the staged path, or nothing when the copy failed or did not match,
+   * and verifies the copy. A copy an interrupted attempt left there is removed first, and the copy is only
+   * ever made where nothing is. Returns the staged path, or nothing when the copy failed or did not match,
    * having removed it.
    */
   private async stageCopy(
@@ -409,10 +464,11 @@ export class StorageCore {
     assetInfo?: { sizeInBytes: number; checksum: Buffer },
   ): Promise<string | undefined> {
     this.logger.debug(`Unable to rename file. Falling back to copy, verify and delete`);
+    await this.removeStaged(staged);
     try {
-      await this.storageRepository.copyFile(source, staged);
+      await this.storageRepository.copyFile(source, staged, constants.COPYFILE_EXCL);
       if (!(await this.verifyNewPathContentsMatchesExpected(source, staged, assetInfo))) {
-        this.logger.warn(`Skipping move due to file size mismatch`);
+        this.logger.warn(`Skipping move: the copy does not match ${source}`);
         await this.removeStaged(staged);
         return;
       }
@@ -441,7 +497,10 @@ export class StorageCore {
     }
   }
 
-  /** A move that is not an asset's (a person's thumbnail): rename, or copy, verify and delete. */
+  /**
+   * A move that is not an asset's (a person's thumbnail): rename, or copy, verify and delete. Neither the
+   * move nor the placing of its copy ever replaces a file at `to`.
+   */
   private async moveAcrossFilesystems(
     source: string,
     to: string,
@@ -464,6 +523,11 @@ export class StorageCore {
     return true;
   }
 
+  /**
+   * Whether `newPath` holds the file: its size, then its bytes (FL-1333: always, whatever
+   * `storageTemplate.hashVerificationEnabled` says). An asset's file is compared with its recorded checksum;
+   * one without (a sidecar, preview or face) with the file at `oldPath`.
+   */
   private async verifyNewPathContentsMatchesExpected(
     oldPath: string,
     newPath: string,
@@ -477,27 +541,24 @@ export class StorageCore {
       this.logger.warn(`Unable to complete move. File size mismatch: ${newPathSize} !== ${oldPathSize}`);
       return false;
     }
-    const repos = {
-      configRepo: this.configRepository,
-      metadataRepo: this.systemMetadataRepository,
-      logger: this.logger,
-    };
-    const config = await getConfig(repos, { withCache: true });
-    if (assetInfo && config.storageTemplate.hashVerificationEnabled) {
-      const { checksum } = assetInfo;
+    let expected: Buffer;
+    let actual: Buffer;
+    if (assetInfo) {
+      expected = assetInfo.checksum;
       // Match algorithm to the stored checksum length (SHA-1 = 20 bytes legacy,
       // SHA-256 = 32 bytes new). Re-uploads in either era should verify cleanly.
-      const newChecksum = await this.cryptoRepository.hashFileMatching(newPath, checksum);
-      if (!newChecksum.equals(checksum)) {
-        this.logger.warn(
-          `Unable to complete move. File checksum mismatch: ${newChecksum.toString('base64')} !== ${checksum.toString(
-            'base64',
-          )}`,
-        );
-        return false;
-      }
-      this.logger.debug(`File checksum check: ${newChecksum.toString('base64')} === ${checksum.toString('base64')}`);
+      actual = await this.cryptoRepository.hashFileMatching(newPath, expected);
+    } else {
+      expected = await this.cryptoRepository.hashFile(oldPath, 'sha256');
+      actual = await this.cryptoRepository.hashFile(newPath, 'sha256');
     }
+    if (!actual.equals(expected)) {
+      this.logger.warn(
+        `Unable to complete move. File checksum mismatch: ${actual.toString('base64')} !== ${expected.toString('base64')}`,
+      );
+      return false;
+    }
+    this.logger.debug(`File checksum check: ${actual.toString('base64')} === ${expected.toString('base64')}`);
     return true;
   }
 

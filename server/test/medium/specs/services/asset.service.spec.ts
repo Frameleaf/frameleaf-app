@@ -1,5 +1,10 @@
 import { Kysely, sql } from 'kysely';
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { StorageCore } from 'src/cores/storage.core.js';
+import { defaults } from 'src/dtos/config.dto.js';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
 import {
   AlbumUserRole,
@@ -20,12 +25,15 @@ import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { CryptoRepository } from 'src/repositories/crypto.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MapRepository } from 'src/repositories/map.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
+import { MoveRepository } from 'src/repositories/move.repository.js';
 import { OcrRepository } from 'src/repositories/ocr.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
@@ -39,6 +47,7 @@ import { UserRepository } from 'src/repositories/user.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AssetService } from 'src/services/asset.service.js';
+import { StorageTemplateService } from 'src/services/storage-template.service.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { getActiveForkKyselyDB, getKyselyDB } from 'test/utils.js';
@@ -1152,6 +1161,106 @@ describe(AssetService.name, () => {
           ).resolves.toBe('moved');
 
           await expect(repository.getById(other.id)).resolves.toMatchObject({ originalPath: to });
+        });
+
+        it('two photos that land on the same name keep both files', async () => {
+          // FL-1333: real files, moved by the storage template's own job
+          const media = await realpath(await mkdtemp(join(tmpdir(), 'frameleaf-same-name-')));
+          StorageCore.reset();
+          StorageCore.setMediaLocation(media);
+          try {
+            const { sut, ctx } = newMediumService(StorageTemplateService, {
+              database: forkDatabase,
+              real: [
+                AssetRepository,
+                AssetJobRepository,
+                CryptoRepository,
+                MoveRepository,
+                PhysicalFileRepository,
+                StorageRepository,
+                UserRepository,
+              ],
+              mock: [DatabaseRepository, EventRepository, JobRepository, LoggingRepository],
+            });
+            const config = structuredClone(defaults);
+            config.storageTemplate.enabled = true;
+            config.storageTemplate.template = 'same-name/{{filename}}';
+            sut.onConfigInit({ newConfig: config });
+            vi.spyOn(sut, 'getConfig').mockResolvedValue(config);
+            // The template's own lock runs one of its moves at a time. Without it the first move stands for any
+            // writer that takes a name between the template's check for it and the move.
+            ctx.getMock(DatabaseRepository).withLock.mockImplementation((_lock, callback) => callback());
+
+            const { user } = await ctx.newUser();
+            const folder = join(media, 'upload', user.id, 'ab', 'cd');
+            await mkdir(folder, { recursive: true });
+            const photos: { id: string; originalPath: string; bytes: Buffer }[] = [];
+            for (const bytes of [Buffer.from('the first photo'), Buffer.from('a second, different photo')]) {
+              const originalPath = join(folder, `${randomUUID()}.jpg`);
+              await writeFile(originalPath, bytes);
+              const { asset } = await ctx.newAsset({
+                ownerId: user.id,
+                originalPath,
+                originalFileName: 'IMG_0001.jpg',
+                checksum: createHash('sha1').update(bytes).digest(),
+              });
+              await ctx.newExif({ assetId: asset.id, fileSizeInByte: bytes.length });
+              photos.push({ id: asset.id, originalPath, bytes });
+            }
+            const [first, second] = photos;
+            const name = join(
+              StorageCore.getLibraryFolder({ id: user.id, storageLabel: user.storageLabel ?? null }),
+              'same-name',
+              'IMG_0001',
+            );
+
+            // The second move finds the name free, and the first move takes it before the second goes on. (Two
+            // moves whose records overlap never get this far: the second record of one new path is refused.)
+            const storage = ctx.get(StorageRepository);
+            const checkFileExists = storage.checkFileExists.bind(storage);
+            let held = false;
+            let secondChecked!: () => void;
+            const checked = new Promise<void>((resolve) => (secondChecked = resolve));
+            let firstMoved!: () => void;
+            const moved = new Promise<void>((resolve) => (firstMoved = resolve));
+            vi.spyOn(storage, 'checkFileExists').mockImplementation(async (path, mode) => {
+              const exists = await checkFileExists(path, mode);
+              if (path === `${name}.jpg` && !held) {
+                held = true;
+                secondChecked();
+                await moved;
+              }
+              return exists;
+            });
+
+            await Promise.all([
+              sut.handleMigrationSingle({ id: second.id }),
+              checked.then(() => sut.handleMigrationSingle({ id: first.id })).finally(firstMoved),
+            ]);
+
+            const pathOf = async (id: string) => (await ctx.get(AssetRepository).getById(id))?.originalPath;
+            await expect(pathOf(first.id)).resolves.toBe(`${name}.jpg`);
+            await expect(readFile(`${name}.jpg`)).resolves.toEqual(first.bytes);
+            // the move that found the name taken changed nothing, and stays recorded for the next run
+            await expect(pathOf(second.id)).resolves.toBe(second.originalPath);
+            await expect(readFile(second.originalPath)).resolves.toEqual(second.bytes);
+            await expect(movesOf(second.id)).resolves.toHaveLength(1);
+
+            // which sees the name taken and picks a free one
+            await expect(sut.handleMigrationSingle({ id: second.id })).resolves.toBe(JobStatus.Success);
+
+            await expect(pathOf(first.id)).resolves.toBe(`${name}.jpg`);
+            await expect(pathOf(second.id)).resolves.toBe(`${name}+1.jpg`);
+            await expect(readFile(`${name}.jpg`)).resolves.toEqual(first.bytes);
+            await expect(readFile(`${name}+1.jpg`)).resolves.toEqual(second.bytes);
+            for (const photo of photos) {
+              await expect(readFile(photo.originalPath)).rejects.toMatchObject({ code: 'ENOENT' });
+              await expect(movesOf(photo.id)).resolves.toEqual([]);
+            }
+          } finally {
+            StorageCore.reset();
+            await rm(media, { recursive: true, force: true });
+          }
         });
       });
 

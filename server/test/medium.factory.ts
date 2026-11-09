@@ -65,6 +65,7 @@ import { MediaRepository } from 'src/repositories/media.repository.js';
 import { MemoryRepository } from 'src/repositories/memory.repository.js';
 import { MetadataRepository } from 'src/repositories/metadata.repository.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
+import { MoveRepository } from 'src/repositories/move.repository.js';
 import { NotificationRepository } from 'src/repositories/notification.repository.js';
 import { OAuthRepository } from 'src/repositories/oauth.repository.js';
 import { OcrRepository } from 'src/repositories/ocr.repository.js';
@@ -602,6 +603,7 @@ const newRealRepository = <T extends MediumRepositoryKey>(key: T, db: Kysely<DB>
     case LockedEncryptionRepository:
     case MediaOperationRepository:
     case MemoryRepository:
+    case MoveRepository:
     case DownloadRepository:
     case AssetChecksumRepository:
     case FrameleafAccountRepository:
