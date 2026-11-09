@@ -13,6 +13,7 @@ import { completeCommonImport } from './common-import-lifecycle.js';
 import { COMMON_IMPORT_CONFIG, IMPORT_PREPARATION_TARGET, writeCommonImportCompose } from './common-import-runtime.js';
 import { DOCKERMAN_TEMPLATES, saveDockermanTemplates } from './dockerman.js';
 import { configureUnraidCompose } from './compose.js';
+import { managerPlatform } from './server-check.js';
 import { explainFailure } from './troubleshooting.js';
 import { importHash, importSourceKinds, importSourceSchema, type ImportPlan } from './import-plan.js';
 import {
@@ -512,7 +513,7 @@ export class Docker {
       throw new Refusal('invalid_managed_project');
     // FL-1320: a missing folder (a disconnected drive) is named before Docker refuses the whole stack.
     if (action !== 'stop') await assertComposeMountSources(directory, services);
-    const unraid = action === 'up' && process.env.MANAGER_PLATFORM === 'unraid';
+    const unraid = action === 'up' && managerPlatform() === 'unraid';
     // DockerMan templates are optional: catalog templates published before the mapping existed still start.
     const dockerman = unraid && (await access(DOCKERMAN_TEMPLATES).then(() => true, () => false));
     if (action === 'up') {
