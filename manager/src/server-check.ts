@@ -14,7 +14,9 @@ import { Refusal } from './contracts.js';
  * install start if it can change after the review, and add its label and wording in the UI module.
  */
 export type CheckStatus = 'ok' | 'problem' | 'warning' | 'unknown';
-export type CheckId = 'docker' | 'media' | 'database' | 'backups' | 'manager' | 'containers' | 'port' | 'release' | (string & {});
+export type CheckId =
+  | 'docker' | 'room' | 'media' | 'database' | 'backups' | 'manager' | 'containers' | 'port' | 'downloads' | 'release' | 'memory' | 'unraid'
+  | (string & {});
 export type CheckFacts = Record<string, string | number | boolean | null>;
 export type CheckResult = { id: CheckId; status: CheckStatus; code?: string; detail?: string; facts?: CheckFacts };
 /** What a check's work returns: its facts, and optionally a non-blocking finding instead of ok. */
