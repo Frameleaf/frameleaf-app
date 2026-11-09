@@ -27,6 +27,8 @@ export interface CloudCaptionCalls {
   start(request: StudioCloudCaptionRequest): Promise<StudioCloudCaptionJob | null>
   read(id: string): Promise<StudioCloudCaptionState>
   pending(): Promise<StudioCloudCaptionJob[]>
+  /** The editor is done with this job, so a reload shouldn't bring it back. */
+  forget(id: string): Promise<void>
   /** Resolves once this editor's own timeline has loaded; false if the editor closed first. */
   ready(): Promise<boolean>
 }
@@ -41,11 +43,6 @@ const isClip = (item: TimelineItem | undefined): item is AudioItem | VideoItem =
 const findClip = (clipId: string) => {
   const item = useTimelineStore.getState().items.find((candidate) => candidate.id === clipId)
   return isClip(item) ? item : null
-}
-
-export function clipAnchor(clip: AudioItem | VideoItem, fps: number): StudioCloudCaptionAnchor {
-  const { sourceStart, sourceFps, speed } = getClipSourceBounds(clip, fps)
-  return { fromSeconds: clip.from / fps, sourceStartSeconds: sourceStart / sourceFps, speed }
 }
 
 /** Cues are timeline seconds at pricing; source seconds keep them on the words if the clip moves or is trimmed. */
@@ -83,10 +80,13 @@ export function createCloudCaptions(calls: CloudCaptionCalls, pollMs = POLL_MS) 
   let stopped = false
   const following = new Set<string>()
 
+  const forget = (job: StudioCloudCaptionJob) => calls.forget(job.id).catch(() => {})
+
   const add = async (job: StudioCloudCaptionJob, cues: StudioCloudCaptionCue[]) => {
     const clip = findClip(job.clipId)
     if (!clip?.mediaId) {
       toast.error(i18n.t('transcript.cloud.gone', { name: job.name }))
+      await forget(job)
       return
     }
     if (clip.transcriptCaptions?.enabled) {
@@ -100,6 +100,7 @@ export function createCloudCaptions(calls: CloudCaptionCalls, pollMs = POLL_MS) 
       replaceExisting: true,
       segments: cuesToSegments(cues, job.anchor),
     })
+    await forget(job)
     toast.success(i18n.t('transcript.cloud.added', { name: job.name }))
   }
 
@@ -119,7 +120,7 @@ export function createCloudCaptions(calls: CloudCaptionCalls, pollMs = POLL_MS) 
         label: i18n.t('transcript.cloud.replace'),
         onClick: () => void add(job, cues).catch(() => failed(job)),
       },
-      cancel: { label: i18n.t('transcript.cloud.keep'), onClick: () => {} },
+      cancel: { label: i18n.t('transcript.cloud.keep'), onClick: () => void forget(job) },
     })
   }
 
@@ -164,12 +165,7 @@ export function createCloudCaptions(calls: CloudCaptionCalls, pollMs = POLL_MS) 
       const media = clip.mediaId ? useMediaLibraryStore.getState().mediaById[clip.mediaId] : undefined
       const name = media?.fileName ?? clip.label
       try {
-        const job = await calls.start({
-          clipId,
-          language: language || 'auto',
-          name,
-          anchor: clipAnchor(clip, useTimelineStore.getState().fps),
-        })
+        const job = await calls.start({ clipId, language: language || 'auto', name })
         if (job) await follow(job)
       } catch {
         toast.error(i18n.t('transcript.cloud.failed', { name }))

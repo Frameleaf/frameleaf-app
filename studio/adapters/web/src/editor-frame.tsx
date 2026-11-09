@@ -717,6 +717,7 @@ function installMediaRelink(state: Session) {
     start: (request) => call('startCloudCaptions', request),
     read: (id) => call('readCloudCaptions', id),
     pending: () => call('pendingCloudCaptions'),
+    forget: (id) => call('forgetCloudCaptions', id),
     ready: async () => {
       while (!state.disposed && !state.mount.loaded) {
         await new Promise((resolve) => setTimeout(resolve, 200))

@@ -609,6 +609,8 @@ export interface StudioHostServices {
   readCloudCaptions?(id: string): Promise<StudioCloudCaptionState>;
   /** Cloud captions jobs confirmed in this project whose lines have not been read yet. */
   pendingCloudCaptions?(): Promise<StudioCloudCaptionJob[]>;
+  /** The editor is done with a job: its lines are added, or the person kept their own. */
+  forgetCloudCaptions?(id: string): Promise<void>;
   /**
    * Captions in other languages (FL-641): translate caption lines, sent as text only, on the processing
    * order ("Where work runs"). One translation per line comes back, in order; the editor keeps the

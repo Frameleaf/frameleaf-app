@@ -30,6 +30,7 @@ describe('FL-641 caption translation in protocol 9', () => {
       'startCloudCaptions',
       'readCloudCaptions',
       'pendingCloudCaptions',
+      'forgetCloudCaptions',
     ]);
     for (const name of [
       'searchLibrary',

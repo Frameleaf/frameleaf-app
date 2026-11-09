@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import type { StudioCloudCaptionJob, StudioCloudCaptionState } from '@frameleaf/host/cloud-captions'
 import type { SubtitleSegmentItem, TimelineItem, TimelineTrack, VideoItem } from '@/types/timeline'
 import { useItemsStore } from '@/features/timeline/stores/items-store'
-import { clipAnchor, createCloudCaptions, cuesToSegments, existingLineCount } from '../src/cloud-captions'
+import { createCloudCaptions, cuesToSegments, existingLineCount } from '../src/cloud-captions'
 
 const toasts = vi.hoisted(() => {
   const toast = Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() })
@@ -68,12 +68,14 @@ const seed = (items: TimelineItem[]) => {
 }
 const subtitles = () =>
   useItemsStore.getState().items.filter((item): item is SubtitleSegmentItem => item.type === 'subtitle')
+const forget = vi.fn(() => Promise.resolve())
 const resumeWith = async (pendingJob: StudioCloudCaptionJob, state: StudioCloudCaptionState) => {
   const flow = createCloudCaptions(
     {
       start: vi.fn(),
       read: () => Promise.resolve(state),
       pending: () => Promise.resolve([pendingJob]),
+      forget,
       ready: () => Promise.resolve(true),
     },
     1,
@@ -86,10 +88,9 @@ describe('FL-1304 captions on Frameleaf Cloud', () => {
     vi.clearAllMocks()
   })
 
-  it('anchors a clip to the source seconds it plays', () => {
-    const speedy = { ...clip('a', 60), sourceStart: 90, speed: 2 }
-    expect(clipAnchor(speedy, fps)).toEqual({ fromSeconds: 2, sourceStartSeconds: 3, speed: 2 })
-    expect(cuesToSegments([{ start: 3, end: 4, text: 'x' }], clipAnchor(speedy, fps))).toEqual([
+  it('maps timeline cues to the source seconds of the priced clip', () => {
+    const anchor = { fromSeconds: 2, sourceStartSeconds: 3, speed: 2 }
+    expect(cuesToSegments([{ start: 3, end: 4, text: 'x' }], anchor)).toEqual([
       { text: 'x', start: 5, end: 7 },
     ])
   })
@@ -123,6 +124,7 @@ describe('FL-1304 captions on Frameleaf Cloud', () => {
     expect(added?.cues.map((cue) => cue.text)).toEqual(['From the Cloud'])
     expect(subtitles().find((item) => item.id === 'other')?.cues[0]?.text).toBe('On another clip')
     expect(toasts.toast.success).toHaveBeenCalledOnce()
+    expect(forget).toHaveBeenCalledExactlyOnceWith('job-1')
   })
 
   it('keeps the lines on the words when the clip moved during the job', async () => {
@@ -138,12 +140,24 @@ describe('FL-1304 captions on Frameleaf Cloud', () => {
     await resumeWith(job('a', 0), done(1, 3))
     expect(subtitles().map((item) => item.id).toSorted()).toEqual(['mine', 'other'])
     expect(toasts.toast).toHaveBeenCalledOnce()
+    // A reload before the person answers still brings the choice back.
+    expect(forget).not.toHaveBeenCalled()
     const options = toasts.toast.mock.calls[0]![1] as { action: { onClick: () => void } }
     options.action.onClick()
     await vi.waitFor(() => expect(toasts.toast.success).toHaveBeenCalledOnce())
+    expect(forget).toHaveBeenCalledExactlyOnceWith('job-1')
     expect(subtitles().some((item) => item.id === 'mine')).toBe(false)
     expect(subtitles().find((item) => item.id === 'other')?.cues[0]?.text).toBe('On another clip')
     expect(subtitles().find((item) => item.id !== 'other')?.cues[0]?.text).toBe('From the Cloud')
+  })
+
+  it('forgets the job when the person keeps their own lines', async () => {
+    seed([clip('a', 0), lines('mine', 'a', 0, 'I edited this')])
+    await resumeWith(job('a', 0), done(1, 3))
+    const options = toasts.toast.mock.calls[0]![1] as { cancel: { onClick: () => void } }
+    options.cancel.onClick()
+    expect(forget).toHaveBeenCalledExactlyOnceWith('job-1')
+    expect(subtitles().map((item) => item.id)).toEqual(['mine'])
   })
 
   it('says so when the clip is gone, and when the job fails', async () => {
@@ -166,6 +180,7 @@ describe('FL-1304 captions on Frameleaf Cloud', () => {
         start: vi.fn(),
         read,
         pending: () => Promise.resolve([job('a', 0)]),
+        forget,
         ready: () => new Promise((resolve) => (loaded = resolve)),
       },
       1,
@@ -191,6 +206,7 @@ describe('FL-1304 captions on Frameleaf Cloud', () => {
         start: vi.fn(),
         read,
         pending: () => Promise.resolve([job('a', 0)]),
+        forget,
         ready: () => Promise.resolve(false),
       },
       1,
@@ -209,7 +225,7 @@ describe('FL-1304 captions on Frameleaf Cloud', () => {
     const start = vi.fn(() => Promise.resolve(null))
     const read = vi.fn()
     await createCloudCaptions(
-      { start, read, pending: () => Promise.resolve([]), ready: () => Promise.resolve(true) },
+      { start, read, pending: () => Promise.resolve([]), forget, ready: () => Promise.resolve(true) },
       1,
     ).start({ clipId: 'a', language: '' })
     expect(start).toHaveBeenCalledWith(expect.objectContaining({ clipId: 'a', language: 'auto' }))
