@@ -502,8 +502,9 @@ export class Docker {
     const dockerman = unraid && (await access(DOCKERMAN_TEMPLATES).then(() => true, () => false));
     if (action === 'up') {
       if (unraid) await configureUnraidCompose(directory);
-      await this.releaseTakenContainerNames(directory, project);
       await this.pullMissing(directory, services);
+      // After the pull, which can take minutes, so the check is as fresh as possible.
+      await this.releaseTakenContainerNames(directory, project);
     }
     await this.execute(
       'docker',
