@@ -5,6 +5,7 @@ import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   NotificationDeleteAllDto,
   NotificationDto,
+  NotificationIdParamDto,
   NotificationSearchDto,
   NotificationUpdateAllDto,
   NotificationUpdateDto,
@@ -12,7 +13,6 @@ import {
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { NotificationService } from 'src/services/notification.service.js';
-import { UUIDParamDto } from 'src/validation.js';
 
 @ApiTags(ApiTag.Notifications)
 @Controller('notifications')
@@ -61,7 +61,7 @@ export class NotificationController {
     description: 'Retrieve a specific notification identified by id.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
-  getNotification(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<NotificationDto> {
+  getNotification(@Auth() auth: AuthDto, @Param() { id }: NotificationIdParamDto): Promise<NotificationDto> {
     return this.service.get(auth, id);
   }
 
@@ -74,7 +74,7 @@ export class NotificationController {
   })
   updateNotification(
     @Auth() auth: AuthDto,
-    @Param() { id }: UUIDParamDto,
+    @Param() { id }: NotificationIdParamDto,
     @Body() dto: NotificationUpdateDto,
   ): Promise<NotificationDto> {
     return this.service.update(auth, id, dto);
@@ -88,7 +88,7 @@ export class NotificationController {
     description: 'Delete a specific notification.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
-  deleteNotification(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
+  deleteNotification(@Auth() auth: AuthDto, @Param() { id }: NotificationIdParamDto): Promise<void> {
     return this.service.delete(auth, id);
   }
 }

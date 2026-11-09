@@ -3,6 +3,9 @@ import z from 'zod';
 import { NotificationLevel, NotificationLevelSchema, NotificationType, NotificationTypeSchema } from 'src/enum.js';
 import { isoDatetimeToDate, stringToBool } from 'src/validation.js';
 
+// Any UUID version: the importers write v5 ids so that re-running an import doesn't repeat a notification.
+const NotificationIdSchema = z.uuid();
+
 const TestEmailResponseSchema = z
   .object({
     messageId: z.string().describe('Email message ID'),
@@ -24,7 +27,7 @@ const TemplateSchema = z
 
 const NotificationSchema = z
   .object({
-    id: z.uuidv4().describe('Notification ID'),
+    id: NotificationIdSchema.describe('Notification ID'),
     createdAt: isoDatetimeToDate.describe('Creation date'),
     level: NotificationLevelSchema,
     type: NotificationTypeSchema,
@@ -37,7 +40,7 @@ const NotificationSchema = z
 
 const NotificationSearchSchema = z
   .object({
-    id: z.uuidv4().optional().describe('Filter by notification ID'),
+    id: NotificationIdSchema.optional().describe('Filter by notification ID'),
     level: NotificationLevelSchema.optional(),
     type: NotificationTypeSchema.optional(),
     unread: stringToBool.optional().describe('Filter by unread status'),
@@ -64,20 +67,21 @@ const NotificationUpdateSchema = z
 
 const NotificationUpdateAllSchema = z
   .object({
-    ids: z.array(z.uuidv4()).min(1).describe('Notification IDs to update'),
+    ids: z.array(NotificationIdSchema).min(1).describe('Notification IDs to update'),
     readAt: isoDatetimeToDate.nullish().describe('Date when notifications were read'),
   })
   .meta({ id: 'NotificationUpdateAllDto' });
 
 const NotificationDeleteAllSchema = z
   .object({
-    ids: z.array(z.uuidv4()).min(1).describe('Notification IDs to delete'),
+    ids: z.array(NotificationIdSchema).min(1).describe('Notification IDs to delete'),
   })
   .meta({ id: 'NotificationDeleteAllDto' });
 
 export class TestEmailResponseDto extends createZodDto(TestEmailResponseSchema) {}
 export class TemplateResponseDto extends createZodDto(TemplateResponseSchema) {}
 export class TemplateDto extends createZodDto(TemplateSchema) {}
+export class NotificationIdParamDto extends createZodDto(z.object({ id: NotificationIdSchema })) {}
 export class NotificationDto extends createZodDto(NotificationSchema) {}
 export class NotificationSearchDto extends createZodDto(NotificationSearchSchema) {}
 export class NotificationCreateDto extends createZodDto(NotificationCreateSchema) {}
