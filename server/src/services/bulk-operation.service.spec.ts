@@ -1167,11 +1167,23 @@ describe(BulkOperationService.name, () => {
         duplicateDecisions.applyGroup.mockImplementation(
           () => new Promise((resolve) => setTimeout(() => resolve(okAll(group.memberIds)), BULK_LEASE_MS * 2)),
         );
+        // the lease as the database keeps it: a write or heartbeat after it lapsed finds no claim
+        let leaseUntil = Date.now() + BULK_LEASE_MS;
+        const renew = () => {
+          if (Date.now() > leaseUntil) {
+            return false;
+          }
+          leaseUntil = Date.now() + BULK_LEASE_MS;
+          return true;
+        };
+        vi.mocked(operations.heartbeat).mockImplementation(() => Promise.resolve(renew()));
+        vi.mocked(operations.setBulkResult).mockImplementation(() => Promise.resolve(renew() ? running : undefined));
 
         const run = sut.run(operationOf(snapshot), 'claim');
         await vi.advanceTimersByTimeAsync(BULK_LEASE_MS * 2);
         await run;
 
+        expect(vi.mocked(operations.heartbeat).mock.calls.length).toBeGreaterThanOrEqual(2);
         expect(operations.heartbeat).toHaveBeenCalledWith(expect.any(String), 'claim', BULK_LEASE_MS);
         expect(operations.complete).toHaveBeenCalled();
       } finally {
