@@ -134,6 +134,7 @@ const storageUsage = () => ({
         },
   },
 });
+const thumbnailStarts = new Map();
 const storageOperation = (id, kind, step, completed) => {
   dashboard.operations = [{ id, kind, state: 'running', step, completed, error: null, canStop: kind === 'move-thumbnails', canCancel: false }];
   return { id };
@@ -251,10 +252,16 @@ await page.route('**/manager-api/**', async (route) => {
     value = { available: true, id: '019aa111-1111-7111-8111-111111111111', root: body.root, files: 2, bytes: 4096 };
   else if (path === 'review-thumbnail-move')
     value = { available: true, id: '019aa111-1111-7111-8111-111111111113', root: body.root, files: 412880, bytes: 86 * GB };
-  else if (path === 'move-thumbnails' && requests.filter((r) => r.path === 'move-thumbnails').length === 1)
-    // The start is recorded, but its answer is lost on the way back.
-    return route.fulfill({ status: 502, contentType: 'text/html', body: '<html><body>Bad gateway</body></html>' });
-  else if (path === 'move-thumbnails') value = storageOperation('thumbnail-operation', 'move-thumbnails', 'move-freeze', ['move-stop-writers', 'move-checkpoint', 'move-fence-stack']);
+  else if (path === 'move-thumbnails') {
+    // Like Manager's request store: a key already seen gets the operation it started, never a second one.
+    const started = thumbnailStarts.get(body.key);
+    value = started ?? storageOperation('thumbnail-operation', 'move-thumbnails', 'move-freeze', ['move-stop-writers', 'move-checkpoint', 'move-fence-stack']);
+    if (!started) {
+      thumbnailStarts.set(body.key, value);
+      // The move starts, but its answer is lost on the way back.
+      return route.fulfill({ status: 502, contentType: 'text/html', body: '<html><body>Bad gateway</body></html>' });
+    }
+  }
   else if (path === 'review-thumbnails-home')
     value = { id: '019aa111-1111-7111-8111-111111111114', missing: thumbnails.path, folder: '/fixture/media/thumbs', assets: 412880 };
   else if (path === 'thumbnails-home') value = storageOperation('home-operation', 'thumbnails-home', 'thumbs-queue', ['thumbs-home-switch', 'start']);
