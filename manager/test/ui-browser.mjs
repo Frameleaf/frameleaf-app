@@ -501,7 +501,7 @@ try {
     await mainButton('Restore').click();
     await mainButton('Choose a recovery point').click();
     await mainButton('Check this server').click();
-    await page.getByRole('heading', { name: '1 thing to fix before installing' }).waitFor();
+    await page.getByRole('heading', { name: '1 thing to fix before restoring' }).waitFor();
     await page.getByRole('heading', { name: 'The thumbnails drive isn’t connected' }).waitFor();
     await mainButton('Keep thumbnails with your photos').click();
     await page.getByRole('heading', { name: 'This server is ready' }).waitFor();

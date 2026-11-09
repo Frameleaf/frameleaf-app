@@ -304,18 +304,23 @@ export function checkRows(results: CheckResult[], context: CheckContext): CheckR
 export const attention = (rows: CheckRow[]) =>
   rows.filter((row) => row.status !== 'ok').sort((a, b) => (a.status === 'problem' ? 0 : 1) - (b.status === 'problem' ? 0 : 1));
 
-/** What the step says once every check has finished. Only a problem stops the install. */
-export function checkSummary(rows: CheckRow[]) {
+/**
+ * What the step says once every check has finished. Only a problem stops the install. The prototype's words are
+ * for an install, which an import also is; a restore says what it does.
+ */
+export function checkSummary(rows: CheckRow[], flow: 'install' | 'import' | 'restore' = 'install') {
+  const doing = flow === 'restore' ? 'restoring' : 'installing',
+    can = flow === 'restore' ? 'restore' : 'install';
   const problems = rows.filter((row) => row.status === 'problem').length;
   const notes = rows.filter((row) => row.status === 'warning' || row.status === 'unknown').length;
   if (problems)
     return {
       problems,
       notes,
-      title: `${problems === 1 ? '1 thing' : `${problems} things`} to fix before installing`,
+      title: `${problems === 1 ? '1 thing' : `${problems} things`} to fix before ${doing}`,
       lead: 'Nothing has been downloaded or changed yet. Fix these, then check again.',
     };
   if (notes)
-    return { problems, notes, title: 'This server is ready', lead: `Frameleaf can install. ${notes === 1 ? 'There’s one thing' : `There are ${notes} things`} worth knowing first.` };
+    return { problems, notes, title: 'This server is ready', lead: `Frameleaf can ${can}. ${notes === 1 ? 'There’s one thing' : `There are ${notes} things`} worth knowing first.` };
   return { problems, notes, title: 'This server is ready', lead: 'Manager checked Docker, storage, the network and the signed release.' };
 }
