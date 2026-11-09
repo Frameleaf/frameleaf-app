@@ -819,7 +819,7 @@ export class AlbumRepository {
     await this.delete(id);
   }
 
-  private async deleteIn(tx: Transaction<DB>, id: string): Promise<void> {
+  async deleteIn(tx: Transaction<DB>, id: string): Promise<void> {
     const album = await tx.selectFrom('album').select('parentId').where('id', '=', id).forUpdate().executeTakeFirst();
     if (!album) return;
     const children = await tx.selectFrom('album').select('id').where('parentId', '=', id).forUpdate().execute();

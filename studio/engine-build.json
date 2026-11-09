@@ -829,7 +829,12 @@
       "path": "patches/0179-studio-ui-audit-copy-and-panel-placement.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "6aadb42629fc50693abb8d2b3af92cd1c5a326adb510530ec0cba13b7a1ebdfe"
+    },
+    {
+      "path": "patches/0180-cloud-captions.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "817caf39f59c6f07efc19c78d861da3b6a7107e9e83a1a8cf2c4be1d7631ce9a"
     }
   ],
-  "sourceSha256": "be812d0bab9c29042c3a611e4d67894ceb5862825fec3688379df9e7a72ab402"
+  "sourceSha256": "c9be2c718ed8dff077b6cbbba072dd8357cc4417109c3faf4f3a556578cffc66"
 }

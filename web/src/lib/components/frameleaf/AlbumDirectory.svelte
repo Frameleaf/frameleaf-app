@@ -7,6 +7,7 @@
   import { afterNavigate, goto, replaceState } from '$app/navigation';
   import { page } from '$app/state';
   import AlbumActions from '$lib/components/frameleaf/AlbumActions.svelte';
+  import AlbumCleanupBanner from '$lib/components/frameleaf/album-cleanup/AlbumCleanupBanner.svelte';
   import AlbumTile from '$lib/components/frameleaf/AlbumTile.svelte';
   import CollectionShelf from '$lib/components/frameleaf/CollectionShelf.svelte';
   import { listEnter, listFlip, listLeave } from '$lib/components/frameleaf/people/list-motion';
@@ -664,6 +665,7 @@
 <svelte:document onkeydown={onKeydown} oncontextmenu={onContextMenu} />
 
 <section class="albums" aria-labelledby={headingId} bind:this={section}>
+  <AlbumCleanupBanner />
   <header class="head">
     <div class="heading">
       <h1 id={headingId}>{$t('albums')}</h1>

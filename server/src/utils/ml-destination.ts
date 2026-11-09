@@ -184,6 +184,8 @@ export type MlSelectionRequest = {
    * (`transcription` or `tts`). A Studio AI cloud job without it has no model and is refused.
    */
   studioFeature?: StudioAiCloudFeature | null;
+  /** FL-1304: the model a confirmed Cloud job already names, in place of the administrator's choice for its group. */
+  modelSku?: string | null;
   /** FL-455: work that never leaves this network (search text): a Frameleaf Cloud destination is refused. */
   homeOnly?: boolean;
   /**
@@ -1066,7 +1068,9 @@ export const selectMlDestination = async (
       ? cloudModelGroupFor(request.workload, request.studioFeature)
       : null;
   // FL-455: smart search and faces have no choice to read; they name the model matching this server's pin
-  const modelId = group && isCloudModelGroup(group) ? await mlDestinationRepository.getCloudModelChoice(group) : null;
+  const modelId =
+    request.modelSku ??
+    (group && isCloudModelGroup(group) ? await mlDestinationRepository.getCloudModelChoice(group) : null);
 
   const verdict = evaluateAdmission({
     destination,

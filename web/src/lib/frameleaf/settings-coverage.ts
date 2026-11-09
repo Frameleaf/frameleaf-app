@@ -1688,6 +1688,12 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
     evidence: 'people.sidebarWeb',
   },
   {
+    pattern: 'albums.cleanupBannerDismissed',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/album-cleanup/AlbumCleanupBanner.svelte',
+    evidence: 'cleanupBannerDismissed',
+  },
+  {
     pattern: 'albums.showPartnerAlbums',
     kind: 'control',
     file: 'src/routes/(user)/user-settings/SharingSettings.svelte',

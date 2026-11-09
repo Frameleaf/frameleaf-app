@@ -1,6 +1,6 @@
 /**
  * Frameleaf
- * 1.2.9
+ * 1.2.10
  * DO NOT MODIFY - This file has been generated using oazapfts.
  * See https://www.npmjs.com/package/oazapfts
  */
@@ -3788,6 +3788,8 @@ export type UserAdminPinCodeStateResponseDto = {
     twoFactorEnabled: boolean;
 };
 export type AlbumsResponse = {
+    /** The Magic Albums cleanup banner has been dismissed */
+    cleanupBannerDismissed: boolean;
     defaultAssetOrder: AssetOrder;
     /** Whether albums a partner shared appear in the album list */
     showPartnerAlbums: boolean;
@@ -3934,6 +3936,8 @@ export type UserPreferencesResponseDto = {
     trash: TrashPreferencesResponse;
 };
 export type AlbumsUpdate = {
+    /** The Magic Albums cleanup banner has been dismissed */
+    cleanupBannerDismissed?: boolean;
     defaultAssetOrder?: AssetOrder;
     /** Whether albums a partner shared appear in the album list */
     showPartnerAlbums?: boolean;
@@ -4442,6 +4446,189 @@ export type AlbumChangeUndoResponseDto = {
     /** Names of what was left alone because it was changed after the run; a later edit wins */
     skipped: string[];
 };
+export type AlbumCleanupOperationDto = {
+    /** move, rename, heal, remove: the album */
+    albumId?: string;
+    /** merge, combine: the albums */
+    albumIds?: string[];
+    /** merge: the person chose to merge albums that are shared */
+    allowShared?: boolean;
+    /** heal: the photos approved */
+    assetIds?: string[];
+    /** createCollection, rename, combine: the name */
+    name?: string;
+    /** createCollection, move: an existing collection, or the top level */
+    parentId?: string | null;
+    /** createCollection, move: a collection this run creates */
+    parentTempId?: string;
+    /** createCollection: how later operations refer to it */
+    tempId?: string;
+    "type": AlbumCleanupOperationType;
+};
+export type AlbumCleanupApplyDto = {
+    /** What to change */
+    operations: AlbumCleanupOperationDto[];
+};
+export type AlbumCleanupApplyResponseDto = {
+    /** The cleanup, to follow its progress and undo it */
+    runId: string;
+};
+export type AlbumCleanupAlbumFactDto = {
+    /** Photos this session may see */
+    count: number;
+    /** A cover this session may see */
+    coverAssetId: string | null;
+    /** When the album was created */
+    createdAt: string;
+    /** Where the photos were taken, when they say so */
+    gps: {
+        /** The city most located photos were taken in */
+        city: string;
+        /** Latitude of the centre of those photos */
+        lat: number;
+        /** Longitude of the centre of those photos */
+        lon: number;
+        /** Its share of the located photos */
+        share: number;
+    } | null;
+    /** Album ID */
+    id: string;
+    /** The album is locked */
+    locked: boolean;
+    /** Album name */
+    name: string;
+    /** The album is shared with people, by a public link or through a shared space */
+    shared: boolean;
+    /** When the photos were taken, leaving out estimated dates */
+    span: {
+        /** First day, as days since 1970-01-01 */
+        "from": number;
+        /** The middle photo, as days since 1970-01-01 */
+        middle: number;
+        /** Last day, as days since 1970-01-01 */
+        to: number;
+    } | null;
+};
+export type AlbumCleanupCollectionFactDto = {
+    /** When it was created; the older of two with one name is reused */
+    createdAt: string;
+    /** Collection ID */
+    id: string;
+    /** Collection name */
+    name: string;
+    /** The collection it sits in */
+    parentId: string | null;
+};
+export type AlbumCleanupHomeAreaDto = {
+    /** The most common city in the area */
+    city: string | null;
+    /** Latitude of its centre */
+    lat: number;
+    /** Longitude of its centre */
+    lon: number;
+    /** Photos taken there */
+    photoCount: number;
+};
+export type AlbumLostDateSuggestionDto = {
+    /** The photo */
+    assetId: string;
+    /** The photos an exact date came from */
+    between: {
+        /** File name of the photo after it */
+        after: string;
+        /** File name of the photo before it */
+        before: string;
+    } | null;
+    /** The date offered: local time with offset */
+    dateTimeOriginal: string;
+    /** The local day offered (YYYY-MM-DD) */
+    day: string;
+    /** Its file name */
+    fileName: string;
+    /** exact (from the numbered photos on either side) or around (the middle of the album). May grow */
+    precision: string;
+    /** The local day it shows now (YYYY-MM-DD) */
+    shownDay: string;
+};
+export type AlbumCleanupLostDatesDto = {
+    /** The album */
+    albumId: string;
+    /** First local day of the album (YYYY-MM-DD) */
+    "from": string;
+    /** Your own photos that lost their date */
+    suggestions: AlbumLostDateSuggestionDto[];
+    /** Last local day of the album (YYYY-MM-DD) */
+    to: string;
+};
+export type AlbumCleanupSameNameDto = {
+    /** Every album with this name */
+    albumIds: string[];
+    /** The name after trimming, collapsing spaces and ignoring case */
+    key: string;
+    /** Photos this session may see after merging, each counted once */
+    union: number;
+    /** The album that would keep its name and icon, from true counts */
+    winnerId: string;
+};
+export type AlbumCleanupPairDto = {
+    /** One album */
+    firstId: string;
+    /** The other album */
+    secondId: string;
+    /** How much of the smaller album is in both; 0 for the same trip */
+    share: number;
+    /** Photos this session may see after merging, each counted once */
+    union: number;
+    /** The album that would keep its name and icon, from true counts */
+    winnerId: string;
+};
+export type AlbumCleanupFactsDto = {
+    /** Your top-level albums */
+    albums: AlbumCleanupAlbumFactDto[];
+    /** Your existing collections, to reuse as structure */
+    collections: AlbumCleanupCollectionFactDto[];
+    /** Albums skipped because their photos span too long */
+    healSkipped: number;
+    /** The largest photo clusters, densest first */
+    homeAreas: AlbumCleanupHomeAreaDto[];
+    /** Albums with photos that lost their date */
+    lostDates: AlbumCleanupLostDatesDto[];
+    /** Albums sharing a name */
+    sameName: AlbumCleanupSameNameDto[];
+    /** Albums holding nearly the same photos under different names */
+    samePhotos: AlbumCleanupPairDto[];
+    /** Albums from the same dates and place with no photos in common */
+    sameTrip: AlbumCleanupPairDto[];
+};
+export type AlbumCleanupSnapshotResponseDto = {
+    /** When the scan ran */
+    computedAt: string | null;
+    /** What the scan found, for this session */
+    facts: (AlbumCleanupFactsDto) | null;
+    /** The first scan has finished */
+    ready: boolean;
+    /** How many albums the review has something to offer */
+    suggestionCount: number;
+};
+export type AlbumCleanupApplyProgressDto = {
+    /** Operations finished */
+    done: number;
+    /** The cleanup, for undoing it */
+    runId: string;
+    status: AlbumChangeRunStatus;
+    /** Operations in all */
+    total: number;
+};
+export type AlbumCleanupStatusResponseDto = {
+    /** The newest cleanup you have not undone */
+    apply: (AlbumCleanupApplyProgressDto) | null;
+    /** When the scan ran */
+    computedAt: string | null;
+    /** The first scan has finished */
+    ready: boolean;
+    /** How many albums the review has something to offer */
+    suggestionCount: number;
+};
 export type AlbumHierarchyNode = {
     album: AlbumResponseDto;
     children: AlbumHierarchyNode[];
@@ -4877,27 +5064,6 @@ export type LibraryItemsResponseDto = {
         id: string;
         kind: LibraryItemKind;
     } | null;
-};
-export type AlbumLostDateSuggestionDto = {
-    /** The photo */
-    assetId: string;
-    /** The photos an exact date came from */
-    between: {
-        /** File name of the photo after it */
-        after: string;
-        /** File name of the photo before it */
-        before: string;
-    } | null;
-    /** The date offered: local time with offset */
-    dateTimeOriginal: string;
-    /** The local day offered (YYYY-MM-DD) */
-    day: string;
-    /** Its file name */
-    fileName: string;
-    /** exact (from the numbered photos on either side) or around (the middle of the album). May grow */
-    precision: string;
-    /** The local day it shows now (YYYY-MM-DD) */
-    shownDay: string;
 };
 export type AlbumLostDatesResponseDto = {
     /** The album is tight enough to say when its photos were taken */
@@ -17516,6 +17682,16 @@ export type StudioTranscriptionQueuedDto = {
     id: string;
     status: MediaOperationStatus;
 };
+export type StudioTranscriptionEstimateDto = {
+    /** A video or audio clip on the main timeline of the head revision */
+    clipId: string;
+    /** The Frameleaf Cloud processing destination, named explicitly */
+    destinationId: string;
+    /** A BCP 47 language tag such as `en` or `pt-BR`, or `auto` to detect the language */
+    language: string;
+    /** The model chosen on the slider; omitted, the chosen or recommended model for captions */
+    modelSku?: string;
+};
 export type StudioTranscriptionTime = {
     den: number;
     num: number;
@@ -23922,6 +24098,43 @@ export function undoLatestAlbumChangeRun({ albumChangeUndoDto }: {
         method: "POST",
         body: albumChangeUndoDto
     })));
+}
+/**
+ * Apply an album cleanup
+ */
+export function applyAlbumCleanup({ albumCleanupApplyDto }: {
+    albumCleanupApplyDto: AlbumCleanupApplyDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumCleanupApplyResponseDto;
+    }>("/albums/cleanup/apply", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: albumCleanupApplyDto
+    })));
+}
+/**
+ * Get the album cleanup scan results
+ */
+export function getAlbumCleanupSnapshot(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumCleanupSnapshotResponseDto;
+    }>("/albums/cleanup/snapshot", {
+        ...opts
+    }));
+}
+/**
+ * Get the album cleanup status
+ */
+export function getAlbumCleanupStatus(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumCleanupStatusResponseDto;
+    }>("/albums/cleanup/status", {
+        ...opts
+    }));
 }
 /**
  * Retrieve the nested album directory
@@ -34829,6 +35042,22 @@ export function createStudioTranscription({ id, studioTranscriptionCreateDto }: 
     })));
 }
 /**
+ * Estimate a Studio clip transcription on Frameleaf Cloud
+ */
+export function estimateStudioTranscription({ id, studioTranscriptionEstimateDto }: {
+    id: string;
+    studioTranscriptionEstimateDto: StudioTranscriptionEstimateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudMlJobEstimateResponseDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/transcriptions/estimate`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioTranscriptionEstimateDto
+    })));
+}
+/**
  * Get a Studio clip transcription
  */
 export function getStudioTranscription({ id, transcriptionId }: {
@@ -38261,6 +38490,15 @@ export enum AlbumChangeRunStatus {
     Done = "done",
     Failed = "failed",
     Undone = "undone"
+}
+export enum AlbumCleanupOperationType {
+    CreateCollection = "createCollection",
+    Move = "move",
+    Rename = "rename",
+    Merge = "merge",
+    Combine = "combine",
+    Heal = "heal",
+    Remove = "remove"
 }
 export enum LibraryItemKind {
     Asset = "asset",

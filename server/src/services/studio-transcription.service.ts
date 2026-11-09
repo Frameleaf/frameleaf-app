@@ -7,6 +7,7 @@ import { OnEvent } from 'src/decorators.js';
 import {
   StudioTranscriptionCreateDto,
   StudioTranscriptionDto,
+  StudioTranscriptionEstimateDto,
   StudioTranscriptionQueuedDto,
   StudioTranscriptionResultSchema,
 } from 'src/dtos/studio-transcription.dto.js';
@@ -32,8 +33,10 @@ import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { StudioTranscriptionRepository } from 'src/repositories/studio-transcription.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
+import { CloudMlJobService } from 'src/services/cloud-ml-job.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioResourceService } from 'src/services/studio-resource.service.js';
+import { CloudMlJobSnapshotSchema, parseCloudMlJobResult } from 'src/utils/cloud-ml-job.js';
 import { selectMlDestination } from 'src/utils/ml-destination.js';
 import { toApproximateNumber } from 'src/utils/rational-time.js';
 import { StudioDestination, isStudioUuid } from 'src/utils/studio-resources.js';
@@ -49,6 +52,8 @@ const LEASE_MS = 120_000;
 const TICK_MS = 5000;
 /** Extraction is quick next to Whisper; it gets the first few percent of the bar. */
 const EXTRACTED_PROGRESS = 5;
+/** Extracting a clip's audio for a Frameleaf Cloud estimate happens inside the request. */
+const ESTIMATE_EXTRACT_MS = 5 * 60 * 1000;
 
 type TranscriptionSnapshot = {
   kind: 'studio-transcription';
@@ -64,6 +69,20 @@ type TranscriptionSnapshot = {
   destinationId: string;
 };
 type Job = { operation: MediaOperation; claimToken: string };
+
+const studioDestinationOf = (kind: MlDestinationKind): StudioDestination => {
+  switch (kind) {
+    case MlDestinationKind.Lan: {
+      return StudioDestination.Lan;
+    }
+    case MlDestinationKind.FrameleafCloud: {
+      return StudioDestination.FrameleafCloud;
+    }
+    default: {
+      return StudioDestination.Local;
+    }
+  }
+};
 
 /**
  * Studio captions (protocol section 15.1, owner decision 2026-10-09): Whisper speech to text for one
@@ -95,6 +114,7 @@ export class StudioTranscriptionService {
     private audio: StudioTranscriptionRepository,
     private machineLearning: MachineLearningRepository,
     private mlDestinations: MlDestinationRepository,
+    private cloudMlJobs: CloudMlJobService,
   ) {
     this.logger.setContext(StudioTranscriptionService.name);
   }
@@ -108,6 +128,9 @@ export class StudioTranscriptionService {
       throw new NotFoundException('Studio project not found');
     }
     const whisperLanguage = whisperLanguageOf(dto.language);
+    if ((await this.mlDestinations.getById(dto.destinationId))?.kind === MlDestinationKind.FrameleafCloud) {
+      throw new BadRequestException('Estimate this job first: Frameleaf Cloud shows its price before anything is sent');
+    }
     const selection = await this.admit(dto.destinationId, null);
     const resolved = await this.source(auth, { projectId, clipId: dto.clipId, destination: selection.kind });
     const window = transcriptionWindow(resolved.clip);
@@ -143,9 +166,64 @@ export class StudioTranscriptionService {
     return { id: operation.id, status: operation.status };
   }
 
+  /**
+   * FL-1304: what captions for this clip would cost on Frameleaf Cloud. The audio is extracted on this
+   * server and only its digest and length are priced; it is sent once the estimate is confirmed with
+   * `POST /cloud/ml/jobs`, whose operation id is read back with `get`.
+   */
+  async estimateCloud(auth: AuthDto, projectId: string, dto: StudioTranscriptionEstimateDto) {
+    if (auth.sharedLink) {
+      throw new NotFoundException('Studio project not found');
+    }
+    const language = whisperLanguageOf(dto.language);
+    const resolved = await this.source(auth, {
+      projectId,
+      clipId: dto.clipId,
+      destination: MlDestinationKind.FrameleafCloud,
+    });
+    const signal = AbortSignal.timeout(ESTIMATE_EXTRACT_MS);
+    if ((await this.media.probe(resolved.path, { countFrames: false, signal })).audioStreams.length === 0) {
+      throw new BadRequestException('The clip has no sound to transcribe');
+    }
+    const workDir = join(
+      StorageCore.getFolderLocation(StorageFolder.Exports, auth.user.id),
+      'studio-transcription',
+      `estimate-${randomUUID()}`,
+    );
+    const audioPath = join(workDir, 'audio.wav');
+    this.storage.mkdirSync(workDir);
+    try {
+      await this.audio.extractAudio(resolved.path, audioPath, transcriptionWindow(resolved.clip), signal);
+      const { format } = await this.media.probe(audioPath, { countFrames: false, signal });
+      return await this.cloudMlJobs.estimateCaptions(auth, {
+        destinationId: dto.destinationId,
+        modelSku: dto.modelSku,
+        language,
+        audioPath,
+        workDir,
+        durationSeconds: format.duration,
+        assetId: resolved.assetId,
+        revisionId: resolved.revisionId,
+        studio: {
+          projectId,
+          revision: resolved.revision,
+          clipId: dto.clipId,
+          language: dto.language,
+          clip: resolved.clip,
+        },
+      });
+    } catch (error) {
+      await this.storage.unlinkDir(workDir, { recursive: true, force: true }).catch(() => {});
+      throw error;
+    }
+  }
+
   /** The job and, once it completed, its cues. Owner only; anyone else is told it does not exist. */
   async get(auth: AuthDto, projectId: string, id: string): Promise<StudioTranscriptionDto> {
     const operation = auth.sharedLink ? undefined : await this.operations.getForOwner(id, auth.user.id);
+    if (operation?.kind === MediaOperationKind.CloudMlJob) {
+      return this.getCloud(auth, projectId, operation);
+    }
     if (
       !operation ||
       operation.kind !== MediaOperationKind.StudioTranscription ||
@@ -172,6 +250,31 @@ export class StudioTranscriptionService {
       progress: operation.progress,
       error: operation.error ?? null,
       result: parsed?.success ? parsed.data : null,
+    };
+  }
+
+  private async getCloud(auth: AuthDto, projectId: string, operation: MediaOperation): Promise<StudioTranscriptionDto> {
+    const parsed = CloudMlJobSnapshotSchema.safeParse(operation.snapshot);
+    if (!parsed.success || parsed.data.studio?.projectId !== projectId) {
+      throw new NotFoundException('Transcription not found');
+    }
+    await this.studio.requireOwnedProject(auth, projectId, 'Only the project owner can read its transcriptions');
+    const { studio, destinationId } = parsed.data;
+    const result =
+      operation.status === MediaOperationStatus.Completed
+        ? StudioTranscriptionResultSchema.safeParse(parseCloudMlJobResult(operation.result).transcript)
+        : undefined;
+    return {
+      id: operation.id,
+      projectId,
+      clipId: studio.clipId,
+      revision: studio.revision,
+      language: studio.language,
+      destinationId,
+      status: operation.status,
+      progress: operation.progress,
+      error: operation.error ?? null,
+      result: result?.success ? result.data : null,
     };
   }
 
@@ -371,14 +474,10 @@ export class StudioTranscriptionService {
   }
 
   /**
-   * Admit Studio AI against exactly the named destination. Only this server's own ML container or a
-   * home-network worker runs Whisper; Frameleaf Cloud transcription is not offered here.
+   * Admit Studio AI against exactly the named destination, for work this worker runs itself. Frameleaf
+   * Cloud captions never reach it: they are estimated, confirmed and run as Cloud jobs (`estimateCloud`).
    */
-  private async admit(destinationId: string, jobId: string | null): Promise<MlSelection> {
-    const destination = await this.mlDestinations.getById(destinationId);
-    if (destination?.kind === MlDestinationKind.FrameleafCloud) {
-      throw new BadRequestException('Captions run on this server or a home-network worker, not on Frameleaf Cloud');
-    }
+  private admit(destinationId: string, jobId: string | null): Promise<MlSelection> {
     return selectMlDestination(
       { mlDestinationRepository: this.mlDestinations, machineLearningRepository: this.machineLearning },
       {
@@ -420,7 +519,9 @@ export class StudioTranscriptionService {
       graph: authorized.envelope.graph,
       imports: await this.projects.listImportDeclarations(input.projectId),
       generated: await this.projects.listGeneratedResources(input.projectId),
-      destination: input.destination === MlDestinationKind.Lan ? StudioDestination.Lan : StudioDestination.Local,
+      destination: studioDestinationOf(input.destination),
+      // Asks only whether this source may leave: nothing does until the estimate is confirmed with consent.
+      cloudConsent: input.destination === MlDestinationKind.FrameleafCloud,
       backgroundRunner: input.backgroundRunner ?? false,
     });
     const entry = resolution.manifest.entries.find((item) => item.key === clip.sourceKey);

@@ -441,6 +441,15 @@ export const healDates = (photos: HealPhoto[]): HealResult => {
   const first = serialDay(inWindow[0].localDateTime);
   const last = serialDay(inWindow.at(-1)!.localDateTime);
   const middle = inWindow[inWindow.length >> 1];
+  const families = new Map<string, (HealPhoto & { number: number })[]>();
+  for (const item of inWindow) {
+    const sequence = sequenceOf(item.fileName);
+    if (sequence) {
+      const family = families.get(sequence.stem) ?? [];
+      family.push({ ...item, number: sequence.number });
+      families.set(sequence.stem, family);
+    }
+  }
   const suggestions = photos
     .filter(({ camera, dateSet, mine, localDateTime }) => {
       const day = serialDay(localDateTime);
@@ -449,12 +458,7 @@ export const healDates = (photos: HealPhoto[]): HealResult => {
     .map((photo): HealSuggestion => {
       const base = { assetId: photo.id, fileName: photo.fileName, shownDay: localDay(photo.localDateTime) };
       const place = sequenceOf(photo.fileName);
-      const family = place
-        ? inWindow.flatMap((item) => {
-            const sequence = sequenceOf(item.fileName);
-            return sequence?.stem === place.stem ? [{ ...item, number: sequence.number }] : [];
-          })
-        : [];
+      const family = place ? (families.get(place.stem) ?? []) : [];
       const before = family.filter(({ number }) => number < place!.number).sort((a, b) => b.number - a.number)[0];
       const after = family.filter(({ number }) => number > place!.number).sort((a, b) => a.number - b.number)[0];
       if (before && after && Math.abs(serialDay(after.localDateTime) - serialDay(before.localDateTime)) <= 1) {

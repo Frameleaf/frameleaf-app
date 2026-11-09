@@ -319,14 +319,20 @@
     gap: 12px;
     margin-block-end: var(--fl-space-3);
   }
+  /* One column the tile's own width, so a long tag wraps instead of pushing the cover past the tile. */
   .tile {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 4px;
     align-content: start;
     justify-items: start;
     padding: 8px;
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-card);
+  }
+  .tile .tag {
+    max-width: 100%;
+    white-space: normal;
   }
   .tile.keeps {
     border-color: var(--fl-accent);

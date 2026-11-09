@@ -1109,6 +1109,9 @@
   "passwordLogin.enabled": {
     "type": "boolean"
   },
+  "preferences.albums.cleanupBannerDismissed": {
+    "type": "boolean"
+  },
   "preferences.albums.defaultAssetOrder": {
     "type": "string",
     "enum": [

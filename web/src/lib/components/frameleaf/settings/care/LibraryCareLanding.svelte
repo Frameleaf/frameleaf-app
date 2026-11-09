@@ -31,11 +31,16 @@
   import { unusedFilesAccess } from '$lib/frameleaf/unused-files.svelte';
   import { libraryCareToolsFor, utilitiesUrl, type UtilityId } from '$lib/frameleaf/utilities';
   import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { Route } from '$lib/route';
   import { locale } from '$lib/stores/preferences.store';
   import { handleError } from '$lib/utils/handle-error';
   import {
+    AlbumChangeRunKind,
     AnalyticsRange,
     createJob,
+    getAlbumCleanupStatus,
+    getLatestAlbumChangeRun,
+    undoLatestAlbumChangeRun,
     getAnalyticsReport,
     getAssetStatistics,
     getIdenticalFilesStatus,
@@ -48,6 +53,8 @@
     ManualJobName,
     QueueName,
     updateQueue,
+    type AlbumChangeRunResponseDto,
+    type AlbumCleanupStatusResponseDto,
     type IdenticalFilesStatusDto,
     type IntegrityCheckRunsResponseDto,
     type IntegrityOverviewResponseDto,
@@ -56,6 +63,7 @@
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import {
+    mdiAutoFix,
     mdiChevronRight,
     mdiClockOutline,
     mdiContentCopy,
@@ -174,6 +182,44 @@
       current = false;
     };
   });
+
+  /** FL-1300: Magic Albums cleanup lives here once the banner on Albums is gone. */
+  let cleanup = $state<AlbumCleanupStatusResponseDto>();
+  let lastRun = $state<AlbumChangeRunResponseDto | null>(null);
+  let undoingCleanup = $state(false);
+
+  const readCleanup = async () => {
+    try {
+      const [status, latest] = await Promise.all([getAlbumCleanupStatus(), getLatestAlbumChangeRun()]);
+      cleanup = status;
+      lastRun = latest?.run ?? null;
+    } catch {
+      // A card that can't be worked out is just not filled in.
+      cleanup = undefined;
+      lastRun = null;
+    }
+  };
+  $effect(() => {
+    if (authManager.authenticated && !authManager.isSharedLink) {
+      void readCleanup();
+    }
+  });
+  const lastCleanup = $derived(lastRun?.kind === AlbumChangeRunKind.Cleanup ? lastRun : null);
+  const undoCleanup = async () => {
+    undoingCleanup = true;
+    try {
+      const { skipped } = await undoLatestAlbumChangeRun({ albumChangeUndoDto: { runId: lastCleanup?.id } });
+      said =
+        skipped.length > 0
+          ? $t('frameleaf_album_cleanup_care_undone_skipped', { values: { count: skipped.length } })
+          : $t('frameleaf_album_cleanup_care_undone');
+      await readCleanup();
+    } catch (error) {
+      handleError(error, $t('frameleaf_album_cleanup_care_undo_failed'));
+    } finally {
+      undoingCleanup = false;
+    }
+  };
 
   const queues = $derived(summary?.queues);
   // FL-520: one count per kind, from one source, for an administrator; a member's own queues otherwise.
@@ -572,6 +618,34 @@
           </Button>
         {/snippet}
       </Item>
+      <Item
+        icon={mdiAutoFix}
+        name={$t('frameleaf_album_cleanup_care_name')}
+        detail={lastCleanup
+          ? $t('frameleaf_album_cleanup_care_detail_done', {
+              values: { when: when(new Date(lastCleanup.createdAt)) },
+            })
+          : $t('frameleaf_album_cleanup_care_detail')}
+        tone={cleanup?.ready && cleanup.suggestionCount > 0 ? 'good' : 'off'}
+        status={cleanup
+          ? cleanup.ready
+            ? cleanup.suggestionCount > 0
+              ? $t('frameleaf_album_cleanup_care_suggestions', { values: { count: cleanup.suggestionCount } })
+              : $t('frameleaf_album_cleanup_care_no_suggestions')
+            : $t('frameleaf_album_cleanup_care_scanning')
+          : undefined}
+      >
+        {#snippet action()}
+          <span class="cleanup-actions">
+            {#if lastCleanup?.canUndo}
+              <Button disabled={undoingCleanup} onclick={undoCleanup}>{$t('frameleaf_album_cleanup_care_undo')}</Button>
+            {/if}
+            <Button label={openLabel('frameleaf_album_cleanup_care_name')} onclick={() => goto(Route.albumCleanup())}>
+              {$t('frameleaf_carehome_open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden />
+            </Button>
+          </span>
+        {/snippet}
+      </Item>
       {#if isAdmin}
         <Item
           icon={mdiImageSearchOutline}
@@ -616,3 +690,12 @@
     </Section>
   {/if}
 </KitPage>
+
+<style>
+  .cleanup-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--fl-space-2);
+    justify-content: flex-end;
+  }
+</style>

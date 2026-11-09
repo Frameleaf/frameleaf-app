@@ -34,6 +34,8 @@ describe('public queue job compatibility (FL-283)', () => {
       JobName.LandmarkInfer,
       JobName.AlbumSuggestionAutoAdd,
       JobName.AlbumSuggestionOutfit,
+      JobName.AlbumCleanupScan,
+      JobName.AlbumCleanupApply,
       JobName.LockedSeal,
       JobName.LockedUnseal,
       JobName.LockedRewrap,

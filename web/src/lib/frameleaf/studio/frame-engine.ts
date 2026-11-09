@@ -18,6 +18,7 @@
  *   frame, which ends every AudioContext, GPU device, worker and object URL it created.
  */
 import { isStudioCaptionTranslationRequest } from './caption-languages';
+import type { StudioCloudCaptionRequest } from './cloud-captions';
 import type { StudioCommandEnvelope } from './commands';
 import { registerStudioEngine, StudioEngineNotBuiltError } from './engine-loader';
 import {
@@ -252,6 +253,18 @@ const serviceCalls: ServiceHandlers = {
     services.readCutout && STUDIO_FRAME_SERVICE_SCHEMA_V9.readCutout(args)
       ? services.readCutout(args[0])
       : Promise.reject(new Error('CUTOUT_UNAVAILABLE')),
+  startCloudCaptions: (services, args) =>
+    services.startCloudCaptions && STUDIO_FRAME_SERVICE_SCHEMA_V9.startCloudCaptions(args)
+      ? services.startCloudCaptions(args[0] as StudioCloudCaptionRequest)
+      : Promise.reject(new Error('CLOUD_CAPTIONS_UNAVAILABLE')),
+  readCloudCaptions: (services, args) =>
+    services.readCloudCaptions && STUDIO_FRAME_SERVICE_SCHEMA_V9.readCloudCaptions(args)
+      ? services.readCloudCaptions(args[0] as string)
+      : Promise.reject(new Error('CLOUD_CAPTIONS_UNAVAILABLE')),
+  pendingCloudCaptions: (services, args) =>
+    services.pendingCloudCaptions && STUDIO_FRAME_SERVICE_SCHEMA_V9.pendingCloudCaptions(args)
+      ? services.pendingCloudCaptions()
+      : Promise.resolve([]),
   submitCommands: (services, [envelopes]) =>
     services.submitCommands(Array.isArray(envelopes) ? (envelopes as StudioCommandEnvelope[]) : []),
   stageDraft: (services, [graph, commandIds, baseRevision, graphVersion]) => {

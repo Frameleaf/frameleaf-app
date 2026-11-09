@@ -13,7 +13,8 @@ import {
 } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import express, { type Request, type Response } from 'express';
-import { fstatSync } from 'node:fs';
+import { existsSync, fstatSync } from 'node:fs';
+import { setTimeout as delay } from 'node:timers/promises';
 import { createNativeService } from './runtime/native-service.js';
 import { chmod, mkdir, readFile, realpath, rm, stat, statfs } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
@@ -25,6 +26,7 @@ import { Store } from './store.js';
 import { DesktopGrants } from './desktop-grants.js';
 import { desktopApi } from './desktop-api.js';
 import { Docker, command } from './docker.js';
+import { adoptOwnMounts, tidyLocations, toHost } from './host-paths.js';
 import { Security, trustedProxyList } from './security.js';
 import { Backups } from './backups.js';
 import { Releases } from './releases.js';
@@ -42,8 +44,24 @@ import { sharePortWithRedirect } from './http-redirect.js';
 import { log, print, renderBanner, requestLog } from './banner.js';
 import { connectionChecks, redactPaths, redactionRoots, renderReport } from './troubleshooting.js';
 
-const directory = process.env.MANAGER_DATA;
 const runtime = process.env.MANAGER_RUNTIME ?? 'docker';
+// Docker only: these are Linux paths, and a native Windows path has a colon of its own.
+if (runtime === 'docker') tidyLocations();
+const docker = new Docker();
+// Before any location is read: a folder may be mapped to a different path inside this container.
+// Failing here beats running with untranslated paths; the container's restart policy tries again.
+if (runtime === 'docker' && process.env.MANAGER_DATA && existsSync('/var/run/docker.sock')) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      adoptOwnMounts(await docker.inventory(), process.env.MANAGER_DATA);
+      break;
+    } catch (error) {
+      if (attempt === 5) throw error;
+      await delay(2000);
+    }
+  }
+}
+const directory = process.env.MANAGER_DATA;
 let acceleration: ReturnType<typeof detectAcceleration> | undefined;
 // Docker: optional; without it Manager answers on any IP, localhost, .local or single-label address.
 const origin = process.env.MANAGER_ORIGIN || undefined;
@@ -67,7 +85,6 @@ if (!backupRoot || backupRoot !== resolve(backupRoot))
 const native = runtime === 'native'
   ? await createNativeService(store, process.stdin, origin!, join(backupRoot, 'frameleaf-database'))
   : null;
-const docker = new Docker();
 // Proxies named in MANAGER_TRUSTED_PROXIES may forward the client address; a loopback-only publish (launch.sh
 // default) means a connection from the bridge gateway can only be this host. Otherwise a gateway-sourced
 // claim is refused (review L1): Docker's userland proxy and NAS portal proxies hide the real client.
@@ -140,6 +157,9 @@ async function troubleshootingScope() {
       backupRoot!,
       directory!,
       installation?.databaseRoot ?? '',
+      ...[...containers, ...(self ? [self] : [])].flatMap((c) =>
+        (c.Mounts ?? []).flatMap((m) => (toHost(m.Source) !== m.Source ? [toHost(m.Source)] : [])),
+      ),
     ],
     [...containers, ...(self ? [self] : [])].flatMap((c) => (c.Mounts ?? []).flatMap((m) => [m.Source, m.Destination])),
   );

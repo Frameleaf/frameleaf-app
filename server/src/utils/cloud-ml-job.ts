@@ -1,4 +1,5 @@
 import z from 'zod';
+import type { TranscriptionClip } from 'src/utils/studio-transcription.js';
 import { MediaOperationKind, MediaOperationStatus, MlWorkload } from 'src/enum.js';
 import {
   CLOUD_JOB_STATUSES,
@@ -81,7 +82,7 @@ export const SMOOTH_MOTION_FACTORS = [2, 4, 8] as const;
 export type SmoothMotionFactor = (typeof SMOOTH_MOTION_FACTORS)[number];
 
 /** The cloud workloads a job of this kind is sent as. */
-export type CloudMlJobWorkload = 'restoration' | 'upscale' | 'interpolation';
+export type CloudMlJobWorkload = 'restoration' | 'upscale' | 'interpolation' | 'transcription';
 
 /**
  * The stages Activity shows (prototype `activity-feed.mjs`): Queued → Starting (cold start) → Running
@@ -156,18 +157,32 @@ export const CloudMlJobUpscaleSchema = z.object({
 });
 export type CloudMlJobUpscale = z.infer<typeof CloudMlJobUpscaleSchema>;
 
+/** FL-1304: what a Studio captions job transcribes, and how its cues map back onto the sequence. */
+export const CloudMlJobStudioCaptionsSchema = z.object({
+  projectId: z.string().min(1),
+  revision: z.int().min(1),
+  clipId: z.string().min(1),
+  /** As asked: `auto` or a BCP 47 tag. */
+  language: z.string().min(1),
+  clip: z.custom<TranscriptionClip>(),
+});
+export type CloudMlJobStudioCaptions = z.infer<typeof CloudMlJobStudioCaptionsSchema>;
+
 /** The immutable binding of a `cloud_ml_job` operation. Written once at confirmation. */
 export const CloudMlJobSnapshotSchema = z.object({
   version: z.literal(1),
-  purpose: z.enum(CLOUD_ML_JOB_PURPOSES),
+  // not in CLOUD_ML_JOB_PURPOSES: that enum reaches Activity, which the native apps decode strictly
+  purpose: z.enum([...CLOUD_ML_JOB_PURPOSES, 'transcription']),
   stage: z.enum(CLOUD_ML_JOB_STAGES),
   restorationId: z.string().min(1),
-  assetId: z.string().min(1),
+  /** Empty for a Studio clip whose source is not a library asset. */
+  assetId: z.string(),
   ownerId: z.string().min(1),
-  sourceChecksumHex: z.string().min(1),
-  sourceType: z.enum(['image', 'video']),
+  /** Empty for Studio captions: the extracted audio is what the estimate binds. */
+  sourceChecksumHex: z.string(),
+  sourceType: z.enum(['image', 'video', 'audio']),
   destinationId: z.string().min(1),
-  workload: z.enum(['restoration', 'upscale', 'interpolation']),
+  workload: z.enum(['restoration', 'upscale', 'interpolation', 'transcription']),
   appWorkload: z.enum(MlWorkload),
   model: z.object({ sku: z.string().min(1), rev: z.string().min(1), label: z.string().min(1) }),
   request: z.record(z.string(), z.unknown()),
@@ -184,6 +199,8 @@ export const CloudMlJobSnapshotSchema = z.object({
   estimateId: z.string().min(1).optional(),
   /** FC-46: a photo upscale's quoted factor (absent on older jobs and on video work). */
   upscale: CloudMlJobUpscaleSchema.optional(),
+  /** FL-1304: set on a Studio captions job, whose `restorationId` is the Studio revision. */
+  studio: CloudMlJobStudioCaptionsSchema.optional(),
   consent: z.object({
     version: z.string().min(1),
     textSha256: z.string().nullable(),
@@ -263,12 +280,12 @@ export type CloudMlJobEstimateRecord = {
   createdAt: string;
   /** The sealed estimate's own expiry: after it, the job is estimated again, never sent with this one. */
   expiresAt: string;
-  purpose: CloudMlJobPurpose;
+  purpose: CloudMlJobSnapshot['purpose'];
   stage: CloudMlJobStage;
   assetId: string;
   restorationId: string | null;
   sourceChecksumHex: string;
-  sourceType: 'image' | 'video';
+  sourceType: CloudMlJobSnapshot['sourceType'];
   destinationId: string;
   workload: CloudMlJobWorkload;
   appWorkload: MlWorkload;
@@ -288,6 +305,8 @@ export type CloudMlJobEstimateRecord = {
   operationId: string | null;
   /** FC-46: a photo upscale's quoted factor; absent on video work. */
   upscale?: CloudMlJobUpscale;
+  /** FL-1304: set on an estimate of Studio captions. */
+  studio?: CloudMlJobStudioCaptions;
 };
 
 /** A kept, job-bound upgrade quote; attempted prices reserve spending until the job reports them. */
@@ -328,6 +347,8 @@ export const CloudMlJobResultSchema = z.object({
   transientFailures: z.int().min(0).default(0),
   /** Acknowledgements of a finished job that failed, so the cleanup pass tries the least-tried first. */
   ackAttempts: z.int().min(0).default(0),
+  /** FL-1304: a Studio captions job's cues, in the shape `StudioTranscriptionResultSchema` reads. */
+  transcript: z.record(z.string(), z.unknown()).nullable().default(null),
   /** A job cancelled before anything was sent had its version and files put right by the cleanup pass. */
   reconciled: z.boolean().default(false),
   /**
@@ -357,6 +378,7 @@ export const emptyCloudMlJobResult = (): CloudMlJobResult => ({
   ackAttempts: 0,
   reconciled: false,
   upscaleScale: null,
+  transcript: null,
 });
 
 /** The result as stored, or a fresh one when there is none or it cannot be read. */
@@ -581,7 +603,8 @@ export const cloudMlJobActivity = (operation: {
   const { purpose, stage, model, approved } = snapshot.data;
   const result = parseCloudMlJobResult(operation.result);
   return {
-    purpose,
+    // ponytail: Activity shows the job's own label; a new value here would break strict native decoders
+    purpose: purpose === 'transcription' ? 'restoration' : purpose,
     stage,
     activityStage: cloudMlJobActivityStage(operation.status as MediaOperationStatus, result),
     model: model.label,
@@ -712,4 +735,5 @@ export const CLOUD_ML_JOB_INPUT_TYPES: Readonly<Record<CloudMlJobWorkload, reado
   restoration: ['video/mp4', 'video/webm', 'video/quicktime'],
   interpolation: ['video/mp4', 'video/webm', 'video/quicktime'],
   upscale: ['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/heic', 'image/heif'],
+  transcription: ['audio/wav'],
 };

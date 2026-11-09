@@ -1,0 +1,338 @@
+diff --git a/src/features/media-library/components/transcribe-dialog.test.tsx b/src/features/media-library/components/transcribe-dialog.test.tsx
+index 6faa3ed..94dc709 100644
+--- a/src/features/media-library/components/transcribe-dialog.test.tsx
++++ b/src/features/media-library/components/transcribe-dialog.test.tsx
+@@ -342,6 +342,49 @@ describe('TranscribeDialog', () => {
+     })
+   })
+ 
++  it('keeps this device only when the host cannot run Frameleaf Cloud', () => {
++    render(
++      <TranscribeDialog
++        open
++        onOpenChange={vi.fn()}
++        fileName="clip.wav"
++        hasTranscript={false}
++        isRunning={false}
++        progressPercent={null}
++        progressLabel="Idle"
++        onStart={vi.fn()}
++        onCancel={vi.fn()}
++      />,
++    )
++    expect(screen.queryByRole('option', { name: 'Frameleaf Cloud' })).not.toBeInTheDocument()
++  })
++
++  it('prices on Frameleaf Cloud instead of starting, with no on-device model to choose', () => {
++    const onStart = vi.fn()
++    const onStartCloud = vi.fn()
++    render(
++      <TranscribeDialog
++        open
++        onOpenChange={vi.fn()}
++        fileName="clip.wav"
++        hasTranscript={false}
++        isRunning={false}
++        progressPercent={null}
++        progressLabel="Idle"
++        onStart={onStart}
++        onCancel={vi.fn()}
++        onStartCloud={onStartCloud}
++      />,
++    )
++    expect(screen.getByRole('button', { name: 'Start' })).toBeInTheDocument()
++    fireEvent.change(screen.getAllByRole('combobox')[0]!, { target: { value: 'cloud' } })
++    expect(screen.queryByRole('option', { name: 'Whisper Tiny' })).not.toBeInTheDocument()
++    expect(screen.queryByRole('button', { name: 'Start' })).not.toBeInTheDocument()
++    fireEvent.click(screen.getByRole('button', { name: 'See the price' }))
++    expect(onStartCloud).toHaveBeenCalledExactlyOnceWith('')
++    expect(onStart).not.toHaveBeenCalled()
++  })
++
+   it('clears a Whisper-only language when switching to Parakeet', () => {
+     settingsStoreState.defaultWhisperLanguage = 'zh'
+ 
+diff --git a/src/features/media-library/components/transcribe-dialog.tsx b/src/features/media-library/components/transcribe-dialog.tsx
+index 657cdc2..379134e 100644
+--- a/src/features/media-library/components/transcribe-dialog.tsx
++++ b/src/features/media-library/components/transcribe-dialog.tsx
+@@ -60,6 +60,8 @@ interface TranscribeDialogProps {
+   errorMessage?: string | null
+   onStart: (values: TranscribeDialogValues) => void
+   onCancel: () => void
++  /** Frameleaf FL-1304: offers Run on → Frameleaf Cloud. `language` is empty for auto-detect. */
++  onStartCloud?: (language: string) => void
+ }
+ 
+ export function TranscribeDialog({
+@@ -75,6 +77,7 @@ export function TranscribeDialog({
+   errorMessage,
+   onStart,
+   onCancel,
++  onStartCloud,
+ }: TranscribeDialogProps) {
+   const { t } = useTranslation()
+   const defaultModel = useSettingsStore((s) => s.defaultWhisperModel)
+@@ -94,9 +97,12 @@ export function TranscribeDialog({
+   const [languageValue, setLanguageValue] = useState<string>(() =>
+     getWhisperLanguageSelectValue(defaultLanguage),
+   )
++  const [runOn, setRunOn] = useState<'device' | 'cloud'>('device')
++  const onCloud = runOn === 'cloud' && !!onStartCloud
+ 
+   useEffect(() => {
+     if (!open) return
++    setRunOn('device')
+     const nextModel = normalizeSelectableWhisperModel(defaultModel)
+     setModel(nextModel)
+     setQuantization(defaultQuantization)
+@@ -177,6 +183,28 @@ export function TranscribeDialog({
+         </DialogHeader>
+ 
+         <div className="space-y-3">
++          {onStartCloud && (
++            <div className="space-y-1.5">
++              <Label htmlFor="transcribe-run-on" className="text-sm">
++                {t('transcript.cloud.runOn')}
++              </Label>
++              <Select
++                value={runOn}
++                onValueChange={(value) => setRunOn(value as 'device' | 'cloud')}
++                disabled={isRunning}
++              >
++                <SelectTrigger id="transcribe-run-on">
++                  <SelectValue />
++                </SelectTrigger>
++                <SelectContent>
++                  <SelectItem value="device">{t('transcript.cloud.device')}</SelectItem>
++                  <SelectItem value="cloud">{t('transcript.cloud.cloud')}</SelectItem>
++                </SelectContent>
++              </Select>
++            </div>
++          )}
++
++          {!onCloud && (
+           <div className="space-y-1.5">
+             <Label htmlFor="transcribe-model" className="text-sm">
+               {t('media.transcribe.model')}
+@@ -194,8 +222,9 @@ export function TranscribeDialog({
+               </SelectContent>
+             </Select>
+           </div>
++          )}
+ 
+-          {!isParakeetModel(model) && (
++          {!onCloud && !isParakeetModel(model) && (
+             <div className="space-y-1.5">
+               <Label htmlFor="transcribe-quantization" className="text-sm">
+                 {t('media.transcribe.quantization')}
+@@ -219,7 +248,7 @@ export function TranscribeDialog({
+             </div>
+           )}
+ 
+-          {isParakeetModel(model) ? (
++          {!onCloud && isParakeetModel(model) ? (
+             <div className="space-y-1.5">
+               <Label className="text-sm">{t('media.transcribe.language')}</Label>
+               <div className="rounded-md border border-border bg-secondary/35 px-3 py-2.5">
+@@ -255,6 +284,12 @@ export function TranscribeDialog({
+             </div>
+           )}
+ 
++          {onCloud && (
++            <p className="text-xs leading-relaxed text-muted-foreground">
++              {t('transcript.cloud.note')}
++            </p>
++          )}
++
+           {errorMessage && !isRunning && (
+             <div
+               role="alert"
+@@ -315,7 +350,13 @@ export function TranscribeDialog({
+               <Button variant="outline" onClick={() => handleOpenChange(false)}>
+                 {t('common.cancel')}
+               </Button>
+-              <Button onClick={handleStart}>{t('media.transcribe.start')}</Button>
++              {onCloud ? (
++                <Button onClick={() => onStartCloud?.(getWhisperLanguageSettingValue(languageValue))}>
++                  {t('transcript.cloud.seePrice')}
++                </Button>
++              ) : (
++                <Button onClick={handleStart}>{t('media.transcribe.start')}</Button>
++              )}
+             </>
+           )}
+         </DialogFooter>
+diff --git a/src/features/media-library/services/media-transcription-service.ts b/src/features/media-library/services/media-transcription-service.ts
+index 12b0eaa..e4f84b2 100644
+--- a/src/features/media-library/services/media-transcription-service.ts
++++ b/src/features/media-library/services/media-transcription-service.ts
+@@ -74,6 +74,8 @@ interface InsertTranscriptAsCaptionsOptions {
+   clipIds?: readonly string[]
+   replaceExisting?: boolean
+   selectUpdatedClips?: boolean
++  /** Frameleaf FL-1304: lines from elsewhere (source seconds), used instead of the media's stored transcript. */
++  segments?: MediaTranscriptSegment[]
+ }
+ 
+ interface InsertTranscriptAsCaptionsResult {
+@@ -824,7 +826,7 @@ class MediaTranscriptionService {
+     mediaId: string,
+     options: InsertTranscriptAsCaptionsOptions = {},
+   ): Promise<InsertTranscriptAsCaptionsResult> {
+-    const transcript = await getTranscript(mediaId)
++    const transcript = options.segments ? { segments: options.segments } : await getTranscript(mediaId)
+     if (!transcript) {
+       throw new Error('No transcript found for this media item')
+     }
+diff --git a/src/features/media-library/utils/caption-items.ts b/src/features/media-library/utils/caption-items.ts
+index 7548a70..da6ae3c 100644
+--- a/src/features/media-library/utils/caption-items.ts
++++ b/src/features/media-library/utils/caption-items.ts
+@@ -162,7 +162,7 @@ function sourceFramesToTimelineFramesCeil(
+   return Math.max(0, Math.ceil((sourceSeconds * timelineFps) / speed))
+ }
+ 
+-function getClipSourceBounds(
++export function getClipSourceBounds(
+   clip: AudioItem | VideoItem,
+   timelineFps: number,
+ ): {
+diff --git a/src/features/timeline/components/timeline-item/clip-floating-layer.tsx b/src/features/timeline/components/timeline-item/clip-floating-layer.tsx
+index 18f0bf6..b9b9b26 100644
+--- a/src/features/timeline/components/timeline-item/clip-floating-layer.tsx
++++ b/src/features/timeline/components/timeline-item/clip-floating-layer.tsx
+@@ -34,6 +34,7 @@ interface ClipFloatingLayerProps {
+   left: number
+   width: number
+   pointerHint: TimelineItemPointerHint | null
++  itemId: string
+   itemMediaId: string | undefined
+   hasGeneratedCaptions: boolean
+   caption: CaptionDialogState
+@@ -66,6 +67,7 @@ export function ClipFloatingLayer({
+   left,
+   width,
+   pointerHint,
++  itemId,
+   itemMediaId,
+   hasGeneratedCaptions,
+   caption,
+@@ -118,6 +120,7 @@ export function ClipFloatingLayer({
+ 
+       <DragBlockedTooltip hint={pointerHint} />
+       <TranscribeDialogController
++        itemId={itemId}
+         itemMediaId={itemMediaId}
+         hasGeneratedCaptions={hasGeneratedCaptions}
+         caption={caption}
+diff --git a/src/features/timeline/components/timeline-item/index.tsx b/src/features/timeline/components/timeline-item/index.tsx
+index 9d883da..4241000 100644
+--- a/src/features/timeline/components/timeline-item/index.tsx
++++ b/src/features/timeline/components/timeline-item/index.tsx
+@@ -1295,6 +1295,7 @@ export const TimelineItem = memo(function TimelineItem({
+         width={width}
+         pointerHint={pointerHint}
+         itemMediaId={item.mediaId}
++        itemId={item.id}
+         hasGeneratedCaptions={hasGeneratedCaptions}
+         caption={caption}
+         onGenerateCaption={handleCaptionsFromDialog}
+diff --git a/src/features/timeline/components/timeline-item/transcribe-dialog-controller.tsx b/src/features/timeline/components/timeline-item/transcribe-dialog-controller.tsx
+index 58f6f97..864e03a 100644
+--- a/src/features/timeline/components/timeline-item/transcribe-dialog-controller.tsx
++++ b/src/features/timeline/components/timeline-item/transcribe-dialog-controller.tsx
+@@ -13,9 +13,11 @@ import {
+   isTranscriptionOutOfMemoryError,
+   TRANSCRIPTION_OOM_HINT,
+ } from '@/shared/utils/transcription-cancellation'
++import { getCloudCaptionHost } from '@/shared/state/cloud-caption-host'
+ import type { CaptionDialogState } from './use-caption-dialog-state'
+ 
+ interface TranscribeDialogControllerProps {
++  itemId: string
+   itemMediaId: string | undefined
+   hasGeneratedCaptions: boolean
+   caption: CaptionDialogState
+@@ -27,6 +29,7 @@ interface TranscribeDialogControllerProps {
+ }
+ 
+ export const TranscribeDialogController = memo(function TranscribeDialogController({
++  itemId,
+   itemMediaId,
+   hasGeneratedCaptions,
+   caption,
+@@ -49,6 +52,7 @@ export const TranscribeDialogController = memo(function TranscribeDialogControll
+     markCaptionEnded,
+     markCaptionStopRequested,
+   } = caption
++  const cloudHost = getCloudCaptionHost()
+ 
+   return (
+     <TranscribeDialog
+@@ -74,6 +78,14 @@ export const TranscribeDialogController = memo(function TranscribeDialogControll
+         transcriptProgress ? getTranscriptionProgressDetail(transcriptProgress) : null
+       }
+       errorMessage={dialogError}
++      onStartCloud={
++        cloudHost
++          ? (language) => {
++              setDialogOpen(false)
++              cloudHost.start({ clipId: itemId, language })
++            }
++          : undefined
++      }
+       onStart={(values: TranscribeDialogValues) => {
+         markCaptionStarted()
+         setDialogError(null)
+diff --git a/src/i18n/locales/partials/en/transcript.json b/src/i18n/locales/partials/en/transcript.json
+index 31743c2..c6bf3e7 100644
+--- a/src/i18n/locales/partials/en/transcript.json
++++ b/src/i18n/locales/partials/en/transcript.json
+@@ -1,5 +1,19 @@
+ {
+   "transcript": {
++    "cloud": {
++      "runOn": "Run on",
++      "device": "This device",
++      "cloud": "Frameleaf Cloud",
++      "seePrice": "See the price",
++      "note": "Nothing is sent until you confirm the price. Frameleaf Cloud captions one clip at a time, in whole lines, so word-by-word styles can't follow each word.",
++      "added": "Captions added to {{name}}.",
++      "readyTitle": "Captions for {{name}} are ready",
++      "readyBody": "New lines: {{lines}}. Lines already on this clip: {{existing}}. Lines on other clips stay as they are.",
++      "replace": "Replace those lines",
++      "keep": "Keep mine",
++      "failed": "Frameleaf Cloud couldn't caption {{name}}.",
++      "gone": "Captions for {{name}} are ready, but that clip is no longer on the timeline."
++    },
+     "sourceAnalyzed": "Full source analyzed",
+     "detectedRange": "Voice detected from {{start}} to {{end}}. Silent and music-only sections are omitted.",
+     "title": "Transcript",
+diff --git a/src/shared/state/cloud-caption-host.ts b/src/shared/state/cloud-caption-host.ts
+new file mode 100644
+index 0000000..5e87941
+--- /dev/null
++++ b/src/shared/state/cloud-caption-host.ts
+@@ -0,0 +1,21 @@
++/**
++ * Frameleaf (FL-1304): captions on Frameleaf Cloud.
++ *
++ * The price, the confirmation and the job all belong to the host. The adapter registers this when the
++ * editor mounts inside Frameleaf; without it (plain Freecut, headless export) the dialog offers this
++ * device only.
++ */
++export interface CloudCaptionHost {
++  /** Ask the host to price captions for one timeline clip. `language` is empty for auto-detect. */
++  start(request: { clipId: string; language: string }): void
++}
++
++let host: CloudCaptionHost | null = null
++
++export function registerCloudCaptionHost(next: CloudCaptionHost | null): void {
++  host = next
++}
++
++export function getCloudCaptionHost(): CloudCaptionHost | null {
++  return host
++}

@@ -3,6 +3,7 @@
   "/(user)/activity": 636855,
   "/(user)/albums": 672011,
   "/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]": 883088,
+  "/(user)/albums/cleanup": 628771,
   "/(user)/archive/[[photos=photos]]/[[assetId=id]]": 775372,
   "/(user)/best-photos/[[photos=photos]]/[[assetId=id]]": 781150,
   "/(user)/buy": 450830,

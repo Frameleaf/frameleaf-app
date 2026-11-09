@@ -1,0 +1,65 @@
+{
+  "schema": "transcription-v1",
+  "model": {
+    "sku": "ms_XA8A84VQ",
+    "rev": "mr_7QX2M9KD4B1V",
+    "licence": "MIT"
+  },
+  "items": [
+    {
+      "inputId": "a1",
+      "language": "en",
+      "languageDetected": true,
+      "durationSec": 1800.4,
+      "segments": [
+        {
+          "start": 0.52,
+          "end": 3.9,
+          "text": "Welcome back to the workshop, everyone."
+        },
+        {
+          "start": 4.1,
+          "end": 8.75,
+          "text": "Today we're restoring the old family films from the attic."
+        }
+      ],
+      "captions": {
+        "outputId": "a1",
+        "format": "vtt",
+        "contentType": "text/vtt",
+        "maxLineChars": 42,
+        "cues": 2,
+        "bytes": 181,
+        "sha256": "c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1"
+      },
+      "confidence": 0.93,
+      "warnings": []
+    },
+    {
+      "inputId": "a2",
+      "language": "de",
+      "languageDetected": false,
+      "durationSec": 180,
+      "segments": [
+        {
+          "start": 1.0,
+          "end": 4.2,
+          "text": "Guten Morgen und herzlich willkommen."
+        }
+      ],
+      "captions": {
+        "outputId": "a2",
+        "format": "srt",
+        "contentType": "application/x-subrip",
+        "maxLineChars": 37,
+        "cues": 1,
+        "bytes": 74,
+        "sha256": "c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2"
+      },
+      "confidence": 0.88,
+      "warnings": [
+        "metadata-removed"
+      ]
+    }
+  ]
+}

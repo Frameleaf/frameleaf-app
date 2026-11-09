@@ -133,6 +133,7 @@ const setup = (kind = MlDestinationKind.Local) => {
   };
   vi.mocked(selectMlDestination).mockResolvedValue(selection as never);
   const logger = { setContext: vi.fn(), warn: vi.fn() };
+  const cloudMlJobs = { estimateCaptions: vi.fn().mockResolvedValue({ estimateId: 'estimate' }) };
   const sut = new StudioTranscriptionService(
     logger as never,
     operations as never,
@@ -145,6 +146,7 @@ const setup = (kind = MlDestinationKind.Local) => {
     audio as never,
     machineLearning as never,
     mlDestinations as never,
+    cloudMlJobs as never,
   );
   return {
     sut,
@@ -157,6 +159,7 @@ const setup = (kind = MlDestinationKind.Local) => {
     audio,
     machineLearning,
     mlDestinations,
+    cloudMlJobs,
     query,
   };
 };
@@ -212,13 +215,56 @@ describe(StudioTranscriptionService.name, () => {
       );
     });
 
-    it('never sends a clip to Frameleaf Cloud', async () => {
+    it('queues nothing for Frameleaf Cloud without an estimate', async () => {
       const { sut, operations } = setup(MlDestinationKind.FrameleafCloud);
       await expect(sut.create(owner, projectId, { clipId: 'clip', language: 'en', destinationId })).rejects.toThrow(
-        BadRequestException,
+        'Estimate this job first',
       );
       expect(selectMlDestination).not.toHaveBeenCalled();
       expect(operations.create).not.toHaveBeenCalled();
+    });
+
+    it('prices a clip for Frameleaf Cloud from audio extracted on this server, sending nothing', async () => {
+      const { sut, resources, audio, media, cloudMlJobs, operations } = setup(MlDestinationKind.FrameleafCloud);
+      media.probe.mockResolvedValue({ audioStreams: [{ index: 1 }], videoStreams: [], format: { duration: 10.02 } });
+
+      await expect(
+        sut.estimateCloud(owner, projectId, { clipId: 'clip', language: 'en-GB', destinationId }),
+      ).resolves.toEqual({ estimateId: 'estimate' });
+
+      expect(resources.resolveProjectResources).toHaveBeenCalledWith(
+        owner,
+        expect.objectContaining({ destination: StudioDestination.FrameleafCloud, cloudConsent: true }),
+      );
+      expect(audio.extractAudio).toHaveBeenCalledOnce();
+      expect(cloudMlJobs.estimateCaptions).toHaveBeenCalledWith(
+        owner,
+        expect.objectContaining({
+          destinationId,
+          language: 'en',
+          durationSeconds: 10.02,
+          assetId,
+          revisionId: 'revision-id',
+          studio: expect.objectContaining({ projectId, revision: 4, clipId: 'clip', language: 'en-GB' }),
+        }),
+      );
+      expect(operations.create).not.toHaveBeenCalled();
+    });
+
+    it('removes the extracted audio when the estimate is refused', async () => {
+      const { sut, media, cloudMlJobs, storage } = setup(MlDestinationKind.FrameleafCloud);
+      media.probe.mockResolvedValue({ audioStreams: [{ index: 1 }], videoStreams: [], format: { duration: 10 } });
+      cloudMlJobs.estimateCaptions.mockRejectedValue(
+        new BadRequestException('Frameleaf Cloud processing is turned off'),
+      );
+
+      await expect(
+        sut.estimateCloud(owner, projectId, { clipId: 'clip', language: 'auto', destinationId }),
+      ).rejects.toThrow('turned off');
+      expect(storage.unlinkDir).toHaveBeenCalledWith(expect.stringContaining('studio-transcription/estimate-'), {
+        recursive: true,
+        force: true,
+      });
     });
 
     it('refuses a clip whose source the manifest does not admit', async () => {

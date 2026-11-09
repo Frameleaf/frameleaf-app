@@ -28,6 +28,7 @@ import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
 import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
 import { AlbumChangeRunRepository } from 'src/repositories/album-change-run.repository.js';
+import { AlbumCleanupRepository } from 'src/repositories/album-cleanup.repository.js';
 import { AlbumSourceRepository } from 'src/repositories/album-source.repository.js';
 import { AlbumSummaryRepository } from 'src/repositories/album-summary.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
@@ -196,6 +197,7 @@ export const BASE_SERVICE_DEPENDENCIES = [
   ItemShareRepository,
   AlbumSourceRepository,
   AlbumChangeRunRepository,
+  AlbumCleanupRepository,
   StackRepository,
   StorageRepository,
   SyncRepository,
@@ -280,6 +282,7 @@ export class BaseService {
     protected itemShareRepository: ItemShareRepository,
     protected albumSourceRepository: AlbumSourceRepository,
     protected albumChangeRunRepository: AlbumChangeRunRepository,
+    protected albumCleanupRepository: AlbumCleanupRepository,
     protected stackRepository: StackRepository,
     protected storageRepository: StorageRepository,
     protected syncRepository: SyncRepository,
@@ -373,6 +376,7 @@ export class BaseService {
       ctx.itemShareRepository,
       ctx.albumSourceRepository,
       ctx.albumChangeRunRepository,
+      ctx.albumCleanupRepository,
       ctx.stackRepository,
       ctx.storageRepository,
       ctx.syncRepository,

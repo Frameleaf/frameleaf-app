@@ -50,6 +50,23 @@ where
   and "album_change_run"."createdAt" < $2
   and "album_change_run"."status" != $3
   and "album"."deletedAt" is not null
+  and not exists (
+    select
+      1
+    from
+      album_source_link link
+    where
+      link."albumId" = album.id
+      and link."stayRemoved"
+  )
+  and not exists (
+    select
+      1
+    from
+      takeout_album mapping
+    where
+      mapping."albumId" = album.id
+  )
 
 -- AlbumChangeRunRepository.deleteRunsBefore
 delete from "album_change_run"
