@@ -214,6 +214,29 @@ describe(AttentionService.name, () => {
       expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('thumbnails drive'));
     });
 
+    it('still warns about a full thumbnails drive when the library folder cannot be read', async () => {
+      const { sut, mocks } = setup();
+      mocks.storage.getDevice.mockImplementation((path: string) => Promise.resolve(path.endsWith('thumbs') ? 7 : null));
+      mocks.storage.checkDiskUsage.mockImplementation((path: string) =>
+        path.endsWith('thumbs')
+          ? Promise.resolve({ available: 5 * GB, free: 5 * GB, total: 500 * GB })
+          : Promise.reject(new Error('EACCES')),
+      );
+
+      const { items, checks } = await sut.getAttention();
+      expect(items.map((item) => [item.id, item.storage?.drive])).toEqual([['storage:thumbnails', 'thumbnails']]);
+      expect(checks).toContainEqual({ kind: 'storage', state: 'attention' });
+    });
+
+    it('keeps one item when the library drive is read but its device is not', async () => {
+      const { sut, mocks } = setup();
+      mocks.storage.getDevice.mockImplementation((path: string) => Promise.resolve(path.endsWith('thumbs') ? 7 : null));
+      diskFor(mocks, 5, 5);
+
+      const { items } = await sut.getAttention();
+      expect(items.map((item) => item.id)).toEqual(['storage']);
+    });
+
     it('checks only the library drive when the thumbnails folder cannot be read', async () => {
       const { sut, mocks } = setup();
       mocks.storage.getDevice.mockImplementation((path: string) =>

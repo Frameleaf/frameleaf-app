@@ -127,7 +127,12 @@ export class AttentionService {
       this.storageRepository.getDevice(library),
       this.storageRepository.getDevice(thumbnails),
     ]);
-    if (libraryDevice === null || thumbnailsDevice === null || libraryDevice === thumbnailsDevice) {
+    // An unreadable library still lets a thumbnails drive of its own warn: with no library item, the
+    // thumbnails' item cannot repeat it even if both turn out to be on one filesystem.
+    const separate =
+      thumbnailsDevice !== null &&
+      (libraryDevice === null ? libraryResult.state === 'unknown' : libraryDevice !== thumbnailsDevice);
+    if (!separate) {
       return libraryResult;
     }
     const thumbnailsResult = await this.storageRepository
