@@ -824,6 +824,24 @@ export class MediaHealthRepository {
       return true;
     });
   }
+  /**
+   * Claim the owner's findings waiting for the shared search by contents (FL-1337): open ones marked
+   * `searchPending: true`, and ones a search claimed before `staleBefore` that never finished. Each is
+   * stamped with the time it was claimed, so a search asked for meanwhile leaves it to this one.
+   */
+  async claimSearchPending(ownerId: string, staleBefore: Date): Promise<string[]> {
+    const { rows } = await sql<{ id: string }>`
+      UPDATE public.asset_health health
+      SET evidence = health.evidence || jsonb_build_object('searchPending', ${new Date().toISOString()}::text)
+      FROM public.asset asset
+      WHERE asset.id = health."assetId" AND asset."ownerId" = ${ownerId}::uuid AND asset."deletedAt" IS NULL
+        AND health."resolvedAt" IS NULL AND health."dismissedAt" IS NULL
+        AND (health.evidence->'searchPending' = 'true'::jsonb
+          OR (jsonb_typeof(health.evidence->'searchPending') = 'string'
+            AND (health.evidence->>'searchPending')::timestamptz < ${staleBefore.toISOString()}::timestamptz))
+      RETURNING health.id`.execute(this.db);
+    return rows.map(({ id }) => id);
+  }
   /** Every finding of one asset, open or settled (FL-1337): at most one of each category. */
   getFindingsForAsset(assetId: string): Promise<MediaHealthFinding[]> {
     return this.db

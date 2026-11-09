@@ -462,6 +462,11 @@ export interface IMediaHealthLocateJob extends IBaseJob {
   runId?: string;
   ids?: string[];
   userId?: string;
+  /**
+   * FL-1337: the owner's shared search for the fixes waiting on it (`userId` required). Its first step
+   * claims them as `ids`; when the walk is complete it feeds each fix again.
+   */
+  pending?: boolean;
   managedSearch?: {
     cursor: Array<{ path: string; after?: string }>;
     matches: Record<string, Record<string, Array<'sha1' | 'sha256'>>>;
@@ -487,11 +492,13 @@ export interface IMediaHealthFixAssetJob extends IEntityJob {
   requeue?: number;
   /** How many times it has waited for an unplugged drive; it stops after a day. */
   waits?: number;
-  /** A search for a copy carried on from an earlier run of this fix. */
-  runId?: string;
-  managedSearch?: IMediaHealthLocateJob['managedSearch'];
-  /** The search is done and recorded: carry on from the backups. */
-  stage?: 'backups';
+  /** The owner's shared search by contents is complete: decide from what it found, without walking. */
+  searched?: boolean;
+  /**
+   * Where a fix that put itself back carries on: `backups` once the search is recorded, `treat` once the
+   * search and the backups are, straight to what is wrong with the file.
+   */
+  stage?: 'backups' | 'treat';
 }
 
 export interface INightlyJob extends IBaseJob {

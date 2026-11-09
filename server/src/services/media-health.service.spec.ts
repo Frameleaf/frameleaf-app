@@ -98,6 +98,7 @@ describe(MediaHealthService.name, () => {
       listSteps: vi.fn().mockResolvedValue([]),
       settleFinding: vi.fn().mockResolvedValue(true),
       getFindingsForAsset: vi.fn().mockResolvedValue([]),
+      claimSearchPending: vi.fn().mockResolvedValue([]),
     } as unknown as MediaHealthRepository;
     mediaOperationRepository = {
       list: vi.fn().mockResolvedValue({ items: [], total: 0 }),
@@ -3992,11 +3993,12 @@ describe(MediaHealthService.name, () => {
       // the file is no longer the one Frameleaf stored
       asset = { ...asset, checksum: Buffer.alloc(20, 9) };
       vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([asset] as never);
-      recorded(finding(MediaHealthCategory.Corrupt, MediaHealthStatus.CorruptConfirmed));
+      recorded(finding(MediaHealthCategory.Corrupt, MediaHealthStatus.CorruptConfirmed, { searchPending: true }));
       decoderSays({ status: 'corrupt', reason: 'decode_failed', message: 'VipsJpeg: Premature end of JPEG file' });
       const restore = vi.spyOn(sut as any, 'restoreLostOriginal').mockResolvedValue('restored');
 
-      await sut.handleFixAsset({ id: 'asset-1', from: 'check' });
+      // the owner's shared search is complete and found no copy
+      await sut.handleFixAsset({ id: 'asset-1', from: 'check', searched: true });
 
       expect(restore).toHaveBeenCalledWith('asset-1');
       expect(stepsWritten()).toEqual(['searched-copy/not-found', 'checked-backups/ok', 'restored/ok']);
@@ -4015,7 +4017,7 @@ describe(MediaHealthService.name, () => {
       asset = { ...asset, originalPath: join(root, 'IMG_3310.jpg'), originalFileName: 'IMG_3310.jpg' };
       vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([asset] as never);
       vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
-      recorded(finding(MediaHealthCategory.Missing, MediaHealthStatus.Missing));
+      recorded(finding(MediaHealthCategory.Missing, MediaHealthStatus.Found, { searchPending: true }));
       vi.mocked(mediaHealthRepository.getCandidatesByHealthIds).mockResolvedValue([
         {
           id: 'candidate-1',
@@ -4028,7 +4030,7 @@ describe(MediaHealthService.name, () => {
       ] as never);
       vi.mocked(mediaHealthRepository.relinkManagedAsset).mockResolvedValue(true);
 
-      await sut.handleFixAsset({ id: 'asset-1', from: 'check' });
+      await sut.handleFixAsset({ id: 'asset-1', from: 'check', searched: true });
 
       expect(stepsWritten()).toEqual(['searched-copy/ok', 'put-back/ok']);
       expect(stepNamed('put-back')?.undo).toMatchObject({ kind: 'relink', previousPath: join(root, 'IMG_3310.jpg') });
@@ -4041,13 +4043,14 @@ describe(MediaHealthService.name, () => {
 
     it('waits for a phone when a missing file is nowhere else', async () => {
       vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
-      recorded(finding(MediaHealthCategory.Missing, MediaHealthStatus.Missing));
+      recorded(finding(MediaHealthCategory.Missing, MediaHealthStatus.Missing, { searchPending: true }));
       vi.spyOn(sut as any, 'phonesToAsk').mockResolvedValue([{ id: 'session-1', name: 'iPhone' }]);
 
-      await sut.handleFixAsset({ id: 'asset-1', from: 'check' });
+      await sut.handleFixAsset({ id: 'asset-1', from: 'check', searched: true });
 
       expect(stepsWritten()).toEqual(['searched-copy/not-found', 'checked-backups/not-found', 'asked-phones/waiting']);
-      expect(fixState()).toMatchObject({ fixState: 'waiting-phone' });
+      // it no longer waits for the search
+      expect(fixState()).toEqual({ fixState: 'waiting-phone', searchPending: false });
       expect(mediaHealthRepository.relinkManagedAsset).not.toHaveBeenCalled();
     });
 
@@ -4120,6 +4123,216 @@ describe(MediaHealthService.name, () => {
       await expect(sut.handleFixAsset({ id: 'asset-1', from: 'check', waits: 48 })).resolves.toBe(JobStatus.Skipped);
       expect(mocks.job.queue).not.toHaveBeenCalled();
       expect(written()).toEqual([]);
+    });
+
+    it('looks at a busy preview again on each try, and records nothing when it stays busy', async () => {
+      await cutShort();
+      decoderSays({ status: 'timeout', reason: 'decode_timeout' });
+      const validate = (sut as any).integrityService.validate as ReturnType<typeof vi.fn>;
+
+      let data: Record<string, unknown> = { id: 'asset-1', from: 'preview', message: 'Timeout' };
+      for (const delay of [5, 30, 120]) {
+        await expect(sut.handleFixAsset(data as never)).resolves.toBe(JobStatus.Success);
+        data = vi.mocked(mocks.job.queue).mock.calls.at(-1)![0].data as typeof data;
+        // the preview's words are not carried into the next try, so it checks the file itself
+        expect(data.message).toBeUndefined();
+        expect(data).toMatchObject({ from: 'preview', delay: minutes(delay) });
+      }
+      expect(validate).toHaveBeenCalledTimes(2);
+
+      // busy never becomes damage: with nothing recorded before, nothing is recorded now
+      await expect(sut.handleFixAsset(data as never)).resolves.toBe(JobStatus.Skipped);
+      expect(validate).toHaveBeenCalledTimes(3);
+      expect(mocks.job.queue).toHaveBeenCalledTimes(3);
+      expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
+      expect(written()).toEqual([]);
+    });
+
+    it('records nothing for a busy preview that opens on the next try', async () => {
+      await cutShort();
+
+      await sut.handleFixAsset({ id: 'asset-1', from: 'preview', message: 'Sharp child closed (SIGSEGV)' });
+      const retry = vi.mocked(mocks.job.queue).mock.calls[0][0].data;
+      // the file opens and is the one Frameleaf stored
+      await expect(sut.handleFixAsset(retry as never)).resolves.toBe(JobStatus.Skipped);
+
+      expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
+      expect(written()).toEqual([]);
+    });
+
+    it('records a changed file that still opens as changed, never as one that will not open', async () => {
+      await cutShort();
+      // the file opens, but it is no longer the one Frameleaf stored
+      asset = { ...asset, checksum: Buffer.alloc(20, 9) };
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([asset] as never);
+
+      await sut.handleFixAsset({ id: 'asset-1', from: 'check' });
+
+      expect(vi.mocked(mediaHealthRepository.upsertFinding).mock.calls[0][0]).toMatchObject({
+        status: MediaHealthStatus.CorruptConfirmed,
+        evidence: { reason: 'expected_mismatch', cause: 'changed' },
+        steps: [],
+      });
+      expect(written()).toEqual([]);
+
+      // the shared search found no copy, and Cloud Backup has none: the person decides
+      recorded(finding(MediaHealthCategory.Corrupt, MediaHealthStatus.CorruptConfirmed, { searchPending: true }));
+      await sut.handleFixAsset({ id: 'asset-1', from: 'check', searched: true });
+
+      expect(stepsWritten()).toEqual(['searched-copy/not-found', 'checked-backups/not-found', 'checked/failed']);
+      expect(stepNamed('checked')?.facts).toEqual({ cause: 'changed' });
+      expect(fixState()).toMatchObject({ fixState: 'cant-repair' });
+      expect(mocks.media.repairJpeg).not.toHaveBeenCalled();
+    });
+
+    it('leaves the one copy of a missing Locked photo for its owner to choose', async () => {
+      const copy = join(root, 'IMG_3310+1.jpg');
+      await original(copy, Buffer.from('the photo, exactly'));
+      asset = { ...asset, originalPath: join(root, 'IMG_3310.jpg'), originalFileName: 'IMG_3310.jpg', isLocked: true };
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([asset] as never);
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+      recorded(finding(MediaHealthCategory.Missing, MediaHealthStatus.Found, { searchPending: true }));
+      vi.mocked(mediaHealthRepository.getCandidatesByHealthIds).mockResolvedValue([
+        {
+          id: 'candidate-1',
+          healthId: 'health-1',
+          candidatePath: copy,
+          status: MediaHealthStatus.Found,
+          evidence: { rootId: MANAGED_ROOT_ID, decodeValid: true },
+          resolution: { autoRelinkable: true },
+        },
+      ] as never);
+
+      await sut.handleFixAsset({ id: 'asset-1', from: 'check', searched: true });
+
+      expect(mediaHealthRepository.relinkManagedAsset).not.toHaveBeenCalled();
+      expect(stepsWritten()).toEqual(['searched-copy/ok']);
+      expect(stepNamed('searched-copy')?.facts).toMatchObject({ copies: 1 });
+      expect(fixState()).toMatchObject({ fixState: 'missing' });
+    });
+
+    it('leaves a problem a fix already settled as it is, unless a person asks', async () => {
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+      recorded(finding(MediaHealthCategory.Missing, MediaHealthStatus.Missing, { fixState: 'waiting-phone' }));
+
+      await expect(sut.handleFixAsset({ id: 'asset-1', from: 'check' })).resolves.toBe(JobStatus.Skipped);
+      expect(written()).toEqual([]);
+      expect(mediaHealthRepository.settleFinding).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+
+      // Try again: the person asks, so it runs
+      await cutShort();
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(true);
+      care({ autoRepair: false });
+      recorded(finding(MediaHealthCategory.Corrupt, MediaHealthStatus.CorruptConfirmed, { fixState: 'cant-repair' }));
+      decoderSays({ status: 'corrupt', reason: 'decode_failed', message: 'VipsJpeg: Premature end of JPEG file' });
+      await expect(sut.handleFixAsset({ id: 'asset-1', from: 'person' })).resolves.toBe(JobStatus.Success);
+      expect(stepsWritten()).toEqual(['checked/failed']);
+
+      // "couldn't check" may be tried again by a check
+      vi.mocked(mediaHealthRepository.settleFinding).mockClear();
+      recorded(finding(MediaHealthCategory.Corrupt, MediaHealthStatus.CorruptSuspect, { fixState: 'couldnt-check' }));
+      await expect(sut.handleFixAsset({ id: 'asset-1', from: 'check' })).resolves.toBe(JobStatus.Success);
+      expect(fixState()).toMatchObject({ fixState: 'cant-repair' });
+    });
+
+    it('asks its owner’s shared search by contents, writing nothing yet', async () => {
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+      recorded(finding(MediaHealthCategory.Missing, MediaHealthStatus.Missing));
+
+      await expect(sut.handleFixAsset({ id: 'asset-1', from: 'check' })).resolves.toBe(JobStatus.Success);
+
+      expect(mediaHealthRepository.settleFinding).toHaveBeenCalledWith({
+        healthId: 'health-1',
+        evidence: { searchPending: true },
+        steps: [],
+      });
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.MediaHealthLocateMissing,
+        data: { userId: 'user-id', pending: true },
+      });
+      expect(written()).toEqual([]);
+      // no walk and no run of its own
+      expect(mocks.storage.walkWithCursor).not.toHaveBeenCalled();
+      expect(mediaHealthRepository.createRun).not.toHaveBeenCalled();
+      expect(mediaHealthRepository.relinkManagedAsset).not.toHaveBeenCalled();
+    });
+
+    it('asks for one shared search for two photos of one owner', async () => {
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+      for (const id of ['asset-1', 'asset-2']) {
+        vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([{ ...asset, id }] as never);
+        recorded({
+          ...finding(MediaHealthCategory.Missing, MediaHealthStatus.Missing),
+          id: `health-${id}`,
+          assetId: id,
+        });
+        await sut.handleFixAsset({ id, from: 'check' });
+      }
+      // the same request twice: one owner key, so the store keeps one waiting search (job.repository.spec)
+      expect(vi.mocked(mocks.job.queue).mock.calls.map(([item]) => item)).toEqual([
+        { name: JobName.MediaHealthLocateMissing, data: { userId: 'user-id', pending: true } },
+        { name: JobName.MediaHealthLocateMissing, data: { userId: 'user-id', pending: true } },
+      ]);
+    });
+
+    it('leaves a finding a search is already walking to that search', async () => {
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+      recorded(
+        finding(MediaHealthCategory.Missing, MediaHealthStatus.Missing, { searchPending: new Date().toISOString() }),
+      );
+
+      await sut.handleFixAsset({ id: 'asset-1', from: 'person' });
+
+      expect(mediaHealthRepository.settleFinding).not.toHaveBeenCalled();
+      expect(mocks.job.queue).toHaveBeenCalledWith(expect.objectContaining({ name: JobName.MediaHealthLocateMissing }));
+    });
+
+    it('feeds each fix still waiting when its owner’s shared search is complete', async () => {
+      const waiting = { ...finding(MediaHealthCategory.Missing, MediaHealthStatus.Missing, { searchPending: 'x' }) };
+      const decided = { ...waiting, id: 'health-2', assetId: 'asset-2', evidence: { searchPending: false } };
+      vi.mocked(mediaHealthRepository.claimSearchPending).mockResolvedValue(['health-1', 'health-2']);
+      vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([waiting, decided] as never);
+
+      await expect(sut.handleLocateMissing({ userId: 'user-id', pending: true })).resolves.toBe(JobStatus.Success);
+
+      expect(mediaHealthRepository.claimSearchPending).toHaveBeenCalledWith('user-id', expect.any(Date));
+      // one walk for every waiting finding of the owner, with no run that would stand in for their last check
+      expect(mediaHealthRepository.getByIds).toHaveBeenCalledWith(['health-1', 'health-2'], 'user-id');
+      expect(mediaHealthRepository.createRun).not.toHaveBeenCalled();
+      expect(mediaHealthRepository.finishRun).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.MediaHealthFixAsset, data: { id: 'asset-1', from: 'check', searched: true } },
+      ]);
+    });
+
+    it('carries an incomplete shared search on with the findings it claimed, feeding no fix yet', async () => {
+      vi.mocked(mediaHealthRepository.claimSearchPending).mockResolvedValue(['health-1']);
+      const continuation = { cursor: [{ path: '/data/library' }], matches: {} };
+      vi.spyOn(sut as any, 'locateFindings').mockResolvedValue({ checkedAssets: 1, foundAssets: 0, continuation });
+
+      await sut.handleLocateMissing({ userId: 'user-id', pending: true });
+
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.MediaHealthLocateMissing,
+        data: { userId: 'user-id', pending: true, ids: ['health-1'], managedSearch: continuation },
+      });
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+
+      // the next step walks on with the same findings, claiming nothing new
+      vi.mocked(mediaHealthRepository.claimSearchPending).mockClear();
+      await sut.handleLocateMissing({
+        userId: 'user-id',
+        pending: true,
+        ids: ['health-1'],
+        managedSearch: continuation,
+      });
+      expect(mediaHealthRepository.claimSearchPending).not.toHaveBeenCalled();
+    });
+
+    it('does nothing when no fix waits for the shared search', async () => {
+      await expect(sut.handleLocateMissing({ userId: 'user-id', pending: true })).resolves.toBe(JobStatus.Skipped);
+      expect(mediaHealthRepository.getByIds).not.toHaveBeenCalled();
     });
 
     it('skips a photo that is gone or in the trash, recording nothing', async () => {

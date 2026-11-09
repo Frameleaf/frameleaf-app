@@ -73,6 +73,35 @@ describe(JobRepository.name, () => {
     ]);
   });
 
+  it('keeps one shared search per owner for the fixes waiting on it, and feeds each fix under its own key (FL-1337)', async () => {
+    const managedSearch = { cursor: [{ path: '/data/library' }], matches: {} };
+    await sut.queue({ name: JobName.MediaHealthLocateMissing, data: { userId: 'owner', pending: true } });
+    await sut.queue({ name: JobName.MediaHealthLocateMissing, data: { userId: 'owner', pending: true } });
+    await sut.queue({ name: JobName.MediaHealthLocateMissing, data: { userId: 'other', pending: true } });
+    await sut.queue({
+      name: JobName.MediaHealthLocateMissing,
+      data: { userId: 'owner', pending: true, ids: ['health'], managedSearch },
+    });
+    await sut.queue({ name: JobName.MediaHealthLocateMissing, data: { userId: 'owner', ids: ['health'] } });
+    await sut.queue({ name: JobName.MediaHealthFixAsset, data: { id: 'asset', from: 'check', searched: true } });
+    const shared = (owner: string) => ({
+      delay: 120_000,
+      deduplication: { id: `MediaHealthLocateMissing:pending:${owner}`, keepLastIfActive: true },
+    });
+    expect(enqueue.mock.calls.map(([items]) => items[0].options)).toEqual([
+      // two photos of one owner: one key, so the store keeps one waiting search, and one after a running walk
+      shared('owner'),
+      shared('owner'),
+      shared('other'),
+      // a walk carries on under no key, so no later request can overwrite where it was
+      undefined,
+      // the classic search is unchanged
+      undefined,
+      // the search's feed cannot be swallowed by a fix queued meanwhile
+      { jobId: 'fix-asset/searched' },
+    ]);
+  });
+
   it('deduplicates palette work per source revision and backfill cursor', async () => {
     await sut.queue({ name: JobName.AssetPaletteExtract, data: { id: 'asset', sourceRevision: 'rev1' } });
     await sut.queue({ name: JobName.AssetPaletteExtract, data: { id: 'asset', sourceRevision: 'rev2' } });

@@ -819,6 +819,40 @@ describe(MediaHealthRepository.name, () => {
   });
 
   describe('fix writes (FL-1337)', () => {
+    it("claims an owner's findings waiting for the shared search once, and a stopped search's again", async () => {
+      const { ctx, sut } = setup();
+      const [{ user }, { user: other }] = await Promise.all([ctx.newUser(), ctx.newUser()]);
+      const waitingFor = async (ownerId: string, searchPending: unknown, settled = false) => {
+        const { result: asset } = await ctx.newAsset({ ownerId });
+        const finding = await sut.upsertFinding({
+          ...findingDto(asset.id, asset.originalPath, null),
+          evidence: { reason: 'stat failed', searchPending },
+          ...(settled && { resolvedAt: new Date() }),
+        });
+        assert.isDefined(finding);
+        return finding.id;
+      };
+      const waiting = await waitingFor(user.id, true);
+      const walking = await waitingFor(user.id, new Date().toISOString());
+      const stopped = await waitingFor(user.id, '2026-01-01T00:00:00.000Z');
+      await waitingFor(user.id, false);
+      await waitingFor(user.id, true, true);
+      await waitingFor(other.id, true);
+
+      const staleBefore = new Date(Date.now() - 6 * 60 * 60_000);
+      await expect(sut.claimSearchPending(user.id, staleBefore).then((ids) => ids.sort())).resolves.toEqual(
+        [waiting, stopped].sort(),
+      );
+      // claimed with the time: a search asked for meanwhile leaves them to this one
+      const [claimed] = await sut.getByIds([waiting]);
+      expect(Date.parse(claimed.evidence.searchPending as string)).toBeGreaterThan(staleBefore.getTime());
+      expect(claimed.evidence).toMatchObject({ reason: 'stat failed' });
+      await expect(sut.claimSearchPending(user.id, staleBefore)).resolves.toEqual([]);
+      await expect(sut.getByIds([walking])).resolves.toEqual([
+        expect.objectContaining({ evidence: expect.objectContaining({ searchPending: expect.any(String) }) }),
+      ]);
+    });
+
     it("writes a new finding's first step with that finding's id, in the same transaction", async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();

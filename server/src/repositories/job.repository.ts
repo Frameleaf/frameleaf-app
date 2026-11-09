@@ -54,6 +54,7 @@ import { ANALYTICS_AUTO_RETRY_DELAY_MS } from 'src/utils/analytics.js';
 import { assertAssetSource, readAssetSource } from 'src/utils/asset-source-authority.js';
 import { recordStoppedAttempt } from 'src/utils/attempt-evidence.js';
 import { DATABASE_POOL_SIZE } from 'src/utils/execution-database.js';
+import { FIX_SEARCH_DELAY_MS } from 'src/utils/file-fix.js';
 import { forgetLockedClaim, lockedKeyLoadedSinceDeferral } from 'src/utils/locked-read.js';
 import { FrameleafStartupError, getKeyByValue } from 'src/utils/misc.js';
 import { inheritWorkflowCausation } from 'src/utils/workflow-context.js';
@@ -1267,8 +1268,27 @@ export class JobRepository {
         // FL-1337: one fix per photo at a time, so the feeds of one photo collapse while it is queued or
         // running. A fix that puts itself back carries its own key: the store drops a job whose key
         // matches a live row, and the live row is the fix that is queuing it.
-        const jobId = item.data.requeue ? `fix-${item.data.id}/r${item.data.requeue}` : `fix-${item.data.id}`;
+        // The shared search's feed has its own key too, so a fix queued meanwhile cannot swallow it.
+        const jobId = item.data.requeue
+          ? `fix-${item.data.id}/r${item.data.requeue}`
+          : item.data.searched
+            ? `fix-${item.data.id}/searched`
+            : `fix-${item.data.id}`;
         return item.data.delay ? { jobId, delay: item.data.delay } : { jobId };
+      }
+      case JobName.MediaHealthLocateMissing: {
+        // FL-1337: one shared search per owner for the fixes waiting on it. It waits a little so a burst of
+        // them is one walk, and one asked for while a walk runs gets its pass after it. The walk carries on
+        // under no key, so a later request can never overwrite where it was.
+        return item.data.pending && !item.data.ids
+          ? {
+              delay: FIX_SEARCH_DELAY_MS,
+              deduplication: {
+                id: `${JobName.MediaHealthLocateMissing}:pending:${item.data.userId}`,
+                keepLastIfActive: true,
+              },
+            }
+          : null;
       }
       case JobName.AssetDetectDuplicates: {
         // FL-651: a recheck after each group mate's fingerprint is its own run item, so one queued
