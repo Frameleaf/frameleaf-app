@@ -1913,6 +1913,7 @@ describe(MediaHealthService.name, () => {
           await Promise.resolve();
           yield {
             id: 'asset-x',
+            ownerId: 'user-1',
             originalPath: '/library/x.jpg',
             originalFileName: 'x.jpg',
             type: AssetType.Image,
@@ -2018,6 +2019,7 @@ describe(MediaHealthService.name, () => {
       const assets = [
         {
           id: 'missing-asset',
+          ownerId: 'user-1',
           originalPath: '/library/missing.jpg',
           originalFileName: 'missing.jpg',
           type: AssetType.Image,
@@ -2026,6 +2028,7 @@ describe(MediaHealthService.name, () => {
         },
         {
           id: 'corrupt-asset',
+          ownerId: 'user-1',
           originalPath: '/library/corrupt.jpg',
           originalFileName: 'corrupt.jpg',
           type: AssetType.Image,
@@ -2064,6 +2067,10 @@ describe(MediaHealthService.name, () => {
         evidence: { reason: 'source_file_missing_or_unreadable' },
         resolution: { autoRelinkable: true },
         checkedAt: expect.any(Date),
+        steps: [
+          { step: 'added', outcome: 'ok', at: undefined },
+          { step: 'not-on-drive', outcome: 'failed', facts: {} },
+        ],
       });
       expect(mediaHealthRepository.upsertFinding).toHaveBeenCalledWith({
         runId: 'corrupt-run',
@@ -2076,6 +2083,10 @@ describe(MediaHealthService.name, () => {
         evidence: { reason: 'image_decode_failed' },
         resolution: { reuploadRecommended: true },
         checkedAt: expect.any(Date),
+        steps: [
+          { step: 'added', outcome: 'ok', at: undefined },
+          { step: 'wont-open', outcome: 'failed', facts: {} },
+        ],
       });
       expect(mediaHealthRepository.markResolvedForAssets).not.toHaveBeenCalledWith(
         [MediaHealthCategory.Corrupt],
@@ -3280,6 +3291,125 @@ describe(MediaHealthService.name, () => {
       expect(found).toBe('busy');
       expect(mediaHealthRepository.markResolvedForAssets).not.toHaveBeenCalled();
       expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
+    });
+
+    describe('file checks hand what they find to the fix', () => {
+      const asset = AssetFactory.create({
+        id: 'asset-1',
+        originalPath: '/data/trips/a.jpg',
+        createdAt: new Date('2026-01-02T03:04:05Z'),
+      });
+      const queued = { name: JobName.MediaHealthFixAsset, data: { id: 'asset-1', from: 'check' } };
+
+      beforeEach(() => {
+        vi.spyOn(sut as any, 'ownerFolders').mockResolvedValue(['/data']);
+        vi.mocked(mediaHealthRepository.getFindingsForAsset).mockResolvedValue([]);
+        vi.mocked(mediaHealthRepository.upsertFinding).mockResolvedValue({ id: 'health-1' } as never);
+      });
+
+      it('a new missing file is recorded and sent to be fixed', async () => {
+        vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+
+        expect(await (sut as any).scanAsset(asset, 'missing-run', 'corrupt-run')).toBe('missing');
+
+        expect(mediaHealthRepository.upsertFinding).toHaveBeenCalledWith(
+          expect.objectContaining({
+            category: MediaHealthCategory.Missing,
+            status: MediaHealthStatus.Missing,
+            steps: [
+              { step: 'added', outcome: 'ok', at: asset.createdAt },
+              { step: 'not-on-drive', outcome: 'failed', facts: { folder: 'trips', name: 'a.jpg' } },
+            ],
+          }),
+        );
+        expect(mocks.job.queue).toHaveBeenCalledTimes(1);
+        expect(mocks.job.queue).toHaveBeenCalledWith(queued);
+      });
+
+      it('an already-open finding is not sent again', async () => {
+        vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+        vi.mocked(mediaHealthRepository.getFindingsForAsset).mockResolvedValue([
+          {
+            id: 'health-1',
+            assetId: 'asset-1',
+            category: MediaHealthCategory.Missing,
+            status: MediaHealthStatus.Missing,
+            resolvedAt: null,
+            dismissedAt: null,
+          },
+        ] as never);
+
+        expect(await (sut as any).scanAsset(asset, 'missing-run', 'corrupt-run')).toBe('missing');
+
+        expect(mediaHealthRepository.upsertFinding).toHaveBeenCalledWith(expect.objectContaining({ steps: [] }));
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+      });
+
+      it('a resolved finding that comes back is recorded and sent again, without a second back-fill', async () => {
+        vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+        vi.mocked(mediaHealthRepository.getFindingsForAsset).mockResolvedValue([
+          {
+            id: 'health-1',
+            assetId: 'asset-1',
+            category: MediaHealthCategory.Missing,
+            status: MediaHealthStatus.Resolved,
+            resolvedAt: new Date(),
+            dismissedAt: null,
+          },
+        ] as never);
+
+        await (sut as any).scanAsset(asset, 'missing-run', 'corrupt-run');
+
+        expect(mediaHealthRepository.upsertFinding).toHaveBeenCalledWith(
+          expect.objectContaining({
+            steps: [{ step: 'not-on-drive', outcome: 'failed', facts: { folder: 'trips', name: 'a.jpg' } }],
+          }),
+        );
+        expect(mocks.job.queue).toHaveBeenCalledWith(queued);
+      });
+
+      it('a new damaged file records that it will not open and is sent with the decoder message', async () => {
+        vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(true);
+        ((sut as any).integrityService.validate as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+          status: 'corrupt',
+          reason: 'decode_failed',
+          message: 'Premature end of JPEG file',
+        });
+
+        expect(await (sut as any).scanAsset(asset, 'missing-run', 'corrupt-run')).toBe('corrupt');
+
+        expect(mediaHealthRepository.upsertFinding).toHaveBeenCalledWith(
+          expect.objectContaining({
+            category: MediaHealthCategory.Corrupt,
+            status: MediaHealthStatus.CorruptConfirmed,
+            steps: [
+              { step: 'added', outcome: 'ok', at: asset.createdAt },
+              { step: 'wont-open', outcome: 'failed', facts: { folder: 'trips', name: 'a.jpg' } },
+            ],
+          }),
+        );
+        expect(mocks.job.queue).toHaveBeenCalledWith({
+          ...queued,
+          data: { ...queued.data, message: 'Premature end of JPEG file' },
+        });
+      });
+
+      it('a file under an unplugged drive is not judged', async () => {
+        const upload = StorageCore.getBaseFolder(StorageFolder.Upload);
+        const lost = { ...asset, originalPath: join(upload, 'user-id', 'a.jpg') };
+        vi.mocked(mocks.storage.stat).mockImplementation((file) =>
+          file === join(upload, '.frameleaf')
+            ? Promise.reject(Object.assign(new Error('gone'), { code: 'ENOENT' }))
+            : Promise.resolve(settledStat({ size: 10 }) as never),
+        );
+        vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+
+        expect(await (sut as any).scanAsset(lost, 'missing-run', 'corrupt-run')).toBe('busy');
+
+        expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
+        expect(mediaHealthRepository.markResolvedForAssets).not.toHaveBeenCalled();
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+      });
     });
 
     it('verifies original checksums in a scan only while "Verify original checksums" is on', async () => {

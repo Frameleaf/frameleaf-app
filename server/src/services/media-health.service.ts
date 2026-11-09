@@ -83,6 +83,7 @@ import {
   MediaHealthRepository,
   MediaHealthRun,
   ReplaceRepairedOriginal,
+  UpsertMediaHealthFinding,
 } from 'src/repositories/media-health.repository.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
@@ -3393,18 +3394,16 @@ export class MediaHealthService {
   ): Promise<'missing' | 'corrupt' | 'healthy' | 'encrypted' | 'busy'> {
     const sourceExists = await this.storageRepository.checkFileExists(asset.originalPath, constants.R_OK);
     if (!sourceExists) {
-      await this.mediaHealthRepository.upsertFinding({
+      if (!(await this.isDriveReachable(asset))) {
+        return 'busy';
+      }
+      await this.recordFileProblem(asset, {
         runId: missingRunId,
-        assetId: asset.id,
-        expectedUpdateId: asset.updateId,
         category: MediaHealthCategory.Missing,
         status: MediaHealthStatus.Missing,
         severity: MediaHealthSeverity.Critical,
-        originalPath: asset.originalPath,
-        originalFileName: asset.originalFileName,
         evidence: { reason: 'source_file_missing_or_unreadable' },
         resolution: { autoRelinkable: !!asset.isExternal && !!asset.libraryId },
-        checkedAt: new Date(),
       });
       return 'missing';
     }
@@ -3433,42 +3432,94 @@ export class MediaHealthService {
       return 'healthy';
     }
     if (result.status === MediaHealthStatus.Missing) {
-      await this.mediaHealthRepository.upsertFinding({
+      if (!(await this.isDriveReachable(asset))) {
+        return 'busy';
+      }
+      await this.recordFileProblem(asset, {
         runId: missingRunId,
-        assetId: asset.id,
-        expectedUpdateId: asset.updateId,
         category: MediaHealthCategory.Missing,
         status: MediaHealthStatus.Missing,
         severity: MediaHealthSeverity.Critical,
-        originalPath: asset.originalPath,
-        originalFileName: asset.originalFileName,
         evidence: result.evidence,
         resolution: result.resolution,
-        checkedAt: new Date(),
       });
       return 'missing';
     }
     await this.mediaHealthRepository.markResolvedForAssets([MediaHealthCategory.Missing], [asset]);
 
-    await this.mediaHealthRepository.upsertFinding({
-      runId: corruptRunId,
+    await this.recordFileProblem(
+      asset,
+      {
+        runId: corruptRunId,
+        category: MediaHealthCategory.Corrupt,
+        status: result.status,
+        severity:
+          result.status === MediaHealthStatus.CorruptConfirmed
+            ? MediaHealthSeverity.Critical
+            : result.status === MediaHealthStatus.UnsupportedRaw
+              ? MediaHealthSeverity.Info
+              : MediaHealthSeverity.Warning,
+        evidence: result.evidence,
+        resolution: result.resolution,
+      },
+      this.decoderMessage(result),
+    );
+    return 'corrupt';
+  }
+
+  /** Whether the drive the original lives on can be reached; on an unplugged one every file looks lost. */
+  private async isDriveReachable(asset: Pick<MediaHealthAsset, 'originalPath'>): Promise<boolean> {
+    const libraries = await this.libraryRepository.getAll().catch(() => []);
+    return isFileRootReachable(this.storageRepository, asset.originalPath, libraries);
+  }
+
+  /**
+   * Record what a file check found and, when it is a new problem, hand it to the fix (FL-1337): a
+   * finding that is new, or that changes into Missing or CorruptConfirmed (or comes back after it was
+   * resolved or dismissed), gets the step that found it, written with the finding. A new finding also
+   * gets the first lines of its history from what the photo row knows. A problem already open with
+   * the same status is only refreshed: no step, nothing queued.
+   */
+  private async recordFileProblem(
+    asset: MediaHealthAsset,
+    problem: Pick<UpsertMediaHealthFinding, 'runId' | 'category' | 'status' | 'severity' | 'evidence' | 'resolution'>,
+    message?: string,
+  ): Promise<void> {
+    const existing = ((await this.mediaHealthRepository.getFindingsForAsset(asset.id)) ?? []).find(
+      ({ category }) => category === problem.category,
+    );
+    const isNew = !existing || !isOpenFinding(existing) || existing.status !== problem.status;
+    const begins =
+      problem.status === MediaHealthStatus.Missing || problem.status === MediaHealthStatus.CorruptConfirmed;
+    const hands = begins && isNew;
+    const steps: FindingStep[] = [];
+    if (!existing) {
+      // only what the row knows: it carries no upload device or import origin, and nothing records a move
+      steps.push({ step: 'added', outcome: 'ok', at: asset.createdAt });
+    }
+    if (hands) {
+      const facts = folderFacts(await this.ownerFolders(asset), asset.originalPath);
+      steps.push({
+        step: problem.category === MediaHealthCategory.Missing ? 'not-on-drive' : 'wont-open',
+        outcome: 'failed',
+        facts,
+      });
+    }
+    const finding = await this.mediaHealthRepository.upsertFinding({
+      ...problem,
       assetId: asset.id,
       expectedUpdateId: asset.updateId,
-      category: MediaHealthCategory.Corrupt,
-      status: result.status,
-      severity:
-        result.status === MediaHealthStatus.CorruptConfirmed
-          ? MediaHealthSeverity.Critical
-          : result.status === MediaHealthStatus.UnsupportedRaw
-            ? MediaHealthSeverity.Info
-            : MediaHealthSeverity.Warning,
       originalPath: asset.originalPath,
       originalFileName: asset.originalFileName,
-      evidence: result.evidence,
-      resolution: result.resolution,
       checkedAt: new Date(),
+      steps,
     });
-    return 'corrupt';
+    if (finding && hands) {
+      await this.jobRepository.queue({
+        name: JobName.MediaHealthFixAsset,
+        data: { id: asset.id, from: 'check', ...(message && { message }) },
+      });
+    }
   }
 
   private async validateAssetIntegrity(asset: MediaHealthAsset): Promise<CandidateValidation | null>;
