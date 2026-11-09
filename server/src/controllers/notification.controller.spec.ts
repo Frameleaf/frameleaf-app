@@ -5,6 +5,9 @@ import { errorDto } from 'test/medium/responses.js';
 import { factory } from 'test/small.factory.js';
 import { ControllerContext, controllerSetup, mockBaseService } from 'test/utils.js';
 
+// A UUID v5: the importers derive notification ids so that re-running an import doesn't repeat them.
+const importedId = '26dfe682-8885-5051-b518-176a1140f1b7';
+
 describe(NotificationController.name, () => {
   let ctx: ControllerContext;
   const service = mockBaseService(NotificationService);
@@ -61,6 +64,32 @@ describe(NotificationController.name, () => {
           .send({ ids: [id] });
         expect(service.updateAll).toHaveBeenCalledWith(undefined, expect.objectContaining({ ids: [id] }));
       });
+
+      it('should accept the deterministic ids the importers write', async () => {
+        const { status } = await request(ctx.getHttpServer())
+          .put(`/notifications`)
+          .send({ ids: [importedId] });
+        expect(status).toBe(204);
+        expect(service.updateAll).toHaveBeenCalledWith(undefined, expect.objectContaining({ ids: [importedId] }));
+      });
+    });
+  });
+
+  describe('DELETE /notifications', () => {
+    it('should accept the deterministic ids the importers write', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .delete(`/notifications`)
+        .send({ ids: [importedId] });
+      expect(status).toBe(204);
+      expect(service.deleteAll).toHaveBeenCalledWith(undefined, { ids: [importedId] });
+    });
+  });
+
+  describe('DELETE /notifications/:id', () => {
+    it('should accept the deterministic ids the importers write', async () => {
+      const { status } = await request(ctx.getHttpServer()).delete(`/notifications/${importedId}`);
+      expect(status).toBe(204);
+      expect(service.delete).toHaveBeenCalledWith(undefined, importedId);
     });
   });
 
@@ -77,6 +106,11 @@ describe(NotificationController.name, () => {
       const id = factory.uuid();
       await request(ctx.getHttpServer()).put(`/notifications/${id}`).send({ readAt: null });
       expect(service.update).toHaveBeenCalledWith(undefined, id, expect.objectContaining({ readAt: null }));
+    });
+
+    it('should accept the deterministic ids the importers write', async () => {
+      await request(ctx.getHttpServer()).put(`/notifications/${importedId}`).send({ readAt: null });
+      expect(service.update).toHaveBeenCalledWith(undefined, importedId, expect.objectContaining({ readAt: null }));
     });
   });
 });
