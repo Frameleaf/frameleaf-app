@@ -127,22 +127,28 @@ export class AttentionService {
       this.storageRepository.getDevice(library),
       this.storageRepository.getDevice(thumbnails),
     ]);
-    // An unreadable library still lets a thumbnails drive of its own warn: with no library item, the
-    // thumbnails' item cannot repeat it even if both turn out to be on one filesystem.
-    const separate =
-      thumbnailsDevice !== null &&
-      (libraryDevice === null ? libraryResult.state === 'unknown' : libraryDevice !== thumbnailsDevice);
-    if (!separate) {
+    const unknown: SignalResult = { state: 'unknown', items: [] };
+    // Where the thumbnails are can't be told: their room is unknown, and any library warning still shows.
+    if (thumbnailsDevice === null) {
+      return combineStorage([libraryResult, unknown]);
+    }
+    const sameDrive = libraryDevice === thumbnailsDevice;
+    const libraryRead = libraryResult.state !== 'unknown';
+    // One drive, already read: one item. A library read without knowing its device: no second item that
+    // could repeat it.
+    if (libraryRead && (sameDrive || libraryDevice === null)) {
       return libraryResult;
     }
+    // A drive of their own, or a library that couldn't be read: read the thumbnails' drive. On the
+    // library's own drive it speaks for the library (`storage`); otherwise it is named (`storage:thumbnails`).
     const thumbnailsResult = await this.storageRepository
       .checkDiskUsage(thumbnails)
-      .then((disk) => storageSignal(disk, percent, 'thumbnails'))
+      .then((disk) => storageSignal(disk, percent, sameDrive ? 'library' : 'thumbnails'))
       .catch((error) => {
         this.logger.warn(`Could not check the thumbnails drive for what needs attention: ${error}`);
-        return { state: 'unknown', items: [] } satisfies SignalResult;
+        return unknown;
       });
-    return combineStorage([libraryResult, thumbnailsResult]);
+    return sameDrive ? thumbnailsResult : combineStorage([libraryResult, thumbnailsResult]);
   }
 
   /**

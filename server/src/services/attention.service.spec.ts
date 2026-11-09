@@ -237,14 +237,47 @@ describe(AttentionService.name, () => {
       expect(items.map((item) => item.id)).toEqual(['storage']);
     });
 
-    it('checks only the library drive when the thumbnails folder cannot be read', async () => {
+    it('says the storage check is unknown when the thumbnails folder cannot be read', async () => {
       const { sut, mocks } = setup();
       mocks.storage.getDevice.mockImplementation((path: string) =>
         Promise.resolve(path.endsWith('thumbs') ? null : 42),
       );
 
-      await sut.getAttention();
+      const { items, checks } = await sut.getAttention();
       expect(mocks.storage.checkDiskUsage).toHaveBeenCalledTimes(1);
+      expect(items).toEqual([]);
+      expect(checks).toContainEqual({ kind: 'storage', state: 'unknown' });
+    });
+
+    it('keeps the library warning when the thumbnails folder cannot be read', async () => {
+      const { sut, mocks } = setup();
+      mocks.storage.getDevice.mockImplementation((path: string) =>
+        Promise.resolve(path.endsWith('thumbs') ? null : 42),
+      );
+      diskFor(mocks, 5, 5);
+
+      const { items, checks } = await sut.getAttention();
+      expect(items.map((item) => item.id)).toEqual(['storage']);
+      expect(checks).toContainEqual({ kind: 'storage', state: 'attention' });
+    });
+
+    it('reads the shared drive through the thumbnails folder when the library folder cannot be read', async () => {
+      const { sut, mocks } = setup();
+      mocks.storage.checkDiskUsage.mockImplementation((path: string) =>
+        path.endsWith('thumbs')
+          ? Promise.resolve({ available: 30 * GB, free: 30 * GB, total: 500 * GB })
+          : Promise.reject(new Error('EACCES')),
+      );
+
+      const { items, checks } = await sut.getAttention();
+      expect(items).toEqual([
+        expect.objectContaining({
+          id: 'storage',
+          reason: 'nearly-full',
+          storage: expect.objectContaining({ drive: 'library' }),
+        }),
+      ]);
+      expect(checks).toContainEqual({ kind: 'storage', state: 'attention' });
     });
   });
 
@@ -402,7 +435,8 @@ describe(AttentionService.name, () => {
       { kind: 'work', state: 'unknown' },
       { kind: 'version', state: 'ok' },
     ]);
-    expect(mocks.logger.warn).toHaveBeenCalledTimes(2);
+    // the library drive, then the same drive through the thumbnails folder, then the work
+    expect(mocks.logger.warn).toHaveBeenCalledTimes(3);
   });
 
   it('puts what needs the person now first', async () => {
