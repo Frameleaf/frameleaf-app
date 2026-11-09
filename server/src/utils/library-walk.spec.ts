@@ -4,8 +4,15 @@ import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import type { Dirent } from 'node:fs';
+import type { QueueExecution } from 'src/queue/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { LIBRARY_WALK_BUFFER, LibraryWalkStorage, walkLibraryPaths } from 'src/utils/library-walk.js';
+import { queueExecution } from 'src/queue/context.js';
+import {
+  LIBRARY_WALK_BUFFER,
+  LIBRARY_WALK_LIVENESS_ENTRIES,
+  LibraryWalkStorage,
+  walkLibraryPaths,
+} from 'src/utils/library-walk.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
 describe('bounded library source walk', () => {
@@ -31,6 +38,18 @@ describe('bounded library source walk', () => {
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, 'source remains read-only');
   };
+
+  it('tells the queue it is alive while walking a tree that yields no media', async () => {
+    await Promise.all(
+      Array.from({ length: LIBRARY_WALK_LIVENESS_ENTRIES * 2 }, (_, index) => write(path.join(root, `${index}.txt`))),
+    );
+    const progress = vi.fn();
+    const execution = { progress, progressUnits: 0 } as unknown as QueueExecution;
+
+    await expect(queueExecution.run(execution, () => collect(options([root])))).resolves.toEqual([]);
+
+    expect(progress).toHaveBeenCalledTimes(2);
+  });
 
   it('accepts omitted optional exclusion patterns', async () => {
     await write(path.join(root, 'a.jpg'));

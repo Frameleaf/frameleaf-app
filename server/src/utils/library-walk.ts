@@ -5,6 +5,7 @@ import picomatch from 'picomatch';
 import type { Dir, Dirent, Stats } from 'node:fs';
 import type { WalkOptionsDto } from 'src/dtos/library.dto.js';
 import { StorageCore } from 'src/cores/storage.core.js';
+import { advanceJobProgress } from 'src/queue/context.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
 // Node ESM requires the actual CommonJS namespace; Vite can synthesize absent named exports.
@@ -13,6 +14,8 @@ const { generateTasks, isDynamicPattern } = glob;
 
 /** Each open directory has a fixed native buffer; no directory listing or lifetime path index. */
 export const LIBRARY_WALK_BUFFER = 32;
+/** Directory entries between liveness reports, so a tree that is slow to yield media outlives the job deadline. */
+export const LIBRARY_WALK_LIVENESS_ENTRIES = 100;
 export type LibraryWalkOptions = WalkOptionsDto & { signal?: AbortSignal };
 export type LibraryWalkStorage = {
   opendir: (folder: string, options: { bufferSize: number }) => Promise<Pick<Dir, 'read' | 'close'>>;
@@ -56,6 +59,7 @@ export async function* walkLibraryPaths(
     dot: includeHidden,
   });
   let batch: string[] = [];
+  let entries = 0;
   for (const root of roots) {
     signal?.throwIfAborted();
     const stack: Array<{ folder: string; real: string; directory: Pick<Dir, 'read' | 'close'> }> = [];
@@ -84,6 +88,8 @@ export async function* walkLibraryPaths(
           ancestors.delete(frame.real);
           continue;
         }
+        // A share that stops answering sends nothing here, so the job deadline still catches a real hang.
+        if (++entries % LIBRARY_WALK_LIVENESS_ENTRIES === 0) advanceJobProgress(1);
         if (!includeHidden && entry.name.startsWith('.')) continue;
         const file = path.join(frame.folder, entry.name);
         let kind: Pick<Stats, 'isDirectory' | 'isFile'> = entry;
