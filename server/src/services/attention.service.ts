@@ -19,7 +19,6 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 import { isNewerRelease } from 'src/services/version.service.js';
 import {
   type BackupPlaceFacts,
-  type DiskFacts,
   type QueueFacts,
   type SignalResult,
   backupSignal,
@@ -38,13 +37,6 @@ import { serverTimeZone } from 'src/utils/server-time-zone.js';
 /** Queues are read a few at a time, as the queue list does, so a read never fills the database pool. */
 const QUEUE_BATCH = 4;
 const BACKUP_STAMP = /\d{8}T\d{6}/;
-
-/**
- * FL-1324: two folders whose device can't be told are taken as one drive when it reads the same size and
- * nearly the same room (writes between the two reads move it a little).
- */
-const isSameDisk = (a: DiskFacts, b: DiskFacts) =>
-  a.total === b.total && Math.abs(a.available - b.available) <= Math.max(a.total * 0.001, 1);
 
 /**
  * FL-421: "What needs your attention" for administrators. Each read checks the drive the library is
@@ -155,10 +147,8 @@ export class AttentionService {
     if (sameDrive) {
       return storageSignal(thumbnailsDisk, percent, 'library');
     }
-    // The library's device couldn't be told, but the drive reads the same size and room: one drive, one item.
-    if (libraryDisk && libraryDevice === null && isSameDisk(libraryDisk, thumbnailsDisk)) {
-      return libraryResult;
-    }
+    // Only device ids prove one drive. Without the library's, the thumbnails' drive is named on its own:
+    // a second warning beats a missed one.
     return combineStorage([libraryResult, storageSignal(thumbnailsDisk, percent, 'thumbnails')]);
   }
 

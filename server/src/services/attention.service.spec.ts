@@ -228,13 +228,19 @@ describe(AttentionService.name, () => {
       expect(checks).toContainEqual({ kind: 'storage', state: 'attention' });
     });
 
-    it('keeps one item when the library drive is read but its device is not', async () => {
+    it('does not take same-size drives with nearly the same room for one drive when the library device is unknown', async () => {
       const { sut, mocks } = setup();
       mocks.storage.getDevice.mockImplementation((path: string) => Promise.resolve(path.endsWith('thumbs') ? 7 : null));
-      diskFor(mocks, 5, 5);
+      mocks.storage.checkDiskUsage.mockImplementation((path: string) => {
+        const available = (path.endsWith('thumbs') ? 9.9 : 10.1) * GB;
+        return Promise.resolve({ available, free: available, total: 500 * GB });
+      });
 
       const { items } = await sut.getAttention();
-      expect(items.map((item) => item.id)).toEqual(['storage']);
+      expect(items.map((item) => [item.id, item.reason])).toEqual([
+        ['storage:thumbnails', 'out-of-space'],
+        ['storage', 'nearly-full'],
+      ]);
     });
 
     it('still names a low thumbnails drive when the library drive is read but its device is not', async () => {
