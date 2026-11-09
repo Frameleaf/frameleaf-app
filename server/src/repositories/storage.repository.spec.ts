@@ -1,4 +1,4 @@
-import { Dirent } from 'node:fs';
+import { Dirent, constants } from 'node:fs';
 import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative } from 'node:path';
@@ -406,6 +406,28 @@ describe(StorageRepository.name, () => {
       await ended;
       expect(started).toEqual(['a', 'b']);
       expect(Buffer.concat(chunks).toString('latin1')).toContain('b bytes');
+    });
+  });
+
+  describe('no-replace primitives', () => {
+    const setup = async () => {
+      const a = join(directory, 'a');
+      const b = join(directory, 'b');
+      await fs.writeFile(a, 'source');
+      await fs.writeFile(b, 'existing');
+      return { a, b };
+    };
+
+    it('link refuses an existing target', async () => {
+      const { a, b } = await setup();
+      await expect(sut.link(a, b)).rejects.toMatchObject({ code: 'EEXIST' });
+      expect(await fs.readFile(b, 'utf8')).toBe('existing');
+    });
+
+    it('copyFile with COPYFILE_EXCL refuses an existing target', async () => {
+      const { a, b } = await setup();
+      await expect(sut.copyFile(a, b, constants.COPYFILE_EXCL)).rejects.toMatchObject({ code: 'EEXIST' });
+      expect(await fs.readFile(b, 'utf8')).toBe('existing');
     });
   });
 

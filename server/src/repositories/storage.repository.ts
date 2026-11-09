@@ -71,8 +71,13 @@ export class StorageRepository {
     return fs.readdir(folder, { withFileTypes: true });
   }
 
-  copyFile(source: string, target: string) {
-    return fs.copyFile(source, target);
+  copyFile(source: string, target: string, mode?: number) {
+    return fs.copyFile(source, target, mode);
+  }
+
+  /** A hard link that fails with EEXIST rather than replacing an existing target. */
+  link(source: string, target: string) {
+    return fs.link(source, target);
   }
 
   stat(filepath: string) {
