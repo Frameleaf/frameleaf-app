@@ -3,6 +3,7 @@ import { constants } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { Refusal, type Installation } from './contracts.js';
 import { overlap, type Container, type Docker } from './docker.js';
+import { broadRoots } from './folders.js';
 import { folderDetail, ownControllers, toHost } from './host-paths.js';
 
 const within = (path: string, parent: string) =>
@@ -20,7 +21,9 @@ export function overlappingWriter(
   installationId?: string,
   roots: string[] = [],
 ): { container: string; source: string } | undefined {
-  const share = (source: string) => roots.some((root) => within(path, root) && root !== source && within(root, source));
+  // With all of /mnt approved, the chosen folder is the root: only a mapping of that folder itself is another app's data.
+  const share = (source: string) =>
+    source !== path && (broadRoots(roots) || roots.some((root) => within(path, root) && root !== source && within(root, source)));
   for (const c of containers) {
     // Any Manager container (a stopped older copy too) maps the database parent itself; Manager never writes PGDATA.
     if (

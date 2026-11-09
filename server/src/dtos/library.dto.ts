@@ -251,6 +251,9 @@ const LibraryFolderEstimateSchema = z
 const LibraryFolderEstimateResponseSchema = z
   .object({
     readable: z.boolean().describe('Whether the folder could be read'),
+    found: z
+      .boolean()
+      .describe('False when this server cannot see the folder at all, rather than being refused access'),
     count: z.int().min(0).describe('Photos and videos found'),
     bytes: z.int().min(0).describe('Their combined size, in bytes'),
     complete: z

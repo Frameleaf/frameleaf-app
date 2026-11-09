@@ -417,10 +417,11 @@ export class LibraryService extends BaseService {
           break;
         }
       }
-    } catch {
-      return { readable: false, count: 0, bytes: 0, complete: true };
+    } catch (error) {
+      const found = !['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '');
+      return { readable: false, found, count: 0, bytes: 0, complete: true };
     }
-    return { readable: true, count, bytes, complete };
+    return { readable: true, found: true, count, bytes, complete };
   }
 
   /** Every account's managed uploads, for the Libraries list (FL-78). */

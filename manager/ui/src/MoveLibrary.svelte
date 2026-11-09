@@ -1,13 +1,17 @@
 <script lang="ts">
+  import FolderPicker from './FolderPicker.svelte';
   import { requestKey } from './request-key';
   import { formatBytes, readable } from './presentation';
   let {
     roots,
+    browse = false,
     disabled = false,
     api,
     started,
   } = $props<{
     roots: string[];
+    /** Folders are chosen by browsing rather than from a short list of mappings. */
+    browse?: boolean;
     disabled?: boolean;
     api: (path: string, body?: unknown) => Promise<any>;
     started: (id: string) => void;
@@ -16,6 +20,7 @@
     review = $state<any>(null),
     accepted = $state(false),
     busy = $state(false),
+    browsing = $state(false),
     error = $state('');
   async function check() {
     busy = true;
@@ -55,6 +60,9 @@
       For a new server, restore a complete media backup there. Manager’s database backups do not contain photos or
       videos.
     </p>
+    {#if browse}
+      <div class="field mt16"><span>New folder</span><div class="folder-field"><input aria-label="New folder" bind:value={root} disabled={disabled || busy} autocomplete="off" spellcheck="false" oninput={() => { review = null; accepted = false; }}/><button type="button" class="button quiet" disabled={disabled || busy} onclick={() => (browsing = true)}>Browse…</button></div></div>
+    {:else}
     <label class="field mt16"
       ><span id="manager-move-drive-label">New drive</span>
       <select
@@ -71,6 +79,7 @@
       </select>
       <small>Only locations mounted into Manager are available. A new private media folder is created there.</small>
     </label>
+    {/if}
     <button class="button quiet mt16" disabled={disabled || busy || !root} onclick={check}>Check this drive</button>
     {#if review}
       {#if !review.available}<p class="notice warning mt16" role="status">
@@ -109,3 +118,5 @@
       </p>{/if}
   </div>
 </section>
+
+{#if browsing}<FolderPicker title="Choose the new folder" start={root || '/mnt'} {api} use={(path) => { root = path; review = null; accepted = false; browsing = false; }} close={() => (browsing = false)}/>{/if}

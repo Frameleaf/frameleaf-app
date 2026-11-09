@@ -51,7 +51,7 @@ export class LibraryMove {
     private fencing: Fencing,
     private storage: PostgresStorage,
     private directory: string,
-    private backups: string,
+    public backups: string,
     private execute: typeof command = command,
     private server?: ServerPause,
     private drain: DrainTiming = DRAIN,

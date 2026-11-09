@@ -27,6 +27,7 @@ import { DesktopGrants } from './desktop-grants.js';
 import { desktopApi } from './desktop-api.js';
 import { Docker, command } from './docker.js';
 import { adoptOwnMounts, tidyLocations, toHost } from './host-paths.js';
+import { applyUnraidFolderDefaults, broadRoots, ensureChosenFolder, listFolders } from './folders.js';
 import { Security, trustedProxyList } from './security.js';
 import { Backups } from './backups.js';
 import { Releases } from './releases.js';
@@ -46,7 +47,10 @@ import { connectionChecks, redactPaths, redactionRoots, renderReport } from './t
 
 const runtime = process.env.MANAGER_RUNTIME ?? 'docker';
 // Docker only: these are Linux paths, and a native Windows path has a colon of its own.
-if (runtime === 'docker') tidyLocations();
+if (runtime === 'docker') {
+  applyUnraidFolderDefaults();
+  tidyLocations();
+}
 const docker = new Docker();
 // Before any location is read: a folder may be mapped to a different path inside this container.
 // Failing here beats running with untranslated paths; the container's restart policy tries again.
@@ -69,6 +73,8 @@ if (!directory || directory !== resolve(directory) || (runtime === 'native' && !
   throw new Error('MANAGER_DATA is required, and MANAGER_ORIGIN for the native runtime');
 const nativeAddress = runtime === 'native' ? nativeListener(origin!) : null;
 if (!['docker', 'native'].includes(runtime)) throw new Refusal('manager_runtime_invalid');
+// A new Unraid install maps all of /mnt, so Docker no longer creates Manager's own folder.
+if (runtime === 'docker' && broadRoots([process.env.MANAGER_STORAGE_ROOTS ?? ''])) await mkdir(directory, { recursive: true });
 const store = new Store(directory);
 if (runtime === 'docker' && store.get('native-installation')) throw new Refusal('manager_runtime_changed');
 if (runtime === 'native') {
@@ -79,6 +85,8 @@ if (runtime === 'native') {
     : bootstrapPipe.isFIFO() || bootstrapPipe.isSocket();
   if (!privatePipe) throw new Refusal('native_bootstrap_unavailable');
 }
+// Chosen in setup on a new Unraid install; the template no longer carries it.
+if (runtime === 'docker' && store.get<string>('backup-root')) process.env.MANAGER_BACKUP_ROOT = store.get<string>('backup-root')!;
 const backupRoot = process.env.MANAGER_BACKUP_ROOT ?? (runtime === 'native' ? join(directory, 'backups') : undefined);
 if (!backupRoot || backupRoot !== resolve(backupRoot))
   throw new Error('MANAGER_BACKUP_ROOT must be an absolute mounted directory');
@@ -129,10 +137,27 @@ const lifecycle = native ?? operations;
 const managerVersion = await readFile(new URL('../package.json', import.meta.url), 'utf8')
   .then((text) => `v${JSON.parse(text).version}`)
   .catch(() => 'unknown version');
+const currentBackupRoot = () => process.env.MANAGER_BACKUP_ROOT ?? backupRoot!;
+const storageRoots = () => (process.env.MANAGER_STORAGE_ROOTS ?? '').split(':').filter(Boolean);
+const folderSetup = () => runtime === 'docker' && broadRoots(storageRoots());
+/** With all of /mnt mapped, the places worth reporting are the folders in use, not /mnt. */
+const mediaPlaces = () =>
+  folderSetup() ? (operations.installation()?.mounts ?? []).filter((m) => m.type === 'bind').map((m) => m.source) : storageRoots();
+/** What setup pre-fills and External folders must stay clear of: the real folders once installed. */
+function folderDefaults() {
+  const base = ('detectedPath' in defaults && defaults.detectedPath) || '/mnt/user/appdata';
+  const installed = operations.installation();
+  return {
+    media: installed?.mounts[0]?.source ?? join(base, 'frameleaf-media'),
+    database: installed?.databaseRoot ?? join(base, 'frameleaf-databases'),
+    backups: currentBackupRoot(),
+    manager: directory!,
+  };
+}
 /** Mounted media storage and the backup destination, which can be a different drive. */
 const drives = () => [
-  ...(process.env.MANAGER_STORAGE_ROOTS ?? '').split(':').filter(Boolean).map((path, i) => ({ name: `Storage ${i + 1}`, path })),
-  { name: 'Backup drive', path: backupRoot! },
+  ...mediaPlaces().map((path, i) => ({ name: `Storage ${i + 1}`, path })),
+  { name: 'Backup drive', path: currentBackupRoot() },
 ];
 /**
  * Everything a troubleshooting run looks at: this library's containers (server, database, machine learning, LAN
@@ -259,7 +284,8 @@ class Api {
       profile: store.get('profile'),
       administrator: { name: store.get<{ name: string }>('administrator')?.name },
       managerOrigin: security.requestOrigin(request),
-      backupRoot,
+      backupRoot: currentBackupRoot(),
+      folderSetup: folderSetup() ? folderDefaults() : null,
       host: {
         name: new URL(security.requestOrigin(request)).hostname,
         available: !!host,
@@ -348,9 +374,9 @@ class Api {
   @Get('storage') async storage() {
     const roots = [
       ...new Set([
-        ...(process.env.MANAGER_STORAGE_ROOTS ?? '').split(':').filter(Boolean),
-        ...defaults.roots,
-        backupRoot!,
+        ...mediaPlaces(),
+        ...(folderSetup() ? [operations.installation()?.databaseRoot ?? ''].filter(Boolean) : defaults.roots),
+        currentBackupRoot(),
       ]),
     ];
     return Promise.all(
@@ -457,11 +483,16 @@ class Api {
       .parse(input);
     return operations.reviewRestore(snapshot, databaseRoot, managerPort(request));
   }
-  @Post('review-move') reviewMove(@Body() input: unknown) {
+  @Post('folders') folders(@Body() input: unknown) {
+    if (!folderSetup()) throw new Refusal('folder_browsing_unavailable');
+    return listFolders(z.object({ path: z.string().min(1).max(4096) }).strict().parse(input).path);
+  }
+  @Post('review-move') async reviewMove(@Body() input: unknown) {
     const { root } = z
       .object({ root: z.string().min(1).max(4096) })
       .strict()
       .parse(input);
+    if (folderSetup()) await ensureChosenFolder(root);
     return operations.reviewMove(root);
   }
   @Post('move-library') moveLibrary(@Body() input: unknown) {

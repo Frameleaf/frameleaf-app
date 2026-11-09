@@ -8,6 +8,7 @@ import { Discovery, COMPATIBLE_SETTINGS, maskSettings, unmaskSettings, unsupport
 import { Releases, type VerifiedRelease } from './releases.js';
 import { compareReleases, isNewerRelease } from './release-order.js';
 import { Backups, sourceBackups } from './backups.js';
+import { assertExternalFolder, assertSeparateFolders, broadRoots, ensureChosenFolder } from './folders.js';
 import { Fencing } from './fencing.js';
 import { detectPhotoApps, identifyPhotoApp, photoAppKind, photoAppNames, type ContainerFileReader, type PhotoAppKind, type PhotoAppPlan } from './photo-app-sources.js';
 import { capturePhotoAppSource, restoreDatabaseUrl, type PhotoAppCapture } from './photo-app-capture.js';
@@ -55,6 +56,8 @@ export const ReviewInput = z
       .regex(/^[a-f0-9]{64}$/)
       .optional(),
     mediaPath: z.string().min(1).max(4096).optional(),
+    /** Only where folders are chosen in Manager (a new Unraid install). */
+    backupPath: z.string().min(1).max(4096).optional(),
     databaseRoot: z.string().min(1).max(4096),
     port: z.number().int().min(1024).max(65535),
     ml: z.boolean(),
@@ -76,7 +79,7 @@ export const PhotoAppPrepareInput = z.strictObject({
     )
     .max(10_000),
   approvedLossCodes: z.array(z.string().min(1).max(1024)).max(1000),
-  review: ReviewInput.pick({ tag: true, databaseRoot: true, port: true, ml: true, name: true, services: true })
+  review: ReviewInput.pick({ tag: true, backupPath: true, databaseRoot: true, port: true, ml: true, name: true, services: true })
     .extend({ mediaPath: z.string().min(1).max(4096) })
     .strict(),
 });
@@ -675,6 +678,7 @@ export class Operations {
     const input = ReviewInput.parse({ ...value.review, kind: 'import', sourceId: capture.fence.id, lifecycle: 'docker-only' });
     // Placements are library/<owner>/…; the preparation reviews them with /data read-only, so the owner folders
     // must exist first. Only these folders, private, in an approved and writable destination.
+    if (broadRoots(this.roots)) await ensureChosenFolder(input.mediaPath!);
     const media = await storagePath(input.mediaPath!, this.roots, 0);
     for (const folder of [join(media, 'library'), ...expected.map((id) => join(media, 'library', ids.owners[id]))]) {
       await mkdir(folder, { mode: 0o700 }).catch((error: NodeJS.ErrnoException) => {
@@ -778,6 +782,7 @@ export class Operations {
   async review(input: z.infer<typeof ReviewInput>, managerPort?: number, common?: CommonImportReview) {
     if (this.installation()) throw new Refusal('installation_already_exists');
     const compatibility = await this.docker.compatibility();
+    await this.prepareChosenFolders(input);
     let source: Source | null = null,
       backup: Backup | null = null;
     if (common) {
@@ -797,6 +802,7 @@ export class Operations {
     await this.checkPort(input.port, null, common?.fence ?? source, managerPort);
     // The same conflict check the stack generator runs, against the mounts this installation will have.
     checkServiceOverrides((source?.mounts ?? [{ target: '/data' }]).map(({ target }) => target), input.services ?? {}, this.mountRoots());
+    this.checkExternalFolders(input.services ?? {}, [input.mediaPath ?? '', input.databaseRoot], input.backupPath);
     const databaseStorage = await this.databaseStorage.validate(
       input.databaseRoot,
       (source?.summary.databaseBytes ?? 1024 ** 3) * 3,
@@ -1071,6 +1077,7 @@ export class Operations {
     assertCommonImportReview(operation, common);
     if (common && (operation.kind !== 'import' || review.source)) throw new Refusal('invalid_import_authority');
     const sourceFence = common?.fence ?? review.source;
+    this.adoptChosenBackupFolder(review.input.backupPath);
     await this.step(operation, 'preflight', async () => {
       if (this.installation()) throw new Refusal('installation_already_exists');
       await this.releases.eligible(review.input.tag);
@@ -1656,6 +1663,7 @@ export class Operations {
     const prior = this.store.request('reconfigure', key, input);
     if (prior) return prior;
     checkServiceOverrides(installation.mounts.map(({ target }) => target), services, this.mountRoots());
+    this.checkExternalFolders(services, [...installation.mounts.filter((m) => m.type === 'bind').map((m) => m.source), installation.databaseRoot]);
     const { operation, created } = this.store.start('reconfigure', key, input);
     if (created) this.launch(operation, () => this.applyReconfigure(operation));
     return operation;
@@ -1664,6 +1672,26 @@ export class Operations {
    * Host folders an advanced container setting may bind-mount: Manager's media and database roots (mapped
    * into Manager at identical paths) plus MANAGER_MOUNT_ROOTS, the administrator's explicit allow-list.
    */
+  /** On a new Unraid install: check the folders chosen in setup and create them. Nothing is adopted until the install starts. */
+  private async prepareChosenFolders(input: z.infer<typeof ReviewInput>): Promise<void> {
+    if (!broadRoots(this.roots)) return;
+    const backups = input.backupPath ?? process.env.MANAGER_BACKUP_ROOT!;
+    assertSeparateFolders([input.mediaPath, input.databaseRoot, backups, this.store.directory].filter((path): path is string => !!path));
+    for (const path of [input.mediaPath, input.databaseRoot, backups]) if (path) await ensureChosenFolder(path);
+  }
+  private adoptChosenBackupFolder(backups: string | undefined): void {
+    if (!broadRoots(this.roots) || !backups) return;
+    process.env.MANAGER_BACKUP_ROOT = backups;
+    this.store.set('backup-root', backups);
+    this.backups.relocate(join(backups, 'frameleaf-database'));
+    this.mediaMove.backups = backups;
+  }
+  private checkExternalFolders(services: ServiceOverrides, used: string[], backups = process.env.MANAGER_BACKUP_ROOT!): void {
+    if (!broadRoots(this.roots)) return;
+    const occupied = [...used.filter(Boolean), backups, this.store.directory];
+    for (const override of Object.values(services))
+      for (const mount of override?.mounts ?? []) assertExternalFolder(mount.source, occupied);
+  }
   private mountRoots(): string[] {
     return [
       ...this.roots,
@@ -1673,6 +1701,7 @@ export class Operations {
   }
   private async renderServices(installation: Installation, services: ServiceOverrides): Promise<void> {
     checkServiceOverrides(installation.mounts.map(({ target }) => target), services, this.mountRoots());
+    this.checkExternalFolders(services, [...installation.mounts.filter((m) => m.type === 'bind').map((m) => m.source), installation.databaseRoot]);
     const application = ApplicationConfig.parse({ ...this.application(), services });
     const release = await this.releases.acquire(installation.release);
     await renderCompose(release, installation, this.store.get<string>('database-password')!, this.directory(), application);
@@ -2192,6 +2221,10 @@ export class Operations {
   }
   async reviewRestore(snapshot: string, databaseRoot: string, managerPort?: number) {
     const current = this.installation();
+    if (broadRoots(this.roots)) {
+      assertSeparateFolders([databaseRoot, process.env.MANAGER_BACKUP_ROOT!, this.store.directory]);
+      await ensureChosenFolder(databaseRoot);
+    }
     await this.databaseStorage.validate(databaseRoot, 1024 ** 3);
     const id = randomUUID(),
       checkpoint = join(this.store.directory, `restore-${id}`);
@@ -2207,6 +2240,8 @@ export class Operations {
       throw new Refusal('backup_belongs_to_another_library');
     await this.fencing.assertMedia(recovery.installation.mounts, current ?? undefined);
     const containers = await this.docker.inventory();
+    if (broadRoots(this.roots))
+      assertSeparateFolders([databaseRoot, ...recovery.installation.mounts.filter((m) => m.type === 'bind').map((m) => m.source)]);
     for (const mount of recovery.installation.mounts) {
       if (mount.type === 'bind') await storagePath(mount.source, this.roots, 0);
       else if (!containers.some((c) => c.Mounts.some((m) => m.Type === 'volume' && m.Name === mount.source)))

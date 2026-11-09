@@ -461,6 +461,7 @@ describe(LibraryService.name, () => {
 
       await expect(sut.estimateFolder({ path: '/photos/', exclusionPatterns: ['**/@eaDir/**'] })).resolves.toEqual({
         readable: true,
+        found: true,
         count: 2,
         bytes: 3000,
         complete: true,
@@ -470,6 +471,17 @@ describe(LibraryService.name, () => {
       );
     });
 
+    it('tells a folder this server cannot see from one it may not open', async () => {
+      mocks.storage.walkLibrary.mockImplementation(async function* () {
+        // eslint-disable-next-line unicorn/no-useless-promise-resolve-reject
+        yield await Promise.reject<string[]>(Object.assign(new Error('missing'), { code: 'ENOENT' }));
+      });
+      await expect(sut.estimateFolder({ path: '/mnt/user/archive', exclusionPatterns: [] })).resolves.toMatchObject({
+        readable: false,
+        found: false,
+      });
+    });
+
     it('says when a folder cannot be read, and refuses a relative path', async () => {
       mocks.storage.walkLibrary.mockImplementation(async function* () {
         // eslint-disable-next-line unicorn/no-useless-promise-resolve-reject
@@ -477,6 +489,7 @@ describe(LibraryService.name, () => {
       });
       await expect(sut.estimateFolder({ path: '/locked', exclusionPatterns: [] })).resolves.toEqual({
         readable: false,
+        found: true,
         count: 0,
         bytes: 0,
         complete: true,

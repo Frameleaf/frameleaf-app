@@ -34,6 +34,7 @@
   import {
     browseLibraryFolders,
     createLibrary,
+    getManagerAccess,
     estimateLibraryFolder,
     scanLibrary,
     type LibraryFolderBrowseResponseDto,
@@ -104,9 +105,14 @@
   /** "About N photos and videos, X GB", read again when the folder or what it skips changes. */
   let estimate = $state<LibraryFolderEstimateResponseDto | null>(null);
   let estimating = $state(false);
+  // Connecting a folder happens in Manager, in another tab; coming back looks again.
+  let looks = $state(0);
+  // Outlives a failed look: Frameleaf restarts while Manager connects a folder, so a look can fail meanwhile.
+  let unconnected = $state<string | null>(null);
   $effect(() => {
     const path = folder;
     const skips = patterns;
+    void looks;
     estimate = null;
     if (!path) {
       return;
@@ -117,6 +123,7 @@
       .then((answer) => {
         if (active) {
           estimate = answer;
+          unconnected = answer.found ? null : path;
         }
       })
       .catch(() => {
@@ -133,6 +140,10 @@
       active = false;
     };
   });
+  let managerUrl = $state<string | null>(null);
+  void getManagerAccess()
+    ?.then((value) => (managerUrl = value.url))
+    .catch(() => {});
   const count = (value: number) => value.toLocaleString($locale);
   const folderHelp = $derived.by(() => {
     if (!folder) {
@@ -140,6 +151,9 @@
     }
     if (estimating || !estimate) {
       return $t('frameleaf_addfolder_counting');
+    }
+    if (!estimate.found) {
+      return $t('frameleaf_addfolder_not_connected');
     }
     if (!estimate.readable) {
       return $t('frameleaf_addfolder_unreadable');
@@ -153,6 +167,7 @@
       isImportPathFormatValid(folder) &&
       !!owner &&
       name.trim().length > 0 &&
+      unconnected !== folder &&
       !(estimate && (!estimate.readable || estimate.count === 0)),
   );
 
@@ -186,6 +201,14 @@
     }
   };
 </script>
+
+<svelte:window
+  onfocus={() => {
+    if (folder && unconnected === folder) {
+      looks++;
+    }
+  }}
+/>
 
 <KitPage>
   {#if error}
@@ -246,6 +269,20 @@
     {/if}
     {#if folder && estimate && estimate.readable && estimate.count === 0}
       <Notice tone="warn" title={$t('frameleaf_addfolder_empty_title')}>{$t('frameleaf_addfolder_empty_body')}</Notice>
+    {:else if folder && unconnected === folder}
+      <Notice tone="warn" title={$t('frameleaf_addfolder_not_connected_title')}
+        >{$t('frameleaf_addfolder_not_connected_body')}
+        {#snippet action()}
+          {#if managerUrl}
+            <a
+              class="fl-control button primary"
+              href={`${managerUrl}/#services`}
+              target="_blank"
+              rel="noopener noreferrer">{$t('frameleaf_move_open_manager')}</a
+            >
+          {/if}
+        {/snippet}
+      </Notice>
     {:else if folder && estimate && !estimate.readable}
       <Notice tone="warn" title={$t('frameleaf_addfolder_blocked_title')}
         >{$t('frameleaf_addfolder_blocked_body')}</Notice

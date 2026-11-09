@@ -148,6 +148,10 @@ const moveRefusals: Record<string, string> = {
 };
 const refusals: Record<string, string> = {
   invalid_storage_path: 'That folder path can’t be used. Use a full path such as /mnt/user/photos, with no comma in it.',
+  storage_volume_missing: 'That drive or share isn’t on this server right now. Check that it’s connected, then choose the folder again.',
+  chosen_folders_overlap: 'Photos and videos, the database, backups and Manager’s own settings each need their own separate folder.',
+  external_folder_holds_frameleaf_data: 'This folder holds Frameleaf’s own data, or sits inside it. Choose a folder of photos instead.',
+  folder_browsing_unavailable: 'This server’s folders are set in its container settings, so they can’t be browsed here.',
   storage_inaccessible: 'Manager can’t find this media folder inside its container. In your server’s settings for Frameleaf, map a folder to it, then try again.',
   storage_outside_approved_roots: 'This folder isn’t one of Manager’s media folders. Choose one from the list, or add it to Media roots in your server’s settings for Frameleaf.',
   storage_permissions: 'Manager can’t read and write this media folder. Check the folder’s permissions on your server, then try again.',
@@ -428,6 +432,37 @@ export function containerText(services: Partial<Record<ContainerId, ContainerOve
     };
   }
   return containers;
+}
+export type ExternalFolder = { path: string; readOnly: boolean };
+/** External folders are the Frameleaf server's extra folders kept at the same path; any other line stays under Advanced. */
+const sameFolderLine = (line: string) => {
+  const [source, target, mode, ...rest] = line.split(':');
+  return source === target && !rest.length && (mode === undefined || mode === 'ro' || mode === 'rw') ? { path: source, readOnly: mode === 'ro' } : null;
+};
+export const externalFolders = (mounts: string): ExternalFolder[] => lines(mounts).flatMap((line) => sameFolderLine(line) ?? []);
+export function setExternalFolders(mounts: string, folders: ExternalFolder[]): string {
+  // Anything else stays exactly as typed, including a line the Advanced editor is reporting as invalid.
+  const others = lines(mounts).filter((line) => !sameFolderLine(line));
+  return [...others, ...folders.map(({ path, readOnly }) => `${path}:${path}${readOnly ? ':ro' : ''}`)].join('\n');
+}
+const lexicalOverlap = (a: string, b: string) => a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
+const shareView = (path: string) => {
+  const [, mnt, view, ...rest] = path.split('/');
+  return mnt === 'mnt' && view && !['disks', 'remotes', 'rootshare', 'addons'].includes(view) ? { view, path: `/${rest.join('/')}` } : null;
+};
+/** /mnt/user/a and /mnt/disk1/a can be the same files; the server applies the same rule. */
+function folderOverlap(a: string, b: string): boolean {
+  if (lexicalOverlap(a, b)) return true;
+  const [left, right] = [shareView(a), shareView(b)];
+  return !!left && !!right && [left.view, right.view].some((view) => view === 'user' || view === 'user0') && lexicalOverlap(left.path, right.path);
+}
+/** Why the browser can't use this as an external folder; the server checks the same rules on save. */
+export function externalFolderIssue(path: string, occupied: string[], existing: ExternalFolder[]): string | null {
+  if (path.split('/').length < 4) return 'Choose a folder inside this one.';
+  if (/[,:]/.test(path)) return 'This folder’s name has a comma or colon, which Frameleaf can’t use.';
+  if (existing.some((folder) => folder.path === path)) return 'This folder is already added.';
+  if (occupied.some((other) => folderOverlap(path, other))) return 'This folder holds Frameleaf’s own data, or sits inside it. Choose a folder of photos instead.';
+  return null;
 }
 /** "2 variables · 1 folder · 4g memory", or "" when nothing is set. */
 export function containerSummary(parsed: ContainerOverride): string {
