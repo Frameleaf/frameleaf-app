@@ -10,6 +10,14 @@ export class LibraryMovePauseDto extends createZodDto(z.object({ operationId }).
 
 export class LibraryMoveResumeDto extends createZodDto(z.object({ operationId }).strict()) {}
 
+export class LibraryMoveThumbnailsDto extends createZodDto(
+  z
+    .object({
+      queued: z.boolean().describe('Every thumbnail is queued to be made again from the original files'),
+    })
+    .meta({ id: 'LibraryMoveThumbnailsDto' }),
+) {}
+
 export class LibraryMovePauseStatusDto extends createZodDto(
   z
     .object({

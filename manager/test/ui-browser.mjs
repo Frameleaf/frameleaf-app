@@ -111,6 +111,34 @@ const dashboard = {
   summary: source.summary,
   librarySetup: { phase: 'rescanning', rescanComplete: false, verificationPassed: false, canFinish: false },
 };
+// FL-1323: the Storage page's places, drives and suggestions.
+const GB = 1024 ** 3;
+const cachePool = { path: '/fixture', hostPath: '/fixture', name: 'Cache pool', label: 'Cache pool (NVMe SSD)', kind: 'nvme', speed: 'fast', freeBytes: 180 * GB, totalBytes: 500 * GB, base: '/fixture/appdata' };
+let thumbnails = { path: '/fixture/media/thumbs', own: false, missing: false, bytes: 86 * GB, files: 412880 };
+const storageUsage = () => ({
+  media: { path: '/fixture/media', bytes: 1.85 * 1024 * GB },
+  database: { path: '/fixture/appdata', bytes: 12 * GB },
+  thumbnails,
+  drives: [cachePool],
+  suggestions: {
+    database: null,
+    thumbs: thumbnails.own
+      ? null
+      : {
+          status: 'found',
+          drive: cachePool,
+          needBytes: 86 * GB,
+          title: 'Suggested: Cache pool (NVMe SSD)',
+          reason: 'It has 180 GB free, and thumbnails need about 86 GB. The timeline loads hundreds of small images at once, so large libraries scroll faster from an SSD or NVMe drive.',
+          folder: '/fixture/appdata/frameleaf-thumbnails',
+        },
+  },
+});
+const thumbnailStarts = new Map();
+const storageOperation = (id, kind, step, completed) => {
+  dashboard.operations = [{ id, kind, state: 'running', step, completed, error: null, canStop: kind === 'move-thumbnails', canCancel: false }];
+  return { id };
+};
 let backupAction = 'reuse',
   sources = [source],
   refused = [],
@@ -199,7 +227,10 @@ await page.route('**/manager-api/**', async (route) => {
     };
   } else if (path === 'storage')
     value = [
-      { path: '/fixture/media', totalBytes: 4 * 1024 ** 4, freeBytes: 3 * 1024 ** 4, availableBytes: 3 * 1024 ** 4 },
+      { path: '/fixture/media', uses: ['media'], device: '1', totalBytes: 4 * 1024 ** 4, freeBytes: 3 * 1024 ** 4, availableBytes: 3 * 1024 ** 4, lowOnSpace: false, measurable: true },
+      { path: '/fixture/imported/thumbs', uses: ['thumbnails'], device: null, totalBytes: null, freeBytes: null, availableBytes: null, lowOnSpace: null, measurable: false },
+      // FL-1324: the database's drive is nearly full.
+      { path: '/fixture/appdata', uses: ['database'], device: '2', totalBytes: 500 * GB, freeBytes: 1 * GB, availableBytes: 1 * GB, lowOnSpace: true, measurable: true },
     ];
   else if (path === 'backup-status')
     value = { configured: true, unlocked: true, keyAvailable: true, snapshots };
@@ -226,8 +257,28 @@ await page.route('**/manager-api/**', async (route) => {
         { name: 'Network discovery', ok: null, detail: 'Stopped: phones on the network will not find this library automatically.' },
       ],
     };
+  else if (path === 'storage-usage') value = storageUsage();
   else if (path === 'review-move')
     value = { available: true, id: '019aa111-1111-7111-8111-111111111111', root: body.root, files: 2, bytes: 4096 };
+  else if (path === 'review-thumbnail-move' && body.root === '/fixture/new-drive') {
+    // A slow review of another folder, answered after its dialog was closed.
+    await new Promise((done) => setTimeout(done, 1500));
+    value = { available: true, id: '019aa111-1111-7111-8111-11111111111a', root: body.root, files: 7, bytes: 7 * GB };
+  } else if (path === 'review-thumbnail-move')
+    value = { available: true, id: '019aa111-1111-7111-8111-111111111113', root: body.root, files: 412880, bytes: 86 * GB };
+  else if (path === 'move-thumbnails') {
+    // Like Manager's request store: a key already seen gets the operation it started, never a second one.
+    const started = thumbnailStarts.get(body.key);
+    value = started ?? storageOperation('thumbnail-operation', 'move-thumbnails', 'move-freeze', ['move-stop-writers', 'move-checkpoint', 'move-fence-stack']);
+    if (!started) {
+      thumbnailStarts.set(body.key, value);
+      // The move starts, but its answer is lost on the way back.
+      return route.fulfill({ status: 502, contentType: 'text/html', body: '<html><body>Bad gateway</body></html>' });
+    }
+  }
+  else if (path === 'review-thumbnails-home')
+    value = { id: '019aa111-1111-7111-8111-111111111114', missing: thumbnails.path, folder: '/fixture/media/thumbs', assets: 412880 };
+  else if (path === 'thumbnails-home') value = storageOperation('home-operation', 'thumbnails-home', 'thumbs-queue', ['thumbs-home-switch', 'start']);
   else if (path === 'move-library') {
     dashboard.operations = [
       {
@@ -470,7 +521,12 @@ try {
     await mainButton('Continue').click();
     await page.getByRole('heading', { name: 'Services', exact: true }).waitFor();
     await nav('Storage');
-    assert.equal(await page.getByRole('progressbar').count(), 1);
+    const places = page.getByRole('list', { name: 'Where your library keeps its data' });
+    assert.deepEqual(await places.getByRole('heading').allInnerTexts(), ['Photos and videos', 'Database', 'Thumbnails']);
+    assert.ok((await places.innerText()).includes('86 GB used, with your photos and videos'));
+    // FL-1324's low-space finding shows on the place whose drive it is.
+    assert.ok((await places.getByRole('listitem').nth(1).innerText()).includes('Cache pool (NVMe SSD) · 180 GB free · Nearly full'));
+    assert.ok(!(await places.getByRole('listitem').nth(0).innerText()).includes('Nearly full'));
     await screenshot('storage');
   });
   await check('installation switcher lists this server’s libraries and explains adding one', async () => {
@@ -488,17 +544,91 @@ try {
     await button('Cancel').click();
   });
   await check('library move requires review and backup acknowledgement, then stops safely', async () => {
-    await page.getByLabel('New drive', { exact: true }).selectOption('/fixture/new-drive');
-    await mainButton('Check this drive').click();
-    await page.getByText('2 files', { exact: false }).waitFor();
-    assert.equal(await mainButton('Move the library').isDisabled(), true);
-    await page.getByRole('checkbox', { name: /I have a separate backup/ }).check();
-    await mainButton('Move the library').click();
+    await nav('Storage');
+    await mainButton('Move…').first().click();
+    await page.getByRole('dialog', { name: 'Choose a bigger drive' }).getByRole('button', { name: '/fixture/new-drive' }).click();
+    const review = page.getByRole('dialog', { name: 'Move photos and videos' });
+    await review.getByText('4 KB to copy').waitFor();
+    assert.equal(await review.getByRole('button', { name: 'Move the library' }).isDisabled(), true);
+    await review.getByRole('checkbox', { name: /I have a separate backup/ }).check();
+    await review.getByRole('button', { name: 'Move the library' }).click();
     await mainButton('Stop safely').waitFor();
     assert.equal(requests.findLast((r) => r.path === 'review-move').body.root, '/fixture/new-drive');
     await mainButton('Stop safely').click();
     await mainButton('Cancel safely').waitFor();
     assert.ok(requests.some((r) => r.path === 'stop-move'));
+    dashboard.operations = [];
+    await refresh();
+  });
+  await check('a review answered after its dialog closed never fills another move’s review', async () => {
+    await nav('Storage');
+    await mainButton('Choose another folder…').click();
+    await page.getByRole('dialog', { name: 'Choose a folder for thumbnails' }).getByRole('button', { name: '/fixture/new-drive' }).click();
+    const first = page.getByRole('dialog', { name: 'Move thumbnails' });
+    await first.getByText('Checking the folder…').waitFor();
+    await first.getByRole('button', { name: 'Cancel' }).click();
+    await mainButton('Move to Cache pool…').click();
+    const review = page.getByRole('dialog', { name: 'Move thumbnails' });
+    await review.getByText('412,880 files · 86 GB to copy').waitFor();
+    // The first folder's review arrives now; the open dialog keeps the folder it was opened for.
+    await page.waitForTimeout(1800);
+    assert.ok(requests.some((r) => r.path === 'review-thumbnail-move' && r.body.root === '/fixture/new-drive'));
+    const text = await review.innerText();
+    assert.ok(text.includes('412,880 files · 86 GB to copy') && text.includes('/fixture/appdata/frameleaf-thumbnails'));
+    assert.ok(!text.includes('7 files') && !text.includes('/fixture/new-drive'));
+    await review.getByRole('button', { name: 'Cancel' }).click();
+  });
+  await check('thumbnails move straight to the suggested drive, with the real file count in the review', async () => {
+    await nav('Storage');
+    await mainButton('Move to Cache pool…').click();
+    const review = page.getByRole('dialog', { name: 'Move thumbnails' });
+    await review.getByText('412,880 files · 86 GB to copy').waitFor();
+    assert.ok((await review.innerText()).includes('/fixture/appdata/frameleaf-thumbnails'));
+    assert.equal(requests.findLast((r) => r.path === 'review-thumbnail-move').body.root, '/fixture/appdata/frameleaf-thumbnails');
+    await screenshot('storage-move-thumbnails');
+    expectedHttpErrors = 1;
+    await review.getByRole('button', { name: 'Move thumbnails' }).click();
+    await review.getByRole('alert').waitFor();
+    // Trying again sends the same key, so Manager answers with the move it already started.
+    await review.getByRole('button', { name: 'Move thumbnails' }).click();
+    await page.getByRole('heading', { name: 'Moving thumbnails' }).waitFor();
+    const starts = requests.filter((r) => r.path === 'move-thumbnails');
+    assert.equal(starts.length, 2);
+    assert.equal(starts[0].body.key, starts[1].body.key);
+    const steps = await page.locator('ol.timeline li strong').allInnerTexts();
+    assert.deepEqual(steps, ['Pause uploads and background work', 'Copy thumbnails', 'Check every file', 'Switch to the new folder', 'Start Frameleaf']);
+    // A running thumbnail move can be stopped, then cancelled safely back to the original folder.
+    await mainButton('Stop safely').click();
+    await mainButton('Cancel safely').waitFor();
+    assert.equal(requests.findLast((r) => r.path === 'stop-move').body.id, 'thumbnail-operation');
+    dashboard.operations = [];
+    await refresh();
+  });
+  await check('a missing thumbnail drive is named, checked again, and thumbnails can go back with the photos', async () => {
+    // A thumbnails folder only Docker reaches is listed without a drive, in FL-1324's words.
+    thumbnails = { path: '/fixture/imported/thumbs', own: true, missing: null, bytes: null, files: null };
+    await nav('Storage');
+    assert.ok(
+      (await page.getByRole('list', { name: 'Where your library keeps its data' }).getByRole('listitem').nth(2).innerText()).includes(
+        'Manager can’t check free space on this folder from here. Frameleaf still uses it as normal.',
+      ),
+    );
+    thumbnails = { path: '/fixture/fast/thumbnails', own: true, missing: true, bytes: null, files: null };
+    await nav('Overview');
+    await nav('Storage');
+    await page.getByRole('heading', { name: 'The thumbnail drive isn’t connected' }).waitFor();
+    await mainButton('Check again').click();
+    await mainButton('Check again').waitFor();
+    assert.ok(requests.filter((r) => r.path === 'storage-usage').length >= 2);
+    await screenshot('storage-thumbnails-missing');
+    await mainButton('Put back with your photos…').click();
+    const review = page.getByRole('dialog', { name: 'Put thumbnails back with your photos' });
+    await review.getByText('412,880 thumbnails to make again').waitFor();
+    assert.ok((await review.innerText()).includes('Your photos and videos are not touched.'));
+    await review.getByRole('button', { name: 'Put back and rebuild' }).click();
+    await page.getByRole('heading', { name: 'Putting thumbnails back with your photos' }).waitFor();
+    assert.deepEqual(await page.locator('ol.timeline li strong').allInnerTexts(), ['Switch to your photos folder', 'Start Frameleaf', 'Queue new thumbnails']);
+    thumbnails = { path: '/fixture/media/thumbs', own: false, missing: false, bytes: 86 * GB, files: 412880 };
     dashboard.operations = [];
     await refresh();
   });

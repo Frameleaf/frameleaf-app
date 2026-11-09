@@ -81,7 +81,7 @@ progress.progress,progress.meter{appearance:none;border:0;display:block;width:10
 .st-field input:not([type=checkbox],[type=radio]){min-height:40px;border-radius:8px;font-size:14px;font-weight:400;padding:9px 10px}
 .st-folder{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}.st-folder .button{width:auto;min-height:40px;font-size:12px;font-weight:600;border-radius:8px;padding:7px 11px}
 .st-hint{color:var(--muted);font-size:11px;font-weight:400;line-height:1.5}
-.st-drive{display:inline-flex;gap:6px;align-items:center;color:var(--muted);font-size:11px;font-weight:400;line-height:1.5}.st-drive svg{width:14px;height:14px;flex-shrink:0}.st-drive[data-speed=fast]{color:var(--teal)}.st-drive[data-speed=network]{color:var(--amber)}
+.st-drive{display:inline-flex;gap:6px;align-items:center;color:var(--muted);font-size:11px;font-weight:400;line-height:1.5}.st-drive svg{width:14px;height:14px;flex-shrink:0}.st-drive[data-speed=fast]{color:var(--teal)}.st-drive[data-speed=network],.st-drive[data-speed=low]{color:var(--amber)}
 .st-suggest{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px 12px;align-items:start;padding:14px 16px;border-radius:8px;background:color-mix(in srgb,var(--accent) 14%,transparent);font-size:12px;font-weight:400;line-height:1.5}
 .st-suggest>svg{width:18px;height:18px;margin-top:2px;color:var(--accent)}.st-suggest strong{display:block;margin-bottom:4px;font-weight:600}.st-suggest p{margin:0;color:var(--text);font-size:12px;overflow-wrap:anywhere}
 .st-suggest .button{grid-column:2;justify-self:start;width:auto;margin-top:4px;min-height:34px;font-size:12px;font-weight:400;border-radius:8px;padding:7px 11px}

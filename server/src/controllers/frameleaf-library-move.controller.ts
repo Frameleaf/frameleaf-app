@@ -5,6 +5,7 @@ import {
   LibraryMovePauseDto,
   LibraryMovePauseStatusDto,
   LibraryMoveResumeDto,
+  LibraryMoveThumbnailsDto,
 } from 'src/dtos/frameleaf-library-move.dto.js';
 import { ApiTag } from 'src/enum.js';
 import { Authenticated } from 'src/middleware/auth.guard.js';
@@ -68,6 +69,19 @@ export class FrameleafLibraryMoveController {
   ): Promise<LibraryMovePauseStatusDto> {
     await this.setup.authorizeManager(token);
     return this.move.resume(dto.operationId);
+  }
+
+  @Post('thumbnails')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ public: true })
+  @Endpoint({
+    operationId: 'queueManagerThumbnails',
+    summary: 'Manager machine-authenticated rebuild of every thumbnail, after thumbnails lost their own drive',
+    history,
+  })
+  async thumbnails(@Headers(MANAGER_TOKEN_HEADER) token?: string): Promise<LibraryMoveThumbnailsDto> {
+    await this.setup.authorizeManager(token);
+    return this.move.queueThumbnails();
   }
 }
 

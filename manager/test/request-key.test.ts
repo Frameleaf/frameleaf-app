@@ -1,6 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { requestKey } from '../ui/src/request-key.js';
+import { requestKey, startKey } from '../ui/src/request-key.js';
+
+test('a start retried after a lost response reuses its key; a new review gets its own', () => {
+  const keys = new Map<string, string>();
+  const first = startKey(keys, 'review-a');
+  assert.equal(startKey(keys, 'review-a'), first);
+  assert.notEqual(startKey(keys, 'review-b'), first);
+  keys.delete('review-a');
+  assert.notEqual(startKey(keys, 'review-a'), first);
+});
 
 test('HTTP-compatible management request keys use cryptographic UUID v4 bytes', () => {
   const descriptor = Object.getOwnPropertyDescriptor(crypto, 'randomUUID');

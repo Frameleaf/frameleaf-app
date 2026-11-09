@@ -24,11 +24,12 @@ import { atomicJson, copyVerified, fileHash } from './files.js';
 import { PostgresStorage } from './postgres-storage.js';
 import { toHost } from './host-paths.js';
 import { hostRealpaths, type HostRealpaths } from './host-realpath.js';
-import { LibraryMove, type ServerPauseStatus } from './library-move.js';
+import { LibraryMove, isMoveOperation, type ServerPauseStatus } from './library-move.js';
+import { folderSize, type FolderSize } from './folder-size.js';
 import { Retention } from './retention.js';
 import { ServerCheck, checkHost, freeBytes, type CheckFacts, type CheckOutcome } from './server-check.js';
 import { DOWNLOAD_HOSTS, LOW_MEMORY, downloadUrl, dockerRoomNeeded, hostProbes, type HostProbes } from './host-probes.js';
-import { assertMountSources, folderExists, libraryMounts, seedThumbnailMarker, thumbnailFolder, thumbnailMount, withThumbnails } from './mounts.js';
+import { THUMBNAIL_TARGET, assertMountSources, folderExists, libraryMounts, seedThumbnailMarker, thumbnailFolder, thumbnailMount, visibility, withThumbnails } from './mounts.js';
 import { environment } from './docker.js';
 import { elapsed, log } from './banner.js';
 import {
@@ -219,6 +220,8 @@ type DatabaseMove = Omit<DatabaseMoveIntent, 'to'> & { to: { image: string; data
 /** Where moveDatabase restores to: an update keeps the folder it is in, a drive move (FL-1322) names another. */
 type DatabaseMoveTarget = { current: Installation; release: VerifiedRelease; databaseRoot: string };
 /** FL-1322: a reviewed move of the database to another folder or drive, on the same release and image. */
+/** FL-1323: putting thumbnails back in the photos folder after their own drive went missing. */
+type ThumbnailsHomeReview = { id: string; expires: number; current: Installation; missing: string; folder: string };
 type DatabaseRelocationReview = {
   id: string;
   expires: number;
@@ -338,9 +341,21 @@ export class Operations {
     if (created) this.launch(operation, () => this.applyMove(operation));
     return operation;
   }
+  /** FL-1323: review moving thumbnails to a folder on another drive; the file count and size are measured. */
+  async reviewThumbnailMove(root: string) {
+    if (this.store.locked()) throw new Refusal('operation_in_progress');
+    const review = await this.mediaMove.review(root, 'thumbs');
+    this.thumbnailSizes.set(review.source!, { files: review.files, bytes: review.bytes, measuredAt: Date.now() });
+    return review;
+  }
+  moveThumbnails(id: string, key: string): Operation {
+    const { operation, created } = this.mediaMove.start(id, key, 'thumbs');
+    if (created) this.launch(operation, () => this.applyMove(operation));
+    return operation;
+  }
   async stopMove(id: string): Promise<void> {
     const operation = this.store.history().find((o) => o.id === id);
-    if (!operation || operation.kind !== 'move-library' || operation.state === 'complete')
+    if (!operation || !isMoveOperation(operation.kind) || operation.state === 'complete')
       throw new Refusal('operation_not_recoverable');
     await this.mediaMove.stop(operation);
   }
@@ -349,11 +364,165 @@ export class Operations {
       operation,
       (name, action) => this.step(operation, name, action),
       async () => {
+        // Thumbnails can be made again from the photos, and the database is not touched: only the stack's
+        // settings are kept, to return to. A library move saves a verified database recovery point first.
+        if (operation.kind === 'move-thumbnails') return this.checkpointSettings(operation);
         await this.backups.initialize();
         return this.backups.snapshot(await this.checkpoint(operation), operation.id);
       },
       () => this.libraryStatus(),
     );
+  }
+  /** The stack's compose.json as it was before a thumbnail move, which an interrupted move returns to. */
+  private async checkpointSettings(operation: Operation): Promise<string> {
+    const path = join(this.store.directory, 'checkpoints', operation.id);
+    await mkdir(path, { recursive: true, mode: 0o700 });
+    const compose = join(this.directory(), 'compose.json');
+    await copyVerified(compose, join(path, 'compose.json'), await fileHash(compose));
+    return 'settings';
+  }
+  /** Which host folders Manager itself can see (mounts.ts); a folder only Docker reaches can't be checked from here. */
+  visibility = visibility;
+  /** Measured thumbnail folders: a walk of a large library takes a while, so each is measured at most hourly. */
+  private thumbnailSizes = new Map<string, FolderSize & { measuredAt: number }>();
+  private measuring = new Map<string, Promise<unknown>>();
+  /**
+   * FL-1323: the Storage page's three places (photos, database, thumbnails), with what each holds. Sizes come from
+   * the database where it keeps them, and from a walk of the thumbnails folder, done in the background; a size not
+   * known yet is null. `missing` is true only for a thumbnail folder Manager can see is not there (its drive is
+   * disconnected); a folder only Docker reaches is null.
+   */
+  async storageUsage() {
+    const installation = this.installation();
+    if (!installation) throw new Refusal('no_installation');
+    const visible = await this.visibility();
+    const own = thumbnailMount(installation.mounts);
+    const thumbs = thumbnailFolder(installation.mounts);
+    const missing = own ? (visible(own.source) ? !(await folderExists(own.source)) : null) : false;
+    const database = await this.targetDatabase(installation).catch(() => null);
+    const sql = async (query: string): Promise<number | null> => {
+      if (!database) return null;
+      const value = (await this.docker.sql(database, query).catch(() => '')).trim();
+      const number = Number(value);
+      return value && Number.isSafeInteger(number) ? number : null;
+    };
+    let measured: (FolderSize & { measuredAt: number }) | null = null;
+    if (thumbs && !missing && visible(thumbs)) {
+      measured = this.thumbnailSizes.get(thumbs) ?? null;
+      if ((!measured || measured.measuredAt < Date.now() - 3_600_000) && !this.measuring.has(thumbs)) {
+        const walk = folderSize(thumbs)
+          .then((size) => {
+            if (size) this.thumbnailSizes.set(thumbs, { ...size, measuredAt: Date.now() });
+          })
+          .catch(() => undefined)
+          .finally(() => this.measuring.delete(thumbs));
+        this.measuring.set(thumbs, walk);
+      }
+    }
+    return {
+      media: {
+        path: installation.mounts[0].source,
+        // Every account's original files, as the server counts them for storage quotas.
+        bytes: await sql('SELECT COALESCE(sum("quotaUsageInBytes"), 0)::bigint FROM public."user";'),
+      },
+      database: {
+        path: installation.databaseRoot,
+        bytes: await sql('SELECT pg_database_size(current_database());'),
+      },
+      thumbnails: {
+        path: thumbs,
+        /** True when thumbnails have a folder of their own; false when they are in the photos folder. */
+        own: !!own,
+        missing,
+        bytes: measured?.bytes ?? null,
+        files: measured?.files ?? null,
+      },
+    };
+  }
+  /** Waits for a background walk of the thumbnails folder, for tests. */
+  async measured(): Promise<void> {
+    await Promise.all([...this.measuring.values()]);
+  }
+  /**
+   * FL-1323: thumbnails' own drive is gone. Review putting them back in the photos folder (the library's own
+   * `thumbs` folder), where Frameleaf makes them again. The photos are never touched: only that folder is created.
+   */
+  async reviewThumbnailsHome() {
+    const current = this.installation();
+    if (!current) throw new Refusal('no_installation');
+    if (this.store.locked()) throw new Refusal('operation_in_progress');
+    const own = thumbnailMount(current.mounts);
+    if (!own) throw new Refusal('thumbnails_already_with_photos');
+    // A folder only Docker reaches (one never mapped into Manager) can't be told apart from a missing one: refuse.
+    if (!(await this.visibility())(own.source)) throw new Refusal('thumbnail_folder_not_visible');
+    if (await folderExists(own.source)) throw new Refusal('thumbnail_folder_present');
+    // The photos must be there: they are what new thumbnails are made from.
+    await assertMountSources(libraryMounts(current.mounts), 'frameleaf-server', await this.visibility());
+    const folder = thumbnailFolder(libraryMounts(current.mounts));
+    if (!folder) throw new Refusal('unsupported_thumbnail_mount');
+    const summary = (await this.librarySummary().catch(() => null)) as { assets?: number } | null;
+    const id = randomUUID();
+    this.store.set(`thumbnails-home:${id}`, {
+      id,
+      expires: Date.now() + 900_000,
+      current,
+      missing: own.source,
+      folder,
+    } satisfies ThumbnailsHomeReview);
+    return { id, missing: own.source, folder, assets: summary?.assets ?? null };
+  }
+  thumbnailsHome(id: string, key: string): Operation {
+    const prior = this.store.request('thumbnails-home', key, { reviewId: id });
+    if (prior) return prior;
+    const review = this.store.get<ThumbnailsHomeReview>(`thumbnails-home:${id}`);
+    if (!review || review.expires < Date.now() || digest(review.current) !== digest(this.installation()))
+      throw new Refusal('review_expired');
+    const { operation, created } = this.store.start('thumbnails-home', key, { reviewId: id });
+    if (created) this.launch(operation, () => this.applyThumbnailsHome(operation, review));
+    return operation;
+  }
+  /**
+   * Switch to the photos folder's own `thumbs` folder, start Frameleaf, then ask the server to make every thumbnail
+   * again. Each step can run again after an interruption; it only goes forward, since the old drive is gone.
+   */
+  private async applyThumbnailsHome(operation: Operation, review: ThumbnailsHomeReview): Promise<void> {
+    const next: Installation = { ...review.current, mounts: withThumbnails(review.current.mounts, null) };
+    // The drive came back after the review: nothing is changed, and Frameleaf uses it again once it is checked.
+    if (
+      !operation.completed.includes('thumbs-home-switch') &&
+      digest(this.installation()) === digest(review.current) &&
+      (await this.visibility())(review.missing) &&
+      (await folderExists(review.missing))
+    ) {
+      operation.receipts['cancelled'] = 'thumbnail_folder_present';
+      this.store.save(operation);
+      return;
+    }
+    await this.step(operation, 'thumbs-home-switch', async () => {
+      const installed = this.installation();
+      if (digest(installed) !== digest(review.current) && digest(installed) !== digest(next))
+        throw new Refusal('installation_changed');
+      await assertMountSources(libraryMounts(review.current.mounts), 'frameleaf-server', await this.visibility());
+      await this.docker.compose(this.directory(), review.current.project, 'stop', ['frameleaf-server']);
+      const path = join(this.directory(), 'compose.json');
+      const compose = JSON.parse(await readFile(path, 'utf8'));
+      const volumes: any[] = compose.services?.['frameleaf-server']?.volumes ?? [];
+      const mapping = volumes.filter((m) => m.target === THUMBNAIL_TARGET);
+      if (mapping.length > 1 || (mapping[0] && mapping[0].source !== review.missing.replaceAll('$', '$$$$')))
+        throw new Refusal('media_mapping_changed');
+      compose.services['frameleaf-server'].volumes = volumes.filter((m) => m.target !== THUMBNAIL_TARGET);
+      await atomicJson(path, compose);
+      this.store.set('installation', next);
+      // The server checks each folder for its marker; this one is new, chosen by Manager and checked here.
+      await seedThumbnailMarker(review.folder);
+      return true;
+    });
+    await this.step(operation, 'start', async () => {
+      await this.fencing.assertMedia(next.mounts, next);
+      await this.docker.compose(this.directory(), next.project, 'up');
+      return true;
+    });
+    await this.step(operation, 'thumbs-queue', () => this.serverRequest('POST', 'library-move/manager/thumbnails'));
   }
   installation(): Installation | null {
     return this.store.get('installation');
@@ -1238,7 +1407,12 @@ export class Operations {
         !operation.receipts['reviewed-common-import']) {
         return this.captureForReview(operation);
       }
-      if (operation.kind === 'move-library') return this.applyMove(operation);
+      if (isMoveOperation(operation.kind)) return this.applyMove(operation);
+      if (operation.kind === 'thumbnails-home') {
+        const review = this.store.get<ThumbnailsHomeReview>(`thumbnails-home:${operation.input.reviewId}`);
+        if (!review) throw new Refusal('review_missing');
+        return this.applyThumbnailsHome(operation, review);
+      }
       if (operation.kind === 'move-database') {
         const review = this.store.get<DatabaseRelocationReview>(`database-move:${operation.input.reviewId}`);
         if (!review) throw new Refusal('review_missing');
@@ -2961,9 +3135,11 @@ export class Operations {
     // FL-1322: once started on the new folder the library may have written there; going back would lose that.
     if (operation.kind === 'move-database' && operation.receipts['start-state'] && !operation.receipts['cancellation-intent'])
       throw new Refusal('database_move_reverse_required');
+    // FL-1323: the thumbnail drive is gone, so there is nothing to go back to; Resume finishes putting them back.
+    if (operation.kind === 'thumbnails-home') throw new Refusal('thumbnails_home_resume_required');
     this.executing.add(id); // Claim synchronously, before any external effect or await.
     try {
-      if (operation.kind === 'move-library') {
+      if (isMoveOperation(operation.kind)) {
         await this.mediaMove.recover(operation);
         operation.state = 'complete';
         operation.error = operation.receipts['cancelled'] as string;
@@ -3278,10 +3454,11 @@ export class Operations {
       databaseMove:
         operation.kind === 'update' &&
         (!!receipts['database-move-intent'] || !!this.store.get<UpdateReview>(`update:${input.reviewId}`)?.databaseMove),
-      canStop: operation.kind === 'move-library' && operation.state === 'running' && !receipts['move-writes-intent'],
+      canStop: isMoveOperation(operation.kind) && operation.state === 'running' && !receipts['move-writes-intent'],
       canCancel:
         ['failed', 'interrupted', 'awaiting-review'].includes(operation.state) &&
-        (operation.kind === 'move-library'
+        operation.kind !== 'thumbnails-home' &&
+        (isMoveOperation(operation.kind)
           ? !receipts['move-writes-intent']
           : operation.kind === 'move-database'
             ? !receipts['start-state']
