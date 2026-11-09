@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { Operations, ReviewInput } from '../src/operations.js';
 import { Store } from '../src/store.js';
 import { Refusal, type Installation } from '../src/contracts.js';
-import { ServerCheck, checkHost } from '../src/server-check.js';
+import { ServerCheck, checkHost, detectPlatform } from '../src/server-check.js';
 import type { Container, Docker } from '../src/docker.js';
 import type { Releases, VerifiedRelease } from '../src/releases.js';
 import type { Backups } from '../src/backups.js';
@@ -445,7 +445,7 @@ test('Unraid found from its docker.cfg counts as Unraid when MANAGER_PLATFORM is
   const f = await fixture();
   try {
     delete process.env.MANAGER_PLATFORM;
-    (f.operations as unknown as { databaseStorage: { unraid: boolean } }).databaseStorage.unraid = true;
+    detectPlatform('unraid');
     f.state.dockerman = false;
     const result = await f.operations.review(f.input);
     assert.equal(result.host, 'unraid');
@@ -455,6 +455,7 @@ test('Unraid found from its docker.cfg counts as Unraid when MANAGER_PLATFORM is
     process.env.MANAGER_PLATFORM = 'truenas';
     assert.equal(f.operations.checkHost(), 'truenas');
   } finally {
+    detectPlatform(undefined);
     delete process.env.MANAGER_PLATFORM;
     await f.cleanup();
   }

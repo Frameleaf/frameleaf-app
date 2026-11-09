@@ -23,7 +23,17 @@ export type CheckResult = { id: CheckId; status: CheckStatus; code?: string; det
 export type CheckOutcome = { facts?: CheckFacts; status?: 'ok' | 'warning' | 'unknown'; code?: string; detail?: string };
 /** The host whose fix steps the UI shows. HexOS sets MANAGER_PLATFORM=hexos; a plain Docker host is linux. */
 export type CheckHost = 'unraid' | 'truenas' | 'hexos' | 'linux';
-export const checkHost = (platform = process.env.MANAGER_PLATFORM): CheckHost =>
+let detectedPlatform: string | undefined;
+/** What Manager found at start without MANAGER_PLATFORM: Unraid, from its docker.cfg. */
+export const detectPlatform = (platform: string | undefined) => {
+  detectedPlatform = platform;
+};
+/**
+ * The one answer to "which host is this": MANAGER_PLATFORM when set, else what Manager detected at start. Check this
+ * server, the Unraid Docker tab check and the Unraid Compose settings all use it, so they can't disagree.
+ */
+export const managerPlatform = () => process.env.MANAGER_PLATFORM || detectedPlatform;
+export const checkHost = (platform = managerPlatform()): CheckHost =>
   platform === 'unraid' || platform === 'truenas' || platform === 'hexos' ? platform : 'linux';
 
 export class ServerCheck {

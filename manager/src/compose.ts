@@ -10,6 +10,7 @@ import { atomicJson, atomicSecret } from './files.js';
 import { command, environment, type Container } from './docker.js';
 import { folderDetail } from './host-paths.js';
 import { UNRAID_ICON, containerName } from './dockerman.js';
+import { managerPlatform } from './server-check.js';
 
 export type Acceleration = 'cpu' | 'cuda' | 'rocm' | 'openvino';
 /** Match hwaccel.transcoding.yml; video acceleration does not require an ML variant or AMD's KFD. */
@@ -618,5 +619,5 @@ export async function renderCompose(
     ),
   );
   await atomicJson(join(directory, 'compose.json'), compose);
-  if (process.env.MANAGER_PLATFORM === 'unraid') await configureUnraidCompose(directory);
+  if (managerPlatform() === 'unraid') await configureUnraidCompose(directory);
 }

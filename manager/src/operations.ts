@@ -960,12 +960,9 @@ export class Operations {
     await this.downloadsCheck(checks);
     return Object.assign(checks, { compatibility, databaseStorage });
   }
-  /**
-   * The host whose checks and fix steps Check this server shows. MANAGER_PLATFORM first; otherwise Unraid as Manager
-   * detected it at start (its docker.cfg), the same detection the database folder and drive suggestions use.
-   */
+  /** The host whose checks and fix steps Check this server shows (MANAGER_PLATFORM, else what Manager detected). */
   checkHost() {
-    return checkHost(process.env.MANAGER_PLATFORM || (this.databaseStorage?.unraid ? 'unraid' : undefined));
+    return checkHost();
   }
   /** FL-1318: room in Docker's own storage for the images this install downloads; less without machine learning. */
   private async roomCheck(checks: ServerCheck, ml: boolean): Promise<void> {
