@@ -236,7 +236,11 @@ refused (`database_move_reverse_required`), and resuming starts Frameleaf on the
 /manager-api/retained-databases` lists retained folders; `POST /manager-api/remove-retained-database`
 with `{ path }` deletes one, only while no operation is open, the current database answers, and no
 container maps the folder, a folder inside it or a folder above it (Manager's own containers, and this
-library's stack mapping a folder above it, excepted).
+library's stack mapping a folder above it, excepted). The comparison happens entirely on the host:
+the folder's host path and each container's mount source as Docker reports it (never Manager's
+translation), both resolved by a short-lived helper in Manager's own image, with the host's `/` mapped
+read-only and no network, which follows links Manager cannot see. If the helper cannot run
+or any source cannot be resolved, the folder is kept (`database_folder_unverified`).
 
 An in-place change needs the same PostgreSQL major and the same on-disk catalog, the installed
 image listed in `databaseImageChange.from`, and a checkpoint backup taken first (Manager always

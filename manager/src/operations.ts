@@ -22,6 +22,8 @@ import { containerNumber } from './dockerman.js';
 import { ApplicationConfig, checkServiceOverrides, detectAcceleration, releaseImages, renderCompose, retuneDatabase, ServiceOverrides, STUDIO_WORKER_TARGET, storagePath } from './compose.js';
 import { atomicJson, copyVerified, fileHash } from './files.js';
 import { PostgresStorage } from './postgres-storage.js';
+import { toHost } from './host-paths.js';
+import { hostRealpaths, type HostRealpaths } from './host-realpath.js';
 import { LibraryMove, type ServerPauseStatus } from './library-move.js';
 import { Retention } from './retention.js';
 import { ServerCheck, checkHost, freeBytes, type CheckFacts, type CheckOutcome } from './server-check.js';
@@ -259,6 +261,8 @@ type PreviousInstallation = {
 };
 export class Operations {
   private mediaMove: LibraryMove;
+  /** FL-1322: host paths resolved as the host sees them, before a retained database folder is removed. */
+  hostRealpaths: HostRealpaths;
   private discovery: Discovery;
   private fencing: Fencing;
   private retention: Retention;
@@ -281,6 +285,7 @@ export class Operations {
     private autostartFile?: string | AutostartFile,
   ) {
     this.discovery = new Discovery(docker);
+    this.hostRealpaths = hostRealpaths(docker, store.directory);
     this.probes = hostProbes(docker, store.directory);
     this.fencing = new Fencing(docker, store, autostartFile);
     this.retention = new Retention(store, store.directory, join(store.directory, 'releases'));
@@ -2507,16 +2512,31 @@ export class Operations {
     // Any container (running or stopped: it can start later) that maps this folder, something inside it, or a folder
     // above it may use these files. Manager's own containers map the database parent and never use PGDATA; this
     // library's stack maps only its media and the database in use (checked above), so only its mappings of this
-    // folder or inside it count.
-    const user = (await this.docker.inventory()).find(
-      (c) =>
-        c.Config.Labels?.['app.frameleaf.manager.role'] !== 'controller' &&
-        c.Mounts.some(
-          (m) =>
-            m.Source?.startsWith('/') &&
-            (inside(m.Source, path) || (c.Config.Labels?.['app.frameleaf.manager'] !== installation.id && inside(path, m.Source))),
-        ),
-    );
+    // folder or inside it count. Everything is compared on the host: the folder's host path and each container's
+    // own host source (Docker's, never Manager's translation of it), both resolved by the host with links followed.
+    // A path the host can't resolve could lead anywhere, so the folder is kept rather than compared by spelling.
+    const containers = (await this.docker.inventory(true)).filter((c) => c.Config.Labels?.['app.frameleaf.manager.role'] !== 'controller');
+    const sources = [...new Set(containers.flatMap((c) => c.Mounts.map((m) => m.Source).filter((source) => source?.startsWith('/'))))];
+    const onHost = toHost(path);
+    const resolved = await this.hostRealpaths([onHost, ...sources]);
+    const unresolved = resolved && containers.find((c) => c.Mounts.some((m) => resolved[sources.indexOf(m.Source) + 1] === null));
+    if (!resolved || resolved[0] === null || unresolved)
+      throw new Refusal(
+        'database_folder_unverified',
+        409,
+        unresolved ? `Manager could not tell where a folder container ${unresolved.Name.replace(/^\//, '')} maps really is.` : undefined,
+      );
+    const names = [onHost, resolved[0]];
+    const user = containers.find((c) => {
+      const own = c.Config.Labels?.['app.frameleaf.manager'] === installation.id;
+      return c.Mounts.some(
+        (m) =>
+          m.Source?.startsWith('/') &&
+          [m.Source, resolved[sources.indexOf(m.Source) + 1]!].some((source) =>
+            names.some((f) => inside(source, f) || (!own && inside(f, source))),
+          ),
+      );
+    });
     if (user) throw new Refusal('database_folder_in_use', 409, `Container ${user.Name.replace(/^\//, '')} maps this folder.`);
     await this.docker.sql(await this.targetDatabase(installation), 'SELECT 1;').catch(() => {
       throw new Refusal('database_unconfirmed');

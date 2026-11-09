@@ -203,6 +203,7 @@ const refusals: Record<string, string> = {
   database_image_changed: 'The database engine differs from the installed release’s. Update Frameleaf first, then move the database.',
   database_folder_not_retained: 'Manager is not keeping this database folder. Refresh the Storage page.',
   database_folder_in_use: 'This database folder is still in use, so it was not removed.',
+  database_folder_unverified: 'Manager could not confirm that no other app uses this folder, so it kept the old copy. Nothing was removed.',
   database_unconfirmed: 'Manager could not confirm the current database is working, so it kept the previous folder. Start Frameleaf, then try again.',
   insufficient_database_space:
     'The drive that holds the database folder does not have enough free space. Free some space, then try again.',
