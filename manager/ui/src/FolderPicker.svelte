@@ -20,12 +20,15 @@
   let dialog = $state<HTMLDialogElement>(),
     listing = $state<{ path: string; parent: string | null; folders: { name: string; path: string }[]; truncated: boolean } | null>(null),
     error = $state('');
+  let latest = 0;
   async function open(path: string) {
+    const request = ++latest;
     error = '';
     try {
-      listing = await api('folders', { path });
+      const answer = await api('folders', { path });
+      if (request === latest) listing = answer;
     } catch (e) {
-      error = readable(e instanceof Error ? e.message : 'storage_volume_missing');
+      if (request === latest) error = readable(e instanceof Error ? e.message : 'storage_volume_missing');
     }
   }
   onMount(() => {

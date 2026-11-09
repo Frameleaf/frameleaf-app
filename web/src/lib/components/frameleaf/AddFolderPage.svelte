@@ -107,6 +107,8 @@
   let estimating = $state(false);
   // Connecting a folder happens in Manager, in another tab; coming back looks again.
   let looks = $state(0);
+  // Outlives a failed look: Frameleaf restarts while Manager connects a folder, so a look can fail meanwhile.
+  let unconnected = $state<string | null>(null);
   $effect(() => {
     const path = folder;
     const skips = patterns;
@@ -121,6 +123,7 @@
       .then((answer) => {
         if (active) {
           estimate = answer;
+          unconnected = answer.found ? null : path;
         }
       })
       .catch(() => {
@@ -164,6 +167,7 @@
       isImportPathFormatValid(folder) &&
       !!owner &&
       name.trim().length > 0 &&
+      unconnected !== folder &&
       !(estimate && (!estimate.readable || estimate.count === 0)),
   );
 
@@ -200,7 +204,7 @@
 
 <svelte:window
   onfocus={() => {
-    if (estimate && !estimate.found) {
+    if (folder && unconnected === folder) {
       looks++;
     }
   }}
@@ -265,7 +269,7 @@
     {/if}
     {#if folder && estimate && estimate.readable && estimate.count === 0}
       <Notice tone="warn" title={$t('frameleaf_addfolder_empty_title')}>{$t('frameleaf_addfolder_empty_body')}</Notice>
-    {:else if folder && estimate && !estimate.found}
+    {:else if folder && unconnected === folder}
       <Notice tone="warn" title={$t('frameleaf_addfolder_not_connected_title')}
         >{$t('frameleaf_addfolder_not_connected_body')}
         {#snippet action()}
