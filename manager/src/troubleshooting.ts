@@ -51,7 +51,16 @@ const reserved = (path: string) => RESERVED_TARGETS.some((target) => path === ta
 export const redactionRoots = (configured: string[], containerMounts: string[]) =>
   [...configured, ...containerMounts.filter((path) => path && !reserved(path))].filter(Boolean);
 
+// Docker's own failures come first: their lines also name a network or file error a later entry would claim.
+// Wording follows the prototype's server checks (FL-1310) where it words the same problem.
 const KNOWN: { problem: string; pattern: RegExp; hint: string }[] = [
+  { problem: 'Port in use', pattern: /port is already allocated|address already in use|EADDRINUSE/i, hint: 'Another app on this server is already using the port Frameleaf would open on. Choose a different Frameleaf port, or stop the other app, then try again.' },
+  { problem: 'Folder missing', pattern: /(?:bind|mount) source path does not exist/i, hint: 'A folder Frameleaf uses isn’t on this server any more. Check that its drive or share is connected and the folder wasn’t moved or renamed, then try again.' },
+  { problem: 'Too many downloads', pattern: /toomanyrequests|pull rate limit|429 Too Many Requests/i, hint: 'Frameleaf’s download server is limiting downloads from this network for now. Wait an hour, then try again.' },
+  { problem: 'Manager can’t reach Frameleaf’s downloads', pattern: /ghcr\.io[^\n]*(?:no such host|i\/o timeout|connection refused|TLS handshake timeout|network is unreachable|connection reset|request canceled|Temporary failure in name resolution)/i, hint: 'This server couldn’t connect to ghcr.io, where Frameleaf is downloaded from. Check this server is connected to the internet. If your network uses a VPN, DNS filter or ad blocker, allow ghcr.io and github.com.' },
+  // Any other registry (Docker Hub for a database or helper image, or a mirror): the same advice, naming no host.
+  { problem: 'Manager can’t reach Frameleaf’s downloads', pattern: /(?:pull|registry|docker\.io|\/v2\/|resolve reference)[^\n]*(?:no such host|i\/o timeout|connection refused|TLS handshake timeout|network is unreachable|connection reset|request canceled|Temporary failure in name resolution)/i, hint: 'This server couldn’t connect to an image registry Frameleaf is downloaded from, such as Docker Hub. Check this server is connected to the internet. If your network uses a VPN, DNS filter or ad blocker, allow ghcr.io, github.com and docker.io.' },
+  { problem: 'Not enough room in Docker’s storage', pattern: /(?:\/var\/lib\/docker|docker\.img|register layer|extract)[^\n]*no space left on device/i, hint: 'Docker filled the drive that holds its images. Free some space on that drive, or remove images no container uses, then try again.' },
   { problem: 'Out of memory', pattern: /out of memory|heap out of memory|OOMKilled|Killed process|cannot allocate memory|ENOMEM/i, hint: 'The host ran short of RAM. Close other apps or containers, or turn off machine learning on small machines.' },
   { problem: 'Disk full', pattern: /no space left on device|ENOSPC|disk quota exceeded/i, hint: 'A drive is full. Free space on the library, database or Docker drive.' },
   { problem: 'Permission denied', pattern: /permission denied|EACCES|EPERM|operation not permitted/i, hint: 'A container cannot read or write a folder. Check the folder owner and share permissions on the host.' },
@@ -79,6 +88,23 @@ export function findProblems(service: string, log: string): Problem[] {
         break;
       }
   return [...found.values()];
+}
+
+/**
+ * What a failed Docker command ran into, and what to do, from its redacted stderr tail; undefined when no known
+ * problem matches. Only fixed wording leaves here (and a port number), never stderr itself: it can hold folder
+ * paths and secrets. A crash points at a report the operation screen does not show, so it keeps today's message.
+ */
+export function explainFailure(stderr: string): string | undefined {
+  const lines = stderr.split('\n');
+  for (const known of KNOWN) {
+    if (known.problem === 'Crash') continue;
+    const line = lines.find((l) => known.pattern.test(l));
+    if (!line) continue;
+    const port = known.problem === 'Port in use' && /(?:\d{1,3}(?:\.\d{1,3}){3}|\]|::):(\d{1,5})\b/.exec(line)?.[1];
+    return `${port ? `Port ${port} is in use` : known.problem}. ${known.hint}`;
+  }
+  return undefined;
 }
 
 /** Error and warning lines, by the level words Node, Python, PostgreSQL and Nest print. */

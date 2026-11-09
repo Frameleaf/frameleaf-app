@@ -12,6 +12,7 @@ import { completeCommonImport } from './common-import-lifecycle.js';
 import { COMMON_IMPORT_CONFIG, IMPORT_PREPARATION_TARGET, writeCommonImportCompose } from './common-import-runtime.js';
 import { DOCKERMAN_TEMPLATES, saveDockermanTemplates } from './dockerman.js';
 import { configureUnraidCompose } from './compose.js';
+import { explainFailure } from './troubleshooting.js';
 import { importHash, importSourceKinds, importSourceSchema, type ImportPlan } from './import-plan.js';
 import {
   parseImportSourceAuthority,
@@ -236,8 +237,13 @@ export async function command(
   } catch (error) {
     child.kill('SIGKILL');
     await Promise.allSettled([exited, ...transfers]);
-    logFailure(binary, args, exit, stderr, error, options.env);
+    const tail = logFailure(binary, args, exit, stderr, error, options.env);
     if (options.outputFile) await rm(`${options.outputFile}.partial`, { force: true });
+    // FL-1316: say what Docker ran into and how to fix it. The fix is fixed wording; stderr never leaves the log.
+    if (binary === 'docker' && error instanceof Refusal && error.code === 'docker_operation_failed' && !error.detail) {
+      const explained = explainFailure(tail);
+      if (explained) throw new Refusal(error.code, error.status, explained);
+    }
     throw error;
   } finally {
     clearTimeout(timer);
@@ -249,7 +255,7 @@ const STDERR_TAIL = 2048;
 // test/server-image-layout.test.ts ties this to server/Dockerfile's final stage.
 export const SERVER_ADMIN = '/usr/src/app/server/bin/frameleaf-admin';
 const SECRET_ARGUMENT = /^([A-Z0-9_]*(?:PASSWORD|SECRET|TOKEN|KEY)[A-Z0-9_]*)=(.*)$/is;
-/** One redacted line for the container log: what ran, how it ended and the end of stderr. */
+/** One redacted line for the container log: what ran, how it ended and the end of stderr. Returns that stderr tail, redacted. */
 function logFailure(
   binary: string,
   args: string[],
@@ -257,7 +263,7 @@ function logFailure(
   stderr: string,
   error: unknown,
   env: Record<string, string> = {},
-): void {
+): string {
   // Secrets passed through the environment (PGPASSWORD) are masked like secret arguments.
   const secrets = [
     ...args.map((arg) => SECRET_ARGUMENT.exec(arg)?.[2] ?? ''),
@@ -268,8 +274,10 @@ function logFailure(
     .map((arg) => (arg.length > 120 ? `${arg.slice(0, 117)}...` : arg))
     .join(' ');
   const reason = error instanceof Refusal ? error.code : ((error as NodeJS.ErrnoException)?.code ?? String(error));
-  const tail = redact(stderr, secrets).trim().replaceAll(/\s+/g, ' ');
+  const redacted = redact(stderr, secrets);
+  const tail = redacted.trim().replaceAll(/\s+/g, ' ');
   console.error(redact(`manager: command failed (${reason}, ${exit}): ${binary} ${shown}${tail ? ` | stderr: ${tail}` : ''}`, secrets));
+  return redacted;
 }
 
 export const environment = (c: Container) =>

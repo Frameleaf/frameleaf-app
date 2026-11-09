@@ -221,6 +221,17 @@ const refusals: Record<string, string> = {
   docker_operation_failed:
     'A Docker command did not finish. The Manager container log has the command, exit code and error output. Fix the cause, then resume.',
   docker_unavailable: 'Manager could not run Docker. Check that the Docker socket is mapped into Manager.',
+  compose_v2_required: 'This version of Docker Compose is too old. Frameleaf needs Docker Compose 2 or newer. Update Docker on this server, then try again.',
+  unsupported_docker_host: 'Frameleaf can’t run on this Docker. It needs Docker on Linux with Swarm mode turned off.',
+  unsupported_docker_version_or_architecture:
+    'This version of Docker is too old, or this server’s processor isn’t supported. Frameleaf needs Docker 24 or newer on a 64-bit Intel, AMD or ARM processor.',
+  docker_storage_unavailable: 'Manager can’t find where Docker keeps its storage. Check that Docker is running on this server, then try again.',
+  host_mount_information_required:
+    'Manager can’t see which drive holds this folder. Install Manager again from the Frameleaf template for your server, so it can read this server’s list of drives, then try again.',
+  manager_host_mounts_unverified:
+    'Manager can’t tell which container it runs in, so it can’t check this server’s drives. Make sure only one Frameleaf Manager is running, then try again.',
+  dockerman_container_identity:
+    'Manager couldn’t save Frameleaf’s settings for Unraid’s Docker tab, because a container in this library doesn’t match what Manager set up. Restart the library from Manager, then try again.',
   database_overlaps_existing_container_data:
     'Another container can write inside this database folder. Change that container’s mapping to read-only or a narrower folder, or choose a database folder outside it.',
   unraid_autostart_file_required:
@@ -265,6 +276,8 @@ const states: Record<string, string> = {
 export const readable = (value: string, detail?: string) => {
   if (value.startsWith('source_snapshot_') && !refusals[value])
     return `Manager couldn’t save a copy of the app’s library (${value}). The app’s own data is unchanged; cancel to start it again.${detail ? ' ' + detail : ''}`;
+  // FL-1316: Manager matched the failure to a known problem; its wording says what happened and what to do.
+  if (value === 'docker_operation_failed' && detail) return detail;
   const refused = /^server_refused_(\d{3})$/.exec(value);
   if (refused) return `The Frameleaf server refused Manager's request (${refused[1]}). Check the server logs, then resume.`;
   const text = stepNames[value] ?? states[value] ?? moveRefusals[value] ?? refusals[value] ?? value.replaceAll(/[_-]/g, ' ');
