@@ -193,6 +193,45 @@ describe(AlbumMergeService.name, () => {
     });
   });
 
+  describe('merge into a chosen album', () => {
+    it('keeps the chosen album even when it is the smallest, skips it in the list, and undoes all at once', async () => {
+      const { sut, ctx, runs } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user: { id: user.id } });
+      const target = await albumWith(ctx, user.id, 1, { albumName: 'Target' });
+      const big = await albumWith(ctx, user.id, 3);
+      const other = await albumWith(ctx, user.id, 2);
+
+      await expect(
+        sut.mergeMany(auth, target.album.id, { otherIds: [target.album.id, big.album.id, other.album.id] }),
+      ).resolves.toEqual({ runId: expect.any(String), winnerId: target.album.id });
+
+      await expect(albumRow(ctx.database, target.album.id)).resolves.toMatchObject({
+        albumName: 'Target',
+        deletedAt: null,
+      });
+      await expect(members(ctx.database, target.album.id)).resolves.toEqual(
+        [...target.assetIds, ...big.assetIds, ...other.assetIds].toSorted(),
+      );
+      expect((await albumRow(ctx.database, big.album.id)).deletedAt).toBeInstanceOf(Date);
+      expect((await albumRow(ctx.database, other.album.id)).deletedAt).toBeInstanceOf(Date);
+
+      await runs.undoLatest(auth);
+      expect((await albumRow(ctx.database, big.album.id)).deletedAt).toBeNull();
+      expect((await albumRow(ctx.database, other.album.id)).deletedAt).toBeNull();
+      await expect(members(ctx.database, target.album.id)).resolves.toEqual(target.assetIds.toSorted());
+    });
+
+    it('refuses when only the chosen album is listed', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user: { id: user.id } });
+      const { album } = await albumWith(ctx, user.id, 1);
+
+      await expect(sut.mergeMany(auth, album.id, { otherIds: [album.id] })).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
   describe('locked rule', () => {
     it('unlocks the merged album unless every album in the merge was locked', async () => {
       const { sut, ctx } = setup();

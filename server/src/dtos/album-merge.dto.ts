@@ -16,6 +16,16 @@ const AlbumMergeSchema = z
   .object({ otherId: z.uuidv4().describe('The album to merge with this one') })
   .meta({ id: 'AlbumMergeDto' });
 
+const AlbumMergeIntoSchema = z
+  .object({
+    otherIds: z
+      .array(z.uuidv4())
+      .min(1)
+      .max(100)
+      .describe('The albums to merge into this one. This album may be listed too; it is left out.'),
+  })
+  .meta({ id: 'AlbumMergeIntoDto' });
+
 const AlbumChangeUndoSchema = z
   .object({
     runId: z.uuidv7().optional().describe('Only undo if this is still the latest run; refused with 409 if it is not'),
@@ -75,6 +85,7 @@ const AlbumChangeUndoResponseSchema = z
   .meta({ id: 'AlbumChangeUndoResponseDto' });
 
 export class AlbumMergeDto extends createZodDto(AlbumMergeSchema) {}
+export class AlbumMergeIntoDto extends createZodDto(AlbumMergeIntoSchema) {}
 export class AlbumChangeUndoDto extends createZodDto(AlbumChangeUndoSchema) {}
 export class AlbumMergePreviewParamDto extends createZodDto(AlbumMergePreviewParamSchema) {}
 export class AlbumMergePreviewResponseDto extends createZodDto(AlbumMergePreviewResponseSchema) {}
