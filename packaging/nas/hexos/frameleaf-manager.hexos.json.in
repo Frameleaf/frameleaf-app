@@ -69,6 +69,7 @@
     ],
     "envs": [
       { "name": "MANAGER_BIND_ADDRESS", "value": "0.0.0.0" },
+      { "name": "MANAGER_PLATFORM", "value": "hexos" },
       { "name": "MANAGER_DATA", "value": "$LOCATION(ApplicationsPerformance)/frameleaf/manager" },
       { "name": "MANAGER_STORAGE_ROOTS", "value": "$LOCATION(Photos)/frameleaf" },
       { "name": "MANAGER_DATABASE_ROOTS", "value": "$LOCATION(ApplicationsPerformance)/frameleaf/databases" },
