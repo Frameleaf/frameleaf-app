@@ -62,6 +62,15 @@ test('every problem has a fix on Unraid, TrueNAS, HexOS and other Linux', () => 
       }
 });
 
+test('a restore says it restores; an install and an import say they install', () => {
+  const rows = checkRows([{ id: 'port', status: 'problem', code: 'port_in_use', facts: { port: 2283, free: 2284 } }], context('linux', ['database'], false));
+  assert.equal(checkSummary(rows, 'restore').title, '1 thing to fix before restoring');
+  assert.equal(checkSummary(rows, 'import').title, '1 thing to fix before installing');
+  assert.equal(checkSummary(rows).title, '1 thing to fix before installing');
+  const unknown = checkRows([{ id: 'port', status: 'unknown', code: 'check_failed', facts: { port: 2283 } }], context('linux', ['database'], false));
+  assert.equal(checkSummary(unknown, 'restore').lead, 'Frameleaf can restore. There’s one thing worth knowing first.');
+});
+
 test('warnings and unknowns never block; problems lead the summary', () => {
   const rows = checkRows(
     [

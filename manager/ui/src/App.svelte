@@ -869,7 +869,7 @@
   {#if setupMode}<p class="setup-eyebrow">{chapters[chapter].label} · Step {current + 1} of {items.length}</p>{:else}<ol class="steps" aria-label="Setup progress">{#each items as item, index}<li class:active={index === current} class:complete={index < current} aria-current={index === current ? 'step' : undefined}><span class="step-number">{#if index < current}<Icon name="check" />{:else}{index + 1}{/if}</span><span>{item}</span></li>{/each}</ol>{/if}
 {/snippet}
 {#snippet checksStep(rows: CheckRow[] | null, order: string[], back: () => void, next: () => void, nextLabel: string, recheck: () => Promise<void>)}
-  {@const summary = rows ? checkSummary(rows) : null}
+  {@const summary = rows ? checkSummary(rows, screen === 'restore' ? 'restore' : screen === 'import' ? 'import' : 'install') : null}
   {@render heading(summary?.title ?? CHECKING.title, summary?.lead ?? CHECKING.lead)}
   <ServerCheck {rows} {order} {busy} onaction={(action) => checkAction(action, recheck)} onreport={() => run(() => download('diagnostics-report', `frameleaf-troubleshooting-${new Date().toISOString().slice(0, 10)}.txt`, {}, 'Report downloaded. Read it before you post it.'))} />
   <div class="wizard-footer"><button class="button quiet" disabled={!rows} onclick={back}><Icon name="back"/>Back</button>{#if !rows}<button class="button primary" disabled aria-busy="true"><span class="spinner" aria-hidden="true"></span>Checking…</button>{:else if summary?.problems}<button class="button primary" disabled={busy} onclick={() => run(recheck)}>Check again<Icon name="refresh"/></button>{:else}<button class="button primary" onclick={next}>{nextLabel}<Icon name="arrow"/></button>{/if}</div>
