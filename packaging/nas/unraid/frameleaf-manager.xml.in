@@ -25,7 +25,7 @@ This is the official way to install Frameleaf on Unraid. Frameleaf Manager sets 
   <ExtraSearchTerms>photos videos photo-library photo-backup google-photos icloud gallery albums family faces people search memories video-editor ai self-hosted immich photoprism librephotos photoview piwigo lychee pigallery2 ente nextcloud-photos synology-photos</ExtraSearchTerms>
   <Requires>Docker enabled. The folders below are ready to use; to store anything elsewhere, change only its folder path. Frameleaf Manager uses the Docker socket to install and update Frameleaf. See the setup guide for hardware requirements.</Requires>
   <Icon>https://raw.githubusercontent.com/Frameleaf/frameleaf-app/main/design/frameleaf/mark.png</Icon>
-  <Discord>https://discord.gg/cN3U3mv4</Discord>
+  <Discord>https://discord.gg/NrQuxCMhh5</Discord>
   <Reddit>https://www.reddit.com/r/Frameleaf/</Reddit>
   <Twitter>https://x.com/frameleafapp</Twitter>
   <DonateLink>https://frameleaf.app/pricing/#supporter</DonateLink>

@@ -370,6 +370,26 @@ export class CloudLibraryQueueWriter {
   }
 }
 
+/** When photos waiting for one kind of work go in a batch at the latest: 50 for one owner, or the oldest's 10 minutes. */
+export const nextCloudLibraryBatchAt = (
+  items: ReadonlyArray<Pick<QueueItem, 'ownerId' | 'queuedAt'>>,
+  now: Date,
+): string | null => {
+  const owners = new Map<string, number[]>();
+  for (const item of items) {
+    owners.set(item.ownerId, [...(owners.get(item.ownerId) ?? []), Date.parse(item.queuedAt)]);
+  }
+  let next: number | null = null;
+  for (const queuedAt of owners.values()) {
+    const due =
+      queuedAt.length >= CLOUD_LIBRARY_MIN_BATCH
+        ? now.getTime()
+        : Math.max(now.getTime(), Math.min(...queuedAt) + CLOUD_LIBRARY_MAX_WAIT_MS);
+    next = next === null ? due : Math.min(next, due);
+  }
+  return next === null ? null : new Date(next).toISOString();
+};
+
 /**
  * The Frameleaf Cloud destination `workload` is routed to, or undefined when it runs on this server or a
  * home-network worker. Only rows are read; nothing is admitted or contacted. FL-456 replaces the single

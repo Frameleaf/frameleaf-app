@@ -19,7 +19,7 @@ Before starting, create a fresh Frameleaf PostgreSQL 19 database on the framelea
   <Icon>https://raw.githubusercontent.com/Frameleaf/frameleaf-app/main/design/frameleaf/mark.png</Icon>
   <WebUI>http://[IP]:[PORT:2283]</WebUI>
   <ExtraParams>--stop-timeout=10 --shm-size=2g</ExtraParams>
-  <Discord>https://discord.gg/cN3U3mv4</Discord>
+  <Discord>https://discord.gg/NrQuxCMhh5</Discord>
   <Reddit>https://www.reddit.com/r/Frameleaf/</Reddit>
   <Twitter>https://x.com/frameleafapp</Twitter>
   <DonateLink>https://frameleaf.app/pricing/#supporter</DonateLink>

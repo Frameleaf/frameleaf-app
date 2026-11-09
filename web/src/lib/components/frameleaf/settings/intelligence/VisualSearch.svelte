@@ -2,8 +2,9 @@
   /**
    * Search & intelligence › Visual search (FL-366, after the approved prototype
    * `settings-v2/care/search.jsx` `VisualSearch`): finding photos by describing them. "Search
-   * quality" is three search models (`machineLearning.clip.modelName`); a model saved outside them
-   * is "Custom" and stays until a choice replaces it, and the name itself is under Advanced. "Ask
+   * quality" is the model slider over the published search models (`machineLearning.clip.modelName`);
+   * a model saved outside them selects no stop and stays until one replaces it, and the name itself
+   * is under Advanced. "Ask
    * about your photos" is `localFeatures.askSearch`.
    *
    * What the app does today is said, not what the prototype hoped for: a new search model empties
@@ -12,7 +13,6 @@
    * recent rate) and offers "Save and start tonight / now". Left for later: the try-out on a few photos
    * first.
    */
-  import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
   import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
   import Amount from '$lib/components/frameleaf/settings/kit/Amount.svelte';
   import Field from '$lib/components/frameleaf/settings/kit/Field.svelte';
@@ -31,8 +31,9 @@
     FEATURE_WORK,
     SEARCH_QUALITY,
     workWaiting,
-    type SearchQuality,
   } from '$lib/components/frameleaf/settings/intelligence/presets';
+  import ServerModelSlider from '$lib/components/frameleaf/settings/intelligence/ServerModelSlider.svelte';
+  import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
   import { aboutTime, rereadSeconds, saveAndRedo } from '$lib/frameleaf/library-progress';
   import { handleError } from '$lib/utils/handle-error';
   import {
@@ -45,9 +46,9 @@
   import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { queueManager } from '$lib/managers/queue-manager.svelte';
-  import { mdiImageSearchOutline, mdiShieldCheckOutline } from '@mdi/js';
+  import { mdiImageSearchOutline } from '@mdi/js';
   import { onMount } from 'svelte';
-  import { t, type Translations } from 'svelte-i18n';
+  import { t } from 'svelte-i18n';
 
   onMount(() => queueManager.listen());
 
@@ -59,8 +60,16 @@
 
   const on = $derived(ml.enabled && ml.clip.enabled);
   const waiting = $derived(workWaiting(queueManager.queues, FEATURE_WORK['smart-search']));
-  const quality = $derived<SearchQuality | 'custom'>(choiceOf(SEARCH_QUALITY, ml.clip) ?? 'custom');
+  const custom = $derived(!choiceOf(SEARCH_QUALITY, ml.clip));
   const modelChanged = $derived(ml.clip.modelName !== saved.clip.modelName);
+
+  // The box under Advanced holds only a model of the person's own; emptying it goes back to a published one.
+  const isPublished = (name: string) => !!choiceOf(SEARCH_QUALITY, { modelName: name });
+  const ownModel = $derived(custom ? ml.clip.modelName : '');
+  const setOwnModel = (value: string) => {
+    settingsDraft.draft.machineLearning.clip.modelName =
+      value.trim() || (isPublished(saved.clip.modelName) ? saved.clip.modelName : SEARCH_QUALITY[1].values.modelName);
+  };
 
   // FL-521: how long reading again takes, at the recent rate, and starting it from the save.
   let progress = $state<LibraryProgressResponseDto>();
@@ -117,18 +126,6 @@
           : $t('frameleaf_intel_search_on_body'),
     };
   });
-
-  const qualityHelp = $derived(
-    quality === 'custom'
-      ? $t('frameleaf_intel_custom_model_help', { values: { model: ml.clip.modelName } })
-      : $t(`frameleaf_intel_search_quality_${quality}_help` as Translations),
-  );
-  /** The chosen quality, which the help starts by saying back (bold, as the prototype). */
-  const qualityLead = $derived(
-    quality === 'custom'
-      ? $t('frameleaf_intel_custom')
-      : $t(`frameleaf_intel_search_quality_${quality}` as Translations),
-  );
 </script>
 
 <KitPage>
@@ -155,26 +152,16 @@
       />
     </Row>
     {#if ml.clip.enabled}
-      <Row label={$t('frameleaf_intel_search_quality')} help={qualityHelp} lead={qualityLead}>
-        <SegmentedControl
-          label={$t('frameleaf_intel_search_quality')}
-          value={quality}
-          {disabled}
-          options={[
-            ...SEARCH_QUALITY.map((choice) => ({
-              value: choice.id,
-              label: $t(`frameleaf_intel_search_quality_${choice.id}` as Translations),
-            })),
-            ...(quality === 'custom' ? [{ value: 'custom', label: $t('frameleaf_intel_custom') }] : []),
-          ]}
-          onChange={(value) => {
-            const choice = SEARCH_QUALITY.find((item) => item.id === value);
-            if (choice) {
-              settingsDraft.draft.machineLearning.clip.modelName = choice.values.modelName;
-            }
-          }}
-        />
-      </Row>
+      <ServerModelSlider
+        workload="search"
+        value={ml.clip.modelName}
+        saved={saved.clip.modelName}
+        label={$t('frameleaf_intel_search_quality')}
+        {disabled}
+        customNote={custom ? $t('frameleaf_intel_own_model_note', { values: { model: ml.clip.modelName } }) : undefined}
+        onChange={(model) => (settingsDraft.draft.machineLearning.clip.modelName = model)}
+        onNeedsCloud={(setup) => getCloudManager.open('processing', setup)}
+      />
       {#if modelChanged}
         <Reread
           title={rereadTitle}
@@ -184,12 +171,15 @@
             { label: $t('frameleaf_intel_save_tonight'), run: () => saveAndRead(LibraryRedoWhen.Tonight) },
             { label: $t('frameleaf_intel_save_now'), run: () => saveAndRead(LibraryRedoWhen.Now) },
           ]}
-          onUndo={() => (settingsDraft.draft.machineLearning.clip.modelName = saved.clip.modelName)}
+          onUndo={() => {
+            settingsDraft.draft.machineLearning.clip.modelName = saved.clip.modelName;
+          }}
         />
+      {:else}
+        <Notice tone="warn" title={$t('frameleaf_intel_search_model_warning')}>
+          {$t('frameleaf_intel_search_model_warning_body')}
+        </Notice>
       {/if}
-      <Notice icon={mdiShieldCheckOutline} title={$t('frameleaf_intel_search_pledge')}>
-        {$t('frameleaf_intel_search_pledge_body')}
-      </Notice>
     {/if}
     <Advanced summary={$t('frameleaf_intel_search_advanced')}>
       <Explain>{$t('frameleaf_intel_search_model_explain')}</Explain>
@@ -197,10 +187,9 @@
         <Field
           label={$t('frameleaf_intel_search_model')}
           wide
-          value={ml.clip.modelName}
+          value={ownModel}
           disabled={disabled || !ml.clip.enabled}
-          invalid={!ml.clip.modelName.trim()}
-          onChange={(value) => (settingsDraft.draft.machineLearning.clip.modelName = value)}
+          onChange={setOwnModel}
         />
       </Row>
     </Advanced>

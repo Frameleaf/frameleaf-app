@@ -25,6 +25,7 @@ import {
 } from 'src/enum.js';
 import { FRAMELEAF_CLOUD_ENDPOINT } from 'src/repositories/machine-learning.repository.js';
 import { ML_URL_REMOVED_SUMMARY, MlDestinationService } from 'src/services/ml-destination.service.js';
+import { clearConfigCache } from 'src/utils/config.js';
 import { FrameleafCloudError, errorEnvelopeSchema } from 'src/utils/frameleaf-cloud.js';
 import { MlDestinationRefusedError } from 'src/utils/ml-destination.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
@@ -1112,6 +1113,22 @@ describe(MlDestinationService.name, () => {
 
     afterEach(() => {
       vi.useRealTimers();
+    });
+
+    it('says which work is set to Frameleaf Cloud only, and only while Cloud is on', async () => {
+      mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.local]);
+      const cloudOnlyWhen = async (enabled: boolean) => {
+        clearConfigCache();
+        mocks.systemMetadata.get.mockResolvedValue({
+          frameleafCloud: { cloudMl: { enabled, routing: { interpolation: 'cloud' } } },
+        } as never);
+        return (await sut.getCapabilities()).workloads.find((entry) => entry.workload === MlWorkload.Interpolation)
+          ?.cloudOnly;
+      };
+
+      await expect(cloudOnlyWhen(true)).resolves.toBe(true);
+      await expect(cloudOnlyWhen(false)).resolves.toBe(false);
+      clearConfigCache();
     });
 
     it('does not offer ML work based on a future-dated probe', async () => {

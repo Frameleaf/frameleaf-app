@@ -12,6 +12,7 @@ import {
   AssetRestorationFileKind,
   AssetRestorationMode,
   AssetRestorationStatus,
+  MlAdmissionRefusal,
   MlDestinationKind,
   getBaseUrl,
   type AssetRestorationDestinationDto,
@@ -213,10 +214,20 @@ export type EnhanceStop = {
   /** The model id the request names; null leaves the choice to the computer. */
   model: string | null;
   disabled: boolean;
-  reason: 'not-ready' | 'needs-cloud' | null;
+  reason: 'not-ready' | 'cloud-only' | null;
 };
 
 export const ENHANCE_CLOUD_STOP = 'frameleaf-cloud';
+
+/** Refusals the set-up sheet can put right: a link, a licence, the terms, Cloud on, or AI credit. */
+const CLOUD_SETUP_REFUSALS: ReadonlySet<MlAdmissionRefusal> = new Set([
+  MlAdmissionRefusal.DestinationMissing,
+  MlAdmissionRefusal.ConsentMissing,
+  MlAdmissionRefusal.ConsentVersionOutdated,
+  MlAdmissionRefusal.CloudUnavailable,
+  MlAdmissionRefusal.EntitlementMissing,
+  MlAdmissionRefusal.WalletInsufficient,
+]);
 export const ENHANCE_OWN_MODEL_STOP = 'own-model';
 
 /** Lighter to heavier: Faithful models before Creative ones, each kind in the order the computer lists them. */
@@ -228,20 +239,19 @@ const MODE_WEIGHT: Record<AssetRestorationMode, number> = {
 
 /**
  * The Enhance slider's stops: every restoration model the computer at home reported (one that is not
- * ready stays visible, crossed out), then a blue Frameleaf Cloud stop unless Where each job runs keeps
- * this work at home. A computer that listed no models gets one stop for its usual model.
+ * ready stays visible, crossed out), then a blue Frameleaf Cloud stop, always: Where work runs is a
+ * preference, and running a blue stop sets up whatever is missing. Set to Frameleaf Cloud, the home stops
+ * are crossed out even when they could run it. A computer that listed no models gets one stop for its
+ * usual model.
  */
 export const enhanceStops = ({
   home,
   mode,
   route,
-  cloud,
 }: {
   home: Pick<AssetRestorationDestinationDto, 'models' | 'gpu'> | null;
   mode: AssetRestorationMode;
   route: 'local' | 'both' | 'cloud';
-  /** A Frameleaf Cloud destination is set up. */
-  cloud: boolean;
 }): EnhanceStop[] => {
   const stops: EnhanceStop[] = [];
   if (home) {
@@ -259,8 +269,8 @@ export const enhanceStops = ({
         runsOn: 'local',
         mode,
         model: null,
-        disabled: false,
-        reason: null,
+        disabled: route === 'cloud',
+        reason: route === 'cloud' ? 'cloud-only' : null,
       });
     }
     for (const model of models) {
@@ -271,34 +281,35 @@ export const enhanceStops = ({
         runsOn: 'local',
         mode: model.mode,
         model: model.id,
-        disabled: !model.available,
-        reason: model.available ? null : 'not-ready',
+        disabled: route === 'cloud' || !model.available,
+        reason: route === 'cloud' ? 'cloud-only' : model.available ? null : 'not-ready',
       });
     }
   }
-  if (route !== 'local') {
-    stops.push({
-      id: ENHANCE_CLOUD_STOP,
-      name: '',
-      band: 'cloud',
-      runsOn: 'cloud',
-      mode: null,
-      model: null,
-      disabled: !cloud,
-      reason: cloud ? null : 'needs-cloud',
-    });
-  }
+  stops.push({
+    id: ENHANCE_CLOUD_STOP,
+    name: '',
+    band: 'cloud',
+    runsOn: 'cloud',
+    mode: null,
+    model: null,
+    disabled: false,
+    reason: null,
+  });
   return stops;
 };
 
 /**
  * Where the slider starts: the first ready model of the kind the server starts on (Settings › AI
  * restoration), else the first that can be chosen at home. Never a stop that cannot be chosen, and
- * never Frameleaf Cloud, which the person picks themselves.
+ * Frameleaf Cloud only when the person set this work to run there.
  */
 export const initialEnhanceStop = (stops: readonly EnhanceStop[], mode: AssetRestorationMode) =>
   stops.find((stop) => !stop.disabled && stop.runsOn === 'local' && stop.mode === mode) ??
   stops.find((stop) => !stop.disabled && stop.runsOn === 'local') ??
+  stops.find(
+    (stop) => !stop.disabled && stop.runsOn === 'cloud' && stops.some((home) => home.reason === 'cloud-only'),
+  ) ??
   null;
 
 /** Whether the picked upscale was reduced by the 4K cap. */
@@ -321,6 +332,37 @@ export const regionFromCrop = (crop: { x: number; y: number; w: number; h: numbe
   const x = Math.min(Math.max(0, crop.x), 1 - w);
   const y = Math.min(Math.max(0, crop.y), 1 - h);
   return { x: round(x), y: round(y), w: round(w), h: round(h) };
+};
+
+/**
+ * What stops the Frameleaf Cloud destination taking this work, sorted by what can be done about it: the
+ * set-up sheet fixes `setup`; anything else is said as it is. Null when it can take the work.
+ */
+export const cloudRefusalKind = (
+  destination: Pick<AssetRestorationDestinationDto, 'available' | 'refusal'> | null | undefined,
+): 'setup' | 'other' | null => {
+  if (!destination) {
+    return 'setup';
+  }
+  if (destination.available) {
+    return null;
+  }
+  return destination.refusal && CLOUD_SETUP_REFUSALS.has(destination.refusal) ? 'setup' : 'other';
+};
+
+/**
+ * The model a home computer is told to run Smooth motion with: the one it reported for the stop on the
+ * slider, by its id or the name it goes by there, else the only one ready. Null leaves the choice to it.
+ */
+export const reportedSmoothModel = (
+  stopId: string | null,
+  models: readonly { id: string; mode: AssetRestorationMode; available: boolean }[],
+): string | null => {
+  const ready = models.filter((model) => model.mode === AssetRestorationMode.SmoothMotion && model.available);
+  const base = stopId?.split('@', 1)[0];
+  return (
+    ready.find((model) => model.id === stopId || model.id === base)?.id ?? (ready.length === 1 ? ready[0].id : null)
+  );
 };
 
 const round = (value: number) => Math.round(value * 10_000) / 10_000;

@@ -2082,7 +2082,11 @@ export class StudioExportService {
         code: 'studio_export_smooth_motion_destination',
       });
     }
-    return { factor: requested.factor, destinationId: destination.id };
+    return {
+      factor: requested.factor,
+      destinationId: destination.id,
+      ...(requested.model && { model: requested.model }),
+    };
   }
 
   /** Undo the move of an attempt that did not publish, so the retry and retention find the file. */

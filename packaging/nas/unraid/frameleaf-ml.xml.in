@@ -17,7 +17,7 @@ Model downloads need internet access and processing needs available CPU and memo
   <ExtraSearchTerms>photos videos smart-search semantic-search face-recognition local-ai machine-learning models studio worker</ExtraSearchTerms>
   <Requires>A compatible Frameleaf Server on the frameleaf Docker network; persistent model-cache storage; internet access for initial model downloads; sufficient CPU and memory for selected models. Studio worker enrolment requires the server shared folder mounted read-only. This template has no separate WebUI.</Requires>
   <Icon>https://raw.githubusercontent.com/Frameleaf/frameleaf-app/main/design/frameleaf/mark.png</Icon>
-  <Discord>https://discord.gg/cN3U3mv4</Discord>
+  <Discord>https://discord.gg/NrQuxCMhh5</Discord>
   <Reddit>https://www.reddit.com/r/Frameleaf/</Reddit>
   <Twitter>https://x.com/frameleafapp</Twitter>
   <DonateLink>https://frameleaf.app/pricing/#supporter</DonateLink>

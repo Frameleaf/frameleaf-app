@@ -41,8 +41,8 @@
   const reasonOf = (stop: EnhanceStop) =>
     stop.reason === 'not-ready'
       ? $t('frameleaf_enhance_model_not_ready', { values: { name: stop.name } })
-      : stop.reason === 'needs-cloud'
-        ? $t('frameleaf_enhance_needs_cloud')
+      : stop.reason === 'cloud-only'
+        ? $t('frameleaf_enhance_cloud_only')
         : '';
   const reasons = $derived([
     ...new Set([

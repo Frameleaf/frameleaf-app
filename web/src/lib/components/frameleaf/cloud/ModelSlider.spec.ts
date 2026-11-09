@@ -68,7 +68,7 @@ describe('ModelSlider (FL-159 §3.3)', () => {
     );
   });
 
-  it("shows the smart search and faces blue stop only while Frameleaf Cloud offers this server's model (FL-455)", () => {
+  it('shows a smart search or faces blue stop only for a model the live catalogue runs (FL-455)', () => {
     const { unmount } = render(ModelSlider, {
       workload: 'search',
       value: 'ViT-B-16-SigLIP-384__webli',
@@ -87,13 +87,38 @@ describe('ModelSlider (FL-159 §3.3)', () => {
       gpu: rtx4090,
       route: 'both',
       label: 'Face recognition',
-      cloudMatched: ['face'],
+      twins: [
+        {
+          localModel: 'buffalo_l',
+          modelName: 'InsightFace buffalo_l',
+          label: 'Faces · Standard',
+          priceUsd: 0.001,
+          pricingUnit: 'second',
+        },
+      ],
     });
     group = screen.getByRole('group', { name: 'Face recognition' });
     const blue = group.querySelectorAll('.ms-stop.is-cloud');
     expect(blue).toHaveLength(1);
     expect(blue[0].querySelector('input')?.value).toBe('buffalo_l@cloud');
-    expect(within(group).getByRole('radio', { name: /^buffalo_l: Cloud · about/ })).toBeEnabled();
+    expect(within(group).getByRole('radio', { name: /^InsightFace buffalo_l: Frameleaf Cloud · / })).toBeEnabled();
     expect(within(group).getByText(/Frameleaf Cloud only/)).toBeInTheDocument();
+  });
+
+  it('with tiers, shows the word above each stop, and starts the readout with it', () => {
+    render(ModelSlider, {
+      workload: 'search',
+      value: 'ViT-B-16-SigLIP-384__webli',
+      gpu: rtx4090,
+      route: 'both',
+      label: 'Search quality',
+      tiered: true,
+    });
+
+    const group = screen.getByRole('group', { name: 'Search quality' });
+    expect([...group.querySelectorAll('.ms-tier')].map((tier) => tier.textContent)).toEqual(['Good', 'Better', 'Best']);
+    expect(group.querySelector(':scope .ms-readout strong')?.textContent).toBe('Better · SigLIP ViT-B/16-384');
+    expect(within(group).getByText('Faster')).toBeInTheDocument();
+    expect(within(group).getByText('Better results')).toBeInTheDocument();
   });
 });

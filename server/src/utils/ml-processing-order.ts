@@ -78,6 +78,19 @@ export const isProcessingOrder = (sources: unknown): sources is MlProcessingSour
   sources.every((source) => Object.values(MlProcessingSource).includes(source)) &&
   new Set(sources).size === sources.length;
 
+/** The one place a workload was pinned to, when it has no list of its own; undefined when it wasn't pinned. */
+const pinnedSources = (pinned?: {
+  storedRoute?: StoredRouteState;
+  destinations: readonly Pick<MlDestinationRow, 'id' | 'kind'>[];
+}): MlProcessingSource[] | undefined => {
+  if (pinned?.storedRoute?.origin !== 'pinned') {
+    return;
+  }
+  const { destinationId } = pinned.storedRoute;
+  const anchor = pinned.destinations.find((destination) => destination.id === destinationId);
+  return anchor ? [KIND_SOURCE[anchor.kind]] : [];
+};
+
 /**
  * The list a workload follows: its own, else the one place an administrator pinned it to (a route
  * restored by Buddy recovery, or saved before its own list was), else the main one.
@@ -86,17 +99,16 @@ export const sourcesFor = (
   order: MlProcessingOrder,
   workload: MlWorkload,
   pinned?: { storedRoute?: StoredRouteState; destinations: readonly Pick<MlDestinationRow, 'id' | 'kind'>[] },
+  /** Given when planning where work goes; left out, the answer is the saved list. */
+  cloudMl?: Pick<SystemConfig['frameleafCloud']['cloudMl'], 'enabled'>,
 ): MlProcessingSource[] => {
-  const own = order.overrides[workload];
-  if (own) {
-    return own;
+  const own = order.overrides[workload] ?? pinnedSources(pinned);
+  if (!own) {
+    return order.order;
   }
-  if (pinned?.storedRoute?.origin === 'pinned') {
-    const { destinationId } = pinned.storedRoute;
-    const anchor = pinned.destinations.find((destination) => destination.id === destinationId);
-    return anchor ? [KIND_SOURCE[anchor.kind]] : [];
-  }
-  return order.order;
+  // Cloud only outlives Cloud: while it is off the work follows the main list, and the saved list holds
+  // again as soon as Cloud is back on.
+  return cloudMl?.enabled === false && own.length === 1 && own[0] === MlProcessingSource.Cloud ? order.order : own;
 };
 
 /** Whether a workload follows the main list: no list of its own and no place pinned for it. */
@@ -167,7 +179,7 @@ export const planMlRoute = (input: MlRoutePlanInput): MlRouteCandidate[] => {
   });
 
   const candidates: MlRouteCandidate[] = [];
-  for (const source of sourcesFor(input.order, workload, { storedRoute, destinations })) {
+  for (const source of sourcesFor(input.order, workload, { storedRoute, destinations }, input.cloudMl)) {
     switch (source) {
       case MlProcessingSource.Local: {
         candidates.push(...ofKind(MlDestinationKind.Local).map((destination) => candidate(destination)));

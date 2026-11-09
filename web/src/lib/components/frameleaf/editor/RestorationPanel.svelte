@@ -33,7 +33,11 @@
   import CloudJobDialog from '$lib/components/frameleaf/cloud/CloudJobDialog.svelte';
   import ModelSlider from '$lib/components/frameleaf/cloud/ModelSlider.svelte';
   import RestorationModelSlider from '$lib/components/frameleaf/editor/RestorationModelSlider.svelte';
-  import { resolvePosition, type DetectedGpu } from '$lib/frameleaf/gpu-model-catalog';
+  import { ladderStates, liveStartStop, withLiveCloudStops, type DetectedGpu } from '$lib/frameleaf/gpu-model-catalog';
+  import { cloudStopSku, liveCloudStops, loadCloudModelData } from '$lib/frameleaf/cloud-models';
+  import { allowCloudFor } from '$lib/frameleaf/cloud-setup';
+  import { estimateLive, estimateRange } from '$lib/frameleaf/cloud-jobs';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { activitySession } from '$lib/frameleaf/activity-session.svelte';
   import {
     CENTRE_REGION,
@@ -45,6 +49,7 @@
     canDecideRestoration,
     canDiscardRestoration,
     canSelectRestoration,
+    cloudRefusalKind,
     compareKindFor,
     defaultDestinationId,
     destinationKindKey,
@@ -56,6 +61,7 @@
     isRestorationBusy,
     orderedDestinations,
     regionFromCrop,
+    reportedSmoothModel,
     restorationFileUrl,
     restorationModeHelpKey,
     restorationModeKey,
@@ -68,6 +74,7 @@
   } from '$lib/frameleaf/restoration';
   import { mlRefusalLabelKey } from '$lib/frameleaf/ml-destinations';
   import { isVideoAsset } from '$lib/frameleaf/viewer-media';
+  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { Route } from '$lib/route';
   import { getAssetMediaUrl, getAssetPlaybackUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
@@ -77,9 +84,13 @@
     AssetRestorationMode,
     CloudMlJobPurpose,
     CloudMlJobStage,
+    CloudMlModelGroup,
     MlDestinationKind,
     acceptAssetRestoration,
+    createCloudMlJob,
     discardAssetRestoration,
+    estimateCloudMlJob,
+    getCloudMlStatus,
     getAssetRestorationOptions,
     getAssetRestorations,
     rejectAssetRestoration,
@@ -89,7 +100,10 @@
     type AssetRestorationListResponseDto,
     type AssetRestorationOptionsDto,
     type AssetRestorationResponseDto,
+    type AssetRestorationDestinationDto,
     type CloudMlJobEstimateRequestDto,
+    type CloudMlJobEstimateResponseDto,
+    type CloudMlModelDto,
     MlAdmissionRefusal,
   } from '@frameleaf/sdk';
   import { Icon, modalManager, toastManager } from '@frameleaf/ui';
@@ -186,6 +200,8 @@
     title: string;
     summary: string;
     request: Omit<CloudMlJobEstimateRequestDto, 'modelSku'>;
+    /** The model the slider named, for Smooth motion. */
+    modelSku?: string | null;
   };
   let cloudJob = $state<CloudJobRequest | null>(null);
   let cloudJobOpen = $state(false);
@@ -207,12 +223,6 @@
   const destinations = $derived(orderedDestinations(options?.destinations ?? []));
   const selected = $derived(destinations.find((item) => item.id === destinationId) ?? null);
   const capped = $derived(options ? isOutputCapped(options) : false);
-  const onCloud = $derived(selected?.kind === MlDestinationKind.FrameleafCloud);
-  /** Frameleaf Cloud restores at 2× or 4×; the same size is a job for this server or the network. */
-  const cloudUpscale = $derived(upscale === 1 ? null : upscale);
-  const canRequest = $derived(
-    !!options && !!selected && selected.available && !submitting && !loadError && (!onCloud || !!cloudUpscale),
-  );
   /** Frameleaf Cloud, for a Smooth motion or restoration job confirmed in CloudJobDialog. */
   const cloudDestinationId = $derived(
     destinations.find((candidate) => candidate.kind === MlDestinationKind.FrameleafCloud)?.id ?? null,
@@ -231,12 +241,24 @@
     return gpu ? { name: gpu.name, vramGb: gpu.memoryTotalBytes / 1024 ** 3, backend: 'CUDA', profile: null } : null;
   });
   const smoothRoute = $derived(smoothOptions?.route ?? 'local');
-  // The slider starts on the model that fits here, as Where each job runs would choose it.
+  /** Blue stops are always offered: Local only is a preference, and running one changes it. */
+  const smoothSliderRoute = $derived(smoothRoute === 'cloud' ? ('cloud' as const) : ('both' as const));
+  /** The live catalogue, read for administrators; everyone else gets a stop that names no model. */
+  let cloudCatalog = $state<CloudMlModelDto[] | null>(null);
+  let cloudCatalogRead = $state(false);
+  const smoothCloudStops = $derived(
+    liveCloudStops('interpolation', CloudMlModelGroup.Interpolation, cloudCatalog, $t('frameleaf_enhance_model_cloud')),
+  );
+  // The slider starts on the model that fits here, as Where work runs would choose it.
   $effect(() => {
-    if (!smoothOptions || smoothModelId) {
+    if (!smoothOptions || smoothModelId || !cloudCatalogRead) {
       return;
     }
-    const start = resolvePosition('interpolation', null, { gpu: smoothGpu, route: smoothRoute });
+    const states = smoothLocal ? ladderStates('interpolation', { gpu: smoothGpu, route: 'both' }) : [];
+    const recommended = cloudCatalog?.find(
+      (model) => model.group === CloudMlModelGroup.Interpolation && model.isDefault,
+    );
+    const start = liveStartStop(withLiveCloudStops(states, smoothCloudStops, smoothSliderRoute), recommended?.id);
     if (start) {
       smoothModelId = start.item.id;
       smoothRunsOn = start.runsOn;
@@ -262,11 +284,29 @@
       : null,
   );
   const enhanceRoute = $derived(options?.route ?? 'local');
-  const enhanceSliderStops = $derived(
-    enhanceStops({ home: enhanceLocal, mode, route: enhanceRoute, cloud: !!cloudDestinationId }),
-  );
+  const enhanceSliderStops = $derived(enhanceStops({ home: enhanceLocal, mode, route: enhanceRoute }));
   const enhanceStop = $derived(enhanceSliderStops.find((stop) => stop.id === enhanceStopId) ?? null);
   const enhanceRunsOn = $derived(enhanceStop?.runsOn ?? null);
+  /** Frameleaf Cloud's verdict on the work the Enhance card or Smooth motion would send. */
+  const cloudRow = (current: AssetRestorationOptionsDto | null) =>
+    current?.destinations.find((candidate) => candidate.kind === MlDestinationKind.FrameleafCloud) ?? null;
+  const refusalOf = (destination: AssetRestorationDestinationDto | null) => {
+    const kind = cloudRefusalKind(destination);
+    return kind ? { kind, destination } : null;
+  };
+  const cloudRefusal = $derived(refusalOf(cloudRow(options)));
+
+  /** On the Enhance card the slider decides; a blue stop stays one even before Cloud is set up. */
+  const onCloud = $derived(enhance ? enhanceRunsOn === 'cloud' : selected?.kind === MlDestinationKind.FrameleafCloud);
+  /** Frameleaf Cloud restores at 2× or 4×; the same size is a job for this server or the network. */
+  const cloudUpscale = $derived(upscale === 1 ? null : upscale);
+  const canRequest = $derived(
+    !!options &&
+      !submitting &&
+      !loadError &&
+      (enhance && onCloud ? !!cloudUpscale && cloudRefusal?.kind !== 'other' : !!selected && selected.available) &&
+      (!onCloud || !!cloudUpscale),
+  );
   // The slider starts on a ready model of the kind the server starts on, else the first that can be chosen.
   $effect(() => {
     if (!enhance || !options || enhanceStopId) {
@@ -307,7 +347,9 @@
       enhanceRunsOn === 'cloud' ? cloudDestinationId : enhanceRunsOn === 'local' ? (enhanceLocal?.id ?? null) : null;
   });
   const canSmoothLocally = $derived(smoothRunsOn === 'local' && !!smoothLocal && !submitting);
-  const canSmoothOnCloud = $derived(smoothRunsOn === 'cloud' && !!cloudDestinationId && !!options);
+  /** The model the computer at home is told to use for Smooth motion, as it reported it. */
+  const smoothLocalModel = $derived(smoothLocal ? reportedSmoothModel(smoothModelId, smoothLocal.models) : null);
+  const canSmoothOnCloud = $derived(smoothRunsOn === 'cloud' && !!options);
   const previewEstimate = $derived(selected ? formatEstimateSeconds(selected.estimate.previewSeconds, $locale) : null);
   const fullEstimate = $derived(selected ? formatEstimateSeconds(selected.estimate.fullSeconds, $locale) : null);
 
@@ -378,8 +420,86 @@
   const loadSmoothOptions = async () => {
     if (isVideo) {
       smoothOptions = await getAssetRestorationOptions({ id: asset.id, mode: AssetRestorationMode.SmoothMotion });
+      await loadCloudCatalog();
     }
   };
+
+  /** Administrators read Frameleaf Cloud's own list; it is what the blue Smooth motion stops offer. */
+  const loadCloudCatalog = async () => {
+    try {
+      cloudCatalog = authManager.user.isAdmin ? (await loadCloudModelData(await getCloudMlStatus())).catalog : null;
+    } catch {
+      cloudCatalog = null;
+    } finally {
+      cloudCatalogRead = true;
+    }
+  };
+
+  /**
+   * What running a blue stop takes: whatever Frameleaf Cloud still needs opens the set-up sheet and the job
+   * carries on after it; work kept at home under Where work runs moves to Both for an administrator.
+   */
+  const runOnCloud = async (
+    kind: 'enhance' | 'smooth',
+    start: (destinationId: string) => void,
+    afterSetup = false,
+    routeMoved = false,
+  ): Promise<void> => {
+    const current = kind === 'smooth' ? smoothOptions : options;
+    const row: 'upscale' | 'restoration' | 'interpolation' =
+      kind === 'smooth' ? 'interpolation' : isVideo ? 'restoration' : 'upscale';
+    const refusal = refusalOf(cloudRow(current));
+    if (refusal?.kind === 'setup' && !afterSetup) {
+      getCloudManager.open('processing', {
+        onDone: () => void reloadAfterSetup().then(() => runOnCloud(kind, start, true)),
+      });
+      return;
+    }
+    if (current?.route === 'local') {
+      if (routeMoved) {
+        // Moved once and still reads Local only (the options may not have loaded): stop here, don't write again.
+        announce = $t('frameleaf_model_route_failed');
+        toastManager.warning(announce);
+        return;
+      }
+      if (!authManager.user.isAdmin) {
+        announce = $t('frameleaf_cloud_route_admin_only');
+        toastManager.warning(announce);
+        return;
+      }
+      try {
+        await allowCloudFor(row);
+      } catch (error) {
+        handleError(error, $t('frameleaf_model_route_failed'));
+        return;
+      }
+      await reloadAfterSetup();
+      return runOnCloud(kind, start, afterSetup, true);
+    }
+    const cloud = cloudRow(current);
+    if (!cloud?.available) {
+      if (cloud) {
+        announce = refusalText(cloud);
+        toastManager.warning(announce);
+      }
+      return;
+    }
+    start(cloud.id);
+  };
+
+  const reloadAfterSetup = async () => {
+    try {
+      await Promise.all([loadOptions(mode, upscale), loadSmoothOptions()]);
+    } catch (error) {
+      handleError(error, $t('frameleaf_restoration_load_error'));
+    }
+  };
+
+  /** The real reason Frameleaf Cloud won't take this work, in the words of its refusal. */
+  const refusalText = (destination: AssetRestorationDestinationDto) =>
+    destination.refusal
+      ? `${$t(mlRefusalLabelKey(destination.refusal))}${destination.refusalDetail ? ` ${destination.refusalDetail}` : ''}`
+      : $t('frameleaf_enhance_cloud_unavailable');
 
   onMount(async () => {
     stopActivity = activitySession.watch();
@@ -441,27 +561,36 @@
     schedulePoll();
   };
 
+  const openRestorationJob = (cloudDestination: string, factor: 2 | 4) =>
+    openCloudJob({
+      title: $t('frameleaf_cloud_job_title_restoration_preview'),
+      summary: [$t(restorationModeKey(mode)), upscaleLabel(factor), $t('frameleaf_cloud_job_preview')].join(' · '),
+      request: {
+        assetId: asset.id,
+        destinationId: cloudDestination,
+        purpose: CloudMlJobPurpose.Restoration,
+        stage: CloudMlJobStage.Preview,
+        mode,
+        upscale: factor,
+        keepGrain,
+        region,
+      },
+    });
+
   const requestPreview = async () => {
-    if (!canRequest || !destinationId) {
+    if (!canRequest) {
       return;
     }
     if (onCloud && cloudUpscale) {
-      openCloudJob({
-        title: $t('frameleaf_cloud_job_title_restoration_preview'),
-        summary: [$t(restorationModeKey(mode)), upscaleLabel(cloudUpscale), $t('frameleaf_cloud_job_preview')].join(
-          ' · ',
-        ),
-        request: {
-          assetId: asset.id,
-          destinationId,
-          purpose: CloudMlJobPurpose.Restoration,
-          stage: CloudMlJobStage.Preview,
-          mode,
-          upscale: cloudUpscale,
-          keepGrain,
-          region,
-        },
-      });
+      const factor = cloudUpscale;
+      await (enhance
+        ? runOnCloud('enhance', (id) => openRestorationJob(id, factor))
+        : destinationId
+          ? openRestorationJob(destinationId, factor)
+          : undefined);
+      return;
+    }
+    if (!destinationId) {
       return;
     }
     submitting = true;
@@ -520,6 +649,7 @@
           keepGrain: false,
           destinationId: smoothLocal.id,
           region,
+          ...(smoothLocalModel && { model: smoothLocalModel }),
         },
       });
       list = {
@@ -539,49 +669,109 @@
   };
 
   /** Smooth motion preview on Frameleaf Cloud: the same clip a restoration preview would use. */
-  const requestSmoothMotion = () => {
-    if (!cloudDestinationId) {
-      return;
-    }
-    openCloudJob({
-      title: $t('frameleaf_cloud_job_title_smooth_motion_preview'),
-      summary: [
-        $t('frameleaf_restoration_smooth_motion_factor', { values: { factor: smoothFactor } }),
-        $t('frameleaf_cloud_job_preview'),
-      ].join(' · '),
-      request: {
-        assetId: asset.id,
-        destinationId: cloudDestinationId,
-        purpose: CloudMlJobPurpose.SmoothMotion,
-        stage: CloudMlJobStage.Preview,
-        factor: smoothFactor,
-        region,
-      },
-    });
-  };
+  const requestSmoothMotion = () =>
+    runOnCloud('smooth', (cloudDestination) =>
+      openCloudJob({
+        title: $t('frameleaf_cloud_job_title_smooth_motion_preview'),
+        summary: [
+          $t('frameleaf_restoration_smooth_motion_factor', { values: { factor: smoothFactor } }),
+          $t('frameleaf_cloud_job_preview'),
+        ].join(' · '),
+        modelSku: cloudStopSku(smoothModelId),
+        request: {
+          assetId: asset.id,
+          destinationId: cloudDestination,
+          purpose: CloudMlJobPurpose.SmoothMotion,
+          stage: CloudMlJobStage.Preview,
+          factor: smoothFactor,
+          region,
+        },
+      }),
+    );
 
   const isCloudItem = (item: AssetRestorationResponseDto) => item.destinationKind === MlDestinationKind.FrameleafCloud;
 
+  const fullJobRequest = (item: AssetRestorationResponseDto): CloudMlJobEstimateRequestDto => ({
+    assetId: asset.id,
+    destinationId: item.destinationId!,
+    purpose:
+      item.mode === AssetRestorationMode.SmoothMotion ? CloudMlJobPurpose.SmoothMotion : CloudMlJobPurpose.Restoration,
+    stage: CloudMlJobStage.Full,
+    restorationId: item.id,
+  });
+
+  const openFullJob = (item: AssetRestorationResponseDto) =>
+    openCloudJob({
+      title: $t(
+        item.mode === AssetRestorationMode.SmoothMotion
+          ? 'frameleaf_cloud_job_title_smooth_motion_full'
+          : 'frameleaf_cloud_job_title_restoration_full',
+      ),
+      summary: itemTitle(item),
+      request: fullJobRequest(item),
+    });
+
+  /*
+   * A reviewed Cloud preview shows the price of the whole job on its Accept button's row; pressing Accept
+   * at that price is the one confirmation. A price that went up since asks again, and so does an upscale
+   * the 64 MP output cap lowered, which the row doesn't say.
+   */
+  let fullQuotes = $state<Record<string, CloudMlJobEstimateResponseDto>>({});
+  const quotesAsked = new Set<string>();
+  $effect(() => {
+    for (const item of items) {
+      if (canDecideRestoration(item.status) && isCloudItem(item) && item.destinationId && !quotesAsked.has(item.id)) {
+        quotesAsked.add(item.id);
+        void (async () => {
+          try {
+            const quote = await estimateCloudMlJob({ cloudMlJobEstimateRequestDto: fullJobRequest(item) });
+            fullQuotes = { ...fullQuotes, [item.id]: quote };
+          } catch {
+            // no price to show: Accept opens the confirmation, which says why
+          }
+        })();
+      }
+    }
+  });
+
   const accept = async (item: AssetRestorationResponseDto) => {
-    // A reviewed Frameleaf Cloud preview renders in full only as its own confirmed job.
-    if (isCloudItem(item) && item.destinationId) {
-      const smooth = item.mode === AssetRestorationMode.SmoothMotion;
-      openCloudJob({
-        title: $t(
-          smooth ? 'frameleaf_cloud_job_title_smooth_motion_full' : 'frameleaf_cloud_job_title_restoration_full',
-        ),
-        summary: itemTitle(item),
-        request: {
-          assetId: asset.id,
-          destinationId: item.destinationId,
-          purpose: smooth ? CloudMlJobPurpose.SmoothMotion : CloudMlJobPurpose.Restoration,
-          stage: CloudMlJobStage.Full,
-          restorationId: item.id,
-        },
-      });
+    if (!isCloudItem(item) || !item.destinationId) {
+      await acceptLocal(item);
       return;
     }
-    await acceptLocal(item);
+    const seen = fullQuotes[item.id];
+    if (!seen || seen.refusal || !seen.permission.canConfirm) {
+      openFullJob(item);
+      return;
+    }
+    await run(
+      item,
+      async () => {
+        const quote = estimateLive(seen)
+          ? seen
+          : await estimateCloudMlJob({ cloudMlJobEstimateRequestDto: fullJobRequest(item) });
+        if (quote.refusal || !quote.permission.canConfirm || quote.p90Usd > seen.p90Usd || quote.upscale?.lowered) {
+          openFullJob(item);
+          return;
+        }
+        try {
+          await createCloudMlJob({
+            cloudMlJobCreateDto: {
+              estimateId: quote.estimateId,
+              consentVersion: quote.consent.version,
+              acknowledgeDataLeaves: true,
+            },
+          });
+        } catch {
+          // the confirmation estimates again and says what changed
+          openFullJob(item);
+          return;
+        }
+        cloudJobSubmitted();
+        void activitySession.refresh();
+      },
+      $t('frameleaf_restoration_accept_error'),
+    );
   };
 
   const acceptLocal = (item: AssetRestorationResponseDto) =>
@@ -810,8 +1000,15 @@
             {$t('frameleaf_enhance_run_here')}
           {/if}
         </button>
-        {#if onCloud && selected && !selected.available}
-          <p class="rs-help">{$t('frameleaf_enhance_cloud_unavailable')}</p>
+        {#if onCloud && cloudRefusal?.kind === 'other' && cloudRefusal.destination}
+          <p class="rs-warning" role="status">{refusalText(cloudRefusal.destination)}</p>
+          {#if cloudRefusal.destination.refusal === MlAdmissionRefusal.BudgetExceeded || cloudRefusal.destination.refusal === MlAdmissionRefusal.WorkloadNotAllowed}
+            <a class="rs-link" href={commandCenterUrl('cloud', 'cloud-processing')}
+              >{$t('frameleaf_enhance_cloud_open_settings')}</a
+            >
+          {/if}
+        {:else if onCloud && cloudRefusal?.kind === 'setup'}
+          <p class="rs-help">{$t('frameleaf_enhance_cloud_setup')}</p>
         {:else if onCloud}
           <p class="rs-help">{$t('frameleaf_enhance_cloud_cost')}</p>
         {/if}
@@ -1100,7 +1297,8 @@
         workload="interpolation"
         value={smoothModelId}
         gpu={smoothGpu}
-        route={smoothRoute}
+        route={smoothSliderRoute}
+        cloudStops={smoothCloudStops}
         label={$t('frameleaf_restoration_smooth_motion_model')}
         hideLegend
         localDisabledReason={smoothLocal ? '' : $t('frameleaf_restoration_smooth_motion_no_local')}
@@ -1112,14 +1310,14 @@
     {/if}
     <div class="rs-actions" data-testid="restoration-smooth-motion">
       {#if smoothRunsOn === 'cloud'}
-        <button type="button" class="ed-button" disabled={!canSmoothOnCloud} onclick={requestSmoothMotion}>
+        <button type="button" class="ed-button" disabled={!canSmoothOnCloud} onclick={() => void requestSmoothMotion()}>
           <Icon icon={mdiCloudOutline} size="18" />
           {$t('frameleaf_restoration_smooth_motion_estimate')}
         </button>
         <p class="rs-help">
           {cloudDestinationId
             ? $t('frameleaf_restoration_smooth_motion_cloud_only')
-            : $t('frameleaf_restoration_smooth_motion_needs_cloud')}
+            : $t('frameleaf_enhance_cloud_setup')}
         </p>
       {:else}
         <button type="button" class="ed-button" disabled={!canSmoothLocally} onclick={requestLocalSmoothMotion}>
@@ -1187,6 +1385,16 @@
         <small data-testid="restoration-result-kept-until"
           >{$t('frameleaf_restoration_partial_kept_until', {
             values: { date: formatDate(partialKeptUntil) },
+          })}</small
+        >
+      {/if}
+      {#if canDecideRestoration(item.status) && isCloudItem(item) && fullQuotes[item.id] && !fullQuotes[item.id].refusal}
+        <small data-testid="restoration-full-price"
+          >{$t('frameleaf_restoration_accept_price', {
+            values: {
+              range: estimateRange(fullQuotes[item.id].p50Usd, fullQuotes[item.id].p90Usd),
+              kind: isVideo ? 'video' : 'photo',
+            },
           })}</small
         >
       {/if}
@@ -1277,6 +1485,7 @@
       title={cloudJob.title}
       summary={cloudJob.summary}
       request={cloudJob.request}
+      initialModelSku={cloudJob.modelSku}
       onSubmitted={cloudJobSubmitted}
     />
   {/key}

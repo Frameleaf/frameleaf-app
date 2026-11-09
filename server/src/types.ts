@@ -1549,6 +1549,10 @@ export type FrameleafRemoteAccess = {
   candidates: FrameleafRemoteConnection[];
 };
 
+// Embedding size of each person-entered Hugging Face search model, learned when it was saved. Not a
+// `SystemMetadataKey` member: `enum.ts` is hashed into the schema catalog, and this adds no schema.
+export const CUSTOM_CLIP_MODELS_KEY = 'custom-clip-models' as SystemMetadataKey;
+
 export interface SystemMetadata extends Record<SystemMetadataKey, Record<string, any>> {
   [SystemMetadataKey.FrameleafDesktopAssistance]: import('src/services/desktop-assistance-policy.service.js').DesktopAssistancePolicyRegistry;
   [SystemMetadataKey.AdminOnboarding]: { isOnboarded: boolean };

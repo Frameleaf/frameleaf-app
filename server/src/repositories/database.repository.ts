@@ -10,6 +10,7 @@ import z from 'zod';
 import type { DB } from 'src/schema/index.js';
 import {
   CLIP_MODEL_INFO,
+  CUSTOM_CLIP_DIM_SIZE,
   EXTENSION_NAMES,
   POSTGRES_VERSION_RANGE,
   VECTOR_INDEX_TABLES,
@@ -227,7 +228,10 @@ export class DatabaseRepository {
     const dimension = embeddings[0]?.length;
     if (
       dimension !== undefined &&
-      Object.values(CLIP_MODEL_INFO).some(({ dimSize }) => dimSize === dimension) &&
+      (Object.values(CLIP_MODEL_INFO).some(({ dimSize }) => dimSize === dimension) ||
+        (Number.isSafeInteger(dimension) &&
+          dimension >= CUSTOM_CLIP_DIM_SIZE.min &&
+          dimension <= CUSTOM_CLIP_DIM_SIZE.max)) &&
       embeddings.every((column) => column?.type === 'vector' && column.length === dimension)
     ) {
       for (const name of CLIP_TABLES) {

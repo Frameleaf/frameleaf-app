@@ -534,6 +534,12 @@ describe(AssetRestorationService.name, () => {
           );
         });
 
+        it('runs it with the model chosen with the export', async () => {
+          await expect(sut.queueExportSmoothMotion({ ...request, model: 'rife-4.25' })).resolves.toBeTruthy();
+
+          expect(JSON.stringify(operations.create.mock.calls[0])).toContain('"modelId":"rife-4.25"');
+        });
+
         it('never sends it to Frameleaf Cloud: the owner confirms that job separately', async () => {
           mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloudConsented);
 
@@ -550,7 +556,7 @@ describe(AssetRestorationService.name, () => {
 
         it('tells the owner when it cannot start, and leaves the export alone', async () => {
           mocks.systemMetadata.get.mockResolvedValue({
-            frameleafCloud: { cloudMl: { routing: { interpolation: 'cloud' } } },
+            frameleafCloud: { cloudMl: { enabled: true, routing: { interpolation: 'cloud' } } },
           } as never);
 
           await expect(sut.queueExportSmoothMotion(request)).resolves.toBeNull();
@@ -562,9 +568,49 @@ describe(AssetRestorationService.name, () => {
         });
       });
 
+      it('Cloud only keeps a video restoration off computers at home, even ones that could run it', async () => {
+        mocks.systemMetadata.get.mockResolvedValue({
+          frameleafCloud: { cloudMl: { enabled: true, routing: { restoration: 'cloud' } } },
+        } as never);
+
+        const options = await sut.getOptions(authStub.user1, video.id, { mode: AssetRestorationMode.Faithful });
+
+        expect(options.route).toBe('cloud');
+        expect(options.destinations.find((item) => item.kind === MlDestinationKind.Lan)).toMatchObject({
+          available: false,
+          refusal: MlAdmissionRefusal.WorkloadNotAllowed,
+        });
+      });
+
+      it('Cloud only stops refusing home work while Frameleaf Cloud is off', async () => {
+        mocks.systemMetadata.get.mockResolvedValue({
+          frameleafCloud: { cloudMl: { enabled: false, routing: { restoration: 'cloud', interpolation: 'cloud' } } },
+        } as never);
+
+        const options = await sut.getOptions(authStub.user1, video.id, { mode: AssetRestorationMode.Faithful });
+
+        expect(options.route).toBe('both');
+        expect(options.destinations.find((item) => item.kind === MlDestinationKind.Lan)?.refusal).not.toBe(
+          MlAdmissionRefusal.WorkloadNotAllowed,
+        );
+        await expect(sut.requestPreview(authStub.user1, video.id, smooth)).resolves.toBeDefined();
+      });
+
+      it('reads a photo from the Enhance row, not the video restoration row', async () => {
+        mocks.systemMetadata.get.mockResolvedValue({
+          frameleafCloud: { cloudMl: { enabled: true, routing: { upscale: 'cloud', restoration: 'local' } } },
+        } as never);
+        mocks.asset.getById.mockResolvedValue(asset as never);
+
+        const options = await sut.getOptions(authStub.user1, asset.id, { mode: AssetRestorationMode.Faithful });
+
+        expect(options.sourceType).toBe('image');
+        expect(options.route).toBe('cloud');
+      });
+
       it('follows Where each job runs: Cloud only refuses this server and the home network', async () => {
         mocks.systemMetadata.get.mockResolvedValue({
-          frameleafCloud: { cloudMl: { routing: { interpolation: 'cloud' } } },
+          frameleafCloud: { cloudMl: { enabled: true, routing: { interpolation: 'cloud' } } },
         } as never);
         const error = await sut.requestPreview(authStub.user1, video.id, smooth).catch((error_: unknown) => error_);
 

@@ -8,16 +8,14 @@
    * - the AI Wallet (CloudMlWalletCard): balance, held, available, spent today against the daily cap,
    *   add credit and automatic top-up;
    * - how cloud jobs are billed (GPU time per second by GPU class plus a start fee per worker) with the
-   *   GPU rate list, the model sliders (FL-189: this server's description model, saved with the
-   *   settings bar, and FL-186: the Frameleaf Cloud model per model group from the cloud's catalogue,
-   *   saved apart from the routes), and a job estimate with its admission;
+   *   GPU rate list, links to the feature pages that choose each model, and a job estimate with its
+   *   admission;
    * - automatic descriptions of new photos with a daily budget;
    * - describing the library in batches, estimate first (FL-163, CloudDescriptionBackfill);
    * - recent cloud jobs with their GPU time and settled cost.
    *
-   * Every figure comes from the server; amounts are USD for everyone. The enable toggle and automatic
-   * descriptions are settings, saved with the settings bar, as is this server's description model; a
-   * Frameleaf Cloud model choice is saved at once.
+   * Every figure comes from the server; amounts are USD for everyone. Turning Cloud on is saved at once,
+   * with the terms it needs; turning it off and automatic descriptions are saved with the settings bar.
    */
   import './frameleaf-cloud.css';
   import { goto } from '$app/navigation';
@@ -39,7 +37,6 @@
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
   import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
-  import WorkloadModelPickers from '$lib/components/frameleaf/cloud/WorkloadModelPickers.svelte';
   import {
     cloudAdmission,
     cloudConsentNeeded,
@@ -63,8 +60,6 @@
     workloadUnitKey,
     type CostEstimate,
   } from '$lib/frameleaf/gpu-model-catalog';
-  import { choicesByGroup, loadCloudModelData, type CloudModelData } from '$lib/frameleaf/cloud-models';
-  import { localModelsFor } from '$lib/frameleaf/local-models';
   import { motionScrollBehavior } from '$lib/frameleaf/motion';
   import { mlWorkloadLabelKey } from '$lib/frameleaf/ml-destinations';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
@@ -72,17 +67,16 @@
   import { Route } from '$lib/route';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { gateButtonKey, type CloudLack } from '$lib/frameleaf/cloud-rules';
+  import { isFirstCloudTurnOn, turnOnCloudProcessing } from '$lib/frameleaf/cloud-setup';
   import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
   import {
     CloudMlConnection,
     getCloudMlSettlements,
     getCloudMlStatus,
-    getHardwareCheck,
     reconcileCloudMlUsage,
     type CloudMlSettlementDto,
     type CloudMlStatusResponseDto,
-    type HardwareCheckResponseDto,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import {
@@ -97,9 +91,6 @@
   import { locale, t, type Translations } from 'svelte-i18n';
 
   let status = $state<CloudMlStatusResponseDto | null>(null);
-  let models = $state<CloudModelData>({ catalog: null, catalogFailed: false, choices: {} });
-  /** The stored Hardware & GPU check, which colours this server's model stops (FL-189). */
-  let hardware = $state<HardwareCheckResponseDto | null>(null);
   let settlements = $state<CloudMlSettlementDto[]>([]);
   let loadError = $state(false);
   let notice = $state('');
@@ -126,14 +117,10 @@
       loadError = true;
       handleError(error, $t('admin.frameleaf_cloud_ml_error_load'));
     }
-    models = await loadCloudModelData(status);
   };
 
   onMount(() => {
     void load();
-    void getHardwareCheck()
-      .then((next) => (hardware = next))
-      .catch(() => (hardware = null));
   });
 
   const linked = $derived(
@@ -172,13 +159,23 @@
       baseline.routing.descriptions !== 'local',
   );
 
-  /** Turning on needs the current terms first; turning off needs nothing. Saved with the settings bar. */
+  /** Saved at once, then this page's settings follow what was saved. */
+  const turnOn = async () => {
+    try {
+      await turnOnCloudProcessing({ firstTime: isFirstCloudTurnOn(status) });
+      await settingsDraft?.refresh();
+      await load();
+    } catch (error) {
+      handleError(error, $t('admin.frameleaf_cloud_ml_error_turn_on'));
+    }
+  };
+
+  /** Turning on needs the current terms first, and is saved at once; turning off needs nothing. */
   const setEnabled = (value: boolean) => {
     if (!cloudMl) {
       return;
     }
     if (value && !consentCurrent) {
-      cloudMl.enabled = false;
       if (status?.consent) {
         consentOpen = true;
       } else {
@@ -186,11 +183,101 @@
       }
       return;
     }
-    cloudMl.enabled = value;
-    if (!value && cloudMl.autoDescribe.enabled) {
+    if (value) {
+      void turnOn();
+      return;
+    }
+    cloudMl.enabled = false;
+    if (cloudMl.autoDescribe.enabled) {
       cloudMl.autoDescribe.enabled = false;
     }
   };
+
+  /* Waiting for Frameleaf Cloud: work that hasn't started yet, and why. Rows appear only when non-zero. */
+  const nextBatchSentence = (photos: number, at: string | null) => {
+    const soon = !at || Date.parse(at) - Date.now() < 60_000;
+    return soon
+      ? $t('frameleaf_cp_waiting_batch_soon', { values: { count: photos } })
+      : $t('frameleaf_cp_waiting_batch', {
+          values: {
+            count: photos,
+            time: new Date(at).toLocaleTimeString($locale ?? undefined, { timeStyle: 'short' }),
+          },
+        });
+  };
+  type WaitingRow = {
+    id: string;
+    label: string;
+    help: string;
+    action?: { label: string; href: string } | { label: string; run: () => void };
+  };
+  const describeLibrary = () =>
+    document.querySelector('#describe-library')?.scrollIntoView({ behavior: motionScrollBehavior(), block: 'start' });
+  const waitingRows = $derived.by((): WaitingRow[] => {
+    const waiting = status?.waiting;
+    if (!waiting) {
+      return [];
+    }
+    const noMatch = (id: string, name: string, count: number, section: string): WaitingRow[] =>
+      count > 0
+        ? [
+            {
+              id,
+              label: name,
+              help: $t('frameleaf_cp_waiting_no_model', { values: { count } }),
+              action: {
+                label: $t('frameleaf_cp_waiting_choose_model'),
+                href: commandCenterUrl('intelligence', section),
+              },
+            },
+          ]
+        : [];
+    const search = $t('frameleaf_cp_waiting_search');
+    const faces = $t('frameleaf_cp_waiting_faces');
+    return [
+      ...(waiting.smartSearch.photos > 0
+        ? [
+            {
+              id: 'search',
+              label: search,
+              help: nextBatchSentence(waiting.smartSearch.photos, waiting.smartSearch.nextBatchAt),
+            },
+          ]
+        : []),
+      ...(waiting.faces.photos > 0
+        ? [{ id: 'faces', label: faces, help: nextBatchSentence(waiting.faces.photos, waiting.faces.nextBatchAt) }]
+        : []),
+      ...noMatch('search-model', search, waiting.smartSearch.noMatchingModel, 'smart-search'),
+      ...noMatch('faces-model', faces, waiting.faces.noMatchingModel, 'faces'),
+      ...(waiting.queuedWhileOff > 0
+        ? [
+            {
+              id: 'off',
+              label: $t('frameleaf_cp_waiting_off_label'),
+              help: $t('frameleaf_cp_waiting_off', { values: { count: waiting.queuedWhileOff } }),
+              ...(cloudMl &&
+                !configDisabled && {
+                  action: { label: $t('frameleaf_cp_turn_on'), run: () => setEnabled(true) },
+                }),
+            },
+          ]
+        : []),
+      ...(waiting.descriptionsForBackfill > 0
+        ? [
+            {
+              id: 'descriptions',
+              label: $t('frameleaf_cp_waiting_descriptions'),
+              help: $t('frameleaf_cp_waiting_descriptions_help', {
+                values: { count: waiting.descriptionsForBackfill },
+              }),
+              ...(backfillAvailable && {
+                action: { label: $t('frameleaf_cp_waiting_see_price'), run: describeLibrary },
+              }),
+            },
+          ]
+        : []),
+    ];
+  });
 
   // FL-541: the answer first (the prototype's Processing hero): on, off, credit almost gone, terms to
   // review, or a server still to link; with the credit and today's spending under it.
@@ -277,6 +364,14 @@
       },
     ];
   });
+
+  /** Each kind of work chooses its model on its own page. */
+  const modelPages = [
+    { key: 'search', area: 'intelligence', section: 'smart-search' },
+    { key: 'descriptions', area: 'intelligence', section: 'descriptions' },
+    { key: 'restoration', area: 'editing', section: 'restoration' },
+    { key: 'studio', area: 'editing', section: 'studio' },
+  ] as const;
 
   const fees = startFeeRange();
 
@@ -431,7 +526,7 @@
         </p>
         {#if lacks.length > 0}
           <div class="fc-actions">
-            <Button onclick={() => getCloudManager.open('processing', { onDone: () => setEnabled(true) })}
+            <Button onclick={() => getCloudManager.open('processing', { onDone: () => void load() })}
               >{$t(gateButtonKey(lacks))}</Button
             >
           </div>
@@ -491,29 +586,13 @@
       </Section>
 
       <Section title={$t('frameleaf_cp_quality')} description={$t('frameleaf_cp_quality_description')}>
-        {#if cloudMl}
-          {#each ROUTED_WORKLOADS as workload (workload)}
-            <!-- every kind of work keeps its slider, as in the prototype's Models card; work set to this server
-                 shows its Frameleaf Cloud stops crossed out with the reason -->
-            {#if models.catalog || models.catalogFailed || localModelsFor(workload).length > 0}
-              <div class="model-row">
-                <WorkloadModelPickers
-                  row={workload}
-                  route={workloadRoute(cloudMl.routing, workload)}
-                  {hardware}
-                  catalog={models.catalog}
-                  catalogFailed={models.catalogFailed}
-                  choices={models.choices}
-                  modelForLegend={false}
-                  onSaved={(choices, message) => {
-                    models = { ...models, choices: choicesByGroup(choices) };
-                    notice = message;
-                  }}
-                />
-              </div>
-            {/if}
-          {/each}
-        {/if}
+        {#each modelPages as page (page.key)}
+          <Row label={$t(`frameleaf_cp_model_row_${page.key}`)} help={$t(`frameleaf_cp_model_row_${page.key}_help`)}>
+            <a class="fl-control button" href={commandCenterUrl(page.area, page.section)}
+              >{$t(`frameleaf_cp_model_row_${page.key}_open`)}<Icon icon={mdiChevronRight} size="16" aria-hidden /></a
+            >
+          </Row>
+        {/each}
         <Row
           label={$t('frameleaf_cp_estimate')}
           help={estimate
@@ -568,6 +647,22 @@
             }))}
           />
         </Advanced>
+      </Section>
+    {/if}
+
+    {#if linked && waitingRows.length > 0}
+      <Section title={$t('frameleaf_cp_waiting')} description={$t('frameleaf_cp_waiting_description')}>
+        {#each waitingRows as row (row.id)}
+          <Row label={row.label} help={row.help}>
+            {#if row.action && 'href' in row.action}
+              <a class="fl-control button" href={row.action.href}
+                >{row.action.label}<Icon icon={mdiChevronRight} size="16" aria-hidden /></a
+              >
+            {:else if row.action}
+              <Button onclick={row.action.run}>{row.action.label}</Button>
+            {/if}
+          </Row>
+        {/each}
       </Section>
     {/if}
 
@@ -691,13 +786,10 @@
     region={status.region}
     matchedWorkloads={status.matchedModelWorkloads ?? []}
     onRecorded={() => {
-      if (cloudMl) {
-        cloudMl.enabled = true;
-      }
       notice = $t('admin.frameleaf_cloud_ml_consent_recorded', {
         values: { version: status?.consent?.requiredVersion ?? '' },
       });
-      void load();
+      void turnOn();
     }}
   />
 {/if}
@@ -721,10 +813,6 @@
     gap: var(--fl-space-1);
     text-decoration: none;
     white-space: nowrap;
-  }
-  .model-row {
-    padding: var(--fl-space-4) 0;
-    border-top: 1px solid var(--fl-border);
   }
   .estimate-model {
     max-width: 280px;

@@ -19,7 +19,7 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Upload
 from fastapi.responses import PlainTextResponse, StreamingResponse
 from onnxruntime.capi.onnxruntime_pybind11_state import InvalidProtobuf, NoSuchFile
 from PIL.Image import Image
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, ValidationError
 from starlette.formparsers import MultiPartParser
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import JSONResponse, Response
@@ -28,6 +28,8 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from frameleaf_ml import allocator
 from frameleaf_ml.models import get_model_deps
 from frameleaf_ml.models.base import InferenceModel, ModelRuntimeUnavailable, ModelUnavailableError
+from frameleaf_ml.models.clip.hugging_face import inspect_custom_clip_model
+from frameleaf_ml.models.constants import is_custom_clip_model
 from frameleaf_ml.models.musicgen import MusicGenModel
 from frameleaf_ml.models.subject_matte import MAX_FRAME_BYTES as SUBJECT_MATTE_MAX_FRAME_BYTES
 from frameleaf_ml.models.subject_matte import MAX_FRAMES as SUBJECT_MATTE_MAX_FRAMES
@@ -477,6 +479,21 @@ def _refuse_missing_runtime(model_name: str, reason: str) -> None:
 async def model_runtime_unavailable(_: Request, error: Exception) -> JSONResponse:
     # FL-676: a stable code the server recognises, so it moves to its fallback model and stops asking.
     return JSONResponse({"detail": "model_runtime_unavailable", "reason": str(error)}, status_code=422)
+
+
+class CustomClipModelRequest(BaseModel):
+    modelName: str = Field(max_length=200)  # noqa: N815 - the JSON key the server sends
+
+
+@app.post("/clip/custom-model", dependencies=[Depends(update_state)])
+def custom_clip_model(request: CustomClipModelRequest) -> ORJSONResponse:
+    """Check a person's own Hugging Face search model and report its embedding size, before it is saved."""
+    if not is_custom_clip_model(request.modelName):
+        raise HTTPException(422, f"'{request.modelName}' is not a Hugging Face model name (org/name).")
+    try:
+        return ORJSONResponse({"dimSize": inspect_custom_clip_model(request.modelName)})
+    except ModelUnavailableError as error:
+        raise HTTPException(422, str(error)) from error
 
 
 @app.post("/predict-bound", dependencies=[Depends(update_state)])

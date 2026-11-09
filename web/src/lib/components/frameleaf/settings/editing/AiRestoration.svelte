@@ -9,9 +9,13 @@
    * - "Enlarge by" is chosen for each restoration, beside its preview.
    * - "Largest output size" is fixed at 4K by the server and the worker, so it is a promise.
    * - "Offer Smooth motion" is the Smooth motion row of Where work runs, whose "Nowhere" turns it off.
+   *
+   * "Models" (approved design): the sliders of Enhance & upscale, restoration and Smooth motion.
    */
   import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import FeatureModelPickers from '$lib/components/frameleaf/cloud/FeatureModelPickers.svelte';
+  import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
   import Promises from '$lib/components/frameleaf/settings/kit/Promises.svelte';
@@ -83,5 +87,12 @@
         >{$t('frameleaf_editing_restore_runs_button')}<Icon icon={mdiChevronRight} size="1em" aria-hidden /></Button
       >
     {/snippet}
+  </Section>
+
+  <Section title={$t('frameleaf_editing_models')} description={$t('frameleaf_editing_models_help')}>
+    <FeatureModelPickers
+      rows={[{ row: 'upscale' }, { row: 'restoration' }, { row: 'interpolation' }]}
+      onNeedsCloud={() => getCloudManager.open('processing')}
+    />
   </Section>
 </KitPage>

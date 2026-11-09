@@ -705,11 +705,13 @@ describe('Studio export dialog', () => {
   });
 
   describe('Smooth motion after export (FL-162, FL-159)', () => {
-    const interpolation = (destinations: object[]) =>
+    const interpolation = (destinations: object[], cloudOnly = false) =>
       vi.mocked(getMlCapabilities).mockResolvedValue({
         probedAt: '2026-09-27T00:00:00.000Z',
         studio: {},
-        workloads: [{ workload: MlWorkload.Interpolation, available: true, routedDestinationId: null, destinations }],
+        workloads: [
+          { workload: MlWorkload.Interpolation, available: true, routedDestinationId: null, cloudOnly, destinations },
+        ],
       } as never);
     const home = {
       id: 'lan-1',
@@ -758,6 +760,24 @@ describe('Studio export dialog', () => {
           destination: MediaOperationDestination.Local,
           smoothMotion: { factor: 2, destinationId: 'cloud-1' },
         }),
+      );
+    });
+
+    it('crosses out home stops when Where work runs says Frameleaf Cloud only', async () => {
+      interpolation([home, cloud], true);
+      const onExport = vi.fn();
+      render(StudioExportDialog, { open: true, sequenceName: 'Lake trip', renderEvidence: [evidence()], onExport });
+
+      await fireEvent.click(within(smoothGroup()).getAllByRole('radio')[1]);
+      const slider = await screen.findByRole('group', { name: 'frameleaf_restoration_smooth_motion_model' });
+      await waitFor(() => expect(screen.getByText('frameleaf_studio_export_smooth_motion_cloud')).toBeInTheDocument());
+
+      const usable = (within(slider).getAllByRole('radio') as HTMLInputElement[]).filter((radio) => !radio.disabled);
+      expect(usable).toHaveLength(1);
+      expect(usable[0]).toBeChecked();
+      await fireEvent.click(exportButton());
+      expect(onExport).toHaveBeenCalledWith(
+        expect.objectContaining({ smoothMotion: { factor: 2, destinationId: 'cloud-1' } }),
       );
     });
 

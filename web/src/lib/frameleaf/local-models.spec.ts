@@ -1,8 +1,16 @@
-import { HardwareBackend, type HardwareCheckResponseDto } from '@frameleaf/sdk';
+import {
+  AssetRestorationMode,
+  CloudMlModelGroup,
+  HardwareBackend,
+  RestorationModelState,
+  type HardwareCheckResponseDto,
+  type RestorationModelCapabilityDto,
+} from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import en from '$i18n/en.json';
 import { ROUTED_WORKLOADS } from '$lib/frameleaf/cloud-ml';
 import {
+  homeStops,
   LOCAL_DESCRIPTION_MODELS,
   localHardware,
   localModelsFor,
@@ -46,6 +54,34 @@ const check = (ml: { model: string | null; vramGb: number | null; backend: Hardw
 
 const byName = (stops: LocalStop[]) =>
   Object.fromEntries(stops.map((stop) => [stop.model.name, { band: stop.band, reason: stop.reason?.kind ?? null }]));
+
+describe('green stops from what connected computers report', () => {
+  const model = (id: string, mode: AssetRestorationMode, state = RestorationModelState.Available) =>
+    ({ id, mode, state, displayName: id.toUpperCase() }) as RestorationModelCapabilityDto;
+  const report = (models: RestorationModelCapabilityDto[], reachable = true) => ({ reachable, models });
+
+  it('lists the models a computer that answered can run now, once each and for this kind of work', () => {
+    const reports = [
+      report([
+        model('seedvr2', AssetRestorationMode.Creative),
+        model('realbasicvsr', AssetRestorationMode.Faithful),
+        model('not-ready', AssetRestorationMode.Faithful, RestorationModelState.NoGpu),
+      ]),
+      report([model('realbasicvsr', AssetRestorationMode.Faithful)]),
+      report([model('offline', AssetRestorationMode.Faithful)], false),
+    ];
+
+    expect(homeStops(reports, CloudMlModelGroup.RestorationFaithful).map((stop) => stop.model.name)).toEqual([
+      'REALBASICVSR',
+    ]);
+    expect(homeStops(reports, CloudMlModelGroup.RestorationCreative).map((stop) => stop.band)).toEqual(['gpu']);
+    expect(homeStops(reports, CloudMlModelGroup.Interpolation)).toEqual([]);
+  });
+
+  it('has nothing to show for work computers do not report, such as upscaling', () => {
+    expect(homeStops([report([model('x', AssetRestorationMode.Faithful)])], CloudMlModelGroup.Upscale)).toEqual([]);
+  });
+});
 
 describe('local model stops (FL-189)', () => {
   it('offers only model names the description setting already accepts, lightest first', () => {

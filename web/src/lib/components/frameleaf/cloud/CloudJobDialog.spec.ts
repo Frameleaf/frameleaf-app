@@ -1,7 +1,8 @@
 import { CloudMlJobPurpose, CloudMlJobStage, MlWorkload, type CloudMlJobEstimateResponseDto } from '@frameleaf/sdk';
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import messages from '$i18n/en.json';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
 import CloudJobDialog from './CloudJobDialog.svelte';
 
 vi.mock('$lib/frameleaf/activity-session.svelte', () => ({
@@ -49,6 +50,79 @@ const open = () =>
       destinationId: 'cloud-1',
     },
   });
+
+describe('CloudJobDialog: one confirmation per job', () => {
+  const insufficient = {
+    ...estimate(null),
+    holdUsd: 40,
+    refusal: { code: 'insufficient-credits', message: 'Not enough credit.', topUpUrl: 'https://top.up/x' },
+  } as unknown as CloudMlJobEstimateResponseDto;
+
+  beforeEach(() => {
+    getCloudManager.close();
+    vi.clearAllMocks();
+  });
+
+  it('asks no per-job consent: the disclosure is a plain line and the terms go with the job', async () => {
+    sdkMock.estimateCloudMlJob.mockResolvedValue(estimate(null));
+    sdkMock.createCloudMlJob.mockResolvedValue({ operationId: 'op-1' } as never);
+    open();
+
+    expect(await screen.findByText('frameleaf_cloud_job_disclosure')).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    const submit = await screen.findByRole('button', { name: /frameleaf_cloud_job_submit/ });
+    await waitFor(() => expect(submit).toBeEnabled());
+    await fireEvent.click(submit);
+
+    await waitFor(() =>
+      expect(sdkMock.createCloudMlJob).toHaveBeenCalledWith({
+        cloudMlJobCreateDto: {
+          estimateId: 'estimate-1',
+          consentVersion: '2026-09-26.1',
+          acknowledgeDataLeaves: true,
+        },
+      }),
+    );
+  });
+
+  it('opens the sheet on a refusal and estimates again when it is done', async () => {
+    sdkMock.estimateCloudMlJob.mockResolvedValue(insufficient);
+    open();
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'frameleaf_add_ai_credit' }));
+    expect(getCloudManager.request).toMatchObject({
+      feature: 'processing',
+      creditNeeded: 40,
+      topUpUrl: 'https://top.up/x',
+    });
+
+    sdkMock.estimateCloudMlJob.mockResolvedValue(estimate(null));
+    getCloudManager.request?.onDone?.();
+    await screen.findByRole('button', { name: /frameleaf_cloud_job_submit/ });
+    expect(sdkMock.estimateCloudMlJob).toHaveBeenCalledTimes(2);
+  });
+
+  it('estimates the model the slider it was opened from named', async () => {
+    sdkMock.estimateCloudMlJob.mockResolvedValue(estimate(null));
+    render(CloudJobDialog, {
+      open: true,
+      title: 'Smooth motion',
+      initialModelSku: 'ms_RIFE',
+      request: {
+        assetId: 'asset-1',
+        purpose: CloudMlJobPurpose.SmoothMotion,
+        stage: CloudMlJobStage.Preview,
+        destinationId: 'cloud-1',
+        factor: 2,
+      },
+    });
+    await waitFor(() =>
+      expect(sdkMock.estimateCloudMlJob).toHaveBeenCalledWith({
+        cloudMlJobEstimateRequestDto: expect.objectContaining({ modelSku: 'ms_RIFE', factor: 2 }),
+      }),
+    );
+  });
+});
 
 describe('CloudJobDialog: photo upscale under the 64 MP output cap (FC-46)', () => {
   it('shows the explicit approved maximum alongside a routed quote', async () => {
@@ -118,8 +192,7 @@ describe('CloudJobDialog: photo upscale under the 64 MP output cap (FC-46)', () 
     expect(onDismissed).toHaveBeenCalledOnce();
   });
   const pressConfirm = async () => {
-    await fireEvent.click(await screen.findByRole('checkbox'));
-    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_cloud_job_submit' }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'frameleaf_cloud_job_submit' }));
   };
 
   it('does not call a confirmation on its way dismissed when the dialog closes (FL-1304)', async () => {

@@ -3,8 +3,10 @@
    * Confirmation for one Frameleaf Cloud restoration or Smooth motion job (FL-162; prototype
    * CloudJobDialog.jsx and cloud-job.css): the model on its slider, the server's estimate as a p50–p90
    * range with how it is billed (metered GPU time × rate + a start fee per worker, never a fixed
-   * price), the amount the AI Wallet holds, and a per-job consent naming the terms version. A refusal
-   * replaces the submit button. Routed GPU pricing changes require a separate approval. Once confirmed, the dialog
+   * price), and the amount held from AI credit. There is one confirmation per job: the terms were agreed
+   * when Cloud was set up, so what leaves this server is said here as a plain line. A refusal replaces
+   * the submit button and opens the set-up sheet, and the job is estimated again when that is done.
+   * Routed GPU pricing changes require a separate approval. Once confirmed, the dialog
    * follows the same durable job Activity shows, so the two always agree; closing it leaves the job
    * running.
    *
@@ -42,7 +44,7 @@
     type CloudMlJobResponseDto,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import { mdiAlertCircleOutline, mdiCloudOutline, mdiCloudUploadOutline, mdiOpenInNew } from '@mdi/js';
+  import { mdiAlertCircleOutline, mdiCloudOutline, mdiCloudUploadOutline } from '@mdi/js';
   import { onDestroy, untrack } from 'svelte';
   import { locale, t } from 'svelte-i18n';
   import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
@@ -58,6 +60,8 @@
     workName?: string;
     /** A short description of the work ("Preview · centre of the frame"). */
     summary?: string;
+    /** The catalogue model the slider it was opened from named; left out, the chosen or recommended one. */
+    initialModelSku?: string | null;
     onSubmitted?: (job: CloudMlJobResponseDto) => void;
     /** The dialog closed with nothing sent. */
     onDismissed?: () => void;
@@ -70,6 +74,7 @@
     estimateWith,
     workName,
     summary = '',
+    initialModelSku = null,
     onSubmitted,
     onDismissed,
   }: Props = $props();
@@ -80,7 +85,6 @@
   let estimateError = $state(false);
   /** FC-62: Frameleaf Cloud paused new jobs in this region; its own message is shown in place of the error. */
   let pausedMessage = $state<string | null>(null);
-  let agreed = $state(false);
   let submitting = $state(false);
   let notice = $state('');
   let job = $state<CloudMlJobResponseDto | null>(null);
@@ -97,7 +101,6 @@
     estimating = true;
     estimateError = false;
     pausedMessage = null;
-    agreed = false;
     try {
       const next = estimateWith
         ? await estimateWith(sku)
@@ -150,7 +153,6 @@
     job = null;
     estimate = null;
     modelSku = null;
-    agreed = false;
     notice = '';
     preparing = false;
     estimateError = false;
@@ -164,7 +166,7 @@
     untrack(() => {
       if (isOpen && !wasOpen) {
         reset();
-        void runEstimate(null);
+        void runEstimate(initialModelSku);
       } else if (!isOpen && wasOpen) {
         estimateTurn++;
         clearTimeout(retryTimer);
@@ -187,7 +189,7 @@
   };
 
   const submit = async () => {
-    if (!estimate || estimate.refusal || !estimate.permission.canConfirm || !agreed || submitting) {
+    if (!estimate || estimate.refusal || !estimate.permission.canConfirm || submitting) {
       return;
     }
     if (!estimateLive(estimate)) {
@@ -385,23 +387,7 @@
             <span>{$t('frameleaf_cloud_job_refusal', { values: { message: estimate.refusal.message } })}</span>
           </p>
         {:else}
-          <label class="fcj-consent">
-            <input type="checkbox" bind:checked={agreed} disabled={estimating || submitting} />
-            <span>
-              <strong>{$t('frameleaf_cloud_job_consent_title')}</strong>
-              <small>{estimate.consent.summary}</small>
-              <small>
-                {$t('frameleaf_cloud_job_consent_version', { values: { version: estimate.consent.version } })}
-                {#if estimate.consent.documentUrl}
-                  ·
-                  <a href={estimate.consent.documentUrl} target="_blank" rel="noopener noreferrer">
-                    {$t('frameleaf_cloud_job_consent_document')}
-                    <Icon icon={mdiOpenInNew} size="12" aria-hidden={true} />
-                  </a>
-                {/if}
-              </small>
-            </span>
-          </label>
+          <p class="fcj-note">{$t('frameleaf_cloud_job_disclosure')}</p>
         {/if}
       {/if}
       <p class="fcj-note">
@@ -471,21 +457,30 @@
   {#snippet actions()}
     {#if !job}
       <Button onclick={close}>{$t('cancel')}</Button>
-      {#if estimate?.refusal}
-        <!-- FL-544: one button that fixes it, instead of a sentence -->
+      {#if estimate?.refusal?.code === 'insufficient-credits'}
+        <!-- FL-544: one button that fixes it, instead of a sentence; the job is estimated again after -->
         <Button
           variant="primary"
-          onclick={() => getCloudManager.open('processing', { topUpUrl: estimate?.refusal?.topUpUrl ?? null })}
+          onclick={() =>
+            getCloudManager.open('processing', {
+              topUpUrl: estimate?.refusal?.topUpUrl ?? null,
+              creditNeeded: estimate?.holdUsd ?? null,
+              onDone: () => void runEstimate(modelSku),
+            })}
         >
-          {estimate.refusal.code === 'insufficient-credits' ? $t('frameleaf_add_ai_credit') : $t('frameleaf_get_cloud')}
+          {$t('frameleaf_add_ai_credit')}
+        </Button>
+      {:else if estimateError && !pausedMessage}
+        <Button
+          variant="primary"
+          onclick={() =>
+            getCloudManager.open('processing', { onDone: () => void runEstimate(modelSku ?? initialModelSku) })}
+        >
+          {$t('frameleaf_model_cloud_set_up')}
         </Button>
       {/if}
       {#if !estimate?.refusal && estimate?.permission.canConfirm !== false}
-        <Button
-          variant="primary"
-          disabled={!estimate || !agreed || estimating || submitting}
-          onclick={() => void submit()}
-        >
+        <Button variant="primary" disabled={!estimate || estimating || submitting} onclick={() => void submit()}>
           <Icon icon={mdiCloudUploadOutline} size="1.125rem" aria-hidden={true} />
           {submitting
             ? $t('frameleaf_cloud_job_submitting')

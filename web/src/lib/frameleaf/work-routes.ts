@@ -12,6 +12,9 @@
  * nowhere is the home record with the cloud record set to home only. A choice is saved to both.
  * Search and faces build one index for the library, so they run in one place and never "ask": their
  * "Frameleaf Cloud" is the home record routed to the Frameleaf Cloud destination (FL-455).
+ * Picking Frameleaf Cloud means Cloud only, even for work a computer here could do: the row is routed
+ * to the Frameleaf Cloud destination too, which gives it a one-place order. Studio AI is the exception
+ * until its captions can run there (`cloudPlace`).
  * One saved record on the server is the follow-up; until then this module is the single reading.
  *
  * FL-456: a row can also follow the processing order (`FOLLOW`): its work runs on the first place in the
@@ -85,16 +88,23 @@ const homeRoute = (workload: MlWorkload, facts: Pick<RouteFacts, 'destinations' 
   return destination && isHome(destination) ? destination.id : NONE;
 };
 
-/** The Frameleaf Cloud destination search or faces may be routed to now, if any. */
-const cloudPlace = (kind: Exclude<WorkKind, 'render'>, { destinations }: Pick<RouteFacts, 'destinations'>) =>
-  isIndexWork(kind)
-    ? destinations.find((destination) => !isHome(destination) && canRouteTo(destination, ROW_WORKLOAD[kind]))
-    : undefined;
+const cloudDestination = (workload: MlWorkload, { destinations }: Pick<RouteFacts, 'destinations'>) =>
+  destinations.find((destination) => !isHome(destination) && canRouteTo(destination, workload));
 
-const indexOnCloud = (kind: Exclude<WorkKind, 'render'>, facts: Pick<RouteFacts, 'destinations' | 'routes'>) => {
-  const destination = isIndexWork(kind) ? routedTo(ROW_WORKLOAD[kind], facts) : undefined;
+/**
+ * The Frameleaf Cloud destination a row can be routed to now, if any. Not Studio AI: the server refuses
+ * captions on Frameleaf Cloud, so routing it there would stop them instead of running them.
+ */
+const cloudPlace = (kind: Exclude<WorkKind, 'render'>, facts: Pick<RouteFacts, 'destinations'>) =>
+  kind === 'studio' ? undefined : cloudDestination(ROW_WORKLOAD[kind], facts);
+
+const onCloud = (workload: MlWorkload, facts: Pick<RouteFacts, 'destinations' | 'routes'>) => {
+  const destination = routedTo(workload, facts);
   return !!destination && !isHome(destination);
 };
+
+const indexOnCloud = (kind: Exclude<WorkKind, 'render'>, facts: Pick<RouteFacts, 'destinations' | 'routes'>) =>
+  isIndexWork(kind) && onCloud(ROW_WORKLOAD[kind], facts);
 
 const canGoToCloud = (kind: WorkKind, facts: Pick<RouteFacts, 'cloudOn'>) =>
   facts.cloudOn && !!mlWorkloads.find(({ id }) => id === kind)?.cloud && isRoutedWorkload(kind);
@@ -102,6 +112,9 @@ const canGoToCloud = (kind: WorkKind, facts: Pick<RouteFacts, 'cloudOn'>) =>
 /** FL-456: the workload follows the processing order (the server says so; an older server never does). */
 const followsOrder = (workload: MlWorkload, { routes }: Pick<RouteFacts, 'routes'>) =>
   routes.find((route) => route.workload === workload)?.followsOrder === true;
+
+/** FL-456: the server keeps a processing order (it says whether each row follows it). */
+const keepsOrder = ({ routes }: Pick<RouteFacts, 'routes'>) => routes.some((route) => route.followsOrder !== undefined);
 
 /** What a row is set to now, from both records. */
 export const currentChoice = (kind: Exclude<WorkKind, 'render'>, facts: RouteFacts): RouteChoice => {
@@ -120,7 +133,18 @@ export const currentChoice = (kind: Exclude<WorkKind, 'render'>, facts: RouteFac
   if (indexOnCloud(kind, facts)) {
     return CLOUD;
   }
-  return homeRoute(ROW_WORKLOAD[kind], facts);
+  const home = homeRoute(ROW_WORKLOAD[kind], facts);
+  // Set to Frameleaf Cloud with Cloud off: the work follows the order until Cloud is back on, which is
+  // not "nowhere" (FL-456).
+  if (
+    home === NONE &&
+    !facts.cloudOn &&
+    isRoutedWorkload(kind) &&
+    facts.cloudRouting?.[kind] === CloudRouteMode.Cloud
+  ) {
+    return keepsOrder(facts) ? FOLLOW : (homePlaces(ROW_WORKLOAD[kind], facts)[0]?.id ?? NONE);
+  }
+  return home;
 };
 
 /**
@@ -132,14 +156,12 @@ export const choicesFor = (kind: Exclude<WorkKind, 'render'>, facts: RouteFacts)
   const home = homePlaces(ROW_WORKLOAD[kind], facts).map(({ id }) => id);
   const cloud = canGoToCloud(kind, facts);
   // Search and faces: one place only, so Frameleaf Cloud is a place of its own and never "ask".
-  const index = !!cloudPlace(kind, facts) || indexOnCloud(kind, facts);
+  const index = isIndexWork(kind) && (!!cloudPlace(kind, facts) || indexOnCloud(kind, facts));
   const places = [...home, ...(cloud ? [...(home.length > 0 ? [ASK] : []), CLOUD] : []), ...(index ? [CLOUD] : [])];
   if (places.length === 0) {
     return [];
   }
-  // FL-456: offered only by a server that keeps a processing order (it says whether a row follows it)
-  const ordered = facts.routes.some((route) => route.followsOrder !== undefined);
-  return [...(ordered ? [FOLLOW] : []), ...places, NONE];
+  return [...(keepsOrder(facts) ? [FOLLOW] : []), ...places, NONE];
 };
 
 /** What a follower is set to: "same" while it runs where its row does. */
@@ -182,7 +204,11 @@ export const routeWrites = (
       return;
     }
     // A row that follows the order may already run there; picking it pins it there.
-    if (followsOrder(workload, facts) || homeRoute(workload, facts) !== choice) {
+    if (
+      followsOrder(workload, facts) ||
+      homeRoute(workload, facts) !== choice ||
+      (choice === NONE && onCloud(workload, facts))
+    ) {
       writes.routes.push({ workload, destinationId: choice === NONE ? null : choice });
     }
   };
@@ -198,6 +224,10 @@ export const routeWrites = (
     const cloudId = choice === CLOUD ? cloudPlace(kind, facts)?.id : undefined;
     if (cloudId && (followsOrder(ROW_WORKLOAD[kind], facts) || routedTo(ROW_WORKLOAD[kind], facts)?.id !== cloudId)) {
       writes.routes.push({ workload: ROW_WORKLOAD[kind], destinationId: cloudId });
+    }
+    if (choice === ASK && routed && onCloud(ROW_WORKLOAD[kind], facts)) {
+      // No longer Cloud only: the one-place order goes, so it can run at home again.
+      writes.follow.push(ROW_WORKLOAD[kind]);
     }
     if (choice === CLOUD || choice === ASK) {
       continue;
@@ -226,7 +256,22 @@ export const routeWrites = (
       setHome(workload, FOLLOW);
       continue;
     }
+    if (isRoutedWorkload(follows) && leader === CLOUD) {
+      const cloudId = cloudDestination(workload, facts)?.id;
+      if (cloudId && (followsOrder(workload, facts) || routedTo(workload, facts)?.id !== cloudId)) {
+        writes.routes.push({ workload, destinationId: cloudId });
+      }
+      continue;
+    }
+    if (leader === ASK && onCloud(workload, facts)) {
+      writes.follow.push(workload);
+      continue;
+    }
     const home = leader === CLOUD || leader === ASK ? homeRoute(ROW_WORKLOAD[follows], facts) : leader;
+    // A leader on Frameleaf Cloud names no computer here, which is not the same as switching this off.
+    if (leader === CLOUD && home === NONE) {
+      continue;
+    }
     // A follower only goes where it is allowed to run; otherwise it stays where it was.
     if (allows(workload, home)) {
       setHome(workload, home);

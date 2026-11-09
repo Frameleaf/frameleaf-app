@@ -12,6 +12,7 @@
    * reload from this tab's session storage (never secrets), copies and exports the saved settings
    * without secrets, and imports a settings file into the draft for review instead of saving it.
    */
+  import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
   import AuthSettings from '../../admin/system-settings/AuthSettings.svelte';
   import PhonesList from '$lib/components/frameleaf/settings/PhonesList.svelte';
   import FFmpegSettings from '../../admin/system-settings/FFmpegSettings.svelte';
@@ -149,6 +150,15 @@
       }),
   );
   setSystemConfigDraft(settingsDraft);
+
+  // The Frameleaf Cloud set-up sheet saves on its own: what it saved becomes this page's baseline.
+  let cloudSetupsSeen = getCloudManager.setups;
+  $effect(() => {
+    if (getCloudManager.setups !== cloudSetupsSeen) {
+      cloudSetupsSeen = getCloudManager.setups;
+      void settingsDraft.refresh();
+    }
+  });
   systemConfigManager.value = cloneConfig(settingsDraft.baseline);
   // A draft left by a reload of this tab comes back before anything writes the journal again.
   settingsDraft.recover();

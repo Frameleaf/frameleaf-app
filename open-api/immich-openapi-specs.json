@@ -65863,7 +65863,7 @@
   "info": {
     "title": "Frameleaf",
     "description": "Frameleaf API",
-    "version": "1.2.10",
+    "version": "1.2.11",
     "contact": {}
   },
   "tags": [
@@ -87536,6 +87536,15 @@
             "description": "Frameleaf Cloud recommends this model for its workload (and restoration mode) in this region; work with no chosen model uses it",
             "type": "boolean"
           },
+          "localModel": {
+            "description": "For smart search and faces, the name of the server's own model this entry runs (machine-learning settings), or null for every other workload",
+            "nullable": true,
+            "type": "string"
+          },
+          "modelName": {
+            "description": "The name of the model itself, for display; never sent back",
+            "type": "string"
+          },
           "name": {
             "type": "string"
           },
@@ -87572,6 +87581,8 @@
           "group",
           "id",
           "isDefault",
+          "localModel",
+          "modelName",
           "name",
           "priceUsd",
           "pricingUnit",
@@ -87737,6 +87748,10 @@
             "nullable": true,
             "type": "string"
           },
+          "waiting": {
+            "$ref": "#/components/schemas/CloudMlWaitingDto",
+            "description": "Work that has not started yet, and why"
+          },
           "wallet": {
             "allOf": [
               {
@@ -87757,7 +87772,64 @@
           "entitled",
           "matchedModelWorkloads",
           "region",
+          "waiting",
           "wallet"
+        ],
+        "type": "object"
+      },
+      "CloudMlWaitingBatchDto": {
+        "properties": {
+          "nextBatchAt": {
+            "description": "When the next batch goes at the latest (50 photos or 10 minutes); null with no photos waiting",
+            "nullable": true,
+            "type": "string"
+          },
+          "noMatchingModel": {
+            "description": "Photos waiting because Frameleaf Cloud doesn't offer this server's own model at the last check",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "photos": {
+            "description": "Photos that will go in the next batch of this kind of work",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "nextBatchAt",
+          "noMatchingModel",
+          "photos"
+        ],
+        "type": "object"
+      },
+      "CloudMlWaitingDto": {
+        "properties": {
+          "descriptionsForBackfill": {
+            "description": "Photos without a description that wait for a backfill because automatic descriptions are off",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "faces": {
+            "$ref": "#/components/schemas/CloudMlWaitingBatchDto"
+          },
+          "queuedWhileOff": {
+            "description": "Smart search and faces photos held because Frameleaf Cloud processing is turned off",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "smartSearch": {
+            "$ref": "#/components/schemas/CloudMlWaitingBatchDto"
+          }
+        },
+        "required": [
+          "descriptionsForBackfill",
+          "faces",
+          "queuedWhileOff",
+          "smartSearch"
         ],
         "type": "object"
       },
@@ -110949,6 +111021,10 @@
             "description": "At least one destination can serve this workload right now",
             "type": "boolean"
           },
+          "cloudOnly": {
+            "description": "Set to Frameleaf Cloud only: home destinations are refused while that holds",
+            "type": "boolean"
+          },
           "destinations": {
             "items": {
               "$ref": "#/components/schemas/MlCapabilityDestinationDto"
@@ -110968,6 +111044,7 @@
         },
         "required": [
           "available",
+          "cloudOnly",
           "destinations",
           "routedDestinationId",
           "workload"
@@ -145979,6 +146056,11 @@
               }
             ],
             "description": "How many frames each frame becomes"
+          },
+          "model": {
+            "description": "The model the computer runs it with; one it reported. Left out, the computer uses its usual model.",
+            "pattern": "^[a-z0-9][a-z0-9-]{1,63}$",
+            "type": "string"
           }
         },
         "required": [

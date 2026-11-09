@@ -9,13 +9,13 @@ from numpy.typing import NDArray
 from tokenizers import Encoding, Tokenizer
 
 from frameleaf_ml.config import log
-from frameleaf_ml.models.base import InferenceModel
+from frameleaf_ml.models.clip.hugging_face import HubClipModel
 from frameleaf_ml.models.constants import WEBLATE_TO_FLORES200
 from frameleaf_ml.models.transforms import clean_text, serialize_np_array
 from frameleaf_ml.schemas import ModelSession, ModelTask, ModelType
 
 
-class BaseCLIPTextualEncoder(InferenceModel):
+class BaseCLIPTextualEncoder(HubClipModel):
     depends = []
     identity = (ModelType.TEXTUAL, ModelTask.SEARCH)
     threads = 4  # lower search latency

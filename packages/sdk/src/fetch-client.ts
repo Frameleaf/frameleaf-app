@@ -1,6 +1,6 @@
 /**
  * Frameleaf
- * 1.2.10
+ * 1.2.11
  * DO NOT MODIFY - This file has been generated using oazapfts.
  * See https://www.npmjs.com/package/oazapfts
  */
@@ -982,6 +982,22 @@ export type MlDestinationResponseDto = {
     /** Workloads the administrator allows on this destination */
     workloads: MlWorkload[];
 };
+export type CloudMlWaitingBatchDto = {
+    /** When the next batch goes at the latest (50 photos or 10 minutes); null with no photos waiting */
+    nextBatchAt: string | null;
+    /** Photos waiting because Frameleaf Cloud doesn't offer this server's own model at the last check */
+    noMatchingModel: number;
+    /** Photos that will go in the next batch of this kind of work */
+    photos: number;
+};
+export type CloudMlWaitingDto = {
+    /** Photos without a description that wait for a backfill because automatic descriptions are off */
+    descriptionsForBackfill: number;
+    faces: CloudMlWaitingBatchDto;
+    /** Smart search and faces photos held because Frameleaf Cloud processing is turned off */
+    queuedWhileOff: number;
+    smartSearch: CloudMlWaitingBatchDto;
+};
 export type CloudMlWalletDto = {
     /** Automatic top-up with the payment method saved on the account */
     autoTopUp: boolean;
@@ -1018,6 +1034,8 @@ export type CloudMlStatusResponseDto = {
     matchedModelWorkloads: MlWorkload[];
     /** The Frameleaf account's data region */
     region: string | null;
+    /** Work that has not started yet, and why */
+    waiting: CloudMlWaitingDto;
     /** The last AI Wallet read, or null */
     wallet: (CloudMlWalletDto) | null;
 };
@@ -1029,6 +1047,10 @@ export type CloudMlModelDto = {
     id: string;
     /** Frameleaf Cloud recommends this model for its workload (and restoration mode) in this region; work with no chosen model uses it */
     isDefault: boolean;
+    /** For smart search and faces, the name of the server's own model this entry runs (machine-learning settings), or null for every other workload */
+    localModel: string | null;
+    /** The name of the model itself, for display; never sent back */
+    modelName: string;
     name: string;
     /** Price per unit, USD */
     priceUsd: number | null;
@@ -10922,6 +10944,8 @@ export type MlCapabilityDestinationDto = {
 export type MlWorkloadCapabilityDto = {
     /** At least one destination can serve this workload right now */
     available: boolean;
+    /** Set to Frameleaf Cloud only: home destinations are refused while that holds */
+    cloudOnly: boolean;
     destinations: MlCapabilityDestinationDto[];
     /** Destination library jobs use for this workload, or null */
     routedDestinationId: string | null;
@@ -17278,6 +17302,8 @@ export type StudioExportSmoothMotionDto = {
     destinationId: string;
     /** How many frames each frame becomes */
     factor: 2 | 4 | 8;
+    /** The model the computer runs it with; one it reported. Left out, the computer uses its usual model. */
+    model?: string;
 };
 export type StudioExportCreateDto = {
     /** Defaults to `preserve`; a stereo downmix happens only when asked for */

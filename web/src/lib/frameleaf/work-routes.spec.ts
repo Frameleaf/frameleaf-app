@@ -86,6 +86,19 @@ describe('reading one choice from the two records', () => {
     expect(currentChoice('descriptions', off)).toBe('srv');
   });
 
+  it('does not call work set to Frameleaf Cloud "nowhere" while Cloud is off', () => {
+    const parked = facts({
+      destinations: [server, cloud],
+      routes: [{ workload: MlWorkload.Enrichment, destinationId: 'fc', followsOrder: false }] as MlWorkloadRouteDto[],
+      cloudOn: false,
+      cloudRouting: { descriptions: CloudRouteMode.Cloud },
+    });
+    expect(currentChoice('descriptions', parked)).toBe(FOLLOW);
+
+    // an older server keeps no order, so it names the place the work can run
+    expect(currentChoice('descriptions', { ...parked, routes: routes({ [MlWorkload.Enrichment]: 'fc' }) })).toBe('srv');
+  });
+
   it('never reads Frameleaf Cloud out of the home record', () => {
     const odd = facts({
       destinations: [server, cloud],
@@ -225,6 +238,91 @@ describe('saving a choice writes both records', () => {
     expect(routeWrites({ faces: 'office' }, {}, noPets).routes).toEqual([
       { workload: MlWorkload.Face, destinationId: 'office' },
     ]);
+  });
+
+  describe('Frameleaf Cloud means Cloud only', () => {
+    const fc = destination({
+      id: 'fc',
+      name: 'Frameleaf Cloud',
+      kind: MlDestinationKind.FrameleafCloud,
+      workloads: [
+        MlWorkload.Enrichment,
+        MlWorkload.Upscale,
+        MlWorkload.RestorationFaithful,
+        MlWorkload.RestorationCreative,
+        MlWorkload.StudioAi,
+      ],
+      consent: { required: true, acknowledgedAt: '2026-10-01T00:00:00Z', version: '1', requiredVersion: '1' },
+    } as Partial<MlDestinationResponseDto>);
+    const ready = (overrides: Partial<RouteFacts> = {}) =>
+      facts({ destinations: [server, office, fc], cloudOn: true, ...overrides });
+
+    it('routes the work there even when a computer at home could run it', () => {
+      expect(routeWrites({ descriptions: CLOUD }, {}, ready())).toEqual({
+        routes: [{ workload: MlWorkload.Enrichment, destinationId: 'fc' }],
+        cloud: { descriptions: CloudRouteMode.Cloud },
+        follow: [],
+      });
+    });
+
+    it('takes creative restoration with it while that runs where restoration does', () => {
+      expect(routeWrites({ restoration: CLOUD }, {}, ready()).routes).toEqual([
+        { workload: MlWorkload.RestorationFaithful, destinationId: 'fc' },
+        { workload: MlWorkload.RestorationCreative, destinationId: 'fc' },
+      ]);
+    });
+
+    it('does not turn Pets off when Faces is on Frameleaf Cloud and Pets is the same', () => {
+      const facesOnCloud = destination({
+        id: 'fc',
+        kind: MlDestinationKind.FrameleafCloud,
+        workloads: [MlWorkload.Face],
+        consent: { required: true, acknowledgedAt: '2026-10-01T00:00:00Z', version: '1', requiredVersion: '1' },
+      } as Partial<MlDestinationResponseDto>);
+      const onCloud = facts({
+        destinations: [server, facesOnCloud],
+        routes: routes({ [MlWorkload.Face]: 'fc', [MlWorkload.PetRecognition]: 'srv' }),
+        cloudOn: true,
+      });
+
+      expect(routeWrites({ faces: CLOUD }, { pets: SAME }, onCloud).routes).toEqual([]);
+    });
+
+    it('pins a follower that follows the order to Cloud with its row, even if it runs there already', () => {
+      const following = ready({
+        routes: [
+          { workload: MlWorkload.RestorationFaithful, destinationId: 'fc', followsOrder: false },
+          { workload: MlWorkload.RestorationCreative, destinationId: 'fc', followsOrder: true },
+        ] as MlWorkloadRouteDto[],
+        cloudRouting: { restoration: CloudRouteMode.Cloud },
+      });
+
+      expect(routeWrites({ restoration: CLOUD }, { creative: SAME }, following).routes).toEqual([
+        { workload: MlWorkload.RestorationCreative, destinationId: 'fc' },
+      ]);
+    });
+
+    it('leaves Studio AI unrouted, because its captions cannot run there', () => {
+      expect(routeWrites({ studio: CLOUD }, {}, ready()).routes).toEqual([]);
+    });
+
+    it('offers Frameleaf Cloud once, beside computers that could run it', () => {
+      expect(choicesFor('descriptions', ready()).filter((choice) => choice === CLOUD)).toHaveLength(1);
+    });
+
+    it('Ask, a computer and Nowhere each undo the Cloud-only route', () => {
+      const pinned = ready({
+        routes: routes({ [MlWorkload.Enrichment]: 'fc' }),
+        cloudRouting: { descriptions: CloudRouteMode.Cloud },
+      });
+      expect(routeWrites({ descriptions: ASK }, {}, pinned).follow).toEqual([MlWorkload.Enrichment]);
+      expect(routeWrites({ descriptions: 'office' }, {}, pinned).routes).toEqual([
+        { workload: MlWorkload.Enrichment, destinationId: 'office' },
+      ]);
+      expect(routeWrites({ descriptions: NONE }, {}, pinned).routes).toEqual([
+        { workload: MlWorkload.Enrichment, destinationId: null },
+      ]);
+    });
   });
 
   it('Ask and Frameleaf Cloud change the cloud record and keep the place at home', () => {

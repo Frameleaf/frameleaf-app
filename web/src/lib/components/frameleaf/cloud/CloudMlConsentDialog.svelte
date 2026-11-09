@@ -18,17 +18,9 @@
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import { CONSENT_TERM_KEYS } from '$lib/frameleaf/cloud-ml';
-  import { FRAMELEAF_CLOUD_WORKLOADS } from '$lib/frameleaf/ml-destinations';
+  import { isConsentOutdatedError, loadCloudConsentTerms, recordCloudConsent } from '$lib/frameleaf/cloud-setup';
   import { handleError } from '$lib/utils/handle-error';
-  import {
-    MlWorkload,
-    createCloudMlDestination,
-    getCloudMlConsentTerms,
-    grantMlDestinationConsent,
-    isHttpError,
-    type CloudMlConsentStateDto,
-    type CloudMlConsentTermsDto,
-  } from '@frameleaf/sdk';
+  import { MlWorkload, type CloudMlConsentStateDto, type CloudMlConsentTermsDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import { mdiOpenInNew, mdiShieldCheckOutline } from '@mdi/js';
   import { untrack } from 'svelte';
@@ -87,13 +79,7 @@
   const loadTerms = async (choices: Choices) => {
     const turn = ++termsTurn;
     try {
-      const next = await getCloudMlConsentTerms({
-        identityNames: choices.identityNames,
-        medicalSignals: choices.medicalSignals,
-        // FL-455: asked for only when chosen, so a Cloud without them answers as before
-        ...(choices.smartSearch && { smartSearch: true }),
-        ...(choices.faceRecognition && { faceRecognition: true }),
-      });
+      const next = await loadCloudConsentTerms(choices);
       if (turn !== termsTurn) {
         return;
       }
@@ -144,33 +130,16 @@
     }
     saving = true;
     try {
-      const id =
-        destinationId ??
-        createdId ??
-        (createdId = (
-          await createCloudMlDestination({
-            cloudMlDestinationCreateDto: { workloads: [...FRAMELEAF_CLOUD_WORKLOADS] },
-          })
-        ).id);
-      await grantMlDestinationConsent({
-        id,
-        mlDestinationConsentRequestDto: {
-          acknowledgeMediaLeavesNetwork: true,
-          version: terms.requiredVersion,
-          ...(terms.textSha256 && { textSha256: terms.textSha256 }),
-          features: {
-            identityNames: chosen.identityNames,
-            medicalSignals: chosen.medicalSignals,
-            ocrAddon: false,
-            ...(chosen.smartSearch && { smartSearch: true }),
-            ...(chosen.faceRecognition && { faceRecognition: true }),
-          },
-        },
+      await recordCloudConsent({
+        destinationId: destinationId ?? createdId,
+        terms,
+        choices: chosen,
+        onCreated: (id) => (createdId = id),
       });
       open = false;
       onRecorded?.();
     } catch (error) {
-      if (isHttpError(error) && (error.data as { code?: unknown } | undefined)?.code === 'consent-version-outdated') {
+      if (isConsentOutdatedError(error)) {
         // FC-62: Frameleaf Cloud asks for other terms now: read them for the same features and show them;
         // the version it named is never accepted unseen
         termsChanged = true;

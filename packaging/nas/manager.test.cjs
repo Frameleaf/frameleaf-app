@@ -69,7 +69,7 @@ assert profile.tag == 'CommunityApplications'
 assert 'Manager' in profile.findtext('Profile', '')
 assert profile.findtext('Forum') == 'https://frameleaf.app/help/community/'
 assert profile.findtext('WebPage') == 'https://frameleaf.app'
-assert profile.findtext('Discord') == 'https://discord.gg/cN3U3mv4'
+assert profile.findtext('Discord') == 'https://discord.gg/NrQuxCMhh5'
 assert profile.findtext('Twitter') == 'https://x.com/frameleafapp'
 assert profile.findtext('Video') == 'https://www.youtube.com/watch?v=rNgyZZoZoEg'
 assert profile.findtext('Photo') == 'https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/frameleaf-library.jpg'

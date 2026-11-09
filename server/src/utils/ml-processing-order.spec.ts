@@ -16,6 +16,7 @@ import {
   planMlRoute,
   processingOrderOf,
   processingSourceStatuses,
+  sourcesFor,
 } from 'src/utils/ml-processing-order.js';
 import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
 
@@ -105,6 +106,51 @@ describe('processing order (FL-456)', () => {
       expect(own([MlProcessingSource.Cloud]).map(({ destinationId }) => destinationId)).toEqual([cloud.id]);
       expect(own([])).toEqual([]);
       expect(firstCandidate(own([]))).toBeUndefined();
+    });
+
+    describe('Cloud only with Frameleaf Cloud switched off', () => {
+      const cloudOnly = {
+        order: [...DEFAULT_ML_PROCESSING_ORDER],
+        overrides: { [MlWorkload.Enrichment]: [MlProcessingSource.Cloud] },
+      };
+      const routing = { ...defaults.frameleafCloud.cloudMl.routing, descriptions: 'cloud' as const };
+
+      it('follows the main list until Cloud is back on, then its own list holds again', () => {
+        const destinationsWhen = (enabled: boolean) =>
+          plan({ workload: MlWorkload.Enrichment, order: cloudOnly, cloudMl: { enabled, routing } }).map(
+            ({ destinationId }) => destinationId,
+          );
+
+        expect(destinationsWhen(false)[0]).toBe(local.id);
+        expect(destinationsWhen(true)).toEqual([cloud.id]);
+      });
+
+      it('does the same for a route pinned to Cloud with no list of its own', () => {
+        const pinned = plan({
+          workload: MlWorkload.Enrichment,
+          storedRoute: { destinationId: cloud.id, origin: 'pinned' },
+          cloudMl: { enabled: false, routing },
+        });
+        expect(pinned[0].destinationId).toBe(local.id);
+      });
+
+      it('leaves other lists alone: Off stays off and a list naming a computer stays on it', () => {
+        const own = (sources: MlProcessingSource[]) =>
+          plan({
+            workload: MlWorkload.Enrichment,
+            order: { order: [...DEFAULT_ML_PROCESSING_ORDER], overrides: { [MlWorkload.Enrichment]: sources } },
+            cloudMl: { enabled: false, routing },
+          });
+        expect(own([])).toEqual([]);
+        expect(own([MlProcessingSource.Local, MlProcessingSource.Cloud]).map(({ source }) => source)).toEqual([
+          MlProcessingSource.Local,
+          MlProcessingSource.Cloud,
+        ]);
+      });
+
+      it('reports the saved list when not planning', () => {
+        expect(sourcesFor(cloudOnly, MlWorkload.Enrichment)).toEqual([MlProcessingSource.Cloud]);
+      });
     });
 
     it('keeps a workload an administrator pinned (or Buddy recovery restored) in its one place', () => {

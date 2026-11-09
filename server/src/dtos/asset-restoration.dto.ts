@@ -129,7 +129,7 @@ export const AssetRestorationUpscaleSchema = z
   .describe('Upscale factor. Output is additionally capped at 4K.');
 
 /** A restoration worker's model id, as its manifest names it (`realbasicvsr-x4`, `seedvr2-3b`). */
-const RESTORATION_MODEL_ID = /^[a-z0-9][a-z0-9-]{1,63}$/;
+export const RESTORATION_MODEL_ID = /^[a-z0-9][a-z0-9-]{1,63}$/;
 
 const AssetRestorationRequestSchema = z
   .object({

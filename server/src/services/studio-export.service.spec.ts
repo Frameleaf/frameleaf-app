@@ -1448,6 +1448,22 @@ describe(StudioExportService.name, () => {
       expect(job.settings).not.toHaveProperty('smoothMotion');
     });
 
+    it('keeps the Smooth motion model chosen in the dialog with the export (FL-162)', async () => {
+      studio.authorizeRevision.mockResolvedValue(authorized());
+      repository.createWithRender.mockResolvedValue({
+        operation: operation({ status: MediaOperationStatus.Queued }),
+        version: versionRow({ state: StudioExportVersionState.Rendering }),
+      });
+
+      await sut.create(auth(), PROJECT, {
+        ...(dto as object),
+        smoothMotion: { factor: 4, destinationId: SMOOTH_DESTINATION, model: 'rife-4.25' },
+      } as never);
+
+      const [job] = repository.createWithRender.mock.calls[0];
+      expect(job.snapshot.smoothMotion).toEqual({ factor: 4, destinationId: SMOOTH_DESTINATION, model: 'rife-4.25' });
+    });
+
     it('refuses Smooth motion on a destination that does not run it, before anything is queued', async () => {
       studio.authorizeRevision.mockResolvedValue(authorized());
       for (const destinationId of [LIBRARY_ONLY_DESTINATION, '0199aaaa-bbbb-4ccc-8ddd-eeeeffff00ff']) {

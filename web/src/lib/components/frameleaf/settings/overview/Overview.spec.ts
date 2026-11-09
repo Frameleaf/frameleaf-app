@@ -145,13 +145,15 @@ describe('Overview (FL-363)', () => {
     sdk.getMlWorkloadRoutes.mockResolvedValue({ routes: [{ workload: 'clip', destinationId: 'lan' }] });
     render(Overview);
     expect(await screen.findByRole('heading', { name: 'Something needs you now' })).toBeInTheDocument();
-    expect(await screen.findByText('AI features are not answering')).toBeInTheDocument();
+    expect(await screen.findByText('Search and recognition are not answering')).toBeInTheDocument();
     expect(screen.getAllByText(/almost out of space/i).length).toBeGreaterThan(0);
     const list = screen.getByRole('list', { name: 'Needs your attention' });
     expect(list.querySelector('li')).toHaveClass('is-now');
     // UI review 2026-10-30 #17: the status names only the problems, and "Check again" is there once.
     expect(
-      screen.getByText('This drive is almost out of space, AI features are not answering, and an update is ready.'),
+      screen.getByText(
+        'This drive is almost out of space, Search and recognition are not answering, and an update is ready.',
+      ),
     ).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /Check again/ })).toHaveLength(1);
   });

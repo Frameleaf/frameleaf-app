@@ -14,6 +14,8 @@
         feature={request.feature}
         onDone={request.onDone}
         topUpUrl={request.topUpUrl}
+        creditNeeded={request.creditNeeded}
+        consentFeature={request.consentFeature}
         close={() => getCloudManager.close()}
       />
     {/await}

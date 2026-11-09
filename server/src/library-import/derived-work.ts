@@ -186,7 +186,8 @@ export async function prepareLibraryImportWork(
         .innerJoin(cohort, 'mapped.destination_id', 'face.assetId')
         .whereRef('person.ownerId', '=', 'mapped.ownerId');
       for (const intent of stages) {
-        const selected =
+        // Named so TypeScript doesn't have to expand the union of all three query shapes (TS2590).
+        const selected: Parameters<typeof insertRunJobs>[3] =
           intent.name === JobName.PersonGenerateThumbnail
             ? people
             : intent.name === JobName.AssetEncodeVideo

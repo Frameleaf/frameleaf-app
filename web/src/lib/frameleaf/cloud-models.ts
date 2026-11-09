@@ -17,6 +17,14 @@ import {
   type CloudMlStatusResponseDto,
 } from '@frameleaf/sdk';
 import type { RoutedWorkload } from '$lib/frameleaf/cloud-ml';
+import {
+  catalogCloudStop,
+  genericCloudStop,
+  GENERIC_CLOUD_STOP,
+  type LiveCloudTwin,
+  type PositionState,
+  type SliderWorkload,
+} from '$lib/frameleaf/gpu-model-catalog';
 
 export type CloudModelGroupRow = {
   group: CloudMlModelGroup;
@@ -70,6 +78,42 @@ export const cloudMatchedWorkloads = (
       (status?.matchedModelWorkloads ?? []).includes(workload) ||
       (catalog ?? []).some((model) => model.workload === workload),
   );
+
+/**
+ * The search or faces entries of the live catalogue, by the local model each runs. A model the catalogue
+ * doesn't list has no blue stop.
+ */
+export const cloudTwinsOf = (catalog: readonly CloudMlModelDto[] | null, workload: MlWorkload): LiveCloudTwin[] =>
+  (catalog ?? []).flatMap((model) =>
+    model.workload === workload && model.localModel
+      ? [
+          {
+            localModel: model.localModel,
+            modelName: model.modelName,
+            label: model.name,
+            priceUsd: model.priceUsd,
+            pricingUnit: model.pricingUnit,
+          },
+        ]
+      : [],
+  );
+
+/**
+ * The blue stops of a slider, from the live catalogue: one per model of the group, or one that names no
+ * model when the catalogue can't be read (a server not linked yet, or someone who isn't an administrator).
+ */
+export const liveCloudStops = (
+  workload: SliderWorkload,
+  group: CloudMlModelGroup,
+  catalog: readonly CloudMlModelDto[] | null,
+  genericName: string,
+): PositionState[] =>
+  catalog
+    ? catalogModelsFor(catalog, group).map((model) => catalogCloudStop(workload, model))
+    : [genericCloudStop(workload, genericName)];
+
+/** The catalogue SKU a blue stop names, or null for the stop that stands for Frameleaf Cloud as a whole. */
+export const cloudStopSku = (id: string | null | undefined) => (id && id !== GENERIC_CLOUD_STOP ? id : null);
 
 /** Studio AI never takes a catalogue default: an administrator always chooses its models. */
 export const takesCatalogDefault = (group: CloudMlModelGroup) =>

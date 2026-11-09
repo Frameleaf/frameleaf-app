@@ -104,7 +104,7 @@ describe('Computers (FL-364)', () => {
     expect(office.getByText('3 kinds of work')).toBeInTheDocument();
     // What it helps with is in Advanced, beside its Manage.
     await fireEvent.click(screen.getByRole('button', { name: 'Advanced' }));
-    expect(await screen.findByText(/AI features and Studio and restoration/)).toBeInTheDocument();
+    expect(await screen.findByText(/Search and recognition and Studio and restoration/)).toBeInTheDocument();
   });
 
   it('says plainly when a helper is not answering', () => {
@@ -132,7 +132,7 @@ describe('Computers (FL-364)', () => {
     const mac = within(computer('Studio Mac'));
     expect(mac.getByText('At home · Mac')).toBeInTheDocument();
     expect(mac.getByText('Ready')).toBeInTheDocument();
-    expect(mac.getByText('Frameleaf Desktop is helping with AI features.')).toBeInTheDocument();
+    expect(mac.getByText('Frameleaf Desktop is helping with search and recognition.')).toBeInTheDocument();
     // The app is managed on the computer itself, so there is no Details for it here.
     expect(mac.queryByRole('button')).not.toBeInTheDocument();
 
@@ -146,12 +146,12 @@ describe('Computers (FL-364)', () => {
   it('says AI features are off and links to the switch, instead of naming a place', () => {
     render(ComputersSection, { data: data([entry({ readiness: MlWorkerReadiness.Unknown })], false) });
 
-    expect(screen.getByText('AI features are turned off')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Turn on AI features' })).toHaveAttribute(
+    expect(screen.getByText('Search and recognition are turned off')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Turn on search and recognition' })).toHaveAttribute(
       'href',
       expect.stringContaining('area=intelligence'),
     );
-    expect(within(computer('This server')).getByText('Ready · AI features off')).toBeInTheDocument();
+    expect(within(computer('This server')).getByText('Ready · search and recognition off')).toBeInTheDocument();
   });
 
   it('offers the two ways a computer can be connected today, and no code that cannot work', async () => {

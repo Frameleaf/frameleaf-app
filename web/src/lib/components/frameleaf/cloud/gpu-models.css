@@ -241,9 +241,42 @@
   color: var(--fl-muted);
   font-size: var(--fl-font-micro);
 }
+/* The quality word stays when the names go on a narrow track, so it is outside .ms-stop-name. */
+.ms-tier {
+  font-size: var(--fl-font-small);
+  font-weight: 600;
+  color: var(--fl-text);
+  white-space: nowrap;
+}
+.ms-stop.is-readonly {
+  cursor: default;
+}
+.ms-stop.is-readonly .ms-knob {
+  display: none;
+}
+.ms-row {
+  padding: var(--fl-space-4) 0;
+  border-top: 1px solid var(--fl-border);
+}
 @container (max-width: 520px) {
   .ms-stop-name > span {
     display: none;
+  }
+  .ms-tier {
+    font-size: var(--fl-font-micro);
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  /* Two lists side by side leave too little room for their words: this server above, Frameleaf Cloud below. */
+  .ms-track.is-split {
+    flex-direction: column;
+    gap: var(--fl-space-3);
+  }
+  .ms-side:has(+ .ms-side) .ms-stop:last-child .ms-band {
+    border-radius: 0 var(--fl-radius-pill) var(--fl-radius-pill) 0;
+  }
+  .ms-side + .ms-side .ms-stop:first-child .ms-band {
+    border-radius: var(--fl-radius-pill) 0 0 var(--fl-radius-pill);
   }
 }
 @media (prefers-reduced-motion: reduce) {

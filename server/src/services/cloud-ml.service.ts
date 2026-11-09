@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, ServiceUnavailableException } from '@nestjs/common';
+import type { SystemConfig } from 'src/config.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { CloudMlGateway } from 'src/repositories/frameleaf-cloud-ml.repository.js';
 import type { MachineLearningHardwareResponse, MlEndpointProbe } from 'src/repositories/machine-learning.repository.js';
@@ -34,6 +35,13 @@ import {
   SystemMetadataKey,
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
+import { CLOUD_DESCRIPTION_BACKFILL_MAX } from 'src/utils/cloud-description-batch.js';
+import {
+  type CloudLibraryWorkload,
+  appWorkloadOfLibrary,
+  cloudLibraryDestination,
+  nextCloudLibraryBatchAt,
+} from 'src/utils/cloud-library-batch.js';
 import { CLOUD_IDENTITY_WORKLOADS, isCloudIdentityWorkload, matchLocalModels } from 'src/utils/cloud-model-identity.js';
 import {
   CloudConnectionState,
@@ -63,12 +71,16 @@ import {
   stepUpUrl,
   workloadForCatalogEntry,
 } from 'src/utils/frameleaf-cloud.js';
+import { isCustomClipModelName } from 'src/utils/misc.js';
 import { mapMlDestination } from 'src/utils/ml-destination-dto.js';
 import { ML_BUDGET_WINDOW_DAYS, cloudRouteAllows, workloadPolicyProblem } from 'src/utils/ml-destination.js';
 import { localNotificationText } from 'src/utils/preferences.js';
 
 /** How many settled charges the processing section lists. */
 const CLOUD_ML_SETTLEMENT_LIMIT = 50;
+
+/** How long the count of photos waiting for a description backfill is remembered. */
+const CLOUD_ML_WAITING_DESCRIPTIONS_TTL_MS = 60_000;
 
 /** How far back a usage reconcile looks for settlements. */
 export const CLOUD_ML_USAGE_WINDOW_DAYS = 30;
@@ -118,6 +130,7 @@ const refusedFacts = (refusal: MlAdmissionRefusal, detail: string, region: strin
 @Injectable()
 export class CloudMlService extends BaseService {
   private lastProbe?: { at: number; probe: MlEndpointProbe };
+  private waitingDescriptions?: { at: number; count: number };
 
   /**
    * FL-168 (prototype: "Turning this off cancels waiting cloud jobs and returns their held credit"):
@@ -185,6 +198,7 @@ export class CloudMlService extends BaseService {
       matchedModelWorkloads: CLOUD_IDENTITY_WORKLOADS.filter(
         (workload) => destination?.lastProbeCloud?.localModels?.[workload] !== undefined,
       ),
+      waiting: await this.waitingWork(config, destination, resolution.state),
       checkedAt: new Date().toISOString(),
     };
     if (resolution.state !== CloudConnectionState.Ready) {
@@ -214,6 +228,75 @@ export class CloudMlService extends BaseService {
       status.detail = error.message;
     }
     return status;
+  }
+
+  /**
+   * Work that hasn't started yet, and why, for "Waiting for Frameleaf Cloud". Smart search and faces follow
+   * what `CloudLibraryBatchService.batchQueued` will do with each photo on its queue: held while processing
+   * is off, held for want of this server's model, sent back to its own job when the work is routed elsewhere
+   * (so not counted), and otherwise waiting for the next batch.
+   */
+  private async waitingWork(
+    config: SystemConfig,
+    destination: MlDestinationRow | undefined,
+    connection: CloudConnectionState,
+  ): Promise<CloudMlStatusResponseDto['waiting']> {
+    const queue = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudLibraryQueue);
+    const items = queue?.items ?? [];
+    const { enabled } = config.frameleafCloud.cloudMl;
+    const now = new Date();
+    const waitingFor = async (workload: CloudLibraryWorkload) => {
+      const waiting = items.filter((item) => item.workload === workload);
+      const appWorkload = appWorkloadOfLibrary(workload);
+      const routed =
+        enabled &&
+        waiting.length > 0 &&
+        !(workload === 'clip' && isCustomClipModelName(config.machineLearning.clip.modelName))
+          ? await cloudLibraryDestination(this.mlDestinationRepository, appWorkload)
+          : undefined;
+      if (!routed) {
+        return { photos: 0, nextBatchAt: null, noMatchingModel: 0 };
+      }
+      return routed.lastProbeCloud?.localModels?.[appWorkload]
+        ? { photos: waiting.length, nextBatchAt: nextCloudLibraryBatchAt(waiting, now), noMatchingModel: 0 }
+        : { photos: 0, nextBatchAt: null, noMatchingModel: waiting.length };
+    };
+    const [smartSearch, faces] = await Promise.all([waitingFor('clip'), waitingFor('face')]);
+    return {
+      smartSearch,
+      faces,
+      queuedWhileOff: enabled ? 0 : items.length,
+      descriptionsForBackfill: await this.descriptionsForBackfill(config, destination, connection, now.getTime()),
+    };
+  }
+
+  /** Bounded and briefly remembered: this read is on a status every Cloud settings page makes. */
+  private async descriptionsForBackfill(
+    config: SystemConfig,
+    destination: MlDestinationRow | undefined,
+    connection: CloudConnectionState,
+    now: number,
+  ): Promise<number> {
+    const { enabled, autoDescribe, routing } = config.frameleafCloud.cloudMl;
+    if (
+      connection !== CloudConnectionState.Ready ||
+      !destination ||
+      !enabled ||
+      autoDescribe.enabled ||
+      routing.descriptions === 'local'
+    ) {
+      return 0;
+    }
+    if (this.waitingDescriptions && now - this.waitingDescriptions.at < CLOUD_ML_WAITING_DESCRIPTIONS_TTL_MS) {
+      return this.waitingDescriptions.count;
+    }
+    const [count, inBatches] = await Promise.all([
+      this.assetJobRepository.countPhotosWithoutDescription(CLOUD_DESCRIPTION_BACKFILL_MAX),
+      this.mediaOperationRepository.getOpenCloudDescriptionAssetIds(),
+    ]);
+    const waiting = Math.max(0, count - inBatches.size);
+    this.waitingDescriptions = { at: now, count: waiting };
+    return waiting;
   }
 
   /**
@@ -368,6 +451,8 @@ export class CloudMlService extends BaseService {
           workload,
           group: isCloudModelGroup(group) ? group : null,
           name: model.label,
+          modelName: model.display.model,
+          localModel: model.identity?.name ?? null,
           description: [
             `${model.display.model}, ${model.display.gpu}`,
             `Start fee ${model.rate.startFeeUsd} USD per worker`,

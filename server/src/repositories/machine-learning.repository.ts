@@ -12,6 +12,7 @@ import type { DB } from 'src/schema/index.js';
 import type { DesktopModelProfile } from 'src/utils/desktop-model-catalogue.js';
 import type { CloudProbeFacts } from 'src/utils/frameleaf-cloud.js';
 import type { MlContainerReport } from 'src/utils/hardware-check.js';
+import { CUSTOM_CLIP_DIM_SIZE } from 'src/constants.js';
 import { MachineLearningConfig } from 'src/dtos/config.dto.js';
 import {
   RESTORATION_MAX_OUTPUT_EDGE,
@@ -605,6 +606,9 @@ export class RestorationWorkerError extends Error {
 
 /** The worker answered that it lacks the library this model needs (FL-676); it will never run the model. */
 export class MachineLearningModelRuntimeUnavailableError extends Error {}
+
+/** The worker refused a person's own Hugging Face search model; the message is written for them. */
+export class CustomClipModelRefusedError extends Error {}
 
 /** No answer from the worker at all (refused, reset or dropped connection), as opposed to an error it returned. */
 export class MachineLearningTransportError extends Error {}
@@ -1961,6 +1965,31 @@ export class MachineLearningRepository implements RestorationInference {
 
   async assertClipModel(modelName: string): Promise<void> {
     await this.clipIndex?.selectProfile(modelName, 'image');
+  }
+
+  /**
+   * Ask the worker to check a person's own Hugging Face search model and report its embedding size.
+   * A model the worker refused throws `CustomClipModelRefusedError` with its explanation for the person.
+   */
+  async getCustomClipDimSize(selection: MlSelection, modelName: string): Promise<number> {
+    await this.authorize(selection.endpoint);
+    const response = await fetch(new URL('clip/custom-model', selection.endpoint.url), {
+      method: 'POST',
+      headers: { ...this.authHeaders(selection.endpoint), 'content-type': 'application/json' },
+      body: JSON.stringify({ modelName }),
+      signal: AbortSignal.timeout(60_000),
+      redirect: 'error',
+    });
+    if (response.status === 422) {
+      const { detail } = z.object({ detail: z.string().min(1).max(1000) }).parse(await response.json());
+      throw new CustomClipModelRefusedError(detail);
+    }
+    if (!response.ok) {
+      throw new Error(`custom model check returned ${response.status}`);
+    }
+    return z
+      .object({ dimSize: z.int().min(CUSTOM_CLIP_DIM_SIZE.min).max(CUSTOM_CLIP_DIM_SIZE.max) })
+      .parse(await response.json()).dimSize;
   }
 
   async encodeImage(selection: MlSelection, imagePath: string, { modelName }: MachineLearningConfig['clip']) {

@@ -197,6 +197,11 @@ describe(matchLocalModels.name, () => {
 
   it('matches nothing when the catalogue offers none, as today', () => {
     expect(matchLocalModels([], names)).toEqual({});
+    expect(
+      matchLocalModels([{ sku: 'ms_clip', workload: 'clip', identity: clipPin() }], {
+        [MlWorkload.Clip]: 'someone/my-search-model',
+      }),
+    ).toEqual({});
     expect(matchLocalModels([{ sku: 'ms_clip', workload: 'clip', identity: clipPin() }], {})).toEqual({});
   });
 

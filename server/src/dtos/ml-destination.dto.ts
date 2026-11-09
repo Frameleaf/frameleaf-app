@@ -359,6 +359,7 @@ const MlWorkloadCapabilitySchema = z
     workload: MlWorkloadSchema,
     available: z.boolean().describe('At least one destination can serve this workload right now'),
     routedDestinationId: z.uuidv4().nullable().describe('Destination library jobs use for this workload, or null'),
+    cloudOnly: z.boolean().describe('Set to Frameleaf Cloud only: home destinations are refused while that holds'),
     destinations: z.array(MlCapabilityDestinationSchema),
   })
   .meta({ id: 'MlWorkloadCapabilityDto' });

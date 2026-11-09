@@ -9,7 +9,7 @@ from numpy.typing import NDArray
 from PIL import Image
 
 from frameleaf_ml.config import log
-from frameleaf_ml.models.base import InferenceModel
+from frameleaf_ml.models.clip.hugging_face import HubClipModel
 from frameleaf_ml.models.transforms import (
     crop_pil,
     decode_pil,
@@ -22,7 +22,7 @@ from frameleaf_ml.models.transforms import (
 from frameleaf_ml.schemas import ModelSession, ModelTask, ModelType
 
 
-class BaseCLIPVisualEncoder(InferenceModel):
+class BaseCLIPVisualEncoder(HubClipModel):
     depends = []
     identity = (ModelType.VISUAL, ModelTask.SEARCH)
 

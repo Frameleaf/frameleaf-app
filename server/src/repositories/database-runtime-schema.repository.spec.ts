@@ -46,7 +46,7 @@ it.each([512, 768, 1024])('accepts all three CLIP stores resized together to sup
 it.each(['mixed-widths', 'unknown-width', 'missing-column', 'nullable', 'wrong-type', 'foreign-column'])(
   'continues to report %s as schema drift',
   async (change) => {
-    const target = resized(change === 'unknown-width' ? 333 : 768);
+    const target = resized(change === 'unknown-width' ? 4096 : 768);
     const table = target.tables.find(({ name }) => name === 'video_moment_frame_embedding')!;
     const column = table.columns.find(({ name }) => name === 'embedding')!;
     switch (change) {

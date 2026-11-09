@@ -106,6 +106,8 @@ describe(CloudMlService.name, () => {
   beforeEach(() => {
     ({ sut, mocks } = newTestService(CloudMlService));
     metadata = new Map();
+    mocks.assetJob.countPhotosWithoutDescription.mockResolvedValue(0);
+    mocks.mediaOperation.getOpenCloudDescriptionAssetIds.mockResolvedValue(new Set());
     mocks.systemMetadata.set.mockImplementation((key, value) => {
       metadata.set(key, value);
       return Promise.resolve();
@@ -517,6 +519,101 @@ describe(CloudMlService.name, () => {
       expect(mocks.mlDestination.applySettlements).not.toHaveBeenCalled();
     });
 
+    describe('waiting work', () => {
+      const queue = (items: Array<{ workload: 'clip' | 'face'; ownerId?: string; queuedAt?: string }>) => {
+        const list = items.map((item, index) => ({
+          assetId: `asset-${index}`,
+          ownerId: item.ownerId ?? 'owner',
+          workload: item.workload,
+          queuedAt: item.queuedAt ?? new Date().toISOString(),
+        }));
+        const original = mocks.systemMetadata.get.getMockImplementation()!;
+        mocks.systemMetadata.get.mockImplementation((key) =>
+          key === SystemMetadataKey.FrameleafCloudLibraryQueue
+            ? (Promise.resolve({ items: list }) as never)
+            : original(key),
+        );
+      };
+      const routedToCloud = (localModels: Record<string, string> | undefined) => {
+        const destination = {
+          ...mlDestinationStub.frameleafCloudConsented,
+          lastProbeCloud: { ...mlDestinationStub.frameleafCloudConsented.lastProbeCloud, localModels },
+        };
+        mocks.mlDestination.getRoute.mockResolvedValue({ destinationId: destination.id } as never);
+        mocks.mlDestination.getById.mockResolvedValue(destination as never);
+      };
+
+      it('says when the next batch goes, from the oldest photo waiting for it', async () => {
+        link();
+        const queuedAt = new Date(Date.now() - 4 * 60 * 1000).toISOString();
+        queue([{ workload: 'clip', queuedAt }, { workload: 'clip' }]);
+        routedToCloud({ clip: 'sku-clip', face: 'sku-face' });
+
+        const { waiting } = await sut.getStatus();
+
+        expect(waiting.smartSearch.photos).toBe(2);
+        expect(waiting.smartSearch.noMatchingModel).toBe(0);
+        expect(Date.parse(waiting.smartSearch.nextBatchAt!)).toBe(Date.parse(queuedAt) + 10 * 60 * 1000);
+        expect(waiting.faces).toEqual({ photos: 0, nextBatchAt: null, noMatchingModel: 0 });
+      });
+
+      it('sends a batch of 50 at the next pass, however new the photos are', async () => {
+        link();
+        queue(Array.from({ length: 50 }, () => ({ workload: 'face' as const })));
+        routedToCloud({ face: 'sku-face' });
+        const before = Date.now();
+
+        const { waiting } = await sut.getStatus();
+
+        expect(waiting.faces.photos).toBe(50);
+        expect(Date.parse(waiting.faces.nextBatchAt!)).toBeLessThanOrEqual(before + 2000);
+      });
+
+      it('separates work Frameleaf Cloud has no matching model for', async () => {
+        link();
+        queue([{ workload: 'clip' }, { workload: 'face' }]);
+        routedToCloud({ clip: 'sku-clip' });
+
+        const { waiting } = await sut.getStatus();
+
+        expect(waiting.smartSearch.photos).toBe(1);
+        expect(waiting.faces).toEqual({ photos: 0, nextBatchAt: null, noMatchingModel: 1 });
+      });
+
+      it('counts everything queued as held while processing is turned off', async () => {
+        configure({ cloudMlEnabled: false });
+        queue([{ workload: 'clip' }, { workload: 'face' }, { workload: 'face' }]);
+
+        const { waiting } = await sut.getStatus();
+
+        expect(waiting.queuedWhileOff).toBe(3);
+        expect(waiting.smartSearch.photos).toBe(0);
+        expect(mocks.mlDestination.getRoute).not.toHaveBeenCalled();
+      });
+
+      it('does not count photos that go back to their own jobs because the work moved', async () => {
+        link();
+        queue([{ workload: 'clip' }]);
+        mocks.mlDestination.getRoute.mockResolvedValue(undefined as never);
+
+        expect((await sut.getStatus()).waiting.smartSearch).toEqual({
+          photos: 0,
+          nextBatchAt: null,
+          noMatchingModel: 0,
+        });
+      });
+
+      it('counts descriptions waiting for a backfill only when automatic descriptions are off', async () => {
+        link();
+        mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.frameleafCloudConsented]);
+        mocks.assetJob.countPhotosWithoutDescription.mockResolvedValue(340);
+        mocks.mediaOperation.getOpenCloudDescriptionAssetIds.mockResolvedValue(new Set(['in-a-batch']));
+
+        expect((await sut.getStatus()).waiting.descriptionsForBackfill).toBe(339);
+        expect(mocks.assetJob.countPhotosWithoutDescription).toHaveBeenCalledWith(5000);
+      });
+    });
+
     it('never flags a consent accepted at or above the required version as outdated (FC-62)', async () => {
       link();
       mocks.mlDestination.getAll.mockResolvedValue([
@@ -575,6 +672,8 @@ describe(CloudMlService.name, () => {
         workload: MlWorkload.Enrichment,
         group: 'descriptions',
         name: 'Descriptions · Best (fallback)',
+        modelName: 'Qwen2.5-VL-72B AWQ',
+        localModel: null,
         description: 'Qwen2.5-VL-72B AWQ, H200-class, 141 GB. Start fee 0.1 USD per worker. Built with Qwen',
         fingerprint: 'mr_68JDMAM8444M',
         pricingUnit: 'second',
@@ -589,6 +688,26 @@ describe(CloudMlService.name, () => {
         description: 'RealBasicVSR, L40S-class, 48 GB. Start fee 0.1 USD per worker',
         fingerprint: 'mr_4H8QZ2N7C1TX',
       });
+    });
+
+    it("names a search or faces entry's own model, and no local model for other work", async () => {
+      link();
+      const clipIdentity = localPinnedIdentity(MlWorkload.Clip, 'ViT-B-16-SigLIP-384__webli')!;
+      const [descriptions] = catalogFixture.models;
+      mocks.frameleafCloudMl.getCatalog.mockResolvedValue(
+        catalogSchema.parse({
+          ...catalogFixture,
+          models: [descriptions, { ...descriptions, sku: 'ms_C11P0000', workload: 'clip', identity: clipIdentity }],
+        }),
+      );
+
+      const result = await sut.getCatalog();
+
+      const { model } = descriptions.display as { model: string };
+      expect(result.models.map(({ modelName, localModel }) => [modelName, localModel])).toEqual([
+        [model, null],
+        [model, 'ViT-B-16-SigLIP-384__webli'],
+      ]);
     });
 
     it("marks the catalogue's default per group for the model picker, and never one for Studio AI (FL-186)", async () => {

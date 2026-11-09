@@ -199,7 +199,7 @@ describe('the Enhance model slider (FL-423)', () => {
   });
 
   it('lists the home models Faithful first, each kind in its own order, then Frameleaf Cloud', () => {
-    const stops = enhanceStops({ home, mode: AssetRestorationMode.Faithful, route: 'both', cloud: true });
+    const stops = enhanceStops({ home, mode: AssetRestorationMode.Faithful, route: 'both' });
 
     expect(stops.map((stop) => [stop.id, stop.band, stop.mode, stop.model, stop.disabled])).toEqual([
       ['realbasicvsr-x4', 'gpu', 'faithful', 'realbasicvsr-x4', false],
@@ -210,13 +210,26 @@ describe('the Enhance model slider (FL-423)', () => {
     expect(stops[2].reason).toBe('not-ready');
   });
 
-  it('keeps the work at home when Where each job runs says so, and marks a cloud that is not set up', () => {
-    expect(
-      enhanceStops({ home, mode: AssetRestorationMode.Faithful, route: 'local', cloud: true }).map((stop) => stop.id),
-    ).not.toContain(ENHANCE_CLOUD_STOP);
-    expect(enhanceStops({ home: null, mode: AssetRestorationMode.Faithful, route: 'cloud', cloud: false })).toEqual([
-      expect.objectContaining({ id: ENHANCE_CLOUD_STOP, disabled: true, reason: 'needs-cloud' }),
+  it('always offers the blue stop, whatever the route and whether or not Cloud is set up', () => {
+    expect(enhanceStops({ home, mode: AssetRestorationMode.Faithful, route: 'local' }).at(-1)).toEqual(
+      expect.objectContaining({ id: ENHANCE_CLOUD_STOP, disabled: false, reason: null }),
+    );
+    expect(enhanceStops({ home: null, mode: AssetRestorationMode.Faithful, route: 'cloud' })).toEqual([
+      expect.objectContaining({ id: ENHANCE_CLOUD_STOP, disabled: false, reason: null }),
     ]);
+  });
+
+  it('never starts on the blue stop while the work stays at home', () => {
+    const stops = enhanceStops({ home, mode: AssetRestorationMode.Faithful, route: 'local' });
+    expect(initialEnhanceStop(stops, AssetRestorationMode.Faithful)?.runsOn).toBe('local');
+  });
+
+  it('Cloud only crosses out the home stops, even ones that could run it, and starts on Frameleaf Cloud', () => {
+    const stops = enhanceStops({ home, mode: AssetRestorationMode.Faithful, route: 'cloud' });
+
+    expect(stops.filter((stop) => stop.runsOn === 'local').every((stop) => stop.disabled)).toBe(true);
+    expect(stops.find((stop) => stop.id === 'realbasicvsr-x4')?.reason).toBe('cloud-only');
+    expect(initialEnhanceStop(stops, AssetRestorationMode.Faithful)?.id).toBe(ENHANCE_CLOUD_STOP);
   });
 
   it('gives a computer that listed no models one stop for its usual model, named by no id', () => {
@@ -224,13 +237,12 @@ describe('the Enhance model slider (FL-423)', () => {
       home: destination(),
       mode: AssetRestorationMode.Creative,
       route: 'local',
-      cloud: false,
     });
     expect(own).toMatchObject({ id: ENHANCE_OWN_MODEL_STOP, band: 'cpu', mode: 'creative', model: null });
   });
 
   it('starts on a ready model of the kind the server starts on, never on Frameleaf Cloud or a model not ready', () => {
-    const stops = enhanceStops({ home, mode: AssetRestorationMode.Creative, route: 'both', cloud: true });
+    const stops = enhanceStops({ home, mode: AssetRestorationMode.Creative, route: 'both' });
     expect(initialEnhanceStop(stops, AssetRestorationMode.Creative)?.id).toBe('seedvr2-3b');
     expect(initialEnhanceStop(stops, AssetRestorationMode.Faithful)?.id).toBe('realbasicvsr-x4');
 
@@ -238,7 +250,6 @@ describe('the Enhance model slider (FL-423)', () => {
       home: destination({ models: [model('seedvr2-7b', AssetRestorationMode.Creative, false)] }),
       mode: AssetRestorationMode.Faithful,
       route: 'both',
-      cloud: true,
     });
     expect(notReady.map((stop) => stop.id)).toEqual(['seedvr2-7b', ENHANCE_CLOUD_STOP]);
     expect(initialEnhanceStop(notReady, AssetRestorationMode.Faithful)).toBeNull();

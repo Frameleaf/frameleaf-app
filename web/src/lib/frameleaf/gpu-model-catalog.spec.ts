@@ -23,6 +23,7 @@ import {
   ladderStates,
   localTwinId,
   matchedLadders,
+  matchedStopStates,
   modelLadders,
   modelLicenceNoteKey,
   modelNoteKey,
@@ -326,99 +327,64 @@ describe('gpu model catalogue (FL-159, CLD-201)', () => {
     const ids = (workload: 'search' | 'faces', options: Parameters<typeof ladderStates>[1] = {}) =>
       ladderStates(workload, options).map((entry) => entry.item.id);
 
-    it("lists this server's models light to heavy, and the cloud stop only while Frameleaf Cloud offers it", () => {
+    const twin = (localModel: string, modelName = localModel) => ({
+      localModel,
+      modelName,
+      label: 'Search · Standard',
+      priceUsd: 0.001,
+      pricingUnit: 'second',
+    });
+
+    it("lists this server's models light to heavy, with no cloud stop from this file alone", () => {
       expect(ids('search')).toEqual([
         'ViT-B-32__openai',
         'ViT-B-16-SigLIP-384__webli',
         'ViT-SO400M-16-SigLIP2-384__webli',
       ]);
       expect(ids('faces')).toEqual(['buffalo_s', 'buffalo_m', 'buffalo_l', 'antelopev2']);
-      expect(ids('search', { cloudMatched: ['face', 'enrichment'] })).not.toContain('ViT-B-16-SigLIP-384__webli@cloud');
-      expect(ids('search', { cloudMatched: ['clip'] }).slice(-2)).toEqual([
-        'ViT-B-32__openai@cloud',
-        'ViT-B-16-SigLIP-384__webli@cloud',
-      ]);
-      expect(ids('faces', { cloudMatched: ['face'] }).slice(-2)).toEqual(['buffalo_l@cloud', 'antelopev2@cloud']);
+      expect(
+        Object.values(matchedLadders)
+          .flat()
+          .filter((item) => item.cloud),
+      ).toEqual([]);
+      expect(cloudPositions('search')).toEqual([]);
     });
 
-    it("shows only the cloud stop of the model this server is set to (A3: the release's pins)", () => {
-      const search = (model: string) => ids('search', { cloudMatched: ['clip'], model });
-      expect(search('ViT-B-32__openai').filter((id) => id.endsWith('@cloud'))).toEqual(['ViT-B-32__openai@cloud']);
-      expect(search('ViT-B-16-SigLIP-384__webli').filter((id) => id.endsWith('@cloud'))).toEqual([
+    it('puts a blue stop right after each local model the live catalogue runs, and no others', () => {
+      const stops = (workload: 'search' | 'faces', twins: ReturnType<typeof twin>[]) =>
+        matchedStopStates(workload, twins).map((entry) => entry.item.id);
+      expect(stops('search', [])).toEqual(ids('search'));
+      expect(stops('search', [twin('ViT-B-16-SigLIP-384__webli')])).toEqual([
+        'ViT-B-32__openai',
+        'ViT-B-16-SigLIP-384__webli',
         'ViT-B-16-SigLIP-384__webli@cloud',
+        'ViT-SO400M-16-SigLIP2-384__webli',
       ]);
-      // a model the release does not pin for the cloud gets no blue stop at all
-      expect(search('ViT-SO400M-16-SigLIP2-384__webli').some((id) => id.endsWith('@cloud'))).toBe(false);
-      const faces = (model: string) => ids('faces', { cloudMatched: ['face'], model });
-      expect(faces('antelopev2').filter((id) => id.endsWith('@cloud'))).toEqual(['antelopev2@cloud']);
-      expect(faces('buffalo_l').filter((id) => id.endsWith('@cloud'))).toEqual(['buffalo_l@cloud']);
-      expect(faces('buffalo_s').some((id) => id.endsWith('@cloud'))).toBe(false);
-      // the local stops stay whatever the model
-      expect(faces('buffalo_s').slice(0, 4)).toEqual(['buffalo_s', 'buffalo_m', 'buffalo_l', 'antelopev2']);
+      expect(stops('faces', [twin('buffalo_l'), twin('antelopev2'), twin('a-model-this-server-has-not')])).toEqual([
+        'buffalo_s',
+        'buffalo_m',
+        'buffalo_l',
+        'buffalo_l@cloud',
+        'antelopev2',
+        'antelopev2@cloud',
+      ]);
       expect(localTwinId('antelopev2@cloud')).toBe('antelopev2');
       expect(localTwinId('antelopev2')).toBe('antelopev2');
     });
 
-    it('turns the cloud stop blue only when matched; every other stop stays white or green', () => {
-      const cloudSearch = positionById('ViT-B-16-SigLIP-384__webli@cloud')!;
-      expect(cloudSearch.cloudMatch).toBe('clip');
-      expect(isCloudOffered(cloudSearch)).toBe(false);
-      expect(isCloudOffered(cloudSearch, ['clip'])).toBe(true);
-      expect(bandFor(cloudSearch, gpus.rtx4090)).toBe('none');
-      expect(bandFor(cloudSearch, gpus.rtx4090, 'cpu8', ['clip'])).toBe('cloud');
-      expect(cloudPositions('search')).toEqual([]);
-      expect(cloudPositions('search', ['clip'])).toEqual([positionById('ViT-B-32__openai@cloud'), cloudSearch]);
-      // never part of the routed cloud list (the Cloud processing estimate)
-      expect(cloudPositions().some((item) => item.cloudMatch)).toBe(false);
-
-      const matched = ['clip', 'face'];
-      for (const workload of MATCHED_WORKLOADS) {
-        const states = ladderStates(workload, { gpu: gpus.gtx1650, route: 'both', cloudMatched: matched });
-        expect(states.map((entry) => entry.band)).toEqual([...states.slice(0, -2).map(() => 'gpu'), 'cloud', 'cloud']);
-        expect(states.every((entry) => !entry.disabled)).toBe(true);
-        const cpu = ladderStates(workload, { gpu: null, cloudMatched: matched });
-        expect(cpu.slice(0, -2).every((entry) => entry.band === 'cpu')).toBe(true);
-        // only this server's model has a cloud offer
-        expect(
-          ladderFor(workload)
-            .filter((item) => item.cloud)
-            .every((item) => item.cloudMatch),
-        ).toBe(true);
-      }
-      // Local only crosses the blue stop out with the reason, like any other ladder
-      const local = ladderStates('faces', { gpu: null, route: 'local', cloudMatched: ['face'] }).at(-1)!;
-      expect(local.band).toBe('cloud');
-      expect(local.reasons[0].key).toBe('frameleaf_model_reason_local_only');
-    });
-
-    it('prices the cloud stop with the Frameleaf Cloud contract figures', () => {
-      const search = estimateCost('ViT-B-16-SigLIP-384__webli@cloud', 1000, ['clip'])!;
-      expect(search.rate).toBe(0.00076906);
-      expect(search.startFee).toBe(0.08);
-      expect(search.workers).toBe(1);
-      expect(search.p50).toBeCloseTo(0.0892, 4);
-      expect(search.p90).toBeCloseTo(0.0985, 4);
-      expect(search.hold).toBe(0.1);
-      const faces = estimateCost('buffalo_l@cloud', 1000, ['face'])!;
-      expect(faces.p50).toBeCloseTo(0.1031, 4);
-      expect(faces.p90).toBeCloseTo(0.1261, 4);
-      // the pinned models' stops carry the Cloud model ladder's planning figures
-      const vit = estimateCost('ViT-B-32__openai@cloud', 1000, ['clip'])!;
-      expect(vit.p50).toBeCloseTo(0.0862, 4);
-      expect(vit.p90).toBeCloseTo(0.0923, 4);
-      const antelope = estimateCost('antelopev2@cloud', 1000, ['face'])!;
-      expect(antelope.p50).toBeCloseTo(0.1108, 4);
-      expect(antelope.p90).toBeCloseTo(0.1415, 4);
-      // not offered, no estimate
-      expect(estimateCost('buffalo_l@cloud', 1000)).toBeNull();
-      expect(estimateCost('buffalo_l@cloud', 1000, ['clip'])).toBeNull();
-      const quote = quotedUnitCost(positionById('ViT-B-16-SigLIP-384__webli@cloud'), ['clip'])!;
-      expect(quote.per).toBe(1000);
-      expect(quote.usd).toBeCloseTo(0.0092, 4);
-      const state = positionState(positionById('buffalo_l@cloud')!, { cloudMatched: ['face'] });
-      expect(state.quote?.usd).toBeCloseTo(0.0231, 4);
-      // the research tables every other ladder uses are unchanged
-      expect(startFees['small-24'].customerUsd).toBe(0.05);
+    it('shows a blue stop from the catalogue, named as the catalogue names it, whatever the route', () => {
+      const [, blue] = matchedStopStates('faces', [twin('buffalo_s', 'InsightFace buffalo_s')], {
+        gpu: gpus.gtx1650,
+        route: 'local',
+      });
+      expect(blue).toMatchObject({
+        band: 'cloud',
+        runsOn: 'cloud',
+        disabled: false,
+        twin: { modelName: 'InsightFace buffalo_s' },
+      });
+      expect(blue.item.name).toBe('InsightFace buffalo_s');
+      expect(blue.item.id).toBe('buffalo_s@cloud');
     });
 
     it('has copy for every model and unit', () => {
@@ -429,9 +395,8 @@ describe('gpu model catalogue (FL-159, CLD-201)', () => {
         expect(messages[workloadUnitKey(workload)]).toContain('{count');
       }
       // what is searched for never goes to the cloud
-      expect(messages[modelNoteKey({ id: 'ViT-B-16-SigLIP-384__webli@cloud' })]).toMatch(
-        /search for is always read on this server/,
-      );
+      expect(messages.frameleaf_model_note_cloud_twin_search).toMatch(/search for is always read on this server/);
+      expect(messages.frameleaf_model_note_cloud_twin_faces).toBeTruthy();
     });
   });
 });

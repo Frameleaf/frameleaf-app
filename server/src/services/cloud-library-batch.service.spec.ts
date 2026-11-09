@@ -101,6 +101,26 @@ describe(CloudLibraryBatchService.name, () => {
       expect(mocks.mediaOperation.createCloudDescriptionBatches).not.toHaveBeenCalled();
     });
 
+    it("gives photos back to their own jobs when search uses a person's own model", async () => {
+      routeTo(matchedCloud);
+      mocks.systemMetadata.get.mockImplementation(
+        (key) =>
+          Promise.resolve(
+            key === SystemMetadataKey.FrameleafCloudLibraryQueue
+              ? queue
+              : key === SystemMetadataKey.SystemConfig
+                ? { machineLearning: { clip: { modelName: 'someone/my-model' } } }
+                : null,
+          ) as never,
+      );
+      queue.items = [{ assetId: 'a', ownerId: 'owner', workload: 'clip', queuedAt: '2026-10-18T00:00:00.000Z' }];
+
+      await sut.batchQueued(now);
+
+      expect(mocks.mediaOperation.createCloudDescriptionBatches.mock.calls[0][0]).toEqual([]);
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.SmartSearch, data: { id: 'a' } }]);
+    });
+
     it('gives the photos back to their own jobs once the work is routed home', async () => {
       routeTo(mlDestinationStub.local);
       queue.items = [{ assetId: 'a', ownerId: 'owner', workload: 'face', queuedAt: now.toISOString() }];
@@ -251,6 +271,20 @@ describe(CloudLibraryBatchService.name, () => {
       expect(mocks.job.queueAll).toHaveBeenCalledWith([
         { name: JobName.SmartSearch, data: { id: 'asset-1', onThisServer: true } },
       ]);
+    });
+
+    it('tells administrators when photos set to Frameleaf Cloud are read on this server instead', async () => {
+      mocks.user.getList.mockResolvedValue([{ id: 'admin-1', isAdmin: true, deletedAt: null }] as never);
+
+      await refuse()(run(), refusal(false));
+
+      expect(mocks.notification.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'admin-1',
+          title: 'Visual search used this server for some photos',
+          description: expect.stringContaining('1 photo is being read on this server'),
+        }),
+      );
     });
   });
 

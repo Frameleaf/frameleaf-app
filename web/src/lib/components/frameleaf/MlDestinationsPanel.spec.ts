@@ -97,6 +97,12 @@ const cloudStatus = {
   },
   wallet: null,
   matchedModelWorkloads: [],
+  waiting: {
+    smartSearch: { photos: 0, nextBatchAt: null, noMatchingModel: 0 },
+    faces: { photos: 0, nextBatchAt: null, noMatchingModel: 0 },
+    queuedWhileOff: 0,
+    descriptionsForBackfill: 0,
+  },
   checkedAt: '2026-09-25T00:00:00.000Z',
 };
 
@@ -267,12 +273,12 @@ describe('MlDestinationsPanel (FL-110)', () => {
 
     const row = screen.getByRole('listitem', { name: 'Frameleaf Cloud' });
     await fireEvent.click(within(row).getByRole('button', { name: 'Edit' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Edit destination' });
+    const dialog = await screen.findByRole('dialog', { name: 'Edit computer' });
     await fireEvent.submit(dialog.querySelector('form')!);
 
     await waitFor(() => expect(sdkMock.updateMlDestination).toHaveBeenCalled());
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(screen.getByRole('dialog', { name: 'Edit destination' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Edit computer' })).toBeInTheDocument();
   });
 
   it('routes a workload through the server and removes a route with an empty choice', async () => {
@@ -316,7 +322,7 @@ describe('MlDestinationsPanel (FL-110)', () => {
     expect(screen.queryByRole('link', { name: 'Add Frameleaf Cloud' })).not.toBeInTheDocument();
     const row = screen.getByRole('listitem', { name: 'Frameleaf Cloud' });
     await fireEvent.click(within(row).getByRole('button', { name: 'Edit' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Edit destination' });
+    const dialog = await screen.findByRole('dialog', { name: 'Edit computer' });
     expect(within(dialog).queryByLabelText('URL')).not.toBeInTheDocument();
     // Faces are offered only while Frameleaf Cloud runs this server's own face model (FL-455); restoration
     // and descriptions may share Frameleaf Cloud.
@@ -339,7 +345,7 @@ describe('MlDestinationsPanel (FL-110)', () => {
     await waitFor(() => expect(sdkMock.getCloudMlStatus).toHaveBeenCalled());
     const row = screen.getByRole('listitem', { name: 'Frameleaf Cloud' });
     await fireEvent.click(within(row).getByRole('button', { name: 'Edit' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Edit destination' });
+    const dialog = await screen.findByRole('dialog', { name: 'Edit computer' });
     expect(within(dialog).getByLabelText('Faces & identity')).toBeEnabled();
     expect(within(dialog).queryByLabelText('Visual search')).not.toBeInTheDocument();
     expect(within(dialog).queryByLabelText('Text in photos')).not.toBeInTheDocument();
@@ -349,17 +355,17 @@ describe('MlDestinationsPanel (FL-110)', () => {
     const { rerender } = render(MlDestinationsPanel, { destinations: [destination(), cloud], routes, addRequest: 1 });
 
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(screen.queryByRole('dialog', { name: 'Add destination' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Add computer' })).not.toBeInTheDocument();
 
     await rerender({ addRequest: 2 });
-    expect(await screen.findByRole('dialog', { name: 'Add destination' })).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: 'Add computer' })).toBeInTheDocument();
   });
 
   it('closes restoration in the form once library work is ticked (FL-72)', async () => {
     render(MlDestinationsPanel, { destinations: [destination(), cloud], routes });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Add home-network worker' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Add destination' });
+    await fireEvent.click(screen.getByRole('button', { name: 'Add home-network computer' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Add computer' });
     await fireEvent.click(within(dialog).getByLabelText('Faces & identity'));
 
     expect(within(dialog).getByLabelText('Restoration (faithful)')).toBeDisabled();
