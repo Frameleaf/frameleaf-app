@@ -130,7 +130,7 @@ export class Retention {
       }
       // Release bundles a live review still points at stay; of the others the newest few are kept.
       const pinned = new Set<string>();
-      for (const prefix of ['review', 'update', 'restore'])
+      for (const prefix of ['review', 'update', 'restore', 'database-move'])
         for (const [id, review] of this.reviews(prefix))
           if (review?.release?.directory && this.live(review, id, operations, now)) pinned.add(review.release.directory);
       const bundles: { path: string; modified: number }[] = [];

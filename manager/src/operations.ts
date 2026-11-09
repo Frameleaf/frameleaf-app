@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
-import { lstat, mkdir, readFile, writeFile, stat, rename, open, realpath, rm } from 'node:fs/promises';
-import { isAbsolute, join, relative } from 'node:path';
+import { lstat, mkdir, readFile, writeFile, stat, statfs, rename, open, realpath, rm } from 'node:fs/promises';
+import { basename, isAbsolute, join, relative } from 'node:path';
 import { z } from 'zod';
 import { Store } from './store.js';
 import { Docker, type ImportInspection } from './docker.js';
@@ -8,7 +8,7 @@ import { Discovery, COMPATIBLE_SETTINGS, maskSettings, unmaskSettings, unsupport
 import { Releases, type VerifiedRelease } from './releases.js';
 import { compareReleases, isNewerRelease } from './release-order.js';
 import { Backups, sourceBackups } from './backups.js';
-import { assertExternalFolder, assertSeparateFolders, broadRoots, ensureChosenFolder, onNetworkShare } from './folders.js';
+import { assertExternalFolder, assertSeparateFolders, broadRoots, ensureChosenFolder, inside, onNetworkShare, overlaps } from './folders.js';
 import { databaseDriveFinding, driveOf, type DriveReport } from './drives.js';
 import { Fencing } from './fencing.js';
 import { detectPhotoApps, identifyPhotoApp, photoAppKind, photoAppNames, type ContainerFileReader, type PhotoAppKind, type PhotoAppPlan } from './photo-app-sources.js';
@@ -201,7 +201,19 @@ type DatabaseMoveIntent = {
   bytes: number;
   attempts: string[];
 };
-type DatabaseMove = Omit<DatabaseMoveIntent, 'to'> & { to: { image: string; databasePath: string } };
+type DatabaseMove = Omit<DatabaseMoveIntent, 'to'> & { to: { image: string; databaseRoot?: string; databasePath: string } };
+/** Where moveDatabase restores to: an update keeps the folder it is in, a drive move (FL-1322) names another. */
+type DatabaseMoveTarget = { current: Installation; release: VerifiedRelease; databaseRoot: string };
+/** FL-1322: a reviewed move of the database to another folder or drive, on the same release and image. */
+type DatabaseRelocationReview = {
+  id: string;
+  expires: number;
+  current: Installation;
+  release: VerifiedRelease;
+  databaseRoot: string;
+  /** The measured database size: the copy's room, and again for a later engine upgrade's second copy. */
+  bytes: number;
+};
 const DATABASE_INVENTORY = `SELECT json_build_object(
   'version', split_part(current_setting('server_version'), ' ', 1),
   'extensions', (SELECT coalesce(json_agg(extname ORDER BY extname), '[]') FROM pg_extension),
@@ -222,7 +234,7 @@ const updateStarted = (operation: Pick<Operation, 'completed' | 'receipts'>): bo
   operation.completed.includes('apply-release') ||
   ['starting', 'started'].includes(operation.receipts['release-start-state'] as string);
 type Cancellation = {
-  kind: 'backup' | 'update' | 'source' | 'restore' | 'reconfigure';
+  kind: 'backup' | 'update' | 'source' | 'restore' | 'reconfigure' | 'move-database';
   installation: Installation | null;
   archive: string;
 };
@@ -1128,6 +1140,11 @@ export class Operations {
         return this.captureForReview(operation);
       }
       if (operation.kind === 'move-library') return this.applyMove(operation);
+      if (operation.kind === 'move-database') {
+        const review = this.store.get<DatabaseRelocationReview>(`database-move:${operation.input.reviewId}`);
+        if (!review) throw new Refusal('review_missing');
+        return this.applyDatabaseRelocation(operation, review);
+      }
       if (operation.kind === 'update') {
         const review = this.store.get<UpdateReview>(`update:${operation.input.reviewId}`);
         if (!review) throw new Refusal('review_missing');
@@ -2040,7 +2057,7 @@ export class Operations {
       .database?.image;
     if (operation.receipts['database-move-intent'] || (installed && databaseImageMove(installed, review.release.nas))) {
       try {
-        await this.moveDatabase(operation, review);
+        await this.moveDatabase(operation, { current: review.current, release: review.release, databaseRoot: review.current.databaseRoot });
       } catch (error) {
         // Before its intent nothing changed but the application is stopped: the update is cancelled and the
         // previous release started again, so no retry reuses this checkpoint after the server wrote again.
@@ -2159,21 +2176,22 @@ export class Operations {
    * new folder beside the current one under the new image and compared with the stopped original (row counts of
    * every table, extensions, server version). apply-release then starts the release on the new folder. The
    * original folder is never written again, so a rollback or cancel puts the previous release back on it.
+   * FL-1322: a drive move runs the same step on the installed release and image, into `move.databaseRoot`.
    */
-  private async moveDatabase(operation: Operation, review: UpdateReview): Promise<DatabaseMove> {
+  private async moveDatabase(operation: Operation, move: DatabaseMoveTarget): Promise<DatabaseMove> {
     return this.step(operation, 'database-move', async () => {
       const dump = join(this.store.directory, 'checkpoints', operation.id, 'database.dump');
       const receipt = operation.receipts['checkpoint-dump'] as { sha256: string } | undefined;
       if (!receipt || (await fileHash(dump)) !== receipt.sha256) throw new Refusal('checkpoint_dump_changed');
       let intent = operation.receipts['database-move-intent'] as DatabaseMoveIntent | undefined;
       if (!intent) {
-        const source = await this.targetDatabase(review.current);
+        const source = await this.targetDatabase(move.current);
         intent = {
           from: {
             image: JSON.parse(await readFile(join(this.directory(), 'compose.json'), 'utf8')).services.database.image,
-            databasePath: review.current.databasePath,
+            databasePath: move.current.databasePath,
           },
-          to: { image: review.release.nas.images.postgres },
+          to: { image: move.release.nas.images.postgres },
           // The application stopped before the checkpoint, so the running database still matches its dump.
           source: await this.databaseInventory(source),
           bytes: await this.databaseMoveBytes(source),
@@ -2184,14 +2202,14 @@ export class Operations {
         if (operation.receipts['release-start-state'] === undefined) operation.receipts['release-start-state'] = 'prepared';
         this.store.save(operation);
       }
-      if (intent.to.image !== review.release.nas.images.postgres) throw new Refusal('database_move_target_changed');
+      if (intent.to.image !== move.release.nas.images.postgres) throw new Refusal('database_move_target_changed');
       // Every attempt restores into a folder of its own: an interrupted one may have left a partial restore.
-      const databasePath = await this.databaseStorage.allocate(review.current.databaseRoot, review.current.id, intent.bytes);
+      const databasePath = await this.databaseStorage.allocate(move.databaseRoot, move.current.id, intent.bytes);
       intent.attempts.push(databasePath);
       this.store.save(operation);
-      const target: Installation = { ...review.current, release: review.release.nas.tag, databasePath };
-      await this.docker.compose(this.directory(), review.current.project, 'stop');
-      await renderCompose(review.release, target, this.store.get<string>('database-password')!, this.directory(), this.application());
+      const target: Installation = { ...move.current, release: move.release.nas.tag, databaseRoot: move.databaseRoot, databasePath };
+      await this.docker.compose(this.directory(), move.current.project, 'stop');
+      await renderCompose(move.release, target, this.store.get<string>('database-password')!, this.directory(), this.application());
       await this.docker.compose(this.directory(), target.project, 'up', ['database']);
       const database = await this.targetDatabase(target);
       await this.docker.verifyDump(database, dump);
@@ -2201,7 +2219,7 @@ export class Operations {
       if (version ? moved.version !== version : Number.parseInt(moved.version, 10) !== postgresMajor(intent.to.image))
         throw new Refusal('database_move_version_mismatch', 409, `Expected ${version ?? intent.to.image}, found ${moved.version}.`);
       if (!sameInventory(moved, intent.source)) throw new Refusal('database_move_verification_failed');
-      return { ...intent, to: { image: intent.to.image, databasePath } } satisfies DatabaseMove;
+      return { ...intent, to: { image: intent.to.image, databaseRoot: move.databaseRoot, databasePath } } satisfies DatabaseMove;
     });
   }
   /** FL-1265: room a database move needs for the restored copy, checked at review and allocated by the move. */
@@ -2211,6 +2229,215 @@ export class Operations {
   private async databaseInventory(database: Database): Promise<DatabaseInventory> {
     // Counting every table of a large library can outlast the default 2 minutes; same budget as dump and restore.
     return JSON.parse(await this.docker.sql(database, DATABASE_INVENTORY, 7_200_000));
+  }
+  /**
+   * FL-1322: review moving the installed database to another folder, usually on another drive. The folder must
+   * pass the same checks as a new install's database folder (a host bind on a local disk, outside Docker's
+   * storage, no other container writing there) and hold the database twice: the moved copy, and later the second
+   * copy an engine upgrade restores beside it.
+   */
+  async reviewDatabaseMove(databaseRoot: string) {
+    const current = this.installation();
+    if (!current) throw new Refusal('no_installation');
+    if (this.store.locked()) throw new Refusal('operation_in_progress');
+    if (databaseRoot === current.databaseRoot) throw new Refusal('database_already_in_folder');
+    const binds = current.mounts.filter((m) => m.type === 'bind').map((m) => m.source);
+    const retained = this.store.get<string[]>('retained-database-directories') ?? [];
+    // Apart from the media, backups, Manager's own folder and the database in use. A retained database folder only
+    // blocks a root inside it: a retry into the same root, or a move back to the original one, keeps it beside.
+    for (const other of [current.databasePath, ...binds, process.env.MANAGER_BACKUP_ROOT, this.store.directory])
+      if (other && overlaps(databaseRoot, other)) throw new Refusal('chosen_folders_overlap');
+    if (retained.some((folder) => inside(databaseRoot, folder))) throw new Refusal('chosen_folders_overlap');
+    this.checkExternalFolders(this.application().services ?? {}, [...binds, databaseRoot]);
+    if (broadRoots(this.roots)) await ensureChosenFolder(databaseRoot);
+    const release = await this.releases.acquire(current.release);
+    const image: string = JSON.parse(await readFile(join(this.directory(), 'compose.json'), 'utf8')).services.database.image;
+    // The move keeps the engine: an installed image the release no longer names is an update's job.
+    if (image !== release.nas.images.postgres) throw new Refusal('database_image_changed');
+    const bytes = await this.databaseMoveBytes(await this.targetDatabase(current));
+    const requiredBytes = 2 * bytes;
+    const { filesystem } = await this.databaseStorage.validate(databaseRoot, requiredBytes, current.id);
+    const space = await statfs(databaseRoot);
+    const id = randomUUID();
+    this.store.set(`database-move:${id}`, {
+      id,
+      expires: Date.now() + 900_000,
+      current,
+      release,
+      databaseRoot,
+      bytes,
+    } satisfies DatabaseRelocationReview);
+    return {
+      id,
+      from: current.databaseRoot,
+      to: databaseRoot,
+      filesystem,
+      databaseBytes: bytes,
+      requiredBytes,
+      availableBytes: space.bavail * space.bsize,
+      recovery:
+        'Frameleaf stops while Manager creates a database recovery point, copies the database into a new folder on the chosen drive and checks every table. If anything goes wrong before Frameleaf starts on the new folder, Manager starts Frameleaf again on the current folder. Once Frameleaf has started on the new folder, it stays there, because new changes may already be saved there: if it does not start properly, choose Resume to try again. The current folder is kept until you remove it.',
+    };
+  }
+  moveDatabaseTo(id: string, key: string): Operation {
+    const prior = this.store.request('move-database', key, { reviewId: id });
+    if (prior) return prior;
+    const review = this.store.get<DatabaseRelocationReview>(`database-move:${id}`);
+    if (!review || review.expires < Date.now() || digest(review.current) !== digest(this.installation()))
+      throw new Refusal('review_expired');
+    const { operation, created } = this.store.start('move-database', key, { reviewId: id });
+    if (created) this.launch(operation, () => this.applyDatabaseRelocation(operation, review));
+    return operation;
+  }
+  /**
+   * FL-1322: stop the application, checkpoint, restore into a new folder in the chosen root and compare it
+   * (moveDatabase), then start the application on it. Until the application is started on the new folder,
+   * any failure puts the original stack back on the original folder, which nothing wrote since the stop.
+   * `start-state` is the barrier: journaled before the server first starts on the new folder, after which the new
+   * database may have taken writes and is kept, whatever happens next.
+   */
+  private async applyDatabaseRelocation(operation: Operation, review: DatabaseRelocationReview): Promise<void> {
+    if (operation.receipts['rollback-intent']) return this.returnToOriginalDatabase(operation, review, 'database_relocation_rolled_back');
+    const fail = async (error: unknown, fallback: string) => {
+      const reason = error instanceof Refusal ? error.code : ((error as Error)?.message ?? String(error));
+      console.error(redact(`manager: the database did not move to ${review.databaseRoot} (${reason}); starting again on ${review.current.databasePath}`));
+      operation.receipts['rollback-intent'] = error instanceof Refusal ? error.code : fallback;
+      this.store.save(operation);
+      return this.returnToOriginalDatabase(operation, review, 'database_relocation_rolled_back');
+    };
+    let moved: DatabaseMove;
+    try {
+      await this.step(operation, 'stop-application', async () => {
+        await this.docker.compose(this.directory(), review.current.project, 'stop', [
+          'frameleaf-server',
+          ...(review.current.ml ? [await this.mlService()] : []),
+        ]);
+        return true;
+      });
+      await this.step(operation, 'database-checkpoint', async () => {
+        await this.backups.initialize();
+        return this.backups.snapshot(await this.checkpoint(operation), operation.id);
+      });
+      const image: string = JSON.parse(await readFile(join(this.directory(), 'compose.json'), 'utf8')).services.database.image;
+      if (!operation.receipts['database-move-intent'] && image !== review.release.nas.images.postgres)
+        throw new Refusal('database_image_changed');
+      moved = await this.moveDatabase(operation, review);
+    } catch (error) {
+      return fail(error, 'database_move_failed');
+    }
+    const installation: Installation = { ...review.current, databaseRoot: review.databaseRoot, databasePath: moved.to.databasePath };
+    try {
+      await this.step(operation, 'start', async () => {
+        await this.databaseStorage.verify(installation);
+        await this.fencing.assertMedia(installation.mounts, installation);
+        if (!operation.receipts['start-state']) {
+          operation.receipts['start-state'] = 'starting';
+          this.store.save(operation); // Journaled before the server can write to the new folder.
+        }
+        this.store.set('installation', installation);
+        await this.docker.compose(this.directory(), installation.project, 'up');
+        return this.libraryStatus();
+      });
+    } catch (error) {
+      // Past the barrier the server may have written to the new folder, even if it has stopped since: the new
+      // folder is kept and the operation fails, so nothing those writes changed is ever rolled back.
+      if (operation.receipts['start-state']) throw error;
+      return fail(error, 'database_move_start_failed');
+    }
+    // The original folder (and any interrupted attempt's) is kept as it was until the administrator removes it.
+    const retained = this.store.get<string[]>('retained-database-directories') ?? [];
+    const unused = [review.current.databasePath, ...moved.attempts.filter((path) => path !== moved.to.databasePath)];
+    this.store.set('retained-database-directories', [...new Set([...retained, ...unused])]);
+  }
+  private async mlService(): Promise<string> {
+    const compose = JSON.parse(await readFile(join(this.directory(), 'compose.json'), 'utf8'));
+    return compose.services['frameleaf-machine-learning'] ? 'frameleaf-machine-learning' : 'immich-machine-learning';
+  }
+  /**
+   * Put the stack from before a drive move back: the checkpoint's compose.json (the original folder, which was
+   * never written after the stop), the original installation record, and start it. Attempt folders are retained.
+   */
+  private async returnToOriginalDatabase(operation: Operation, review: DatabaseRelocationReview, code: string): Promise<void> {
+    const previous = review.current;
+    const move = operation.receipts['database-move-intent'] as DatabaseMoveIntent | undefined;
+    await this.step(operation, 'return-original-database', async () => {
+      if (move) {
+        await this.docker.compose(this.directory(), previous.project, 'stop');
+        const compose = JSON.parse(await readFile(join(this.store.directory, 'checkpoints', operation.id, 'compose.json'), 'utf8'));
+        const data = compose.services.database.volumes.find((v: any) => v.target === '/var/lib/postgresql');
+        if (data?.source !== previous.databasePath.replaceAll('$', () => '$$') || compose.services.database.image !== move.from.image)
+          throw new Refusal('database_path_changed');
+        const retained = this.store.get<string[]>('retained-database-directories') ?? [];
+        this.store.set('retained-database-directories', [...new Set([...retained, ...move.attempts])]);
+        await atomicJson(join(this.directory(), 'compose.json'), compose);
+      }
+      this.store.set('installation', previous);
+      return true;
+    });
+    await this.step(operation, 'start-original-database', async () => {
+      await this.databaseStorage.verify(previous);
+      await this.fencing.assertMedia(previous.mounts, previous);
+      await this.docker.compose(this.directory(), previous.project, 'up');
+      return true;
+    });
+    operation.receipts['cancelled'] = code;
+  }
+  /** FL-1322: database folders a move, update or restore left behind, for the administrator to remove. */
+  async retainedDatabases(): Promise<{ path: string; present: boolean }[]> {
+    return Promise.all(
+      (this.store.get<string[]>('retained-database-directories') ?? []).map(async (path) => ({
+        path,
+        present: await lstat(path).then(
+          (s) => s.isDirectory(),
+          () => false,
+        ),
+      })),
+    );
+  }
+  /**
+   * FL-1322: delete a retained database folder once the library runs on another one. Only a folder Manager
+   * retained, never the one in use or one any container maps, and only while no operation is open and the
+   * current database answers.
+   */
+  async removeRetainedDatabase(path: string): Promise<void> {
+    const retained = this.store.get<string[]>('retained-database-directories') ?? [];
+    if (!retained.includes(path)) throw new Refusal('database_folder_not_retained');
+    if (this.store.locked()) throw new Refusal('operation_in_progress');
+    const installation = this.installation();
+    if (!installation) throw new Refusal('no_installation');
+    // inside() also matches the same files through another Unraid share view (/mnt/user and /mnt/diskN).
+    if (inside(installation.databasePath, path) || inside(path, installation.databasePath))
+      throw new Refusal('database_folder_in_use');
+    if (!/^frameleaf-[a-f0-9]{12}-postgres-[A-Za-z0-9]+$/.test(basename(path)) || !isAbsolute(path))
+      throw new Refusal('invalid_database_directory');
+    // Any container (running or stopped: it can start later) that maps this folder, something inside it, or a folder
+    // above it may use these files. Manager's own containers map the database parent and never use PGDATA; this
+    // library's stack maps only its media and the database in use (checked above), so only its mappings of this
+    // folder or inside it count.
+    const user = (await this.docker.inventory()).find(
+      (c) =>
+        c.Config.Labels?.['app.frameleaf.manager.role'] !== 'controller' &&
+        c.Mounts.some(
+          (m) =>
+            m.Source?.startsWith('/') &&
+            (inside(m.Source, path) || (c.Config.Labels?.['app.frameleaf.manager'] !== installation.id && inside(path, m.Source))),
+        ),
+    );
+    if (user) throw new Refusal('database_folder_in_use', 409, `Container ${user.Name.replace(/^\//, '')} maps this folder.`);
+    await this.docker.sql(await this.targetDatabase(installation), 'SELECT 1;').catch(() => {
+      throw new Refusal('database_unconfirmed');
+    });
+    const folder = await lstat(path).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'ENOENT') throw error;
+      return null;
+    });
+    if (folder) {
+      if (!folder.isDirectory() || folder.isSymbolicLink() || (await realpath(path)) !== path)
+        throw new Refusal('database_path_changed');
+      await rm(path, { recursive: true });
+    }
+    const now = this.store.get<string[]>('retained-database-directories') ?? [];
+    this.store.set('retained-database-directories', now.filter((other) => other !== path));
   }
   /**
    * FL-1210: whether the server's `frameleaf-served` marker (written on each boot's first real request)
@@ -2621,6 +2848,9 @@ export class Operations {
     const operation = this.store.history().find((o) => o.id === id);
     if (!operation || this.executing.has(id) || !['failed', 'interrupted', 'awaiting-review'].includes(operation.state))
       throw new Refusal('operation_not_recoverable');
+    // FL-1322: once started on the new folder the library may have written there; going back would lose that.
+    if (operation.kind === 'move-database' && operation.receipts['start-state'] && !operation.receipts['cancellation-intent'])
+      throw new Refusal('database_move_reverse_required');
     this.executing.add(id); // Claim synchronously, before any external effect or await.
     try {
       if (operation.kind === 'move-library') {
@@ -2641,7 +2871,9 @@ export class Operations {
                 ? 'update'
                 : operation.kind === 'reconfigure'
                   ? 'reconfigure'
-                  : 'source';
+                  : operation.kind === 'move-database'
+                    ? 'move-database'
+                    : 'source';
         if (kind === 'source' && installation?.mayHaveWrittenMedia) throw new Refusal('manual_media_recovery_required');
         const restoreReview =
           kind === 'restore' ? this.store.get<RestoreReview>(`restore:${operation.input.reviewId}`) : null;
@@ -2770,6 +3002,11 @@ export class Operations {
       });
       operation.receipts['cancelled'] = 'update_cancelled_previous_release_running';
       return;
+    }
+    if (intent.kind === 'move-database') {
+      const review = this.store.get<DatabaseRelocationReview>(`database-move:${operation.input.reviewId}`);
+      if (!review) throw new Refusal('review_missing');
+      return this.returnToOriginalDatabase(operation, review, 'database_relocation_cancelled');
     }
     if (intent.kind === 'reconfigure') {
       if (!installation) throw new Refusal('no_installation');
@@ -2936,7 +3173,9 @@ export class Operations {
         ['failed', 'interrupted', 'awaiting-review'].includes(operation.state) &&
         (operation.kind === 'move-library'
           ? !receipts['move-writes-intent']
-          : operation.kind === 'backup' ||
+          : operation.kind === 'move-database'
+            ? !receipts['start-state']
+            : operation.kind === 'backup' ||
             operation.kind === 'reconfigure' ||
             (operation.kind === 'update' && !updateStarted({ ...operation, receipts })) ||
             !this.installation()?.mayHaveWrittenMedia ||
