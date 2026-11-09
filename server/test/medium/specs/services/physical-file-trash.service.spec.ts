@@ -1,9 +1,9 @@
 import { Kysely, sql } from 'kysely';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
-import { mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetLockReason, AssetType, AssetVisibility, ChecksumAlgorithm } from 'src/enum.js';
@@ -20,9 +20,16 @@ import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
 import { IntegrityService } from 'src/services/integrity.service.js';
 import { PhysicalFileTrashService } from 'src/services/physical-file-trash.service.js';
+import { retainFile } from 'src/utils/media-health-roots.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB, newTestService } from 'test/utils.js';
+
+// Moves are real; a test that needs a move to fail makes this one fail.
+vi.mock('src/utils/media-health-roots.js', async (original) => {
+  const module = await original<typeof import('src/utils/media-health-roots.js')>();
+  return { ...module, retainFile: vi.fn(module.retainFile) };
+});
 
 let database: Kysely<DB>;
 const directories: string[] = [];
@@ -35,6 +42,10 @@ beforeAll(async () => {
 afterAll(async () => {
   StorageCore.reset();
   await database?.destroy();
+});
+
+beforeEach(() => {
+  vi.mocked(retainFile).mockClear();
 });
 
 afterEach(async () => {
@@ -78,7 +89,6 @@ const setup = async () => {
   storage.mkdirSync.mockImplementation((path) => {
     mkdirSync(path, { recursive: true });
   });
-  storage.rename.mockImplementation(rename);
   storage.stat.mockImplementation((path) => stat(path));
   ctx.getMock(CryptoRepository).randomUUID.mockImplementation(randomUUID);
   ctx.getMock(JobRepository).queue.mockResolvedValue();
@@ -146,7 +156,7 @@ describe(PhysicalFileTrashService.name, () => {
       await expect(sut.purge(auth, entry.id)).rejects.toThrow('File not found');
       await expect(sut.restore(auth, entry.id)).rejects.toThrow('File not found');
     }
-    expect(storage.rename).not.toHaveBeenCalled();
+    expect(retainFile).not.toHaveBeenCalled();
     expect(storage.unlink).not.toHaveBeenCalled();
     await expect(readFile(entry.path)).resolves.toEqual(bytes);
     await expect(sut.list(ownerAuth(user.id), { page: 1, size: 100 })).resolves.toMatchObject({
@@ -215,7 +225,7 @@ describe(PhysicalFileTrashService.name, () => {
       await expect(sut.purge(auth, entry.id)).rejects.toThrow('File not found');
       await expect(sut.restore(auth, entry.id)).rejects.toThrow('File not found');
     }
-    expect(storage.rename).not.toHaveBeenCalled();
+    expect(retainFile).not.toHaveBeenCalled();
     expect(storage.unlink).not.toHaveBeenCalled();
     await expect(sut.list(ownerAuth(user.id), { page: 1, size: 100 })).resolves.toMatchObject({ total: 1 });
     if (state === 'deleted') {
@@ -326,12 +336,19 @@ describe(PhysicalFileTrashService.name, () => {
         mock: [StorageRepository, LoggingRepository, JobRepository, EventRepository],
       });
       actAsServerOwner(sut);
+      // real files: the original goes to the file trash and comes back out
+      const media = await mkdtemp(join(tmpdir(), 'frameleaf-trash-health-'));
+      directories.push(media);
+      StorageCore.setMediaLocation(media);
       const contents = Buffer.from(`original media bytes for ${name}`);
       const checksum = createHash(algorithm).update(contents).digest();
       const { user } = await ctx.newUser();
+      const originalPath = join(media, 'upload', randomUUID(), name);
+      await mkdir(dirname(originalPath), { recursive: true });
+      await writeFile(originalPath, contents);
       const { asset: original } = await ctx.newAsset({
         ownerId: user.id,
-        originalPath: `/data/upload/${randomUUID()}/${name}`,
+        originalPath,
         originalFileName: name,
         checksum,
         checksumAlgorithm,
@@ -345,7 +362,7 @@ describe(PhysicalFileTrashService.name, () => {
         files.deleteUnreferencedPath(original.originalPath, unlink, {
           removedAssetId: original.id,
           trash: {
-            move: vi.fn().mockResolvedValue(undefined),
+            move: (from, to) => retainFile(from, to),
             original: {
               checksum,
               sizeInBytes: contents.length,
@@ -360,10 +377,11 @@ describe(PhysicalFileTrashService.name, () => {
       const trash = ctx.get(PhysicalFileTrashRepository);
       const entry = (await trash.findByChecksum(checksum, contents.length))!;
       expect(entry.checksum).toEqual(checksum);
+      await expect(readFile(entry.path)).resolves.toEqual(contents);
+      await expect(readFile(originalPath)).rejects.toMatchObject({ code: 'ENOENT' });
       const storage = ctx.getMock(StorageRepository);
       storage.mkdirSync.mockReturnValue(undefined);
-      storage.rename.mockResolvedValue(undefined);
-      storage.stat.mockResolvedValue({ mtime: new Date() } as never);
+      storage.stat.mockImplementation((path) => stat(path));
       ctx.getMock(JobRepository).queue.mockResolvedValue(undefined);
       ctx.getMock(EventRepository).emit.mockResolvedValue(undefined);
       const { assetId } = await sut.restore(ownerAuth(user.id), entry.id);
@@ -374,6 +392,8 @@ describe(PhysicalFileTrashService.name, () => {
         .executeTakeFirstOrThrow();
       expect(restored).toMatchObject({ checksum, checksumAlgorithm });
       await expect(trash.getById(entry.id)).resolves.toBeUndefined();
+      await expect(readFile(restored.originalPath)).resolves.toEqual(contents);
+      await expect(readFile(entry.path)).rejects.toMatchObject({ code: 'ENOENT' });
       const physical = (await files.getPhysicalFile(restored.physicalOriginalFileId!))!;
       expect(physical).toMatchObject({ checksum, canonicalAssetId: assetId, path: restored.originalPath });
 
@@ -454,15 +474,19 @@ describe(PhysicalFileTrashService.name, () => {
     const compensationError = new Error('move back failed');
     storage.stat.mockRejectedValueOnce(inspectionError);
     // the move back keeps failing: the inline compensation and the journal's own recovery attempt
-    storage.rename.mockImplementationOnce(rename).mockRejectedValue(compensationError);
+    const move = vi.mocked(retainFile).getMockImplementation()!;
+    vi.mocked(retainFile).mockImplementationOnce(move).mockRejectedValue(compensationError);
+    onTestFinished(() => {
+      vi.mocked(retainFile).mockImplementation(move);
+    });
 
     await expect(sut.restore(ownerAuth(user.id), entry.id)).rejects.toMatchObject({
       errors: [inspectionError, compensationError],
       cause: compensationError,
     });
-    storage.rename.mockImplementation(rename);
+    vi.mocked(retainFile).mockImplementation(move);
 
-    const target = storage.rename.mock.calls[0][1];
+    const target = vi.mocked(retainFile).mock.calls[0][1];
     await expect(trash.getById(entry.id)).resolves.toEqual(entry);
     await expect(readFile(target)).resolves.toEqual(bytes);
     // the journalled move stays (raw SQL, as the repository writes it), so a later recovery returns
