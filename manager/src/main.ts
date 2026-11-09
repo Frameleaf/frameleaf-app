@@ -197,7 +197,8 @@ async function driveReport(sizes: Parameters<typeof suggestFolders>[1]) {
   if (runtime !== 'docker') throw new Refusal('drive_detection_unavailable');
   const dockerRoot = await docker.compatibility().then((c) => c.dataRoot, () => undefined);
   const roots = [...new Set([...storageRoots(), ...defaults.roots])];
-  return suggestFolders(await findDrives({ roots, dockerRoot, platform: process.env.MANAGER_PLATFORM }), sizes);
+  // Unraid is recognised from its docker.cfg even when the template doesn't name the platform.
+  return suggestFolders(await findDrives({ roots, dockerRoot, platform: process.env.MANAGER_PLATFORM || defaults.platform }), sizes);
 }
 /** The port the administrator reached Manager on: never offered to, or accepted for, the Frameleaf stack. */
 const managerPort = (request: Request) => Number(new URL(security.requestOrigin(request)).port || 443);

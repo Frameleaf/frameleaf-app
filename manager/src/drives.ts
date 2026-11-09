@@ -118,14 +118,21 @@ export async function blockDevice(mount: FilesystemMount, sys: Sysfs = hostSysfs
   const disk = (await sys.read(`${real}/partition`)) !== null ? dirname(real) : real;
   const name = basename(disk);
   const flag = await sys.read(`${disk}/queue/rotational`);
-  // An encrypted or mapped device sits on top of other disks; NVMe underneath still counts.
+  // An encrypted or mapped device (LUKS, LVM) sits on other disks: NVMe or a virtual disk underneath still counts.
   const below = name.startsWith('dm-') ? await sys.list(`${disk}/slaves`) : [];
-  const identity = `${(await sys.read(`${disk}/device/vendor`)) ?? ''} ${(await sys.read(`${disk}/device/model`)) ?? ''}`;
+  const virtual = async (path: string, device: string) =>
+    /^(?:x?vd)/.test(device) ||
+    VIRTUAL_VENDOR.test(`${(await sys.read(`${path}/device/vendor`)) ?? ''} ${(await sys.read(`${path}/device/model`)) ?? ''}`);
+  const slaveVirtual = async (slave: string) => {
+    const real = await sys.real(`${disk}/slaves/${slave}`);
+    const path = real && (await sys.read(`${real}/partition`)) !== null ? dirname(real) : real;
+    return virtual(path ?? '', path ? basename(path) : slave);
+  };
   return {
     name,
     rotational: flag === '0' ? false : flag === '1' ? true : null,
     nvme: /^nvme/.test(name) || (below.length > 0 && below.every((slave) => /^nvme/.test(slave))),
-    virtual: /^(?:x?vd)/.test(name) || VIRTUAL_VENDOR.test(identity),
+    virtual: (await virtual(disk, name)) || (await Promise.all(below.map(slaveVirtual))).some(Boolean),
   };
 }
 

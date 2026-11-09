@@ -112,6 +112,25 @@ test('sysfs: a partition is judged by its disk, and an anonymous btrfs device by
   assert.deepEqual(await blockDevice(at('253:0'), sys), { name: 'vda', rotational: true, nvme: false, virtual: true });
   assert.deepEqual(await blockDevice(at('254:0'), sys), { name: 'dm-0', rotational: false, nvme: true, virtual: false });
   assert.equal((await blockDevice(at('8:0'), sys))?.virtual, true);
+  // LVM or LUKS on a virtio disk, and on a QEMU SCSI disk's partition: still virtual, so it gets a timed write.
+  const layered = sysfs(
+    {
+      '/sys/devices/virtual/block/dm-1/queue/rotational': '1',
+      '/sys/devices/virtual/block/dm-2/queue/rotational': '1',
+      '/sys/devices/pci0/scsi/block/sdb/sdb2/partition': '2',
+      '/sys/devices/pci0/scsi/block/sdb/device/vendor': 'QEMU',
+    },
+    {
+      '/sys/dev/block/254:1': '/sys/devices/virtual/block/dm-1',
+      '/sys/dev/block/254:2': '/sys/devices/virtual/block/dm-2',
+      '/sys/devices/virtual/block/dm-1/slaves/vda2': '/sys/devices/virtio1/block/vda/vda2',
+      '/sys/devices/virtual/block/dm-2/slaves/sdb2': '/sys/devices/pci0/scsi/block/sdb/sdb2',
+    },
+    { '/sys/devices/virtual/block/dm-1/slaves': ['vda2'], '/sys/devices/virtual/block/dm-2/slaves': ['sdb2'] },
+  );
+  assert.deepEqual(await blockDevice(at('254:1'), layered), { name: 'dm-1', rotational: true, nvme: false, virtual: true });
+  assert.equal((await blockDevice(at('254:2'), layered))?.virtual, true);
+  assert.equal((await blockDevice(at('254:0'), sys))?.virtual, false);
   assert.equal(await blockDevice(at('8:99'), sys), null);
 });
 
