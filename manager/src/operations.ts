@@ -21,6 +21,7 @@ import { containerNumber } from './dockerman.js';
 import { ApplicationConfig, checkServiceOverrides, releaseImages, renderCompose, retuneDatabase, ServiceOverrides, STUDIO_WORKER_TARGET, storagePath } from './compose.js';
 import { atomicJson, copyVerified, fileHash } from './files.js';
 import { PostgresStorage } from './postgres-storage.js';
+import { toContainer, toHost } from './host-paths.js';
 import { LibraryMove, type ServerPauseStatus } from './library-move.js';
 import { Retention } from './retention.js';
 import { ServerCheck, checkHost, freeBytes, type CheckFacts } from './server-check.js';
@@ -2371,16 +2372,21 @@ export class Operations {
     // Any container (running or stopped: it can start later) that maps this folder, something inside it, or a folder
     // above it may use these files. Manager's own containers map the database parent and never use PGDATA; this
     // library's stack maps only its media and the database in use (checked above), so only its mappings of this
-    // folder or inside it count.
-    const user = (await this.docker.inventory()).find(
-      (c) =>
-        c.Config.Labels?.['app.frameleaf.manager.role'] !== 'controller' &&
-        c.Mounts.some(
-          (m) =>
-            m.Source?.startsWith('/') &&
-            (inside(m.Source, path) || (c.Config.Labels?.['app.frameleaf.manager'] !== installation.id && inside(path, m.Source))),
-        ),
-    );
+    // folder or inside it count. Each side is compared as reported, as the host and Manager name it, and with
+    // links resolved, so a symlinked or differently spelled mapping cannot slip past.
+    const spellings = async (value: string) => [
+      ...new Set([value, toHost(value), toContainer(value), ...(await Promise.all([value, toContainer(value)].map((v) => realpath(v).catch(() => v))))]),
+    ];
+    const names = await spellings(path);
+    let user: Awaited<ReturnType<Docker['inventory']>>[number] | undefined;
+    for (const c of await this.docker.inventory()) {
+      if (c.Config.Labels?.['app.frameleaf.manager.role'] === 'controller') continue;
+      const own = c.Config.Labels?.['app.frameleaf.manager'] === installation.id;
+      for (const m of c.Mounts)
+        if (m.Source?.startsWith('/'))
+          for (const source of await spellings(m.Source))
+            if (names.some((f) => inside(source, f) || (!own && inside(f, source)))) user ??= c;
+    }
     if (user) throw new Refusal('database_folder_in_use', 409, `Container ${user.Name.replace(/^\//, '')} maps this folder.`);
     await this.docker.sql(await this.targetDatabase(installation), 'SELECT 1;').catch(() => {
       throw new Refusal('database_unconfirmed');
