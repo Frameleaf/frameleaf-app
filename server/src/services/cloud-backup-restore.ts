@@ -495,6 +495,9 @@ export class CloudBackupRestorer {
             await assertOwnerRestoreFile(file.target, null);
             await assertOwnerRestoreFile(staged, stagedEvidence.identity);
             // A file that appeared since the checks above is never replaced.
+            // ponytail: this assumes staging is on the target's drive and that drive can hard-link. Otherwise
+            // retainFile copies, and the dev:ino check below fails after placing; a retry finds the checked bytes
+            // there and skips the file.
             await retainFile(staged, file.target);
             if (options.stageBesideTarget) await flushBuddyDirectory(dirname(file.target));
             await assertOwnerRestoreFile(file.target, stagedEvidence.identity, true);
