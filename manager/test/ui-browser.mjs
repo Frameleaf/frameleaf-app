@@ -119,7 +119,8 @@ let backupAction = 'reuse',
   photoAppSources = [],
   photoAppInspection = null,
   // FL-1317: the next review reports these problems once, then the server is ready.
-  reviewProblems = null;
+  reviewProblems = null,
+  reviewFails = false;
 const okChecks = (restore = false) => [
   { id: 'docker', status: 'ok', facts: { version: '28.4' } },
   { id: 'media', status: 'ok', facts: { free: 3 * 1024 ** 4 } },
@@ -250,7 +251,11 @@ await page.route('**/manager-api/**', async (route) => {
       databaseStorage: { root: body.databaseRoot },
       replacesInstallation: true,
     };
-  else if (path === 'review') {
+  else if (path === 'review' && reviewFails) {
+    reviewFails = false;
+    expectedHttpErrors++;
+    return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ code: 'installation_already_exists' }) });
+  } else if (path === 'review') {
     await new Promise((done) => setTimeout(done, 300));
     const problems = reviewProblems;
     reviewProblems = null;
@@ -691,13 +696,14 @@ try {
     await serverEnvironment.fill('TZ=America/Toronto');
     await screenshot('install-advanced');
     // FL-1317: every problem at once, problems first; a fix in place checks again.
-    reviewProblems = [
+    const twoProblems = [
       { id: 'docker', status: 'ok', facts: { version: '28.4' } },
       { id: 'media', status: 'ok', facts: { free: 3 * 1024 ** 4 } },
       { id: 'database', status: 'problem', code: 'insufficient_database_space' },
       { id: 'backups', status: 'ok', facts: { free: 3 * 1024 ** 4 } },
       { id: 'port', status: 'problem', code: 'port_in_use', facts: { port: 2283, free: 2287 } },
     ];
+    reviewProblems = twoProblems;
     await mainButton('Check this server').click();
     // The slow server check shows it is still working.
     await page.getByRole('heading', { name: 'Checking this server' }).waitFor();
@@ -707,6 +713,14 @@ try {
     assert.equal(await mainButton('Review installation').count(), 0);
     await mainButton('Check again').waitFor();
     await screenshot('install-checks-problems');
+    // A recheck that can't finish returns to the step before the checks, never a Checking… screen with no way out.
+    reviewFails = true;
+    await mainButton('Check again').click();
+    await page.getByRole('heading', { name: 'Give your library a home' }).waitFor();
+    assert.equal(await mainButton('Check this server').isEnabled(), true);
+    reviewProblems = twoProblems;
+    await mainButton('Check this server').click();
+    await page.getByRole('heading', { name: '2 things to fix before installing' }).waitFor();
     await mainButton('Use port 2287').click();
     await page.getByRole('heading', { name: 'This server is ready' }).waitFor();
     assert.equal(requests.findLast((r) => r.path === 'review').body.port, 2287);

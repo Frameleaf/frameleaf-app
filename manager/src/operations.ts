@@ -884,12 +884,14 @@ export class Operations {
     const checks = new ServerCheck();
     const broad = broadRoots(this.roots);
     const backups = input.backupPath ?? process.env.MANAGER_BACKUP_ROOT!;
-    const chosen = [input.mediaPath, input.databaseRoot, backups, this.store.directory].filter((path): path is string => !!path);
+    // Each folder by its role: the same path chosen for two roles is still refused.
+    const chosen = Object.entries({ media: input.mediaPath, database: input.databaseRoot, backups, state: this.store.directory })
+      .filter((entry): entry is [string, string] => !!entry[1]);
     const databaseBytes = (source?.summary.databaseBytes ?? 1024 ** 3) * 3;
     // A folder chosen in setup must be its own, and exist (the review creates it, empty).
-    const chosenFolder = async (path: string) => {
+    const chosenFolder = async (role: string, path: string) => {
       if (!broad) return;
-      for (const other of chosen) if (other !== path) assertSeparateFolders([path, other]);
+      for (const [other, otherPath] of chosen) if (other !== role) assertSeparateFolders([path, otherPath]);
       if (phase === 'review') await ensureChosenFolder(path);
     };
     const compatibility = await checks.run('docker', async () => {
@@ -898,17 +900,17 @@ export class Operations {
     });
     await checks.run('media', async () => {
       if (source) return { outcome: { facts: { folders: source.mounts.length } as CheckFacts } };
-      await chosenFolder(input.mediaPath!);
+      await chosenFolder('media', input.mediaPath!);
       const path = await storagePath(input.mediaPath!, this.roots, common?.requiredMediaBytes ?? 1024 ** 3);
       return { outcome: { facts: { path, free: await freeBytes(path) } } };
     });
     const databaseStorage = await checks.run('database', async () => {
-      await chosenFolder(input.databaseRoot);
+      await chosenFolder('database', input.databaseRoot);
       const value = await this.databaseStorage.validate(input.databaseRoot, databaseBytes);
       return { value, outcome: { facts: { path: input.databaseRoot, free: await freeBytes(input.databaseRoot) } } };
     });
     await checks.run('backups', async () => {
-      await chosenFolder(backups);
+      await chosenFolder('backups', backups);
       // Database backups and recovery points are written through Manager's own folder first.
       await storagePath(this.store.directory, [this.store.directory], databaseBytes);
       return { outcome: { facts: { path: backups, free: await freeBytes(broad ? backups : this.store.directory) } } };

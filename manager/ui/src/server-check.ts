@@ -34,6 +34,8 @@ export type CheckContext = {
   folderSetup: boolean;
   /** The folders this review checked, by check id. */
   paths: Partial<Record<CheckFolder, string>>;
+  /** The folders this flow sends to the review, so choosing another one can fix it (an import keeps its media where it is). */
+  chosen: CheckFolder[];
   /** A restore keeps the backup's port: Manager can't offer another one. */
   fixedPort?: boolean;
 };
@@ -135,9 +137,10 @@ type Words = Pick<CheckRow, 'title' | 'detail' | 'steps' | 'action'>;
 
 function folderProblem(folder: CheckFolder, code: string, context: CheckContext, detail?: string): Words {
   const path = context.paths[folder] ?? '';
-  const choose = context.folderSetup ? { action: { kind: 'folder' as const, folder, label: 'Choose another folder' } } : {};
+  const pick = context.folderSetup && context.chosen.includes(folder);
+  const choose = pick ? { action: { kind: 'folder' as const, folder, label: 'Choose another folder' } } : {};
   if (UNREACHABLE.has(code))
-    return context.folderSetup
+    return pick
       ? { title: `Manager can’t reach the ${NOUNS[folder]}`, detail: `${path} isn’t on a drive Manager can use.`, ...choose }
       : { title: `Manager can’t reach the ${NOUNS[folder]}`, detail: `${path} isn’t connected to Manager yet.`, steps: connectSteps(context.host, folder) };
   if (code === 'storage_permissions' || code === 'database_permissions')
@@ -146,14 +149,14 @@ function folderProblem(folder: CheckFolder, code: string, context: CheckContext,
     return {
       title: `Not enough room in the ${NOUNS[folder]}`,
       detail: `The drive that holds ${path} is nearly full.`,
-      steps: [context.folderSetup ? 'Free some space on that drive, or choose a folder on a bigger drive.' : 'Free some space on that drive, then check again.'],
+      steps: [pick ? 'Free some space on that drive, or choose a folder on a bigger drive.' : 'Free some space on that drive, then check again.'],
       ...choose,
     };
   if (code === 'chosen_folders_overlap' || code === 'external_folder_holds_frameleaf_data')
     return {
       title: 'These folders overlap',
       detail: 'Photos and videos, the database, backups and Manager’s own settings each need their own separate folder.',
-      ...(context.folderSetup ? choose : { steps: [AGAIN] }),
+      ...(pick ? choose : { steps: [AGAIN] }),
     };
   return generic(folder, code, detail);
 }

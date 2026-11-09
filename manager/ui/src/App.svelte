@@ -212,6 +212,7 @@
     host: (screen === 'restore' ? restoreReview : review)?.host ?? 'linux',
     folderSetup: !!dashboard?.folderSetup,
     paths: { media: mediaPath, database: databaseRoot, backups: backupPath || dashboard?.backupRoot },
+    chosen: screen === 'restore' ? ['database'] : [...(screen === 'fresh' ? (['media'] as const) : []), 'database', 'backups'],
     fixedPort: screen === 'restore',
   });
   const reviewRows = $derived(review?.checks ? checkRows(review.checks, checkContext) : null);
@@ -612,7 +613,8 @@
     if (!configurationReady()) return;
     if (screen === 'restore') restoreReview = null;
     else review = null;
-    const before = step;
+    // A recheck starts on the Checks step itself: if it can't finish, go back to the step before it, not a screen with no results.
+    const before = step === at ? at - 1 : step;
     step = at;
     await tick();
     page?.scrollTo({ top: 0 });

@@ -119,6 +119,23 @@ test('a server with several problems reports them all in one pass, and nothing i
   }
 });
 
+test('the same folder chosen for photos and the database is refused on both', async () => {
+  const f = await fixture();
+  process.env.MANAGER_FOLDER_ROOT = f.root;
+  try {
+    const shared = join(f.root, 'share', 'frameleaf');
+    const result = await f.operations.review({ ...f.input, mediaPath: shared, databaseRoot: shared, backupPath: join(f.root, 'share', 'backups') });
+    assert.equal(result.ready, false);
+    assert.deepEqual(
+      result.checks.filter((check) => check.status === 'problem').map((check) => [check.id, check.code]),
+      [['media', 'chosen_folders_overlap'], ['database', 'chosen_folders_overlap']],
+    );
+  } finally {
+    delete process.env.MANAGER_FOLDER_ROOT;
+    await f.cleanup();
+  }
+});
+
 test('the next free port skips every port in use', async () => {
   const f = await fixture();
   try {
