@@ -101,8 +101,11 @@ export class ViewRepository {
   async getFolderSummary(userId: string, options?: HiddenContentQueryOptions): Promise<FolderSummaryRow[]> {
     // the pattern is a literal, not a bound parameter: Postgres works the folder out once per file only
     // when the partitioned expression is the selected one exactly, and two parameters with the same
-    // value are two different expressions to it
-    const directoryPath = sql<string>`substring(${displayPathSql()}, ${sql.lit(DIRECTORY_PATTERN)})`;
+    // value are two different expressions to it. Every file is sorted by its folder, so the folder is
+    // compared byte by byte ("C"): the database's language collation made that sort the slowest part of
+    // the query on a large library (2.2 s to 1.0 s for 120,000 files). The folders still come back in
+    // the language's order.
+    const directoryPath = sql<string>`substring(${displayPathSql()}, ${sql.lit(DIRECTORY_PATTERN)}) collate "C"`;
     const files = this.folderAssets(userId, options)
       .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
       .select([
@@ -129,7 +132,7 @@ export class ViewRepository {
         eb.fn.max(sql<Date>`("file"."localDateTime" AT TIME ZONE 'UTC'::text)::date`).as('endDate'),
       ])
       .groupBy('file.directoryPath')
-      .orderBy('file.directoryPath', 'asc')
+      .orderBy(sql`"file"."directoryPath" collate "default"`, 'asc')
       .execute();
 
     return rows.map((row) => ({

@@ -2,6 +2,7 @@ import { SharedLinkType } from '@frameleaf/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import { dockLift } from '$lib/frameleaf/panel-dock.svelte';
 import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
 import { handleCreateSharedLink } from '$lib/services/shared-link.service';
 import en from '../../../../../i18n/en.json';
@@ -39,6 +40,20 @@ it('shares every explicitly selected ID after part of the selection leaves the l
     expect.objectContaining({ type: SharedLinkType.Individual, assetIds: ['loaded', 'offscreen'] }),
     expect.objectContaining({ onSlugTaken: expect.any(Function) }),
   );
+});
+
+it('lifts the transfer dock only while a selection is open', async () => {
+  addMessages('dev', en);
+  const props = { count: 1, assets: [], selectedIds: ['one'], onAction: vi.fn(), onClear: vi.fn() };
+  const { rerender, unmount } = render(SelectionBar, { props });
+  expect(dockLift.selections).toBe(1);
+
+  await rerender({ ...props, count: 0, selectedIds: [] });
+  expect(dockLift.selections).toBe(0);
+
+  await rerender(props);
+  unmount();
+  expect(dockLift.selections).toBe(0);
 });
 
 it('opens the preservation export on the selection and says what was left out (FL-74)', async () => {

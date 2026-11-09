@@ -397,6 +397,23 @@
     };
   });
   /**
+   * A menu open in the scrolling header (see `.has-header-menu`). Watched here rather than with a
+   * `.fl-timeline:has(...)` rule: Chrome checks a `:has()` anchor again whenever a span or input is
+   * added below it, and re-styles its spans and inputs, so every frame of a scroll re-styled the grid.
+   */
+  let headerMenuOpen = $state(false);
+  $effect(() => {
+    const element = topElement;
+    if (!element) {
+      return;
+    }
+    const check = () => (headerMenuOpen = !!element.querySelector("[role='menu'], .fl-pop"));
+    const mutations = new MutationObserver(check);
+    mutations.observe(element, { childList: true, subtree: true });
+    check();
+    return () => mutations.disconnect();
+  });
+  /**
    * The year labels sit beside the track, towards the photos (YearScrubber `.fl-scrub-year`): the
    * column keeps room for them, as the scroll area's margin and the scrubber's own column did before.
    */
@@ -1414,6 +1431,7 @@
   class="fl-timeline"
   class:is-groupable={onGroupingChange && showDayHeaders}
   class:is-zoomable={tileLayout !== 'timeline' && tileLayout !== 'list' && !!onThumbnailSizeChange}
+  class:has-header-menu={headerMenuOpen}
   data-testid="frameleaf-timeline"
   style:--fl-group-header-lead="{groupHeaderLead}px"
   style:--fl-library-gutter-start="{gutter}px"
@@ -1655,7 +1673,7 @@
    * painted inside the scroller, whose `contain: strict` makes it one layer under the scrubber, so
    * the scrubber steps aside until the menu closes rather than drawing its year over the menu.
    */
-  .fl-timeline:has(:global(.fl-timeline-scroll :is([role='menu'], .fl-pop))) :global(.fl-scrubber) {
+  .fl-timeline.has-header-menu :global(.fl-scrubber) {
     visibility: hidden;
   }
   .fl-timeline-scroll {
