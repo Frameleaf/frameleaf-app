@@ -150,6 +150,18 @@ describe(MediaIntegrityService.name, () => {
     exec.error = error;
     expect(await sut.validate({ ...input, type: AssetType.Video, deep: true })).toEqual({ status, reason });
   });
+  it('an unsupported-format message on a JPEG with junk in front is corrupt', async () => {
+    await writeFile(input.path, Buffer.concat([Buffer.alloc(300, 7), Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3])]));
+    mocks.media.decodeImage.mockRejectedValue(new Error('Input buffer contains unsupported image format'));
+    expect(await sut.validate({ ...input, deep: true })).toEqual({ status: 'corrupt', reason: 'decode_failed' });
+  });
+  it('an unsupported-format message on a file with no JPEG marker stays unsupported', async () => {
+    mocks.media.decodeImage.mockRejectedValue(new Error('Input buffer contains unsupported image format'));
+    expect(await sut.validate({ ...input, deep: true })).toEqual({
+      status: 'unsupported',
+      reason: 'decode_unsupported',
+    });
+  });
   it('decodes the full rendered RAW without thumbnail resizing', async () => {
     vi.mocked(renderRawWithLibRaw).mockResolvedValue(bytes);
     expect(await sut.validate({ ...input, originalFileName: 'original.nef', deep: true })).toMatchObject({

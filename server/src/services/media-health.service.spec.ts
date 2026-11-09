@@ -3184,6 +3184,19 @@ describe(MediaHealthService.name, () => {
       expect(mediaHealthRepository.countScanAssets).toHaveBeenCalledWith('user-id', new Date(snapshot.changedSince));
     });
 
+    it.each([
+      [{ status: 'transient', reason: 'validation_busy' }],
+      [{ status: 'transient', reason: 'io_failed' }],
+      [{ status: 'timeout', reason: 'decode_timeout' }],
+    ])('a busy validation records no damage (%j)', async (outcome) => {
+      const asset = AssetFactory.create({ id: 'asset-1', originalPath: '/data/a.jpg' });
+      const validate = (sut as any).integrityService.validate as ReturnType<typeof vi.fn>;
+      validate.mockResolvedValueOnce(outcome);
+
+      expect(await (sut as any).validateReadableAssetIntegrity(asset)).toBeNull();
+      expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
+    });
+
     it('verifies original checksums in a scan only while "Verify original checksums" is on', async () => {
       const asset = AssetFactory.create({ id: 'asset-1', originalPath: '/data/a.jpg' });
       const withSha1 = { ...asset, checksum: Buffer.from('abc'), checksumAlgorithm: ChecksumAlgorithm.sha1File };

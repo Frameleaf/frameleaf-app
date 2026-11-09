@@ -2854,6 +2854,10 @@ export class MediaHealthService {
       // FL-721: sealed since the caller looked; never damage (the callers skip it before this)
       return null;
     }
+    if (result.status === 'transient' || result.status === 'timeout') {
+      // Busy, timed out or out of resources (including `validation_busy`): not a verdict on the file, so no finding this time
+      return null;
+    }
     return {
       status:
         result.status === 'missing' || result.status === 'unreadable'
