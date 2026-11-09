@@ -1,6 +1,7 @@
 import { readFile, stat, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Refusal, type Mount } from './contracts.js';
+import { filesystemMounts } from './postgres-storage.js';
 
 /**
  * FL-1320: the media mounts of an installation (`Installation.mounts`).
@@ -104,17 +105,42 @@ function missing(service: string, source: string, target: string): Refusal {
   );
 }
 
+/**
+ * Which paths Manager can answer for: those inside one of its own mounts (its state, the media and database
+ * roots, /mnt). An imported library may keep a host folder that was never mapped into Manager; only Docker can
+ * see that one, so it is left to Docker. Outside a container (a native Manager, tests) every path is checked.
+ */
+export async function visibility(
+  mountinfo = '/proc/self/mountinfo',
+  container = '/.dockerenv',
+): Promise<(path: string) => boolean> {
+  if (!(await exists(container))) return () => true;
+  const contents = await readFile(mountinfo, 'utf8').catch(() => null);
+  if (contents === null) return () => true;
+  const targets = filesystemMounts(contents)
+    .map((mount) => mount.target)
+    .filter((target) => target !== '/');
+  return (path) => targets.some((target) => path === target || path.startsWith(`${target}/`));
+}
+
 /** Before a start: every bind source of these mounts must exist. Docker's own error would stop the whole stack. */
-export async function assertMountSources(mounts: Mount[] = [], service = 'frameleaf-server'): Promise<void> {
+export async function assertMountSources(mounts: Mount[] = [], service = 'frameleaf-server', visible?: (path: string) => boolean): Promise<void> {
+  visible ??= await visibility();
   for (const mount of mounts)
-    if (mount.type === 'bind' && !(await exists(mount.source))) throw missing(service, mount.source, mount.target);
+    if (mount.type === 'bind' && visible(mount.source) && !(await exists(mount.source)))
+      throw missing(service, mount.source, mount.target);
 }
 
 /**
  * The same check against a rendered stack, for the services a `compose up` or `restart` starts (all when none
  * are named). Compose doubles `$` in every string (renderCompose), so sources are read back unescaped.
  */
-export async function assertComposeMountSources(directory: string, services: string[] = []): Promise<void> {
+export async function assertComposeMountSources(
+  directory: string,
+  services: string[] = [],
+  visible?: (path: string) => boolean,
+): Promise<void> {
+  visible ??= await visibility();
   const compose = JSON.parse(await readFile(join(directory, 'compose.json'), 'utf8')) as {
     services?: Record<string, { volumes?: ({ type?: string; source?: string; target?: string } | string)[] }>;
   };
@@ -123,7 +149,7 @@ export async function assertComposeMountSources(directory: string, services: str
     for (const volume of service.volumes ?? []) {
       if (typeof volume !== 'object' || volume.type !== 'bind' || !volume.source || !volume.target) continue;
       const source = volume.source.replaceAll('$$', '$');
-      if (!(await exists(source))) throw missing(name, source, volume.target.replaceAll('$$', '$'));
+      if (visible(source) && !(await exists(source))) throw missing(name, source, volume.target.replaceAll('$$', '$'));
     }
   }
 }

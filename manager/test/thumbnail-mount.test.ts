@@ -20,6 +20,7 @@ import {
   seedThumbnailMarker,
   thumbnailFolder,
   thumbnailMount,
+  visibility,
   withThumbnails,
 } from '../src/mounts.js';
 
@@ -83,7 +84,7 @@ test('a missing drive is named before a start: thumbnails, photos and any other 
         'frameleaf-server': {
           volumes: [
             { type: 'bind', source: photos, target: '/data' },
-            { type: 'bind', source: thumbnails.replaceAll('$', '$$'), target: THUMBNAIL_TARGET },
+            { type: 'bind', source: thumbnails.replaceAll('$', () => '$$'), target: THUMBNAIL_TARGET },
             { type: 'volume', source: 'model-cache', target: '/cache' },
           ],
         },
@@ -372,5 +373,32 @@ test('a restore whose thumbnail folder is gone offers the photos folder, and see
     await rm(photos, { recursive: true });
     await assert.rejects((operations as any).applyRestore(again, saved), /media_folder_missing/);
     await assert.rejects(readFile(join(photos, 'thumbs', '.frameleaf')), /ENOENT/);
+  });
+});
+
+test('a host folder never mapped into Manager is left to Docker; a missing drive under a mapped root is named', async () => {
+  await folder(async (root) => {
+    const info = join(root, 'mountinfo');
+    await writeFile(
+      info,
+      [
+        '20 1 0:20 / / rw - overlay overlay rw',
+        `30 20 8:1 /mnt ${root} rw,relatime - ext4 /dev/sda1 rw`,
+        '31 20 8:2 /appdata /config rw - ext4 /dev/sda2 rw',
+      ].join('\n') + '\n',
+    );
+    assert.equal((await visibility(info, join(root, 'no-dockerenv')))('/srv/immich/library'), true, 'outside a container');
+    await writeFile(join(root, '.dockerenv'), '');
+    const visible = await visibility(info, join(root, '.dockerenv'));
+    assert.equal(visible(join(root, 'disks', 'fast')), true);
+    assert.equal(visible('/config/x'), true);
+    assert.equal(visible('/srv/immich/library'), false, 'the overlay root says nothing about host folders');
+    // An imported Immich library whose folder only the Docker host can see still starts.
+    await assertMountSources([library('/srv/immich/library')], 'frameleaf-server', visible);
+    await assert.rejects(
+      assertMountSources([library('/srv/immich/library'), thumbs(join(root, 'disks', 'fast'))], 'frameleaf-server', visible),
+      /thumbnail_folder_missing/,
+    );
+    assert.equal((await visibility(join(root, 'no-such-mountinfo'), join(root, '.dockerenv')))('/anything'), true);
   });
 });
