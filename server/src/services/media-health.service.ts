@@ -160,6 +160,9 @@ type CandidateValidation = {
   resolution: Record<string, unknown>;
 };
 
+/** A validation that could not reach a verdict (busy, timed out, out of resources): no change this time. */
+type BusyValidation = { busy: true; candidate: CandidateValidation };
+
 type ManagedSearchProgress = NonNullable<JobOf<JobName.MediaHealthLocateMissing>['managedSearch']>;
 
 /** One step of a search for originals (FL-69): what it covered, and where to carry on from. */
@@ -2328,7 +2331,12 @@ export class MediaHealthService {
           continue;
         }
         checkedAssets++;
-        const result = await this.validateAssetIntegrity(asset);
+        const checked = await this.validateReadableAssetIntegrity(asset);
+        if (checked && 'busy' in checked) {
+          // Not a verdict: leave this asset's findings as they are
+          continue;
+        }
+        const result = checked;
         if (!result) {
           resolveBuffer.push(asset);
           if (resolveBuffer.length >= RESOLVE_BATCH) {
@@ -2485,7 +2493,8 @@ export class MediaHealthService {
             encryptedAssets++;
             break;
           }
-          case 'healthy': {
+          case 'healthy':
+          case 'busy': {
             break;
           }
         }
@@ -2544,7 +2553,7 @@ export class MediaHealthService {
     missingRunId: string,
     corruptRunId: string | null,
     { checksumScan = true }: { checksumScan?: boolean } = {},
-  ): Promise<'missing' | 'corrupt' | 'healthy' | 'encrypted'> {
+  ): Promise<'missing' | 'corrupt' | 'healthy' | 'encrypted' | 'busy'> {
     const sourceExists = await this.storageRepository.checkFileExists(asset.originalPath, constants.R_OK);
     if (!sourceExists) {
       await this.mediaHealthRepository.upsertFinding({
@@ -2575,6 +2584,10 @@ export class MediaHealthService {
     // "Verify original checksums" off: the scan still reads and decodes every original, but no longer
     // proves it is the recorded file. Repairs and the trash always verify, whatever this says.
     const result = await this.validateReadableAssetIntegrity(asset, { verifyChecksum: checksumScan });
+    if (result && 'busy' in result) {
+      // Not a verdict: leave every finding for this asset exactly as it is until the next run
+      return 'busy';
+    }
     if (!result) {
       await this.mediaHealthRepository.markResolvedForAssets(
         [MediaHealthCategory.Missing, MediaHealthCategory.Corrupt],
@@ -2622,7 +2635,9 @@ export class MediaHealthService {
   }
 
   private async validateAssetIntegrity(asset: MediaHealthAsset): Promise<CandidateValidation | null> {
-    return this.validateReadableAssetIntegrity(asset);
+    const result = await this.validateReadableAssetIntegrity(asset);
+    // Callers that act on one finding keep treating "could not check" as a suspect, as before.
+    return result && 'busy' in result ? result.candidate : result;
   }
 
   /**
@@ -2838,7 +2853,7 @@ export class MediaHealthService {
   private async validateReadableAssetIntegrity(
     asset: MediaHealthAsset,
     { verifyChecksum = true }: { verifyChecksum?: boolean } = {},
-  ): Promise<CandidateValidation | null> {
+  ): Promise<CandidateValidation | BusyValidation | null> {
     const result = await this.integrityService.validate({
       path: asset.originalPath,
       originalFileName: asset.originalFileName,
@@ -2854,11 +2869,7 @@ export class MediaHealthService {
       // FL-721: sealed since the caller looked; never damage (the callers skip it before this)
       return null;
     }
-    if (result.status === 'transient' || result.status === 'timeout') {
-      // Busy, timed out or out of resources (including `validation_busy`): not a verdict on the file, so no finding this time
-      return null;
-    }
-    return {
+    const candidate: CandidateValidation = {
       status:
         result.status === 'missing' || result.status === 'unreadable'
           ? MediaHealthStatus.Missing
@@ -2871,6 +2882,9 @@ export class MediaHealthService {
       evidence: { reason: result.reason, validationStatus: result.status },
       resolution: { reuploadRecommended: result.status === 'corrupt' },
     };
+    // Busy, timed out or out of resources (including `validation_busy`): not a verdict on the file.
+    // The scan skips the asset this run; one-finding callers read the candidate (a suspect), as before.
+    return result.status === 'transient' || result.status === 'timeout' ? { busy: true, candidate } : candidate;
   }
 
   /**

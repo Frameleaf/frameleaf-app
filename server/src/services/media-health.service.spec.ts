@@ -3193,7 +3193,20 @@ describe(MediaHealthService.name, () => {
       const validate = (sut as any).integrityService.validate as ReturnType<typeof vi.fn>;
       validate.mockResolvedValueOnce(outcome);
 
-      expect(await (sut as any).validateReadableAssetIntegrity(asset)).toBeNull();
+      expect(await (sut as any).validateReadableAssetIntegrity(asset)).toMatchObject({ busy: true });
+      expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
+    });
+
+    it('a busy validation keeps an open corrupt finding open', async () => {
+      const asset = AssetFactory.create({ id: 'asset-1', originalPath: '/data/a.jpg' });
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(true);
+      const validate = (sut as any).integrityService.validate as ReturnType<typeof vi.fn>;
+      validate.mockResolvedValueOnce({ status: 'transient', reason: 'validation_busy' });
+
+      const found = await (sut as any).scanAsset(asset, 'missing-run', 'corrupt-run');
+
+      expect(found).toBe('busy');
+      expect(mediaHealthRepository.markResolvedForAssets).not.toHaveBeenCalled();
       expect(mediaHealthRepository.upsertFinding).not.toHaveBeenCalled();
     });
 
