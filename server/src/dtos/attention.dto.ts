@@ -34,6 +34,10 @@ export type AttentionReason = (typeof ATTENTION_REASONS)[number];
 export const ATTENTION_CHECK_STATES = ['ok', 'attention', 'off', 'unknown'] as const;
 export type AttentionCheckState = (typeof ATTENTION_CHECK_STATES)[number];
 
+/** FL-1324: which drive a storage item is about. Thumbnails count only when they are on a drive of their own. */
+export const ATTENTION_STORAGE_DRIVES = ['library', 'thumbnails'] as const;
+export type AttentionStorageDrive = (typeof ATTENTION_STORAGE_DRIVES)[number];
+
 export const ATTENTION_BACKUP_PLACES = ['cloud', 'buddy', 'local'] as const;
 export type AttentionBackupPlace = (typeof ATTENTION_BACKUP_PLACES)[number];
 
@@ -58,9 +62,15 @@ const AttentionBackupPlaceSchema = z
   .describe('Where a backup is kept; local is the copy of the library data on this server')
   .meta({ id: 'AttentionBackupPlace' });
 
+const AttentionStorageDriveSchema = z
+  .enum(ATTENTION_STORAGE_DRIVES)
+  .describe('The drive: the one the library is on, or the one thumbnails are kept on when that is another drive')
+  .meta({ id: 'AttentionStorageDrive' });
+
 const AttentionStorageSchema = z
   .object({
-    availableBytes: z.int().min(0).describe('Space left on the drive the library is on'),
+    drive: AttentionStorageDriveSchema,
+    availableBytes: z.int().min(0).describe('Space left on the drive'),
     totalBytes: z.int().min(0).describe('Size of that drive'),
     usedPercent: z.number().min(0).max(100).meta({ format: 'double' }).describe('How full the drive is'),
   })

@@ -42,6 +42,8 @@ const setup = () => {
     },
     storage: {
       checkDiskUsage: vi.fn().mockResolvedValue({ available: 600 * GB, free: 600 * GB, total: 1000 * GB }),
+      // One drive: thumbnails sit inside the library's own folder.
+      getDevice: vi.fn().mockResolvedValue(42),
       // The server names each copy after its own clock: this one was made early this morning.
       readdir: vi
         .fn()
@@ -128,7 +130,170 @@ describe(AttentionService.name, () => {
 
     const { items } = await sut.getAttention();
     expect(mocks.storage.checkDiskUsage).toHaveBeenCalledWith(expect.stringMatching(/library$/));
-    expect(items).toEqual([expect.objectContaining({ id: 'storage', reason: 'out-of-space', level: 'now' })]);
+    expect(items).toEqual([
+      expect.objectContaining({
+        id: 'storage',
+        reason: 'out-of-space',
+        level: 'now',
+        storage: expect.objectContaining({ drive: 'library' }),
+      }),
+    ]);
+  });
+
+  describe('thumbnails on a drive of their own (FL-1324)', () => {
+    const separateDrives = (mocks: ReturnType<typeof setup>['mocks']) =>
+      mocks.storage.getDevice.mockImplementation((path: string) => Promise.resolve(path.endsWith('thumbs') ? 7 : 42));
+    const diskFor = (mocks: ReturnType<typeof setup>['mocks'], library: number, thumbnails: number) =>
+      mocks.storage.checkDiskUsage.mockImplementation((path: string) => {
+        const available = (path.endsWith('thumbs') ? thumbnails : library) * GB;
+        return Promise.resolve({ available, free: available, total: 500 * GB });
+      });
+
+    it('keeps one item for a library whose thumbnails are on the same drive', async () => {
+      const { sut, mocks } = setup();
+      diskFor(mocks, 8, 8);
+
+      const { items, checks } = await sut.getAttention();
+      expect(items.map((item) => item.id)).toEqual(['storage']);
+      expect(checks).toContainEqual({ kind: 'storage', state: 'attention' });
+      expect(mocks.storage.checkDiskUsage).toHaveBeenCalledTimes(1);
+    });
+
+    it('names the thumbnails drive when only it is nearly full', async () => {
+      const { sut, mocks } = setup();
+      separateDrives(mocks);
+      diskFor(mocks, 400, 30);
+
+      const { items, checks } = await sut.getAttention();
+      expect(mocks.storage.checkDiskUsage).toHaveBeenCalledWith(expect.stringMatching(/thumbs$/));
+      expect(items).toEqual([
+        expect.objectContaining({
+          id: 'storage:thumbnails',
+          reason: 'nearly-full',
+          level: 'soon',
+          storage: { drive: 'thumbnails', availableBytes: 30 * GB, totalBytes: 500 * GB, usedPercent: 94 },
+        }),
+      ]);
+      expect(checks).toContainEqual({ kind: 'storage', state: 'attention' });
+    });
+
+    it('lists each drive that is running out, with the drive named', async () => {
+      const { sut, mocks } = setup();
+      separateDrives(mocks);
+      diskFor(mocks, 30, 5);
+
+      const { items } = await sut.getAttention();
+      expect(items.map((item) => [item.id, item.reason, item.storage?.drive])).toEqual([
+        ['storage:thumbnails', 'out-of-space', 'thumbnails'],
+        ['storage', 'nearly-full', 'library'],
+      ]);
+    });
+
+    it('is fine when both drives have room', async () => {
+      const { sut, mocks } = setup();
+      separateDrives(mocks);
+
+      const { items, checks } = await sut.getAttention();
+      expect(items).toEqual([]);
+      expect(checks).toContainEqual({ kind: 'storage', state: 'ok' });
+      expect(mocks.storage.checkDiskUsage).toHaveBeenCalledTimes(2);
+    });
+
+    it('still warns about one drive when the other cannot be read', async () => {
+      const { sut, mocks } = setup();
+      separateDrives(mocks);
+      mocks.storage.checkDiskUsage.mockImplementation((path: string) =>
+        path.endsWith('thumbs')
+          ? Promise.reject(new Error('EIO'))
+          : Promise.resolve({ available: 5 * GB, free: 5 * GB, total: 500 * GB }),
+      );
+
+      const { items, checks } = await sut.getAttention();
+      expect(items.map((item) => item.id)).toEqual(['storage']);
+      expect(checks).toContainEqual({ kind: 'storage', state: 'attention' });
+      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('thumbnails drive'));
+    });
+
+    it('still warns about a full thumbnails drive when the library folder cannot be read', async () => {
+      const { sut, mocks } = setup();
+      mocks.storage.getDevice.mockImplementation((path: string) => Promise.resolve(path.endsWith('thumbs') ? 7 : null));
+      mocks.storage.checkDiskUsage.mockImplementation((path: string) =>
+        path.endsWith('thumbs')
+          ? Promise.resolve({ available: 5 * GB, free: 5 * GB, total: 500 * GB })
+          : Promise.reject(new Error('EACCES')),
+      );
+
+      const { items, checks } = await sut.getAttention();
+      expect(items.map((item) => [item.id, item.storage?.drive])).toEqual([['storage:thumbnails', 'thumbnails']]);
+      expect(checks).toContainEqual({ kind: 'storage', state: 'attention' });
+    });
+
+    it('does not take same-size drives with nearly the same room for one drive when the library device is unknown', async () => {
+      const { sut, mocks } = setup();
+      mocks.storage.getDevice.mockImplementation((path: string) => Promise.resolve(path.endsWith('thumbs') ? 7 : null));
+      mocks.storage.checkDiskUsage.mockImplementation((path: string) => {
+        const available = (path.endsWith('thumbs') ? 9.9 : 10.1) * GB;
+        return Promise.resolve({ available, free: available, total: 500 * GB });
+      });
+
+      const { items } = await sut.getAttention();
+      expect(items.map((item) => [item.id, item.reason])).toEqual([
+        ['storage:thumbnails', 'out-of-space'],
+        ['storage', 'nearly-full'],
+      ]);
+    });
+
+    it('still names a low thumbnails drive when the library drive is read but its device is not', async () => {
+      const { sut, mocks } = setup();
+      mocks.storage.getDevice.mockImplementation((path: string) => Promise.resolve(path.endsWith('thumbs') ? 7 : null));
+      diskFor(mocks, 400, 5);
+
+      const { items } = await sut.getAttention();
+      expect(items.map((item) => [item.id, item.storage?.drive])).toEqual([['storage:thumbnails', 'thumbnails']]);
+    });
+
+    it('says the storage check is unknown when the thumbnails folder cannot be read', async () => {
+      const { sut, mocks } = setup();
+      mocks.storage.getDevice.mockImplementation((path: string) =>
+        Promise.resolve(path.endsWith('thumbs') ? null : 42),
+      );
+
+      const { items, checks } = await sut.getAttention();
+      expect(mocks.storage.checkDiskUsage).toHaveBeenCalledTimes(1);
+      expect(items).toEqual([]);
+      expect(checks).toContainEqual({ kind: 'storage', state: 'unknown' });
+    });
+
+    it('keeps the library warning when the thumbnails folder cannot be read', async () => {
+      const { sut, mocks } = setup();
+      mocks.storage.getDevice.mockImplementation((path: string) =>
+        Promise.resolve(path.endsWith('thumbs') ? null : 42),
+      );
+      diskFor(mocks, 5, 5);
+
+      const { items, checks } = await sut.getAttention();
+      expect(items.map((item) => item.id)).toEqual(['storage']);
+      expect(checks).toContainEqual({ kind: 'storage', state: 'attention' });
+    });
+
+    it('reads the shared drive through the thumbnails folder when the library folder cannot be read', async () => {
+      const { sut, mocks } = setup();
+      mocks.storage.checkDiskUsage.mockImplementation((path: string) =>
+        path.endsWith('thumbs')
+          ? Promise.resolve({ available: 30 * GB, free: 30 * GB, total: 500 * GB })
+          : Promise.reject(new Error('EACCES')),
+      );
+
+      const { items, checks } = await sut.getAttention();
+      expect(items).toEqual([
+        expect.objectContaining({
+          id: 'storage',
+          reason: 'nearly-full',
+          storage: expect.objectContaining({ drive: 'library' }),
+        }),
+      ]);
+      expect(checks).toContainEqual({ kind: 'storage', state: 'attention' });
+    });
   });
 
   it('reads each backup place from what the server records about it', async () => {
@@ -285,7 +450,8 @@ describe(AttentionService.name, () => {
       { kind: 'work', state: 'unknown' },
       { kind: 'version', state: 'ok' },
     ]);
-    expect(mocks.logger.warn).toHaveBeenCalledTimes(2);
+    // the library drive, then the same drive through the thumbnails folder, then the work
+    expect(mocks.logger.warn).toHaveBeenCalledTimes(3);
   });
 
   it('puts what needs the person now first', async () => {

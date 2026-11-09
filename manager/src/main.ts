@@ -16,7 +16,7 @@ import express, { type Request, type Response } from 'express';
 import { existsSync, fstatSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createNativeService } from './runtime/native-service.js';
-import { chmod, mkdir, readFile, realpath, rm, stat, statfs } from 'node:fs/promises';
+import { chmod, mkdir, readFile, realpath, rm, stat } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { isIP } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
@@ -47,6 +47,8 @@ import { ServiceOverrides, detectAcceleration, hostInstallations, suggestedPort 
 import { sharePortWithRedirect } from './http-redirect.js';
 import { log, print, renderBanner, requestLog } from './banner.js';
 import { connectionChecks, redactPaths, redactionRoots, renderReport } from './troubleshooting.js';
+import { visibility } from './mounts.js';
+import { measurableBy, readStorage, storagePlaces } from './storage-drives.js';
 
 const runtime = process.env.MANAGER_RUNTIME ?? 'docker';
 // Docker only: these are Linux paths, and a native Windows path has a colon of its own.
@@ -165,11 +167,17 @@ function folderDefaults() {
     fastDatabase: !installed && fresh.fastDatabase,
   };
 }
-/** Mounted media storage and the backup destination, which can be a different drive. */
-const drives = () => [
-  ...mediaPlaces().map((path, i) => ({ name: `Storage ${i + 1}`, path })),
-  { name: 'Backup drive', path: currentBackupRoot() },
-];
+/**
+ * FL-1324: mounted media storage, the thumbnails' own folder, the database and the backup destination, each of
+ * which can be on a different drive. A thumbnail or database folder Manager cannot see stays listed, as one it
+ * can't measure.
+ */
+const drives = async () => {
+  const measurable = measurableBy(await visibility());
+  return storagePlaces(operations.installation(), { media: mediaPlaces(), backups: currentBackupRoot() }).map(
+    (place) => ({ ...place, measurable: measurable(place.path, [place.use]) }),
+  );
+};
 /**
  * Everything a troubleshooting run looks at: this library's containers (server, database, machine learning, LAN
  * discovery and any import runner), plus Manager's own container when Docker runs it.
@@ -394,29 +402,17 @@ class Api {
     await operations.cancelPhotoApp(operationId);
     return { cancelled: true };
   }
+  /** FL-1324: each folder the library uses (media, thumbnails, database, backups), what it holds, and its drive's room. */
   @Get('storage') async storage() {
-    const roots = [
-      ...new Set([
-        ...mediaPlaces(),
-        ...(folderSetup() ? [operations.installation()?.databaseRoot ?? ''].filter(Boolean) : defaults.roots),
-        currentBackupRoot(),
-      ]),
-    ];
-    return Promise.all(
-      roots.map(async (path) => {
-        try {
-          if ((await realpath(path)) !== path) throw new Refusal('storage_path_changed');
-          const space = await statfs(path);
-          return {
-            path,
-            totalBytes: space.blocks * space.bsize,
-            availableBytes: space.bavail * space.bsize,
-            freeBytes: space.bfree * space.bsize,
-          };
-        } catch {
-          return { path, totalBytes: null, availableBytes: null, freeBytes: null };
-        }
+    return readStorage(
+      storagePlaces(operations.installation(), {
+        media: mediaPlaces(),
+        backups: currentBackupRoot(),
+        databaseRoots: folderSetup() ? [] : defaults.roots,
       }),
+      undefined,
+      // An imported library's thumbnail or database folder may be one only Docker reaches: listed, not measured.
+      measurableBy(await visibility()),
     );
   }
   @Get('drives') driveList() {
@@ -587,7 +583,7 @@ class Api {
   @Post('diagnostics') async diagnostics(@Body() input: unknown) {
     z.object({}).strict().parse(input);
     const { installation, containers, clean } = await troubleshootingScope();
-    const checks = await connectionChecks(docker, installation, containers, drives());
+    const checks = await connectionChecks(docker, installation, containers, await drives());
     return { checks: checks.map((c) => ({ ...c, detail: clean(c.detail) })) };
   }
   /** One text file to post on the community: checks, problems found, activity and every service's log, redacted. */
@@ -595,7 +591,7 @@ class Api {
     z.object({}).strict().parse(input);
     const { installation, containers, self, clean } = await troubleshootingScope();
     const [checks, host, logs] = await Promise.all([
-      connectionChecks(docker, installation, containers, drives()),
+      connectionChecks(docker, installation, containers, await drives()),
       docker.compatibility().catch(() => null),
       Promise.all(
         [...containers, ...(self ? [self] : [])].map(async (c) => ({

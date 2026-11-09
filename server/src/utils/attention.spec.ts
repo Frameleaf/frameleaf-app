@@ -6,6 +6,7 @@ import {
   type QueueFacts,
   backupSignal,
   behindAfterDays,
+  combineStorage,
   sortAttention,
   storageSignal,
   versionSignal,
@@ -44,9 +45,30 @@ describe('attention: the drive the library is on', () => {
         kind: 'storage',
         reason: 'nearly-full',
         level: 'soon',
-        storage: { availableBytes: 74 * GB, totalBytes: 932 * GB, usedPercent: 92.1 },
+        storage: { drive: 'library', availableBytes: 74 * GB, totalBytes: 932 * GB, usedPercent: 92.1 },
       }),
     ]);
+  });
+
+  it('names the thumbnails drive, with an id of its own (FL-1324)', () => {
+    const { items } = storageSignal({ available: 9 * GB, free: 9 * GB, total: 64 * GB }, 90, 'thumbnails');
+    expect(items).toEqual([
+      expect.objectContaining({
+        id: 'storage:thumbnails',
+        reason: 'out-of-space',
+        storage: expect.objectContaining({ drive: 'thumbnails' }),
+      }),
+    ]);
+  });
+
+  it('lists every drive that needs the person, and is unknown only when nothing else is found (FL-1324)', () => {
+    const full = storageSignal({ available: 9 * GB, free: 9 * GB, total: 64 * GB });
+    const roomy = storageSignal({ available: 400 * GB, free: 400 * GB, total: 1000 * GB }, 90, 'thumbnails');
+    const unread = { state: 'unknown' as const, items: [] };
+    expect(combineStorage([full, roomy])).toEqual(full);
+    expect(combineStorage([unread, full]).state).toBe('attention');
+    expect(combineStorage([roomy, unread])).toEqual(unread);
+    expect(combineStorage([roomy, roomy])).toEqual({ state: 'ok', items: [] });
   });
 
   it('needs the person now when less than 10 GB is left, however big the drive', () => {
