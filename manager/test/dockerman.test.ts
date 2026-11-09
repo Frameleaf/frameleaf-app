@@ -72,9 +72,7 @@ for (const [title, owner, kept] of [
       const path = join(directory, 'compose.json');
       await writeFile(path, JSON.stringify({ name: project, services: { database: { image: `ghcr.io/frameleaf/frameleaf-postgres@sha256:${'a'.repeat(64)}`, container_name: 'Frameleaf-Database-843' } } }));
       const docker = new Docker((async (_binary: string, args: string[]) => {
-        if (args[0] === 'ps') return 'a'.repeat(64);
-        if (args[0] === 'inspect') return JSON.stringify([{ Id: 'a'.repeat(64), Name: '/Frameleaf-Database-843', State: { Running: true },
-          Config: { Image: 'x', Env: [], Labels: owner ? { 'com.docker.compose.project': owner } : {} }, Mounts: [], NetworkSettings: { Networks: {} } }]);
+        if (args[0] === 'ps') return `Frameleaf-Database-843\t${owner ?? ''}\n`;
         return '';
       }) as any);
       await docker.compose(directory, project, 'up');

@@ -312,9 +312,9 @@ export class Operations {
   }
   /** A new installation id whose container number no other installation on this host uses. */
   private async newInstallationId(): Promise<string> {
-    const used = new Set(
-      (await this.docker.inventory()).map((c) => containerNumber(c.Config.Labels?.['app.frameleaf.manager'] ?? '')),
-    );
+    // Best effort: the check before `up` catches any clash this misses, so a failed listing must not stop the operation.
+    const containers = await this.docker.inventory().catch(() => []);
+    const used = new Set(containers.map((c) => containerNumber(c.Config.Labels?.['app.frameleaf.manager'] ?? '')));
     for (;;) {
       const id = randomBytes(6).toString('hex');
       if (!used.has(containerNumber(id))) return id;

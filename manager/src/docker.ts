@@ -320,10 +320,14 @@ export class Docker {
     const compose = await readFile(path, 'utf8').then(JSON.parse, () => null);
     const services = Object.values(compose?.services ?? {}) as { container_name?: string }[];
     if (!services.some((service) => service.container_name)) return;
+    // One `ps`, not inventory(): a container removed between its list and inspect steps would fail this start.
+    const listing = await this.execute('docker', ['ps', '--all', '--format', '{{.Names}}\t{{.Label "com.docker.compose.project"}}']);
     const taken = new Set(
-      (await this.inventory())
-        .filter((c) => c.Config.Labels?.['com.docker.compose.project'] !== project)
-        .map((c) => c.Name.replace(/^\//, '')),
+      listing
+        .split('\n')
+        .map((line) => line.split('\t'))
+        .filter(([, owner]) => owner !== project)
+        .map(([name]) => name),
     );
     if (!services.some((service) => service.container_name && taken.has(service.container_name))) return;
     for (const service of services) delete service.container_name;
