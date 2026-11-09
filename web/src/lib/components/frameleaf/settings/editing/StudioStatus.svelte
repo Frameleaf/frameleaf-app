@@ -10,9 +10,13 @@
    *
    * The prototype's "Show Studio" switch is not built. Studio is on for everyone in v1 (FL-408), and
    * hiding it would need a server switch honoured by every Studio entry point and API.
+   *
+   * "Models" (approved design): the sliders of speech to text and voice-over.
    */
   import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import FeatureModelPickers from '$lib/components/frameleaf/cloud/FeatureModelPickers.svelte';
+  import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
   import Pill, { type KitTone } from '$lib/components/frameleaf/settings/kit/Pill.svelte';
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
@@ -68,5 +72,9 @@
     <Row label={$t('frameleaf_editing_studio_where')} help={$t('frameleaf_editing_studio_where_help')}>
       <Pill tone="good">{$t('frameleaf_editing_studio_where_value')}</Pill>
     </Row>
+  </Section>
+
+  <Section title={$t('frameleaf_editing_models')} description={$t('frameleaf_editing_models_help')}>
+    <FeatureModelPickers rows={[{ row: 'studio' }]} onNeedsCloud={() => getCloudManager.open('processing')} />
   </Section>
 </KitPage>

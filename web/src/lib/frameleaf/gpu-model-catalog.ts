@@ -13,10 +13,9 @@
  * Studio exports render at home only (this server or a home-network worker, §2.7): the `render`
  * ladder has no cloud position.
  *
- * Smart search and faces (FL-455) have ladders of their own (`matchedLadders`): this server's models,
- * plus one blue stop for the model Frameleaf Cloud may run for them. That stop exists only while the
- * cloud offers exactly this server's model (`cloudMatch`, read from the Cloud processing status or
- * catalogue at run time), never from this file alone. Search text is always read on this server.
+ * Smart search and faces (FL-455) have ladders of their own (`matchedLadders`): this server's models.
+ * A blue stop for one of them comes only from the live catalogue, for a model it says it runs
+ * (`matchedStopStates`), never from this file. Search text is always read on this server.
  */
 
 /** Customers pay this multiple of the fully loaded GPU cost, for GPU time and the start fee alike. */
@@ -91,7 +90,7 @@ export type LadderWorkload = 'descriptions' | 'upscale' | 'restoration' | 'studi
 export type MatchedWorkload = 'search' | 'faces';
 /** Every kind of work with a model slider. */
 export type SliderWorkload = LadderWorkload | MatchedWorkload;
-/** The Frameleaf Cloud workload (the server's `MlWorkload` value) a cloud stop needs offered. */
+/** The Frameleaf Cloud workload (the server's `MlWorkload` value) a search or faces cloud stop runs under. */
 export type CloudMatch = 'clip' | 'face';
 
 /** How many units a price label quotes, which container runs the work locally, and whether video is chunked. */
@@ -118,7 +117,7 @@ export const LADDER_WORKLOADS: readonly LadderWorkload[] = Object.freeze([
   'interpolation',
 ]);
 export const MATCHED_WORKLOADS: readonly MatchedWorkload[] = Object.freeze(['search', 'faces']);
-/** The Frameleaf Cloud workload each matched kind of work needs offered. */
+/** The Frameleaf Cloud workload of each matched kind of work. */
 export const CLOUD_MATCH: Readonly<Record<MatchedWorkload, CloudMatch>> = Object.freeze({
   search: 'clip',
   faces: 'face',
@@ -196,11 +195,6 @@ export type CloudOffer = Readonly<{
   gpuClass: GpuClassId;
   feeClass: FeeClassId;
   secondsPerUnit: Readonly<{ p50: number; p90: number }>;
-  /**
-   * The Frameleaf Cloud contract's own customer rate and start fee for this offer, where it names
-   * them; they replace the research rate of `gpuClass` and the start fee of `feeClass`.
-   */
-  contract?: Readonly<{ usdPerSec: number; startFeeUsd: number }>;
 }>;
 
 /**
@@ -223,11 +217,6 @@ export type ModelPosition = Readonly<{
   vramGb: Readonly<Partial<Record<'fp16' | 'int8' | 'int4', number>>>;
   speed: Readonly<Partial<Record<GpuProfileId, SpeedClass>>>;
   cloud: CloudOffer | null;
-  /**
-   * FL-455: the cloud offer stands only while Frameleaf Cloud offers this workload with exactly this
-   * server's model (`isCloudOffered`); null for every other position.
-   */
-  cloudMatch: CloudMatch | null;
   retiresOn: string | null;
 }>;
 
@@ -243,7 +232,6 @@ type PositionSpec = {
   vramGb: ModelPosition['vramGb'];
   speed: ModelPosition['speed'];
   cloud: CloudOffer | null;
-  cloudMatch?: CloudMatch;
 };
 
 const position = (workload: SliderWorkload, spec: PositionSpec): ModelPosition =>
@@ -254,22 +242,9 @@ const position = (workload: SliderWorkload, spec: PositionSpec): ModelPosition =
     retiresOn: null,
     ...spec,
     licenceNote: spec.licenceNote ?? false,
-    cloudMatch: spec.cloudMatch ?? null,
   });
 const cloud = (gpuClassId: GpuClassId, feeClass: FeeClassId, p50: number, p90: number): CloudOffer =>
   Object.freeze({ gpuClass: gpuClassId, feeClass, secondsPerUnit: Object.freeze({ p50, p90 }) });
-
-/**
- * FL-455 planning figures from the Frameleaf Cloud contract for search and faces: gpu24 at
- * $0.00076906 per second and the small-24 start fee of $0.08. They are higher than this file's
- * research rate for gpu24 and its small-24 fee, and they are what Frameleaf Cloud charges, so these
- * offers carry them (`CloudOffer.contract`) instead of changing the tables every other ladder uses.
- * 1,000 photos: search about $0.089 typical and $0.098 at the high end, faces $0.103 and $0.126
- * (start fee included). The job's own estimate from the server stays what is charged.
- */
-const MATCHED_CONTRACT = Object.freeze({ usdPerSec: 0.00076906, startFeeUsd: 0.08 });
-const matchedCloud = (p50: number, p90: number): CloudOffer =>
-  Object.freeze({ ...cloud('gpu24', 'small-24', p50, p90), contract: MATCHED_CONTRACT });
 
 const noteKeyOf = (id: string) =>
   id
@@ -602,12 +577,9 @@ export const modelLadders: Readonly<Record<LadderWorkload, readonly ModelPositio
 
 /**
  * Smart search and faces (FL-455), light → heavy: the models this server can be set to (the choices
- * of Search & intelligence), then one blue stop per model the release pins for Frameleaf Cloud
- * (SigLIP 384 and ViT-B-32 for search, buffalo_l and antelopev2 for faces; the server's
- * `resources/desktop` catalogue and pins). The cloud runs only the model this server uses, so a blue
- * stop repeats its model with `@cloud` and `cloudMatch`, and the slider shows the one of the model it
- * is set to while Frameleaf Cloud offers it (`ladderStates`). Speeds, memory and cloud seconds are
- * planning estimates (the Cloud model ladder); local positions have no cloud offer.
+ * of Search & intelligence). Frameleaf Cloud runs only a model this server uses, so its stops come
+ * from the live catalogue, each right after the local model it runs (`matchedStopStates`). Speeds
+ * and memory are planning estimates.
  */
 export const matchedLadders: Readonly<Record<MatchedWorkload, readonly ModelPosition[]>> = Object.freeze({
   search: Object.freeze([
@@ -625,7 +597,7 @@ export const matchedLadders: Readonly<Record<MatchedWorkload, readonly ModelPosi
     }),
     position('search', {
       id: 'ViT-B-16-SigLIP-384__webli',
-      name: 'SigLIP ViT-B-16 384',
+      name: 'SigLIP ViT-B/16-384',
       short: 'SigLIP 384',
       params: '203M',
       sizeClass: 'small',
@@ -646,30 +618,6 @@ export const matchedLadders: Readonly<Record<MatchedWorkload, readonly ModelPosi
       vramGb: { fp16: 3 },
       speed: speeds('SOFFFFFS'),
       cloud: null,
-    }),
-    position('search', {
-      id: 'ViT-B-32__openai@cloud',
-      name: 'CLIP ViT-B-32',
-      short: 'ViT-B-32',
-      params: '151M',
-      sizeClass: 'tiny',
-      licence: 'MIT',
-      vramGb: {},
-      speed: speeds('NNNNNNNN'),
-      cloud: matchedCloud(0.008, 0.016),
-      cloudMatch: 'clip',
-    }),
-    position('search', {
-      id: 'ViT-B-16-SigLIP-384__webli@cloud',
-      name: 'SigLIP ViT-B-16 384',
-      short: 'SigLIP 384',
-      params: '203M',
-      sizeClass: 'small',
-      licence: 'Apache-2.0',
-      vramGb: {},
-      speed: speeds('NNNNNNNN'),
-      cloud: matchedCloud(0.012, 0.024),
-      cloudMatch: 'clip',
     }),
   ]),
   faces: Object.freeze([
@@ -721,30 +669,6 @@ export const matchedLadders: Readonly<Record<MatchedWorkload, readonly ModelPosi
       speed: speeds('SOFFFFFS'),
       cloud: null,
     }),
-    position('faces', {
-      id: 'buffalo_l@cloud',
-      name: 'buffalo_l',
-      short: 'buffalo_l',
-      params: null,
-      sizeClass: 'small',
-      licence: 'commercial',
-      vramGb: {},
-      speed: speeds('NNNNNNNN'),
-      cloud: matchedCloud(0.03, 0.06),
-      cloudMatch: 'face',
-    }),
-    position('faces', {
-      id: 'antelopev2@cloud',
-      name: 'antelopev2',
-      short: 'antelopev2',
-      params: null,
-      sizeClass: 'medium',
-      licence: 'commercial',
-      vramGb: {},
-      speed: speeds('NNNNNNNN'),
-      cloud: matchedCloud(0.04, 0.08),
-      cloudMatch: 'face',
-    }),
   ]),
 });
 
@@ -755,7 +679,7 @@ export const matchedLadders: Readonly<Record<MatchedWorkload, readonly ModelPosi
  */
 export const localOnlyModels = Object.freeze({
   // The release default (`machineLearning.clip.modelName` in config.dto.ts), as the cloud stop above names it.
-  search: Object.freeze([{ id: 'siglip-vit-b-16-384', name: 'SigLIP ViT-B-16 384', licence: 'Apache-2.0' }]),
+  search: Object.freeze([{ id: 'siglip-vit-b-16-384', name: 'SigLIP ViT-B/16-384', licence: 'Apache-2.0' }]),
   faces: Object.freeze([{ id: 'insightface-buffalo_l', name: 'InsightFace buffalo_l', licence: 'commercial' }]),
   ocr: Object.freeze([{ id: 'pp-ocrv5-mobile', name: 'PP-OCRv5 mobile', licence: 'Apache-2.0' }]),
 });
@@ -777,31 +701,18 @@ export const positionById = (id: string | null | undefined): ModelPosition | nul
 };
 
 /**
- * The Frameleaf Cloud workloads that run exactly this server's model now (FL-455): the Cloud
- * processing status's `matchedModelWorkloads`, or the catalogue's own clip/face entries. Without
- * them search and faces have no cloud stop.
- */
-export type CloudMatched = readonly string[];
-
-/**
  * Positions Frameleaf Cloud may host: every position with a cloud offer. No model is kept off the
  * cloud for its licence (FL-451, legal review 2026-10-17, which retired the FL-146 local-only list).
- * A search or faces offer also needs Frameleaf Cloud to offer this server's model (`cloudMatched`).
  */
-export const isCloudOffered = (
-  item: ModelPosition | null | undefined,
-  cloudMatched: CloudMatched = [],
-): item is ModelPosition & { cloud: CloudOffer } =>
-  !!item?.cloud && (!item.cloudMatch || cloudMatched.includes(item.cloudMatch));
+export const isCloudOffered = (item: ModelPosition | null | undefined): item is ModelPosition & { cloud: CloudOffer } =>
+  !!item?.cloud;
 
 /** The local model a search or faces cloud stop repeats (`buffalo_l` for `buffalo_l@cloud`); any other id as is. */
 export const localTwinId = (id: string) => id.replace(/@cloud$/, '');
 
-/** Cloud positions of one workload, or of every routed ladder (search and faces only by name). */
-export const cloudPositions = (workload?: SliderWorkload, cloudMatched: CloudMatched = []) =>
-  (workload ? ladderFor(workload) : Object.values(modelLadders).flat()).filter((item) =>
-    isCloudOffered(item, cloudMatched),
-  );
+/** Cloud positions of one workload, or of every routed ladder. */
+export const cloudPositions = (workload?: SliderWorkload) =>
+  (workload ? ladderFor(workload) : Object.values(modelLadders).flat()).filter((item) => isCloudOffered(item));
 
 /** Smallest GPU memory the model needs at any precision (null when it has no GPU path). */
 export const minVramGb = (item: Pick<ModelPosition, 'vramGb'> | null | undefined): number | null => {
@@ -864,7 +775,6 @@ export const bandFor = (
   item: ModelPosition | null,
   gpu: DetectedGpu | null,
   cpuProfile: GpuProfileId = 'cpu8',
-  cloudMatched: CloudMatched = [],
 ): Band => {
   if (!item) {
     return 'none';
@@ -875,7 +785,7 @@ export const bandFor = (
   if (cpuSpeed(item, cpuProfile) !== 'no') {
     return 'cpu';
   }
-  return isCloudOffered(item, cloudMatched) ? 'cloud' : 'none';
+  return isCloudOffered(item) ? 'cloud' : 'none';
 };
 
 // ------------------------------------------------------------------ estimates
@@ -930,14 +840,10 @@ export type CostEstimate = {
  * fee are both 2× our loaded cost. p50 is typical, p90 the high end, and the wallet hold is p90
  * rounded up to the cent (§2.4).
  */
-export const estimateCost = (
-  itemOrId: ModelPosition | string | null,
-  quantity: number,
-  cloudMatched: CloudMatched = [],
-): CostEstimate | null => {
+export const estimateCost = (itemOrId: ModelPosition | string | null, quantity: number): CostEstimate | null => {
   const item = typeof itemOrId === 'string' ? positionById(itemOrId) : itemOrId;
   const units = quantity;
-  if (!isCloudOffered(item, cloudMatched) || !Number.isFinite(units) || units <= 0) {
+  if (!isCloudOffered(item) || !Number.isFinite(units) || units <= 0) {
     return null;
   }
   const gpu = gpuClassById(item.cloud.gpuClass);
@@ -945,9 +851,9 @@ export const estimateCost = (
   if (!gpu || !fee) {
     return null;
   }
-  const rate = item.cloud.contract?.usdPerSec ?? gpu.customerUsdPerSec;
+  const rate = gpu.customerUsdPerSec;
   const workers = workersFor(item, units);
-  const startFee = item.cloud.contract?.startFeeUsd ?? fee.customerUsd;
+  const startFee = fee.customerUsd;
   const workSeconds = {
     p50: round(units * item.cloud.secondsPerUnit.p50, 2),
     p90: round(units * item.cloud.secondsPerUnit.p90, 2),
@@ -973,13 +879,13 @@ export const estimateCost = (
 };
 
 /** Typical GPU-time cost for the number of units a label quotes (e.g. per 100 photos), start fee excluded. */
-export const quotedUnitCost = (item: ModelPosition | null, cloudMatched: CloudMatched = []) => {
-  if (!isCloudOffered(item, cloudMatched)) {
+export const quotedUnitCost = (item: ModelPosition | null) => {
+  if (!isCloudOffered(item)) {
     return null;
   }
   const per = workloadUnits[item.workload]?.per ?? 1;
   const gpu = gpuClassById(item.cloud.gpuClass);
-  const rate = item.cloud.contract?.usdPerSec ?? gpu?.customerUsdPerSec;
+  const rate = gpu?.customerUsdPerSec;
   return rate === undefined ? null : { per, usd: item.cloud.secondsPerUnit.p50 * rate * per };
 };
 
@@ -1014,6 +920,8 @@ export type PositionState = {
   quote: { per: number; usd: number } | null;
   reasons: StopReason[];
   disabled: boolean;
+  /** A search or faces stop run on Frameleaf Cloud: the live catalogue's entry for it. */
+  twin?: LiveCloudTwin;
 };
 
 /**
@@ -1029,26 +937,16 @@ export const positionState = (
     route = 'both',
     benchmark = null,
     cpuProfile = 'cpu8',
-    cloudMatched = [],
   }: {
     gpu?: DetectedGpu | null;
     route?: RouteMode;
     benchmark?: Benchmark | null;
     cpuProfile?: GpuProfileId;
-    /** FL-455: what Frameleaf Cloud offers with this server's own models (search and faces). */
-    cloudMatched?: CloudMatched;
-    /**
-     * FL-455: the model this server is set to for a search or faces slider; only that model's cloud
-     * stop is shown (`ladderStates`). Left out, every matched cloud stop is.
-     */
-    model?: string | null;
   } = {},
 ): PositionState => {
-  const natural = bandFor(item, gpu, cpuProfile, cloudMatched);
+  const natural = bandFor(item, gpu, cpuProfile);
   const band: Band =
-    route === 'cloud' && natural !== 'cloud' && natural !== 'none' && isCloudOffered(item, cloudMatched)
-      ? 'cloud'
-      : natural;
+    route === 'cloud' && natural !== 'cloud' && natural !== 'none' && isCloudOffered(item) ? 'cloud' : natural;
   const local = band === 'gpu' || band === 'cpu';
   const speedClass = band === 'gpu' ? speedOn(item, gpu) : band === 'cpu' ? cpuSpeed(item, cpuProfile) : 'no';
   const reasons: StopReason[] = [];
@@ -1077,7 +975,7 @@ export const positionState = (
     speedClass,
     seconds: local ? localSecondsPerUnit(item, gpu, { benchmark, cpuProfile }) : null,
     measured: local && benchmark?.factors[item.id] !== undefined,
-    quote: band === 'cloud' ? quotedUnitCost(item, cloudMatched) : null,
+    quote: band === 'cloud' ? quotedUnitCost(item) : null,
     reasons,
     disabled: reasons.length > 0,
   };
@@ -1092,20 +990,135 @@ export const CLOUD_DEFAULT_MODELS: Readonly<Partial<Record<SliderWorkload, strin
   descriptions: 'qwen3.5-9b@1',
 });
 
-/**
- * Every stop of a slider. A search or faces cloud stop is left out while Frameleaf Cloud does not offer
- * this server's model, rather than shown crossed out: nothing could make it available from here. With
- * `model`, only the cloud stop of that model is shown: the cloud runs exactly the server's model, so
- * another pinned model's stop would promise a run that can never match.
- */
+/** Every stop of a slider. */
 export const ladderStates = (workload: SliderWorkload, options: Parameters<typeof positionState>[1] = {}) =>
-  ladderFor(workload)
-    .filter(
-      (item) =>
-        !item.cloudMatch ||
-        (isCloudOffered(item, options.cloudMatched) && (!options.model || localTwinId(item.id) === options.model)),
-    )
-    .map((item) => positionState(item, options));
+  ladderFor(workload).map((item) => positionState(item, options));
+
+/**
+ * A search or faces entry of the live Frameleaf Cloud catalogue (`GET admin/cloud/ml/catalog`): the
+ * local model it runs (`localModel`) and what the slider shows for it.
+ */
+export type LiveCloudTwin = {
+  localModel: string;
+  modelName: string;
+  label: string;
+  priceUsd: number | null;
+  pricingUnit: string | null;
+};
+
+/** The stop of a local model on Frameleaf Cloud, as the live catalogue describes it. */
+const twinState = (item: ModelPosition, twin: LiveCloudTwin): PositionState => ({
+  item: { ...item, id: `${item.id}@cloud`, name: twin.modelName, short: twin.modelName, cloud: null },
+  band: 'cloud',
+  runsOn: 'cloud',
+  speedClass: 'no',
+  seconds: null,
+  measured: false,
+  quote: null,
+  reasons: [],
+  disabled: false,
+  twin,
+});
+
+/**
+ * The stops of a search or faces slider, in quality order: each local model, and right after it the same
+ * model on Frameleaf Cloud when the live catalogue lists it. A model the catalogue doesn't list has no
+ * blue stop, and nothing here decides what Frameleaf Cloud offers.
+ */
+export const matchedStopStates = (
+  workload: MatchedWorkload,
+  twins: readonly LiveCloudTwin[],
+  options: Parameters<typeof positionState>[1] = {},
+): PositionState[] =>
+  matchedLadders[workload].flatMap((item) => {
+    const local = positionState(item, options);
+    const twin = twins.find((entry) => entry.localModel === item.id);
+    return twin ? [local, twinState(item, twin)] : [local];
+  });
+
+/** The stop that stands for Frameleaf Cloud as a whole, before its list of models can be read. */
+export const GENERIC_CLOUD_STOP = 'frameleaf-cloud';
+
+/** One blue stop from what Frameleaf Cloud itself says: no ladder entry decides its name, price or offer. */
+const cloudStopState = (workload: SliderWorkload, id: string, name: string, twin: LiveCloudTwin): PositionState => {
+  const [base] = ladderFor(workload);
+  return {
+    item: { ...base, id, name, short: name, params: null, licenceNote: false, cloud: null },
+    band: 'cloud',
+    runsOn: 'cloud',
+    speedClass: 'no',
+    seconds: null,
+    measured: false,
+    quote: null,
+    reasons: [],
+    disabled: false,
+    twin,
+  };
+};
+
+/** A model of the live catalogue as a blue stop; `id` is its catalogue SKU. */
+export const catalogCloudStop = (
+  workload: SliderWorkload,
+  model: { id: string; name: string; modelName: string; priceUsd: number | null; pricingUnit: string | null },
+) =>
+  cloudStopState(workload, model.id, model.modelName, {
+    localModel: '',
+    modelName: model.modelName,
+    label: model.name,
+    // the slider quotes a rate per minute of GPU time; any other unit is priced in the confirmation
+    priceUsd: model.pricingUnit === 'second' ? model.priceUsd : null,
+    pricingUnit: model.pricingUnit,
+  });
+
+/** One blue stop that names no model: Frameleaf Cloud's list can't be read yet (the server isn't linked). */
+export const genericCloudStop = (workload: SliderWorkload, name: string) =>
+  cloudStopState(workload, GENERIC_CLOUD_STOP, name, {
+    localModel: '',
+    modelName: name,
+    label: '',
+    priceUsd: null,
+    pricingUnit: null,
+  });
+
+/**
+ * A slider whose blue stops come from Frameleaf Cloud itself. The ladder keeps only what can run at home;
+ * set to Frameleaf Cloud in Where work runs, those stops stay visible, crossed out.
+ */
+export const withLiveCloudStops = (
+  states: readonly PositionState[],
+  cloudStops: readonly PositionState[],
+  route: RouteMode,
+): PositionState[] => [
+  ...states
+    .filter((entry) => entry.runsOn !== 'cloud')
+    .map((entry) =>
+      route === 'cloud' && entry.runsOn === 'local'
+        ? {
+            ...entry,
+            disabled: true,
+            reasons: [{ key: 'frameleaf_model_reason_cloud_only', values: {} } as StopReason],
+          }
+        : entry,
+    ),
+  ...cloudStops,
+];
+
+/**
+ * Where a slider with live blue stops starts: the heaviest home model that runs at a usable speed, else the
+ * first home model, else Frameleaf Cloud (the catalogue's recommendation, when there is one).
+ */
+export const liveStartStop = (states: readonly PositionState[], recommended?: string | null) => {
+  const enabled = states.filter((entry) => !entry.disabled);
+  const local = enabled.filter((entry) => entry.runsOn === 'local');
+  const cloud = enabled.filter((entry) => entry.runsOn === 'cloud');
+  return (
+    local.findLast((entry) => entry.speedClass !== 'slow' && entry.band !== 'cpu') ??
+    local[0] ??
+    cloud.find((entry) => entry.item.id === recommended) ??
+    cloud[0] ??
+    null
+  );
+};
 
 /**
  * The position to use: the saved choice when it can be chosen, otherwise the heaviest position that

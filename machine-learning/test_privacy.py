@@ -205,3 +205,24 @@ def test_model_source_token_goes_only_to_its_source_and_is_never_shown(monkeypat
     assert download.call_args.kwargs["token"] == "mirror-token"
     assert "mirror-token" not in repr(settings)
     assert "mirror-token" not in str(settings)
+
+
+def test_custom_model_downloads_send_no_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    from pydantic import SecretStr
+
+    from frameleaf_ml.config import settings
+    from frameleaf_ml.models.base import ModelUnavailableError
+    from frameleaf_ml.models.clip.hugging_face import HubClipModel
+    from frameleaf_ml.models.clip.visual import OpenClipVisualEncoder
+
+    assert issubclass(OpenClipVisualEncoder, HubClipModel)
+    monkeypatch.setenv("HF_TOKEN", "hugging-face-token-must-stay-home")
+    monkeypatch.setenv("HF_ENDPOINT", "https://hub-mirror.example.com")
+    monkeypatch.setattr(settings, "model_source_url", "https://hub-mirror.example.com")
+    monkeypatch.setattr(settings, "model_source_token", SecretStr("mirror-token"))
+    with patch("frameleaf_ml.models.clip.hugging_face.snapshot_download") as download:
+        with pytest.raises(ModelUnavailableError):  # the mocked snapshot wrote no files, so the layout is refused
+            OpenClipVisualEncoder("someone/my-search-model", cache_dir="/path/to/cache").download()
+
+    assert download.call_args.kwargs["token"] is False
+    assert download.call_args.kwargs["endpoint"] == "https://huggingface.co"

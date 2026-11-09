@@ -60,7 +60,7 @@ describe('CloudDescriptionBackfill (FL-163)', () => {
     expect(
       screen.getByText(/About \$0\.0020 to \$0\.0024 of GPU time per photo, plus a \$0\.0200 start fee/),
     ).toBeInTheDocument();
-    expect(screen.getByText('$10.00 available in the AI Wallet.')).toBeInTheDocument();
+    expect(screen.getByText('$10.00 of AI credit available.')).toBeInTheDocument();
     expect(sdkMock.startCloudMlDescriptionBackfill).not.toHaveBeenCalled();
   });
 

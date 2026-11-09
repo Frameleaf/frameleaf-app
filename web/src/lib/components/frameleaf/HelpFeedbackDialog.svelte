@@ -50,7 +50,7 @@
   const FRAMELEAF_HELP = {
     helpCenter: 'https://frameleaf.app/help/',
     documentation: 'https://frameleaf.app/docs/start/introduction/',
-    discord: 'https://discord.gg/cN3U3mv4',
+    discord: 'https://discord.gg/NrQuxCMhh5',
     community: 'https://frameleaf.app/help/community',
     problem: 'https://frameleaf.app/help/community/c/bug-reports',
     feature: 'https://frameleaf.app/help/community/c/ideas-feedback',

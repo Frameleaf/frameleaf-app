@@ -9,30 +9,37 @@
    * and Cloud only moves hostable models to blue; a model's licence never keeps it off blue (FL-451).
    * Below phone width the stops show their icons only.
    *
-   * FL-455: smart search and faces have sliders too. Their blue stop is this server's own model run on
-   * Frameleaf Cloud, shown only while the cloud offers it (`cloudMatched`, from the Cloud processing
-   * status or catalogue); without that the slider has white and green stops only.
+   * FL-455: smart search and faces have sliders too. Their blue stops are this server's own models run
+   * on Frameleaf Cloud, one right after each local model the live catalogue says it runs (`twins`);
+   * without a catalogue the slider has white and green stops only. `tiered` adds the quality word above
+   * every stop, which stays when the names are hidden on a phone.
    */
   import './gpu-models.css';
-  import { formatDuration, formatUsd } from '$lib/frameleaf/cloud-ml';
+  import { formatDuration, formatRatePerMinute, formatUsd } from '$lib/frameleaf/cloud-ml';
   import {
+    GENERIC_CLOUD_STOP,
     isMatchedWorkload,
     ladderStates,
+    localTwinId,
+    matchedStopStates,
     modelLicenceNoteKey,
     modelNoteKey,
+    withLiveCloudStops,
     workloadUnitKey,
     workloadUnits,
     type Band,
     type Benchmark,
     type DetectedGpu,
     type GpuProfileId,
-    type CloudMatched,
+    type LiveCloudTwin,
     type PositionState,
     type RouteMode,
     type SliderWorkload,
   } from '$lib/frameleaf/gpu-model-catalog';
+  import { stopTiers, tierKey } from '$lib/frameleaf/model-tiers';
   import { Icon } from '@frameleaf/ui';
   import { mdiCancel, mdiChip, mdiCloudOutline, mdiExpansionCard, mdiInformationOutline } from '@mdi/js';
+  import { tick } from 'svelte';
   import { locale, t, type Translations } from 'svelte-i18n';
 
   type Props = {
@@ -47,8 +54,12 @@
     disabled?: boolean;
     /** Disables every local stop with this reason (for example a busy or missing worker). */
     localDisabledReason?: string;
-    /** FL-455: the Frameleaf Cloud workloads that run this server's own model now (search and faces). */
-    cloudMatched?: CloudMatched;
+    /** FL-455: the entries of the live catalogue that run this server's own models (search and faces). */
+    twins?: readonly LiveCloudTwin[];
+    /** The blue stops, when they come from Frameleaf Cloud itself rather than this slider's own list. */
+    cloudStops?: readonly PositionState[];
+    /** Show the quality word of each stop, and say "Faster" to "Better results" along the track. */
+    tiered?: boolean;
     /** Said in place of "nothing can run this" when the saved model is simply not one of the stops. */
     customNote?: string;
     onChange?: (id: string, state: PositionState) => void;
@@ -65,7 +76,9 @@
     hideLegend = false,
     disabled = false,
     localDisabledReason = '',
-    cloudMatched = [],
+    twins = [],
+    cloudStops,
+    tiered = false,
     customNote,
     onChange,
   }: Props = $props();
@@ -76,22 +89,36 @@
   const reasonText = (entry: PositionState) =>
     entry.reasons.map((reason) => $t(reason.key as Translations, { values: reason.values })).join(' ');
 
+  const options = $derived({
+    gpu,
+    // live blue stops replace the ladder's, so Cloud only doesn't move the home models to blue
+    route: cloudStops && route === 'cloud' ? ('both' as const) : route,
+    benchmark,
+    cpuProfile,
+  });
+  const ladder = $derived(
+    isMatchedWorkload(workload) ? matchedStopStates(workload, twins, options) : ladderStates(workload, options),
+  );
   const stops = $derived(
-    ladderStates(workload, {
-      gpu,
-      route,
-      benchmark,
-      cpuProfile,
-      cloudMatched,
-      // a search or faces slider shows the cloud stop of the model this server is set to, no other
-      model: isMatchedWorkload(workload) ? value : undefined,
-    }).map((entry) =>
+    (cloudStops ? withLiveCloudStops(ladder, cloudStops, route) : ladder).map((entry) =>
       localDisabledReason && entry.runsOn === 'local' && !entry.disabled
         ? { ...entry, disabled: true, reasonText: localDisabledReason }
         : { ...entry, reasonText: reasonText(entry) },
     ),
   );
-  const selected = $derived(stops.find((entry) => entry.item.id === value) ?? null);
+  // the stop that stands for Frameleaf Cloud as a whole is no model, so it has no quality word
+  const tiers = $derived(
+    stopTiers(
+      stops.filter((entry) => entry.item.id !== GENERIC_CLOUD_STOP),
+      (entry) => localTwinId(entry.item.id),
+    ),
+  );
+  const tierOf = (index: number) => {
+    const tier = tiers.at(index);
+    return tier ? $t(tierKey(tier)) : '';
+  };
+  const selectedIndex = $derived(stops.findIndex((entry) => entry.item.id === value));
+  const selected = $derived(selectedIndex === -1 ? null : stops[selectedIndex]);
   const reasons = $derived([...new Set(stops.filter((entry) => entry.disabled).map((entry) => entry.reasonText))]);
   const bandsPresent = $derived(new Set(stops.map((entry) => entry.band)));
 
@@ -110,6 +137,11 @@
         },
       });
     }
+    if (entry.twin) {
+      return entry.twin.priceUsd === null
+        ? $t('frameleaf_model_label_cloud_twin')
+        : $t('frameleaf_model_label_cloud_twin_rate', { values: { rate: formatRatePerMinute(entry.twin.priceUsd) } });
+    }
     if (entry.band === 'cloud' && entry.quote) {
       return $t(entry.item.params ? 'frameleaf_model_label_cloud_params' : 'frameleaf_model_label_cloud', {
         values: { params: entry.item.params ?? '', price: formatUsd(entry.quote.usd), unit: unit(entry.quote.per) },
@@ -122,6 +154,9 @@
     if (entry.band === 'gpu' || entry.band === 'cpu') {
       return $t(entry.measured ? 'frameleaf_model_detail_measured' : 'frameleaf_model_detail_estimated');
     }
+    if (entry.twin) {
+      return entry.twin.label ? `${entry.twin.label}.` : '';
+    }
     if (entry.band === 'cloud' && entry.item.cloud) {
       return $t('frameleaf_model_detail_cloud', {
         values: { gpu: $t(`frameleaf_gpu_class_${entry.item.cloud.gpuClass}` as Translations) },
@@ -129,12 +164,31 @@
     }
     return '';
   };
+
+  /** What a stop says it is for: a Cloud run of a search or faces model has one sentence of its own. */
+  const noteOf = (entry: PositionState) =>
+    entry.item.id === GENERIC_CLOUD_STOP
+      ? $t('frameleaf_enhance_model_cloud_help')
+      : entry.twin
+        ? $t(`frameleaf_model_note_cloud_twin_${workload}` as Translations)
+        : $t(modelNoteKey(entry.item) as Translations);
+
+  /**
+   * A choice the page didn't take (it needs Frameleaf Cloud set up first, or a write failed) must not stay
+   * ticked: the radios follow `value`, and only a new `value` would re-draw them.
+   */
+  const choose = async (event: Event, entry: PositionState) => {
+    const input = event.currentTarget as HTMLInputElement;
+    onChange?.(entry.item.id, entry);
+    await tick();
+    input.checked = entry.item.id === value;
+  };
 </script>
 
 <fieldset class="ms" data-workload={workload} {disabled}>
   <legend class="ms-legend">{label}</legend>
   <div class="ms-track" style:--ms-count={stops.length}>
-    {#each stops as entry (entry.item.id)}
+    {#each stops as entry, index (entry.item.id)}
       {@const checked = entry.item.id === value}
       <label
         class="ms-stop"
@@ -144,7 +198,9 @@
         class:is-none={entry.band === 'none'}
         class:is-selected={checked}
         class:is-disabled={entry.disabled}
-        title={entry.disabled ? entry.reasonText : `${entry.item.name} · ${stopLabel(entry)}`}
+        title={entry.disabled
+          ? entry.reasonText
+          : `${tiered ? `${tierOf(index)} · ` : ''}${entry.item.name} · ${stopLabel(entry)}`}
       >
         <input
           type="radio"
@@ -154,16 +210,19 @@
           {checked}
           disabled={entry.disabled}
           aria-describedby={entry.disabled ? `${id}-reasons` : undefined}
-          onchange={() => onChange?.(entry.item.id, entry)}
+          onchange={(event) => choose(event, entry)}
         />
         <span class="ms-band" aria-hidden="true"></span>
         <span class="ms-knob" aria-hidden="true"></span>
+        {#if tiered}
+          <span class="ms-tier" aria-hidden="true">{tierOf(index)}</span>
+        {/if}
         <span class="ms-stop-name" aria-hidden="true">
           <Icon icon={ICONS[entry.band]} size="14" />
           <span>{entry.item.short}</span>
         </span>
         <span class="sr-only">
-          {entry.item.name}: {stopLabel(entry)}{entry.disabled
+          {tiered ? `${tierOf(index)}, ` : ''}{entry.item.name}: {stopLabel(entry)}{entry.disabled
             ? `. ${$t('frameleaf_model_unavailable_prefix')} ${entry.reasonText}`
             : ''}
         </span>
@@ -171,8 +230,8 @@
     {/each}
   </div>
   <div class="ms-scale" aria-hidden="true">
-    <span>{$t('frameleaf_model_scale_lighter')}</span>
-    <span>{$t('frameleaf_model_scale_heavier')}</span>
+    <span>{$t(tiered ? 'frameleaf_model_scale_faster' : 'frameleaf_model_scale_lighter')}</span>
+    <span>{$t(tiered ? 'frameleaf_model_scale_better_results' : 'frameleaf_model_scale_heavier')}</span>
   </div>
   {#if selected}
     <p
@@ -185,9 +244,9 @@
     >
       <Icon icon={ICONS[selected.band]} size="16" aria-hidden={true} />
       <span>
-        <strong>{selected.item.name}</strong> · {stopLabel(selected)}
+        <strong>{tiered ? `${tierOf(selectedIndex)} · ` : ''}{selected.item.name}</strong> · {stopLabel(selected)}
         <small>
-          {$t(modelNoteKey(selected.item) as Translations)}
+          {noteOf(selected)}
           {detail(selected)}
           {#if selected.item.licenceNote}
             {$t('frameleaf_model_licence', {

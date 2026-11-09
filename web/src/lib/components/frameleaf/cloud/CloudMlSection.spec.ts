@@ -1,6 +1,5 @@
 import {
   CloudMlConnection,
-  CloudMlModelGroup,
   MlWorkload,
   type AdminConfigDto,
   type CloudMlStatusResponseDto,
@@ -46,6 +45,10 @@ const cloudConfig = (enabled = false, modelName?: string) =>
       },
     },
   }) as unknown as AdminConfigDto;
+
+const savedTurnedOn = () =>
+  (sdkMock.updateAdminConfigWithRevision.mock.calls.at(-1)?.[0].adminConfigRevisionUpdateDto.config as AdminConfigDto)
+    .frameleafCloud!.cloudMl;
 
 const useDraft = (enabled = false, modelName?: string) => {
   const store = new SystemConfigDraftStore(
@@ -94,6 +97,12 @@ const status = (overrides: Partial<CloudMlStatusResponseDto> = {}): CloudMlStatu
   consent: consent(null),
   wallet,
   matchedModelWorkloads: [],
+  waiting: {
+    smartSearch: { photos: 0, nextBatchAt: null, noMatchingModel: 0 },
+    faces: { photos: 0, nextBatchAt: null, noMatchingModel: 0 },
+    queuedWhileOff: 0,
+    descriptionsForBackfill: 0,
+  },
   checkedAt: '2026-09-25T09:00:00.000Z',
   ...overrides,
 });
@@ -170,6 +179,8 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
     const store = useDraft();
     sdkMock.createCloudMlDestination.mockResolvedValue({ id: 'cloud-1' } as never);
     sdkMock.grantMlDestinationConsent.mockResolvedValue({} as never);
+    sdkMock.getAdminConfigWithRevision.mockResolvedValue({ config: cloudConfig(false), revision: 'r1' });
+    sdkMock.updateAdminConfigWithRevision.mockResolvedValue({ config: cloudConfig(true), revision: 'r2' });
     render(CloudMlSection);
 
     const toggle = await screen.findByRole('switch', { name: 'Use Frameleaf Cloud for chosen jobs' });
@@ -199,7 +210,91 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
         },
       },
     });
-    expect(store.draft.frameleafCloud!.cloudMl.enabled).toBe(true);
+    // saved at once, with no settings bar
+    await vi.waitFor(() => expect(sdkMock.updateAdminConfigWithRevision).toHaveBeenCalled());
+    expect(savedTurnedOn().enabled).toBe(true);
+  });
+
+  it('saves Turn on at once when the terms are already agreed, and leaves routes alone', async () => {
+    useDraft();
+    sdkMock.getCloudMlStatus.mockResolvedValue(
+      status({ consent: consent('2026-10-01'), destination: { id: 'cloud-1', consent: {} } as never }),
+    );
+    sdkMock.reconcileCloudMlUsage.mockResolvedValue({} as never);
+    sdkMock.getAdminConfigWithRevision.mockResolvedValue({ config: cloudConfig(false), revision: 'r1' });
+    sdkMock.updateAdminConfigWithRevision.mockResolvedValue({ config: cloudConfig(true), revision: 'r2' });
+    render(CloudMlSection);
+
+    const toggle = await screen.findByRole('switch', { name: 'Use Frameleaf Cloud for chosen jobs' });
+    await vi.waitFor(() => expect(toggle).toBeEnabled());
+    await fireEvent.click(toggle);
+
+    await vi.waitFor(() => expect(sdkMock.updateAdminConfigWithRevision).toHaveBeenCalledTimes(1));
+    expect(savedTurnedOn().enabled).toBe(true);
+    expect(savedTurnedOn().routing).toEqual(cloudConfig(false).frameleafCloud!.cloudMl.routing);
+  });
+
+  describe('Waiting for Frameleaf Cloud', () => {
+    const none = {
+      smartSearch: { photos: 0, nextBatchAt: null, noMatchingModel: 0 },
+      faces: { photos: 0, nextBatchAt: null, noMatchingModel: 0 },
+      queuedWhileOff: 0,
+      descriptionsForBackfill: 0,
+    };
+
+    it('stays away when nothing is waiting', async () => {
+      useDraft(true);
+      sdkMock.getCloudMlStatus.mockResolvedValue(
+        status({ enabled: true, consent: consent('2026-10-01'), waiting: none }),
+      );
+      render(CloudMlSection);
+      await screen.findByText('What may use the cloud');
+      expect(screen.queryByText('Waiting for Frameleaf Cloud')).toBeNull();
+    });
+
+    it('shows only the rows that have work, each with a plain sentence', async () => {
+      useDraft(true);
+      const at = new Date(Date.now() + 8 * 60_000).toISOString();
+      sdkMock.getCloudMlStatus.mockResolvedValue(
+        status({
+          enabled: true,
+          consent: consent('2026-10-01'),
+          waiting: {
+            ...none,
+            smartSearch: { photos: 12, nextBatchAt: at, noMatchingModel: 0 },
+            faces: { photos: 0, nextBatchAt: null, noMatchingModel: 3 },
+            descriptionsForBackfill: 340,
+          },
+        }),
+      );
+      render(CloudMlSection);
+
+      expect(await screen.findByText('Waiting for Frameleaf Cloud')).toBeInTheDocument();
+      expect(screen.getByText(/12 new photos join the next batch, by about/)).toBeInTheDocument();
+      expect(
+        screen.getByText(/3 photos are waiting because Frameleaf Cloud doesn’t offer the model/),
+      ).toBeInTheDocument();
+      expect(screen.getByText(/340 photos are waiting for you/)).toBeInTheDocument();
+      expect(screen.queryByText(/turned off\.$/)).toBeNull();
+      expect(screen.getByRole('link', { name: 'Choose a model' })).toHaveAttribute(
+        'href',
+        expect.stringContaining('faces'),
+      );
+    });
+
+    it('offers Turn on for photos held while Cloud is off', async () => {
+      useDraft(false);
+      sdkMock.getCloudMlStatus.mockResolvedValue(
+        status({ consent: consent('2026-10-01'), waiting: { ...none, queuedWhileOff: 7 } }),
+      );
+      sdkMock.getAdminConfigWithRevision.mockResolvedValue({ config: cloudConfig(false), revision: 'r1' });
+      sdkMock.updateAdminConfigWithRevision.mockResolvedValue({ config: cloudConfig(true), revision: 'r2' });
+      render(CloudMlSection);
+
+      expect(
+        await screen.findByText('7 photos are waiting because Frameleaf Cloud is turned off.'),
+      ).toBeInTheDocument();
+    });
   });
 
   it('asks to review new terms when the cloud requires a newer version, and records the new version (FL-201)', async () => {
@@ -405,60 +500,30 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
     expect(await screen.findByText(/Would be refused: Add AI credit/)).toBeInTheDocument();
   });
 
-  it('chooses the Frameleaf Cloud model of each group from the catalogue and saves it apart from the routes (FL-186)', async () => {
-    const store = useDraft(true);
+  it('links to the page of each kind of work instead of holding its sliders', async () => {
+    useDraft(true);
     sdkMock.getCloudMlStatus.mockResolvedValue(status({ enabled: true, consent: consent('2026-10-01') }));
-    sdkMock.getCloudMlModelChoices.mockResolvedValue({
-      choices: [{ group: CloudMlModelGroup.Descriptions, modelId: null }],
-    });
-    const entry = {
-      workload: MlWorkload.Enrichment,
-      group: CloudMlModelGroup.Descriptions,
-      description: 'Qwen3.5-9B, L40S-class',
-      fingerprint: 'mr_68JDMAM8444M',
-      pricingUnit: 'second',
-      priceUsd: 0.002,
-    };
-    sdkMock.getCloudMlCatalog.mockResolvedValue({
-      models: [
-        { ...entry, id: 'ms_K6WT70CS', name: 'Descriptions · Standard', rank: 2, isDefault: true },
-        { ...entry, id: 'ms_M7QG26PT', name: 'Descriptions · Best', rank: 5, isDefault: false },
-      ],
-    });
-    sdkMock.setCloudMlModelChoice.mockResolvedValue({
-      choices: [{ group: CloudMlModelGroup.Descriptions, modelId: 'ms_M7QG26PT' }],
-    });
     render(CloudMlSection);
 
-    // Quality names each slider after its work, as in the prototype
-    const picker = await screen.findByRole('group', { name: 'Descriptions & tags' });
-    expect(within(picker).getByRole('radio', { name: /Descriptions · Standard/ })).toBeChecked();
-    // every kind of work keeps its slider, as in the prototype, even work set to this server; with no upscale model in
-    // this catalogue its slider says so instead of disappearing
-    const upscale = screen.getByRole('group', { name: 'Enhance & upscale' });
-    expect(within(upscale).getByRole('status')).toHaveTextContent('Frameleaf Cloud offers no model for this work');
-
-    await fireEvent.click(within(picker).getByRole('radio', { name: /Descriptions · Best/ }));
-    await vi.waitFor(() =>
-      expect(sdkMock.setCloudMlModelChoice).toHaveBeenCalledWith({
-        group: CloudMlModelGroup.Descriptions,
-        cloudMlModelChoiceUpdateDto: { modelId: 'ms_M7QG26PT' },
-      }),
+    expect(await screen.findByRole('link', { name: en.frameleaf_cp_model_row_search_open })).toHaveAttribute(
+      'href',
+      expect.stringContaining('smart-search'),
     );
-    expect(within(picker).getByRole('radio', { name: /Descriptions · Best/ })).toBeChecked();
-    expect(sdkMock.setMlWorkloadRoute).not.toHaveBeenCalled();
-    // a model choice is not a setting: nothing waits for the settings bar
-    expect(store.draft.frameleafCloud!.cloudMl).not.toHaveProperty('models');
-  });
-
-  it("leaves this server's description model to Descriptions while cloud processing is off (FL-189)", async () => {
-    useDraft(false, 'Qwen/Qwen2.5-VL-3B-Instruct');
-    sdkMock.getCloudMlStatus.mockResolvedValue(status({ connection: CloudMlConnection.NotLinked }));
-    render(CloudMlSection);
-
-    await screen.findByRole('button', { name: en.frameleaf_cp_link_server });
-    // the prototype's Quality section is for cloud work; the local model is chosen on Descriptions
+    expect(screen.getByRole('link', { name: en.frameleaf_cp_model_row_descriptions_open })).toHaveAttribute(
+      'href',
+      expect.stringContaining('descriptions'),
+    );
+    expect(screen.getByRole('link', { name: en.frameleaf_cp_model_row_restoration_open })).toHaveAttribute(
+      'href',
+      expect.stringContaining('restoration'),
+    );
+    expect(screen.getByRole('link', { name: en.frameleaf_cp_model_row_studio_open })).toHaveAttribute(
+      'href',
+      expect.stringContaining('studio'),
+    );
     expect(screen.queryByRole('group', { name: 'Descriptions & tags' })).toBeNull();
+    expect(sdkMock.getCloudMlCatalog).not.toHaveBeenCalled();
+    expect(screen.getByLabelText(/Quantity/)).toBeInTheDocument();
   });
 
   it('lists recent cloud jobs with GPU time, workers, estimate and settled cost', async () => {
@@ -486,7 +551,7 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
     const recent = await screen.findByRole('region', { name: 'Recent cloud work' });
     const row = within(recent).getAllByRole('listitem')[0];
     expect(within(row).getByText(/estimated \$2\.26/)).toBeInTheDocument();
-    expect(within(row).getByText(/9 min GPU time · 5 workers/)).toBeInTheDocument();
+    expect(within(row).getByText(/9 min GPU time · 5 computers/)).toBeInTheDocument();
     expect(within(row).getByText('$2.21')).toBeInTheDocument();
   });
 

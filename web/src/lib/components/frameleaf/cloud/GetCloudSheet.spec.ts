@@ -1,5 +1,5 @@
 import { CloudHeartbeatField, CloudLinkState, LicenseState, type CloudStatusResponseDto } from '@frameleaf/sdk';
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
@@ -207,29 +207,219 @@ describe('GetCloudSheet (FL-544: one sheet on every gate)', () => {
     expect(await screen.findByText('Added to this server just now. Covers you only.')).toBeInTheDocument();
   });
 
-  it('asks only for AI credit when the licence is already here, and watches the wallet', async () => {
-    sdkMock.getLicenseStatus.mockResolvedValue(cloudLicense());
-    render(GetCloudSheet, { feature: 'processing', close: vi.fn() });
+  describe('from a job (the one set-up sheet)', () => {
+    const TOP_UP = 'https://frameleaf.cloud.test/wallet/top-up';
+    const agreed = (availableUsd: number) =>
+      ({
+        connection: 'ready',
+        enabled: true,
+        destination: { id: 'cloud-1', consent: { acknowledgedAt: '2026-10-01T00:00:00.000Z' } },
+        consent: { acceptedVersion: '2026-10-01', outdated: false, features: {} },
+        wallet: { availableUsd, topUpUrl: TOP_UP },
+      }) as never;
+    const notAgreed = (availableUsd = 0) =>
+      ({
+        connection: 'ready',
+        enabled: false,
+        destination: null,
+        consent: { acceptedVersion: null, outdated: false, features: {} },
+        wallet: { availableUsd, topUpUrl: TOP_UP },
+      }) as never;
+    const titles = () =>
+      screen
+        .getAllByRole('listitem')
+        .map((item) => within(item).getByText(/./, { selector: 'strong' }).textContent?.trim());
 
-    expect(await screen.findByText('AI credit to start')).toBeInTheDocument();
-    expect(screen.queryByText('Frameleaf Cloud', { selector: 'strong' })).toBeNull();
-    await fireEvent.click(screen.getByRole('button', { name: 'Continue to the Frameleaf store' }));
-    expect(sdkMock.startLicenseCheckout).not.toHaveBeenCalled();
-    expect(open).toHaveBeenCalledWith(
-      'https://frameleaf.cloud.test/wallet/top-up?amount=25',
-      '_blank',
-      'noopener,noreferrer',
-    );
-    sdkMock.getCloudMlStatus.mockResolvedValue({
-      wallet: { availableUsd: 25, topUpUrl: 'https://frameleaf.cloud.test/wallet/top-up' },
-    } as never);
-    await vi.advanceTimersByTimeAsync(5000);
-    // no gate asked to turn it on here, so the sheet ends on Done
-    expect(await screen.findByRole('button', { name: 'Done' })).toBeInTheDocument();
+    it('lists only what is missing, in order', async () => {
+      sdkMock.getCloudStatus.mockResolvedValue(status());
+      sdkMock.getCloudMlStatus.mockResolvedValue(notAgreed());
+      render(GetCloudSheet, { feature: 'processing', close: vi.fn() });
+
+      await screen.findByText('Link this server');
+      expect(titles()).toEqual([
+        'Link this server',
+        'Get a Server licence',
+        'Agree how your photos are handled',
+        'Add AI credit',
+      ]);
+      expect(screen.getByText('4 things left, then your job carries on and shows its price.')).toBeInTheDocument();
+    });
+
+    it('leaves out what the server already has', async () => {
+      sdkMock.getLicenseStatus.mockResolvedValue(cloudLicense());
+      sdkMock.getCloudMlStatus.mockResolvedValue(agreed(0));
+      render(GetCloudSheet, { feature: 'processing', close: vi.fn() });
+
+      await screen.findByRole('button', { name: 'Add $25' });
+      expect(titles()).toEqual(['Add AI credit']);
+      expect(screen.getByText('One thing left, then your job carries on and shows its price.')).toBeInTheDocument();
+    });
+
+    it('needs no plan for AI work: a licence is bought alone, from the store', async () => {
+      sdkMock.getCloudMlStatus.mockResolvedValue(agreed(5));
+      render(GetCloudSheet, { feature: 'processing', close: vi.fn() });
+
+      expect(await screen.findByText(/\$100(\.00)? once\. No plan needed for AI work\./)).toBeInTheDocument();
+      await fireEvent.click(screen.getByRole('button', { name: 'Buy licence' }));
+      await waitFor(() =>
+        expect(open).toHaveBeenCalledWith(
+          'https://frameleaf.cloud.test/store?product=supporter-server',
+          '_blank',
+          'noopener,noreferrer',
+        ),
+      );
+      expect(sdkMock.startLicenseCheckout).not.toHaveBeenCalled();
+    });
+
+    it('agreeing records the terms, adds the destination and turns Cloud on at once, then goes back to the job', async () => {
+      sdkMock.getLicenseStatus.mockResolvedValue(cloudLicense());
+      sdkMock.getCloudMlStatus.mockResolvedValue(notAgreed(10));
+      sdkMock.getCloudMlConsentTerms.mockResolvedValue({
+        requiredVersion: '2026-10-01',
+        recordedVersion: null,
+        summary: 'x',
+        textSha256: 'a'.repeat(64),
+        documentUrl: null,
+      } as never);
+      sdkMock.createCloudMlDestination.mockResolvedValue({ id: 'cloud-1' } as never);
+      sdkMock.grantMlDestinationConsent.mockResolvedValue({} as never);
+      const config = {
+        frameleafCloud: {
+          cloudMl: {
+            enabled: false,
+            routing: {
+              descriptions: 'local',
+              upscale: 'cloud',
+              restoration: 'local',
+              studio: 'both',
+              interpolation: 'local',
+            },
+          },
+        },
+      };
+      sdkMock.getAdminConfigWithRevision.mockResolvedValue({ config, revision: 'r1' } as never);
+      sdkMock.updateAdminConfigWithRevision.mockImplementation(() => {
+        sdkMock.getCloudMlStatus.mockResolvedValue(agreed(10));
+        return Promise.resolve({ config, revision: 'r2' } as never);
+      });
+      const onDone = vi.fn();
+      const close = vi.fn();
+      render(GetCloudSheet, { feature: 'processing', onDone, close });
+
+      const action = await screen.findByRole('button', { name: 'Agree and turn on' });
+      expect(action).toBeDisabled();
+      await fireEvent.click(screen.getByRole('checkbox', { name: 'I agree to the Frameleaf Cloud processing terms' }));
+      await waitFor(() => expect(action).toBeEnabled());
+      await fireEvent.click(action);
+
+      await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
+      expect(close).toHaveBeenCalledTimes(1);
+      expect(sdkMock.createCloudMlDestination).toHaveBeenCalledTimes(1);
+      expect(sdkMock.grantMlDestinationConsent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'cloud-1',
+          mlDestinationConsentRequestDto: expect.objectContaining({ version: '2026-10-01' }),
+        }),
+      );
+      const saved = sdkMock.updateAdminConfigWithRevision.mock.calls[0][0].adminConfigRevisionUpdateDto;
+      expect(saved.expectedRevision).toBe('r1');
+      expect(saved.config.frameleafCloud!.cloudMl).toMatchObject({
+        enabled: true,
+        // the first time Cloud is on, work at home may use it too; Cloud only stays as it is
+        routing: { descriptions: 'both', upscale: 'cloud', restoration: 'both', studio: 'both', interpolation: 'both' },
+      });
+    });
+
+    it('treats a missing search consent as the terms step not done, and records it', async () => {
+      sdkMock.getLicenseStatus.mockResolvedValue(cloudLicense());
+      sdkMock.getCloudMlStatus.mockResolvedValue(agreed(10));
+      sdkMock.getCloudMlConsentTerms.mockResolvedValue({
+        requiredVersion: '2026-10-01',
+        recordedVersion: '2026-10-01',
+        summary: 'x',
+        textSha256: 'a'.repeat(64),
+        documentUrl: null,
+      } as never);
+      sdkMock.grantMlDestinationConsent.mockResolvedValue({} as never);
+      const config = { frameleafCloud: { cloudMl: { enabled: true, routing: {} } } };
+      sdkMock.getAdminConfigWithRevision.mockResolvedValue({ config, revision: 'r1' } as never);
+      sdkMock.updateAdminConfigWithRevision.mockImplementation(() => {
+        sdkMock.getCloudMlStatus.mockResolvedValue({
+          ...(agreed(10) as object),
+          consent: { acceptedVersion: '2026-10-01', outdated: false, features: { smartSearch: true } },
+        } as never);
+        return Promise.resolve({ config, revision: 'r2' } as never);
+      });
+      const onDone = vi.fn();
+      render(GetCloudSheet, { feature: 'processing', consentFeature: 'smartSearch', onDone, close: vi.fn() });
+
+      const action = await screen.findByRole('button', { name: 'Agree and turn on' });
+      expect(onDone).not.toHaveBeenCalled();
+      expect(screen.getByTestId('cs-feature-consent')).toHaveTextContent('Prepare smart search on Frameleaf Cloud');
+      await waitFor(() =>
+        expect(sdkMock.getCloudMlConsentTerms).toHaveBeenCalledWith(expect.objectContaining({ smartSearch: true })),
+      );
+      await fireEvent.click(screen.getByRole('checkbox', { name: 'I agree to the Frameleaf Cloud processing terms' }));
+      await waitFor(() => expect(action).toBeEnabled());
+      await fireEvent.click(action);
+
+      await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
+      expect(sdkMock.grantMlDestinationConsent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mlDestinationConsentRequestDto: expect.objectContaining({
+            features: expect.objectContaining({ smartSearch: true }),
+          }),
+        }),
+      );
+    });
+
+    it('moves on from paying when the licence arrives, with credit still to add', async () => {
+      sdkMock.getCloudMlStatus.mockResolvedValue(agreed(0));
+      render(GetCloudSheet, { feature: 'processing', close: vi.fn() });
+
+      await fireEvent.click(await screen.findByRole('button', { name: 'Buy licence' }));
+      expect(await screen.findByRole('button', { name: 'Open the store again' })).toBeInTheDocument();
+
+      sdkMock.refreshLicense.mockResolvedValue(cloudLicense());
+      await vi.advanceTimersByTimeAsync(5000);
+
+      expect(await screen.findByRole('button', { name: 'Add $25' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Open the store again' })).toBeNull();
+    });
+
+    it('goes straight back to the job when nothing is missing', async () => {
+      sdkMock.getLicenseStatus.mockResolvedValue(cloudLicense());
+      sdkMock.getCloudMlStatus.mockResolvedValue(agreed(10));
+      const onDone = vi.fn();
+      const close = vi.fn();
+      render(GetCloudSheet, { feature: 'processing', onDone, close });
+      await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
+      expect(close).toHaveBeenCalledTimes(1);
+    });
+
+    it('watches the wallet after a top-up and returns to the job', async () => {
+      sdkMock.getLicenseStatus.mockResolvedValue(cloudLicense());
+      sdkMock.getCloudMlStatus.mockResolvedValue(agreed(0));
+      const onDone = vi.fn();
+      render(GetCloudSheet, { feature: 'processing', onDone, close: vi.fn() });
+
+      await fireEvent.click(await screen.findByRole('button', { name: 'Add $25' }));
+      expect(open).toHaveBeenCalledWith(`${TOP_UP}?amount=25`, '_blank', 'noopener,noreferrer');
+      sdkMock.getCloudMlStatus.mockResolvedValue(agreed(25));
+      await vi.advanceTimersByTimeAsync(5000);
+      await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
+    });
+
+    it('asks for more credit when a job needs more held than is there', async () => {
+      sdkMock.getLicenseStatus.mockResolvedValue(cloudLicense());
+      sdkMock.getCloudMlStatus.mockResolvedValue(agreed(5));
+      render(GetCloudSheet, { feature: 'processing', creditNeeded: 40, close: vi.fn() });
+      expect(await screen.findByRole('button', { name: 'Add $50' })).toBeInTheDocument();
+    });
   });
 
   it('buys a licence alone from the store, never the combined checkout, when only the licence is missing', async () => {
-    render(GetCloudSheet, { feature: 'processing', close: vi.fn() });
+    render(GetCloudSheet, { feature: 'buddy', close: vi.fn() });
     expect(await screen.findByText('A lifetime Server licence')).toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: 'Continue to the Frameleaf store' }));
     await waitFor(() =>

@@ -1,5 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import { RESTORATION_MODEL_ID } from 'src/dtos/asset-restoration.dto.js';
 import { MediaOperationSchema } from 'src/dtos/media-operation.dto.js';
 import { MediaOperationDestinationSchema, StudioExportScopeSchema, StudioExportVersionStateSchema } from 'src/enum.js';
 import { STUDIO_EXPORT_AUDIO, StudioExportMasteringSchema } from 'src/utils/studio-export-contract.js';
@@ -149,6 +150,13 @@ const StudioExportCreateSchema = z
           ])
           .describe('How many frames each frame becomes'),
         destinationId: z.uuidv4().describe('Where the Smooth motion job runs; Frameleaf Cloud is confirmed separately'),
+        model: z
+          .string()
+          .regex(RESTORATION_MODEL_ID)
+          .optional()
+          .describe(
+            'The model the computer runs it with; one it reported. Left out, the computer uses its usual model.',
+          ),
       })
       .optional()
       .describe(

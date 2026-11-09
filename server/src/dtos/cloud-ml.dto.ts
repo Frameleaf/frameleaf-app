@@ -80,6 +80,35 @@ const CloudMlWalletSchema = z
   })
   .meta({ id: 'CloudMlWalletDto' });
 
+const CloudMlWaitingBatchSchema = z
+  .object({
+    photos: z.int().min(0).describe('Photos that will go in the next batch of this kind of work'),
+    nextBatchAt: z
+      .string()
+      .nullable()
+      .describe('When the next batch goes at the latest (50 photos or 10 minutes); null with no photos waiting'),
+    noMatchingModel: z
+      .int()
+      .min(0)
+      .describe("Photos waiting because Frameleaf Cloud doesn't offer this server's own model at the last check"),
+  })
+  .meta({ id: 'CloudMlWaitingBatchDto' });
+
+const CloudMlWaitingSchema = z
+  .object({
+    smartSearch: CloudMlWaitingBatchSchema,
+    faces: CloudMlWaitingBatchSchema,
+    queuedWhileOff: z
+      .int()
+      .min(0)
+      .describe('Smart search and faces photos held because Frameleaf Cloud processing is turned off'),
+    descriptionsForBackfill: z
+      .int()
+      .min(0)
+      .describe('Photos without a description that wait for a backfill because automatic descriptions are off'),
+  })
+  .meta({ id: 'CloudMlWaitingDto' });
+
 const CloudMlStatusResponseSchema = z
   .object({
     connection: CloudMlConnectionSchema,
@@ -95,6 +124,7 @@ const CloudMlStatusResponseSchema = z
       .describe(
         "Smart search and faces work Frameleaf Cloud offers with exactly this server's own models, at the last check",
       ),
+    waiting: CloudMlWaitingSchema.describe('Work that has not started yet, and why'),
     checkedAt: z.string(),
   })
   .meta({ id: 'CloudMlStatusResponseDto' });
@@ -113,6 +143,13 @@ const CloudMlModelSchema = z
       'The workload this model serves, or null for one this server does not know',
     ),
     name: z.string(),
+    modelName: z.string().describe('The name of the model itself, for display; never sent back'),
+    localModel: z
+      .string()
+      .nullable()
+      .describe(
+        "For smart search and faces, the name of the server's own model this entry runs (machine-learning settings), or null for every other workload",
+      ),
     description: z.string(),
     fingerprint: z.string(),
     pricingUnit: z.string().nullable().describe('What one price unit is (for example an image or a video minute)'),

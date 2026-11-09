@@ -56,6 +56,7 @@ import {
   MlDestinationRefusedError,
   hasRequiredConsent,
   isCloudDestination,
+  liveCloudRouting,
   readCloudModelChoices,
   restorationRoleConflict,
   selectMlDestination,
@@ -82,9 +83,21 @@ import {
   restorationWorkDir,
   workloadForMode,
 } from 'src/utils/restoration.js';
-/** Why a local Smooth motion is refused while the administrator routes interpolation to the cloud only. */
+/** Why work is refused on a computer at home while an administrator has set it to Frameleaf Cloud. */
 const CLOUD_ONLY_DETAIL =
-  'Smooth motion is set to Frameleaf Cloud only under Where each job runs; confirm it as a Frameleaf Cloud job';
+  'This work is set to Frameleaf Cloud under Where work runs; confirm it as a Frameleaf Cloud job';
+
+/** The Where work runs row behind a request: Smooth motion, Enhance for a photo, or video restoration. */
+const routeOf = (
+  smooth: boolean,
+  sourceType: AssetRestorationSourceType,
+  routing: Record<'upscale' | 'restoration' | 'interpolation', 'local' | 'both' | 'cloud'>,
+) => {
+  if (smooth) {
+    return routing.interpolation;
+  }
+  return sourceType === AssetRestorationSourceType.Image ? routing.upscale : routing.restoration;
+};
 
 /** Window over which a destination's measured throughput is averaged for estimates. */
 const ESTIMATE_WINDOW_DAYS = 30;
@@ -243,8 +256,8 @@ export class AssetRestorationService {
     const workload = workloadForMode(mode);
     const output = cappedOutputSize(source.width, source.height, upscale);
     const routing = await this.routing();
-    const route = smooth ? routing.interpolation : routing.restoration;
-    const cloudOnly = smooth && route === 'cloud';
+    const route = routeOf(smooth, source.sourceType, routing);
+    const cloudOnly = route === 'cloud';
     const rows = await this.mlDestinationRepository.getAll();
     const since = windowStart(ESTIMATE_WINDOW_DAYS);
     // FL-186: Frameleaf Cloud is judged with the model an administrator chose for this mode
@@ -267,7 +280,7 @@ export class AssetRestorationService {
         choices,
       });
       if (verdict.admitted && cloudOnly && row.kind !== MlDestinationKind.FrameleafCloud) {
-        // FL-162: Smooth motion is set to Frameleaf Cloud only under Where each job runs.
+        // Set to Frameleaf Cloud under Where work runs, even when this computer could run it.
         verdict = { admitted: false, refusal: MlAdmissionRefusal.WorkloadNotAllowed, detail: CLOUD_ONLY_DETAIL };
       }
       if (verdict.admitted) {
@@ -361,6 +374,7 @@ export class AssetRestorationService {
     exportName: string;
     factor: SmoothMotionFactor;
     destinationId: string;
+    model?: string;
   }): Promise<AssetRestorationResponseDto | null> {
     const destination = await this.mlDestinationRepository.getById(request.destinationId);
     const tell = (level: NotificationLevel, title: string, description: string) =>
@@ -393,6 +407,7 @@ export class AssetRestorationService {
           smoothMotionFactor: request.factor,
           keepGrain: false,
           destinationId: request.destinationId,
+          ...(request.model && { model: request.model }),
           region: DEFAULT_RESTORATION_REGION,
         },
       );
@@ -445,6 +460,17 @@ export class AssetRestorationService {
     // Consent, allow-list, budget, health and the worker's role are all decided here, before a row exists.
     await this.admitRestoration(workload, dto.destinationId, MediaOperationKind.RestorationPreview);
     const destination = await this.requireDestination(dto.destinationId);
+    if (
+      destination.kind !== MlDestinationKind.FrameleafCloud &&
+      routeOf(smooth, source.sourceType, await this.routing()) === 'cloud'
+    ) {
+      throw new MlDestinationRefusedError(
+        MlAdmissionRefusal.WorkloadNotAllowed,
+        workload,
+        dto.destinationId,
+        CLOUD_ONLY_DETAIL,
+      );
+    }
     refuseUnofferedModel(destination, dto);
     const output = cappedOutputSize(source.width, source.height, smooth ? 1 : dto.upscale);
     const sample = await this.mlDestinationRepository.getThroughput(
@@ -827,7 +853,7 @@ export class AssetRestorationService {
       { configRepo: this.configRepository, metadataRepo: this.systemMetadataRepository, logger: this.logger },
       { withCache: true },
     );
-    return config.frameleafCloud.cloudMl.routing;
+    return liveCloudRouting(config.frameleafCloud.cloudMl);
   }
 
   private async requireDestination(id: string): Promise<MlDestinationRow> {

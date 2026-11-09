@@ -20,6 +20,8 @@ import {
   MlAdmissionRefusal,
   MlDestinationKind,
   MlWorkload,
+  NotificationLevel,
+  NotificationType,
   QueueName,
   SystemMetadataKey,
 } from 'src/enum.js';
@@ -90,7 +92,7 @@ import {
   pausedMessageOf,
 } from 'src/utils/frameleaf-cloud.js';
 import { ImageMetadataStripError, stripImageMetadata } from 'src/utils/image-metadata-strip.js';
-import { handlePromiseError } from 'src/utils/misc.js';
+import { handlePromiseError, isCustomClipModelName } from 'src/utils/misc.js';
 import {
   ML_BUDGET_WINDOW_DAYS,
   MlDestinationNotFoundError,
@@ -314,7 +316,11 @@ export class CloudLibraryBatchService extends BaseService {
           continue;
         }
         const appWorkload = appWorkloadOfLibrary(workload);
-        const destination = await cloudLibraryDestination(this.mlDestinationRepository, appWorkload);
+        // A person's own search model is never offered to the Cloud, whatever the last check of it said.
+        const destination =
+          workload === 'clip' && isCustomClipModelName(config.machineLearning.clip.modelName)
+            ? undefined
+            : await cloudLibraryDestination(this.mlDestinationRepository, appWorkload);
         if (!destination) {
           // the work is routed elsewhere now: the photos go back to their own jobs
           for (const item of waiting) {
@@ -1515,12 +1521,34 @@ export class CloudLibraryBatchService extends BaseService {
    * left the queue when the batch was made): they run on this server instead, as a refused result does (FL-455).
    */
   private async handBack({ snapshot, result }: Pick<BatchRun, 'snapshot' | 'result'>) {
-    await this.backToTheirJobs(
-      result.items
-        .filter((item) => !item.outcome && !item.refused)
-        .map(({ assetId }) => ({ workload: snapshot.workload, assetId })),
-      true,
-    );
+    const items = result.items
+      .filter((item) => !item.outcome && !item.refused)
+      .map(({ assetId }) => ({ workload: snapshot.workload, assetId }));
+    await this.backToTheirJobs(items, true);
+    await this.tellHandedBack(snapshot.workload, items.length);
+  }
+
+  /** Work the person set to Frameleaf Cloud ran here instead, so they are told. */
+  private async tellHandedBack(workload: string, count: number) {
+    if (count === 0) {
+      return;
+    }
+    const feature = workload === 'clip' ? 'Visual search' : 'Faces';
+    try {
+      const admins = (await this.userRepository.getList()).filter((user) => user.isAdmin && !user.deletedAt);
+      for (const admin of admins) {
+        await this.notificationRepository.create({
+          userId: admin.id,
+          type: NotificationType.Custom,
+          level: NotificationLevel.Warning,
+          title: `${feature} used this server for some photos`,
+          description: `A Frameleaf Cloud batch couldn’t finish, so ${count} ${count === 1 ? 'photo is' : 'photos are'} being read on this server instead.`,
+          data: JSON.stringify({ link: '/user-settings?area=processing&section=computers' }),
+        });
+      }
+    } catch (error) {
+      this.logger.warn(`Could not tell administrators about the batch handed back: ${errorMessage(error)}`);
+    }
   }
 
   /** Write the batch's result; false when the claim is gone or a cancel arrived (then it is handled). */

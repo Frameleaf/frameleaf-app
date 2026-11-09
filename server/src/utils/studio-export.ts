@@ -110,13 +110,17 @@ export type StudioExportPublishSnapshot = {
  * its own Smooth motion job, preview first: on a home worker it is queued, and for Frameleaf Cloud the
  * owner confirms and pays for it separately. The export is never sent to Frameleaf Cloud.
  */
-export type StudioExportSmoothMotion = { factor: 2 | 4 | 8; destinationId: string };
+export type StudioExportSmoothMotion = { factor: 2 | 4 | 8; destinationId: string; model?: string };
 
 export const parseStudioExportSmoothMotion = (value: unknown): StudioExportSmoothMotion | null => {
   const candidate = value as Partial<StudioExportSmoothMotion> | null | undefined;
   const factor = candidate?.factor;
   return factor && ([2, 4, 8] as const).includes(factor) && typeof candidate?.destinationId === 'string'
-    ? { factor, destinationId: candidate.destinationId }
+    ? {
+        factor,
+        destinationId: candidate.destinationId,
+        ...(typeof candidate.model === 'string' && { model: candidate.model }),
+      }
     : null;
 };
 

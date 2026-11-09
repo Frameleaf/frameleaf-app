@@ -3,7 +3,9 @@ import { SystemConfig } from 'src/dtos/config.dto.js';
 import { AssetFileType, AssetVisibility, FrameleafWorker, JobName, JobStatus, MlWorkload } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { JobDependencyUnavailable } from 'src/queue/dependency.js';
+import { CustomClipModelRefusedError } from 'src/repositories/machine-learning.repository.js';
 import { SmartInfoService } from 'src/services/smart-info.service.js';
+import { CUSTOM_CLIP_MODELS_KEY } from 'src/types.js';
 import { getCLIPModelInfo } from 'src/utils/misc.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
@@ -282,6 +284,38 @@ describe(SmartInfoService.name, () => {
       expect(mocks.search.upsert).not.toHaveBeenCalled();
     });
 
+    it("keeps a person's own search model off Frameleaf Cloud, even when search is routed there", async () => {
+      const asset = AssetFactory.from().file({ type: AssetFileType.Preview }).build();
+      mocks.assetJob.getForClipEncoding.mockResolvedValue(asset);
+      mocks.machineLearning.encodeImage.mockResolvedValue('[0.01, 0.02, 0.03]');
+      mocks.systemMetadata.get.mockResolvedValue({
+        machineLearning: { clip: { modelName: 'someone/my-search-model' } },
+      });
+      mocks.mlDestination.getById.mockImplementation((id) =>
+        Promise.resolve(
+          id === mlDestinationStub.local.id ? mlDestinationStub.local : mlDestinationStub.frameleafCloudConsented,
+        ),
+      );
+      mocks.mlDestination.getRoute.mockResolvedValue({
+        workload: MlWorkload.Clip,
+        destinationId: mlDestinationStub.frameleafCloudConsented.id,
+        modelId: null,
+        updatedAt: new Date(),
+      } as never);
+      mocks.mlDestination.getAll.mockResolvedValue([
+        mlDestinationStub.frameleafCloudConsented,
+        mlDestinationStub.local,
+      ]);
+
+      expect(await sut.handleEncodeClip({ id: asset.id })).toEqual(JobStatus.Success);
+
+      expect(mocks.machineLearning.encodeImage).toHaveBeenCalledWith(
+        expect.objectContaining({ destinationId: mlDestinationStub.local.id }),
+        asset.files[0].path,
+        expect.objectContaining({ modelName: 'someone/my-search-model' }),
+      );
+    });
+
     it("makes a refused Frameleaf Cloud result on this server's own machine learning (FL-455)", async () => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Preview }).build();
       mocks.assetJob.getForClipEncoding.mockResolvedValue(asset);
@@ -393,6 +427,101 @@ describe(SmartInfoService.name, () => {
       );
       expect(mocks.search.upsert).toHaveBeenCalledWith(asset.id, '[0.01, 0.02, 0.03]');
       expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.SmartSearchPostprocess, data: { id: asset.id } });
+    });
+  });
+
+  describe('a custom Hugging Face model', () => {
+    const modelName = 'someone/my-search-model';
+    const custom = (name = modelName) =>
+      ({ machineLearning: { enabled: true, clip: { enabled: true, modelName: name } } }) as SystemConfig;
+    const published = custom('ViT-B-32__openai');
+
+    beforeEach(() => {
+      mocks.machineLearning.getCustomClipDimSize.mockResolvedValue(640);
+    });
+
+    it('accepts a new name and remembers the size the worker learned', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ 'other/model': 256 });
+
+      await expect(sut.onConfigValidate({ newConfig: custom(), oldConfig: published })).resolves.toBeUndefined();
+
+      expect(mocks.machineLearning.getCustomClipDimSize).toHaveBeenCalledWith(expect.anything(), modelName);
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(CUSTOM_CLIP_MODELS_KEY, {
+        'other/model': 256,
+        [modelName]: 640,
+      });
+    });
+
+    it('fails the save with the reason a refused repository gives', async () => {
+      const reason = "The Hugging Face model 'someone/my-search-model' can't be used for search: it's missing x.";
+      mocks.machineLearning.getCustomClipDimSize.mockRejectedValue(new CustomClipModelRefusedError(reason));
+
+      await expect(sut.onConfigValidate({ newConfig: custom(), oldConfig: published })).rejects.toThrow(reason);
+
+      expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
+    });
+
+    it('fails the save in plain words when the worker cannot be reached', async () => {
+      mocks.machineLearning.getCustomClipDimSize.mockRejectedValue(new Error('fetch failed'));
+
+      await expect(sut.onConfigValidate({ newConfig: custom(), oldConfig: published })).rejects.toThrow(
+        "Frameleaf couldn't check 'someone/my-search-model'",
+      );
+    });
+
+    it('does not ask the worker again when another setting is saved', async () => {
+      await expect(sut.onConfigValidate({ newConfig: custom(), oldConfig: custom() })).resolves.toBeUndefined();
+
+      expect(mocks.machineLearning.getCustomClipDimSize).not.toHaveBeenCalled();
+    });
+
+    it('does not treat a published model with an owner as custom, or a malformed name as a repository', async () => {
+      await expect(
+        sut.onConfigValidate({ newConfig: custom('immich-app/ViT-B-32__openai'), oldConfig: published }),
+      ).resolves.toBeUndefined();
+      await expect(sut.onConfigValidate({ newConfig: custom('../etc/passwd'), oldConfig: published })).rejects.toThrow(
+        'Unknown CLIP model',
+      );
+
+      expect(mocks.machineLearning.getCustomClipDimSize).not.toHaveBeenCalled();
+    });
+
+    it('resizes the vector columns to the learned size and clears results on a change', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ [modelName]: 640 });
+      mocks.database.getDimensionSize.mockResolvedValue(512);
+
+      await sut.onConfigUpdate({ newConfig: custom(), oldConfig: published });
+
+      expect(mocks.database.setDimensionSize).toHaveBeenCalledWith(640);
+    });
+
+    it('clears search results when the size is unchanged, like any other model', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ [modelName]: 512 });
+      mocks.database.getDimensionSize.mockResolvedValue(512);
+
+      await sut.onConfigUpdate({ newConfig: custom(), oldConfig: published });
+
+      expect(mocks.database.setDimensionSize).not.toHaveBeenCalled();
+      expect(mocks.database.deleteAllSearchEmbeddings).toHaveBeenCalled();
+    });
+
+    it('waits instead of breaking startup when the size cannot be learned', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({});
+      mocks.machineLearning.getCustomClipDimSize.mockRejectedValue(new Error('fetch failed'));
+
+      await expect(sut.onConfigInit({ newConfig: custom() })).resolves.toBeUndefined();
+
+      expect(mocks.database.setDimensionSize).not.toHaveBeenCalled();
+      expect(mocks.database.deleteAllSearchEmbeddings).not.toHaveBeenCalled();
+    });
+
+    it('queues nothing until the size is known', async () => {
+      mocks.systemMetadata.get.mockResolvedValueOnce({ machineLearning: custom().machineLearning });
+      mocks.systemMetadata.get.mockResolvedValue({});
+
+      await expect(sut.handleQueueEncodeClip({ force: false })).resolves.toBe(JobStatus.Failed);
+
+      expect(mocks.job.queueSelection).not.toHaveBeenCalled();
     });
   });
 

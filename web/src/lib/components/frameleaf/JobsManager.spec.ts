@@ -437,7 +437,7 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
     await screen.findAllByRole('button', { name: /^Detect faces/ });
     const table = screen.getByRole('table');
     expect(within(table).getByRole('columnheader', { name: 'Account' })).toBeInTheDocument();
-    expect(within(table).getByRole('columnheader', { name: 'Worker' })).toBeInTheDocument();
+    expect(within(table).getByRole('columnheader', { name: 'Computer' })).toBeInTheDocument();
     const [, first, second, third] = within(table).getAllByRole('row');
     expect(within(first).getByText('Ada Lovelace')).toBeInTheDocument();
     expect(within(first).getByText('Frameleaf Cloud').closest('span')).toHaveAttribute('title', 'Studio cloud');
@@ -449,7 +449,7 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
     await fireEvent.click(within(first).getByRole('button', { name: /^Detect faces/ }));
     const detail = screen.getByRole('dialog', { name: 'Detect faces' });
     expect(within(detail).getByText('Account').nextElementSibling).toHaveTextContent('Ada Lovelace');
-    expect(within(detail).getByText('Worker').nextElementSibling).toHaveTextContent('Frameleaf Cloud · Studio cloud');
+    expect(within(detail).getByText('Computer').nextElementSibling).toHaveTextContent('Frameleaf Cloud · Studio cloud');
   });
 
   it('retries the failed jobs after the review, without an acknowledgement', async () => {

@@ -55,6 +55,7 @@ import {
   healthFromProbe,
   insufficientMemoryDetail,
   isCloudDestination,
+  isCloudOnly,
   mayMixRoles,
   mlWorkerRoleOf,
   readCloudModelChoices,
@@ -794,10 +795,11 @@ export class MlDestinationService extends BaseService {
    * carries fresh conformance evidence on the engine digest its worker is pinned to (FL-42).
    */
   async getCapabilities(): Promise<MlCapabilitiesResponseDto> {
-    const [rows, routes, sessions] = await Promise.all([
+    const [rows, routes, sessions, config] = await Promise.all([
       this.mlDestinationRepository.getAll(),
       this.mlDestinationRepository.getRoutes(),
       this.renderWorkerRepository.listLiveSessions(),
+      this.getConfig({ withCache: true }),
     ]);
     const now = new Date();
     const evaluated = await Promise.all(
@@ -877,6 +879,7 @@ export class MlDestinationService extends BaseService {
         workload,
         available: destinations.some((destination) => destination.available),
         routedDestinationId: routed.get(workload) ?? null,
+        cloudOnly: isCloudOnly(config.frameleafCloud.cloudMl, workload),
         destinations,
       };
     });

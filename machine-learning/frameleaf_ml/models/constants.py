@@ -1,3 +1,4 @@
+import re
 from typing import NamedTuple
 
 from frameleaf_ml.config import clean_name
@@ -244,7 +245,7 @@ WEBLATE_TO_FLORES200 = {
 }
 
 
-def get_model_source(model_name: str) -> ModelSource | None:
+def _published_model_source(model_name: str) -> ModelSource | None:
     cleaned_name = clean_name(model_name)
 
     if cleaned_name in _INSIGHTFACE_MODELS:
@@ -260,6 +261,25 @@ def get_model_source(model_name: str) -> ModelSource | None:
         return ModelSource.PADDLE
 
     return None
+
+
+_HUGGING_FACE_REPOSITORY = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,95}/[A-Za-z0-9][A-Za-z0-9_.-]{0,95}")
+
+
+def is_custom_clip_model(model_name: str) -> bool:
+    """A well-formed ``org/name`` outside the published lists: a person's own Hugging Face search model."""
+    return (
+        _HUGGING_FACE_REPOSITORY.fullmatch(model_name) is not None
+        and ".." not in model_name
+        and "--" not in model_name
+        and _published_model_source(model_name) is None
+    )
+
+
+def get_model_source(model_name: str) -> ModelSource | None:
+    if is_custom_clip_model(model_name):
+        return ModelSource.OPENCLIP
+    return _published_model_source(model_name)
 
 
 class TranscribeModelFile(NamedTuple):

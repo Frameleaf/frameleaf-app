@@ -27,7 +27,7 @@ describe('HelpFeedbackDialog (S-3)', () => {
     expect(rows.map((link) => [link.querySelector('strong')?.textContent, link.getAttribute('href')])).toEqual([
       ['Help Center', 'https://frameleaf.app/help/'],
       ['Documentation', 'https://frameleaf.app/docs/start/introduction/'],
-      ['Get help on Discord', 'https://discord.gg/cN3U3mv4'],
+      ['Get help on Discord', 'https://discord.gg/NrQuxCMhh5'],
       ['Community chat', 'https://frameleaf.app/help/community'],
       ['Report a problem', 'https://frameleaf.app/help/community/c/bug-reports'],
       ['Feature requests', 'https://frameleaf.app/help/community/c/ideas-feedback'],
@@ -78,7 +78,7 @@ describe('HelpFeedbackDialog (S-3)', () => {
     expect(screen.getByRole('link', { name: /Help Center/ })).toHaveAttribute('href', 'https://frameleaf.app/help/');
     expect(screen.getByRole('link', { name: /Get help on Discord/ })).toHaveAttribute(
       'href',
-      'https://discord.gg/cN3U3mv4',
+      'https://discord.gg/NrQuxCMhh5',
     );
   });
 

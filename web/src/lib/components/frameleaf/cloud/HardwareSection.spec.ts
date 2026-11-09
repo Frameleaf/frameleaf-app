@@ -95,7 +95,7 @@ describe('Graphics card check (FL-364)', () => {
 
     expect(await screen.findByRole('heading', { name: 'Your graphics card is working' })).toBeInTheDocument();
     expect(
-      status().getByText(/NVIDIA GeForce RTX 4090 is speeding up AI features\. Video uses the processor\./),
+      status().getByText(/NVIDIA GeForce RTX 4090 is speeding up search and recognition\. Video uses the processor\./),
     ).toBeInTheDocument();
     expect(can('Visual search')).toContain('Works here');
     expect(can('Descriptions & tags')).toContain('Works here');
@@ -115,22 +115,24 @@ describe('Graphics card check (FL-364)', () => {
     sdkMock.runHardwareCheck.mockResolvedValue(check({ ml: container({ reachable: false }) }));
     render(HardwareSection);
 
-    expect(await screen.findByRole('heading', { name: 'AI features are not running' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Search and recognition are not running' })).toBeInTheDocument();
     expect(status().getByText(/isn’t answering, so it couldn’t be checked\. Video is working\./)).toBeInTheDocument();
     expect(status().getByText('Not answering')).toBeInTheDocument();
-    expect(status().getByRole('link', { name: 'Turn on AI features' })).toHaveAttribute(
+    expect(status().getByRole('link', { name: 'Turn on search and recognition' })).toHaveAttribute(
       'href',
       expect.stringContaining('area=intelligence'),
     );
     for (const name of ['Visual search', 'Descriptions & tags', 'Transcripts & captions']) {
-      expect(can(name)).toBe(`${name} Can’t tell until AI features answer. Can’t tell yet`);
+      expect(can(name)).toBe(`${name} Can’t tell until search and recognition answer. Can’t tell yet`);
     }
     // Studio export is the video side's, and the server says nothing connected can do it.
     expect(can('Studio export')).toContain('Can’t run here');
 
     await fireEvent.click(status().getByRole('button', { name: 'Try again' }));
     expect(sdkMock.runHardwareCheck).toHaveBeenCalledTimes(1);
-    expect(await screen.findByText('Checked again. AI features still aren’t answering.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Checked again. Search and recognition still aren’t answering.'),
+    ).toBeInTheDocument();
   });
 
   it('reads Studio export from what the server says is connected, not from the processor', async () => {
@@ -381,7 +383,7 @@ describe('Graphics card check (FL-364)', () => {
     await screen.findByRole('heading', { name: 'Your graphics card is working' });
     const technical = within(screen.getByText('Technical details').closest('details')!);
     expect(technical.getByText('Video: the server container')).toBeInTheDocument();
-    expect(technical.getByText('AI features: the machine-learning container')).toBeInTheDocument();
+    expect(technical.getByText('Search and recognition: the machine-learning container')).toBeInTheDocument();
     expect(technical.getAllByText('On the computer')).toHaveLength(2);
     expect(technical.getAllByText('Visible to Frameleaf')).toHaveLength(2);
     expect(technical.getByText('Driver 560.35 · CUDA 12.4')).toBeInTheDocument();

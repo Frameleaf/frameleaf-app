@@ -78,6 +78,29 @@ export const cloudRouteAllows = (
   return !!kind && cloudMl.routing[kind] !== 'local';
 };
 
+/**
+ * Where each kind of work may run now. "Cloud only" holds only while Frameleaf Cloud is on: with it off the
+ * work may run at home again, and turning Cloud back on brings the saved choice back.
+ */
+export const liveCloudRouting = ({
+  enabled,
+  routing,
+}: Pick<SystemConfig['frameleafCloud']['cloudMl'], 'enabled' | 'routing'>): typeof routing =>
+  enabled
+    ? routing
+    : (Object.fromEntries(
+        Object.entries(routing).map(([kind, mode]) => [kind, mode === 'cloud' ? 'both' : mode]),
+      ) as typeof routing);
+
+/** Whether this workload is set to Frameleaf Cloud only, and that holds now. */
+export const isCloudOnly = (
+  cloudMl: Pick<SystemConfig['frameleafCloud']['cloudMl'], 'enabled' | 'routing'>,
+  workload: MlWorkload,
+): boolean => {
+  const kind = ROUTED_KIND[workload];
+  return !!kind && liveCloudRouting(cloudMl)[kind] === 'cloud';
+};
+
 /** Window over which a destination's spend is compared with its budget limit. */
 export const ML_BUDGET_WINDOW_DAYS = 30;
 

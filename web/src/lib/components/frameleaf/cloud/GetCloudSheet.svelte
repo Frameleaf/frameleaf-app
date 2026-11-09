@@ -6,6 +6,11 @@
    * shows the done steps ticked, starts the combined licence-and-plan purchase, waits for the
    * server to pick the plan up, and ends on the feature's own button. Payment happens in the
    * Frameleaf store, never here.
+   *
+   * From a Frameleaf Cloud job (`processing`) it is the one set-up sheet (prototype `CloudSetupSheet.jsx`):
+   * only what is still missing, in order (link, licence, terms, credit), and it hands back to the job as
+   * soon as the last one is done. AI work needs a Server licence and no plan. Agreeing to the terms here
+   * records them and turns Cloud on at once.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
@@ -13,14 +18,37 @@
   import CloudPendingCode from '$lib/components/frameleaf/cloud/CloudPendingCode.svelte';
   import { cloudPlanPrice, formatUsd } from '$lib/frameleaf/cloud';
   import { topUpCheckoutUrl } from '$lib/frameleaf/cloud-ml';
-  import { FEATURES, haveFrom, missing, type CloudFeature, type CloudLack } from '$lib/frameleaf/cloud-rules';
+  import {
+    FEATURES,
+    haveFrom,
+    missing,
+    type CloudConsentFeature,
+    type CloudFeature,
+    type CloudLack,
+  } from '$lib/frameleaf/cloud-rules';
+  import {
+    isConsentOutdatedError,
+    isFirstCloudTurnOn,
+    loadCloudConsentTerms,
+    recordCloudConsent,
+    turnOnCloudProcessing,
+  } from '$lib/frameleaf/cloud-setup';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
+  import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
-  import { Licence, Plan, getCloudMlStatus, startLicenseCheckout, type CloudMlWalletDto } from '@frameleaf/sdk';
+  import {
+    Licence,
+    Plan,
+    getCloudMlStatus,
+    startLicenseCheckout,
+    type CloudMlConsentTermsDto,
+    type CloudMlStatusResponseDto,
+    type CloudMlWalletDto,
+  } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import { mdiArrowRight, mdiCartOutline, mdiCheck, mdiCheckCircle, mdiClockOutline } from '@mdi/js';
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
   type Props = {
@@ -29,9 +57,13 @@
     onDone?: () => void;
     /** FL-544: the top-up page a job refusal carried, so a member who may spend is not sent to an administrator. */
     topUpUrl?: string | null;
+    /** How much AI credit the job needs held, when a refusal said so. */
+    creditNeeded?: number | null;
+    /** FL-455: the consent this work needs on top of the terms; until it is given the terms step isn't done. */
+    consentFeature?: CloudConsentFeature | null;
     close: () => void;
   };
-  let { feature, onDone, topUpUrl = null, close }: Props = $props();
+  let { feature, onDone, topUpUrl = null, creditNeeded = null, consentFeature = null, close }: Props = $props();
 
   /** The sheet polls this often while the store tab is open. */
   const POLL_MS = 5000;
@@ -40,12 +72,26 @@
   const CREDIT_AMOUNTS = [25, 50, 100];
 
   const isAdmin = authManager.user.isAdmin;
+  /** Opened from a Frameleaf Cloud job: only what is missing, and back to the job when it is done. */
+  const forJob = feature === 'processing';
   const spec = $derived(feature ? FEATURES[feature] : null);
 
   let wallet = $state<Pick<CloudMlWalletDto, 'availableUsd' | 'topUpUrl'> | null>(null);
+  /** The Cloud processing status, for the terms step: Cloud on, and which terms were agreed to. */
+  let processing = $state<CloudMlStatusResponseDto | null>(null);
   /** This sheet's own read of the server has landed; the manager may hold an older page's state until then. */
   let ready = $state(false);
-  const have = $derived(haveFrom(cloudManager.status, cloudManager.license, cloudManager.products, wallet));
+  const have = $derived(
+    haveFrom(
+      cloudManager.status,
+      cloudManager.license,
+      cloudManager.products,
+      wallet,
+      forJob ? processing : undefined,
+      creditNeeded,
+      consentFeature,
+    ),
+  );
 
   /** What was missing when the sheet opened: it stays the list of steps after a purchase changes `have`. */
   let lacks = $state<CloudLack[] | null>(null);
@@ -66,8 +112,10 @@
 
   const loadWallet = async () => {
     try {
-      wallet = (await getCloudMlStatus()).wallet ?? null;
+      processing = await getCloudMlStatus();
+      wallet = processing.wallet ?? null;
     } catch {
+      processing = null;
       wallet = null;
     }
   };
@@ -79,11 +127,32 @@
     }
     stopListening = cloudManager.listen();
     const settle = async () => {
-      await Promise.all([cloudManager.refresh(), feature === 'processing' ? loadWallet() : null]);
+      await Promise.all([cloudManager.refresh(), forJob ? loadWallet() : null]);
       ready = true;
     };
     void settle();
   });
+
+  /** What each step is waiting for, from what the server says now. */
+  const stepDone = (step: CloudLack) => {
+    switch (step) {
+      case 'link': {
+        return have.linked;
+      }
+      case 'cloud': {
+        return have.plan;
+      }
+      case 'licence': {
+        return have.licence !== 'none';
+      }
+      case 'terms': {
+        return !!have.terms;
+      }
+      case 'credit': {
+        return have.credit;
+      }
+    }
+  };
 
   const stepsFor = (list: CloudLack[]) => list.filter((item) => item !== 'link');
 
@@ -94,12 +163,107 @@
     }
     const current = feature ? missing(feature, have) : missing('remote', have);
     lacks = current;
-    stage = current[0] === 'link' ? 'link' : stepsFor(current).length > 0 ? 'needs' : 'done';
+    stage = forJob ? 'needs' : current[0] === 'link' ? 'link' : stepsFor(current).length > 0 ? 'needs' : 'done';
+    if (forJob) {
+      hadLink = have.linked;
+    }
+  });
+
+  /** The step the job is waiting on now; null once nothing is missing. */
+  const jobStep = $derived(forJob && lacks ? (lacks.find((step) => !stepDone(step)) ?? null) : null);
+  let hadLink = false;
+
+  // Linked in this sheet: the Cloud status is only known from here on (its terms, the credit).
+  $effect(() => {
+    if (forJob && ready && have.linked && !hadLink) {
+      hadLink = true;
+      untrack(() => void loadWallet());
+    }
+  });
+
+  // Nothing left to do: back to the job, which carries on and estimates again.
+  let handedBack = false;
+  $effect(() => {
+    if (!forJob || !lacks || !ready || jobStep !== null || stage === 'paying' || handedBack) {
+      return;
+    }
+    handedBack = true;
+    untrack(() => {
+      getCloudManager.setUp();
+      onDone?.();
+      close();
+    });
+  });
+
+  /* The terms, read from Frameleaf Cloud when they are the next thing. */
+  let terms = $state<CloudMlConsentTermsDto | null>(null);
+  let agreed = $state(false);
+  let termsChanged = $state(false);
+  let createdDestinationId = $state<string | null>(null);
+  const termChoices = $derived({
+    identityNames: !!processing?.consent?.features.identityNames,
+    medicalSignals: !!processing?.consent?.features.medicalSignals,
+    smartSearch: !!processing?.consent?.features.smartSearch || consentFeature === 'smartSearch',
+    faceRecognition: !!processing?.consent?.features.faceRecognition || consentFeature === 'faceRecognition',
+  });
+  const loadTerms = async () => {
+    try {
+      terms = await loadCloudConsentTerms(termChoices);
+    } catch (error) {
+      failure = getServerErrorMessage(error) ?? $t('admin.frameleaf_cloud_ml_consent_error');
+    }
+  };
+  let termsAsked = false;
+  $effect(() => {
+    if (jobStep === 'terms' && !termsAsked) {
+      termsAsked = true;
+      untrack(() => void loadTerms());
+    }
+  });
+
+  const agreeAndTurnOn = async () => {
+    if (!terms || !agreed || busy) {
+      return;
+    }
+    busy = true;
+    failure = '';
+    try {
+      const firstTime = isFirstCloudTurnOn(processing);
+      await recordCloudConsent({
+        destinationId: processing?.destination?.id ?? createdDestinationId,
+        terms,
+        choices: termChoices,
+        onCreated: (id) => (createdDestinationId = id),
+      });
+      await turnOnCloudProcessing({ firstTime });
+      await loadWallet();
+    } catch (error) {
+      if (isConsentOutdatedError(error)) {
+        termsChanged = true;
+        agreed = false;
+        await loadTerms();
+      } else {
+        failure = getServerErrorMessage(error) ?? $t('admin.frameleaf_cloud_ml_consent_error');
+      }
+    } finally {
+      busy = false;
+    }
+  };
+
+  /** The Server licence's price, and the first credit amount that covers what the job needs held. */
+  const licenceForJob = $derived(
+    formatUsd(cloudManager.products?.products.find((p) => p.id === 'supporter-server')?.priceUsd ?? 0),
+  );
+  $effect(() => {
+    if (jobStep === 'credit' && creditNeeded) {
+      const needed = Math.max(0, creditNeeded - (wallet?.availableUsd ?? 0));
+      untrack(() => (amount = CREDIT_AMOUNTS.find((option) => option >= needed) ?? CREDIT_AMOUNTS.at(-1)!));
+    }
   });
 
   // the link step ends by itself once the code is approved, and comes back if the link is lost
   $effect(() => {
-    if (!lacks || !ready) {
+    if (!lacks || !ready || forJob) {
       return;
     }
     if (stage === 'link' && have.linked) {
@@ -114,7 +278,7 @@
   const buysLicence = $derived(!!lacks?.includes('licence') && !bought.licence && !bought.cloud);
   const buysCredit = $derived(!!lacks?.includes('credit') && !bought.credit);
   /** The store trip at hand: licence and plan first, AI credit on its own trip after. */
-  const buyingStore = $derived((buysCloud && !bought.cloud) || buysLicence);
+  const buyingStore = $derived(forJob ? jobStep === 'licence' : (buysCloud && !bought.cloud) || buysLicence);
 
   const price = (id: string) => cloudManager.products?.products.find((product) => product.id === id)?.priceUsd ?? 0;
   const share = $derived(
@@ -178,6 +342,8 @@
 
   let poll: ReturnType<typeof setInterval> | undefined;
   let pollStarted = 0;
+  /** The trip under way is the store's (licence, plan), not AI credit. `buyingStore` moves on as steps finish. */
+  let payingStore = false;
   const stopWaiting = () => {
     if (poll) {
       clearInterval(poll);
@@ -186,6 +352,7 @@
     removeEventListener('focus', onFocus);
   };
   const startWaiting = () => {
+    payingStore = buyingStore;
     stage = 'paying';
     pollStarted = Date.now();
     stopWaiting();
@@ -204,7 +371,7 @@
       return;
     }
     try {
-      if (buyingStore) {
+      if (payingStore) {
         await cloudManager.refreshLicense();
       } else {
         await loadWallet();
@@ -223,8 +390,8 @@
       return;
     }
     const remaining = new Set(missing(feature, have).filter((item) => item !== 'link'));
-    const storeDone = buyingStore && !remaining.has('cloud') && !remaining.has('licence');
-    const creditDone = !buyingStore && !remaining.has('credit');
+    const storeDone = payingStore && !remaining.has('cloud') && !remaining.has('licence');
+    const creditDone = !payingStore && !remaining.has('credit');
     if (storeDone || creditDone) {
       finishPaying();
     }
@@ -234,11 +401,11 @@
     bought = {
       cloud: bought.cloud || buysCloud,
       licence: bought.licence || buysLicence,
-      credit: bought.credit || (!buyingStore && buysCredit),
+      credit: bought.credit || (!payingStore && buysCredit),
     };
     const remaining = feature ? missing(feature, have).filter((item) => item !== 'link') : [];
     // AI credit is a second store trip, after the licence that it needs
-    stage = remaining.length > 0 ? 'needs' : 'done';
+    stage = remaining.length > 0 || forJob ? 'needs' : 'done';
   };
   onDestroy(() => {
     stopWaiting();
@@ -258,6 +425,17 @@
     stage === 'done' && (bought.cloud || have.plan) ? $t('frameleaf_gc_done_title') : $t('frameleaf_gc_title'),
   );
   const canChooseMe = $derived(feature !== 'buddy');
+
+  /* Each step of the set-up sheet, in words. */
+  const stepsLeft = $derived(lacks && jobStep ? lacks.length - lacks.indexOf(jobStep) : 0);
+  const jobStepTitle = (step: CloudLack) => $t(`frameleaf_cs_${step === 'cloud' ? 'licence' : step}_title`);
+  const jobStepBody = (step: CloudLack) =>
+    step === 'licence'
+      ? $t('frameleaf_cs_licence_body', { values: { price: licenceForJob } })
+      : $t(`frameleaf_cs_${step === 'cloud' ? 'licence' : step}_body`);
+  const jobUnavailable = $derived(
+    (jobStep === 'licence' && !have.store) || (jobStep === 'credit' && !wallet?.topUpUrl),
+  );
 </script>
 
 <Dialog {title} closeLabel={$t('close')} open={true} onRequestClose={close} size="medium">
@@ -275,6 +453,103 @@
     <p class="gc-lead">{$t('frameleaf_cloud_not_configured_title')}</p>
   {:else if lacks === null}
     <p class="gc-lead" aria-busy="true">{$t('frameleaf_gc_intro')}</p>
+  {:else if forJob}
+    {#if jobStep}
+      <p class="gc-lead">{$t('frameleaf_cs_lead', { values: { count: stepsLeft } })}</p>
+      <ol class="cs-steps">
+        {#each lacks as step, position (step)}
+          {@const done = stepDone(step)}
+          {@const now = step === jobStep}
+          <li class:is-done={done} class:is-now={now}>
+            <span class="cs-mark" aria-hidden="true">
+              {#if done}<Icon icon={mdiCheck} size="14" />{:else}{position + 1}{/if}
+            </span>
+            <div>
+              <strong>
+                {jobStepTitle(step)}
+                {#if done}<span class="sr-only">{$t('frameleaf_cs_step_done')}</span>{/if}
+              </strong>
+              {#if now}
+                <p>{jobStepBody(step)}</p>
+                {#if step === 'link' && status?.state === 'pending' && status.pending}
+                  <div class="gc-link-step">
+                    <CloudPendingCode
+                      pending={status.pending}
+                      keyFingerprint={status.keyFingerprint}
+                      lastError={status.lastError}
+                      pollError={!!cloudManager.pollError}
+                      bind:expired={codeExpired}
+                      compact
+                    />
+                    <div class="gc-actions">
+                      <Button
+                        variant={codeExpired ? 'primary' : 'default'}
+                        disabled={busy}
+                        onclick={() => void cloudManager.startLink()}>{$t('frameleaf_gc_new_code')}</Button
+                      >
+                      <Button disabled={busy} onclick={() => void cloudManager.cancelLink()}
+                        >{$t('frameleaf_gc_cancel_link')}</Button
+                      >
+                    </div>
+                  </div>
+                {:else if step === 'terms'}
+                  {#if termsChanged}
+                    <p role="status">{$t('admin.frameleaf_cloud_ml_consent_terms_changed')}</p>
+                  {/if}
+                  {#if consentFeature}
+                    <p data-testid="cs-feature-consent">
+                      <strong>
+                        {$t(
+                          consentFeature === 'smartSearch'
+                            ? 'admin.frameleaf_cloud_ml_consent_feature_smart_search'
+                            : 'admin.frameleaf_cloud_ml_consent_feature_faces',
+                        )}
+                      </strong>
+                      {$t(
+                        consentFeature === 'smartSearch'
+                          ? 'admin.frameleaf_cloud_ml_consent_feature_smart_search_help'
+                          : 'admin.frameleaf_cloud_ml_consent_feature_faces_help',
+                      )}
+                    </p>
+                  {/if}
+                  {#if terms?.documentUrl}
+                    <a class="gc-link" href={terms.documentUrl} target="_blank" rel="noopener noreferrer"
+                      >{$t('frameleaf_cs_terms_read')}</a
+                    >
+                  {/if}
+                  <label class="cs-agree">
+                    <input type="checkbox" bind:checked={agreed} disabled={!terms || busy} />
+                    <span>{$t('frameleaf_cs_terms_agree')}</span>
+                  </label>
+                {:else if step === 'credit' && stage !== 'paying'}
+                  <div class="gc-who" role="radiogroup" aria-label={$t('frameleaf_gc_amount')}>
+                    <span>{$t('frameleaf_gc_amount')}</span>
+                    {#each CREDIT_AMOUNTS as option (option)}
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={amount === option}
+                        class:is-on={amount === option}
+                        onclick={() => (amount = option)}>{formatUsd(option)}</button
+                      >
+                    {/each}
+                  </div>
+                {/if}
+                {#if stage === 'paying'}
+                  <p role="status">{$t('frameleaf_gc_paying')} {$t('frameleaf_gc_paying_note')}</p>
+                {/if}
+              {/if}
+            </div>
+          </li>
+        {/each}
+      </ol>
+      {#if jobUnavailable}
+        <p class="gc-note">{$t('frameleaf_plan_store_unavailable')}</p>
+      {/if}
+      {#if failure}
+        <InlineError message={failure} />
+      {/if}
+    {/if}
   {:else}
     {#if stage === 'done'}
       <p class="gc-lead is-done">
@@ -500,6 +775,35 @@
   {#snippet actions()}
     {#if !isAdmin || notConfigured || lacks === null}
       <Button onclick={close}>{$t('close')}</Button>
+    {:else if forJob}
+      {#if stage === 'paying'}
+        <Button
+          onclick={() => {
+            stopWaiting();
+            stage = 'needs';
+          }}>{$t('frameleaf_gc_back')}</Button
+        >
+        <Button onclick={() => checkoutUrl && open(checkoutUrl)}>{$t('frameleaf_gc_store_again')}</Button>
+      {:else if jobStep}
+        <Button onclick={close}>{$t('frameleaf_gc_not_now')}</Button>
+        {#if jobStep === 'link' && status?.state !== 'pending'}
+          <Button variant="primary" disabled={busy || !have.configured} onclick={() => void cloudManager.startLink()}
+            >{$t('frameleaf_cs_link_action')}</Button
+          >
+        {:else if jobStep === 'licence' && !jobUnavailable}
+          <Button variant="primary" disabled={busy} onclick={() => void continueToStore()}
+            >{$t('frameleaf_cs_licence_action')}</Button
+          >
+        {:else if jobStep === 'terms'}
+          <Button variant="primary" disabled={!agreed || !terms || busy} onclick={() => void agreeAndTurnOn()}
+            >{$t('frameleaf_cs_terms_action')}</Button
+          >
+        {:else if jobStep === 'credit' && !jobUnavailable}
+          <Button variant="primary" disabled={busy} onclick={() => void continueToStore()}
+            >{$t('frameleaf_cs_credit_action', { values: { amount: formatUsd(amount) } })}</Button
+          >
+        {/if}
+      {/if}
     {:else if stage === 'link'}
       <Button onclick={close}>{$t('frameleaf_gc_not_now')}</Button>
     {:else if stage === 'needs'}
@@ -693,6 +997,73 @@
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
     line-height: 1.5;
+  }
+  .cs-steps {
+    display: grid;
+    gap: 16px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .cs-steps > li {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr);
+    gap: 12px;
+    color: var(--fl-muted);
+  }
+  .cs-steps > li.is-now,
+  .cs-steps > li.is-done {
+    color: var(--fl-text);
+  }
+  .cs-steps strong {
+    display: block;
+    line-height: 28px;
+    font-weight: 600;
+  }
+  .cs-steps p {
+    margin: 4px 0 0;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+    line-height: 1.5;
+  }
+  .cs-mark {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--fl-border);
+    border-radius: 50%;
+    font-size: var(--fl-font-small);
+  }
+  .is-now .cs-mark,
+  .is-done .cs-mark {
+    border-color: var(--fl-accent);
+    background: var(--fl-accent);
+    color: var(--fl-accent-text);
+  }
+  .cs-agree {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    color: var(--fl-text);
+    font-size: var(--fl-font-small);
+    cursor: pointer;
+  }
+  .cs-agree input {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    accent-color: var(--fl-accent);
+  }
+  .cs-steps .gc-link-step {
+    margin: 12px 0 0;
+  }
+  .cs-steps .gc-link {
+    display: inline-block;
+    margin-top: 8px;
+    font-size: var(--fl-font-small);
   }
   .gc-to-pay {
     margin-inline-end: auto;

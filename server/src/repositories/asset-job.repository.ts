@@ -778,6 +778,21 @@ export class AssetJobRepository {
     return this.selectionForImageDescriptionJob(force).stream();
   }
 
+  /** How many photos still have no description, counted up to `limit`: the cost of this read stays bounded. */
+  async countPhotosWithoutDescription(limit: number): Promise<number> {
+    const { count } = await this.db
+      .selectFrom(
+        this.selectionForImageDescriptionJob(false)
+          .clearOrderBy()
+          .where('asset.type', '=', sql.lit(AssetType.Image))
+          .limit(limit)
+          .as('waiting'),
+      )
+      .select((eb) => eb.fn.countAll<number>().as('count'))
+      .executeTakeFirstOrThrow();
+    return Number(count);
+  }
+
   selectionForImageDescriptionJob(force?: boolean) {
     // Image descriptions run on photos and videos. A video is described from its reusable moment
     // frames (FL-59), which the description job cuts itself when the video has none yet; duplicate

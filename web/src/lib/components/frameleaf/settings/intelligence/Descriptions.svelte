@@ -17,6 +17,8 @@
    */
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
+  import FeatureModelPickers from '$lib/components/frameleaf/cloud/FeatureModelPickers.svelte';
+  import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
   import EnrichmentWorkbench from '$lib/components/frameleaf/EnrichmentWorkbench.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
@@ -49,6 +51,7 @@
   } from '$lib/components/frameleaf/settings/intelligence/presets';
   import { QueryParameter } from '$lib/constants';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
+  import { LOCAL_DESCRIPTION_MODELS } from '$lib/frameleaf/local-models';
   import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { queueManager } from '$lib/managers/queue-manager.svelte';
@@ -71,9 +74,7 @@
   import { t, type Translations } from 'svelte-i18n';
   import {
     CUSTOM_MODEL,
-    DESCRIPTION_MODEL_PROFILES,
     FALLBACK_MODEL_PROFILES,
-    findDescriptionProfile,
     hardwareAcceleration,
     imageEnrichmentHardwarePresets,
     isImageEnrichmentHardwareAcceleration,
@@ -207,16 +208,19 @@
 
   // Caption model and hardware ──────────────────────────────────────────────────────────────
 
-  const modelChoice = $derived(
-    findDescriptionProfile(imageDescription.modelName) ? imageDescription.modelName : CUSTOM_MODEL,
-  );
+  // The box under Advanced holds only a model of the person's own; emptying it goes back to a published one.
+  const isPublished = (name: string) => LOCAL_DESCRIPTION_MODELS.some((model) => model.value === name);
+  const ownModel = $derived(isPublished(imageDescription.modelName) ? '' : imageDescription.modelName);
+  const setOwnModel = (value: string) => {
+    imageDescription.modelName =
+      value.trim() || (isPublished(saved.modelName) ? saved.modelName : LOCAL_DESCRIPTION_MODELS[0].value);
+  };
   const fallbackChoice = $derived(
     FALLBACK_MODEL_PROFILES.some((profile) => profile.value === imageDescription.fallbackModelName)
       ? imageDescription.fallbackModelName
       : CUSTOM_MODEL,
   );
   /** "Custom" was picked while the name still matches a listed model: show the box to type one. */
-  let typingModel = $state(false);
   let typingFallback = $state(false);
 
   const hardwareName = (acceleration: MachineLearningHardwareAcceleration) =>
@@ -443,6 +447,12 @@
         >{$t('frameleaf_intel_where_open')}</Button
       >
     </Row>
+    {#if imageDescription.enabled}
+      <FeatureModelPickers
+        rows={[{ row: 'descriptions', legend: $t('frameleaf_intel_captions_model') }]}
+        onNeedsCloud={() => getCloudManager.open('processing')}
+      />
+    {/if}
     <Row label={$t('frameleaf_intel_overnight')} help={$t('frameleaf_intel_captions_overnight_help')}>
       <Button onclick={() => goto(commandCenterUrl('processing', 'nightly-tasks'))}>
         {$t('frameleaf_intel_overnight_open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden />
@@ -451,38 +461,15 @@
 
     <Advanced summary={$t('frameleaf_intel_captions_adv_model')} open={opened === 'advanced-description-runtime'}>
       <Explain>{$t('frameleaf_intel_captions_adv_model_explain')}</Explain>
-      <Row label={$t('frameleaf_intel_captions_model')}>
-        <Select
-          label={$t('frameleaf_intel_captions_model')}
-          value={typingModel ? CUSTOM_MODEL : modelChoice}
-          options={[
-            ...DESCRIPTION_MODEL_PROFILES.map((profile) => ({
-              value: profile.value,
-              label: `${profile.label}, ${profile.vramHint}`,
-            })),
-            { value: CUSTOM_MODEL, label: $t('frameleaf_intel_captions_model_custom') },
-          ]}
+      <Row label={$t('frameleaf_intel_captions_model_name')} help={$t('frameleaf_intel_captions_model_name_help')}>
+        <Field
+          label={$t('frameleaf_intel_captions_model_name')}
+          wide
+          value={ownModel}
           disabled={off}
-          onChange={(value) => {
-            typingModel = value === CUSTOM_MODEL;
-            if (value !== CUSTOM_MODEL) {
-              imageDescription.modelName = value;
-            }
-          }}
+          onChange={setOwnModel}
         />
       </Row>
-      {#if typingModel || modelChoice === CUSTOM_MODEL}
-        <Row label={$t('frameleaf_intel_captions_model_name')} help={$t('frameleaf_intel_captions_model_name_help')}>
-          <Field
-            label={$t('frameleaf_intel_captions_model_name')}
-            wide
-            value={imageDescription.modelName}
-            disabled={off}
-            invalid={!imageDescription.modelName.trim()}
-            onChange={(value) => (imageDescription.modelName = value)}
-          />
-        </Row>
-      {/if}
       <Row label={$t('frameleaf_intel_captions_fallback')} help={$t('frameleaf_intel_captions_fallback_help')}>
         <Select
           label={$t('frameleaf_intel_captions_fallback')}

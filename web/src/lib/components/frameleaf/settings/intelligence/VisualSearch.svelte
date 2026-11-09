@@ -33,6 +33,7 @@
     workWaiting,
   } from '$lib/components/frameleaf/settings/intelligence/presets';
   import ServerModelSlider from '$lib/components/frameleaf/settings/intelligence/ServerModelSlider.svelte';
+  import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
   import { aboutTime, rereadSeconds, saveAndRedo } from '$lib/frameleaf/library-progress';
   import { handleError } from '$lib/utils/handle-error';
   import {
@@ -61,6 +62,14 @@
   const waiting = $derived(workWaiting(queueManager.queues, FEATURE_WORK['smart-search']));
   const custom = $derived(!choiceOf(SEARCH_QUALITY, ml.clip));
   const modelChanged = $derived(ml.clip.modelName !== saved.clip.modelName);
+
+  // The box under Advanced holds only a model of the person's own; emptying it goes back to a published one.
+  const isPublished = (name: string) => !!choiceOf(SEARCH_QUALITY, { modelName: name });
+  const ownModel = $derived(custom ? ml.clip.modelName : '');
+  const setOwnModel = (value: string) => {
+    settingsDraft.draft.machineLearning.clip.modelName =
+      value.trim() || (isPublished(saved.clip.modelName) ? saved.clip.modelName : SEARCH_QUALITY[1].values.modelName);
+  };
 
   // FL-521: how long reading again takes, at the recent rate, and starting it from the save.
   let progress = $state<LibraryProgressResponseDto>();
@@ -146,12 +155,12 @@
       <ServerModelSlider
         workload="search"
         value={ml.clip.modelName}
+        saved={saved.clip.modelName}
         label={$t('frameleaf_intel_search_quality')}
         {disabled}
-        customNote={custom
-          ? $t('frameleaf_intel_custom_model_help', { values: { model: ml.clip.modelName } })
-          : undefined}
+        customNote={custom ? $t('frameleaf_intel_own_model_note', { values: { model: ml.clip.modelName } }) : undefined}
         onChange={(model) => (settingsDraft.draft.machineLearning.clip.modelName = model)}
+        onNeedsCloud={(setup) => getCloudManager.open('processing', setup)}
       />
       {#if modelChanged}
         <Reread
@@ -162,7 +171,9 @@
             { label: $t('frameleaf_intel_save_tonight'), run: () => saveAndRead(LibraryRedoWhen.Tonight) },
             { label: $t('frameleaf_intel_save_now'), run: () => saveAndRead(LibraryRedoWhen.Now) },
           ]}
-          onUndo={() => (settingsDraft.draft.machineLearning.clip.modelName = saved.clip.modelName)}
+          onUndo={() => {
+            settingsDraft.draft.machineLearning.clip.modelName = saved.clip.modelName;
+          }}
         />
       {:else}
         <Notice tone="warn" title={$t('frameleaf_intel_search_model_warning')}>
@@ -176,10 +187,9 @@
         <Field
           label={$t('frameleaf_intel_search_model')}
           wide
-          value={ml.clip.modelName}
+          value={ownModel}
           disabled={disabled || !ml.clip.enabled}
-          invalid={!ml.clip.modelName.trim()}
-          onChange={(value) => (settingsDraft.draft.machineLearning.clip.modelName = value)}
+          onChange={setOwnModel}
         />
       </Row>
     </Advanced>

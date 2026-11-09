@@ -25,6 +25,8 @@ const model = (id: string, group: CloudMlModelGroup | null, rank: number, isDefa
   rank,
   isDefault,
   description: `${id} model`,
+  modelName: id,
+  localModel: null,
   fingerprint: 'mr_68JDMAM8444M',
   pricingUnit: 'second',
   priceUsd: 0.001,

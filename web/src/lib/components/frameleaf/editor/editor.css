@@ -1396,6 +1396,12 @@
   color: var(--fl-viewer-muted);
   font-size: var(--fl-font-micro);
 }
+.rs-link {
+  color: var(--fl-accent);
+  font-size: var(--fl-font-small);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 .rs-warning {
   display: flex;
   align-items: center;

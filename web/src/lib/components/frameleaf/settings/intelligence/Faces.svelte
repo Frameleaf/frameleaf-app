@@ -28,6 +28,7 @@
   import Figure from '$lib/components/frameleaf/settings/intelligence/Figure.svelte';
   import MasterOff from '$lib/components/frameleaf/settings/intelligence/MasterOff.svelte';
   import ServerModelSlider from '$lib/components/frameleaf/settings/intelligence/ServerModelSlider.svelte';
+  import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
   import {
     applyChoice,
     choiceOf,
@@ -249,12 +250,14 @@
       <ServerModelSlider
         workload="faces"
         value={faces.modelName}
-        label={$t('frameleaf_intel_faces_model')}
+        saved={saved.modelName}
+        label={$t('frameleaf_intel_faces_quality')}
         {disabled}
         customNote={(FACE_MODELS as readonly string[]).includes(faces.modelName)
           ? undefined
           : $t('frameleaf_intel_custom_model_help', { values: { model: faces.modelName } })}
         onChange={(model) => (settingsDraft.draft.machineLearning.facialRecognition.modelName = model)}
+        onNeedsCloud={(setup) => getCloudManager.open('processing', setup)}
       />
       {#if modelChanged}
         <Reread
@@ -262,7 +265,9 @@
           body={$t('frameleaf_intel_faces_model_reread_body')}
           {disabled}
           choices={[{ label: $t('frameleaf_intel_save_now'), run: saveAndFindFaces }]}
-          onUndo={() => (settingsDraft.draft.machineLearning.facialRecognition.modelName = saved.modelName)}
+          onUndo={() => {
+            settingsDraft.draft.machineLearning.facialRecognition.modelName = saved.modelName;
+          }}
         />
       {:else}
         <Notice tone="warn" title={$t('frameleaf_intel_faces_model_warning')}>

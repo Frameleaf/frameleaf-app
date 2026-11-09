@@ -9,13 +9,22 @@ import {
 } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import RestorationPanel from './RestorationPanel.svelte';
 
 vi.mock('$lib/frameleaf/activity-session.svelte', () => ({
   activitySession: { watch: () => () => {}, operations: [], refresh: vi.fn(), cancel: vi.fn(), retry: vi.fn() },
 }));
-vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { params: {} } }));
+const auth = vi.hoisted(() => ({ isAdmin: true }));
+vi.mock('$lib/managers/auth-manager.svelte', () => ({
+  authManager: {
+    params: {},
+    get user() {
+      return { isAdmin: auth.isAdmin };
+    },
+  },
+}));
 
 const asset = assetFactory.build({ type: AssetTypeEnum.Video, id: 'asset-1' });
 
@@ -207,9 +216,85 @@ describe('RestorationPanel Smooth motion (FL-162, FL-159)', () => {
     sdkMock.getAssetRestorationOptions.mockResolvedValue(smoothOptions({ destinations: [] }));
     render(RestorationPanel, { asset, onCompare: vi.fn() });
 
-    const area = await screen.findByTestId('restoration-smooth-motion');
-    await waitFor(() => expect(area).toHaveTextContent('frameleaf_restoration_smooth_motion_no_local'));
+    const slider = await screen.findByRole('group', { name: 'frameleaf_restoration_smooth_motion_model' });
+    await waitFor(() => expect(slider).toHaveTextContent('frameleaf_restoration_smooth_motion_no_local'));
     expect(sdkMock.requestAssetRestoration).not.toHaveBeenCalled();
+  });
+
+  it('sends the model the computer at home reported', async () => {
+    sdkMock.requestAssetRestoration.mockResolvedValue(
+      item({ id: 'smooth-2', mode: AssetRestorationMode.SmoothMotion }),
+    );
+    const base = smoothOptions();
+    const destinations = (base as unknown as { destinations: object[] }).destinations.map((destination) => ({
+      ...destination,
+      models: [
+        { id: 'rife-4.25', name: 'RIFE', family: 'rife', mode: AssetRestorationMode.SmoothMotion, available: true },
+      ],
+    }));
+    sdkMock.getAssetRestorationOptions.mockResolvedValue({ ...(base as object), destinations } as never);
+    render(RestorationPanel, { asset, onCompare: vi.fn() });
+
+    const preview = await screen.findByRole('button', { name: /frameleaf_restoration_smooth_motion_preview/ });
+    await waitFor(() => expect(preview).toBeEnabled());
+    await fireEvent.click(preview);
+
+    expect(sdkMock.requestAssetRestoration).toHaveBeenCalledWith({
+      id: asset.id,
+      assetRestorationRequestDto: expect.objectContaining({
+        mode: AssetRestorationMode.SmoothMotion,
+        model: 'rife-4.25',
+      }),
+    });
+  });
+
+  it('offers the live catalogue on its blue stops, and estimates with the model chosen there', async () => {
+    const base = smoothOptions() as unknown as { destinations: object[] };
+    sdkMock.getAssetRestorationOptions.mockResolvedValue({
+      ...base,
+      route: 'both',
+      destinations: [
+        ...base.destinations,
+        {
+          ...base.destinations[0],
+          id: 'cloud',
+          kind: MlDestinationKind.FrameleafCloud,
+          name: 'Frameleaf Cloud',
+          models: [],
+        },
+      ],
+    } as never);
+    sdkMock.getCloudMlStatus.mockResolvedValue({ connection: 'ready' } as never);
+    sdkMock.getCloudMlModelChoices.mockResolvedValue({ choices: [] } as never);
+    sdkMock.getCloudMlCatalog.mockResolvedValue({
+      models: [
+        {
+          id: 'ms_RIFE',
+          group: 'interpolation',
+          workload: 'interpolation',
+          name: 'Smooth motion',
+          modelName: 'RIFE on Cloud',
+          rank: 1,
+          isDefault: true,
+          priceUsd: 0.01,
+          pricingUnit: 'second',
+        },
+      ],
+    } as never);
+    sdkMock.estimateCloudMlJob.mockImplementation(() => new Promise(() => {}));
+    render(RestorationPanel, { asset, onCompare: vi.fn() });
+
+    const slider = await screen.findByRole('group', { name: 'frameleaf_restoration_smooth_motion_model' });
+    const blue = await within(slider).findByRole('radio', { name: /RIFE on Cloud/ });
+    expect(within(slider).queryByRole('radio', { name: /FILM/ })).toBeNull();
+    await fireEvent.click(blue);
+    await fireEvent.click(await screen.findByRole('button', { name: /frameleaf_restoration_smooth_motion_estimate/ }));
+
+    await waitFor(() =>
+      expect(sdkMock.estimateCloudMlJob).toHaveBeenCalledWith({
+        cloudMlJobEstimateRequestDto: expect.objectContaining({ modelSku: 'ms_RIFE', factor: 2 }),
+      }),
+    );
   });
 });
 
@@ -219,6 +304,7 @@ describe('RestorationPanel Enhance & upscale (VIEWER-P6)', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    auth.isAdmin = true;
     sdkMock.getAssetRestorations.mockResolvedValue({ assetId: photo.id, currentRestorationId: null, items: [] });
     sdkMock.getAssetRestorationOptions.mockResolvedValue({
       assetId: photo.id,
@@ -382,8 +468,8 @@ describe('RestorationPanel Enhance model choice (FL-423)', () => {
         expect.objectContaining({ mode: AssetRestorationMode.Creative }),
       ),
     );
-    // Where each job runs keeps this work at home: no Frameleaf Cloud stop
-    expect(within(slider).queryByRole('radio', { name: /frameleaf_enhance_model_cloud/ })).not.toBeInTheDocument();
+    // Where work runs is a preference: the blue stop is still there
+    expect(within(slider).getByRole('radio', { name: /frameleaf_enhance_model_cloud/ })).toBeEnabled();
 
     const run = screen.getByRole('button', { name: /frameleaf_enhance_run_on/ });
     await waitFor(() => expect(run).toBeEnabled());
@@ -399,16 +485,7 @@ describe('RestorationPanel Enhance model choice (FL-423)', () => {
     });
   });
 
-  it('sends a blue stop to the Frameleaf Cloud estimate, and crosses it out until Frameleaf Cloud is set up', async () => {
-    options(AssetRestorationRoute.Both, [garage]);
-    const { unmount } = render(RestorationPanel, { asset: photo, onCompare: vi.fn(), enhance: true });
-    const slider = await screen.findByRole('group', { name: 'frameleaf_enhance_model' });
-    const blue = await within(slider).findByRole('radio', { name: /frameleaf_enhance_model_cloud/ });
-    expect(blue).toBeDisabled();
-    expect(slider).toHaveTextContent('frameleaf_enhance_needs_cloud');
-    unmount();
-
-    options(AssetRestorationRoute.Both, [garage, cloud]);
+  const runBlueStop = async () => {
     render(RestorationPanel, { asset: photo, onCompare: vi.fn(), enhance: true });
     await fireEvent.click(
       await within(await screen.findByRole('group', { name: 'frameleaf_enhance_model' })).findByRole('radio', {
@@ -418,8 +495,156 @@ describe('RestorationPanel Enhance model choice (FL-423)', () => {
     const run = await screen.findByRole('button', { name: /frameleaf_enhance_run_cloud/ });
     await waitFor(() => expect(run).toBeEnabled());
     await fireEvent.click(run);
+  };
+
+  it('sends a blue stop to the Frameleaf Cloud estimate', async () => {
+    options(AssetRestorationRoute.Both, [garage, cloud]);
+    await runBlueStop();
     await waitFor(() => expect(sdkMock.estimateCloudMlJob).toHaveBeenCalled());
     expect(sdkMock.requestAssetRestoration).not.toHaveBeenCalled();
+  });
+
+  it('opens the set-up sheet when Cloud is not set up, then carries on and estimates', async () => {
+    getCloudManager.close();
+    options(AssetRestorationRoute.Local, [garage]);
+    await runBlueStop();
+
+    expect(sdkMock.estimateCloudMlJob).not.toHaveBeenCalled();
+    expect(getCloudManager.request?.feature).toBe('processing');
+
+    options(AssetRestorationRoute.Both, [garage, cloud]);
+    getCloudManager.request?.onDone?.();
+    await waitFor(() => expect(sdkMock.estimateCloudMlJob).toHaveBeenCalled());
+  });
+
+  it('moves work kept at home to Both when an administrator runs a blue stop', async () => {
+    options(AssetRestorationRoute.Local, [garage, cloud]);
+    const config = { frameleafCloud: { cloudMl: { enabled: true, routing: { upscale: 'local' } } } };
+    sdkMock.getAdminConfigWithRevision.mockResolvedValue({ config, revision: 'r1' } as never);
+    sdkMock.updateAdminConfigWithRevision.mockImplementation(() => {
+      options(AssetRestorationRoute.Both, [garage, cloud]);
+      return Promise.resolve({ config, revision: 'r2' } as never);
+    });
+    await runBlueStop();
+
+    await waitFor(() => expect(sdkMock.estimateCloudMlJob).toHaveBeenCalled());
+    const saved = sdkMock.updateAdminConfigWithRevision.mock.calls[0][0].adminConfigRevisionUpdateDto.config;
+    expect(saved.frameleafCloud!.cloudMl.routing).toMatchObject({ upscale: 'both' });
+  });
+
+  it('moves work kept at home once, and stops, when the options keep failing', async () => {
+    options(AssetRestorationRoute.Local, [garage, cloud]);
+    const config = { frameleafCloud: { cloudMl: { enabled: true, routing: { upscale: 'local' } } } };
+    sdkMock.getAdminConfigWithRevision.mockResolvedValue({ config, revision: 'r1' } as never);
+    sdkMock.updateAdminConfigWithRevision.mockImplementation(() => {
+      sdkMock.getAssetRestorationOptions.mockRejectedValue(new Error('offline'));
+      return Promise.resolve({ config, revision: 'r2' } as never);
+    });
+    await runBlueStop();
+
+    await waitFor(() => expect(document.body.textContent).toContain('frameleaf_model_route_failed'));
+    expect(sdkMock.updateAdminConfigWithRevision).toHaveBeenCalledTimes(1);
+    expect(sdkMock.estimateCloudMlJob).not.toHaveBeenCalled();
+  });
+
+  it('tells a non-administrator why a blue stop on home-only work does not run', async () => {
+    auth.isAdmin = false;
+    options(AssetRestorationRoute.Local, [garage, cloud]);
+    await runBlueStop();
+    await waitFor(() => expect(document.body.textContent).toContain('frameleaf_cloud_route_admin_only'));
+    expect(sdkMock.estimateCloudMlJob).not.toHaveBeenCalled();
+    expect(sdkMock.updateAdminConfigWithRevision).not.toHaveBeenCalled();
+    auth.isAdmin = true;
+  });
+
+  it('says the real reason Cloud refused the photo', async () => {
+    options(AssetRestorationRoute.Both, [
+      garage,
+      { ...cloud, available: false, refusal: 'budget-exceeded', refusalDetail: 'Spending limit reached.' },
+    ]);
+    render(RestorationPanel, { asset: photo, onCompare: vi.fn(), enhance: true });
+    await fireEvent.click(
+      await within(await screen.findByRole('group', { name: 'frameleaf_enhance_model' })).findByRole('radio', {
+        name: /frameleaf_enhance_model_cloud/,
+      }),
+    );
+    expect(await screen.findByText(/Spending limit reached\./)).toBeInTheDocument();
+    expect(screen.queryByText('frameleaf_enhance_cloud_unavailable')).toBeNull();
+  });
+
+  describe('accepting a reviewed Cloud preview', () => {
+    const preview = item({
+      id: 'cloud-preview',
+      status: AssetRestorationStatus.PreviewReady,
+      destinationId: 'cloud',
+      destinationKind: MlDestinationKind.FrameleafCloud,
+    });
+    const quote = (p90Usd: number) => ({
+      estimateId: `estimate-${p90Usd}`,
+      expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+      p50Usd: p90Usd / 2,
+      p90Usd,
+      holdUsd: p90Usd,
+      consent: { version: 'v1' },
+      refusal: null,
+      permission: { canConfirm: true },
+    });
+    const acceptButton = () => screen.findByRole('button', { name: 'frameleaf_restoration_accept' });
+
+    beforeEach(() => {
+      options(AssetRestorationRoute.Both, [garage, cloud]);
+      sdkMock.getAssetRestorations.mockResolvedValue({
+        assetId: photo.id,
+        currentRestorationId: null,
+        items: [preview],
+      });
+    });
+
+    it('asks nothing more at the price it showed', async () => {
+      sdkMock.estimateCloudMlJob.mockResolvedValue(quote(2) as never);
+      sdkMock.createCloudMlJob.mockResolvedValue({ operationId: 'op' } as never);
+      render(RestorationPanel, { asset: photo, onCompare: vi.fn(), enhance: true });
+
+      expect(await screen.findByTestId('restoration-full-price')).toBeInTheDocument();
+      await fireEvent.click(await acceptButton());
+
+      await waitFor(() =>
+        expect(sdkMock.createCloudMlJob).toHaveBeenCalledWith({
+          cloudMlJobCreateDto: { estimateId: 'estimate-2', consentVersion: 'v1', acknowledgeDataLeaves: true },
+        }),
+      );
+      expect(screen.queryByRole('dialog', { name: 'frameleaf_cloud_job_title_restoration_full' })).toBeNull();
+    });
+
+    it('asks again when the upscale was lowered, which the row does not say', async () => {
+      sdkMock.estimateCloudMlJob.mockResolvedValue({
+        ...quote(2),
+        upscale: { requestedScale: 4, appliedScale: 2, lowered: true, outputWidth: 8000, outputHeight: 6000 },
+      } as never);
+      render(RestorationPanel, { asset: photo, onCompare: vi.fn(), enhance: true });
+
+      await screen.findByTestId('restoration-full-price');
+      await fireEvent.click(await acceptButton());
+
+      expect(
+        await screen.findByRole('dialog', { name: 'frameleaf_cloud_job_title_restoration_full' }),
+      ).toBeInTheDocument();
+      expect(sdkMock.createCloudMlJob).not.toHaveBeenCalled();
+    });
+
+    it('asks again when the price went up', async () => {
+      const expired = { ...quote(2), expiresAt: new Date(Date.now() - 1000).toISOString() };
+      sdkMock.estimateCloudMlJob.mockResolvedValueOnce(expired as never).mockResolvedValue(quote(5) as never);
+      render(RestorationPanel, { asset: photo, onCompare: vi.fn(), enhance: true });
+
+      await screen.findByTestId('restoration-full-price');
+      await fireEvent.click(await acceptButton());
+
+      expect(
+        await screen.findByRole('dialog', { name: 'frameleaf_cloud_job_title_restoration_full' }),
+      ).toBeInTheDocument();
+      expect(sdkMock.createCloudMlJob).not.toHaveBeenCalled();
+    });
   });
 });
 

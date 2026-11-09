@@ -7,15 +7,22 @@
  * never names a model the container cannot fetch or load.
  *
  * Only descriptions has a local model setting (`machineLearning.imageDescription.modelName`).
- * Upscale and smooth motion have no local runner, and restoration and Studio AI run on dedicated
- * workers that bring their own pinned models, so those pickers have the blue band only.
+ * Restoration and Smooth motion run on dedicated workers that bring their own pinned models: what the
+ * connected ones report is shown read-only (`homeStops`), because no setting keeps a default for them.
+ * Upscale and Studio AI report nothing to show here, so their pickers have the blue band only.
  *
  * Bands follow the stored Hardware & GPU check of the ML container: green when the model fits its
  * GPU, white when it runs on the processor, and unavailable otherwise. Without a check every stop is
  * white, since nothing says which fit. Which models load at all depends on the ML image, not the GPU
  * (FL-427): the processor image has torch but no OpenVINO GenAI, the OpenVINO image the reverse.
  */
-import type { HardwareCheckResponseDto } from '@frameleaf/sdk';
+import {
+  AssetRestorationMode,
+  CloudMlModelGroup,
+  RestorationModelState,
+  type HardwareCheckResponseDto,
+  type MlRestorationModelsResponseDto,
+} from '@frameleaf/sdk';
 import { workerFromHardware, type RoutedWorkload } from '$lib/frameleaf/cloud-ml';
 import type { DetectedGpu, RouteMode } from '$lib/frameleaf/gpu-model-catalog';
 
@@ -168,6 +175,11 @@ export type LocalSide = {
   hardware: LocalHardware;
   /** Settings come from a configuration file, so they cannot be changed here. */
   disabled: boolean;
+  /**
+   * What connected computers report they can run, shown but not chosen here: no setting keeps a default
+   * model for that work, so the model is picked when a job starts.
+   */
+  readOnly?: boolean;
   onChoose: (value: string) => void;
 };
 
@@ -180,3 +192,41 @@ export const localStops = (models: readonly LocalModel[], hardware: LocalHardwar
     const { band, reason } = bandOf(model, hardware);
     return { model, band, reason: reason ?? (route === 'cloud' ? { kind: 'cloud-only' } : null) };
   });
+
+/** Which reported kind of model a model group is. Upscaling has none: computers report only these. */
+const HOME_MODE: Partial<Record<CloudMlModelGroup, AssetRestorationMode>> = {
+  [CloudMlModelGroup.RestorationFaithful]: AssetRestorationMode.Faithful,
+  [CloudMlModelGroup.RestorationCreative]: AssetRestorationMode.Creative,
+  [CloudMlModelGroup.Interpolation]: AssetRestorationMode.SmoothMotion,
+};
+
+/**
+ * The green stops of a restoration or Smooth motion group: the models connected computers answered that
+ * they can run now, once each, in the order they listed them. A computer that didn't answer, and a model
+ * not ready, adds nothing, because green must mean it can really run here.
+ */
+export const homeStops = (
+  reports: readonly Pick<MlRestorationModelsResponseDto, 'reachable' | 'models'>[],
+  group: CloudMlModelGroup,
+): LocalStop[] => {
+  const mode = HOME_MODE[group];
+  if (!mode) {
+    return [];
+  }
+  const ready = reports
+    .filter((report) => report.reachable)
+    .flatMap((report) => report.models)
+    .filter((model) => model.mode === mode && model.state === RestorationModelState.Available);
+  return [...new Map(ready.map((model) => [model.id, model])).values()].map((model) => ({
+    model: {
+      value: model.id,
+      name: model.displayName,
+      short: model.displayName,
+      vramGb: 0,
+      images: {},
+      noteKey: '',
+    },
+    band: 'gpu' as const,
+    reason: null,
+  }));
+};

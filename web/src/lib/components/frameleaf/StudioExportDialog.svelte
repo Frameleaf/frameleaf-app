@@ -13,7 +13,7 @@
      * FL-162 Smooth motion of the exported video, as its own job once it is in the library. The export
      * still renders at home; a Frameleaf Cloud Smooth motion is confirmed and billed separately.
      */
-    smoothMotion?: { factor: 2 | 4 | 8; destinationId: string };
+    smoothMotion?: { factor: 2 | 4 | 8; destinationId: string; model?: string };
     /** FL-563: a vertical or square picture; absent keeps the project's own shape. */
     shape?: StudioExportRequestShape;
     /** FL-563: the crop path of each shot as shown, for a vertical or square export. */
@@ -58,7 +58,12 @@
     StudioExportShape,
     type StudioExportRequestShape,
     StudioExportSubtitleMode,
+    CloudMlModelGroup,
+    RestorationModelState,
+    getCloudMlStatus,
     getMlCapabilities,
+    getMlDestinationRestorationModels,
+    type CloudMlModelDto,
     getStudioFraming,
     type MlCapabilityDestinationDto,
     type StudioExportFramingDto,
@@ -68,7 +73,11 @@
   import StudioExportReframe from '$lib/components/frameleaf/StudioExportReframe.svelte';
   import { cropPath, cropShare, isReshaped, shapedSize, sizeLabel } from '$lib/frameleaf/studio/reframe';
   import ModelSlider from '$lib/components/frameleaf/cloud/ModelSlider.svelte';
-  import { resolvePosition, type DetectedGpu, type RouteMode } from '$lib/frameleaf/gpu-model-catalog';
+  import { liveCloudStops, loadCloudModelData } from '$lib/frameleaf/cloud-models';
+  import { ladderStates, liveStartStop, withLiveCloudStops, type DetectedGpu } from '$lib/frameleaf/gpu-model-catalog';
+  import { reportedSmoothModel } from '$lib/frameleaf/restoration';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
   import { Icon } from '@frameleaf/ui';
   import { mdiAlertOutline, mdiExportVariant } from '@mdi/js';
   import type { Translations } from 'svelte-i18n';
@@ -272,6 +281,9 @@
   let smoothRunsOn = $state<'local' | 'cloud' | null>(null);
   let interpolationDestinations = $state<MlCapabilityDestinationDto[] | null>(null);
   let capabilitiesFailed = $state(false);
+  /** Where work runs says Frameleaf Cloud only: the server would refuse a home stop after the export. */
+  let smoothCloudOnly = $state(false);
+  const smoothSliderRoute = $derived(smoothCloudOnly ? ('cloud' as const) : ('both' as const));
 
   const smoothLocal = $derived(
     interpolationDestinations?.find(
@@ -288,8 +300,15 @@
       ? { name: smoothLocal.name, vramGb: smoothLocal.gpuMemoryBytes / 1024 ** 3, backend: 'CUDA', profile: null }
       : null,
   );
-  /** What can run the work right now decides the slider's route; the server still decides each job. */
-  const smoothRoute = $derived<RouteMode>(smoothLocal && smoothCloud ? 'both' : smoothCloud ? 'cloud' : 'local');
+  /** The live catalogue, read for administrators; everyone else gets a stop that names no model. */
+  let cloudCatalog = $state<CloudMlModelDto[] | null>(null);
+  let cloudCatalogRead = $state(false);
+  const smoothCloudStops = $derived(
+    liveCloudStops('interpolation', CloudMlModelGroup.Interpolation, cloudCatalog, $t('frameleaf_enhance_model_cloud')),
+  );
+  /** What the computer at home reports it runs, so the export names one it has. */
+  let smoothReported = $state<Parameters<typeof reportedSmoothModel>[1]>([]);
+  const smoothLocalModel = $derived(reportedSmoothModel(smoothModelId, smoothReported));
   const smoothDestination = $derived(
     smoothRunsOn === 'cloud' ? smoothCloud : smoothRunsOn === 'local' ? smoothLocal : null,
   );
@@ -299,25 +318,71 @@
     if (smoothFactor === null || interpolationDestinations !== null || capabilitiesFailed) {
       return;
     }
-    void getMlCapabilities()
-      .then((capabilities) => {
-        interpolationDestinations =
-          capabilities.workloads.find((row) => row.workload === MlWorkload.Interpolation)?.destinations ?? [];
-      })
-      .catch(() => {
-        capabilitiesFailed = true;
-      });
+    void readInterpolation();
   });
+  const readInterpolation = async () => {
+    try {
+      const capabilities = await getMlCapabilities();
+      const interpolation = capabilities.workloads.find((row) => row.workload === MlWorkload.Interpolation);
+      smoothCloudOnly = !!interpolation?.cloudOnly;
+      interpolationDestinations = interpolation?.destinations ?? [];
+    } catch {
+      capabilitiesFailed = true;
+    }
+    try {
+      cloudCatalog = authManager.user.isAdmin ? (await loadCloudModelData(await getCloudMlStatus())).catalog : null;
+    } catch {
+      cloudCatalog = null;
+    }
+    cloudCatalogRead = true;
+  };
   $effect(() => {
-    if (!interpolationDestinations || smoothModelId) {
+    if (!interpolationDestinations || smoothModelId || !cloudCatalogRead) {
       return;
     }
-    const start = resolvePosition('interpolation', null, { gpu: smoothGpu, route: smoothRoute });
+    const states = smoothLocal ? ladderStates('interpolation', { gpu: smoothGpu, route: 'both' }) : [];
+    const recommended = cloudCatalog?.find(
+      (model) => model.group === CloudMlModelGroup.Interpolation && model.isDefault,
+    );
+    const start = liveStartStop(withLiveCloudStops(states, smoothCloudStops, smoothSliderRoute), recommended?.id);
     if (start) {
       smoothModelId = start.item.id;
       smoothRunsOn = start.runsOn;
     }
   });
+  $effect(() => {
+    const id = smoothLocal?.id;
+    smoothReported = [];
+    if (!id) {
+      return;
+    }
+    void (async () => {
+      try {
+        const report = await getMlDestinationRestorationModels({ id });
+        if (smoothLocal?.id === id) {
+          smoothReported = report.models.map((model) => ({
+            id: model.id,
+            mode: model.mode,
+            available: model.state === RestorationModelState.Available,
+          }));
+        }
+      } catch {
+        // left to the computer, which runs its usual model
+      }
+    })();
+  });
+  /** A blue stop with Cloud not set up yet: the sheet opens, and the choice stands once it's done. */
+  const chooseSmoothStop = (id: string, runsOn: 'local' | 'cloud' | null) => {
+    smoothModelId = id;
+    smoothRunsOn = runsOn;
+    if (runsOn === 'cloud' && !smoothCloud) {
+      getCloudManager.open('processing', {
+        onDone: () => {
+          interpolationDestinations = null;
+        },
+      });
+    }
+  };
 
   /** FL-674: the export's picture, which decides whether a 10-bit format is an HDR master or SDR. */
   const picture = $derived({ hdrPicture });
@@ -759,7 +824,13 @@
         ...(selectedRange && { range: selectedRange }),
         destination,
         ...(smoothFactor !== null &&
-          smoothDestination && { smoothMotion: { factor: smoothFactor, destinationId: smoothDestination.id } }),
+          smoothDestination && {
+            smoothMotion: {
+              factor: smoothFactor,
+              destinationId: smoothDestination.id,
+              ...(smoothRunsOn === 'local' && smoothLocalModel && { model: smoothLocalModel }),
+            },
+          }),
         ...(reshaped && { shape, ...(framingPayload.length > 0 && { framing: framingPayload }) }),
         ...(multiDelivery &&
           revision !== null && {
@@ -1139,14 +1210,12 @@
               workload="interpolation"
               value={smoothModelId}
               gpu={smoothGpu}
-              route={smoothRoute}
+              route={smoothSliderRoute}
+              cloudStops={smoothCloudStops}
               label={$t('frameleaf_restoration_smooth_motion_model')}
               hideLegend
               localDisabledReason={smoothLocal ? '' : $t('frameleaf_restoration_smooth_motion_no_local')}
-              onChange={(id, state) => {
-                smoothModelId = id;
-                smoothRunsOn = state.runsOn;
-              }}
+              onChange={(id, state) => chooseSmoothStop(id, state.runsOn)}
             />
             <p class="note" role="status">
               {#if smoothRunsOn === 'cloud' && smoothCloud}

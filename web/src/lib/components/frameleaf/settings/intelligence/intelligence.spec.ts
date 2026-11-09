@@ -195,7 +195,7 @@ describe('Visual search', () => {
     render(VisualSearch);
 
     expect(screen.getByText('Changing the search model reads your whole library again')).toBeInTheDocument();
-    await fireEvent.click(screen.getByRole('radio', { name: /^SigLIP 2 SO400M 384/ }));
+    await fireEvent.click(screen.getByRole('radio', { name: /^Best, SigLIP 2 SO400M 384/ }));
     expect(store.draft.machineLearning.clip.modelName).toBe('ViT-SO400M-16-SigLIP2-384__webli');
     expect(screen.getByText('Saving this means reading all photos and videos again')).toBeInTheDocument();
 
@@ -213,7 +213,7 @@ describe('Visual search', () => {
     sdkMock.redoLibraryWork.mockResolvedValue({ tonight: [] });
     render(VisualSearch);
 
-    await fireEvent.click(screen.getByRole('radio', { name: /^SigLIP 2 SO400M 384/ }));
+    await fireEvent.click(screen.getByRole('radio', { name: /^Best, SigLIP 2 SO400M 384/ }));
     expect(
       await screen.findByText('Saving this reads all 4,000 photos and videos again, about 2 hours'),
     ).toBeInTheDocument();
@@ -258,7 +258,7 @@ describe('Faces & identity', () => {
 
     expect(screen.getByText('Changing the face model reads your whole library again')).toBeInTheDocument();
 
-    await fireEvent.click(screen.getByRole('radio', { name: /^buffalo_s/ }));
+    await fireEvent.click(screen.getByRole('radio', { name: /^Good, buffalo_s/ }));
     expect(store.draft.machineLearning.facialRecognition.modelName).toBe('buffalo_s');
     expect(screen.getByText('Saving this means reading all photos and videos again to find faces')).toBeInTheDocument();
     expect(screen.queryByText('Changing the face model reads your whole library again')).not.toBeInTheDocument();

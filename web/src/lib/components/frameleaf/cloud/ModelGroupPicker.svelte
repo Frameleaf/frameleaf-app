@@ -19,14 +19,25 @@
    *   where it recommends none, and always for Studio AI, the picker asks for a choice, because those
    *   jobs are refused until one is made.
    *
+   * Every stop shows a quality word above its name (`stopTiers`, from its place in the whole list), kept
+   * when the names are hidden on a phone. One model in all leaves nothing to choose, so it is a plain row
+   * saying where it runs.
+   *
+   * With Frameleaf Cloud not set up, a blue stop still looks and works like the rest: the choice is
+   * saved for when it is, and `onNeedsCloud` hands over to whatever sets it up.
+   *
    * Each side is a native radio group, so arrow keys move between its stops. The cloud side stays
    * enabled while a choice is saved, so focus never drops: it shows the latest choice at once, saves
    * it after a short pause, and saves only the latest one when several follow each other.
    */
   import './gpu-models.css';
+  import Button from '$lib/components/frameleaf/Button.svelte';
+  import Pill from '$lib/components/frameleaf/settings/kit/Pill.svelte';
+  import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
   import { formatRatePerMinute, formatUsd } from '$lib/frameleaf/cloud-ml';
   import { cloudModelChoice, takesCatalogDefault } from '$lib/frameleaf/cloud-models';
   import type { LocalBand, LocalReason, LocalSide, LocalStop } from '$lib/frameleaf/local-models';
+  import { stopTiers, tierKey } from '$lib/frameleaf/model-tiers';
   import { handleError } from '$lib/utils/handle-error';
   import {
     setCloudMlModelChoice,
@@ -63,6 +74,12 @@
     local?: LocalSide | null;
     /** The work has no local model setting: say that its worker brings the model. */
     workerNote?: boolean;
+    /** Frameleaf Cloud's list can't be read yet (not linked): one blue stop stands for it. */
+    cloudPlaceholder?: boolean;
+    /** Frameleaf Cloud can take this work now; while it can't, a blue stop also calls `onNeedsCloud`. */
+    cloudSetUp?: boolean;
+    /** A blue stop was picked while Frameleaf Cloud isn't set up: open whatever sets it up. */
+    onNeedsCloud?: () => void;
     onSaved: (choices: CloudMlModelChoiceDto[], message: string) => void;
   };
 
@@ -75,6 +92,9 @@
     modelId,
     local = null,
     workerNote = false,
+    cloudPlaceholder = false,
+    cloudSetUp = true,
+    onNeedsCloud,
     onSaved,
   }: Props = $props();
 
@@ -99,14 +119,31 @@
     const value = local?.value;
     return localStops.find((stop) => stop.model.value === value) ?? null;
   });
-  const stopCount = $derived(localStops.length + cloudModels.length);
+  const hasPlaceholder = $derived(cloudPlaceholder && !models);
+  const stopCount = $derived(localStops.length + cloudModels.length + (hasPlaceholder ? 1 : 0));
+  const tiers = $derived(
+    stopTiers(
+      [...localStops.map((stop) => `local:${stop.model.value}`), ...cloudModels.map((model) => model.id)],
+      (id) => id,
+    ),
+  );
+  const localTier = (index: number) => $t(tierKey(tiers[index]));
+  const cloudTier = (index: number) => $t(tierKey(tiers[localStops.length + index]));
+  const localSelectedIndex = $derived(localSelected ? localStops.indexOf(localSelected) : -1);
+  const cloudSelectedIndex = $derived(cloudModels.findIndex((model) => model.id === selectedId));
+
+  /** The one model of the group, when there is exactly one. */
+  const onlyLocal = $derived(stopCount === 1 ? (localStops[0] ?? null) : null);
+  const onlyCloud = $derived(stopCount === 1 && !onlyLocal && !hasPlaceholder ? cloudModels[0] : null);
 
   const BAND_ICONS: Record<LocalBand, string> = { cpu: mdiChip, gpu: mdiExpansionCard, none: mdiCancel };
 
   const localLabel = (stop: LocalStop) => {
     switch (stop.band) {
       case 'gpu': {
-        return $t('admin.frameleaf_model_local_label_gpu', { values: { gb: stop.model.vramGb } });
+        return local?.readOnly
+          ? $t('frameleaf_model_home_label')
+          : $t('admin.frameleaf_model_local_label_gpu', { values: { gb: stop.model.vramGb } });
       }
       case 'cpu': {
         return local?.hardware.known
@@ -172,7 +209,7 @@
   const savedMessage = (next: string | null) => {
     const model = next ? cloudModels.find((entry) => entry.id === next) : undefined;
     return model
-      ? $t('admin.frameleaf_cloud_model_saved', { values: { model: model.name, name } })
+      ? $t('admin.frameleaf_cloud_model_saved', { values: { model: model.modelName, name } })
       : $t('admin.frameleaf_cloud_model_saved_default', { values: { name } });
   };
 
@@ -213,6 +250,26 @@
     wanted = { id: next };
     clearTimeout(timer);
     timer = setTimeout(() => void flush(), SAVE_DELAY_MS);
+    if (next !== null && !cloudSetUp) {
+      onNeedsCloud?.();
+    }
+  };
+
+  const whereKey = (band: LocalBand | 'cloud'): Translations => {
+    switch (band) {
+      case 'gpu': {
+        return 'frameleaf_model_where_gpu';
+      }
+      case 'cpu': {
+        return 'frameleaf_model_where_cpu';
+      }
+      case 'cloud': {
+        return 'frameleaf_model_where_cloud';
+      }
+      case 'none': {
+        return 'frameleaf_model_label_none';
+      }
+    }
   };
 
   let fieldset = $state<HTMLFieldSetElement>();
@@ -245,225 +302,287 @@
   });
 </script>
 
-<fieldset class="ms" data-group={group} aria-busy={saving} bind:this={fieldset}>
-  <legend class="ms-legend">{legend}</legend>
-  {#if stopCount > 0}
-    <div class="ms-track is-split">
-      {#if local && localStops.length > 0}
-        {@const side = local}
-        <div
-          class="ms-side"
-          role="radiogroup"
-          aria-label={$t('admin.frameleaf_model_local_for', { values: { name } })}
-          style:--ms-count={localStops.length}
-        >
-          {#each localStops as stop (stop.model.value)}
-            {@const checked = stop.model.value === side.value}
-            {@const off = side.disabled || stop.reason !== null}
-            <label
-              class="ms-stop"
-              class:is-cpu={stop.band === 'cpu'}
-              class:is-gpu={stop.band === 'gpu'}
-              class:is-none={stop.band === 'none'}
-              class:is-selected={checked}
-              class:is-disabled={off}
-              title={stop.reason ? reasonText(stop, stop.reason) : `${stop.model.name} · ${localLabel(stop)}`}
-            >
-              <input
-                type="radio"
-                class="sr-only"
-                name="{id}-local"
-                value={stop.model.value}
-                {checked}
-                disabled={off}
-                aria-describedby={stop.reason ? `${id}-reasons` : undefined}
-                onchange={() => side.onChoose(stop.model.value)}
-              />
-              <span class="ms-band" aria-hidden="true"></span>
-              <span class="ms-knob" aria-hidden="true"></span>
-              <span class="ms-stop-name" aria-hidden="true">
-                <Icon icon={BAND_ICONS[stop.band]} size="14" />
-                <span>{stop.model.short}</span>
-              </span>
-              <span class="sr-only">
-                {stop.model.name}: {localLabel(stop)}{stop.reason
-                  ? `. ${$t('frameleaf_model_unavailable_prefix')} ${reasonText(stop, stop.reason)}`
-                  : ''}
-              </span>
-            </label>
-          {/each}
-        </div>
-      {/if}
-      {#if cloudModels.length > 0}
-        <div
-          class="ms-side"
-          role="radiogroup"
-          aria-label={$t('admin.frameleaf_cloud_model_for', { values: { name } })}
-          style:--ms-count={cloudModels.length}
-        >
-          {#each cloudModels as model (model.id)}
-            {@const checked = model.id === selectedId}
-            <label
-              class="ms-stop is-cloud"
-              class:is-selected={checked}
-              class:is-disabled={cloudDisabled}
-              title={cloudDisabled ? cloudReason : `${model.name} · ${price(model)}`}
-            >
-              <input
-                type="radio"
-                class="sr-only"
-                name="{id}-cloud"
-                value={model.id}
-                {checked}
-                disabled={cloudDisabled}
-                aria-describedby={cloudDisabled ? `${id}-reasons` : undefined}
-                onchange={() => choose(model.id)}
-              />
-              <span class="ms-band" aria-hidden="true"></span>
-              <span class="ms-knob" aria-hidden="true"></span>
-              <span class="ms-stop-name" aria-hidden="true">
-                <Icon icon={model.id === recommended?.id ? mdiStarOutline : mdiCloudOutline} size="14" />
-                <span>{model.name}</span>
-              </span>
-              <span class="sr-only">
-                {model.name}: {price(model)}{model.id === recommended?.id
-                  ? `. ${$t('admin.frameleaf_cloud_model_recommended')}`
-                  : ''}
-              </span>
-            </label>
-          {/each}
-        </div>
-      {/if}
-    </div>
-    <div class="ms-scale" aria-hidden="true">
-      <span>{$t('frameleaf_model_scale_lighter')}</span>
-      <span>{$t('frameleaf_model_scale_heavier')}</span>
-    </div>
-  {/if}
-
-  {#if local}
-    {#if localSelected}
-      <p
-        class="ms-readout"
-        class:is-cpu={localSelected.band === 'cpu'}
-        class:is-gpu={localSelected.band === 'gpu'}
-        class:is-none={localSelected.band === 'none'}
-        aria-live="polite"
-      >
-        <Icon icon={BAND_ICONS[localSelected.band]} size="16" aria-hidden={true} />
-        <span>
-          {$t('admin.frameleaf_model_local_side')} · <strong>{localSelected.model.name}</strong> · {localLabel(
-            localSelected,
-          )}
-          <small>
-            {$t(localSelected.model.noteKey as Translations)}
-            {#if localSelected.reason && localSelected.reason.kind !== 'cloud-only'}
-              {reasonText(localSelected, localSelected.reason)}
-              {$t('admin.frameleaf_model_local_misfit')}
-            {/if}
-            {#if local.value !== local.saved}
-              {$t('admin.frameleaf_model_local_unsaved', { values: { model: localSelected.model.name } })}
-            {/if}
-          </small>
-        </span>
-      </p>
+{#snippet onlyRow(modelName: string, band: LocalBand | 'cloud', cloudId: string | null)}
+  <Row
+    label={legend}
+    help={$t('frameleaf_model_only_help', { values: { model: modelName, where: $t(whereKey(band)) } })}
+  >
+    {#if cloudId && selectedId !== cloudId}
+      <!-- Studio AI takes no default, and a saved model can be retired: one tap keeps its jobs running. -->
+      <Button onclick={() => choose(cloudId)}>{$t('frameleaf_model_only_use')}</Button>
     {:else}
-      <p class="ms-readout is-none" role="status">
-        <Icon icon={mdiChip} size="16" aria-hidden={true} />
-        <span>{$t('admin.frameleaf_model_local_custom', { values: { model: local.value } })}</span>
-      </p>
+      <Pill tone={band === 'gpu' ? 'good' : 'off'}>{$t(whereKey(band))}</Pill>
     {/if}
-    <p class="ms-note">{$t('admin.frameleaf_model_local_download')}</p>
-    {#if !local.hardware.known}
-      <p class="ms-note">{$t('admin.frameleaf_model_local_unchecked')}</p>
-    {/if}
-  {:else if workerNote}
-    <p class="ms-note">{$t('admin.frameleaf_model_local_worker')}</p>
-  {/if}
+  </Row>
+{/snippet}
 
-  {#if models}
-    {#if models.length === 0}
-      <p class="ms-readout is-none" role="status">
-        <Icon icon={mdiAlertOutline} size="16" aria-hidden={true} />
-        <span>{$t('admin.frameleaf_cloud_model_empty')}</span>
-      </p>
-    {:else if choice.kind === 'chosen' || choice.kind === 'default'}
-      <p class="ms-readout is-cloud" aria-live="polite">
-        <Icon icon={mdiCloudOutline} size="16" aria-hidden={true} />
-        <span>
-          <strong>{choice.model.name}</strong> · {price(choice.model)}
-          <small>
-            {choice.model.description}.
-            {#if choice.model.id === recommended?.id}
-              {$t('admin.frameleaf_cloud_model_recommended_note')}
-            {/if}
-            {#if choice.kind === 'default'}
-              {$t('admin.frameleaf_cloud_model_using_default')}
-            {/if}
-          </small>
-        </span>
-      </p>
-    {:else}
-      <p class="ms-readout is-none" role="status">
-        <Icon icon={mdiAlertOutline} size="16" aria-hidden={true} />
-        <span>
-          {#if choice.kind === 'missing'}
-            {$t('admin.frameleaf_cloud_model_missing', { values: { model: choice.id } })}
-          {:else if takesCatalogDefault(group)}
-            {$t('admin.frameleaf_cloud_model_none')}
-          {:else}
-            {$t('admin.frameleaf_cloud_model_none_studio')}
+{#if onlyLocal}
+  {@render onlyRow(onlyLocal.model.name, onlyLocal.band, null)}
+{:else if onlyCloud}
+  {@render onlyRow(onlyCloud.modelName, 'cloud', onlyCloud.id)}
+{:else}
+  <div class="ms-row">
+    <fieldset class="ms" data-group={group} aria-busy={saving} bind:this={fieldset}>
+      <legend class="ms-legend">{legend}</legend>
+      {#if stopCount > 0}
+        <div class="ms-track is-split">
+          {#if local && localStops.length > 0}
+            {@const side = local}
+            <div
+              class="ms-side"
+              role={side.readOnly ? 'group' : 'radiogroup'}
+              aria-label={$t('admin.frameleaf_model_local_for', { values: { name } })}
+              style:--ms-count={localStops.length}
+            >
+              {#each localStops as stop, index (stop.model.value)}
+                {@const checked = !side.readOnly && stop.model.value === side.value}
+                {@const off = !side.readOnly && (side.disabled || stop.reason !== null)}
+                <svelte:element
+                  this={side.readOnly ? 'span' : 'label'}
+                  class="ms-stop"
+                  class:is-readonly={side.readOnly}
+                  class:is-cpu={stop.band === 'cpu'}
+                  class:is-gpu={stop.band === 'gpu'}
+                  class:is-none={stop.band === 'none'}
+                  class:is-selected={checked}
+                  class:is-disabled={off}
+                  title={stop.reason
+                    ? reasonText(stop, stop.reason)
+                    : `${localTier(index)} · ${stop.model.name} · ${localLabel(stop)}`}
+                >
+                  {#if !side.readOnly}
+                    <input
+                      type="radio"
+                      class="sr-only"
+                      name="{id}-local"
+                      value={stop.model.value}
+                      {checked}
+                      disabled={off}
+                      aria-describedby={stop.reason ? `${id}-reasons` : undefined}
+                      onchange={() => side.onChoose(stop.model.value)}
+                    />
+                  {/if}
+                  <span class="ms-band" aria-hidden="true"></span>
+                  <span class="ms-knob" aria-hidden="true"></span>
+                  <span class="ms-tier" aria-hidden="true">{localTier(index)}</span>
+                  <span class="ms-stop-name" aria-hidden="true">
+                    <Icon icon={BAND_ICONS[stop.band]} size="14" />
+                    <span>{stop.model.short}</span>
+                  </span>
+                  <span class="sr-only">
+                    {localTier(index)}, {stop.model.name}: {localLabel(stop)}{stop.reason
+                      ? `. ${$t('frameleaf_model_unavailable_prefix')} ${reasonText(stop, stop.reason)}`
+                      : ''}
+                  </span>
+                </svelte:element>
+              {/each}
+            </div>
           {/if}
-        </span>
-      </p>
-    {/if}
-    {#if recommended && !cloudDisabled && shownModelId !== null && shownModelId !== recommended.id}
-      <button type="button" class="fc-link" onclick={useRecommended}>
-        {$t('admin.frameleaf_cloud_model_use_recommended', { values: { model: recommended.name } })}
-      </button>
-    {/if}
-  {/if}
+          {#if hasPlaceholder}
+            <div
+              class="ms-side"
+              role="radiogroup"
+              aria-label={$t('admin.frameleaf_cloud_model_for', { values: { name } })}
+              style:--ms-count={1}
+            >
+              <label class="ms-stop is-cloud" title={$t('frameleaf_enhance_model_cloud_help')}>
+                <input
+                  type="radio"
+                  class="sr-only"
+                  name="{id}-cloud"
+                  value="frameleaf-cloud"
+                  checked={false}
+                  onchange={(event) => {
+                    event.currentTarget.checked = false;
+                    onNeedsCloud?.();
+                  }}
+                />
+                <span class="ms-band" aria-hidden="true"></span>
+                <span class="ms-knob" aria-hidden="true"></span>
+                <span class="ms-stop-name" aria-hidden="true">
+                  <Icon icon={mdiCloudOutline} size="14" />
+                  <span>{$t('frameleaf_enhance_model_cloud')}</span>
+                </span>
+                <span class="sr-only">
+                  {$t('frameleaf_enhance_model_cloud')}: {$t('frameleaf_enhance_model_cloud_help')}
+                </span>
+              </label>
+            </div>
+          {:else if cloudModels.length > 0}
+            <div
+              class="ms-side"
+              role="radiogroup"
+              aria-label={$t('admin.frameleaf_cloud_model_for', { values: { name } })}
+              style:--ms-count={cloudModels.length}
+            >
+              {#each cloudModels as model, index (model.id)}
+                {@const checked = model.id === selectedId}
+                <label
+                  class="ms-stop is-cloud"
+                  class:is-selected={checked}
+                  class:is-disabled={cloudDisabled}
+                  title={cloudDisabled ? cloudReason : `${cloudTier(index)} · ${model.modelName} · ${price(model)}`}
+                >
+                  <input
+                    type="radio"
+                    class="sr-only"
+                    name="{id}-cloud"
+                    value={model.id}
+                    {checked}
+                    disabled={cloudDisabled}
+                    aria-describedby={cloudDisabled ? `${id}-reasons` : undefined}
+                    onchange={() => choose(model.id)}
+                  />
+                  <span class="ms-band" aria-hidden="true"></span>
+                  <span class="ms-knob" aria-hidden="true"></span>
+                  <span class="ms-tier" aria-hidden="true">{cloudTier(index)}</span>
+                  <span class="ms-stop-name" aria-hidden="true">
+                    <Icon icon={model.id === recommended?.id ? mdiStarOutline : mdiCloudOutline} size="14" />
+                    <span>{model.modelName}</span>
+                  </span>
+                  <span class="sr-only">
+                    {cloudTier(index)}, {model.modelName}: {price(model)}{model.id === recommended?.id
+                      ? `. ${$t('admin.frameleaf_cloud_model_recommended')}`
+                      : ''}
+                  </span>
+                </label>
+              {/each}
+            </div>
+          {/if}
+        </div>
+        <div class="ms-scale" aria-hidden="true">
+          <span>{$t('frameleaf_model_scale_faster')}</span>
+          <span>{$t('frameleaf_model_scale_better_results')}</span>
+        </div>
+      {/if}
 
-  {#if stopCount > 0}
-    <ul class="ms-key" aria-label={$t('frameleaf_model_key_label')}>
-      {#if bandsPresent.has('cpu')}
-        <li class="is-cpu">
-          <Icon icon={mdiChip} size="14" aria-hidden={true} />
-          {$t('frameleaf_model_key_cpu')}
-        </li>
+      {#if local?.readOnly}
+        <p class="ms-note">{$t('frameleaf_model_home_note')}</p>
+      {:else if local}
+        {#if localSelected}
+          <p
+            class="ms-readout"
+            class:is-cpu={localSelected.band === 'cpu'}
+            class:is-gpu={localSelected.band === 'gpu'}
+            class:is-none={localSelected.band === 'none'}
+            aria-live="polite"
+          >
+            <Icon icon={BAND_ICONS[localSelected.band]} size="16" aria-hidden={true} />
+            <span>
+              {$t('admin.frameleaf_model_local_side')} ·
+              <strong>{localTier(localSelectedIndex)} · {localSelected.model.name}</strong>
+              · {localLabel(localSelected)}
+              <small>
+                {$t(localSelected.model.noteKey as Translations)}
+                {#if localSelected.reason && localSelected.reason.kind !== 'cloud-only'}
+                  {reasonText(localSelected, localSelected.reason)}
+                  {$t('admin.frameleaf_model_local_misfit')}
+                {/if}
+                {#if local.value !== local.saved}
+                  {$t('admin.frameleaf_model_local_unsaved', { values: { model: localSelected.model.name } })}
+                {/if}
+              </small>
+            </span>
+          </p>
+        {:else}
+          <p class="ms-readout is-none" role="status">
+            <Icon icon={mdiChip} size="16" aria-hidden={true} />
+            <span>{$t('admin.frameleaf_model_local_custom', { values: { model: local.value } })}</span>
+          </p>
+        {/if}
+        <p class="ms-note">{$t('admin.frameleaf_model_local_download')}</p>
+        {#if !local.hardware.known}
+          <p class="ms-note">{$t('admin.frameleaf_model_local_unchecked')}</p>
+        {/if}
+      {:else if workerNote}
+        <p class="ms-note">{$t('admin.frameleaf_model_local_worker')}</p>
       {/if}
-      {#if bandsPresent.has('gpu')}
-        <li class="is-gpu">
-          <Icon icon={mdiExpansionCard} size="14" aria-hidden={true} />
-          {local?.hardware.gpu
-            ? $t('frameleaf_model_key_gpu_named', {
-                values: { gpu: local.hardware.gpu.name, memory: local.hardware.gpu.vramGb },
-              })
-            : $t('frameleaf_model_key_gpu')}
-        </li>
+
+      {#if models}
+        {#if models.length === 0}
+          <p class="ms-readout is-none" role="status">
+            <Icon icon={mdiAlertOutline} size="16" aria-hidden={true} />
+            <span>{$t('admin.frameleaf_cloud_model_empty')}</span>
+          </p>
+        {:else if choice.kind === 'chosen' || choice.kind === 'default'}
+          <p class="ms-readout is-cloud" aria-live="polite">
+            <Icon icon={mdiCloudOutline} size="16" aria-hidden={true} />
+            <span>
+              <strong>{cloudTier(cloudSelectedIndex)} · {choice.model.modelName}</strong> · {price(choice.model)}
+              <small>
+                {choice.model.name}. {choice.model.description}.
+                {#if choice.model.id === recommended?.id}
+                  {$t('admin.frameleaf_cloud_model_recommended_note')}
+                {/if}
+                {#if choice.kind === 'default'}
+                  {$t('admin.frameleaf_cloud_model_using_default')}
+                {/if}
+              </small>
+            </span>
+          </p>
+        {:else}
+          <p class="ms-readout is-none" role="status">
+            <Icon icon={mdiAlertOutline} size="16" aria-hidden={true} />
+            <span>
+              {#if choice.kind === 'missing'}
+                {$t('admin.frameleaf_cloud_model_missing', { values: { model: choice.id } })}
+              {:else if takesCatalogDefault(group)}
+                {$t('admin.frameleaf_cloud_model_none')}
+              {:else}
+                {$t('admin.frameleaf_cloud_model_none_studio')}
+              {/if}
+            </span>
+          </p>
+        {/if}
+        {#if recommended && !cloudDisabled && shownModelId !== null && shownModelId !== recommended.id}
+          <button type="button" class="fc-link" onclick={useRecommended}>
+            {$t('admin.frameleaf_cloud_model_use_recommended', { values: { model: recommended.modelName } })}
+          </button>
+        {/if}
       {/if}
-      {#if cloudModels.length > 0}
-        <li class="is-cloud">
-          <Icon icon={mdiCloudOutline} size="14" aria-hidden={true} />
-          {$t('frameleaf_model_key_cloud')}
-        </li>
+
+      {#if stopCount > 0}
+        <ul class="ms-key" aria-label={$t('frameleaf_model_key_label')}>
+          {#if bandsPresent.has('cpu')}
+            <li class="is-cpu">
+              <Icon icon={mdiChip} size="14" aria-hidden={true} />
+              {$t('frameleaf_model_key_cpu')}
+            </li>
+          {/if}
+          {#if bandsPresent.has('gpu')}
+            <li class="is-gpu">
+              <Icon icon={mdiExpansionCard} size="14" aria-hidden={true} />
+              {local?.hardware.gpu
+                ? $t('frameleaf_model_key_gpu_named', {
+                    values: { gpu: local.hardware.gpu.name, memory: local.hardware.gpu.vramGb },
+                  })
+                : $t('frameleaf_model_key_gpu')}
+            </li>
+          {/if}
+          {#if cloudModels.length > 0}
+            <li class="is-cloud">
+              <Icon icon={mdiCloudOutline} size="14" aria-hidden={true} />
+              {$t('frameleaf_model_key_cloud')}
+            </li>
+          {/if}
+          {#if recommended}
+            <li>
+              <Icon icon={mdiStarOutline} size="14" aria-hidden={true} />
+              {$t('admin.frameleaf_cloud_model_recommended')}
+            </li>
+          {/if}
+        </ul>
       {/if}
-      {#if recommended}
-        <li>
-          <Icon icon={mdiStarOutline} size="14" aria-hidden={true} />
-          {$t('admin.frameleaf_cloud_model_recommended')}
-        </li>
+      {#if reasons.length > 0}
+        <ul class="ms-reasons" id="{id}-reasons">
+          {#each reasons as reason (reason)}
+            <li>
+              <Icon icon={mdiInformationOutline} size="14" aria-hidden={true} />
+              {reason}
+            </li>
+          {/each}
+        </ul>
       {/if}
-    </ul>
-  {/if}
-  {#if reasons.length > 0}
-    <ul class="ms-reasons" id="{id}-reasons">
-      {#each reasons as reason (reason)}
-        <li>
-          <Icon icon={mdiInformationOutline} size="14" aria-hidden={true} />
-          {reason}
-        </li>
-      {/each}
-    </ul>
-  {/if}
-</fieldset>
+    </fieldset>
+  </div>
+{/if}

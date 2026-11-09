@@ -22,6 +22,7 @@ import { queueExecution } from 'src/queue/context.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
   CloudJobsUnavailableError,
+  CustomClipModelRefusedError,
   CutoutUnavailableError,
   CutoutWorkerError,
   FRAMELEAF_CLOUD_ENDPOINT,
@@ -131,6 +132,35 @@ describe(MachineLearningRepository.name, () => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
     await rm(imagePath, { force: true });
+  });
+
+  describe('getCustomClipDimSize', () => {
+    const custom = 'someone/my-search-model';
+
+    it('asks the worker and returns a validated integer size', async () => {
+      const fetch = vi.fn().mockResolvedValue(jsonResponse({ dimSize: 640 }));
+      vi.stubGlobal('fetch', fetch);
+
+      await expect(sut.getCustomClipDimSize(selection(MlDestinationKind.Local, localUrl), custom)).resolves.toBe(640);
+
+      expect(String(fetch.mock.calls[0][0])).toBe(`${localUrl}/clip/custom-model`);
+      expect(JSON.parse(fetch.mock.calls[0][1].body as string)).toEqual({ modelName: custom });
+    });
+
+    it.each([0, -512, 12.5, 2001, '512; drop table asset'])('refuses the unsafe size %s', async (dimSize) => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ dimSize })));
+
+      await expect(sut.getCustomClipDimSize(selection(MlDestinationKind.Local, localUrl), custom)).rejects.toThrow();
+    });
+
+    it('passes on the reason the worker refused a model', async () => {
+      const detail = "The Hugging Face model 'someone/my-search-model' can't be used for search: it's missing x.";
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ detail }, 422)));
+
+      await expect(sut.getCustomClipDimSize(selection(MlDestinationKind.Local, localUrl), custom)).rejects.toEqual(
+        new CustomClipModelRefusedError(detail),
+      );
+    });
   });
 
   describe('predict', () => {

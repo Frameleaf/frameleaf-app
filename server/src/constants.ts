@@ -167,6 +167,12 @@ export const excludePaths = ['/.well-known/frameleaf', '/.well-known/immich', '/
 export const FACE_THUMBNAIL_SIZE = 250;
 
 type ModelInfo = { dimSize: number };
+/**
+ * The embedding sizes accepted for a person's own Hugging Face search model. The upper bound is
+ * pgvector's limit for an HNSW index on `vector` columns, so a resize can never fail on the index.
+ */
+export const CUSTOM_CLIP_DIM_SIZE = { min: 32, max: 2000 } as const;
+
 export const CLIP_MODEL_INFO: Record<string, ModelInfo> = {
   RN101__openai: { dimSize: 512 },
   RN101__yfcc15m: { dimSize: 512 },

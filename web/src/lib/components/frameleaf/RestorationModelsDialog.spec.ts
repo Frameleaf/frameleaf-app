@@ -160,7 +160,7 @@ describe('RestorationModelsDialog (FL-114)', () => {
 
     render(RestorationModelsDialog, { destination: lan, open: true });
 
-    expect(await screen.findByText('This worker reports no GPU.')).toBeInTheDocument();
+    expect(await screen.findByText('This computer reports no GPU.')).toBeInTheDocument();
   });
 
   it('says so when the destination cannot be asked', async () => {
@@ -179,7 +179,7 @@ describe('RestorationModelsDialog (FL-114)', () => {
 
     expect(
       await screen.findByText(
-        "Could not read this destination's restoration models: the destination does not run the restoration worker",
+        "Could not read this computer's restoration models: the destination does not run the restoration worker",
       ),
     ).toBeInTheDocument();
   });

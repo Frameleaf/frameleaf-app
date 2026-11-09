@@ -193,6 +193,18 @@ function cleanModelName(modelName: string): string {
   return token.replaceAll(':', '_');
 }
 
+const HUGGING_FACE_REPOSITORY = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}\/[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$/;
+
+/** A person's own Hugging Face search model (`org/name`): well-formed and not one of the published models. */
+export function isCustomClipModelName(modelName: string): boolean {
+  return (
+    HUGGING_FACE_REPOSITORY.test(modelName) &&
+    !modelName.includes('..') &&
+    !modelName.includes('--') &&
+    !CLIP_MODEL_INFO[cleanModelName(modelName)]
+  );
+}
+
 export function getCLIPModelInfo(modelName: string) {
   const modelInfo = CLIP_MODEL_INFO[cleanModelName(modelName)];
   if (!modelInfo) {
