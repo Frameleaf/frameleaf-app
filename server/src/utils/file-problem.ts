@@ -67,7 +67,7 @@ export const isJpegFileName = (name: string): boolean => JPEG_EXTENSIONS.has(ext
 const NOT_DECODED_EXTENSIONS = new Set(['.psd', '.ai', '.indd']);
 
 // FL-1337: the image worker's own words when it crashed or stalled count too ("Sharp child closed")
-const isBusy = (message: string) =>
+export const isBusy = (message: string) =>
   /timeout|timed out|busy|\bEIO\b|\bEAGAIN\b|worker.*exit|child closed|stopped making progress|execution deadline/i.test(
     message,
   );

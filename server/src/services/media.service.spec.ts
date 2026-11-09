@@ -1939,6 +1939,50 @@ describe(MediaService.name, () => {
       });
     });
 
+    it('a damaged image is sent to Library care, not failed', async () => {
+      const asset = AssetFactory.from().exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      const message = 'VipsJpeg: premature end of JPEG image';
+      mocks.media.generateThumbnail.mockRejectedValue(new SharpOperationError(message));
+
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.job.queue).toHaveBeenCalledExactlyOnceWith({
+        name: JobName.MediaHealthFixAsset,
+        data: { id: asset.id, from: 'preview', message },
+      });
+    });
+
+    it('an unsupported RAW is sent too', async () => {
+      const asset = AssetFactory.from({ originalFileName: 'file.cr2' }).exif().build();
+      const failure = new RawRenderError('unsupported', 'ERR_RAW_UNSUPPORTED');
+      mocks.systemMetadata.get.mockResolvedValue({ image: { extractEmbedded: false, enhancedRaw: { enabled: true } } });
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      vi.mocked(renderRawWithLibRaw).mockRejectedValue(failure);
+
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.job.queue).toHaveBeenCalledExactlyOnceWith({
+        name: JobName.MediaHealthFixAsset,
+        data: { id: asset.id, from: 'preview', message: failure.message },
+      });
+    });
+
+    it.each([
+      new SharpOperationError('Sharp child closed before the task finished'),
+      new SharpOperationError('image worker stopped making progress'),
+      new SharpOperationError('operation timed out'),
+      new RawRenderError('timeout', 'ETIMEDOUT'),
+    ])('a timeout or worker exit still fails the job so it retries: %s', async (failure) => {
+      const asset = AssetFactory.from().exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      mocks.media.generateThumbnail.mockRejectedValue(failure);
+
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toBe(failure);
+
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.MediaHealthFixAsset }));
+    });
+
     it('should skip unsupported or corrupt raw files', async () => {
       const asset = AssetFactory.from({ originalFileName: 'file.cr2' })
         .exif({ fileSizeInByte: 5000, profileDescription: 'Adobe RGB', bitsPerSample: 14, orientation: undefined })
@@ -1974,8 +2018,6 @@ describe(MediaService.name, () => {
       new RawRenderError('timeout', 'ETIMEDOUT'),
       new RawRenderError('resource_limit', 'ERR_RAW_RESOURCE_LIMIT'),
       new RawRenderError('io', 'EIO'),
-      new RawRenderError('damaged', 'ERR_RAW_DAMAGED'),
-      new RawRenderError('decode_failed', 'ERR_RAW_DECODE'),
     ])('propagates classified RAW failure for retry or diagnosis: %s', async (failure) => {
       const asset = AssetFactory.from({ originalFileName: 'file.cr2' }).exif().build();
       mocks.systemMetadata.get.mockResolvedValue({
@@ -2124,8 +2166,12 @@ describe(MediaService.name, () => {
       const error = new SharpOperationError('output encoding failed');
       mocks.media.generateThumbnail.mockRejectedValueOnce(error);
 
-      await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toBe(error);
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Skipped);
 
+      expect(mocks.job.queue).toHaveBeenCalledExactlyOnceWith({
+        name: JobName.MediaHealthFixAsset,
+        data: { id: asset.id, from: 'preview', message: error.message },
+      });
       expect(renderRawWithLibRaw).not.toHaveBeenCalled();
       expect(mocks.asset.upsertFiles).not.toHaveBeenCalled();
     });
@@ -2285,7 +2331,7 @@ describe(MediaService.name, () => {
 
     it('does not repeat a failed sensor attempt or use the embedded JPEG to hide it', async () => {
       const asset = AssetFactory.from({ originalFileName: 'file.dng' }).exif().build();
-      const error = new RawRenderError('damaged', 'ERR_RAW_DAMAGED');
+      const error = new RawRenderError('io', 'EIO');
       mocks.systemMetadata.get.mockResolvedValue({
         image: { fullsize: { enabled: true }, extractEmbedded: true, enhancedRaw: { enabled: true } },
       });

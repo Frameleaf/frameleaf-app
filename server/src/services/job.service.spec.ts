@@ -340,6 +340,29 @@ describe(JobService.name, () => {
     });
   });
 
+  it('a skipped preview queues nothing after it, but still announces the upload', async () => {
+    const asset = AssetFactory.create({ id: 'asset-1', type: AssetType.Image });
+    const data = { id: asset.id, source: 'upload' } as const;
+    mocks.asset.getByIdsWithAllRelationsButStacks.mockResolvedValue([asset as never]);
+    mocks.systemMetadata.get.mockResolvedValue({
+      machineLearning: {
+        enabled: true,
+        clip: { enabled: true },
+        facialRecognition: { enabled: true },
+        ocr: { enabled: true },
+        imageDescription: { enabled: true },
+        nsfwDetection: { enabled: true },
+      },
+    });
+    mocks.job.run.mockResolvedValue(JobStatus.Skipped);
+
+    await sut.onJobRun(QueueName.ThumbnailGeneration, { name: JobName.AssetGenerateThumbnails, data });
+
+    expect(mocks.job.queueAll).toHaveBeenCalledExactlyOnceWith([]);
+    expect(mocks.job.queue).not.toHaveBeenCalled();
+    expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_upload_success', asset.ownerId, expect.anything());
+  });
+
   describe('a handler that throws (FL-71)', () => {
     it('reports the error and rethrows it, so the SQL queue records the job as failed', async () => {
       const error = new Error('Input file is missing');

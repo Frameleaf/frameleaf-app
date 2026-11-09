@@ -213,7 +213,7 @@ export class JobService extends BaseService {
       [JobStatus.Success, JobStatus.Skipped].includes(response) &&
       !(job.name === JobName.AssetVideoFingerprint && response === JobStatus.Skipped);
     if (shouldRunFollowUp) {
-      await this.onDone(job);
+      await this.onDone(job, response);
     }
   }
 
@@ -256,7 +256,8 @@ export class JobService extends BaseService {
   /**
    * Queue follow up jobs
    */
-  private async onDone(item: JobItem) {
+  private async onDone(item: JobItem, response?: JobStatus) {
+    const skipped = response === JobStatus.Skipped;
     switch (item.name) {
       case JobName.SidecarCheck: {
         await this.jobRepository.queue({ name: JobName.AssetExtractMetadata, data: item.data });
@@ -335,31 +336,37 @@ export class JobService extends BaseService {
           break;
         }
 
-        const { machineLearning } = await this.getConfig({ withCache: true });
+        // FL-1337: a preview that was skipped has no picture to work from, so nothing is queued after it.
+        // Library care queues thumbnails again after a fix, and the work follows then. The upload is still announced.
         const jobs: JobItem[] = [];
-        if (isSmartSearchEnabled(machineLearning)) {
-          jobs.push({ name: JobName.SmartSearch, data: item.data });
-        }
-        if (asset.libraryScope !== LibraryScope.Design && isFacialRecognitionEnabled(machineLearning)) {
-          jobs.push({ name: JobName.AssetDetectFaces, data: item.data });
-        }
-        if (isOcrEnabled(machineLearning)) {
-          jobs.push({ name: JobName.Ocr, data: item.data });
-        }
+        const { machineLearning } = await this.getConfig({ withCache: true });
+        if (!skipped) {
+          if (isSmartSearchEnabled(machineLearning)) {
+            jobs.push({ name: JobName.SmartSearch, data: item.data });
+          }
+          if (asset.libraryScope !== LibraryScope.Design && isFacialRecognitionEnabled(machineLearning)) {
+            jobs.push({ name: JobName.AssetDetectFaces, data: item.data });
+          }
+          if (isOcrEnabled(machineLearning)) {
+            jobs.push({ name: JobName.Ocr, data: item.data });
+          }
 
-        if (asset.type === AssetType.Video) {
-          // Videos are scored for Best Photos too (via sampled frames).
-          jobs.push({ name: JobName.AssetEncodeVideo, data: item.data });
-          if (asset.libraryScope !== LibraryScope.Design) jobs.push({ name: JobName.BestPhotosScore, data: item.data });
-        }
+          if (asset.type === AssetType.Video) {
+            // Videos are scored for Best Photos too (via sampled frames).
+            jobs.push({ name: JobName.AssetEncodeVideo, data: item.data });
+            if (asset.libraryScope !== LibraryScope.Design)
+              jobs.push({ name: JobName.BestPhotosScore, data: item.data });
+          }
 
-        if (asset.type === AssetType.Image) {
-          if (asset.libraryScope !== LibraryScope.Design) jobs.push({ name: JobName.BestPhotosScore, data: item.data });
+          if (asset.type === AssetType.Image) {
+            if (asset.libraryScope !== LibraryScope.Design)
+              jobs.push({ name: JobName.BestPhotosScore, data: item.data });
 
-          if (isImageDescriptionEnabled(machineLearning)) {
-            jobs.push({ name: JobName.ImageDescription, data: item.data });
-          } else if (isNsfwDetectionEnabled(machineLearning)) {
-            jobs.push({ name: JobName.NsfwDetection, data: item.data });
+            if (isImageDescriptionEnabled(machineLearning)) {
+              jobs.push({ name: JobName.ImageDescription, data: item.data });
+            } else if (isNsfwDetectionEnabled(machineLearning)) {
+              jobs.push({ name: JobName.NsfwDetection, data: item.data });
+            }
           }
         }
 
