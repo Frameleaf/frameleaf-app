@@ -1,4 +1,4 @@
-import { writeFile, rm } from 'node:fs/promises';
+import { readFile, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Refusal } from './contracts.js';
 import { publishFile } from './files.js';
@@ -130,7 +130,9 @@ export async function saveDockermanTemplates(containers: DockerManContainer[], p
   for (const service of SERVICES) {
     for (const name of [`${project}-${service}-1`, containerName(project.slice('frameleaf-'.length), service)]) {
       const path = join(directory, `my-${name}.xml`);
-      if (!templates.some(([destination]) => destination === path)) await rm(path, { force: true });
+      // A friendly name can be shared with another installation; only ever remove this project's template.
+      if (!templates.some(([destination]) => destination === path) &&
+        (await readFile(path, 'utf8').catch(() => '')).includes(project)) await rm(path, { force: true });
     }
   }
 }

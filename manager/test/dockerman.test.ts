@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { Docker } from '../src/docker.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -44,6 +45,45 @@ test('friendly container names are stable, three digits, and accepted by the Doc
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('template cleanup leaves another installation\'s template with the same friendly name', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'dockerman-shared-'));
+  try {
+    const other = join(directory, `my-${containerName('aaaaaaaaaaaa', 'frameleaf-server')}.xml`);
+    await writeFile(other, '<Container>com.docker.compose.project=frameleaf-bbbbbbbbbbbb</Container>');
+    await saveDockermanTemplates([fixture()], project, directory);
+    await stat(other);
+    await writeFile(other, `<Container>com.docker.compose.project=${project}</Container>`);
+    await saveDockermanTemplates([fixture()], project, directory);
+    await assert.rejects(stat(other), { code: 'ENOENT' });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+for (const [title, owner, kept] of [
+  ['another stack owns', 'frameleaf-bbbbbbbbbbbb', false],
+  ['an unmanaged container owns', undefined, false],
+  ['this stack already owns', project, true],
+] as const) {
+  test(`up handles a friendly name ${title}`, async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'compose-names-'));
+    try {
+      const path = join(directory, 'compose.json');
+      await writeFile(path, JSON.stringify({ name: project, services: { database: { image: `ghcr.io/frameleaf/frameleaf-postgres@sha256:${'a'.repeat(64)}`, container_name: 'Frameleaf-Database-843' } } }));
+      const docker = new Docker((async (_binary: string, args: string[]) => {
+        if (args[0] === 'ps') return 'a'.repeat(64);
+        if (args[0] === 'inspect') return JSON.stringify([{ Id: 'a'.repeat(64), Name: '/Frameleaf-Database-843', State: { Running: true },
+          Config: { Image: 'x', Env: [], Labels: owner ? { 'com.docker.compose.project': owner } : {} }, Mounts: [], NetworkSettings: { Networks: {} } }]);
+        return '';
+      }) as any);
+      await docker.compose(directory, project, 'up');
+      assert.equal(JSON.parse(await readFile(path, 'utf8')).services.database.container_name, kept ? 'Frameleaf-Database-843' : undefined);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+}
 
 test('DockerMan templates preserve identity, secrets, storage, devices, networking and health checks', () => {
   const xml = dockermanTemplate(fixture());
