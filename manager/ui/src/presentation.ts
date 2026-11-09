@@ -16,6 +16,7 @@ export type JournalOperation = {
 };
 export const operationNames: Record<string, string> = {
   'move-library': 'Moving your library',
+  'move-database': 'Moving your database',
   install: 'Setting up Frameleaf',
   import: 'Bringing your library to Frameleaf',
   restore: 'Restoring your library',
@@ -57,7 +58,9 @@ export const stepNames: Record<string, string> = {
   'prepare-library': 'Begin library preparation',
   'stop-application': 'Pause application writes',
   'database-checkpoint': 'Create a database recovery point',
-  'database-move': 'Copy the database to the new database engine and check it',
+  'database-move': 'Copy the database into a new folder and check it',
+  'return-original-database': 'Switch back to the original database folder',
+  'start-original-database': 'Start Frameleaf on the original database folder',
   'apply-release': 'Apply and verify the update',
   'rollback-stop-release': 'Stop the release that did not start',
   'rollback-restore-database': 'Restore the database from before the update',
@@ -106,6 +109,7 @@ const plans: Record<string, string[]> = {
     'prepare-library',
   ],
   update: ['download-images', 'stop-application', 'database-checkpoint', 'database-move', 'apply-release'],
+  'move-database': ['stop-application', 'database-checkpoint', 'database-move', 'start'],
   restore: [
     'download-images',
     'stop-previous-installation',
@@ -184,6 +188,16 @@ const refusals: Record<string, string> = {
   database_move_verification_failed:
     'The copied database did not match the original, so Manager kept the original. Nothing was lost.',
   database_move_version_mismatch: 'The new database engine reported an unexpected version, so Manager kept the original database.',
+  database_relocation_rolled_back:
+    'Manager could not move the database to the chosen folder, so Frameleaf started again on its original database folder. Nothing was lost. Any partial copy was kept for you to remove.',
+  database_relocation_cancelled: 'The database move was cancelled. Frameleaf is running on its original database folder.',
+  database_move_reverse_required:
+    'Frameleaf already started on the new database folder and may have saved changes there, so going back to the original folder is not offered. Resume to finish the move.',
+  database_already_in_folder: 'The database is already in this folder. Choose a folder on another drive.',
+  database_image_changed: 'The database engine differs from the installed release’s. Update Frameleaf first, then move the database.',
+  database_folder_not_retained: 'Manager is not keeping this database folder. Refresh the Storage page.',
+  database_folder_in_use: 'This database folder is still in use, so it was not removed.',
+  database_unconfirmed: 'Manager could not confirm the current database is working, so it kept the previous folder. Start Frameleaf, then try again.',
   insufficient_database_space:
     'The drive that holds the database folder does not have enough free space. Free some space, then try again.',
   database_checkpoint_required: 'A database checkpoint must exist before the database image can change. Resume the update to take one.',
@@ -366,6 +380,7 @@ const operationSections: Record<string, string> = {
   restart: 'services',
   reconfigure: 'services',
   'move-library': 'storage',
+  'move-database': 'storage',
 };
 /** The navigation entry for the open screen; maintenance on an installed server belongs to its own section. */
 export function navSection(screen: string, installed: boolean, operationKind?: string) {

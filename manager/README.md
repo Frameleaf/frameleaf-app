@@ -184,8 +184,27 @@ start before it served, the rollback puts back the previous release's `compose.j
 checkpoint (old image, old folder) without a restore (`database_move_failed_rolled_back` or
 `update_failed_rolled_back`); a cancel does the same. A rerun after an interruption restores
 into another new folder. Folders a move leaves behind are listed in
-`retained-database-directories` and never deleted. A move never goes to an older PostgreSQL major
-or to an image Manager cannot identify (`database_image_change_unsupported`).
+`retained-database-directories` and are only deleted when the administrator removes them (below).
+A move never goes to an older PostgreSQL major or to an image Manager cannot identify
+(`database_image_change_unsupported`).
+
+**Moving the database to another drive** (FL-1322) uses the same `database-move` step on the
+installed release and image. `POST /manager-api/review-database-move` with `{ databaseRoot }` checks
+the folder like a new install's database folder (host bind on a local disk, outside Docker's
+storage, no other container writing there, not inside the media, backup, Manager or any database
+folder) and requires room for twice the measured database size: the moved copy, and the second copy
+a later engine upgrade restores beside it. `POST /manager-api/move-database` with `{ id, key }`
+starts a `move-database` operation: `stop-application`, `database-checkpoint`, `database-move` (new
+folder allocated in the chosen root, checked by row counts, extensions and version) and `start`,
+which saves the new `databaseRoot` and `databasePath`. Any failure before the application is started
+on the new folder, or a start whose server never ran, puts the checkpoint's `compose.json` back on the
+original folder and starts it (`database_relocation_rolled_back`); cancelling an interrupted move does
+the same (`database_relocation_cancelled`), and resuming it restores into another new folder. Once the
+start journaled `start-state` the new folder may hold writes: it is kept and cancelling is refused
+(`database_move_reverse_required`). The original folder is retained. `GET
+/manager-api/retained-databases` lists retained folders; `POST /manager-api/remove-retained-database`
+with `{ path }` deletes one, only while no operation is open, the current database answers, and no
+container maps it.
 
 An in-place change needs the same PostgreSQL major and the same on-disk catalog, the installed
 image listed in `databaseImageChange.from`, and a checkpoint backup taken first (Manager always

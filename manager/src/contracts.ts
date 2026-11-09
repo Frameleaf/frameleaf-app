@@ -114,7 +114,8 @@ export type OperationKind =
   | 'restart'
   | 'reconfigure'
   | 'recover-source'
-  | 'move-library';
+  | 'move-library'
+  | 'move-database';
 export type Operation = {
   id: string;
   kind: OperationKind;
