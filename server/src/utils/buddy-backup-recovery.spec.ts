@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { lstat, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { BuddyRecovery } from 'src/utils/buddy-backup-recovery.js';
@@ -86,6 +86,32 @@ describe('Replacement-local database credential files', () => {
       expect(await readFile(target, 'utf8')).toBe('replacement credential');
     },
   );
+
+  it('never replaces a file that appears while the recovery copy is being published', async () => {
+    const id = randomUUID();
+    const directory = join(root, 'recovery', id, 'objects');
+    await mkdir(directory, { recursive: true });
+    const restored = Buffer.from('historical configuration');
+    const sha256 = createHash('sha256').update(restored).digest('hex');
+    await writeFile(join(directory, sha256), restored);
+    const target = join(root, 'configuration');
+    const plan = {
+      version: 1,
+      scope: 'settings',
+      mode: 'replace',
+      files: [{ path: target, sha256, size: restored.length }],
+    } as BuddyRecovery;
+    // The last check before the copy is put in place: the target appears after it has looked.
+    const publisher = new BuddyRecoveryFiles(root, id, async () => {
+      const copy = (await readdir(root)).find((name) => name.startsWith('configuration.buddy-'));
+      const written = copy ? (await lstat(join(root, copy))).size : 0;
+      if (written === restored.length && !(await lstat(target).catch(() => null))) {
+        await writeFile(target, 'new occupant');
+      }
+    });
+    await expect(publisher.publish(plan, [], [target])).rejects.toThrow();
+    expect(await readFile(target, 'utf8')).toBe('new occupant');
+  });
 
   it.each([false, true])('retains the effective credential-file source at startup (systemd: %s)', async (systemd) => {
     const source = await readFile(resolve('bin/start.sh'), 'utf8');

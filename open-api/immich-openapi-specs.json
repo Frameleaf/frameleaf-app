@@ -69183,7 +69183,7 @@
             "type": "boolean"
           },
           "hashVerificationEnabled": {
-            "description": "Hash verification enabled",
+            "description": "Deprecated: ignored, every copied original is always checked",
             "type": "boolean"
           },
           "template": {

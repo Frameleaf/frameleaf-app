@@ -6,6 +6,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { BUDDY_ID, BUDDY_UUID } from './buddy-backup-crypto.ts';
 import { createBuddyDirectory, flushBuddyDirectory, writeBuddyFile } from './buddy-backup-vault.ts';
 import type { CloudBackupManifestFile } from './cloud-backup.ts';
+import { retainFile } from './media-health-roots.ts';
 import type { BuddyManifest } from '../services/buddy-backup-capture.service.ts';
 
 export type BuddyRecovery = {
@@ -276,7 +277,7 @@ export class BuddyRecoveryFiles {
           throw new Error('Recovery copy failed verification');
         if (await lstat(file.path).catch(() => null)) throw new Error('Recovery target appeared during publication');
         await this.assert();
-        await rename(temporary, file.path);
+        await retainFile(temporary, file.path);
         await flushBuddyDirectory(dirname(file.path));
       } finally {
         await rm(temporary, { force: true });

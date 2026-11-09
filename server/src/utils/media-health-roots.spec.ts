@@ -1,5 +1,17 @@
 import { createHash } from 'node:crypto';
-import { link, mkdir, mkdtemp, open, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import {
+  copyFile,
+  link,
+  mkdir,
+  mkdtemp,
+  open,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
@@ -20,7 +32,7 @@ import {
 // Real filesystem calls by default; single cases simulate other filesystems through `link`.
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>();
-  return { ...actual, link: vi.fn(actual.link), open: vi.fn(actual.open) };
+  return { ...actual, copyFile: vi.fn(actual.copyFile), link: vi.fn(actual.link), open: vi.fn(actual.open) };
 });
 
 const failWith = (code: string) => Object.assign(new Error(code), { code });
@@ -172,6 +184,112 @@ describe('media-health-roots (FL-69)', () => {
       await expect(readFile(source)).rejects.toThrow();
     });
 
+    it('removes the old name of a file that also has the new one, and keeps the file', async () => {
+      const source = join(root, 'damaged.jpg');
+      const destination = join(root, 'media', 'asset-finding.damaged.jpg');
+      await writeFile(source, 'damaged');
+      await mkdir(join(root, 'media'));
+      await link(source, destination);
+
+      await retainFile(source, destination);
+
+      await expect(readFile(source)).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(readFile(destination, 'utf8')).resolves.toBe('damaged');
+      expect((await stat(destination)).nlink).toBe(1);
+    });
+
+    it('keeps a file moved onto its own name', async () => {
+      const file = join(root, 'damaged.jpg');
+      await writeFile(file, 'damaged');
+
+      await retainFile(file, file);
+      await retainFile(file, `${root}/./damaged.jpg`);
+
+      await expect(readFile(file, 'utf8')).resolves.toBe('damaged');
+    });
+
+    it('keeps a file moved onto itself through a folder reached by a symbolic link', async () => {
+      const real = join(root, 'real');
+      await mkdir(real);
+      const file = join(real, 'damaged.jpg');
+      await writeFile(file, 'damaged');
+      // a second name elsewhere, so the link count alone does not tell
+      await link(file, join(root, 'kept-elsewhere.jpg'));
+      await symlink(real, join(root, 'alias'));
+
+      await retainFile(file, join(root, 'alias', 'damaged.jpg'));
+
+      await expect(readFile(file, 'utf8')).resolves.toBe('damaged');
+      await expect(readdir(real)).resolves.toEqual(['damaged.jpg']);
+    });
+
+    it('keeps a file moved onto another letter case of its name', async () => {
+      const file = join(root, 'damaged.jpg');
+      await writeFile(file, 'damaged');
+
+      await retainFile(file, join(root, 'DAMAGED.JPG'));
+
+      // one entry on a case-insensitive drive, so nothing moves; a real move on a case-sensitive one
+      await expect(readFile(join(root, 'DAMAGED.JPG'), 'utf8')).resolves.toBe('damaged');
+    });
+
+    describe('on a drive without hard links', () => {
+      const withoutHardLinks = async () => {
+        const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+        vi.mocked(link).mockImplementation(() => Promise.reject(failWith('EPERM')));
+        onTestFinished(() => {
+          vi.mocked(link).mockReset().mockImplementation(actual.link);
+          vi.mocked(copyFile).mockReset().mockImplementation(actual.copyFile);
+        });
+        return actual;
+      };
+
+      it('moves a file by copying it, and removes the source once the copy holds the same bytes', async () => {
+        await withoutHardLinks();
+        const source = join(root, 'damaged.jpg');
+        const destination = join(root, 'trash', 'damaged.jpg');
+        await writeFile(source, 'damaged');
+
+        await retainFile(source, destination);
+
+        await expect(readFile(destination, 'utf8')).resolves.toBe('damaged');
+        await expect(readFile(source)).rejects.toMatchObject({ code: 'ENOENT' });
+        // no temporary copy is left beside it
+        await expect(readdir(join(root, 'trash'))).resolves.toEqual(['damaged.jpg']);
+      });
+
+      it('never replaces a different file already at the destination', async () => {
+        await withoutHardLinks();
+        const source = join(root, 'damaged.jpg');
+        const destination = join(root, 'trash', 'damaged.jpg');
+        await writeFile(source, 'damaged');
+        await mkdir(join(root, 'trash'));
+        await writeFile(destination, 'other');
+
+        await expect(retainFile(source, destination)).rejects.toThrow('different file');
+
+        await expect(readFile(source, 'utf8')).resolves.toBe('damaged');
+        await expect(readFile(destination, 'utf8')).resolves.toBe('other');
+        await expect(readdir(join(root, 'trash'))).resolves.toEqual(['damaged.jpg']);
+      });
+
+      it('keeps the source when the copy it placed differs, and removes only that copy', async () => {
+        const actual = await withoutHardLinks();
+        const source = join(root, 'damaged.jpg');
+        const destination = join(root, 'trash', 'damaged.jpg');
+        await writeFile(source, 'damaged');
+        // a copy that is the same size but holds different bytes
+        vi.mocked(copyFile).mockImplementationOnce(async (_from, to) =>
+          actual.writeFile(to, 'damagxx', { flag: 'wx' }),
+        );
+
+        await expect(retainFile(source, destination)).rejects.toThrow('does not match');
+
+        await expect(readFile(source, 'utf8')).resolves.toBe('damaged');
+        await expect(readFile(destination)).rejects.toMatchObject({ code: 'ENOENT' });
+      });
+    });
+
     it('moves across filesystems to a destination that cannot hard-link, never replacing a file', async () => {
       const source = join(root, 'damaged.jpg');
       const destination = join(root, 'nolinks', 'asset-finding.damaged.jpg');
@@ -294,6 +412,39 @@ describe('media-health-roots (FL-69)', () => {
       await expect(retainFile(source, destination)).rejects.toThrow('EIO');
       await expect(readFile(destination, 'utf8')).resolves.toBe('someone else');
       await expect(readFile(source, 'utf8')).resolves.toBe('damaged');
+    });
+
+    it('keeps the source when the placed copy differs', async () => {
+      const source = join(root, 'damaged.jpg');
+      const destination = join(root, 'asset-finding.damaged.jpg');
+      await writeFile(source, 'damaged');
+      const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+      vi.mocked(link).mockRejectedValueOnce(failWith('EXDEV'));
+      // A copy that is the same size but holds different bytes.
+      vi.mocked(copyFile).mockImplementationOnce(async (_from, to) => actual.writeFile(to, 'damagxx', { flag: 'wx' }));
+
+      await expect(retainFile(source, destination)).rejects.toThrow('does not match');
+
+      await expect(readFile(source, 'utf8')).resolves.toBe('damaged');
+      await expect(readFile(destination)).rejects.toThrow();
+    });
+
+    it('never removes a destination it did not create when the bytes differ', async () => {
+      const source = join(root, 'damaged.jpg');
+      const destination = join(root, 'asset-finding.damaged.jpg');
+      await writeFile(source, 'damaged');
+      await writeFile(destination, 'damaged');
+      vi.mocked(link).mockRejectedValueOnce(failWith('EXDEV'));
+      // The destination changes after the same-bytes check passed, as another writer might.
+      const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+      vi.mocked(link).mockImplementationOnce(async () => {
+        await actual.writeFile(destination, 'damagxx');
+        throw failWith('EEXIST');
+      });
+
+      await expect(retainFile(source, destination)).rejects.toThrow('already holds a different file');
+      await expect(readFile(source, 'utf8')).resolves.toBe('damaged');
+      await expect(readFile(destination, 'utf8')).resolves.toBe('damagxx');
     });
 
     it('finishes a cross-filesystem move whose complete copy is already at the new name', async () => {

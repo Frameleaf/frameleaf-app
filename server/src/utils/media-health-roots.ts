@@ -2,6 +2,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { constants, createReadStream } from 'node:fs';
 import { copyFile, link, lstat, mkdir, open, realpath, unlink } from 'node:fs/promises';
 import path from 'node:path';
+// eslint-disable-next-line no-restricted-imports -- Offline recovery loads this file directly under Node without application aliases.
+import { isOtherLinkOf } from './file-identity.ts';
 
 /**
  * Library Care search locations (FL-69).
@@ -222,21 +224,29 @@ const sha256Of = async (filePath: string) => {
   return digest.digest();
 };
 
-/** Whether two names hold the same bytes: the same file, or an identical complete copy. */
-const holdsSameBytes = async (source: string, destination: string) => {
-  const [from, to] = await Promise.all([lstat(source), lstat(destination)]);
+/**
+ * How the name `destination` stands to `source`:
+ * - `alias`: one directory entry under two spellings (another letter case, a folder reached through a symbolic
+ *   link or a bind mount). Removing either name would remove the file.
+ * - `same`: the same bytes under a separate name, as another name of the file or an identical complete copy.
+ * - `different`: anything else.
+ */
+const relationOf = async (source: string, destination: string): Promise<'alias' | 'same' | 'different'> => {
+  const [from, to] = await Promise.all([lstat(source, { bigint: true }), lstat(destination, { bigint: true })]);
   if (from.ino === to.ino && from.dev === to.dev) {
-    return true;
+    return (await isOtherLinkOf(source, destination)) ? 'same' : 'alias';
   }
-  if (from.size !== to.size) {
-    return false;
+  if (!from.isFile() || !to.isFile() || from.size !== to.size) {
+    return 'different';
   }
   const [a, b] = await Promise.all([sha256Of(source), sha256Of(destination)]);
-  return a.equals(b);
+  return a.equals(b) ? 'same' : 'different';
 };
 
 /** Errors from a filesystem that cannot hard-link at all. */
 const NO_HARD_LINKS = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS']);
+
+const cannotHardLink = (code: unknown) => typeof code === 'string' && NO_HARD_LINKS.has(code);
 
 /**
  * Publish a flushed staged copy where hard links are unsupported. The destination is created
@@ -247,14 +257,14 @@ const publishByCopy = async (
   staged: string,
   destination: string,
   refuseDifferent: (error: unknown) => Promise<void>,
-) => {
+): Promise<boolean> => {
   let file;
   try {
     file = await open(destination, 'wx', (await lstat(staged)).mode & 0o777);
   } catch (error) {
     if (errorCode(error) === 'EEXIST') {
       await refuseDifferent(error);
-      return;
+      return false;
     }
     throw error;
   }
@@ -267,17 +277,61 @@ const publishByCopy = async (
     throw error;
   }
   await file.close();
+  return true;
+};
+
+/**
+ * Copy `source` to a private temporary name beside `destination`, flush it, and place it at `destination`
+ * without replacing anything: hard-linked when the drive can, else written by `publishByCopy`. Returns whether
+ * this call created `destination`; a name already holding the same bytes is accepted.
+ */
+const placeCopy = async (
+  source: string,
+  destination: string,
+  canLink: boolean,
+  refuseDifferent: (error: unknown) => Promise<void>,
+): Promise<boolean> => {
+  const temporary = `${destination}.${randomUUID()}.partial`;
+  try {
+    await copyFile(source, temporary, constants.COPYFILE_EXCL);
+    const file = await open(temporary, 'r');
+    try {
+      await file.sync();
+    } finally {
+      await file.close();
+    }
+    if (!canLink) {
+      return await publishByCopy(temporary, destination, refuseDifferent);
+    }
+    try {
+      await link(temporary, destination);
+      return true;
+    } catch (linkError) {
+      const linkCode = errorCode(linkError);
+      if (linkCode === 'EEXIST') {
+        await refuseDifferent(linkError);
+        return false;
+      }
+      if (cannotHardLink(linkCode)) {
+        return await publishByCopy(temporary, destination, refuseDifferent);
+      }
+      throw linkError;
+    }
+  } finally {
+    await unlink(temporary).catch(() => {});
+  }
 };
 
 /**
  * Move a file to a new name without ever replacing anything (FL-69).
  *
  * The new name is hard-linked first, which fails rather than overwrites, and the old name is only
- * removed once the new one holds the same bytes. Across filesystems the bytes are copied to a private
- * temporary name beside the new one, flushed, and then hard-linked into place, so the new name is
- * either complete or absent. A repeat after an interruption finds the same bytes at both names and
- * just removes the old one; different bytes already at the new name are an error and nothing is
- * changed.
+ * removed once the new one holds the same bytes. Across filesystems, or on a drive that cannot hard-link
+ * at all (exFAT, many network shares), the bytes are copied to a private temporary name beside the new one,
+ * flushed, and then placed without replacing anything, so the new name is either complete or absent. A
+ * repeat after an interruption finds the same bytes at both names and just removes the old one; different
+ * bytes already at the new name are an error and nothing is changed. A destination that is the source's own
+ * entry (the same path, or another spelling of it) is left as it is.
  */
 export const retainFile = (source: string, destination: string): Promise<void> => {
   // Every move runs one after another in this process (they are rare), so no move ever sees another
@@ -306,9 +360,18 @@ let retainQueue: Promise<unknown> = Promise.resolve();
 const retainingMoves = new Map<string, Promise<boolean>>();
 
 const retainFileNow = async (source: string, destination: string): Promise<void> => {
+  if (path.resolve(source) === path.resolve(destination)) {
+    // one name: the file is where it should be (or rejects with ENOENT when it is gone), and nothing changes
+    await lstat(source);
+    return;
+  }
+  // Whether this call made the destination, so a copy that fails the final check is only ever
+  // removed when it is this call's own, never a file that was already there. A hard link made on the same
+  // drive is the source's own file, which always passes that check, so it is never counted here.
+  let createdDestination = false;
   await mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
   const refuseDifferent = async (error: unknown) => {
-    if (!(await holdsSameBytes(source, destination))) {
+    if ((await relationOf(source, destination)) === 'different') {
       throw new Error(`${destination} already holds a different file`, { cause: error });
     }
   };
@@ -316,33 +379,11 @@ const retainFileNow = async (source: string, destination: string): Promise<void>
     await link(source, destination);
   } catch (error) {
     const code = errorCode(error);
-    if (code === 'EXDEV') {
-      const temporary = `${destination}.${randomUUID()}.partial`;
-      try {
-        await copyFile(source, temporary, constants.COPYFILE_EXCL);
-        const file = await open(temporary, 'r');
-        try {
-          await file.sync();
-        } finally {
-          await file.close();
-        }
-        try {
-          await link(temporary, destination);
-        } catch (linkError) {
-          const linkCode = errorCode(linkError);
-          if (linkCode === 'EEXIST') {
-            await refuseDifferent(linkError);
-          } else if (typeof linkCode === 'string' && NO_HARD_LINKS.has(linkCode)) {
-            await publishByCopy(temporary, destination, refuseDifferent);
-          } else {
-            throw linkError;
-          }
-        }
-      } finally {
-        await unlink(temporary).catch(() => {});
-      }
-    } else if (code === 'EEXIST') {
+    if (code === 'EEXIST') {
       await refuseDifferent(error);
+    } else if (code === 'EXDEV' || cannotHardLink(code)) {
+      // ponytail: on a drive without hard links a move on the same drive is a full copy; safe beats fast
+      createdDestination = await placeCopy(source, destination, code === 'EXDEV', refuseDifferent);
     } else {
       throw error;
     }
@@ -354,5 +395,17 @@ const retainFileNow = async (source: string, destination: string): Promise<void>
   } finally {
     await directory.close();
   }
-  await unlink(source);
+
+  // The source is only removed once the new name is proven to hold the same bytes, and never when both
+  // names are one entry: the file is at the destination already, and removing either name would remove it.
+  const relation = await relationOf(source, destination);
+  if (relation === 'different') {
+    if (createdDestination) {
+      await unlink(destination).catch(() => {});
+    }
+    throw new Error(`${destination} does not match ${source}; the file was left where it was`);
+  }
+  if (relation === 'same') {
+    await unlink(source);
+  }
 };

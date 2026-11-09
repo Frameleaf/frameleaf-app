@@ -21,6 +21,7 @@ import { createGunzip, createGzip } from 'node:zlib';
 import { CrawlOptionsDto, WalkOptionsDto } from 'src/dtos/library.dto.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { getDiskUsage } from 'src/utils/disk-usage.js';
+import { isOtherLinkOf } from 'src/utils/file-identity.js';
 import { LibraryWalkOptions, walkLibraryPaths } from 'src/utils/library-walk.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
@@ -71,8 +72,18 @@ export class StorageRepository {
     return fs.readdir(folder, { withFileTypes: true });
   }
 
-  copyFile(source: string, target: string) {
-    return fs.copyFile(source, target);
+  copyFile(source: string, target: string, mode?: number) {
+    return fs.copyFile(source, target, mode);
+  }
+
+  /** A hard link that fails with EEXIST rather than replacing an existing target. */
+  link(source: string, target: string) {
+    return fs.link(source, target);
+  }
+
+  /** Whether `second` is another name (hard link) of the file at `first`; see `isOtherLinkOf` in file-identity. */
+  isOtherLinkOf(first: string, second: string): Promise<boolean> {
+    return isOtherLinkOf(first, second);
   }
 
   stat(filepath: string) {
@@ -285,6 +296,17 @@ export class StorageRepository {
       if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') {
         this.logger.warn(`File ${file} does not exist.`);
       } else {
+        throw error;
+      }
+    }
+  }
+
+  /** Removes a file that need not be there: a missing file is no error, and is not reported; any other failure is. */
+  async unlinkIfExists(file: string) {
+    try {
+      await fs.unlink(file);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') {
         throw error;
       }
     }

@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { DateTime } from 'luxon';
-import { Stats } from 'node:fs';
+import { Stats, constants } from 'node:fs';
 import type { PendingAssetMove } from 'src/repositories/move.repository.js';
 import { SystemConfig, defaults } from 'src/dtos/config.dto.js';
 import { AssetFileType, AssetPathType, AssetType, JobName, JobStatus, QueueName } from 'src/enum.js';
@@ -177,7 +177,7 @@ describe(StorageTemplateService.name, () => {
         await sut.handleMigrationSingle({ id: asset.id });
 
         expect(mocks.move.create).not.toHaveBeenCalled();
-        expect(mocks.storage.rename).not.toHaveBeenCalled();
+        expect(mocks.storage.link).not.toHaveBeenCalled();
         expect(mocks.asset.moveFile).not.toHaveBeenCalled();
         expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('invalid path'));
       },
@@ -189,7 +189,7 @@ describe(StorageTemplateService.name, () => {
       await expect(sut.handleMigrationSingle({ id: testAsset.id })).resolves.toBe(JobStatus.Skipped);
 
       expect(mocks.user.get).not.toHaveBeenCalled();
-      expect(mocks.storage.rename).not.toHaveBeenCalled();
+      expect(mocks.storage.link).not.toHaveBeenCalled();
     });
 
     it('should skip when storage template is disabled', async () => {
@@ -199,7 +199,7 @@ describe(StorageTemplateService.name, () => {
 
       expect(mocks.asset.getByIds).not.toHaveBeenCalled();
       expect(mocks.storage.checkFileExists).not.toHaveBeenCalled();
-      expect(mocks.storage.rename).not.toHaveBeenCalled();
+      expect(mocks.storage.link).not.toHaveBeenCalled();
       expect(mocks.storage.copyFile).not.toHaveBeenCalled();
       expect(await movedOriginals()).toEqual([]);
       expect(mocks.move.create).not.toHaveBeenCalled();
@@ -212,7 +212,7 @@ describe(StorageTemplateService.name, () => {
 
       await sut.handleMigrationSingle({ id: testAsset.id });
 
-      expect(mocks.storage.rename).not.toHaveBeenCalled();
+      expect(mocks.storage.link).not.toHaveBeenCalled();
       expect(mocks.storage.copyFile).not.toHaveBeenCalled();
       expect(mocks.move.create).not.toHaveBeenCalled();
       expect(mocks.physicalFile.updateOriginalPhysicalPathForAsset).not.toHaveBeenCalled();
@@ -602,7 +602,8 @@ describe(StorageTemplateService.name, () => {
 
       expect(mocks.assetJob.getForStorageTemplateJob).toHaveBeenCalledWith(asset.id);
       expect(mocks.storage.checkFileExists).toHaveBeenCalledTimes(3);
-      expect(mocks.storage.rename).toHaveBeenCalledWith(asset.originalPath, newPath);
+      expect(mocks.storage.link).toHaveBeenCalledWith(asset.originalPath, newPath);
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(asset.originalPath);
       expect(mocks.move.update).toHaveBeenCalledWith('123', {
         id: '123',
         oldPath: asset.originalPath,
@@ -652,7 +653,8 @@ describe(StorageTemplateService.name, () => {
       expect(mocks.assetJob.getForStorageTemplateJob).toHaveBeenCalledWith(asset.id);
       expect(mocks.storage.checkFileExists).toHaveBeenCalledTimes(3);
       expect(mocks.storage.stat).toHaveBeenCalledWith(previousFailedNewPath);
-      expect(mocks.storage.rename).toHaveBeenCalledWith(previousFailedNewPath, newPath);
+      expect(mocks.storage.link).toHaveBeenCalledWith(previousFailedNewPath, newPath);
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(previousFailedNewPath);
       expect(mocks.storage.copyFile).not.toHaveBeenCalled();
       expect(mocks.move.update).toHaveBeenCalledWith('123', { id: '123', oldPath: previousFailedNewPath, newPath });
       expect(await movedOriginals()).toContainEqual({ id: asset.id, originalPath: newPath });
@@ -670,7 +672,7 @@ describe(StorageTemplateService.name, () => {
       mocks.user.get.mockResolvedValue(user);
       const newPath = `/data/library/${user.id}/2022/2022-06-19/${asset.originalFileName}`;
 
-      mocks.storage.rename.mockRejectedValue({ code: 'EXDEV' });
+      mocks.storage.link.mockRejectedValue({ code: 'EXDEV' });
       mocks.storage.stat.mockResolvedValue({ size: 5000 } as Stats);
       mocks.crypto.hashFileMatching.mockResolvedValue(Buffer.from('different-hash', 'utf8'));
       mocks.assetJob.getForStorageTemplateJob.mockResolvedValue(getForStorageTemplate(asset));
@@ -695,10 +697,11 @@ describe(StorageTemplateService.name, () => {
         oldPath: asset.originalPath,
         newPath,
       });
-      expect(mocks.storage.rename).toHaveBeenCalledWith(asset.originalPath, newPath);
-      expect(mocks.storage.copyFile).toHaveBeenCalledWith(asset.originalPath, staged);
-      expect(mocks.storage.unlink).toHaveBeenCalledWith(staged);
-      expect(mocks.storage.unlink).toHaveBeenCalledTimes(1);
+      expect(mocks.storage.link).toHaveBeenCalledWith(asset.originalPath, newPath);
+      expect(mocks.storage.copyFile).toHaveBeenCalledWith(asset.originalPath, staged, constants.COPYFILE_EXCL);
+      // a leftover copy is cleared before copying (quietly when there is none), and the copy that did not match after
+      expect(mocks.storage.unlinkIfExists.mock.calls).toEqual([[staged]]);
+      expect(mocks.storage.unlink.mock.calls).toEqual([[staged]]);
       expect(await movedOriginals()).toEqual([]);
     });
 
@@ -739,7 +742,7 @@ describe(StorageTemplateService.name, () => {
         expect(mocks.assetJob.getForStorageTemplateJob).toHaveBeenCalledWith(testAsset.id);
         expect(mocks.storage.checkFileExists).toHaveBeenCalledTimes(3);
         expect(mocks.storage.stat).toHaveBeenCalledWith(previousFailedNewPath);
-        expect(mocks.storage.rename).not.toHaveBeenCalled();
+        expect(mocks.storage.link).not.toHaveBeenCalled();
         expect(mocks.storage.copyFile).not.toHaveBeenCalled();
         expect(mocks.move.update).not.toHaveBeenCalled();
         expect(await movedOriginals()).toEqual([]);
@@ -789,6 +792,139 @@ describe(StorageTemplateService.name, () => {
       expect(mocks.user.getList).toHaveBeenCalled();
     });
 
+    it('reuses a destination that is another name of the asset’s own file (FL-1333)', async () => {
+      const asset = AssetFactory.from({
+        fileCreatedAt: new Date('2022-06-19T23:41:36.910Z'),
+      })
+        .exif()
+        .build();
+
+      const oldPath = asset.originalPath;
+      const newPath = `/data/library/${asset.ownerId}/2022/2022-06-19/${asset.originalFileName}`;
+
+      mocks.assetJob.streamForStorageTemplateJob.mockReturnValue(makeStream([getForStorageTemplate(asset)]));
+      mocks.user.getList.mockResolvedValue([userStub.user1]);
+      mocks.move.create.mockResolvedValue({
+        id: '123',
+        entityId: asset.id,
+        pathType: AssetPathType.Original,
+        oldPath,
+        newPath,
+      });
+      // an interrupted move left the photo linked at its template path as well
+      mocks.storage.checkFileExists.mockImplementation((path) => Promise.resolve(path === newPath));
+      mocks.storage.isOtherLinkOf.mockImplementation((first, second) =>
+        Promise.resolve(first === oldPath && second === newPath),
+      );
+      mocks.storage.link.mockRejectedValue(Object.assign(new Error('EEXIST'), { code: 'EEXIST' }));
+
+      await sut.handleMigration();
+
+      expect(mocks.storage.isOtherLinkOf).toHaveBeenCalledWith(oldPath, newPath);
+      expect(mocks.storage.checkFileExists).not.toHaveBeenCalledWith(newPath.replace('.jpg', '+1.jpg'));
+      expect(await movedOriginals()).toEqual([{ id: asset.id, originalPath: newPath }]);
+      // the move finishes by removing the old name, so the photo keeps one name
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(oldPath);
+    });
+
+    it('never reuses a name of the asset’s file that another photo is recorded at (FL-1333)', async () => {
+      const asset = AssetFactory.from({
+        fileCreatedAt: new Date('2022-06-19T23:41:36.910Z'),
+      })
+        .exif()
+        .build();
+
+      const oldPath = asset.originalPath;
+      const newPath = `/data/library/${asset.ownerId}/2022/2022-06-19/${asset.originalFileName}`;
+      const newPath2 = newPath.replace('.jpg', '+1.jpg');
+
+      mocks.assetJob.streamForStorageTemplateJob.mockReturnValue(makeStream([getForStorageTemplate(asset)]));
+      mocks.user.getList.mockResolvedValue([userStub.user1]);
+      mocks.move.create.mockResolvedValue({
+        id: '123',
+        entityId: asset.id,
+        pathType: AssetPathType.Original,
+        oldPath,
+        newPath: newPath2,
+      });
+      // an in-place import keeps two photos' originals as two names of one file: the other photo is at newPath
+      mocks.storage.checkFileExists.mockImplementation((path) => Promise.resolve(path === newPath));
+      mocks.storage.isOtherLinkOf.mockImplementation((first, second) =>
+        Promise.resolve(first === oldPath && second === newPath),
+      );
+      mocks.asset.isPathNamedByOthers.mockImplementation((assetId, path) =>
+        Promise.resolve(assetId === asset.id && path === newPath),
+      );
+
+      await sut.handleMigration();
+
+      expect(await movedOriginals()).toEqual([{ id: asset.id, originalPath: newPath2 }]);
+      expect(mocks.asset.isPathNamedByOthers).toHaveBeenCalledWith(asset.id, newPath);
+      // the other photo's name is never touched
+      expect(mocks.storage.unlink).not.toHaveBeenCalledWith(newPath);
+      expect(mocks.storage.link).not.toHaveBeenCalledWith(oldPath, newPath);
+    });
+
+    it('skips a name another photo is recorded at even when nothing is on disk there (FL-1333)', async () => {
+      const asset = AssetFactory.from({
+        fileCreatedAt: new Date('2022-06-19T23:41:36.910Z'),
+      })
+        .exif()
+        .build();
+
+      const oldPath = asset.originalPath;
+      const newPath = `/data/library/${asset.ownerId}/2022/2022-06-19/${asset.originalFileName}`;
+      const newPath2 = newPath.replace('.jpg', '+1.jpg');
+
+      mocks.assetJob.streamForStorageTemplateJob.mockReturnValue(makeStream([getForStorageTemplate(asset)]));
+      mocks.user.getList.mockResolvedValue([userStub.user1]);
+      mocks.move.create.mockResolvedValue({
+        id: '123',
+        entityId: asset.id,
+        pathType: AssetPathType.Original,
+        oldPath,
+        newPath: newPath2,
+      });
+      // another photo is recorded at the name, though its file is missing (an offline or lost original)
+      mocks.storage.checkFileExists.mockResolvedValue(false);
+      mocks.asset.isPathNamedByOthers.mockImplementation((assetId, path) =>
+        Promise.resolve(assetId === asset.id && path === newPath),
+      );
+
+      await sut.handleMigration();
+
+      expect(await movedOriginals()).toEqual([{ id: asset.id, originalPath: newPath2 }]);
+      expect(mocks.asset.isPathNamedByOthers).toHaveBeenCalledWith(asset.id, newPath);
+      expect(mocks.storage.link).not.toHaveBeenCalledWith(oldPath, newPath);
+    });
+
+    it('takes the next name when it cannot tell whether a destination is the asset’s own file', async () => {
+      const asset = AssetFactory.from({
+        fileCreatedAt: new Date('2022-06-19T23:41:36.910Z'),
+      })
+        .exif()
+        .build();
+
+      const newPath = `/data/library/${asset.ownerId}/2022/2022-06-19/${asset.originalFileName}`;
+      const newPath2 = newPath.replace('.jpg', '+1.jpg');
+
+      mocks.assetJob.streamForStorageTemplateJob.mockReturnValue(makeStream([getForStorageTemplate(asset)]));
+      mocks.user.getList.mockResolvedValue([userStub.user1]);
+      mocks.move.create.mockResolvedValue({
+        id: '123',
+        entityId: asset.id,
+        pathType: AssetPathType.Original,
+        oldPath: asset.originalPath,
+        newPath: newPath2,
+      });
+      mocks.storage.checkFileExists.mockImplementation((path) => Promise.resolve(path === newPath));
+      mocks.storage.isOtherLinkOf.mockRejectedValue(Object.assign(new Error('EIO'), { code: 'EIO' }));
+
+      await sut.handleMigration();
+
+      expect(await movedOriginals()).toEqual([{ id: asset.id, originalPath: newPath2 }]);
+    });
+
     it('should skip when an asset already matches the template', async () => {
       const asset = AssetFactory.from({
         originalPath: '/data/library/user-id/2023/2023-02-23/asset-id.jpg',
@@ -802,7 +938,7 @@ describe(StorageTemplateService.name, () => {
       await sut.handleMigration();
 
       expect(mocks.assetJob.streamForStorageTemplateJob).toHaveBeenCalled();
-      expect(mocks.storage.rename).not.toHaveBeenCalled();
+      expect(mocks.storage.link).not.toHaveBeenCalled();
       expect(mocks.storage.copyFile).not.toHaveBeenCalled();
       expect(mocks.storage.checkFileExists).not.toHaveBeenCalledTimes(2);
       expect(await movedOriginals()).toEqual([]);
@@ -821,7 +957,7 @@ describe(StorageTemplateService.name, () => {
       await sut.handleMigration();
 
       expect(mocks.assetJob.streamForStorageTemplateJob).toHaveBeenCalled();
-      expect(mocks.storage.rename).not.toHaveBeenCalled();
+      expect(mocks.storage.link).not.toHaveBeenCalled();
       expect(mocks.storage.copyFile).not.toHaveBeenCalled();
       expect(mocks.storage.checkFileExists).not.toHaveBeenCalledTimes(2);
       expect(await movedOriginals()).toEqual([]);
@@ -849,7 +985,9 @@ describe(StorageTemplateService.name, () => {
       await sut.handleMigration();
 
       expect(mocks.assetJob.streamForStorageTemplateJob).toHaveBeenCalled();
-      expect(mocks.storage.rename).toHaveBeenCalledWith(oldPath, newPath);
+      expect(mocks.storage.link).toHaveBeenCalledWith(oldPath, newPath);
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(oldPath);
+      expect(mocks.storage.rename).not.toHaveBeenCalled();
       expect(await movedOriginals()).toContainEqual({ id: asset.id, originalPath: newPath });
     });
 
@@ -913,7 +1051,7 @@ describe(StorageTemplateService.name, () => {
       it('leaves folders alone when the move fails or the file is outside upload/<user>/xx/yy', async () => {
         await run(uploaded((owner) => `/data/library/${owner}/old`));
         await run(uploaded((owner) => `/data/upload/${owner}`));
-        mocks.storage.rename.mockRejectedValue(new Error('Read only system'));
+        mocks.storage.link.mockRejectedValue(new Error('Read only system'));
         mocks.storage.copyFile.mockRejectedValue(new Error('Read only system'));
         await run(uploaded((owner) => `/data/upload/${owner}/ab/cd`));
 
@@ -943,7 +1081,7 @@ describe(StorageTemplateService.name, () => {
       await sut.handleMigration();
 
       expect(mocks.assetJob.streamForStorageTemplateJob).toHaveBeenCalled();
-      expect(mocks.storage.rename).toHaveBeenCalledWith(
+      expect(mocks.storage.link).toHaveBeenCalledWith(
         asset.originalPath,
         expect.stringContaining(`/data/library/${user.storageLabel}/2022/2022-06-19/${asset.originalFileName}`),
       );
@@ -966,7 +1104,7 @@ describe(StorageTemplateService.name, () => {
       const oldPath = asset.originalPath;
       const newPath = `/data/library/${asset.ownerId}/2022/2022-06-19/${asset.originalFileName}`;
       mocks.assetJob.streamForStorageTemplateJob.mockReturnValue(makeStream([getForStorageTemplate(asset)]));
-      mocks.storage.rename.mockRejectedValueOnce({ code: 'EXDEV' });
+      mocks.storage.link.mockRejectedValueOnce({ code: 'EXDEV' });
       mocks.user.getList.mockResolvedValue([userStub.user1]);
       mocks.move.create.mockResolvedValue({
         id: '123',
@@ -988,14 +1126,16 @@ describe(StorageTemplateService.name, () => {
       expect(mocks.assetJob.streamForStorageTemplateJob).toHaveBeenCalled();
       // FL-179: copied and checked beside the new path first, then renamed in place in the move's unit
       const staged = `${newPath}.123.moving`;
-      expect(mocks.storage.rename).toHaveBeenCalledWith(oldPath, newPath);
-      expect(mocks.storage.copyFile).toHaveBeenCalledWith(oldPath, staged);
+      expect(mocks.storage.link).toHaveBeenCalledWith(oldPath, newPath);
+      expect(mocks.storage.copyFile).toHaveBeenCalledWith(oldPath, staged, constants.COPYFILE_EXCL);
       expect(mocks.storage.stat).toHaveBeenCalledWith(oldPath);
       expect(mocks.storage.stat).toHaveBeenCalledWith(staged);
       expect(mocks.storage.utimes).toHaveBeenCalledWith(staged, expect.any(Date), expect.any(Date));
-      expect(mocks.storage.rename).toHaveBeenCalledWith(staged, newPath);
-      expect(mocks.storage.unlink).toHaveBeenCalledWith(oldPath);
-      expect(mocks.storage.unlink).toHaveBeenCalledTimes(1);
+      expect(mocks.storage.link).toHaveBeenCalledWith(staged, newPath);
+      expect(mocks.storage.rename).not.toHaveBeenCalled();
+      // a leftover copy is cleared first; the copy's own name goes once it is linked into place
+      expect(mocks.storage.unlinkIfExists.mock.calls).toEqual([[staged]]);
+      expect(mocks.storage.unlink.mock.calls).toEqual([[staged], [oldPath]]);
       expect(await movedOriginals()).toContainEqual({ id: asset.id, originalPath: newPath });
     });
 
@@ -1009,7 +1149,7 @@ describe(StorageTemplateService.name, () => {
         .build();
 
       mocks.assetJob.streamForStorageTemplateJob.mockReturnValue(makeStream([getForStorageTemplate(asset)]));
-      mocks.storage.rename.mockRejectedValue({ code: 'EXDEV' });
+      mocks.storage.link.mockRejectedValue({ code: 'EXDEV' });
       mocks.user.getList.mockResolvedValue([user]);
       mocks.move.create.mockResolvedValue({
         id: '123',
@@ -1025,13 +1165,14 @@ describe(StorageTemplateService.name, () => {
       await sut.handleMigration();
 
       expect(mocks.assetJob.streamForStorageTemplateJob).toHaveBeenCalled();
-      expect(mocks.storage.rename).toHaveBeenCalledWith(
+      expect(mocks.storage.link).toHaveBeenCalledWith(
         asset.originalPath,
         expect.stringContaining(`/data/library/${user.id}/2022/2022-06-19/${asset.originalFileName}`),
       );
       expect(mocks.storage.copyFile).toHaveBeenCalledWith(
         asset.originalPath,
         expect.stringContaining(`/data/library/${user.id}/2022/2022-06-19/${asset.originalFileName}`),
+        constants.COPYFILE_EXCL,
       );
       expect(mocks.storage.stat).toHaveBeenCalledWith(
         expect.stringContaining(`/data/library/${user.id}/2022/2022-06-19/${asset.originalFileName}`),
@@ -1049,7 +1190,7 @@ describe(StorageTemplateService.name, () => {
         .build();
 
       mocks.assetJob.streamForStorageTemplateJob.mockReturnValue(makeStream([getForStorageTemplate(asset)]));
-      mocks.storage.rename.mockRejectedValue(new Error('Read only system'));
+      mocks.storage.link.mockRejectedValue(new Error('Read only system'));
       mocks.storage.copyFile.mockRejectedValue(new Error('Read only system'));
       mocks.move.create.mockResolvedValue({
         id: 'move-123',
@@ -1063,7 +1204,7 @@ describe(StorageTemplateService.name, () => {
       await sut.handleMigration();
 
       expect(mocks.assetJob.streamForStorageTemplateJob).toHaveBeenCalled();
-      expect(mocks.storage.rename).toHaveBeenCalledWith(
+      expect(mocks.storage.link).toHaveBeenCalledWith(
         asset.originalPath,
         expect.stringContaining(`/data/library/${user.id}/2022/2022-06-19/${asset.originalFileName}`),
       );
@@ -1193,7 +1334,7 @@ describe(StorageTemplateService.name, () => {
       await sut.handleMigration();
 
       expect(mocks.assetJob.streamForStorageTemplateJob).toHaveBeenCalled();
-      expect(mocks.storage.rename).toHaveBeenCalledWith(
+      expect(mocks.storage.link).toHaveBeenCalledWith(
         expect.stringContaining(`/data/library/${user.id}/2022/2022-06-19/IMG_7065.heic`),
         expect.stringContaining(`/data/library/${user.storageLabel}/2022/2022-06-19/IMG_7065.heic`),
       );
@@ -1223,7 +1364,7 @@ describe(StorageTemplateService.name, () => {
       await sut.handleMigration();
 
       expect(mocks.assetJob.streamForStorageTemplateJob).toHaveBeenCalled();
-      expect(mocks.storage.rename).toHaveBeenCalledWith(
+      expect(mocks.storage.link).toHaveBeenCalledWith(
         expect.stringContaining(`/data/library/${user.id}/2022/2022-06-19/IMG_7065.HEIC`),
         expect.stringContaining(`/data/library/${user.id}/2022/2022-06-19/IMG_7065.heic`),
       );
@@ -1253,7 +1394,7 @@ describe(StorageTemplateService.name, () => {
       await sut.handleMigration();
 
       expect(mocks.assetJob.streamForStorageTemplateJob).toHaveBeenCalled();
-      expect(mocks.storage.rename).toHaveBeenCalledWith(
+      expect(mocks.storage.link).toHaveBeenCalledWith(
         expect.stringContaining(`/data/library/${user.id}/2022/2022-06-19/IMG_7065.JPEG`),
         expect.stringContaining(`/data/library/${user.id}/2022/2022-06-19/IMG_7065.jpg`),
       );
@@ -1283,7 +1424,7 @@ describe(StorageTemplateService.name, () => {
       await sut.handleMigration();
 
       expect(mocks.assetJob.streamForStorageTemplateJob).toHaveBeenCalled();
-      expect(mocks.storage.rename).toHaveBeenCalledWith(
+      expect(mocks.storage.link).toHaveBeenCalledWith(
         expect.stringContaining(`/data/library/${user.id}/2022/2022-06-19/IMG_7065.JPG`),
         expect.stringContaining(`/data/library/${user.id}/2022/2022-06-19/IMG_7065.jpg`),
       );
@@ -1326,8 +1467,8 @@ describe(StorageTemplateService.name, () => {
         },
         { rename: expect.any(Function), finish: expect.any(Function), undo: expect.any(Function) },
       );
-      // the rename runs inside the unit, never before it
-      expect(mocks.storage.rename.mock.invocationCallOrder[0]).toBeGreaterThan(
+      // the move runs inside the unit, never before it
+      expect(mocks.storage.link.mock.invocationCallOrder[0]).toBeGreaterThan(
         mocks.asset.moveFile.mock.invocationCallOrder[0],
       );
       expect(mocks.physicalFile.updateOriginalPhysicalPathForAsset).toHaveBeenCalledWith(asset.id, newPath);
@@ -1340,7 +1481,7 @@ describe(StorageTemplateService.name, () => {
 
       await expect(sut.handleMigrationSingle({ id: asset.id })).resolves.toBe(JobStatus.Success);
 
-      expect(mocks.storage.rename).not.toHaveBeenCalled();
+      expect(mocks.storage.link).not.toHaveBeenCalled();
       expect(mocks.physicalFile.updateOriginalPhysicalPathForAsset).not.toHaveBeenCalled();
     });
 
@@ -1354,24 +1495,26 @@ describe(StorageTemplateService.name, () => {
 
       await expect(sut.handleMigrationSingle({ id: asset.id })).resolves.toBe(JobStatus.Success);
 
-      expect(mocks.storage.rename.mock.calls).toEqual([
+      // put back the same way, so it is never put onto a file at the old path
+      expect(mocks.storage.link.mock.calls).toEqual([
         [asset.originalPath, newPath],
         [newPath, asset.originalPath],
       ]);
+      expect(mocks.storage.unlink.mock.calls).toEqual([[asset.originalPath], [newPath]]);
       expect(mocks.physicalFile.updateOriginalPhysicalPathForAsset).not.toHaveBeenCalled();
     });
 
     it('keeps a copied file’s source until its new path is saved, and drops the copy when it cannot be', async () => {
       const { asset, newPath } = setupMove();
       const staged = `${newPath}.move-1.moving`;
-      mocks.storage.rename.mockRejectedValueOnce({ code: 'EXDEV' });
+      mocks.storage.link.mockRejectedValueOnce({ code: 'EXDEV' });
       mocks.storage.stat.mockResolvedValue({ size: 5000, atime: new Date(), mtime: new Date() } as Stats);
       mocks.crypto.hashFileMatching.mockResolvedValue(asset.checksum);
       mocks.asset.moveFile.mockImplementationOnce(async (_move, { rename }) => ((await rename()) ? 'moved' : 'failed'));
       mocks.asset.moveFile.mockImplementationOnce(async (_move, { rename, undo }) => {
         await rename();
         // the source is still there while the new path is being saved
-        expect(mocks.storage.unlink).not.toHaveBeenCalled();
+        expect(mocks.storage.unlink).not.toHaveBeenCalledWith(asset.originalPath);
         await undo();
         throw new Error('database unavailable');
       });
@@ -1379,35 +1522,35 @@ describe(StorageTemplateService.name, () => {
       await expect(sut.handleMigrationSingle({ id: asset.id })).resolves.toBe(JobStatus.Success);
 
       // copied outside the transaction, renamed into place inside it, then put back and removed
-      expect(mocks.storage.copyFile).toHaveBeenCalledWith(asset.originalPath, staged);
-      expect(mocks.storage.rename.mock.calls).toEqual([
+      expect(mocks.storage.copyFile).toHaveBeenCalledWith(asset.originalPath, staged, constants.COPYFILE_EXCL);
+      expect(mocks.storage.link.mock.calls).toEqual([
         [asset.originalPath, newPath],
         [staged, newPath],
         [newPath, staged],
       ]);
-      expect(mocks.storage.unlink.mock.calls).toEqual([[staged]]);
+      expect(mocks.storage.unlink.mock.calls).toEqual([[staged], [newPath], [staged]]);
     });
 
     it('removes a copied file’s source once its new path is saved', async () => {
       const { asset, newPath } = setupMove();
       const staged = `${newPath}.move-1.moving`;
-      mocks.storage.rename.mockRejectedValueOnce({ code: 'EXDEV' });
+      mocks.storage.link.mockRejectedValueOnce({ code: 'EXDEV' });
       mocks.storage.stat.mockResolvedValue({ size: 5000, atime: new Date(), mtime: new Date() } as Stats);
       mocks.crypto.hashFileMatching.mockResolvedValue(asset.checksum);
 
       await expect(sut.handleMigrationSingle({ id: asset.id })).resolves.toBe(JobStatus.Success);
 
       expect(mocks.asset.moveFile).toHaveBeenCalledTimes(2);
-      expect(mocks.storage.copyFile).toHaveBeenCalledWith(asset.originalPath, staged);
-      expect(mocks.storage.rename).toHaveBeenLastCalledWith(staged, newPath);
-      expect(mocks.storage.unlink.mock.calls).toEqual([[asset.originalPath]]);
+      expect(mocks.storage.copyFile).toHaveBeenCalledWith(asset.originalPath, staged, constants.COPYFILE_EXCL);
+      expect(mocks.storage.link).toHaveBeenLastCalledWith(staged, newPath);
+      expect(mocks.storage.unlink.mock.calls).toEqual([[staged], [asset.originalPath]]);
       expect(await movedOriginals()).toEqual([{ id: asset.id, originalPath: newPath }]);
     });
 
     it('removes the temporary copy when the asset was removed before the copy was placed', async () => {
       const { asset, newPath } = setupMove();
       const staged = `${newPath}.move-1.moving`;
-      mocks.storage.rename.mockRejectedValueOnce({ code: 'EXDEV' });
+      mocks.storage.link.mockRejectedValueOnce({ code: 'EXDEV' });
       mocks.storage.stat.mockResolvedValue({ size: 5000, atime: new Date(), mtime: new Date() } as Stats);
       mocks.crypto.hashFileMatching.mockResolvedValue(asset.checksum);
       mocks.asset.moveFile.mockImplementationOnce(async (_move, { rename }) => ((await rename()) ? 'moved' : 'failed'));
@@ -1464,7 +1607,7 @@ describe(StorageTemplateService.name, () => {
 
       await expect(sut.handleMigrationSingle({ id: asset.id })).resolves.toBe(JobStatus.Success);
 
-      expect(mocks.storage.unlink).toHaveBeenCalledWith(`${earlierPath}.move-1.moving`);
+      expect(mocks.storage.unlinkIfExists).toHaveBeenCalledWith(`${earlierPath}.move-1.moving`);
       expect(await movedOriginals()).toEqual([{ id: asset.id, originalPath: newPath }]);
     });
   });
@@ -1588,6 +1731,33 @@ describe(StorageTemplateService.name, () => {
 
       const warnings = mocks.logger.warn.mock.calls.filter(([message]) => message.includes('mapped to another file'));
       expect(warnings).toHaveLength(1);
+    });
+
+    it('reports a move refused because another record names its new path once, naming the path (FL-1333)', async () => {
+      const user = UserFactory.create();
+      const asset = AssetFactory.from({ fileCreatedAt: new Date('2022-06-19T23:41:36.910Z') })
+        .owner(user)
+        .exif({ fileSizeInByte: 5000 })
+        .build();
+      mocks.user.get.mockResolvedValue(user);
+      mocks.assetJob.getForStorageTemplateJob.mockResolvedValue(getForStorageTemplate(asset));
+      mocks.move.create.mockResolvedValue({
+        id: 'move-taken',
+        entityId: asset.id,
+        pathType: AssetPathType.Original,
+        oldPath: asset.originalPath,
+        newPath: '/data/library/taken.jpg',
+      });
+      // the locked move found the new path held by another record after the template chose it
+      mocks.asset.moveFile.mockResolvedValue('taken');
+
+      await expect(sut.handleMigrationSingle({ id: asset.id })).resolves.toBe(JobStatus.Success);
+      await sut.handleMigrationSingle({ id: asset.id });
+
+      const warnings = mocks.logger.warn.mock.calls.filter(([message]) => message.includes('another record names'));
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0][0]).toContain(mocks.asset.moveFile.mock.calls[0][0].to);
+      expect(mocks.storage.link).not.toHaveBeenCalled();
     });
 
     it('defers a failure to the next night', async () => {

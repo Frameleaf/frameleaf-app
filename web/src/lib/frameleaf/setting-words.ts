@@ -129,7 +129,8 @@ export const SERVER_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   'user.deleteDelay': { label: 'frameleaf_deleted_keep_account', values: count('frameleaf_deleted_days') },
   // Storage & originals › Folder layout
   'storageTemplate.enabled': { label: 'frameleaf_layout_sort' },
-  'storageTemplate.hashVerificationEnabled': { label: 'frameleaf_layout_verify' },
+  // FL-1333: a retired switch the server ignores (every copy is checked); the promise is said on Folder layout only
+  'storageTemplate.hashVerificationEnabled': { label: 'frameleaf_folders_copy_check_retired' },
   'storageTemplate.template': { label: 'frameleaf_layout_pattern' },
   // Access & security › Sign in with Frameleaf
   'frameleafCloud.signIn.showOnLocalLogin': { label: 'frameleaf_signin_offer_home' },

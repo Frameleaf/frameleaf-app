@@ -3,7 +3,7 @@ import { createReadStream, mkdirSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { StorageRepository } from 'src/repositories/storage.repository.js';
 import { moveFileWithin, storedCopyChecks, verifyStoredCopy } from 'src/utils/file-trash.js';
 
@@ -15,22 +15,10 @@ const crypto = {
       .digest(),
 };
 
-/** The storage calls the helpers make, on real files; a rename across filesystems is simulated. */
-const storageOn = (options: { crossDevice?: boolean; corruptCopy?: boolean } = {}) =>
+/** The storage calls the helpers make, on real files. */
+const storageOn = () =>
   ({
     mkdirSync: (path: string) => mkdirSync(path, { recursive: true }),
-    rename: vi.fn(async (from: string, to: string) => {
-      if (options.crossDevice && !from.endsWith('.tmp')) {
-        throw Object.assign(new Error('cross-device link'), { code: 'EXDEV' });
-      }
-      await fs.rename(from, to);
-    }),
-    copyFile: async (from: string, to: string) => {
-      await fs.copyFile(from, to);
-      if (options.corruptCopy) {
-        await fs.appendFile(to, 'x');
-      }
-    },
     unlink: (path: string) => fs.unlink(path),
     createPlainReadStream: (path: string) => createReadStream(path),
     stat: (path: string) => fs.stat(path),
@@ -58,25 +46,25 @@ describe('file trash moves and stored copies (FL-412)', () => {
   });
 
   describe(moveFileWithin.name, () => {
-    it('moves a file across filesystems once the copy reads back with the same SHA-256', async () => {
+    it('moves a file to a folder it creates, holding the same bytes', async () => {
       const target = join(directory, 'trash', 'photo.jpg');
 
-      await moveFileWithin(storageOn({ crossDevice: true }), source, target);
+      await moveFileWithin(storageOn(), source, target);
 
       await expect(fs.readFile(target)).resolves.toEqual(bytes);
       await expect(exists(source)).resolves.toBe(false);
       await expect(fs.readdir(join(directory, 'trash'))).resolves.toEqual(['photo.jpg']);
     });
 
-    it('keeps the source, and publishes nothing, when the copy does not match it', async () => {
+    it('never replaces a different file at the destination, and keeps the source', async () => {
       const target = join(directory, 'trash', 'photo.jpg');
+      await fs.mkdir(join(directory, 'trash'));
+      await fs.writeFile(target, 'someone else');
 
-      await expect(moveFileWithin(storageOn({ crossDevice: true, corruptCopy: true }), source, target)).rejects.toThrow(
-        'does not match',
-      );
+      await expect(moveFileWithin(storageOn(), source, target)).rejects.toThrow('already holds a different file');
 
+      await expect(fs.readFile(target, 'utf8')).resolves.toBe('someone else');
       await expect(fs.readFile(source)).resolves.toEqual(bytes);
-      await expect(fs.readdir(join(directory, 'trash'))).resolves.toEqual([]);
     });
   });
 

@@ -14,6 +14,7 @@
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
   import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
+  import Promises from '$lib/components/frameleaf/settings/kit/Promises.svelte';
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
   import Said from '$lib/components/frameleaf/settings/kit/Said.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
@@ -31,7 +32,7 @@
     runStorageMigrationInBackground,
     type StorageMigrationStatusResponseDto,
   } from '@frameleaf/sdk';
-  import { mdiFolderCogOutline, mdiFolderOutline, mdiSync } from '@mdi/js';
+  import { mdiFolderCogOutline, mdiFolderOutline, mdiShieldCheckOutline, mdiSync } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t, type Translations } from 'svelte-i18n';
 
@@ -225,20 +226,16 @@
         </div>
       {/if}
     {/if}
+    <Promises
+      rows={[
+        {
+          icon: mdiShieldCheckOutline,
+          text: $t('frameleaf_folders_copy_check_title'),
+          detail: $t('frameleaf_folders_copy_check_body'),
+        },
+      ]}
+    />
     <Advanced summary={$t('frameleaf_layout_advanced')} open={layout === 'custom'}>
-      <Row
-        label={$t('frameleaf_layout_verify')}
-        help={draft?.storageTemplate.hashVerificationEnabled
-          ? $t('frameleaf_layout_verify_on')
-          : $t('frameleaf_layout_verify_off')}
-      >
-        <Switch
-          label={$t('frameleaf_layout_verify')}
-          checked={draft?.storageTemplate.hashVerificationEnabled ?? true}
-          held={disabled}
-          onChange={(on) => draft && (draft.storageTemplate.hashVerificationEnabled = on)}
-        />
-      </Row>
       <Row label={$t('frameleaf_layout_pattern')} help={$t('frameleaf_layout_pattern_help')} />
       <input
         type="text"

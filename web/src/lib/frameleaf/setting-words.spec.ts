@@ -29,6 +29,22 @@ describe('setting words (FL-368)', () => {
     );
   });
 
+  it('names the retired copy-check switch as one, so turning it off never reads as a broken promise (FL-1333)', () => {
+    // the server checks every copy whatever this stored value says; only Folder layout shows the promise
+    const change = describeChange($t(), 'server', {
+      path: 'storageTemplate.hashVerificationEnabled',
+      before: true,
+      after: false,
+    });
+    expect(change).toMatchObject({
+      label: 'Old copy-check switch (no longer used)',
+      said: 'Old copy-check switch (no longer used) turned off',
+      page: { section: 'storage-template' },
+    });
+    expect(change.label).not.toBe($t()('frameleaf_folders_copy_check_title'));
+    expect(change.said).not.toMatch(/hash|checksum/i);
+  });
+
   it('says a choice in the words of its options, and a number with its unit', () => {
     expect(describeChange($t(), 'server', { path: 'logging.level', before: 'log', after: 'debug' }).said).toBe(
       'How much to record: Normal activity → Detail for finding a fault',

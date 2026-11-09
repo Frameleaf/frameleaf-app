@@ -7,12 +7,21 @@ import { ChecksumAlgorithm, IntegrityReport, JobStatus, SystemMetadataKey } from
 import { IntegrityService } from 'src/services/integrity.service.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
+const { retainFile } = vi.hoisted(() => ({ retainFile: vi.fn() }));
+
+// The never-replace move is proved on real files in media-health-roots.spec.ts; here only its wiring is.
+vi.mock('src/utils/media-health-roots.js', async (original) => ({
+  ...(await original<typeof import('src/utils/media-health-roots.js')>()),
+  retainFile,
+}));
+
 describe(IntegrityService.name, () => {
   let sut: IntegrityService;
   let mocks: ServiceMocks;
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(IntegrityService));
+    retainFile.mockReset();
   });
 
   it('should work', () => {
@@ -363,7 +372,7 @@ describe(IntegrityService.name, () => {
 
       await sut.deleteIntegrityReport('user-id', 'report-id');
 
-      expect(mocks.storage.rename).toHaveBeenCalledWith(path, '/data/file-trash/id/stored.jpg');
+      expect(retainFile).toHaveBeenCalledExactlyOnceWith(path, '/data/file-trash/id/stored.jpg');
       expect(mocks.storage.unlink).not.toHaveBeenCalled();
     });
 

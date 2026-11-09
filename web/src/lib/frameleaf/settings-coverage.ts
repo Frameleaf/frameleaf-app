@@ -1470,10 +1470,11 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'draft.storageTemplate.enabled = on',
   },
   {
+    // Ignored by the server: every copied original is always checked. Folder layout shows a promise instead.
     pattern: 'storageTemplate.hashVerificationEnabled',
-    kind: 'control',
+    kind: 'policy',
     file: 'src/lib/components/frameleaf/settings/storage/FolderLayout.svelte',
-    evidence: 'draft.storageTemplate.hashVerificationEnabled = on',
+    evidence: 'frameleaf_folders_copy_check_title',
   },
   {
     pattern: 'storageTemplate.template',

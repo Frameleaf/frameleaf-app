@@ -7,12 +7,21 @@ import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
+const { retainFile } = vi.hoisted(() => ({ retainFile: vi.fn() }));
+
+// The never-replace move is proved on real files in media-health-roots.spec.ts; here only its wiring is.
+vi.mock('src/utils/media-health-roots.js', async (original) => ({
+  ...(await original<typeof import('src/utils/media-health-roots.js')>()),
+  retainFile,
+}));
+
 describe(StorageService.name, () => {
   let sut: StorageService;
   let mocks: ServiceMocks;
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(StorageService));
+    retainFile.mockReset();
   });
 
   it('should work', () => {
@@ -457,10 +466,7 @@ describe(StorageService.name, () => {
         expect.any(Function),
         { removedAssetId: 'asset-id', trash: { move: expect.any(Function) } },
       );
-      expect(mocks.storage.rename).toHaveBeenCalledWith(
-        '/data/library/user/photo.jpg',
-        '/data/file-trash/id/photo.jpg',
-      );
+      expect(retainFile).toHaveBeenCalledWith('/data/library/user/photo.jpg', '/data/file-trash/id/photo.jpg');
       expect(mocks.storage.unlink).not.toHaveBeenCalled();
     });
 

@@ -49,6 +49,14 @@ import { userStub } from 'test/fixtures/user.stub.js';
 import { getForAsset } from 'test/mappers.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
+const { retainFile } = vi.hoisted(() => ({ retainFile: vi.fn() }));
+
+// The never-replace move is proved on real files in media-health-roots.spec.ts; here only its wiring is.
+vi.mock('src/utils/media-health-roots.js', async (original) => ({
+  ...(await original<typeof import('src/utils/media-health-roots.js')>()),
+  retainFile,
+}));
+
 const file1 = Buffer.from('d2947b871a706081be194569951b7db246907957', 'hex');
 
 const uploadFile = {
@@ -202,6 +210,7 @@ describe(AssetMediaService.name, () => {
   beforeEach(() => {
     clearConfigCache();
     ({ sut, mocks } = newTestService(AssetMediaService));
+    retainFile.mockReset();
     mocks.partner.getAll.mockResolvedValue([]);
     mocks.asset.getByChecksums.mockResolvedValue([]);
     mocks.storage.checkFileExists.mockResolvedValue(true);
@@ -847,7 +856,7 @@ describe(AssetMediaService.name, () => {
 
         const options = mocks.physicalFile.linkUploadedOriginal.mock.calls[0][2];
         await options.untrash!('/data/file-trash/id/duplicate.jpeg', '/data/upload/restored.jpeg');
-        expect(mocks.storage.rename).toHaveBeenCalledWith(
+        expect(retainFile).toHaveBeenCalledExactlyOnceWith(
           '/data/file-trash/id/duplicate.jpeg',
           '/data/upload/restored.jpeg',
         );
