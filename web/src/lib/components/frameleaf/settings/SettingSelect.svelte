@@ -4,8 +4,6 @@
    * route-local SettingSelect it replaces; a native select keeps keyboard and screen-reader
    * behaviour and the option list stays data the caller owns.
    */
-  import { Icon } from '@frameleaf/ui';
-  import { mdiChevronDown } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   interface Props {
@@ -71,7 +69,6 @@
         <option value={option.value}>{option.text}</option>
       {/each}
     </select>
-    <span class="chevron" aria-hidden="true"><Icon icon={mdiChevronDown} size="1rem" /></span>
   </div>
 </div>
 
@@ -141,7 +138,7 @@
   select {
     width: 100%;
     appearance: none;
-    padding: 7px 2rem 7px 10px;
+    padding: 7px 10px;
     color: var(--fl-text);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);
@@ -152,15 +149,6 @@
   select:disabled {
     color: var(--fl-muted);
     background: var(--fl-canvas);
-  }
-  .chevron {
-    position: absolute;
-    inset-inline-end: 0.5rem;
-    inset-block: 0;
-    display: grid;
-    place-items: center;
-    pointer-events: none;
-    color: var(--fl-muted);
   }
   @container settings (min-width: 560px) {
     .field {

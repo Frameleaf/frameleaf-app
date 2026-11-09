@@ -998,6 +998,10 @@
     color: var(--fl-muted);
     text-align: center;
   }
+  /* The icon renders as a block, so text-align leaves it at the start edge; centre it over the text. */
+  .fm-empty :global(svg) {
+    margin-inline: auto;
+  }
   .fm-empty strong {
     display: block;
     margin-block-start: 0.875rem;
