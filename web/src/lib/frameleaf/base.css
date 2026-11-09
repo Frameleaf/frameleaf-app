@@ -642,6 +642,28 @@
     transition: border-color var(--fl-motion-fast) var(--fl-ease);
   }
 
+  /*
+   * One chevron for every dropdown, 12px in from the edge. The browser's own arrow sits flush
+   * against the border and looks different on each platform. A component's `background` or
+   * `padding` shorthand would wipe the chevron or run its text under it, so these few
+   * declarations are !important (a layered !important still loses to nothing a component writes).
+   */
+  :where(
+    :is(.frameleaf, .fl-scope)
+      select:not([multiple], [size], [class~='ring-1'], .immich-form-input, [class~='ring-1'] > *)
+  ) {
+    appearance: none;
+    padding-inline-end: 36px !important;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b929c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
+    background-repeat: no-repeat !important;
+    background-position: right 12px center !important;
+    background-size: 16px !important;
+  }
+
+  :where([dir='rtl'] :is(.frameleaf, .fl-scope) select) {
+    background-position: left 12px center !important;
+  }
+
   :where(
     .frameleaf
       :is(input, select, textarea):not([class~='ring-1'], .immich-form-input, [class~='ring-1'] > *):focus-visible
