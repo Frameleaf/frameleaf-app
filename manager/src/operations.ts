@@ -22,6 +22,7 @@ import { ApplicationConfig, checkServiceOverrides, detectAcceleration, releaseIm
 import { atomicJson, copyVerified, fileHash } from './files.js';
 import { PostgresStorage } from './postgres-storage.js';
 import { toContainer, toHost } from './host-paths.js';
+import { hostRealpaths, type HostRealpaths } from './host-realpath.js';
 import { LibraryMove, type ServerPauseStatus } from './library-move.js';
 import { Retention } from './retention.js';
 import { ServerCheck, checkHost, freeBytes, type CheckFacts, type CheckOutcome } from './server-check.js';
@@ -246,6 +247,8 @@ type PreviousInstallation = {
 };
 export class Operations {
   private mediaMove: LibraryMove;
+  /** FL-1322: host paths resolved as the host sees them, before a retained database folder is removed. */
+  hostRealpaths: HostRealpaths;
   private discovery: Discovery;
   private fencing: Fencing;
   private retention: Retention;
@@ -264,6 +267,7 @@ export class Operations {
     private autostartFile?: string | AutostartFile,
   ) {
     this.discovery = new Discovery(docker);
+    this.hostRealpaths = hostRealpaths(docker, store.directory);
     this.probes = hostProbes(docker, store.directory);
     this.fencing = new Fencing(docker, store, autostartFile);
     this.retention = new Retention(store, store.directory, join(store.directory, 'releases'));
@@ -2449,19 +2453,30 @@ export class Operations {
     // Any container (running or stopped: it can start later) that maps this folder, something inside it, or a folder
     // above it may use these files. Manager's own containers map the database parent and never use PGDATA; this
     // library's stack maps only its media and the database in use (checked above), so only its mappings of this
-    // folder or inside it count. Each side is compared as reported, as the host and Manager name it, and with
-    // links resolved, so a symlinked or differently spelled mapping cannot slip past.
-    const spellings = async (value: string) => [
-      ...new Set([value, toHost(value), toContainer(value), ...(await Promise.all([value, toContainer(value)].map((v) => realpath(v).catch(() => v))))]),
+    // folder or inside it count. Each side is compared as reported, as the host and Manager name it, Manager's view
+    // with links resolved, and the host's own resolution, which follows links outside Manager's mappings. A path
+    // the host can't resolve could lead anywhere, so the folder is kept rather than compared by its spelling.
+    const containers = (await this.docker.inventory()).filter((c) => c.Config.Labels?.['app.frameleaf.manager.role'] !== 'controller');
+    const sources = [...new Set(containers.flatMap((c) => c.Mounts.map((m) => m.Source).filter((source) => source?.startsWith('/'))))];
+    const resolved = await this.hostRealpaths([path, ...sources]);
+    const unresolved = resolved && containers.find((c) => c.Mounts.some((m) => resolved[sources.indexOf(m.Source) + 1] === null));
+    if (!resolved || resolved[0] === null || unresolved)
+      throw new Refusal(
+        'database_folder_unverified',
+        409,
+        unresolved ? `Manager could not tell where a folder container ${unresolved.Name.replace(/^\//, '')} maps really is.` : undefined,
+      );
+    const onHost = new Map(sources.map((source, i) => [source, resolved[i + 1]!]));
+    const spellings = async (value: string, host: string) => [
+      ...new Set([value, toHost(value), toContainer(value), host, ...(await Promise.all([value, toContainer(value)].map((v) => realpath(v).catch(() => v))))]),
     ];
-    const names = await spellings(path);
-    let user: Awaited<ReturnType<Docker['inventory']>>[number] | undefined;
-    for (const c of await this.docker.inventory()) {
-      if (c.Config.Labels?.['app.frameleaf.manager.role'] === 'controller') continue;
+    const names = await spellings(path, resolved[0]);
+    let user: (typeof containers)[number] | undefined;
+    for (const c of containers) {
       const own = c.Config.Labels?.['app.frameleaf.manager'] === installation.id;
       for (const m of c.Mounts)
         if (m.Source?.startsWith('/'))
-          for (const source of await spellings(m.Source))
+          for (const source of await spellings(m.Source, onHost.get(m.Source)!))
             if (names.some((f) => inside(source, f) || (!own && inside(f, source)))) user ??= c;
     }
     if (user) throw new Refusal('database_folder_in_use', 409, `Container ${user.Name.replace(/^\//, '')} maps this folder.`);

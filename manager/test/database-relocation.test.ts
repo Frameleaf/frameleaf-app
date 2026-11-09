@@ -7,6 +7,8 @@ import { Operations } from '../src/operations.js';
 import { Store } from '../src/store.js';
 import { Refusal } from '../src/contracts.js';
 import { fileHash } from '../src/files.js';
+import { hostRealpathScript, hostRealpaths } from '../src/host-realpath.js';
+import { execFileSync } from 'node:child_process';
 
 // FL-1322: moving the installed database to a folder on another drive, on the same release and image.
 type Options = { restore?: 'fails' | 'differs' | 'hangs'; start?: 'fails' | 'fails-while-running' | 'crash-then-fails' | 'media' };
@@ -59,6 +61,8 @@ async function relocationFixture(options: Options = {}) {
   let started: () => void = () => {};
   const reachedStart = new Promise<void>((resolve) => (started = resolve));
   const extra: any[] = [];
+  // Host-only links (outside anything Manager maps) and paths the host can't resolve; null: the helper can't run.
+  const host: { links: Record<string, string>; unresolvable: string[]; unavailable?: boolean } = { links: {}, unresolvable: [] };
   const docker = {
     compose: async (_dir: string, _project: string, action: string, services: string[] = []) => {
       composed.push([action, ...services]);
@@ -134,6 +138,8 @@ async function relocationFixture(options: Options = {}) {
       verify: async () => {},
     };
     (operations as any).libraryStatus = async () => null;
+    operations.hostRealpaths = async (paths) =>
+      host.unavailable ? null : paths.map((path) => (host.unresolvable.includes(path) ? null : (host.links[path] ?? path)));
     // The checkpoint itself is covered by the backup tests: here it leaves its dump and compose.json.
     (operations as any).checkpoint = async (operation: any) => {
       const checkpoint = join(directory, 'state', 'checkpoints', operation.id);
@@ -158,7 +164,7 @@ async function relocationFixture(options: Options = {}) {
       await new Promise((resolve) => setTimeout(resolve, 5));
     }
   };
-  return { extra, reachedStart, stopServer: () => (serverUp = false), directory, store, current, newRoot, oldRoot, previousCompose, folders, composed, restored, allocated, validated,
+  return { host, extra, reachedStart, stopServer: () => (serverUp = false), directory, store, current, newRoot, oldRoot, previousCompose, folders, composed, restored, allocated, validated,
     reachedRestore, create, begin, settled, escaped,
     attemptPath: (n: number) => join(newRoot, `frameleaf-${id}-postgres-$new${n}`),
     stackNow: async () => JSON.parse(await readFile(stack, 'utf8')),
@@ -390,6 +396,23 @@ test('a retained database folder is removed only on request, and never the one i
       await assert.rejects(operations.removeRetainedDatabase(f.current.databasePath),
         (error: Refusal) => error.code === 'database_folder_in_use' && error.detail === `Container ${other} maps this folder.`, other);
     }
+    // A link only the host can follow, to the folder above it.
+    f.host.links['/srv/apps/linked'] = f.oldRoot;
+    f.extra.splice(0, f.extra.length, container('host-linked-app', '/srv/apps/linked'));
+    await assert.rejects(operations.removeRetainedDatabase(f.current.databasePath),
+      (error: Refusal) => error.code === 'database_folder_in_use' && error.detail === 'Container host-linked-app maps this folder.');
+    // A mapping whose real place can't be told, or no host check at all, keeps the folder.
+    f.host.links = {};
+    f.host.unresolvable = ['/srv/apps/unreadable'];
+    f.extra.splice(0, f.extra.length, container('unreadable-app', '/srv/apps/unreadable'));
+    await assert.rejects(operations.removeRetainedDatabase(f.current.databasePath),
+      (error: Refusal) => error.code === 'database_folder_unverified' && /unreadable-app/.test(error.detail ?? ''));
+    f.host.unresolvable = [];
+    f.host.unavailable = true;
+    f.extra.splice(0, f.extra.length);
+    await assert.rejects(operations.removeRetainedDatabase(f.current.databasePath), /database_folder_unverified/);
+    f.host.unavailable = false;
+    assert.ok((await stat(f.current.databasePath)).isDirectory(), 'kept every time');
     f.extra.splice(0, f.extra.length,
       container('frameleaf-manager', f.directory, { 'app.frameleaf.manager.role': 'controller' }),
       container('frameleaf-test-frameleaf-server-1', f.oldRoot, { 'app.frameleaf.manager': f.current.id }));
@@ -399,4 +422,44 @@ test('a retained database folder is removed only on request, and never the one i
   } finally {
     await f.cleanup();
   }
+});
+
+test('the host resolver follows links inside the host root, keeps a missing tail and gives up on a loop', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'manager-host-root-')));
+  try {
+    await mkdir(join(root, 'mnt', 'cache', 'db'), { recursive: true });
+    await mkdir(join(root, 'srv'));
+    await symlink('/mnt/cache', join(root, 'srv', 'absolute')); // absolute: followed inside the host root
+    await symlink('../mnt/cache/db', join(root, 'srv', 'relative'));
+    await symlink('/srv/loop-b', join(root, 'srv', 'loop-a'));
+    await symlink('/srv/loop-a', join(root, 'srv', 'loop-b'));
+    const output = execFileSync(process.execPath, ['-e', hostRealpathScript, root, JSON.stringify([
+      '/srv/absolute/db', '/srv/relative', '/srv/absolute/not-yet/x', '/srv/loop-a', '/mnt/cache/./db/../db',
+    ])], { encoding: 'utf8' });
+    assert.deepEqual(JSON.parse(output), ['/mnt/cache/db', '/mnt/cache/db', '/mnt/cache/not-yet/x', null, '/mnt/cache/db']);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('the host resolver runs in Manager’s own image with the host read-only and no network, and fails closed', async () => {
+  const image = `sha256:${'d'.repeat(64)}`;
+  const manager = { Id: 'e'.repeat(64), Image: image, State: { Running: true },
+    Config: { Env: ['MANAGER_DATA=/state'], Labels: { 'app.frameleaf.manager.role': 'controller' } } };
+  const calls: string[][] = [];
+  const docker = { inventory: async () => [manager] } as never;
+  const resolve = hostRealpaths(docker, '/state', (async (_binary: string, args: string[]) => {
+    calls.push(args);
+    return JSON.stringify(['/mnt/cache/db', null]);
+  }) as never);
+  assert.deepEqual(await resolve(['/srv/a', '/srv/b']), ['/mnt/cache/db', null]);
+  const args = calls[0];
+  for (const flag of [['--network', 'none'], ['--volume', '/:/host:ro'], ['--cap-drop', 'ALL'], ['--entrypoint', 'node']])
+    assert.ok(args.some((arg, i) => arg === flag[0] && args[i + 1] === flag[1]), flag.join(' '));
+  assert.ok(args.includes('--read-only') && args.includes(image));
+  // A wrong-sized or malformed answer, a failed run or no Manager container is never taken as "nothing found".
+  for (const answer of ['["/a"]', '["relative", "/b"]', 'not json'])
+    assert.equal(await hostRealpaths(docker, '/state', (async () => answer) as never)(['/srv/a', '/srv/b']), null);
+  assert.equal(await hostRealpaths(docker, '/state', (async () => { throw new Error('no docker'); }) as never)(['/a']), null);
+  assert.equal(await hostRealpaths({ inventory: async () => [] } as never, '/state')(['/a']), null);
 });
