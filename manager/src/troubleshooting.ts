@@ -132,7 +132,7 @@ const LAN_PROBE = `fetch((process.env.FRAMELEAF_DISCOVERY_URL||'http://127.0.0.1
 type Http = { status?: number; date?: string | null; sent?: number; received?: number; error?: string };
 const http = (r: Http | null | undefined) => (r?.status ? `answered (HTTP ${r.status})` : `no answer (${r?.error ?? 'error'})`);
 
-export async function connectionChecks(docker: Docker, installation: Installation | null, containers: Container[], drives: { name: string; path: string; use?: DriveUse }[]): Promise<Check[]> {
+export async function connectionChecks(docker: Docker, installation: Installation | null, containers: Container[], drives: { name: string; path: string; use?: DriveUse; measurable?: boolean }[]): Promise<Check[]> {
   const checks: Check[] = [];
   let start = Date.now();
   const host = await docker.compatibility().then(
@@ -232,12 +232,16 @@ const list = (items: string[]) =>
  * own, named.
  */
 export async function driveChecks(
-  drives: { name: string; path: string; use?: DriveUse }[],
+  drives: { name: string; path: string; use?: DriveUse; measurable?: boolean }[],
   fs: { statfs: typeof statfs; stat: typeof stat } = { statfs, stat },
 ): Promise<Check[]> {
   const checks: (Check & { also: string[] })[] = [];
   const byDevice = new Map<number, Check & { also: string[] }>();
-  for (const { name, path, use } of drives) {
+  for (const { name, path, use, measurable } of drives) {
+    if (measurable === false) {
+      checks.push({ name, ok: null, detail: 'Docker uses this folder directly, so Manager can’t measure its free space.', also: [] });
+      continue;
+    }
     const [space, device] = await Promise.all([
       fs.statfs(path).catch(() => null),
       fs.stat(path).then((s) => s.dev, () => null),

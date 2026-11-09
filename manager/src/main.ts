@@ -46,7 +46,7 @@ import { sharePortWithRedirect } from './http-redirect.js';
 import { log, print, renderBanner, requestLog } from './banner.js';
 import { connectionChecks, redactPaths, redactionRoots, renderReport } from './troubleshooting.js';
 import { visibility } from './mounts.js';
-import { readStorage, storagePlaces } from './storage-drives.js';
+import { measurableBy, readStorage, storagePlaces } from './storage-drives.js';
 
 const runtime = process.env.MANAGER_RUNTIME ?? 'docker';
 // Docker only: these are Linux paths, and a native Windows path has a colon of its own.
@@ -159,12 +159,13 @@ function folderDefaults() {
 }
 /**
  * FL-1324: mounted media storage, the thumbnails' own folder, the database and the backup destination, each of
- * which can be on a different drive. Thumbnail and database folders Manager cannot see are left to Docker.
+ * which can be on a different drive. A thumbnail or database folder Manager cannot see stays listed, as one it
+ * can't measure.
  */
 const drives = async () => {
-  const visible = await visibility();
-  return storagePlaces(operations.installation(), { media: mediaPlaces(), backups: currentBackupRoot() }).filter(
-    (place) => (place.use !== 'thumbnails' && place.use !== 'database') || visible(place.path),
+  const measurable = measurableBy(await visibility());
+  return storagePlaces(operations.installation(), { media: mediaPlaces(), backups: currentBackupRoot() }).map(
+    (place) => ({ ...place, measurable: measurable(place.path, [place.use]) }),
   );
 };
 /**
@@ -395,6 +396,9 @@ class Api {
         backups: currentBackupRoot(),
         databaseRoots: folderSetup() ? [] : defaults.roots,
       }),
+      undefined,
+      // An imported library's thumbnail or database folder may be one only Docker reaches: listed, not measured.
+      measurableBy(await visibility()),
     );
   }
   @Get('drives') driveList() {

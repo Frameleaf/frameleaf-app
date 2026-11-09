@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Stats, StatsFs } from 'node:fs';
 import type { Mount } from '../src/contracts.js';
-import { isLowOnSpace, readStorage, storagePlaces } from '../src/storage-drives.js';
+import { isLowOnSpace, measurableBy, readStorage, storagePlaces } from '../src/storage-drives.js';
 import { driveChecks } from '../src/troubleshooting.js';
 
 const GB = 1e9;
@@ -112,10 +112,47 @@ test('a folder that cannot be read is unknown on the Storage page, and a problem
     availableBytes: null,
     freeBytes: null,
     lowOnSpace: null,
+    measurable: true,
   });
   const checks = await driveChecks(places, fs);
   assert.deepEqual(checks[0], { name: 'Storage 1', ok: false, detail: 'Manager cannot read this mounted drive.' });
   assert.equal(checks.length, 2);
+});
+
+test('a thumbnail or database folder only Docker reaches is listed as not measurable, never missing or full', async () => {
+  const places = storagePlaces(
+    { mounts: [library, thumbs], databaseRoot: '/mnt/nvme/databases' },
+    { media: ['/mnt/photos/frameleaf'], backups: '/mnt/photos/backups' },
+  );
+  // Manager sees only /mnt/photos; the thumbnail and database folders are mapped into the library's containers only.
+  const measurable = measurableBy((path) => path.startsWith('/mnt/photos/'));
+  const fs = server({ '/mnt/photos': { device: 1, availableGb: 600 } });
+
+  const storage = await readStorage(places, fs, measurable);
+  assert.deepEqual(
+    storage.map(({ uses, measurable: m, availableBytes, lowOnSpace }) => ({ uses, measurable: m, availableBytes, lowOnSpace })),
+    [
+      { uses: ['media'], measurable: true, availableBytes: 600 * GB, lowOnSpace: false },
+      { uses: ['thumbnails'], measurable: false, availableBytes: null, lowOnSpace: null },
+      { uses: ['database'], measurable: false, availableBytes: null, lowOnSpace: null },
+      { uses: ['backups'], measurable: true, availableBytes: 600 * GB, lowOnSpace: false },
+    ],
+  );
+
+  const checks = await driveChecks(
+    places.map((place) => ({ ...place, measurable: measurable(place.path, [place.use]) })),
+    fs,
+  );
+  assert.deepEqual(checks, [
+    { name: 'Storage 1', ok: true, detail: '600.0 GB free (60%). Also holds the backups' },
+    { name: 'Thumbnails drive', ok: null, detail: 'Docker uses this folder directly, so Manager can’t measure its free space.' },
+    { name: 'Database drive', ok: null, detail: 'Docker uses this folder directly, so Manager can’t measure its free space.' },
+  ]);
+
+  // A media folder Manager cannot read stays a problem: it is Manager's own to read.
+  const [gone] = await readStorage([{ name: 'Storage 1', path: '/mnt/gone', use: 'media' }], fs, measurable);
+  assert.equal(gone.measurable, true);
+  assert.equal(gone.availableBytes, null);
 });
 
 test('a folder used for two things is read once, with both uses', async () => {

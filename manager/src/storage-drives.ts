@@ -34,6 +34,15 @@ export function storagePlaces(
   ];
 }
 
+/**
+ * Media and backup folders are always Manager's own to read. A thumbnail or database folder of an imported library
+ * can be one only Docker reaches (`mounts.ts` `visibility`): that one is listed as not measurable.
+ */
+export const measurableBy =
+  (visible: (path: string) => boolean) =>
+  (path: string, uses: DriveUse[]) =>
+    uses.some((use) => use === 'media' || use === 'backups') || visible(path);
+
 /** One folder on the Storage page: what it holds, its drive, and how much room that drive has. */
 export type StorageSpace = {
   path: string;
@@ -46,12 +55,24 @@ export type StorageSpace = {
   freeBytes: number | null;
   /** Under 5% or 2 GB left; null when the drive could not be read. */
   lowOnSpace: boolean | null;
+  /**
+   * False for a folder Manager can't see from where it runs (an imported library's thumbnail or database folder
+   * that only Docker uses): it is listed, but its room is unknown rather than missing or full.
+   */
+  measurable: boolean;
 };
 
 type Readers = { realpath: typeof realpath; stat: typeof stat; statfs: typeof statfs };
 
-/** Reads each place once per folder (a folder used twice lists both uses). A moved or unreadable folder reads as unknown. */
-export async function readStorage(places: StoragePlace[], fs: Readers = { realpath, stat, statfs }): Promise<StorageSpace[]> {
+/**
+ * Reads each place once per folder (a folder used twice lists both uses). A moved or unreadable folder reads as
+ * unknown; a folder `visible` says Manager can't see is listed as not measurable, without being read.
+ */
+export async function readStorage(
+  places: StoragePlace[],
+  fs: Readers = { realpath, stat, statfs },
+  visible: (path: string, uses: DriveUse[]) => boolean = () => true,
+): Promise<StorageSpace[]> {
   const byPath = new Map<string, DriveUse[]>();
   for (const { path, use } of places) {
     const uses = byPath.get(path) ?? [];
@@ -60,6 +81,8 @@ export async function readStorage(places: StoragePlace[], fs: Readers = { realpa
   }
   return Promise.all(
     [...byPath].map(async ([path, uses]) => {
+      const unknown = { path, uses, device: null, totalBytes: null, availableBytes: null, freeBytes: null, lowOnSpace: null };
+      if (!visible(path, uses)) return { ...unknown, measurable: false };
       try {
         if ((await fs.realpath(path)) !== path) throw new Error('storage_path_changed');
         const [space, info] = await Promise.all([fs.statfs(path), fs.stat(path)]);
@@ -73,9 +96,10 @@ export async function readStorage(places: StoragePlace[], fs: Readers = { realpa
           availableBytes,
           freeBytes: space.bfree * space.bsize,
           lowOnSpace: isLowOnSpace(availableBytes, totalBytes),
+          measurable: true,
         };
       } catch {
-        return { path, uses, device: null, totalBytes: null, availableBytes: null, freeBytes: null, lowOnSpace: null };
+        return { ...unknown, measurable: true };
       }
     }),
   );
