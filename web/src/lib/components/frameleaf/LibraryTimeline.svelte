@@ -405,6 +405,8 @@
   $effect(() => {
     const element = topElement;
     if (!element) {
+      // The cards draw no header here: a menu left open in the rows must not keep the scrubber hidden.
+      headerMenuOpen = false;
       return;
     }
     const check = () => (headerMenuOpen = !!element.querySelector("[role='menu'], .fl-pop"));

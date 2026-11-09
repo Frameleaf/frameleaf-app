@@ -439,6 +439,20 @@ describe('LibraryTimeline curated Years and Months', () => {
     return { ...view, onGroupingChange };
   };
 
+  it('forgets a header menu left open in the rows when the view turns to cards', async () => {
+    const { container, rerender } = renderGrouping('days');
+    await tick();
+    const root = container.querySelector('.fl-timeline')!;
+    const menu = document.createElement('div');
+    menu.setAttribute('role', 'menu');
+    container.querySelector('.fl-timeline-top')!.append(menu);
+    await waitFor(() => expect(root.classList.contains('has-header-menu')).toBe(true));
+
+    await rerender({ grouping: 'years' });
+    await screen.findByRole('button', { name: 'frameleaf_timeline_card_show_months' });
+    expect(root.classList.contains('has-header-menu')).toBe(false);
+  });
+
   it('shows a card per year with the same query as the time buckets, and opens Months', async () => {
     const { onGroupingChange } = renderGrouping('years');
     const card = await screen.findByRole('button', { name: 'frameleaf_timeline_card_show_months' });
