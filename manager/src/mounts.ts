@@ -1,5 +1,5 @@
 import { readFile, stat, writeFile, mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { Refusal, type Mount } from './contracts.js';
 import { filesystemMounts } from './postgres-storage.js';
 
@@ -120,7 +120,12 @@ export async function visibility(
   const targets = filesystemMounts(contents)
     .map((mount) => mount.target)
     .filter((target) => target !== '/');
-  return (path) => targets.some((target) => path === target || path.startsWith(`${target}/`));
+  // Path-aware: `..` and repeated slashes are resolved first, and /mnt/disk10 is not inside /mnt/disk1.
+  return (path) =>
+    targets.some((target) => {
+      const inner = relative(resolve(target), resolve(path));
+      return inner === '' || (inner !== '..' && !inner.startsWith('../') && !isAbsolute(inner));
+    });
 }
 
 /** Before a start: every bind source of these mounts must exist. Docker's own error would stop the whole stack. */

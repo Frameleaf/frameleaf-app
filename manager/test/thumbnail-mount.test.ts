@@ -393,6 +393,11 @@ test('a host folder never mapped into Manager is left to Docker; a missing drive
     assert.equal(visible(join(root, 'disks', 'fast')), true);
     assert.equal(visible('/config/x'), true);
     assert.equal(visible('/srv/immich/library'), false, 'the overlay root says nothing about host folders');
+    // Sibling prefixes and `..` never count as inside a mapped folder.
+    assert.equal(visible('/config'), true);
+    assert.equal(visible('/config2/x'), false, '/config2 is not inside /config');
+    assert.equal(visible('/config/../srv/x'), false);
+    assert.equal(visible('/config//nested/x'), true);
     // An imported Immich library whose folder only the Docker host can see still starts.
     await assertMountSources([library('/srv/immich/library')], 'frameleaf-server', visible);
     await assert.rejects(
