@@ -324,10 +324,14 @@
   let countedViewFor: string | undefined;
   $effect(() => {
     const id = cursor.current.id;
-    if (countedViewFor === id || slideshowActive || !authManager.authenticated || authManager.isSharedLink) {
+    if (countedViewFor === id || !authManager.authenticated || authManager.isSharedLink) {
       return;
     }
+    // Mark slideshow slides as seen too, so stopping on one does not count it as an opening.
     countedViewFor = id;
+    if (slideshowActive) {
+      return;
+    }
     void (async () => {
       try {
         await recordAssetView({ id });
