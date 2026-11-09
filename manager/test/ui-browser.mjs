@@ -120,7 +120,9 @@ let backupAction = 'reuse',
   photoAppInspection = null,
   // FL-1317: the next review reports these problems once, then the server is ready.
   reviewProblems = null,
-  reviewFails = false;
+  reviewFails = false,
+  // FL-1320 in the FL-1317 list: the first restore review finds the thumbnails drive gone.
+  restoreThumbnailsGone = true;
 const okChecks = (restore = false) => [
   { id: 'docker', status: 'ok', facts: { version: '28.4' } },
   { id: 'media', status: 'ok', facts: { free: 3 * 1024 ** 4 } },
@@ -240,8 +242,20 @@ await page.route('**/manager-api/**', async (route) => {
     value = { requested: true };
   } else if (path === 'review-update')
     value = { id: 'update-review', from: installation.release, to: body.tag, recovery: 'Database only' };
+  else if (path === 'review-restore' && restoreThumbnailsGone && !body.thumbnailFallback)
+    value = {
+      ready: false,
+      host: 'unraid',
+      port: 2283,
+      checks: [
+        { id: 'docker', status: 'ok', facts: { version: '28.4' } },
+        { id: 'thumbnails', status: 'problem', code: 'thumbnail_folder_missing', facts: { missing: '/fixture/fast/thumbs', folder: '/fixture/media/thumbs' } },
+        ...okChecks(true).slice(1),
+      ],
+    };
   else if (path === 'review-restore')
     value = {
+      ...(body.thumbnailFallback && { thumbnailFallback: { missing: '/fixture/fast/thumbs', folder: '/fixture/media/thumbs' } }),
       ready: true,
       host: 'linux',
       checks: okChecks(true),
@@ -487,8 +501,13 @@ try {
     await mainButton('Restore').click();
     await mainButton('Choose a recovery point').click();
     await mainButton('Check this server').click();
+    await page.getByRole('heading', { name: '1 thing to fix before installing' }).waitFor();
+    await page.getByRole('heading', { name: 'The thumbnails drive isn’t connected' }).waitFor();
+    await mainButton('Keep thumbnails with your photos').click();
     await page.getByRole('heading', { name: 'This server is ready' }).waitFor();
+    assert.equal(requests.findLast((r) => r.path === 'review-restore').body.thumbnailFallback, true);
     await mainButton('Review restore').click();
+    await page.getByText('Thumbnails go back in the photos folder', { exact: true }).waitFor();
     assert.equal(await mainButton('Restore database').isDisabled(), true);
     await page.getByRole('checkbox').check();
     assert.equal(await mainButton('Restore database').isEnabled(), true);

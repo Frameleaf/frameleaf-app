@@ -218,5 +218,35 @@ test('launch.sh short form maps one folder; the long form still names each one',
     assert.equal(launch(['https://nas.local:2282', `${root}/`]).status, 0);
     run = (await fs.readFile(log, 'utf8')).split('\n');
     assert(run.includes(`MANAGER_FOLDER_ROOT=${root}`) && run.includes(`MANAGER_DATA=${root}/manager`));
+
+    // MANAGER_EXTRA_FOLDERS adds drives to the short form, each mapped at its own path.
+    const ssd = path.join(directory, 'ssd', 'frameleaf'), disk2 = path.join(directory, 'disk 2', 'frameleaf');
+    await fs.mkdir(ssd, { recursive: true }); await fs.mkdir(disk2, { recursive: true });
+    await fs.symlink(path.dirname(ssd), path.join(directory, 'link'));
+    const extra = (folders, args = ['https://nas.local:2282', root]) => spawnSync('sh', [path.join(__dirname, '../../manager/launch.sh'), `${IMAGE}:latest`, ...args],
+      { env: { PATH: `${bin}:/usr/bin:/bin`, MANAGER_EXTRA_FOLDERS: folders }, encoding: 'utf8' });
+    await fs.rm(log);
+    assert.equal(extra(`${ssd}:${disk2}/`).status, 0);
+    run = (await fs.readFile(log, 'utf8')).split('\n');
+    assert(run.includes(`MANAGER_FOLDER_ROOT=${root}:${ssd}:${disk2}`));
+    assert(run.includes(`MANAGER_DATA=${root}/manager`));
+    for (const folder of [root, ssd, disk2]) assert(run.includes(`type=bind,source=${folder},target=${folder}`), folder);
+    // An empty value is the one-folder form, unchanged.
+    assert.equal(extra('').status, 0);
+    assert((await fs.readFile(log, 'utf8')).split('\n').includes(`MANAGER_FOLDER_ROOT=${root}`));
+    await fs.rm(log);
+    for (const folders of [
+      '/', '/frameleaf', 'relative/path', `${ssd}::${disk2}`, // never / or one level, and no empty entries
+      path.join(directory, 'missing', 'drive'), // a drive that isn't there is never created
+      `${ssd}:${ssd}`, path.join(root, 'inside'), path.dirname(root), `${ssd}:${path.join(ssd, 'x')}`, // overlapping folders
+      path.join(directory, 'link', 'frameleaf'), // canonical paths only, never a link
+    ]) {
+      const result = extra(folders);
+      assert.equal(result.status, 2, `${folders}: ${result.stderr}`);
+    }
+    // The long form names every folder; extra drives belong to the short form.
+    assert.equal(extra(ssd, [...folders.slice(0, 3), 'https://nas.local:2282', folders[3]]).status, 2);
+    await assert.rejects(fs.stat(log), { code: 'ENOENT' });
+    await assert.rejects(fs.stat(path.join(directory, 'missing')), { code: 'ENOENT' });
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
 });

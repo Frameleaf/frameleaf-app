@@ -245,6 +245,10 @@ test('the restore review reports its problems together and removes the unpacked 
     );
     assert.equal(f.state.acquired, 0);
     assert.deepEqual((await readdir(f.store.directory)).filter((name) => name.startsWith('restore-')), []);
+    // FL-1320: a photos drive that isn't mounted is named plainly in the list.
+    await rm(join(f.root, 'media'), { recursive: true });
+    const gone = await f.operations.reviewRestore('a'.repeat(64), join(f.root, 'database'));
+    assert.deepEqual(gone.checks.find((check) => check.id === 'media')?.code, 'media_folder_missing');
   } finally {
     await f.cleanup();
   }

@@ -17,6 +17,8 @@ export type CheckAction =
   | { kind: 'port'; port: number; label: string }
   | { kind: 'folder'; folder: CheckFolder; label: string }
   | { kind: 'ml'; label: string }
+  /** FL-1320: a restore keeps thumbnails in the photos folder when their own drive is gone. */
+  | { kind: 'thumbnails'; label: string }
   | { kind: 'recheck'; label: string };
 export type CheckRow = {
   id: string;
@@ -43,6 +45,7 @@ export type CheckContext = {
 export const CHECK_LABELS: Record<string, string> = {
   docker: 'Docker',
   media: 'Photos and videos',
+  thumbnails: 'Thumbnails',
   database: 'Database',
   backups: 'Backups',
   manager: 'Manager’s own folder',
@@ -122,6 +125,13 @@ const managerRoomSteps: Record<CheckHost, string[]> = {
   hexos: ['Free some space on the drive that holds your applications, or remove apps you no longer use.', AGAIN],
   linux: ['Free some space on the drive that holds Manager’s state folder.', AGAIN],
 };
+/** FL-1320: a folder whose drive is disconnected or not mounted. */
+const reconnectSteps: Record<CheckHost, string[]> = {
+  unraid: ['In Unraid, open Main and check the drive or pool that holds this folder is mounted. For an Unassigned Devices drive, click Mount.', AGAIN],
+  truenas: ['In TrueNAS, open Storage and check the pool that holds this folder is online.', AGAIN],
+  hexos: ['In HexOS, check the drive that holds this folder is connected and healthy.', AGAIN],
+  linux: ['Connect the drive and mount it at the same place, for example with sudo mount -a.', AGAIN],
+};
 const portSteps = (host: CheckHost, port: number): string[] =>
   ({
     unraid: [`In Unraid’s Docker tab, find the app using port ${port}, and stop it or change its port.`, AGAIN],
@@ -192,9 +202,22 @@ function problem(result: CheckResult, context: CheckContext): Words {
       if (code === 'unsupported_docker_host')
         return { title: 'Docker is part of a swarm', detail: 'Frameleaf runs on a single Docker server, not a swarm.', steps: ['On this server, run docker swarm leave --force. Apps the swarm runs stop.', REOPEN] };
       return { title: 'Manager can’t use Docker', detail: 'Docker didn’t answer when Manager asked about this server.', steps: dockerStartSteps[host] };
+    case 'thumbnails': {
+      const folder = typeof result.facts?.folder === 'string' ? result.facts.folder : null;
+      return {
+        title: 'The thumbnails drive isn’t connected',
+        detail: `${result.facts?.missing ?? result.detail ?? 'The thumbnails folder'} isn’t there. Your photos are untouched.${folder ? ' Reconnect the drive, or keep thumbnails with your photos and Frameleaf makes any missing ones again.' : ''}`,
+        steps: reconnectSteps[host],
+        ...(folder && { action: { kind: 'thumbnails' as const, label: 'Keep thumbnails with your photos' } }),
+      };
+    }
     case 'media':
     case 'database':
     case 'backups':
+      if (code === 'media_folder_missing')
+        return { title: 'The photos drive isn’t connected', detail: 'A photos folder isn’t there. Its drive may be disconnected or not mounted. Nothing has been changed.', steps: reconnectSteps[host] };
+      if (code === 'mounted_folder_missing' || code === 'thumbnail_folder_missing')
+        return { title: 'A folder Frameleaf uses isn’t there', detail: 'Its drive may be disconnected or not mounted. Nothing has been changed.', steps: reconnectSteps[host] };
       if (code === 'external_media_volume_unavailable')
         return { title: 'A media volume is missing', detail: `The Docker volume ${result.detail ?? ''} isn’t on this server.`, steps: ['Create or restore that Docker volume, then check again.'] };
       return folderProblem(result.id, code, context, result.detail);

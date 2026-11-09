@@ -6,6 +6,7 @@ import type { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import type { LoggingRepository } from 'src/repositories/logging.repository.js';
 import type { StorageRepository } from 'src/repositories/storage.repository.js';
 import type { RestoreDetailsMode } from 'src/utils/cloud-backup-details.js';
+import { StorageFolder } from 'src/enum.js';
 import { CloudBackupStoreError, CloudBackupStoreRepository } from 'src/repositories/cloud-backup-store.repository.js';
 import { CloudBackupBucket, CloudBackupCheckpoint } from 'src/services/cloud-backup-maintenance.js';
 import { flushBuddyDirectory } from 'src/utils/buddy-backup-vault.js';
@@ -449,9 +450,13 @@ export class CloudBackupRestorer {
       });
     if (options.publish) {
       if (options.stageBesideTarget) await options.publish(file, '', () => Promise.resolve('skipped'), 'inspect');
+      // FL-1320: the thumbnails folder can be a drive of its own, and a rename cannot cross drives, so a
+      // thumbnail is staged beside its target rather than in the restore folder.
       const staged = options.stageBesideTarget
         ? join(dirname(file.target), `.buddy-restore-${randomUUID()}.tmp`)
-        : join(options.mediaLocation, RESTORE_FOLDER, options.operationId, 'staging', randomUUID());
+        : isInside(join(options.mediaLocation, StorageFolder.Thumbnails), file.target)
+          ? join(dirname(file.target), `.cloud-restore-${randomUUID()}.tmp`)
+          : join(options.mediaLocation, RESTORE_FOLDER, options.operationId, 'staging', randomUUID());
       this.storage.mkdirSync(dirname(staged));
       try {
         const downloaded = await download(key, staged, file.sha256);
