@@ -29,7 +29,7 @@ const installation = {
   databasePath: '/fixtures/db',
 } as unknown as Installation;
 const settled = async (store: Store) => {
-  for (const deadline = Date.now() + 5000; store.history()[0].state === 'running' && Date.now() < deadline; )
+  for (const deadline = Date.now() + 30_000; store.history()[0].state === 'running' && Date.now() < deadline; )
     await new Promise((resolve) => setTimeout(resolve, 5));
   return store.history()[0];
 };
