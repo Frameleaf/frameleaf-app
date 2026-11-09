@@ -200,6 +200,7 @@
   let agreed = $state(false);
   let termsChanged = $state(false);
   let createdDestinationId = $state<string | null>(null);
+  let firstTurnOn = false;
   const termChoices = $derived({
     identityNames: !!processing?.consent?.features.identityNames,
     medicalSignals: !!processing?.consent?.features.medicalSignals,
@@ -237,15 +238,16 @@
         await loadTerms();
         return;
       }
-      // A retry after this sheet already created the destination must not rewrite the routes again.
-      const firstTime = !createdDestinationId && isFirstCloudTurnOn(processing);
+      // Stays true across a failed attempt, even once the terms are recorded, until Cloud is really on.
+      firstTurnOn ||= isFirstCloudTurnOn(processing);
       await recordCloudConsent({
         destinationId: processing?.destination?.id ?? createdDestinationId,
         terms,
         choices: termChoices,
         onCreated: (id) => (createdDestinationId = id),
       });
-      await turnOnCloudProcessing({ firstTime });
+      await turnOnCloudProcessing({ firstTime: firstTurnOn });
+      firstTurnOn = false;
       await loadWallet();
     } catch (error) {
       if (isConsentOutdatedError(error)) {

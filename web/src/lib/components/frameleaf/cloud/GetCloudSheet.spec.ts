@@ -330,6 +330,57 @@ describe('GetCloudSheet (FL-544: one sheet on every gate)', () => {
       });
     });
 
+    it('still opens work to Cloud on the retry when saving failed after the terms were recorded', async () => {
+      sdkMock.getLicenseStatus.mockResolvedValue(cloudLicense());
+      sdkMock.getCloudMlStatus.mockResolvedValue(notAgreed(10));
+      sdkMock.getCloudMlConsentTerms.mockResolvedValue({
+        requiredVersion: '2026-10-01',
+        recordedVersion: null,
+        summary: 'x',
+        textSha256: 'a'.repeat(64),
+        documentUrl: null,
+      } as never);
+      sdkMock.createCloudMlDestination.mockResolvedValue({ id: 'cloud-1' } as never);
+      sdkMock.grantMlDestinationConsent.mockImplementation(() => {
+        sdkMock.getCloudMlStatus.mockResolvedValue(agreed(10));
+        return Promise.resolve({} as never);
+      });
+      sdkMock.getAdminConfigWithRevision.mockImplementation(() =>
+        Promise.resolve({
+          config: {
+            frameleafCloud: {
+              cloudMl: {
+                enabled: false,
+                routing: {
+                  descriptions: 'local',
+                  upscale: 'local',
+                  restoration: 'local',
+                  studio: 'local',
+                  interpolation: 'local',
+                },
+              },
+            },
+          },
+          revision: 'r1',
+        } as never),
+      );
+      sdkMock.updateAdminConfigWithRevision.mockRejectedValueOnce(new Error('offline'));
+      sdkMock.updateAdminConfigWithRevision.mockResolvedValue({ config: {}, revision: 'r2' } as never);
+      render(GetCloudSheet, { feature: 'processing', onDone: vi.fn(), close: vi.fn() });
+
+      const action = await screen.findByRole('button', { name: 'Agree and turn on' });
+      await fireEvent.click(screen.getByRole('checkbox', { name: 'I agree to the Frameleaf Cloud processing terms' }));
+      await waitFor(() => expect(action).toBeEnabled());
+      await fireEvent.click(action);
+      await waitFor(() => expect(sdkMock.updateAdminConfigWithRevision).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(action).toBeEnabled());
+      await fireEvent.click(action);
+
+      await waitFor(() => expect(sdkMock.updateAdminConfigWithRevision).toHaveBeenCalledTimes(2));
+      const saved = sdkMock.updateAdminConfigWithRevision.mock.calls[1][0].adminConfigRevisionUpdateDto;
+      expect(saved.config.frameleafCloud!.cloudMl.routing).toMatchObject({ descriptions: 'both', upscale: 'both' });
+    });
+
     it('treats a missing search consent as the terms step not done, and records it', async () => {
       sdkMock.getLicenseStatus.mockResolvedValue(cloudLicense());
       sdkMock.getCloudMlStatus.mockResolvedValue(agreed(10));
