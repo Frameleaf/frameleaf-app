@@ -472,7 +472,10 @@ export class AlbumCleanupService extends BaseService {
 
     // Rule 14: same dates in the same place, with no photos in common.
     const located = facts.filter((fact) => fact.gps && fact.span);
-    const byTrip = Map.groupBy(located, (fact) => `${fact.span!.from}|${fact.span!.to}|${fact.gps!.city}`);
+    const byTrip = Map.groupBy(
+      located,
+      (fact) => `${fact.parentId ?? ''}|${fact.span!.from}|${fact.span!.to}|${fact.gps!.city}`,
+    );
     const sameTrip = byTrip
       .values()
       .flatMap((group) => {
@@ -481,11 +484,7 @@ export class AlbumCleanupService extends BaseService {
         }
         const lead = winner(group.map(({ id }) => album(id)));
         return group.flatMap((other) => {
-          if (
-            other.id === lead.id ||
-            nameOf(other.id) === nameOf(lead.id) ||
-            album(other.id).parentId !== lead.parentId
-          ) {
+          if (other.id === lead.id || nameOf(other.id) === nameOf(lead.id)) {
             return [];
           }
           const [firstId, secondId] = lead.id < other.id ? [lead.id, other.id] : [other.id, lead.id];
