@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, realpath, stat, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { overlappingWriter } from '../src/postgres-storage.js';
-import { assertExternalFolder, assertSeparateFolders, applyFolderDefaults, broadRoots, ensureChosenFolder, ensureManagerFolder, listFolders, realTarget } from '../src/folders.js';
+import { assertExternalFolder, assertSeparateFolders, applyFolderDefaults, broadRoots, ensureChosenFolder, ensureManagerFolder, isMounted, listFolders, realTarget } from '../src/folders.js';
 import type { Refusal } from '../src/contracts.js';
 import { externalFolderIssue, externalFolders, setExternalFolders } from '../ui/src/presentation.js';
 
@@ -58,6 +58,13 @@ test('on TrueNAS a pool is just a pool, whatever it is called, and the apps data
     await assert.rejects(ensureChosenFolder('/mnt/tank'), (error: Refusal) => error.code === 'invalid_storage_path');
     await assert.rejects(ensureChosenFolder('/mnt/no-such-pool/media'), (error: Refusal) => error.code === 'storage_volume_missing');
   });
+});
+
+test('a folder left where a pool used to be is not a mounted pool', () => {
+  const mountinfo = '36 1 0:30 / /mnt/tank rw,relatime shared:1 - zfs tank rw\n37 36 0:31 / /mnt/tank/media rw,relatime shared:2 - zfs tank/media rw';
+  assert.ok(isMounted('/mnt/tank', mountinfo));
+  assert.ok(!isMounted('/mnt/exported', mountinfo));
+  assert.ok(!isMounted('/mnt/tank', ''));
 });
 
 test('Manager will not create its own folder on a pool that is not there', async () => {

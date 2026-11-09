@@ -1,7 +1,8 @@
-import { mkdir, readdir, realpath, stat } from 'node:fs/promises';
+import { mkdir, readFile, readdir, realpath, stat } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
 import { Refusal } from './contracts.js';
 import { folderDetail } from './host-paths.js';
+import { filesystemMounts } from './postgres-storage.js';
 
 /**
  * A new install maps one broad folder into Manager, and folders are chosen in Manager rather than in the template:
@@ -71,11 +72,18 @@ export async function realTarget(path: string): Promise<string> {
   }
 }
 
+/** Whether `place` is a mount of its own in the host's mount table, not just a folder of that name. */
+export const isMounted = (place: string, mountinfo: string) => filesystemMounts(mountinfo).some((mount) => mount.target === place);
+/** A TrueNAS pool that isn't imported can leave an empty /mnt/tank: writing there lands on the boot disk, hidden once the pool returns. */
+const poolAbsent = async (place: string) =>
+  process.env.MANAGER_PLATFORM === 'truenas' && !isMounted(place, await readFile('/run/frameleaf-host/mountinfo', 'utf8').catch(() => ''));
+
 /** A folder chosen in setup, created when it is missing. A drive or share that isn't there is never invented. */
 export async function ensureChosenFolder(path: string): Promise<void> {
   assertUsable(path);
-  // ponytail: an unmounted drive that left its empty mount point behind passes; the disk-space check is the next guard.
-  if (!(await stat(volume(path)).then((s) => s.isDirectory(), () => false)))
+  const place = volume(path);
+  // ponytail: off TrueNAS, an unmounted drive that left its empty mount point behind passes; the disk-space check is the next guard.
+  if (!(await stat(place).then((s) => s.isDirectory(), () => false)) || (await poolAbsent(place)))
     throw new Refusal('storage_volume_missing', 409, folderDetail(path));
   // A link could lead outside /mnt or into another chosen folder, past the checks that compare these paths.
   if ((await realTarget(path)) !== path) throw new Refusal('invalid_storage_path', 409, folderDetail(path));

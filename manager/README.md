@@ -20,6 +20,8 @@ The shortest launch needs no folders made first. Give the address you will open 
 sh launch.sh ghcr.io/frameleaf/frameleaf-manager:latest "https://server.example:2282" "$FOLDER_ROOT" "$LAN_ADDRESS"
 ```
 
+Without `$LAN_ADDRESS`, Manager listens only on this machine (`127.0.0.1`). Give the server's LAN address to open it from another device, unless a reverse proxy on this machine serves it.
+
 To name every folder yourself, use the long form, and create the state, library, backup and appdata folders on the intended storage first. It is also what an existing launch keeps using:
 
 ```sh
