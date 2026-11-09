@@ -1,8 +1,8 @@
 import { Kysely, sql } from 'kysely';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { link, mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { defaults } from 'src/dtos/config.dto.js';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
@@ -1257,6 +1257,74 @@ describe(AssetService.name, () => {
               await expect(readFile(photo.originalPath)).rejects.toMatchObject({ code: 'ENOENT' });
               await expect(movesOf(photo.id)).resolves.toEqual([]);
             }
+          } finally {
+            StorageCore.reset();
+            await rm(media, { recursive: true, force: true });
+          }
+        });
+
+        it.each([
+          { recorded: true, label: 'with its recorded move' },
+          { recorded: false, label: 'without a recorded move' },
+        ])('finishes a move an interruption left under two names, $label (FL-1333)', async ({ recorded }) => {
+          // real files: the photo is linked at its template path, and its old name was never removed
+          const media = await realpath(await mkdtemp(join(tmpdir(), 'frameleaf-leftover-name-')));
+          StorageCore.reset();
+          StorageCore.setMediaLocation(media);
+          try {
+            const { sut, ctx } = newMediumService(StorageTemplateService, {
+              database: forkDatabase,
+              real: [
+                AssetRepository,
+                AssetJobRepository,
+                CryptoRepository,
+                MoveRepository,
+                PhysicalFileRepository,
+                StorageRepository,
+                UserRepository,
+              ],
+              mock: [DatabaseRepository, EventRepository, JobRepository, LoggingRepository],
+            });
+            const config = structuredClone(defaults);
+            config.storageTemplate.enabled = true;
+            config.storageTemplate.template = 'leftover/{{filename}}';
+            sut.onConfigInit({ newConfig: config });
+            vi.spyOn(sut, 'getConfig').mockResolvedValue(config);
+            ctx.getMock(DatabaseRepository).withLock.mockImplementation((_lock, callback) => callback());
+
+            const { user } = await ctx.newUser();
+            const folder = join(media, 'upload', user.id, 'ab', 'cd');
+            await mkdir(folder, { recursive: true });
+            const bytes = Buffer.from('the only photo');
+            const originalPath = join(folder, `${randomUUID()}.jpg`);
+            await writeFile(originalPath, bytes);
+            const { asset } = await ctx.newAsset({
+              ownerId: user.id,
+              originalPath,
+              originalFileName: 'IMG_0001.jpg',
+              checksum: createHash('sha1').update(bytes).digest(),
+            });
+            await ctx.newExif({ assetId: asset.id, fileSizeInByte: bytes.length });
+            const name = join(
+              StorageCore.getLibraryFolder({ id: user.id, storageLabel: user.storageLabel ?? null }),
+              'leftover',
+              'IMG_0001.jpg',
+            );
+            await mkdir(dirname(name), { recursive: true });
+            await link(originalPath, name);
+            if (recorded) {
+              await recordMove(asset.id, originalPath, name);
+            }
+
+            await expect(sut.handleMigrationSingle({ id: asset.id })).resolves.toBe(JobStatus.Success);
+
+            // the name the photo already had is reused, not +1, and the photo ends with one name
+            await expect(ctx.get(AssetRepository).getById(asset.id)).resolves.toMatchObject({ originalPath: name });
+            await expect(readFile(name)).resolves.toEqual(bytes);
+            expect((await stat(name)).nlink).toBe(1);
+            await expect(stat(originalPath)).rejects.toMatchObject({ code: 'ENOENT' });
+            await expect(stat(name.replace('.jpg', '+1.jpg'))).rejects.toMatchObject({ code: 'ENOENT' });
+            await expect(movesOf(asset.id)).resolves.toEqual([]);
           } finally {
             StorageCore.reset();
             await rm(media, { recursive: true, force: true });

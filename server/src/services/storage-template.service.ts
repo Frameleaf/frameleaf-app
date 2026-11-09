@@ -543,7 +543,9 @@ export class StorageTemplateService extends BaseService {
 
       while (true) {
         const isExists = await this.storageRepository.checkFileExists(destination);
-        if (!isExists) {
+        // FL-1333: a name that already holds this photo's own file (an interrupted move linked it there) is
+        // the photo's; the move finishes there and removes the old name, so the file keeps one name
+        if (!isExists || (await this.isOwnFile(source, destination))) {
           break;
         }
 
@@ -555,6 +557,16 @@ export class StorageTemplateService extends BaseService {
     } catch (error: any) {
       this.logger.error(`Unable to get template path for ${filename}: ${error}`);
       return asset.originalPath;
+    }
+  }
+
+  /** Whether `candidate` is another name of the file at `originalPath`; when that cannot be told, it is not. */
+  private async isOwnFile(originalPath: string, candidate: string): Promise<boolean> {
+    try {
+      return await this.storageRepository.isOtherLinkOf(originalPath, candidate);
+    } catch (error: any) {
+      this.logger.debug(`Unable to compare ${candidate} with ${originalPath}: ${error}`);
+      return false;
     }
   }
 

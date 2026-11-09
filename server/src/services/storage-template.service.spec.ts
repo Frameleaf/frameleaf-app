@@ -792,6 +792,68 @@ describe(StorageTemplateService.name, () => {
       expect(mocks.user.getList).toHaveBeenCalled();
     });
 
+    it('reuses a destination that is another name of the asset’s own file (FL-1333)', async () => {
+      const asset = AssetFactory.from({
+        fileCreatedAt: new Date('2022-06-19T23:41:36.910Z'),
+      })
+        .exif()
+        .build();
+
+      const oldPath = asset.originalPath;
+      const newPath = `/data/library/${asset.ownerId}/2022/2022-06-19/${asset.originalFileName}`;
+
+      mocks.assetJob.streamForStorageTemplateJob.mockReturnValue(makeStream([getForStorageTemplate(asset)]));
+      mocks.user.getList.mockResolvedValue([userStub.user1]);
+      mocks.move.create.mockResolvedValue({
+        id: '123',
+        entityId: asset.id,
+        pathType: AssetPathType.Original,
+        oldPath,
+        newPath,
+      });
+      // an interrupted move left the photo linked at its template path as well
+      mocks.storage.checkFileExists.mockImplementation((path) => Promise.resolve(path === newPath));
+      mocks.storage.isOtherLinkOf.mockImplementation((first, second) =>
+        Promise.resolve(first === oldPath && second === newPath),
+      );
+      mocks.storage.link.mockRejectedValue(Object.assign(new Error('EEXIST'), { code: 'EEXIST' }));
+
+      await sut.handleMigration();
+
+      expect(mocks.storage.isOtherLinkOf).toHaveBeenCalledWith(oldPath, newPath);
+      expect(mocks.storage.checkFileExists).not.toHaveBeenCalledWith(newPath.replace('.jpg', '+1.jpg'));
+      expect(await movedOriginals()).toEqual([{ id: asset.id, originalPath: newPath }]);
+      // the move finishes by removing the old name, so the photo keeps one name
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(oldPath);
+    });
+
+    it('takes the next name when it cannot tell whether a destination is the asset’s own file', async () => {
+      const asset = AssetFactory.from({
+        fileCreatedAt: new Date('2022-06-19T23:41:36.910Z'),
+      })
+        .exif()
+        .build();
+
+      const newPath = `/data/library/${asset.ownerId}/2022/2022-06-19/${asset.originalFileName}`;
+      const newPath2 = newPath.replace('.jpg', '+1.jpg');
+
+      mocks.assetJob.streamForStorageTemplateJob.mockReturnValue(makeStream([getForStorageTemplate(asset)]));
+      mocks.user.getList.mockResolvedValue([userStub.user1]);
+      mocks.move.create.mockResolvedValue({
+        id: '123',
+        entityId: asset.id,
+        pathType: AssetPathType.Original,
+        oldPath: asset.originalPath,
+        newPath: newPath2,
+      });
+      mocks.storage.checkFileExists.mockImplementation((path) => Promise.resolve(path === newPath));
+      mocks.storage.isOtherLinkOf.mockRejectedValue(Object.assign(new Error('EIO'), { code: 'EIO' }));
+
+      await sut.handleMigration();
+
+      expect(await movedOriginals()).toEqual([{ id: asset.id, originalPath: newPath2 }]);
+    });
+
     it('should skip when an asset already matches the template', async () => {
       const asset = AssetFactory.from({
         originalPath: '/data/library/user-id/2023/2023-02-23/asset-id.jpg',
