@@ -133,6 +133,17 @@ describe('FL-1304 captions on Frameleaf Cloud', () => {
     expect(subtitles()[0]?.from).toBe(330)
   })
 
+  it('places lines through the anchor the job completed with', async () => {
+    seed([clip('a', 300)])
+    await resumeWith(job('a'), {
+      ...done(3, 4),
+      anchor: { fromSeconds: 2, sourceStartSeconds: 1, speed: 2 },
+    })
+    // Timeline 3-4 s with that anchor is source 3-5 s, which this clip shows 3-5 s after it starts.
+    expect(subtitles()[0]).toMatchObject({ from: 390, durationInFrames: 60 })
+    expect(subtitles()[0]?.cues[0]).toMatchObject({ startSeconds: 0, endSeconds: 2 })
+  })
+
   it('asks before replacing lines the clip already has, and only that clip changes', async () => {
     const mine = lines('mine', 'a', 0, 'I edited this')
     const other = lines('other', 'b', 400, 'On another clip')
