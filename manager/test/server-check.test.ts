@@ -8,13 +8,20 @@ import { join } from 'node:path';
 import { Operations, ReviewInput } from '../src/operations.js';
 import { Store } from '../src/store.js';
 import { Refusal, type Installation } from '../src/contracts.js';
-import { ServerCheck, checkHost } from '../src/server-check.js';
+import { ServerCheck, checkHost, detectPlatform } from '../src/server-check.js';
 import type { Container, Docker } from '../src/docker.js';
 import type { Releases, VerifiedRelease } from '../src/releases.js';
 import type { Backups } from '../src/backups.js';
 import type { PostgresStorage } from '../src/postgres-storage.js';
 import { fileHash } from '../src/files.js';
+import { dockerRoomNeeded, dockerStorageFree, hostPortScript, hostProbes } from '../src/host-probes.js';
+import { createServer, type AddressInfo } from 'node:net';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 
+const run = promisify(execFile);
+
+const GB = 1024 ** 3;
 const publishing = (port: number, running = true): Container =>
   ({
     Id: randomUUID().replaceAll('-', '').padEnd(64, '0'),
@@ -44,6 +51,14 @@ async function fixture({ stateLink = false } = {}) {
     databaseRefusal: null as string | null,
     acquired: 0,
     pulled: 0,
+    // FL-1318 host probes: a server with room, online, nothing else on its ports, and 32 GB of memory.
+    memory: 32 * GB as number | null,
+    dockerFree: 31 * GB as number | null,
+    offline: [] as string[],
+    hostBusy: [] as number[],
+    hostUnknown: false,
+    dockerman: true,
+    ownMemory: null as number | null,
   };
   const release = {
     directory: join(root, 'release'),
@@ -60,7 +75,7 @@ async function fixture({ stateLink = false } = {}) {
   const docker = {
     compatibility: async () => {
       if (!state.dockerVersion) throw new Refusal('unsupported_docker_version_or_architecture');
-      return { platform: 'linux/amd64', version: state.dockerVersion, compose: '2.29.0', dataRoot: '/var/lib/docker', memory: null, processors: null };
+      return { platform: 'linux/amd64', version: state.dockerVersion, compose: '2.29.0', dataRoot: '/var/lib/docker', memory: state.memory, processors: null };
     },
     inventory: async () => {
       if (state.inventoryFails) throw new Error('docker ps timed out');
@@ -87,6 +102,13 @@ async function fixture({ stateLink = false } = {}) {
     allocate: async () => join(database, randomUUID()),
   } as unknown as PostgresStorage;
   const operations = new Operations(store, docker, releases, {} as Backups, [root], storage);
+  operations.probes = {
+    dockerFree: async () => state.dockerFree,
+    reaches: async (url) => !state.offline.some((host) => new URL(url).hostname === host),
+    hostFreePorts: async (ports) => (state.hostUnknown ? null : ports.filter((port) => !state.hostBusy.includes(port))),
+    dockermanMapped: async () => state.dockerman,
+    memory: () => state.ownMemory,
+  };
   const input = ReviewInput.parse({
     kind: 'install', tag: release.nas.tag, mediaPath: media, databaseRoot: database, port: 2283, ml: false, lifecycle: 'docker-only',
   });
@@ -106,10 +128,10 @@ test('a server with several problems reports them all in one pass, and nothing i
     assert.equal(result.ready, false);
     assert.equal(result.host, 'linux');
     const byId = Object.fromEntries(result.checks.map((check) => [check.id, check]));
-    assert.deepEqual(result.checks.map((check) => check.id), ['docker', 'media', 'database', 'backups', 'manager', 'port']);
+    assert.deepEqual(result.checks.map((check) => check.id), ['docker', 'room', 'media', 'database', 'backups', 'manager', 'port', 'downloads', 'memory']);
     assert.deepEqual(
       Object.fromEntries(result.checks.map((check) => [check.id, check.status])),
-      { docker: 'problem', media: 'ok', database: 'problem', backups: 'ok', manager: 'ok', port: 'problem' },
+      { docker: 'problem', room: 'ok', media: 'ok', database: 'problem', backups: 'ok', manager: 'ok', port: 'problem', downloads: 'ok', memory: 'unknown' },
     );
     assert.equal(byId.docker.code, 'unsupported_docker_version_or_architecture');
     assert.equal(byId.database.code, 'insufficient_database_space');
@@ -174,7 +196,7 @@ test('a port Manager could not check is unknown and does not block', async () =>
     assert.equal(result.ready, true);
     const port = result.checks.find((check) => check.id === 'port')!;
     assert.equal(port.status, 'unknown');
-    assert.deepEqual(result.checks.at(-1), { id: 'release', status: 'ok', facts: { tag: f.release.nas.tag } });
+    assert.deepEqual(result.checks.find((check) => check.id === 'release'), { id: 'release', status: 'ok', facts: { tag: f.release.nas.tag } });
   } finally {
     await f.cleanup();
   }
@@ -186,7 +208,7 @@ test('a release built for another processor is a problem, and its bundle is not 
     f.release.nas.platforms = ['linux/arm64'];
     const result = await f.operations.review(f.input);
     assert.equal(result.ready, false);
-    assert.deepEqual(result.checks.at(-1), { id: 'release', status: 'problem', code: 'release_architecture_unavailable', detail: 'linux/amd64' });
+    assert.deepEqual(result.checks.find((check) => check.id === 'release'), { id: 'release', status: 'problem', code: 'release_architecture_unavailable', detail: 'linux/amd64' });
     assert.deepEqual(await readdir(f.root).then((names) => names.includes('release')), false);
   } finally {
     await f.cleanup();
@@ -241,7 +263,10 @@ test('the restore review reports its problems together and removes the unpacked 
     assert.equal(result.ready, false);
     assert.deepEqual(
       result.checks.map((check) => [check.id, check.status, check.code]),
-      [['docker', 'problem', 'unsupported_docker_version_or_architecture'], ['media', 'ok', undefined], ['database', 'ok', undefined], ['port', 'problem', 'port_in_use']],
+      [
+        ['docker', 'problem', 'unsupported_docker_version_or_architecture'], ['room', 'ok', undefined], ['media', 'ok', undefined],
+        ['database', 'ok', undefined], ['port', 'problem', 'port_in_use'], ['downloads', 'ok', undefined], ['memory', 'unknown', 'memory_unknown'],
+      ],
     );
     assert.equal(f.state.acquired, 0);
     assert.deepEqual((await readdir(f.store.directory)).filter((name) => name.startsWith('restore-')), []);
@@ -275,4 +300,240 @@ test('the host that picks the fix steps', () => {
   assert.equal(checkHost('hexos'), 'hexos');
   assert.equal(checkHost('linux'), 'linux');
   assert.equal(checkHost(undefined), 'linux');
+});
+
+// FL-1318: Docker storage, downloads, host ports, memory and Unraid's Docker tab.
+test('too little room in Docker’s storage is a problem with what is needed and free; less is needed without machine learning', async () => {
+  const f = await fixture();
+  process.env.MANAGER_ML_ACCELERATION = 'cpu';
+  try {
+    f.state.dockerFree = 6 * GB;
+    const withMl = await f.operations.review({ ...f.input, ml: true });
+    assert.equal(withMl.ready, false);
+    assert.deepEqual(withMl.checks.find((check) => check.id === 'room'), {
+      id: 'room', status: 'problem', code: 'insufficient_docker_space', facts: { needed: dockerRoomNeeded(true), free: 6 * GB },
+    });
+    assert.equal(dockerRoomNeeded(true), 8 * GB);
+    assert.equal(f.state.acquired, 0, 'nothing downloads while Docker has no room');
+    const withoutMl = await f.operations.review(f.input);
+    assert.equal(withoutMl.ready, true);
+    assert.deepEqual(withoutMl.checks.find((check) => check.id === 'room'), { id: 'room', status: 'ok', facts: { needed: 4 * GB, free: 6 * GB } });
+    // A GPU build of machine learning needs more.
+    assert.ok(dockerRoomNeeded(true, 'cuda') > dockerRoomNeeded(true));
+  } finally {
+    delete process.env.MANAGER_ML_ACCELERATION;
+    await f.cleanup();
+  }
+});
+
+test('Docker storage Manager can’t read is “couldn’t check” and never blocks', async () => {
+  const f = await fixture();
+  try {
+    f.state.dockerFree = null;
+    const result = await f.operations.review(f.input);
+    assert.equal(result.ready, true);
+    assert.deepEqual(result.checks.find((check) => check.id === 'room'), { id: 'room', status: 'unknown', code: 'docker_storage_unreadable', facts: { needed: 4 * GB } });
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('a download host that doesn’t answer is a problem named by host, found before the release is fetched', async () => {
+  const f = await fixture();
+  try {
+    for (const host of ['ghcr.io', 'github.com']) {
+      f.state.offline = [host];
+      const result = await f.operations.review(f.input);
+      assert.equal(result.ready, false);
+      assert.deepEqual(result.checks.find((check) => check.id === 'downloads'), { id: 'downloads', status: 'problem', code: 'download_host_unreachable', detail: host });
+      assert.equal(result.checks.some((check) => check.id === 'release'), false);
+    }
+    assert.equal(f.state.acquired, 0);
+    f.state.offline = [];
+    const online = await f.operations.review(f.input);
+    assert.deepEqual(online.checks.find((check) => check.id === 'downloads'), { id: 'downloads', status: 'ok' });
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('a port a host app listens on is in use, and the next free port skips host apps too', async () => {
+  const f = await fixture();
+  try {
+    f.state.hostBusy = [2283, 2284];
+    f.state.containers = [publishing(2285)];
+    const result = await f.operations.review(f.input);
+    assert.equal(result.ready, false);
+    assert.deepEqual(result.checks.find((check) => check.id === 'port'), { id: 'port', status: 'problem', code: 'port_in_use', facts: { port: 2283, free: 2286 } });
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('a port a container publishes is left to the container check, so an import can reuse its source’s port', async () => {
+  const f = await fixture();
+  try {
+    // The helper finds the port taken, by the published port of a container the import replaces, not a host app.
+    f.state.hostBusy = [2283];
+    f.state.containers = [publishing(2283)];
+    const replaced = f.state.containers[0].Id;
+    const checks = new ServerCheck();
+    await (f.operations as unknown as { portCheck: (...args: unknown[]) => Promise<void> }).portCheck(
+      checks, 2283, null, { workers: [replaced], containers: [] }, undefined, true,
+    );
+    assert.deepEqual(checks.results, [{ id: 'port', status: 'ok', facts: { port: 2283 } }]);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('a host port Manager couldn’t test is “couldn’t check” and never blocks', async () => {
+  const f = await fixture();
+  try {
+    f.state.hostUnknown = true;
+    const result = await f.operations.review(f.input);
+    assert.equal(result.ready, true);
+    assert.deepEqual(result.checks.find((check) => check.id === 'port'), { id: 'port', status: 'unknown', code: 'host_port_unchecked', facts: { port: 2283 } });
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('less than 8 GB of memory with machine learning on is worth knowing, not a problem', async () => {
+  const f = await fixture();
+  try {
+    f.state.memory = 4 * GB;
+    f.state.dockerFree = 100 * GB;
+    const withMl = await f.operations.review({ ...f.input, ml: true });
+    assert.equal(withMl.ready, true);
+    assert.deepEqual(withMl.checks.find((check) => check.id === 'memory'), { id: 'memory', status: 'warning', code: 'low_memory', facts: { bytes: 4 * GB, ml: true } });
+    const withoutMl = await f.operations.review(f.input);
+    assert.deepEqual(withoutMl.checks.find((check) => check.id === 'memory'), { id: 'memory', status: 'ok', facts: { bytes: 4 * GB, ml: false } });
+    // When Docker can't answer, the memory Manager's own container sees.
+    f.state.dockerVersion = null;
+    f.state.ownMemory = 6 * GB;
+    const noDocker = await f.operations.review({ ...f.input, ml: true });
+    assert.deepEqual(noDocker.checks.find((check) => check.id === 'memory'), { id: 'memory', status: 'warning', code: 'low_memory', facts: { bytes: 6 * GB, ml: true } });
+    f.state.dockerVersion = '27.5.1';
+    // A machine sold as 8 GB reports a little less to Docker; it isn't warned.
+    f.state.memory = 7.6 * GB;
+    const eight = await f.operations.review({ ...f.input, ml: true });
+    assert.equal(eight.checks.find((check) => check.id === 'memory')?.status, 'ok');
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('Unraid’s Docker tab: an unmapped templates folder is a warning; other hosts don’t show the check', async () => {
+  const f = await fixture();
+  try {
+    assert.equal((await f.operations.review(f.input)).checks.some((check) => check.id === 'unraid'), false);
+    process.env.MANAGER_PLATFORM = 'unraid';
+    f.state.dockerman = false;
+    const missing = await f.operations.review(f.input);
+    assert.equal(missing.ready, true);
+    assert.deepEqual(missing.checks.at(-1), { id: 'unraid', status: 'warning', code: 'dockerman_templates_unmapped' });
+    f.state.dockerman = true;
+    assert.deepEqual((await f.operations.review(f.input)).checks.at(-1), { id: 'unraid', status: 'ok' });
+  } finally {
+    delete process.env.MANAGER_PLATFORM;
+    await f.cleanup();
+  }
+});
+
+test('Unraid found from its docker.cfg counts as Unraid when MANAGER_PLATFORM isn’t set', async () => {
+  const f = await fixture();
+  try {
+    delete process.env.MANAGER_PLATFORM;
+    detectPlatform('unraid');
+    f.state.dockerman = false;
+    const result = await f.operations.review(f.input);
+    assert.equal(result.host, 'unraid');
+    assert.equal(f.operations.checkHost(), 'unraid');
+    assert.deepEqual(result.checks.at(-1), { id: 'unraid', status: 'warning', code: 'dockerman_templates_unmapped' });
+    // An explicit platform still wins.
+    process.env.MANAGER_PLATFORM = 'truenas';
+    assert.equal(f.operations.checkHost(), 'truenas');
+  } finally {
+    detectPlatform(undefined);
+    delete process.env.MANAGER_PLATFORM;
+    await f.cleanup();
+  }
+});
+
+test('install start repeats the new checks: Docker storage that filled since the review refuses before any download', async () => {
+  const f = await fixture();
+  try {
+    const result = await f.operations.review(f.input);
+    assert.equal(result.ready, true);
+    if (!result.ready) return;
+    f.state.dockerFree = GB;
+    const operation = f.operations.start(result.id, randomUUID());
+    for (let i = 0; i < 200 && f.store.history().find((o) => o.id === operation.id)?.state === 'running'; i++)
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    const saved = f.store.history().find((o) => o.id === operation.id)!;
+    assert.equal(saved.state, 'failed');
+    assert.equal(saved.error, 'insufficient_docker_space');
+    assert.equal(saved.step, 'preflight');
+    assert.equal(f.state.pulled, 0);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('Docker’s free space is read from Manager’s own layer only inside a container on a layered driver', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'manager-docker-free-'));
+  try {
+    const marker = join(root, '.dockerenv'),
+      mounts = join(root, 'mounts');
+    const free = async () => 31 * GB;
+    await writeFile(mounts, 'overlay / overlay rw,relatime,lowerdir=/a,upperdir=/b 0 0\nproc /proc proc rw 0 0\n');
+    assert.equal(await dockerStorageFree(mounts, marker, free), null, 'not in a container');
+    await writeFile(marker, '');
+    assert.equal(await dockerStorageFree(mounts, marker, free), 31 * GB);
+    await writeFile(mounts, '/dev/sda1 / ext4 rw 0 0\n');
+    assert.equal(await dockerStorageFree(mounts, marker, free), null, 'a root that isn’t Docker’s storage');
+    assert.equal(await dockerStorageFree(join(root, 'missing'), marker, free), null);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('the host port helper reports only the ports it could listen on', async () => {
+  const busy = createServer();
+  await new Promise<void>((resolve) => busy.listen({ port: 0, host: '0.0.0.0' }, resolve));
+  const taken = (busy.address() as AddressInfo).port;
+  try {
+    const probe = createServer();
+    await new Promise<void>((resolve) => probe.listen({ port: 0, host: '0.0.0.0' }, resolve));
+    const open = (probe.address() as AddressInfo).port;
+    await new Promise((resolve) => probe.close(resolve));
+    const { stdout } = await run(process.execPath, ['-e', hostPortScript, JSON.stringify([taken, open])]);
+    assert.deepEqual(JSON.parse(stdout), [open]);
+  } finally {
+    busy.close();
+  }
+});
+
+test('the host port helper is Manager’s image on the host network, and anything unexpected is “couldn’t check”', async () => {
+  const image = `sha256:${'e'.repeat(64)}`;
+  const controller = {
+    Id: 'f'.repeat(64), State: { Running: true }, Image: image,
+    Config: { Labels: { 'app.frameleaf.manager.role': 'controller' }, Env: ['MANAGER_DATA=/data'] },
+  } as unknown as Container;
+  const calls: string[][] = [];
+  let output = '[2284]';
+  const docker = { inventory: async () => [controller] } as unknown as Docker;
+  const probes = hostProbes(docker, '/data', (async (_binary: string, args: string[]) => {
+    calls.push(args);
+    return output;
+  }) as never);
+  assert.deepEqual(await probes.hostFreePorts([2283, 2284]), [2284]);
+  const args = calls[0];
+  assert.deepEqual(args.slice(0, 6), ['run', '--rm', '--pull', 'never', '--network', 'host']);
+  assert.ok(args.includes(image) && args.includes('--read-only') && args.at(-1) === '[2283,2284]');
+  output = 'not json';
+  assert.equal(await probes.hostFreePorts([2283]), null);
+  const elsewhere = hostProbes(docker, '/other', (async () => '[2283]') as never);
+  assert.equal(await elsewhere.hostFreePorts([2283]), null, 'no controller for this Manager');
 });

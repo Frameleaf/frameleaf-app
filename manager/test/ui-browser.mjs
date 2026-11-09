@@ -153,11 +153,14 @@ let backupAction = 'reuse',
   restoreThumbnailsGone = true;
 const okChecks = (restore = false) => [
   { id: 'docker', status: 'ok', facts: { version: '28.4' } },
+  { id: 'room', status: 'ok', facts: { needed: 8 * 1024 ** 3, free: 31 * 1024 ** 3 } },
   { id: 'media', status: 'ok', facts: { free: 3 * 1024 ** 4 } },
   { id: 'database', status: 'ok', facts: { free: 200 * 1024 ** 3 } },
   ...(restore ? [] : [{ id: 'backups', status: 'ok', facts: { free: 3 * 1024 ** 4 } }, { id: 'manager', status: 'ok', facts: { free: 200 * 1024 ** 3 } }]),
   { id: 'port', status: 'ok', facts: { port: 2283 } },
+  { id: 'downloads', status: 'ok' },
   { id: 'release', status: 'ok', facts: { tag: 'frameleaf-v3.2.1-1' } },
+  { id: 'memory', status: 'ok', facts: { bytes: 32 * 1024 ** 3, ml: true } },
 ];
 const snapshot = { id: 'd'.repeat(64), time: '2026-10-07T02:00:00Z' };
 let snapshots = [snapshot];
@@ -856,6 +859,37 @@ try {
     await mainButton('Use port 2287').click();
     await page.getByRole('heading', { name: 'This server is ready' }).waitFor();
     assert.equal(requests.findLast((r) => r.path === 'review').body.port, 2287);
+    // FL-1318: Docker's storage and downloads block; memory and Unraid's Docker tab are worth knowing. Problems first.
+    await mainButton('Back').click();
+    reviewProblems = [
+      { id: 'docker', status: 'ok', facts: { version: '28.4' } },
+      { id: 'room', status: 'problem', code: 'insufficient_docker_space', facts: { needed: 8 * 1024 ** 3, free: 3.1 * 1024 ** 3 } },
+      { id: 'media', status: 'ok', facts: { free: 3 * 1024 ** 4 } },
+      { id: 'port', status: 'ok', facts: { port: 2287 } },
+      { id: 'downloads', status: 'problem', code: 'download_host_unreachable', detail: 'ghcr.io' },
+      { id: 'memory', status: 'warning', code: 'low_memory', facts: { bytes: 4 * 1024 ** 3, ml: true } },
+      { id: 'unraid', status: 'warning', code: 'dockerman_templates_unmapped' },
+    ];
+    await mainButton('Check this server').click();
+    await page.getByRole('heading', { name: '2 things to fix before installing' }).waitFor();
+    assert.deepEqual(await page.locator('.check-issue h2').allInnerTexts(), [
+      'Not enough room in Docker’s storage',
+      'Manager can’t reach Frameleaf’s downloads',
+      'This server has 4 GB of memory',
+      'Frameleaf won’t be editable from Unraid’s Docker tab',
+    ]);
+    await page.getByText('Frameleaf needs about 8 GB there, and only 3.1 GB is free.', { exact: true }).waitFor();
+    await page.getByText('Raise Docker vDisk size to at least 40 GB, then turn Docker back on.', { exact: true }).waitFor();
+    await screenshot('install-checks-host');
+    // Turning off faces and smart search checks again without machine learning.
+    await mainButton('Turn off faces and smart search').click();
+    await page.getByRole('heading', { name: 'This server is ready' }).waitFor();
+    assert.equal(requests.findLast((r) => r.path === 'review').body.ml, false);
+    await mainButton('Back').click();
+    await page.locator('.list-row', { hasText: 'Face recognition and smart search' }).locator('input[type=checkbox]').check({ force: true });
+    await mainButton('Check this server').click();
+    await page.getByRole('heading', { name: 'This server is ready' }).waitFor();
+    assert.match(await page.locator('.check-fine li', { hasText: 'Room for Frameleaf' }).innerText(), /8 GB needed · 31 GB free/);
     await mainButton('Review installation').click();
     await screenshot('install-review');
     await page.getByText('Intel GPU · Machine learning on', { exact: true }).waitFor();
