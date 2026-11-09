@@ -103,6 +103,8 @@ import { publishScopeOwner, scopeTimelineContent } from './scope-owner'
 import { createMediaFileRelinker, publishRelinkSources, type RelinkCapture } from './media-file-relink'
 import { registerMediaFileRelink } from '@/features/media-library/stores/media-relinking-actions'
 import { registerSubjectCutoutHost } from '@/shared/state/subject-cutout-host'
+import { registerCloudCaptionHost } from '@/shared/state/cloud-caption-host'
+import { createCloudCaptions } from './cloud-captions'
 import { captureSnapshot, restoreSnapshot } from '@/features/timeline/stores/commands/snapshot'
 import { useCompositionNavigationStore } from '@/features/timeline/stores/composition-navigation-store'
 import { useTimelineCommandStore } from '@/features/timeline/stores/timeline-command-store'
@@ -710,6 +712,24 @@ function installMediaRelink(state: Session) {
     },
   })
   state.unsubscribe.push(() => registerSubjectCutoutHost(null))
+  // FL-1304: captions on Frameleaf Cloud are priced and run by the host.
+  const cloudCaptions = createCloudCaptions({
+    start: (request) => call('startCloudCaptions', request),
+    read: (id) => call('readCloudCaptions', id),
+    pending: () => call('pendingCloudCaptions'),
+    ready: async () => {
+      while (!state.disposed && !state.mount.loaded) {
+        await new Promise((resolve) => setTimeout(resolve, 200))
+      }
+      return !state.disposed
+    },
+  })
+  registerCloudCaptionHost({ start: (request) => void cloudCaptions.start(request) })
+  void cloudCaptions.resume()
+  state.unsubscribe.push(() => {
+    registerCloudCaptionHost(null)
+    cloudCaptions.stop()
+  })
   state.unsubscribe.push(
     registerMediaFileRelink(async (id) => {
       const success = await relink(id)

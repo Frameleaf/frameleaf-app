@@ -51,13 +51,28 @@
     open?: boolean;
     title: string;
     /** What to estimate; the model is chosen here. */
-    request: Omit<CloudMlJobEstimateRequestDto, 'modelSku'>;
+    request?: Omit<CloudMlJobEstimateRequestDto, 'modelSku'>;
+    /** Prices work that has its own estimate endpoint (Studio captions, FL-1304), in place of `request`. */
+    estimateWith?: (modelSku: string | null) => Promise<CloudMlJobEstimateResponseDto>;
+    /** What the work is called in the summary line, when `request` doesn't say. */
+    workName?: string;
     /** A short description of the work ("Preview · centre of the frame"). */
     summary?: string;
     onSubmitted?: (job: CloudMlJobResponseDto) => void;
+    /** The dialog closed with nothing sent. */
+    onDismissed?: () => void;
   };
 
-  let { open = $bindable(false), title, request, summary = '', onSubmitted }: Props = $props();
+  let {
+    open = $bindable(false),
+    title,
+    request,
+    estimateWith,
+    workName,
+    summary = '',
+    onSubmitted,
+    onDismissed,
+  }: Props = $props();
 
   let estimate = $state<CloudMlJobEstimateResponseDto | null>(null);
   let modelSku = $state<string | null>(null);
@@ -84,9 +99,14 @@
     pausedMessage = null;
     agreed = false;
     try {
-      const next = await estimateCloudMlJob({
-        cloudMlJobEstimateRequestDto: { ...request, ...(sku && { modelSku: sku }) },
-      });
+      const next = estimateWith
+        ? await estimateWith(sku)
+        : await estimateCloudMlJob({
+            cloudMlJobEstimateRequestDto: {
+              ...(request as CloudMlJobEstimateRequestDto),
+              ...(sku && { modelSku: sku }),
+            },
+          });
       if (turn !== estimateTurn) {
         return;
       }
@@ -148,6 +168,10 @@
       } else if (!isOpen && wasOpen) {
         estimateTurn++;
         clearTimeout(retryTimer);
+        // A confirmation still on its way may yet become a job; `submit` settles it.
+        if (!job && !submitting) {
+          onDismissed?.();
+        }
       }
       wasOpen = isOpen;
     });
@@ -205,6 +229,9 @@
       }
     } finally {
       submitting = false;
+      if (!open && !job) {
+        onDismissed?.();
+      }
     }
   };
 
@@ -228,9 +255,10 @@
   );
 
   const workLabel = $derived(
-    request.purpose === CloudMlJobPurpose.SmoothMotion
-      ? $t('frameleaf_cloud_job_work_smooth_motion')
-      : $t('frameleaf_cloud_job_work_restoration'),
+    workName ??
+      (request?.purpose === CloudMlJobPurpose.SmoothMotion
+        ? $t('frameleaf_cloud_job_work_smooth_motion')
+        : $t('frameleaf_cloud_job_work_restoration')),
   );
   const upscale = $derived(estimate ? upscaleFact(estimate) : null);
   const expiresAt = $derived(
@@ -279,7 +307,7 @@
             <dt>{$t('frameleaf_cloud_job_fact_model')}</dt>
             <dd>
               {estimate.model.label}
-              {#if request.stage === CloudMlJobStage.Full}
+              {#if request?.stage === CloudMlJobStage.Full}
                 <small>{$t('frameleaf_cloud_job_fact_model_help')}</small>
               {/if}
             </dd>
