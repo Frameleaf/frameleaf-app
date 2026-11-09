@@ -51,6 +51,16 @@ export type ImagePathOptions = { fileType: AssetFileType; format: ImageFormat | 
 
 let instance: StorageCore | null;
 
+/**
+ * FL-1333: the files a move never puts onto another file, which could be someone's photo: an original and its
+ * sidecar. Every other file (a thumbnail, preview, full-size image, encoded video or face) can be made again,
+ * so a leftover at its new path is replaced rather than left to block the move for good.
+ */
+const NEVER_REPLACED_PATH_TYPES: ReadonlySet<PathType> = new Set<PathType>([
+  AssetPathType.Original,
+  AssetFileType.Sidecar,
+]);
+
 let mediaLocation: string | undefined;
 
 export class StorageCore {
@@ -265,7 +275,7 @@ export class StorageCore {
 
       // FL-179: a copy an interrupted attempt staged for the recorded new path is not needed any more
       if (move.newPath !== newPath) {
-        await this.removeStaged(getStagedMovePath(move.newPath, move.id));
+        await this.clearStaged(getStagedMovePath(move.newPath, move.id));
       }
       move = await this.moveRepository.update(move.id, { id: move.id, oldPath: actualPath, newPath });
     } else {
@@ -278,9 +288,10 @@ export class StorageCore {
     }
 
     const source = move.oldPath;
+    const replace = !NEVER_REPLACED_PATH_TYPES.has(pathType);
 
     if (!ASSET_MOVE_PATH_TYPES.has(pathType)) {
-      if (source !== newPath && !(await this.moveAcrossFilesystems(source, newPath, move.id, assetInfo))) {
+      if (source !== newPath && !(await this.moveAcrossFilesystems(source, newPath, move.id, replace, assetInfo))) {
         return false;
       }
       await this.savePath(pathType, entityId, newPath, ownerId);
@@ -307,11 +318,11 @@ export class StorageCore {
         if (source === newPath) {
           return true;
         }
-        const renamed = await this.rename(source, newPath);
+        const renamed = await this.rename(source, newPath, replace);
         state.crossDevice = renamed === 'cross-device';
         return renamed === 'renamed';
       },
-      undo: () => (source === newPath ? Promise.resolve() : this.undoRename(newPath, source)),
+      undo: () => (source === newPath ? Promise.resolve() : this.undoRename(newPath, source, replace)),
       finish: () => Promise.resolve(),
     });
 
@@ -323,13 +334,13 @@ export class StorageCore {
       try {
         result = await this.assetRepository.moveFile(moveArgs, {
           rename: async () => {
-            state.placed = (await this.rename(staged, newPath)) === 'renamed';
+            state.placed = (await this.rename(staged, newPath, replace)) === 'renamed';
             return state.placed;
           },
           // the source is untouched until the new path is saved
           undo: async () => {
             state.placed = false;
-            await this.undoRename(newPath, staged);
+            await this.undoRename(newPath, staged, replace);
           },
           finish: () => this.removeSource(source),
         });
@@ -373,19 +384,24 @@ export class StorageCore {
   }
 
   /**
-   * Moves a file within one filesystem, never onto a file already at `to` (FL-1333): the file is linked at
-   * `to`, which fails when anything is there, and only then is its old name removed. `exists` and `failed`
-   * changed nothing; a move to another filesystem is reported rather than attempted.
+   * Moves a file within one filesystem without replacing a file at `to` (FL-1333): the file is linked at `to`,
+   * which fails when anything is there, and only then is its old name removed. When `to` is this file already
+   * (an interrupted move linked it there and stopped), the move is finished. Any other file there is kept
+   * (`exists`) unless `replace`, for a file that can be made again. `exists` and `failed` changed nothing; a
+   * move to another filesystem is reported rather than attempted.
    */
-  private async rename(from: string, to: string): Promise<'renamed' | 'cross-device' | 'exists' | 'failed'> {
+  private async rename(
+    from: string,
+    to: string,
+    replace = false,
+  ): Promise<'renamed' | 'cross-device' | 'exists' | 'failed'> {
     this.logger.debug(`Attempting to rename file: ${from} => ${to}`);
     try {
       await this.storageRepository.link(from, to);
     } catch (error: any) {
       switch (error?.code) {
         case 'EEXIST': {
-          this.logger.warn(`Unable to move ${from} to ${to}: another file is already there and is never replaced`);
-          return 'exists';
+          return this.renameOntoExisting(from, to, replace);
         }
         case 'EXDEV': {
           return 'cross-device';
@@ -394,7 +410,7 @@ export class StorageCore {
         case 'ENOTSUP':
         case 'EOPNOTSUPP':
         case 'ENOSYS': {
-          return this.renameWithoutLink(from, to);
+          return this.renameWithoutLink(from, to, replace);
         }
         default: {
           this.logger.warn(
@@ -421,12 +437,46 @@ export class StorageCore {
     }
   }
 
-  private async renameWithoutLink(from: string, to: string): Promise<'renamed' | 'cross-device' | 'exists' | 'failed'> {
-    // ponytail: no hard links on this drive; the path lock (lockFilePath) serializes Frameleaf's own movers, an outside writer can still race the check
-    if (await this.storageRepository.checkFileExists(to)) {
+  /** A file is at `to` already: this file under a second name, or another file. */
+  private async renameOntoExisting(
+    from: string,
+    to: string,
+    replace: boolean,
+  ): Promise<'renamed' | 'cross-device' | 'exists' | 'failed'> {
+    if (await this.isOtherLinkOf(from, to)) {
+      this.logger.log(`Finishing an interrupted move: ${from} is linked at ${to} already`);
+      try {
+        await this.storageRepository.unlink(from);
+        return 'renamed';
+      } catch (error: any) {
+        // both names stay, as the interrupted move left them, for the next run
+        this.logger.warn(`Unable to complete move. Error removing ${from}, linked at ${to} already: ${error}`);
+        return 'failed';
+      }
+    }
+    if (replace) {
+      this.logger.log(`Replacing ${to}, a leftover file that can be made again`);
+      return this.renameInPlace(from, to);
+    }
+    this.logger.warn(`Unable to move ${from} to ${to}: another file is already there and is never replaced`);
+    return 'exists';
+  }
+
+  private async renameWithoutLink(
+    from: string,
+    to: string,
+    replace: boolean,
+  ): Promise<'renamed' | 'cross-device' | 'exists' | 'failed'> {
+    // ponytail: no hard links on this drive; asset moves hold the path lock (lockFilePath), but an outside writer can still race the check
+    if (!replace && (await this.storageRepository.checkFileExists(to))) {
       this.logger.warn(`Unable to move ${from} to ${to}: another file is already there and is never replaced`);
       return 'exists';
     }
+    return this.renameInPlace(from, to);
+  }
+
+  /** `fs.rename`, which replaces a file at `to`. */
+  private async renameInPlace(from: string, to: string): Promise<'renamed' | 'cross-device' | 'failed'> {
     try {
       await this.storageRepository.rename(from, to);
       return 'renamed';
@@ -441,12 +491,23 @@ export class StorageCore {
     }
   }
 
+  /** Whether `second` is another name of the file at `first`; when that cannot be told, it is not. */
+  private async isOtherLinkOf(first: string, second: string): Promise<boolean> {
+    try {
+      return await this.storageRepository.isOtherLinkOf(first, second);
+    } catch (error: any) {
+      this.logger.warn(`Unable to compare ${first} with ${second}: ${error}`);
+      return false;
+    }
+  }
+
   /**
-   * Puts a moved file back where the rows still name it, never onto another file there. Never throws: a
-   * file it cannot put back stays where it is, and the recorded move resolves it on the next run.
+   * Puts a moved file back where the rows still name it, as `rename` would move it (an original or sidecar
+   * never onto another file there). Never throws: a file it cannot put back stays where it is, and the
+   * recorded move resolves it on the next run.
    */
-  private async undoRename(from: string, to: string) {
-    const result = await this.rename(from, to);
+  private async undoRename(from: string, to: string, replace: boolean) {
+    const result = await this.rename(from, to, replace);
     if (result !== 'renamed') {
       this.logger.warn(`Unable to move ${from} back to ${to} (${result}); the recorded move finishes it`);
     }
@@ -464,7 +525,7 @@ export class StorageCore {
     assetInfo?: { sizeInBytes: number; checksum: Buffer },
   ): Promise<string | undefined> {
     this.logger.debug(`Unable to rename file. Falling back to copy, verify and delete`);
-    await this.removeStaged(staged);
+    await this.clearStaged(staged);
     try {
       await this.storageRepository.copyFile(source, staged, constants.COPYFILE_EXCL);
       if (!(await this.verifyNewPathContentsMatchesExpected(source, staged, assetInfo))) {
@@ -489,6 +550,15 @@ export class StorageCore {
     }
   }
 
+  /** Removes a temporary copy an interrupted attempt may have left; that there is none is not reported. */
+  private async clearStaged(staged: string) {
+    try {
+      await this.storageRepository.unlinkIfExists(staged);
+    } catch (error: any) {
+      this.logger.warn(`Unable to remove the temporary copy ${staged}: ${error}`);
+    }
+  }
+
   private async removeSource(source: string) {
     try {
       await this.storageRepository.unlink(source);
@@ -498,16 +568,17 @@ export class StorageCore {
   }
 
   /**
-   * A move that is not an asset's (a person's thumbnail): rename, or copy, verify and delete. Neither the
-   * move nor the placing of its copy ever replaces a file at `to`.
+   * A move that is not an asset's (a person's thumbnail): rename, or copy, verify and delete. The move and the
+   * placing of its copy replace a file at `to` only when `replace`.
    */
   private async moveAcrossFilesystems(
     source: string,
     to: string,
     moveId: string,
+    replace: boolean,
     assetInfo?: { sizeInBytes: number; checksum: Buffer },
   ): Promise<boolean> {
-    const renamed = await this.rename(source, to);
+    const renamed = await this.rename(source, to, replace);
     if (renamed !== 'cross-device') {
       return renamed === 'renamed';
     }
@@ -515,7 +586,7 @@ export class StorageCore {
     if (!staged) {
       return false;
     }
-    if ((await this.rename(staged, to)) !== 'renamed') {
+    if ((await this.rename(staged, to, replace)) !== 'renamed') {
       await this.removeStaged(staged);
       return false;
     }

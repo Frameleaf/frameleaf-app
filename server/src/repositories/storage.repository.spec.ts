@@ -429,6 +429,55 @@ describe(StorageRepository.name, () => {
       await expect(sut.copyFile(a, b, constants.COPYFILE_EXCL)).rejects.toMatchObject({ code: 'EEXIST' });
       expect(await fs.readFile(b, 'utf8')).toBe('existing');
     });
+
+    it('isOtherLinkOf is true only for two separate names of one file', async () => {
+      const { a, b } = await setup();
+      const folder = join(directory, 'folder');
+      await fs.mkdir(folder);
+      const besideIt = join(directory, 'second-name');
+      const elsewhere = join(folder, 'third-name');
+      const symlink = join(directory, 'symlink');
+      await fs.link(a, besideIt);
+      await fs.link(a, elsewhere);
+      await fs.symlink(a, symlink);
+
+      await expect(sut.isOtherLinkOf(a, besideIt)).resolves.toBe(true);
+      await expect(sut.isOtherLinkOf(a, elsewhere)).resolves.toBe(true);
+      await expect(sut.isOtherLinkOf(a, b)).resolves.toBe(false);
+      await expect(sut.isOtherLinkOf(a, symlink)).resolves.toBe(false);
+      await expect(sut.isOtherLinkOf(a, join(directory, 'missing'))).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
+    it('isOtherLinkOf is false for two spellings of one entry, whose removal would remove the file', async () => {
+      const real = join(directory, 'real');
+      await fs.mkdir(real);
+      const file = join(real, 'photo.jpg');
+      await fs.writeFile(file, 'only copy');
+      // a second name elsewhere, so the link count alone does not tell
+      await fs.link(file, join(directory, 'kept-elsewhere'));
+      const alias = join(directory, 'alias');
+      await fs.symlink(real, alias);
+
+      await expect(sut.isOtherLinkOf(file, join(alias, 'photo.jpg'))).resolves.toBe(false);
+      await expect(sut.isOtherLinkOf(file, `${real}/./photo.jpg`)).resolves.toBe(false);
+      // another case is the same entry on a case-insensitive drive, and no file at all on a case-sensitive one
+      const otherCase = await sut.isOtherLinkOf(file, join(real, 'PHOTO.JPG')).catch((error) => error.code);
+      expect([false, 'ENOENT']).toContain(otherCase);
+    });
+
+    it('unlinkIfExists removes a file, passes over a missing one, and reports any other failure', async () => {
+      const { a } = await setup();
+      const folder = join(directory, 'folder');
+      await fs.mkdir(folder);
+
+      await expect(sut.unlinkIfExists(a)).resolves.toBeUndefined();
+      await expect(fs.access(a)).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(sut.unlinkIfExists(a)).resolves.toBeUndefined();
+      await expect(sut.unlinkIfExists(folder)).rejects.toMatchObject({
+        code: expect.stringMatching(/^E(ISDIR|PERM)$/),
+      });
+      await expect(fs.stat(folder)).resolves.toBeDefined();
+    });
   });
 
   describe('removeDirIfEmpty', () => {

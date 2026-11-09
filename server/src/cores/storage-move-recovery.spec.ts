@@ -1,6 +1,6 @@
 import type { Stats } from 'node:fs';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { AssetFileType, AssetPathType } from 'src/enum.js';
+import { AssetFileType, AssetPathType, PersonPathType } from 'src/enum.js';
 import { getMocks } from 'test/utils.js';
 
 // FL-1333: the setting is off here; a move checks a copy (and a recovered file) regardless
@@ -72,7 +72,7 @@ it.each([
   },
 );
 
-describe('a move never replaces a file (FL-1333)', () => {
+describe('a move never replaces an original or a sidecar (FL-1333)', () => {
   const oldPath = '/upload/user/ab/cd/photo.jpg';
   const newPath = '/library/user/2024/photo.jpg';
   const staged = `${newPath}.move.moving`;
@@ -80,7 +80,7 @@ describe('a move never replaces a file (FL-1333)', () => {
   const assetInfo = { sizeInBytes: 64, checksum };
   const error = (code: string) => Object.assign(new Error(code), { code });
 
-  const prepare = (pathType: AssetPathType | AssetFileType = AssetPathType.Original) => {
+  const prepare = (pathType: AssetPathType | AssetFileType | PersonPathType = AssetPathType.Original) => {
     const { core, mocks } = setup();
     const move = { id: 'move', entityId: 'asset', pathType, oldPath, newPath };
     mocks.move.getByEntity.mockResolvedValue(void 0);
@@ -93,20 +93,107 @@ describe('a move never replaces a file (FL-1333)', () => {
   it('does not move onto an existing file', async () => {
     const { core, mocks } = prepare();
     mocks.storage.link.mockRejectedValue(error('EEXIST'));
+    // another file, not this one under a second name
+    mocks.storage.isOtherLinkOf.mockResolvedValue(false);
 
     await expect(
       core.moveFile({ entityId: 'asset', pathType: AssetPathType.Original, oldPath, newPath, assetInfo }),
     ).resolves.toBe(false);
 
     expect(mocks.storage.link).toHaveBeenCalledWith(oldPath, newPath);
-    expect(mocks.storage.rename).not.toHaveBeenCalledWith(oldPath, newPath);
+    expect(mocks.storage.isOtherLinkOf).toHaveBeenCalledWith(oldPath, newPath);
     expect(mocks.storage.rename).not.toHaveBeenCalled();
-    expect(mocks.storage.unlink).not.toHaveBeenCalledWith(newPath);
-    expect(mocks.storage.unlink).not.toHaveBeenCalledWith(oldPath);
+    expect(mocks.storage.unlink).not.toHaveBeenCalled();
     expect(mocks.storage.copyFile).not.toHaveBeenCalled();
     // the move stays recorded: the next run resolves it
     expect(mocks.move.delete).not.toHaveBeenCalled();
     await expect(mocks.asset.moveFile.mock.results[0].value).resolves.toBe('failed');
+  });
+
+  it('does not move a sidecar onto an existing file', async () => {
+    const { core, mocks } = prepare(AssetFileType.Sidecar);
+    mocks.storage.link.mockRejectedValue(error('EEXIST'));
+    mocks.storage.isOtherLinkOf.mockResolvedValue(false);
+
+    await expect(core.moveFile({ entityId: 'asset', pathType: AssetFileType.Sidecar, oldPath, newPath })).resolves.toBe(
+      false,
+    );
+
+    expect(mocks.storage.rename).not.toHaveBeenCalled();
+    expect(mocks.storage.unlink).not.toHaveBeenCalled();
+  });
+
+  it('finishes a move an interrupted attempt linked but never unlinked', async () => {
+    const { core, mocks } = prepare();
+    mocks.storage.link.mockRejectedValue(error('EEXIST'));
+    // the new path is this file under a second name: same device and inode, a separate entry
+    mocks.storage.isOtherLinkOf.mockResolvedValue(true);
+
+    await expect(
+      core.moveFile({ entityId: 'asset', pathType: AssetPathType.Original, oldPath, newPath, assetInfo }),
+    ).resolves.toBe(true);
+
+    expect(mocks.storage.isOtherLinkOf).toHaveBeenCalledWith(oldPath, newPath);
+    expect(mocks.storage.unlink.mock.calls).toEqual([[oldPath]]);
+    expect(mocks.storage.rename).not.toHaveBeenCalled();
+    await expect(mocks.asset.moveFile.mock.results[0].value).resolves.toBe('moved');
+  });
+
+  it('keeps both names when an interrupted move cannot remove the old one', async () => {
+    const { core, mocks } = prepare();
+    mocks.storage.link.mockRejectedValue(error('EEXIST'));
+    mocks.storage.isOtherLinkOf.mockResolvedValue(true);
+    mocks.storage.unlink.mockRejectedValue(error('EACCES'));
+
+    await expect(
+      core.moveFile({ entityId: 'asset', pathType: AssetPathType.Original, oldPath, newPath, assetInfo }),
+    ).resolves.toBe(false);
+
+    // as the interrupted attempt left it: the next run tries again
+    expect(mocks.storage.unlink.mock.calls).toEqual([[oldPath]]);
+  });
+
+  it('replaces a leftover preview, which can be made again', async () => {
+    const { core, mocks } = prepare(AssetFileType.Preview);
+    mocks.storage.link.mockRejectedValue(error('EEXIST'));
+    mocks.storage.isOtherLinkOf.mockResolvedValue(false);
+
+    await expect(core.moveFile({ entityId: 'asset', pathType: AssetFileType.Preview, oldPath, newPath })).resolves.toBe(
+      true,
+    );
+
+    expect(mocks.storage.rename).toHaveBeenCalledWith(oldPath, newPath);
+    expect(mocks.storage.unlink).not.toHaveBeenCalled();
+  });
+
+  it('replaces a leftover face thumbnail, which can be made again', async () => {
+    const { core, mocks } = prepare(PersonPathType.Face);
+    mocks.storage.link.mockRejectedValue(error('EEXIST'));
+    mocks.storage.isOtherLinkOf.mockResolvedValue(false);
+
+    await expect(
+      core.moveFile({ entityId: 'person', ownerId: 'owner', pathType: PersonPathType.Face, oldPath, newPath }),
+    ).resolves.toBe(true);
+
+    expect(mocks.storage.rename).toHaveBeenCalledWith(oldPath, newPath);
+    expect(mocks.person.update).toHaveBeenCalledWith({
+      ownerId: 'owner',
+      personGroupId: 'person',
+      thumbnailPath: newPath,
+    });
+    expect(mocks.move.delete).toHaveBeenCalledWith('move');
+  });
+
+  it('renames a preview over a leftover where hard links are unsupported', async () => {
+    const { core, mocks } = prepare(AssetFileType.Preview);
+    mocks.storage.link.mockRejectedValue(error('ENOTSUP'));
+    mocks.storage.checkFileExists.mockResolvedValue(true);
+
+    await expect(core.moveFile({ entityId: 'asset', pathType: AssetFileType.Preview, oldPath, newPath })).resolves.toBe(
+      true,
+    );
+
+    expect(mocks.storage.rename).toHaveBeenCalledWith(oldPath, newPath);
   });
 
   it('falls back to an exclusive check where hard links are unsupported', async () => {
@@ -204,8 +291,7 @@ describe('a move never replaces a file (FL-1333)', () => {
 
     expect(mocks.storage.copyFile).toHaveBeenCalledWith(oldPath, staged, expect.any(Number));
     expect(mocks.crypto.hashFileMatching).toHaveBeenCalledWith(staged, checksum);
-    expect(mocks.storage.unlink).not.toHaveBeenCalledWith(oldPath);
-    expect(mocks.storage.unlink).toHaveBeenLastCalledWith(staged);
+    expect(mocks.storage.unlink.mock.calls).toEqual([[staged]]);
     expect(mocks.asset.moveFile).toHaveBeenCalledOnce();
   });
 
@@ -239,7 +325,40 @@ describe('a move never replaces a file (FL-1333)', () => {
       [oldPath, newPath],
       [staged, newPath],
     ]);
-    // a leftover copy is cleared first, then the copy is made only where nothing is
-    expect(mocks.storage.unlink.mock.calls).toEqual([[staged], [staged], [oldPath]]);
+    // a leftover copy is cleared first, quietly when there is none, then the copy is made only where nothing is
+    expect(mocks.storage.unlinkIfExists.mock.calls).toEqual([[staged]]);
+    expect(mocks.storage.unlinkIfExists.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.storage.copyFile.mock.invocationCallOrder[0],
+    );
+    expect(mocks.storage.unlink.mock.calls).toEqual([[staged], [oldPath]]);
+  });
+
+  it('replaces a leftover at the new path with a preview copied across filesystems', async () => {
+    const { core, mocks } = prepare(AssetFileType.Preview);
+    mocks.storage.link.mockRejectedValueOnce(error('EXDEV')).mockRejectedValueOnce(error('EEXIST'));
+    mocks.storage.isOtherLinkOf.mockResolvedValue(false);
+    mocks.crypto.hashFile.mockResolvedValue(Buffer.alloc(32, 1));
+
+    await expect(core.moveFile({ entityId: 'asset', pathType: AssetFileType.Preview, oldPath, newPath })).resolves.toBe(
+      true,
+    );
+
+    expect(mocks.storage.rename).toHaveBeenCalledWith(staged, newPath);
+    expect(mocks.storage.unlink.mock.calls).toEqual([[oldPath]]);
+  });
+
+  it('keeps a sidecar copied across filesystems off a file already at the new path', async () => {
+    const { core, mocks } = prepare(AssetFileType.Sidecar);
+    mocks.storage.link.mockRejectedValueOnce(error('EXDEV')).mockRejectedValueOnce(error('EEXIST'));
+    mocks.storage.isOtherLinkOf.mockResolvedValue(false);
+    mocks.crypto.hashFile.mockResolvedValue(Buffer.alloc(32, 1));
+
+    await expect(core.moveFile({ entityId: 'asset', pathType: AssetFileType.Sidecar, oldPath, newPath })).resolves.toBe(
+      false,
+    );
+
+    expect(mocks.storage.rename).not.toHaveBeenCalled();
+    // only the copy is removed; the source and the file at the new path stay
+    expect(mocks.storage.unlink.mock.calls).toEqual([[staged]]);
   });
 });

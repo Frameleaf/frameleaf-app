@@ -699,8 +699,9 @@ describe(StorageTemplateService.name, () => {
       });
       expect(mocks.storage.link).toHaveBeenCalledWith(asset.originalPath, newPath);
       expect(mocks.storage.copyFile).toHaveBeenCalledWith(asset.originalPath, staged, constants.COPYFILE_EXCL);
-      // a leftover copy is cleared before copying, and the copy that did not match after
-      expect(mocks.storage.unlink.mock.calls).toEqual([[staged], [staged]]);
+      // a leftover copy is cleared before copying (quietly when there is none), and the copy that did not match after
+      expect(mocks.storage.unlinkIfExists.mock.calls).toEqual([[staged]]);
+      expect(mocks.storage.unlink.mock.calls).toEqual([[staged]]);
       expect(await movedOriginals()).toEqual([]);
     });
 
@@ -1000,7 +1001,8 @@ describe(StorageTemplateService.name, () => {
       expect(mocks.storage.link).toHaveBeenCalledWith(staged, newPath);
       expect(mocks.storage.rename).not.toHaveBeenCalled();
       // a leftover copy is cleared first; the copy's own name goes once it is linked into place
-      expect(mocks.storage.unlink.mock.calls).toEqual([[staged], [staged], [oldPath]]);
+      expect(mocks.storage.unlinkIfExists.mock.calls).toEqual([[staged]]);
+      expect(mocks.storage.unlink.mock.calls).toEqual([[staged], [oldPath]]);
       expect(await movedOriginals()).toContainEqual({ id: asset.id, originalPath: newPath });
     });
 
@@ -1393,7 +1395,7 @@ describe(StorageTemplateService.name, () => {
         [staged, newPath],
         [newPath, staged],
       ]);
-      expect(mocks.storage.unlink.mock.calls).toEqual([[staged], [staged], [newPath], [staged]]);
+      expect(mocks.storage.unlink.mock.calls).toEqual([[staged], [newPath], [staged]]);
     });
 
     it('removes a copied file’s source once its new path is saved', async () => {
@@ -1408,7 +1410,7 @@ describe(StorageTemplateService.name, () => {
       expect(mocks.asset.moveFile).toHaveBeenCalledTimes(2);
       expect(mocks.storage.copyFile).toHaveBeenCalledWith(asset.originalPath, staged, constants.COPYFILE_EXCL);
       expect(mocks.storage.link).toHaveBeenLastCalledWith(staged, newPath);
-      expect(mocks.storage.unlink.mock.calls).toEqual([[staged], [staged], [asset.originalPath]]);
+      expect(mocks.storage.unlink.mock.calls).toEqual([[staged], [asset.originalPath]]);
       expect(await movedOriginals()).toEqual([{ id: asset.id, originalPath: newPath }]);
     });
 
@@ -1423,7 +1425,7 @@ describe(StorageTemplateService.name, () => {
 
       await expect(sut.handleMigrationSingle({ id: asset.id })).resolves.toBe(JobStatus.Success);
 
-      expect(mocks.storage.unlink.mock.calls).toEqual([[staged], [staged]]);
+      expect(mocks.storage.unlink.mock.calls).toEqual([[staged]]);
       expect(mocks.physicalFile.updateOriginalPhysicalPathForAsset).not.toHaveBeenCalled();
     });
 
@@ -1472,7 +1474,7 @@ describe(StorageTemplateService.name, () => {
 
       await expect(sut.handleMigrationSingle({ id: asset.id })).resolves.toBe(JobStatus.Success);
 
-      expect(mocks.storage.unlink).toHaveBeenCalledWith(`${earlierPath}.move-1.moving`);
+      expect(mocks.storage.unlinkIfExists).toHaveBeenCalledWith(`${earlierPath}.move-1.moving`);
       expect(await movedOriginals()).toEqual([{ id: asset.id, originalPath: newPath }]);
     });
   });
