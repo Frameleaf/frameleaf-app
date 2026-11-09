@@ -6,6 +6,14 @@ import { ASSET_CHECKSUM_CONSTRAINT } from 'src/utils/database.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
+const moves = vi.hoisted(() => ({ rename: (_from: string, _to: string): Promise<unknown> => Promise.resolve() }));
+
+// The never-replace move is proved on real files in media-health-roots.spec.ts; here it is the storage mock's rename.
+vi.mock('src/utils/media-health-roots.js', async (original) => ({
+  ...(await original<typeof import('src/utils/media-health-roots.js')>()),
+  retainFile: (from: string, to: string) => moves.rename(from, to),
+}));
+
 const checksum = Buffer.from('c'.repeat(64), 'hex');
 const entry = {
   id: 'trash-id',
@@ -28,6 +36,7 @@ describe(PhysicalFileTrashService.name, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(PhysicalFileTrashService));
+    moves.rename = (from, to) => mocks.storage.rename(from, to);
     ownerId = authStub.admin.user.id;
     mocks.user.getAdmins.mockImplementation(() =>
       Promise.resolve([{ id: ownerId }, { id: 'second-admin-id' }] as never),

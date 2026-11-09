@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { constants } from 'node:fs';
 import { join, parse, relative, sep } from 'node:path';
 import { v5 } from 'uuid';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
@@ -652,9 +653,16 @@ export class IdenticalFilesService {
         continue;
       }
       const target = StorageCore.getNestedPath(StorageFolder.Upload, ownerId, `${assetId}.xmp`);
-      if (target !== candidate && !(await this.storageRepository.checkFileExists(target))) {
+      if (target !== candidate) {
         this.storageRepository.mkdirSync(parse(target).dir);
-        await this.storageRepository.copyFile(candidate, target);
+        try {
+          // Never replaces a sidecar that is already there, even one written since this started.
+          await this.storageRepository.copyFile(candidate, target, constants.COPYFILE_EXCL);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException)?.code !== 'EEXIST') {
+            throw error;
+          }
+        }
       }
       await this.assetRepository.upsertFile({ assetId, type: AssetFileType.Sidecar, path: target });
       return;

@@ -1,48 +1,16 @@
-import { createHash, randomUUID } from 'node:crypto';
 import { dirname } from 'node:path';
 import type { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import type { StorageRepository } from 'src/repositories/storage.repository.js';
-
-const sha256Of = (storage: Pick<StorageRepository, 'createPlainReadStream'>, path: string) =>
-  new Promise<Buffer>((resolve, reject) => {
-    const hash = createHash('sha256');
-    storage
-      .createPlainReadStream(path)
-      .on('data', (chunk) => hash.update(chunk))
-      .on('end', () => resolve(hash.digest()))
-      .on('error', reject);
-  });
+import { retainFile } from 'src/utils/media-health-roots.js';
 
 /**
- * Moves a file into or out of the universal storage file trash. A rename when both paths share a
- * filesystem; otherwise a copy published at the destination through a temporary name, then the source
- * removed. Rejects with ENOENT when the source is gone. FL-412: a copy is published, and its source
- * removed, only once it reads back with the source's SHA-256; otherwise the source stays where it was.
+ * Moves a file into or out of the universal storage file trash without ever replacing a file already at
+ * the destination (FL-1333): it is linked, or copied across filesystems, and the source is removed only
+ * once the destination holds the same bytes. Rejects with ENOENT when the source is gone.
  */
 export const moveFileWithin = async (storage: StorageRepository, from: string, to: string): Promise<void> => {
   storage.mkdirSync(dirname(to));
-  try {
-    await storage.rename(from, to);
-    return;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException)?.code !== 'EXDEV') {
-      throw error;
-    }
-  }
-
-  const temporary = `${to}.${randomUUID()}.tmp`;
-  try {
-    await storage.copyFile(from, temporary);
-    const [source, copy] = await Promise.all([sha256Of(storage, from), sha256Of(storage, temporary)]);
-    if (!source.equals(copy)) {
-      throw new Error(`The copy of ${from} does not match it; the file was left where it was`);
-    }
-    await storage.rename(temporary, to);
-  } catch (error) {
-    await storage.unlink(temporary).catch(() => void 0);
-    throw error;
-  }
-  await storage.unlink(from);
+  await retainFile(from, to);
 };
 
 /** What identifies a file on disk without reading it: the same file, unchanged, keeps the same key. */

@@ -1,10 +1,17 @@
 import { createHash } from 'node:crypto';
 import { link, lstat } from 'node:fs/promises';
 
+const { retainFile } = vi.hoisted(() => ({ retainFile: vi.fn() }));
+
 vi.mock('node:fs/promises', async (original) => ({
   ...(await original<typeof import('node:fs/promises')>()),
   lstat: vi.fn(),
   link: vi.fn(),
+}));
+// The never-replace move is proved on real files in media-health-roots.spec.ts; here it moves within `present`.
+vi.mock('src/utils/media-health-roots.js', async (original) => ({
+  ...(await original<typeof import('src/utils/media-health-roots.js')>()),
+  retainFile,
 }));
 import { CloudBackupStoreError, CloudBackupStoreRepository } from 'src/repositories/cloud-backup-store.repository.js';
 import { CloudBackupBucket } from 'src/services/cloud-backup-maintenance.js';
@@ -201,14 +208,19 @@ describe('cloud backup restore (FL-164)', () => {
           return Promise.resolve({ size, sha256 });
         }),
       };
+      retainFile.mockReset();
+      retainFile.mockImplementation((from: string, to: string) => {
+        const occupant = present.get(to);
+        if (occupant !== undefined && occupant !== present.get(from)) {
+          return Promise.reject(new Error(`${to} already holds a different file`));
+        }
+        present.set(to, present.get(from)!);
+        present.delete(from);
+        return Promise.resolve();
+      });
       storage = {
         checkFileExists: vi.fn().mockImplementation((path: string) => Promise.resolve(present.has(path))),
         mkdirSync: vi.fn(),
-        rename: vi.fn().mockImplementation((from: string, to: string) => {
-          present.set(to, present.get(from)!);
-          present.delete(from);
-          return Promise.resolve();
-        }),
         copyFile: vi.fn(),
         unlink: vi.fn(),
       };
@@ -244,7 +256,7 @@ describe('cloud backup restore (FL-164)', () => {
         } as Parameters<CloudBackupRestorer['restore']>[0]),
       ).rejects.toThrow('Owner restore authorization changed');
       expect(present.get(original.target)).toBe(hex('occupied'));
-      expect(storage.rename).not.toHaveBeenCalled();
+      expect(retainFile).not.toHaveBeenCalled();
       expect(publish).toHaveBeenCalledOnce();
       expect(crypto.hashFile).not.toHaveBeenCalled();
       expect(storage.unlink).toHaveBeenCalled();
@@ -293,7 +305,7 @@ describe('cloud backup restore (FL-164)', () => {
           }),
         ).rejects.toThrow('Owner restore staging size or checksum mismatch');
         expect(present.get(original.target)).toBe(hex('occupied'));
-        expect(storage.rename).not.toHaveBeenCalled();
+        expect(retainFile).not.toHaveBeenCalled();
       },
     );
 
@@ -325,7 +337,7 @@ describe('cloud backup restore (FL-164)', () => {
         }),
       ).rejects.toThrow('Owner restore original changed');
       expect(present.get(original.target)).toBe(hex('occupied'));
-      expect(storage.rename).not.toHaveBeenCalled();
+      expect(retainFile).not.toHaveBeenCalled();
     });
 
     it('refuses wrong-sized verified owner staging before moving the occupied target', async () => {
@@ -350,7 +362,7 @@ describe('cloud backup restore (FL-164)', () => {
       ).rejects.toThrow('size');
       expect(present.get(files[0].target)).toBe(hex('occupied'));
       expect(publish).not.toHaveBeenCalled();
-      expect(storage.rename).not.toHaveBeenCalled();
+      expect(retainFile).not.toHaveBeenCalled();
     });
 
     it('publishes only after the owner guard accepts verified staging and preserves the move-aside rule', async () => {
@@ -452,7 +464,7 @@ describe('cloud backup restore (FL-164)', () => {
           }),
         ).rejects.toThrow('Owner restore original changed');
         expect(present.get(original.target)).toBe(hex('new occupant'));
-        expect(storage.rename).not.toHaveBeenCalled();
+        expect(retainFile).not.toHaveBeenCalled();
       },
     );
 
@@ -534,7 +546,7 @@ describe('cloud backup restore (FL-164)', () => {
 
       const result = await restore('asset', ['asset-1']);
 
-      expect(storage.rename).toHaveBeenCalledWith(
+      expect(retainFile).toHaveBeenCalledWith(
         '/data/library/owner-1/2026/IMG_1.jpg',
         expect.stringMatching(
           /^\/data\/frameleaf\/restore\/replaced\/op-1\/[^/]+\/library\/owner-1\/2026\/IMG_1\.jpg$/,
@@ -543,6 +555,35 @@ describe('cloud backup restore (FL-164)', () => {
       expect(storage.unlink).not.toHaveBeenCalledWith('/data/library/owner-1/2026/IMG_1.jpg');
       expect(present.get('/data/library/owner-1/2026/IMG_1.jpg')).toBe(hex('one'));
       expect(result).toMatchObject({ files: 2, skipped: 1, replaced: 1, restoredAssetIds: ['asset-1'] });
+    });
+
+    it('refuses to publish an owner file onto a different file that appeared after the checks, keeping it', async () => {
+      const { files, destination } = plan('asset', ['asset-1']);
+      const original = files[0];
+      store.download.mockImplementationOnce((_connection, _key, _bucketKey, target, sha256) => {
+        present.set(target, sha256!);
+        return Promise.resolve({ size: original.size, sha256: sha256! });
+      });
+      retainFile.mockImplementationOnce(() => {
+        present.set(original.target, hex('new occupant'));
+        return Promise.reject(new Error(`${original.target} already holds a different file`));
+      });
+      await expect(
+        sut.restore({
+          bucket,
+          manifest,
+          scope: 'asset',
+          files: [original],
+          destination,
+          mediaLocation: MEDIA,
+          backupsFolder: '/data/backups',
+          operationId: 'op-1',
+          start: emptyRestoreResult(),
+          checkpoint: () => Promise.resolve(true),
+          publish: (_file, _staged, commit) => commit(),
+        }),
+      ).rejects.toThrow('already holds a different file');
+      expect(present.get(original.target)).toBe(hex('new occupant'));
     });
 
     it('puts the database dump into the backups folder for the maintenance restore', async () => {
@@ -578,7 +619,7 @@ describe('cloud backup restore (FL-164)', () => {
       store.download.mockRejectedValueOnce(error);
       await expect(restore('asset', ['asset-1'])).rejects.toThrow();
       expect(present.get(target)).toBe(hex('existing'));
-      expect(storage.rename).not.toHaveBeenCalled();
+      expect(retainFile).not.toHaveBeenCalled();
     });
 
     it('stops at an object that is missing from the bucket', async () => {

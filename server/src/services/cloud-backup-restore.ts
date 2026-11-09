@@ -20,6 +20,7 @@ import {
   liveLockedKeyIds,
   lockedKeyFilePath,
 } from 'src/utils/locked-backup.js';
+import { retainFile } from 'src/utils/media-health-roots.js';
 
 /**
  * What a restore brings back (FL-164, CLD-302):
@@ -493,7 +494,8 @@ export class CloudBackupRestorer {
             this.storage.mkdirSync(dirname(file.target));
             await assertOwnerRestoreFile(file.target, null);
             await assertOwnerRestoreFile(staged, stagedEvidence.identity);
-            await this.storage.rename(staged, file.target);
+            // A file that appeared since the checks above is never replaced.
+            await retainFile(staged, file.target);
             if (options.stageBesideTarget) await flushBuddyDirectory(dirname(file.target));
             await assertOwnerRestoreFile(file.target, stagedEvidence.identity, true);
             return present === null ? 'written' : 'replaced';
@@ -566,15 +568,8 @@ export class CloudBackupRestorer {
       ? join(dirname(path), `.${basename(path)}.buddy-rollback-${randomUUID()}`)
       : join(mediaLocation, RESTORE_REPLACED_FOLDER, operationId, below);
     this.storage.mkdirSync(dirname(target));
-    try {
-      await this.storage.rename(path, target);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EXDEV') {
-        throw error;
-      }
-      await this.storage.copyFile(path, target);
-      await this.storage.unlink(path);
-    }
+    // Never replaces a file already at the aside name, and removes the original only once the copy checks.
+    await retainFile(path, target);
     if (besideTarget) await flushBuddyDirectory(dirname(path));
     this.logger.log(`Cloud backup restore ${operationId}: moved ${path} aside to ${target}`);
   }

@@ -1,5 +1,10 @@
+import { writeFileSync } from 'node:fs';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { JobName, JobStatus, QueueName, SystemMetadataKey } from 'src/enum.js';
+import { AssetFileType, JobName, JobStatus, QueueName, StorageFolder, SystemMetadataKey } from 'src/enum.js';
+import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { IdenticalFilesService } from 'src/services/identical-files.service.js';
 
 /** FL-413 run control; the stages themselves are proved with real files in the medium spec. */
@@ -205,5 +210,39 @@ describe(IdenticalFilesService.name, () => {
     const { sut } = setup(null);
     await expect(sut.handleRetiredDryRun()).resolves.toBe(JobStatus.Skipped);
     await expect(sut.handleRetiredApply()).resolves.toBe(JobStatus.Skipped);
+  });
+
+  // FL-1333: a sidecar written between the check and the copy is never replaced.
+  it('keeps a sidecar that appears while another is being kept', async () => {
+    const folder = await mkdtemp(join(tmpdir(), 'identical-sidecar-'));
+    try {
+      StorageCore.setMediaLocation(folder);
+      const original = join(folder, 'external', 'IMG_1.jpg');
+      await mkdir(join(folder, 'external'), { recursive: true });
+      await writeFile(`${original}.xmp`, 'the sidecar');
+      const storage = new StorageRepository({ setContext: vi.fn(), log: vi.fn(), warn: vi.fn() } as never);
+      const target = StorageCore.getNestedPath(StorageFolder.Upload, 'owner', 'asset.xmp');
+      // The folder is made just before the copy; the sidecar appears right after that.
+      const mkdirSync = storage.mkdirSync.bind(storage);
+      vi.spyOn(storage, 'mkdirSync').mockImplementation((path: string) => {
+        mkdirSync(path);
+        writeFileSync(target, 'written meanwhile');
+      });
+      const upsertFile = vi.fn();
+      const { sut } = setup(null);
+      Object.assign(sut as object, { storageRepository: storage, assetRepository: { upsertFile } });
+
+      await (sut as unknown as { keepSidecar: (...args: string[]) => Promise<void> }).keepSidecar(
+        'asset',
+        'owner',
+        original,
+      );
+
+      await expect(readFile(target, 'utf8')).resolves.toBe('written meanwhile');
+      expect(upsertFile).toHaveBeenCalledWith({ assetId: 'asset', type: AssetFileType.Sidecar, path: target });
+    } finally {
+      StorageCore.setMediaLocation('/data');
+      await rm(folder, { recursive: true, force: true });
+    }
   });
 });
