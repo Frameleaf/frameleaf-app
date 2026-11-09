@@ -1115,9 +1115,13 @@ try {
       await page.getByRole('heading', { name: 'This server is ready' }).waitFor();
       const checked = requests.findLast((r) => r.path === 'review').body.databaseRoot;
       assert.equal(checked, '/mnt/user/appdata/frameleaf-databases');
+      // The held drives request is already out; let it answer, then let the page handle the answer before looking.
+      assert.ok(requests.some((r) => r.path === 'drives'), 'the drive report was requested');
+      const answered = page.waitForResponse((response) => response.url().endsWith('/manager-api/drives'));
       release();
       drivesGate = null;
-      await page.waitForTimeout(300);
+      await (await answered).finished();
+      await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => setTimeout(done, 0))));
       await mainButton('Review installation').click();
       await page.locator('.list-row', { hasText: 'New PostgreSQL database' }).getByText(checked).waitFor();
       assert.equal(requests.findLast((r) => r.path === 'review').body.databaseRoot, checked);
