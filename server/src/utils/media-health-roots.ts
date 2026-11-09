@@ -238,6 +238,8 @@ const holdsSameBytes = async (source: string, destination: string) => {
 /** Errors from a filesystem that cannot hard-link at all. */
 const NO_HARD_LINKS = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS']);
 
+const cannotHardLink = (code: unknown) => typeof code === 'string' && NO_HARD_LINKS.has(code);
+
 /**
  * Publish a flushed staged copy where hard links are unsupported. The destination is created
  * exclusively first, so it never replaces anything, and only a destination this call created is
@@ -271,14 +273,56 @@ const publishByCopy = async (
 };
 
 /**
+ * Copy `source` to a private temporary name beside `destination`, flush it, and place it at `destination`
+ * without replacing anything: hard-linked when the drive can, else written by `publishByCopy`. Returns whether
+ * this call created `destination`; a name already holding the same bytes is accepted.
+ */
+const placeCopy = async (
+  source: string,
+  destination: string,
+  canLink: boolean,
+  refuseDifferent: (error: unknown) => Promise<void>,
+): Promise<boolean> => {
+  const temporary = `${destination}.${randomUUID()}.partial`;
+  try {
+    await copyFile(source, temporary, constants.COPYFILE_EXCL);
+    const file = await open(temporary, 'r');
+    try {
+      await file.sync();
+    } finally {
+      await file.close();
+    }
+    if (!canLink) {
+      return await publishByCopy(temporary, destination, refuseDifferent);
+    }
+    try {
+      await link(temporary, destination);
+      return true;
+    } catch (linkError) {
+      const linkCode = errorCode(linkError);
+      if (linkCode === 'EEXIST') {
+        await refuseDifferent(linkError);
+        return false;
+      }
+      if (cannotHardLink(linkCode)) {
+        return await publishByCopy(temporary, destination, refuseDifferent);
+      }
+      throw linkError;
+    }
+  } finally {
+    await unlink(temporary).catch(() => {});
+  }
+};
+
+/**
  * Move a file to a new name without ever replacing anything (FL-69).
  *
  * The new name is hard-linked first, which fails rather than overwrites, and the old name is only
- * removed once the new one holds the same bytes. Across filesystems the bytes are copied to a private
- * temporary name beside the new one, flushed, and then hard-linked into place, so the new name is
- * either complete or absent. A repeat after an interruption finds the same bytes at both names and
- * just removes the old one; different bytes already at the new name are an error and nothing is
- * changed.
+ * removed once the new one holds the same bytes. Across filesystems, or on a drive that cannot hard-link
+ * at all (exFAT, many network shares), the bytes are copied to a private temporary name beside the new one,
+ * flushed, and then placed without replacing anything, so the new name is either complete or absent. A
+ * repeat after an interruption finds the same bytes at both names and just removes the old one; different
+ * bytes already at the new name are an error and nothing is changed.
  */
 export const retainFile = (source: string, destination: string): Promise<void> => {
   // Every move runs one after another in this process (they are rare), so no move ever sees another
@@ -308,7 +352,8 @@ const retainingMoves = new Map<string, Promise<boolean>>();
 
 const retainFileNow = async (source: string, destination: string): Promise<void> => {
   // Whether this call made the destination, so a copy that fails the final check is only ever
-  // removed when it is this call's own, never a file that was already there.
+  // removed when it is this call's own, never a file that was already there. A hard link made on the same
+  // drive is the source's own file, which always passes that check, so it is never counted here.
   let createdDestination = false;
   await mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
   const refuseDifferent = async (error: unknown) => {
@@ -320,34 +365,11 @@ const retainFileNow = async (source: string, destination: string): Promise<void>
     await link(source, destination);
   } catch (error) {
     const code = errorCode(error);
-    if (code === 'EXDEV') {
-      const temporary = `${destination}.${randomUUID()}.partial`;
-      try {
-        await copyFile(source, temporary, constants.COPYFILE_EXCL);
-        const file = await open(temporary, 'r');
-        try {
-          await file.sync();
-        } finally {
-          await file.close();
-        }
-        try {
-          await link(temporary, destination);
-          createdDestination = true;
-        } catch (linkError) {
-          const linkCode = errorCode(linkError);
-          if (linkCode === 'EEXIST') {
-            await refuseDifferent(linkError);
-          } else if (typeof linkCode === 'string' && NO_HARD_LINKS.has(linkCode)) {
-            createdDestination = await publishByCopy(temporary, destination, refuseDifferent);
-          } else {
-            throw linkError;
-          }
-        }
-      } finally {
-        await unlink(temporary).catch(() => {});
-      }
-    } else if (code === 'EEXIST') {
+    if (code === 'EEXIST') {
       await refuseDifferent(error);
+    } else if (code === 'EXDEV' || cannotHardLink(code)) {
+      // ponytail: on a drive without hard links a move on the same drive is a full copy; safe beats fast
+      createdDestination = await placeCopy(source, destination, code === 'EXDEV', refuseDifferent);
     } else {
       throw error;
     }

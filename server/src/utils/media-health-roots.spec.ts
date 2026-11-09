@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { copyFile, link, mkdir, mkdtemp, open, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { copyFile, link, mkdir, mkdtemp, open, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
@@ -170,6 +170,63 @@ describe('media-health-roots (FL-69)', () => {
 
       await expect(readFile(destination, 'utf8')).resolves.toBe('damaged');
       await expect(readFile(source)).rejects.toThrow();
+    });
+
+    describe('on a drive without hard links', () => {
+      const withoutHardLinks = async () => {
+        const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+        vi.mocked(link).mockImplementation(() => Promise.reject(failWith('EPERM')));
+        onTestFinished(() => {
+          vi.mocked(link).mockReset().mockImplementation(actual.link);
+          vi.mocked(copyFile).mockReset().mockImplementation(actual.copyFile);
+        });
+        return actual;
+      };
+
+      it('moves a file by copying it, and removes the source once the copy holds the same bytes', async () => {
+        await withoutHardLinks();
+        const source = join(root, 'damaged.jpg');
+        const destination = join(root, 'trash', 'damaged.jpg');
+        await writeFile(source, 'damaged');
+
+        await retainFile(source, destination);
+
+        await expect(readFile(destination, 'utf8')).resolves.toBe('damaged');
+        await expect(readFile(source)).rejects.toMatchObject({ code: 'ENOENT' });
+        // no temporary copy is left beside it
+        await expect(readdir(join(root, 'trash'))).resolves.toEqual(['damaged.jpg']);
+      });
+
+      it('never replaces a different file already at the destination', async () => {
+        await withoutHardLinks();
+        const source = join(root, 'damaged.jpg');
+        const destination = join(root, 'trash', 'damaged.jpg');
+        await writeFile(source, 'damaged');
+        await mkdir(join(root, 'trash'));
+        await writeFile(destination, 'other');
+
+        await expect(retainFile(source, destination)).rejects.toThrow('different file');
+
+        await expect(readFile(source, 'utf8')).resolves.toBe('damaged');
+        await expect(readFile(destination, 'utf8')).resolves.toBe('other');
+        await expect(readdir(join(root, 'trash'))).resolves.toEqual(['damaged.jpg']);
+      });
+
+      it('keeps the source when the copy it placed differs, and removes only that copy', async () => {
+        const actual = await withoutHardLinks();
+        const source = join(root, 'damaged.jpg');
+        const destination = join(root, 'trash', 'damaged.jpg');
+        await writeFile(source, 'damaged');
+        // a copy that is the same size but holds different bytes
+        vi.mocked(copyFile).mockImplementationOnce(async (_from, to) =>
+          actual.writeFile(to, 'damagxx', { flag: 'wx' }),
+        );
+
+        await expect(retainFile(source, destination)).rejects.toThrow('does not match');
+
+        await expect(readFile(source, 'utf8')).resolves.toBe('damaged');
+        await expect(readFile(destination)).rejects.toMatchObject({ code: 'ENOENT' });
+      });
     });
 
     it('moves across filesystems to a destination that cannot hard-link, never replacing a file', async () => {
