@@ -7,12 +7,15 @@
     occupied,
     api,
     saving = null,
+    later = false,
   } = $props<{
     /** The Frameleaf server's "Extra folders" text: this is a friendlier view of the same setting. */
     mounts: string;
     occupied: string[];
     api: (path: string, body?: unknown) => Promise<any>;
     saving?: { dirty: boolean; disabled: boolean; save: () => void; discard: () => void } | null;
+    /** FL-1321: during setup, say folders can be added later too. */
+    later?: boolean;
   }>();
   let browsing = $state(false);
   const folders = $derived(externalFolders(mounts));
@@ -21,7 +24,7 @@
 
 <section class="card mt16">
   <div class="card-header">
-    <div><h2>External folders</h2><p class="meta">Already keep photos somewhere else on this server? Add the folder and Frameleaf can show them without moving or copying them.</p></div>
+    <div><h2>External folders</h2><p class="meta">Already keep photos somewhere else on this server? Add the folder and Frameleaf can show them without moving or copying them.{later ? ' You can do this later too.' : ''}</p></div>
     <button type="button" class="button" onclick={() => (browsing = true)}>Add a folder…</button>
   </div>
   {#if folders.length}

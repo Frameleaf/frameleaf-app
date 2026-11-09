@@ -28,7 +28,8 @@ import { desktopApi } from './desktop-api.js';
 import { Docker, command } from './docker.js';
 import { adoptOwnMounts, tidyLocations, toHost } from './host-paths.js';
 import { findDrives, suggestFolders } from './drives.js';
-import { applyFolderDefaults, broadRoots, ensureChosenFolder, ensureManagerFolder, listFolders } from './folders.js';
+import { applyFolderDefaults, broadRoots, ensureChosenFolder, ensureManagerFolder, listFolders, newLibraryFolders } from './folders.js';
+import { thumbnailMount } from './mounts.js';
 import { Security, trustedProxyList } from './security.js';
 import { Backups } from './backups.js';
 import { Releases } from './releases.js';
@@ -153,11 +154,17 @@ const mediaPlaces = () =>
 function folderDefaults() {
   const base = ('detectedPath' in defaults && defaults.detectedPath) || dirname(directory!);
   const installed = operations.installation();
+  // FL-1321: new libraries only; an installed library always reports the folders it has.
+  const fresh = newLibraryFolders(base, defaults.platform);
   return {
-    media: installed?.mounts[0]?.source ?? join(base, 'frameleaf-media'),
-    database: installed?.databaseRoot ?? join(base, 'frameleaf-databases'),
+    media: installed?.mounts[0]?.source ?? fresh.media,
+    database: installed?.databaseRoot ?? fresh.database,
+    /** Thumbnails on a folder of their own (FL-1320), or null when they are with the photos. */
+    thumbs: installed ? (thumbnailMount(installed.mounts)?.source ?? null) : null,
     backups: currentBackupRoot(),
     manager: directory!,
+    /** Setup moves the database onto the drive Manager suggests, when it finds one. */
+    fastDatabase: !installed && fresh.fastDatabase,
   };
 }
 /**
@@ -211,6 +218,8 @@ async function driveReport(sizes: Parameters<typeof suggestFolders>[1]) {
   // Unraid is recognised from its docker.cfg even when the template doesn't name the platform.
   return suggestFolders(await findDrives({ roots, dockerRoot, platform: process.env.MANAGER_PLATFORM || defaults.platform }), sizes);
 }
+// FL-1321: Check this server says when the database is on hard drives and a faster drive is there.
+operations.driveReport = (sizes) => driveReport(sizes);
 /** The port the administrator reached Manager on: never offered to, or accepted for, the Frameleaf stack. */
 const managerPort = (request: Request) => Number(new URL(security.requestOrigin(request)).port || 443);
 const RequestKey = z.string().uuid();

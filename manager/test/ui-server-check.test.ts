@@ -134,6 +134,6 @@ test('Unraid’s Docker tab is a warning with the path to add', () => {
 });
 
 test('the running list follows the prototype’s order and shows Unraid’s Docker tab only on Unraid', () => {
-  assert.deepEqual(checkOrder('install', false, 'unraid'), ['docker', 'room', 'media', 'database', 'backups', 'manager', 'port', 'downloads', 'release', 'memory', 'unraid']);
+  assert.deepEqual(checkOrder('install', false, 'unraid'), ['docker', 'room', 'media', 'database', 'thumbnails', 'backups', 'manager', 'port', 'downloads', 'release', 'memory', 'unraid']);
   assert.deepEqual(checkOrder('restore', false, 'linux'), ['docker', 'room', 'media', 'database', 'port', 'downloads', 'release', 'memory']);
 });

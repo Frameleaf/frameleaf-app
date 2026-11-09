@@ -485,7 +485,7 @@ const shareView = (path: string) => {
   return mnt === 'mnt' && view && !['disks', 'remotes', 'rootshare', 'addons'].includes(view) ? { view, path: `/${rest.join('/')}` } : null;
 };
 /** /mnt/user/a and /mnt/disk1/a can be the same files; the server applies the same rule. */
-function folderOverlap(a: string, b: string): boolean {
+export function folderOverlap(a: string, b: string): boolean {
   if (lexicalOverlap(a, b)) return true;
   const [left, right] = [shareView(a), shareView(b)];
   return !!left && !!right && [left.view, right.view].some((view) => view === 'user' || view === 'user0') && lexicalOverlap(left.path, right.path);
