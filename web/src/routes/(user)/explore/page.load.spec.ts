@@ -199,6 +199,16 @@ describe('the Explore loader', () => {
     await expect(data.facetSection).resolves.toMatchObject({ libraryTotal: 9, withoutPeople: 0 });
   });
 
+  it('reports People and Places as failed, never pending, when their section cannot be built', async () => {
+    vi.mocked(searchFacets).mockResolvedValueOnce({ total: 1, facets: 'not a list' } as never);
+
+    await expect((await open()).facetSection).resolves.toMatchObject({
+      peopleCards: [],
+      places: [],
+      failed: { people: true, places: true },
+    });
+  });
+
   it('takes recent captures with Timeline visibility and makes no per-card cover search', async () => {
     await open();
 

@@ -152,7 +152,16 @@ export const load = (async ({ url }) => {
   await authenticate(url);
 
   const formatter = getFormatter();
-  const facetSection = loadFacetSection(formatter);
+  // Never rejects: a section that cannot be built shows its retry instead of placeholders forever.
+  const facetSection = loadFacetSection(formatter).catch((): ExploreFacetSection => ({
+    peopleCards: [],
+    places: [],
+    things: [],
+    mediaKinds: [],
+    libraryTotal: null,
+    withoutPeople: null,
+    failed: { people: true, places: true },
+  }));
   const [$t, albums, memories, favoriteCount, photoStatistics, videoStatistics, bestPhotos, recentCaptures] =
     await Promise.all([
       formatter,
