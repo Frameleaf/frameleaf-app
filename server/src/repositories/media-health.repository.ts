@@ -3,6 +3,7 @@ import { Insertable, Kysely, Selectable, Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
+import type { FileStep, NewFileStep } from 'src/utils/file-steps.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { EXTERNAL_SCAN_CHECKSUM } from 'src/constants.js';
@@ -1233,5 +1234,41 @@ export class MediaHealthRepository {
       WHERE candidate."healthId" = health.id AND health."assetId" = ANY(${assetIds}::uuid[])
     `.execute(db);
     await sql`DELETE FROM public.asset_health WHERE "assetId" = ANY(${assetIds}::uuid[])`.execute(db);
+  }
+
+  /** Append to the history of a finding; pass `trx` to write in the same transaction as the finding. */
+  async appendSteps(steps: NewFileStep[], trx?: Kysely<DB>): Promise<void> {
+    if (steps.length === 0) {
+      return;
+    }
+    await (trx ?? this.db)
+      .insertInto('asset_health_step')
+      .values(
+        steps.map(({ healthId, assetId, step, outcome, facts, undo, at }) => ({
+          healthId,
+          assetId,
+          step,
+          outcome,
+          ...(at && { at }),
+          ...(facts && { facts }),
+          undo: undo ?? null,
+        })),
+      )
+      .execute();
+  }
+
+  async listSteps(healthId: string): Promise<FileStep[]> {
+    const rows = await this.db
+      .selectFrom('asset_health_step')
+      .selectAll()
+      .where('healthId', '=', healthId)
+      .orderBy('at')
+      .orderBy('id')
+      .execute();
+    return rows.map((row) => ({
+      ...row,
+      step: row.step as FileStep['step'],
+      outcome: row.outcome as FileStep['outcome'],
+    }));
   }
 }

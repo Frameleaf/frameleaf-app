@@ -136,3 +136,32 @@ export class AssetHealthCandidateTable {
   @UpdateDateColumn()
   updatedAt!: Generated<Timestamp>;
 }
+
+@Index({ columns: ['healthId', 'at', 'id'] })
+@Index({ columns: ['assetId'] })
+@Table('asset_health_step')
+export class AssetHealthStepTable {
+  @PrimaryGeneratedColumn()
+  id!: Generated<string>;
+
+  @ForeignKeyColumn(() => AssetHealthTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE' })
+  healthId!: string;
+
+  @ForeignKeyColumn(() => AssetTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE' })
+  assetId!: string;
+
+  @Column({ type: 'timestamp with time zone', default: () => 'now()' })
+  at!: Generated<Timestamp>;
+
+  @Column()
+  step!: string;
+
+  @Column()
+  outcome!: string;
+
+  @Column({ type: 'jsonb', default: '{}' })
+  facts!: Generated<Record<string, unknown>>;
+
+  @Column({ type: 'jsonb', nullable: true })
+  undo!: Record<string, unknown> | null;
+}

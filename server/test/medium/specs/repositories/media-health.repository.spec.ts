@@ -721,4 +721,63 @@ describe(MediaHealthRepository.name, () => {
       ]);
     });
   });
+  describe('steps', () => {
+    it('appends and lists steps in order', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { result: asset } = await ctx.newAsset({ ownerId: user.id });
+      const finding = await sut.upsertFinding(findingDto(asset.id, asset.originalPath, null));
+      assert.isDefined(finding);
+      const at = new Date('2026-11-01T10:00:00.000Z');
+      const later = new Date('2026-11-01T10:05:00.000Z');
+      const base = { healthId: finding.id, assetId: asset.id };
+
+      await sut.appendSteps([]);
+      await sut.appendSteps([
+        { ...base, step: 'checked', outcome: 'ok', at },
+        { ...base, step: 'searched-copy', outcome: 'not-found', facts: { looked: 2 }, at },
+        { ...base, step: 'repaired', outcome: 'ok', undo: { restore: '/a' }, at: later },
+      ]);
+
+      const steps = await sut.listSteps(finding.id);
+      // the two sharing `at` come first, ordered by id (a v7 uuid is not strictly monotonic within a millisecond)
+      const [first, second, third] = steps;
+      expect(first.id < second.id).toBe(true);
+      expect([first.step, second.step].sort()).toEqual(['checked', 'searched-copy']);
+      expect(third).toMatchObject({ step: 'repaired', undo: { restore: '/a' }, at: later });
+      const byStep = Object.fromEntries(steps.map((row) => [row.step, row]));
+      expect(byStep['checked']).toMatchObject({ outcome: 'ok', facts: {}, undo: null, at });
+      expect(byStep['searched-copy']).toMatchObject({ outcome: 'not-found', facts: { looked: 2 } });
+    });
+
+    it('writes in the caller transaction', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { result: asset } = await ctx.newAsset({ ownerId: user.id });
+      const finding = await sut.upsertFinding(findingDto(asset.id, asset.originalPath, null));
+      assert.isDefined(finding);
+
+      await expect(
+        defaultDatabase.transaction().execute(async (trx) => {
+          await sut.appendSteps([{ healthId: finding.id, assetId: asset.id, step: 'checked', outcome: 'ok' }], trx);
+          throw new Error('rolled back');
+        }),
+      ).rejects.toThrow('rolled back');
+      await expect(sut.listSteps(finding.id)).resolves.toEqual([]);
+    });
+
+    it('steps go with their finding', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { result: asset } = await ctx.newAsset({ ownerId: user.id });
+      const finding = await sut.upsertFinding(findingDto(asset.id, asset.originalPath, null));
+      assert.isDefined(finding);
+      await sut.appendSteps([{ healthId: finding.id, assetId: asset.id, step: 'not-on-drive', outcome: 'info' }]);
+      await expect(sut.listSteps(finding.id)).resolves.toHaveLength(1);
+
+      await defaultDatabase.deleteFrom('asset').where('id', '=', asset.id).execute();
+
+      await expect(sut.listSteps(finding.id)).resolves.toEqual([]);
+    });
+  });
 });
