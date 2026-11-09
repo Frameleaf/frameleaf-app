@@ -7,7 +7,7 @@ import { desktopInventoryWorkloads } from 'src/dtos/desktop-model-inventory.dto.
 import { MlDestinationKind, MlWorkload } from 'src/enum.js';
 import { findDesktopClipSpace } from 'src/utils/desktop-clip-space.js';
 import { faceEntries } from 'src/utils/desktop-face.js';
-import { desktopImageModelKeys } from 'src/utils/desktop-model-catalogue.js';
+import { desktopImageModelKey } from 'src/utils/desktop-model-catalogue.js';
 import { ocrEntries } from 'src/utils/desktop-ocr.js';
 import { canonicalJson } from 'src/utils/object.js';
 
@@ -67,8 +67,8 @@ export const selectDesktopModelInventory = ({
         item.modelName === model.modelName &&
         item.spec.provider === provider &&
         item.runtimeSourceRevision === runtimeSourceRevision &&
-        (workload !== MlWorkload.Face || item.modelKey === desktopImageModelKeys.face) &&
-        (workload !== MlWorkload.Ocr || item.modelKey === desktopImageModelKeys.ocr) &&
+        (workload !== MlWorkload.Face || item.modelKey === desktopImageModelKey('face', model.modelName)) &&
+        (workload !== MlWorkload.Ocr || item.modelKey === desktopImageModelKey('ocr', model.modelName)) &&
         (workload === MlWorkload.Face
           ? canonicalJson(item.spec.entries) === canonicalJson(faceEntries(config.facialRecognition))
           : workload === MlWorkload.Ocr

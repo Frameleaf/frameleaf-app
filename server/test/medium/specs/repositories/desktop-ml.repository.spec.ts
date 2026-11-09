@@ -27,7 +27,7 @@ import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
 import { DesktopMlService } from 'src/services/desktop-ml.service.js';
-import { desktopImageModelKeys } from 'src/utils/desktop-model-catalogue.js';
+import { desktopImageModelKey } from 'src/utils/desktop-model-catalogue.js';
 import { lockEffectiveConfig } from 'src/utils/effective-config-lock.js';
 import { seedDesktopQualification } from 'test/desktop-qualification.js';
 import { mediumFactory, newMediumService } from 'test/medium.factory.js';
@@ -940,7 +940,9 @@ it.each([
       (p) =>
         p.workload === workload &&
         p.spec.fixtureKind === 'image' &&
-        (workload === MlWorkload.Clip || legacy || p.modelKey === desktopImageModelKeys[workload]),
+        (workload === MlWorkload.Clip ||
+          legacy ||
+          p.modelKey === desktopImageModelKey(p.workload as 'ocr' | 'face', p.modelName)),
     )!;
     const space = JSON.parse(readFileSync('resources/desktop/model-spaces.json', 'utf8')).spaces[0];
     for (const table of ['smart_search', 'smart_search_description', 'video_moment_frame_embedding'])

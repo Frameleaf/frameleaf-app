@@ -78,7 +78,7 @@ describe('the local pin (FL-455)', () => {
 
   it('pins nothing for a model the release neither qualifies nor pins, so the cloud is never offered for it', () => {
     expect(localPinnedIdentity(MlWorkload.Clip, 'ViT-B-16-SigLIP2__webli')).toBeNull();
-    expect(localPinnedIdentity(MlWorkload.Face, 'buffalo_s')).toBeNull();
+    expect(localPinnedIdentity(MlWorkload.Face, 'yunet_sface')).toBeNull();
     expect(localPinnedIdentity(MlWorkload.Clip, 'antelopev2')).toBeNull();
     expect(localPinnedIdentity(MlWorkload.Face, 'ViT-B-32__openai')).toBeNull();
   });
@@ -148,7 +148,8 @@ describe('the local pin (FL-455)', () => {
     };
     // the catalogue's profile (with its fixture and reference output) stays the pin, not the entry
     expect(localPinnedProfile(MlWorkload.Face, 'buffalo_l', models)!.modelKey).toBe(qualified.modelKey);
-    expect(localPinnedProfile(MlWorkload.Face, 'antelopev2', models)).toBeNull();
+    // antelopev2's own qualified profile replaced its pin, keeping the pinned model key
+    expect(localPinnedProfile(MlWorkload.Face, 'antelopev2', models)!.modelKey).toBe(antelope.modelKey);
   });
 });
 
