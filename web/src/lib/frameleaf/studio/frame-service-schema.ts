@@ -175,6 +175,7 @@ export const STUDIO_FRAME_SERVICE_SCHEMA_V9 = Object.freeze({
   startCloudCaptions: (args: unknown[]) => args.length === 1 && isStudioCloudCaptionRequest(args[0]),
   readCloudCaptions: (args: unknown[]) => args.length === 1 && isStudioCloudCaptionId(args[0]),
   pendingCloudCaptions: (args: unknown[]) => args.length === 0,
+  forgetCloudCaptions: (args: unknown[]) => args.length === 1 && isStudioCloudCaptionId(args[0]),
 });
 type ServiceBindings = Omit<StudioFrameServiceCallsV7, 'commitEditorDraft' | 'reloadProject'> & {
   translateCaptions: { args: [request: StudioCaptionTranslationRequest]; result: StudioCaptionTranslationResult };
@@ -200,6 +201,7 @@ type ServiceBindings = Omit<StudioFrameServiceCallsV7, 'commitEditorDraft' | 're
   startCloudCaptions: { args: [request: StudioCloudCaptionRequest]; result: StudioCloudCaptionJob | null };
   readCloudCaptions: { args: [id: string]; result: StudioCloudCaptionState };
   pendingCloudCaptions: { args: []; result: StudioCloudCaptionJob[] };
+  forgetCloudCaptions: { args: [id: string]; result: void };
 };
 export type StudioFrameServiceName = keyof typeof STUDIO_FRAME_SERVICE_SCHEMA_V9;
 export type StudioFrameServiceCalls = { [Name in StudioFrameServiceName]: ServiceBindings[Name] };

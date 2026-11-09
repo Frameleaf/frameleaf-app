@@ -1,5 +1,6 @@
 import {
   CLOUD_CAPTION_ENGINE_STRINGS,
+  clipAnchorIn,
   cloudCaptionEngineStrings,
   createCloudCaptionServices,
   isStudioCloudCaptionRequest,
@@ -12,7 +13,11 @@ const request: StudioCloudCaptionRequest = {
   clipId: 'clip-1',
   language: 'auto',
   name: 'Lake morning.mov',
-  anchor: { fromSeconds: 2, sourceStartSeconds: 0, speed: 1 },
+};
+const anchor = { fromSeconds: 2, sourceStartSeconds: 3, speed: 2 };
+const graph = {
+  metadata: { fps: 30 },
+  timeline: { items: [{ id: 'clip-1', type: 'video', from: 60, sourceStart: 90, sourceFps: 30, speed: 2 }] },
 };
 const memory = () => {
   const values = new Map<string, string>();
@@ -26,6 +31,7 @@ const make = (overrides: Partial<Parameters<typeof createCloudCaptionServices>[0
   createCloudCaptionServices({
     projectId: () => 'p1',
     save: () => Promise.resolve(),
+    graph: () => graph,
     confirm: () => Promise.resolve(ID),
     read: () => Promise.resolve({ status: 'rendering', error: null, result: null }),
     storage: memory(),
@@ -37,7 +43,6 @@ describe('Studio captions on Frameleaf Cloud', () => {
     expect(STUDIO_FRAME_SERVICE_SCHEMA_V9.startCloudCaptions([request])).toBe(true);
     expect(isStudioCloudCaptionRequest({ ...request, clipId: '../x' })).toBe(false);
     expect(isStudioCloudCaptionRequest({ ...request, language: '' })).toBe(false);
-    expect(isStudioCloudCaptionRequest({ ...request, anchor: { ...request.anchor, speed: 0 } })).toBe(false);
     expect(STUDIO_FRAME_SERVICE_SCHEMA_V9.readCloudCaptions(['nope'])).toBe(false);
     expect(STUDIO_FRAME_SERVICE_SCHEMA_V9.readCloudCaptions([ID])).toBe(true);
   });
@@ -54,8 +59,62 @@ describe('Studio captions on Frameleaf Cloud', () => {
         return Promise.resolve(ID);
       },
     });
-    await expect(services.startCloudCaptions(request)).resolves.toEqual({ ...request, id: ID });
+    await expect(services.startCloudCaptions(request)).resolves.toEqual({ ...request, id: ID, anchor });
     expect(order).toEqual(['save', 'confirm']);
+  });
+
+  it('anchors a job to the saved revision the server prices', async () => {
+    let saved = false;
+    const services = make({
+      save: () => {
+        saved = true;
+        return Promise.resolve();
+      },
+      graph: () => (saved ? graph : { metadata: { fps: 30 }, timeline: { items: [] } }),
+    });
+    await expect(services.startCloudCaptions(request)).resolves.toMatchObject({ anchor });
+  });
+
+  it('reads a clip the way the server does, and refuses one it cannot place', () => {
+    const items = [{ id: 'bare', from: 30 }];
+    expect(clipAnchorIn({ metadata: { fps: 30 }, timeline: { items } }, 'bare')).toEqual({
+      fromSeconds: 1,
+      sourceStartSeconds: 0,
+      speed: 1,
+    });
+    expect(clipAnchorIn(graph, 'missing')).toBeNull();
+    expect(clipAnchorIn(null, 'clip-1')).toBeNull();
+    expect(clipAnchorIn({ ...graph, timeline: { items: [{ id: 'clip-1', from: 0, speed: 0 }] } }, 'clip-1')).toBeNull();
+  });
+
+  it('sends nothing for a clip the saved revision does not have', async () => {
+    const confirm = vi.fn();
+    const services = make({ confirm, graph: () => null });
+    await expect(services.startCloudCaptions(request)).rejects.toThrow();
+    expect(confirm).not.toHaveBeenCalled();
+  });
+
+  it('reads a job resumed after a reload under its own project, even after Save as copy', async () => {
+    const storage = memory();
+    await make({ storage, projectId: () => 'original' }).startCloudCaptions(request);
+    let project = 'original';
+    const read = vi.fn(() => Promise.resolve({ status: 'rendering', error: null, result: null }));
+    const reloaded = make({ storage, projectId: () => project, read });
+    await reloaded.pendingCloudCaptions();
+    project = 'copy';
+    await reloaded.readCloudCaptions(ID);
+    expect(read).toHaveBeenCalledWith('original', ID);
+  });
+
+  it('keeps a completed job until the editor is done with it', async () => {
+    const storage = memory();
+    const result = { cues: [{ start: { num: 1, den: 1 }, end: { num: 2, den: 1 }, text: 'Hello' }] };
+    const services = make({ storage, read: () => Promise.resolve({ status: 'completed', error: null, result }) });
+    await services.startCloudCaptions(request);
+    await services.readCloudCaptions(ID);
+    await expect(make({ storage }).pendingCloudCaptions()).resolves.toHaveLength(1);
+    await services.forgetCloudCaptions(ID);
+    await expect(make({ storage }).pendingCloudCaptions()).resolves.toEqual([]);
   });
 
   it('remembers nothing when the person walks away from the price', async () => {

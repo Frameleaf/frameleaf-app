@@ -265,6 +265,10 @@ const serviceCalls: ServiceHandlers = {
     services.pendingCloudCaptions && STUDIO_FRAME_SERVICE_SCHEMA_V9.pendingCloudCaptions(args)
       ? services.pendingCloudCaptions()
       : Promise.resolve([]),
+  forgetCloudCaptions: (services, args) =>
+    services.forgetCloudCaptions && STUDIO_FRAME_SERVICE_SCHEMA_V9.forgetCloudCaptions(args)
+      ? services.forgetCloudCaptions(args[0] as string)
+      : Promise.resolve(),
   submitCommands: (services, [envelopes]) =>
     services.submitCommands(Array.isArray(envelopes) ? (envelopes as StudioCommandEnvelope[]) : []),
   stageDraft: (services, [graph, commandIds, baseRevision, graphVersion]) => {
