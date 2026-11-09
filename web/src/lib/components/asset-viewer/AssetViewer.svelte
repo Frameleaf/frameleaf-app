@@ -59,6 +59,7 @@
     getAssetInfo,
     getAssetDevelop,
     getStack,
+    recordAssetView,
     type AlbumResponseDto,
     type AssetResponseDto,
     type PersonResponseDto,
@@ -316,6 +317,24 @@
     }
     pendingNavigation = undefined;
     queuedWhileBusy = undefined;
+  });
+
+  // Year in Review groundwork: count each asset the person opens once. Slideshows advance on their own and
+  // shared-link visitors are not the library's people, so neither counts.
+  let countedViewFor: string | undefined;
+  $effect(() => {
+    const id = cursor.current.id;
+    if (countedViewFor === id || slideshowActive || !authManager.authenticated || authManager.isSharedLink) {
+      return;
+    }
+    countedViewFor = id;
+    void (async () => {
+      try {
+        await recordAssetView({ id });
+      } catch {
+        // A lost count is not worth a toast.
+      }
+    })();
   });
 
   // A reload reconstructs the viewer with isShowEditor=false. If this tab has an unsaved draft,

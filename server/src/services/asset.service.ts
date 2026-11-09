@@ -1301,6 +1301,12 @@ export class AssetService extends BaseService {
     return this.assetRepository.getMetadata(id);
   }
 
+  /** Year in Review groundwork: the viewer opened this asset. Shared-link visitors are not counted. */
+  async recordView(auth: AuthDto, id: string): Promise<void> {
+    await this.requireAccess({ auth, permission: Permission.AssetRead, ids: [id] });
+    await this.assetRepository.recordView(auth.user.id, id);
+  }
+
   async getOcr(auth: AuthDto, id: string): Promise<AssetOcrResponseDto[]> {
     await this.requireAccess({ auth, permission: Permission.AssetRead, ids: [id] });
     const ocr = await this.ocrRepository.getByAssetId(id);

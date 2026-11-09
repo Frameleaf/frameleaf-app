@@ -263,6 +263,18 @@ export class AssetController {
     return this.service.getMetadata(auth, id);
   }
 
+  @Post(':id/views')
+  @Authenticated({ permission: Permission.AssetRead })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Record an asset view',
+    description: 'Count one opening of the asset in a viewer, for Year in Review. Call once per open, not per render.',
+    history: new HistoryBuilder().added('v3.4.0').beta('v3.4.0'),
+  })
+  recordAssetView(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
+    return this.service.recordView(auth, id);
+  }
+
   @Get(':id/ocr')
   @Authenticated({ permission: Permission.AssetRead })
   @Endpoint({
