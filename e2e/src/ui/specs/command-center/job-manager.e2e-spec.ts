@@ -207,7 +207,7 @@ test.describe('Job manager', () => {
 
     const table = page.getByRole('table');
     await expect(table.getByRole('columnheader', { name: 'Account' })).toBeVisible();
-    await expect(table.getByRole('columnheader', { name: 'Worker' })).toBeVisible();
+    await expect(table.getByRole('columnheader', { name: 'Computer' })).toBeVisible();
     await expect(table.getByText('Ada Lovelace')).toBeVisible();
     await expect(table.getByText('Frameleaf Cloud')).toBeVisible();
 

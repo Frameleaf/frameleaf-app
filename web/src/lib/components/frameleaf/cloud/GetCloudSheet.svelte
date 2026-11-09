@@ -200,6 +200,7 @@
   let agreed = $state(false);
   let termsChanged = $state(false);
   let createdDestinationId = $state<string | null>(null);
+  let firstTurnOn = false;
   const termChoices = $derived({
     identityNames: !!processing?.consent?.features.identityNames,
     medicalSignals: !!processing?.consent?.features.medicalSignals,
@@ -228,14 +229,25 @@
     busy = true;
     failure = '';
     try {
-      const firstTime = isFirstCloudTurnOn(processing);
+      // Decided from what is true now: a stale read could create a second destination.
+      const choicesWere = JSON.stringify(termChoices);
+      processing = await getCloudMlStatus();
+      wallet = processing.wallet ?? null;
+      if (JSON.stringify(termChoices) !== choicesWere) {
+        agreed = false;
+        await loadTerms();
+        return;
+      }
+      // Stays true across a failed attempt, even once the terms are recorded, until Cloud is really on.
+      firstTurnOn ||= isFirstCloudTurnOn(processing);
       await recordCloudConsent({
         destinationId: processing?.destination?.id ?? createdDestinationId,
         terms,
         choices: termChoices,
         onCreated: (id) => (createdDestinationId = id),
       });
-      await turnOnCloudProcessing({ firstTime });
+      await turnOnCloudProcessing({ firstTime: firstTurnOn });
+      firstTurnOn = false;
       await loadWallet();
     } catch (error) {
       if (isConsentOutdatedError(error)) {

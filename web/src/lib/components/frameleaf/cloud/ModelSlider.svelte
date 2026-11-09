@@ -181,7 +181,10 @@
     const input = event.currentTarget as HTMLInputElement;
     onChange?.(entry.item.id, entry);
     await tick();
-    input.checked = entry.item.id === value;
+    // The browser unticked the stop that was selected, and Svelte doesn't know: put the whole group back.
+    for (const radio of input.closest('fieldset')?.querySelectorAll<HTMLInputElement>('input[type="radio"]') ?? []) {
+      radio.checked = radio.value === value;
+    }
   };
 </script>
 

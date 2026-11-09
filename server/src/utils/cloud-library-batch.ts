@@ -375,16 +375,21 @@ export const nextCloudLibraryBatchAt = (
   items: ReadonlyArray<Pick<QueueItem, 'ownerId' | 'queuedAt'>>,
   now: Date,
 ): string | null => {
-  const owners = new Map<string, number[]>();
+  const owners = new Map<string, { count: number; oldest: number }>();
   for (const item of items) {
-    owners.set(item.ownerId, [...(owners.get(item.ownerId) ?? []), Date.parse(item.queuedAt)]);
+    const queuedAt = Date.parse(item.queuedAt);
+    const owner = owners.get(item.ownerId);
+    if (owner) {
+      owner.count += 1;
+      owner.oldest = Math.min(owner.oldest, queuedAt);
+    } else {
+      owners.set(item.ownerId, { count: 1, oldest: queuedAt });
+    }
   }
   let next: number | null = null;
-  for (const queuedAt of owners.values()) {
+  for (const { count, oldest } of owners.values()) {
     const due =
-      queuedAt.length >= CLOUD_LIBRARY_MIN_BATCH
-        ? now.getTime()
-        : Math.max(now.getTime(), Math.min(...queuedAt) + CLOUD_LIBRARY_MAX_WAIT_MS);
+      count >= CLOUD_LIBRARY_MIN_BATCH ? now.getTime() : Math.max(now.getTime(), oldest + CLOUD_LIBRARY_MAX_WAIT_MS);
     next = next === null ? due : Math.min(next, due);
   }
   return next === null ? null : new Date(next).toISOString();

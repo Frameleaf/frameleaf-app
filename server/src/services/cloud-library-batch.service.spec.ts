@@ -282,6 +282,7 @@ describe(CloudLibraryBatchService.name, () => {
         expect.objectContaining({
           userId: 'admin-1',
           title: 'Visual search used this server for some photos',
+          data: { link: '/user-settings?area=processing&section=computers' },
           description: expect.stringContaining('1 photo is being read on this server'),
         }),
       );

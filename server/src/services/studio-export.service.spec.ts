@@ -1972,14 +1972,21 @@ describe(StudioExportService.name, () => {
 
       await sut.onRenderCompleted(
         operation({
-          snapshot: { kind: 'studio-export', smoothMotion: { factor: 8, destinationId: SMOOTH_DESTINATION } },
+          snapshot: {
+            kind: 'studio-export',
+            smoothMotion: { factor: 8, destinationId: SMOOTH_DESTINATION, model: 'rife-4.25' },
+          },
         }),
         'worker-1',
         { path: staged, checksum: 'ab'.repeat(32), sizeInBytes: '1024', contentType: 'video/mp4' },
       );
 
       const publish = repository.stage.mock.calls[0][3](versionRow());
-      expect(publish.snapshot.smoothMotion).toEqual({ factor: 8, destinationId: SMOOTH_DESTINATION });
+      expect(publish.snapshot.smoothMotion).toEqual({
+        factor: 8,
+        destinationId: SMOOTH_DESTINATION,
+        model: 'rife-4.25',
+      });
     });
 
     it('carries a render that stays with its project into its publication (FL-194)', async () => {
@@ -2346,6 +2353,7 @@ describe(StudioExportService.name, () => {
       (smooth.operation.snapshot as Record<string, unknown>).smoothMotion = {
         factor: 4,
         destinationId: SMOOTH_DESTINATION,
+        model: 'rife-4.25',
       };
 
       await sut.run(smooth);
@@ -2363,6 +2371,7 @@ describe(StudioExportService.name, () => {
         exportName: expect.any(String),
         factor: 4,
         destinationId: SMOOTH_DESTINATION,
+        model: 'rife-4.25',
       });
       expect(restorations.queueExportSmoothMotion.mock.invocationCallOrder[0]).toBeLessThan(
         operations.complete.mock.invocationCallOrder[0],
