@@ -129,11 +129,14 @@ let backupAction = 'reuse',
   storageChecks = null;
 const okChecks = (restore = false) => [
   { id: 'docker', status: 'ok', facts: { version: '28.4' } },
+  { id: 'room', status: 'ok', facts: { needed: 8 * 1024 ** 3, free: 31 * 1024 ** 3 } },
   { id: 'media', status: 'ok', facts: { free: 3 * 1024 ** 4 } },
   { id: 'database', status: 'ok', facts: { free: 200 * 1024 ** 3 } },
   ...(restore ? [] : [{ id: 'backups', status: 'ok', facts: { free: 3 * 1024 ** 4 } }, { id: 'manager', status: 'ok', facts: { free: 200 * 1024 ** 3 } }]),
   { id: 'port', status: 'ok', facts: { port: 2283 } },
+  { id: 'downloads', status: 'ok' },
   { id: 'release', status: 'ok', facts: { tag: 'frameleaf-v3.2.1-1' } },
+  { id: 'memory', status: 'ok', facts: { bytes: 32 * 1024 ** 3, ml: true } },
 ];
 const snapshot = { id: 'd'.repeat(64), time: '2026-10-07T02:00:00Z' };
 let snapshots = [snapshot];
@@ -779,6 +782,37 @@ try {
     await mainButton('Use port 2287').click();
     await page.getByRole('heading', { name: 'This server is ready' }).waitFor();
     assert.equal(requests.findLast((r) => r.path === 'review').body.port, 2287);
+    // FL-1318: Docker's storage and downloads block; memory and Unraid's Docker tab are worth knowing. Problems first.
+    await mainButton('Back').click();
+    reviewProblems = [
+      { id: 'docker', status: 'ok', facts: { version: '28.4' } },
+      { id: 'room', status: 'problem', code: 'insufficient_docker_space', facts: { needed: 8 * 1024 ** 3, free: 3.1 * 1024 ** 3 } },
+      { id: 'media', status: 'ok', facts: { free: 3 * 1024 ** 4 } },
+      { id: 'port', status: 'ok', facts: { port: 2287 } },
+      { id: 'downloads', status: 'problem', code: 'download_host_unreachable', detail: 'ghcr.io' },
+      { id: 'memory', status: 'warning', code: 'low_memory', facts: { bytes: 4 * 1024 ** 3, ml: true } },
+      { id: 'unraid', status: 'warning', code: 'dockerman_templates_unmapped' },
+    ];
+    await mainButton('Check this server').click();
+    await page.getByRole('heading', { name: '2 things to fix before installing' }).waitFor();
+    assert.deepEqual(await page.locator('.check-issue h2').allInnerTexts(), [
+      'Not enough room in Docker’s storage',
+      'Manager can’t reach Frameleaf’s downloads',
+      'This server has 4 GB of memory',
+      'Frameleaf won’t be editable from Unraid’s Docker tab',
+    ]);
+    await page.getByText('Frameleaf needs about 8 GB there, and only 3.1 GB is free.', { exact: true }).waitFor();
+    await page.getByText('Raise Docker vDisk size to at least 40 GB, then turn Docker back on.', { exact: true }).waitFor();
+    await screenshot('install-checks-host');
+    // Turning off faces and smart search checks again without machine learning.
+    await mainButton('Turn off faces and smart search').click();
+    await page.getByRole('heading', { name: 'This server is ready' }).waitFor();
+    assert.equal(requests.findLast((r) => r.path === 'review').body.ml, false);
+    await mainButton('Back').click();
+    await page.locator('.list-row', { hasText: 'Face recognition and smart search' }).locator('input[type=checkbox]').check({ force: true });
+    await mainButton('Check this server').click();
+    await page.getByRole('heading', { name: 'This server is ready' }).waitFor();
+    assert.match(await page.locator('.check-fine li', { hasText: 'Room for Frameleaf' }).innerText(), /8 GB needed · 31 GB free/);
     await mainButton('Review installation').click();
     await screenshot('install-review');
     await page.getByText('Intel GPU · Machine learning on', { exact: true }).waitFor();
@@ -1048,13 +1082,14 @@ try {
       database: { status: 'found', drive: cache, title: 'Suggested: Cache pool (NVMe SSD)', reason: 'It has 180 GB free, and the database needs about 20 GB. Browsing and search read it constantly, so an SSD or NVMe drive makes them noticeably faster.', folder: '/mnt/cache/appdata/frameleaf-databases' },
       thumbs: { status: 'found', drive: cache, title: 'Suggested: Cache pool (NVMe SSD)', reason: 'It has 160 GB free after the database, and thumbnails need about 50 GB. The timeline loads hundreds of small images at once, so large libraries scroll faster from an SSD or NVMe drive.', folder: '/mnt/cache/appdata/frameleaf-thumbnails' },
     };
+    const beforeDatabase = okChecks().findIndex((check) => check.id === 'database');
     storageChecks = (body) => [
-      ...okChecks().slice(0, 2),
+      ...okChecks().slice(0, beforeDatabase),
       body.databaseRoot.startsWith('/mnt/user/')
         ? { id: 'database', status: 'warning', code: 'database_on_hard_drives', facts: { drive: 'Hard drive array', free: 2150 * GB, suggestion: '/mnt/cache/appdata/frameleaf-databases', suggestedDrive: 'Cache pool (NVMe SSD)', suggestedName: 'Cache pool', reason: driveReport.database.reason } }
         : { id: 'database', status: 'ok', facts: { drive: 'Cache pool (NVMe SSD)', free: 180 * GB } },
       body.thumbnailsPath ? { id: 'thumbnails', status: 'ok', facts: { path: body.thumbnailsPath, drive: 'Cache pool (NVMe SSD)', free: 180 * GB } } : { id: 'thumbnails', status: 'ok', facts: { withPhotos: true } },
-      ...okChecks().slice(3),
+      ...okChecks().slice(beforeDatabase + 1),
     ];
     const saved = { installation: dashboard.installation, folderSetup: dashboard.folderSetup };
     dashboard.installation = null;

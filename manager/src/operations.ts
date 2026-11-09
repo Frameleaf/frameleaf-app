@@ -19,12 +19,13 @@ import { rollbackCommonImport } from './common-import-lifecycle.js';
 import type { ImportPreparationSeal, ImportSourceAuthoritySeal } from './import-source-authority.js';
 import type { AutostartFile } from './unraid-autostart.js';
 import { containerNumber } from './dockerman.js';
-import { ApplicationConfig, checkServiceOverrides, releaseImages, renderCompose, retuneDatabase, ServiceOverrides, STUDIO_WORKER_TARGET, storagePath } from './compose.js';
+import { ApplicationConfig, checkServiceOverrides, detectAcceleration, releaseImages, renderCompose, retuneDatabase, ServiceOverrides, STUDIO_WORKER_TARGET, storagePath } from './compose.js';
 import { atomicJson, copyVerified, fileHash } from './files.js';
 import { PostgresStorage } from './postgres-storage.js';
 import { LibraryMove, type ServerPauseStatus } from './library-move.js';
 import { Retention } from './retention.js';
-import { ServerCheck, checkHost, freeBytes, type CheckFacts } from './server-check.js';
+import { ServerCheck, checkHost, freeBytes, type CheckFacts, type CheckOutcome } from './server-check.js';
+import { DOWNLOAD_HOSTS, LOW_MEMORY, downloadUrl, dockerRoomNeeded, hostProbes, type HostProbes } from './host-probes.js';
 import { assertMountSources, folderExists, libraryMounts, seedThumbnailMarker, thumbnailFolder, thumbnailMount, withThumbnails } from './mounts.js';
 import { environment } from './docker.js';
 import { elapsed, log } from './banner.js';
@@ -268,6 +269,8 @@ export class Operations {
   driveReport?: (sizes: { databaseBytes?: number }) => Promise<DriveReport>;
   /** How long the review waits for the drive report before carrying on without it. */
   driveReportMs = 8000;
+  /** FL-1318: what Check this server asks the host itself (Docker storage, downloads, host ports, Unraid's Docker tab). */
+  probes: HostProbes;
   constructor(
     readonly store: Store,
     readonly docker: Docker,
@@ -278,6 +281,7 @@ export class Operations {
     private autostartFile?: string | AutostartFile,
   ) {
     this.discovery = new Discovery(docker);
+    this.probes = hostProbes(docker, store.directory);
     this.fencing = new Fencing(docker, store, autostartFile);
     this.retention = new Retention(store, store.directory, join(store.directory, 'releases'));
     this.mediaMove = new LibraryMove(
@@ -852,7 +856,8 @@ export class Operations {
           return { value, outcome: { facts: { tag: value.nas.tag } } };
         })
       : undefined;
-    const host = checkHost();
+    await this.hostNotes(checks, compatibility?.memory, input.ml);
+    const host = this.checkHost();
     if (!release || checks.blocked) {
       // A photo-app import has already prepared its bundle: it keeps refusing on the first problem.
       if (common) checks.assert();
@@ -950,6 +955,7 @@ export class Operations {
       const value = await this.docker.compatibility();
       return { value, outcome: { facts: { version: value.version ?? null } } };
     });
+    await this.roomCheck(checks, input.ml);
     await checks.run('media', async () => {
       if (source) {
         // FL-1320: a source folder on a drive that isn't mounted is named plainly.
@@ -996,28 +1002,99 @@ export class Operations {
       await storagePath(this.store.directory, [this.store.directory], databaseBytes);
       return { outcome: { facts: { path: this.store.directory, free: await freeBytes(this.store.directory) } } };
     });
-    await checks.run(
-      'port',
-      async () => {
-        await this.checkPort(input.port, null, common?.fence ?? source, managerPort);
-        return { outcome: { facts: { port: input.port } } };
-      },
-      { unknownOnError: true },
-    );
-    if (checks.results.at(-1)?.code === 'port_in_use')
-      checks.annotate('port', { port: input.port, free: await this.freePort(input.port, common?.fence ?? source, managerPort) });
+    await this.portCheck(checks, input.port, null, common?.fence ?? source, managerPort, true);
     if (Object.keys(input.services ?? {}).length)
       await checks.run('containers', async () => {
         // The same conflict check the stack generator runs, against the mounts this installation will have.
         checkServiceOverrides((source?.mounts ?? [{ target: '/data' }]).map(({ target }) => target), input.services ?? {}, this.mountRoots());
         this.checkExternalFolders(input.services ?? {}, [input.mediaPath ?? '', input.databaseRoot, input.thumbnailsPath ?? ''], input.backupPath);
       });
+    await this.downloadsCheck(checks);
     return Object.assign(checks, { compatibility, databaseStorage });
+  }
+  /** The host whose checks and fix steps Check this server shows (MANAGER_PLATFORM, else what Manager detected). */
+  checkHost() {
+    return checkHost();
+  }
+  /** FL-1318: room in Docker's own storage for the images this install downloads; less without machine learning. */
+  private async roomCheck(checks: ServerCheck, ml: boolean): Promise<void> {
+    const needed = dockerRoomNeeded(ml, ml ? await detectAcceleration() : 'cpu');
+    const free = await this.probes.dockerFree().catch(() => null);
+    await checks.run('room', async (): Promise<{ outcome: CheckOutcome }> => {
+      if (free === null) return { outcome: { status: 'unknown', code: 'docker_storage_unreadable', facts: { needed } } };
+      if (free < needed) throw new Refusal('insufficient_docker_space', 409);
+      return { outcome: { facts: { needed, free } } };
+    });
+    if (free !== null && free < needed) checks.annotate('room', { needed, free });
+  }
+  /** FL-1318: the image registry and the release host answer from this server before anything downloads. */
+  private async downloadsCheck(checks: ServerCheck): Promise<void> {
+    await checks.run('downloads', async () => {
+      const answered = await Promise.all(DOWNLOAD_HOSTS.map((host) => this.probes.reaches(downloadUrl(host)).catch(() => false)));
+      const silent = DOWNLOAD_HOSTS.find((_, index) => !answered[index]);
+      if (silent) throw new Refusal('download_host_unreachable', 503, silent);
+    });
+  }
+  /**
+   * The port check. checkPort sees only containers; FL-1318 also tests the host's own listeners from a helper on its
+   * network. A port a container publishes is the container check's call (an import reuses its source's port).
+   */
+  private async portCheck(
+    checks: ServerCheck,
+    port: number,
+    installation: Installation | null,
+    source: Source | SourceFence | null | undefined,
+    managerPort: number | undefined,
+    offerFree: boolean,
+  ): Promise<void> {
+    await checks.run(
+      'port',
+      async () => {
+        await this.checkPort(port, installation, source, managerPort);
+        const open = await this.probes.hostFreePorts([port]);
+        if (!open) return { outcome: { status: 'unknown', code: 'host_port_unchecked', facts: { port } } };
+        if (!open.includes(port) && !(await this.publishedPorts()).has(port)) throw new Refusal('port_in_use');
+        return { outcome: { facts: { port } } };
+      },
+      { unknownOnError: true },
+    );
+    if (checks.results.at(-1)?.code === 'port_in_use')
+      checks.annotate('port', { port, ...(offerFree && { free: await this.freePort(port, source, managerPort) }) });
+  }
+  /** Ports running containers publish on this server. */
+  private async publishedPorts(): Promise<Set<number>> {
+    return new Set(
+      (await this.docker.inventory())
+        .filter((c) => c.State.Running)
+        .flatMap((c) => Object.values(c.HostConfig.PortBindings ?? {}).flatMap((values) => (values ?? []).map((v) => Number(v.HostPort)))),
+    );
+  }
+  /** FL-1318: worth knowing, never blocking: memory for machine learning, and Unraid's Docker tab. */
+  private async hostNotes(checks: ServerCheck, dockerMemory: number | null | undefined, ml: boolean): Promise<void> {
+    await checks.run(
+      'memory',
+      async () => {
+        // Docker's answer first; when Docker itself is the problem, what Manager's own container sees.
+        const memory = dockerMemory || this.probes.memory();
+        if (!memory) return { outcome: { status: 'unknown', code: 'memory_unknown' } };
+        return { outcome: { facts: { bytes: memory, ml }, ...(ml && memory < LOW_MEMORY && { status: 'warning' as const, code: 'low_memory' }) } };
+      },
+      { unknownOnError: true },
+    );
+    if (this.checkHost() === 'unraid')
+      await checks.run(
+        'unraid',
+        async () => ((await this.probes.dockermanMapped()) ? {} : { outcome: { status: 'warning', code: 'dockerman_templates_unmapped' } }),
+        { unknownOnError: true },
+      );
   }
   /** The next port after `port` that nothing on this server publishes, for "Use port 2284". Null when none is near. */
   private async freePort(port: number, source?: Source | SourceFence | null, managerPort?: number): Promise<number | null> {
-    for (let next = port + 1; next <= Math.min(65535, port + 50); next++)
-      if (await this.checkPort(next, null, source, managerPort).then(() => true, () => false)) return next;
+    const candidates = Array.from({ length: Math.min(65535, port + 50) - port }, (_, index) => port + 1 + index);
+    // Ports a host app listens on are skipped too, when the helper can tell.
+    const open = await this.probes.hostFreePorts(candidates).catch(() => null);
+    for (const next of candidates)
+      if ((!open || open.includes(next)) && (await this.checkPort(next, null, source, managerPort).then(() => true, () => false))) return next;
     return null;
   }
   /**
@@ -2626,7 +2703,7 @@ export class Operations {
     const databaseBytes = Math.max(1024 ** 3, (await stat(join(checkpoint, 'database.dump'))).size * 4);
     // FL-1317: the server checks, reported together. The backup itself was checked above.
     const checks = await this.restoreChecks(
-      { mounts, port: recovery.installation.port }, databaseRoot, databaseBytes, current, managerPort, 'review',
+      { mounts, port: recovery.installation.port, ml: recovery.installation.ml }, databaseRoot, databaseBytes, current, managerPort, 'review',
       thumbnailsMissing && !fallback ? { missing: thumbnails!.source, folder } : undefined,
     );
     const { compatibility, databaseStorage } = checks;
@@ -2640,7 +2717,8 @@ export class Operations {
           return { value, outcome: { facts: { tag: value.nas.tag } } };
         })
       : undefined;
-    const host = checkHost();
+    await this.hostNotes(checks, compatibility?.memory, recovery.installation.ml);
+    const host = this.checkHost();
     if (!release || !databaseStorage || checks.blocked) {
       await rm(checkpoint, { recursive: true, force: true });
       return { ready: false as const, host, port: recovery.installation.port, checks: checks.results };
@@ -2676,7 +2754,7 @@ export class Operations {
   }
   /** The restore review's server checks; the restore repeats them before it downloads anything. */
   private async restoreChecks(
-    target: { mounts: Mount[]; port: number },
+    target: { mounts: Mount[]; port: number; ml: boolean },
     databaseRoot: string,
     databaseBytes: number,
     current: Installation | null,
@@ -2692,6 +2770,7 @@ export class Operations {
       const value = await this.docker.compatibility();
       return { value, outcome: { facts: { version: value.version ?? null } } };
     });
+    await this.roomCheck(checks, target.ml);
     if (thumbnailsMissing) {
       await checks.run('thumbnails', async () => {
         throw new Refusal('thumbnail_folder_missing', 409, thumbnailsMissing.missing);
@@ -2721,14 +2800,8 @@ export class Operations {
       const value = await this.databaseStorage.validate(databaseRoot, databaseBytes);
       return { value, outcome: { facts: { path: databaseRoot, free: await freeBytes(databaseRoot) } } };
     });
-    await checks.run(
-      'port',
-      async () => {
-        await this.checkPort(target.port, current, undefined, managerPort);
-        return { outcome: { facts: { port: target.port } } };
-      },
-      { unknownOnError: true },
-    );
+    await this.portCheck(checks, target.port, current, undefined, managerPort, false);
+    await this.downloadsCheck(checks);
     return Object.assign(checks, { compatibility, databaseStorage });
   }
   restore(id: string, key: string): Operation {
@@ -2745,7 +2818,7 @@ export class Operations {
     await this.step(operation, 'download-images', async () => {
       // FL-1317: the review's checks again, so a change since the review still refuses before any download.
       (await this.restoreChecks(
-        { mounts: review.mounts ?? review.recovery.installation.mounts, port: review.recovery.installation.port },
+        { mounts: review.mounts ?? review.recovery.installation.mounts, port: review.recovery.installation.port, ml: review.recovery.installation.ml },
         review.databaseRoot, review.databaseBytes, review.current, undefined, 'start',
       )).assert();
       await this.releases.eligible(review.release.nas.tag);

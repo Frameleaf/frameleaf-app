@@ -93,7 +93,7 @@ test('the server check: the database’s drive and the Thumbnails row when fine'
       ['Database', 'On this server · 180 GB free'],
     ],
   );
-  assert.deepEqual(checkOrder('install'), ['docker', 'media', 'database', 'thumbnails', 'backups', 'manager', 'port', 'release']);
+  assert.deepEqual(checkOrder('install'), ['docker', 'room', 'media', 'database', 'thumbnails', 'backups', 'manager', 'port', 'downloads', 'release', 'memory']);
   assert.ok(!checkOrder('import').includes('thumbnails'));
 });
 

@@ -10,6 +10,7 @@ import {
 } from 'src/enum.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import {
+  BULK_LEASE_MS,
   BULK_TICK_MS,
   BulkOperationService,
   MEDIA_HEALTH_BULK_BATCH_SIZE,
@@ -1156,6 +1157,38 @@ describe(BulkOperationService.name, () => {
       // a decision never goes through the per-item update paths
       expect(assets.updateAll).not.toHaveBeenCalled();
       expect(duplicateDecisions.getLockedIds).not.toHaveBeenCalled();
+    });
+
+    it('keeps the claim alive while a batch outlasts the lease, so the sweep does not fail the job', async () => {
+      vi.useFakeTimers();
+      try {
+        const group = groupOf(2);
+        const snapshot = decisionSnapshot([group], { elevated: true });
+        duplicateDecisions.applyGroup.mockImplementation(
+          () => new Promise((resolve) => setTimeout(() => resolve(okAll(group.memberIds)), BULK_LEASE_MS * 2)),
+        );
+        // the lease as the database keeps it: a write or heartbeat after it lapsed finds no claim
+        let leaseUntil = Date.now() + BULK_LEASE_MS;
+        const renew = () => {
+          if (Date.now() > leaseUntil) {
+            return false;
+          }
+          leaseUntil = Date.now() + BULK_LEASE_MS;
+          return true;
+        };
+        vi.mocked(operations.heartbeat).mockImplementation(() => Promise.resolve(renew()));
+        vi.mocked(operations.setBulkResult).mockImplementation(() => Promise.resolve(renew() ? running : undefined));
+
+        const run = sut.run(operationOf(snapshot), 'claim');
+        await vi.advanceTimersByTimeAsync(BULK_LEASE_MS * 2);
+        await run;
+
+        expect(vi.mocked(operations.heartbeat).mock.calls.length).toBeGreaterThanOrEqual(2);
+        expect(operations.heartbeat).toHaveBeenCalledWith(expect.any(String), 'claim', BULK_LEASE_MS);
+        expect(operations.complete).toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('skips a whole group that holds an item locked since a job queued without the PIN', async () => {

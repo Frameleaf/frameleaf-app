@@ -42,10 +42,13 @@ export type CheckContext = {
   chosen: CheckFolder[];
   /** A restore keeps the backup's port: Manager can't offer another one. */
   fixedPort?: boolean;
+  /** A restore keeps the backup's machine learning setting: Manager can't offer to turn it off. */
+  fixedMl?: boolean;
 };
 
 export const CHECK_LABELS: Record<string, string> = {
   docker: 'Docker',
+  room: 'Room for Frameleaf',
   media: 'Photos and videos',
   thumbnails: 'Thumbnails',
   database: 'Database',
@@ -53,18 +56,25 @@ export const CHECK_LABELS: Record<string, string> = {
   manager: 'Manager’s own folder',
   port: 'Frameleaf port',
   containers: 'Container settings',
+  downloads: 'Downloads',
   release: 'Release signature',
+  memory: 'Memory',
+  unraid: 'Unraid Docker tab',
 };
 /** The checks in the order Manager runs them, for the list shown while it looks. */
-export const checkOrder = (flow: 'install' | 'import' | 'restore', containers = false) => [
+export const checkOrder = (flow: 'install' | 'import' | 'restore', containers = false, host: CheckHost = 'linux') => [
   'docker',
+  'room',
   'media',
   'database',
   ...(flow === 'install' ? ['thumbnails'] : []),
   ...(flow === 'restore' ? [] : ['backups', 'manager']),
   'port',
   ...(containers && flow !== 'restore' ? ['containers'] : []),
+  'downloads',
   'release',
+  'memory',
+  ...(host === 'unraid' ? ['unraid'] : []),
 ];
 
 export const CHECKING = { title: 'Checking this server', lead: 'Manager is only looking. Nothing is downloaded or changed.' };
@@ -135,6 +145,24 @@ const reconnectSteps: Record<CheckHost, string[]> = {
   hexos: ['In HexOS, check the drive that holds this folder is connected and healthy.', AGAIN],
   linux: ['Connect the drive and mount it at the same place, for example with sudo mount -a.', AGAIN],
 };
+/** FL-1318: Docker's own storage is full. Unraid keeps it in a fixed-size docker.img. */
+const dockerRoomSteps: Record<CheckHost, string[]> = {
+  unraid: [
+    'In Unraid, open Settings, then Docker, and set Enable Docker to No. Your containers stop while Docker is off.',
+    'Raise Docker vDisk size to at least 40 GB, then turn Docker back on.',
+    REOPEN,
+  ],
+  truenas: ['In TrueNAS, open Apps, then Configuration, then Choose Pool, to see which pool holds your apps.', 'Free some space on that pool, or remove apps you no longer use.'],
+  hexos: ['Free some space on the drive that holds your applications, or remove apps you no longer use.'],
+  linux: ['Free some space on the drive that holds /var/lib/docker.', 'To clear images no container uses, run docker image prune -a.'],
+};
+const DOWNLOAD_STEPS = ['Check this server is connected to the internet.', 'If your network uses a VPN, DNS filter or ad blocker, allow ghcr.io and github.com.'];
+const DOCKERMAN_STEPS = [
+  'In Unraid’s Docker tab, click Frameleaf and choose Edit.',
+  'Choose Add another Path, Port, Variable, Label or Device, and set Config Type to Path.',
+  'Set Container Path to /run/frameleaf-host/templates-user and Host Path to /boot/config/plugins/dockerMan/templates-user, then Apply.',
+];
+const gigabytes = (bytes: number) => `${Math.round(bytes / 1024 ** 3)} GB`;
 const portSteps = (host: CheckHost, port: number): string[] =>
   ({
     unraid: [`In Unraid’s Docker tab, find the app using port ${port}, and stop it or change its port.`, AGAIN],
@@ -205,6 +233,18 @@ function problem(result: CheckResult, context: CheckContext): Words {
       if (code === 'unsupported_docker_host')
         return { title: 'Docker is part of a swarm', detail: 'Frameleaf runs on a single Docker server, not a swarm.', steps: ['On this server, run docker swarm leave --force. Apps the swarm runs stop.', REOPEN] };
       return { title: 'Manager can’t use Docker', detail: 'Docker didn’t answer when Manager asked about this server.', steps: dockerStartSteps[host] };
+    case 'room': {
+      const needed = Number(result.facts?.needed ?? 0),
+        free = Number(result.facts?.free ?? 0);
+      if (code !== 'insufficient_docker_space') return generic('room', code, result.detail);
+      return { title: 'Not enough room in Docker’s storage', detail: `Frameleaf needs about ${size(needed)} there, and only ${size(free)} is free.`, steps: dockerRoomSteps[host] };
+    }
+    case 'downloads':
+      return {
+        title: 'Manager can’t reach Frameleaf’s downloads',
+        detail: `This server couldn’t connect to ${result.detail === 'github.com' ? 'github.com' : 'ghcr.io'}, where Frameleaf is downloaded from.`,
+        steps: DOWNLOAD_STEPS,
+      };
     case 'thumbnails': {
       // FL-1321: a new library's thumbnails folder, chosen on the Storage step.
       if (code === 'thumbnails_on_network_share')
@@ -262,20 +302,41 @@ function problem(result: CheckResult, context: CheckContext): Words {
         return {
           title: 'Manager can’t reach Frameleaf’s downloads',
           detail: 'This server couldn’t connect to github.com, where Frameleaf is downloaded from.',
-          steps: ['Check this server is connected to the internet.', 'If your network uses a VPN, DNS filter or ad blocker, allow ghcr.io and github.com.'],
+          steps: DOWNLOAD_STEPS,
         };
       return { title: 'The release couldn’t be verified', detail: 'Manager checks every release’s signature before it installs anything, and this one didn’t pass.', steps: ['Go back and choose another release, or check again later.'] };
   }
   return generic(result.id, code, result.detail);
 }
 
-function notice(result: CheckResult): Words {
+function notice(result: CheckResult, context: CheckContext): Words {
   // FL-1321: hard drives work; this is said only when a faster drive with room is there, with the one-press fix.
   if (result.id === 'database' && result.code === 'database_on_hard_drives' && typeof result.facts?.suggestion === 'string')
     return {
       title: 'The database is on hard drives',
       detail: `Frameleaf will work, but a faster drive is available. ${result.facts.suggestedDrive}: ${result.facts.reason}`,
       action: { kind: 'suggest', folder: 'database', path: result.facts.suggestion, label: `Use ${result.facts.suggestedName}` },
+    };
+  if (result.id === 'room' && result.status === 'unknown')
+    return {
+      title: 'Couldn’t check Docker’s storage',
+      detail: `Manager couldn’t see how much room Docker has here. Frameleaf needs about ${size(Number(result.facts?.needed ?? 0))}. If it runs out, the install stops at that point and tells you.`,
+      action: { kind: 'recheck', label: 'Check again' },
+    };
+  if (result.id === 'memory') {
+    if (result.status === 'unknown')
+      return { title: 'Couldn’t check memory', detail: 'Manager couldn’t tell how much memory this server has. Faces and smart search can run out of memory with less than 8 GB.' };
+    return {
+      title: `This server has ${gigabytes(Number(result.facts?.bytes ?? 0))} of memory`,
+      detail: 'Frameleaf will work, but faces and smart search can run out of memory with less than 8 GB.',
+      ...(!context.fixedMl && { action: { kind: 'ml' as const, label: 'Turn off faces and smart search' } }),
+    };
+  }
+  if (result.id === 'unraid' && result.status === 'warning')
+    return {
+      title: 'Frameleaf won’t be editable from Unraid’s Docker tab',
+      detail: 'Frameleaf will still install and run. A folder Unraid uses to save its container settings isn’t connected to Manager.',
+      steps: DOCKERMAN_STEPS,
     };
   if (result.id === 'port' && result.status === 'unknown') {
     const port = result.facts?.port ?? '';
@@ -308,8 +369,14 @@ function value(result: CheckResult, host: CheckHost): string {
     case 'backups':
     case 'manager':
       return `Can save here${freeText(facts)}`;
+    case 'room':
+      return typeof facts?.needed === 'number' && typeof facts.free === 'number' ? `${size(facts.needed)} needed · ${size(facts.free)} free` : 'Ready';
     case 'port':
       return `${facts?.port} is free`;
+    case 'downloads':
+      return 'Frameleaf’s download server answered';
+    case 'memory':
+      return typeof facts?.bytes === 'number' ? gigabytes(facts.bytes) : 'Ready';
     case 'containers':
       return 'Can be applied';
     case 'release':
@@ -323,7 +390,7 @@ export function checkRows(results: CheckResult[], context: CheckContext): CheckR
   return results.map((result) => {
     const label = CHECK_LABELS[result.id] ?? result.id;
     if (result.status === 'ok') return { id: result.id, label, status: 'ok', value: value(result, context.host) };
-    const words = result.status === 'problem' ? problem(result, context) : notice(result);
+    const words = result.status === 'problem' ? problem(result, context) : notice(result, context);
     return { id: result.id, label, status: result.status, ...words };
   });
 }

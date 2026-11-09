@@ -236,7 +236,7 @@ export class BulkOperationService {
    *
    * Lapsed claims are not recovered here. One sweep owns recovery for every kind of media
    * operation, so it never runs twice with two different answers: `MediaOperationSweepService`
-   * returns lapsed bulk jobs to the queue (or gives them their automatic retry) with the rest.
+   * fails a lapsed bulk job for its owner to retry (bulk is not in `SAFE_MEDIA_OPERATION_REPLAY_KINDS`).
    */
   async drain(): Promise<void> {
     while (!this.stopping) {
@@ -468,14 +468,13 @@ export class BulkOperationService {
       return null;
     }
 
-    // Library Care reads, hashes and may copy whole originals (FL-69): one item can outlast the
-    // lease, so the claim is kept alive while the batch is in hand. A lost claim still stops the job
-    // at the next write.
-    const keepAlive = isMediaHealthBulkAction(job.snapshot.action)
-      ? setInterval(() => {
-          this.operations.heartbeat(job.id, job.claimToken, BULK_LEASE_MS).catch(() => false);
-        }, BULK_LEASE_MS / 4)
-      : undefined;
+    // A batch can outlast the lease: Library Care hashes and copies whole originals (FL-69), and a
+    // duplicate decision batch resolves hundreds of groups one by one. Bulk jobs get no automatic
+    // replay, so a lapsed lease fails the job while this batch carries on. The claim is kept alive
+    // while the batch is in hand; a lost claim still stops the job at the next write.
+    const keepAlive = setInterval(() => {
+      this.operations.heartbeat(job.id, job.claimToken, BULK_LEASE_MS).catch(() => false);
+    }, BULK_LEASE_MS / 4);
     try {
       await this.requireCredentials(job.ownerId, job.snapshot);
       return inBatchOrder(

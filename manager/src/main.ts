@@ -35,6 +35,7 @@ import { Backups } from './backups.js';
 import { Releases } from './releases.js';
 import { CommonImportBootstrapCredentials } from './common-import-runtime.js';
 import { Operations, PhotoAppPrepareInput, ReviewInput } from './operations.js';
+import { detectPlatform } from './server-check.js';
 import { folderImportKinds } from './photo-app-folder.js';
 import { Refusal, containerId, publicSource, redact, releaseTag, secretEnvironmentValues } from './contracts.js';
 import { appdataDefaults } from './appdata.js';
@@ -117,6 +118,8 @@ async function databaseDefaults() {
   return appdataDefaults(process.env, config);
 }
 const defaults = native ? { roots: [], platform: 'native' as const } : await databaseDefaults();
+// FL-1318: Unraid found from docker.cfg is Unraid for Check this server and the Compose settings alike.
+detectPlatform(defaults.platform === 'unraid' ? 'unraid' : undefined);
 // Preserve existing explicit mounts; Unraid otherwise discovers the file through the host engine.
 const mountedAutostart = '/run/frameleaf-host/unraid-autostart';
 const autostart = process.env.MANAGER_UNRAID_AUTOSTART || mountedAutostart;
@@ -304,6 +307,8 @@ class Api {
       managerOrigin: security.requestOrigin(request),
       backupRoot: currentBackupRoot(),
       folderSetup: folderSetup() ? folderDefaults() : null,
+      /** FL-1318: whose fix steps and checks Check this server shows, before its first result. */
+      checkHost: operations.checkHost(),
       host: {
         name: new URL(security.requestOrigin(request)).hostname,
         available: !!host,

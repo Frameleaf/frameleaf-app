@@ -3,6 +3,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { Refusal } from './contracts.js';
 import { folderDetail } from './host-paths.js';
 import { filesystemMounts } from './postgres-storage.js';
+import { managerPlatform } from './server-check.js';
 
 /**
  * A new install maps one broad folder into Manager, and folders are chosen in Manager rather than in the template:
@@ -132,7 +133,7 @@ const NETWORK_FILESYSTEMS = /^(?:nfs4?|cifs|smb3?|smbfs|9p|afs|ceph|glusterfs|fu
  * server: a share that drops out takes the timeline with it.
  */
 export function onNetworkShare(path: string, mountinfo: string): boolean {
-  if (unraid() && within(path, '/mnt/remotes')) return true;
+  if (managerPlatform() === 'unraid' && within(path, '/mnt/remotes')) return true;
   const mount = filesystemMounts(mountinfo)
     .filter((m) => within(path, m.target))
     .sort((a, b) => b.target.length - a.target.length)[0];

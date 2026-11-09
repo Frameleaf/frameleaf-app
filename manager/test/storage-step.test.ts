@@ -164,7 +164,7 @@ test('thumbnails: with the photos by default, or a folder of their own the revie
   const f = await fixture(fastReport);
   try {
     const plain = await f.operations.review(f.input);
-    assert.deepEqual(plain.checks.map((check) => check.id), ['docker', 'media', 'database', 'thumbnails', 'backups', 'manager', 'port', 'release']);
+    assert.deepEqual(plain.checks.map((check) => check.id), ['docker', 'room', 'media', 'database', 'thumbnails', 'backups', 'manager', 'port', 'downloads', 'release', 'memory']);
     assert.deepEqual(plain.checks.find((check) => check.id === 'thumbnails')?.facts, { withPhotos: true });
 
     const thumbnailsPath = join(f.fast, 'frameleaf-thumbnails');
