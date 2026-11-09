@@ -1,5 +1,5 @@
 import { ConflictException } from '@nestjs/common';
-import { FrameleafWorker, QueueName, SystemMetadataKey } from 'src/enum.js';
+import { FrameleafWorker, JobName, QueueName, SystemMetadataKey } from 'src/enum.js';
 import {
   FrameleafLibraryMoveService,
   LIBRARY_MOVE_LEASE_MS,
@@ -95,6 +95,14 @@ describe(FrameleafLibraryMoveService.name, () => {
     ]) {
       expect(libraryMoveFence.admit(method, path)).toBeTypeOf('function');
     }
+  });
+
+  it('queues every thumbnail to be made again after thumbnails lost their own drive', async () => {
+    await expect(sut.queueThumbnails()).resolves.toEqual({ queued: true });
+    expect(mocks.job.queue).toHaveBeenCalledWith({
+      name: JobName.AssetGenerateThumbnailsQueueAll,
+      data: { force: true },
+    });
   });
 
   it('renews an existing pause idempotently and refuses another operation', async () => {

@@ -107,6 +107,38 @@ review offers to keep them in the photos folder's own `thumbs` folder instead;
 Manager then seeds the marker there before starting, and missing thumbnails can
 be made again.
 
+**Moving thumbnails** (FL-1323) reuses Library Move below for the thumbnails
+folder (the photos folder's own `thumbs`, or the thumbnail mount):
+`POST /manager-api/review-thumbnail-move` with `{ root }` measures the real file
+count and size with the copy helper, and `POST /manager-api/move-thumbnails`
+with `{ id, key }` starts a `move-thumbnails` operation. It pauses the server,
+keeps the stack's `compose.json` to return to (no database recovery point: the
+database is not touched), copies into a new `frameleaf-<id>-thumbnails-<op>`
+folder, verifies it, and then switches only the thumbnail mount (`withThumbnails`).
+The photos mount is never changed. Stop safely and Cancel safely work as for a
+library move: until Frameleaf starts on the new folder, an interrupted move goes
+back to the original folder. The original thumbnails are kept, and
+`retained-thumbnails:<op>` records them.
+
+**A missing thumbnail drive** is reported by `GET /manager-api/storage-usage`
+(`thumbnails.missing`). Plug the drive back in and check again, or put the
+thumbnails back with the photos: `POST /manager-api/review-thumbnails-home`,
+then `POST /manager-api/thumbnails-home` with `{ id, key }`. The
+`thumbnails-home` operation removes the thumbnail mount, creates the photos
+folder's own `thumbs` folder with the server's marker (nothing else in the
+photos folder is touched), starts Frameleaf, and asks the server to queue every
+thumbnail to be made again (`POST /api/server/library-move/manager/thumbnails`).
+It only goes forward: Resume finishes it, and cancelling is refused. A thumbnail
+folder Manager can't see (one only Docker reaches) is never treated as missing
+(`thumbnail_folder_not_visible`), and a drive that comes back before the switch
+ends the operation with nothing changed (`thumbnail_folder_present`).
+
+`GET /manager-api/storage-usage` also gives the Storage page each place's size
+(photos from the accounts' storage use, the database from PostgreSQL, thumbnails
+from a background walk of their folder) and the fast drive Manager suggests for
+the database (while it is on a slow drive) and for thumbnails (while they are
+with the photos). The database has first claim on a fast drive both would use.
+
 Manager stops and fences managed writers, saves a verified database recovery point,
 copies into a new folder and independently compares the complete file inventory,
 SHA-256 checksums, POSIX metadata, ACLs and extended attributes. Its isolated copy helper uses the exact local
@@ -236,7 +268,11 @@ refused (`database_move_reverse_required`), and resuming starts Frameleaf on the
 /manager-api/retained-databases` lists retained folders; `POST /manager-api/remove-retained-database`
 with `{ path }` deletes one, only while no operation is open, the current database answers, and no
 container maps the folder, a folder inside it or a folder above it (Manager's own containers, and this
-library's stack mapping a folder above it, excepted).
+library's stack mapping a folder above it, excepted). The comparison happens entirely on the host:
+the folder's host path and each container's mount source as Docker reports it (never Manager's
+translation), both resolved by a short-lived helper in Manager's own image, with the host's `/` mapped
+read-only and no network, which follows links Manager cannot see. If the helper cannot run
+or any source cannot be resolved, the folder is kept (`database_folder_unverified`).
 
 An in-place change needs the same PostgreSQL major and the same on-disk catalog, the installed
 image listed in `databaseImageChange.from`, and a checkpoint backup taken first (Manager always

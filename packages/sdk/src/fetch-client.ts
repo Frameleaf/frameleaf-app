@@ -67,8 +67,9 @@ export type AttentionBackupDto = {
     place: (AttentionBackupPlace) | null;
 };
 export type AttentionStorageDto = {
-    /** Space left on the drive the library is on */
+    /** Space left on the drive */
     availableBytes: number;
+    drive: AttentionStorageDrive;
     /** Size of that drive */
     totalBytes: number;
     /** How full the drive is */
@@ -15907,6 +15908,10 @@ export type LibraryMoveResumeDto = {
     /** Frameleaf Manager move operation that holds the pause */
     operationId: string;
 };
+export type LibraryMoveThumbnailsDto = {
+    /** Every thumbnail is queued to be made again from the original files */
+    queued: boolean;
+};
 export type LibrarySetupStatusDto = {
     canFinish: boolean;
     /** A file check or library scan ended early (failed or cancelled). Setup carried on; Library Care lists what it could not check */
@@ -26160,6 +26165,17 @@ export function playStudioHdrVideo({ id }: {
     }));
 }
 /**
+ * Record an asset view
+ */
+export function recordAssetView({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/assets/${encodeURIComponent(id)}/views`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Get video audio waveform
  */
 export function getAssetWaveform({ buckets, channels, id, key, slug }: {
@@ -33077,6 +33093,23 @@ export function resumeManagerLibraryMove({ libraryMoveResumeDto }: {
     })));
 }
 /**
+ * Manager machine-authenticated rebuild of every thumbnail, after thumbnails lost their own drive
+ */
+export function queueManagerThumbnails({ xFrameleafManager }: {
+    xFrameleafManager: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LibraryMoveThumbnailsDto;
+    }>("/server/library-move/manager/thumbnails", {
+        ...opts,
+        method: "POST",
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-manager": xFrameleafManager
+        })
+    }));
+}
+/**
  * Library preparation for this authenticated device
  */
 export function getLibrarySetupStatus(opts?: Oazapfts.RequestOpts) {
@@ -37389,6 +37422,10 @@ export enum AttentionReason {
     WorkFailed = "work-failed",
     WorkPaused = "work-paused",
     NewVersion = "new-version"
+}
+export enum AttentionStorageDrive {
+    Library = "library",
+    Thumbnails = "thumbnails"
 }
 export enum QueueName {
     ThumbnailGeneration = "thumbnailGeneration",

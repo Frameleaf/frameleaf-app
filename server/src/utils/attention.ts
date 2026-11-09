@@ -11,6 +11,7 @@ import {
   type AttentionBackupPlace,
   type AttentionCheckState,
   type AttentionItem,
+  type AttentionStorageDrive,
 } from 'src/dtos/attention.dto.js';
 
 /** How a check came out, and what it lists. */
@@ -47,30 +48,51 @@ const time = (value: string | null | undefined) => {
 
 // ── Storage ─────────────────────────────────────────────────────────────────────────────────────────
 
-/** The drive the library is on, as `StorageRepository.checkDiskUsage` reads it. */
+/** A drive, as `StorageRepository.checkDiskUsage` reads it. */
 export type DiskFacts = { available: number; free: number; total: number };
 
 /**
  * FL-365: `nearlyFullPercent` is Storage & originals › "Warn me when the disk is nearly full"
  * (`storageWarning.percent`); 0 turns that warning off. Under 10 GB free always needs the person.
+ *
+ * FL-1324: `drive` names the drive. The library's item keeps the id `storage`; thumbnails kept on a
+ * drive of their own get `storage:thumbnails`, so each drive is listed and dismissed on its own.
  */
-export const storageSignal = (disk: DiskFacts, nearlyFullPercent = NEARLY_FULL_PERCENT): SignalResult => {
+export const storageSignal = (
+  disk: DiskFacts,
+  nearlyFullPercent = NEARLY_FULL_PERCENT,
+  drive: AttentionStorageDrive = 'library',
+): SignalResult => {
   if (!(disk.total > 0)) {
     return { state: 'unknown', items: [] };
   }
   const usedPercent = Math.min(100, Math.max(0, ((disk.total - disk.free) / disk.total) * 100));
   const storage = {
+    drive,
     availableBytes: Math.max(0, Math.floor(disk.available)),
     totalBytes: Math.floor(disk.total),
     usedPercent: Math.round(usedPercent * 10) / 10,
   };
+  const id = drive === 'library' ? 'storage' : `storage:${drive}`;
   if (disk.available < OUT_OF_SPACE_BYTES) {
-    return outcome([item({ id: 'storage', kind: 'storage', reason: 'out-of-space', level: 'now', storage })]);
+    return outcome([item({ id, kind: 'storage', reason: 'out-of-space', level: 'now', storage })]);
   }
   if (nearlyFullPercent > 0 && usedPercent >= nearlyFullPercent) {
-    return outcome([item({ id: 'storage', kind: 'storage', reason: 'nearly-full', level: 'soon', storage })]);
+    return outcome([item({ id, kind: 'storage', reason: 'nearly-full', level: 'soon', storage })]);
   }
   return outcome([]);
+};
+
+/**
+ * FL-1324: one storage check from each drive's own. Everything to put right is listed; a drive that
+ * could not be read leaves the check unknown only when no other drive needs the person.
+ */
+export const combineStorage = (results: SignalResult[]): SignalResult => {
+  const items = results.flatMap((result) => result.items);
+  if (items.length > 0) {
+    return outcome(items);
+  }
+  return { state: results.some((result) => result.state === 'unknown') ? 'unknown' : 'ok', items: [] };
 };
 
 // ── Backup ──────────────────────────────────────────────────────────────────────────────────────────

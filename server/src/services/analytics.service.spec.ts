@@ -256,6 +256,102 @@ describe(AnalyticsService.name, () => {
     });
   });
 
+  describe('getReport reuse (FL-1336)', () => {
+    const read = (auth: ReturnType<typeof admin>, scope = 'all') =>
+      sut.getReport(auth, { scope, range: AnalyticsRange.Year });
+    const at = (time: string) => vitest.setSystemTime(new Date(`2026-09-19T${time}.000Z`));
+
+    it('gives the same reader the same reading for five minutes, with free space read live', async () => {
+      const first = await read(admin());
+      at('12:04:59');
+      storageRepository.checkDiskUsage.mockResolvedValue({ total: 1_000_000, free: 300_000, available: 250_000 });
+      const second = await read(admin());
+
+      expect(analyticsRepository.getInventory).toHaveBeenCalledTimes(1);
+      expect(analyticsRepository.getInsights).toHaveBeenCalledTimes(1);
+      // "Library read" stays the time it was read
+      expect(second.generatedAt).toBe(first.generatedAt);
+      expect(second.summary).toEqual(first.summary);
+      expect(second.host).toMatchObject({ observedAt: '2026-09-19T12:04:59.000Z', freeBytes: 250_000 });
+      // the volume breakdown is against the live volume, so its parts still add up to it
+      expect(second.host.breakdown).toMatchObject({ originalsBytes: 5000, otherBytes: 700_000 - 5000 - 50_000 });
+
+      at('12:05:00');
+      const third = await read(admin());
+      expect(analyticsRepository.getInventory).toHaveBeenCalledTimes(2);
+      expect(third.generatedAt).toBe('2026-09-19T12:05:00.000Z');
+    });
+
+    it('never gives one session what another may see: Locked, unlocked, another reader or range', async () => {
+      const locked = {
+        ...admin(),
+        hiddenContent: {
+          userId: ADMIN_ID,
+          includeNsfw: false,
+          tagIds: [],
+          personIds: ['person-locked'],
+          petIds: [],
+          scope: 'owned' as const,
+        },
+      };
+      const unlocked = factory.auth({
+        user: { id: ADMIN_ID, isAdmin: true },
+        session: { hasElevatedPermission: true },
+      });
+      const otherAdmin = factory.auth({ user: { id: OTHER_ID, isAdmin: true } });
+
+      await read(admin());
+      await read(locked);
+      await read(unlocked);
+      await read({ ...admin(), hideNsfwAssets: true });
+      await read(otherAdmin);
+      await read(admin(), `account:${ADMIN_ID}`);
+      await sut.getReport(admin(), { scope: 'all', range: AnalyticsRange.NinetyDays });
+      expect(analyticsRepository.getInventory).toHaveBeenCalledTimes(7);
+
+      // each of them is kept on its own
+      await read(locked);
+      await read(unlocked);
+      expect(analyticsRepository.getInventory).toHaveBeenCalledTimes(7);
+    });
+
+    it('reads again once the collector records a new reading, as after "Count now"', async () => {
+      const before = await read(admin());
+      expect(before.history.lastObservedAt).toBeNull();
+
+      analyticsRepository.getLatestObservation.mockResolvedValue(new Date('2026-09-19T12:01:00.000Z'));
+      at('12:02:00');
+      const after = await read(admin());
+      expect(analyticsRepository.getInventory).toHaveBeenCalledTimes(2);
+      expect(after.history.lastObservedAt).toBe('2026-09-19T12:01:00.000Z');
+    });
+
+    it('does not keep a report whose "What the AI sees" labels were late, so the next visit can have them', async () => {
+      vitest.useFakeTimers({
+        now: new Date('2026-09-19T12:00:00.000Z'),
+        toFake: ['Date', 'setTimeout', 'clearTimeout'],
+      });
+      const labels = vitest
+        .fn()
+        .mockReturnValueOnce(new Promise(() => {}))
+        .mockResolvedValue(undefined);
+      Object.assign(sut, { seenLabels: { labels } });
+      const report = read(admin(), `account:${ADMIN_ID}`);
+      await vitest.advanceTimersByTimeAsync(3000);
+      await report;
+      await read(admin(), `account:${ADMIN_ID}`);
+      await read(admin(), `account:${ADMIN_ID}`);
+      // read again once, then kept: the labels arrived in time the second visit
+      expect(analyticsRepository.getInventory).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not keep a report that failed', async () => {
+      analyticsRepository.getInventory.mockRejectedValueOnce(new Error('database went away'));
+      await expect(read(admin())).rejects.toThrow('database went away');
+      await expect(read(admin())).resolves.toMatchObject({ summary: { items: 100 } });
+    });
+  });
+
   describe('getReport', () => {
     it('reports the selection and the whole host separately, without inventing other usage', async () => {
       const result = await sut.getReport(admin(), { scope: `account:${USER_ID}`, range: AnalyticsRange.Year });
@@ -718,6 +814,8 @@ describe(AnalyticsService.name, () => {
       analyticsRepository.getInsights.mockResolvedValue(
         insightRows({ hdr: { probedVideos: 8, hdrVideos: 3, dolbyVisionVideos: 1 } }),
       );
+      // past the five minutes a reading is reused for (FL-1336)
+      vitest.setSystemTime(new Date('2026-09-19T12:05:00.000Z'));
       await expect(read(user(), `account:${USER_ID}`)).resolves.toMatchObject({
         insights: { hdr: { probedVideos: 8, hdrVideos: 3, dolbyVisionVideos: 1 } },
       });

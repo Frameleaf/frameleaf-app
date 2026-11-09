@@ -17,6 +17,8 @@ export type JournalOperation = {
 export const operationNames: Record<string, string> = {
   'move-library': 'Moving your library',
   'move-database': 'Moving your database',
+  'move-thumbnails': 'Moving thumbnails',
+  'thumbnails-home': 'Putting thumbnails back with your photos',
   install: 'Setting up Frameleaf',
   import: 'Bringing your library to Frameleaf',
   restore: 'Restoring your library',
@@ -110,6 +112,9 @@ const plans: Record<string, string[]> = {
   ],
   update: ['download-images', 'stop-application', 'database-checkpoint', 'database-move', 'apply-release'],
   'move-database': ['stop-application', 'database-checkpoint', 'database-move', 'start'],
+  // FL-1323: the steps the Storage page's review lists (frameleaf-prototype MOVES.thumbs and MOVES.rebuild).
+  'move-thumbnails': ['move-stop-writers', 'move-copy', 'move-verify', 'move-switch', 'move-start'],
+  'thumbnails-home': ['thumbs-home-switch', 'start', 'thumbs-queue'],
   restore: [
     'download-images',
     'stop-previous-installation',
@@ -125,6 +130,25 @@ const plans: Record<string, string[]> = {
   stop: ['stop'],
   restart: ['restart'],
   reconfigure: ['apply-container-settings', 'start'],
+};
+/**
+ * FL-1323: a thumbnail move runs Library Move's journal; its steps read as the Storage page's review lists them. Its
+ * settings, fence and record steps belong to the step shown in their place.
+ */
+const kindSteps: Record<string, { labels: Record<string, string>; within?: Record<string, string> }> = {
+  'move-thumbnails': {
+    labels: {
+      'move-stop-writers': 'Pause uploads and background work',
+      'move-copy': 'Copy thumbnails',
+      'move-verify': 'Check every file',
+      'move-switch': 'Switch to the new folder',
+      'move-start': 'Start Frameleaf',
+    },
+    within: { 'move-checkpoint': 'move-stop-writers', 'move-fence-stack': 'move-stop-writers', 'move-freeze': 'move-copy' },
+  },
+  'thumbnails-home': {
+    labels: { 'thumbs-home-switch': 'Switch to your photos folder', start: 'Start Frameleaf', 'thumbs-queue': 'Queue new thumbnails' },
+  },
 };
 const moveRefusals: Record<string, string> = {
   media_quiescence_unavailable:
@@ -158,6 +182,11 @@ const refusals: Record<string, string> = {
   media_folder_missing: 'The photos drive isn’t connected.',
   mounted_folder_missing: 'A folder Frameleaf uses isn’t there.',
   unsupported_thumbnail_mount: 'Thumbnails can only be kept in one writable folder of their own, outside the photos folder.',
+  // FL-1323: putting thumbnails back with the photos after their drive went missing.
+  thumbnail_folder_present: 'The thumbnail drive is connected again. Check again to use it.',
+  thumbnail_folder_not_visible: 'Manager can’t see the thumbnail folder from here, so it can’t tell whether its drive is connected. Your thumbnails were left where they are.',
+  thumbnails_already_with_photos: 'Thumbnails are already with your photos and videos.',
+  thumbnails_home_resume_required: 'Thumbnails are going back with your photos. Choose Resume to finish; the old drive isn’t used again.',
   chosen_folders_overlap: 'Photos and videos, the database, backups and Manager’s own settings each need their own separate folder.',
   external_folder_holds_frameleaf_data: 'This folder holds Frameleaf’s own data, or sits inside it. Choose a folder of photos instead.',
   drive_detection_unavailable: 'Drive suggestions are only available when Manager runs in Docker.',
@@ -203,6 +232,7 @@ const refusals: Record<string, string> = {
   database_image_changed: 'The database engine differs from the installed release’s. Update Frameleaf first, then move the database.',
   database_folder_not_retained: 'Manager is not keeping this database folder. Refresh the Storage page.',
   database_folder_in_use: 'This database folder is still in use, so it was not removed.',
+  database_folder_unverified: 'Manager could not confirm that no other app uses this folder, so it kept the old copy. Nothing was removed.',
   database_unconfirmed: 'Manager could not confirm the current database is working, so it kept the previous folder. Start Frameleaf, then try again.',
   insufficient_database_space:
     'The drive that holds the database folder does not have enough free space. Free some space, then try again.',
@@ -290,6 +320,8 @@ export const readable = (value: string, detail?: string) => {
   return detail ? `${text} ${detail}` : text;
 };
 export function operationProgress(operation: JournalOperation, backupSkipped = false) {
+  const own = kindSteps[operation.kind];
+  if (own?.within) operation = grouped(operation, own.within);
   const capture = operation.step === 'capture-common-source' || operation.completed.includes('capture-common-source');
   const planned = operation.commonImport ? plans['common-import'] : capture ? [] : plans[operation.kind] ?? [];
   const ids = [
@@ -304,7 +336,9 @@ export function operationProgress(operation: JournalOperation, backupSkipped = f
   const successful = operation.state === 'complete' && !operation.error;
   const steps = ids.map((id) => ({
     id,
-    label: id === 'capture-common-source' && isFolderImport(operation.photoApp?.kind) ? 'Read the export folder' : readable(id),
+    label:
+      own?.labels[id] ??
+      (id === 'capture-common-source' && isFolderImport(operation.photoApp?.kind) ? 'Read the export folder' : readable(id)),
     state: operation.completed.includes(id)
       ? 'complete'
       : id === operation.step
@@ -323,6 +357,16 @@ export function operationProgress(operation: JournalOperation, backupSkipped = f
           Math.round((operation.completed.filter((id) => ids.includes(id)).length / Math.max(ids.length, 1)) * 100),
         ),
   };
+}
+/** The journal as its shown steps: a step counts as done once it and every step within it are. */
+function grouped(operation: JournalOperation, within: Record<string, string>): JournalOperation {
+  const shown = (id: string) => within[id] ?? id;
+  const members = (id: string) => [id, ...Object.keys(within).filter((inner) => within[inner] === id)];
+  const step = operation.step ? shown(operation.step) : null;
+  const completed = [...new Set(operation.completed.map(shown))].filter(
+    (id) => id !== step && members(id).every((inner) => operation.completed.includes(inner)),
+  );
+  return { ...operation, step, completed };
 }
 export function canCancel(operation: JournalOperation, installation: { mayHaveWrittenMedia: boolean } | null) {
   if (!['failed', 'interrupted'].includes(operation.state)) return false;
@@ -400,6 +444,8 @@ const operationSections: Record<string, string> = {
   reconfigure: 'services',
   'move-library': 'storage',
   'move-database': 'storage',
+  'move-thumbnails': 'storage',
+  'thumbnails-home': 'storage',
 };
 /** The navigation entry for the open screen; maintenance on an installed server belongs to its own section. */
 export function navSection(screen: string, installed: boolean, operationKind?: string) {
@@ -485,7 +531,7 @@ const shareView = (path: string) => {
   return mnt === 'mnt' && view && !['disks', 'remotes', 'rootshare', 'addons'].includes(view) ? { view, path: `/${rest.join('/')}` } : null;
 };
 /** /mnt/user/a and /mnt/disk1/a can be the same files; the server applies the same rule. */
-function folderOverlap(a: string, b: string): boolean {
+export function folderOverlap(a: string, b: string): boolean {
   if (lexicalOverlap(a, b)) return true;
   const [left, right] = [shareView(a), shareView(b)];
   return !!left && !!right && [left.view, right.view].some((view) => view === 'user' || view === 'user0') && lexicalOverlap(left.path, right.path);

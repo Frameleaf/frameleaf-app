@@ -1643,6 +1643,16 @@ where
   "asset"."id" = $1
   and "asset"."type" = $2
 
+-- AssetRepository.recordView
+insert into
+  "asset_view" ("userId", "assetId", "viewedOn")
+values
+  ($1, $2, current_date)
+on conflict ("userId", "assetId", "viewedOn") do update
+set
+  "viewCount" = "asset_view"."viewCount" + $3,
+  "lastViewedAt" = now()
+
 -- AssetRepository.getForOcr
 select
   (

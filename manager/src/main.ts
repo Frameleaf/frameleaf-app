@@ -16,7 +16,7 @@ import express, { type Request, type Response } from 'express';
 import { existsSync, fstatSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createNativeService } from './runtime/native-service.js';
-import { chmod, mkdir, readFile, realpath, rm, stat, statfs } from 'node:fs/promises';
+import { chmod, mkdir, readFile, realpath, rm, stat } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { isIP } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
@@ -28,12 +28,15 @@ import { desktopApi } from './desktop-api.js';
 import { Docker, command } from './docker.js';
 import { adoptOwnMounts, tidyLocations, toHost } from './host-paths.js';
 import { findDrives, suggestFolders } from './drives.js';
-import { applyFolderDefaults, broadRoots, ensureChosenFolder, ensureManagerFolder, listFolders } from './folders.js';
+import { storageSuggestions } from './storage-suggestions.js';
+import { applyFolderDefaults, broadRoots, ensureChosenFolder, ensureManagerFolder, listFolders, newLibraryFolders } from './folders.js';
+import { thumbnailMount } from './mounts.js';
 import { Security, trustedProxyList } from './security.js';
 import { Backups } from './backups.js';
 import { Releases } from './releases.js';
 import { CommonImportBootstrapCredentials } from './common-import-runtime.js';
 import { Operations, PhotoAppPrepareInput, ReviewInput } from './operations.js';
+import { detectPlatform } from './server-check.js';
 import { folderImportKinds } from './photo-app-folder.js';
 import { Refusal, containerId, publicSource, redact, releaseTag, secretEnvironmentValues } from './contracts.js';
 import { appdataDefaults } from './appdata.js';
@@ -45,6 +48,8 @@ import { ServiceOverrides, detectAcceleration, hostInstallations, suggestedPort 
 import { sharePortWithRedirect } from './http-redirect.js';
 import { log, print, renderBanner, requestLog } from './banner.js';
 import { connectionChecks, redactPaths, redactionRoots, renderReport } from './troubleshooting.js';
+import { visibility } from './mounts.js';
+import { measurableBy, readStorage, storagePlaces } from './storage-drives.js';
 
 const runtime = process.env.MANAGER_RUNTIME ?? 'docker';
 // Docker only: these are Linux paths, and a native Windows path has a colon of its own.
@@ -116,6 +121,8 @@ async function databaseDefaults() {
   return appdataDefaults(process.env, config);
 }
 const defaults = native ? { roots: [], platform: 'native' as const } : await databaseDefaults();
+// FL-1318: Unraid found from docker.cfg is Unraid for Check this server and the Compose settings alike.
+detectPlatform(defaults.platform === 'unraid' ? 'unraid' : undefined);
 // Preserve existing explicit mounts; Unraid otherwise discovers the file through the host engine.
 const mountedAutostart = '/run/frameleaf-host/unraid-autostart';
 const autostart = process.env.MANAGER_UNRAID_AUTOSTART || mountedAutostart;
@@ -148,18 +155,30 @@ const mediaPlaces = () =>
 function folderDefaults() {
   const base = ('detectedPath' in defaults && defaults.detectedPath) || dirname(directory!);
   const installed = operations.installation();
+  // FL-1321: new libraries only; an installed library always reports the folders it has.
+  const fresh = newLibraryFolders(base, defaults.platform);
   return {
-    media: installed?.mounts[0]?.source ?? join(base, 'frameleaf-media'),
-    database: installed?.databaseRoot ?? join(base, 'frameleaf-databases'),
+    media: installed?.mounts[0]?.source ?? fresh.media,
+    database: installed?.databaseRoot ?? fresh.database,
+    /** Thumbnails on a folder of their own (FL-1320), or null when they are with the photos. */
+    thumbs: installed ? (thumbnailMount(installed.mounts)?.source ?? null) : null,
     backups: currentBackupRoot(),
     manager: directory!,
+    /** Setup moves the database onto the drive Manager suggests, when it finds one. */
+    fastDatabase: !installed && fresh.fastDatabase,
   };
 }
-/** Mounted media storage and the backup destination, which can be a different drive. */
-const drives = () => [
-  ...mediaPlaces().map((path, i) => ({ name: `Storage ${i + 1}`, path })),
-  { name: 'Backup drive', path: currentBackupRoot() },
-];
+/**
+ * FL-1324: mounted media storage, the thumbnails' own folder, the database and the backup destination, each of
+ * which can be on a different drive. A thumbnail or database folder Manager cannot see stays listed, as one it
+ * can't measure.
+ */
+const drives = async () => {
+  const measurable = measurableBy(await visibility());
+  return storagePlaces(operations.installation(), { media: mediaPlaces(), backups: currentBackupRoot() }).map(
+    (place) => ({ ...place, measurable: measurable(place.path, [place.use]) }),
+  );
+};
 /**
  * Everything a troubleshooting run looks at: this library's containers (server, database, machine learning, LAN
  * discovery and any import runner), plus Manager's own container when Docker runs it.
@@ -200,6 +219,8 @@ async function driveReport(sizes: Parameters<typeof suggestFolders>[1]) {
   // Unraid is recognised from its docker.cfg even when the template doesn't name the platform.
   return suggestFolders(await findDrives({ roots, dockerRoot, platform: process.env.MANAGER_PLATFORM || defaults.platform }), sizes);
 }
+// FL-1321: Check this server says when the database is on hard drives and a faster drive is there.
+operations.driveReport = (sizes) => driveReport(sizes);
 /** The port the administrator reached Manager on: never offered to, or accepted for, the Frameleaf stack. */
 const managerPort = (request: Request) => Number(new URL(security.requestOrigin(request)).port || 443);
 const RequestKey = z.string().uuid();
@@ -295,6 +316,8 @@ class Api {
       managerOrigin: security.requestOrigin(request),
       backupRoot: currentBackupRoot(),
       folderSetup: folderSetup() ? folderDefaults() : null,
+      /** FL-1318: whose fix steps and checks Check this server shows, before its first result. */
+      checkHost: operations.checkHost(),
       host: {
         name: new URL(security.requestOrigin(request)).hostname,
         available: !!host,
@@ -380,29 +403,17 @@ class Api {
     await operations.cancelPhotoApp(operationId);
     return { cancelled: true };
   }
+  /** FL-1324: each folder the library uses (media, thumbnails, database, backups), what it holds, and its drive's room. */
   @Get('storage') async storage() {
-    const roots = [
-      ...new Set([
-        ...mediaPlaces(),
-        ...(folderSetup() ? [operations.installation()?.databaseRoot ?? ''].filter(Boolean) : defaults.roots),
-        currentBackupRoot(),
-      ]),
-    ];
-    return Promise.all(
-      roots.map(async (path) => {
-        try {
-          if ((await realpath(path)) !== path) throw new Refusal('storage_path_changed');
-          const space = await statfs(path);
-          return {
-            path,
-            totalBytes: space.blocks * space.bsize,
-            availableBytes: space.bavail * space.bsize,
-            freeBytes: space.bfree * space.bsize,
-          };
-        } catch {
-          return { path, totalBytes: null, availableBytes: null, freeBytes: null };
-        }
+    return readStorage(
+      storagePlaces(operations.installation(), {
+        media: mediaPlaces(),
+        backups: currentBackupRoot(),
+        databaseRoots: folderSetup() ? [] : defaults.roots,
       }),
+      undefined,
+      // An imported library's thumbnail or database folder may be one only Docker reaches: listed, not measured.
+      measurableBy(await visibility()),
     );
   }
   @Get('drives') driveList() {
@@ -525,6 +536,35 @@ class Api {
     const { id, key } = z.object({ id: z.string().uuid(), key: RequestKey }).strict().parse(input);
     return { id: operations.move(id, key).id };
   }
+  /** FL-1323: move thumbnails to a folder of their own, usually on a faster drive. The photos stay where they are. */
+  @Post('review-thumbnail-move') async reviewThumbnailMove(@Body() input: unknown) {
+    const { root } = z
+      .object({ root: z.string().min(1).max(4096) })
+      .strict()
+      .parse(input);
+    if (folderSetup()) await ensureChosenFolder(root);
+    return operations.reviewThumbnailMove(root);
+  }
+  @Post('move-thumbnails') moveThumbnails(@Body() input: unknown) {
+    const { id, key } = z.object({ id: z.string().uuid(), key: RequestKey }).strict().parse(input);
+    return { id: operations.moveThumbnails(id, key).id };
+  }
+  /** FL-1323: thumbnails' own drive is missing; put them back with the photos and make them again. */
+  @Post('review-thumbnails-home') reviewThumbnailsHome(@Body() input: unknown) {
+    z.object({}).strict().parse(input ?? {});
+    return operations.reviewThumbnailsHome();
+  }
+  @Post('thumbnails-home') thumbnailsHome(@Body() input: unknown) {
+    const { id, key } = z.object({ id: z.string().uuid(), key: RequestKey }).strict().parse(input);
+    return { id: operations.thumbnailsHome(id, key).id };
+  }
+  /** FL-1323: photos, database and thumbnails: where each is, how much it holds, and whether a drive is missing. */
+  @Get('storage-usage') async storageUsage() {
+    const usage = await operations.storageUsage();
+    // Drive detection is a hint: without it the page lists each place without its drive or a suggestion.
+    const drives = await driveReport({}).then((report) => report.drives, () => null);
+    return { ...usage, drives, suggestions: drives ? storageSuggestions(drives, usage) : null };
+  }
   @Post('stop-move') async stopMove(@Body() input: unknown) {
     const { id } = z.object({ id: z.string().uuid() }).strict().parse(input);
     await operations.stopMove(id);
@@ -573,7 +613,7 @@ class Api {
   @Post('diagnostics') async diagnostics(@Body() input: unknown) {
     z.object({}).strict().parse(input);
     const { installation, containers, clean } = await troubleshootingScope();
-    const checks = await connectionChecks(docker, installation, containers, drives());
+    const checks = await connectionChecks(docker, installation, containers, await drives());
     return { checks: checks.map((c) => ({ ...c, detail: clean(c.detail) })) };
   }
   /** One text file to post on the community: checks, problems found, activity and every service's log, redacted. */
@@ -581,7 +621,7 @@ class Api {
     z.object({}).strict().parse(input);
     const { installation, containers, self, clean } = await troubleshootingScope();
     const [checks, host, logs] = await Promise.all([
-      connectionChecks(docker, installation, containers, drives()),
+      connectionChecks(docker, installation, containers, await drives()),
       docker.compatibility().catch(() => null),
       Promise.all(
         [...containers, ...(self ? [self] : [])].map(async (c) => ({

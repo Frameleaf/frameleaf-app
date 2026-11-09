@@ -533,6 +533,83 @@ describe(MediaService.name, () => {
       expect(mocks.asset.update).not.toHaveBeenCalled();
     });
 
+    describe('a full thumbnails drive (FL-1324)', () => {
+      const GB = 1_000_000_000;
+      const inQueue = () =>
+        ({
+          claim: { id: newUuid(), data: {}, attempt: 1, safeToRetry: true },
+          signal: new AbortController().signal,
+          adoptions: [],
+          followups: [],
+          progress: vi.fn(),
+        }) as unknown as QueueExecution;
+      const full = () => Object.assign(new Error('ENOSPC: no space left on device, write'), { code: 'ENOSPC' });
+
+      it('waits for room instead of failing, and warns once', async () => {
+        const asset = AssetFactory.from().exif().build();
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+        mocks.media.generateThumbnail.mockRejectedValue(full());
+        const context = inQueue();
+
+        await expect(queueExecution.run(context, () => sut.handleGenerateThumbnails({ id: asset.id }))).rejects.toThrow(
+          JobDependencyUnavailable,
+        );
+        expect(context.dependencyReason).toBe('local-capacity');
+        expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('thumbnails drive is full'));
+        expect(mocks.asset.upsertFiles).not.toHaveBeenCalled();
+      });
+
+      it('recognises a full drive reported only in a child process message', async () => {
+        const asset = AssetFactory.from().exif().build();
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+        mocks.media.generateThumbnail.mockRejectedValue(
+          new SharpOperationError('VipsForeignSave: write: No space left on device'),
+        );
+        const context = inQueue();
+
+        await expect(queueExecution.run(context, () => sut.handleGenerateThumbnails({ id: asset.id }))).rejects.toThrow(
+          JobDependencyUnavailable,
+        );
+      });
+
+      it('does not try again until the drive has room, then carries on', async () => {
+        const asset = AssetFactory.from().exif().build();
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+        mocks.media.generateThumbnail.mockRejectedValueOnce(full());
+        await expect(
+          queueExecution.run(inQueue(), () => sut.handleGenerateThumbnails({ id: asset.id })),
+        ).rejects.toThrow(JobDependencyUnavailable);
+        mocks.media.generateThumbnail.mockClear();
+
+        // still full: the next job waits without decoding the photo again
+        mocks.storage.checkDiskUsage.mockResolvedValue({ available: 0.2 * GB, free: 0.2 * GB, total: 500 * GB });
+        await expect(
+          queueExecution.run(inQueue(), () => sut.handleGenerateThumbnails({ id: asset.id })),
+        ).rejects.toThrow(JobDependencyUnavailable);
+        expect(mocks.storage.checkDiskUsage).toHaveBeenCalledWith(expect.stringMatching(/thumbs$/));
+        expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
+
+        // room again: thumbnails carry on
+        mocks.storage.checkDiskUsage.mockResolvedValue({ available: 50 * GB, free: 50 * GB, total: 500 * GB });
+        await expect(queueExecution.run(inQueue(), () => sut.handleGenerateThumbnails({ id: asset.id }))).resolves.toBe(
+          JobStatus.Success,
+        );
+        expect(mocks.media.generateThumbnail).toHaveBeenCalled();
+      });
+
+      it('leaves other failures, and calls made outside the queue, as they were', async () => {
+        const asset = AssetFactory.from().exif().build();
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+        mocks.media.generateThumbnail.mockRejectedValueOnce(new Error('corrupt'));
+        await expect(
+          queueExecution.run(inQueue(), () => sut.handleGenerateThumbnails({ id: asset.id })),
+        ).rejects.toThrow('corrupt');
+
+        mocks.media.generateThumbnail.mockRejectedValueOnce(full());
+        await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toThrow('ENOSPC');
+      });
+    });
+
     it('should skip invisible assets', async () => {
       const asset = AssetFactory.from({ visibility: AssetVisibility.Hidden }).exif().build();
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));

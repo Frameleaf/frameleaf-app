@@ -8,11 +8,37 @@ import { atomicJson } from './files.js';
 import type { Store } from './store.js';
 import type { Fencing } from './fencing.js';
 import { filesystemMounts, type PostgresStorage, type FilesystemMount } from './postgres-storage.js';
-import { assertMountSources, assertMounts, libraryMounts, thumbnailMount } from './mounts.js';
+import {
+  THUMBNAIL_TARGET,
+  assertMountSources,
+  assertMounts,
+  folderExists,
+  libraryMounts,
+  seedThumbnailMarker,
+  thumbnailFolder,
+  thumbnailMount,
+  withThumbnails,
+} from './mounts.js';
+
+/**
+ * FL-1323: what a move copies. `media` is the library folder (Library Move, FL-360); `thumbs` is the thumbnails
+ * folder, wherever it is now (the library's own `thumbs` folder or a folder of its own, FL-1320). Both share the
+ * server pause, the isolated copy helper, the checks and the recovery below; only the folder and the switch differ.
+ */
+export type MoveKind = 'media' | 'thumbs';
+export const MOVE_OPERATION: Record<MoveKind, 'move-library' | 'move-thumbnails'> = {
+  media: 'move-library',
+  thumbs: 'move-thumbnails',
+};
+export const isMoveOperation = (kind: string) => kind === 'move-library' || kind === 'move-thumbnails';
 
 type Review = {
   available: boolean;
   id: string;
+  /** Absent on reviews made before FL-1323: a library move. */
+  kind?: MoveKind;
+  /** The folder copied, on the host. Absent on reviews made before FL-1323: the library folder. */
+  source?: string;
   expires: number;
   current: Installation;
   root: string;
@@ -91,13 +117,13 @@ export class LibraryMove {
       path: resolve(mount.root, relative(mount.target, path)),
     };
   }
-  private async physicalPaths(current: Installation, root: string): Promise<void> {
+  private async physicalPaths(current: Installation, root: string, source = current.mounts[0].source): Promise<void> {
     const mounts = filesystemMounts(await readFile('/run/frameleaf-host/mountinfo', 'utf8'));
     const location = (path: string) => LibraryMove.backing(toHost(path), mounts);
     const destination = location(root);
     const autostart = await this.fencing.readAutostart();
     const names = new Set(autostart.split('\n').map((line) => line.trim().split(/\s+/)[0]));
-    const protectedPaths = [location(current.mounts[0].source), destination];
+    const protectedPaths = [...new Set([current.mounts[0].source, source])].map(location).concat(destination);
     for (const container of await this.docker.inventory()) {
       if (
         container.Config.Labels?.['app.frameleaf.manager'] === current.id ||
@@ -124,6 +150,10 @@ export class LibraryMove {
         .some((source) => source.device === destination.device && overlap(source.path, destination.path))
     )
       throw new Refusal('media_move_overlap');
+  }
+  /** The folder a review copies. */
+  private static source(review: Pick<Review, 'source' | 'current'>): string {
+    return review.source ?? review.current.mounts[0].source;
   }
   private state(id: string): string {
     return join(this.directory, 'media-moves', id);
@@ -165,7 +195,7 @@ export class LibraryMove {
     }
     await mkdir(this.state(review.id), { recursive: true, mode: 0o700 });
     // `--mount` is a CSV: a comma in any of these paths would be parsed as another field (review L6).
-    for (const path of [review.current.mounts[0].source, destination, this.state(review.id)])
+    for (const path of [LibraryMove.source(review), destination, this.state(review.id)])
       if (/[,\n\0]/.test(path))
         throw new Refusal(
           'media_path_unsupported_character',
@@ -205,7 +235,7 @@ export class LibraryMove {
           '--cap-add',
           'FOWNER',
           '--mount',
-          `type=bind,source=${review.current.mounts[0].source},target=/source,readonly`,
+          `type=bind,source=${LibraryMove.source(review)},target=/source,readonly`,
           '--mount',
           `type=bind,source=${destination},target=/destination${action === 'copy' ? '' : ',readonly'}`,
           '--mount',
@@ -270,21 +300,26 @@ export class LibraryMove {
       throw new Refusal('invalid_media_copy_receipt');
     return values;
   }
-  async review(root: string): Promise<Review> {
+  async review(root: string, kind: MoveKind = 'media'): Promise<Review> {
     const current = this.current();
     this.paths(current, root);
     await assertMountSources(current.mounts);
+    // Thumbnails are copied from wherever they are now; a library that has none yet has nothing to move.
+    const source = kind === 'thumbs' ? thumbnailFolder(current.mounts) : current.mounts[0].source;
+    if (!source || (kind === 'thumbs' && !(await folderExists(source)))) throw new Refusal('thumbnail_folder_missing');
     await this.storage.validate(root, 0);
     await this.storage.validate(current.mounts[0].source, 0, current.id);
-    await this.physicalPaths(current, root);
+    await this.physicalPaths(current, root, source);
     await this.fencing.assertMedia(current.mounts, current);
     const review: Review = {
       available: await this.pauseAvailable(),
       id: randomUUID(),
+      kind,
+      source,
       expires: Date.now() + 900_000,
       current,
       root,
-      sourceIdentity: await this.identity(current.mounts[0].source),
+      sourceIdentity: await this.identity(source),
       rootIdentity: await this.identity(root),
       files: 0,
       bytes: 0,
@@ -358,14 +393,52 @@ export class LibraryMove {
       await delay(this.drain.intervalMs);
     }
   }
-  start(id: string, key: string): { operation: Operation; created: boolean } {
-    const prior = this.store.request('move-library', key, { reviewId: id });
+  start(id: string, key: string, kind: MoveKind = 'media'): { operation: Operation; created: boolean } {
+    const prior = this.store.request(MOVE_OPERATION[kind], key, { reviewId: id });
     if (prior) return { operation: prior, created: false };
     const review = this.store.get<Review>(`media-move:${id}`);
-    if (!review || review.expires < Date.now() || digest(review.current) !== digest(this.current()))
+    if (
+      !review ||
+      (review.kind ?? 'media') !== kind ||
+      review.expires < Date.now() ||
+      digest(review.current) !== digest(this.current())
+    )
       throw new Refusal('review_expired');
     this.requireQuiescence();
-    return this.store.start('move-library', key, { reviewId: id });
+    return this.store.start(MOVE_OPERATION[kind], key, { reviewId: id });
+  }
+  /**
+   * FL-1323: the stack's compose.json with thumbnails in `destination`. Where thumbnails already have a folder of
+   * their own its source changes; otherwise their mapping is added straight after the library's, as renderCompose
+   * writes it. Compose strings carry `$` doubled (renderCompose).
+   */
+  static thumbnailConfiguration(compose: any, current: Installation, destination: string): any {
+    const updated = structuredClone(compose);
+    const volumes = updated.services?.['frameleaf-server']?.volumes;
+    const escape = (path: string) => path.replaceAll('$', '$$$$');
+    const own = thumbnailMount(current.mounts);
+    const library = current.mounts[0];
+    const find = (mount: Mount) =>
+      volumes?.filter(
+        (m: any) =>
+          m.type === 'bind' && m.source === escape(mount.source) && m.target === mount.target && m.read_only === mount.readOnly,
+      ) ?? [];
+    if (own) {
+      const mapping = find(own);
+      if (mapping.length !== 1) throw new Refusal('media_mapping_changed');
+      mapping[0].source = escape(destination);
+      return updated;
+    }
+    const mapping = find(library);
+    if (mapping.length !== 1 || volumes.some((m: any) => m.target === THUMBNAIL_TARGET)) throw new Refusal('media_mapping_changed');
+    volumes.splice(volumes.indexOf(mapping[0]) + 1, 0, {
+      type: 'bind',
+      source: escape(destination),
+      target: THUMBNAIL_TARGET,
+      read_only: false,
+      bind: { create_host_path: false },
+    });
+    return updated;
   }
   static configuration(compose: any, mount: Mount, destination: string): any {
     const updated = structuredClone(compose);
@@ -389,14 +462,19 @@ export class LibraryMove {
     if (operation.receipts['move-recovery-intent']) return this.recover(operation);
     if (await this.cancelled(operation)) throw new Refusal('media_move_cancelled');
     const current = review.current;
+    const kind = review.kind ?? 'media';
+    const source = LibraryMove.source(review);
     this.paths(current, review.root);
-    await this.physicalPaths(current, review.root);
+    await this.physicalPaths(current, review.root, source);
     if (
-      (await this.identity(current.mounts[0].source)) !== review.sourceIdentity ||
+      (await this.identity(source)) !== review.sourceIdentity ||
       (await this.identity(review.root)) !== review.rootIdentity
     )
       throw new Refusal('media_mount_changed');
-    const destination = join(review.root, `frameleaf-${current.id}-media-${operation.id}`);
+    const destination = join(
+      review.root,
+      `frameleaf-${current.id}-${kind === 'thumbs' ? 'thumbnails' : 'media'}-${operation.id}`,
+    );
     await step('move-stop-writers', async () => {
       if (digest(this.current()) !== digest(current)) throw new Refusal('installation_changed');
       await this.storage.validate(review.root, review.bytes);
@@ -416,7 +494,8 @@ export class LibraryMove {
     });
     await step('move-checkpoint', async () => {
       await this.fencing.stopInstallation(current);
-      await this.docker.compose(join(this.directory, 'stack'), current.project, 'up', ['database']);
+      // Thumbnails leave the database as it is: only the stack's settings are kept to return to.
+      if (kind === 'media') await this.docker.compose(join(this.directory, 'stack'), current.project, 'up', ['database']);
       return checkpoint();
     });
     await step('move-fence-stack', async () => {
@@ -448,21 +527,25 @@ export class LibraryMove {
       return this.helper('copy', review, destination);
     });
     await step('move-verify', () => this.helper('verify', review, destination));
-    // Only the library mount changes; a thumbnail mount (and its drive) is kept as it is.
+    // A library move changes only the library mount; a thumbnail mount (and its drive) is kept as it is. A
+    // thumbnail move changes only the thumbnail mount, so the photos folder is never touched.
     const next = {
       ...current,
-      mounts: current.mounts.map((mount, index) => (index === 0 ? { ...mount, source: destination } : mount)),
+      mounts:
+        kind === 'thumbs'
+          ? withThumbnails(current.mounts, destination)
+          : current.mounts.map((mount, index) => (index === 0 ? { ...mount, source: destination } : mount)),
     };
     await step('move-switch', async () => {
       if (await this.cancelled(operation)) throw new Refusal('media_move_cancelled');
       await this.helper('verify', review, destination);
       if (
-        (await this.identity(current.mounts[0].source)) !== review.sourceIdentity ||
+        (await this.identity(source)) !== review.sourceIdentity ||
         (await this.identity(review.root)) !== review.rootIdentity
       )
         throw new Refusal('media_mount_changed');
       await this.fencing.verifyInstallation(current);
-      await this.physicalPaths(current, review.root);
+      await this.physicalPaths(current, review.root, source);
 
       await this.storage.validate(destination, 0, current.id);
       const existing = this.store.get<Installation>('installation');
@@ -472,10 +555,16 @@ export class LibraryMove {
       const original = JSON.parse(
         await readFile(join(this.directory, 'checkpoints', operation.id, 'compose.json'), 'utf8'),
       );
-      await atomicJson(path, LibraryMove.configuration(original, current.mounts[0], destination));
+      await atomicJson(
+        path,
+        kind === 'thumbs'
+          ? LibraryMove.thumbnailConfiguration(original, current, destination)
+          : LibraryMove.configuration(original, current.mounts[0], destination),
+      );
       this.store.set('installation', next);
-      this.store.set(`retained-media:${operation.id}`, {
-        source: current.mounts[0].source,
+      // The original copy is kept as it was, for the photos and for thumbnails alike.
+      this.store.set(`retained-${kind === 'thumbs' ? 'thumbnails' : 'media'}:${operation.id}`, {
+        source,
         destination,
         installation: current,
       });
@@ -485,8 +574,11 @@ export class LibraryMove {
       if ((await this.cancelled(operation)) && !operation.receipts['move-writes-intent'])
         throw new Refusal('media_move_cancelled');
       await this.fencing.assertMedia([...current.mounts, ...next.mounts], next);
-      await this.physicalPaths(current, review.root);
+      await this.physicalPaths(current, review.root, source);
       if (await this.cancelled(operation)) throw new Refusal('media_move_cancelled');
+      // The copy carries the server's folder marker when the old folder had one; a folder that never had one (no
+      // thumbnail made yet) gets it here, as for any thumbnail folder Manager has chosen and checked.
+      if (kind === 'thumbs') await seedThumbnailMarker(destination);
       // Starting may have succeeded before a lost response. A rollback must never discard new writes.
       operation.receipts['move-writes-intent'] = true;
       this.store.save(operation);
@@ -512,11 +604,14 @@ export class LibraryMove {
         c.Config.Labels?.['app.frameleaf.manager'] === current.id &&
         c.Config.Labels?.['com.docker.compose.service'] === 'frameleaf-server',
     );
-    const thumbnails = thumbnailMount(current.mounts);
+    const moved = (review.kind ?? 'media') === 'thumbs';
+    // What the server must run with: the library folder (moved or not) and the thumbnail folder (moved or kept).
+    const librarySource = moved ? current.mounts[0].source : destination;
+    const thumbnails = moved ? { source: destination, target: THUMBNAIL_TARGET } : thumbnailMount(current.mounts);
     if (
       !server?.State.Running ||
       !server.Mounts.some(
-        (m) => m.Type === 'bind' && m.Source === destination && m.Destination === current.mounts[0].target && m.RW,
+        (m) => m.Type === 'bind' && m.Source === librarySource && m.Destination === current.mounts[0].target && m.RW,
       ) ||
       (thumbnails &&
         !server.Mounts.some(
@@ -531,8 +626,10 @@ export class LibraryMove {
       sha256?: string;
     }[];
     // With thumbnails on their own drive the server reads /data/thumbs from there, not from the copied folder.
+    // A thumbnail move's manifest is the thumbnails folder itself, read back at /data/thumbs.
     const files = manifest.filter(
-      (entry) => !entry.directory && !(thumbnails && (entry.path === 'thumbs' || entry.path.startsWith('thumbs/'))),
+      (entry) =>
+        !entry.directory && (moved || !(thumbnails && (entry.path === 'thumbs' || entry.path.startsWith('thumbs/')))),
     );
     const chosen = [
       ...new Map(
@@ -546,7 +643,8 @@ export class LibraryMove {
       ).values(),
     ].slice(0, 64);
     const script = `const fs=require('node:fs/promises'),{createHash}=require('node:crypto'),{join,resolve}=require('node:path');(async()=>{const root=process.argv[1];await fs.access(root);for(const e of JSON.parse(process.argv[2])){const p=join(root,e.path);if(!p.startsWith(root+'/')||await fs.realpath(p)!==p)throw Error();const h=createHash('sha256');const f=await fs.open(p,'r');try{if(!(await f.stat()).isFile())throw Error();for await(const b of f.createReadStream({autoClose:false}))h.update(b);}finally{await f.close();}if(h.digest('hex')!==e.sha256)throw Error();}process.stdout.write('true');})().catch(()=>process.exit(1));`;
-    if ((await this.docker.node(server.Id, script, [current.mounts[0].target, JSON.stringify(chosen)])) !== 'true')
+    const root = moved ? THUMBNAIL_TARGET : current.mounts[0].target;
+    if ((await this.docker.node(server.Id, script, [root, JSON.stringify(chosen)])) !== 'true')
       throw new Refusal('media_move_access_unverified');
     const library = (await status()) as { verificationPassed?: boolean; phase?: string };
     if (!library.verificationPassed || library.phase === 'needs-attention')
@@ -581,7 +679,8 @@ export class LibraryMove {
         },
       ),
     );
-    if ((await this.identity(review.current.mounts[0].source)) !== review.sourceIdentity)
+    // The original folder must still be the one reviewed: it is what Frameleaf starts on again.
+    if ((await this.identity(LibraryMove.source(review))) !== review.sourceIdentity)
       throw new Refusal('media_mount_changed');
     if (!operation.receipts['move-recovery-writes-intent'] && operation.completed.includes('move-freeze'))
       await this.helper('freeze', review, review.root);

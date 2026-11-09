@@ -91,6 +91,7 @@ import { AssetRestorationTable } from 'src/schema/tables/asset-restoration.table
 import { AssetSourceTable } from 'src/schema/tables/asset-source.table.js';
 import { AssetUploadPartTable, AssetUploadResourceTable } from 'src/schema/tables/asset-upload-resource.table.js';
 import { AssetVideoFingerprintTable } from 'src/schema/tables/asset-video-fingerprint.table.js';
+import { AssetViewTable } from 'src/schema/tables/asset-view.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { BackupDeviceTable, BackupReconciliationTable } from 'src/schema/tables/backup-device.table.js';
 import { BookmarkTagTable } from 'src/schema/tables/bookmark-tag.table.js';
@@ -338,6 +339,7 @@ export class ImmichDatabase {
     AlbumChangeTable,
     AlbumCleanupApplyTable,
     AlbumCleanupSnapshotTable,
+    AssetViewTable,
     BookmarkTagTable,
     AssetSourceTable,
     ActivityTable,
@@ -640,6 +642,7 @@ export interface DB extends QueueDatabase {
   asset_video: AssetVideoTable;
   asset_keyframe: AssetKeyframeTable;
   asset_video_fingerprint: AssetVideoFingerprintTable;
+  asset_view: AssetViewTable;
   ocr_search: OcrSearchTable;
 
   duplicate_decision: DuplicateDecisionTable;

@@ -13,6 +13,7 @@ import { completeCommonImport } from './common-import-lifecycle.js';
 import { COMMON_IMPORT_CONFIG, IMPORT_PREPARATION_TARGET, writeCommonImportCompose } from './common-import-runtime.js';
 import { DOCKERMAN_TEMPLATES, saveDockermanTemplates } from './dockerman.js';
 import { configureUnraidCompose } from './compose.js';
+import { managerPlatform } from './server-check.js';
 import { explainFailure } from './troubleshooting.js';
 import { importHash, importSourceKinds, importSourceSchema, type ImportPlan } from './import-plan.js';
 import {
@@ -342,11 +343,13 @@ export class Docker {
     for (const service of services) delete service.container_name;
     await atomicJson(path, compose);
   }
-  async inventory(): Promise<Container[]> {
+  /** Every container, mounts as Manager sees them; `onHost` keeps Docker's own host paths (FL-1322). */
+  async inventory(onHost = false): Promise<Container[]> {
     const ids = (await this.execute('docker', ['ps', '-aq', '--no-trunc'])).trim().split('\n').filter(Boolean);
     if (!ids.length) return [];
     ids.forEach((id) => containerId.parse(id));
-    return (JSON.parse(await this.execute('docker', ['inspect', ...ids])) as Container[]).map(containerView);
+    const containers = JSON.parse(await this.execute('docker', ['inspect', ...ids])) as Container[];
+    return onHost ? containers : containers.map(containerView);
   }
   async inspect(id: string): Promise<Container> {
     containerId.parse(id);
@@ -512,7 +515,7 @@ export class Docker {
       throw new Refusal('invalid_managed_project');
     // FL-1320: a missing folder (a disconnected drive) is named before Docker refuses the whole stack.
     if (action !== 'stop') await assertComposeMountSources(directory, services);
-    const unraid = action === 'up' && process.env.MANAGER_PLATFORM === 'unraid';
+    const unraid = action === 'up' && managerPlatform() === 'unraid';
     // DockerMan templates are optional: catalog templates published before the mapping existed still start.
     const dockerman = unraid && (await access(DOCKERMAN_TEMPLATES).then(() => true, () => false));
     if (action === 'up') {

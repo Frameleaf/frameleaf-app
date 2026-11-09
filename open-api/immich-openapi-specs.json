@@ -20355,6 +20355,56 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/assets/{id}/views": {
+      "post": {
+        "description": "Count one opening of the asset in a viewer, for Year in Review. Call once per open, not per render.",
+        "operationId": "recordAssetView",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Record an asset view",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Beta"
+      }
+    },
     "/assets/{id}/waveform": {
       "get": {
         "description": "Minimum and maximum sample per bucket of the video’s first audio track, normalized to -1..1, mono or per channel, for a Studio timeline. A video without audio returns `hasAudio: false` and no channels; anything that is not a video is 404. Made on first request from the playback rendition, cached, and remade when the video changes.",
@@ -48072,6 +48122,48 @@
           }
         },
         "summary": "Manager machine-authenticated resume after a library move",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/server/library-move/manager/thumbnails": {
+      "post": {
+        "operationId": "queueManagerThumbnails",
+        "parameters": [
+          {
+            "name": "x-frameleaf-manager",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryMoveThumbnailsDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Manager machine-authenticated rebuild of every thumbnail, after thumbnails lost their own drive",
         "tags": [
           "Server"
         ],
@@ -79745,13 +79837,24 @@
         ],
         "type": "object"
       },
+      "AttentionStorageDrive": {
+        "description": "The drive: the one the library is on, or the one thumbnails are kept on when that is another drive",
+        "enum": [
+          "library",
+          "thumbnails"
+        ],
+        "type": "string"
+      },
       "AttentionStorageDto": {
         "properties": {
           "availableBytes": {
-            "description": "Space left on the drive the library is on",
+            "description": "Space left on the drive",
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
+          },
+          "drive": {
+            "$ref": "#/components/schemas/AttentionStorageDrive"
           },
           "totalBytes": {
             "description": "Size of that drive",
@@ -79769,6 +79872,7 @@
         },
         "required": [
           "availableBytes",
+          "drive",
           "totalBytes",
           "usedPercent"
         ],
@@ -102732,6 +102836,18 @@
         },
         "required": [
           "operationId"
+        ],
+        "type": "object"
+      },
+      "LibraryMoveThumbnailsDto": {
+        "properties": {
+          "queued": {
+            "description": "Every thumbnail is queued to be made again from the original files",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "queued"
         ],
         "type": "object"
       },

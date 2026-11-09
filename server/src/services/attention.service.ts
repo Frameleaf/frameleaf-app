@@ -22,6 +22,7 @@ import {
   type QueueFacts,
   type SignalResult,
   backupSignal,
+  combineStorage,
   sortAttention,
   storageSignal,
   versionSignal,
@@ -107,11 +108,48 @@ export class AttentionService {
     }
   }
 
+  /**
+   * The drive the library is on, and (FL-1324) the thumbnails' drive when it is another filesystem: a
+   * thumbnails folder mounted from another drive fills up on its own. On one drive there is one item.
+   */
   private async storage(config: SystemConfig): Promise<SignalResult> {
-    return storageSignal(
-      await this.storageRepository.checkDiskUsage(StorageCore.getBaseFolder(StorageFolder.Library)),
-      config.storageWarning.percent,
-    );
+    const percent = config.storageWarning.percent;
+    const library = StorageCore.getBaseFolder(StorageFolder.Library);
+    const thumbnails = StorageCore.getBaseFolder(StorageFolder.Thumbnails);
+    const read = (folder: string, name: string) =>
+      this.storageRepository.checkDiskUsage(folder).catch((error) => {
+        this.logger.warn(`Could not check the ${name} drive for what needs attention: ${error}`);
+        return null;
+      });
+    const [libraryDisk, libraryDevice, thumbnailsDevice] = await Promise.all([
+      read(library, 'library'),
+      this.storageRepository.getDevice(library),
+      this.storageRepository.getDevice(thumbnails),
+    ]);
+    const unknown: SignalResult = { state: 'unknown', items: [] };
+    const libraryResult = libraryDisk ? storageSignal(libraryDisk, percent, 'library') : unknown;
+    // Where the thumbnails are can't be told: their room is unknown, and any library warning still shows.
+    if (thumbnailsDevice === null) {
+      return combineStorage([libraryResult, unknown]);
+    }
+    const sameDrive = libraryDevice === thumbnailsDevice;
+    // One drive, already read: one item.
+    if (libraryDisk && sameDrive) {
+      return libraryResult;
+    }
+    // A drive of their own, a library that couldn't be read, or a library whose device couldn't be
+    // told: read the thumbnails' drive too.
+    const thumbnailsDisk = await read(thumbnails, 'thumbnails');
+    if (!thumbnailsDisk) {
+      return combineStorage([libraryResult, unknown]);
+    }
+    // The library's own drive, whose library folder couldn't be read: the thumbnails folder speaks for it.
+    if (sameDrive) {
+      return storageSignal(thumbnailsDisk, percent, 'library');
+    }
+    // Only device ids prove one drive. Without the library's, the thumbnails' drive is named on its own:
+    // a second warning beats a missed one.
+    return combineStorage([libraryResult, storageSignal(thumbnailsDisk, percent, 'thumbnails')]);
   }
 
   /**

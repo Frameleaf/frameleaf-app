@@ -12,8 +12,10 @@ import {
   searchFacets,
   SearchFacetField,
   searchMemories,
+  type SearchFacetsResponseDto,
 } from '@frameleaf/sdk';
 import { eventManager } from '$lib/managers/event-manager.svelte';
+import { deferredPromise } from '@test-data/deferred';
 import { load } from './+page';
 
 vi.mock('@frameleaf/sdk', async (original) => {
@@ -73,7 +75,8 @@ describe('the Explore loader', () => {
         ],
       });
 
-    const data = await open();
+    const { facetSection } = await open();
+    const { things } = await facetSection;
 
     expect(searchFacets).toHaveBeenCalledTimes(2);
     expect(vi.mocked(searchFacets).mock.calls[1][0].searchFacetsDto).toMatchObject({
@@ -81,11 +84,11 @@ describe('the Explore loader', () => {
       facets: [SearchFacetField.Tags],
       facetLimit: 100,
     });
-    expect(data.things.map(({ label }) => label)).toEqual(['beach']);
+    expect(things.map(({ label }) => label)).toEqual(['beach']);
   });
 
   it('counts and covers People, Places, Things and Media types with Timeline visibility, in one request', async () => {
-    const data = await open();
+    const section = await (await open()).facetSection;
 
     expect(searchFacets).toHaveBeenCalledOnce();
     expect(vi.mocked(searchFacets).mock.calls[0][0].searchFacetsDto).toMatchObject({
@@ -93,8 +96,8 @@ describe('the Explore loader', () => {
       facets: [SearchFacetField.People, SearchFacetField.City, SearchFacetField.Tags, SearchFacetField.MediaKinds],
       facetCovers: true,
     });
-    expect(data.places).toEqual([expect.objectContaining({ label: 'Paris', count: 2, coverAssetId: 'newest' })]);
-    expect(data.libraryTotal).toBe(2);
+    expect(section.places).toEqual([expect.objectContaining({ label: 'Paris', count: 2, coverAssetId: 'newest' })]);
+    expect(section.libraryTotal).toBe(2);
   });
 
   it('counts the Photos and Videos shortcuts in the Timeline scope their search opens', async () => {
@@ -162,17 +165,13 @@ describe('the Explore loader', () => {
     vi.mocked(searchFacets).mockRejectedValueOnce(new Error('offline'));
 
     const data = await open();
+    const section = await data.facetSection;
 
-    expect(data.failed).toEqual({
-      people: true,
-      places: true,
-      memories: false,
-      albums: true,
-      recents: false,
-    });
-    expect(data.peopleCards).toEqual([]);
+    expect(data.failed).toEqual({ memories: false, albums: true, recents: false });
+    expect(section.failed).toEqual({ people: true, places: true });
+    expect(section.peopleCards).toEqual([]);
     expect(data.albums).toEqual([]);
-    expect(data.libraryTotal).toBeNull();
+    expect(section.libraryTotal).toBeNull();
     expect(data.shortcutCounts.favorites).toBe(5);
   });
 
@@ -186,6 +185,28 @@ describe('the Explore loader', () => {
 
     vi.mocked(getVisitedLandmarks).mockRejectedValueOnce(new Error('offline'));
     await expect((await open()).landmarkSection).resolves.toMatchObject({ cards: [], failed: true });
+  });
+
+  it('opens without waiting for the facet count, which People, Places and Things fill in from (FL-1335)', async () => {
+    const facets = deferredPromise<SearchFacetsResponseDto>();
+    vi.mocked(searchFacets).mockReturnValueOnce(facets.promise);
+
+    const data = await open();
+    expect(data.bestPhotosPreview).toEqual({ total: 0, cover: null });
+    expect(data.shortcutCounts).toEqual({ favorites: 5, photos: 0, videos: 0 });
+
+    facets.resolve({ total: 9, facets: [] });
+    await expect(data.facetSection).resolves.toMatchObject({ libraryTotal: 9, withoutPeople: 0 });
+  });
+
+  it('reports People and Places as failed, never pending, when their section cannot be built', async () => {
+    vi.mocked(searchFacets).mockResolvedValueOnce({ total: 1, facets: 'not a list' } as never);
+
+    await expect((await open()).facetSection).resolves.toMatchObject({
+      peopleCards: [],
+      places: [],
+      failed: { people: true, places: true },
+    });
   });
 
   it('takes recent captures with Timeline visibility and makes no per-card cover search', async () => {

@@ -4,6 +4,7 @@ import {
   AttentionKind,
   AttentionLevel,
   AttentionReason,
+  AttentionStorageDrive,
   QueueName,
   type AttentionItemDto,
   type AttentionResponseDto,
@@ -80,7 +81,12 @@ describe('Notifications › What needs your attention (FL-421)', () => {
             kind: AttentionKind.Storage,
             reason: AttentionReason.OutOfSpace,
             level: AttentionLevel.Now,
-            storage: { availableBytes: 9 * GB, totalBytes: 500 * GB, usedPercent: 98.2 },
+            storage: {
+              drive: AttentionStorageDrive.Library,
+              availableBytes: 9 * GB,
+              totalBytes: 500 * GB,
+              usedPercent: 98.2,
+            },
           }),
           item({
             id: 'backup:buddy',

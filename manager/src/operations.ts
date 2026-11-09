@@ -8,7 +8,8 @@ import { Discovery, COMPATIBLE_SETTINGS, maskSettings, unmaskSettings, unsupport
 import { Releases, type VerifiedRelease } from './releases.js';
 import { compareReleases, isNewerRelease } from './release-order.js';
 import { Backups, sourceBackups } from './backups.js';
-import { assertExternalFolder, assertSeparateFolders, broadRoots, ensureChosenFolder, inside, overlaps } from './folders.js';
+import { assertExternalFolder, assertSeparateFolders, broadRoots, ensureChosenFolder, inside, onNetworkShare, overlaps } from './folders.js';
+import { databaseDriveFinding, driveOf, type DriveReport } from './drives.js';
 import { Fencing } from './fencing.js';
 import { detectPhotoApps, identifyPhotoApp, photoAppKind, photoAppNames, type ContainerFileReader, type PhotoAppKind, type PhotoAppPlan } from './photo-app-sources.js';
 import { capturePhotoAppSource, restoreDatabaseUrl, type PhotoAppCapture } from './photo-app-capture.js';
@@ -18,13 +19,17 @@ import { rollbackCommonImport } from './common-import-lifecycle.js';
 import type { ImportPreparationSeal, ImportSourceAuthoritySeal } from './import-source-authority.js';
 import type { AutostartFile } from './unraid-autostart.js';
 import { containerNumber } from './dockerman.js';
-import { ApplicationConfig, checkServiceOverrides, releaseImages, renderCompose, retuneDatabase, ServiceOverrides, STUDIO_WORKER_TARGET, storagePath } from './compose.js';
+import { ApplicationConfig, checkServiceOverrides, detectAcceleration, releaseImages, renderCompose, retuneDatabase, ServiceOverrides, STUDIO_WORKER_TARGET, storagePath } from './compose.js';
 import { atomicJson, copyVerified, fileHash } from './files.js';
 import { PostgresStorage } from './postgres-storage.js';
-import { LibraryMove, type ServerPauseStatus } from './library-move.js';
+import { toHost } from './host-paths.js';
+import { hostRealpaths, type HostRealpaths } from './host-realpath.js';
+import { LibraryMove, isMoveOperation, type ServerPauseStatus } from './library-move.js';
+import { folderSize, type FolderSize } from './folder-size.js';
 import { Retention } from './retention.js';
-import { ServerCheck, checkHost, freeBytes, type CheckFacts } from './server-check.js';
-import { assertMountSources, folderExists, libraryMounts, seedThumbnailMarker, thumbnailFolder, thumbnailMount, withThumbnails } from './mounts.js';
+import { ServerCheck, checkHost, freeBytes, type CheckFacts, type CheckOutcome } from './server-check.js';
+import { DOWNLOAD_HOSTS, LOW_MEMORY, downloadUrl, dockerRoomNeeded, hostProbes, type HostProbes } from './host-probes.js';
+import { THUMBNAIL_TARGET, assertMountSources, folderExists, libraryMounts, seedThumbnailMarker, thumbnailFolder, thumbnailMount, visibility, withThumbnails } from './mounts.js';
 import { environment } from './docker.js';
 import { elapsed, log } from './banner.js';
 import {
@@ -49,6 +54,17 @@ import {
 } from './contracts.js';
 
 const importNames: Record<PhotoAppKind | FolderImportKind, string> = { ...photoAppNames, ...folderImportNames };
+/** The promise's value, or undefined when it fails or `ms` passes first. For hints the review must never wait on. */
+async function withDeadline<T>(work: Promise<T>, ms: number): Promise<T | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([work.catch(() => undefined), new Promise<undefined>((done) => {
+      timer = setTimeout(() => done(undefined), ms);
+    })]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 export const ReviewInput = z
   .object({
     kind: z.enum(['install', 'import']),
@@ -62,6 +78,8 @@ export const ReviewInput = z
     /** Only where folders are chosen in Manager (a new Unraid install). */
     backupPath: z.string().min(1).max(4096).optional(),
     databaseRoot: z.string().min(1).max(4096),
+    /** FL-1321: thumbnails on a faster drive, in a folder of their own. Left out, they stay with the photos. New libraries only. */
+    thumbnailsPath: z.string().min(1).max(4096).optional(),
     port: z.number().int().min(1024).max(65535),
     ml: z.boolean(),
     lifecycle: z.literal('docker-only'),
@@ -202,6 +220,8 @@ type DatabaseMove = Omit<DatabaseMoveIntent, 'to'> & { to: { image: string; data
 /** Where moveDatabase restores to: an update keeps the folder it is in, a drive move (FL-1322) names another. */
 type DatabaseMoveTarget = { current: Installation; release: VerifiedRelease; databaseRoot: string };
 /** FL-1322: a reviewed move of the database to another folder or drive, on the same release and image. */
+/** FL-1323: putting thumbnails back in the photos folder after their own drive went missing. */
+type ThumbnailsHomeReview = { id: string; expires: number; current: Installation; missing: string; folder: string };
 type DatabaseRelocationReview = {
   id: string;
   expires: number;
@@ -244,12 +264,20 @@ type PreviousInstallation = {
 };
 export class Operations {
   private mediaMove: LibraryMove;
+  /** FL-1322: host paths resolved as the host sees them, before a retained database folder is removed. */
+  hostRealpaths: HostRealpaths;
   private discovery: Discovery;
   private fencing: Fencing;
   private retention: Retention;
   private executing = new Set<string>();
   /** How often an update's start polls Docker for the new server's health. Docker keeps its last five probes. */
   serverWatchMs = 5000;
+  /** FL-1321: the drives under Manager's folders and the fast drive it suggests; unset where Manager can't tell. */
+  driveReport?: (sizes: { databaseBytes?: number }) => Promise<DriveReport>;
+  /** How long the review waits for the drive report before carrying on without it. */
+  driveReportMs = 8000;
+  /** FL-1318: what Check this server asks the host itself (Docker storage, downloads, host ports, Unraid's Docker tab). */
+  probes: HostProbes;
   constructor(
     readonly store: Store,
     readonly docker: Docker,
@@ -260,6 +288,8 @@ export class Operations {
     private autostartFile?: string | AutostartFile,
   ) {
     this.discovery = new Discovery(docker);
+    this.hostRealpaths = hostRealpaths(docker, store.directory);
+    this.probes = hostProbes(docker, store.directory);
     this.fencing = new Fencing(docker, store, autostartFile);
     this.retention = new Retention(store, store.directory, join(store.directory, 'releases'));
     this.mediaMove = new LibraryMove(
@@ -311,9 +341,21 @@ export class Operations {
     if (created) this.launch(operation, () => this.applyMove(operation));
     return operation;
   }
+  /** FL-1323: review moving thumbnails to a folder on another drive; the file count and size are measured. */
+  async reviewThumbnailMove(root: string) {
+    if (this.store.locked()) throw new Refusal('operation_in_progress');
+    const review = await this.mediaMove.review(root, 'thumbs');
+    this.thumbnailSizes.set(review.source!, { files: review.files, bytes: review.bytes, measuredAt: Date.now() });
+    return review;
+  }
+  moveThumbnails(id: string, key: string): Operation {
+    const { operation, created } = this.mediaMove.start(id, key, 'thumbs');
+    if (created) this.launch(operation, () => this.applyMove(operation));
+    return operation;
+  }
   async stopMove(id: string): Promise<void> {
     const operation = this.store.history().find((o) => o.id === id);
-    if (!operation || operation.kind !== 'move-library' || operation.state === 'complete')
+    if (!operation || !isMoveOperation(operation.kind) || operation.state === 'complete')
       throw new Refusal('operation_not_recoverable');
     await this.mediaMove.stop(operation);
   }
@@ -322,11 +364,165 @@ export class Operations {
       operation,
       (name, action) => this.step(operation, name, action),
       async () => {
+        // Thumbnails can be made again from the photos, and the database is not touched: only the stack's
+        // settings are kept, to return to. A library move saves a verified database recovery point first.
+        if (operation.kind === 'move-thumbnails') return this.checkpointSettings(operation);
         await this.backups.initialize();
         return this.backups.snapshot(await this.checkpoint(operation), operation.id);
       },
       () => this.libraryStatus(),
     );
+  }
+  /** The stack's compose.json as it was before a thumbnail move, which an interrupted move returns to. */
+  private async checkpointSettings(operation: Operation): Promise<string> {
+    const path = join(this.store.directory, 'checkpoints', operation.id);
+    await mkdir(path, { recursive: true, mode: 0o700 });
+    const compose = join(this.directory(), 'compose.json');
+    await copyVerified(compose, join(path, 'compose.json'), await fileHash(compose));
+    return 'settings';
+  }
+  /** Which host folders Manager itself can see (mounts.ts); a folder only Docker reaches can't be checked from here. */
+  visibility = visibility;
+  /** Measured thumbnail folders: a walk of a large library takes a while, so each is measured at most hourly. */
+  private thumbnailSizes = new Map<string, FolderSize & { measuredAt: number }>();
+  private measuring = new Map<string, Promise<unknown>>();
+  /**
+   * FL-1323: the Storage page's three places (photos, database, thumbnails), with what each holds. Sizes come from
+   * the database where it keeps them, and from a walk of the thumbnails folder, done in the background; a size not
+   * known yet is null. `missing` is true only for a thumbnail folder Manager can see is not there (its drive is
+   * disconnected); a folder only Docker reaches is null.
+   */
+  async storageUsage() {
+    const installation = this.installation();
+    if (!installation) throw new Refusal('no_installation');
+    const visible = await this.visibility();
+    const own = thumbnailMount(installation.mounts);
+    const thumbs = thumbnailFolder(installation.mounts);
+    const missing = own ? (visible(own.source) ? !(await folderExists(own.source)) : null) : false;
+    const database = await this.targetDatabase(installation).catch(() => null);
+    const sql = async (query: string): Promise<number | null> => {
+      if (!database) return null;
+      const value = (await this.docker.sql(database, query).catch(() => '')).trim();
+      const number = Number(value);
+      return value && Number.isSafeInteger(number) ? number : null;
+    };
+    let measured: (FolderSize & { measuredAt: number }) | null = null;
+    if (thumbs && !missing && visible(thumbs)) {
+      measured = this.thumbnailSizes.get(thumbs) ?? null;
+      if ((!measured || measured.measuredAt < Date.now() - 3_600_000) && !this.measuring.has(thumbs)) {
+        const walk = folderSize(thumbs)
+          .then((size) => {
+            if (size) this.thumbnailSizes.set(thumbs, { ...size, measuredAt: Date.now() });
+          })
+          .catch(() => undefined)
+          .finally(() => this.measuring.delete(thumbs));
+        this.measuring.set(thumbs, walk);
+      }
+    }
+    return {
+      media: {
+        path: installation.mounts[0].source,
+        // Every account's original files, as the server counts them for storage quotas.
+        bytes: await sql('SELECT COALESCE(sum("quotaUsageInBytes"), 0)::bigint FROM public."user";'),
+      },
+      database: {
+        path: installation.databaseRoot,
+        bytes: await sql('SELECT pg_database_size(current_database());'),
+      },
+      thumbnails: {
+        path: thumbs,
+        /** True when thumbnails have a folder of their own; false when they are in the photos folder. */
+        own: !!own,
+        missing,
+        bytes: measured?.bytes ?? null,
+        files: measured?.files ?? null,
+      },
+    };
+  }
+  /** Waits for a background walk of the thumbnails folder, for tests. */
+  async measured(): Promise<void> {
+    await Promise.all([...this.measuring.values()]);
+  }
+  /**
+   * FL-1323: thumbnails' own drive is gone. Review putting them back in the photos folder (the library's own
+   * `thumbs` folder), where Frameleaf makes them again. The photos are never touched: only that folder is created.
+   */
+  async reviewThumbnailsHome() {
+    const current = this.installation();
+    if (!current) throw new Refusal('no_installation');
+    if (this.store.locked()) throw new Refusal('operation_in_progress');
+    const own = thumbnailMount(current.mounts);
+    if (!own) throw new Refusal('thumbnails_already_with_photos');
+    // A folder only Docker reaches (one never mapped into Manager) can't be told apart from a missing one: refuse.
+    if (!(await this.visibility())(own.source)) throw new Refusal('thumbnail_folder_not_visible');
+    if (await folderExists(own.source)) throw new Refusal('thumbnail_folder_present');
+    // The photos must be there: they are what new thumbnails are made from.
+    await assertMountSources(libraryMounts(current.mounts), 'frameleaf-server', await this.visibility());
+    const folder = thumbnailFolder(libraryMounts(current.mounts));
+    if (!folder) throw new Refusal('unsupported_thumbnail_mount');
+    const summary = (await this.librarySummary().catch(() => null)) as { assets?: number } | null;
+    const id = randomUUID();
+    this.store.set(`thumbnails-home:${id}`, {
+      id,
+      expires: Date.now() + 900_000,
+      current,
+      missing: own.source,
+      folder,
+    } satisfies ThumbnailsHomeReview);
+    return { id, missing: own.source, folder, assets: summary?.assets ?? null };
+  }
+  thumbnailsHome(id: string, key: string): Operation {
+    const prior = this.store.request('thumbnails-home', key, { reviewId: id });
+    if (prior) return prior;
+    const review = this.store.get<ThumbnailsHomeReview>(`thumbnails-home:${id}`);
+    if (!review || review.expires < Date.now() || digest(review.current) !== digest(this.installation()))
+      throw new Refusal('review_expired');
+    const { operation, created } = this.store.start('thumbnails-home', key, { reviewId: id });
+    if (created) this.launch(operation, () => this.applyThumbnailsHome(operation, review));
+    return operation;
+  }
+  /**
+   * Switch to the photos folder's own `thumbs` folder, start Frameleaf, then ask the server to make every thumbnail
+   * again. Each step can run again after an interruption; it only goes forward, since the old drive is gone.
+   */
+  private async applyThumbnailsHome(operation: Operation, review: ThumbnailsHomeReview): Promise<void> {
+    const next: Installation = { ...review.current, mounts: withThumbnails(review.current.mounts, null) };
+    // The drive came back after the review: nothing is changed, and Frameleaf uses it again once it is checked.
+    if (
+      !operation.completed.includes('thumbs-home-switch') &&
+      digest(this.installation()) === digest(review.current) &&
+      (await this.visibility())(review.missing) &&
+      (await folderExists(review.missing))
+    ) {
+      operation.receipts['cancelled'] = 'thumbnail_folder_present';
+      this.store.save(operation);
+      return;
+    }
+    await this.step(operation, 'thumbs-home-switch', async () => {
+      const installed = this.installation();
+      if (digest(installed) !== digest(review.current) && digest(installed) !== digest(next))
+        throw new Refusal('installation_changed');
+      await assertMountSources(libraryMounts(review.current.mounts), 'frameleaf-server', await this.visibility());
+      await this.docker.compose(this.directory(), review.current.project, 'stop', ['frameleaf-server']);
+      const path = join(this.directory(), 'compose.json');
+      const compose = JSON.parse(await readFile(path, 'utf8'));
+      const volumes: any[] = compose.services?.['frameleaf-server']?.volumes ?? [];
+      const mapping = volumes.filter((m) => m.target === THUMBNAIL_TARGET);
+      if (mapping.length > 1 || (mapping[0] && mapping[0].source !== review.missing.replaceAll('$', '$$$$')))
+        throw new Refusal('media_mapping_changed');
+      compose.services['frameleaf-server'].volumes = volumes.filter((m) => m.target !== THUMBNAIL_TARGET);
+      await atomicJson(path, compose);
+      this.store.set('installation', next);
+      // The server checks each folder for its marker; this one is new, chosen by Manager and checked here.
+      await seedThumbnailMarker(review.folder);
+      return true;
+    });
+    await this.step(operation, 'start', async () => {
+      await this.fencing.assertMedia(next.mounts, next);
+      await this.docker.compose(this.directory(), next.project, 'up');
+      return true;
+    });
+    await this.step(operation, 'thumbs-queue', () => this.serverRequest('POST', 'library-move/manager/thumbnails'));
   }
   installation(): Installation | null {
     return this.store.get('installation');
@@ -807,6 +1003,8 @@ export class Operations {
    */
   async review(input: z.infer<typeof ReviewInput>, managerPort?: number, common?: CommonImportReview) {
     if (this.installation()) throw new Refusal('installation_already_exists');
+    // FL-1321: an import keeps its thumbnails where its library has them; the Storage page moves them later.
+    if (input.thumbnailsPath && (input.kind !== 'install' || common)) throw new Refusal('thumbnail_folder_unavailable');
     let source: Source | null = null,
       backup: Backup | null = null;
     if (common) {
@@ -832,7 +1030,8 @@ export class Operations {
           return { value, outcome: { facts: { tag: value.nas.tag } } };
         })
       : undefined;
-    const host = checkHost();
+    await this.hostNotes(checks, compatibility?.memory, input.ml);
+    const host = this.checkHost();
     if (!release || checks.blocked) {
       // A photo-app import has already prepared its bundle: it keeps refusing on the first problem.
       if (common) checks.assert();
@@ -906,9 +1105,20 @@ export class Operations {
     const broad = broadRoots(this.roots);
     const backups = input.backupPath ?? process.env.MANAGER_BACKUP_ROOT!;
     // Each folder by its role: the same path chosen for two roles is still refused.
-    const chosen = Object.entries({ media: input.mediaPath, database: input.databaseRoot, backups, state: this.store.directory })
-      .filter((entry): entry is [string, string] => !!entry[1]);
+    const chosen = Object.entries({
+      media: input.mediaPath,
+      database: input.databaseRoot,
+      thumbnails: input.thumbnailsPath,
+      backups,
+      state: this.store.directory,
+    }).filter((entry): entry is [string, string] => !!entry[1]);
     const databaseBytes = (source?.summary.databaseBytes ?? 1024 ** 3) * 3;
+    // FL-1321: what the review says about drives. Detection is a hint: without it, or past its deadline (a drive whose
+    // statfs hangs), the checks stay as they were. An import's suggestion needs room for its own database.
+    const report =
+      phase === 'review' && this.driveReport
+        ? await withDeadline(this.driveReport(source ? { databaseBytes } : {}), this.driveReportMs)
+        : undefined;
     // A folder chosen in setup must be its own, and exist (the review creates it, empty).
     const chosenFolder = async (role: string, path: string) => {
       if (!broad) return;
@@ -919,6 +1129,7 @@ export class Operations {
       const value = await this.docker.compatibility();
       return { value, outcome: { facts: { version: value.version ?? null } } };
     });
+    await this.roomCheck(checks, input.ml);
     await checks.run('media', async () => {
       if (source) {
         // FL-1320: a source folder on a drive that isn't mounted is named plainly.
@@ -932,8 +1143,29 @@ export class Operations {
     const databaseStorage = await checks.run('database', async () => {
       await chosenFolder('database', input.databaseRoot);
       const value = await this.databaseStorage.validate(input.databaseRoot, databaseBytes);
-      return { value, outcome: { facts: { path: input.databaseRoot, free: await freeBytes(input.databaseRoot) } } };
+      const facts: CheckFacts = { path: input.databaseRoot, free: await freeBytes(input.databaseRoot) };
+      const finding = report && databaseDriveFinding(input.databaseRoot, report);
+      if (finding?.drive) facts.drive = finding.drive;
+      // FL-1321: hard drives work; say so only when a faster drive with room is actually there, with its folder.
+      if (finding?.warning) return { value, outcome: { status: 'warning', code: 'database_on_hard_drives', facts: { ...facts, ...finding.warning } } };
+      return { value, outcome: { facts } };
     });
+    // FL-1321: a new library's thumbnails, with the photos or in a folder of their own on a faster drive.
+    if (input.kind === 'install' && !source && !common)
+      await checks.run('thumbnails', async () => {
+        const path = input.thumbnailsPath;
+        if (!path) return { outcome: { facts: { withPhotos: true } as CheckFacts } };
+        // Only where folders are chosen in Manager: elsewhere there is no folder to bind but the photos one.
+        if (!broad) throw new Refusal('thumbnail_folder_unavailable');
+        if (onNetworkShare(path, await readFile('/proc/self/mountinfo', 'utf8').catch(() => '')))
+          throw new Refusal('thumbnails_on_network_share', 409, path);
+        await chosenFolder('thumbnails', path);
+        // At install start the folder the review created must still be there: its drive may have gone.
+        if (!(await folderExists(path))) throw new Refusal('thumbnail_folder_missing', 409, path);
+        const at = await storagePath(path, this.roots, 1024 ** 3);
+        const drive = report && driveOf(path, report.drives);
+        return { outcome: { facts: { path: at, free: await freeBytes(at), ...(drive && { drive: drive.label }) } as CheckFacts } };
+      });
     await checks.run('backups', async () => {
       await chosenFolder('backups', backups);
       return { outcome: { facts: { path: backups, free: await freeBytes(backups) } } };
@@ -944,28 +1176,99 @@ export class Operations {
       await storagePath(this.store.directory, [this.store.directory], databaseBytes);
       return { outcome: { facts: { path: this.store.directory, free: await freeBytes(this.store.directory) } } };
     });
-    await checks.run(
-      'port',
-      async () => {
-        await this.checkPort(input.port, null, common?.fence ?? source, managerPort);
-        return { outcome: { facts: { port: input.port } } };
-      },
-      { unknownOnError: true },
-    );
-    if (checks.results.at(-1)?.code === 'port_in_use')
-      checks.annotate('port', { port: input.port, free: await this.freePort(input.port, common?.fence ?? source, managerPort) });
+    await this.portCheck(checks, input.port, null, common?.fence ?? source, managerPort, true);
     if (Object.keys(input.services ?? {}).length)
       await checks.run('containers', async () => {
         // The same conflict check the stack generator runs, against the mounts this installation will have.
         checkServiceOverrides((source?.mounts ?? [{ target: '/data' }]).map(({ target }) => target), input.services ?? {}, this.mountRoots());
-        this.checkExternalFolders(input.services ?? {}, [input.mediaPath ?? '', input.databaseRoot], input.backupPath);
+        this.checkExternalFolders(input.services ?? {}, [input.mediaPath ?? '', input.databaseRoot, input.thumbnailsPath ?? ''], input.backupPath);
       });
+    await this.downloadsCheck(checks);
     return Object.assign(checks, { compatibility, databaseStorage });
+  }
+  /** The host whose checks and fix steps Check this server shows (MANAGER_PLATFORM, else what Manager detected). */
+  checkHost() {
+    return checkHost();
+  }
+  /** FL-1318: room in Docker's own storage for the images this install downloads; less without machine learning. */
+  private async roomCheck(checks: ServerCheck, ml: boolean): Promise<void> {
+    const needed = dockerRoomNeeded(ml, ml ? await detectAcceleration() : 'cpu');
+    const free = await this.probes.dockerFree().catch(() => null);
+    await checks.run('room', async (): Promise<{ outcome: CheckOutcome }> => {
+      if (free === null) return { outcome: { status: 'unknown', code: 'docker_storage_unreadable', facts: { needed } } };
+      if (free < needed) throw new Refusal('insufficient_docker_space', 409);
+      return { outcome: { facts: { needed, free } } };
+    });
+    if (free !== null && free < needed) checks.annotate('room', { needed, free });
+  }
+  /** FL-1318: the image registry and the release host answer from this server before anything downloads. */
+  private async downloadsCheck(checks: ServerCheck): Promise<void> {
+    await checks.run('downloads', async () => {
+      const answered = await Promise.all(DOWNLOAD_HOSTS.map((host) => this.probes.reaches(downloadUrl(host)).catch(() => false)));
+      const silent = DOWNLOAD_HOSTS.find((_, index) => !answered[index]);
+      if (silent) throw new Refusal('download_host_unreachable', 503, silent);
+    });
+  }
+  /**
+   * The port check. checkPort sees only containers; FL-1318 also tests the host's own listeners from a helper on its
+   * network. A port a container publishes is the container check's call (an import reuses its source's port).
+   */
+  private async portCheck(
+    checks: ServerCheck,
+    port: number,
+    installation: Installation | null,
+    source: Source | SourceFence | null | undefined,
+    managerPort: number | undefined,
+    offerFree: boolean,
+  ): Promise<void> {
+    await checks.run(
+      'port',
+      async () => {
+        await this.checkPort(port, installation, source, managerPort);
+        const open = await this.probes.hostFreePorts([port]);
+        if (!open) return { outcome: { status: 'unknown', code: 'host_port_unchecked', facts: { port } } };
+        if (!open.includes(port) && !(await this.publishedPorts()).has(port)) throw new Refusal('port_in_use');
+        return { outcome: { facts: { port } } };
+      },
+      { unknownOnError: true },
+    );
+    if (checks.results.at(-1)?.code === 'port_in_use')
+      checks.annotate('port', { port, ...(offerFree && { free: await this.freePort(port, source, managerPort) }) });
+  }
+  /** Ports running containers publish on this server. */
+  private async publishedPorts(): Promise<Set<number>> {
+    return new Set(
+      (await this.docker.inventory())
+        .filter((c) => c.State.Running)
+        .flatMap((c) => Object.values(c.HostConfig.PortBindings ?? {}).flatMap((values) => (values ?? []).map((v) => Number(v.HostPort)))),
+    );
+  }
+  /** FL-1318: worth knowing, never blocking: memory for machine learning, and Unraid's Docker tab. */
+  private async hostNotes(checks: ServerCheck, dockerMemory: number | null | undefined, ml: boolean): Promise<void> {
+    await checks.run(
+      'memory',
+      async () => {
+        // Docker's answer first; when Docker itself is the problem, what Manager's own container sees.
+        const memory = dockerMemory || this.probes.memory();
+        if (!memory) return { outcome: { status: 'unknown', code: 'memory_unknown' } };
+        return { outcome: { facts: { bytes: memory, ml }, ...(ml && memory < LOW_MEMORY && { status: 'warning' as const, code: 'low_memory' }) } };
+      },
+      { unknownOnError: true },
+    );
+    if (this.checkHost() === 'unraid')
+      await checks.run(
+        'unraid',
+        async () => ((await this.probes.dockermanMapped()) ? {} : { outcome: { status: 'warning', code: 'dockerman_templates_unmapped' } }),
+        { unknownOnError: true },
+      );
   }
   /** The next port after `port` that nothing on this server publishes, for "Use port 2284". Null when none is near. */
   private async freePort(port: number, source?: Source | SourceFence | null, managerPort?: number): Promise<number | null> {
-    for (let next = port + 1; next <= Math.min(65535, port + 50); next++)
-      if (await this.checkPort(next, null, source, managerPort).then(() => true, () => false)) return next;
+    const candidates = Array.from({ length: Math.min(65535, port + 50) - port }, (_, index) => port + 1 + index);
+    // Ports a host app listens on are skipped too, when the helper can tell.
+    const open = await this.probes.hostFreePorts(candidates).catch(() => null);
+    for (const next of candidates)
+      if ((!open || open.includes(next)) && (await this.checkPort(next, null, source, managerPort).then(() => true, () => false))) return next;
     return null;
   }
   /**
@@ -1104,7 +1407,12 @@ export class Operations {
         !operation.receipts['reviewed-common-import']) {
         return this.captureForReview(operation);
       }
-      if (operation.kind === 'move-library') return this.applyMove(operation);
+      if (isMoveOperation(operation.kind)) return this.applyMove(operation);
+      if (operation.kind === 'thumbnails-home') {
+        const review = this.store.get<ThumbnailsHomeReview>(`thumbnails-home:${operation.input.reviewId}`);
+        if (!review) throw new Refusal('review_missing');
+        return this.applyThumbnailsHome(operation, review);
+      }
       if (operation.kind === 'move-database') {
         const review = this.store.get<DatabaseRelocationReview>(`database-move:${operation.input.reviewId}`);
         if (!review) throw new Refusal('review_missing');
@@ -1243,9 +1551,13 @@ export class Operations {
           port: review.input.port,
           ml: review.input.ml,
           origin: sourceFence ? 'new_import' : 'new_library',
-          mounts: review.source?.mounts ?? [
-            { type: 'bind', source: review.input.mediaPath!, target: '/data', readOnly: false },
-          ],
+          // FL-1321: thumbnails chosen on a faster drive are the library's second mount (FL-1320's model).
+          mounts:
+            review.source?.mounts ??
+            withThumbnails(
+              [{ type: 'bind', source: review.input.mediaPath!, target: '/data', readOnly: false }],
+              review.input.thumbnailsPath ?? null,
+            ),
           sourceId: sourceFence?.id ?? null,
           mayHaveWrittenMedia: false,
           databaseRoot: review.input.databaseRoot,
@@ -1266,6 +1578,9 @@ export class Operations {
       });
       await mkdir(this.directory(), { recursive: true, mode: 0o700 });
       await this.managerToken();
+      // A thumbnail folder Manager chose and checked carries the server's folder marker from the start (FL-1320).
+      const thumbnails = thumbnailMount(result.mounts);
+      if (thumbnails && !review.source) await seedThumbnailMarker(thumbnails.source);
       await renderCompose(review.release, result, password, this.directory(), this.application());
       return result;
     });
@@ -2371,16 +2686,31 @@ export class Operations {
     // Any container (running or stopped: it can start later) that maps this folder, something inside it, or a folder
     // above it may use these files. Manager's own containers map the database parent and never use PGDATA; this
     // library's stack maps only its media and the database in use (checked above), so only its mappings of this
-    // folder or inside it count.
-    const user = (await this.docker.inventory()).find(
-      (c) =>
-        c.Config.Labels?.['app.frameleaf.manager.role'] !== 'controller' &&
-        c.Mounts.some(
-          (m) =>
-            m.Source?.startsWith('/') &&
-            (inside(m.Source, path) || (c.Config.Labels?.['app.frameleaf.manager'] !== installation.id && inside(path, m.Source))),
-        ),
-    );
+    // folder or inside it count. Everything is compared on the host: the folder's host path and each container's
+    // own host source (Docker's, never Manager's translation of it), both resolved by the host with links followed.
+    // A path the host can't resolve could lead anywhere, so the folder is kept rather than compared by spelling.
+    const containers = (await this.docker.inventory(true)).filter((c) => c.Config.Labels?.['app.frameleaf.manager.role'] !== 'controller');
+    const sources = [...new Set(containers.flatMap((c) => c.Mounts.map((m) => m.Source).filter((source) => source?.startsWith('/'))))];
+    const onHost = toHost(path);
+    const resolved = await this.hostRealpaths([onHost, ...sources]);
+    const unresolved = resolved && containers.find((c) => c.Mounts.some((m) => resolved[sources.indexOf(m.Source) + 1] === null));
+    if (!resolved || resolved[0] === null || unresolved)
+      throw new Refusal(
+        'database_folder_unverified',
+        409,
+        unresolved ? `Manager could not tell where a folder container ${unresolved.Name.replace(/^\//, '')} maps really is.` : undefined,
+      );
+    const names = [onHost, resolved[0]];
+    const user = containers.find((c) => {
+      const own = c.Config.Labels?.['app.frameleaf.manager'] === installation.id;
+      return c.Mounts.some(
+        (m) =>
+          m.Source?.startsWith('/') &&
+          [m.Source, resolved[sources.indexOf(m.Source) + 1]!].some((source) =>
+            names.some((f) => inside(source, f) || (!own && inside(f, source))),
+          ),
+      );
+    });
     if (user) throw new Refusal('database_folder_in_use', 409, `Container ${user.Name.replace(/^\//, '')} maps this folder.`);
     await this.docker.sql(await this.targetDatabase(installation), 'SELECT 1;').catch(() => {
       throw new Refusal('database_unconfirmed');
@@ -2567,7 +2897,7 @@ export class Operations {
     const databaseBytes = Math.max(1024 ** 3, (await stat(join(checkpoint, 'database.dump'))).size * 4);
     // FL-1317: the server checks, reported together. The backup itself was checked above.
     const checks = await this.restoreChecks(
-      { mounts, port: recovery.installation.port }, databaseRoot, databaseBytes, current, managerPort, 'review',
+      { mounts, port: recovery.installation.port, ml: recovery.installation.ml }, databaseRoot, databaseBytes, current, managerPort, 'review',
       thumbnailsMissing && !fallback ? { missing: thumbnails!.source, folder } : undefined,
     );
     const { compatibility, databaseStorage } = checks;
@@ -2581,7 +2911,8 @@ export class Operations {
           return { value, outcome: { facts: { tag: value.nas.tag } } };
         })
       : undefined;
-    const host = checkHost();
+    await this.hostNotes(checks, compatibility?.memory, recovery.installation.ml);
+    const host = this.checkHost();
     if (!release || !databaseStorage || checks.blocked) {
       await rm(checkpoint, { recursive: true, force: true });
       return { ready: false as const, host, port: recovery.installation.port, checks: checks.results };
@@ -2617,7 +2948,7 @@ export class Operations {
   }
   /** The restore review's server checks; the restore repeats them before it downloads anything. */
   private async restoreChecks(
-    target: { mounts: Mount[]; port: number },
+    target: { mounts: Mount[]; port: number; ml: boolean },
     databaseRoot: string,
     databaseBytes: number,
     current: Installation | null,
@@ -2633,6 +2964,7 @@ export class Operations {
       const value = await this.docker.compatibility();
       return { value, outcome: { facts: { version: value.version ?? null } } };
     });
+    await this.roomCheck(checks, target.ml);
     if (thumbnailsMissing) {
       await checks.run('thumbnails', async () => {
         throw new Refusal('thumbnail_folder_missing', 409, thumbnailsMissing.missing);
@@ -2662,14 +2994,8 @@ export class Operations {
       const value = await this.databaseStorage.validate(databaseRoot, databaseBytes);
       return { value, outcome: { facts: { path: databaseRoot, free: await freeBytes(databaseRoot) } } };
     });
-    await checks.run(
-      'port',
-      async () => {
-        await this.checkPort(target.port, current, undefined, managerPort);
-        return { outcome: { facts: { port: target.port } } };
-      },
-      { unknownOnError: true },
-    );
+    await this.portCheck(checks, target.port, current, undefined, managerPort, false);
+    await this.downloadsCheck(checks);
     return Object.assign(checks, { compatibility, databaseStorage });
   }
   restore(id: string, key: string): Operation {
@@ -2686,7 +3012,7 @@ export class Operations {
     await this.step(operation, 'download-images', async () => {
       // FL-1317: the review's checks again, so a change since the review still refuses before any download.
       (await this.restoreChecks(
-        { mounts: review.mounts ?? review.recovery.installation.mounts, port: review.recovery.installation.port },
+        { mounts: review.mounts ?? review.recovery.installation.mounts, port: review.recovery.installation.port, ml: review.recovery.installation.ml },
         review.databaseRoot, review.databaseBytes, review.current, undefined, 'start',
       )).assert();
       await this.releases.eligible(review.release.nas.tag);
@@ -2809,9 +3135,11 @@ export class Operations {
     // FL-1322: once started on the new folder the library may have written there; going back would lose that.
     if (operation.kind === 'move-database' && operation.receipts['start-state'] && !operation.receipts['cancellation-intent'])
       throw new Refusal('database_move_reverse_required');
+    // FL-1323: the thumbnail drive is gone, so there is nothing to go back to; Resume finishes putting them back.
+    if (operation.kind === 'thumbnails-home') throw new Refusal('thumbnails_home_resume_required');
     this.executing.add(id); // Claim synchronously, before any external effect or await.
     try {
-      if (operation.kind === 'move-library') {
+      if (isMoveOperation(operation.kind)) {
         await this.mediaMove.recover(operation);
         operation.state = 'complete';
         operation.error = operation.receipts['cancelled'] as string;
@@ -3126,10 +3454,11 @@ export class Operations {
       databaseMove:
         operation.kind === 'update' &&
         (!!receipts['database-move-intent'] || !!this.store.get<UpdateReview>(`update:${input.reviewId}`)?.databaseMove),
-      canStop: operation.kind === 'move-library' && operation.state === 'running' && !receipts['move-writes-intent'],
+      canStop: isMoveOperation(operation.kind) && operation.state === 'running' && !receipts['move-writes-intent'],
       canCancel:
         ['failed', 'interrupted', 'awaiting-review'].includes(operation.state) &&
-        (operation.kind === 'move-library'
+        operation.kind !== 'thumbnails-home' &&
+        (isMoveOperation(operation.kind)
           ? !receipts['move-writes-intent']
           : operation.kind === 'move-database'
             ? !receipts['start-state']

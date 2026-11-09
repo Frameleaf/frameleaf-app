@@ -581,6 +581,11 @@
   .dv-place {
     position: relative;
     min-height: 180px;
+    /* A large library visits hundreds of landmarks: a card far off screen is not styled, laid out or
+       painted until it comes near. Its size never depends on its content (min-height, absolute
+       children), so nothing moves when it is drawn. */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 180px;
     overflow: hidden;
     border-radius: var(--fl-radius-card);
     background: var(--fl-raised);

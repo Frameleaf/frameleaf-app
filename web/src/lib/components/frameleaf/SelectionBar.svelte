@@ -8,6 +8,7 @@
   import BulkLocationDialog from '$lib/components/frameleaf/BulkLocationDialog.svelte';
   import BulkOperationStatus from '$lib/components/frameleaf/BulkOperationStatus.svelte';
   import BulkTagDialog from '$lib/components/frameleaf/BulkTagDialog.svelte';
+  import { dockLift } from '$lib/frameleaf/panel-dock.svelte';
   import PreservationExportDialog from '$lib/components/frameleaf/PreservationExportDialog.svelte';
   import SharedLinkForm from '$lib/components/frameleaf/SharedLinkForm.svelte';
   import {
@@ -189,6 +190,13 @@
   const menuId = $props.id();
 
   let open = $derived(count > 0);
+  $effect(() => {
+    if (!open) {
+      return;
+    }
+    untrack(() => dockLift.selections++);
+    return () => untrack(() => dockLift.selections--);
+  });
   // The bar fades out after the selection is cleared; it keeps the last count until it is gone
   // rather than flashing "0 selected".
   let shownCount = $state(untrack(() => count));
