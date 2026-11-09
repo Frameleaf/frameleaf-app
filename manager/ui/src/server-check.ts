@@ -11,7 +11,7 @@ export type CheckResult = {
   detail?: string;
   facts?: Record<string, string | number | boolean | null>;
 };
-export type CheckFolder = 'media' | 'database' | 'backups';
+export type CheckFolder = 'media' | 'database' | 'thumbnails' | 'backups';
 /** Fixes Manager can make without leaving setup. After one, Manager checks again. */
 export type CheckAction =
   | { kind: 'port'; port: number; label: string }
@@ -19,6 +19,8 @@ export type CheckAction =
   | { kind: 'ml'; label: string }
   /** FL-1320: a restore keeps thumbnails in the photos folder when their own drive is gone. */
   | { kind: 'thumbnails'; label: string }
+  /** FL-1321: put the database in the folder Manager suggests on a faster drive. */
+  | { kind: 'suggest'; folder: 'database'; path: string; label: string }
   | { kind: 'recheck'; label: string };
 export type CheckRow = {
   id: string;
@@ -65,6 +67,7 @@ export const checkOrder = (flow: 'install' | 'import' | 'restore', containers = 
   'room',
   'media',
   'database',
+  ...(flow === 'install' ? ['thumbnails'] : []),
   ...(flow === 'restore' ? [] : ['backups', 'manager']),
   'port',
   ...(containers && flow !== 'restore' ? ['containers'] : []),
@@ -77,8 +80,8 @@ export const checkOrder = (flow: 'install' | 'import' | 'restore', containers = 
 export const CHECKING = { title: 'Checking this server', lead: 'Manager is only looking. Nothing is downloaded or changed.' };
 
 const HOSTS: Record<CheckHost, string> = { unraid: 'Unraid', truenas: 'TrueNAS', hexos: 'HexOS', linux: '' };
-const NOUNS: Record<CheckFolder, string> = { media: 'photos and videos folder', database: 'database folder', backups: 'backups folder' };
-const ROOTS: Record<CheckFolder, string> = { media: 'MANAGER_STORAGE_ROOTS', database: 'MANAGER_DATABASE_ROOTS', backups: 'MANAGER_BACKUP_ROOT' };
+const NOUNS: Record<CheckFolder, string> = { media: 'photos and videos folder', database: 'database folder', thumbnails: 'thumbnails folder', backups: 'backups folder' };
+const ROOTS: Record<CheckFolder, string> = { media: 'MANAGER_STORAGE_ROOTS', database: 'MANAGER_DATABASE_ROOTS', thumbnails: 'MANAGER_STORAGE_ROOTS', backups: 'MANAGER_BACKUP_ROOT' };
 const REOPEN = 'Open Manager again and check again.';
 const AGAIN = 'Check again.';
 
@@ -243,6 +246,21 @@ function problem(result: CheckResult, context: CheckContext): Words {
         steps: DOWNLOAD_STEPS,
       };
     case 'thumbnails': {
+      // FL-1321: a new library's thumbnails folder, chosen on the Storage step.
+      if (code === 'thumbnails_on_network_share')
+        return {
+          title: 'Thumbnails can’t go in this folder',
+          detail: `${context.paths.thumbnails ?? result.detail ?? ''} is a network share. Thumbnails need a drive inside this server.`,
+          ...(context.chosen.includes('thumbnails') && { action: { kind: 'folder' as const, folder: 'thumbnails' as const, label: 'Choose another folder' } }),
+        };
+      if (code === 'thumbnail_folder_missing' && context.chosen.includes('thumbnails'))
+        return {
+          title: 'The thumbnails drive isn’t connected',
+          detail: `${context.paths.thumbnails ?? result.detail ?? 'The thumbnails folder'} isn’t there. Its drive may be disconnected or not mounted. Nothing has been changed.`,
+          steps: reconnectSteps[host],
+          action: { kind: 'folder', folder: 'thumbnails', label: 'Choose another folder' },
+        };
+      if (code !== 'thumbnail_folder_missing') return folderProblem('thumbnails', code, context, result.detail);
       const folder = typeof result.facts?.folder === 'string' ? result.facts.folder : null;
       return {
         title: 'The thumbnails drive isn’t connected',
@@ -292,6 +310,13 @@ function problem(result: CheckResult, context: CheckContext): Words {
 }
 
 function notice(result: CheckResult, context: CheckContext): Words {
+  // FL-1321: hard drives work; this is said only when a faster drive with room is there, with the one-press fix.
+  if (result.id === 'database' && result.code === 'database_on_hard_drives' && typeof result.facts?.suggestion === 'string')
+    return {
+      title: 'The database is on hard drives',
+      detail: `Frameleaf will work, but a faster drive is available. ${result.facts.suggestedDrive}: ${result.facts.reason}`,
+      action: { kind: 'suggest', folder: 'database', path: result.facts.suggestion, label: `Use ${result.facts.suggestedName}` },
+    };
   if (result.id === 'room' && result.status === 'unknown')
     return {
       title: 'Couldn’t check Docker’s storage',
@@ -337,7 +362,10 @@ function value(result: CheckResult, host: CheckHost): string {
       if (typeof facts?.folders === 'number') return `${facts.folders} ${facts.folders === 1 ? 'folder stays' : 'folders stay'} where ${facts.folders === 1 ? 'it is' : 'they are'}`;
       return `Can save here${freeText(facts)}`;
     case 'database':
-      return `On this server${freeText(facts)}`;
+      return `${typeof facts?.drive === 'string' ? facts.drive : 'On this server'}${freeText(facts)}`;
+    case 'thumbnails':
+      if (facts?.withPhotos) return 'With your photos and videos';
+      return `${typeof facts?.drive === 'string' ? facts.drive : 'Can save here'}${freeText(facts)}`;
     case 'backups':
     case 'manager':
       return `Can save here${freeText(facts)}`;

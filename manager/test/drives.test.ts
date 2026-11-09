@@ -318,13 +318,14 @@ test('a write that hangs is not waited on: the drive reads as unidentified, one 
     let release!: () => void;
     const stalled = new Promise<void>((done) => (release = done));
     let started = 0;
+    let stalledWrite!: Promise<unknown>;
     // A real file whose sync hangs until released, as on a pool stuck behind a failing disk.
     const hanging = (path: string) => {
       started++;
-      return timedWrite(path, 800, async (file) => {
+      return (stalledWrite = timedWrite(path, 800, async (file) => {
         const handle = await open(file, 'wx', 0o600);
         return { write: handle.write.bind(handle), datasync: () => stalled.then(() => handle.datasync()), close: () => handle.close() };
-      });
+      }));
     };
     const before = performance.now();
     assert.equal(await boundedProbe('stall', folder, hanging, 100), null);
@@ -334,10 +335,14 @@ test('a write that hangs is not waited on: the drive reads as unidentified, one 
     assert.equal(started, 1);
     assert.equal((await readdir(folder)).length, 1);
     release();
-    // Once the stalled write returns, its file is removed and the late result isn't kept.
-    for (let i = 0; i < 50 && (await readdir(folder)).length; i++) await new Promise((done) => setTimeout(done, 10));
+    // Once the stalled write returns, its file is removed and the late result isn't kept: the next report probes again.
+    // Waiting on the write itself, and a fake for the fresh probe, keeps this independent of the runner's disk speed.
+    await stalledWrite;
+    await new Promise((done) => setImmediate(done));
     assert.deepEqual(await readdir(folder), []);
-    assert.ok(['fast', 'slow'].includes((await boundedProbe('stall', folder, timedWrite, 1000))!));
+    let fresh = 0;
+    assert.equal(await boundedProbe('stall', folder, async () => (fresh++, 'fast' as const)), 'fast');
+    assert.equal(fresh, 1);
     // An answer of unidentified (a full drive, a permissions or passing I/O error) isn't kept either.
     let failures = 0;
     const failing = async () => (failures++, null);

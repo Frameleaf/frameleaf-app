@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { dockLift } from '$lib/frameleaf/panel-dock.svelte';
   import type { Snippet } from 'svelte';
 
   /**
@@ -10,7 +11,7 @@
   let { children }: { children: Snippet } = $props();
 </script>
 
-<div class="fl-panel-dock">
+<div class="fl-panel-dock" class:is-lifted={dockLift.selections > 0}>
   {@render children()}
 </div>
 
@@ -37,7 +38,7 @@
     translate: 0 calc(-1 * (var(--fl-dock-clearance, 0px) + var(--fl-dock-lift)));
     transition: translate var(--fl-duration-dock) var(--fl-spring);
   }
-  :global(:root:has(.selection-bar.is-open)) .fl-panel-dock {
+  .fl-panel-dock.is-lifted {
     --fl-dock-lift: 4rem;
   }
   @media (prefers-reduced-motion: reduce) {

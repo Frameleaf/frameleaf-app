@@ -58,6 +58,8 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import FolderPicker from './FolderPicker.svelte';
+  import DriveLine from './DriveLine.svelte';
+  import DriveSuggestion from './DriveSuggestion.svelte';
   import Icon from './Icon.svelte';
   import { startKey } from './request-key';
   import { formatBytes, readable } from './presentation';
@@ -142,7 +144,10 @@
       rootDialog?.showModal();
     }
   }
+  /** Which open() the dialog belongs to: a review answered after its dialog closed is never shown in another. */
+  let opened = 0;
   async function open(kind: MoveKind, path?: string) {
+    const request = ++opened;
     picking = null;
     rootDialog?.close();
     moving = { kind, path };
@@ -153,12 +158,14 @@
     dialog?.showModal();
     try {
       const route = ROUTES[kind].review;
-      review = await api(
+      const answer = await api(
         route,
         kind === 'rebuild' ? {} : kind === 'database' ? { databaseRoot: path } : { root: path },
       );
+      if (request === opened) review = answer;
     } catch (e) {
-      reviewError = readable(e instanceof Error ? e.message : 'request_failed', (e as { detail?: string }).detail);
+      if (request === opened)
+        reviewError = readable(e instanceof Error ? e.message : 'request_failed', (e as { detail?: string }).detail);
     }
   }
   /** A start retried after a lost response sends the same key, so Manager returns the operation it started. */
@@ -166,6 +173,7 @@
   function close() {
     if (starting) return;
     if (review) keys.delete(review.id);
+    opened++;
     dialog?.close();
     moving = null;
     review = null;
@@ -195,26 +203,17 @@
     return `${amount(value.bytes)} to copy`;
   };
   const waitsForPause = (kind: MoveKind) => (kind === 'media' || kind === 'thumbs') && review && review.available === false;
-  const DRIVE_ICON = { fast: 'bolt', slow: 'harddisk', network: 'lan' } as const;
 </script>
 
 {#snippet hint(path: string | null | undefined)}
-  {@const found = path ? driveHint(path, drives) : null}
-  {#if unmeasurable(path)}<span class="sp-drive">Manager can’t check free space on this folder from here. Frameleaf still uses it as normal.</span>
-  {:else if found}<span class="sp-drive" data-speed={low(path) ? 'low' : found.speed}><Icon name={DRIVE_ICON[found.speed]} />{found.text}{#if low(path)}{' · Nearly full'}{/if}</span>{/if}
+  <DriveLine {path} {drives} low={low(path)} unmeasurable={unmeasurable(path)} />
 {/snippet}
 
 {#snippet suggestion(kind: MoveKind, value: Suggestion | null | undefined)}
-  {#if value}
-    {#if value.status !== 'found'}
-      <p class="sp-suggest-note"><Icon name="info-outline" /><span>{value.reason}</span></p>
-    {:else}
-      <div class="sp-suggest">
-        <Icon name="bulb" />
-        <div><strong>{value.title}</strong><p>{value.reason}</p></div>
-        <button type="button" class="button quiet" {disabled} onclick={() => open(kind, value.folder)}>Move to {value.drive.name}…</button>
-      </div>
-    {/if}
+  {#if value?.status === 'found'}
+    <DriveSuggestion suggestion={value} action={`Move to ${value.drive.name}…`} {disabled} use={() => open(kind, value.folder)} />
+  {:else}
+    <DriveSuggestion suggestion={value} action="" use={() => {}} />
   {/if}
 {/snippet}
 
@@ -386,59 +385,11 @@
     line-height: 1.5;
     overflow-wrap: anywhere;
   }
-  .sp-drive {
-    display: inline-flex;
-    gap: 6px;
-    align-items: center;
-    color: var(--muted);
-    font-size: 11px;
-    line-height: 1.5;
-  }
-  .sp-drive :global(svg) {
-    width: 14px;
-    height: 14px;
-  }
-  .sp-drive[data-speed='fast'] {
-    color: var(--teal);
-  }
-  .sp-drive[data-speed='network'],
-  .sp-drive[data-speed='low'] {
-    color: var(--amber);
-  }
-  .sp-suggest {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    gap: 8px 12px;
-    align-items: start;
+  /* The drive line and suggestion are FL-1321's shared .st-drive and .st-suggest (style.css); here they fill the row. */
+  .sp-body > :global(.st-suggest),
+  .sp-body > :global(.st-suggest-note) {
     width: 100%;
-    padding: 14px 16px;
-    border-radius: 8px;
-    background: color-mix(in srgb, var(--accent) 14%, transparent);
-    font-size: 12px;
-    line-height: 1.5;
   }
-  .sp-suggest > :global(svg) {
-    width: 18px;
-    height: 18px;
-    margin-top: 2px;
-    color: var(--accent);
-  }
-  .sp-suggest strong {
-    display: block;
-    margin-bottom: 4px;
-    font-weight: 600;
-  }
-  .sp-suggest p {
-    margin: 0;
-    font-size: 12px;
-    overflow-wrap: anywhere;
-  }
-  .sp-suggest .button {
-    grid-column: 2;
-    justify-self: start;
-    margin-top: 4px;
-  }
-  .sp-suggest-note,
   .sp-move-problem {
     display: flex;
     gap: 8px;
@@ -449,7 +400,6 @@
     font-size: 12px;
     line-height: 1.5;
   }
-  .sp-suggest-note :global(svg),
   .sp-move-problem :global(svg) {
     width: 16px;
     height: 16px;
@@ -476,8 +426,8 @@
   .sp-place .button {
     font-size: 14px;
   }
-  .sp-suggest .button {
-    font-size: 12px;
+  .sp-body :global(.st-suggest .button) {
+    line-height: 1.5;
   }
   .sp-move {
     font-size: 14px;
@@ -577,7 +527,8 @@
   /* Phones: 44px touch targets, as across the prototype. */
   @media (max-width: 700px) {
     .sp-place .button,
-    .sp-move .button {
+    .sp-move .button,
+    .sp-body :global(.st-suggest .button) {
       min-height: 44px;
     }
   }

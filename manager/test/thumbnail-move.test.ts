@@ -440,6 +440,8 @@ async function homeFixture(run: (context: { operations: Operations; store: Store
   };
   const operations = new Operations(store, docker as never, {} as never, {} as never, [base], {} as never);
   (operations as any).fencing = { assertMedia: async () => {} };
+  // Manager sees every fixture folder, whatever this machine's own mounts are (as the FL-1320 tests do).
+  operations.visibility = async () => () => true;
   (operations as any).librarySummary = async () => ({ assets: 412880 });
   (operations as any).serverRequest = async (method: string, path: string) => {
     calls.push(`${method} ${path}`);

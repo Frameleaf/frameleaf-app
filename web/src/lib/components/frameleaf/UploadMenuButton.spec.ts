@@ -57,6 +57,17 @@ describe('UploadMenuButton', () => {
     expect(screen.getByRole('menuitem', { name: new RegExp(en.frameleaf_transfer_upload_folder) })).toBeInTheDocument();
   });
 
+  it('reads the albums only when the menu opens', async () => {
+    vi.mocked(getAllAlbums).mockResolvedValue([album({ id: 'solo', albumName: 'Solo album' })]);
+    render(UploadMenuButton);
+    expect(getAllAlbums).not.toHaveBeenCalled();
+
+    await fireEvent.click(screen.getByRole('button', { name: en.upload }));
+
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Solo album' })).toBeInTheDocument());
+    expect(getAllAlbums).toHaveBeenCalledTimes(1);
+  });
+
   it('lists albums and shared spaces as upload targets, never a collection', async () => {
     vi.mocked(getAllAlbums).mockResolvedValue([
       album({ id: 'trips', albumName: 'Trips', kind: AlbumKind.Collection }),

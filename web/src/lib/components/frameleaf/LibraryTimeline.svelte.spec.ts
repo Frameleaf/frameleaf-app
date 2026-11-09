@@ -70,6 +70,21 @@ describe('LibraryTimeline "all" grouping', () => {
     expect(manager.months.map((month) => month.isLoaded)).toEqual([true, false]);
   });
 
+  it('marks a menu open in the header, so the scrubber steps aside, and clears it when it closes', async () => {
+    const { container } = renderYears();
+    await tick();
+    const root = container.querySelector('.fl-timeline')!;
+    const menu = document.createElement('div');
+    menu.setAttribute('role', 'menu');
+    expect(root.classList.contains('has-header-menu')).toBe(false);
+
+    container.querySelector('.fl-timeline-top')!.append(menu);
+    await waitFor(() => expect(root.classList.contains('has-header-menu')).toBe(true));
+
+    menu.remove();
+    await waitFor(() => expect(root.classList.contains('has-header-menu')).toBe(false));
+  });
+
   it('bounds the physical scroll surface for a timeline beyond the browser height limit', async () => {
     const { container } = renderYears();
     await tick();
@@ -423,6 +438,20 @@ describe('LibraryTimeline curated Years and Months', () => {
     const view = render(LibraryTimeline, { timelineManager: manager, session, grouping, onGroupingChange });
     return { ...view, onGroupingChange };
   };
+
+  it('forgets a header menu left open in the rows when the view turns to cards', async () => {
+    const { container, rerender } = renderGrouping('days');
+    await tick();
+    const root = container.querySelector('.fl-timeline')!;
+    const menu = document.createElement('div');
+    menu.setAttribute('role', 'menu');
+    container.querySelector('.fl-timeline-top')!.append(menu);
+    await waitFor(() => expect(root.classList.contains('has-header-menu')).toBe(true));
+
+    await rerender({ grouping: 'years' });
+    await screen.findByRole('button', { name: 'frameleaf_timeline_card_show_months' });
+    expect(root.classList.contains('has-header-menu')).toBe(false);
+  });
 
   it('shows a card per year with the same query as the time buckets, and opens Months', async () => {
     const { onGroupingChange } = renderGrouping('years');

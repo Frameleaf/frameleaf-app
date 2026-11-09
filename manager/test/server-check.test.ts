@@ -128,10 +128,10 @@ test('a server with several problems reports them all in one pass, and nothing i
     assert.equal(result.ready, false);
     assert.equal(result.host, 'linux');
     const byId = Object.fromEntries(result.checks.map((check) => [check.id, check]));
-    assert.deepEqual(result.checks.map((check) => check.id), ['docker', 'room', 'media', 'database', 'backups', 'manager', 'port', 'downloads', 'memory']);
+    assert.deepEqual(result.checks.map((check) => check.id), ['docker', 'room', 'media', 'database', 'thumbnails', 'backups', 'manager', 'port', 'downloads', 'memory']);
     assert.deepEqual(
       Object.fromEntries(result.checks.map((check) => [check.id, check.status])),
-      { docker: 'problem', room: 'ok', media: 'ok', database: 'problem', backups: 'ok', manager: 'ok', port: 'problem', downloads: 'ok', memory: 'unknown' },
+      { docker: 'problem', room: 'ok', media: 'ok', database: 'problem', thumbnails: 'ok', backups: 'ok', manager: 'ok', port: 'problem', downloads: 'ok', memory: 'unknown' },
     );
     assert.equal(byId.docker.code, 'unsupported_docker_version_or_architecture');
     assert.equal(byId.database.code, 'insufficient_database_space');

@@ -58,10 +58,12 @@
           {#if initial}{initial}{:else}<Icon icon={mdiAccountOutline} size="1em" />{/if}
         </span>
       {:else}
+        <!-- Lazy: the People grid draws every person at once, so an eager face loaded thousands. -->
         <ImageThumbnail
           url={getPeopleThumbnailUrl(person)}
           altText=""
           widthStyle="100%"
+          preload={false}
           onComplete={(errored) => {
             if (!errored) {
               return;

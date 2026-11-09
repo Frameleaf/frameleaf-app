@@ -51,13 +51,22 @@
     }, authManager.user.id),
   );
   onDestroy(() => generation++);
+  // The albums are read when the menu opens, not with every page: on a large library the list is
+  // one of the biggest responses a page asks for, and most pages never open this menu. They are read
+  // again on each open, and a reading for another scope or lock state is not shown meanwhile.
+  let loadedFor = '';
   $effect(() => {
     const scope = libraryScope;
-    void accessRevision;
+    const key = `${scope}:${accessRevision}`;
+    if (!open) {
+      return;
+    }
     untrack(() => {
       const version = ++generation;
       const current = authManager.captureSession();
-      targets = [];
+      if (loadedFor !== key) {
+        targets = [];
+      }
       void loadAlbumTargets(
         authManager.user.id,
         $t('unnamed_album'),
@@ -68,6 +77,7 @@
             targets = flattenAlbumTargets(directory)
               .map(({ id, name }) => ({ id, name }))
               .sort((a, b) => a.name.localeCompare(b.name));
+            loadedFor = key;
           }
         })
         .catch((error) => {
